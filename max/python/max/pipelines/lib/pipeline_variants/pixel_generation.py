@@ -68,7 +68,7 @@ class PixelGenerationPipeline(
         self._devices = load_devices(pipeline_config.model.device_specs)
 
         # Initialize Session.
-        session = InferenceSession(devices=self._devices)
+        session = InferenceSession(devices=[*self._devices])
 
         # Configure session with pipeline settings.
         self._pipeline_config.configure_session(session)
@@ -121,20 +121,30 @@ class PixelGenerationPipeline(
 
         # Handle both numpy array (NHWC) and list of images
         if isinstance(images, np.ndarray):
-            # images shape: (batch_size, H, W, C) or (batch_size, C, H, W)
-            # Convert NCHW to NHWC if needed
-            if images.ndim == 4 and images.shape[1] in (1, 3, 4):
-                # Likely NCHW format, convert to NHWC
-                images = np.transpose(images, (0, 2, 3, 1))
-            # Denormalize from [-1, 1] to [0, 1] range
-            images = (images * 0.5 + 0.5).clip(min=0.0, max=1.0)
-            image_list = [images[i] for i in range(images.shape[0])]
+            if images.dtype == np.uint8:
+                # Already NHWC uint8 [0, 255] from GPU post-processing.
+                image_list = [images[i] for i in range(images.shape[0])]
+            else:
+                # images shape: (batch_size, H, W, C) or (batch_size, C, H, W)
+                # Convert NCHW to NHWC if needed
+                if images.ndim == 4 and images.shape[1] in (1, 3, 4):
+                    # Likely NCHW format, convert to NHWC
+                    images = np.transpose(images, (0, 2, 3, 1))
+                # Denormalize [-1, 1] -> [0, 255] uint8
+                images = np.clip(images * 0.5 + 0.5, 0.0, 1.0)
+                images = (images * 255).astype(np.uint8)
+                image_list = [images[i] for i in range(images.shape[0])]
         else:
-            # Denormalize each image from [-1, 1] to [0, 1] range
+            # Denormalize each image from [-1, 1] to [0, 255] uint8
             image_list = [
-                (np.asarray(img, dtype=np.float32) * 0.5 + 0.5).clip(
-                    min=0.0, max=1.0
-                )
+                (
+                    np.clip(
+                        np.asarray(img, dtype=np.float32) * 0.5 + 0.5,
+                        0.0,
+                        1.0,
+                    )
+                    * 255
+                ).astype(np.uint8)
                 for img in images
             ]
 
@@ -150,7 +160,7 @@ class PixelGenerationPipeline(
             # Select images for this request (already in NHWC format)
             pixel_data = np.stack(
                 image_list[offset : offset + num_images_per_prompt], axis=0
-            ).astype(np.float32, copy=False)
+            )
 
             responses[request_id] = GenerationOutput(
                 request_id=request_id,

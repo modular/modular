@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import inf, nan
+from std.math import inf, nan
 
-from gpu.host import DeviceContext
-from memory import bitcast
+from std.gpu.host import DeviceContext
+from std.memory import bitcast
 
 
 # CHECK-LABEL: test_e5m2_initialization
@@ -753,7 +753,7 @@ fn test_simd_f32_to_e5m2_ptx_path(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     test_e5m2_initialization()
     test_simd_e5m2_to_f32()
     test_simd_e5m2_to_f16()

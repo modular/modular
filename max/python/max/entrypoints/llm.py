@@ -74,7 +74,7 @@ class LLM:
     _pending_requests: dict[RequestID, queue.Queue[_Response]]
 
     def __init__(self, pipeline_config: PipelineConfig) -> None:
-        settings = Settings(MAX_SERVE_OFFLINE_INFERENCE=True)
+        settings = Settings(offline_inference=True)
         self._pc = ThreadControl()
         self._request_queue = queue.Queue()
         self._pending_requests = {}
@@ -199,7 +199,7 @@ async def _async_worker(
     pipeline_task = PIPELINE_REGISTRY.retrieve_pipeline_task(pipeline_config)
     lora_queue: LoRAQueue | None = (
         LoRAQueue(
-            pipeline_config.zmq_endpoint_base,
+            pipeline_config.runtime.zmq_endpoint_base,
             pipeline_config.lora.lora_paths,
         )
         if pipeline_config.lora
@@ -255,6 +255,7 @@ async def _async_worker(
 
                 # Generate this request until complete
                 chunks = await pipeline.all_tokens(gen_request)
+                # TODO: (MODELS-1120) determine whether to include reasoning tokens
                 return "".join(
                     chunk.decoded_tokens
                     if chunk.decoded_tokens is not None

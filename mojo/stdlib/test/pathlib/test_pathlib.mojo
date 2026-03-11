@@ -11,13 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
-from pathlib import DIR_SEPARATOR, Path, cwd
-from sys import CompilationTarget
-from tempfile import NamedTemporaryFile
+import std.os
+from std.pathlib import DIR_SEPARATOR, Path, cwd
+from std.sys import CompilationTarget
+from std.tempfile import NamedTemporaryFile
 
-from reflection import source_location
-from testing import (
+from std.reflection import source_location
+from test_utils import check_write_to
+from std.testing import (
     assert_equal,
     assert_false,
     assert_not_equal,
@@ -26,11 +27,11 @@ from testing import (
 )
 
 
-def test_cwd():
+def test_cwd() raises:
     assert_true(String(cwd()).startswith("/"))
 
 
-def test_path():
+def test_path() raises:
     assert_true(String(Path() / "some" / "dir").endswith("/some/dir"))
 
     assert_equal(String(Path("/foo") / "bar" / "jar"), "/foo/bar/jar")
@@ -44,7 +45,7 @@ def test_path():
     assert_true(len(Path().listdir()) > 0)
 
 
-def test_path_exists():
+def test_path_exists() raises:
     assert_true(
         Path(source_location().file_name).exists(), msg="does not exist"
     )
@@ -54,17 +55,17 @@ def test_path_exists():
     )
 
 
-def test_path_isdir():
+def test_path_isdir() raises:
     assert_true(Path().is_dir())
     assert_false((Path() / "this_path_does_not_exist").is_dir())
 
 
-def test_path_isfile():
+def test_path_isfile() raises:
     assert_true(Path(source_location().file_name).is_file())
     assert_false(Path("this/file/does/not/exist").is_file())
 
 
-def test_suffix():
+def test_suffix() raises:
     # Common filenames.
     assert_equal(Path("/file.txt").suffix(), ".txt")
     assert_equal(Path("file.txt").suffix(), ".txt")
@@ -81,18 +82,18 @@ def test_suffix():
     assert_equal(Path("résumé.doc").suffix(), ".doc")
 
 
-def test_joinpath():
+def test_joinpath() raises:
     assert_equal(Path(), Path().joinpath())
     assert_equal(Path() / "some" / "dir", Path().joinpath("some", "dir"))
 
 
-def test_read_write():
-    var temp_file = Path(os.getenv("TEST_TMPDIR")) / "foo.txt"
+def test_read_write() raises:
+    var temp_file = Path(std.os.getenv("TEST_TMPDIR")) / "foo.txt"
     temp_file.write_text("hello")
     assert_equal(temp_file.read_text(), "hello")
 
 
-def test_read_write_bytes():
+def test_read_write_bytes() raises:
     comptime data = "hello world".as_bytes()
     with NamedTemporaryFile() as tmp:
         var file = Path(tmp.name)
@@ -105,31 +106,31 @@ fn get_user_path() -> Path:
 
 
 fn get_current_home() -> String:
-    return os.env.getenv("HOME")
+    return std.os.env.getenv("HOME")
 
 
-def set_home(path: Path):
+def set_home(path: Path) raises:
     path_str = String(path)
-    _ = os.env.setenv("HOME", path_str)
+    _ = std.os.env.setenv("HOME", path_str)
 
 
 # More elaborate tests in `os/path/test_expanduser.mojo`
-def test_expand_user():
+def test_expand_user() raises:
     var user_path = get_user_path()
     var original_home = get_current_home()
     set_home(user_path)
 
     path = Path("~") / "test"
     test_path = user_path / "test"
-    assert_equal(test_path, os.path.expanduser(path))
+    assert_equal(test_path, std.os.path.expanduser(path))
     # Original path should remain unmodified
-    assert_equal(path, os.path.join("~", "test"))
+    assert_equal(path, std.os.path.join("~", "test"))
 
     # Make sure this process doesn't break other tests by changing the home dir.
     set_home(original_home)
 
 
-def test_home():
+def test_home() raises:
     var user_path = get_user_path()
     var original_home = get_current_home()
     set_home(user_path)
@@ -142,7 +143,7 @@ def test_home():
     set_home(original_home)
 
 
-def test_stat():
+def test_stat() raises:
     var path = Path(source_location().file_name)
     var stat = path.stat()
     assert_equal(
@@ -173,7 +174,7 @@ def test_stat():
 
 
 # More elaborate tests in `os/path/test_basename.mojo`
-def test_name():
+def test_name() raises:
     # Root directories
     assert_equal("", Path("/").name())
 
@@ -198,7 +199,7 @@ def test_name():
     assert_equal("file", Path("file").name())
 
 
-def test_parts():
+def test_parts() raises:
     var path_to_file = Path("/path/to/file")
     assert_equal(path_to_file.parts(), path_to_file.path.split("/"))
 
@@ -217,5 +218,23 @@ def test_parts():
     assert_equal(root_path.parts(), root_path.path.split("/"))
 
 
-def main():
+def test_write_to() raises:
+    check_write_to(Path("foo/bar"), expected="foo/bar", is_repr=False)
+    check_write_to(Path(""), expected="", is_repr=False)
+    check_write_to(
+        Path("/absolute/path"), expected="/absolute/path", is_repr=False
+    )
+
+
+def test_write_repr_to() raises:
+    check_write_to(Path("foo/bar"), expected="Path('foo/bar')", is_repr=True)
+    check_write_to(Path(""), expected="Path('')", is_repr=True)
+    check_write_to(
+        Path("/absolute/path"),
+        expected="Path('/absolute/path')",
+        is_repr=True,
+    )
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

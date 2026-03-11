@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy import (
+from max.nn import (
     Float8Config,
     Float8InputScaleSpec,
     Float8ScaleGranularity,

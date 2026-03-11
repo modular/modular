@@ -11,22 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from sys import size_of
+from std.collections import Optional
+from std.sys import size_of
 
-from gpu.host import DeviceContext, HostBuffer
-from layout._coord import Coord, CoordLike, Idx
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.gpu.host import DeviceContext, HostBuffer
+from layout import (
+    Coord,
+    CoordLike,
+    Idx,
+    TileTensor,
+    row_major,
+)
 from nn.concat import (
     _concat_gpu,
     _concat_inner_most_single_dim,
     elementwise_epilogue_type,
 )
-from testing import assert_true
+from std.testing import assert_true
 
-from utils import IndexList, StaticTuple
-from utils.index import product
+from std.utils import IndexList, StaticTuple
+from std.utils.index import product
 
 
 fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
@@ -136,14 +140,14 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         )
 
     comptime kernel = _concat_inner_most_single_dim[
-        OutputLayoutType = output_dyn.LayoutType,
+        OutputLayoutType=output_dyn.LayoutType,
         output_origin=MutAnyOrigin,
-        InputLayoutType = input_0_dyn.LayoutType,
+        InputLayoutType=input_0_dyn.LayoutType,
         input_origin=ImmutAnyOrigin,
         dtype=dtype,
         num_inputs=4,
         block_size=B_SIZE,
-        epilogue_fn = Optional[elementwise_epilogue_type](
+        epilogue_fn=Optional[elementwise_epilogue_type](
             epilogue_plus_one
         ) if test_epilogue else None,
     ]
@@ -181,7 +185,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     )
     print(
         "transfer rate = ",
-        Float64(output_dyn.numel() * size_of[UInt8]() * 2)
+        Float64(output_dyn.num_elements() * size_of[UInt8]() * 2)
         * 1e9
         / Float64((1024**3))
         / Float64(nstime_kernel),
@@ -236,7 +240,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     fn run_concat_gpu(ctx: DeviceContext) raises:
         # uses default stream
         _concat_gpu[
-            epilogue_fn = Optional[elementwise_epilogue_type](
+            epilogue_fn=Optional[elementwise_epilogue_type](
                 epilogue_plus_one
             ) if test_epilogue else None
         ](
@@ -258,7 +262,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     print("concat_gpu time = ", Float64(nstime) * 1e-6, " ms")
     print(
         "transfer rate = ",
-        Float64(output_dyn.numel() * size_of[UInt8]() * 2)
+        Float64(output_dyn.num_elements() * size_of[UInt8]() * 2)
         * 1e9
         / Float64((1024**3))
         / Float64(nstime),
@@ -277,7 +281,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     _ = output_device_buffer
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_concat_4_inputs_rank5[True](ctx)
         test_concat_4_inputs_rank5[False](ctx)

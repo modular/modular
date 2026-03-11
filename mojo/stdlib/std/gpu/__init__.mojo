@@ -32,7 +32,7 @@ grid and the current thread, including block dimensions, block index in the grid
 and thread index. Import these directly from `gpu`:
 
 ```mojo
-from gpu import block_dim, block_idx, thread_idx, global_idx
+from std.gpu import block_dim, block_idx, thread_idx, global_idx
 ```
 
 For an example of launching a GPU kernel from a MAX custom operation, see the
@@ -54,15 +54,19 @@ from .primitives import (
     launch_dependent_grids,
     wait_on_dependent_grids,
     block_dim,
+    block_dim_int,
     block_id_in_cluster,
     block_idx,
+    block_idx_int,
     cluster_dim,
     cluster_idx,
     global_idx,
     grid_dim,
     lane_id,
+    lane_id_int,
     sm_id,
     thread_idx,
+    thread_idx_int,
     warp_id,
 )
 from .globals import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE

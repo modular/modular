@@ -95,7 +95,7 @@ bd //KGEN/tools/mojo -- /path/to/file.mojo
 
 ```mojo
 from linalg.matmul import matmul
-from layout import Layout, LayoutTensor
+from layout import TileTensor, row_major
 from gpu.host import DeviceContext
 ```
 
@@ -125,9 +125,9 @@ from gpu.host import DeviceContext
 # Run benchmarks using the benchmarking framework
 ./bazelw run //max/kernels/benchmarks/gpu:bench_matmul
 
-# Run benchmarks with environment variables
+# Run benchmarks with compile-time defines
 ./bazelw run //max/kernels/benchmarks/gpu:bench_matmul -- \
-    env_get_int[M]=1024 env_get_int[N]=1024 env_get_int[K]=1024
+    get_defined_int[M]=1024 get_defined_int[N]=1024 get_defined_int[K]=1024
 
 # Use autotune tools for performance analysis
 python benchmarks/autotune/kbench.py benchmarks/gpu/bench_matmul.yaml
@@ -159,20 +159,20 @@ mojo format ./
 - ARM NEON intrinsics
 - x86 AVX/VNNI instructions
 
-## Environment Variables
+## Compile-Time Defines
 
-Many benchmarks and tests use environment variables for configuration:
+Many benchmarks and tests use compile-time defines for configuration:
 
-- `env_get_int[]`: Get integer values
-- `env_get_bool[]`: Get boolean flags
-- `env_get_dtype[]`: Get data type specifications
+- `get_defined_int[]`: Get integer values
+- `get_defined_bool[]`: Get boolean flags
+- `get_defined_dtype[]`: Get data type specifications
 
 Example:
 
 ```bash
 ./bazelw run //max/kernels/benchmarks/gpu:bench_matmul -- \
-    env_get_int[M]=512 env_get_bool[transpose_b]=true \
-    env_get_dtype[type]=float16
+    get_defined_int[M]=512 get_defined_bool[transpose_b]=true \
+    get_defined_dtype[type]=float16
 ```
 
 ## Debugging Tips

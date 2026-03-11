@@ -26,7 +26,10 @@ import numpy as np
 import numpy.typing as npt
 import requests
 from max.interfaces import (
+    ImageContentPart,
     ImageMetadata,
+    MessageContent,
+    TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TokenBuffer,
@@ -466,14 +469,15 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         if request.prompt is not None:
             prompt = request.prompt
             if request.images:
-                content = [
-                    {"type": "text", "text": request.prompt},
-                ] + [{"type": "image"} for _ in request.images]
-                messages = [
-                    TextGenerationRequestMessage(
-                        role="user",
-                        content=content,
+                if not isinstance(request.prompt, str):
+                    raise ValueError(
+                        "prompt must be a string when images are provided"
                     )
+                content: list[MessageContent] = [
+                    TextContentPart(text=request.prompt),
+                ] + [ImageContentPart() for _ in request.images]
+                messages = [
+                    TextGenerationRequestMessage(role="user", content=content)
                 ]
                 new_request = TextGenerationRequest(
                     request_id=request.request_id,

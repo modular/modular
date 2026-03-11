@@ -11,13 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.gpu.host import DeviceContext
 
 
-fn kernel_with_list(res: UnsafePointer[Float32]):
+fn kernel_with_list(res: UnsafePointer[Float32, MutAnyOrigin]):
     var list: List[Float32] = [10]
     for i in range(4):
         list.append(Float32(i + 1))
@@ -47,6 +44,6 @@ fn test_kernel_with_list(ctx: DeviceContext) raises:
         print("Res=", res_host[0])
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_kernel_with_list(ctx)

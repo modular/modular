@@ -21,18 +21,18 @@
 # - Add bounds checking for input dimensions
 # - Add test cases for odd sizes, likely broken
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu.host import DeviceContext
-from gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
 from layout import Layout, LayoutTensor, IntTuple, RuntimeLayout, UNKNOWN_VALUE
 from layout.int_tuple import product
 from layout._fillers import random
 from nn.conv import conv_gpu
-from testing import assert_almost_equal, assert_true
+from std.testing import assert_almost_equal, assert_true
 
-from utils.index import IndexList
-from utils.numerics import get_accum_type
+from std.utils.index import IndexList
+from std.utils.numerics import get_accum_type
 
 
 @always_inline
@@ -116,8 +116,7 @@ fn matmul[
     comptime N = Int(c_layout.shape[1])
     comptime K = Int(a_layout.shape[1])
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         for i in range(M):
             for j in range(N):
                 var sum: SIMD[s_type, C.element_size] = 0
@@ -148,7 +147,7 @@ fn get_tile[
     dtype,
     Layout.row_major(tile_size, tile_size),
     MutAnyOrigin,
-    element_layout = input_tensor.element_layout,
+    element_layout=input_tensor.element_layout,
 ]:
     # TODO: Issue because returning a stack variable? Workaround
     # with @always_inline
@@ -156,7 +155,7 @@ fn get_tile[
         dtype,
         Layout.row_major(tile_size, tile_size),
         MutAnyOrigin,
-        element_layout = input_tensor.element_layout,
+        element_layout=input_tensor.element_layout,
     ].stack_allocation()
 
     for i in range(tile_size):
@@ -274,7 +273,7 @@ fn winograd_conv2d_gpu_nhwc[
 
     # Pre-transform filter (G^T * filter * G)
     # offsets=(0, 0) specifies indices for the non-sliced dimensions (rank-2)
-    var filter_slice = filter.slice[:, :, slice_indices= (0, 1)](offsets=(0, 0))
+    var filter_slice = filter.slice[:, :, slice_indices=(0, 1)](offsets=(0, 0))
     matmul[False](scratch, g, filter_slice)
     matmul[True](g_transformed, scratch, g)
 
@@ -526,61 +525,61 @@ fn test_winograd_conv_gpu[
                 )
 
 
-def main():
+def main() raises:
     comptime dtype = DType.float32
 
     with DeviceContext() as ctx:
         test_winograd_conv_gpu[
             dtype=dtype,
-            input_dim = IntTuple(1, 8, 8, 1),
-            filter_dim = IntTuple(3, 3, 1, 1),
-            stride = IndexList[2](1, 1),
-            dilation = IndexList[2](1, 1),
-            pad = IndexList[4](
+            input_dim=IntTuple(1, 8, 8, 1),
+            filter_dim=IntTuple(3, 3, 1, 1),
+            stride=IndexList[2](1, 1),
+            dilation=IndexList[2](1, 1),
+            pad=IndexList[4](
                 0, 0, 0, 0
             ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)
 
         test_winograd_conv_gpu[
             dtype=dtype,
-            input_dim = IntTuple(32, 256, 256, 1),
-            filter_dim = IntTuple(3, 3, 1, 1),
-            stride = IndexList[2](1, 1),
-            dilation = IndexList[2](1, 1),
-            pad = IndexList[4](
+            input_dim=IntTuple(32, 256, 256, 1),
+            filter_dim=IntTuple(3, 3, 1, 1),
+            stride=IndexList[2](1, 1),
+            dilation=IndexList[2](1, 1),
+            pad=IndexList[4](
                 0, 0, 0, 0
             ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)
 
         test_winograd_conv_gpu[
             dtype=dtype,
-            input_dim = IntTuple(1, 4, 16, 1),
-            filter_dim = IntTuple(3, 3, 1, 1),
-            stride = IndexList[2](1, 1),
-            dilation = IndexList[2](1, 1),
-            pad = IndexList[4](
+            input_dim=IntTuple(1, 4, 16, 1),
+            filter_dim=IntTuple(3, 3, 1, 1),
+            stride=IndexList[2](1, 1),
+            dilation=IndexList[2](1, 1),
+            pad=IndexList[4](
                 0, 0, 0, 0
             ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)
 
         test_winograd_conv_gpu[
             dtype=dtype,
-            input_dim = IntTuple(1, 16, 4, 1),
-            filter_dim = IntTuple(3, 3, 1, 1),
-            stride = IndexList[2](1, 1),
-            dilation = IndexList[2](1, 1),
-            pad = IndexList[4](
+            input_dim=IntTuple(1, 16, 4, 1),
+            filter_dim=IntTuple(3, 3, 1, 1),
+            stride=IndexList[2](1, 1),
+            dilation=IndexList[2](1, 1),
+            pad=IndexList[4](
                 0, 0, 0, 0
             ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)
 
         test_winograd_conv_gpu[
-            dtype = DType.bfloat16,
-            input_dim = IntTuple(1, 32, 32, 1),
-            filter_dim = IntTuple(3, 3, 1, 1),
-            stride = IndexList[2](1, 1),
-            dilation = IndexList[2](1, 1),
-            pad = IndexList[4](
+            dtype=DType.bfloat16,
+            input_dim=IntTuple(1, 32, 32, 1),
+            filter_dim=IntTuple(3, 3, 1, 1),
+            stride=IndexList[2](1, 1),
+            dilation=IndexList[2](1, 1),
+            pad=IndexList[4](
                 0, 0, 0, 0
             ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)

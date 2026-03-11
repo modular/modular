@@ -15,21 +15,23 @@
 You can import these APIs from the `memory` package. For example:
 
 ```mojo
-from memory import OwnedPointer
+from std.memory import OwnedPointer
 ```
 """
 
-from builtin.constrained import _constrained_conforms_to
-from builtin.rebind import downcast, trait_downcast
-from format._utils import (
+from std.builtin.constrained import _constrained_conforms_to
+from std.builtin.rebind import downcast, trait_downcast
+from std.format._utils import (
     Repr,
     FormatStruct,
     TypeNames,
-    constrained_conforms_to_writable,
 )
 
 
-struct OwnedPointer[T: AnyType](RegisterPassable, Writable):
+struct OwnedPointer[T: AnyType](
+    RegisterPassable,
+    Writable where conforms_to(T, Writable),
+):
     """A safe, owning, smart pointer.
 
     This smart pointer is designed for cases where there is clear ownership
@@ -151,7 +153,7 @@ struct OwnedPointer[T: AnyType](RegisterPassable, Writable):
         _constrained_conforms_to[
             conforms_to(Self.T, ImplicitlyDestructible),
             Parent=Self,
-            Element = Self.T,
+            Element=Self.T,
             ParentConformsTo="ImplicitlyDestructible",
         ]()
         comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
@@ -233,7 +235,9 @@ struct OwnedPointer[T: AnyType](RegisterPassable, Writable):
         """
         return self._inner
 
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Formats this pointer's value to the provided Writer.
 
         Args:
@@ -242,15 +246,11 @@ struct OwnedPointer[T: AnyType](RegisterPassable, Writable):
         Constraints:
             `T` must conform to Writable.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Writable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Writable",
-        ]()
         trait_downcast[Writable](self[]).write_to(writer)
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    fn write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Write the string representation of the `OwnedPointer`.
 
         Args:
@@ -259,7 +259,6 @@ struct OwnedPointer[T: AnyType](RegisterPassable, Writable):
         Constraints:
             `T` must conform to Writable.
         """
-        constrained_conforms_to_writable[Self.T, Parent=Self]()
         FormatStruct(writer, "OwnedPointer").params(
             TypeNames[Self.T](),
         ).fields(Repr(trait_downcast[Writable](self[])))

@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
-from io.io import _printf
-from random import randint, randn, seed
-from sys import (
+from std.io.io import _printf
+from std.random import randint, randn, seed
+from std.sys import (
     align_of,
     has_nvidia_gpu_accelerator,
     has_amd_gpu_accelerator,
@@ -23,8 +23,8 @@ from sys import (
     size_of,
 )
 
-from algorithm import sync_parallelize
-from benchmark import (
+from std.algorithm import sync_parallelize
+from std.benchmark import (
     Bench,
     BenchConfig,
     Bencher,
@@ -34,8 +34,8 @@ from benchmark import (
     Report,
     ThroughputMeasure,
 )
-from comm.sync import can_enable_p2p
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from comm.sync import enable_p2p
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from shmem.ep_comm import (
@@ -47,13 +47,13 @@ from shmem.ep_comm import (
     dispatch_wait_kernel,
     dispatch_async_kernel,
 )
-from testing import assert_equal
-from utils import IndexList
+from std.testing import assert_equal
+from std.utils import IndexList
 
 
 fn legalize_topk_ids[
     n_experts: Int, top_k: Int
-](topk_ids: UnsafePointer[Int32, MutExternalOrigin], n_tokens: Int):
+](topk_ids: UnsafePointer[Int32, MutAnyOrigin], n_tokens: Int):
     for tok_id in range(n_tokens):
         var topk_ids_for_token = topk_ids + tok_id * top_k
 
@@ -87,7 +87,7 @@ fn test_combine[
         SIMD[DType.uint8, gpu_simd_width], target=gpu_target
     ]()
     comptime token_fmt_type = BF16TokenFormat[
-        output_layout = Layout(), hidden_size, top_k, gpu_alignment
+        output_layout=Layout(), hidden_size, top_k, gpu_alignment
     ]
     comptime msg_bytes = token_fmt_type.msg_size()
     comptime combine_msg_bytes = size_of[input_type]() * hidden_size
@@ -125,8 +125,8 @@ fn test_combine[
     # Shared atomic counter buffer for dispatch and combine
     var atomic_counters_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
 
-    var host_topk_ids_list = InlineArray[UnsafePointer[Int32, MutExternalOrigin], n_ranks](fill={})
-    var host_input_tokens_list = InlineArray[UnsafePointer[Scalar[input_type], MutExternalOrigin], n_ranks](fill={})
+    var host_topk_ids_list = InlineArray[UnsafePointer[Int32, MutAnyOrigin], n_ranks](fill={})
+    var host_input_tokens_list = InlineArray[UnsafePointer[Scalar[input_type], MutAnyOrigin], n_ranks](fill={})
 
     var device_topk_bufs_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
     var device_input_bufs_list = List[DeviceBuffer[input_type]](capacity=n_ranks)
@@ -236,23 +236,23 @@ fn test_combine[
     # Dispatch helpers
     @always_inline
     @parameter
-    fn get_dispatch_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutExternalOrigin]) raises:
+    fn get_dispatch_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutAnyOrigin]) raises:
         return type_of(result)(dispatch_send_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * msg_bytes)
 
     # Combine helpers
     @always_inline
     @parameter
-    fn get_combine_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutExternalOrigin]) raises:
+    fn get_combine_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutAnyOrigin]) raises:
         return type_of(result)(combine_send_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * combine_msg_bytes)
 
     @always_inline
     @parameter
-    fn get_combine_recv_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutExternalOrigin]) raises:
+    fn get_combine_recv_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutAnyOrigin]) raises:
         return type_of(result)(combine_recv_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes)
 
     @always_inline
     @parameter
-    fn get_combine_recv_count_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt64, MutExternalOrigin]) raises:
+    fn get_combine_recv_count_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt64, MutAnyOrigin]) raises:
         return type_of(result)(combine_recv_count_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_experts)
 
     @always_inline
@@ -664,10 +664,10 @@ fn test_combine[
         host_input_tokens_list[dev_idx].free()
 
 
-def main():
+def main() raises:
     comptime test_gpu_counts = (2, 4, 8)
 
-    if can_enable_p2p():
+    if enable_p2p():
         print("Enabled P2P Mem Access on all GPUs.")
     else:
         raise Error("Cannot enable P2P Mem Access!")
@@ -675,10 +675,8 @@ def main():
     comptime assert (
         has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
     ), "Only NVIDIA and AMD GPUs are supported"
-    comptime n_local_experts = 32 if has_nvidia_gpu_accelerator() else 16
 
-    @parameter
-    for gpu_idx in range(len(test_gpu_counts)):
+    comptime for gpu_idx in range(len(test_gpu_counts)):
         comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() != num_gpus:
             continue
@@ -688,11 +686,15 @@ def main():
         for i in range(num_gpus):
             ctx.append(DeviceContext(device_id=i))
 
-        test_combine[
-            hidden_size=7168,
-            top_k=8,
-            n_experts = num_gpus * n_local_experts,
-            n_ranks=num_gpus,
-            n_slots=3,
-            n_tokens_per_rank=128,
-        ](ctx)
+        comptime for n_local_experts in [32, 64]:
+            comptime if num_gpus * n_local_experts > 256:
+                continue
+
+            test_combine[
+                hidden_size=7168,
+                top_k=8,
+                n_experts=num_gpus * n_local_experts,
+                n_ranks=num_gpus,
+                n_slots=1,
+                n_tokens_per_rank=128,
+            ](ctx)

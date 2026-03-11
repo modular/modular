@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import randint, seed
+from std.random import randint, seed
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     Bencher,
     BenchId,
@@ -21,16 +21,13 @@ from benchmark import (
     ThroughputMeasure,
     keep,
 )
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 fn test[N: Int = 1024 * 1024]() -> UInt32:
     # seed(0)
     comptime alignment = 64
     comptime type = DType.uint32
-    var x = UnsafePointer[Scalar[type]].alloc(N, alignment=alignment)
+    var x = alloc[Scalar[type]](N, alignment=alignment)
     randint[type](x, N, 0, 255)
     var s: UInt32 = 0
     for i in range(N):
@@ -81,7 +78,7 @@ fn bench_func[
     """
 
 
-def main():
+def main() raises:
     var m = Bench()
     bench_func[test, 8](m, "test8")
     bench_func[test, 16](m, "test16")

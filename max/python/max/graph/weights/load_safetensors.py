@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements :class:`Weights` loading from safetensors checkpoint files."""
+
 from __future__ import annotations
 
 import difflib
@@ -110,7 +112,7 @@ class SafetensorWeights(Weights):
         return self._prefix
 
     def items(self):  # noqa: ANN201
-        """Iterate through all allocable weights that start with the prefix."""
+        """Iterates through all allocable weights that start with the prefix."""
         for name in self._tensors:
             if name.startswith(self.name):
                 yield (
@@ -228,7 +230,7 @@ class SafetensorWeights(Weights):
         """Creates a Weight that can be added to the graph with uint8 representation.
 
         The last dimension is scaled by the number of bytes of the original
-        dtype (e.g. ``[512, 256]`` ``float32`` becomes ``[512, 1024]`` ``uint8``). Scalars
+        dtype (for example, ``[512, 256]`` ``float32`` becomes ``[512, 1024]`` ``uint8``). Scalars
         are interpreted as shape ``[1]``.
         """
         tensor = self._load_tensor(dtype)

@@ -34,7 +34,7 @@ from max.interfaces import (
     VLMTextGenerationContext,
 )
 from max.kv_cache.kv_connector import KVConnector
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
@@ -52,6 +52,8 @@ logger = logging.getLogger("max.pipelines")
 
 
 class BlockManager:
+    """Manages allocation and deallocation of paged KV cache blocks."""
+
     @traced
     def __init__(
         self,
@@ -293,7 +295,7 @@ class BlockManager:
             device_block_ids.append(device_block.bid)
 
         # Load from host cache via connector - returns the block hashes.
-        loaded_hashes = self.connector.load(ctx, device_block_ids, [])
+        loaded_hashes = self.connector.load(ctx, device_block_ids)
 
         # Commit the device blocks into the device prefix cache.
         for device_block, block_hash in zip(blocks, loaded_hashes, strict=True):
@@ -540,6 +542,16 @@ class BlockManager:
             ctx.tokens.rewind_processing(delta)
         elif delta < 0:
             ctx.tokens.skip_processing(-delta)
+
+    def register_dummy_request(
+        self, request_id: RequestID, sentinel_request_id: RequestID
+    ) -> None:
+        """Maps a dummy request to the sentinel's block via ref-count sharing."""
+        sentinel_blocks = self.req_to_blocks[sentinel_request_id]
+        assert len(sentinel_blocks) == 1
+        sentinel_block = sentinel_blocks[0]
+        self.device_block_pool.touch(sentinel_block)
+        self.req_to_blocks[request_id] = [sentinel_block]
 
     @traced
     def get_req_blocks(self, request_id: RequestID) -> list[int]:

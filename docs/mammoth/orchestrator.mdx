@@ -1,0 +1,157 @@
+---
+title: Routing and orchestration
+sidebar_label: Orchestration
+description: Learn how the orchestrator routes and schedules inference requests in Mammoth
+---
+
+import ContactSection from '@site/src/components/ContactSection';
+
+The orchestrator is responsible for distributing incoming inference
+requests to the appropriate worker node in a cluster. This orchestration layer
+plays a critical role in performance, load balancing, memory optimization, and
+user experience.
+
+Rather than simply forwarding requests to the next available worker, the
+orchestrator uses configurable routing strategies to intelligently direct
+traffic. Each routing strategy has trade-offs, and the ideal strategy depends
+on the characteristics of your workload.
+
+## How the orchestrator works
+
+The orchestrator routes inference requests across distributed workers.
+The orchestrator receives a prompt from an HTTP server, then analyzes the
+request to extract information relevant to the specific routing strategy. The
+orchestrator then selects a worker based on the specified routing algorithm and
+current cluster state, proxies the request to the relevant worker, and streams
+the response back to the user.
+
+:::note
+
+Orchestration with Mammoth is still in preview and some aspects may change as
+we refine the implementation. Expect ongoing improvements and potential
+adjustments based on feedback and performance optimizations.
+
+:::
+
+<figure>
+  <img src={require('./images/orchestrator-light.png').default}
+       className="light" alt="" width="704" />
+  <img src={require('./images/orchestrator-dark.png').default}
+       className="dark" alt="" width="704" />
+  <figcaption>An overview of steps taken by the Mammoth orchestrator.</figcaption>
+</figure>
+
+## Routing options
+
+You can configure the routing strategy based on your deployment goals. For
+stateless requests and broad load balancing, the round robin or least request
+routing options work well. If you're optimizing for cache reuse or continuity in
+conversation, prefix-aware, sticky sessions, or KV cache-aware routing may
+offer significant performance gains. We also provide a random routing algorithm
+for benchmarking or experimental purposes.
+
+| Name              | Strategy                                                                 | Use case                                                       |
+|-------------------|--------------------------------------------------------------------------|----------------------------------------------------------------|
+| KV cache-aware    | Routes based on shared tokens or document chunks in the KV cache         | Repeated prompts in chatbots, agents, or RAG-style workflows   |
+| Least request     | Sends requests to the worker with the fewest active requests             | Mixed workloads with variable size or latency requirements     |
+| Prefix-aware      | Uses consistent hashing on prompt prefixes to group similar requests     | Prompts with shared templates or recurring task descriptions   |
+| Random            | Selects a backend worker at random                                       | Benchmarking and exposing latency variability                  |
+| Round robin       | Distributes requests evenly across all workers in sequential order       | Stateless, uniform tasks without caching needs                 |
+| Sticky session    | Routes requests with the same session ID to the same worker              | Session-based chat or apps needing memory and continuity       |
+
+
+### KV cache-aware
+
+KV cache-aware routing manages requests based on the contents of the KV cache
+on each worker. You might use KV cache-aware routing if you're running a
+retrieval-augmented generation (RAG) system where most queries share common
+document chunks or similar inputs, but not identical prefixes. KV cache-aware
+routing is especially useful in the following scenarios:
+
+- For high-throughput workloads with many repeating or similar tokens across
+  queries.
+- When you want to minimize redundant computation across diverse,
+  overlapping queries.
+
+### Least request
+
+Least request routing sends new inference requests to the worker currently
+handling the fewest active requests. This helps balance load dynamically and
+reduces the chance of overloading any single worker. You might use least
+request routing when serving a mix of both small and large generation tasks in
+order to avoid piling multiple large requests on the same node. Least request
+routing is especially useful in the following situations:
+
+- When some workers receive heavier workloads or respond slower.
+- For variable-length or unpredictable inference tasks.
+- When you're optimizing for low tail latency.
+
+### Prefix-aware
+
+Prefix-aware routing, also known as consistent hashing, examines the prompt
+prefix in an incoming request and routes it to the worker handling requests with
+the same prefix. For example, if a support chatbot frequently receives the
+prefix `{"role": "system", "content": "You are a helpful assistant."}` followed
+by user-specific questions, prefix-aware routing keeps that common prefix cached
+on a single node. When a worker becomes saturated with requests for a popular
+prefix, the orchestrator automatically distributes the load by spilling over to
+additional workers, maintaining partial cache locality while balancing traffic.
+
+Prefix-aware request routing is especially useful in the following situations:
+
+- When many users send queries that start with the same instructions or
+  template.
+- If users frequently issue similar or identical prompts, like a
+  recurring task description or persona.
+- In multi-turn conversations where session stickiness isn't enabled
+
+### Random
+
+Random routing selects a backend worker at random from the pool of available
+endpoints for each incoming request. Random routing is useful when you want to
+eliminate routing bias and observe average worker performance under distributed
+load. It can help identify variability in latency or behavior across nodes
+without favoring specific ones. Random routing is especially useful for
+benchmarking use cases.
+
+### Round robin
+
+The round robin routing algorithm distributes incoming requests
+evenly across all available workers in sequential order. Once the orchestrator
+reaches the last worker in the list, it cycles back to the first. You might use
+round robin routing if you're running a batch of isolated tasks that don't
+require any request context or caching.
+
+Round robin routing is especially useful in the following situations:
+
+- For stateless or homogenous workloads where each request is independent.
+- For testing environments or basic load distribution.
+
+### Sticky session
+
+Sticky session routing sends a user's requests to the same worker node for the
+duration of their session. A session is identified by checking for a session ID
+value in the request HTTP header. If this header is not present, the
+orchestrator falls back to round robin routing.
+
+You might use sticky session routing for a chatbot with user interaction, where
+keeping their requests on the same worker node avoids reloading context
+repeatedly. Sticky session routing is especially useful in the following
+situations:
+
+- When in-flight session state (ex. conversational memory) is maintained on the
+  server.
+- For chatbots or streaming applications where continuity is important.
+- When memory locality is key to performance.
+
+## Become a design partner
+
+To get the most out of prefix-aware routing and other advanced strategies, you
+can explore [prefix caching](/max/serve/prefix-caching) and other serving layer
+optimizations in MAX.
+
+To get started with Mammoth's cluster-based deployments and optimize request
+routing for your specific use case, you can reach out us and talk to an AI
+expert.
+
+<ContactSection />

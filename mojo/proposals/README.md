@@ -36,6 +36,7 @@ These proposals have been implemented and are part of Mojo today.
 | [deinit-arg-convention](deinit-arg-convention.md) | `deinit` argument convention |
 | [fixing-simple-literals](fixing-simple-literals.md) | Redesign of `IntLiteral`, `FloatLiteral`, `StringLiteral` |
 | [improved-hash-module](improved-hash-module.md) | Improvements to `Hashable` trait |
+| [remove_move_and_copy_init](remove_move_and_copy_init.md) | Init unification (remove `__copyinit__`/`__moveinit__`) |
 | [inferred-parameters](inferred-parameters.md) | Parameter inference from other parameters |
 | [mojo-test-deprecation](mojo-test-deprecation.md) | Removal of `mojo test` utility |
 | [mutable-def-arguments](mutable-def-arguments.md) | Removal of mutable `def` argument behavior |
@@ -51,6 +52,7 @@ These proposals have been implemented and are part of Mojo today.
 | [upgrading-value-decorator](upgrading-value-decorator.md) | Trait-based replacement for `@value` |
 | [value-ownership](value-ownership.md) | Value ownership design (historical) |
 | [variable-bindings](variable-bindings.md) | `var` and `ref` bindings design |
+| [explicit-std-imports](explicit-std-imports.md) | Require explicit `std.` prefix for standard library imports |
 | [where_clauses](where_clauses.md) | Where clauses for generic constraints |
 
 ## Accepted Proposals
@@ -61,7 +63,6 @@ These proposals have been accepted and are planned for implementation.
 |----------|-------------|
 | [align-decorator](align-decorator.md) | `@align(N)` decorator for struct alignment |
 | [code-improvement-diagnostics](code-improvement-diagnostics.md) | Compiler-integrated code improvement diagnostics |
-| [remove_move_and_copy_init](remove_move_and_copy_init.md) | Init unification (remove `__copyinit__`/`__moveinit__`) |
 | [stdlib-insider-docs](stdlib-insider-docs.md) | Internal documentation for stdlib developers |
 
 ## Partially Implemented

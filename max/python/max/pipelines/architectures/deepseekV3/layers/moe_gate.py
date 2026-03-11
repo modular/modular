@@ -19,10 +19,10 @@ from collections.abc import Callable, Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, Shape, TensorValue, Weight, ops
-from max.nn.legacy.kernels import moe_router_group_limited
-from max.nn.legacy.linear import Linear
-from max.nn.legacy.moe import MoEGate
-from max.nn.legacy.moe.moe import ShardingStrategy
+from max.nn.kernels import moe_router_group_limited
+from max.nn.linear import Linear
+from max.nn.moe import MoEGate
+from max.nn.moe.moe import ShardingStrategy
 
 
 def _fill(
@@ -128,17 +128,31 @@ class DeepseekV3TopKRouter(MoEGate):
         logits = self.gate_score(hidden_states)
 
         scores = ops.sigmoid(logits.cast(self.correction_bias_dtype))
+        if self.n_group != 1:
+            topk_idx, topk_weight = moe_router_group_limited(
+                scores,
+                self.e_score_correction_bias,
+                self.num_experts,
+                self.num_experts_per_token,
+                self.n_group,
+                self.topk_group,
+                self.norm_topk_prob,
+                self.routed_scaling_factor,
+            )
+        else:
+            corrected_scores = scores + ops.unsqueeze(
+                self.e_score_correction_bias, 0
+            )
 
-        topk_idx, topk_weight = moe_router_group_limited(
-            scores,
-            self.e_score_correction_bias,
-            self.num_experts,
-            self.num_experts_per_token,
-            self.n_group,
-            self.topk_group,
-            self.norm_topk_prob,
-            self.routed_scaling_factor,
-        )
+            _, topk_idx = ops.top_k(
+                corrected_scores, self.num_experts_per_token, axis=-1
+            )
+            topk_weight = ops.gather_nd(scores, ops.unsqueeze(topk_idx, 2), 1)
+            topk_weight = (
+                topk_weight
+                / ops.sum(topk_weight, axis=-1)
+                * self.routed_scaling_factor
+            )
         return topk_idx, topk_weight
 
     @property

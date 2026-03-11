@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from math import ceildiv
-from random import seed
+from std.collections import Optional
+from std.math import ceildiv
+from std.random import seed
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
 from layout import *
 from layout._utils import ManagedLayoutTensor, UNKNOWN_VALUE
-from memory import memcpy, memset_zero
+from std.memory import memcpy, memset_zero
 from nn.kv_cache_ragged import kv_cache_store_padded, kv_cache_store_ragged
-from testing import assert_equal, assert_almost_equal
+from std.testing import assert_equal, assert_almost_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
 
@@ -46,10 +46,9 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     var valid_lengths: List[Int] = [100, 200, 300]
     var cache_lengths: List[Int] = [100, 200, 300]
 
-    debug_assert(
-        len(valid_lengths) == len(cache_lengths),
-        "expected valid_lengths and cache_lengths size to be equal",
-    )
+    assert len(valid_lengths) == len(
+        cache_lengths
+    ), "expected valid_lengths and cache_lengths size to be equal"
 
     var cache_lengths_table = CacheLengthsTable.build(
         valid_lengths, cache_lengths, ctx
@@ -222,10 +221,9 @@ fn test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
     var valid_lengths: List[Int] = [3, 1, 4]
     var cache_lengths: List[Int] = [5, 2, 0]
 
-    debug_assert(
-        len(valid_lengths) == len(cache_lengths),
-        "expected valid_lengths and cache_lengths size to be equal",
-    )
+    assert len(valid_lengths) == len(
+        cache_lengths
+    ), "expected valid_lengths and cache_lengths size to be equal"
 
     var cache_lengths_table = CacheLengthsTable.build(
         valid_lengths, cache_lengths, ctx
@@ -426,7 +424,7 @@ fn test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
     _ = paged_lut^
 
 
-def main():
+def main() raises:
     seed(42)  # Set seed for reproducible tests
 
     with DeviceContext() as ctx:

@@ -16,29 +16,29 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: not %bare-mojo %s 2>&1 | FileCheck %s
 
-from compile import compile_info
-from math.math import sin, cos
-from gpu.host.info import _get_h100_target
+from std.compile import compile_info
+from std.math.math import sin, cos
+from std.gpu.host.info import _get_h100_target
 
 
-def sin_func(x: Float64) -> Float64:
+def sin_func(x: Float64) raises -> Float64:
     # CHECK: constraint failed: DType.float64 is not supported on NVIDIA GPU
     return sin(x)
 
 
-def cos_func(x: Float64) -> Float64:
+def cos_func(x: Float64) raises -> Float64:
     # CHECK: constraint failed: DType.float64 is not supported on NVIDIA GPU
     return cos(x)
 
 
-def main():
+def main() raises:
     print(
         compile_info[
-            sin_func, emission_kind="llvm", target = _get_h100_target()
+            sin_func, emission_kind="llvm", target=_get_h100_target()
         ]()
     )
     print(
         compile_info[
-            cos_func, emission_kind="llvm", target = _get_h100_target()
+            cos_func, emission_kind="llvm", target=_get_h100_target()
         ]()
     )

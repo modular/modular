@@ -122,7 +122,7 @@ Each Mojo cell must contain a complete program, including a `main()` function.
 ```mojo
 %%mojo
 
-def main():
+def main() raises:
   print("Hello Mojo")
 ```
 
@@ -139,8 +139,7 @@ Hello Mojo
 
 # Compiler-parameterized function
 fn repeat[count: Int](msg: String):
-    @parameter
-    for i in range(count):
+    comptime for i in range(count):
         print(msg)
 
 # Compiler-argumented function
@@ -148,7 +147,7 @@ fn threehello():
     repeat[3]("Hello 🔥!")
 
 # Run
-def main():
+def main() raises:
     threehello()
 ```
 
@@ -172,12 +171,13 @@ select _Runtime > Change runtime type > [GPU]_.
 ```mojo
 %%mojo
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
 fn kernel():
+    # This call does not work on Apple Silicon
     print("Hello from the GPU")
 
-def main():
+def main() raises:
     # Launch GPU kernel
     with DeviceContext() as ctx:
         ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)
@@ -190,6 +190,42 @@ Output:
 Hello from the GPU
 ```
 
+### Hello, Apple Silicon
+
+On Apple Silicon, `print()` isn't available inside GPU kernels. But you
+can still say hello.
+
+Instead of printing from the kernel, write a value to device memory and
+read it back on the host:
+
+```mojo
+%%mojo
+from std.memory import UnsafePointer
+from std.gpu.host import DeviceContext
+
+comptime `✅`: Int32 = 1
+comptime `❌`: Int32 = 0
+
+fn kernel(value: UnsafePointer[Scalar[DType.int32], MutAnyOrigin]):
+    value[0] = `✅`
+
+def main() raises:
+    with DeviceContext() as ctx:
+        # Build it
+        var out = ctx.enqueue_create_buffer[DType.int32](1)
+        out.enqueue_fill(`❌`)
+
+        # Run it
+        ctx.enqueue_function[kernel, kernel](out, grid_dim=1, block_dim=1)
+
+        # Report the result
+        with out.map_to_host() as out_host:
+            print("GPU responded:", "👋, 🔥" if out_host[0] == `✅` else "😢")
+```
+
+While `print()` isn't supported inside Apple Silicon GPU kernels,
+the final report runs on the CPU and is safe to run.
+
 ### Example: GPU vector addition
 
 This example runs elementwise vector addition on the GPU.
@@ -198,10 +234,10 @@ Each GPU thread updates one element.
 ```mojo
 %%mojo
 
-from gpu import thread_idx
-from gpu.host import DeviceContext
+from std.gpu import thread_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from sys import has_accelerator
+from std.sys import has_accelerator
 
 comptime VECTOR_WIDTH = 10
 comptime layout = Layout.row_major(VECTOR_WIDTH)
@@ -215,12 +251,9 @@ fn vector_addition(left: Tensor, right: Tensor, output: Tensor):
     output[idx] = left[idx] + right[idx]
 
 
-def main():
+def main() raises:
     # Ensure a supported GPU (NVIDIA or AMD) is available
-    constrained[
-        has_accelerator(),
-        "This example requires a supported GPU",
-    ]()
+    comptime assert has_accelerator(), "This example requires a supported GPU"
 
     # Create GPU device context
     var ctx = DeviceContext()

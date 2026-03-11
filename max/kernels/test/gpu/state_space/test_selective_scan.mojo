@@ -11,18 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
-from gpu.host import DeviceContext
+from std.math import ceildiv
+from std.gpu.host import DeviceContext
 from layout import (
     UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
 )
-from random import rand
+from std.random import rand
 from state_space.selective_scan import (
     selective_scan_fwd_cpu,
     selective_scan_fwd_gpu,
@@ -33,12 +30,12 @@ from state_space.selective_scan import (
     Strides3D,
     Strides4D,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
@@ -58,7 +55,7 @@ fn run_selective_scan_gpu[
     rtol: Float64 = 0.01,
 ) raises:
     """Test selective scan GPU kernel against CPU reference."""
-    constrained[DSTATE <= 16, "DSTATE exceeds kernel limit"]()
+    comptime assert DSTATE <= 16, "DSTATE exceeds kernel limit"
     comptime dstate = DSTATE
 
     var group_size = dim // n_groups
@@ -71,16 +68,12 @@ fn run_selective_scan_gpu[
     comptime layout_2d = Layout.row_major[2]()
     comptime layout_1d = Layout(UNKNOWN_VALUE)
 
-    var output_cpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
-    var output_gpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
-    var x_cpu_h = UnsafePointer[Scalar[dtype]].alloc(
-        batch * dim * n_chunks * 2 * dstate
-    )
-    var x_gpu_h = UnsafePointer[Scalar[dtype]].alloc(
-        batch * dim * n_chunks * 2 * dstate
-    )
-    var out_z_cpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
-    var out_z_gpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
+    var output_cpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
+    var output_gpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
+    var x_cpu_h = alloc[Scalar[dtype]](batch * dim * n_chunks * 2 * dstate)
+    var x_gpu_h = alloc[Scalar[dtype]](batch * dim * n_chunks * 2 * dstate)
+    var out_z_cpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
+    var out_z_gpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
 
     # Initialize output buffers to zero
     for i in range(batch * dim * seqlen):
@@ -91,23 +84,17 @@ fn run_selective_scan_gpu[
     for i in range(batch * dim * n_chunks * 2 * dstate):
         x_cpu_h[i] = Scalar[dtype](0)
         x_gpu_h[i] = Scalar[dtype](0)
-    var u_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
-    var delta_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
-    var A_h = UnsafePointer[Scalar[dtype]].alloc(dim * dstate)
-    var B_h = UnsafePointer[Scalar[dtype]].alloc(
-        batch * n_groups * dstate * seqlen
-    )
-    var C_h = UnsafePointer[Scalar[dtype]].alloc(
-        batch * n_groups * dstate * seqlen
-    )
+    var u_h = alloc[Scalar[dtype]](batch * dim * seqlen)
+    var delta_h = alloc[Scalar[dtype]](batch * dim * seqlen)
+    var A_h = alloc[Scalar[dtype]](dim * dstate)
+    var B_h = alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
+    var C_h = alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
     var D_size = dim if has_D else 0
-    var D_h = UnsafePointer[Scalar[dtype]].alloc(max(D_size, 1))
+    var D_h = alloc[Scalar[dtype]](max(D_size, 1))
     var z_size = batch * dim * seqlen if has_z else 0
-    var z_h = UnsafePointer[Scalar[dtype]].alloc(max(z_size, 1))
+    var z_h = alloc[Scalar[dtype]](max(z_size, 1))
     var delta_bias_size = dim if has_delta_bias else 0
-    var delta_bias_h = UnsafePointer[Scalar[dtype]].alloc(
-        max(delta_bias_size, 1)
-    )
+    var delta_bias_h = alloc[Scalar[dtype]](max(delta_bias_size, 1))
 
     # Create LayoutTensors for initialization
     var u_init = LayoutTensor[dtype, layout_3d](
@@ -384,7 +371,7 @@ fn run_selective_scan_gpu[
     # Run GPU kernel
     var total_batch_dim = batch * dim
     comptime BLOCK_SIZE = 128
-    from math import ceildiv
+    from std.math import ceildiv
 
     var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
 
@@ -500,7 +487,7 @@ fn run_selective_scan_update_gpu[
     rtol: Float64 = 0.01,
 ) raises:
     """Test selective scan update GPU kernel against CPU reference."""
-    constrained[DSTATE <= 16, "DSTATE exceeds kernel limit"]()
+    comptime assert DSTATE <= 16, "DSTATE exceeds kernel limit"
     comptime dstate = DSTATE
 
     var group_size = dim // n_groups
@@ -510,26 +497,22 @@ fn run_selective_scan_update_gpu[
     comptime layout_2d = Layout.row_major[2]()
     comptime layout_1d = Layout(UNKNOWN_VALUE)
 
-    var state_in_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * dstate)
-    var state_out_gpu_h = UnsafePointer[Scalar[dtype]].alloc(
-        batch * dim * dstate
-    )
-    var state_out_cpu_h = UnsafePointer[Scalar[dtype]].alloc(
-        batch * dim * dstate
-    )
-    var output_gpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim)
-    var output_cpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim)
-    var x_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim)
-    var dt_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim)
-    var A_h = UnsafePointer[Scalar[dtype]].alloc(dim * dstate)
-    var B_h = UnsafePointer[Scalar[dtype]].alloc(batch * n_groups * dstate)
-    var C_h = UnsafePointer[Scalar[dtype]].alloc(batch * n_groups * dstate)
+    var state_in_h = alloc[Scalar[dtype]](batch * dim * dstate)
+    var state_out_gpu_h = alloc[Scalar[dtype]](batch * dim * dstate)
+    var state_out_cpu_h = alloc[Scalar[dtype]](batch * dim * dstate)
+    var output_gpu_h = alloc[Scalar[dtype]](batch * dim)
+    var output_cpu_h = alloc[Scalar[dtype]](batch * dim)
+    var x_h = alloc[Scalar[dtype]](batch * dim)
+    var dt_h = alloc[Scalar[dtype]](batch * dim)
+    var A_h = alloc[Scalar[dtype]](dim * dstate)
+    var B_h = alloc[Scalar[dtype]](batch * n_groups * dstate)
+    var C_h = alloc[Scalar[dtype]](batch * n_groups * dstate)
     var D_size = dim if has_D else 0
-    var D_h = UnsafePointer[Scalar[dtype]].alloc(max(D_size, 1))
+    var D_h = alloc[Scalar[dtype]](max(D_size, 1))
     var z_size = batch * dim if has_z else 0
-    var z_h = UnsafePointer[Scalar[dtype]].alloc(max(z_size, 1))
+    var z_h = alloc[Scalar[dtype]](max(z_size, 1))
     var dt_bias_size = dim if has_delta_bias else 0
-    var dt_bias_h = UnsafePointer[Scalar[dtype]].alloc(max(dt_bias_size, 1))
+    var dt_bias_h = alloc[Scalar[dtype]](max(dt_bias_size, 1))
 
     # Initialize output buffers to zero
     for i in range(batch * dim * dstate):

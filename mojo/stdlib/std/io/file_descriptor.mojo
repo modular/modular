@@ -23,15 +23,15 @@ f.close()
 ```
 
 """
-from os import abort
-from sys import (
+from std.os import abort
+from std.sys import (
     CompilationTarget,
     is_amd_gpu,
-    is_compile_time,
+    is_run_in_comptime_interpreter,
     is_gpu,
     is_nvidia_gpu,
 )
-from ffi import (
+from std.ffi import (
     c_ssize_t,
     c_int,
     external_call,
@@ -39,7 +39,7 @@ from ffi import (
     get_errno,
 )
 
-from memory import Span
+from std.memory import Span
 
 
 struct FileDescriptor(TrivialRegisterPassable, Writer):
@@ -75,10 +75,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         written = external_call["write", c_ssize_t](
             self.value, bytes.unsafe_ptr(), len(bytes)
         )
-        debug_assert(
-            written == len(bytes),
-            "expected amount of bytes not written",
-        )
+        assert written == len(bytes), "expected amount of bytes not written"
 
     fn write_string(mut self, string: StringSlice):
         """
@@ -92,7 +89,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         self.write_bytes(string.as_bytes())
 
     @always_inline
-    fn read_bytes(mut self, buffer: Span[mut=True, Byte]) raises -> UInt:
+    fn read_bytes(mut self, buffer: Span[mut=True, Byte, _]) raises -> UInt:
         """Read a number of bytes from the file into a buffer.
 
         Args:
@@ -112,20 +109,15 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
             not is_gpu()
         ), "`read_bytes()` is not yet implemented for GPUs."
 
-        @parameter
-        if CompilationTarget.is_macos() or CompilationTarget.is_linux():
-            var read = external_call["read", c_ssize_t](
-                self.value, buffer.unsafe_ptr(), len(buffer)
-            )
-            if read < 0:
-                raise Error("Failed to read bytes.")
-            return UInt(read)
-        else:
-            constrained[
-                False,
-                "`read_bytes()` is not yet implemented for unknown platform.",
-            ]()
-            abort()
+        comptime assert (
+            CompilationTarget.is_macos() or CompilationTarget.is_linux()
+        ), "`read_bytes()` is not yet implemented for unknown platform."
+        var read = external_call["read", c_ssize_t](
+            self.value, buffer.unsafe_ptr(), len(buffer)
+        )
+        if read < 0:
+            raise Error("Failed to read bytes.")
+        return UInt(read)
 
     fn isatty(self) -> Bool:
         """Checks whether a file descriptor refers to a terminal.
@@ -147,7 +139,6 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
             ```
         """
 
-        @parameter
-        if is_gpu():
+        comptime if is_gpu():
             return False
         return _external_call_const["isatty", c_int](c_int(self.value)) != 0

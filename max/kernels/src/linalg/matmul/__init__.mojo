@@ -13,22 +13,22 @@
 """Provides the backend implementation for matmuls."""
 
 
-from collections import OptionalReg
-from collections.string.string_slice import get_static_string
-from math import align_up, ceildiv
-from sys.info import align_of, simd_width_of
+from std.collections import OptionalReg
+from std.collections.string.string_slice import get_static_string
+from std.math import align_up, ceildiv
+from std.sys.info import align_of, simd_width_of
 
-from algorithm import sync_parallelize, tile, vectorize
+from std.algorithm import sync_parallelize, tile, vectorize
 from buffer.buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from gpu.host.info import is_cpu, is_valid_target
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import is_cpu, is_valid_target
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
-from memory import memset_zero
-from runtime.asyncrt import DeviceContextPtr, parallelism_level
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from std.memory import memset_zero
+from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 import .cpu
 from ..gemv import gemv
@@ -54,9 +54,9 @@ fn matmul[
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
 ](
-    c: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
-    a: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
-    b: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    c: LayoutTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    a: LayoutTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: LayoutTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     ctx: Optional[DeviceContext],
 ) raises:
     return matmul[
@@ -71,8 +71,8 @@ fn matmul[
         target=target,
     ](
         NDBuffer[
+            rank=2,
             c.dtype,
-            2,
             c.origin,
             DimList(
                 _to_value_or_dim(Int(c.layout.shape[0])),
@@ -83,8 +83,8 @@ fn matmul[
             rebind[IndexList[2]](c.runtime_layout.shape.value.canonicalize()),
         ),
         NDBuffer[
+            rank=2,
             a.dtype,
-            2,
             a.origin,
             DimList(
                 _to_value_or_dim(Int(a.layout.shape[0])),
@@ -95,8 +95,8 @@ fn matmul[
             rebind[IndexList[2]](a.runtime_layout.shape.value.canonicalize()),
         ),
         NDBuffer[
+            rank=2,
             b.dtype,
-            2,
             b.origin,
             DimList(
                 _to_value_or_dim(Int(b.layout.shape[0])),
@@ -124,9 +124,9 @@ fn matmul[
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
 ](
-    c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[_, 2, _, _],
-    b: NDBuffer[_, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, _, _, _],
+    a: NDBuffer[mut=False, rank=2, _, _, _],
+    b: NDBuffer[mut=False, rank=2, _, _, _],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     var cuda_ctx = Optional[DeviceContext]() if is_cpu[
@@ -160,17 +160,16 @@ fn matmul[
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
 ](
-    c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[_, 2, _, _],
-    b: NDBuffer[_, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, _, _, _],
+    a: NDBuffer[mut=False, rank=2, _, _, _],
+    b: NDBuffer[mut=False, rank=2, _, _, _],
     ctx: Optional[DeviceContext],
 ) raises:
     comptime assert is_valid_target[target](), "unsupported target"
     comptime assert not transpose_a, "transpose_a not yet supported"
-    debug_assert(
-        is_cpu[target]() or Bool(ctx),
-        "expected DeviceContext to be provided if target != cpu",
-    )
+    assert is_cpu[target]() or Bool(
+        ctx
+    ), "expected DeviceContext to be provided if target != cpu"
 
     # If any of the dimensions are 0, we can skip the kernel.
     if c.dim[0]() == 0 or c.dim[1]() == 0:
@@ -205,9 +204,7 @@ fn matmul[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=OptionalReg(Int(ctx.value().id())) if ctx else None,
     ):
-
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             var kernel_type_m = a.shape.at[0]().or_else(0)
 
             # The CPU version of matmul doesn't support compute lambda
@@ -217,8 +214,7 @@ fn matmul[
             fn compute_lambda_wrapper[
                 _type: DType, _width: Int, *, alignment: Int = 1
             ](coords: IndexList[2], val: SIMD[_type, _width]):
-                @parameter
-                if elementwise_compute_lambda_fn:
+                comptime if elementwise_compute_lambda_fn:
                     comptime compute_lambda = elementwise_compute_lambda_fn.value()
                     var output = compute_lambda(coords, val)
                     c.store[alignment=alignment](

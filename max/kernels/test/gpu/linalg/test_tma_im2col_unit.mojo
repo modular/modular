@@ -21,26 +21,24 @@ Test cases from CUTLASS (simplest first):
 3. 3x3 filter, symmetric padding: {2, 8, 8, 32} NHWC, {256, 3, 3, 32} KRSC, pad=(1,1)
 """
 
-from sys import size_of
+from std.sys import size_of
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import barrier, thread_idx, block_idx
-from gpu.host import DeviceContext, FuncAttribute
-from testing import assert_false
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.memory import AddressSpace, external_memory
+from std.gpu import barrier, thread_idx, block_idx
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.testing import assert_false
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.memory import AddressSpace, external_memory
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTileIm2col,
+    _idx_product,
     create_tensor_tile_im2col,
 )
-from memory import LegacyUnsafePointer
-from utils.index import Index
-
-# Create a mutable UnsafePointer alias for host memory operations
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import alloc
+from std.utils.index import Index, IndexList
 
 
 # ============================================================================
@@ -51,13 +49,14 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 @__llvm_arg_metadata(act_tma_op, `nvvm.grid_constant`)
 fn im2col_load_kernel[
     dtype: DType,
-    tile_layout: Layout,
-    desc_layout: Layout,
+    tile_rank: Int,
+    tile_shape: IndexList[tile_rank],
+    desc_shape: IndexList[tile_rank],
     BM: Int,
     BK: Int,
 ](
-    act_tma_op: TMATensorTileIm2col[dtype, tile_layout, desc_layout],
-    output_ptr: UnsafePointer[Scalar[dtype]],
+    act_tma_op: TMATensorTileIm2col[dtype, tile_rank, tile_shape, desc_shape],
+    output_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     k_coord: UInt,
     m_coord: UInt,
 ):
@@ -72,7 +71,7 @@ fn im2col_load_kernel[
 
     var smem_ptr = external_memory[
         Scalar[dtype],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
         name="im2col_smem",
     ]()
@@ -80,7 +79,7 @@ fn im2col_load_kernel[
     var barrier_ptr = (
         external_memory[
             Scalar[DType.uint8],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
             name="im2col_smem",
         ]()
@@ -98,7 +97,7 @@ fn im2col_load_kernel[
             dtype,
             smem_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]
         var smem_tile = smem_tile_t(smem_ptr)
@@ -116,8 +115,7 @@ fn im2col_load_kernel[
     barrier()
 
     # Copy loaded data to output (all threads participate)
-    @parameter
-    for i in range(tile_size // 128 + 1):
+    comptime for i in range(tile_size // 128 + 1):
         var idx = thread_idx.x + i * 128
         if idx < tile_size:
             output_ptr[idx] = smem_ptr[idx]
@@ -131,8 +129,8 @@ fn im2col_load_kernel[
 fn im2col_reference[
     dtype: DType,
 ](
-    output: UnsafePointer[Scalar[dtype]],
-    input: NDBuffer[dtype, 4],  # NHWC
+    output: UnsafePointer[mut=True, Scalar[dtype], _],
+    input: NDBuffer[rank=4, dtype],  # NHWC
     batch: Int,
     in_height: Int,
     in_width: Int,
@@ -171,10 +169,8 @@ fn im2col_reference[
             continue
 
         # Decompose M into (n, oh, ow)
-        var n = m // hw
-        var m_rem = m % hw
-        var oh = m_rem // out_width
-        var ow = m_rem % out_width
+        var n, m_rem = divmod(m, hw)
+        var oh, ow = divmod(m_rem, out_width)
 
         for k_local in range(BK):
             var k = k_start + k_local
@@ -185,10 +181,8 @@ fn im2col_reference[
 
             # Decompose K into (r, s, c)
             # K = r * filter_w * in_channels + s * in_channels + c
-            var c = k % in_channels
-            var filter_idx = k // in_channels
-            var r = filter_idx // filter_w
-            var s = filter_idx % filter_w
+            var filter_idx, c = divmod(k, in_channels)
+            var r, s = divmod(filter_idx, filter_w)
 
             # Compute input coordinates
             var ih = oh * stride_h + r - pad_h
@@ -269,7 +263,7 @@ fn run_im2col_test[
 
     # Allocate input tensor
     comptime input_size = batch * in_height * in_width * in_channels
-    var input_host = UnsafePointer[Scalar[dtype]].alloc(input_size)
+    var input_host = alloc[Scalar[dtype]](input_size)
 
     # Initialize with sequential pattern
     for i in range(input_size):
@@ -283,7 +277,7 @@ fn run_im2col_test[
     # Note: For runtime dynamic shapes, we would need to use RuntimeLayout
     # to properly compute strides. For now, we use comptime known shapes.
     comptime static_shape = DimList(batch, in_height, in_width, in_channels)
-    var input_nd = NDBuffer[dtype, 4, _, static_shape](
+    var input_nd = NDBuffer[rank=4, dtype, _, static_shape](
         input_device.unsafe_ptr(), static_shape
     )
     var input_tensor = from_ndbuffer_row_major(input_nd)
@@ -307,8 +301,8 @@ fn run_im2col_test[
 
     var act_tma = create_tensor_tile_im2col[
         dtype,
-        tile_shape = Index(BM, BK),
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+        tile_shape=Index(BM, BK),
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
     ](
         ctx,
         input_tensor,
@@ -324,12 +318,12 @@ fn run_im2col_test[
 
     # Allocate output buffer
     comptime tile_size = BM * BK
-    var output_host = UnsafePointer[Scalar[dtype]].alloc(tile_size)
+    var output_host = alloc[Scalar[dtype]](tile_size)
     var output_device = ctx.enqueue_create_buffer[dtype](tile_size)
-    var ref_host = UnsafePointer[Scalar[dtype]].alloc(tile_size)
+    var ref_host = alloc[Scalar[dtype]](tile_size)
 
     # Compute reference on CPU for tile at (k=0, m=0)
-    var input_nd_host = NDBuffer[dtype, 4, _, static_shape](
+    var input_nd_host = NDBuffer[rank=4, dtype, _, static_shape](
         input_host, static_shape
     )
     im2col_reference[dtype](
@@ -357,7 +351,12 @@ fn run_im2col_test[
     comptime smem_bytes = tile_size * size_of[dtype]() + 256
 
     comptime kernel = im2col_load_kernel[
-        dtype, type_of(act_tma).layout, type_of(act_tma).desc_layout, BM, BK
+        dtype,
+        type_of(act_tma).rank,
+        type_of(act_tma).tile_shape,
+        type_of(act_tma).desc_shape,
+        BM,
+        BK,
     ]
 
     ctx.enqueue_function_unchecked[kernel, dump_asm=False](
@@ -433,7 +432,7 @@ fn run_im2col_test[
     return errors == 0
 
 
-def main():
+def main() raises:
     print("=" * 70)
     print("TMA Im2Col Unit Tests (ported from CUTLASS)")
     print("=" * 70)

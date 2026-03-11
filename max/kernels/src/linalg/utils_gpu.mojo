@@ -11,27 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib.hasher import Hasher
-from math import ceildiv
-from memory import LegacyUnsafePointer
+from std.hashlib.hasher import Hasher
+from std.math import ceildiv
+from std.sys import (
+    get_defined_int,
+    get_defined_bool,
+    has_nvidia_gpu_accelerator,
+    size_of,
+)
+from std.ffi import external_call
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
-
-from sys import env_get_int, env_get_bool, has_nvidia_gpu_accelerator, size_of
-from ffi import external_call
-
-from gpu import WARP_SIZE
-from gpu.primitives.grid_controls import PDLLevel
-from gpu.host import DeviceContext
-from gpu.host.device_context import DeviceBuffer
-from gpu.host.info import A100
+from std.gpu import WARP_SIZE
+from std.gpu.primitives.grid_controls import PDLLevel
+from std.gpu.host import DeviceContext
+from std.gpu.host.device_context import DeviceBuffer
+from std.gpu.host.info import A100
 from layout.tensor_core import get_mma_shape
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 # ===------------------------------------------------------------------===#
 # GPU Matmul Block Swizzling
@@ -102,7 +100,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = False,
-](Stringable, TrivialRegisterPassable, Writable):
+](TrivialRegisterPassable, Writable):
     """Static configuration of GPU matmul."""
 
     var block_tile_shape: IndexList[3]
@@ -135,7 +133,7 @@ struct MatmulConfig[
     # We see some discrepancy between BF16 and FP32 in KERN-933 and use FP32
     # by default to be safe. TODO: set via env var KERN-1002.
 
-    comptime split_k_reduction_scheme = env_get_int[
+    comptime split_k_reduction_scheme = get_defined_int[
         "SPLITK_REDUCTION_SCHEME", 2
     ]()
 
@@ -237,8 +235,7 @@ struct MatmulConfig[
     fn __eq__(self, rhs: MatmulConfig) -> Bool:
         comptime static_info_match = Self.a_type == rhs.a_type and Self.b_type == rhs.b_type and Self.c_type == rhs.c_type and Self.transpose_b == rhs.transpose_b
 
-        @parameter
-        if static_info_match:
+        comptime if static_info_match:
             return (
                 self.block_tile_shape == rhs.block_tile_shape
                 and self.num_pipeline_stages == rhs.num_pipeline_stages
@@ -246,6 +243,7 @@ struct MatmulConfig[
         else:
             return False
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         return String.write(self)
 
@@ -267,6 +265,7 @@ struct MatmulConfig[
         # transpose B
         writer.write("T" if Self.transpose_b else "N")
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         return String.write(self)
 
@@ -299,16 +298,12 @@ struct MatmulConfig[
 # Actual BK should be multiple of BK_base.
 fn _bk_base[type: DType, amd_kernel: Bool = False]() -> Int:
     if type.is_float8():
-
-        @parameter
-        if amd_kernel:
+        comptime if amd_kernel:
             return 128
         else:
             return 64
     elif type.is_half_float():
-
-        @parameter
-        if amd_kernel:
+        comptime if amd_kernel:
             return 64
         else:
             return 32
@@ -377,19 +372,19 @@ struct MatmulKernels[
         Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
     ](
         block_tile_shape=Index(
-            env_get_int["TUNE_BM", 128](),
-            env_get_int["TUNE_BN", 128](),
-            env_get_int["TUNE_BK", 32](),
+            get_defined_int["TUNE_BM", 128](),
+            get_defined_int["TUNE_BN", 128](),
+            get_defined_int["TUNE_BK", 32](),
         ),
         warp_tile_shape=Index(
-            env_get_int["TUNE_WM", 64](),
-            env_get_int["TUNE_WN", 64](),
-            env_get_int["TUNE_BK", 32](),
+            get_defined_int["TUNE_WM", 64](),
+            get_defined_int["TUNE_WN", 64](),
+            get_defined_int["TUNE_BK", 32](),
         ),
-        num_pipeline_stages=UInt(env_get_int["TUNE_NUM_STAGES", 4]()),
-        num_k_partitions=UInt(env_get_int["TUNE_NUM_K_PARTITIONS", 1]()),
+        num_pipeline_stages=UInt(get_defined_int["TUNE_NUM_STAGES", 4]()),
+        num_k_partitions=UInt(get_defined_int["TUNE_NUM_K_PARTITIONS", 1]()),
         num_warp_k_partitions=UInt(
-            env_get_int["TUNE_NUM_WARP_K_PARTITIONS", 1]()
+            get_defined_int["TUNE_NUM_WARP_K_PARTITIONS", 1]()
         ),
     )
 
@@ -509,10 +504,10 @@ fn _vendor_blas_fallback_disabled() -> Bool:
         - benchmark has specifically requested mojo kernel
     else returns False.
     """
-    comptime globally_disabled = env_get_bool[
+    comptime globally_disabled = get_defined_bool[
         "MODULAR_DISABLE_VENDOR_FALLBACK", False
     ]()
-    comptime bench_disabled = not env_get_bool["use_vendor_blas", True]()
+    comptime bench_disabled = not get_defined_bool["use_vendor_blas", False]()
     return globally_disabled or bench_disabled
 
 
@@ -528,7 +523,7 @@ fn create_hilbert_lut(
     """
     var num_blocks = grid_x * grid_y
     # Allocate temporary host buffer.
-    var host_ptr = UnsafePointer[UInt32].alloc(num_blocks)
+    var host_ptr = alloc[UInt32](num_blocks)
 
     # Next power-of-two square dimension enclosing the rectangle.
     var dim_pow2 = 1
@@ -579,7 +574,7 @@ fn get_hilbert_lut_with_cache(
 
     # use runtime lookup since key is computed at runtime
     var cached_ptr = external_call[
-        "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer
+        "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer[MutExternalOrigin]
     ](StringSlice(key_str).unsafe_ptr(), key_str.byte_length())
 
     if cached_ptr:

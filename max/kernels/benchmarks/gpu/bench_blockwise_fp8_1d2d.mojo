@@ -28,35 +28,45 @@ Usage:
 
     # Custom shapes
     mojo bench_blockwise_fp8_1d2d.mojo \
-        env_get_int[N]=7168 env_get_int[K]=2048 \
-        env_get_int[num_experts]=256
+        get_defined_int[N]=7168 get_defined_int[K]=2048 \
+        get_defined_int[num_experts]=256
 """
 
-from sys import env_get_int, size_of
+from std.sys import get_defined_int, size_of
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.gpu.host import DeviceContext
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeInt,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._fillers import random
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
 from linalg.matmul.gpu.sm100.config import MatmulConfig
-from layout._tile_tensor import TileTensor
-from layout._layout import row_major as new_row_major
-from layout._coord import Coord, RuntimeInt, Idx
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from layout.tile_layout import row_major as new_row_major
+from structured_kernels.tile_types import (
     GMEMLayout1D,
 )
 from linalg.matmul.gpu.sm100_structured.blockwise_fp8_1d2d import (
     grouped_matmul_dynamic_scaled_fp8_1d2d,
 )
 from buffer import Dim, DimList, NDBuffer
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn bench_blockwise_fp8_1d2d[
@@ -111,15 +121,9 @@ fn bench_blockwise_fp8_1d2d[
     )
 
     # Host allocations
-    var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_active_experts + 1
-    )
-    var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
-        num_active_experts
-    )
-    var expert_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        num_experts
-    )
+    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
+    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
+    var expert_scales_host_ptr = alloc[Scalar[DType.float32]](num_experts)
 
     # Setup offsets, expert ids, scales
     a_offsets_host_ptr[0] = 0
@@ -165,27 +169,32 @@ fn bench_blockwise_fp8_1d2d[
         num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
 
-    var a_ndb = NDBuffer[a_type, 2, _, static_a_shape](
-        a_dev_buf.unsafe_ptr(), DimList(total_num_tokens, K)
+    var a_ndb = NDBuffer[rank=2, a_type, _, static_a_shape](
+        a_dev_buf.unsafe_ptr(), IndexList[2](total_num_tokens, K)
     )
-    var b_ndb = NDBuffer[b_type, 3, _, static_b_shape](
-        b_dev_buf.unsafe_ptr(), static_b_shape
+    var b_ndb = NDBuffer[rank=3, b_type, _, static_b_shape](
+        b_dev_buf.unsafe_ptr(), IndexList[3](num_experts, N, K)
     )
-    var c_ndb = NDBuffer[c_type, 2, _, static_c_shape](
-        c_dev_buf.unsafe_ptr(), DimList(total_num_tokens, N)
+    var c_ndb = NDBuffer[rank=2, c_type, _, static_c_shape](
+        c_dev_buf.unsafe_ptr(), IndexList[2](total_num_tokens, N)
     )
-    var a_offsets_ndb = NDBuffer[DType.uint32, 1](
-        a_offsets_dev_buf.unsafe_ptr(), num_active_experts + 1
+    var a_offsets_ndb = NDBuffer[rank=1, DType.uint32](
+        a_offsets_dev_buf.unsafe_ptr(), IndexList[1](num_active_experts + 1)
     )
-    var expert_ids_ndb = NDBuffer[DType.int32, 1](
-        expert_ids_dev_buf.unsafe_ptr(), num_active_experts
+    var expert_ids_ndb = NDBuffer[rank=1, DType.int32](
+        expert_ids_dev_buf.unsafe_ptr(), IndexList[1](num_active_experts)
     )
-    var a_scales_ndb = NDBuffer[DType.float32, 2, _, static_a_scales_shape](
+    var a_scales_ndb = NDBuffer[
+        rank=2, DType.float32, _, static_a_scales_shape
+    ](
         a_scales_dev_buf.unsafe_ptr(),
-        DimList(K // BLOCK_SCALE_K, total_num_tokens),
+        IndexList[2](K // BLOCK_SCALE_K, total_num_tokens),
     )
-    var b_scales_ndb = NDBuffer[DType.float32, 3, _, static_b_scales_shape](
-        b_scales_dev_buf.unsafe_ptr(), static_b_scales_shape
+    var b_scales_ndb = NDBuffer[
+        rank=3, DType.float32, _, static_b_scales_shape
+    ](
+        b_scales_dev_buf.unsafe_ptr(),
+        IndexList[3](num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K),
     )
 
     var a_lt = from_ndbuffer_row_major(a_ndb)
@@ -201,6 +210,9 @@ fn bench_blockwise_fp8_1d2d[
     var dynamic_c_shape = IndexList[2](total_num_tokens, N)
     var dynamic_a_scales_shape = IndexList[2](
         K // BLOCK_SCALE_K, total_num_tokens
+    )
+    var dynamic_b_scales_shape = IndexList[3](
+        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
 
     var a_struct = LayoutTensor[a_type, a_layout](
@@ -248,7 +260,7 @@ fn bench_blockwise_fp8_1d2d[
     )
 
     # TileTensor versions for the structured kernel
-    from memory import UnsafePointer as NewPtr
+    from std.memory import UnsafePointer as NewPtr
 
     var a_tt = TileTensor(
         a_dev_buf.unsafe_ptr().bitcast[Scalar[a_type]](),
@@ -384,8 +396,8 @@ fn bench_blockwise_fp8_1d2d[
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             grouped_matmul_dynamic_scaled_fp8_1d2d[
-                a_scales_type = DType.float32,
-                b_scales_type = DType.float32,
+                a_scales_type=DType.float32,
+                b_scales_type=DType.float32,
                 transpose_b=transpose_b,
             ](
                 c_tt,
@@ -421,14 +433,14 @@ fn bench_blockwise_fp8_1d2d[
     _ = expert_scales_dev_buf^
 
 
-def main():
+def main() raises:
     """Benchmark blockwise FP8 1D2D: legacy vs structured.
 
     Default shapes match DeepSeek V3 MoE dimensions.
     """
-    comptime N = env_get_int["N", 7168]()
-    comptime K = env_get_int["K", 2048]()
-    comptime num_experts = env_get_int["num_experts", 8]()
+    comptime N = get_defined_int["N", 7168]()
+    comptime K = get_defined_int["K", 2048]()
+    comptime num_experts = get_defined_int["num_experts", 8]()
     comptime expert_shape = IndexList[2](N, K)
 
     var b = Bench()

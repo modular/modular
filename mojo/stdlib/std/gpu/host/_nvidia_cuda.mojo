@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ffi import external_call
-from gpu.host import DeviceContext, DeviceFunction, DeviceStream
-from gpu.host.device_context import (
+from std.ffi import external_call
+from std.gpu.host import DeviceContext, DeviceFunction, DeviceStream
+from std.gpu.host.device_context import (
     _ConstCharPtr,
     _checked,
     _DeviceBufferPtr,
@@ -39,10 +39,10 @@ struct _CUevent_st:
     pass
 
 
-comptime CUcontext = UnsafePointer[_CUctx_st, MutAnyOrigin]
-comptime CUstream = UnsafePointer[_CUstream_st, MutAnyOrigin]
-comptime CUmodule = UnsafePointer[_CUmod_st, MutAnyOrigin]
-comptime CUevent = UnsafePointer[_CUevent_st, MutAnyOrigin]
+comptime CUcontext = UnsafePointer[_CUctx_st, ExternalOrigin[mut=True]]
+comptime CUstream = UnsafePointer[_CUstream_st, ExternalOrigin[mut=True]]
+comptime CUmodule = UnsafePointer[_CUmod_st, ExternalOrigin[mut=True]]
+comptime CUevent = UnsafePointer[_CUevent_st, ExternalOrigin[mut=True]]
 
 
 # Accessor function to get access to the underlying CUcontext from a abstract DeviceContext.

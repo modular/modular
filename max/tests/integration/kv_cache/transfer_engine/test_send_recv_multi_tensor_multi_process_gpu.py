@@ -22,11 +22,11 @@ from max.kv_cache import KVTransferEngine
 
 
 def transfer_routine_sender(
-    sender_md_queue: mp.Queue,
-    receiver_md_queue: mp.Queue,
-    transfer_queue: mp.Queue,
-    sender_done_queue: mp.Queue,
-    receiver_done_queue: mp.Queue,
+    sender_md_queue: mp.Queue,  # type: ignore[type-arg]
+    receiver_md_queue: mp.Queue,  # type: ignore[type-arg]
+    transfer_queue: mp.Queue,  # type: ignore[type-arg]
+    sender_done_queue: mp.Queue,  # type: ignore[type-arg]
+    receiver_done_queue: mp.Queue,  # type: ignore[type-arg]
     total_num_pages: int,
     total_bytes: int,
     src_idxs: list[int],
@@ -88,11 +88,11 @@ def transfer_routine_sender(
 
 
 def transfer_routine_receiver(
-    sender_md_queue: mp.Queue,
-    receiver_md_queue: mp.Queue,
-    transfer_queue: mp.Queue,
-    sender_done_queue: mp.Queue,
-    receiver_done_queue: mp.Queue,
+    sender_md_queue: mp.Queue,  # type: ignore[type-arg]
+    receiver_md_queue: mp.Queue,  # type: ignore[type-arg]
+    transfer_queue: mp.Queue,  # type: ignore[type-arg]
+    sender_done_queue: mp.Queue,  # type: ignore[type-arg]
+    receiver_done_queue: mp.Queue,  # type: ignore[type-arg]
     total_num_pages: int,
     total_bytes: int,
 ) -> None:
@@ -142,11 +142,11 @@ def test_multi_tensor_transfer_multiprocessing(
     """Test transfer between multiple tensors using multiprocessing."""
     # Use multiprocessing.Queue for inter-process communication
     ctx = mp.get_context("spawn")
-    sender_md_queue: mp.Queue = ctx.Queue()
-    receiver_md_queue: mp.Queue = ctx.Queue()
-    transfer_queue: mp.Queue = ctx.Queue()
-    sender_done_queue: mp.Queue = ctx.Queue()
-    receiver_done_queue: mp.Queue = ctx.Queue()
+    sender_md_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
+    receiver_md_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
+    transfer_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
+    sender_done_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
+    receiver_done_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
 
     GB = 1024 * 1024 * 1024
     total_bytes = int(1 * GB)

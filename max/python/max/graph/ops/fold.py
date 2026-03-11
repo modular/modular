@@ -99,7 +99,7 @@ def fold(
                 zip(output_size, kernel_size, strict=True)
             ):
                 L_d = int(
-                    (int(o) + 2 * padding[n] - dilation[n] * (int(k) - 1) - 1)
+                    (int(o) + 2 * padding[n] - dilation[n] * (int(k) - 1) - 1)  # type: ignore
                     // stride[n]
                     + 1
                 )

@@ -11,23 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, iota
-from random import random_float64, seed
+from std.math import ceildiv, iota
+from std.random import random_float64, seed
 
-from algorithm.reduction import max as reduce_max
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.algorithm.reduction import max as reduce_max
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE
-from gpu.host import DeviceContext
+from std.gpu import WARP_SIZE
+from std.gpu.host import DeviceContext
 
-from layout._coord import Coord, Idx, coord_to_index_list
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 
 from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
-from testing import assert_almost_equal, assert_equal
+from std.testing import assert_almost_equal, assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 comptime DEBUG_BENCH = False
 comptime PRINT_OUTPUT = False
@@ -157,8 +167,7 @@ fn test_case_batched[
     )
     var k_tt = TileTensor(K_device_buffer, k_runtime_layout)
 
-    @parameter
-    if DEBUG_BENCH:
+    comptime if DEBUG_BENCH:
 
         @always_inline
         @parameter
@@ -200,8 +209,7 @@ fn test_case_batched[
     ctx.enqueue_copy(topk_idxs_host_ptr, device_out_idxs)
     ctx.synchronize()
 
-    @parameter
-    if PRINT_OUTPUT:
+    comptime if PRINT_OUTPUT:
         var _msg1: String = "Top-K values"
         var _msg2 = "Sample token index" if sampling else String(
             "Top K indices"
@@ -209,8 +217,7 @@ fn test_case_batched[
         print(_msg1, "and", _msg2, "output available in host pointers")
 
     # ASSERT equality with CPU topk kernel reference
-    @parameter
-    if not sampling:
+    comptime if not sampling:
         var topk_vals_cpu_ptr = alloc[Scalar[dtype]](
             out_vals_shape.flattened_length()
         )
@@ -226,15 +233,14 @@ fn test_case_batched[
         )
         var k_host_tt = TileTensor(K_host_ptr, k_runtime_layout)
 
-        @parameter
-        if DEBUG_BENCH:
+        comptime if DEBUG_BENCH:
 
             @always_inline
             @parameter
             fn run_func_cpu(ctx: DeviceContext) raises:
                 _top_k_cpu[
                     dtype=dtype,
-                    out_idx_type = DType.int64,
+                    out_idx_type=DType.int64,
                     largest=largest,
                 ](
                     in_host_tt,
@@ -249,7 +255,7 @@ fn test_case_batched[
 
             time_kernel[run_func_cpu](m, ctx, "topk-cpu")
 
-        _top_k_cpu[dtype=dtype, out_idx_type = DType.int64, largest=largest](
+        _top_k_cpu[dtype=dtype, out_idx_type=DType.int64, largest=largest](
             in_host_tt,
             max_k,
             rank - 1,
@@ -266,8 +272,7 @@ fn test_case_batched[
                 topk_vals_cpu_ptr[i],
             )
 
-            @parameter
-            if dtype == DType.float32:
+            comptime if dtype == DType.float32:
                 assert_equal(
                     topk_idxs_host_ptr[i],
                     topk_idxs_cpu_ptr[i].cast[out_idx_type](),
@@ -291,8 +296,7 @@ fn test_case_batched[
     _ = device_local_topk_idxs^
     _ = K_device_buffer^
 
-    @parameter
-    if DEBUG_BENCH:
+    comptime if DEBUG_BENCH:
         m.dump_report()
 
 
@@ -347,8 +351,7 @@ fn test_case_multi_rank[
     ctx.enqueue_copy(device_in, in_host_ptr)
     var batch_size: Int
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         batch_size = 1
     elif rank == 2:
         batch_size = input_shape[0]
@@ -403,8 +406,7 @@ fn test_case_multi_rank[
     ctx.synchronize()
 
     # ASSERT equality with CPU topk kernel reference
-    @parameter
-    if not sampling:
+    comptime if not sampling:
         var topk_vals_cpu_ptr = alloc[Scalar[dtype]](
             out_vals_shape.flattened_length()
         )
@@ -420,7 +422,7 @@ fn test_case_multi_rank[
         )
         var k_host_tt = TileTensor(K_host_ptr, k_runtime_layout)
 
-        _top_k_cpu[dtype=dtype, out_idx_type = DType.int64, largest=largest](
+        _top_k_cpu[dtype=dtype, out_idx_type=DType.int64, largest=largest](
             in_host_tt,
             max_k,
             rank - 1,
@@ -437,8 +439,7 @@ fn test_case_multi_rank[
                 topk_vals_cpu_ptr[i],
             )
 
-            @parameter
-            if dtype == DType.float32:
+            comptime if dtype == DType.float32:
                 assert_equal(
                     topk_idxs_host_ptr[i],
                     topk_idxs_cpu_ptr[i].cast[out_idx_type](),
@@ -465,7 +466,7 @@ fn test_case_multi_rank[
 fn fill_random[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
     comptime min_val = -1e9
     comptime max_val = 1e9
-    var total_elements = buffer.numel()
+    var total_elements = buffer.num_elements()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
         buffer.ptr[i] = random_value.cast[dtype]()
@@ -473,7 +474,7 @@ fn fill_random[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
 
 @parameter
 fn fill_constant[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
-    var total_elements = buffer.numel()
+    var total_elements = buffer.num_elements()
     for i in range(total_elements):
         if i % 3 == 1:
             buffer.ptr[i] = 1.0
@@ -590,7 +591,7 @@ fn test_min_topk[dtype: DType](ctx: DeviceContext) raises:
     test_case_batched[
         dtype,
         fill_iota,
-        out_idx_type = DType.uint64,
+        out_idx_type=DType.uint64,
     ](ctx, test_case0)
 
     comptime test_case1 = TestCase[_sampling=False, _largest=False](
@@ -657,7 +658,7 @@ fn test_multi_rank[dtype: DType, sampling: Bool](ctx: DeviceContext) raises:
     test_case_multi_rank[dtype, fill_iota](ctx, test_case_multi_rank3)
 
 
-def main():
+def main() raises:
     comptime llama3_vocab_size = 128256
     with DeviceContext() as ctx:
         comptime dtype = DType.float32
@@ -680,7 +681,7 @@ def main():
         test_case_batched[
             dtype,
             fill_iota,
-            out_idx_type = DType.uint64,
+            out_idx_type=DType.uint64,
         ](ctx, test_case0)
 
         comptime test_case1 = TestCase[_sampling=False](
@@ -693,7 +694,7 @@ def main():
         test_case_batched[
             dtype,
             fill_iota,
-            out_idx_type = DType.uint64,
+            out_idx_type=DType.uint64,
         ](ctx, test_case1)
 
         comptime test_case2 = TestCase[_sampling=False](
@@ -750,7 +751,7 @@ def main():
         test_case_batched[
             dtype,
             fill_random,
-            out_idx_type = DType.int32,
+            out_idx_type=DType.int32,
         ](ctx, test_case6)
 
         comptime test_case7 = TestCase[_sampling=False](
@@ -820,7 +821,7 @@ def main():
         test_case_batched[
             bf16_type,
             fill_iota,
-            out_idx_type = DType.uint64,
+            out_idx_type=DType.uint64,
         ](ctx, test_case13)
 
         comptime test_case14 = TestCase[_sampling=False](
@@ -852,7 +853,7 @@ def main():
         test_case_batched[
             bf16_type,
             fill_iota,
-            out_idx_type = DType.int64,
+            out_idx_type=DType.int64,
         ](ctx, test_case16)
 
         comptime test_case17 = TestCase[_sampling=False](

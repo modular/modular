@@ -15,12 +15,17 @@
 from typing import cast
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.sampling import MinPSampler
+from max.nn.sampling import MinPSampler
+from max.pipelines.lib.sampling import (
+    greedy_acceptance_sampler,
+    typical_acceptance_sampler,
+)
 
 
 # NOTE THAT ONLY RANK 2 TENSORS
@@ -29,9 +34,6 @@ from max.nn.legacy.sampling import MinPSampler
     ("input_shape", "min_p", "temperature"),
     [
         ((5, 5), 0.0, 0.0),
-        ((4, 3), 0.01, 0.1),
-        ((2, 3), 0.05, 0.2),
-        ((6, 2), 0.08, 0.25),
         ((3, 5), 0.1, 0.3),
     ],
 )
@@ -105,3 +107,102 @@ def test_min_p_known_inputs_outputs(session: InferenceSession) -> None:
         assert (
             result[2, 0] == 2
         )  # 1.1 is the only logit that is greater than 0.26 after softmax
+
+
+def test_greedy_acceptance_sampler(session: InferenceSession) -> None:
+    """Tests TypicalAcceptanceSampler in greedy mode (accept iff draft == argmax)."""
+    device = session.devices[0]
+    graph = greedy_acceptance_sampler(device=DeviceRef.from_device(device))
+    model = session.load(graph)
+
+    batch_size = 2
+    num_steps = 4
+    vocab_size = 6
+
+    # Batch 0: target argmax = [1, 1, 3, 0, bonus=2], draft = [1, 1, 0, 0] → reject at 2
+    # Batch 1: target argmax = [2, 4, 4, 5, bonus=1], draft = [2, 4, 4, 5] → all accepted
+    target_logits = np.zeros(
+        (batch_size * (num_steps + 1), vocab_size), dtype=np.float32
+    )
+    target_argmax = [[1, 1, 3, 0, 2], [2, 4, 4, 5, 1]]
+    for b in range(batch_size):
+        for s in range(num_steps + 1):
+            target_logits[b * (num_steps + 1) + s, target_argmax[b][s]] = 10.0
+
+    draft_tokens_np = np.array([[1, 1, 0, 0], [2, 4, 4, 5]], dtype=np.int64)
+    offsets = np.arange(
+        0, (batch_size + 1) * (num_steps + 1), num_steps + 1, dtype=np.int64
+    )
+
+    first_rejected, target_tokens, bonus_tokens = model.execute(
+        Buffer.from_numpy(draft_tokens_np).to(device),
+        Buffer.from_numpy(target_logits).to(device),
+        Buffer.from_numpy(offsets).to(device),
+    )
+    first_rejected_np = cast(Buffer, first_rejected).to_numpy()
+    target_tokens_np = cast(Buffer, target_tokens).to_numpy()
+    bonus_tokens_np = cast(Buffer, bonus_tokens).to_numpy()
+
+    assert first_rejected_np.shape == (batch_size,)
+    assert target_tokens_np.shape == (batch_size, num_steps)
+    assert bonus_tokens_np.shape == (batch_size, 1)
+    np.testing.assert_array_equal(first_rejected_np, [2, num_steps])
+    np.testing.assert_array_equal(
+        target_tokens_np, [[1, 1, 3, 0], [2, 4, 4, 5]]
+    )
+    np.testing.assert_array_equal(bonus_tokens_np, [[2], [1]])
+
+
+def test_typical_acceptance_sampler(session: InferenceSession) -> None:
+    """Tests TypicalAcceptanceSampler in stochastic mode (accept with prob p_target)."""
+    device = session.devices[0]
+    graph = typical_acceptance_sampler(device=DeviceRef.from_device(device))
+    model = session.load(graph)
+
+    def _make_inputs(
+        batch_size: int,
+        num_steps: int,
+        vocab_size: int,
+        draft_tokens_np: "npt.NDArray[np.int64]",
+        logits: "npt.NDArray[np.float32]",
+    ) -> list[Buffer]:
+        offsets = np.arange(
+            0, (batch_size + 1) * (num_steps + 1), num_steps + 1, dtype=np.int64
+        )
+        return [
+            Buffer.from_numpy(draft_tokens_np).to(device),
+            Buffer.from_numpy(logits).to(device),
+            Buffer.from_numpy(offsets).to(device),
+            Buffer.from_numpy(np.ones(batch_size, dtype=np.float32)).to(device),
+            Buffer.from_numpy(
+                np.full(batch_size, vocab_size, dtype=np.int64)
+            ).to(device),
+            Buffer.from_numpy(np.array(vocab_size, dtype=np.int64)),
+            Buffer.from_numpy(np.ones(batch_size, dtype=np.float32)).to(device),
+            Buffer.from_numpy(np.array(1.0, dtype=np.float32)),
+        ]
+
+    num_steps = 3
+    vocab_size = 5
+
+    # Case 1: draft token has ~1.0 probability → all accepted
+    logits_high = np.full((num_steps + 1, vocab_size), -100.0, dtype=np.float32)
+    logits_high[:, 2] = 100.0
+    draft_high = np.full((1, num_steps), 2, dtype=np.int64)
+
+    first_rejected, recovered, bonus = model.execute(
+        *_make_inputs(1, num_steps, vocab_size, draft_high, logits_high)
+    )
+    assert cast(Buffer, first_rejected).to_numpy()[0] == num_steps
+    assert cast(Buffer, recovered).to_numpy().shape == (1, num_steps)
+    assert cast(Buffer, bonus).to_numpy().shape == (1, 1)
+
+    # Case 2: draft token has ~0.0 probability → rejected at position 0
+    logits_low = np.full((num_steps + 1, vocab_size), -100.0, dtype=np.float32)
+    logits_low[:, 0] = 100.0
+    draft_low = np.full((1, num_steps), 4, dtype=np.int64)
+
+    first_rejected, _, _ = model.execute(
+        *_make_inputs(1, num_steps, vocab_size, draft_low, logits_low)
+    )
+    assert cast(Buffer, first_rejected).to_numpy()[0] == 0

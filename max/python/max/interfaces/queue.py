@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Defines non-blocking queue protocols and utility functions for producer-consumer patterns in MAX."""
+
 from __future__ import annotations
 
 import logging

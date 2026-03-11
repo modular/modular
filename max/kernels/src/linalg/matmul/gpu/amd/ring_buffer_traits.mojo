@@ -20,12 +20,12 @@ This module provides:
 - Atomic utility functions for thread-safe counter operations
 """
 
-from gpu import thread_idx, WARP_SIZE
+from std.gpu import thread_idx, WARP_SIZE
 from layout import Layout
 from linalg.structuring import SMemArray
-from os.atomic import Atomic
-from sys._assembly import inlined_assembly
-from utils import StaticTuple
+from std.os.atomic import Atomic
+from std.sys._assembly import inlined_assembly
+from std.utils import StaticTuple
 
 from .structured import SMemBuffer
 
@@ -38,7 +38,7 @@ from .structured import SMemBuffer
 @always_inline
 fn wait_for_counter(
     counter: UnsafePointer[
-        mut=True, Int32, address_space = AddressSpace.SHARED
+        mut=True, Int32, _, address_space=AddressSpace.SHARED
     ],
     threshold: Int32,
 ):
@@ -52,7 +52,7 @@ fn wait_for_counter(
 @always_inline
 fn increment_counter_if_first_thread(
     counter: UnsafePointer[
-        mut=True, Int32, address_space = AddressSpace.SHARED
+        mut=True, Int32, _, address_space=AddressSpace.SHARED
     ],
     increment: Int32,
 ):
@@ -182,8 +182,7 @@ struct SingleCounterSync[
             alignment=32
         ]()
 
-        @parameter
-        for i in range(Self.total_tiles):
+        comptime for i in range(Self.total_tiles):
             self.sync_counter[i][] = 0
 
     @always_inline
@@ -261,8 +260,7 @@ struct SplitCounterSync[
             alignment=32
         ]()
 
-        @parameter
-        for i in range(Self.total_tiles):
+        comptime for i in range(Self.total_tiles):
             self.producer_counters[i][] = 0
             self.consumer_counters[i][] = 0
 

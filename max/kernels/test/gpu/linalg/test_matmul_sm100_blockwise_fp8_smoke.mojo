@@ -19,35 +19,29 @@ Covers:
 Target: < 1 minute compile + run for debugging purposes.
 """
 
-from math import align_up, ceildiv
-from sys import size_of
+from std.math import align_up, ceildiv
+from std.sys import size_of
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
 )
-from random import rand
+from std.random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
-    lt_to_tt,
-)
+from layout.tile_tensor import TileTensor
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from linalg.matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul import (
     blockwise_fp8_matmul,
 )
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 
 fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -105,32 +99,30 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     )
 
     # Allocate host memory
-    a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(M * K)
-    b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(N * K)
-    c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
-    c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
+    a_host_ptr = alloc[Scalar[a_type]](M * K)
+    b_host_ptr = alloc[Scalar[b_type]](N * K)
+    c_host_ptr = alloc[Scalar[c_type]](M * N)
+    c_host_ref_ptr = alloc[Scalar[c_type]](M * N)
 
-    a_host = NDBuffer[a_type, 2](a_host_ptr, DimList(M, K))
-    b_host = NDBuffer[b_type, 2](b_host_ptr, DimList(N, K))
-    c_host = NDBuffer[c_type, 2](c_host_ptr, DimList(M, N))
-    c_host_ref = NDBuffer[c_type, 2](c_host_ref_ptr, DimList(M, N))
+    a_host = NDBuffer[rank=2, a_type](a_host_ptr, DimList(M, K))
+    b_host = NDBuffer[rank=2, b_type](b_host_ptr, DimList(N, K))
+    c_host = NDBuffer[rank=2, c_type](c_host_ptr, DimList(M, N))
+    c_host_ref = NDBuffer[rank=2, c_type](c_host_ref_ptr, DimList(M, N))
 
     # Calculate scales dimensions
     var a_scales_shape_k = ceildiv(K, BLOCK_SCALE_K)
     var b_scales_shape_n = ceildiv(N, BLOCK_SCALE_K)
     var b_scales_shape_k = ceildiv(K, BLOCK_SCALE_K)
 
-    a_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        a_scales_shape_k * M
-    )
-    b_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
+    a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_shape_k * M)
+    b_scales_host_ptr = alloc[Scalar[scales_type]](
         b_scales_shape_n * b_scales_shape_k
     )
 
-    a_scales_host = NDBuffer[scales_type, 2](
+    a_scales_host = NDBuffer[rank=2, scales_type](
         a_scales_host_ptr, DimList(a_scales_shape_k, M)
     )
-    b_scales_host = NDBuffer[scales_type, 2](
+    b_scales_host = NDBuffer[rank=2, scales_type](
         b_scales_host_ptr, DimList(b_scales_shape_n, b_scales_shape_k)
     )
 
@@ -152,16 +144,22 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     dynamic_a_scales_shape = DimList(a_scales_shape_k, M)
     dynamic_b_scales_shape = DimList(b_scales_shape_n, b_scales_shape_k)
 
-    a_device_nd = NDBuffer[a_type, 2](a_device.unsafe_ptr(), dynamic_a_shape)
-    b_device_nd = NDBuffer[b_type, 2](b_device.unsafe_ptr(), dynamic_b_shape)
-    c_device_nd = NDBuffer[c_type, 2](c_device.unsafe_ptr(), dynamic_c_shape)
-    c_device_ref_nd = NDBuffer[c_type, 2](
+    a_device_nd = NDBuffer[rank=2, a_type](
+        a_device.unsafe_ptr(), dynamic_a_shape
+    )
+    b_device_nd = NDBuffer[rank=2, b_type](
+        b_device.unsafe_ptr(), dynamic_b_shape
+    )
+    c_device_nd = NDBuffer[rank=2, c_type](
+        c_device.unsafe_ptr(), dynamic_c_shape
+    )
+    c_device_ref_nd = NDBuffer[rank=2, c_type](
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
-    a_scales_device_nd = NDBuffer[scales_type, 2](
+    a_scales_device_nd = NDBuffer[rank=2, scales_type](
         a_scales_device.unsafe_ptr(), dynamic_a_scales_shape
     )
-    b_scales_device_nd = NDBuffer[scales_type, 2](
+    b_scales_device_nd = NDBuffer[rank=2, scales_type](
         b_scales_device.unsafe_ptr(), dynamic_b_scales_shape
     )
 
@@ -180,16 +178,11 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    var a_lt = from_ndbuffer_row_major(a_device_nd)
-    var b_lt = from_ndbuffer_row_major(b_device_nd)
-    var c_lt = from_ndbuffer_row_major(c_device_nd)
-    var a_scales_lt = from_ndbuffer_row_major(a_scales_device_nd)
-    var b_scales_lt = from_ndbuffer_row_major(b_scales_device_nd)
-    var a = lt_to_tt(a_lt)
-    var b = lt_to_tt(b_lt)
-    var c = lt_to_tt(c_lt)
-    var a_scales = lt_to_tt(a_scales_lt)
-    var b_scales = lt_to_tt(b_scales_lt)
+    var a = TileTensor(a_device_nd)
+    var b = TileTensor(b_device_nd)
+    var c = TileTensor(c_device_nd)
+    var a_scales = TileTensor(a_scales_device_nd)
+    var b_scales = TileTensor(b_scales_device_nd)
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         cluster_shape=Index(
@@ -218,7 +211,7 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
     ](
         c_device_ref_nd,
         a_device_nd,
@@ -263,7 +256,7 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     print("PASSED")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
         comptime in_dtype = DType.float8_e4m3fn
@@ -293,7 +286,7 @@ def main():
             out_dtype,
             block_tile_1sm,
             umma_shape_1sm,
-            cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             cta_group=1,
@@ -324,7 +317,7 @@ def main():
             out_dtype,
             block_tile_2sm,
             umma_shape_2sm,
-            cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             cta_group=2,
@@ -342,7 +335,7 @@ def main():
             out_dtype,
             block_tile_2sm,
             umma_shape_2sm,
-            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             cta_group=2,

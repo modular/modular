@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def main():
+def main() raises:
     # Simple if statement
     temp_celsius = Float64(25)
     if temp_celsius > 20:

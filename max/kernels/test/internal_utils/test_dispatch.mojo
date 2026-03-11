@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from bit import next_power_of_two
+from std.bit import next_power_of_two
 
 # from internal_utils import Table, TuningConfig
 from internal_utils import (
@@ -21,7 +21,7 @@ from internal_utils import (
     TuningTableNvidia,
     arg_parse,
 )
-from testing import assert_equal
+from std.testing import assert_equal
 
 # Highly recommended to use "vendor_arch_dtype" format for table names.
 # For example:
@@ -62,12 +62,10 @@ fn dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
     comptime expected_m_values: List[Int] = [1, 2, 16]
     comptime assert len(m_values) == len(expected_m_values)
 
-    @parameter
-    for i in range(len(m_values)):
+    comptime for i in range(len(m_values)):
         comptime assert m_values[i] == expected_m_values[i]
 
-    @parameter
-    for i in range(1, len(m_values)):
+    comptime for i in range(1, len(m_values)):
 
         @parameter
         @always_inline
@@ -88,8 +86,7 @@ fn dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
                 rule_m, domain=nk_idx_list
             ]()
 
-            @parameter
-            if idx_list:
+            comptime if idx_list:
                 print("Found dispatch for next value of m", m)
                 print(
                     String(materialize[TuningTableAMD.configs[idx_list[0]]]())
@@ -144,12 +141,10 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
     ]
     comptime assert len(m_values) == len(expected_m_values)
 
-    @parameter
-    for i in range(len(m_values)):
+    comptime for i in range(len(m_values)):
         comptime assert m_values[i] == expected_m_values[i]
 
-    @parameter
-    for i in range(1, len(m_values)):
+    comptime for i in range(1, len(m_values)):
 
         @parameter
         @always_inline
@@ -170,8 +165,7 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
                 rule_m, domain=nk_idx_list
             ]()
 
-            @parameter
-            if idx_list:
+            comptime if idx_list:
                 print("Found dispatch for next value of m", m)
                 print(
                     String(
@@ -182,7 +176,7 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
                 # return
 
 
-def main():
+def main() raises:
     var m = arg_parse("m", 0)
     print(String(materialize[TuningTableAMD]()))
     dispatch_matmul_amd[static_n=1, static_k=1](m)

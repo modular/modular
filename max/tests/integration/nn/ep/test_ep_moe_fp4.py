@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 import torch
 from max.driver import Accelerator, Buffer, accelerator_api, accelerator_count
@@ -20,16 +22,16 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, ShardingStrategy, TensorType
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.legacy.float8_config import (
+from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.float8_config import (
     Float8Config,
     Float8InputScaleSpec,
     Float8ScaleGranularity,
     Float8ScaleOrigin,
     Float8WeightScaleSpec,
 )
-from max.nn.legacy.moe import MoEQuantized
-from max.nn.legacy.transformer.distributed_transformer import (
+from max.nn.moe import MoEQuantized
+from max.nn.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
 from test_common.graph_utils import is_b100_b200
@@ -111,7 +113,7 @@ def test_ep_moe_fp4(
         n_experts=NUM_EXPERTS,
         max_tokens_per_rank=max_tokens_per_rank,
         n_gpus_per_node=n_devices,
-        n_nodes=1,  # Single node test
+        n_nodes=int(os.environ.get("SHMEM_TOTAL_NODES", "1")),
         dispatch_fp8_config=fp4_config,
         fused_shared_expert=True,
     )

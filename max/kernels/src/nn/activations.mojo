@@ -13,9 +13,9 @@
 
 """The module contains implementations of activation functions."""
 
-import math
+import std.math
 
-from utils.numerics import get_accum_type
+from std.utils.numerics import get_accum_type
 
 # ===----------------------------------------------------------------------=== #
 # sign
@@ -43,8 +43,7 @@ fn _is_neg[
         negative at position `i` and False otherwise.
     """
 
-    @parameter
-    if dtype.is_unsigned():
+    comptime if dtype.is_unsigned():
         return SIMD[DType.bool, simd_width](fill=False)
     return val.lt(0)
 
@@ -92,7 +91,7 @@ fn elu[
         The result of the ELU operation.
     """
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
-    return x.ge(0).select(x, math.expm1(x))
+    return x.ge(0).select(x, std.math.expm1(x))
 
 
 # ===----------------------------------------------------------------------=== #

@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import align_of
-from gpu import WARP_SIZE
-from gpu.compute.mma import mma
-from itertools import product
+from std.sys import align_of
+from std.gpu import WARP_SIZE
+from std.gpu.compute.mma import mma
+from std.itertools import product
 from layout import Layout, LayoutTensor
 from layout.int_tuple import product as prod
 from layout.layout import blocked_product
 from layout.swizzle import Swizzle
 from layout.tensor_core import num_matrix_reg, TensorCore
 from linalg.structuring import SMemTile, RegTile
-from sys._assembly import inlined_assembly
-from utils import IndexList, StaticTuple
-from gpu.intrinsics import load_acquire, store_release
+from std.sys._assembly import inlined_assembly
+from std.utils import IndexList, StaticTuple
+from std.gpu.intrinsics import load_acquire, store_release
 
 
 trait Enum(TrivialRegisterPassable):
@@ -49,7 +49,7 @@ trait Enum(TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct ThreadRole(Enum, Stringable, Writable):
+struct ThreadRole(Enum, Writable):
     var _value: Int
 
     @always_inline
@@ -60,6 +60,7 @@ struct ThreadRole(Enum, Stringable, Writable):
     comptime CONSUMER = Self(1)
     comptime PRODUCER_CONSUMER = Self(2)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @always_inline
     fn __str__(self) -> String:
         """Returns the string representation of this algorithm.
@@ -74,7 +75,7 @@ struct ThreadRole(Enum, Stringable, Writable):
         elif self is Self.PRODUCER_CONSUMER:
             return "PRODUCER_CONSUMER"
         else:
-            return String("UNKNOWN_ROLE: ", self._value)
+            return t"UNKNOWN_ROLE: {self._value}"
 
     @always_inline
     fn write_to[W: Writer](self, mut writer: W) -> None:
@@ -84,7 +85,7 @@ struct ThreadRole(Enum, Stringable, Writable):
 @parameter
 @always_inline
 fn pipeline_layout[layout: Layout, pipeline_stages: Int]() -> Layout:
-    constrained[layout.rank() == 2]()
+    comptime assert layout.rank() == 2
     return blocked_product(
         materialize[layout](),
         Layout.row_major(1, pipeline_stages),
@@ -118,24 +119,16 @@ struct SMemBuffer[
 
     @always_inline
     fn __init__(out self):
-        constrained[
-            Self.layout.rank() == 2,
-            "layout must be 2D",
-        ]()
+        comptime assert Self.layout.rank() == 2, "layout must be 2D"
 
-        constrained[
+        comptime assert (
             prod(Self.layout.shape[0]) == Self.BM
-            and prod(Self.layout.shape[1]) == Self.BN,
-            (
-                "shared memory rows must match block_rows and columns must"
-                " match BN"
-            ),
-        ]()
+            and prod(Self.layout.shape[1]) == Self.BN
+        ), "shared memory rows must match block_rows and columns must match BN"
 
-        constrained[
-            Self.BM % Self.WM == 0 and Self.BN % Self.WN == 0,
-            "BM and BN must be a multiple of WM and WN",
-        ]()
+        comptime assert (
+            Self.BM % Self.WM == 0 and Self.BN % Self.WN == 0
+        ), "BM and BN must be a multiple of WM and WN"
 
         self.buffer = Self.SMemTile.stack_allocation()
 
@@ -188,8 +181,7 @@ struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterPassable):
     fn value(ref[AddressSpace.SHARED] self) -> Int32:
         var sum: Int32 = 0
 
-        @parameter
-        for i in range(Self.size):
+        comptime for i in range(Self.size):
             sum += self.__repr[i]
         return sum
 
@@ -199,7 +191,7 @@ struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterPassable):
             UnsafePointer[
                 Scalar[DType.int32],
                 MutAnyOrigin,
-                address_space = AddressSpace.SHARED,
+                address_space=AddressSpace.SHARED,
             ]
         ](Pointer(to=self.__repr))
         bar[warp_id] += 1
@@ -339,8 +331,8 @@ struct AmdTileOperator[
         Self.OutType,
         Self._out_layout,
         MutAnyOrigin,
-        alignment = Self._type_alignment,
-        address_space = AddressSpace.LOCAL,
+        alignment=Self._type_alignment,
+        address_space=AddressSpace.LOCAL,
     ]
 
     comptime OutRegTileFragmentType = Self.OutRegTile.TileType[
@@ -354,24 +346,21 @@ struct AmdTileOperator[
 
     @always_inline
     fn __init__(out self):
-        constrained[
+        comptime assert (
             Self.simd_width >= Self._registers_per_thread_a
-            and Self.simd_width >= Self._registers_per_thread_b,
-            (
-                "simd_width must be greater than or equal to required mma"
-                " fragments size"
-            ),
-        ]()
+            and Self.simd_width >= Self._registers_per_thread_b
+        ), (
+            "simd_width must be greater than or equal to required mma"
+            " fragments size"
+        )
 
-        constrained[
-            Self.num_k_tiles % Self.k_group_size_a == 0,
-            "num_k_tiles must be divisible by k_group_size",
-        ]()
+        comptime assert (
+            Self.num_k_tiles % Self.k_group_size_a == 0
+        ), "num_k_tiles must be divisible by k_group_size"
 
-        constrained[
-            Self._k_tiles_per_simd_a == Self._k_tiles_per_simd_b,
-            "k_tiles_per_simd must be equal for A and B",
-        ]()
+        comptime assert (
+            Self._k_tiles_per_simd_a == Self._k_tiles_per_simd_b
+        ), "k_tiles_per_simd must be equal for A and B"
 
         self._a_reg_tile = Self.ARegTile.stack_allocation()
         self._b_reg_tile = Self.BRegTile.stack_allocation()
@@ -429,9 +418,8 @@ struct AmdTileOperator[
 
         # Only load if this is the first fragment in the group
         # (tensor core loads k_group_size tiles at once)
-        @parameter
-        if fragment_idx == 0:
-            Self.tensor_core.load_a[swizzle = Self.swizzle](
+        comptime if fragment_idx == 0:
+            Self.tensor_core.load_a[swizzle=Self.swizzle](
                 smem_tile_a,
                 self._a_reg_tile.tile[Self.num_m_mmas, Self.simd_width](
                     group_idx, 0
@@ -439,7 +427,7 @@ struct AmdTileOperator[
                 UInt(group_idx),
             )
 
-            Self.tensor_core.load_b[swizzle = Self.swizzle](
+            Self.tensor_core.load_b[swizzle=Self.swizzle](
                 smem_tile_b,
                 self._b_reg_tile.tile[Self.num_n_mmas, Self.simd_width](
                     group_idx, 0
@@ -466,14 +454,12 @@ struct AmdTileOperator[
         var b_tile = self.b_reg_tile(group_idx)
 
         # Perform MMA for this specific fragment within the group
-        @parameter
-        for mma_m_idx in range(Self.num_m_mmas):
+        comptime for mma_m_idx in range(Self.num_m_mmas):
             var a_fragment = a_tile.tile[1, Self._registers_per_thread_a](
                 mma_m_idx, fragment_idx
             )
 
-            @parameter
-            for mma_n_idx in range(Self.num_n_mmas):
+            comptime for mma_n_idx in range(Self.num_n_mmas):
                 var b_fragment = b_tile.tile[1, Self._registers_per_thread_b](
                     mma_n_idx, fragment_idx
                 )

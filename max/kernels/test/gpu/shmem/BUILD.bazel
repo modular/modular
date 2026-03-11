@@ -13,6 +13,15 @@ lit_tests(
             "MODULAR_SHMEM_LIB_DIR": "../+http_archive+rocshmem/lib",
             # 8GB symmetric heap for large buffer tests
             "ROCSHMEM_HEAP_SIZE": "8589934592",
+            "ROCSHMEM_BOOTSTRAP_SOCKET_IFNAME": "eno0",
+            # Example config to uncomment for running tests across 2 nodes
+            # set one node SHMEM_NODE_ID: 0, and the other to SHMEM_NODE_ID: 1
+            # Find the SHMEM_SERVER_IP  with e.g. `ip addr show eno0`
+            # "SHMEM_NODE_ID": "0",
+            # "SHMEM_TOTAL_NODES": "2",
+            # "SHMEM_GPUS_PER_NODE": "8",
+            # "SHMEM_SERVER_IP": "10.24.8.111",
+            # "SHMEM_SERVER_PORT": "12345",
         },
         "//conditions:default": {},
     }),

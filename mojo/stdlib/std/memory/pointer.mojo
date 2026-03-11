@@ -15,11 +15,13 @@
 You can import these APIs from the `memory` package. For example:
 
 ```mojo
-from memory import Pointer
+from std.memory import Pointer
 ```
 """
 
-from format._utils import FormatStruct, Named, TypeNames
+from std.format._utils import FormatStruct, Named, TypeNames
+from std.memory import UnsafeMaybeUninit
+from std.utils._nicheable import UnsafeSingleNicheable, NicheIndex
 
 # ===-----------------------------------------------------------------------===#
 # AddressSpace
@@ -30,7 +32,6 @@ struct AddressSpace(
     Equatable,
     ImplicitlyCopyable,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -103,6 +104,7 @@ struct AddressSpace(
         """
         return self._value == other._value
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @always_inline("nodebug")
     fn __str__(self) -> String:
         """Gets a string representation of the AddressSpace.
@@ -201,7 +203,7 @@ struct Pointer[
     type: AnyType,
     origin: Origin[mut=mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](Stringable, TrivialRegisterPassable, Writable):
+](TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to
@@ -244,7 +246,7 @@ struct Pointer[
         out self: Pointer[
             other.type,
             ImmutOrigin(other.origin),
-            address_space = other.address_space,
+            address_space=other.address_space,
         ],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
@@ -333,6 +335,7 @@ struct Pointer[
         """
         return not (self == rhs)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Gets a string representation of the Pointer.
@@ -368,10 +371,10 @@ struct Pointer[
     ](
         self,
         out result: Pointer[
-            mut = Self.mut & other_type.origin.mut,
-            type = Self.type,
-            origin = origin_of(Self.origin, other_type.origin),
-            address_space = Self.address_space,
+            mut=Self.mut & other_type.origin.mut,
+            type=Self.type,
+            origin=origin_of(Self.origin, other_type.origin),
+            address_space=Self.address_space,
         ],
     ):
         """Returns a pointer merged with the specified `other_type`.
@@ -383,3 +386,25 @@ struct Pointer[
             A pointer merged with the specified `other_type`.
         """
         return {_mlir_value = self._value}  # allow lit.ref to convert.
+
+    # ===------------------------------------------------------------------===#
+    # UnsafeNicheable
+    # ===------------------------------------------------------------------===#
+
+    comptime _NullPointerType = UnsafePointer[
+        Self.type, MutAnyOrigin, address_space=Self.address_space
+    ]
+
+    @staticmethod
+    @always_inline
+    @doc_private
+    fn write_niche(memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]):
+        memory.bitcast[Self._NullPointerType]().init_pointee_move({})
+
+    @staticmethod
+    @always_inline
+    @doc_private
+    fn isa_niche(
+        memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
+    ) -> Bool:
+        return not Bool(memory.bitcast[Self._NullPointerType]()[])

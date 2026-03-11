@@ -10,26 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from testing import assert_equal, assert_raises, TestSuite
+from std.testing import assert_equal, assert_raises, TestSuite
 
 from typed_errors import ValidationError, validate_username
 
 
-def test_valid_username():
+def test_valid_username() raises:
     assert_equal(validate_username("alice"), "alice")
 
 
-def test_empty_username_raises():
+def test_empty_username_raises() raises:
     with assert_raises(contains="cannot be empty"):
         _ = validate_username("")
 
 
-def test_short_username_raises():
+def test_short_username_raises() raises:
     with assert_raises(contains="must be at least 3 characters"):
         _ = validate_username("ab")
 
 
-def test_field_access():
+def test_field_access() raises:
     try:
         _ = validate_username("")
     except e:
@@ -37,5 +37,5 @@ def test_field_access():
         assert_equal(e.reason, "cannot be empty")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

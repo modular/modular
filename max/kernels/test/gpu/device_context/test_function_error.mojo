@@ -11,24 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceBuffer, DeviceContext
-from memory import LegacyUnsafePointer, OwnedPointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import *
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.memory import OwnedPointer
+from std.testing import *
 
 
-fn kernel(res: UnsafePointer[UInt32]):
+fn kernel(res: UnsafePointer[UInt32, MutAnyOrigin]):
     res[] = 0
 
 
 # Here the argument is a host pointer and not a device pointer, so we expect
 # an error about an illegal memory address.
-def test_function_error(ctx: DeviceContext):
+def test_function_error(ctx: DeviceContext) raises:
     # CHECK: test_function_error
     print("== test_function_error")
     try:
-        var res_ptr = UnsafePointer[UInt32].alloc(1)
+        var res_ptr = alloc[UInt32](1)
         var res_ptr_owned = OwnedPointer[UInt32](
             unsafe_from_raw_pointer=res_ptr
         )
@@ -41,15 +39,15 @@ def test_function_error(ctx: DeviceContext):
         ctx.synchronize()
 
         # Don't allow early dealloc.
-        _ = res_ptr_owned
+        _ = res_ptr_owned^
     except e:
         # This error should occur at the synchronize call as the kernel launches
         # async by default.
-        # CHECK: max/kernels/test/gpu/device_context/test_function_error.mojo:41:24
+        # CHECK: max/kernels/test/gpu/device_context/test_function_error.mojo
         print(e)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # CHECK: To get more accurate error information, set MODULAR_DEVICE_CONTEXT_SYNC_MODE=true
         test_function_error(ctx)

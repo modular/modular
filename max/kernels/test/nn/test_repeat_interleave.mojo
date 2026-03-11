@@ -12,11 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor, row_major
 from nn.repeat_interleave import _collapse_dims_around_axis, repeat_interleave
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn test_collapse_dims_around_axis() raises:
@@ -266,7 +265,7 @@ fn test_repeat_interleave_3d() raises:
     print()
 
 
-def main():
+def main() raises:
     test_collapse_dims_around_axis()
     test_repeat_interleave_1d()
     test_repeat_interleave_1d_broadcast_repeats()

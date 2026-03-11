@@ -11,21 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isclose
-from random import rand
-from sys import simd_width_of, size_of
+from std.math import isclose
+from std.random import rand
+from std.sys import simd_width_of, size_of
 
-import benchmark
+import std.benchmark
 from buffer import NDBuffer
 from buffer.dimlist import Dim
 from linalg.gemv import gemv, naive_gemv
 from linalg.matmul import matmul
-from memory import LegacyUnsafePointer
+from std.testing import assert_false
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_false
-
-from utils.index import Index
+from std.utils.index import Index
 
 comptime alignment = 64
 
@@ -33,11 +30,11 @@ comptime alignment = 64
 @parameter
 fn bench_run[
     func: fn() raises capturing[_] -> None
-]() raises -> benchmark.Report:
-    return benchmark.run[func](2, 1_000_000, 1, 3)
+]() raises -> std.benchmark.Report:
+    return std.benchmark.run[func](2, 1_000_000, 1, 3)
 
 
-def test_gemv():
+def test_gemv() raises:
     print("== test_gemv")
     comptime type = DType.float32
     comptime absolute_tolerance = 1e-08
@@ -54,21 +51,17 @@ def test_gemv():
     comptime m = 4096
     comptime k = 11008
 
-    var lhs_storage = UnsafePointer[Scalar[type],].alloc(
-        m * k, alignment=alignment
-    )
-    var lhs = NDBuffer[type, 2](lhs_storage, Index(m, k))
+    var lhs_storage = alloc[Scalar[type],](m * k, alignment=alignment)
+    var lhs = NDBuffer[rank=2, type](lhs_storage, Index(m, k))
 
-    var rhs_storage = UnsafePointer[Scalar[type],].alloc(k, alignment=alignment)
-    var rhs = NDBuffer[type, 1, _, Dim(k)](rhs_storage)
+    var rhs_storage = alloc[Scalar[type],](k, alignment=alignment)
+    var rhs = NDBuffer[rank=1, type, _, Dim(k)](rhs_storage)
 
-    var out_storage = UnsafePointer[Scalar[type],].alloc(m, alignment=alignment)
-    var out = NDBuffer[type, 1, _, Dim(m)](out_storage)
+    var out_storage = alloc[Scalar[type],](m, alignment=alignment)
+    var out = NDBuffer[rank=1, type, _, Dim(m)](out_storage)
 
-    var ref_out_storage = UnsafePointer[Scalar[type]].alloc(
-        m, alignment=alignment
-    )
-    var ref_out = NDBuffer[type, 1, _, Dim(m)](ref_out_storage)
+    var ref_out_storage = alloc[Scalar[type]](m, alignment=alignment)
+    var ref_out = NDBuffer[rank=1, type, _, Dim(m)](ref_out_storage)
 
     rand[type](lhs_storage, m * k)
     rand[type](rhs_storage, k)
@@ -119,7 +112,7 @@ def test_gemv():
         gemv[parallelize=False](out, lhs, rhs)
 
     var serial_perf = bench_run[bench_fn_serial]()
-    benchmark.keep(out[10])
+    std.benchmark.keep(out[10])
     var serial_bandwidth = (
         Float64(bytes_per_iteration) / serial_perf.mean()
     ) / gigabyte
@@ -140,10 +133,10 @@ def test_gemv():
         gemv[parallelize=True](out, lhs, rhs)
 
     var par_perf = bench_run[bench_fn_parallel]()
-    benchmark.keep(out[10])
+    std.benchmark.keep(out[10])
 
-    var rhs_mat = NDBuffer[type, 2](rhs_storage, Index(k, 1))
-    var out_mat = NDBuffer[type, 2](out_storage, Index(m, 1))
+    var rhs_mat = NDBuffer[rank=2, type](rhs_storage, Index(k, 1))
+    var out_mat = NDBuffer[rank=2, type](out_storage, Index(m, 1))
 
     # Compute speedup and bandwidth stats
     var par_bandwidth = (
@@ -173,7 +166,7 @@ def test_gemv():
     bench_fn_matmul()
 
     var matmul_perf = bench_run[bench_fn_matmul]()
-    benchmark.keep(out[10])
+    std.benchmark.keep(out[10])
     matmul_perf.print()
     print("Matmul GEMV GFLOP/s", 1e-9 * ((2 * m * k) / matmul_perf.mean()))
 
@@ -183,5 +176,5 @@ def test_gemv():
     ref_out_storage.free()
 
 
-def main():
+def main() raises:
     test_gemv()

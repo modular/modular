@@ -45,7 +45,7 @@ ATOL = 8e-3
 def generate_torch_outputs(
     pixel_values: torch.Tensor,
     window_index: torch.Tensor,
-    hf_vision_config: dict,
+    hf_vision_config: dict,  # type: ignore[type-arg]
     embeddings_weights: dict[str, torch.Tensor],
     device: torch.device = "cuda",
     dtype: torch.dtype = torch.bfloat16,
@@ -87,7 +87,7 @@ def generate_torch_outputs(
 def generate_max_outputs(
     pixel_values: torch.Tensor,
     window_index: torch.Tensor,
-    qwen2_5vl_config: dict,
+    qwen2_5vl_config: dict,  # type: ignore[type-arg]
     embeddings_weights: dict[str, torch.Tensor],
     dtype: DType,
     device: Device,

@@ -18,14 +18,14 @@ This module registers the following ops:
 - selective_scan_update: Single-step update for autoregressive inference
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
 import compiler_internal as compiler
-from gpu.host import DeviceContext
-from gpu.host.info import is_cpu, is_gpu
-from runtime.asyncrt import DeviceContextPtr
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import is_cpu, is_gpu
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 from state_space.selective_scan import (
     selective_scan_fwd_cpu,
@@ -66,17 +66,17 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
         dtype: DType,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=3],
-        x: OutputTensor[dtype=dtype, rank=4],
-        out_z: OutputTensor[dtype=dtype, rank=3],
-        u: InputTensor[dtype=dtype, rank=3],
-        delta: InputTensor[dtype=dtype, rank=3],
-        A: InputTensor[dtype=dtype, rank=2],
-        B: InputTensor[dtype=dtype, rank=4],
-        C: InputTensor[dtype=dtype, rank=4],
-        D: InputTensor[dtype=dtype, rank=1],
-        z: InputTensor[dtype=dtype, rank=3],
-        delta_bias: InputTensor[dtype=dtype, rank=1],
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        x: OutputTensor[dtype=dtype, rank=4, ...],
+        out_z: OutputTensor[dtype=dtype, rank=3, ...],
+        u: InputTensor[dtype=dtype, rank=3, ...],
+        delta: InputTensor[dtype=dtype, rank=3, ...],
+        A: InputTensor[dtype=dtype, rank=2, ...],
+        B: InputTensor[dtype=dtype, rank=4, ...],
+        C: InputTensor[dtype=dtype, rank=4, ...],
+        D: InputTensor[dtype=dtype, rank=1, ...],
+        z: InputTensor[dtype=dtype, rank=3, ...],
+        delta_bias: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         if output.shape() != u.shape():
@@ -124,8 +124,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
 
         # Dispatch runtime dstate to compile-time DSTATE for @parameter for
         # loop unrolling and guaranteed register allocation on GPU.
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             if dstate == 16:
                 selective_scan_fwd_cpu[
                     dtype,
@@ -361,14 +360,14 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
     fn shape[
         dtype: DType,
     ](
-        u: InputTensor[dtype=dtype, rank=3],
-        delta: InputTensor[dtype=dtype, rank=3],
-        A: InputTensor[dtype=dtype, rank=2],
-        B: InputTensor[dtype=dtype, rank=4],
-        C: InputTensor[dtype=dtype, rank=4],
-        D: InputTensor[dtype=dtype, rank=1],
-        z: InputTensor[dtype=dtype, rank=3],
-        delta_bias: InputTensor[dtype=dtype, rank=1],
+        u: InputTensor[dtype=dtype, rank=3, ...],
+        delta: InputTensor[dtype=dtype, rank=3, ...],
+        A: InputTensor[dtype=dtype, rank=2, ...],
+        B: InputTensor[dtype=dtype, rank=4, ...],
+        C: InputTensor[dtype=dtype, rank=4, ...],
+        D: InputTensor[dtype=dtype, rank=1, ...],
+        z: InputTensor[dtype=dtype, rank=3, ...],
+        delta_bias: InputTensor[dtype=dtype, rank=1, ...],
     ) -> IndexList[3]:
         return u.shape()
 
@@ -398,13 +397,13 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
         dtype: DType,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=3],
-        x: OutputTensor[dtype=dtype, rank=4],
-        u: InputTensor[dtype=dtype, rank=3],
-        delta: InputTensor[dtype=dtype, rank=3],
-        A: InputTensor[dtype=dtype, rank=2],
-        B: InputTensor[dtype=dtype, rank=4],
-        C: InputTensor[dtype=dtype, rank=4],
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        x: OutputTensor[dtype=dtype, rank=4, ...],
+        u: InputTensor[dtype=dtype, rank=3, ...],
+        delta: InputTensor[dtype=dtype, rank=3, ...],
+        A: InputTensor[dtype=dtype, rank=2, ...],
+        B: InputTensor[dtype=dtype, rank=4, ...],
+        C: InputTensor[dtype=dtype, rank=4, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         if output.shape() != u.shape():
@@ -442,8 +441,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                 "Unsupported dstate: " + String(dstate) + ". Expected 8 or 16."
             )
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             if dstate == 16:
                 selective_scan_fwd_cpu_minimal[
                     dtype,
@@ -623,11 +621,11 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
     fn shape[
         dtype: DType,
     ](
-        u: InputTensor[dtype=dtype, rank=3],
-        delta: InputTensor[dtype=dtype, rank=3],
-        A: InputTensor[dtype=dtype, rank=2],
-        B: InputTensor[dtype=dtype, rank=4],
-        C: InputTensor[dtype=dtype, rank=4],
+        u: InputTensor[dtype=dtype, rank=3, ...],
+        delta: InputTensor[dtype=dtype, rank=3, ...],
+        A: InputTensor[dtype=dtype, rank=2, ...],
+        B: InputTensor[dtype=dtype, rank=4, ...],
+        C: InputTensor[dtype=dtype, rank=4, ...],
     ) -> IndexList[3]:
         return u.shape()
 
@@ -660,17 +658,17 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
         dtype: DType,
         target: StaticString,
     ](
-        state_out: OutputTensor[dtype=dtype, rank=3],
-        output: OutputTensor[dtype=dtype, rank=2],
-        state_in: InputTensor[dtype=dtype, rank=3],
-        x: InputTensor[dtype=dtype, rank=2],
-        dt: InputTensor[dtype=dtype, rank=2],
-        A: InputTensor[dtype=dtype, rank=2],
-        B: InputTensor[dtype=dtype, rank=3],
-        C: InputTensor[dtype=dtype, rank=3],
-        D: InputTensor[dtype=dtype, rank=1],
-        z: InputTensor[dtype=dtype, rank=2],
-        dt_bias: InputTensor[dtype=dtype, rank=1],
+        state_out: OutputTensor[dtype=dtype, rank=3, ...],
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        state_in: InputTensor[dtype=dtype, rank=3, ...],
+        x: InputTensor[dtype=dtype, rank=2, ...],
+        dt: InputTensor[dtype=dtype, rank=2, ...],
+        A: InputTensor[dtype=dtype, rank=2, ...],
+        B: InputTensor[dtype=dtype, rank=3, ...],
+        C: InputTensor[dtype=dtype, rank=3, ...],
+        D: InputTensor[dtype=dtype, rank=1, ...],
+        z: InputTensor[dtype=dtype, rank=2, ...],
+        dt_bias: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         var batch = state_out.dim_size(0)
@@ -712,8 +710,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                 "Unsupported dstate: " + String(dstate) + ". Expected 8 or 16."
             )
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             if dstate == 16:
                 selective_scan_update_cpu[
                     dtype,
@@ -945,14 +942,14 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
     fn shape[
         dtype: DType,
     ](
-        state_in: InputTensor[dtype=dtype, rank=3],
-        x: InputTensor[dtype=dtype, rank=2],
-        dt: InputTensor[dtype=dtype, rank=2],
-        A: InputTensor[dtype=dtype, rank=2],
-        B: InputTensor[dtype=dtype, rank=3],
-        C: InputTensor[dtype=dtype, rank=3],
-        D: InputTensor[dtype=dtype, rank=1],
-        z: InputTensor[dtype=dtype, rank=2],
-        dt_bias: InputTensor[dtype=dtype, rank=1],
+        state_in: InputTensor[dtype=dtype, rank=3, ...],
+        x: InputTensor[dtype=dtype, rank=2, ...],
+        dt: InputTensor[dtype=dtype, rank=2, ...],
+        A: InputTensor[dtype=dtype, rank=2, ...],
+        B: InputTensor[dtype=dtype, rank=3, ...],
+        C: InputTensor[dtype=dtype, rank=3, ...],
+        D: InputTensor[dtype=dtype, rank=1, ...],
+        z: InputTensor[dtype=dtype, rank=2, ...],
+        dt_bias: InputTensor[dtype=dtype, rank=1, ...],
     ) -> Tuple[IndexList[3], IndexList[2]]:
         return (state_in.shape(), x.shape())

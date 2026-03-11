@@ -15,14 +15,14 @@
 You can import these APIs from the `sys` package. For example:
 
 ```mojo
-from sys import CompilationTarget
+from std.sys import CompilationTarget
 
 print(CompilationTarget.is_x86())
 ```
 """
 
-from collections.string.string_slice import _get_kgen_string
-from .ffi import _external_call_const, external_call
+from std.collections.string.string_slice import _get_kgen_string
+from std.ffi import _external_call_const, external_call
 
 comptime _TargetType = __mlir_type.`!kgen.target`
 
@@ -48,41 +48,25 @@ struct CompilationTarget[value: _TargetType = _current_target()](
     @always_inline("nodebug")
     @staticmethod
     fn unsupported_target_error[
-        result: AnyType = NoneType._mlir_type,
         *,
         operation: Optional[String] = None,
         note: Optional[String] = None,
-    ]() -> result:
+    ]() -> Never:
         """Produces a constraint failure when called indicating that some
         operation is not supported by the current compilation target.
 
         Parameters:
-            result: The never-returned result type of this function.
             operation: Optional name of the operation that is not supported.
                 Should be a function name or short description.
             note: Optional additional note to print.
-
-        Returns:
-            This function does not return normally, however a return type
-            can be specified to satisfy Mojo type checking.
         """
 
         comptime note_text = String(" Note: ", note.value() if note else "")
         comptime msg = "Current compilation target does not support"
-
-        @parameter
-        if operation:
-            constrained[
-                False,
-                String(msg, " operation: ", operation.value(), ".", note_text),
-            ]()
-        else:
-            constrained[
-                False,
-                String(msg, " this operation.", note_text),
-            ]()
-
-        os.abort()
+        comptime op_text = String(
+            " operation: ", operation.value(), "."
+        ) if operation else " this operation."
+        comptime assert False, String(msg, op_text, note_text)
 
     @always_inline("nodebug")
     @staticmethod
@@ -167,8 +151,7 @@ struct CompilationTarget[value: _TargetType = _current_target()](
             The string of default compile options for the compilation target.
         """
 
-        @parameter
-        if is_triple["nvptx64-nvidia-cuda", Self.value]():
+        comptime if is_triple["nvptx64-nvidia-cuda", Self.value]():
             # TODO: use `is_nvidia_gpu` when moved to into this struct.
             return "nvptx-short-ptr=true"
         else:
@@ -396,15 +379,12 @@ fn platform_map[
     ```
     """
 
-    @parameter
-    if CompilationTarget.is_macos() and macos:
-        return macos.value().copy()
+    comptime if CompilationTarget.is_macos() and macos:
+        return materialize[macos.value()]()
     elif CompilationTarget.is_linux() and linux:
-        return linux.value().copy()
+        return materialize[linux.value()]()
     else:
-        return CompilationTarget.unsupported_target_error[
-            T, operation=operation
-        ]()
+        CompilationTarget.unsupported_target_error[operation=operation]()
 
 
 @always_inline("nodebug")
@@ -494,7 +474,7 @@ fn _is_sm_120x() -> Bool:
 
 @always_inline("nodebug")
 fn _has_blackwell_tcgen05() -> Bool:
-    return is_nvidia_gpu["sm_100a"]() or is_nvidia_gpu["sm_101a"]()
+    return "sm_100a" in _accelerator_arch() or "sm_101a" in _accelerator_arch()
 
 
 @always_inline("nodebug")
@@ -706,8 +686,7 @@ fn _cdna_version() -> Int:
         _is_amd_mi300x() or _is_amd_mi355x()
     ), "querying the cdna version is only supported on AMD hardware"
 
-    @parameter
-    if _is_amd_mi300x():
+    comptime if _is_amd_mi300x():
         return 3
     else:
         return 4
@@ -715,16 +694,14 @@ fn _cdna_version() -> Int:
 
 @always_inline("nodebug")
 fn _cdna_3_or_newer() -> Bool:
-    @parameter
-    if _is_amd_cdna():
+    comptime if _is_amd_cdna():
         return _cdna_version() >= 3
     return False
 
 
 @always_inline("nodebug")
 fn _cdna_4_or_newer() -> Bool:
-    @parameter
-    if _is_amd_cdna():
+    comptime if _is_amd_cdna():
         return _cdna_version() >= 4
     return False
 
@@ -890,8 +867,8 @@ fn size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
 
     Example:
     ```mojo
-    from sys.info import size_of
-    def main():
+    from std.sys.info import size_of
+    def main() raises:
         print(
             size_of[UInt8]() == 1,
             size_of[UInt16]() == 2,

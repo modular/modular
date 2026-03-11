@@ -17,18 +17,15 @@
 #
 # ===-----------------------------------------------------------------------===#
 
-from sys._assembly import inlined_assembly
+from std.sys._assembly import inlined_assembly
 
 from buffer import DimList
 from layout import Layout, LayoutTensor
-from memory import (
-    LegacyUnsafePointer,
+from std.memory import (
     memcpy,
     memset_zero,
     stack_allocation,
 )
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 # All AMX instructions are of the form
@@ -246,14 +243,13 @@ fn genlut(gpr: Int):
 @always_inline
 fn _encode_load_store[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int) -> Int:
+](src: UnsafePointer[Scalar[dtype], _], start_index: Int) -> Int:
     """
     Utility to do the bit encoding for load and store ops.
     """
     var src_idx = Int(src) | (start_index << 56)
 
-    @parameter
-    if row_count == 2:
+    comptime if row_count == 2:
         src_idx |= 1 << 62
     return src_idx
 
@@ -261,42 +257,42 @@ fn _encode_load_store[
 @always_inline
 fn store_x[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+](src: UnsafePointer[Scalar[dtype], _], start_index: Int):
     ldx(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
 fn store_y[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+](src: UnsafePointer[Scalar[dtype], _], start_index: Int):
     ldy(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
 fn store_z[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+](src: UnsafePointer[Scalar[dtype], _], start_index: Int):
     ldz(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
 fn read_x[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+](src: UnsafePointer[mut=True, Scalar[dtype], _], start_index: Int):
     stx(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
 fn read_y[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+](src: UnsafePointer[mut=True, Scalar[dtype], _], start_index: Int):
     sty(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
 fn load_z[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+](src: UnsafePointer[mut=True, Scalar[dtype], _], start_index: Int):
     stz(_encode_load_store[row_count, dtype](src, start_index))
 
 
@@ -424,20 +420,15 @@ fn dot_at_b_impl(
     # _set() has the side effect of clearing the z tile
     _set()
 
-    @parameter
-    for j in range(2):
-
-        @parameter
-        for i in range(8):
+    comptime for j in range(2):
+        comptime for i in range(8):
             ldx((i << 56) | Int(b_buffer + (j * 8 + i) * b.dim[0]()))
             ldy((i << 56) | Int(a_buffer + (j * 8 + i) * a.dim[0]()))
 
-        @parameter
-        for i in range(8):
+        comptime for i in range(8):
             fma32((i << 6 << 10) | (i << 6))
 
-    @parameter
-    for i in range(0, 64, 4):
+    comptime for i in range(0, 64, 4):
         stz((i << 56) | Int(c_buffer + (i >> 2) * c.dim[0]()))
 
     _clr()
@@ -468,20 +459,15 @@ fn dot_at_b_impl(
     # _set() has the side effect of clearing the z tile
     _set()
 
-    @parameter
-    for j in range(4):
-
-        @parameter
-        for i in range(8):
+    comptime for j in range(4):
+        comptime for i in range(8):
             ldx((i << 56) | Int(b_buffer + (j * 8 + i) * b.dim[0]()))
             ldy((i << 56) | Int(a_buffer + (j * 8 + i) * a.dim[0]()))
 
-        @parameter
-        for i in range(8):
+        comptime for i in range(8):
             fma16((i << 6 << 10) | (i << 6))
 
-    @parameter
-    for i in range(0, 64, 2):
+    comptime for i in range(0, 64, 2):
         stz((i << 56) | Int(c_buffer + (i >> 1) * c.dim[0]()))
 
     _clr()
@@ -495,8 +481,7 @@ fn dot_at_b(c: LayoutTensor[mut=True, ...], a: type_of(c), b: type_of(c)):
         c.dtype == DType.float32 or c.dtype == DType.float16
     ), "the buffer dtype must be float32 or float16"
 
-    @parameter
-    if c.dtype == DType.float32:
+    comptime if c.dtype == DType.float32:
         comptime f32_tensor = LayoutTensor[
             DType.float32,
             Layout.row_major(16, 16),

@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections.string.string_slice import get_static_string
-from os import abort, getenv
-from pathlib import Path
-from sys import argv, size_of
-from ffi import (
+from std.collections.string.string_slice import get_static_string
+from std.os import abort, getenv
+from std.pathlib import Path
+from std.sys import argv, size_of
+from std.ffi import (
     _find_dylib,
     _get_dylib_function,
     _Global,
@@ -25,10 +25,10 @@ from ffi import (
     external_call,
     RTLD,
 )
-from sys.info import CompilationTarget, is_nvidia_gpu
+from std.sys.info import CompilationTarget, is_nvidia_gpu
 
-from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import CUmodule, CUstream
+from std.gpu.host import DeviceContext
+from std.gpu.host._nvidia_cuda import CUmodule, CUstream
 
 from ._mpi import MPI_Comm_rank, MPI_Init, MPIComm, get_mpi_comm_world
 
@@ -63,7 +63,7 @@ fn _init_nvshmem_dylib() -> OwnedDLHandle:
     try:
         return OwnedDLHandle(path=lib)
     except e:
-        abort(String("failed to load NVSHMEM library: ", e))
+        abort(t"failed to load NVSHMEM library: {e}")
 
 
 @always_inline
@@ -209,8 +209,7 @@ struct NVSHMEMXUniqueID:
 
 
 fn _get_prefix[scope: SHMEMScope]() -> StaticString:
-    @parameter
-    if scope == SHMEMScope.default:
+    comptime if scope == SHMEMScope.default:
         return "nvshmem_"
     else:
         return "nvshmemx_"
@@ -260,8 +259,7 @@ fn _dtype_to_nvshmem_type[
     ptrdiff_t            ptrdiff       64
     """
 
-    @parameter
-    if dtype == DType.float16:
+    comptime if dtype == DType.float16:
         return get_static_string[prefix, "half", suffix, scope]()
     elif dtype == DType.bfloat16:
         return get_static_string[prefix, "bfloat16", suffix, scope]()
@@ -288,8 +286,8 @@ fn _dtype_to_nvshmem_type[
     elif dtype == DType.int:
         return get_static_string[prefix, "size", suffix, scope]()
     else:
-        return CompilationTarget.unsupported_target_error[
-            StaticString, operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
@@ -392,8 +390,7 @@ fn nvshmemx_init_status() -> c_int:
 
 
 fn nvshmem_my_pe() -> c_int:
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return external_call["nvshmem_my_pe", c_int]()
     else:
         return _get_nvshmem_function[
@@ -403,8 +400,7 @@ fn nvshmem_my_pe() -> c_int:
 
 
 fn nvshmem_n_pes() -> c_int:
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return external_call["nvshmem_n_pes", c_int]()
     else:
         return _get_nvshmem_function[
@@ -481,8 +477,8 @@ fn nvshmem_put[
     //,
     scope: SHMEMScope,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -497,8 +493,8 @@ fn nvshmem_put_nbi[
     //,
     scope: SHMEMScope,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -510,7 +506,7 @@ fn nvshmem_put_nbi[
 
 fn nvshmem_p[
     dtype: DType
-](dest: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], pe: c_int,):
+](dest: UnsafePointer[Scalar[dtype], _], value: Scalar[dtype], pe: c_int,):
     comptime symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_p"]()
     external_call[symbol, NoneType](dest, value, pe)
 
@@ -520,8 +516,8 @@ fn nvshmem_get[
     //,
     scope: SHMEMScope,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -536,8 +532,8 @@ fn nvshmem_get_nbi[
     //,
     scope: SHMEMScope,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -549,7 +545,7 @@ fn nvshmem_get_nbi[
 
 fn nvshmem_g[
     dtype: DType
-](source: UnsafePointer[Scalar[dtype]], pe: c_int) -> Scalar[dtype]:
+](source: UnsafePointer[Scalar[dtype], _], pe: c_int) -> Scalar[dtype]:
     comptime symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_g"]()
     return external_call[symbol, Scalar[dtype]](source, pe)
 
@@ -573,10 +569,10 @@ fn nvshmemx_signal_op(
 fn nvshmem_put_signal_nbi[
     dtype: DType
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: Int,
-    sig_addr: UnsafePointer[UInt64],
+    sig_addr: UnsafePointer[UInt64, _],
     signal: UInt64,
     sig_op: c_int,
     pe: c_int,
@@ -603,8 +599,7 @@ fn nvshmem_sync_all():
 
 
 fn nvshmem_barrier_all():
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         external_call["nvshmem_barrier_all", NoneType]()
     else:
         _get_nvshmem_function[

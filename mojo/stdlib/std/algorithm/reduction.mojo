@@ -15,26 +15,30 @@
 You can import these APIs from the `algorithm` package. For example:
 
 ```mojo
-from algorithm import map_reduce
+from std.algorithm import map_reduce
 ```
 """
 
-from collections import OptionalReg
-from math import align_down, ceildiv
-from sys.info import align_of, simd_width_of, size_of
+from std.collections import OptionalReg
+from std.math import align_down, ceildiv
+from std.sys.info import align_of, simd_width_of, size_of
 
-from algorithm import sync_parallelize, vectorize
-from algorithm.functional import _get_num_workers
-from bit import log2_floor
-from math.math import max as _max, min as _min
-from gpu.host import DeviceContext
-from gpu.host.info import is_cpu, is_valid_target
-from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from std.algorithm import sync_parallelize, vectorize
+from std.algorithm.functional import _get_num_workers
+from std.bit import log2_floor
+from std.math.math import max as _max, min as _min
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import is_cpu, is_valid_target
+from std.runtime.asyncrt import DeviceContextPtr
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
-from utils.index import Index, IndexList, StaticTuple
+from std.utils.index import Index, IndexList, StaticTuple
 
-from ._gpu.reduction import reduce_launch
+# Import CPU implementations.
+from .backend.cpu.reduction import _reduce_generator_cpu
+
+# Import GPU implementations.
+from .backend.gpu.reduction import _reduce_generator_gpu, reduce_launch
 
 # ===-----------------------------------------------------------------------===#
 # ND indexing helper
@@ -69,8 +73,7 @@ fn _get_nd_indices_from_flat_index(
 
     # The inner dimensions ([outer, outer, inner]) are not traversed if
     # drop last is set.
-    @parameter
-    if shape.size == 2:
+    comptime if shape.size == 2:
         if skip_dim == 1:
             return {flat_index, 0}
         else:
@@ -79,8 +82,7 @@ fn _get_nd_indices_from_flat_index(
     res = {}
     var curr_index = flat_index
 
-    @parameter
-    for i in reversed(range(shape.size)):
+    comptime for i in reversed(range(shape.size)):
         # There is one dimension we skip, this represents the inner loop that
         # is being traversed.
         if i == skip_dim:
@@ -91,7 +93,629 @@ fn _get_nd_indices_from_flat_index(
 
 
 # ===-----------------------------------------------------------------------===#
-# reduce
+# MOGG reduce functions.
+# These take lambdas and don't assume contiguous inputs so can compose
+# with mogg kernels / fusion.
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _reduce_generator[
+    num_reductions: Int,
+    init_type: DType,
+    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
+        IndexList[rank]
+    ) capturing[_] -> SIMD[dtype, width],
+    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
+        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    ) capturing[_] -> None,
+    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int](
+        SIMD[ty, width], SIMD[ty, width]
+    ) capturing[_] -> SIMD[ty, width],
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    shape: IndexList[_, element_type=DType.int64],
+    init: StaticTuple[Scalar[init_type], num_reductions],
+    reduce_dim: Int,
+    context: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    """Reduce the given tensor using the given reduction function. The
+    num_reductions parameter enables callers to execute fused reductions. The
+    reduce_0_fn and output_0_fn should be implemented in a way which routes
+    between the fused reduction methods using their reduction_idx parameter.
+
+    Parameters:
+        num_reductions: The number of fused reductions to perform.
+        init_type: The initial accumulator value for each reduction.
+        input_0_fn: The lambda to use to access the incoming tensor.
+        output_0_fn: The lambda to use to storing to the output tensor.
+        reduce_function: The lambda implementing the reduction.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
+        target: The target to run on.
+
+    Args:
+        shape: The shape of the tensor we are reducing.
+        init: The value to start the reduction from.
+        reduce_dim: The dimension we are reducing.
+        context: The pointer to DeviceContext.
+    """
+    comptime assert is_valid_target[target](), "unsupported target"
+
+    for i in range(len(shape)):
+        if shape[i] == 0:
+            return
+
+    comptime if is_cpu[target]():
+        _reduce_generator_cpu[
+            num_reductions,
+            init_type,
+            input_0_fn,
+            output_0_fn,
+            reduce_function,
+            single_thread_blocking_override,
+        ](shape, init, reduce_dim)
+    else:
+        _reduce_generator_gpu[
+            num_reductions,
+            init_type,
+            input_0_fn,
+            output_0_fn,
+            reduce_function,
+            single_thread_blocking_override,
+        ](shape, init, reduce_dim, context.get_device_context())
+
+
+@always_inline
+fn _reduce_generator_wrapper[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    reduce_function: fn[width: Int](
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) capturing[_] -> SIMD[dtype, width],
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    shape: IndexList[_, element_type=DType.int64],
+    init: Scalar,
+    reduce_dim: Int,
+    context: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    @always_inline
+    @parameter
+    fn input_fn_wrapper[
+        _dtype: DType, width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
+        return input_fn[width, rank](idx)._refine[_dtype]()
+
+    @always_inline
+    @parameter
+    fn output_fn_wrapper[
+        _dtype: DType,
+        width: Int,
+        rank: Int,
+    ](indices: IndexList[rank], value: SIMD[_dtype, width]):
+        output_fn[width, rank](indices, value._refine[dtype]())
+
+    @always_inline
+    @parameter
+    fn reduce_fn[
+        ty: DType, width: Int
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+        return reduce_function(
+            v1._refine[dtype](),
+            v2._refine[dtype](),
+        )._refine[ty]()
+
+    _reduce_generator[
+        input_fn_wrapper,
+        output_fn_wrapper,
+        reduce_fn,
+        target=target,
+        single_thread_blocking_override=single_thread_blocking_override,
+    ](shape, init, reduce_dim, context)
+
+
+@always_inline
+fn _reduce_generator[
+    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
+        IndexList[rank]
+    ) capturing[_] -> SIMD[dtype, width],
+    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    reduce_function: fn[ty: DType, width: Int](
+        SIMD[ty, width], SIMD[ty, width]
+    ) capturing[_] -> SIMD[ty, width],
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    shape: IndexList[_, element_type=DType.int64],
+    init: Scalar,
+    reduce_dim: Int,
+    context: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    """Reduce the given tensor using the given reduction function.
+
+    Constraints:
+        Target must be "cpu".
+
+    Parameters:
+        input_0_fn: The lambda to use to access the incoming tensor.
+        output_0_fn: The lambda to use to storing to the output tensor.
+        reduce_function: The lambda implementing the reduction.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
+        target: The target to run on.
+
+    Args:
+        shape: The shape of the tensor we are reducing.
+        init: The value to start the reduction from.
+        reduce_dim: The dimension we are reducing.
+        context: The pointer to DeviceContext.
+    """
+
+    comptime num_reductions = 1
+
+    @always_inline
+    @parameter
+    fn output_fn_wrapper[
+        dtype: DType, width: Int, rank: Int
+    ](
+        indices: IndexList[rank],
+        val: StaticTuple[SIMD[dtype, width], num_reductions],
+    ):
+        output_0_fn[dtype, width, rank](indices, val[0])
+
+    @always_inline
+    @parameter
+    fn reduce_fn_wrapper[
+        dtype: DType, width: Int, reduction_idx: Int
+    ](val: SIMD[dtype, width], acc: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        comptime assert (
+            reduction_idx < num_reductions
+        ), "invalid reduction index"
+        return reduce_function[dtype, width](val, acc)
+
+    var init_wrapped = StaticTuple[Scalar[init.dtype], num_reductions](init)
+    return _reduce_generator[
+        num_reductions,
+        init.dtype,
+        input_0_fn,
+        output_fn_wrapper,
+        reduce_fn_wrapper,
+        single_thread_blocking_override,
+        target,
+    ](shape, init_wrapped, reduce_dim, context)
+
+
+# ===-----------------------------------------------------------------------===#
+# Dispatch overloads for max, min, sum, product, mean
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn max[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    input_shape: IndexList[_, element_type=DType.int64],
+    reduce_dim: Int,
+    context: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    """Computes the max across the input and output shape.
+
+    This performs the max computation on the domain specified by `input_shape`,
+    loading the inputs using the `input_fn`. The results are stored using
+    the `output_fn`.
+
+    Parameters:
+        dtype: The dtype of the input and output.
+        input_fn: The function to load the input.
+        output_fn: The function to store the output.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
+        target: The target to run on.
+
+    Args:
+        input_shape: The input shape.
+        reduce_dim: The axis to perform the max on.
+        context: The pointer to DeviceContext.
+
+    Raises:
+        If the operation fails.
+    """
+
+    @always_inline
+    @parameter
+    fn input_fn_wrapper[
+        _dtype: DType, width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
+        return input_fn[width, rank](idx)._refine[_dtype]()
+
+    @always_inline
+    @parameter
+    fn output_fn_wrapper[
+        _dtype: DType, width: Int, rank: Int
+    ](indices: IndexList[rank], value: SIMD[_dtype, width]):
+        output_fn[width, rank](indices, value._refine[dtype]())
+
+    @always_inline
+    @parameter
+    fn reduce_impl[
+        ty: DType, width: Int
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+        return _max(v1, v2)
+
+    _reduce_generator[
+        input_fn_wrapper,
+        output_fn_wrapper,
+        reduce_impl,
+        target=target,
+        single_thread_blocking_override=single_thread_blocking_override,
+    ](input_shape, Scalar[dtype].MIN, reduce_dim, context=context)
+
+
+@always_inline
+fn min[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    input_shape: IndexList[_, element_type=DType.int64],
+    reduce_dim: Int,
+    context: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    """Computes the min across the input and output shape.
+
+    This performs the min computation on the domain specified by `input_shape`,
+    loading the inputs using the `input_fn`. The results are stored using
+    the `output_fn`.
+
+    Parameters:
+        dtype: The dtype of the input and output.
+        input_fn: The function to load the input.
+        output_fn: The function to store the output.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
+        target: The target to run on.
+
+    Args:
+        input_shape: The input shape.
+        reduce_dim: The axis to perform the min on.
+        context: The pointer to DeviceContext.
+
+    Raises:
+        If the operation fails.
+    """
+
+    @always_inline
+    @parameter
+    fn input_fn_wrapper[
+        _dtype: DType, width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
+        return input_fn[width, rank](idx)._refine[_dtype]()
+
+    @always_inline
+    @parameter
+    fn output_fn_wrapper[
+        _dtype: DType, width: Int, rank: Int
+    ](indices: IndexList[rank], value: SIMD[_dtype, width]):
+        output_fn[width, rank](indices, value._refine[dtype]())
+
+    @always_inline
+    @parameter
+    fn reduce_impl[
+        ty: DType, width: Int
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+        return _min(v1, v2)
+
+    _reduce_generator[
+        input_fn_wrapper,
+        output_fn_wrapper,
+        reduce_impl,
+        target=target,
+        single_thread_blocking_override=single_thread_blocking_override,
+    ](input_shape, Scalar[dtype].MAX, reduce_dim, context=context)
+
+
+@always_inline
+fn sum[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    input_shape: IndexList[_, element_type=DType.int64],
+    reduce_dim: Int,
+    context: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    """Computes the sum across the input and output shape.
+
+    This performs the sum computation on the domain specified by `input_shape`,
+    loading the inputs using the `input_fn`. The results are stored using
+    the `output_fn`.
+
+    Parameters:
+        dtype: The dtype of the input and output.
+        input_fn: The function to load the input.
+        output_fn: The function to store the output.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
+        target: The target to run on.
+
+    Args:
+        input_shape: The input shape.
+        reduce_dim: The axis to perform the sum on.
+        context: The pointer to DeviceContext.
+
+    Raises:
+        If the operation fails.
+    """
+
+    @always_inline
+    @parameter
+    fn input_fn_wrapper[
+        _dtype: DType, width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
+        return input_fn[width, rank](idx)._refine[_dtype]()
+
+    @always_inline
+    @parameter
+    fn output_fn_wrapper[
+        _dtype: DType, width: Int, rank: Int
+    ](indices: IndexList[rank], value: SIMD[_dtype, width]):
+        output_fn[width, rank](indices, value._refine[dtype]())
+
+    @always_inline
+    @parameter
+    fn reduce_impl[
+        ty: DType, width: Int
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+        return v1 + v2
+
+    _reduce_generator[
+        input_fn_wrapper,
+        output_fn_wrapper,
+        reduce_impl,
+        target=target,
+        single_thread_blocking_override=single_thread_blocking_override,
+    ](input_shape, Scalar[dtype](0), reduce_dim, context=context)
+
+
+@always_inline
+fn product[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    input_shape: IndexList[_, element_type=DType.int64],
+    reduce_dim: Int,
+    context: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    """Computes the product across the input and output shape.
+    This performs the product computation on the domain specified by `input_shape`,
+    loading the inputs using the `input_fn`. The results are stored using
+    the `output_fn`.
+
+    Parameters:
+        dtype: The dtype of the input and output.
+        input_fn: The function to load the input.
+        output_fn: The function to store the output.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
+        target: The target to run on.
+
+    Args:
+        input_shape: The input shape.
+        reduce_dim: The axis to perform the product on.
+        context: The pointer to DeviceContext.
+
+    Raises:
+        If the operation fails.
+    """
+
+    @always_inline
+    @parameter
+    fn input_fn_wrapper[
+        _dtype: DType, width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
+        return input_fn[width, rank](idx)._refine[_dtype]()
+
+    @always_inline
+    @parameter
+    fn output_fn_wrapper[
+        _dtype: DType, width: Int, rank: Int
+    ](indices: IndexList[rank], value: SIMD[_dtype, width]):
+        output_fn[width, rank](indices, value._refine[dtype]())
+
+    @always_inline
+    @parameter
+    fn reduce_impl[
+        ty: DType, width: Int
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+        return v1 * v2
+
+    _reduce_generator[
+        input_fn_wrapper,
+        output_fn_wrapper,
+        reduce_impl,
+        target=target,
+        single_thread_blocking_override=single_thread_blocking_override,
+    ](input_shape, Scalar[dtype](1), reduce_dim, context=context)
+
+
+@always_inline
+fn mean[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    input_shape: IndexList[_, element_type=DType.int64],
+    reduce_dim: Int,
+    output_shape: type_of(input_shape),
+    context: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    """Computes the mean across the input and output shape.
+
+    This performs the mean computation on the domain specified by `input_shape`,
+    loading the inputs using the `input_fn`. The results' domain is
+    `output_shape` which are stored using the `output_fn`.
+
+    Parameters:
+        dtype: The dtype of the input and output.
+        input_fn: The function to load the input.
+        output_fn: The function to store the output.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
+        target: The target to run on.
+
+    Args:
+        input_shape: The input shape.
+        reduce_dim: The axis to perform the mean on.
+        output_shape: The output shape.
+        context: The pointer to DeviceContext.
+
+    Raises:
+        If the operation fails.
+    """
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return ";".join(
+            Span(
+                [
+                    trace_arg("input", input_shape, dtype),
+                    trace_arg("output", output_shape, dtype),
+                ]
+            )
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "mean",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(context),
+    ):
+
+        @always_inline
+        @parameter
+        fn reduce_impl[
+            ty: DType, width: Int
+        ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+            return v1 + v2
+
+        @always_inline
+        @parameter
+        fn input_fn_wrapper[
+            _dtype: DType, width: Int, rank: Int
+        ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
+            return input_fn[width, rank](idx)._refine[_dtype, width]()
+
+        # For floats apply the reciprocal as a multiply.
+        comptime if dtype.is_floating_point():
+            # Apply mean division before storing to the output lambda.
+            var reciprocal = 1.0 / Float64(input_shape[reduce_dim])
+
+            @always_inline
+            @__copy_capture(reciprocal)
+            @parameter
+            fn wrapped_output_mul[
+                _dtype: DType, width: Int, rank: Int
+            ](indices: IndexList[rank], value: SIMD[_dtype, width]):
+                var mean_val = value * reciprocal.cast[_dtype]()
+                output_fn[width, rank](
+                    indices, mean_val._refine[dtype, width]()
+                )
+
+            _reduce_generator[
+                input_fn_wrapper,
+                wrapped_output_mul,
+                reduce_impl,
+                single_thread_blocking_override=single_thread_blocking_override,
+                target=target,
+            ](
+                input_shape,
+                init=Scalar[dtype](0),
+                reduce_dim=reduce_dim,
+                context=context,
+            )
+
+        else:
+            # For ints just a normal divide.
+            var dim_size = input_shape[reduce_dim]
+
+            @always_inline
+            @__copy_capture(dim_size)
+            @parameter
+            fn wrapped_output_div[
+                _dtype: DType, width: Int, rank: Int
+            ](indices: IndexList[rank], value: SIMD[_dtype, width]):
+                var mean_val = value / SIMD[_dtype, width](dim_size)
+                output_fn[width, rank](
+                    indices, mean_val._refine[dtype, width]()
+                )
+
+            _reduce_generator[
+                input_fn_wrapper,
+                wrapped_output_div,
+                reduce_impl,
+                single_thread_blocking_override=single_thread_blocking_override,
+                target=target,
+            ](
+                input_shape,
+                init=Scalar[dtype](0),
+                reduce_dim=reduce_dim,
+                context=context,
+            )
+
+
+# ===-----------------------------------------------------------------------===#
+# CPU-only public API functions
 # ===-----------------------------------------------------------------------===#
 
 
@@ -112,7 +736,7 @@ fn map_reduce[
     reduce_vec_to_scalar_fn: fn[dtype: DType, width: Int](
         SIMD[dtype, width]
     ) -> Scalar[dtype],
-](dst: Span[mut=True, Scalar[dtype]], init: Scalar[acc_type]) -> Scalar[
+](dst: Span[mut=True, Scalar[dtype], _], init: Scalar[acc_type]) -> Scalar[
     acc_type
 ]:
     """Stores the result of calling input_gen_fn in dst and simultaneously
@@ -231,6 +855,11 @@ fn map_reduce[
     return acc[0]
 
 
+# ===-----------------------------------------------------------------------===#
+# reduce
+# ===-----------------------------------------------------------------------===#
+
+
 @always_inline
 @parameter
 fn reduce[
@@ -238,7 +867,7 @@ fn reduce[
         SIMD[acc_type, width], SIMD[dtype, width]
     ) capturing[_] -> SIMD[acc_type, width],
     dtype: DType,
-](src: Span[Scalar[dtype]], init: Scalar[dtype]) raises -> Scalar[dtype]:
+](src: Span[Scalar[dtype], _], init: Scalar[dtype]) raises -> Scalar[dtype]:
     """Computes a custom reduction of buffer elements.
 
     Parameters:
@@ -301,7 +930,7 @@ fn reduce_boolean[
     ] -> Bool,
     continue_fn: fn(Bool) capturing[_] -> Bool,
     dtype: DType,
-](src: Span[Scalar[dtype]], init: Bool) -> Bool:
+](src: Span[Scalar[dtype], _], init: Bool) -> Bool:
     """Computes a bool reduction of buffer elements. The reduction will early
     exit if the `continue_fn` returns False.
 
@@ -349,640 +978,7 @@ fn reduce_boolean[
 
 
 # ===-----------------------------------------------------------------------===#
-# MOGG reduce functions.
-# These take lambdas and don't assume contiguous inputs so can compose
-# with mogg kernels / fusion.
-# ===-----------------------------------------------------------------------===#
-
-
-@always_inline
-fn _reduce_generator[
-    num_reductions: Int,
-    init_type: DType,
-    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing[_] -> None,
-    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int](
-        SIMD[ty, width], SIMD[ty, width]
-    ) capturing[_] -> SIMD[ty, width],
-    /,
-    single_thread_blocking_override: Bool = False,
-    target: StaticString = "cpu",
-](
-    shape: IndexList[_, element_type = DType.int64],
-    init: StaticTuple[Scalar[init_type], num_reductions],
-    reduce_dim: Int,
-    context: DeviceContextPtr = DeviceContextPtr(),
-) raises:
-    """Reduce the given tensor using the given reduction function. The
-    num_reductions parameter enables callers to execute fused reductions. The
-    reduce_0_fn and output_0_fn should be implemented in a way which routes
-    between the fused reduction methods using their reduction_idx parameter.
-
-    Parameters:
-        num_reductions: The number of fused reductions to perform.
-        init_type: The initial accumulator value for each reduction.
-        input_0_fn: The lambda to use to access the incoming tensor.
-        output_0_fn: The lambda to use to storing to the output tensor.
-        reduce_function: The lambda implementing the reduction.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
-        target: The target to run on.
-
-    Args:
-        shape: The shape of the tensor we are reducing.
-        init: The value to start the reduction from.
-        reduce_dim: The dimension we are reducing.
-        context: The pointer to DeviceContext.
-    """
-    comptime assert is_valid_target[target](), "unsupported target"
-
-    for i in range(len(shape)):
-        if shape[i] == 0:
-            return
-
-    @parameter
-    if is_cpu[target]():
-        _reduce_generator_cpu[
-            num_reductions,
-            init_type,
-            input_0_fn,
-            output_0_fn,
-            reduce_function,
-            single_thread_blocking_override,
-        ](shape, init, reduce_dim)
-    else:
-        _reduce_generator_gpu[
-            num_reductions,
-            init_type,
-            input_0_fn,
-            output_0_fn,
-            reduce_function,
-            single_thread_blocking_override,
-        ](shape, init, reduce_dim, context.get_device_context())
-
-
-@always_inline
-fn _reduce_generator_gpu[
-    num_reductions: Int,
-    init_type: DType,
-    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing[_] -> None,
-    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int](
-        SIMD[ty, width], SIMD[ty, width]
-    ) capturing[_] -> SIMD[ty, width],
-    /,
-    single_thread_blocking_override: Bool = False,
-](
-    shape: IndexList[_, element_type = DType.int64],
-    init: StaticTuple[Scalar[init_type], num_reductions],
-    reduce_dim: Int,
-    ctx: DeviceContext,
-) raises:
-    """Reduce the given tensor using the given reduction function on GPU. The
-    num_reductions parameter enables callers to execute fused reductions. The
-    reduce_0_fn and output_0_fn should be implemented in a way which routes
-    between the fused reduction methods using their reduction_idx parameter.
-
-    Parameters:
-        num_reductions: The number of fused reductions to perform.
-        init_type: The initial accumulator value for each reduction.
-        input_0_fn: The lambda to use to access the incoming tensor.
-        output_0_fn: The lambda to use to storing to the output tensor.
-        reduce_function: The lambda implementing the reduction.
-        single_thread_blocking_override: If True, then reduction is run
-          synchronously using a single thread.
-
-    Args:
-        shape: The shape of the tensor we are reducing.
-        init: The value to start the reduction from.
-        reduce_dim: The dimension we are reducing.
-        ctx: The pointer to DeviceContext.
-    """
-
-    var reduce_dim_normalized = (
-        len(shape) + reduce_dim
-    ) if reduce_dim < 0 else reduce_dim
-
-    reduce_launch[
-        num_reductions,
-        input_0_fn,
-        output_0_fn,
-        reduce_function,
-        shape.size,
-        init_type,
-    ](shape, reduce_dim_normalized, init, ctx)
-
-
-@always_inline
-fn _reduce_generator_cpu[
-    num_reductions: Int,
-    init_type: DType,
-    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing[_] -> None,
-    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int](
-        SIMD[ty, width], SIMD[ty, width]
-    ) capturing[_] -> SIMD[ty, width],
-    /,
-    single_thread_blocking_override: Bool = False,
-](
-    shape: IndexList[_, element_type = DType.int64],
-    init: StaticTuple[Scalar[init_type], num_reductions],
-    reduce_dim: Int,
-):
-    """Reduce the given tensor using the given reduction function on CPU. The
-    num_reductions parameter enables callers to execute fused reductions. The
-    reduce_0_fn and output_0_fn should be implemented in a way which routes
-    between the fused reduction methods using their reduction_idx parameter.
-
-    Parameters:
-        num_reductions: The number of fused reductions to perform.
-        init_type: The initial accumulator value for each reduction.
-        input_0_fn: The lambda to use to access the incoming tensor.
-        output_0_fn: The lambda to use to storing to the output tensor.
-        reduce_function: The lambda implementing the reduction.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
-
-    Args:
-        shape: The shape of the tensor we are reducing.
-        init: The value to start the reduction from.
-        reduce_dim: The dimension we are reducing.
-    """
-
-    comptime rank = shape.size
-
-    var reduce_dim_normalized = (
-        rank + reduce_dim
-    ) if reduce_dim < 0 else reduce_dim
-
-    @parameter
-    if shape.size == 1:
-        _reduce_along_inner_dimension[
-            num_reductions,
-            init_type,
-            input_0_fn,
-            output_0_fn,
-            reduce_function,
-            single_thread_blocking_override=single_thread_blocking_override,
-        ](shape, init, reduce_dim_normalized)
-    else:
-        if rank - 1 == reduce_dim_normalized:
-            _reduce_along_inner_dimension[
-                num_reductions,
-                init_type,
-                input_0_fn,
-                output_0_fn,
-                reduce_function,
-                single_thread_blocking_override=single_thread_blocking_override,
-            ](shape, init, reduce_dim_normalized)
-        else:
-            _reduce_along_outer_dimension[
-                num_reductions,
-                init_type,
-                input_0_fn,
-                output_0_fn,
-                reduce_function,
-                single_thread_blocking_override=single_thread_blocking_override,
-            ](shape, init, reduce_dim_normalized)
-
-
-@always_inline
-fn _reduce_generator_wrapper[
-    dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
-        dtype, width
-    ],
-    output_fn: fn[width: Int, rank: Int](
-        IndexList[rank], SIMD[dtype, width]
-    ) capturing[_] -> None,
-    reduce_function: fn[width: Int](
-        SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing[_] -> SIMD[dtype, width],
-    /,
-    single_thread_blocking_override: Bool = False,
-    target: StaticString = "cpu",
-](
-    shape: IndexList[_, element_type = DType.int64],
-    init: Scalar,
-    reduce_dim: Int,
-    context: DeviceContextPtr = DeviceContextPtr(),
-) raises:
-    @always_inline
-    @parameter
-    fn input_fn_wrapper[
-        _dtype: DType, width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
-        return input_fn[width, rank](idx)._refine[_dtype]()
-
-    @always_inline
-    @parameter
-    fn output_fn_wrapper[
-        _dtype: DType,
-        width: Int,
-        rank: Int,
-    ](indices: IndexList[rank], value: SIMD[_dtype, width]):
-        output_fn[width, rank](indices, value._refine[dtype]())
-
-    @always_inline
-    @parameter
-    fn reduce_fn[
-        ty: DType, width: Int
-    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
-        return reduce_function(
-            v1._refine[dtype](),
-            v2._refine[dtype](),
-        )._refine[ty]()
-
-    _reduce_generator[
-        input_fn_wrapper,
-        output_fn_wrapper,
-        reduce_fn,
-        target=target,
-        single_thread_blocking_override=single_thread_blocking_override,
-    ](shape, init, reduce_dim, context)
-
-
-@always_inline
-fn _reduce_generator[
-    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank], SIMD[dtype, width]
-    ) capturing[_] -> None,
-    reduce_function: fn[ty: DType, width: Int](
-        SIMD[ty, width], SIMD[ty, width]
-    ) capturing[_] -> SIMD[ty, width],
-    /,
-    single_thread_blocking_override: Bool = False,
-    target: StaticString = "cpu",
-](
-    shape: IndexList[_, element_type = DType.int64],
-    init: Scalar,
-    reduce_dim: Int,
-    context: DeviceContextPtr = DeviceContextPtr(),
-) raises:
-    """Reduce the given tensor using the given reduction function.
-
-    Constraints:
-        Target must be "cpu".
-
-    Parameters:
-        input_0_fn: The lambda to use to access the incoming tensor.
-        output_0_fn: The lambda to use to storing to the output tensor.
-        reduce_function: The lambda implementing the reduction.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
-        target: The target to run on.
-
-    Args:
-        shape: The shape of the tensor we are reducing.
-        init: The value to start the reduction from.
-        reduce_dim: The dimension we are reducing.
-        context: The pointer to DeviceContext.
-    """
-
-    comptime num_reductions = 1
-
-    @always_inline
-    @parameter
-    fn output_fn_wrapper[
-        dtype: DType, width: Int, rank: Int
-    ](
-        indices: IndexList[rank],
-        val: StaticTuple[SIMD[dtype, width], num_reductions],
-    ):
-        output_0_fn[dtype, width, rank](indices, val[0])
-
-    @always_inline
-    @parameter
-    fn reduce_fn_wrapper[
-        dtype: DType, width: Int, reduction_idx: Int
-    ](val: SIMD[dtype, width], acc: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        comptime assert (
-            reduction_idx < num_reductions
-        ), "invalid reduction index"
-        return reduce_function[dtype, width](val, acc)
-
-    var init_wrapped = StaticTuple[Scalar[init.dtype], num_reductions](init)
-    return _reduce_generator[
-        num_reductions,
-        init.dtype,
-        input_0_fn,
-        output_fn_wrapper,
-        reduce_fn_wrapper,
-        single_thread_blocking_override,
-        target,
-    ](shape, init_wrapped, reduce_dim, context)
-
-
-fn _reduce_along_inner_dimension[
-    num_reductions: Int,
-    init_type: DType,
-    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing[_] -> None,
-    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int](
-        SIMD[ty, width], SIMD[ty, width]
-    ) capturing[_] -> SIMD[ty, width],
-    /,
-    single_thread_blocking_override: Bool = False,
-](
-    shape: IndexList[_, element_type = DType.int64],
-    init_value: StaticTuple[Scalar[init_type], num_reductions],
-    reduce_dim: Int,
-):
-    var total_size: Int = shape.flattened_length()
-    if total_size == 0:
-        return
-
-    var reduce_dim_size = shape[reduce_dim]
-
-    var parallelism_size: Int = total_size // reduce_dim_size
-
-    var num_workers: Int
-
-    @parameter
-    if single_thread_blocking_override:
-        num_workers = 1
-    else:
-        num_workers = _get_num_workers(total_size)
-
-    var chunk_size = ceildiv(parallelism_size, num_workers)
-
-    comptime unroll_factor = 8
-    comptime simd_width = simd_width_of[init_type]()
-    comptime unrolled_simd_width = simd_width * unroll_factor
-
-    var unrolled_simd_compatible_size = align_down(
-        reduce_dim_size, unrolled_simd_width
-    )
-    var simd_compatible_size = align_down(reduce_dim_size, simd_width)
-
-    @always_inline
-    @parameter
-    fn simd_reduce_helper_fn[
-        in_width: Int,
-        out_width: Int,
-    ](
-        in_acc_tup: StaticTuple[SIMD[init_type, in_width], num_reductions]
-    ) -> StaticTuple[SIMD[init_type, out_width], num_reductions]:
-        var out_acc_tup = StaticTuple[
-            SIMD[init_type, out_width], num_reductions
-        ]()
-
-        @parameter
-        for i in range(num_reductions):
-            out_acc_tup[i] = in_acc_tup[i].reduce[
-                reduce_function[init_type, reduction_idx=i], out_width
-            ]()
-
-        return out_acc_tup
-
-    @always_inline
-    @parameter
-    fn reduce_rows_unrolled(start_row: Int, end_row: Int):
-        # Iterate over the non reduced dimensions.
-        for flat_index in range(start_row, end_row):
-            # In normal elementwise get_nd_indices skips the last dimension as
-            # it is the dimension being iterated over. In our case we don't know
-            # this yet so we do have to calculate the extra one.
-            var indices = _get_nd_indices_from_flat_index(
-                flat_index, shape, reduce_dim
-            )
-
-            @always_inline
-            @parameter
-            fn unrolled_reduce_helper_fn[
-                width: Int,
-            ](
-                start: Int,
-                finish: Int,
-                init: StaticTuple[SIMD[init_type, width], num_reductions],
-            ) -> StaticTuple[SIMD[init_type, width], num_reductions]:
-                var acc = init
-                for idx in range(start, finish, width):
-                    indices[reduce_dim] = idx
-                    var load_value = input_0_fn[init_type, width](indices)
-
-                    @parameter
-                    for i in range(num_reductions):
-                        acc[i] = reduce_function[init_type, width, i](
-                            load_value, acc[i]
-                        )
-
-                return acc
-
-            # initialize our accumulator
-            var acc_unrolled_simd_tup = StaticTuple[
-                SIMD[
-                    init_type,
-                    unrolled_simd_width,
-                ],
-                num_reductions,
-            ]()
-
-            @parameter
-            for i in range(num_reductions):
-                acc_unrolled_simd_tup[i] = SIMD[
-                    init_type,
-                    unrolled_simd_width,
-                ](init_value[i])
-
-            # Loop over unroll_factor*simd_width chunks.
-            acc_unrolled_simd_tup = unrolled_reduce_helper_fn[
-                unrolled_simd_width
-            ](0, unrolled_simd_compatible_size, acc_unrolled_simd_tup)
-
-            # Reduce to simd_width
-            var acc_simd_tup = simd_reduce_helper_fn[
-                unrolled_simd_width,
-                simd_width,
-            ](acc_unrolled_simd_tup)
-
-            # Loop over tail simd_width chunks
-            acc_simd_tup = unrolled_reduce_helper_fn[simd_width](
-                unrolled_simd_compatible_size,
-                simd_compatible_size,
-                acc_simd_tup,
-            )
-
-            # Reduce to scalars
-            var acc_scalar_tup = simd_reduce_helper_fn[
-                simd_width,
-                1,
-            ](acc_simd_tup)
-
-            # Loop over tail scalars
-            acc_scalar_tup = unrolled_reduce_helper_fn[1](
-                simd_compatible_size, reduce_dim_size, acc_scalar_tup
-            )
-
-            # Store the result back to the output.
-            indices[reduce_dim] = 0
-            output_0_fn(indices, acc_scalar_tup)
-
-    @always_inline
-    @parameter
-    fn reduce_rows(i: Int):
-        var start_parallel_offset = i * chunk_size
-        var end_parallel_offset = _min((i + 1) * chunk_size, parallelism_size)
-
-        var length = end_parallel_offset - start_parallel_offset
-        if length <= 0:
-            return
-
-        reduce_rows_unrolled(start_parallel_offset, end_parallel_offset)
-
-    @parameter
-    if single_thread_blocking_override:
-        reduce_rows_unrolled(0, parallelism_size)
-    else:
-        sync_parallelize[reduce_rows](num_workers)
-    _ = reduce_dim_size
-    _ = parallelism_size
-    _ = chunk_size
-    _ = unrolled_simd_compatible_size
-    _ = simd_compatible_size
-
-
-fn _reduce_along_outer_dimension[
-    num_reductions: Int,
-    init_type: DType,
-    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing[_] -> None,
-    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int](
-        SIMD[ty, width], SIMD[ty, width]
-    ) capturing[_] -> SIMD[ty, width],
-    /,
-    single_thread_blocking_override: Bool = False,
-](
-    shape: IndexList[_, element_type = DType.int64],
-    init: StaticTuple[Scalar[init_type], num_reductions],
-    reduce_dim: Int,
-):
-    """Reduce the given tensor using the given reduction function. The
-    num_reductions parameter enables callers to execute fused reductions. The
-    reduce_0_fn and output_0_fn should be implemented in a way which routes
-    between the fused reduction methods using their reduction_idx parameter.
-
-    Parameters:
-        num_reductions: The number of fused reductions to execute in parallel.
-        init_type: The initial accumulator value for each reduction.
-        input_0_fn: The lambda to use to access the incoming tensor.
-        output_0_fn: The lambda to use to storing to the output tensor.
-        reduce_function: The lambda implementing the reduction.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
-
-    Args:
-        shape: The shape of the tensor we are reducing
-        init: The value to start the reduction from.
-        reduce_dim: The dimension we are reducing.
-    """
-    comptime rank = shape.size
-    comptime dtype = init.element_type
-
-    # Compute the number of workers to allocate based on ALL work, not just
-    # the dimensions we split across.
-    comptime simd_width = simd_width_of[dtype]()
-
-    var total_size: Int = shape.flattened_length()
-    if total_size == 0:
-        return
-
-    var reduce_dim_size = shape[reduce_dim]
-    var inner_dim = shape[rank - 1]
-
-    # parallelize across slices of the input, where a slice is [reduce_dim, inner_dim]
-    # the slice is composed of [reduce_dim, simd_width] chunks
-    # these chunks are reduced simultaneously across the reduce_dim using simd instructions
-    # and accumulation
-    var parallelism_size: Int = total_size // (reduce_dim_size * inner_dim)
-
-    var num_workers: Int
-
-    @parameter
-    if single_thread_blocking_override:
-        num_workers = 1
-    else:
-        num_workers = _get_num_workers(total_size)
-
-    var chunk_size = ceildiv(parallelism_size, num_workers)
-
-    @parameter
-    fn reduce_slices(i: Int):
-        var start_parallel_offset = i * chunk_size
-        var end_parallel_offset = _min((i + 1) * chunk_size, parallelism_size)
-
-        var length = end_parallel_offset - start_parallel_offset
-
-        if length <= 0:
-            return
-
-        for var slice_idx in range(start_parallel_offset, end_parallel_offset):
-
-            @always_inline
-            fn reduce_chunk[simd_width: Int](inner_dim_idx: Int) unified {read}:
-                var acc_simd_tup = StaticTuple[
-                    SIMD[init_type, simd_width], num_reductions
-                ]()
-
-                @parameter
-                for i in range(num_reductions):
-                    acc_simd_tup[i] = SIMD[init_type, simd_width](init[i])
-
-                var reduce_vector_idx = slice_idx * inner_dim + inner_dim_idx
-                var indices = _get_nd_indices_from_flat_index(
-                    reduce_vector_idx, shape, reduce_dim
-                )
-                for reduce_dim_idx in range(reduce_dim_size):
-                    indices[reduce_dim] = reduce_dim_idx
-                    var load_value = input_0_fn[
-                        init_type, simd_width, shape.size
-                    ](indices)
-
-                    @parameter
-                    for i in range(num_reductions):
-                        acc_simd_tup[i] = reduce_function[
-                            init_type, simd_width, i
-                        ](load_value, acc_simd_tup[i])
-
-                indices[reduce_dim] = 0
-                output_0_fn[init_type, simd_width, indices.size](
-                    indices, acc_simd_tup
-                )
-
-            vectorize[simd_width](inner_dim, reduce_chunk)
-
-    @parameter
-    if single_thread_blocking_override:
-        reduce_slices(0)
-    else:
-        sync_parallelize[reduce_slices](num_workers)
-
-
-# ===-----------------------------------------------------------------------===#
-# max
+# max (Span overload)
 # ===-----------------------------------------------------------------------===#
 
 
@@ -1011,7 +1007,7 @@ fn _simd_max_elementwise[
     return _max(x, y.cast[acc_type]())
 
 
-fn max[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
+fn max[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
     """Computes the max element in a buffer.
 
     Parameters:
@@ -1029,78 +1025,8 @@ fn max[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
     return reduce[_simd_max_elementwise](src, Scalar[dtype].MIN)
 
 
-@always_inline
-fn max[
-    dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
-        dtype, width
-    ],
-    output_fn: fn[width: Int, rank: Int](
-        IndexList[rank], SIMD[dtype, width]
-    ) capturing[_] -> None,
-    /,
-    single_thread_blocking_override: Bool = False,
-    target: StaticString = "cpu",
-](
-    input_shape: IndexList[_, element_type = DType.int64],
-    reduce_dim: Int,
-    context: DeviceContextPtr = DeviceContextPtr(),
-) raises:
-    """Computes the max across the input and output shape.
-
-    This performs the max computation on the domain specified by `input_shape`,
-    loading the inputs using the `input_fn`. The results are stored using
-    the `output_fn`.
-
-    Parameters:
-        dtype: The dtype of the input and output.
-        input_fn: The function to load the input.
-        output_fn: The function to store the output.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
-        target: The target to run on.
-
-    Args:
-        input_shape: The input shape.
-        reduce_dim: The axis to perform the max on.
-        context: The pointer to DeviceContext.
-
-    Raises:
-        If the operation fails.
-    """
-
-    @always_inline
-    @parameter
-    fn input_fn_wrapper[
-        _dtype: DType, width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
-        return input_fn[width, rank](idx)._refine[_dtype]()
-
-    @always_inline
-    @parameter
-    fn output_fn_wrapper[
-        _dtype: DType, width: Int, rank: Int
-    ](indices: IndexList[rank], value: SIMD[_dtype, width]):
-        output_fn[width, rank](indices, value._refine[dtype]())
-
-    @always_inline
-    @parameter
-    fn reduce_impl[
-        ty: DType, width: Int
-    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
-        return _max(v1, v2)
-
-    _reduce_generator[
-        input_fn_wrapper,
-        output_fn_wrapper,
-        reduce_impl,
-        target=target,
-        single_thread_blocking_override=single_thread_blocking_override,
-    ](input_shape, Scalar[dtype].MIN, reduce_dim, context=context)
-
-
 # ===-----------------------------------------------------------------------===#
-# min
+# min (Span overload)
 # ===-----------------------------------------------------------------------===#
 
 
@@ -1126,7 +1052,7 @@ fn _simd_min_elementwise[
     return _min(x, y.cast[acc_type]())
 
 
-fn min[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
+fn min[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
     """Computes the min element in a buffer.
 
     Parameters:
@@ -1144,78 +1070,8 @@ fn min[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
     return reduce[_simd_min_elementwise](src, Scalar[dtype].MAX)
 
 
-@always_inline
-fn min[
-    dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
-        dtype, width
-    ],
-    output_fn: fn[width: Int, rank: Int](
-        IndexList[rank], SIMD[dtype, width]
-    ) capturing[_] -> None,
-    /,
-    single_thread_blocking_override: Bool = False,
-    target: StaticString = "cpu",
-](
-    input_shape: IndexList[_, element_type = DType.int64],
-    reduce_dim: Int,
-    context: DeviceContextPtr = DeviceContextPtr(),
-) raises:
-    """Computes the min across the input and output shape.
-
-    This performs the min computation on the domain specified by `input_shape`,
-    loading the inputs using the `input_fn`. The results are stored using
-    the `output_fn`.
-
-    Parameters:
-        dtype: The dtype of the input and output.
-        input_fn: The function to load the input.
-        output_fn: The function to store the output.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
-        target: The target to run on.
-
-    Args:
-        input_shape: The input shape.
-        reduce_dim: The axis to perform the min on.
-        context: The pointer to DeviceContext.
-
-    Raises:
-        If the operation fails.
-    """
-
-    @always_inline
-    @parameter
-    fn input_fn_wrapper[
-        _dtype: DType, width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
-        return input_fn[width, rank](idx)._refine[_dtype]()
-
-    @always_inline
-    @parameter
-    fn output_fn_wrapper[
-        _dtype: DType, width: Int, rank: Int
-    ](indices: IndexList[rank], value: SIMD[_dtype, width]):
-        output_fn[width, rank](indices, value._refine[dtype]())
-
-    @always_inline
-    @parameter
-    fn reduce_impl[
-        ty: DType, width: Int
-    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
-        return _min(v1, v2)
-
-    _reduce_generator[
-        input_fn_wrapper,
-        output_fn_wrapper,
-        reduce_impl,
-        target=target,
-        single_thread_blocking_override=single_thread_blocking_override,
-    ](input_shape, Scalar[dtype].MAX, reduce_dim, context=context)
-
-
 # ===-----------------------------------------------------------------------===#
-# sum
+# sum (Span and 1d overloads)
 # ===-----------------------------------------------------------------------===#
 
 
@@ -1241,7 +1097,7 @@ fn _simd_sum_elementwise[
     return x + y.cast[acc_type]()
 
 
-fn sum[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
+fn sum[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
     """Computes the sum of buffer elements.
 
     Parameters:
@@ -1267,76 +1123,6 @@ fn sum[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
         )
 
     return sum[dtype, input_fn_1d](len(src))
-
-
-@always_inline
-fn sum[
-    dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
-        dtype, width
-    ],
-    output_fn: fn[width: Int, rank: Int](
-        IndexList[rank], SIMD[dtype, width]
-    ) capturing[_] -> None,
-    /,
-    single_thread_blocking_override: Bool = False,
-    target: StaticString = "cpu",
-](
-    input_shape: IndexList[_, element_type = DType.int64],
-    reduce_dim: Int,
-    context: DeviceContextPtr = DeviceContextPtr(),
-) raises:
-    """Computes the sum across the input and output shape.
-
-    This performs the sum computation on the domain specified by `input_shape`,
-    loading the inputs using the `input_fn`. The results are stored using
-    the `output_fn`.
-
-    Parameters:
-        dtype: The dtype of the input and output.
-        input_fn: The function to load the input.
-        output_fn: The function to store the output.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
-        target: The target to run on.
-
-    Args:
-        input_shape: The input shape.
-        reduce_dim: The axis to perform the sum on.
-        context: The pointer to DeviceContext.
-
-    Raises:
-        If the operation fails.
-    """
-
-    @always_inline
-    @parameter
-    fn input_fn_wrapper[
-        _dtype: DType, width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
-        return input_fn[width, rank](idx)._refine[_dtype]()
-
-    @always_inline
-    @parameter
-    fn output_fn_wrapper[
-        _dtype: DType, width: Int, rank: Int
-    ](indices: IndexList[rank], value: SIMD[_dtype, width]):
-        output_fn[width, rank](indices, value._refine[dtype]())
-
-    @always_inline
-    @parameter
-    fn reduce_impl[
-        ty: DType, width: Int
-    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
-        return v1 + v2
-
-    _reduce_generator[
-        input_fn_wrapper,
-        output_fn_wrapper,
-        reduce_impl,
-        target=target,
-        single_thread_blocking_override=single_thread_blocking_override,
-    ](input_shape, Scalar[dtype](0), reduce_dim, context=context)
 
 
 fn sum[
@@ -1406,7 +1192,7 @@ fn sum[
 
 
 # ===-----------------------------------------------------------------------===#
-# product
+# product (Span overload)
 # ===-----------------------------------------------------------------------===#
 
 
@@ -1432,7 +1218,7 @@ fn _simd_product_elementwise[
     return x * y.cast[acc_type]()
 
 
-fn product[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
+fn product[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
     """Computes the product of the buffer elements.
 
     Parameters:
@@ -1450,81 +1236,12 @@ fn product[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
     return reduce[_simd_product_elementwise](src, Scalar[dtype](1))
 
 
-@always_inline
-fn product[
-    dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
-        dtype, width
-    ],
-    output_fn: fn[width: Int, rank: Int](
-        IndexList[rank], SIMD[dtype, width]
-    ) capturing[_] -> None,
-    /,
-    single_thread_blocking_override: Bool = False,
-    target: StaticString = "cpu",
-](
-    input_shape: IndexList[_, element_type = DType.int64],
-    reduce_dim: Int,
-    context: DeviceContextPtr = DeviceContextPtr(),
-) raises:
-    """Computes the product across the input and output shape.
-    This performs the product computation on the domain specified by `input_shape`,
-    loading the inputs using the `input_fn`. The results are stored using
-    the `output_fn`.
-
-    Parameters:
-        dtype: The dtype of the input and output.
-        input_fn: The function to load the input.
-        output_fn: The function to store the output.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
-        target: The target to run on.
-
-    Args:
-        input_shape: The input shape.
-        reduce_dim: The axis to perform the product on.
-        context: The pointer to DeviceContext.
-
-    Raises:
-        If the operation fails.
-    """
-
-    @always_inline
-    @parameter
-    fn input_fn_wrapper[
-        _dtype: DType, width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
-        return input_fn[width, rank](idx)._refine[_dtype]()
-
-    @always_inline
-    @parameter
-    fn output_fn_wrapper[
-        _dtype: DType, width: Int, rank: Int
-    ](indices: IndexList[rank], value: SIMD[_dtype, width]):
-        output_fn[width, rank](indices, value._refine[dtype]())
-
-    @always_inline
-    @parameter
-    fn reduce_impl[
-        ty: DType, width: Int
-    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
-        return v1 * v2
-
-    _reduce_generator[
-        input_fn_wrapper,
-        output_fn_wrapper,
-        reduce_impl,
-        target=target,
-        single_thread_blocking_override=single_thread_blocking_override,
-    ](input_shape, Scalar[dtype](1), reduce_dim, context=context)
-
-
 # ===-----------------------------------------------------------------------===#
-# mean
+# mean (Span and 1d overloads)
 # ===-----------------------------------------------------------------------===#
 
 
-fn mean[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
+fn mean[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
     """Computes the mean value of the elements in a buffer.
 
     Parameters:
@@ -1540,7 +1257,7 @@ fn mean[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
         If the operation fails.
     """
 
-    debug_assert(len(src) != 0, "input must not be empty")
+    assert len(src) != 0, "input must not be empty"
 
     @parameter
     @always_inline
@@ -1552,139 +1269,6 @@ fn mean[dtype: DType](src: Span[Scalar[dtype]]) raises -> Scalar[dtype]:
         )
 
     return mean[dtype, input_fn_1d](len(src))
-
-
-@always_inline
-fn mean[
-    dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
-        dtype, width
-    ],
-    output_fn: fn[width: Int, rank: Int](
-        IndexList[rank], SIMD[dtype, width]
-    ) capturing[_] -> None,
-    /,
-    single_thread_blocking_override: Bool = False,
-    target: StaticString = "cpu",
-](
-    input_shape: IndexList[_, element_type = DType.int64],
-    reduce_dim: Int,
-    output_shape: type_of(input_shape),
-    context: DeviceContextPtr = DeviceContextPtr(),
-) raises:
-    """Computes the mean across the input and output shape.
-
-    This performs the mean computation on the domain specified by `input_shape`,
-    loading the inputs using the `input_fn`. The results' domain is
-    `output_shape` which are stored using the `output_fn`.
-
-    Parameters:
-        dtype: The dtype of the input and output.
-        input_fn: The function to load the input.
-        output_fn: The function to store the output.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
-        target: The target to run on.
-
-    Args:
-        input_shape: The input shape.
-        reduce_dim: The axis to perform the mean on.
-        output_shape: The output shape.
-        context: The pointer to DeviceContext.
-
-    Raises:
-        If the operation fails.
-    """
-
-    @always_inline
-    @parameter
-    fn description_fn() -> String:
-        return ";".join(
-            Span(
-                [
-                    trace_arg("input", input_shape, dtype),
-                    trace_arg("output", output_shape, dtype),
-                ]
-            )
-        )
-
-    with Trace[TraceLevel.OP, target=target](
-        "mean",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=get_safe_task_id(context),
-    ):
-
-        @always_inline
-        @parameter
-        fn reduce_impl[
-            ty: DType, width: Int
-        ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
-            return v1 + v2
-
-        @always_inline
-        @parameter
-        fn input_fn_wrapper[
-            _dtype: DType, width: Int, rank: Int
-        ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
-            return input_fn[width, rank](idx)._refine[_dtype, width]()
-
-        # For floats apply the reciprocal as a multiply.
-        @parameter
-        if dtype.is_floating_point():
-            # Apply mean division before storing to the output lambda.
-            var reciprocal = 1.0 / Float64(input_shape[reduce_dim])
-
-            @always_inline
-            @__copy_capture(reciprocal)
-            @parameter
-            fn wrapped_output_mul[
-                _dtype: DType, width: Int, rank: Int
-            ](indices: IndexList[rank], value: SIMD[_dtype, width]):
-                var mean_val = value * reciprocal.cast[_dtype]()
-                output_fn[width, rank](
-                    indices, mean_val._refine[dtype, width]()
-                )
-
-            _reduce_generator[
-                input_fn_wrapper,
-                wrapped_output_mul,
-                reduce_impl,
-                single_thread_blocking_override=single_thread_blocking_override,
-                target=target,
-            ](
-                input_shape,
-                init=Scalar[dtype](0),
-                reduce_dim=reduce_dim,
-                context=context,
-            )
-
-        else:
-            # For ints just a normal divide.
-            var dim_size = input_shape[reduce_dim]
-
-            @always_inline
-            @__copy_capture(dim_size)
-            @parameter
-            fn wrapped_output_div[
-                _dtype: DType, width: Int, rank: Int
-            ](indices: IndexList[rank], value: SIMD[_dtype, width]):
-                var mean_val = value / SIMD[_dtype, width](dim_size)
-                output_fn[width, rank](
-                    indices, mean_val._refine[dtype, width]()
-                )
-
-            _reduce_generator[
-                input_fn_wrapper,
-                wrapped_output_div,
-                reduce_impl,
-                single_thread_blocking_override=single_thread_blocking_override,
-                target=target,
-            ](
-                input_shape,
-                init=Scalar[dtype](0),
-                reduce_dim=reduce_dim,
-                context=context,
-            )
 
 
 fn mean[
@@ -1710,8 +1294,7 @@ fn mean[
     """
     var total = sum[dtype, input_fn_1d](length)
 
-    @parameter
-    if dtype.is_integral():
+    comptime if dtype.is_integral():
         return total // Scalar[dtype](length)
     else:
         return total / Scalar[dtype](length)
@@ -1725,7 +1308,7 @@ fn mean[
 fn variance[
     dtype: DType
 ](
-    src: Span[Scalar[dtype]], mean_value: Scalar[dtype], correction: Int = 1
+    src: Span[Scalar[dtype], _], mean_value: Scalar[dtype], correction: Int = 1
 ) raises -> Scalar[dtype]:
     """Given a mean, computes the variance of elements in a buffer.
 
@@ -1750,7 +1333,7 @@ fn variance[
         If the operation fails.
     """
 
-    debug_assert(len(src) > 1, "input length must be greater than 1")
+    assert len(src) > 1, "input length must be greater than 1"
 
     @parameter
     @always_inline
@@ -1846,7 +1429,7 @@ fn variance[
 
 fn variance[
     dtype: DType
-](src: Span[Scalar[dtype]], correction: Int = 1) raises -> Scalar[dtype]:
+](src: Span[Scalar[dtype], _], correction: Int = 1) raises -> Scalar[dtype]:
     """Computes the variance value of the elements in a buffer.
 
     ```
@@ -1915,7 +1498,7 @@ fn variance[
 @always_inline
 fn _cumsum_small[
     dtype: DType
-](dst: Span[mut=True, Scalar[dtype]], src: Span[Scalar[dtype]]):
+](dst: Span[mut=True, Scalar[dtype], _], src: Span[Scalar[dtype], _]):
     dst[0] = src[0]
     for i in range(1, len(dst)):
         dst[i] = src[i] + dst[i - 1]
@@ -1923,7 +1506,7 @@ fn _cumsum_small[
 
 fn cumsum[
     dtype: DType
-](dst: Span[mut=True, Scalar[dtype]], src: Span[Scalar[dtype]]):
+](dst: Span[mut=True, Scalar[dtype], _], src: Span[Scalar[dtype], _]):
     """Computes the cumulative sum of all elements in a buffer.
        dst[i] = src[i] + src[i-1] + ... + src[0].
 
@@ -1935,8 +1518,8 @@ fn cumsum[
         src: The buffer of elements for which the cumulative sum is computed.
     """
 
-    debug_assert(len(src) != 0, "Input must not be empty")
-    debug_assert(len(dst) != 0, "Output must not be empty")
+    assert len(src) != 0, "Input must not be empty"
+    assert len(dst) != 0, "Output must not be empty"
 
     comptime simd_width = simd_width_of[dtype]()
 
@@ -1960,8 +1543,7 @@ fn cumsum[
     for i in range(0, div_size, simd_width):
         var x_simd = src.unsafe_ptr().load[width=simd_width](i)
 
-        @parameter
-        for i in range(rep):
+        comptime for i in range(rep):
             x_simd += x_simd.shift_right[2**i]()
 
         dst.unsafe_ptr().store(i, x_simd)

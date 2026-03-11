@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Defines the :class:`ComponentModel` abstract base class for pipeline components."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

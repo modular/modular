@@ -1,0 +1,132 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import CodeBlock from '@theme/CodeBlock';
+import Admonition from '@theme/Admonition';
+import Link from '@docusaurus/Link';
+import ConditionalVersionDocs from '@site/src/components/ConditionalVersionDocs'
+import Tooltip from '@site/src/components/Tooltip/tooltip';
+
+export default function InstallModular({ folder = "example-project", extraLibraries = [] }) {
+  const extraLibsString = extraLibraries.length > 0 ? ' ' + extraLibraries.join(' ') : '';
+  const extraLibsDescription = extraLibraries.length > 0
+    ? ' and other required packages'
+    : '';
+  const tooltipNightly = (<Tooltip
+    parent="nightly"
+    content="To get the stable build, change the version in the website header."
+  />);
+  const tooltipStable = (<Tooltip
+    parent="stable"
+    content="To get the nightly build, change the version in the website header."
+  />);
+  return (
+    <>
+      <Tabs groupId="install">
+        <TabItem value="pixi" label="pixi">
+          <ol>
+            <li>
+              If you don't have it, install <a
+                href="https://pixi.sh/latest/"><code>pixi</code></a>:
+              <CodeBlock language="sh">
+                {`curl -fsSL https://pixi.sh/install.sh | sh`}
+              </CodeBlock>
+              <p>Then restart your terminal for the changes to take effect.</p>
+            </li>
+
+            <li>
+              Create a project:
+              <CodeBlock language="sh">
+                {`pixi init ${folder} \\
+  -c https://conda.modular.com/max-nightly/ -c conda-forge \\
+  && cd ${folder}`}
+              </CodeBlock>
+
+              <Admonition type="tip">
+                <p>
+                  <b>Tip:</b>{' '}
+                  You can skip the <code>-c</code> options if you{' '}
+                  <Link to="/pixi#create-a-project-and-virtual-environment">
+                    add these channels as defaults
+                  </Link>.
+                </p>
+              </Admonition>
+
+            </li>
+
+            <ConditionalVersionDocs version="nightly">
+              <li>
+                Install <code>modular</code> ({tooltipNightly}){extraLibsDescription}:
+                <CodeBlock language="sh">
+                  {`pixi add modular${extraLibsString}`}
+                </CodeBlock>
+              </li>
+            </ConditionalVersionDocs>
+            <ConditionalVersionDocs version="stable">
+              <li>
+                Install <code>modular</code> ({tooltipStable}){extraLibsDescription}:
+                <CodeBlock language="sh">
+                  {`pixi add "modular==26.2"${extraLibsString}`}
+                </CodeBlock>
+              </li>
+            </ConditionalVersionDocs>
+
+            <li>
+              Start the virtual environment:
+              <CodeBlock language="sh">
+                {`pixi shell`}
+              </CodeBlock>
+            </li>
+          </ol>
+        </TabItem>
+
+        <TabItem value="uv" label="uv">
+          <ol>
+            <li>
+              If you don't have it, install <a
+                href="https://docs.astral.sh/uv/"><code>uv</code></a>:
+              <CodeBlock language="sh">
+                {`curl -LsSf https://astral.sh/uv/install.sh | sh`}
+              </CodeBlock>
+              <p>Then restart your terminal to make <code>uv</code> accessible.</p>
+            </li>
+
+            <li>
+              Create a project:
+              <CodeBlock language="sh">
+                {`uv init ${folder} && cd ${folder}`}
+              </CodeBlock>
+            </li>
+
+            <li>
+              Create and start a virtual environment:
+              <CodeBlock language="sh">
+                {`uv venv && source .venv/bin/activate`}
+              </CodeBlock>
+            </li>
+
+            <ConditionalVersionDocs version="nightly">
+              <li>
+                Install <code>modular</code> ({tooltipNightly}){extraLibsDescription}:
+                <CodeBlock language="sh">
+                  {`uv pip install modular${extraLibsString} \\
+    --index https://whl.modular.com/nightly/simple/ \\
+    --prerelease allow`}
+                </CodeBlock>
+              </li>
+            </ConditionalVersionDocs>
+            <ConditionalVersionDocs version="stable">
+              <li>
+                Install <code>modular</code> ({tooltipStable}){extraLibsDescription}:
+                <CodeBlock language="sh">
+                  {`uv pip install modular${extraLibsString} \\
+    --extra-index-url https://modular.gateway.scarf.sh/simple/`}
+                </CodeBlock>
+              </li>
+            </ConditionalVersionDocs>
+          </ol>
+        </TabItem>
+
+      </Tabs>
+    </>
+  );
+}

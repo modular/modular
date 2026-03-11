@@ -13,25 +13,21 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import block_idx
-from gpu.host import DeviceContext
+from std.gpu import block_idx
+from std.gpu.host import DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.grouped_matmul_tile_scheduler import TileScheduler
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
-from utils.index import Index
+from std.utils.index import Index, IndexList
 
 
 fn test_kernel[
     swizzle: Bool, shape: DimList
-](group_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin, shape]):
+](group_offsets: NDBuffer[rank=1, DType.uint32, MutAnyOrigin, shape]):
     var offset_tensor = from_ndbuffer_row_major(group_offsets)
     scheduler = TileScheduler[
         static_MN=20,
-        tile_shape = Index(4, 8, 16),
-        cluster = Index(1, 1, 1),
+        tile_shape=Index(4, 8, 16),
+        cluster=Index(1, 1, 1),
         swizzle=swizzle,
     ](len(group_offsets) - 1, offset_tensor)
 
@@ -42,14 +38,12 @@ fn test_kernel[
         print(block_idx.x, work_info)
 
 
-def test(ctx: DeviceContext):
+def test(ctx: DeviceContext) raises:
     comptime group_len = 3
     comptime offset_shape = DimList(group_len + 1)
 
     # Host allocation
-    var host_group_offsets_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        group_len + 1
-    )
+    var host_group_offsets_ptr = alloc[Scalar[DType.uint32]](group_len + 1)
     host_group_offsets_ptr[0] = 0
     host_group_offsets_ptr[1] = 18
     host_group_offsets_ptr[2] = 24
@@ -59,9 +53,9 @@ def test(ctx: DeviceContext):
     var dev_group_offsets_buffer = ctx.enqueue_create_buffer[DType.uint32](
         group_len + 1
     )
-    var dev_group_offsets = NDBuffer[DType.uint32, 1, _, offset_shape](
+    var dev_group_offsets = NDBuffer[rank=1, DType.uint32, _, offset_shape](
         dev_group_offsets_buffer.unsafe_ptr(),
-        offset_shape,
+        IndexList[1](group_len + 1),
     )
 
     ctx.enqueue_copy(dev_group_offsets_buffer, host_group_offsets_ptr)
@@ -149,6 +143,6 @@ def test(ctx: DeviceContext):
     _ = dev_group_offsets_buffer^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test(ctx)

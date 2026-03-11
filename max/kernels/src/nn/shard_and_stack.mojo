@@ -11,23 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import parallelize, sync_parallelize
-from gpu.host import DeviceBuffer
-from memory import memcpy
-from runtime.asyncrt import DeviceContextPtrList
+from std.algorithm import parallelize, sync_parallelize
+from std.gpu.host import DeviceBuffer
+from std.memory import memcpy
+from std.runtime.asyncrt import DeviceContextPtrList
 from tensor import InputVariadicTensors, OutputVariadicTensors
-from utils import IndexList, product
-
-
-fn _row_major_strides[rank: Int](shape: IndexList[rank]) -> IndexList[rank]:
-    var offset = 1
-    var strides = IndexList[rank]()
-
-    @parameter
-    for i in reversed(range(rank)):
-        strides[i] = offset
-        offset *= shape[i]
-    return strides
+from std.utils import IndexList, product
 
 
 fn _validate_shard_and_stack[
@@ -35,8 +24,9 @@ fn _validate_shard_and_stack[
 ](
     outputs: OutputVariadicTensors,
     inputs: InputVariadicTensors[
-        dtype = outputs.dtype,
-        rank = outputs.rank - 1,
+        dtype=outputs.dtype,
+        rank=outputs.rank - 1,
+        ...,
     ],
 ) raises:
     """Validate inputs and outputs for shard_and_stack operation.
@@ -48,11 +38,11 @@ fn _validate_shard_and_stack[
         outputs: Output tensors, one per device/shard.
         inputs: Input tensors to be sharded, all with identical shapes.
     """
-    constrained[inputs.size > 0, "must have one or more inputs"]()
-    constrained[0 <= axis < inputs.rank, "axis must be in [0, inputs.rank)"]()
+    comptime assert inputs.size > 0, "must have one or more inputs"
+    comptime assert 0 <= axis < inputs.rank, "axis must be in [0, inputs.rank)"
 
     var input_shape = inputs[0].shape()
-    var row_major_strides = _row_major_strides(input_shape)
+    var row_major_strides = input_shape.get_row_major_strides()
 
     # Validate that all inputs must have the same shape and row-major strides
     for i in range(inputs.size):
@@ -108,8 +98,9 @@ fn _shard_and_stack_multi_device[
 ](
     outputs: OutputVariadicTensors,
     inputs: InputVariadicTensors[
-        dtype = outputs.dtype,
-        rank = outputs.rank - 1,
+        dtype=outputs.dtype,
+        rank=outputs.rank - 1,
+        ...,
     ],
     dev_ctxs_input: DeviceContextPtrList,
 ) raises:
@@ -195,8 +186,9 @@ fn _shard_and_stack_single_device[
 ](
     outputs: OutputVariadicTensors,
     inputs: InputVariadicTensors[
-        dtype = outputs.dtype,
-        rank = outputs.rank - 1,
+        dtype=outputs.dtype,
+        rank=outputs.rank - 1,
+        ...,
     ],
 ) raises:
     """Single-device implementation using CPU memcpy.
@@ -264,8 +256,9 @@ fn shard_and_stack[
 ](
     outputs: OutputVariadicTensors,
     inputs: InputVariadicTensors[
-        dtype = outputs.dtype,
-        rank = outputs.rank - 1,
+        dtype=outputs.dtype,
+        rank=outputs.rank - 1,
+        ...,
     ],
     dev_ctxs_input: DeviceContextPtrList,
 ) raises:
@@ -288,8 +281,7 @@ fn shard_and_stack[
     # Check if outputs are on different devices than inputs (multi-device mode).
     comptime is_multi_device = dev_ctxs_input.size > 1
 
-    @parameter
-    if is_multi_device:
+    comptime if is_multi_device:
         _shard_and_stack_multi_device[axis](outputs, inputs, dev_ctxs_input)
     else:
         _shard_and_stack_single_device[axis](outputs, inputs)

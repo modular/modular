@@ -18,7 +18,7 @@ from __future__ import annotations
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.norm import ConstantLayerNorm, LayerNorm
+from max.nn.norm import ConstantLayerNorm, LayerNorm
 
 from .norm_test_utils import (
     COMMON_NORM_TEST_SHAPES,

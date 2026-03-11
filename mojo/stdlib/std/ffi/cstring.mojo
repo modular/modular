@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string.string_slice import _unsafe_strlen
+from std.collections.string.string_slice import _unsafe_strlen
 
 
 @always_inline
-fn _validate_bytes(slice: Span[Byte]) raises:
+fn _validate_bytes(slice: Span[Byte, _]) raises:
     var length = Int(_unsafe_strlen(slice.unsafe_ptr(), UInt(len(slice))))
     if length == len(slice) - 1:
         return
@@ -66,7 +66,7 @@ struct CStringSlice[origin: ImmutOrigin](
         Example:
 
         ```mojo
-        from ffi import c_char, CStringSlice, external_call
+        from std.ffi import c_char, CStringSlice, external_call
 
         fn getenv_wrapper(
             name: CStringSlice,
@@ -100,8 +100,8 @@ struct CStringSlice[origin: ImmutOrigin](
         Example:
 
         ```mojo
-        from ffi import CStringSlice
-        from testing import assert_raises
+        from std.ffi import CStringSlice
+        from std.testing import assert_raises
 
         var string = String("Hello, World!")
 

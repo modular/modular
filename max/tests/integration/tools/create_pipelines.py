@@ -22,9 +22,11 @@ import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
+
+import diffusers
 
 # 3rd-party
 import hf_repo_lock
@@ -36,14 +38,25 @@ from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.interfaces import PipelineTask, PipelineTokenizer
 from max.pipelines import TextGenerationPipelineInterface
+from max.pipelines.architectures.flux1_modulev3.pipeline_flux import (
+    FluxPipeline,
+)
+from max.pipelines.architectures.flux2_modulev3.pipeline_flux2 import (
+    Flux2Pipeline,
+)
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
+from max.pipelines.core import PixelContext
+from max.pipelines.lib import (
+    PipelineRuntimeConfig,
+    PixelGenerationPipeline,
+    PixelGenerationTokenizer,
+)
 from peft.peft_model import PeftModel
-
-# Tests
 from qwen2_5vl import generate_utils as qwen2_5vl_utils
 from qwen3vl import generate_utils as qwen3vl_utils
 from test_common import test_data, torch_utils
-from test_common.torch_utils import MockTextGenerationRequest
+from test_common.test_data import MockTextGenerationRequest
+from typing_extensions import NotRequired
 
 
 # This is required since the presence of peft changes
@@ -110,8 +123,10 @@ class VLLMPipeline:
 
     model_path: str
     trust_remote_code: bool = False
-    encoding: str | None = None
+    encoding: pipelines.SupportedEncoding | None = None
     tensor_parallel_size: int = 1
+    extra_kwargs: dict[str, Any] = field(default_factory=dict)
+    mm_data_key: str = "image"
 
 
 class PipelineOracle(ABC):
@@ -120,6 +135,9 @@ class PipelineOracle(ABC):
     Can provide information about that pipeline, and create other objects
     necessary to run the model.
     """
+
+    model_path: str
+    """ID of the Hugging Face repository."""
 
     task: PipelineTask = PipelineTask.TEXT_GENERATION
     default_batch_size: int | list[int] | None = None
@@ -140,36 +158,36 @@ class PipelineOracle(ABC):
 
     @abstractmethod
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         """Instantiate a MAX pipeline for the given encoding/device."""
         raise NotImplementedError
 
     @abstractmethod
     def create_torch_pipeline(
-        self, *, encoding: str | None, device: torch.device | str
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device | str,
     ) -> TorchModelAndDataProcessor:
         """Instantiate a Torch pipeline for the given encoding/device."""
         raise NotImplementedError
 
     def create_vllm_pipeline(
-        self, *, encoding: str | None, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device_specs: list[driver.DeviceSpec],
     ) -> VLLMPipeline:
         """Instantiate a vLLM pipeline config."""
-        path = getattr(self, "model_path", None)
-        # We shouldn't hit this; we only have it because using the string
-        # `model_path` is standard practice rather than enforced behavior.
-        if not path:
-            raise ValueError(
-                f"Cannot find `model_path` for {self.__class__.__name__}"
-            )
-        config = getattr(self, "config_params", {})
         # Use tensor parallelism across all GPU devices
         gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
         return VLLMPipeline(
-            model_path=path,
-            trust_remote_code=config.get("trust_remote_code", False)
-            or getattr(self, "trust_remote_code", False),
+            model_path=self.model_path,
+            trust_remote_code=getattr(self, "trust_remote_code", False),
             encoding=encoding,
             tensor_parallel_size=max(1, gpu_count),
         )
@@ -213,15 +231,66 @@ class PipelineOracle(ABC):
         )
 
 
+class _ModelConfigExtras(TypedDict):
+    huggingface_weight_revision: NotRequired[str]
+
+
+def _create_vision_max_pipeline(
+    model_path: str,
+    encoding: pipelines.SupportedEncoding,
+    device_specs: list[driver.DeviceSpec],
+    *,
+    max_length: int = 8192,
+    trust_remote_code: bool = True,
+    device_memory_utilization: float | None = None,
+    enable_chunked_prefill: bool | None = None,
+    set_weight_revision: bool = False,
+) -> MaxPipelineAndTokenizer:
+    """Shared MAX pipeline construction for vision oracles."""
+    revision = hf_repo_lock.revision_for_hf_repo(model_path)
+    assert revision is not None
+    if device_memory_utilization is not None:
+        kv_cache = pipelines.KVCacheConfig(
+            device_memory_utilization=device_memory_utilization,
+        )
+    else:
+        kv_cache = pipelines.KVCacheConfig()
+    model = pipelines.MAXModelConfig(
+        device_specs=device_specs,
+        quantization_encoding=encoding,
+        model_path=model_path,
+        huggingface_model_revision=revision,
+        trust_remote_code=trust_remote_code,
+        max_length=max_length,
+        kv_cache=kv_cache,
+        **(
+            _ModelConfigExtras(huggingface_weight_revision=revision)
+            if set_weight_revision
+            else _ModelConfigExtras()
+        ),
+    )
+    if enable_chunked_prefill is not None:
+        runtime = PipelineRuntimeConfig(
+            max_num_steps=1, enable_chunked_prefill=enable_chunked_prefill
+        )
+    else:
+        runtime = PipelineRuntimeConfig(max_num_steps=1)
+    config = pipelines.PipelineConfig(
+        model=model,
+        runtime=runtime,
+    )
+    tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+    assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
+    return MaxPipelineAndTokenizer(pipeline, tokenizer)
+
+
 class InternVLPipelineOracle(PipelineOracle):
     """Pipeline oracle for InternVL3 architectures."""
-
-    model_path: str
-    """ID of the Hugging Face repository."""
 
     def __init__(self, model_path: str) -> None:
         super().__init__()
         self.model_path = model_path
+        self.trust_remote_code = True
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
@@ -237,31 +306,24 @@ class InternVLPipelineOracle(PipelineOracle):
         )
 
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
-        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
-
-        # InternVL uses dynamic image sizing, so use a reasonable default
-        max_length = 8192
-
-        config = pipelines.PipelineConfig(
-            device_specs=device_specs,
-            quantization_encoding=pipelines.SupportedEncoding[encoding],
-            cache_strategy="paged",
-            model_path=self.model_path,
-            huggingface_model_revision=revision,
-            max_length=max_length,
-            max_num_steps=1,
-            trust_remote_code=True,
+        return _create_vision_max_pipeline(
+            self.model_path,
+            encoding,
+            device_specs,
             # TODO(GEX-2365): Handle this in model memory estimation.
             device_memory_utilization=0.8,
         )
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
-        return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
-        self, *, encoding: str | None, device: torch.device
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         tokenizer = transformers.AutoTokenizer.from_pretrained(
@@ -305,23 +367,9 @@ class InternVLPipelineOracle(PipelineOracle):
             # Omit `use_cache` since the InternVL code hardcodes it.
         )
 
-    def create_vllm_pipeline(
-        self, *, encoding: str | None, device_specs: list[driver.DeviceSpec]
-    ) -> VLLMPipeline:
-        gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
-        return VLLMPipeline(
-            model_path=self.model_path,
-            trust_remote_code=True,
-            encoding=encoding,
-            tensor_parallel_size=max(1, gpu_count),
-        )
-
 
 class Idefics3PipelineOracle(PipelineOracle):
     """Pipeline oracle for Idefics3 architectures."""
-
-    model_path: str
-    """ID of the Hugging Face repository."""
 
     def __init__(self, model_path: str) -> None:
         super().__init__()
@@ -342,31 +390,25 @@ class Idefics3PipelineOracle(PipelineOracle):
         )
 
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
-        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
-
-        max_length = 8192
-
-        config = pipelines.PipelineConfig(
-            device_specs=device_specs,
-            quantization_encoding=pipelines.SupportedEncoding[encoding],
-            cache_strategy="paged",
-            model_path=self.model_path,
-            huggingface_model_revision=revision,
-            huggingface_weight_revision=revision,
-            max_length=max_length,
-            max_num_steps=1,
-            trust_remote_code=True,
+        return _create_vision_max_pipeline(
+            self.model_path,
+            encoding,
+            device_specs,
             # TODO(GEX-2365): Handle this in model memory estimation.
             device_memory_utilization=0.8,
+            set_weight_revision=True,
         )
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
-        return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
-        self, *, encoding: str | None, device: torch.device
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         config = transformers.AutoConfig.from_pretrained(
@@ -412,9 +454,6 @@ class Idefics3PipelineOracle(PipelineOracle):
 class Qwen2_5VLPipelineOracle(PipelineOracle):
     """Pipeline oracle for Qwen2.5VL architectures."""
 
-    model_path: str
-    """ID of the Hugging Face repository."""
-
     def __init__(self, model_path: str) -> None:
         super().__init__()
         self.model_path = model_path
@@ -439,33 +478,26 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
         return qwen2_5vl_utils.INSTRUCT_REQUESTS + text_only_requests
 
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
-        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
-        max_length = 8192
-
-        config = pipelines.PipelineConfig(
-            device_specs=device_specs,
-            quantization_encoding=pipelines.SupportedEncoding[encoding],
-            cache_strategy="paged",
-            model_path=self.model_path,
-            huggingface_model_revision=revision,
-            max_length=max_length,
-            max_num_steps=1,
-            trust_remote_code=True,
+        return _create_vision_max_pipeline(
+            self.model_path,
+            encoding,
+            device_specs,
             # Chunked prefill is not supported for image prompts.
             # (technically, this script doesn't go through the scheduler so
             # it's not a problem, but it's a good idea to disable it anyway.)
             enable_chunked_prefill=False,
-            # TODO(GEX-2365): Handle this in model memory estimation.
-            device_memory_utilization=0.6,
         )
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
-        return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
-        self, *, encoding: str | None, device: torch.device
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         config = transformers.AutoConfig.from_pretrained(
@@ -510,9 +542,6 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
 class Qwen3VLPipelineOracle(PipelineOracle):
     """Pipeline oracle for Qwen3VL architectures."""
 
-    model_path: str
-    """ID of the Hugging Face repository."""
-
     def __init__(
         self,
         model_path: str,
@@ -521,6 +550,7 @@ class Qwen3VLPipelineOracle(PipelineOracle):
         super().__init__()
         self.model_path = model_path
         self._device_encoding_map = device_encoding_map or {"gpu": ["bfloat16"]}
+        self.trust_remote_code = True
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
@@ -540,33 +570,26 @@ class Qwen3VLPipelineOracle(PipelineOracle):
         return qwen3vl_utils.INSTRUCT_REQUESTS + text_only_requests
 
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
-        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
-        max_length = 8192
-
-        config = pipelines.PipelineConfig(
-            device_specs=device_specs,
-            quantization_encoding=pipelines.SupportedEncoding[encoding],
-            cache_strategy="paged",
-            model_path=self.model_path,
-            huggingface_model_revision=revision,
-            max_length=max_length,
-            max_num_steps=1,
-            trust_remote_code=True,
+        return _create_vision_max_pipeline(
+            self.model_path,
+            encoding,
+            device_specs,
             # Chunked prefill is not supported for image prompts.
             # (technically, this script doesn't go through the scheduler so
             # it's not a problem, but it's a good idea to disable it anyway.)
             enable_chunked_prefill=False,
-            # TODO(GEX-2365): Handle this in model memory estimation.
-            device_memory_utilization=0.4,
         )
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
-        return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
-        self, *, encoding: str | None, device: torch.device
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         config = transformers.AutoConfig.from_pretrained(
@@ -620,6 +643,7 @@ class PixtralPipelineOracle(PipelineOracle):
     def __init__(self) -> None:
         super().__init__()
         self.model_path = "mistral-community/pixtral-12b"
+        self.max_length = 8192
 
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
@@ -633,17 +657,23 @@ class PixtralPipelineOracle(PipelineOracle):
         }
 
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         # TODO (AIPIPE-234): Implement MAX pipeline generation for Pixtral.
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
+        assert revision is not None
         config = pipelines.PipelineConfig(
-            device_specs=device_specs,
-            quantization_encoding=pipelines.SupportedEncoding[encoding],
-            model_path=self.model_path,
-            huggingface_model_revision=revision,
-            max_length=8192,
-            max_num_steps=1,
+            model=pipelines.MAXModelConfig(
+                device_specs=device_specs,
+                quantization_encoding=encoding,
+                model_path=self.model_path,
+                huggingface_model_revision=revision,
+                max_length=self.max_length,
+            ),
+            runtime=PipelineRuntimeConfig(max_num_steps=1),
         )
         hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
@@ -652,7 +682,10 @@ class PixtralPipelineOracle(PipelineOracle):
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
-        self, *, encoding: str | None, device: torch.device
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         processor = transformers.AutoProcessor.from_pretrained(
@@ -669,6 +702,89 @@ class PixtralPipelineOracle(PipelineOracle):
             torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None,
         )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
+
+
+class KimiK2_5PipelineOracle(PipelineOracle):
+    """Pipeline oracle for Kimi K2.5 multimodal architectures (vLLM only).
+
+    Kimi K2.5 is a 1T-parameter MoE model.
+    """
+
+    def __init__(self, model_path: str) -> None:
+        super().__init__()
+        self.model_path = model_path
+        self.trust_remote_code = True
+
+    @property
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return {"gpu": ["float4_e2m1fnx2"]}
+
+    @property
+    def inputs(self) -> list[MockTextGenerationRequest]:
+        text_only_requests = [
+            MockTextGenerationRequest.text_only(prompt)
+            for prompt in test_data.SHORT_TEXT_PROMPTS
+        ]
+        return test_data.KIMIK2_5_REQUESTS + text_only_requests
+
+    def create_max_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
+    ) -> MaxPipelineAndTokenizer:
+        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
+        config = pipelines.PipelineConfig.model_validate(
+            {
+                "defer_resolve": True,
+                "device_specs": device_specs,
+                "quantization_encoding": encoding,
+                "model_path": self.model_path,
+                "huggingface_model_revision": revision,
+                "huggingface_weight_revision": revision,
+                "max_num_steps": 1,
+                "max_length": 1028,
+                "trust_remote_code": self.trust_remote_code,
+                "max_batch_input_tokens": 1024,
+                "ep_size": 8,
+                "data_parallel_degree": 8,
+            }
+        )
+        hf_repo_lock.apply_to_config(config)
+        config.resolve()
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        assert isinstance(pipeline, TextGenerationPipelineInterface)
+        return MaxPipelineAndTokenizer(pipeline, tokenizer)
+
+    def create_torch_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device | str,
+    ) -> TorchModelAndDataProcessor:
+        raise NotImplementedError(
+            "Kimi K2.5 is 1T params (MoE) — torch golden generation is not"
+            " practical. Use --framework vllm instead."
+        )
+
+    def create_vllm_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device_specs: list[driver.DeviceSpec],
+    ) -> VLLMPipeline:
+        gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
+        return VLLMPipeline(
+            model_path=self.model_path,
+            trust_remote_code=self.trust_remote_code,
+            encoding=encoding,
+            tensor_parallel_size=max(1, gpu_count),
+            extra_kwargs={
+                "mm_encoder_tp_mode": "data",
+                "limit_mm_per_prompt": {"vision_chunk": 1},
+            },
+            mm_data_key="vision_chunk",
+        )
 
 
 class GenericOracle(PipelineOracle):
@@ -696,12 +812,13 @@ class GenericOracle(PipelineOracle):
         self.task = task
         self._use_cache = use_cache
         self.default_batch_size = batch_size
+        self.trust_remote_code = config_params.get("trust_remote_code", False)
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]] | None:
         return self._device_encoding_map
 
-    def weight_path(self, encoding: str) -> str | None:
+    def weight_path(self, encoding: pipelines.SupportedEncoding) -> str | None:
         if self._weight_path_map and encoding in self._weight_path_map:
             return self._weight_path_map[encoding]
         return None
@@ -719,34 +836,40 @@ class GenericOracle(PipelineOracle):
     def create_max_pipeline(
         self,
         *,
-        encoding: str,
+        encoding: pipelines.SupportedEncoding,
         device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         model_revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         weight_path = self.weight_path(encoding) if encoding else None
 
-        # Determine weight revision: use weight repo's revision if different
-        weight_revision = model_revision
+        weight_filename: str | None = None
+        weight_repo_id: str | None = None
         if weight_path:
-            weight_repo_id, _, weight_revision = self._parse_weight_path(
+            weight_repo_id, weight_filename, _ = self._parse_weight_path(
                 weight_path
             )
-            if weight_repo_id == self.model_path:
-                weight_revision = model_revision
 
-        config = pipelines.PipelineConfig(
-            device_specs=device_specs if device_specs else None,
-            quantization_encoding=pipelines.SupportedEncoding[encoding]
-            if encoding
-            else None,
-            model_path=self.model_path,
-            huggingface_model_revision=model_revision,
-            huggingface_weight_revision=weight_revision,
-            weight_path=[] if weight_path is None else [weight_path],
-            max_num_steps=1,
-            **self.config_params,
+        # Defer resolution so we can set _weights_repo_id before
+        # validation runs.  Without this, PipelineConfig.resolve() would
+        # look for weight files in the model repo (meta-llama) instead of
+        # the weights repo (bartowski).
+        config = pipelines.PipelineConfig.model_validate(
+            {
+                "defer_resolve": True,
+                "device_specs": device_specs if device_specs else None,
+                "quantization_encoding": encoding,
+                "model_path": self.model_path,
+                "huggingface_model_revision": model_revision,
+                "huggingface_weight_revision": model_revision,
+                "weight_path": [] if weight_path is None else [weight_filename],
+                "max_num_steps": 1,
+                **self.config_params,
+            }
         )
+        if weight_repo_id and weight_repo_id != self.model_path:
+            config.model._weights_repo_id = weight_repo_id
         hf_repo_lock.apply_to_config(config)
+        config.resolve()
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
             config, task=self.task
         )
@@ -758,12 +881,16 @@ class GenericOracle(PipelineOracle):
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
-        self, *, encoding: str | None, device: torch.device
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
-        trust_remote_code = self.config_params.get("trust_remote_code", False)
+        model_revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         processor = self.auto_processor_cls.from_pretrained(
             self.model_path,
-            trust_remote_code=trust_remote_code,
+            revision=model_revision,
+            trust_remote_code=self.trust_remote_code,
         )
         weight_path = self.weight_path(encoding) if encoding else None
         if weight_path:
@@ -792,7 +919,7 @@ class GenericOracle(PipelineOracle):
                     config=config,
                     gguf_file=str(downloaded_weight_path),
                     device_map=device,
-                    trust_remote_code=trust_remote_code,
+                    trust_remote_code=self.trust_remote_code,
                     torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding]
                     if encoding
                     else None,
@@ -802,7 +929,7 @@ class GenericOracle(PipelineOracle):
                 self.model_path,
                 revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
                 device_map=device,
-                trust_remote_code=trust_remote_code,
+                trust_remote_code=self.trust_remote_code,
                 torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding]
                 if encoding
                 else None,
@@ -906,27 +1033,31 @@ class LoRAOracle(PipelineOracle):
         return self._adapter_path
 
     def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         """Create MAX pipeline with LoRA adapter."""
 
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         lora_path = self._get_shared_adapter()
 
-        config = pipelines.PipelineConfig(
-            device_specs=device_specs,
-            quantization_encoding=pipelines.SupportedEncoding[encoding],
-            model_path=self.model_path,
-            huggingface_model_revision=revision,
-            max_num_steps=1,
-            enable_lora=True,
-            lora_paths=[lora_path],
-            max_num_loras=1,
-            max_lora_rank=self.lora_rank,
-            cache_strategy="paged",
-            enable_prefix_caching=False,  # LoRA requires prefix caching disabled
-            trust_remote_code=True,
-            **self.config_params,
+        config = pipelines.PipelineConfig.model_validate(
+            {
+                "device_specs": device_specs,
+                "quantization_encoding": encoding,
+                "model_path": self.model_path,
+                "huggingface_model_revision": revision,
+                "max_num_steps": 1,
+                "enable_lora": True,
+                "lora_paths": [lora_path],
+                "max_num_loras": 1,
+                "max_lora_rank": self.lora_rank,
+                "enable_prefix_caching": False,  # LoRA requires prefix caching disabled
+                "trust_remote_code": True,
+                **self.config_params,
+            }
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
 
@@ -936,7 +1067,10 @@ class LoRAOracle(PipelineOracle):
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
-        self, *, encoding: str | None, device: torch.device
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device,
     ) -> TorchModelAndDataProcessor:
         """Create PyTorch pipeline with LoRA adapter using PEFT."""
 
@@ -978,6 +1112,126 @@ class LoRAOracle(PipelineOracle):
     @property
     def use_cache(self) -> bool:
         return self._use_cache
+
+
+class ImageGenerationOracle(PipelineOracle):
+    """Pipeline oracle for FLUX image generation."""
+
+    num_steps: int
+    """Number of denoising steps."""
+
+    def __init__(
+        self,
+        model_path: str = "black-forest-labs/FLUX.1-dev",
+        num_steps: int = 50,
+        requests: list[Any] = test_data.DEFAULT_PIXEL_GENERATION,
+    ) -> None:
+        super().__init__()
+        self.model_path = model_path
+        self.task = PipelineTask.PIXEL_GENERATION
+        self.num_steps = num_steps
+        self._inputs = requests
+
+    @property
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return {
+            "gpu": ["bfloat16"],
+        }
+
+    @property
+    def inputs(self) -> list[Any]:
+        """Input prompts for image generation."""
+        return self._inputs
+
+    def create_max_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
+    ) -> MaxPipelineAndTokenizer:
+        """Create MAX FLUX pixel generation pipeline."""
+
+        config = pipelines.PipelineConfig(
+            model=pipelines.MAXModelConfig(
+                model_path=self.model_path,
+                device_specs=device_specs,
+            ),
+            runtime=PipelineRuntimeConfig(prefer_module_v3=True),
+        )
+
+        is_flux2 = self.model_path.startswith("black-forest-labs/FLUX.2")
+        if is_flux2:
+            tokenizer = PixelGenerationTokenizer(
+                model_path=self.model_path,
+                pipeline_config=config,
+                subfolder="tokenizer",
+                max_length=512,
+            )
+            pipeline = PixelGenerationPipeline[PixelContext](
+                pipeline_config=config,
+                pipeline_model=Flux2Pipeline,
+            )
+        else:
+            tokenizer = PixelGenerationTokenizer(
+                model_path=self.model_path,
+                pipeline_config=config,
+                subfolder="tokenizer",
+                max_length=77,
+                subfolder_2="tokenizer_2",
+                secondary_max_length=512,
+            )
+            pipeline = PixelGenerationPipeline[PixelContext](
+                pipeline_config=config,
+                pipeline_model=FluxPipeline,
+            )
+
+        return MaxPipelineAndTokenizer(
+            pipeline=pipeline,  # type: ignore
+            tokenizer=tokenizer,
+        )
+
+    def create_torch_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device,
+    ) -> TorchModelAndDataProcessor:
+        """Create diffusers FLUX pipeline."""
+
+        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
+
+        # Load the exact pipeline class from model config.
+        # AutoPipelineForText2Image in diffusers==0.36.0 cannot resolve FLUX2.
+        pipeline = diffusers.DiffusionPipeline.from_pretrained(
+            self.model_path,
+            revision=revision,
+            torch_dtype=ENCODING_TO_TORCH_DTYPE.get(encoding, torch.bfloat16),  # type: ignore
+        )
+        pipeline = pipeline.to(device)
+
+        # Return pipeline as "model" and None as data_processor (not needed for diffusers)
+        return TorchModelAndDataProcessor(
+            model=pipeline,
+            data_processor=None,
+        )
+
+    def run_torch_image_generation(
+        self,
+        *,
+        torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
+        device: torch.device,
+        num_steps: int,
+        inputs: list[Any],
+    ) -> list[dict[str, Any]]:
+        """Run image generation using diffusers FLUX."""
+
+        return torch_utils.run_image_generation(
+            pipeline=torch_pipeline_and_tokenizer.model,
+            device=device,
+            requests=inputs,
+            num_steps=num_steps,
+            print_outputs=True,
+        )
 
 
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
@@ -1027,18 +1281,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "q4_k": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
             "float32": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/Meta-Llama-3.1-8B-Instruct-f32.gguf",
         },
-        config_params={"max_length": 512, "use_legacy_module": False},
-        device_encoding_map={
-            "gpu": ["float32", "bfloat16"],
-            "cpu": ["float32", "q4_k"],
-        },
-    ),
-    "meta-llama/Llama-3.1-8B-Instruct-legacy": GenericOracle(
-        model_path="meta-llama/Llama-3.1-8B-Instruct",
-        weight_path_map={
-            "q4_k": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
-            "float32": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/Meta-Llama-3.1-8B-Instruct-f32.gguf",
-        },
         config_params={"max_length": 512},
         device_encoding_map={
             "gpu": ["float32", "bfloat16"],
@@ -1082,6 +1324,13 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="nvidia/Llama-3.1-405B-Instruct-NVFP4",
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+    ),
+    "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": GenericOracle(
+        model_path="RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic",
+        config_params={"max_length": 512},
+        device_encoding_map={
+            "gpu": ["float8_e4m3fn"],
+        },
     ),
     "meta-llama/Llama-3.2-1B": GenericOracle(
         model_path="meta-llama/Llama-3.2-1B",
@@ -1209,7 +1458,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="allenai/Olmo-3-7B-Instruct",
         config_params={
             "max_length": 32768,
-            "use_legacy_module": False,
+            "prefer_module_v3": True,
         },
         device_encoding_map={
             "gpu": ["bfloat16"],
@@ -1301,11 +1550,15 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
+    "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8": GenericOracle(
+        model_path="Qwen/Qwen3-30B-A3B-Instruct-2507-FP8",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+    ),
     "HuggingFaceTB/SmolLM2-135M": GenericOracle(
         model_path="HuggingFaceTB/SmolLM2-135M",
         config_params={
             "max_length": 512,
-            "cache_strategy": "paged",
         },
         prompts=[p[:502] for p in test_data.DEFAULT_PROMPTS],
         device_encoding_map={
@@ -1466,6 +1719,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
+    "nvidia/Kimi-K2.5-NVFP4": KimiK2_5PipelineOracle("nvidia/Kimi-K2.5-NVFP4"),
     "HKUSTAudio/Llasa-8B": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",
         config_params={
@@ -1483,5 +1737,15 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "Convert the text to speech:<|TEXT_UNDERSTANDING_START|>In a hole in the ground there lived a hobbit.<|TEXT_UNDERSTANDING_END|>",
         ],
         use_cache=True,
+    ),
+    "black-forest-labs/FLUX.1-dev": ImageGenerationOracle(
+        "black-forest-labs/FLUX.1-dev"
+    ),
+    "black-forest-labs/FLUX.2-dev-t2i": ImageGenerationOracle(
+        "black-forest-labs/FLUX.2-dev",
+    ),
+    "black-forest-labs/FLUX.2-dev-i2i": ImageGenerationOracle(
+        "black-forest-labs/FLUX.2-dev",
+        requests=test_data.FLUX2_PIXEL_GENERATION_I2I,
     ),
 }

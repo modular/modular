@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler_internal as compiler
-from gpu.host.device_context import DeviceExternalFunction
-from os import getenv
+from std.gpu.host.device_context import DeviceExternalFunction
+from std.os import abort, getenv
 from tensor import (
     foreach,
     DynamicTensor,
@@ -26,8 +26,8 @@ from tensor import OutputVariadicTensors
 from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
 )
-from utils.index import IndexList
-from runtime.asyncrt import DeviceContextPtr
+from std.utils.index import IndexList
+from std.runtime.asyncrt import DeviceContextPtr
 
 
 @compiler.register("my_add")
@@ -35,8 +35,8 @@ struct MyAdd:
     @staticmethod
     fn execute(
         output: OutputTensor,
-        x: InputTensor[dtype = output.dtype, rank = output.rank],
-        y: InputTensor[dtype = output.dtype, rank = output.rank],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        y: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0] + y[0]
 
@@ -53,7 +53,7 @@ struct OpWidthDeviceContext:
     @staticmethod
     fn execute(
         output: OutputTensor,
-        x: InputTensor[dtype = output.dtype, rank = output.rank],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContextPtr,
     ):
         output[0] = x[0]
@@ -70,8 +70,8 @@ struct OpWithMultipleOutputs:
     @staticmethod
     fn execute(
         out0: OutputTensor,
-        out1: OutputTensor[dtype = out0.dtype, rank = out0.rank],
-        x: InputTensor[dtype = out0.dtype, rank = out0.rank],
+        out1: OutputTensor[dtype=out0.dtype, rank=out0.rank, ...],
+        x: InputTensor[dtype=out0.dtype, rank=out0.rank, ...],
     ):
         out0[0] = 2 * x[0]
         out1[0] = 4 * x[0]
@@ -105,7 +105,7 @@ struct MyIntMemory(Movable):
 @compiler.register("make_my_int_memory")
 struct MakeMyIntMemory:
     @staticmethod
-    fn execute(x: InputTensor[dtype = DType.int32, rank=1]) -> MyIntMemory:
+    fn execute(x: InputTensor[dtype=DType.int32, rank=1, ...]) -> MyIntMemory:
         return MyIntMemory(Int(x[0]))
 
 
@@ -117,7 +117,7 @@ struct MyIntReg(TrivialRegisterPassable):
 @compiler.register("make_my_int_reg")
 struct MakeMyIntReg:
     @staticmethod
-    fn execute(x: InputTensor[dtype = DType.int32, rank=1]) -> MyIntReg:
+    fn execute(x: InputTensor[dtype=DType.int32, rank=1, ...]) -> MyIntReg:
         return MyIntReg(Int(x[0]))
 
 
@@ -128,12 +128,11 @@ struct VariadicInputToOutput:
         dtype: DType,
         size: Int,
     ](
-        output: OutputVariadicTensors[dtype, rank=1, size=size],
-        bias: InputTensor[dtype=dtype, rank=1],
-        input: InputVariadicTensors[dtype, rank=1, size=size],
+        output: OutputVariadicTensors[dtype=dtype, rank=1, size=size, ...],
+        bias: InputTensor[dtype=dtype, rank=1, ...],
+        input: InputVariadicTensors[dtype=dtype, rank=1, size=size, ...],
     ):
-        @parameter
-        for i in range(size):
+        comptime for i in range(size):
             for j in range(input[i].size()):
                 output[i][j] = input[i][j]
             output[i][0] += bias[0]
@@ -146,15 +145,14 @@ struct VariadicAdd:
         dtype: DType,
         size: Int,
     ](
-        output: OutputTensor[dtype=dtype, rank=1],
-        bias: InputTensor[dtype=dtype, rank=1],
-        input: InputVariadicTensors[dtype, rank=1, size=size],
+        output: OutputTensor[dtype=dtype, rank=1, ...],
+        bias: InputTensor[dtype=dtype, rank=1, ...],
+        input: InputVariadicTensors[dtype=dtype, rank=1, size=size, ...],
     ):
         for i in range(output.size()):
             output[i] = bias[i]
 
-            @parameter
-            for j in range(size):
+            comptime for j in range(size):
                 output[i] += input[j][i]
 
 
@@ -163,8 +161,8 @@ struct BinaryKernelWithRaises:
     @staticmethod
     fn execute(
         output: OutputTensor,
-        x: InputTensor[dtype = output.dtype, rank = output.rank],
-        y: InputTensor[dtype = output.dtype, rank = output.rank],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        y: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ) raises:
         output[0] = x[0] + y[0]
 
@@ -188,7 +186,7 @@ struct OpWithIntParameter[IntParameter: Int]:
     @staticmethod
     fn execute(
         output: OutputTensor,
-        x: InputTensor[dtype = output.dtype, rank = output.rank],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
         print(Self.IntParameter)
@@ -198,8 +196,8 @@ struct OpWithIntParameter[IntParameter: Int]:
 struct OpWithDTypeParameter[DTypeParameter: DType]:
     @staticmethod
     fn execute(
-        output: OutputTensor,
-        x: InputTensor[dtype = output.dtype, rank = output.rank],
+        output: OutputTensor[...],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
         print(Self.DTypeParameter)
@@ -209,8 +207,8 @@ struct OpWithDTypeParameter[DTypeParameter: DType]:
 struct OpWithStringParameter[StringParameter: String]:
     @staticmethod
     fn execute(
-        output: OutputTensor,
-        x: InputTensor[dtype = output.dtype, rank = output.rank],
+        output: OutputTensor[...],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
         print(Self.StringParameter)
@@ -220,8 +218,8 @@ struct OpWithStringParameter[StringParameter: String]:
 struct OpWithStringSliceParameter[StringParameter: StringSlice]:
     @staticmethod
     fn execute(
-        output: OutputTensor,
-        x: InputTensor[dtype = output.dtype, rank = output.rank],
+        output: OutputTensor[...],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
         print(Self.StringParameter)
@@ -231,8 +229,8 @@ struct OpWithStringSliceParameter[StringParameter: StringSlice]:
 struct OpWithStaticStringParameter[StringParameter: StaticString]:
     @staticmethod
     fn execute(
-        output: OutputTensor,
-        x: InputTensor[dtype = output.dtype, rank = output.rank],
+        output: OutputTensor[...],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
         print(Self.StringParameter)
@@ -246,12 +244,12 @@ struct ExternalCubinVecAdd:
     def execute[
         target: StaticString
     ](
-        output: OutputTensor[rank=1],
-        lhs: InputTensor[dtype = output.dtype, rank = output.rank],
-        rhs: InputTensor[dtype = output.dtype, rank = output.rank],
+        output: OutputTensor[rank=1, ...],
+        lhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        rhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContextPtr,
-    ):
-        constrained[target == "gpu"]()
+    ) raises:
+        comptime assert target == "gpu"
         gpu_ctx = ctx.get_device_context()
 
         with open(getenv("CUBIN_PATH"), "r") as file:
@@ -279,3 +277,33 @@ struct ExternalCubinVecAdd:
             grid_dim=(grid_dim,),
             block_dim=(block_dim,),
         )
+
+
+@compiler.register("intentional_gpu_crash")
+struct IntentionalGpuCrash:
+    """A custom op that launches a GPU kernel which executes a trap instruction.
+
+    This causes a real GPU hardware fault (e.g. CUDA_ERROR_ILLEGAL_INSTRUCTION)
+    to test that runtime error reporting includes source notes. Only supported
+    on NVIDIA GPUs; ROCm handles GPU traps by calling host-side abort() which
+    kills the process.
+    """
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[rank=1, ...],
+        x: InputTensor[dtype=output.dtype, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert target == "gpu"
+        gpu_ctx = ctx.get_device_context()
+
+        fn crash_kernel():
+            abort()
+
+        gpu_ctx.enqueue_function_experimental[crash_kernel](
+            grid_dim=(1,), block_dim=(1,)
+        )
+        gpu_ctx.synchronize()

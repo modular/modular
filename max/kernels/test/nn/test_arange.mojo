@@ -12,16 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from algorithm import elementwise
+from std.algorithm import elementwise
 from buffer import NDBuffer
 from nn.arange import arange, arange_shape
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 def print_elements[
     dtype: DType, in_rank: Int
-](tensor: NDBuffer[dtype, in_rank]):
+](tensor: NDBuffer[rank=in_rank, dtype, ...]) raises:
     print("New shape:", tensor.get_shape())
     print("New strides:", tensor.get_strides())
 
@@ -39,7 +39,7 @@ def print_elements[
 # slice_dim
 def test_arange[
     dtype: DType,
-](start: Scalar[dtype], stop: Scalar[dtype], step: Scalar[dtype]):
+](start: Scalar[dtype], stop: Scalar[dtype], step: Scalar[dtype]) raises:
     var outshape: IndexList[1]
     try:
         outshape = arange_shape[dtype, True](start, stop, step)
@@ -58,7 +58,7 @@ def test_arange[
     var memory4 = InlineArray[Scalar[dtype], max_output_size](
         uninitialized=True
     )
-    var out_tensor = NDBuffer[dtype, 1](memory4.unsafe_ptr(), outshape)
+    var out_tensor = NDBuffer[rank=1, dtype](memory4.unsafe_ptr(), outshape)
 
     @always_inline
     @__copy_capture(out_tensor, step, start, stop)
@@ -78,7 +78,7 @@ def test_arange[
 
 
 # CHECK-LABEL: == test_arrange_basic
-def test_arrange_basic():
+def test_arrange_basic() raises:
     print("== test_arrange_basic")
 
     # CHECK-NEXT: Expected output shape:
@@ -107,5 +107,5 @@ def test_arrange_basic():
     test_arange[DType.int32](38, -13, -23)
 
 
-def main():
+def main() raises:
     test_arrange_basic()

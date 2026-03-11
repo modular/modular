@@ -12,28 +12,26 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections import OptionalReg
-from math import ceildiv, iota
-from sys.info import simd_width_of
+from std.collections import OptionalReg
+from std.math import ceildiv, iota
+from std.sys.info import simd_width_of
 
-from algorithm import elementwise
-from bit import next_power_of_two
-from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import is_cpu
-from layout._coord import Coord, Idx
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from std.algorithm import elementwise
+from std.bit import next_power_of_two
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu
+from layout import Coord, Idx, TileTensor, row_major
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
-from utils.index import IndexList, StaticTuple
+from std.utils.index import IndexList, StaticTuple
 
 
 fn _argsort_cpu[
     *,
     ascending: Bool = True,
 ](
-    indices: TileTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    indices: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     input: TileTensor,
 ) raises:
     """
@@ -59,12 +57,11 @@ fn _argsort_cpu[
 
     elementwise[
         fill_indices_iota, simd_width_of[indices.dtype](), target="cpu"
-    ](indices.numel())
+    ](indices.num_elements())
 
     @parameter
     fn cmp_fn(a: Scalar[indices.dtype], b: Scalar[indices.dtype]) -> Bool:
-        @parameter
-        if ascending:
+        comptime if ascending:
             return input[a] < input[b]
         else:
             return input[a] > input[b]
@@ -73,7 +70,7 @@ fn _argsort_cpu[
         Span[
             Scalar[indices.dtype],
             indices.origin,
-        ](ptr=indices.ptr, length=indices.numel())
+        ](ptr=indices.ptr, length=indices.num_elements())
     )
 
 
@@ -90,8 +87,7 @@ fn _sentinel_val[dtype: DType, ascending: Bool]() -> Scalar[dtype]:
         MAX_FINITE for ascending sort, MIN_FINITE for descending sort.
     """
 
-    @parameter
-    if ascending:
+    comptime if ascending:
         return Scalar[dtype].MAX_FINITE
     else:
         return Scalar[dtype].MIN_FINITE
@@ -119,9 +115,9 @@ fn _argsort_gpu_impl[
     comptime assert input.flat_rank == 1
     comptime assert indices.flat_rank == 1
     # Create a device buffer to store a copy of the input data
-    var n = indices.numel()
+    var n = indices.num_elements()
 
-    debug_assert(n.is_power_of_two(), "n must be a power of two")
+    assert n.is_power_of_two(), "n must be a power of two"
 
     # Define block size for GPU kernel execution
     comptime BLOCK_SIZE = 256
@@ -159,8 +155,7 @@ fn _argsort_gpu_impl[
         if partner > i and partner < UInt(n):
             var cmp_val: Bool
 
-            @parameter
-            if ascending:
+            comptime if ascending:
                 cmp_val = input[i] > input[partner]
             else:
                 cmp_val = input[i] < input[partner]
@@ -214,7 +209,7 @@ fn _argsort_gpu[
     comptime assert indices.flat_rank == 1
     comptime assert input.flat_rank == 1
     # Create a device buffer to store a copy of the input data
-    var n = indices.numel()
+    var n = indices.num_elements()
 
     if n.is_power_of_two():
         # Initialize indices with iota.
@@ -230,9 +225,7 @@ fn _argsort_gpu[
 
         elementwise[
             fill_indices_iota_no_padding,
-            simd_width = simd_width_of[
-                indices.dtype, target = get_gpu_target()
-            ](),
+            simd_width=simd_width_of[indices.dtype, target=get_gpu_target()](),
             target="gpu",
         ](n, ctx)
 
@@ -269,7 +262,7 @@ fn _argsort_gpu[
                 i, iota[padded_indices.dtype, width](Scalar[indices.dtype](i))
             )
             padded_input.ptr.store[
-                alignment = simd_width_of[padded_input.dtype]()
+                alignment=simd_width_of[padded_input.dtype]()
             ](i, input.ptr.load[width=width](i))
             return
 
@@ -307,7 +300,7 @@ fn _argsort_gpu[
     # Extract the unpadded indices from the padded indices.
     elementwise[
         extract_indices,
-        simd_width = simd_width_of[indices.dtype, target = get_gpu_target()](),
+        simd_width=simd_width_of[indices.dtype, target=get_gpu_target()](),
         target="gpu",
     ](n, ctx)
 
@@ -328,7 +321,7 @@ fn _validate_argsort(input: TileTensor, output: TileTensor) raises:
         Error if buffers don't meet requirements for argsort.
     """
 
-    if output.numel() != input.numel():
+    if output.num_elements() != input.num_elements():
         raise "output and input must have the same length"
 
 
@@ -337,7 +330,7 @@ fn argsort[
     ascending: Bool = True,
     target: StaticString = "cpu",
 ](
-    output: TileTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     input: TileTensor[mut=True, ...],
     ctx: DeviceContext,
 ) raises:
@@ -361,8 +354,7 @@ fn argsort[
     ):
         _validate_argsort(input, output)
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             return _argsort_cpu[ascending=ascending](output, input)
         else:
             return _argsort_gpu[ascending=ascending](output, input, ctx)
@@ -371,7 +363,7 @@ fn argsort[
 fn argsort[
     ascending: Bool = True
 ](
-    output: TileTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     input: TileTensor,
 ) raises:
     """

@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from io.io import _printf
+from std.io.io import _printf
 
-from gpu import WARP_SIZE, barrier
-from gpu.host import DeviceContext
-from gpu import thread_idx
+from std.gpu import WARP_SIZE, barrier
+from std.gpu.host import DeviceContext
+from std.gpu import thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor, load_to_simd
 from layout.layout_tensor import copy_dram_to_sram
 from layout.tensor_core import TensorCore
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn mma_load_and_multiply[
@@ -46,9 +46,8 @@ fn mma_load_and_multiply[
     var d_reg_tile = mma.mma_op(a_reg_tile, b_reg_tile, c_reg_tile)
     var d_frags = load_to_simd(d_reg_tile).cast[DType.float64]()
 
-    @parameter
     # NVIDIA
-    if a_frags.size == 8 and b_frags.size == 4:
+    comptime if a_frags.size == 8 and b_frags.size == 4:
         _printf[
             "thread %u a_vals=[%g %g %g %g %g %g %g %g], b_vals=[%g %g %g %g],"
             " d_vals=[%g %g %g %g]\n"
@@ -155,7 +154,7 @@ def test_load_and_mma_and_multiply_operands[
     dtype: DType,
     shape: IndexList[3],
     transpose_b: Bool = False,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime M = shape[0]
     comptime N = shape[1]
     comptime K = shape[2]
@@ -181,13 +180,10 @@ def test_load_and_mma_and_multiply_operands[
     )
     ctx.synchronize()
 
-    _ = lhs^
-    _ = rhs^
-
 
 def test_write_res_operand[
     dst_dtype: DType, dtype: DType, shape: IndexList[3]
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime M = shape[0]
     comptime N = shape[1]
     comptime K = shape[2]
@@ -203,8 +199,6 @@ def test_write_res_operand[
     ctx.synchronize()
 
     print(dst.tensor())
-
-    _ = dst^
 
 
 fn mma_load_and_print_operands_kernel_ldmatrix[
@@ -223,14 +217,14 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
         dtype,
         lhs.layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem = LayoutTensor[
         dtype,
         rhs.layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     comptime thread_layout = Layout.row_major(WARP_SIZE // 4, 4)
@@ -245,7 +239,7 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
             dtype,
             Layout.row_major(1, a_simd_width),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .vectorize[1, a_simd_width]()
@@ -256,7 +250,7 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
             dtype,
             Layout.row_major(1, b_simd_width),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .vectorize[1, b_simd_width]()
@@ -268,9 +262,8 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
     var a_frags = a_reg_tile[0, 0].cast[DType.float64]()
     var b_frags = b_reg_tile[0, 0].cast[DType.float64]()
 
-    @parameter
     # NVIDIA
-    if a_frags.size == 4 and b_frags.size == 2:
+    comptime if a_frags.size == 4 and b_frags.size == 2:
         _printf["thread %u a_vals=[%g %g %g %g], b_vals=[%g %g]\n"](
             thread_idx.x,
             a_frags[0],
@@ -324,7 +317,7 @@ def test_load_operands_ldmatrix[
     dtype: DType,
     shape: IndexList[3],
     transpose_b: Bool = False,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime M = shape[0]
     comptime N = shape[1]
     comptime K = shape[2]
@@ -346,5 +339,3 @@ def test_load_operands_ldmatrix[
         block_dim=(WARP_SIZE),
     )
     ctx.synchronize()
-    _ = lhs^
-    _ = rhs^

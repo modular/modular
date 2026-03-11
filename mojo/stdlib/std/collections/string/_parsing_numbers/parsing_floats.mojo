@@ -22,12 +22,12 @@ The reference implementation used was the one in C# and can be found here:
 - https://github.com/CarlVerret/csFastFloat
 """
 
-from collections import InlineArray
+from std.collections import InlineArray
 
-import bit
-import memory
+import std.bit
+import std.memory
 
-from builtin.globals import global_constant
+from std.builtin.globals import global_constant
 
 from .constants import (
     CONTAINER_SIZE,
@@ -53,7 +53,7 @@ struct UInt128Decomposed(ImplicitlyCopyable, RegisterPassable):
 
 
 fn _get_w_and_q_from_float_string(
-    input_string: StringSlice[mut=False],
+    input_string: StringSlice[mut=False, _],
 ) raises -> Tuple[UInt64, Int64]:
     """We suppose the number is in the form '123.2481' or '123' or '123e-2' or '12.3e2'.
 
@@ -155,11 +155,11 @@ fn _get_w_and_q_from_float_string(
     return (significand_as_integer, Int64(exponent_as_integer))
 
 
-fn strip_unused_characters(x: StringSlice[mut=False]) -> type_of(x):
+fn strip_unused_characters(x: StringSlice[mut=False, _]) -> type_of(x):
     return x.strip().removeprefix("+").removesuffix("f").removesuffix("F")
 
 
-fn get_sign(x: StringSlice[mut=False]) -> Tuple[Float64, type_of(x)]:
+fn get_sign(x: StringSlice[mut=False, _]) -> Tuple[Float64, type_of(x)]:
     if x.startswith("-"):
         return (-1.0, x[1:])
     return (1.0, x)
@@ -209,7 +209,7 @@ fn create_float64(m: UInt64, p: Int64) -> Float64:
     m_mask = UInt64(2**MANTISSA_EXPLICIT_BITS - 1)
     p_shifted = UInt64(p + 1023) << MANTISSA_EXPLICIT_BITS
     representation_as_int = (m & m_mask) | p_shifted
-    return memory.bitcast[DType.float64](representation_as_int)
+    return std.memory.bitcast[DType.float64](representation_as_int)
 
 
 fn lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
@@ -224,7 +224,7 @@ fn lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
         return FloatLiteral.infinity
 
     # Step 3
-    l = bit.count_leading_zeros(w)
+    l = std.bit.count_leading_zeros(w)
 
     # Step 4
     w <<= l
@@ -266,7 +266,7 @@ fn lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
     # Step 16-18
     # Round ties to even
     if product.low <= 1 and (m & 3 == 1) and (Int64(-4) <= q <= Int64(23)):
-        if bit.pop_count(product.high // m) == 1:
+        if std.bit.pop_count(product.high // m) == 1:
             m -= 2
 
     # step 19

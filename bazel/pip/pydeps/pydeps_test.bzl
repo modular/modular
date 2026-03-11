@@ -42,11 +42,17 @@ def _pydeps_test_impl(ctx):
         if not raw_sources:
             # FIXME: This is an odd special case, it is used as a "I just want to use MAX" dependency,
             # so it sort of goes against the point of this test in the first place.
-            if str(dep.label) != "@@//max/python/max:max":
-                fail("Error: Dependency {} has no source files.".format(dep.label))
+            if str(dep.label) == "@@//max/python/max:max":
+                env["DEP_SOURCES"][label] = []
+                continue
+            elif str(dep.label) in [
+                "@@//max/tests/integration/tools:transformers_v4",
+                "@@//max/tests/integration/tools:huggingface_hub_v0",
+            ]:
+                # Silently ignore these, temporary hack
+                continue
 
-            env["DEP_SOURCES"][label] = []
-            continue
+            fail("Error: Dependency {} has no source files.".format(dep.label))
 
         # PyInfo doesn't give us the import paths directly, just a list of all of them. Try to
         # infer the correct one by looking for one that is a prefix of one of the source files.

@@ -39,7 +39,7 @@ fn get_common_type(typea, typeb) raises -> Type:
    if b_impl_converts_to_a:
        return typea  # Use implicit conversion
 
-   # Elided: do similar test for @nonmaterializable types.
+   # Elided: do similar test for @__nonmaterializable types.
    throw "no common type found"
 ```
 
@@ -226,7 +226,7 @@ fn get_common_type(typea, typeb) raises -> Type:
    if b_impl_converts_to_a:
        return typea  # Use implicit conversion
 
-   # Elided: do similar test for @nonmaterializable types.
+   # Elided: do similar test for @__nonmaterializable types.
    throw "no common type found"
 ```
 

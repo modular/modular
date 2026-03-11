@@ -76,11 +76,11 @@ semantics for boolean operators. If the first argument to an `or` operator
 evaluates to `True`, the second argument is not evaluated.
 
 ```mojo
-def true_func() -> Bool:
+def true_func() raises -> Bool:
     print("Executing true_func")
     return True
 
-def false_func() -> Bool:
+def false_func() raises -> Bool:
     print("Executing false_func")
     return False
 
@@ -204,7 +204,6 @@ while n < 4:
     n += 1
 else:
     print("Loop completed")
-
 ```
 
 ```output
@@ -267,7 +266,7 @@ The same technique works for iterating over a Mojo
 [`Set`](/mojo/std/collections/set/Set).
 
 ```mojo
-from collections import Set
+from std.collections import Set
 
 values = {42, 0}
 for item in values:
@@ -332,7 +331,7 @@ var values = [1, 4, 7, 3, 6, 11]
 for ref value in values:
     if value % 2 != 0:
         value -= 1
-print(values.__str__())
+print(values)
 ```
 
 ```output
@@ -405,7 +404,7 @@ Finished executing 'for' loop
 The `else` clause executes even if the collection is empty.
 
 ```mojo
-from collections import List
+from std.collections import List
 
 var empty: List[Int] = []
 for i in empty:
@@ -426,7 +425,7 @@ terminates the `for` loop.
 :::
 
 ```mojo
-from collections import List
+from std.collections import List
 
 animals = ["cat", "aardvark", "hippopotamus", "dog"]
 for animal in animals:
@@ -452,9 +451,9 @@ documentation for more information on manipulating Python objects from Mojo.
 The following is a simple example of iterating over a mixed-type Python list.
 
 ```mojo
-from python import Python
+from std.python import Python
 
-def main():
+def main() raises:
     # Create a mixed-type Python list
     py_list = Python.list(42, "cat", 3.14159)
     for py_obj in py_list:  # Each element is of type "PythonObject"
@@ -471,9 +470,9 @@ There are two techniques for iterating over a Python dictionary. The first is to
 iterate directly using the dictionary, which produces a sequence of its keys.
 
 ```mojo
-from python import Python
+from std.python import Python
 
-def main():
+def main() raises:
     # Create a mixed-type Python dictionary
     py_dict = Python.evaluate("{'a': 1, 'b': 2.71828, 'c': 'sushi'}")
     for py_key in py_dict:  # Each key is of type "PythonObject"
@@ -491,9 +490,9 @@ The second approach to iterating over a Python dictionary is to invoke its
 Within the loop body, you can then access the key and value by index.
 
 ```mojo
-from python import Python
+from std.python import Python
 
-def main():
+def main() raises:
     # Create a mixed-type Python dictionary
     py_dict = Python.evaluate("{'a': 1, 'b': 2.71828, 'c': 'sushi'}")
     for py_tuple in py_dict.items():  # Each 2-tuple is of type "PythonObject"

@@ -13,13 +13,15 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 import torch
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
 from test_common.graph_utils import gpu_warp_size
 
 # EP_DATA_READY_FLAG constant from ep_comm.mojo
@@ -29,7 +31,7 @@ MAX_GPUS_PER_NODE = 8
 
 
 def verify_ep_dispatch_results(
-    results: list,
+    results: list,  # type: ignore[type-arg]
     per_device_inputs_torch: list[torch.Tensor],
     all_topk_ids_torch: list[torch.Tensor],
     atomic_counters: list[Buffer],
@@ -133,7 +135,7 @@ def test_ep_dispatch(n_devices: int) -> None:
         n_experts=min(256, n_devices * (1024 // gpu_warp_size())),
         max_tokens_per_rank=128,
         n_gpus_per_node=n_devices,
-        n_nodes=1,
+        n_nodes=int(os.environ.get("SHMEM_TOTAL_NODES", "1")),
     )
     ep_initializer = EPCommInitializer(config)
     ep_initializer.ep_init(session)

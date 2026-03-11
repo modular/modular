@@ -23,12 +23,12 @@ Key features:
 - Phase-based synchronization to prevent data races
 """
 
-from gpu import thread_idx, WARP_SIZE
+from std.gpu import thread_idx, WARP_SIZE
 from layout import Layout
 from linalg.structuring import SMemArray
-from os.atomic import Atomic
-from sys._assembly import inlined_assembly
-from utils import StaticTuple
+from std.os.atomic import Atomic
+from std.sys._assembly import inlined_assembly
+from std.utils import StaticTuple
 
 from .structured import SMemBuffer
 from .ring_buffer_traits import (
@@ -402,13 +402,10 @@ struct RingBuffer[
 
     @always_inline
     fn __init__(out self):
-        constrained[
-            Self.total_tiles <= 32,
-            (
-                "total_tiles must be less than or equal to 32 for AMD atomic"
-                " limitations"
-            ),
-        ]()
+        comptime assert Self.total_tiles <= 32, (
+            "total_tiles must be less than or equal to 32 for AMD atomic"
+            " limitations"
+        )
 
         var smem_buffer = Self.SmemBufferType()
         self.smem_buffers = StaticTuple[
@@ -426,8 +423,7 @@ struct RingBuffer[
         """Get tiles from shared memory."""
         var result = Self.WarpTileTupleType()
 
-        @parameter
-        for i in range(Self.tile_buffers):
+        comptime for i in range(Self.tile_buffers):
             var staged_smem_tile = self.smem_buffers[i].get_tile(stage)
             result[i] = staged_smem_tile.tile[Self.warp_rows, Self.warp_cols](
                 warp_tile_idx, 0

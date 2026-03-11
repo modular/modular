@@ -246,7 +246,7 @@ str_ptr[] += " pointers" # Works now
 
 The [`take_pointee()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#take_pointee)
 method moves a pointee from the memory location pointed to by `ptr`. This is
-a consuming move. It invokes `__moveinit__()` on the destination value. It leaves
+a consuming move. It invokes `__init__(take=)` on the destination value. It leaves
 the memory location uninitialized.
 
 The [`destroy_pointee()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#destroy_pointee)
@@ -443,9 +443,9 @@ For example, the following code creates a NumPy array and then accesses the
 data using a Mojo pointer:
 
 ```mojo
-from python import Python
+from std.python import Python
 
-def share_array():
+def share_array() raises:
     np = Python.import_module("numpy")
     arr = np.array(Python.list(1, 2, 3, 4, 5, 6, 7, 8, 9))
     ptr = arr.ctypes.data.unsafe_get_as_pointer[DType.int64]()
@@ -453,7 +453,7 @@ def share_array():
         print(ptr[i], end=", ")
     print()
 
-def main():
+def main() raises:
     share_array()
 ```
 
@@ -479,9 +479,9 @@ be set to `(Mut/Immut)ExternalOrigin`, since the pointer points to memory
 external to the mojo program.
 
 ```mojo
-from ffi import external_call
+from std.ffi import external_call
 
-def get_foreign_pointer() -> UnsafePointer[Int, MutExternalOrigin]:
+def get_foreign_pointer() raises -> UnsafePointer[Int, MutExternalOrigin]:
     var ptr = external_call[
         "my_c_function", # external function name
         UnsafePointer[Int, MutExternalOrigin] # return type
@@ -525,7 +525,7 @@ in the chunk.
 ```mojo
 def read_chunks(
   var ptr: UnsafePointer[mut=False, UInt8],
-) -> List[List[UInt32]]:
+) raises -> List[List[UInt32]]:
     chunks = List[List[UInt32]]()
     # A chunk size of 0 indicates the end of the data
     chunk_size = Int(ptr[])
@@ -596,7 +596,7 @@ that this function only handles images where the number of pixels is evenly
 divisible by eight.)
 
 ```mojo
-def invert_red_channel(ptr: UnsafePointer[mut=True, UInt8], pixel_count: Int):
+def invert_red_channel(ptr: UnsafePointer[mut=True, UInt8], pixel_count: Int) raises:
     # number of values loaded or stored at a time
     comptime simd_width = 8
     # bytes per pixel, which is also the stride size

@@ -23,13 +23,13 @@ The convolution is mapped to GEMM as implicit im2col:
 - K = C_in * R * S (input channels * filter spatial)
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu.host.info import B200
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from sys import size_of
-from utils.index import IndexList
-from utils.numerics import get_accum_type
+from std.gpu.host.info import B200
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.sys import size_of
+from std.utils.index import IndexList
+from std.utils.numerics import get_accum_type
 
 
 # =============================================================================

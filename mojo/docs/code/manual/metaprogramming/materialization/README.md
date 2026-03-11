@@ -1,5 +1,5 @@
 This directory contains code examples for the
-[Life of a value](../../../../../docs/manual/metaprogramming/materialization.mdx)
+[Materialization](../../../../../docs/manual/metaprogramming/materialization.mdx)
 section of the Mojo Manual.
 
 Contents:

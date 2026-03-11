@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from sys import align_of, size_of
+from std.collections import Optional
+from std.sys import align_of, size_of
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils._measure import relative_difference
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
@@ -31,12 +31,9 @@ from linalg.matmul.gpu.sm100.blockwise_fp8 import (
 )
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 from linalg.utils import elementwise_epilogue_type
-from memory import LegacyUnsafePointer
+from std.testing import assert_almost_equal
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
-
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 def test_grouped_matmul_sm100_blockwise_scaled_fp8[
@@ -46,12 +43,13 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     expert_shape: IndexList[2],
     umma_shape: IndexList[3] = Index(64, 64, 32),
     use_epilogue: Bool = False,
+    scales_type: DType = DType.float32,
 ](
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
     expert_ids_list: List[Int],
     ctx: DeviceContext,
-):
+) raises:
     comptime BLOCK_SCALE_K = 128
     comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
     comptime transpose_b = True
@@ -71,10 +69,9 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         total_num_tokens += M
         max_num_tokens_by_expert = max(max_num_tokens_by_expert, M)
 
-    debug_assert(
-        total_num_tokens * size_of[DType.float32]() % 16 == 0,
-        "TMA expects total_num_tokens to be divisible by 16 bytes",
-    )
+    assert (
+        total_num_tokens * size_of[scales_type]() % 16 == 0
+    ), "TMA expects total_num_tokens to be divisible by 16 bytes"
 
     print(
         "== test_grouped_sm100_blockwise_scaled_fp8_matmul",
@@ -97,10 +94,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         transpose_b,
     )
 
-    debug_assert(
-        (K % BLOCK_SCALE_K == 0),
-        "K must be divisible by BLOCK_SCALE_K",
-    )
+    assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
 
     # Define shapes
     comptime static_a_shape = DimList(Dim(), K)
@@ -108,6 +102,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     var a_size = total_num_tokens * K
 
     comptime static_b_shape = DimList(num_experts, N, K)
+    var dynamic_b_shape = IndexList[3](num_experts, N, K)
     var b_size = num_experts * N * K
 
     comptime static_c_shape = DimList(Dim(), N)
@@ -121,6 +116,9 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     var a_scales_size = (K // BLOCK_SCALE_K) * total_num_tokens
 
     comptime static_b_scales_shape = DimList(
+        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
+    )
+    var dynamic_b_scales_shape = IndexList[3](
         num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
     var b_scales_size = (
@@ -138,22 +136,14 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     )
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_active_experts + 1
-    )
-    var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
-        num_active_experts
-    )
-    var a_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        a_scales_size
-    )
-    var b_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        b_scales_size
-    )
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
+    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
+    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_size)
+    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_size)
 
     var a_host = LayoutTensor[a_type, a_layout](
         a_host_ptr,
@@ -171,11 +161,11 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         c_host_ref_ptr,
         RuntimeLayout[c_layout].row_major(dynamic_c_shape),
     )
-    var a_scales_host = LayoutTensor[DType.float32, a_scales_layout](
+    var a_scales_host = LayoutTensor[scales_type, a_scales_layout](
         a_scales_host_ptr,
         RuntimeLayout[a_scales_layout].row_major(dynamic_a_scales_shape),
     )
-    var b_scales_host = LayoutTensor[DType.float32, b_scales_layout](
+    var b_scales_host = LayoutTensor[scales_type, b_scales_layout](
         b_scales_host_ptr,
         RuntimeLayout[b_scales_layout].row_major(
             IndexList[3](num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K)
@@ -201,44 +191,48 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     var expert_ids_device_buffer = ctx.enqueue_create_buffer[DType.int32](
         num_active_experts
     )
-    var a_scales_device_buffer = ctx.enqueue_create_buffer[DType.float32](
+    var a_scales_device_buffer = ctx.enqueue_create_buffer[scales_type](
         a_scales_size
     )
-    var b_scales_device_buffer = ctx.enqueue_create_buffer[DType.float32](
+    var b_scales_device_buffer = ctx.enqueue_create_buffer[scales_type](
         b_scales_size
     )
 
-    var a_device = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_device = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_device_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, K),
+        IndexList[2](total_num_tokens, K),
     )
-    var b_device = NDBuffer[b_type, 3, _, static_b_shape](
+    var b_device = NDBuffer[rank=3, b_type, _, static_b_shape](
         b_device_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
-    var c_device = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, N),
+        IndexList[2](total_num_tokens, N),
     )
-    var c_device_ref = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_ref_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, N),
+        IndexList[2](total_num_tokens, N),
     )
-    var a_offsets_device = NDBuffer[DType.uint32, 1](
+    var a_offsets_device = NDBuffer[rank=1, DType.uint32](
         a_offsets_device_buffer.unsafe_ptr(),
         num_active_experts + 1,
     )
-    var expert_ids_device = NDBuffer[DType.int32, 1](
+    var expert_ids_device = NDBuffer[rank=1, DType.int32](
         expert_ids_device_buffer.unsafe_ptr(),
         num_active_experts,
     )
-    var a_scales_device = NDBuffer[DType.float32, 2, _, static_a_scales_shape](
+    var a_scales_device = NDBuffer[
+        rank=2, scales_type, _, static_a_scales_shape
+    ](
         a_scales_device_buffer.unsafe_ptr(),
-        DimList(K // BLOCK_SCALE_K, total_num_tokens),
+        IndexList[2](K // BLOCK_SCALE_K, total_num_tokens),
     )
-    var b_scales_device = NDBuffer[DType.float32, 3, _, static_b_scales_shape](
+    var b_scales_device = NDBuffer[
+        rank=3, scales_type, _, static_b_scales_shape
+    ](
         b_scales_device_buffer.unsafe_ptr(),
-        static_b_scales_shape,
+        dynamic_b_scales_shape,
     )
 
     var c_tensor = c_device
@@ -287,7 +281,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         BLOCK_DIM_M=16,
         BLOCK_DIM_N=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
     ](
         c_ref,
         a,
@@ -314,7 +308,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     # grouped_matmul_sm100_blockwise_scaled_fp8[
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         config=config,
-        elementwise_lambda_fn = Optional[elementwise_epilogue_type](
+        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
             epilogue_fn
         ) if use_epilogue else None,
     ](
@@ -343,7 +337,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
             assert_almost_equal(
                 c_host[mi, ni][0],
                 c_host_ref[mi, ni][0],
-                msg=String("m: ", mi, " n: ", ni),
+                msg=t"m: {mi} n: {ni}",
                 rtol=rtol,
                 atol=atol,
             )
@@ -375,13 +369,13 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     _ = expert_ids
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=1,
-            expert_shape = Index(256, 256),
+            expert_shape=Index(256, 256),
             use_epilogue=True,
         ](1, [128], [0], ctx)
 
@@ -389,7 +383,7 @@ def main():
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=1,
-            expert_shape = Index(512, 1024),
+            expert_shape=Index(512, 1024),
         ](1, [256], [0], ctx)
 
         # Simple expert routing
@@ -397,14 +391,14 @@ def main():
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(512, 1024),
+            expert_shape=Index(512, 1024),
         ](1, [256], [2], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(4096, 7168),
+            expert_shape=Index(4096, 7168),
         ](2, [128, 256], [0, 2], ctx)
 
         # Unaligned grouped matmul
@@ -412,21 +406,21 @@ def main():
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(512, 1024),
+            expert_shape=Index(512, 1024),
         ](2, [20, 40], [0, 2], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=6,
-            expert_shape = Index(7168, 2048),
+            expert_shape=Index(7168, 2048),
         ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=6,
-            expert_shape = Index(1280, 1024),
+            expert_shape=Index(1280, 1024),
             use_epilogue=True,
         ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
 
@@ -434,28 +428,28 @@ def main():
             DType.float8_e4m3fn,
             DType.float32,
             num_experts=4,
-            expert_shape = Index(512, 1024),
+            expert_shape=Index(512, 1024),
         ](2, [20, 40], [0, 2], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.float32,
             num_experts=1,
-            expert_shape = Index(512, 1024),
+            expert_shape=Index(512, 1024),
         ](1, [512], [0], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.float32,
             num_experts=6,
-            expert_shape = Index(7168, 2048),
+            expert_shape=Index(7168, 2048),
         ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.float32,
             num_experts=6,
-            expert_shape = Index(1280, 1024),
+            expert_shape=Index(1280, 1024),
             use_epilogue=True,
         ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
 
@@ -463,12 +457,54 @@ def main():
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(4096, 7168),
+            expert_shape=Index(4096, 7168),
         ](2, [8, 64], [0, 2], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=6,
-            expert_shape = Index(7168, 2048),
+            expert_shape=Index(7168, 2048),
         ](4, [20, 4, 4, 40], [0, 3, 2, 4], ctx)
+
+        # bf16 scales tests
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            num_experts=1,
+            expert_shape=Index(256, 256),
+            scales_type=DType.bfloat16,
+        ](1, [128], [0], ctx)
+
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            num_experts=1,
+            expert_shape=Index(512, 1024),
+            scales_type=DType.bfloat16,
+        ](1, [256], [0], ctx)
+
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            num_experts=4,
+            expert_shape=Index(4096, 7168),
+            scales_type=DType.bfloat16,
+        ](2, [128, 256], [0, 2], ctx)
+
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            num_experts=6,
+            expert_shape=Index(7168, 2048),
+            scales_type=DType.bfloat16,
+        ](4, [24, 1504, 296, 32], [0, 3, 2, 4], ctx)
+
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            num_experts=6,
+            expert_shape=Index(1280, 1024),
+            use_epilogue=True,
+            scales_type=DType.bfloat16,
+        ](4, [24, 1504, 296, 32], [0, 3, 2, 4], ctx)

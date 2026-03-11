@@ -25,10 +25,10 @@ directly to hardware instructions and require understanding of the
 underlying GPU architecture.
 """
 
-from collections.string.string_slice import get_static_string
-from os.atomic import Consistency
-from ffi import external_call
-from sys import (
+from std.collections.string.string_slice import get_static_string
+from std.os.atomic import Consistency
+from std.ffi import external_call
+from std.sys import (
     is_amd_gpu,
     is_gpu,
     is_nvidia_gpu,
@@ -36,8 +36,8 @@ from sys import (
     size_of,
     _RegisterPackType,
 )
-from sys._assembly import inlined_assembly
-from sys.info import (
+from std.sys._assembly import inlined_assembly
+from std.sys.info import (
     CompilationTarget,
     _is_sm_9x_or_newer,
     align_of,
@@ -49,9 +49,9 @@ from sys.info import (
     _is_amd_rdna3,
     _is_amd_rdna4,
 )
-from sys.intrinsics import llvm_intrinsic, readfirstlane
+from std.sys.intrinsics import llvm_intrinsic, readfirstlane
 
-from memory.unsafe import bitcast
+from std.memory.unsafe import bitcast
 
 from .memory.memory import CacheOperation, _int_to_str
 
@@ -67,7 +67,9 @@ fn ldg[
     width: Int = 1,
     *,
     alignment: Int = align_of[SIMD[dtype, width]](),
-](x: UnsafePointer[mut=False, Scalar[dtype]]) -> SIMD[dtype, width]:
+](x: UnsafePointer[mut=False, Scalar[dtype], _]) -> SIMD[
+    dtype, width
+] where dtype.is_numeric():
     """Load data from global memory through the non-coherent cache.
 
     This function provides a hardware-accelerated global memory load operation
@@ -91,7 +93,6 @@ fn ldg[
         - Particularly beneficial for read-only texture-like access patterns.
         - May improve performance on memory-bound kernels.
     """
-    comptime assert dtype.is_numeric(), "the dtype must be numeric"
     return x.load[width=width, alignment=alignment, invariant=True]()
 
 
@@ -128,8 +129,7 @@ fn warpgroup_reg_alloc[count: Int]():
         24 <= count <= 256
     ), "count argument must be within 24 and 256"
 
-    @parameter
-    if _is_sm_9x_or_newer():
+    comptime if _is_sm_9x_or_newer():
         inlined_assembly[
             "setmaxnreg.inc.sync.aligned.u32 $0;",
             NoneType,
@@ -163,8 +163,7 @@ fn warpgroup_reg_dealloc[count: Int]():
         24 <= count <= 256
     ), "count argument must be within 24 and 256"
 
-    @parameter
-    if _is_sm_9x_or_newer():
+    comptime if _is_sm_9x_or_newer():
         inlined_assembly[
             "setmaxnreg.dec.sync.aligned.u32 $0;",
             NoneType,
@@ -201,8 +200,7 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
         - Lookup table value determines output for each possible input combo.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return inlined_assembly[
             "lop3.b32 $0, $1, $2, $3, $4;",
             Int32,
@@ -210,9 +208,8 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
             has_side_effect=False,
         ](a, b, c, lut)
     else:
-        return CompilationTarget.unsupported_target_error[
-            Int32,
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
             note="lop() is only supported when targeting NVIDIA GPUs.",
         ]()
 
@@ -250,15 +247,13 @@ fn byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
 
 
 fn _byte_permute_inst() -> StaticString:
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return "llvm.nvvm.prmt"
     elif is_amd_gpu():
         return "llvm.amdgcn.perm"
     else:
-        return CompilationTarget.unsupported_target_error[
-            StaticString,
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -288,8 +283,7 @@ fn mulhi(a: UInt16, b: UInt16) -> UInt32:
         On others, it performs multiplication using 32-bit arithmetic.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.us", UInt32, has_side_effect=False
         ](a, b)
@@ -319,8 +313,7 @@ fn mulhi(a: Int16, b: Int16) -> Int32:
         On others, it performs multiplication using 32-bit arithmetic.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.s", Int32, has_side_effect=False
         ](a, b)
@@ -350,8 +343,7 @@ fn mulhi(a: UInt32, b: UInt32) -> UInt32:
         On others, it performs multiplication using 64-bit arithmetic.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.ui", UInt32, has_side_effect=False
         ](a, b)
@@ -381,8 +373,7 @@ fn mulhi(a: Int32, b: Int32) -> Int32:
         On others, it performs multiplication using 64-bit arithmetic.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.i", Int32, has_side_effect=False
         ](a, b)
@@ -416,8 +407,7 @@ fn mulwide(a: UInt32, b: UInt32) -> UInt64:
         On others, it performs multiplication using 64-bit casts.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return inlined_assembly[
             "mul.wide.u32 $0, $1, $2;",
             UInt64,
@@ -449,8 +439,7 @@ fn mulwide(a: Int32, b: Int32) -> Int64:
         On others, it performs multiplication using 64-bit casts.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return inlined_assembly[
             "mul.wide.s32 $0, $1, $2;",
             Int64,
@@ -574,7 +563,7 @@ struct Scope(Equatable, ImplicitlyCopyable, Writable):
         Returns:
             A string representation of the memory scope.
         """
-        return String("Scope(", self, ")")
+        return t"Scope({self})"
 
     @always_inline("nodebug")
     fn mnemonic(self) -> StaticString:
@@ -645,14 +634,12 @@ fn _get_type_suffix[dtype: DType]() -> StaticString:
 
 
 fn _get_air_atomic_suffix[dtype: DType]() -> StaticString:
-    @parameter
-    if dtype == DType.float32:
+    comptime if dtype == DType.float32:
         return "f32"
     elif dtype in (DType.int32, DType.uint32):
         return "i32"
     else:
-        constrained[False, "unsupported dtype for air atomic intrinsics"]()
-        return ""
+        comptime assert False, "unsupported dtype for air atomic intrinsics"
 
 
 fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
@@ -747,8 +734,7 @@ fn store_release[
     """
     comptime assert is_gpu(), "atomic store only supported on GPU"
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         comptime mem_constraint = StaticString(",~{memory}") if memory else ""
         comptime constraints = _get_nvtx_register_constraint[
             dtype
@@ -765,8 +751,8 @@ fn store_release[
         ](value, ptr)
     elif is_amd_gpu():
         __mlir_op.`pop.store`[
-            alignment = alignment._mlir_value,
-            ordering = Consistency.RELEASE.__mlir_attr(),
+            alignment=alignment._mlir_value,
+            ordering=Consistency.RELEASE.__mlir_attr(),
         ](value, ptr.address)
     elif is_apple_gpu():
         comptime mem_flags = _AirMemFlags.ThreadGroup if ptr.address_space == AddressSpace.SHARED else _AirMemFlags.Device
@@ -789,8 +775,8 @@ fn store_release[
             True,
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
@@ -819,8 +805,7 @@ fn store_relaxed[
     """
     comptime assert is_gpu(), "atomic store only supported on GPU"
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         comptime mem_constraint = StaticString(",~{memory}") if memory else ""
         comptime constraints = _get_nvtx_register_constraint[
             dtype
@@ -837,12 +822,12 @@ fn store_relaxed[
         ](value, ptr)
     elif is_amd_gpu():
         __mlir_op.`pop.store`[
-            alignment = alignment._mlir_value,
-            ordering = Consistency.MONOTONIC.__mlir_attr(),
+            alignment=alignment._mlir_value,
+            ordering=Consistency.MONOTONIC.__mlir_attr(),
         ](value, ptr.address)
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
@@ -881,8 +866,7 @@ fn load_acquire[
     """
     comptime assert is_gpu(), "atomic load only supported on GPU"
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         comptime mem_constraint = StaticString(",~{memory}") if memory else ""
         comptime constraints = "=" + _get_nvtx_register_constraint[
             dtype
@@ -899,8 +883,8 @@ fn load_acquire[
         ](ptr.address_space_cast[AddressSpace.GENERIC]())
     elif is_amd_gpu():
         return __mlir_op.`pop.load`[
-            alignment = alignment._mlir_value,
-            ordering = Consistency.ACQUIRE.__mlir_attr(),
+            alignment=alignment._mlir_value,
+            ordering=Consistency.ACQUIRE.__mlir_attr(),
         ](ptr.address)
     elif is_apple_gpu():
         comptime addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GENERIC else ptr.address_space
@@ -923,9 +907,8 @@ fn load_acquire[
         )
         return value
     else:
-        return CompilationTarget.unsupported_target_error[
-            Scalar[dtype],
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -956,8 +939,7 @@ fn load_relaxed[
     """
     comptime assert is_gpu(), "atomic load only supported on GPU"
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         comptime mem_constraint = StaticString(",~{memory}") if memory else ""
         comptime constraints = "=" + _get_nvtx_register_constraint[
             dtype
@@ -974,13 +956,12 @@ fn load_relaxed[
         ](ptr.address_space_cast[AddressSpace.GENERIC]())
     elif is_amd_gpu():
         return __mlir_op.`pop.load`[
-            alignment = alignment._mlir_value,
-            ordering = Consistency.MONOTONIC.__mlir_attr(),
+            alignment=alignment._mlir_value,
+            ordering=Consistency.MONOTONIC.__mlir_attr(),
         ](ptr.address)
     else:
-        return CompilationTarget.unsupported_target_error[
-            Scalar[dtype],
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -1103,8 +1084,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
 
         # Architecture-specific word 3 value for buffer resource.
         # https://github.com/ROCm/composable_kernel/blob/3b2302081eab4975370e29752343058392578bcb/include/ck/ck.hpp#L84
-        @parameter
-        if _is_amd_rdna3() or _is_amd_rdna4():
+        comptime if _is_amd_rdna3() or _is_amd_rdna4():
             # GFX11/GFX12 (RDNA3/RDNA4)
             self.desc[3] = 0x31004000
         elif _is_amd_rdna1() or _is_amd_rdna2():
@@ -1198,7 +1178,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
         self,
         vector_offset: Int32,
         shared_ptr: UnsafePointer[
-            mut=True, Scalar[dtype], address_space = AddressSpace.SHARED
+            mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
         ],
         *,
         scalar_offset: Int32 = 0,
@@ -1313,8 +1293,7 @@ fn _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
         Format: bit 0 = SC0, bit 1 = NT, bit 4 = SC1
     """
 
-    @parameter
-    if cache_policy == CacheOperation.ALWAYS:
+    comptime if cache_policy == CacheOperation.ALWAYS:
         return 0x00  # SC=00, NT=0
     elif cache_policy == CacheOperation.STREAMING:
         return 0x02  # SC=00, NT=1
@@ -1337,8 +1316,7 @@ fn _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
 
 
 fn _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
-    @parameter
-    if bytes == 1:
+    comptime if bytes == 1:
         return DType.uint8
     elif bytes == 2:
         return DType.uint16
@@ -1363,7 +1341,7 @@ fn ds_read_tr16_b64[
     //,
 ](
     shared_ptr: UnsafePointer[
-        mut=False, Scalar[dtype], address_space = AddressSpace.SHARED
+        mut=False, Scalar[dtype], _, address_space=AddressSpace.SHARED
     ]
 ) -> SIMD[dtype, 4]:
     """Reads a 64-bit LDS transpose block using TR16 layout and returns SIMD[dtype, 4] of 16-bit types.
@@ -1467,8 +1445,7 @@ fn permlane_shuffle[
 
     var out = type_of(res)()
 
-    @parameter
-    for i in range(simd_width):
+    comptime for i in range(simd_width):
         out[i] = permlane_swap[stride](val[i], val[i])[
             Int((lane_group + 1) % 2)
         ]

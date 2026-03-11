@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import Floorable, floor
+from std.math import Floorable, floor
 
 
 # This decorator limits the instance variable count to one

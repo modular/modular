@@ -32,8 +32,8 @@ from max.interfaces import (
     LoRAStatus,
 )
 from max.pipelines.core import TextContext
+from max.pipelines.lib.config.lora_config import LoRAConfig
 from max.pipelines.lib.lora import LoRAManager
-from max.pipelines.lib.lora_config import LoRAConfig
 from safetensors.numpy import save_file
 
 

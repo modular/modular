@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib.hasher import Hasher
+from std.hashlib.hasher import Hasher
 
-from collections.set import Set
-from gpu.primitives.grid_controls import PDLLevel
-from gpu.host.info import H100
-from utils.index import Index, IndexList
+from std.collections.set import Set
+from std.gpu.primitives.grid_controls import PDLLevel
+from std.gpu.host.info import H100
+from std.utils.index import Index, IndexList
 from ....utils_gpu import MatmulConfig as BaseMatmulConfig
-from collections import Optional
+from std.collections import Optional
 
 
 struct MatmulConfig[
@@ -26,7 +26,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, Stringable, TrivialRegisterPassable, Writable):
+](Copyable, Equatable, Hashable, TrivialRegisterPassable, Writable):
     """Static configuration of SM90 GPU matmul."""
 
     # Mandatory parameters
@@ -88,9 +88,9 @@ struct MatmulConfig[
             consumer_groups: The number of consumer groups.
             swapAB: Whether to swap A and B.
         """
-        constrained[
-            Self.a_type == Self.b_type, "a_type and b_type must be the same"
-        ]()
+        comptime assert (
+            Self.a_type == Self.b_type
+        ), "a_type and b_type must be the same"
 
         var M = n if swapAB else m
         var N = m if swapAB else n
@@ -249,6 +249,7 @@ struct MatmulConfig[
             and self.k_group_size == other.k_group_size
         )
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         return String.write(self)
 
@@ -294,6 +295,7 @@ struct MatmulConfig[
         writer.write("  transpose_b: ", "K" if Self.transpose_b else "MN", "\n")
         writer.write(")")
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         return String.write(self)
 
@@ -404,8 +406,7 @@ fn swapAB_smallM[
 
     var final_mma_n: UInt = 0
 
-    @parameter
-    for mma_n in range(UInt(8), UInt(256) + 1, UInt(8)):
+    comptime for mma_n in range(UInt(8), UInt(256) + 1, UInt(8)):
         var total_n_computed = align_up(N, mma_n)
         var num_ctas = ceildiv(M, BM) * ceildiv(N, mma_n)
 
@@ -416,8 +417,7 @@ fn swapAB_smallM[
 
         var condition: Bool
 
-        @parameter
-        if prioritize_compute_over_ctas:
+        comptime if prioritize_compute_over_ctas:
             condition = current_compute_ratio < compute_ratio
         else:
             condition = num_ctas > ctas_used

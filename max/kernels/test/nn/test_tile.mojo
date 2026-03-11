@@ -11,13 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout._coord import Coord
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import Coord, TileTensor, row_major
 from nn.tile import tile
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 # CHECK-LABEL: test_tile_eg1
@@ -900,7 +898,7 @@ fn test_tile_1d() raises:
         assert_equal(output[i], expected[i])
 
 
-def main():
+def main() raises:
     test_tile_1d()
     test_tile_eg1()
     test_tile_eg2()

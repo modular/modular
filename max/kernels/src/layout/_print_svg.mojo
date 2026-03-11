@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from pathlib import Path
-from sys import size_of
+from std.pathlib import Path
+from std.sys import size_of
 
 from layout import Layout, LayoutTensor
 from layout.swizzle import Swizzle
@@ -153,8 +153,7 @@ fn _print_svg_impl[
             var idx = materialized_layout([i, j])
             var non_swizzled_idx = idx
 
-            @parameter
-            if swizzle:
+            comptime if swizzle:
                 idx = swizzle.value()(idx)
 
             map[idx] = IntTuple(i, j)
@@ -195,8 +194,7 @@ fn _print_svg_impl[
                 idx,
             )
 
-            @parameter
-            if memory_bank:
+            comptime if memory_bank:
                 writer.write(
                     " b=",
                     (

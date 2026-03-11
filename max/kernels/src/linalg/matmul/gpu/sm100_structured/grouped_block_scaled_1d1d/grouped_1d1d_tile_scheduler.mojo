@@ -23,17 +23,16 @@ Key characteristics:
 - 3-warp specialization (no scheduler warp)
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import block_idx, grid_dim, thread_idx
-from layout import Layout, LayoutTensor, RuntimeLayout
-from layout._tile_tensor import TileTensor
+from std.gpu import block_idx, grid_dim, thread_idx
+from layout import TileTensor
 
-from ..structured_kernels.tile_types import GMEMLayout1D
-from memory import UnsafePointer
+from structured_kernels.tile_types import GMEMLayout1D
+from std.memory import UnsafePointer
 
-from utils.fast_div import FastDiv
-from utils.index import Index, IndexList
+from std.utils.fast_div import FastDiv
+from std.utils.index import Index, IndexList
 
 
 # ===----------------------------------------------------------------------=== #
@@ -42,7 +41,7 @@ from utils.index import Index, IndexList
 
 
 @fieldwise_init
-struct GroupedWorkInfo1D1D(Stringable, TrivialRegisterPassable, Writable):
+struct GroupedWorkInfo1D1D(TrivialRegisterPassable, Writable):
     """Work tile information for 1D-1D grouped matmul.
 
     Contains the coordinates and metadata for a single work tile:
@@ -59,6 +58,7 @@ struct GroupedWorkInfo1D1D(Stringable, TrivialRegisterPassable, Writable):
     var expert_id: Int32
     var is_valid_tile: Bool
     var terminate: Bool
+    var m_start: UInt32  # Expert's start offset in contiguous token space
 
     @always_inline
     fn __init__(out self):
@@ -68,6 +68,7 @@ struct GroupedWorkInfo1D1D(Stringable, TrivialRegisterPassable, Writable):
         self.expert_id = 0
         self.is_valid_tile = False
         self.terminate = False
+        self.m_start = 0
 
     @always_inline
     fn is_valid(self) -> Bool:
@@ -79,6 +80,7 @@ struct GroupedWorkInfo1D1D(Stringable, TrivialRegisterPassable, Writable):
         """Returns True if the scheduler has no more work."""
         return self.terminate
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)
@@ -98,6 +100,8 @@ struct GroupedWorkInfo1D1D(Stringable, TrivialRegisterPassable, Writable):
             self.is_valid_tile,
             ", terminate=",
             self.terminate,
+            ", m_start=",
+            self.m_start,
             ")",
         )
 
@@ -122,6 +126,11 @@ struct GroupedWorkContext1D1D(ImplicitlyCopyable, Movable):
     fn m(self) -> UInt32:
         """M coordinate in contiguous token space."""
         return self.info.m
+
+    @always_inline
+    fn m_start(self) -> UInt32:
+        """Expert's start token offset in contiguous token space."""
+        return self.info.m_start
 
     @always_inline
     fn n(self) -> UInt32:
@@ -155,6 +164,7 @@ struct GroupedWorkIterator1D1D[
     cluster: IndexList[3] = Index(1, 1, 1),
     cta_group: Int = 1,
     swizzle: Bool = False,
+    AB_swapped: Bool = False,
 ]:
     """Work iterator for 1D-1D grouped block-scaled matmul.
 
@@ -183,14 +193,21 @@ struct GroupedWorkIterator1D1D[
     var block_idx_start: UInt32
 
     # Derived constants
+    # For AB_swapped: m=tokens strides by MMA_N (=BN*cta_group),
+    # n=weights strides by MMA_M (=BM*cta_group).
+    # For non-swapped: m=tokens strides by BM, n=weights strides by MMA_N.
     comptime cta_group_tile_shape = Index(
-        Self.tile_shape[0] * Self.cta_group, Self.tile_shape[1] * Self.cta_group
+        Self.tile_shape[1] * Self.cta_group,
+        Self.tile_shape[0] * Self.cta_group,
+    ) if Self.AB_swapped else Index(
+        Self.tile_shape[0],
+        Self.tile_shape[1] * Self.cta_group,
     )
     comptime div_dynamic_block = FastDiv[DType.uint32](
         Self.cta_group_tile_shape[0]  # M dimension is dynamic
     )
     comptime num_static_dim_blocks: UInt32 = UInt32(
-        ceildiv(Self.static_N, Self.tile_shape[1])
+        ceildiv(Self.static_N, Self.cta_group_tile_shape[1])
     )
     comptime kNum1DBlocksPerGroup: UInt32 = 16
 
@@ -236,9 +253,11 @@ struct GroupedWorkIterator1D1D[
     fn _fetch_next_work(mut self) -> Tuple[GroupedWorkInfo1D1D, UInt32]:
         """Internal method to compute next work tile."""
         self.current_iter += 1
+        # Normalize by cta_group so all CTAs in a cluster get the same
+        # work tile.  For cta_group==1 this is a no-op.
         var next_block_idx = UInt32(self.current_iter) * UInt32(
-            grid_dim.x
-        ) + UInt32(block_idx.x)
+            grid_dim.x // Scalar[DType.uint](Self.cta_group)
+        ) + UInt32(block_idx.x // Scalar[DType.uint](Self.cta_group))
         var start_idx = rebind[Scalar[DType.uint32]](
             self.group_offsets[Int(self.current_group_idx)]
         )
@@ -250,7 +269,10 @@ struct GroupedWorkIterator1D1D[
         while True:
             if self.current_group_idx >= UInt32(self.num_active_experts):
                 # Finished all groups
-                return (GroupedWorkInfo1D1D(0, 0, 0, 0, False, True), UInt32(0))
+                return (
+                    GroupedWorkInfo1D1D(0, 0, 0, 0, False, True, 0),
+                    UInt32(0),
+                )
 
             end_idx = rebind[Scalar[DType.uint32]](
                 self.group_offsets[Int(self.current_group_idx + 1)]
@@ -284,7 +306,7 @@ struct GroupedWorkIterator1D1D[
         if not is_valid:
             return (
                 GroupedWorkInfo1D1D(
-                    0, 0, self.current_group_idx, 0, False, False
+                    0, 0, self.current_group_idx, 0, False, False, 0
                 ),
                 end_idx,
             )
@@ -302,7 +324,7 @@ struct GroupedWorkIterator1D1D[
 
         # Compute actual coordinates
         # M is in contiguous token space, offset by start_idx
-        var m = m_block_idx * UInt32(Self.tile_shape[0]) + start_idx
+        var m = m_block_idx * UInt32(Self.cta_group_tile_shape[0]) + start_idx
         var n = n_block_idx * UInt32(Self.cta_group_tile_shape[1])
 
         return (
@@ -313,6 +335,7 @@ struct GroupedWorkIterator1D1D[
                 expert_id,
                 True,
                 False,
+                start_idx,
             ),
             end_idx,
         )

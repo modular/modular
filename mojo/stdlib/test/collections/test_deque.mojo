@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Deque
+from std.collections import Deque
 
 from test_utils import check_write_to
-from testing import assert_equal, assert_false, assert_raises, assert_true
-from testing import TestSuite
+from std.testing import assert_equal, assert_false, assert_raises, assert_true
+from std.testing import TestSuite
 
 # ===-----------------------------------------------------------------------===#
 # Implementation tests
@@ -1090,7 +1090,9 @@ fn test_reversed_iter() raises:
     assert_equal(-i, len(q))
 
 
-def _test_deque_iter_bounds[I: Iterator](var deque_iter: I, deque_len: Int):
+def _test_deque_iter_bounds[
+    I: Iterator
+](var deque_iter: I, deque_len: Int) raises:
     var iter = deque_iter^
 
     for i in range(deque_len):
@@ -1106,28 +1108,13 @@ def _test_deque_iter_bounds[I: Iterator](var deque_iter: I, deque_len: Int):
     assert_equal(0, upper.value())
 
 
-def test_deque_iter_bounds():
+def test_deque_iter_bounds() raises:
     var deque = Deque(1, 2, 3)
     _test_deque_iter_bounds(iter(deque), len(deque))
     _test_deque_iter_bounds(reversed(deque), len(deque))
 
 
-fn test_str_and_repr() raises:
-    q = Deque(1, 2, 3)
-
-    assert_equal(q.__str__(), "[1, 2, 3]")
-    assert_equal(q.__repr__(), "Deque[Int]([Int(1), Int(2), Int(3)])")
-
-    s = Deque[String]("a", "b", "c")
-
-    assert_equal(s.__str__(), "[a, b, c]")
-    assert_equal(
-        s.__repr__(),
-        "Deque[String](['a', 'b', 'c'])",
-    )
-
-
-def test_deque_literal():
+def test_deque_literal() raises:
     var q: Deque[Int] = [1, 2, 3]
     assert_equal(3, len(q))
     assert_equal(1, q[0])
@@ -1143,7 +1130,7 @@ def test_deque_literal():
     assert_equal(0, len(q3))
 
 
-def test_repr_wrap():
+def test_repr_wrap() raises:
     var s = Deque[String]("a", "b", "c")
     assert_equal(
         repr(s),
@@ -1151,7 +1138,7 @@ def test_repr_wrap():
     )
 
 
-def test_write_to():
+def test_write_to() raises:
     """Test Writable trait implementation."""
     check_write_to(
         Deque[Int](10, 20, 30), expected="[10, 20, 30]", is_repr=False
@@ -1163,7 +1150,7 @@ def test_write_to():
     check_write_to(Deque[Int](42), expected="[42]", is_repr=False)
 
 
-def test_write_repr_to():
+def test_write_repr_to() raises:
     """Test write_repr_to implementation."""
     check_write_to(
         Deque[Int](1, 2, 3),
@@ -1174,10 +1161,38 @@ def test_write_repr_to():
     check_write_to(Deque[Int](), expected="Deque[Int]([])", is_repr=True)
 
 
+struct NonEquatable(Copyable):
+    pass
+
+
+def test_deque_conditional_conformances() raises:
+    assert_true(conforms_to(Deque[Int], Equatable))
+    # TODO(MOCO-3413): The `conforms_to` builtin does not evaluate the
+    # `where` clause on conditional conformances — it sees that `Deque` has a
+    # conformance for `Equatable` and returns True without checking whether
+    # the condition holds for the concrete `ElementType`. The type checker at
+    # call sites *does* enforce the condition correctly (e.g., passing
+    # `Deque[NonEquatable]` to `fn foo[T: Equatable](x: T)` is an error).
+    # assert_false(conforms_to(Deque[NonEquatable], Equatable))
+
+    assert_true(conforms_to(Deque[Int], Hashable))
+    # TODO(MOCO-3413): `conforms_to` doesn't evaluate `where` clauses.
+    # assert_false(conforms_to(Deque[NonEquatable], Hashable))
+
+    # Verify equal deques produce equal hashes.
+    var d1 = Deque[Int](1, 2, 3)
+    var d2 = Deque[Int](1, 2, 3)
+    assert_equal(hash(d1), hash(d2))
+
+    assert_true(conforms_to(Deque[Int], Writable))
+    # TODO(MOCO-3413): `conforms_to` doesn't evaluate `where` clauses.
+    # assert_false(conforms_to(Deque[NonEquatable], Writable))
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

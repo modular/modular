@@ -13,14 +13,11 @@
 
 # Meant to be run on an AVX512 system
 
-from sys import prefetch
-from sys.intrinsics import PrefetchOptions
+from std.sys import prefetch
+from std.sys.intrinsics import PrefetchOptions
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 comptime mr = 6
 comptime nr = 64
@@ -29,16 +26,16 @@ comptime simd_size = 16
 
 
 fn kernel6x4(
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
-    c_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float32, _],
+    b_ptr: UnsafePointer[Float32, _],
+    c_ptr: UnsafePointer[mut=True, Float32, _],
     n: Int,
     k: Int,
     kc: Int,
 ):
-    var a = NDBuffer[DType.float32, 1, _, Dim()](a_ptr, mr * k)
-    var b = NDBuffer[DType.float32, 1, _, Dim()](b_ptr, kc * nr)
-    var c = NDBuffer[DType.float32, 1, _, Dim()](c_ptr, mr * n)
+    var a = NDBuffer[rank=1, DType.float32, _, Dim()](a_ptr, mr * k)
+    var b = NDBuffer[rank=1, DType.float32, _, Dim()](b_ptr, kc * nr)
+    var c = NDBuffer[rank=1, DType.float32, _, Dim()](c_ptr, mr * n)
 
     var cv0 = c.load[width=simd_size](n * 0 + simd_size * 0)
     var cv1 = c.load[width=simd_size](n * 0 + simd_size * 1)
@@ -146,16 +143,16 @@ fn kernel6x4(
 
 
 fn kernel6x4_naive(
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
-    c_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float32, _],
+    b_ptr: UnsafePointer[Float32, _],
+    c_ptr: UnsafePointer[mut=True, Float32, _],
     n: Int,
     k: Int,
     kc: Int,
 ):
-    var a = NDBuffer[DType.float32, 1, _, Dim()](a_ptr, mr * k)
-    var b = NDBuffer[DType.float32, 1, _, Dim()](b_ptr, kc * nr)
-    var c = NDBuffer[DType.float32, 1, _, Dim()](c_ptr, mr * n)
+    var a = NDBuffer[rank=1, DType.float32, _, Dim()](a_ptr, mr * k)
+    var b = NDBuffer[rank=1, DType.float32, _, Dim()](b_ptr, kc * nr)
+    var c = NDBuffer[rank=1, DType.float32, _, Dim()](c_ptr, mr * n)
 
     for ir in range(mr):
         for jr in range(nr):

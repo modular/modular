@@ -12,42 +12,40 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements Transpose functions."""
 
-from math import ceildiv
-from sys.info import simd_width_of
-from sys.intrinsics import strided_load, strided_store
+from std.math import ceildiv
+from std.sys.info import simd_width_of
+from std.sys.intrinsics import strided_load, strided_store
 
-from algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
+from std.algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from layout import (
-    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from layout.layout import is_row_major
-from layout._tile_tensor import TileTensor
-from memory import LegacyUnsafePointer, memcpy
+from std.memory import memcpy
+from std.runtime.asyncrt import parallelism_level
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from runtime.asyncrt import parallelism_level
-
-from utils.index import IndexList, StaticTuple
+from std.utils.index import IndexList, StaticTuple
 
 
 fn _transpose_inplace_4x4[
     rows: Int,
     cols: Int,
     dtype: DType,
-](bufloat0: NDBuffer[mut=True, dtype, 2, _, DimList(rows, cols)]):
+](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList(rows, cols)]):
     comptime assert rows == 4
     comptime assert cols == 4
     var buf = rebind[
         NDBuffer[
+            rank=2,
             dtype,
-            2,
             bufloat0.origin,
             DimList(4, 4),
         ],
@@ -129,13 +127,13 @@ fn _transpose_inplace_8x8[
     rows: Int,
     cols: Int,
     dtype: DType,
-](bufloat0: NDBuffer[mut=True, dtype, 2, _, DimList(rows, cols)]):
+](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList(rows, cols)]):
     comptime assert rows == 8
     comptime assert cols == 8
     var buf = rebind[
         NDBuffer[
+            rank=2,
             dtype,
-            2,
             bufloat0.origin,
             DimList(8, 8),
         ],
@@ -359,13 +357,13 @@ fn _transpose_inplace_16x16[
     rows: Int,
     cols: Int,
     dtype: DType,
-](bufloat0: NDBuffer[mut=True, dtype, 2, _, DimList(rows, cols)]):
+](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList(rows, cols)]):
     comptime assert rows == 16
     comptime assert cols == 16
     var buf = rebind[
         NDBuffer[
+            rank=2,
             dtype,
-            2,
             bufloat0.origin,
             DimList(16, 16),
         ],
@@ -799,7 +797,7 @@ fn _transpose_inplace_naive[
     rows: Int,
     cols: Int,
     dtype: DType,
-](buf: NDBuffer[mut=True, dtype, 2, _, DimList(rows, cols)]):
+](buf: NDBuffer[mut=True, rank=2, dtype, _, DimList(rows, cols)]):
     for i in range(rows):
         for j in range(i + 1, cols):
             var tmp = buf[i, j]
@@ -824,12 +822,11 @@ fn transpose_inplace[
     rows: Int,
     cols: Int,
     dtype: DType,
-](buf: NDBuffer[mut=True, dtype, 2, _, DimList(rows, cols)]):
+](buf: NDBuffer[mut=True, rank=2, dtype, _, DimList(rows, cols)]):
     # Reject sizes covered by specialized implementations
     comptime assert rows == cols
 
-    @parameter
-    if rows == 4:
+    comptime if rows == 4:
         _transpose_inplace_4x4[rows, cols, dtype](buf)
     elif rows == 8:
         _transpose_inplace_8x8[rows, cols, dtype](buf)
@@ -850,8 +847,7 @@ fn transpose_inplace[
     comptime assert rows == Int(buf.layout.shape[0])
     comptime assert cols == Int(buf.layout.shape[1])
 
-    @parameter
-    if rows == 4:
+    comptime if rows == 4:
         _transpose_inplace_4x4(buf)
     elif rows == 8:
         _transpose_inplace_8x8(buf)
@@ -865,16 +861,15 @@ fn _permute_data[
     size: Int,
     dtype: DType,
 ](
-    input: UnsafePointer[Scalar[dtype]],
-    output: UnsafePointer[Scalar[dtype]],
-    perms: UnsafePointer[Scalar[DType.int]],
+    input: UnsafePointer[mut=False, Scalar[dtype], _],
+    output: UnsafePointer[mut=True, Scalar[dtype], _],
+    perms: UnsafePointer[mut=False, Scalar[DType.int], _],
 ):
     """
     Ensures that output[i] = input[perms[i]] for i ∈ [0, size)
     """
 
-    @parameter
-    for idx in range(size):
+    comptime for idx in range(size):
         var perm_axis = perms.load(idx)[0]
         var perm_data = input.load(perm_axis)
         output[idx] = perm_data
@@ -885,8 +880,8 @@ fn _fill_strides[
     input_shape: DimList,
     dtype: DType,
 ](
-    buf: NDBuffer[dtype, rank, _, input_shape],
-    strides: UnsafePointer[Scalar[DType.int]],
+    buf: NDBuffer[rank=rank, dtype, _, input_shape],
+    strides: UnsafePointer[mut=True, Scalar[DType.int], _],
 ):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
@@ -894,7 +889,7 @@ fn _fill_strides[
 
     Note that `buf` is only used for querying its dimensions.
     """
-    _fill_strides(buf, NDBuffer[DType.int, 1, _, rank](strides))
+    _fill_strides(buf, NDBuffer[rank=1, DType.int, _, rank](strides))
 
 
 fn _fill_strides[
@@ -902,8 +897,8 @@ fn _fill_strides[
     input_shape: DimList,
     dtype: DType,
 ](
-    buf: NDBuffer[dtype, rank, _, input_shape],
-    strides: NDBuffer[mut=True, DType.int, 1, _, rank],
+    buf: NDBuffer[rank=rank, dtype, _, input_shape],
+    strides: NDBuffer[mut=True, rank=1, DType.int, _, rank],
 ):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
@@ -914,8 +909,7 @@ fn _fill_strides[
     comptime assert rank > 0
     strides[rank - 1] = 1
 
-    @parameter
-    for idx in range(rank - 1):
+    comptime for idx in range(rank - 1):
         comptime axis = rank - idx - 2
         var next_axis_stride = strides[axis + 1]
         var next_axis_dim = buf.dim[axis + 1]()
@@ -940,8 +934,7 @@ fn _fill_strides[
     comptime assert strides.flat_rank == 1
     strides[buf.rank - 1] = 1
 
-    @parameter
-    for idx in range(buf.rank - 1):
+    comptime for idx in range(buf.rank - 1):
         comptime axis = buf.rank - idx - 2
         var next_axis_stride = strides[axis + 1]
         var next_axis_dim = buf.dim[axis + 1]()
@@ -1011,8 +1004,7 @@ fn _simplify_transpose_perms_impl[
     mut simplified_shape: IndexList[tuple_size],
     mut simplified_perms: IndexList[tuple_size],
 ):
-    @parameter
-    if rank < 2:
+    comptime if rank < 2:
         return
 
     else:
@@ -1064,7 +1056,7 @@ fn _simplify_transpose_perms[
 @always_inline
 fn _convert_transpose_perms_to_static_int_tuple[
     rank: Int
-](perms: UnsafePointer[Scalar[DType.int]]) -> IndexList[rank]:
+](perms: UnsafePointer[mut=False, Scalar[DType.int], _]) -> IndexList[rank]:
     var simplified_perms = IndexList[rank]()
     # TODO: unroll
     for j in range(rank):
@@ -1083,8 +1075,8 @@ fn _process_tile[
     n: Int,
     M: Int,
     N: Int,
-    out_ptr: UnsafePointer[Scalar[dtype]],
-    in_ptr: UnsafePointer[Scalar[dtype]],
+    out_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    in_ptr: UnsafePointer[Scalar[dtype], _],
 ):
     var input_tile_offset = M * n + m
     var output_tile_offset = N * m + n
@@ -1092,38 +1084,32 @@ fn _process_tile[
     var input_vals = StaticTuple[SIMD[dtype, tile_size_m], tile_size_n]()
     var output_vals = StaticTuple[SIMD[dtype, tile_size_n], tile_size_m]()
 
-    @parameter
-    for i in range(tile_size_n):
+    comptime for i in range(tile_size_n):
         input_vals[i] = in_ptr.load[width=tile_size_m](
             input_tile_offset + M * i
         )
 
-    @parameter
-    for m in range(tile_size_m):
-
-        @parameter
-        for n in range(tile_size_n):
+    comptime for m in range(tile_size_m):
+        comptime for n in range(tile_size_n):
             output_vals[m][n] = input_vals[n][m]
 
-    @parameter
-    for i in range(tile_size_m):
+    comptime for i in range(tile_size_m):
         out_ptr.store(output_tile_offset + N * i, output_vals[i])
 
 
 fn _transpose_2d_serial_tiled[
     rank: Int, dtype: DType, //
 ](
-    output: NDBuffer[mut=True, dtype, rank, _, _],
-    input: NDBuffer[dtype, rank, _, _],
-    perms: UnsafePointer[Scalar[DType.int]],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
+    input: NDBuffer[rank=rank, dtype, _, _],
+    perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
 ):
     comptime simd_width = simd_width_of[dtype]()
 
-    @parameter
-    if rank < 2:
+    comptime if rank < 2:
         return
     # The input tile is MxN, the output tile is NxM.
     # We want to do:
@@ -1144,11 +1130,7 @@ fn _transpose_2d_serial_tiled[
         )
 
     comptime tile_size = simd_width if simd_width <= 16 else 1
-    tile[
-        process_tile,
-        VariadicList[Int](tile_size, 1),
-        VariadicList[Int](tile_size, 1),
-    ](0, 0, M, N)
+    tile[process_tile, [tile_size, 1], [tile_size, 1]](0, 0, M, N)
 
 
 @always_inline
@@ -1177,15 +1159,14 @@ fn _should_run_parallel(
 fn _transpose_2d_parallel_tiled[
     rank: Int, dtype: DType, //
 ](
-    output: NDBuffer[dtype, rank, _, _],
-    input: NDBuffer[dtype, rank, _, _],
-    perms: UnsafePointer[Scalar[DType.int]],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
+    input: NDBuffer[rank=rank, dtype, _, _],
+    perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
 ):
-    @parameter
-    if rank < 2:
+    comptime if rank < 2:
         return
 
     comptime simd_width = simd_width_of[dtype]()
@@ -1244,15 +1225,14 @@ fn transpose_2d[
     input_shape: DimList,
     dtype: DType,
 ](
-    output: NDBuffer[mut=True, dtype, rank, _, output_shape],
-    input: NDBuffer[dtype, rank, _, input_shape],
-    perms: UnsafePointer[Scalar[DType.int]],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, output_shape],
+    input: NDBuffer[rank=rank, dtype, _, input_shape],
+    perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
 ):
-    @parameter
-    if rank < 2:
+    comptime if rank < 2:
         return
 
     comptime simd_width = simd_width_of[dtype]()
@@ -1285,8 +1265,8 @@ fn transpose_2d[
 fn _transpose_4d_swap_middle_helper[
     dtype: DType, //
 ](
-    dst_ptr: UnsafePointer[Scalar[dtype]],
-    src_ptr: UnsafePointer[Scalar[dtype]],
+    dst_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    src_ptr: UnsafePointer[Scalar[dtype], _],
     L: Int,
     M: Int,
     N: Int,
@@ -1333,10 +1313,8 @@ fn _transpose_4d_swap_middle_helper[
             var begin = work_block_size * thread_id
             var end = min(work_block_size * (thread_id + 1), work)
             for block_idx in range(begin, end):
-                var l = block_idx // (M * N)
-                var block_idx_mn = block_idx % (M * N)
-                var m = block_idx_mn // N
-                var n = block_idx_mn % N
+                var l, block_idx_mn = divmod(block_idx, M * N)
+                var m, n = divmod(block_idx_mn, N)
 
                 var in_off = l * M * N * K + m * N * K + n * K
                 var out_off = l * M * N * K + n * M * K + m * K
@@ -1352,14 +1330,13 @@ fn _transpose_4d_swap_middle_helper[
 fn transpose_4d_swap_middle[
     rank: Int, dtype: DType, //
 ](
-    output: NDBuffer[mut=True, dtype, rank, _, _],
-    input: NDBuffer[dtype, rank, _, _, _],
-    perms: UnsafePointer[Scalar[DType.int]],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
+    input: NDBuffer[rank=rank, dtype, _, _, _],
+    perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
-    @parameter
-    if rank < 4:
+    comptime if rank < 4:
         return
     # The input tile is LxMxNxK, the output tile is LxNxMxK.
     # We want to do:
@@ -1379,14 +1356,13 @@ fn transpose_3d_swap_outer[
     input_shape: DimList,
     dtype: DType,
 ](
-    output: NDBuffer[mut=True, dtype, rank, _, output_shape],
-    input: NDBuffer[dtype, rank, _, input_shape],
-    perms: UnsafePointer[Scalar[DType.int]],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, output_shape],
+    input: NDBuffer[rank=rank, dtype, _, input_shape],
+    perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
-    @parameter
-    if rank < 3:
+    comptime if rank < 3:
         return
     # The input tile is MxNxK, the output tile is NxMxK.
     # We want to do:
@@ -1404,14 +1380,13 @@ fn transpose_3d_swap_outer[
 fn transpose_3d_swap_inner[
     rank: Int, dtype: DType, //
 ](
-    output: NDBuffer[mut=True, dtype, rank, _, _],
-    input: NDBuffer[dtype, rank, _, _],
-    perms: UnsafePointer[Scalar[DType.int]],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
+    input: NDBuffer[rank=rank, dtype, _, _],
+    perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
-    @parameter
-    if rank < 3:
+    comptime if rank < 3:
         return
     # simplified perms must be 0, 2, 1
     var offset = 0
@@ -1420,7 +1395,7 @@ fn transpose_3d_swap_inner[
         * simplified_input_shape[simplified_rank - 1]
     )
     # TODO: parallelize this loop
-    for i in range(simplified_input_shape[0]):
+    for _i in range(simplified_input_shape[0]):
         _transpose_2d_serial_tiled(
             output,
             input,
@@ -1438,8 +1413,8 @@ fn transpose_trivial_memcpy[
     input_shape: DimList,
     dtype: DType,
 ](
-    output: NDBuffer[mut=True, dtype, rank, _, output_shape],
-    input: NDBuffer[dtype, rank, _, input_shape],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, output_shape],
+    input: NDBuffer[rank=rank, dtype, _, input_shape],
 ):
     var src_ptr = input.data + 0
     var dst_ptr = output.data + 0
@@ -1474,10 +1449,10 @@ fn _copy_with_strides[
     rank: Int, dtype: DType, //
 ](
     axis: Int,
-    output: NDBuffer[mut=True, dtype, rank, _, _],
-    input: UnsafePointer[Scalar[dtype]],
-    input_strides: UnsafePointer[Scalar[DType.int]],
-    output_strides: UnsafePointer[Scalar[DType.int]],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
+    input: UnsafePointer[mut=False, Scalar[dtype], _],
+    input_strides: UnsafePointer[mut=False, Scalar[DType.int], _],
+    output_strides: UnsafePointer[mut=False, Scalar[DType.int], _],
     input_offset: Int,
     output_offset: Int,
 ) raises:
@@ -1603,17 +1578,17 @@ fn _copy_with_strides[
 fn transpose_strided[
     rank: Int, dtype: DType, //
 ](
-    output: NDBuffer[mut=True, dtype, rank, _, _],
-    input: NDBuffer[dtype, rank, _, _],
-    perms: UnsafePointer[Scalar[DType.int]],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
+    input: NDBuffer[rank=rank, dtype, _, _],
+    perms: UnsafePointer[Scalar[DType.int], _],
 ) raises:
     # Compute `permuted_input_strides`
-    var input_strides = UnsafePointer[Scalar[DType.int]].alloc(rank)
-    var permuted_input_strides = UnsafePointer[Scalar[DType.int]].alloc(rank)
+    var input_strides = alloc[Scalar[DType.int]](rank)
+    var permuted_input_strides = alloc[Scalar[DType.int]](rank)
     _fill_strides(input, input_strides)
     _permute_data[rank, DType.int](input_strides, permuted_input_strides, perms)
     # Compute `output_strides`
-    var output_strides = UnsafePointer[Scalar[DType.int]].alloc(rank)
+    var output_strides = alloc[Scalar[DType.int]](rank)
     _fill_strides(output, output_strides)
     # Kickoff; for intuition on permuted input strides, note that
     #   transpose(output, input, [2, 0, 1])
@@ -1647,9 +1622,9 @@ fn transpose_strided[
 fn transpose[
     rank: Int, dtype: DType, //
 ](
-    output: NDBuffer[mut=True, dtype, rank, _, _],
-    input: NDBuffer[dtype, rank, _, _],
-    perms: UnsafePointer[Scalar[DType.int]],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
+    input: NDBuffer[rank=rank, dtype, _, _],
+    perms: UnsafePointer[Scalar[DType.int], _],
 ) raises:
     """
     Permute the axis of `input` based on `perms`, and place the result in

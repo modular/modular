@@ -18,7 +18,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.moe import MoEGate, StackedMoE
+from max.nn.moe import MoEGate, StackedMoE
 from torch.utils.dlpack import from_dlpack
 
 HIDDEN_DIM = 256

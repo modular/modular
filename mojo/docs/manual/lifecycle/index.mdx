@@ -42,19 +42,19 @@ ownership.
 
 First, let's clarify some terminology:
 
-* The "lifecycle" of a value is defined by various [dunder
+- The "lifecycle" of a value is defined by various [dunder
   methods](/mojo/manual/structs#special-methods) in a struct.
   Each lifecycle event is handled by a different method,
   such as the constructor (`__init__()`), the destructor (`__del__()`), the copy
-  constructor (`__copyinit__()`), and the move constructor (`__moveinit__()`).
+  constructor (`__init__(copy=)`), and the move constructor (`__init__(take=)`).
   All values that are declared with the same type have the same lifecycle.
 
-* The "lifetime" of a variable is defined by the span of time during
+- The "lifetime" of a variable is defined by the span of time during
   program execution in which the variable is considered valid. The life of a
-  variable begins when its value is initialized (via `__init__()`,
-  `__copyinit__()` or `__moveinit__()`) and ends when the value is destroyed
+  variable begins when its value is initialized (via `__init__()`) and ends when
+  the value is destroyed
   (`__del__()`), or consumed in some other way (for example, as part of a
-  `__moveinit__()` call).
+  `__init__(take=)` call).
 
 No two values have the exact same lifetime, because every value is created and
 destroyed at a different point in time (even if the difference is imperceptible).

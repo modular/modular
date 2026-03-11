@@ -19,8 +19,8 @@ from typing import Any, cast
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, Type, Weight
-from max.nn.legacy import Signals
-from max.nn.legacy.linear import ColumnParallelLinear
+from max.nn import Signals
+from max.nn.linear import ColumnParallelLinear
 
 
 def test_column_parallel_linear_empty_devices() -> None:

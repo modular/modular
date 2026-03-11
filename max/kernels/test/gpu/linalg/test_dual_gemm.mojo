@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from math import exp2
-from os import abort
-from random import rand, randn
-from sys import align_of, argv, simd_width_of
+from std.collections import Optional
+from std.math import exp2
+from std.os import abort
+from std.random import rand, randn
+from std.sys import align_of, argv, simd_width_of
 
-import benchmark
-from algorithm.functional import elementwise
-from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+import std.benchmark
+from std.algorithm.functional import elementwise
+from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import Layout
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
@@ -29,11 +29,11 @@ from linalg.dual_gemm import binary_fn_type, multistage_dual_gemm
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, _bk_base
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import StaticTuple
-from utils.index import Index, IndexList
-from utils.numerics import FPUtils
+from std.utils import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import FPUtils
 
 
 fn binary_sub[
@@ -72,12 +72,12 @@ fn multistage_gemm_simple[
         b_type,
         b_layout,
         transpose_b,
-        c_layout_int_type = c.layout_int_type,
-        c_linear_idx_type = c.linear_idx_type,
-        a_layout_int_type = a.layout_int_type,
-        a_linear_idx_type = a.linear_idx_type,
-        b_layout_int_type = b.layout_int_type,
-        b_linear_idx_type = b.linear_idx_type,
+        c_layout_int_type=c.layout_int_type,
+        c_linear_idx_type=c.linear_idx_type,
+        a_layout_int_type=a.layout_int_type,
+        a_linear_idx_type=a.linear_idx_type,
+        b_layout_int_type=b.layout_int_type,
+        b_linear_idx_type=b.linear_idx_type,
         config=config,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
@@ -121,7 +121,7 @@ fn naive_dual_gemm[
         ](c01, a, b01, ctx)
 
         comptime simd_width = simd_width_of[
-            c_type, target = get_gpu_target["sm_80"]()
+            c_type, target=get_gpu_target["sm_80"]()
         ]()
         comptime align = align_of[SIMD[c_type, simd_width]]()
 
@@ -159,7 +159,7 @@ fn runtime_row_major[
     ],
 ):
     return type_of(res).row_major(
-        IndexList[2, element_type = res.element_type](rows, cols)
+        IndexList[2, element_type=res.element_type](rows, cols)
     )
 
 
@@ -258,7 +258,7 @@ fn test_dual_matmul[
 
     var dual_gemm_time: Float64 = 0.0
     if do_benchmark:
-        dual_gemm_time = benchmark.run[func3=run_dual_gemm](
+        dual_gemm_time = std.benchmark.run[func3=run_dual_gemm](
             max_runtime_secs=5.0
         ).mean()
         print(
@@ -286,8 +286,7 @@ fn test_dual_matmul[
     var mat_b0_tensor = mat_b0.tensor()
     var mat_b1_tensor = mat_b1.tensor()
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         for n in range(N):
             for k in range(K // src_simd_width):
                 mat_b01v[n, k] = rebind[SIMD[src_type, mat_b01v.element_size]](
@@ -353,7 +352,7 @@ fn test_dual_matmul[
             )
 
     if do_benchmark:
-        var dgs = benchmark.run[func3=run_naive_dual_gemm](
+        var dgs = std.benchmark.run[func3=run_naive_dual_gemm](
             max_runtime_secs=5.0
         ).mean()
         print(
@@ -397,7 +396,7 @@ fn test_dual_matmul[
     _ = mat_c01^
 
 
-def main():
+def main() raises:
     var do_benchmark: Bool = False
     var args = argv()
     for i in range(len(args)):

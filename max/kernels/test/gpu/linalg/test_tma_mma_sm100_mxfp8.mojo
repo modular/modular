@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of, argv
-from utils.numerics import min_finite, max_finite
-from gpu import (
+from std.sys import size_of, argv
+from std.utils.numerics import min_finite, max_finite
+from std.gpu import (
     WARP_SIZE,
     barrier,
     warp_id as get_warp_id,
     block_idx,
-    lane_id,
+    lane_id_int as lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.memory import AddressSpace, external_memory
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.compute.arch.tcgen05 import *
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import IntTuple
@@ -37,33 +37,31 @@ from layout.tensor_core_async import (
 )
 from layout.layout import tile_to_shape
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE, RuntimeLayout
-from gpu.primitives.cluster import block_rank_in_cluster
+from std.gpu.primitives.cluster import block_rank_in_cluster
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
+    _idx_product,
     create_tensor_tile,
     create_tma_tile,
 )
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
-from math import ceildiv
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
+from std.math import ceildiv
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
 from internal_utils._utils import ValOrDim, dynamic, static
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
-from random import rand
+from std.random import rand
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from logger import Logger
-from collections import Optional
+from std.logger import Logger
+from std.collections import Optional
 from linalg.utils import elementwise_epilogue_type
-from builtin.simd import _convert_f32_to_float8_ue8m0
-from gpu.sync import syncwarp
+from std.builtin.simd import _convert_f32_to_float8_ue8m0
+from std.gpu.sync import syncwarp
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from random import random_ui64
+from std.random import random_ui64
 from linalg.fp4_utils import (
     convert_ref_scales_to_mxfp8_format,
     MXFP8_SF_VECTOR_SIZE,
@@ -92,15 +90,19 @@ fn block_scaled_mxfp8_kernel[
     c_type: DType,
     a_scales_type: DType,
     b_scales_type: DType,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
-    a_scales_tile_layout: Layout,
-    b_scales_tile_layout: Layout,
+    a_tile_rank: Int,
+    a_tile_shape: IndexList[a_tile_rank],
+    a_desc_shape: IndexList[a_tile_rank],
+    b_tile_rank: Int,
+    b_tile_shape: IndexList[b_tile_rank],
+    b_desc_shape: IndexList[b_tile_rank],
+    a_scales_tile_rank: Int,
+    a_scales_tile_shape: IndexList[a_scales_tile_rank],
+    a_scales_desc_shape: IndexList[a_scales_tile_rank],
+    b_scales_tile_rank: Int,
+    b_scales_tile_shape: IndexList[b_scales_tile_rank],
+    b_scales_desc_shape: IndexList[b_scales_tile_rank],
     c_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    a_scales_desc_layout: Layout,
-    b_scales_desc_layout: Layout,
     block_tile_shape: IndexList[3],
     umma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -108,13 +110,19 @@ fn block_scaled_mxfp8_kernel[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: UInt = 256,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
+    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     a_scales_tma_op: TMATensorTile[
-        a_scales_type, a_scales_tile_layout, a_scales_desc_layout
+        a_scales_type,
+        a_scales_tile_rank,
+        a_scales_tile_shape,
+        a_scales_desc_shape,
     ],
     b_scales_tma_op: TMATensorTile[
-        b_scales_type, b_scales_tile_layout, b_scales_desc_layout
+        b_scales_type,
+        b_scales_tile_rank,
+        b_scales_tile_shape,
+        b_scales_desc_shape,
     ],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
@@ -144,7 +152,7 @@ fn block_scaled_mxfp8_kernel[
     ]()
 
     var smem = external_memory[
-        UInt8, address_space = AddressSpace.SHARED, alignment=8
+        UInt8, address_space=AddressSpace.SHARED, alignment=8
     ]()
     var a_smem = smem.bitcast[Scalar[a_type]]()
 
@@ -152,14 +160,14 @@ fn block_scaled_mxfp8_kernel[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
 
@@ -179,14 +187,14 @@ fn block_scaled_mxfp8_kernel[
         a_scales_type,
         a_scales_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime b_scales_smem_tile_t = LayoutTensor[
         b_scales_type,
         b_scales_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
 
@@ -225,7 +233,7 @@ fn block_scaled_mxfp8_kernel[
     comptime accum_type = get_accum_type[a_type]()
 
     comptime c_frag_size = MMA_M * MMA_N // Int(num_threads)
-    var c_frag = SIMD[accum_type, c_frag_size]()
+    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
 
     comptime a_expected_bytes = a_size * size_of[a_type]()
     comptime b_expected_bytes = b_size * size_of[b_type]()
@@ -291,7 +299,7 @@ fn block_scaled_mxfp8_kernel[
         a_type,
         b_type,
         a_scales_type,
-        Index[dtype = DType.uint32](umma_shape[0], umma_shape[1]),
+        Index[dtype=DType.uint32](umma_shape[0], umma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -340,9 +348,7 @@ fn block_scaled_mxfp8_kernel[
         tma_phase ^= 1
 
         if elect_one_thread:
-
-            @parameter
-            for i in range(BM // SF_MN_GROUP_SIZE):
+            comptime for i in range(BM // SF_MN_GROUP_SIZE):
                 comptime idx = IntTuple(i * SF_ATOM_M[0], 0)
                 comptime a_scales_offset = a_scales_smem_layout(idx) * size_of[
                     a_scales_type
@@ -357,8 +363,7 @@ fn block_scaled_mxfp8_kernel[
                     cta_group=1, datapaths=32, bits=128, multicast="warpx4"
                 ](a_scales_tmem_addr, a_scales_desc)
 
-            @parameter
-            for i in range(BN // SF_MN_GROUP_SIZE):
+            comptime for i in range(BN // SF_MN_GROUP_SIZE):
                 comptime idx = IntTuple(i * SF_ATOM_M[0], 0)
                 comptime b_scales_offset = b_scales_smem_layout(idx) * size_of[
                     b_scales_type
@@ -394,8 +399,7 @@ fn block_scaled_mxfp8_kernel[
                     c_scale=0,
                 )
 
-                @parameter
-                for j in range(1, num_k_mmas):
+                comptime for j in range(1, num_k_mmas):
                     runtime_desc = UMMAInsDescriptor[
                         UMMAKind.KIND_MXF8F6F4
                     ].update_desc_with_sf_id[UInt32(j)](
@@ -414,9 +418,7 @@ fn block_scaled_mxfp8_kernel[
                         c_scale=1,
                     )
             else:
-
-                @parameter
-                for j in range(num_k_mmas):
+                comptime for j in range(num_k_mmas):
                     var runtime_desc = UMMAInsDescriptor[
                         UMMAKind.KIND_MXF8F6F4
                     ].update_desc_with_sf_id[UInt32(j)](
@@ -443,7 +445,7 @@ fn block_scaled_mxfp8_kernel[
     c_frag = tcgen05_ld[
         datapaths=16,
         bits=256,
-        repeat = BN // 8,
+        repeat=BN // 8,
         dtype=accum_type,
         pack=False,
         width=c_frag_size,
@@ -457,15 +459,13 @@ fn block_scaled_mxfp8_kernel[
 
     comptime num_warps = num_threads // UInt(WARP_SIZE)
     var warp_id = get_warp_id()
-    warp_id = 2 * (warp_id % 4) + warp_id // 4
+    var warp_id_q, warp_id_r = divmod(warp_id, 4)
+    warp_id = 2 * warp_id_r + warp_id_q
 
     ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for n_mma in range(num_n_mmas):
+    comptime for m_mma in range(num_m_mmas):
+        comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
             c_gmem_warp_tile = ctile.tile[MMA_M // Int(num_warps), MMA_N](
@@ -479,11 +479,8 @@ fn block_scaled_mxfp8_kernel[
             comptime num_vecs_m = c_gmem_frag.layout.shape[0].value()
             comptime num_vecs_n = c_gmem_frag.layout.shape[1].value()
 
-            @parameter
-            for n_vec in range(num_vecs_n):
-
-                @parameter
-                for m_vec in range(num_vecs_m):
+            comptime for n_vec in range(num_vecs_n):
+                comptime for m_vec in range(num_vecs_m):
                     comptime i_vec = n_vec * num_vecs_m + m_vec
 
                     c_gmem_frag[m_vec, n_vec] = rebind[
@@ -610,8 +607,8 @@ fn sm100_block_scaled_mxfp8[
         Index(
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_layout = Layout.row_major(
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+        __tile_shape=Index(
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
     ](ctx, a_scales_4d)
@@ -620,8 +617,8 @@ fn sm100_block_scaled_mxfp8[
         Index(
             BN // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_layout = Layout.row_major(
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+        __tile_shape=Index(
             BN // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
     ](ctx, b_scales_4d)
@@ -640,15 +637,19 @@ fn sm100_block_scaled_mxfp8[
         c_type,
         a_scales_type,
         b_scales_type,
-        type_of(a_tma_op).layout,
-        type_of(b_tma_op).layout,
-        type_of(a_scales_tma_op).layout,
-        type_of(b_scales_tma_op).layout,
+        type_of(a_tma_op).rank,
+        type_of(a_tma_op).tile_shape,
+        type_of(a_tma_op).desc_shape,
+        type_of(b_tma_op).rank,
+        type_of(b_tma_op).tile_shape,
+        type_of(b_tma_op).desc_shape,
+        type_of(a_scales_tma_op).rank,
+        type_of(a_scales_tma_op).tile_shape,
+        type_of(a_scales_tma_op).desc_shape,
+        type_of(b_scales_tma_op).rank,
+        type_of(b_scales_tma_op).tile_shape,
+        type_of(b_scales_tma_op).desc_shape,
         c_layout,
-        type_of(a_tma_op).desc_layout,
-        type_of(b_tma_op).desc_layout,
-        type_of(a_scales_tma_op).desc_layout,
-        type_of(b_scales_tma_op).desc_layout,
         block_tile_shape,
         umma_shape,
         transpose_b=transpose_b,
@@ -678,13 +679,15 @@ def test_block_scaled_mxfp8[
     c_type: DType,
     block_tile_shape: IndexList[3],
     umma_shape: IndexList[3],
-    transpose_b: Bool = True,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
+    transpose_b: Bool,
+    *,
+    k: Int,
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim) raises:
     comptime assert transpose_b, "transpose_b must be true"
 
     var M = m.value
     var N = n.value
-    var K = k.value
+    var K = k
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -703,49 +706,49 @@ def test_block_scaled_mxfp8[
     # Initialize reference scales
     comptime REF_BLOCK_SCALE = 128
     comptime static_ref_a_scales_shape = DimList(
-        ceildiv(Int(k.dim), REF_BLOCK_SCALE), m.dim
+        ceildiv(k, REF_BLOCK_SCALE), m.dim
     )
     comptime static_ref_b_scales_shape = DimList(
         ceildiv(Int(n.dim), REF_BLOCK_SCALE),
-        ceildiv(Int(k.dim), REF_BLOCK_SCALE),
+        ceildiv(k, REF_BLOCK_SCALE),
     )
 
-    var dynamic_ref_a_scales_shape = DimList(
-        ceildiv(k.value, REF_BLOCK_SCALE), m.value
+    var dynamic_ref_a_scales_shape = IndexList[2](
+        ceildiv(k, REF_BLOCK_SCALE), m.value
     )
-    var dynamic_ref_b_scales_shape = DimList(
-        ceildiv(n.value, REF_BLOCK_SCALE), ceildiv(k.value, REF_BLOCK_SCALE)
+    var dynamic_ref_b_scales_shape = IndexList[2](
+        ceildiv(n.value, REF_BLOCK_SCALE), ceildiv(k, REF_BLOCK_SCALE)
     )
 
-    var ref_a_scales_size = ceildiv(k.value, REF_BLOCK_SCALE) * m.value
+    var ref_a_scales_size = ceildiv(k, REF_BLOCK_SCALE) * m.value
     var ref_b_scales_size = ceildiv(n.value, REF_BLOCK_SCALE) * ceildiv(
-        k.value, REF_BLOCK_SCALE
+        k, REF_BLOCK_SCALE
     )
 
-    var a_scales_host_ref_ptr = UnsafePointer[Scalar[ref_scales_type]].alloc(
+    var a_scales_host_ref_ptr = alloc[Scalar[ref_scales_type]](
         ref_a_scales_size
     )
     var a_scales_host_ref = NDBuffer[
-        ref_scales_type, 2, _, static_ref_a_scales_shape
+        rank=2, ref_scales_type, _, static_ref_a_scales_shape
     ](a_scales_host_ref_ptr, dynamic_ref_a_scales_shape)
-    var b_scales_host_ref_ptr = UnsafePointer[Scalar[ref_scales_type]].alloc(
+    var b_scales_host_ref_ptr = alloc[Scalar[ref_scales_type]](
         ref_b_scales_size
     )
     var b_scales_host_ref = NDBuffer[
-        ref_scales_type, 2, _, static_ref_b_scales_shape
+        rank=2, ref_scales_type, _, static_ref_b_scales_shape
     ](b_scales_host_ref_ptr, dynamic_ref_b_scales_shape)
 
     var a_scales_device_ref = ctx.enqueue_create_buffer[ref_scales_type](
         ref_a_scales_size
     )
     var a_scales_device_ref_nd = NDBuffer[
-        ref_scales_type, 2, _, static_ref_a_scales_shape
+        rank=2, ref_scales_type, _, static_ref_a_scales_shape
     ](a_scales_device_ref.unsafe_ptr(), dynamic_ref_a_scales_shape)
     var b_scales_device_ref = ctx.enqueue_create_buffer[ref_scales_type](
         ref_b_scales_size
     )
     var b_scales_device_ref_nd = NDBuffer[
-        ref_scales_type, 2, _, static_ref_b_scales_shape
+        rank=2, ref_scales_type, _, static_ref_b_scales_shape
     ](b_scales_device_ref.unsafe_ptr(), dynamic_ref_b_scales_shape)
 
     a_scales_host_ref.fill(Scalar[ref_scales_type](1.0))
@@ -781,17 +784,17 @@ def test_block_scaled_mxfp8[
         + String(umma_shape)
     )
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(n.dim, k.dim)
+    comptime static_a_shape = DimList(m.dim, k)
+    comptime static_b_shape = DimList(n.dim, k)
     comptime static_c_shape = DimList(m.dim, n.dim)
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value)
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var dynamic_a_shape = IndexList[2](m.value, k)
+    var dynamic_b_shape = IndexList[2](n.value, k)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
 
     comptime SF_VECTOR_SIZE = 32
     comptime atom_m = (32, 4)
     comptime atom_k = 4
-    comptime sf_k = ceildiv(k.dim, SF_VECTOR_SIZE)
+    comptime sf_k = ceildiv(k, SF_VECTOR_SIZE)
     comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, atom_m[0] * atom_m[1]),
         ceildiv(sf_k, atom_k),
@@ -807,93 +810,89 @@ def test_block_scaled_mxfp8[
         Dim(atom_k),
     )
 
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, atom_m[0] * atom_m[1]),
         ceildiv(sf_k, atom_k),
-        Dim(atom_m[0]),
-        Dim(atom_m[1]),
-        Dim(atom_k),
+        atom_m[0],
+        atom_m[1],
+        atom_k,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(n.value, atom_m[0] * atom_m[1]),
         ceildiv(sf_k, atom_k),
-        Dim(atom_m[0]),
-        Dim(atom_m[1]),
-        Dim(atom_k),
+        atom_m[0],
+        atom_m[1],
+        atom_k,
     )
 
     var a_scales_total = (
         ceildiv(m.value, atom_m[0] * atom_m[1])
-        * Int(ceildiv(sf_k, atom_k))
+        * ceildiv(sf_k, atom_k)
         * atom_m[0]
         * atom_m[1]
         * atom_k
     )
     var b_scales_total = (
         ceildiv(n.value, atom_m[0] * atom_m[1])
-        * Int(ceildiv(sf_k, atom_k))
+        * ceildiv(sf_k, atom_k)
         * atom_m[0]
         * atom_m[1]
         * atom_k
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        a_scales_total
-    )
-    var a_scales_host = NDBuffer[scales_type, 5, _, static_a_scales_shape](
+    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_total)
+    var a_scales_host = NDBuffer[rank=5, scales_type, _, static_a_scales_shape](
         a_scales_host_ptr, dynamic_a_scales_shape
     )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        b_scales_total
-    )
-    var b_scales_host = NDBuffer[scales_type, 5, _, static_b_scales_shape](
+    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_total)
+    var b_scales_host = NDBuffer[rank=5, scales_type, _, static_b_scales_shape](
         b_scales_host_ptr, dynamic_b_scales_shape
     )
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_type](a_scales_total)
-    var a_scales_device_nd = NDBuffer[scales_type, 5, _, static_a_scales_shape](
-        a_scales_device.unsafe_ptr(), dynamic_a_scales_shape
-    )
+    var a_scales_device_nd = NDBuffer[
+        rank=5, scales_type, _, static_a_scales_shape
+    ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_type](b_scales_total)
-    var b_scales_device_nd = NDBuffer[scales_type, 5, _, static_b_scales_shape](
-        b_scales_device.unsafe_ptr(), dynamic_b_scales_shape
-    )
+    var b_scales_device_nd = NDBuffer[
+        rank=5, scales_type, _, static_b_scales_shape
+    ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
-    var a_size = m.value * k.value
-    var b_size = n.value * k.value
+    var a_size = m.value * k
+    var b_size = n.value * k
     var c_size = m.value * n.value
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var a_host = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var b_host = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
     )
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_device.unsafe_ptr(), dynamic_b_shape
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
     )
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
@@ -984,7 +983,7 @@ def test_block_scaled_mxfp8[
     _ = b_scales_device_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime dtype = DType.float8_e4m3fn
         comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
@@ -999,7 +998,8 @@ def main():
             Index(MMA_M, 256, BK),
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
-        ](ctx, dynamic(256), static[256](), static[BK * 3]())
+            k=BK * 3,
+        ](ctx, dynamic(256), static[256]())
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -1007,7 +1007,8 @@ def main():
             Index(MMA_M, 256, BK),
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
-        ](ctx, dynamic(256), static[256 * 2](), static[BK * 3]())
+            k=BK * 3,
+        ](ctx, dynamic(256), static[256 * 2]())
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -1015,7 +1016,8 @@ def main():
             Index(MMA_M, 256, BK),
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
-        ](ctx, dynamic(1000), static[256 * 4](), static[BK * 3]())
+            k=BK * 3,
+        ](ctx, dynamic(1000), static[256 * 4]())
 
         test_block_scaled_mxfp8[
             dtype,
@@ -1024,7 +1026,8 @@ def main():
             Index(MMA_M, 128, BK),
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
-        ](ctx, dynamic(256), static[2 * 128](), static[BK * 3]())
+            k=BK * 3,
+        ](ctx, dynamic(256), static[2 * 128]())
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -1032,7 +1035,8 @@ def main():
             Index(MMA_M, 128, BK),
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
-        ](ctx, dynamic(256), static[3 * 128](), static[BK * 2]())
+            k=BK * 2,
+        ](ctx, dynamic(256), static[3 * 128]())
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -1040,4 +1044,5 @@ def main():
             Index(MMA_M, 128, BK),
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
-        ](ctx, dynamic(1000), static[3 * 128](), static[BK * 3]())
+            k=BK * 3,
+        ](ctx, dynamic(1000), static[3 * 128]())

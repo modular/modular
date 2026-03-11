@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
+from std.os import abort
 
-from builtin.sort import _quicksort
+from std.builtin.sort import _quicksort
 
 
 # DO NOT CHANGE
-trait TuningConfig(Stringable, TrivialRegisterPassable):
+trait TuningConfig(TrivialRegisterPassable, Writable):
     ...
 
 
 # DO NOT CHANGE
-struct Table[type: TuningConfig](Stringable):
+struct Table[type: TuningConfig](Writable):
     var configs: List[Self.type]
     var name: String
     var num_configs: UInt
@@ -33,7 +33,7 @@ struct Table[type: TuningConfig](Stringable):
         self.num_configs = UInt(len(configs))
 
         if not self.check():
-            abort(String("Failed to Compile Table: [", self.name, "]"))
+            abort(t"Failed to Compile Table: [{self.name}]")
 
     # Method to check there are no redundancies in table (based on __str__).
     fn check(self) -> Bool:
@@ -42,15 +42,15 @@ struct Table[type: TuningConfig](Stringable):
 
         for i in range(len(self.configs)):
             var cfg = self.configs[i]
-            var res = String(cfg)
+            var res = String.write(cfg)
             if res in keys:
                 print(
                     "ERROR: Redundant Entry [",
                     self.name,
                     "][",
-                    String(i),
+                    i,
                     "] ",
-                    String(cfg),
+                    cfg,
                     sep="",
                 )
                 is_valid = False
@@ -58,12 +58,20 @@ struct Table[type: TuningConfig](Stringable):
             keys.append(res)
         return is_valid
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
-        var s: List[String] = [self.name]
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the table as a string.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write_string(self.name)
         for i in range(len(self.configs)):
             var cfg = self.configs[i]
-            s += [String("[", i, "] ", String(cfg))]
-        return "\n".join(s)
+            t"\n[{i}] {cfg}".write_to(writer)
 
     # Method `query_index` queries a unique list of values for each parameter.
     # Find the indices of all matching values in the list.
@@ -76,8 +84,7 @@ struct Table[type: TuningConfig](Stringable):
     ](self) -> List[Int]:
         var flag: List[Bool]
 
-        @parameter
-        if len(domain):
+        comptime if len(domain):
             flag = List[Bool](length=Int(self.num_configs), fill=False)
             for idx in materialize[domain]():
                 flag[idx] = True

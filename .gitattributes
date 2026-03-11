@@ -1,4 +1,0 @@
-# Add an override so that .🔥 files are highlighted as Mojo files within github
-# since the linguist system does not work with the .🔥 extention.
-# See https://github.com/github/linguist/blob/master/docs/overrides.md
-*.🔥 linguist-language=Mojo

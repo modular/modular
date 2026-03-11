@@ -83,6 +83,7 @@ modular_py_test(
         exclude = [
             "*_distributed_gpu.py",
             "test_lora_*.py",
+            "test_lmcache_*.py",  # Requires external lmcache package
         ],
     ) + ["conftest.py"],
     exec_properties = {
@@ -111,6 +112,9 @@ modular_py_test(
 modular_py_test(
     name = "kvcache_distributed_gpu_tests",
     srcs = glob(["*_distributed_gpu.py"]) + ["conftest.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
     gpu_constraints = ["//:has_4_gpus"],
     tags = [
         "gpu",

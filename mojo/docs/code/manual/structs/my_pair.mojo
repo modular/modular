@@ -21,7 +21,7 @@ struct MyPair(ImplicitlyCopyable):
         return self.first + self.second
 
 
-def main():
+def main() raises:
     var a = MyPair(1, 2)
 
     # copyable, movable

@@ -11,13 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
-from sys import size_of, has_amd_gpu_accelerator, simd_width_of
-from itertools import product
+import std.time
+from std.sys import size_of, has_amd_gpu_accelerator, simd_width_of
+from std.itertools import product
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm import Signal, MAX_GPUS, group_start, group_end
+from comm.sync import enable_p2p
 from comm.allreduce import (
     _allreduce_naive_single,
     allreduce,
@@ -25,16 +26,16 @@ from comm.allreduce import (
 )
 import comm.vendor.ccl as vendor_ccl
 from internal_utils import human_readable_size
-from gpu.host import (
+from std.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     DeviceMulticastBuffer,
     get_gpu_target,
 )
-from testing import assert_almost_equal, assert_true
-from collections import Optional
+from std.testing import assert_almost_equal, assert_true
+from std.collections import Optional
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 # Shared test configurations
 comptime test_lengths = (
@@ -61,7 +62,6 @@ fn allreduce_test[
     ngpus: Int,
     *,
     use_multimem: Bool,
-    use_quickreduce: Bool = False,
     use_custom_epilogue: Bool = False,
 ](list_of_ctx: List[DeviceContext], length: Int) raises:
     # Using multimem with zero length raises CUDA_ERROR_INVALID_VALUE
@@ -106,7 +106,9 @@ fn allreduce_test[
         host_buffers.append(host_buffer)
 
         # Initialize host buffer with values (i + 1).0
-        var host_nd_buf = NDBuffer[dtype, rank](host_buffer, DimList(length))
+        var host_nd_buf = NDBuffer[rank=rank, dtype](
+            host_buffer, IndexList[rank](length)
+        )
         host_nd_buf.fill(Scalar[dtype](i + 1))
 
         # Create and initialize signal buffers
@@ -123,10 +125,10 @@ fn allreduce_test[
             list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
 
     # Create and initialize input and output buffers.
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], num_buffers](
-        fill={}
-    )
-    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
+    var in_bufs = InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], num_buffers
+    ](fill={})
+    var out_bufs = InlineArray[NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus](
         fill={}
     )
 
@@ -138,19 +140,19 @@ fn allreduce_test[
             var unicast_buf = multicast_buf.unicast_buffer_for(list_of_ctx[i])
             list_of_ctx[i].enqueue_copy(unicast_buf, host_buffers[i])
         # All GPUs use the same multicast pointer
-        in_bufs[0] = NDBuffer[dtype, rank](
+        in_bufs[0] = NDBuffer[rank=rank, dtype](
             multicast_buf.multicast_buffer_for(list_of_ctx[0]).unsafe_ptr(),
-            DimList(length),
+            IndexList[rank](length),
         )
     else:
         for i in range(ngpus):
-            in_bufs[i] = NDBuffer[dtype, rank](
-                in_bufs_list[i].unsafe_ptr(), DimList(length)
+            in_bufs[i] = NDBuffer[rank=rank, dtype](
+                in_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
             )
 
     for i in range(ngpus):
-        out_bufs[i] = NDBuffer[dtype, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(length)
+        out_bufs[i] = NDBuffer[rank=rank, dtype](
+            out_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
         )
 
     for i in range(ngpus):
@@ -158,12 +160,12 @@ fn allreduce_test[
 
     # Copy-capture in registers since the lambda will be used on GPU.
     var out_bufs_capture = StaticTuple[
-        NDBuffer[dtype, rank, MutAnyOrigin], ngpus
-    ](NDBuffer[dtype, rank, MutAnyOrigin]())
+        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus
+    ](NDBuffer[rank=rank, dtype, MutAnyOrigin]())
 
     for i in range(ngpus):
-        out_bufs_capture[i] = NDBuffer[dtype, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(length)
+        out_bufs_capture[i] = NDBuffer[rank=rank, dtype](
+            out_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
         )
 
     # Custom epilogue that negates values to distinguish from default
@@ -192,15 +194,13 @@ fn allreduce_test[
 
     group_start()
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         allreduce[
             ngpus=ngpus,
-            output_lambda = Optional[elementwise_epilogue_type](
-                outputs_lambda[input_index=i]
+            output_lambda=Optional[elementwise_epilogue_type](
+                outputs_lambda[input_index=i, ...]
             ) if use_custom_epilogue else None,
             use_multimem=use_multimem,
-            use_quickreduce=use_quickreduce,
         ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
     group_end()
 
@@ -208,27 +208,24 @@ fn allreduce_test[
         list_of_ctx[i].synchronize()
 
     # Vendor RCCL comparison (non-multimem path only and only if available).
-    @parameter
-    if not use_multimem and has_amd_gpu_accelerator():
+    comptime if not use_multimem and has_amd_gpu_accelerator():
         try:
             # Prepare distinct outputs for vendor path to avoid aliasing.
             var out_dev_vendor = List[DeviceBuffer[dtype]](capacity=ngpus)
             var out_bufs_vendor = InlineArray[
-                NDBuffer[dtype, rank, MutAnyOrigin], ngpus
+                NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus
             ](fill={})
             for i in range(ngpus):
                 out_dev_vendor.append(
                     list_of_ctx[i].enqueue_create_buffer[dtype](length)
                 )
-                out_bufs_vendor[i] = NDBuffer[dtype, rank](
-                    out_dev_vendor[i].unsafe_ptr(), DimList(length)
+                out_bufs_vendor[i] = NDBuffer[rank=rank, dtype](
+                    out_dev_vendor[i].unsafe_ptr(), IndexList[rank](length)
                 )
 
             # Test RCCL.
             with vendor_ccl.group():
-
-                @parameter
-                for i in range(ngpus):
+                comptime for i in range(ngpus):
                     vendor_ccl.allreduce[ngpus=ngpus](
                         in_bufs,
                         out_bufs_vendor[i],
@@ -272,19 +269,14 @@ fn allreduce_test[
     # Cleanup
     for i in range(ngpus):
         host_buffers[i].free()
-    _ = signal_buffers^
-    _ = in_bufs_list^
-    _ = out_bufs_list^
 
 
 fn _get_test_str[
     dtype: DType,
     use_multimem: Bool,
-    use_quickreduce: Bool = False,
     use_custom_epilogue: Bool = False,
 ](ngpus: Int, length: Int) -> String:
     var multimem_tag = "-multimem" if use_multimem else ""
-    var quickreduce_tag = "-quickreduce" if use_quickreduce else ""
     var epilogue_tag = "-custom_epilogue" if use_custom_epilogue else ""
     return String(
         "====allreduce-",
@@ -292,14 +284,13 @@ fn _get_test_str[
         "-",
         ngpus,
         multimem_tag,
-        quickreduce_tag,
         epilogue_tag,
         "-",
         human_readable_size(size_of[dtype]() * length),
     )
 
 
-def allreduce_naive_test() -> None:
+def allreduce_naive_test() raises -> None:
     """Explicit smoke test for the allreduce naive path."""
     print("====allreduce-naive-smoke-DType.float32-2-8Ki elements")
     comptime ngpus = 2
@@ -322,33 +313,33 @@ def allreduce_naive_test() -> None:
         out_dev.append(ctxs[i].enqueue_create_buffer[DType.float32](length))
         var h = alloc[Float32](length)
         host_ptrs.append(h)
-        var h_nd = NDBuffer[DType.float32, 1](h, DimList(length))
+        var h_nd = NDBuffer[rank=1, DType.float32](h, IndexList[1](length))
         h_nd.fill(Float32(i + 1))
         ctxs[i].enqueue_copy(in_dev[i], host_ptrs[i])
 
     # Wrap as NDBuffers for the kernel API
-    var in_bufs = InlineArray[NDBuffer[DType.float32, 1, MutAnyOrigin], ngpus](
-        fill={}
-    )
-    var out_bufs = InlineArray[NDBuffer[DType.float32, 1, MutAnyOrigin], ngpus](
-        fill={}
-    )
+    var in_bufs = InlineArray[
+        NDBuffer[rank=1, DType.float32, MutAnyOrigin], ngpus
+    ](fill={})
+    var out_bufs = InlineArray[
+        NDBuffer[rank=1, DType.float32, MutAnyOrigin], ngpus
+    ](fill={})
 
     for i in range(ngpus):
-        in_bufs[i] = NDBuffer[DType.float32, 1](
-            in_dev[i].unsafe_ptr(), DimList(length)
+        in_bufs[i] = NDBuffer[rank=1, DType.float32](
+            in_dev[i].unsafe_ptr(), IndexList[1](length)
         )
-        out_bufs[i] = NDBuffer[DType.float32, 1](
-            out_dev[i].unsafe_ptr(), DimList(length)
+        out_bufs[i] = NDBuffer[rank=1, DType.float32](
+            out_dev[i].unsafe_ptr(), IndexList[1](length)
         )
 
     # Prepare an output lambda that writes into the correct device's out buffer.
     var out_bufs_capture = StaticTuple[
-        NDBuffer[DType.float32, 1, MutAnyOrigin], ngpus
-    ](NDBuffer[DType.float32, 1, MutAnyOrigin]())
+        NDBuffer[rank=1, DType.float32, MutAnyOrigin], ngpus
+    ](NDBuffer[rank=1, DType.float32, MutAnyOrigin]())
     for i in range(ngpus):
-        out_bufs_capture[i] = NDBuffer[DType.float32, 1](
-            out_dev[i].unsafe_ptr(), DimList(length)
+        out_bufs_capture[i] = NDBuffer[rank=1, DType.float32](
+            out_dev[i].unsafe_ptr(), IndexList[1](length)
         )
 
     @always_inline
@@ -368,13 +359,12 @@ def allreduce_naive_test() -> None:
         )
 
     # Launch naive allreduce per device
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         _allreduce_naive_single[
-            dtype = DType.float32,
+            dtype=DType.float32,
             rank=1,
             ngpus=ngpus,
-            output_lambda = outputs_lambda[input_index=i],
+            output_lambda=outputs_lambda[input_index=i, ...],
         ](in_bufs, out_bufs[i], 216, ctxs[i])
 
     # Synchronize and verify
@@ -395,12 +385,9 @@ def allreduce_naive_test() -> None:
 
 
 @parameter
-fn run_allreduce_sweep[
-    use_multimem: Bool, use_quickreduce: Bool = False
-]() raises:
+fn run_allreduce_sweep[use_multimem: Bool]() raises:
     # Run tests for each configuration.
-    @parameter
-    for gpu_idx, dtype_idx, length_idx, epilogue_idx in product(
+    comptime for gpu_idx, dtype_idx, length_idx, epilogue_idx in product(
         range(len(test_gpu_counts)),
         range(len(test_dtypes)),
         range(len(test_lengths)),
@@ -421,18 +408,14 @@ fn run_allreduce_sweep[
 
         # Some checks for raggedness
         comptime simd_width = simd_width_of[dtype, get_gpu_target()]()
-        constrained[
-            length % simd_width == 0, "Length must be multiple of simd_width"
-        ]()
-        comptime quickreduce_tile_shape = simd_width * 8 * 256
-        if use_quickreduce and (length % quickreduce_tile_shape != 0):
-            # Quickreduce requires full tiles (a quickreduce specific concept)
-            continue
+        comptime assert (
+            length % simd_width == 0
+        ), "Length must be multiple of simd_width"
 
         print(
-            _get_test_str[
-                dtype, use_multimem, use_quickreduce, use_custom_epilogue
-            ](num_gpus, length)
+            _get_test_str[dtype, use_multimem, use_custom_epilogue](
+                num_gpus, length
+            )
         )
         try:
             allreduce_test[
@@ -440,7 +423,6 @@ fn run_allreduce_sweep[
                 rank=1,
                 ngpus=num_gpus,
                 use_multimem=use_multimem,
-                use_quickreduce=use_quickreduce,
                 use_custom_epilogue=use_custom_epilogue,
             ](ctx, length)
         except e:
@@ -450,7 +432,6 @@ fn run_allreduce_sweep[
                     _get_test_str[
                         dtype,
                         use_multimem,
-                        use_quickreduce,
                         use_custom_epilogue,
                     ](num_gpus, length),
                 )
@@ -466,7 +447,7 @@ fn run_allreduce_sweep[
                 raise e^
 
 
-def main():
+def main() raises:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
@@ -474,6 +455,7 @@ def main():
     # First, explicitly exercise the naive allreduce path by calling it directly.
     allreduce_naive_test()
 
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
+
     # Standard (non-multimem) sweep
     run_allreduce_sweep[use_multimem=False]()
-    run_allreduce_sweep[use_multimem=False, use_quickreduce=True]()

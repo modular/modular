@@ -11,29 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from collections import Optional
-from math import ceildiv, isclose
-from random import randn
-from sys import argv, has_nvidia_gpu_accelerator
+from std.collections import Optional
+from std.math import ceildiv, isclose
+from std.random import randn
+from std.sys import argv, has_nvidia_gpu_accelerator
 
 from buffer import Dim, DimList, NDBuffer
-from gpu import *
-from gpu.host import DeviceContext
+from std.gpu import *
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
 from nn.mha_mask import CausalMask, MaterializedMask, NullMask
 from nn.mha_operand import LayoutTensorMHAOperand
-from nn.mha_score_mod import IdentityScoreMod
 from nn.mla import flare_mla_decoding, flare_mla_prefill
+from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
 from tensor import IOUnknown, ManagedTensorSlice
 from tensor.managed_tensor_slice import StaticTensorSpec
-from testing import assert_almost_equal
-from gpu.host.info import B200
-from utils.index import Index
-from utils.numerics import get_accum_type
+from std.testing import assert_almost_equal
+from std.gpu.host.info import B200
+from std.utils.index import Index
+from std.utils.numerics import get_accum_type
 
 
 # ===-----------------------------------------------------------------------===#
@@ -64,8 +61,8 @@ fn host_cast_k_fp8_to_bf16[
     kv_fp8_t: DType,
     k_bf16_t: DType,
 ](
-    k_fp8: UnsafePointer[Scalar[kv_fp8_t]],
-    k_bf16: UnsafePointer[Scalar[k_bf16_t]],
+    k_fp8: UnsafePointer[Scalar[kv_fp8_t], _],
+    k_bf16: UnsafePointer[mut=True, Scalar[k_bf16_t], _],
     depth: Int,
     num_keys: Int,
     kv_num_heads: Int,
@@ -154,12 +151,12 @@ fn test[
     )
 
     # Allocate memory for all variables.
-    var q_ptr = UnsafePointer[Scalar[q_type]].alloc(q_size)
-    var k_ptr = UnsafePointer[Scalar[kv_type]].alloc(k_size)  # fp8 host
-    var k_bf16_ptr = UnsafePointer[Scalar[q_type]].alloc(k_size)
-    var mask_ptr = UnsafePointer[Scalar[mask_type]].alloc(mask_size)
-    var output_ptr = UnsafePointer[Scalar[q_type]].alloc(o_size)
-    var flash_output_ptr = UnsafePointer[Scalar[q_type]].alloc(o_size)
+    var q_ptr = alloc[Scalar[q_type]](q_size)
+    var k_ptr = alloc[Scalar[kv_type]](k_size)  # fp8 host
+    var k_bf16_ptr = alloc[Scalar[q_type]](k_size)
+    var mask_ptr = alloc[Scalar[mask_type]](mask_size)
+    var output_ptr = alloc[Scalar[q_type]](o_size)
+    var flash_output_ptr = alloc[Scalar[q_type]](o_size)
 
     # Q, K, V are randomly initialized.
     randn[q_type](q_ptr, q_size)
@@ -210,8 +207,7 @@ fn test[
         ),
     )
 
-    @parameter
-    if not against_gpu_naive:
+    comptime if not against_gpu_naive:
         comptime assert (
             q_type == mask_type
         ), "expect qkv and mask have same type for CPU."
@@ -274,21 +270,34 @@ fn test[
     comptime q_tile_num_rows = 32
     comptime k_tile_num_rows = 128
 
+    var mla_args = MLADispatchScalarArgs[
+        num_heads=num_heads,
+        _is_cache_length_accurate=True,
+        is_fp8_kv=True,
+    ](batch_size, num_keys, seq_len, ctx)
+    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+
     @parameter
     @always_inline
-    @__copy_capture(q_device, k_device, mask3d, mask4d, output_device)
+    @__copy_capture(
+        q_device,
+        k_device,
+        mask3d,
+        mask4d,
+        output_device,
+        scalar_args_buf_lt,
+    )
     fn kernel_launch(ctx: DeviceContext) raises:
-        @parameter
-        if mla_mask_type == MLAMaskType.CAUSAL:
+        comptime if mla_mask_type == MLAMaskType.CAUSAL:
             flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
                 output_device.as_any_origin(),
                 q_device,
                 k_device,
                 CausalMask(),
-                IdentityScoreMod(),
                 scale,
                 ctx,
-                num_partitions,
+                scalar_args_buf_lt,
+                num_partitions=num_partitions,
             )
         elif mla_mask_type == MLAMaskType.MASK_3D:
             flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
@@ -296,10 +305,10 @@ fn test[
                 q_device,
                 k_device,
                 MaterializedMask(mask3d),
-                IdentityScoreMod(),
                 scale,
                 ctx,
-                num_partitions,
+                scalar_args_buf_lt,
+                num_partitions=num_partitions,
             )
         elif mla_mask_type == MLAMaskType.MASK_4D:
             flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
@@ -307,10 +316,10 @@ fn test[
                 q_device,
                 k_device,
                 MaterializedMask(mask4d),
-                IdentityScoreMod(),
                 scale,
                 ctx,
-                num_partitions,
+                scalar_args_buf_lt,
+                num_partitions=num_partitions,
             )
         elif mla_mask_type == MLAMaskType.NO_MASK:
             flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
@@ -318,10 +327,10 @@ fn test[
                 q_device,
                 k_device,
                 NullMask(),
-                IdentityScoreMod(),
                 scale,
                 ctx,
-                num_partitions,
+                scalar_args_buf_lt,
+                num_partitions=num_partitions,
             )
 
     if is_benchmark():
@@ -343,8 +352,7 @@ fn test[
 
     ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
-    @parameter
-    if against_gpu_naive:
+    comptime if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[q_type](o_size)
         comptime output_ref_layout = Layout.row_major(
             Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
@@ -367,13 +375,12 @@ fn test[
         )
         ctx.enqueue_copy(k_ref_device_ptr, k_bf16_ptr)
 
-        @parameter
-        if mla_mask_type == MLAMaskType.CAUSAL:
+        comptime if mla_mask_type == MLAMaskType.CAUSAL:
             var k_operand = LayoutTensorMHAOperand(k_ref_device)
             var null_valid_length = LayoutTensor[
                 DType.uint32, Layout.row_major(UNKNOWN_VALUE)
             ](
-                UnsafePointer[UInt32](),
+                UnsafePointer[UInt32, MutAnyOrigin](),
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                     Index(0)
                 ),
@@ -476,6 +483,7 @@ fn test[
                         print(b, h, s, d, actual, expect)
                     assert_almost_equal(actual, expect, atol=atol, rtol=rtol)
 
+    _ = mla_args
     _ = q_device_ptr
     _ = k_device_ptr
     _ = mask_device_ptr
@@ -540,11 +548,9 @@ fn test_decoding[
     ](seq_len, num_keys, ctx, use_index_input=use_index_input)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
-
-        @parameter
-        if has_nvidia_gpu_accelerator() and ctx.default_device_info == B200:
+        comptime if has_nvidia_gpu_accelerator() and ctx.default_device_info == B200:
             # tests with mask tensor
             # Test with benchmark parameters: batch_size=1, cache_len=32768, num_heads=128
             test_decoding[1, MLAMaskType.NO_MASK](ctx, False, 1, 32768)

@@ -11,18 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
-from sys import simd_width_of
-from sys.info import _current_target
+from std.collections.string import StaticString
+from std.sys import simd_width_of
+from std.sys.info import _current_target
 
-from algorithm import elementwise
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import is_cpu
-from layout._coord import Coord, CoordLike, coord_to_index_list
-from layout._tile_tensor import TileTensor
-from layout._layout import row_major, TensorLayout
+from std.algorithm import elementwise
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu
+from layout import (
+    Coord,
+    CoordLike,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
+from layout.tile_layout import TensorLayout
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # split
@@ -51,11 +56,8 @@ fn split[
     ), "Input and outputs must have the same rank."
 
     # check inputs have same rank and same dims except for axis dim
-    @parameter
-    for i in range(num_outputs):
-
-        @parameter
-        for j in range(input.rank):
+    comptime for i in range(num_outputs):
+        comptime for j in range(input.rank):
             if j != axis and outputs[0].dim[j]() != outputs[i].dim[j]():
                 raise Error(
                     "all split outputs must have the same dimensions in the"
@@ -64,8 +66,7 @@ fn split[
 
     var output_sizes = IndexList[num_outputs]()
 
-    @parameter
-    for i in range(num_outputs):
+    comptime for i in range(num_outputs):
         output_sizes[i] = Int(outputs[i].dim(axis))
 
     @__copy_capture(output_sizes)
@@ -83,16 +84,14 @@ fn split[
         var axis_output_dim = input_coords[axis]
 
         # First determine which output we should write to
-        @parameter
-        for i in range(num_outputs):
+        comptime for i in range(num_outputs):
             if axis_output_dim < output_sizes[i]:
                 break
             axis_output_dim -= output_sizes[i]
             output_idx += 1
 
         # Then derive the output coordinate
-        @parameter
-        for i in range(rank):
+        comptime for i in range(rank):
             if i == axis:
                 output_coords[i] = axis_output_dim
             else:

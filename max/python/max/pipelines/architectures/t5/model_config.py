@@ -17,10 +17,12 @@ from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.lib import MAXModelConfigBase, SupportedEncoding
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from pydantic import Field
+from typing_extensions import Self
 
 
-class T5ConfigBase(MAXModelConfigBase):
+class T5Config(MAXModelConfigBase):
     vocab_size: int = 32128
     d_model: int = 512
     d_kv: int = 64
@@ -45,23 +47,22 @@ class T5ConfigBase(MAXModelConfigBase):
     device: DeviceRef = Field(default_factory=DeviceRef.GPU)
     dtype: DType = DType.bfloat16
 
-
-class T5Config(T5ConfigBase):
-    @staticmethod
-    def generate(
+    @classmethod
+    def initialize_from_config(
+        cls,
         config_dict: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
-    ) -> T5ConfigBase:
+    ) -> Self:
         init_dict = {
             key: value
             for key, value in config_dict.items()
-            if key in T5ConfigBase.__annotations__
+            if key in cls.model_fields
         }
         init_dict.update(
             {
-                "dtype": encoding.dtype,
+                "dtype": supported_encoding_dtype(encoding),
                 "device": DeviceRef.from_device(devices[0]),
             }
         )
-        return T5ConfigBase(**init_dict)
+        return cls(**init_dict)

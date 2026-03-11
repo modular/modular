@@ -12,37 +12,33 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the  Set datatype."""
 
-from format._utils import (
+from std.format._utils import (
     write_sequence_to,
     FormatStruct,
     Named,
     TypeNames,
-    constrained_conforms_to_writable,
 )
-from hashlib import Hasher, default_hasher
+from std.hashlib import Hasher, default_hasher
 
 from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
-from builtin.constrained import _constrained_conforms_to
 
 
 struct Set[T: KeyElement, H: Hasher = default_hasher](
     Boolable,
-    Comparable,
-    Copyable,
-    Hashable,
+    Comparable where conforms_to(T, Equatable),
+    Copyable where conforms_to(T, Copyable),
+    Equatable where conforms_to(T, Equatable),
+    Hashable where conforms_to(T, Hashable),
     Iterable,
-    KeyElement,
-    Representable,
     Sized,
-    Stringable,
-    Writable,
+    Writable where conforms_to(T, Writable),
 ):
     """A set data type.
 
     O(1) average-case amortized add, remove, and membership check.
 
     ```mojo
-    from collections import Set
+    from std.collections import Set
 
     var set = { 1, 2, 3 }
     print(len(set))  # 3
@@ -119,7 +115,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return t in self._data
 
-    fn __eq__(self, other: Self) -> Bool:
+    fn __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Set equality.
 
         Args:
@@ -205,7 +201,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         self.difference_update(other)
 
-    fn __le__(self, other: Self) -> Bool:
+    fn __le__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Overloads the <= operator for sets. Works like as `issubset` method.
 
         Args:
@@ -216,7 +212,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return self.issubset(other)
 
-    fn __ge__(self, other: Self) -> Bool:
+    fn __ge__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Overloads the >= operator for sets. Works like as `issuperset` method.
 
         Args:
@@ -227,7 +223,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return self.issuperset(other)
 
-    fn __gt__(self, other: Self) -> Bool:
+    fn __gt__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Overloads the > operator for strict superset comparison of sets.
 
         Args:
@@ -236,9 +232,9 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Returns:
             True if the set is a strict superset of the `other` set, False otherwise.
         """
-        return self >= other and self != other
+        return len(self) > len(other) and other.issubset(self)
 
-    fn __lt__(self, other: Self) -> Bool:
+    fn __lt__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Overloads the < operator for strict subset comparison of sets.
 
         Args:
@@ -247,7 +243,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Returns:
             True if the set is a strict subset of the `other` set, False otherwise.
         """
-        return self <= other and self != other
+        return len(self) < len(other) and self.issubset(other)
 
     fn __xor__(self, other: Self) -> Self:
         """Overloads the ^ operator for sets. Works like as `symmetric_difference` method.
@@ -290,13 +286,12 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return len(self._data)
 
-    fn __hash__[_H: Hasher](self, mut hasher: _H):
+    fn __hash__(
+        self, mut hasher: Some[Hasher]
+    ) where conforms_to(Self.T, Hashable):
         """Updates hasher with the underlying values.
 
         The update is order independent, so s1 == s2 -> hash(s1) == hash(s2).
-
-        Parameters:
-            _H: The hasher type.
 
         Args:
             hasher: The hasher instance.
@@ -308,8 +303,9 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             hash_value ^= hash(e)
         hasher.update(hash_value)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
-    fn __str__(self) -> String:
+    fn __str__(self) -> String where conforms_to(Self.T, Writable):
         """Returns the string representation of the set.
 
         Returns:
@@ -319,8 +315,9 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         self.write_to(output)
         return output
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
-    fn __repr__(self) -> String:
+    fn __repr__(self) -> String where conforms_to(Self.T, Writable):
         """Returns the string representation of the set.
 
         Returns:
@@ -330,17 +327,16 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         self.write_repr_to(output)
         return output
 
-    fn _write_self_to[*, is_repr: Bool](self, mut writer: Some[Writer]):
-        constrained_conforms_to_writable[Self.T, Parent=Self]()
-
+    fn _write_self_to[
+        *, is_repr: Bool
+    ](self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         var iterator = self.__iter__()
 
         @parameter
         fn iterate(mut w: Some[Writer]) raises StopIteration:
             ref element = iterator.__next__()
 
-            @parameter
-            if is_repr:
+            comptime if is_repr:
                 trait_downcast[Writable](element).write_repr_to(w)
             else:
                 trait_downcast[Writable](element).write_to(w)
@@ -349,11 +345,10 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         _ = iterator^
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Write this set to a `Writer`.
-
-        Constraints:
-            `T` must conform to `Writable`.
 
         Args:
             writer: The object to write to.
@@ -361,11 +356,10 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         self._write_self_to[is_repr=False](writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    fn write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Write this set to a `Writer`.
-
-        Constraints:
-            `T` must conform to `Writable`.
 
         Args:
             writer: The object to write to.
@@ -419,9 +413,8 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     fn pop(mut self) raises -> Self.T:
         """Remove any one item from the set, and return it.
 
-        As an implementation detail this will remove the first item
-        according to insertion order. This is practically useful
-        for breadth-first search implementations.
+        As an implementation detail this will remove the last item
+        according to insertion order.
 
         Returns:
             The element which was removed from the set.
@@ -429,12 +422,10 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Raises:
             If the set is empty.
         """
-        if not self:
+        try:
+            return self._data.popitem().key.copy()
+        except:
             raise "Pop on empty set"
-        var iter = self.__iter__()
-        var first = iter.__next__().copy()
-        self.remove(first)
-        return first^
 
     fn union(self, other: Self) -> Self:
         """Set union.
@@ -622,14 +613,4 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         This method modifies the set in-place, removing all of its elements.
         After calling this method, the set will be empty.
         """
-        for _ in range(len(self)):
-            # Can't fail from an empty set
-            try:
-                _ = self.pop()
-            except:
-                pass
-
-        #! This code below (without using range function) won't pass tests
-        #! It leaves set with one remaining item. Is this a bug?
-        # for _ in self:
-        #     var a = self.pop()
+        self._data.clear()

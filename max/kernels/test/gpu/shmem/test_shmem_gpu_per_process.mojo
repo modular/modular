@@ -23,18 +23,16 @@ mpirun.
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun-gpu-per-process %t
 
-from gpu.host import DeviceBuffer, DeviceContext
-from memory import LegacyUnsafePointer, alloc
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from os.path import dirname
-from pathlib import Path
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.memory import alloc
+from std.os.path import dirname
+from std.pathlib import Path
 from shmem import *
-from sys.param_env import env_get_string
-from testing import assert_equal
+from std.sys.defines import get_defined_string
+from std.testing import assert_equal
 
 
-fn simple_shift_kernel(destination: UnsafePointer[Int32]):
+fn simple_shift_kernel(destination: UnsafePointer[Int32, MutAnyOrigin]):
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
     var peer = (mype + 1) % npes
@@ -44,7 +42,7 @@ fn simple_shift_kernel(destination: UnsafePointer[Int32]):
     shmem_p(destination, mype, peer)
 
 
-def main():
+def main() raises:
     # Initializes SHMEM/MPI and finalizes at the end of the scope
     with SHMEMContext() as ctx:
         # Set up buffers to test devices are communicating with the correct IDs

@@ -15,11 +15,11 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from math import ceil
+from std.math import ceil
 
-from sys import bit_width_of
-from bit import count_leading_zeros
-from memory import Span
+from std.sys import bit_width_of
+from std.bit import count_leading_zeros
+from std.memory import Span
 
 # ===-----------------------------------------------------------------------===#
 # sort
@@ -212,8 +212,7 @@ fn _quicksort[
         var interval = stack.pop()
         var len = len(interval)
 
-        @parameter
-        if do_smallsort:
+        comptime if do_smallsort:
             if len <= 5:
                 _delegate_small_sort[cmp_fn](interval)
                 continue
@@ -295,10 +294,9 @@ fn _merge[
     var span2_ptr = span2.unsafe_ptr()
     var res_ptr = result.unsafe_ptr()
 
-    debug_assert(
-        span1_size + span2_size <= len(result),
-        "The merge result does not fit in the span provided",
-    )
+    assert span1_size + span2_size <= len(
+        result
+    ), "The merge result does not fit in the span provided"
     var i = 0
     var j = 0
     var k = 0
@@ -465,8 +463,7 @@ fn _sort[
     stable: Bool = False,
     do_smallsort: Bool = False,
 ](span: Span[T, origin]):
-    @parameter
-    if do_smallsort:
+    comptime if do_smallsort:
         if len(span) <= 5:
             _delegate_small_sort[cmp_fn](span)
             return
@@ -475,8 +472,7 @@ fn _sort[
         _insertion_sort[cmp_fn](span)
         return
 
-    @parameter
-    if stable:
+    comptime if stable:
         _stable_sort[cmp_fn](span)
     else:
         _quicksort[cmp_fn, do_smallsort=do_smallsort](span)
@@ -659,19 +655,16 @@ fn _small_sort[
     T: Copyable,
     cmp_fn: fn(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin]):
-    @parameter
-    if n == 2:
+    comptime if n == 2:
         _sort2[T, cmp_fn](span, 0, 1)
         return
 
-    @parameter
-    if n == 3:
+    comptime if n == 3:
         _sort2[T, cmp_fn](span, 1, 2)
         _sort_partial_3[T, cmp_fn](span, 0, 1, 2)
         return
 
-    @parameter
-    if n == 4:
+    comptime if n == 4:
         _sort2[T, cmp_fn](span, 0, 2)
         _sort2[T, cmp_fn](span, 1, 3)
         _sort2[T, cmp_fn](span, 0, 1)
@@ -679,8 +672,7 @@ fn _small_sort[
         _sort2[T, cmp_fn](span, 1, 2)
         return
 
-    @parameter
-    if n == 5:
+    comptime if n == 5:
         _sort2[T, cmp_fn](span, 0, 1)
         _sort2[T, cmp_fn](span, 3, 4)
         _sort_partial_3[T, cmp_fn](span, 2, 3, 4)

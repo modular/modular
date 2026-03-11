@@ -54,7 +54,6 @@ def test_pipelines_cli__smollm_float32(
                 "--model-path",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
-                "--no-use-legacy-module",
                 "--devices=cpu",
                 "--prompt",
                 "Why is the sky blue?",
@@ -74,16 +73,13 @@ def test_pipelines_cli__invalid_quantization_encoding(
     tiny_llama_local_path: str,
     custom_architecture_path: str,
 ) -> None:
-    with pytest.raises(
-        ValueError, match=r".*'SupportedEncoding.q4_k' is not supported.*"
-    ):
+    with pytest.raises(ValueError, match=r".*'q4_k' is not supported.*"):
         pipelines.main(
             [
                 "generate",
                 "--model-path",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
-                "--no-use-legacy-module",
                 "--devices=cpu",
                 "--prompt",
                 "Why is the sky blue?",
@@ -112,7 +108,6 @@ def test_pipelines_cli__model_and_model_path_conflict(
                 "--model-path",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
-                "--no-use-legacy-module",
                 "--devices=cpu",
                 "--prompt",
                 "Why is the sky blue?",
@@ -138,7 +133,6 @@ def test_pipelines_cli__set_kv_cache_dtype(
                 "--model",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
-                "--no-use-legacy-module",
                 "--devices=cpu",
                 "--prompt",
                 "Why is the sky blue?",
@@ -160,7 +154,6 @@ def test_pipelines_cli__set_kv_cache_dtype(
                 "--model",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
-                "--no-use-legacy-module",
                 "--devices=cpu",
                 "--prompt",
                 "Why is the sky blue?",

@@ -11,18 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import env_get_int, env_get_string
+from std.math import ceildiv
+from std.sys import get_defined_int, get_defined_string
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import TileTensor
+from layout.tile_layout import row_major
+from layout.coord import Coord, Idx
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn _get_run_name[
@@ -45,11 +53,11 @@ fn _get_run_name[
         "->",
         out_dtype,
         ") : ",
-        shape_c_dim[0].__str__(),
+        shape_c_dim[0],
         ",",
-        shape_c_dim[1].__str__(),
+        shape_c_dim[1],
         ",",
-        shape_a_dim[1].__str__(),
+        shape_a_dim[1],
     )
 
 
@@ -76,13 +84,13 @@ fn bench_matmul[
         shape_b_dim[0] * shape_b_dim[1]
     )
 
-    var mat_c = NDBuffer[out_dtype, 2, _, shape_c](
+    var mat_c = NDBuffer[rank=2, out_dtype, _, shape_c](
         mat_c_buf.unsafe_ptr(), shape_c_dim
     )
-    var mat_a = NDBuffer[in_dtype, 2, _, shape_a](
+    var mat_a = NDBuffer[rank=2, in_dtype, _, shape_a](
         mat_a_buf.unsafe_ptr(), shape_a_dim
     )
-    var mat_b = NDBuffer[in_dtype, 2, _, shape_b](
+    var mat_b = NDBuffer[rank=2, in_dtype, _, shape_b](
         mat_b_buf.unsafe_ptr(), shape_b_dim
     )
 
@@ -141,13 +149,13 @@ fn bench_matmul_transpose[
         shape_b_dim[0] * shape_b_dim[1]
     )
 
-    var mat_c = NDBuffer[out_dtype, 2, _, shape_c](
+    var mat_c = NDBuffer[rank=2, out_dtype, _, shape_c](
         mat_c_buf.unsafe_ptr(), shape_c_dim
     )
-    var mat_a = NDBuffer[in_dtype, 2, _, shape_a](
+    var mat_a = NDBuffer[rank=2, in_dtype, _, shape_a](
         mat_a_buf.unsafe_ptr(), shape_a_dim
     )
-    var mat_b = NDBuffer[in_dtype, 2, _, shape_b](
+    var mat_b = NDBuffer[rank=2, in_dtype, _, shape_b](
         mat_b_buf.unsafe_ptr(), shape_b_dim
     )
 
@@ -206,19 +214,22 @@ fn bench_matmul_naive[
         shape_b_dim[0] * shape_b_dim[1]
     )
 
-    var mat_c = NDBuffer[out_type, 2, _, shape_c](
-        mat_c_buf.unsafe_ptr(), shape_c_dim
+    var c_tt = TileTensor(
+        mat_c_buf.unsafe_ptr(),
+        row_major(Coord(Idx(shape_c_dim[0]), Idx(shape_c_dim[1]))),
     )
-    var mat_a = NDBuffer[in_type, 2, _, shape_a](
-        mat_a_buf.unsafe_ptr(), shape_a_dim
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[in_type], ImmutAnyOrigin](
+            unsafe_from_address=Int(mat_a_buf.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(shape_a_dim[0]), Idx(shape_a_dim[1]))),
     )
-    var mat_b = NDBuffer[in_type, 2, _, shape_b](
-        mat_b_buf.unsafe_ptr(), shape_b_dim
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[in_type], ImmutAnyOrigin](
+            unsafe_from_address=Int(mat_b_buf.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(shape_b_dim[0]), Idx(shape_b_dim[1]))),
     )
-
-    var c_tensor = from_ndbuffer_row_major(mat_c)
-    var a_tensor = from_ndbuffer_row_major(mat_a)
-    var b_tensor = from_ndbuffer_row_major(mat_b)
 
     var M = shape_c_dim[0]
     var N = shape_c_dim[1]
@@ -238,15 +249,15 @@ fn bench_matmul_naive[
                 out_type,
                 in_type,
                 in_type,
-                c_tensor.layout,
-                a_tensor.layout,
-                b_tensor.layout,
+                type_of(c_tt).LayoutType,
+                type_of(a_tt).LayoutType,
+                type_of(b_tt).LayoutType,
                 BLOCK_DIM,
             ]
             ctx.enqueue_function[kernel, kernel](
-                c_tensor,
-                a_tensor,
-                b_tensor,
+                c_tt,
+                a_tt,
+                b_tt,
                 M,
                 N,
                 K,
@@ -326,17 +337,17 @@ fn get_dtype[output_type: String]() -> DType:
     return DType.bfloat16
 
 
-def main():
+def main() raises:
     var h = Bench()
 
     comptime input_type = DType.bfloat16
 
     var M = Int(arg_parse("M", 1))
-    comptime N = env_get_int["N", 1]()
-    comptime K = env_get_int["K", 1]()
+    comptime N = get_defined_int["N", 1]()
+    comptime K = get_defined_int["K", 1]()
 
     comptime output_type = get_dtype[
-        env_get_string["output_type", "bfloat16"]()
+        get_defined_string["output_type", "bfloat16"]()
     ]()
 
     var mode = arg_parse("mode", "default")  # [default, naive, transpose]

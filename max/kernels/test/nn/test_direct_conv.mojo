@@ -11,12 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import ceildiv, isclose
-from random import rand
-from sys.info import num_physical_cores, simd_width_of
+from std.math import ceildiv, isclose
+from std.random import rand
+from std.sys.info import num_physical_cores, simd_width_of
 
 from layout import LayoutTensor, Layout, RuntimeLayout
 from nn.conv import (
@@ -34,7 +31,7 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime simd_size: Int = simd_width_of[DType.float32]()
 comptime dtype = DType.float32
@@ -79,10 +76,10 @@ fn test[
         num_groups=num_groups,
     )
 
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(N * H * W * C)
-    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(R * S * C * F)
-    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(N * HO * WO * F)
-    var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(N * HO * WO * F)
+    var input_ptr = alloc[Scalar[dtype]](N * H * W * C)
+    var filter_ptr = alloc[Scalar[dtype]](R * S * C * F)
+    var output_ptr = alloc[Scalar[dtype]](N * HO * WO * F)
+    var output_ref_ptr = alloc[Scalar[dtype]](N * HO * WO * F)
 
     rand[dtype](input_ptr, N * H * W * C)
     rand[dtype](filter_ptr, R * S * C * F)
@@ -111,7 +108,7 @@ fn test[
         RuntimeLayout[layout_4d].row_major(Index(R, S, C // num_groups, F)),
     )
     var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
-    var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
+    var packed_filter_ptr = alloc[Scalar[dtype]](
         packed_filter_shape.flattened_length()
     )
     var packed_filter = LayoutTensor[dtype, layout_5d](
@@ -125,8 +122,7 @@ fn test[
         output_ref_ptr, RuntimeLayout[layout_4d].row_major(Index(N, HO, WO, F))
     )
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         pack_filter(filter, packed_filter, num_groups)
 
     # Reference: naive conv
@@ -152,15 +148,11 @@ fn test[
     # Test direct conv
     comptime conv_attr = ConvInfoStatic[2]()
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         ConvDirectNHWC[
             layout_4d,
             layout_5d,
             layout_4d,
-            input.origin,
-            filter.origin,
-            output.origin,
             dtype,
             dtype,
             dtype,
@@ -177,9 +169,6 @@ fn test[
             layout_4d,
             layout_4d,
             layout_4d,
-            _,
-            _,
-            _,
             dtype,
             dtype,
             dtype,
@@ -220,7 +209,7 @@ fn test[
     print("Succeed")
 
 
-def main():
+def main() raises:
     """It only includes shapes where F is multiple simd_size."""
     # No packing or padding.
     test[DType.float32, False](

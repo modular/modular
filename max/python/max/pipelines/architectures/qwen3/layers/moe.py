@@ -22,7 +22,7 @@ from collections.abc import Iterable
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.legacy.moe import MoEGate
+from max.nn.moe import MoEGate
 
 
 class Qwen3MoEGate(MoEGate):

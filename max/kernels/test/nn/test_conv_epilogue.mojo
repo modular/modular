@@ -11,14 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.math import ceildiv, isclose
+from std.random import rand
+from std.sys.info import simd_width_of
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import ceildiv, isclose
-from random import rand
-from sys.info import simd_width_of
-
-from algorithm.functional import vectorize
+from std.algorithm.functional import vectorize
 from layout import LayoutTensor, Layout, RuntimeLayout
 from nn.conv import (
     ConvDirectNHWC,
@@ -34,7 +31,7 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime simd_size: Int = simd_width_of[DType.float32]()
 comptime dtype = DType.float32
@@ -58,8 +55,7 @@ fn test[
 
     var output_dims = IndexList[rank](1)
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         output_dims[i] = (
             input_dims[i]
             + pad[2 * i]
@@ -72,8 +68,7 @@ fn test[
     var pad_h = IndexList[2](0)
     var pad_w = IndexList[2](0)
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         pad_w = Index(pad[0], pad[1])
     elif rank == 2:
         pad_h = Index(pad[0], pad[1])
@@ -101,18 +96,18 @@ fn test[
     var C_per_group = C // num_groups
 
     var input_size = N * conv_shape.input_image_flat_size() * C
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(input_size)
+    var input_ptr = alloc[Scalar[dtype]](input_size)
     rand(input_ptr, input_size)
 
     var filter_size = conv_shape.filter_window_flat_size() * C_per_group * F
-    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
+    var filter_ptr = alloc[Scalar[dtype]](filter_size)
     rand(filter_ptr, filter_size)
 
     var output_size = N * conv_shape.output_image_flat_size() * F
-    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
-    var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    var output_ptr = alloc[Scalar[dtype]](output_size)
+    var output_ref_ptr = alloc[Scalar[dtype]](output_size)
 
-    var bias_ptr = UnsafePointer[Scalar[dtype]].alloc(F)
+    var bias_ptr = alloc[Scalar[dtype]](F)
     rand(bias_ptr, F)
 
     # Find the tile size used in packing.
@@ -138,7 +133,7 @@ fn test[
     )
 
     var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
-    var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
+    var packed_filter_ptr = alloc[Scalar[dtype]](
         packed_filter_shape.flattened_length()
     )
     var packed_filter = LayoutTensor[dtype, layout_p3](
@@ -154,8 +149,7 @@ fn test[
         output_ref_ptr, RuntimeLayout[layout_p2].row_major(output_shape)
     )
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         pack_filter(filter, packed_filter, num_groups)
 
     comptime conv_attr = ConvInfoStatic[rank]()
@@ -165,15 +159,11 @@ fn test[
     fn null_epilogue[rank: Int](coords: IndexList[rank], f_size: Int):
         pass
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         ConvDirectNHWC[
             layout_p2,
             layout_p3,
             layout_p2,
-            _,
-            _,
-            _,
             dtype,
             dtype,
             dtype,
@@ -191,9 +181,6 @@ fn test[
             layout_p2,
             layout_p2,
             layout_p2,
-            _,
-            _,
-            _,
             dtype,
             dtype,
             dtype,
@@ -248,15 +235,11 @@ fn test[
 
         vectorize[simd_size](f_size, body1)
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         ConvDirectNHWC[
             layout_p2,
             layout_p3,
             layout_p2,
-            _,
-            _,
-            _,
             dtype,
             dtype,
             dtype,
@@ -275,9 +258,6 @@ fn test[
             layout_p2,
             layout_p2,
             layout_p2,
-            _,
-            _,
-            _,
             dtype,
             dtype,
             dtype,
@@ -323,7 +303,7 @@ fn test[
     print("Succeed")
 
 
-def main():
+def main() raises:
     # No packing or padding.
     test[2, DType.float32, False](
         1,  # N

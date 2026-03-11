@@ -25,7 +25,7 @@ For foreign function interface (FFI) functionality, use the `ffi` module.
 from ._assembly import inlined_assembly
 from ._io import stderr, stdin, stdout
 from .arg import argv
-from .compile import codegen_unreachable, is_compile_time
+from .compile import codegen_unreachable, is_run_in_comptime_interpreter
 from .debug import breakpointhook
 from .info import (
     CompilationTarget,
@@ -66,11 +66,17 @@ from .intrinsics import (
     strided_load,
     strided_store,
 )
+from .defines import (
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
+    get_defined_string,
+    is_defined,
+)
 from .param_env import (
     env_get_bool,
     env_get_dtype,
     env_get_int,
     env_get_string,
-    is_defined,
 )
 from .terminate import exit

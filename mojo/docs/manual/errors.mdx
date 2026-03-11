@@ -67,7 +67,7 @@ You **don't** include `raises` in the signature (doing so results in a
 compiler error):
 
 ```mojo
-def read_file(path: String) -> String:
+def read_file(path: String) raises -> String:
     if not path:
         raise "path cannot be empty"
     return "contents of " + path
@@ -146,7 +146,7 @@ fn process_record(id: Int) raises -> String:
     return String("record_", id)
 
 
-def main():
+def main() raises:
     try:
         for id in [5, 0, 1001, -3, 42]:
             var result: String
@@ -190,6 +190,7 @@ re-raised error: invalid record ID: must be non-negative
 ```
 
 Notice:
+
 - When `id` is 5: `process_record()` succeeds, so `else` runs, then `finally`.
 - When `id` is 0: `continue` exits the `try` block, skipping both `except`
   and `else`. Only `finally` runs.
@@ -444,7 +445,7 @@ an integer-based enumeration. Define a separate struct for each condition, then
 combine them into a single error type with a `comptime` alias:
 
 ```mojo title="variant_errors.mojo"
-from utils import Variant
+from std.utils import Variant
 
 
 @fieldwise_init
@@ -633,7 +634,7 @@ A `def` function can raise the built-in `Error` type without declaring it in the
 signature:
 
 ```mojo
-def validate_def(value: Int) -> Int:
+def validate_def(value: Int) raises -> Int:
     if value < 0:
         raise "value cannot be negative"
     return value
@@ -689,7 +690,7 @@ except e:
 :::note
 
 For a complete working example of all three function forms, see
-[`fn_vs_def_errors.mojo`](https://github.com/modularml/modular/blob/main/mojo/docs/code/manual/errors/fn_vs_def_errors.mojo).
+[`fn_vs_def_errors.mojo`](https://github.com/modular/modular/blob/main/mojo/docs/code/manual/errors/fn_vs_def_errors.mojo).
 
 :::
 
@@ -705,7 +706,7 @@ When calling `def` functions or other `Error`-raising code from a function that
 uses typed errors, catch the `Error` and convert it:
 
 ```mojo
-def validate_with_error(value: Int) -> Int:
+def validate_with_error(value: Int) raises -> Int:
     if value < 0:
         raise "value cannot be negative"
     return value
@@ -760,7 +761,7 @@ A `def` function can call a function that raises a typed error and catch it
 with full field access:
 
 ```mojo
-def error_caller():
+def error_caller() raises:
     try:
         _ = validate_typed(-5)
     except e:
@@ -784,7 +785,7 @@ You can't call functions that raise different error types in the same `try`
 block. The compiler rejects the mismatch:
 
 ```mojo
-def error_func() -> Int:
+def error_func() raises -> Int:
     raise "something went wrong"
 
 fn typed_func() raises ValidationError -> Int:
@@ -827,7 +828,7 @@ When working with both `Error` and typed errors:
 :::note
 
 For a complete working example of these interaction patterns, see
-[`error_interaction.mojo`](https://github.com/modularml/modular/blob/main/mojo/docs/code/manual/errors/error_interaction.mojo).
+[`error_interaction.mojo`](https://github.com/modular/modular/blob/main/mojo/docs/code/manual/errors/error_interaction.mojo).
 
 :::
 
@@ -864,15 +865,15 @@ default, so often your stack trace won't be very useful.
 Consider this program:
 
 ```mojo title="stacktrace_error.mojo"
-def func2() -> None:
+def func2() raises -> None:
     raise Error("Intentional error")
 
 
-def func1() -> None:
+def func1() raises -> None:
     func2()
 
 
-def main():
+def main() raises:
     func1()
 ```
 
@@ -940,15 +941,15 @@ to get the stack trace as an `Optional[String]`. The method returns `None` if
 stack trace collection was disabled or unavailable:
 
 ```mojo title="stacktrace_error_capture.mojo"
-def func2() -> None:
+def func2() raises -> None:
     raise Error("Intentional error")
 
 
-def func1() -> None:
+def func1() raises -> None:
     func2()
 
 
-def main():
+def main() raises:
     try:
         func1()
     except e:
@@ -1018,7 +1019,7 @@ content = f.read()
 f.close()
 ```
 
-Calling [`close()`](/mojo/std/builtin/file/FileHandle#close) releases the
+Calling [`close()`](/mojo/std/io/file/FileHandle#close) releases the
 memory and other operating system resources associated with the opened file. If
 your program were to open many files without closing them, you could exhaust the
 resources available to your program and cause errors. The problem is even worse
@@ -1028,7 +1029,7 @@ program were to crash instead of exiting normally, that buffered data could be
 lost instead of being written to storage.
 
 The example above includes the call to `close()`, but it ignores the
-possibility that [`read()`](/mojo/std/builtin/file/FileHandle#read) could
+possibility that [`read()`](/mojo/std/io/file/FileHandle#read) could
 raise an error, which would prevent the `close()` from executing.
 To handle this scenario, you could rewrite the code to use `try` like this:
 
@@ -1044,8 +1045,8 @@ finally:
     f.close()
 ```
 
-However, the [`FileHandle`](/mojo/std/builtin/file/FileHandle) struct
-returned by [`open()`](/mojo/std/builtin/file/open) is a context manager.
+However, the [`FileHandle`](/mojo/std/io/file/FileHandle) struct
+returned by [`open()`](/mojo/std/io/file/open) is a context manager.
 When used with Mojo's `with` statement, a context manager ensures that the
 resources it manages are properly released at the end of the block, even if an
 error occurs. In the case of a `FileHandle`, that means the call to `close()`
@@ -1116,8 +1117,8 @@ Here is an example of implementing a `Timer` context manager, which prints the
 amount of time spent executing the `with` code block:
 
 ```mojo title="context_mgr.mojo"
-import sys
-import time
+import std.sys
+import std.time
 
 @fieldwise_init
 struct Timer(ImplicitlyCopyable):
@@ -1137,7 +1138,7 @@ struct Timer(ImplicitlyCopyable):
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
-def main():
+def main() raises:
     with Timer():
         print("Beginning execution")
         time.sleep(1.0)
@@ -1192,7 +1193,7 @@ The following is an example of a context manager that suppresses only a certain
 error condition and propagates all others:
 
 ```mojo title="conditional_context_mgr.mojo"
-import time
+import std.time
 
 @fieldwise_init
 struct ConditionalTimer(ImplicitlyCopyable):
@@ -1222,7 +1223,7 @@ struct ConditionalTimer(ImplicitlyCopyable):
             self.__exit__()
             return False
 
-def flaky_identity(n: Int) -> Int:
+def flaky_identity(n: Int) raises -> Int:
     if (n % 4) == 0:
         raise "really bad"
     elif (n % 2) == 0:
@@ -1230,7 +1231,7 @@ def flaky_identity(n: Int) -> Int:
     else:
         return n
 
-def main():
+def main() raises:
     for i in range(1, 9):
         with ConditionalTimer():
             print("\nBeginning execution")
@@ -1287,11 +1288,11 @@ fn __exit__[ErrType: AnyType](self, err: ErrType) -> Bool
 
 This method receives the typed error directly, preserving its full type
 information. You can use
-[reflection](/mojo/manual/metaprogramming/reflection) to inspect the error
+[reflection](/mojo/manual/reflection/) to inspect the error
 type at compile time. For example, you can:
 
 - `get_type_name[ErrType]()` — Get the error type's name as a string.
-- `@parameter if conforms_to(ErrType, Writable)` — Check if the error
+- `comptime if conforms_to(ErrType, Writable)` — Check if the error
   implements `Writable`.
 - `trait_downcast[Writable](err)` — Access the error through its `Writable`
   interface.
@@ -1299,7 +1300,7 @@ type at compile time. For example, you can:
 The following `ResourceGuard` example demonstrates this pattern:
 
 ```mojo
-from reflection import *
+from std.reflection import *
 
 @fieldwise_init
 struct ConnectionError(Copyable, Writable):
@@ -1329,8 +1330,7 @@ struct ResourceGuard(ImplicitlyCopyable):
         print("Releasing:", self.name)
         print("  Error type:", type_name)
 
-        @parameter
-        if conforms_to(ErrType, Writable):
+        comptime if conforms_to(ErrType, Writable):
             print("  Message:", trait_downcast[Writable](err))
 
         return self.suppress_errors
@@ -1366,6 +1366,6 @@ Continued after suppressed error
 :::note
 
 For a complete working example including error suppression and propagation, see
-[`resource_guard.mojo`](https://github.com/modularml/modular/blob/main/mojo/docs/code/manual/errors/resource_guard.mojo).
+[`resource_guard.mojo`](https://github.com/modular/modular/blob/main/mojo/docs/code/manual/errors/resource_guard.mojo).
 
 :::

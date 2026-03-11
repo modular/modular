@@ -24,17 +24,14 @@ FLUX VAE decoder uses block_out_channels=[128, 256, 512, 512] with:
 - BF16 data type
 """
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from random import rand
-from testing import assert_false
+from std.random import rand
+from std.testing import assert_false
 
 from layout import LayoutTensor, Layout, RuntimeLayout
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from nn.conv import conv_gpu, conv_cudnn
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn test_flux_conv_layer[
@@ -92,11 +89,11 @@ fn test_flux_conv_layer[
     )
 
     # Host memory
-    var input_host_ptr = UnsafePointer[Scalar[dtype]].alloc(in_size)
-    var filter_host_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
-    var filter_nchw_host_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
-    var out_sm100_host_ptr = UnsafePointer[Scalar[dtype]].alloc(out_size)
-    var out_cudnn_host_ptr = UnsafePointer[Scalar[dtype]].alloc(out_size)
+    var input_host_ptr = alloc[Scalar[dtype]](in_size)
+    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
+    var filter_nchw_host_ptr = alloc[Scalar[dtype]](filter_size)
+    var out_sm100_host_ptr = alloc[Scalar[dtype]](out_size)
+    var out_cudnn_host_ptr = alloc[Scalar[dtype]](out_size)
 
     rand(input_host_ptr, in_size)
     rand(filter_host_ptr, filter_size)
@@ -222,7 +219,7 @@ fn test_flux_conv_layer[
     _ = out_cudnn_dev^
 
 
-def main():
+def main() raises:
     print("=" * 60)
     print("FLUX VAE Decoder Conv2D Integration Test")
     print("SM100 dispatch through conv_gpu vs cuDNN reference")

@@ -19,13 +19,11 @@
 from __future__ import annotations
 
 import asyncio
-import enum
 import json
 import os
 import random
 import time
 import warnings
-from collections.abc import Mapping
 from dataclasses import dataclass
 
 import pyarrow.parquet
@@ -50,7 +48,6 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
@@ -115,14 +112,6 @@ class ThroughputBenchmarkConfig(ConfigFileModel):
     async_engine: bool = Field(default=True)
     """Use Modular async pipeline engine rather than LLM class."""
 
-    # TODO: These have different default values than ones configured via
-    # PipelineConfig constructor.
-    # KV Cache configuration (throughput-specific)
-    cache_strategy: KVCacheStrategy = Field(
-        default="paged",
-    )
-    """The KVCache strategy to use."""
-
     kv_cache_page_size: int | None = Field(default=None)
     """Number of tokens in a single page in the paged kv cache."""
 
@@ -143,13 +132,6 @@ class ThroughputBenchmarkConfig(ConfigFileModel):
 
     show_text: bool = Field(default=False)
     """Whether to show generated text."""
-
-    @classmethod
-    def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
-        """Get the enum mapping for ThroughputBenchmarkConfig."""
-        return {
-            "PipelineTask": PipelineTask,
-        }
 
 
 @dataclass
@@ -316,6 +298,7 @@ def print_results(
         if isinstance(outputs, EmbeddingsGenerationOutput):
             output_text = str(outputs.embeddings)
         else:
+            # TODO: (MODELS-1119) determine whether to include reasoning tokens in print
             output_text = "".join(
                 chunk.decoded_tokens
                 for chunk in outputs
@@ -531,7 +514,7 @@ def run(benchmark_config: ThroughputBenchmarkConfig) -> None:
 
         else:
             sample_requests_func = sample_requests  # type: ignore
-            optional_kwargs["max_length"] = pipeline_config.max_length
+            optional_kwargs["max_length"] = pipeline_config.model.max_length
 
         requests = sample_requests_func(
             dataset_path=dataset_path,
@@ -597,13 +580,13 @@ def run(benchmark_config: ThroughputBenchmarkConfig) -> None:
                 f"task#{i}: [{prompt_len}, {output_real}({output_len})]", end=""
             )
             if (
-                pipeline_config.max_length is not None
-                and output_real + prompt_len >= pipeline_config.max_length
+                pipeline_config.model.max_length is not None
+                and output_real + prompt_len >= pipeline_config.model.max_length
             ):
                 print(
                     (
                         "  # [WARNING] limited by maximum sequence length"
-                        f" ({pipeline_config.max_length}) from the pipeline config."
+                        f" ({pipeline_config.model.max_length}) from the pipeline config."
                     ),
                     end="",
                 )
@@ -679,15 +662,6 @@ def main() -> None:
         if benchmark_config.other.tokenizer is None:
             benchmark_config.other.tokenizer = (
                 benchmark_config.pipeline.model.model_path
-            )
-
-        # Validate cache strategy
-        if (
-            benchmark_config.enable_prefix_caching
-            and benchmark_config.cache_strategy != "paged"
-        ):
-            raise ValueError(
-                "prefix caching is only supported with paged attention"
             )
 
         if (

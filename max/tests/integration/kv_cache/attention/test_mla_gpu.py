@@ -20,14 +20,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kernels import (
-    flare_mla_decompress_k_cache,
-    flare_mla_prefill_plan,
-)
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kernels import flare_mla_decompress_k_cache, flare_mla_prefill_plan
+from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 
@@ -44,13 +38,14 @@ def test_mla_prefill_plan() -> None:
         n_kv_heads=8,
         head_dim=128,
         num_layers=1,
-        cache_strategy="paged",
         page_size=page_size,
         is_mla=True,
+        num_q_heads=8,
         devices=[DeviceRef.GPU()],
     )
-    prompt_lens = [10, 30]
+    prompt_lens = [160, 200]
     batch_size = len(prompt_lens)
+    buffer_tok_size = 256
 
     # Set MLIR types for the graph.
     input_row_offsets_type = TensorType(
@@ -75,15 +70,16 @@ def test_mla_prefill_plan() -> None:
             input_row_offsets = g.inputs[0].tensor
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = PagedCacheValues(
-                kv_blocks=g.inputs[1].buffer,
-                cache_lengths=g.inputs[2].tensor,
-                lookup_table=g.inputs[3].tensor,
-                max_lengths=g.inputs[4].tensor,
-            )
+            kv_collection = unflatten_ragged_attention_inputs(
+                g.inputs[1:], n_devices=1
+            )[0]
 
             results = flare_mla_prefill_plan(
-                kv_params, input_row_offsets, kv_collection, layer_idx, 32
+                kv_params,
+                input_row_offsets,
+                kv_collection,
+                layer_idx,
+                buffer_tok_size,
             )
 
             g.output(results[0].tensor, results[1].tensor, results[2].tensor)
@@ -110,23 +106,24 @@ def test_mla_prefill_plan() -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
 
     results = model.execute(input_row_offsets.to(device0), *kv_inputs)
 
-    buffer_row_offsets_ref = np.zeros((16, batch_size + 1), dtype=np.int32)
-    buffer_row_offsets_ref[0, 1] = 10
-    buffer_row_offsets_ref[0, 2] = 32
-    buffer_row_offsets_ref[1, 2] = 8
+    # Hardcoded reference for:
+    # page_size = 128, buffer_tok_size = 256, prompt_lens = [160, 200]
+    # aligned lengths = [256, 256]
+    buffer_row_offsets_ref = np.zeros((16, batch_size + 1), dtype=np.uint32)
+    buffer_row_offsets_ref[0] = np.array([0, 256, 256], dtype=np.uint32)
+    buffer_row_offsets_ref[1] = np.array([0, 0, 256], dtype=np.uint32)
 
-    cache_offsets_ref = np.zeros((16, batch_size), dtype=np.int32)
-    cache_offsets_ref[1] = np.array([10, 22], dtype=np.int32)
-    cache_offsets_ref[2:16, 0] = 10
-    cache_offsets_ref[2:16, 1] = 30
+    cache_offsets_ref = np.zeros((16, batch_size), dtype=np.uint32)
+    cache_offsets_ref[0] = np.array([0, 0], dtype=np.uint32)
+    cache_offsets_ref[1] = np.array([256, 0], dtype=np.uint32)
+    cache_offsets_ref[2:16] = np.array([256, 256], dtype=np.uint32)
 
     buffer_lengths_ref = -1 * np.ones((16,), dtype=np.int32)
-    buffer_lengths_ref[0] = 32
-    buffer_lengths_ref[1] = 8
+    buffer_lengths_ref[0:2] = 256
 
     assert np.all(
         from_dlpack(results[0]).cpu().numpy() == buffer_row_offsets_ref
@@ -149,9 +146,9 @@ def test_mla_decompress_k_cache() -> None:
         n_kv_heads=1,
         head_dim=576,
         num_layers=1,
-        cache_strategy="paged",
         page_size=page_size,
         is_mla=True,
+        num_q_heads=128,
         devices=[DeviceRef.GPU()],
     )
     prompt_lens = [10, 30]
@@ -187,15 +184,12 @@ def test_mla_decompress_k_cache() -> None:
             weight = g.inputs[1].tensor
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = PagedCacheValues(
-                kv_blocks=g.inputs[2].buffer,
-                cache_lengths=g.inputs[3].tensor,
-                lookup_table=g.inputs[4].tensor,
-                max_lengths=g.inputs[5].tensor,
-            )
+            kv_collection = unflatten_ragged_attention_inputs(
+                g.inputs[2:], n_devices=1
+            )[0]
 
-            # Allocate a buffer to hold KV cache for 60 decompressed tokens
-            buffer_tok_size = 60
+            # Allocate a page-aligned buffer to hold decompressed KV cache.
+            buffer_tok_size = 256
 
             (buffer_row_offsets, cache_offsets, buffer_lengths) = (
                 flare_mla_prefill_plan(
@@ -244,11 +238,17 @@ def test_mla_decompress_k_cache() -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs([batch])[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch])
+
+    new_blocks = torch.randn(
+        size=kv_runtime_inputs.inputs[0].blocks.shape, dtype=torch.float32
     )
 
-    new_blocks = torch.randn(size=blocks.shape, dtype=torch.float32)
+    kv_runtime_inputs.inputs[0].blocks = Buffer.from_numpy(
+        new_blocks.numpy()
+    ).to(device0)
+
+    assert kv_runtime_inputs.inputs[0].attention_dispatch_metadata is not None
 
     weight = (
         torch.randn(size=weight_type.shape.static_dims, dtype=torch.float32)
@@ -258,23 +258,21 @@ def test_mla_decompress_k_cache() -> None:
     results = model.execute(
         input_row_offsets.to(device0),
         Buffer.from_numpy(weight.numpy()).to(device0),
-        Buffer.from_numpy(new_blocks.numpy()).to(device0),
-        cache_lengths,
-        lookup_table_tensor,
-        is_cache_empty_buf,
+        *kv_runtime_inputs,
     )
 
-    # Concatenate tokens from blocks to form ragged reference cache
+    # With page-aligned spans and 256-token chunks, chunk 0 covers request 0 and 1.
     # blocks shape: [block_num, kv_dim, layers, page_size, num_heads, head_dim]
-    # Extract first 10 tokens from block 0 and first 30 tokens from block 1 to match prompt_lens
-    ref_ragged_cache = torch.concatenate(
-        (new_blocks[0, 0, 0, :10, 0, :512], new_blocks[1, 0, 0, :30, 0, :512]),
+    ref_chunk0_cache = torch.concatenate(
+        (
+            new_blocks[0, 0, 0, :page_size, 0, :512],
+            new_blocks[1, 0, 0, :page_size, 0, :512],
+        ),
         dim=0,
     )
+    ref_output = ref_chunk0_cache @ weight.T
 
-    ref_output = ref_ragged_cache @ weight.T
-
-    graph_output = from_dlpack(results[0]).cpu()[: ref_output.shape[0], :]
+    graph_output = from_dlpack(results[0]).cpu()
 
     torch.testing.assert_close(
         ref_output,
@@ -296,7 +294,6 @@ def test_mla_decompress_k_cache_only_k() -> None:
         n_kv_heads=1,
         head_dim=576,
         num_layers=1,
-        cache_strategy="paged",
         page_size=page_size,
         is_mla=False,  # intentionally false, which is incorrect
         devices=[DeviceRef.GPU()],
@@ -325,12 +322,9 @@ def test_mla_decompress_k_cache_only_k() -> None:
             weight = g.inputs[1].tensor
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = PagedCacheValues(
-                kv_blocks=g.inputs[2].buffer,
-                cache_lengths=g.inputs[3].tensor,
-                lookup_table=g.inputs[4].tensor,
-                max_lengths=g.inputs[5].tensor,
-            )
+            kv_collection = unflatten_ragged_attention_inputs(
+                g.inputs[2:], n_devices=1
+            )[0]
 
             # Allocate a buffer to hold KV cache for 60 decompressed tokens
             buffer_tok_size = 60

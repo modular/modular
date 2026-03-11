@@ -11,26 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import (
     UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
 )
-from random import rand
+from std.random import rand
 from state_space.varlen_selective_scan import (
     varlen_selective_scan_fwd_cpu,
     varlen_selective_scan_fwd_gpu,
     varlen_selective_state_update_cpu,
     varlen_selective_state_update_gpu,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn run_varlen_selective_scan_fwd_gpu[
@@ -63,35 +60,25 @@ fn run_varlen_selective_scan_fwd_gpu[
     comptime layout_2d = Layout.row_major[2]()
     comptime layout_1d = Layout(UNKNOWN_VALUE)
 
-    var ssm_states_cpu_h = UnsafePointer[Scalar[dtype]].alloc(
-        batch * dim * dstate
-    )
-    var ssm_states_gpu_h = UnsafePointer[Scalar[dtype]].alloc(
-        batch * dim * dstate
-    )
-    var output_cpu_h = UnsafePointer[Scalar[dtype]].alloc(dim * total_length)
-    var output_gpu_h = UnsafePointer[Scalar[dtype]].alloc(dim * total_length)
-    var u_h = UnsafePointer[Scalar[dtype]].alloc(dim * total_length)
-    var delta_h = UnsafePointer[Scalar[dtype]].alloc(dim * total_length)
-    var A_h = UnsafePointer[Scalar[dtype]].alloc(dim * dstate)
-    var B_h = UnsafePointer[Scalar[dtype]].alloc(
-        ngroups * dstate * total_length
-    )
-    var C_h = UnsafePointer[Scalar[dtype]].alloc(
-        ngroups * dstate * total_length
-    )
+    var ssm_states_cpu_h = alloc[Scalar[dtype]](batch * dim * dstate)
+    var ssm_states_gpu_h = alloc[Scalar[dtype]](batch * dim * dstate)
+    var output_cpu_h = alloc[Scalar[dtype]](dim * total_length)
+    var output_gpu_h = alloc[Scalar[dtype]](dim * total_length)
+    var u_h = alloc[Scalar[dtype]](dim * total_length)
+    var delta_h = alloc[Scalar[dtype]](dim * total_length)
+    var A_h = alloc[Scalar[dtype]](dim * dstate)
+    var B_h = alloc[Scalar[dtype]](ngroups * dstate * total_length)
+    var C_h = alloc[Scalar[dtype]](ngroups * dstate * total_length)
     var D_size = dim if has_D else 0
-    var D_h = UnsafePointer[Scalar[dtype]].alloc(max(D_size, 1))
+    var D_h = alloc[Scalar[dtype]](max(D_size, 1))
     var z_size = dim * total_length if has_z else 0
-    var z_cpu_h = UnsafePointer[Scalar[dtype]].alloc(max(z_size, 1))
-    var z_gpu_h = UnsafePointer[Scalar[dtype]].alloc(max(z_size, 1))
+    var z_cpu_h = alloc[Scalar[dtype]](max(z_size, 1))
+    var z_gpu_h = alloc[Scalar[dtype]](max(z_size, 1))
     var delta_bias_size = dim if has_delta_bias else 0
-    var delta_bias_h = UnsafePointer[Scalar[dtype]].alloc(
-        max(delta_bias_size, 1)
-    )
-    var query_start_loc_h = UnsafePointer[Scalar[DType.int32]].alloc(batch + 1)
-    var cache_indices_h = UnsafePointer[Scalar[DType.int32]].alloc(batch)
-    var has_initial_state_h = UnsafePointer[Scalar[DType.bool]].alloc(batch)
+    var delta_bias_h = alloc[Scalar[dtype]](max(delta_bias_size, 1))
+    var query_start_loc_h = alloc[Scalar[DType.int32]](batch + 1)
+    var cache_indices_h = alloc[Scalar[DType.int32]](batch)
+    var has_initial_state_h = alloc[Scalar[DType.bool]](batch)
 
     # Create LayoutTensors for initialization
     var u_init = LayoutTensor[dtype, layout_2d](
@@ -567,5 +554,5 @@ fn test_varlen_selective_scan_fwd_gpu_with_delta_softplus() raises:
         ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

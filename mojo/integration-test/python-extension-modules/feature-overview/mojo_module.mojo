@@ -11,14 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.os import abort
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from os import abort
-
-from python import Python, PythonObject
-from python._cpython import PyObjectPtr
-from python.bindings import (
+from std.python import Python, PythonObject
+from std.python._cpython import PyObjectPtr
+from std.python.bindings import (
     PythonModuleBuilder,
     check_and_get_arg,
     check_and_get_or_convert_arg,
@@ -129,22 +126,13 @@ fn case_downcast_unbound_type(value: PythonObject) raises:
 
 
 @fieldwise_init
-struct Person(Defaultable, ImplicitlyCopyable, Representable):
+struct Person(Defaultable, ImplicitlyCopyable, Writable):
     var name: String
     var age: Int
 
     fn __init__(out self):
         self.name = "John Smith"
         self.age = 123
-
-    fn __repr__(self) -> String:
-        return String(
-            "Person(",
-            repr(self.name),
-            ", ",
-            repr(self.age),
-            ")",
-        )
 
     @staticmethod
     fn obj_name(self_: PythonObject) raises -> PythonObject:
@@ -156,7 +144,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
     fn change_name(
         self_: PythonObject, new_name: PythonObject
     ) raises -> PythonObject:
-        var self0 = LegacyUnsafePointer[Self, ...](
+        var self0 = UnsafePointer[Self, ...](
             unchecked_downcast_value=self_
         ).unsafe_mut_cast[True]()
 
@@ -173,15 +161,12 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct FailToInitialize(Defaultable, Movable, Representable):
+struct FailToInitialize(Defaultable, Movable, Writable):
     fn __init__(out self):
         pass
 
     fn __del__(deinit self):
         abort("FailToInitialize should never be deinitialized.")
-
-    fn __repr__(self) -> String:
-        return "FailToInitialize()"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -211,7 +196,7 @@ fn incr_int__wrapper(
 ) raises -> PythonObject:
     check_arguments_arity(1, py_args, "incr_int")
 
-    var arg_0: UnsafePointer[Int] = check_and_get_arg[Int](
+    var arg_0: UnsafePointer[Int, MutAnyOrigin] = check_and_get_arg[Int](
         "incr_int", py_args, 0
     )
 
@@ -226,11 +211,13 @@ fn add_to_int__wrapper(
 ) raises -> PythonObject:
     check_arguments_arity(2, py_args, "add_to_int")
 
-    var arg_0: UnsafePointer[Int] = check_and_get_arg[Int](
+    var arg_0: UnsafePointer[Int, MutAnyOrigin] = check_and_get_arg[Int](
         "add_to_int", py_args, 0
     )
 
-    var arg_1: UnsafePointer[Int] = check_and_get_or_convert_arg[Int](
+    var arg_1: UnsafePointer[Int, MutAnyOrigin] = check_and_get_or_convert_arg[
+        Int
+    ](
         "add_to_int",
         py_args,
         1,

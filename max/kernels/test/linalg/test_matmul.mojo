@@ -15,7 +15,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import CompilationTarget
+from std.sys.info import CompilationTarget
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -27,12 +27,9 @@ from linalg.packing import (
     pack_b_ndbuffer,
     pack_matmul_b_shape_func,
 )
-from memory import LegacyUnsafePointer
+from std.testing import assert_almost_equal, assert_equal
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal, assert_equal
-
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime alignment = 64
 
@@ -63,10 +60,10 @@ def test_matmul[
     transpose_b: Bool,
     b_packed: Bool,
     saturated: Bool,
-](m: Int, n: Int, k: Int, kernel_type_m: Int):
-    var a_ptr = UnsafePointer[Scalar[a_type],].alloc(m * k, alignment=alignment)
-    var b_ptr = UnsafePointer[Scalar[b_type],].alloc(k * n, alignment=alignment)
-    var b = NDBuffer[b_type, 2, _, b_shape](b_ptr, Index(k, n))
+](m: Int, n: Int, k: Int, kernel_type_m: Int) raises:
+    var a_ptr = alloc[Scalar[a_type],](m * k, alignment=alignment)
+    var b_ptr = alloc[Scalar[b_type],](k * n, alignment=alignment)
+    var b = NDBuffer[rank=2, b_type, _, b_shape](b_ptr, Index(k, n))
 
     var padded_n_k: IndexList[2]
     if kernel_type_m != 0:
@@ -84,8 +81,6 @@ def test_matmul[
         padded_n_k = pack_matmul_b_shape_func[
             a_type,
             a_shape,
-            b_type,
-            b_shape,
             c_type,
             c_shape,
             transpose_b,
@@ -95,24 +90,20 @@ def test_matmul[
     var padded_n = padded_n_k[1] if b_packed else n
     var padded_k = padded_n_k[0] if b_packed else k
 
-    var bp_ptr = UnsafePointer[Scalar[b_type],].alloc(
+    var bp_ptr = alloc[Scalar[b_type],](
         padded_k * padded_n, alignment=alignment
     )
-    var c0_ptr = UnsafePointer[Scalar[c_type],].alloc(
-        m * n, alignment=alignment
-    )
-    var c1_ptr = UnsafePointer[Scalar[c_type],].alloc(
-        m * n, alignment=alignment
-    )
+    var c0_ptr = alloc[Scalar[c_type],](m * n, alignment=alignment)
+    var c1_ptr = alloc[Scalar[c_type],](m * n, alignment=alignment)
 
-    var a = NDBuffer[a_type, 2, _, a_shape](a_ptr, Index(m, k))
+    var a = NDBuffer[rank=2, a_type, _, a_shape](a_ptr, Index(m, k))
 
-    var bp = NDBuffer[b_type, 2, _, DimList.create_unknown[2]()](
+    var bp = NDBuffer[rank=2, b_type, _, DimList.create_unknown[2]()](
         bp_ptr, Index(padded_k, padded_n)
     )
-    var c = NDBuffer[c_type, 2, _, c_shape](c0_ptr, Index(m, n))
+    var c = NDBuffer[rank=2, c_type, _, c_shape](c0_ptr, Index(m, n))
 
-    var golden = NDBuffer[c_type, 2, _, c_shape](c1_ptr, Index(m, n))
+    var golden = NDBuffer[rank=2, c_type, _, c_shape](c1_ptr, Index(m, n))
 
     # saturated VNNI only has a range [0,127] for the input a
     var vnni_range: Int = 128 if saturated else 256
@@ -136,18 +127,15 @@ def test_matmul[
             c[IndexList[2]((i, j))] = 0
             golden[IndexList[2]((i, j))] = c[IndexList[2]((i, j))]
 
-    @parameter
-    if b_packed:
+    comptime if b_packed:
         if kernel_type_m != 0:
             _pack_b_ndbuffer_impl[
-                a_type, a_shape, b_type, b_shape, c_type, c_shape, transpose_b
+                a_type, a_shape, c_type, c_shape, transpose_b
             ](b, bp, kernel_type_m)
         else:
             pack_b_ndbuffer[
                 a_type,
                 a_shape,
-                b_type,
-                b_shape,
                 c_type,
                 c_shape,
             ](b, bp)
@@ -160,7 +148,7 @@ def test_matmul[
         ](
             c,
             a,
-            rebind[NDBuffer[b_type, 2, bp.origin, b_shape]](bp),
+            rebind[NDBuffer[rank=2, b_type, bp.origin, b_shape]](bp),
             kernel_type_m,
         )
     else:
@@ -168,7 +156,7 @@ def test_matmul[
             transpose_b=transpose_b,
             b_packed=b_packed,
             saturated_vnni=saturated,
-        ](c, a, rebind[NDBuffer[b_type, 2, bp.origin, b_shape]](bp))
+        ](c, a, rebind[NDBuffer[rank=2, b_type, bp.origin, b_shape]](bp))
 
     gemm_naive(a, b, golden, m, n, k)
 
@@ -189,8 +177,7 @@ def test_matmul[
                 c_type,
             )
 
-            @parameter
-            if c_type.is_floating_point():
+            comptime if c_type.is_floating_point():
                 assert_almost_equal(c[i, j], golden[i, j], msg)
             else:
                 assert_equal(c[i, j], golden[i, j], msg)
@@ -210,7 +197,7 @@ def test_matmul[
     b_packed: Bool,
     saturated: Bool,
     mixed_kernels: Bool,
-](m: Int, n: Int, k: Int):
+](m: Int, n: Int, k: Int) raises:
     comptime a_shape = DimList.create_unknown[2]()
     comptime b_shape = DimList.create_unknown[2]()
     comptime c_shape = DimList.create_unknown[2]()
@@ -234,7 +221,7 @@ def test_shapes[
     b_packed: Bool,
     saturated: Bool,
     mixed_kernels: Bool,
-]():
+]() raises:
     @parameter
     fn test_shapes_helper(m: Int, n: Int, k: Int) raises:
         test_matmul[
@@ -262,9 +249,8 @@ def test_shapes[
     test_shapes_helper(384, 768, 1)
 
 
-def test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]():
-    @parameter
-    if b_packed and CompilationTarget.is_macos():
+def test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]() raises:
+    comptime if b_packed and CompilationTarget.is_macos():
         return
 
     test_shapes[
@@ -292,7 +278,7 @@ def test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]():
         ]()
 
 
-def main():
+def main() raises:
     test_types[b_packed=False, saturated=False, mixed_kernels=False]()
     test_types[b_packed=True, saturated=False, mixed_kernels=False]()
     test_types[b_packed=False, saturated=True, mixed_kernels=False]()

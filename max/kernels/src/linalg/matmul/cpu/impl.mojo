@@ -10,20 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Optional
-from collections.string.string_slice import get_static_string
-from math import align_up, ceildiv
-from sys.info import align_of, simd_width_of
+from std.collections import Optional
+from std.collections.string.string_slice import get_static_string
+from std.math import align_up, ceildiv
+from std.sys.info import align_of, simd_width_of
 
-from algorithm import sync_parallelize, tile, vectorize
+from std.algorithm import sync_parallelize, tile, vectorize
 from buffer.buffer import NDBuffer
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from buffer.dimlist import DimList
-from layout import Layout, LayoutTensor
-from memory import alloc, memset_zero
-from runtime.asyncrt import DeviceContextPtr, parallelism_level
+from layout import Layout, LayoutTensor, TileTensor
+from std.memory import alloc, memset_zero
+from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from ...gemv import gemv
 from ...packing import BTileGenerator
@@ -85,7 +84,7 @@ fn elementwise_epilogue_c_tile[
 ](
     offset: GemmShape,
     tile_len: GemmShape,
-    c: NDBuffer[dtype, 2, origin, c_shape],
+    c: NDBuffer[rank=2, dtype, origin, c_shape],
 ):
     @always_inline
     fn activation_on_col_chunk[col_chunk_size: Int](idx_n: Int) unified {mut}:
@@ -110,9 +109,9 @@ fn tiled_matmul_run[
     algorithm: InnerMatmulKernel,
 ](
     alg: algorithm,
-    c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[_, 2, _, _],
-    b: NDBuffer[_, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, _, _, _],
+    a: NDBuffer[rank=2, _, _, _],
+    b: NDBuffer[rank=2, _, _, _],
     elementwise_epilogue_fn: fn(GemmShape, GemmShape) escaping -> None,
     global_tile_shape: GemmShape,
     global_tile_offset: GemmShape,
@@ -189,9 +188,9 @@ struct TiledMatmul[
     """
 
     var alg: Self.algorithm
-    var c: NDBuffer[Self.c_type, 2, Self.c_origin, Self.c_shape]
-    var a: NDBuffer[Self.a_type, 2, Self.a_origin, Self.a_shape]
-    var b: NDBuffer[Self.b_type, 2, Self.b_origin, Self.b_shape]
+    var c: NDBuffer[rank=2, Self.c_type, Self.c_origin, Self.c_shape]
+    var a: NDBuffer[rank=2, Self.a_type, Self.a_origin, Self.a_shape]
+    var b: NDBuffer[rank=2, Self.b_type, Self.b_origin, Self.b_shape]
     # Dynamic tile parameter.
     var tile_n_k: IndexList[2]
 
@@ -262,9 +261,9 @@ struct TiledMatmul[
             var skip_boundary_check = knm_bounds[1] > sub_tile_n
             # TODO(jtodd): bubble up from here
             # Convert NDBuffers to LayoutTensors for the inner matmul call
-            var c_tensor = from_ndbuffer_row_major(self.c)
-            var a_tensor = from_ndbuffer_row_major(self.a)
-            var b_tensor = from_ndbuffer_row_major(b_packed_tile)
+            var c_tensor = TileTensor(self.c).to_layout_tensor()
+            var a_tensor = TileTensor(self.a).to_layout_tensor()
+            var b_tensor = TileTensor(b_packed_tile).to_layout_tensor()
             self.alg.__inner_matmul__[
                 tile_kernel_rows,
                 tile_kernel_cols,
@@ -287,11 +286,10 @@ struct TiledMatmul[
                     ),
                 )
 
-        @parameter
-        if Self.kernel_id == InnerKernelID.I8MM:
+        comptime if Self.kernel_id == InnerKernelID.I8MM:
             tile[
                 row_iteration,
-                VariadicList[Int](2 * Self.config.kernel_rows, 8, 6, 4, 2, 1),
+                [2 * Self.config.kernel_rows, 8, 6, 4, 2, 1],
             ](
                 0,  # starting row offset
                 knm_bounds.M,  # row bound
@@ -299,7 +297,7 @@ struct TiledMatmul[
         else:
             tile[
                 row_iteration,
-                VariadicList[Int](Self.config.kernel_rows, 4, 3, 2, 1),
+                [Self.config.kernel_rows, 4, 3, 2, 1],
             ](0, knm_bounds.M)
 
     # Iterate on the N dimension of the gemm space.
@@ -333,26 +331,24 @@ struct TiledMatmul[
 
         # if b is packed, the packing was performed offline using a single inner
         # size and tile_n.
-        @parameter
-        if not Self.b_packed:
-            comptime secondary_tiles = VariadicList[Int](
+        comptime if not Self.b_packed:
+            comptime secondary_tiles = [
                 Self.config.kernel_cols,
                 2 * Self.config.simd_size,
                 Self.config.simd_size,
-            )
-            var primary_tiles = VariadicList[Int](
-                tile_n, 2 * Self.config.simd_size, Self.config.simd_size
-            )
+            ]
             tile[secondary_tiles, Self.config.simd_size, m_loop](
-                0, valid_col_count, primary_tiles, Self.config.simd_size
+                0,
+                valid_col_count,
+                tile_n,
+                2 * Self.config.simd_size,
+                Self.config.simd_size,
+                primary_cleanup_tile=Self.config.simd_size,
             )
         else:
-            comptime secondary_tiles_packed_b = VariadicList[Int](
-                Self.config.kernel_cols
-            )
-            var primary_tiles_packed_b = VariadicList[Int](tile_n)
+            comptime secondary_tiles_packed_b = [Self.config.kernel_cols]
             tile[secondary_tiles_packed_b, Self.config.kernel_cols, m_loop](
-                0, valid_col_count, primary_tiles_packed_b, tile_n
+                0, valid_col_count, tile_n, primary_cleanup_tile=tile_n
             )
 
     # Iterate over the K dimension of the gemm space.
@@ -390,7 +386,11 @@ struct TiledMatmul[
         tile_k: Int,
         n_inner_size: Int,
     ) -> NDBuffer[
-        Self.b_type, 3, b_packed_ptr.origin, Self.config.packed_shape
+        rank=3,
+        Self.b_type,
+        b_packed_ptr.origin,
+        Self.config.packed_shape,
+        address_space=b_packed_ptr.address_space,
     ]:
         """Utility function to use to map the allocated packing workspace into
         an n-dimensional buffer.
@@ -402,9 +402,15 @@ struct TiledMatmul[
             n_inner_size: Inner dimension size to use for the packed data
                 layout.
         """
-        return NDBuffer[Self.b_type, 3, _, Self.config.packed_shape](
+        return NDBuffer[
+            rank=3,
+            Self.b_type,
+            b_packed_ptr.origin,
+            Self.config.packed_shape,
+            address_space=b_packed_ptr.address_space,
+        ](
             b_packed_ptr,
-            DimList(tile_n // n_inner_size, tile_k, n_inner_size),
+            IndexList[3](tile_n // n_inner_size, tile_k, n_inner_size),
         )
 
 
@@ -413,9 +419,9 @@ fn _small_matmul[
     transpose_b: Bool,
     epilogue_wrapper: Optional[elementwise_epilogue_type],
 ](
-    a: NDBuffer[_, 2, _, _],
-    b: NDBuffer[_, 2, _, _],
-    c: NDBuffer[mut=True, _, 2, _, _],
+    a: NDBuffer[rank=2, _, _, _],
+    b: NDBuffer[rank=2, _, _, _],
+    c: NDBuffer[mut=True, rank=2, _, _, _],
 ):
     comptime simd_width = simd_width_of[c.type]()
 
@@ -423,8 +429,7 @@ fn _small_matmul[
     var N = b.dim[0]() if transpose_b else b.dim[1]()
     var K = a.dim[1]()
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         for var m in range(M):
             for var n in range(N):
                 var acc_vector = SIMD[c.type, simd_width]()
@@ -432,8 +437,7 @@ fn _small_matmul[
 
                 @always_inline
                 fn compute_fn[width: Int](k: Int) unified {mut}:
-                    @parameter
-                    if width == 1:
+                    comptime if width == 1:
                         acc_scalar += (
                             a[m, k].cast[c.type]() * b[n, k].cast[c.type]()
                         )
@@ -447,8 +451,7 @@ fn _small_matmul[
 
                 var val = acc_vector.reduce_add() + acc_scalar
 
-                @parameter
-                if epilogue_wrapper:
+                comptime if epilogue_wrapper:
                     comptime func = epilogue_wrapper.value()
                     func[c.type, 1](Index(m, n), val)
                 else:
@@ -469,8 +472,7 @@ fn _small_matmul[
         fn last_update[
             _dtype: DType, width: Int
         ](coords: IndexList[2], val: SIMD[_dtype, width]):
-            @parameter
-            if epilogue_wrapper:
+            comptime if epilogue_wrapper:
                 comptime func = epilogue_wrapper.value()
                 func[_dtype, width](coords, val)
             else:
@@ -513,13 +515,12 @@ fn _matmul_cpu_impl[
     algorithm: InnerMatmulKernel,
 ](
     alg: algorithm,
-    c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[_, 2, _, _],
-    b: NDBuffer[_, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, _, _, _],
+    a: NDBuffer[mut=False, rank=2, _, _, _],
+    b: NDBuffer[mut=False, rank=2, _, _, _],
     num_threads: Int = -1,
 ) raises:
-    @parameter
-    if (
+    comptime if (
         single_thread_blocking_override
         and not b_packed
         and a.type == b.type
@@ -536,26 +537,22 @@ fn _matmul_cpu_impl[
     var k = shape.K
     # Matrix by vector pattern -> use gemv
     if n == 1:
-        var out = NDBuffer[c.type, 1](c.data, c.dim[0]())
+        var out = NDBuffer[rank=1, c.type, c.origin](
+            c.data, IndexList[1](c.dim[0]())
+        )
         var lhs = a
-        var rhs = NDBuffer[b.type, 1](b.data, b.dim[0]())
-        gemv[
-            c_size = out.shape.at[0](),
-            c_type = out.type,
-            a_shape = lhs.shape,
-            a_type = lhs.type,
-            b_size = rhs.shape.at[0](),
-            b_type = rhs.type,
-            parallelize=True,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](out, lhs, rhs)
+        var rhs = NDBuffer[rank=1, b.type, b.origin](
+            b.data, IndexList[1](b.dim[0]())
+        )
+        gemv[parallelize=True, elementwise_lambda_fn=elementwise_lambda_fn](
+            out, lhs, rhs
+        )
     else:
         # SGEMM calls for MacOS >= 13.0.0 and a, b, c of type Float32 are
         # directed to the special Apple-specific implementations.
         # apple_matmul handles generic matmuls.
         # apple_gemv handles cases with M=1 (where apple_matmul is suboptimal).
-        @parameter
-        if use_apple_accelerate_lib[c.type, a.type, b.type]():
+        comptime if use_apple_accelerate_lib[c.type, a.type, b.type]():
             if m == 1:
                 apple_gemv[
                     b_packed=b_packed,
@@ -595,8 +592,8 @@ fn _matmul_cpu_impl[
         var a_packed_ptr = UnsafePointer[Scalar[a.type], MutExternalOrigin]()
         if use_i8mm:
             a_packed_ptr = alloc[Scalar[a.type]](mh * kh, alignment=alignment)
-        var a_packed = NDBuffer[a.type, 2, _, a.shape](
-            a_packed_ptr, DimList(mh, kh)
+        var a_packed = NDBuffer[rank=2, a.type, _, a.shape](
+            a_packed_ptr, IndexList[2](mh, kh)
         )
 
         @always_inline
@@ -682,9 +679,9 @@ fn matmul[
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
 ](
-    c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[_, 2, _, _],
-    b: NDBuffer[_, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, _, _, _],
+    a: NDBuffer[mut=False, rank=2, _, _, _],
+    b: NDBuffer[mut=False, rank=2, _, _, _],
     kernel_type_m: Int,
     num_threads: Int = -1,
 ) raises:
@@ -700,8 +697,7 @@ fn matmul[
             kernel_type=kernel_type,
         ]()
 
-        @parameter
-        if kernel_id == InnerKernelID.DEFAULT:
+        comptime if kernel_id == InnerKernelID.DEFAULT:
             _matmul_cpu_impl[
                 config,
                 transpose_b,
@@ -762,7 +758,7 @@ fn matmul[
                 num_threads,
             )
         else:
-            constrained[False, "no _run_inner_loop implementation"]()
+            comptime assert False, "no _run_inner_loop implementation"
 
     var shape = GemmShape.get[transpose_b](c, a, b)
     var n = shape.N
@@ -779,17 +775,16 @@ fn _submatmul_sequential_sync[
     algorithm: InnerMatmulKernel,
 ](
     alg: algorithm,
-    c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[_, 2, _, _],
-    b: NDBuffer[_, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, _, _, _],
+    a: NDBuffer[rank=2, _, _, _],
+    b: NDBuffer[rank=2, _, _, _],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
 ):
     comptime simd_size = config.simd_size
 
     fn elementwise_closure(offset: GemmShape, shape: GemmShape):
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime func = elementwise_lambda_fn.value()
             elementwise_epilogue_c_tile[
                 simd_size,
@@ -830,16 +825,15 @@ fn _submatmul_sequential_sync[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     saturated_vnni: Bool,
 ](
-    c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[_, 2, _, _],
-    b: NDBuffer[_, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, _, _, _],
+    a: NDBuffer[rank=2, _, _, _],
+    b: NDBuffer[rank=2, _, _, _],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
 ):
     comptime kernel_id = select_inner_kernel[a.type, b.type, c.type]()
 
-    @parameter
-    if kernel_id == InnerKernelID.DEFAULT:
+    comptime if kernel_id == InnerKernelID.DEFAULT:
         _submatmul_sequential_sync[
             config,
             transpose_b,
@@ -900,4 +894,4 @@ fn _submatmul_sequential_sync[
             sub_matrix_offset,
         )
     else:
-        constrained[False, "no _run_inner_loop implementation"]()
+        comptime assert False, "no _run_inner_loop implementation"

@@ -11,15 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from os import abort
-
-from python import PythonObject
+from std.os import abort
+from std.python import PythonObject
 
 
-struct TestStruct(Defaultable, Movable, Representable):
+struct TestStruct(Defaultable, Movable, Writable):
     var a: Int
     var b: Int
 
@@ -33,9 +29,6 @@ struct TestStruct(Defaultable, Movable, Representable):
 
     fn print(self) -> None:
         print(self.a, self.b)
-
-    fn __repr__(self: TestStruct) -> String:
-        return String("TestStruct(", self.a, ", ", self.b, ")")
 
     @staticmethod
     fn set_a(py_self: PythonObject, a: PythonObject):
@@ -52,7 +45,9 @@ struct TestStruct(Defaultable, Movable, Representable):
             abort(String("failed to set b: ", b))
 
     @staticmethod
-    fn _get_self_ptr(py_self: PythonObject) -> UnsafePointer[Self]:
+    fn _get_self_ptr(
+        py_self: PythonObject,
+    ) -> UnsafePointer[Self, MutAnyOrigin]:
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:

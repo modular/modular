@@ -13,28 +13,26 @@
 
 """Test FP8 E4M3FN to E4M3FNUZ conversion kernel."""
 
-from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from std.gpu.host import DeviceContext
+from layout import TileTensor, row_major, Coord, RuntimeInt
 from linalg.fp8_quantization import convert_e4m3fn_to_e4m3fnuz
-from testing import assert_equal
-from utils import IndexList
+from std.testing import assert_equal
 
 
 # CHECK-LABEL: test_convert_e4m3fn_to_e4m3fnuz_basic
-fn test_convert_e4m3fn_to_e4m3fnuz_basic() raises:
+def test_convert_e4m3fn_to_e4m3fnuz_basic() raises:
     print("== test_convert_e4m3fn_to_e4m3fnuz_basic")
     var ctx = DeviceContext()
 
     # Test with 5 values: 4 regular values + 1 special -128 bit pattern
-    comptime layout = Layout.row_major(1, 5)
-    var runtime_layout = RuntimeLayout[layout].row_major(IndexList[2](1, 5))
+    var m = 1
+    var n = 5
+    var total_size = m * n
 
     # Create device buffers
-    var device_in = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
-        comptime (layout.size())
-    )
+    var device_in = ctx.enqueue_create_buffer[DType.float8_e4m3fn](total_size)
     var device_out = ctx.enqueue_create_buffer[DType.float8_e4m3fnuz](
-        comptime (layout.size())
+        total_size
     )
 
     # Initialize input data on host
@@ -48,15 +46,14 @@ fn test_convert_e4m3fn_to_e4m3fnuz_basic() raises:
             -0.0
         )  # Special 0x80 bit pattern - this should be converted to 0.0
 
-    # Create layout tensors for GPU operations
-    var in_tensor = LayoutTensor[DType.float8_e4m3fn, layout](
-        device_in, runtime_layout
+    # Create TileTensors for GPU operations
+    var shape = Coord(
+        RuntimeInt[DType.int64](Int64(m)), RuntimeInt[DType.int64](Int64(n))
     )
-    var out_tensor = LayoutTensor[DType.float8_e4m3fnuz, layout](
-        device_out, runtime_layout
-    )
+    var in_tt = TileTensor(device_in.unsafe_ptr(), row_major(shape))
+    var out_tt = TileTensor(device_out.unsafe_ptr(), row_major(shape))
 
-    convert_e4m3fn_to_e4m3fnuz(in_tensor, out_tensor, ctx)
+    convert_e4m3fn_to_e4m3fnuz(in_tt, out_tt, ctx)
     ctx.synchronize()
 
     # Verify results: regular values should be unchanged in bits, -128 should become 0
@@ -89,5 +86,5 @@ fn test_convert_e4m3fn_to_e4m3fnuz_basic() raises:
         )
 
 
-def main():
+def main() raises:
     test_convert_e4m3fn_to_e4m3fnuz_basic()

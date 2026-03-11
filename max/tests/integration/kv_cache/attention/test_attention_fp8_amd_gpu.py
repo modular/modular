@@ -20,19 +20,20 @@ from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy import (
+from max.nn import (
     Float8Config,
     Float8InputScaleSpec,
     Float8ScaleGranularity,
     Float8ScaleOrigin,
 )
-from max.nn.legacy.attention.attention_with_rope import AttentionWithRope
-from max.nn.legacy.float8_config import Float8WeightScaleSpec
-from max.nn.legacy.kv_cache import (
+from max.nn.attention.attention_with_rope import AttentionWithRope
+from max.nn.float8_config import Float8WeightScaleSpec
+from max.nn.kv_cache import (
+    AttentionDispatchMetadata,
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.rotary_embedding import RotaryEmbedding
 from test_common.context_utils import create_text_context
 
 
@@ -91,7 +92,6 @@ def _create_kv_manager(
         n_kv_heads=num_kv_heads,
         head_dim=head_dim,
         num_layers=1,
-        cache_strategy="paged",
         devices=[DeviceRef.GPU()],
     )
 
@@ -184,9 +184,9 @@ def _build_and_execute_attention_graph(
     graph_name: str,
 ) -> torch.Tensor:
     """Build graph, execute model, and return results."""
-    blocks_type, cache_lengths_type, lookup_table_type, max_lengths_type = (
-        kv_params.get_symbolic_inputs()[0]
-    )
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
+    dispatch_metadata_symbol = kv_symbolic_inputs.dispatch_metadata
+    assert dispatch_metadata_symbol is not None
 
     # Prepare input data
     np.random.seed(42)
@@ -214,10 +214,7 @@ def _build_and_execute_attention_graph(
                 shape=["row_offsets_length"],
                 device=DeviceRef.GPU(),
             ),
-            blocks_type,
-            cache_lengths_type,
-            lookup_table_type,
-            max_lengths_type,
+            *kv_symbolic_inputs,
         ],
     ) as graph:
         freqs_cis = rope.freqs_cis
@@ -230,6 +227,7 @@ def _build_and_execute_attention_graph(
             cache_lengths,
             lookup_table,
             max_lengths,
+            attention_dispatch_metadata,
         ) = graph.inputs
 
         kv_collection = PagedCacheValues(
@@ -237,6 +235,9 @@ def _build_and_execute_attention_graph(
             cache_lengths.tensor,
             lookup_table.tensor,
             max_lengths.tensor,
+            dispatch_metadata=AttentionDispatchMetadata(
+                attention_dispatch_metadata.tensor
+            ),
         )
         output = attention(
             layer_idx=layer_idx.tensor,
@@ -265,19 +266,13 @@ def _build_and_execute_attention_graph(
         kv_manager.claim(context.request_id, replica_idx=0)
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
 
-    fetch_result = kv_manager.get_runtime_inputs([batch])[0]
-    blocks_tensor = fetch_result[0]
-    cache_lengths_tensor = fetch_result[1]
-    lookup_table_tensor = fetch_result[2]
-    max_lengths_tensor = fetch_result[3]
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     result = model.execute(
         input_tensor,
         input_row_offsets_tensor,
-        blocks_tensor,
-        cache_lengths_tensor,
-        lookup_table_tensor,
-        max_lengths_tensor,
+        *kv_runtime_inputs,
     )[0]
 
     return torch.from_dlpack(result)

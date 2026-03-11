@@ -312,14 +312,14 @@ def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
 class Graph:
     """Represents a single MAX graph.
 
-    A `Graph` is a callable routine in MAX Engine. Like functions, graphs have a
+    A :class:`Graph` is a callable routine in MAX. Like functions, graphs have a
     name and signature. Unlike a function, which follows an imperative
-    programming model, a `Graph` follows a dataflow programming model, using
+    programming model, a :class:`Graph` follows a dataflow programming model, using
     lazily-executed, parallel operations instead of sequential instructions.
 
     When you instantiate a graph, you must specify the input shapes as one or
-    more :obj:`TensorType` values. Then, build a sequence of ops and set the
-    graph output with :obj:`output()`. For example:
+    more :class:`TensorType` values. Then, build a sequence of ops and set the
+    graph output with :meth:`output()`. For example:
 
     .. code-block:: python
 
@@ -327,7 +327,7 @@ class Graph:
 
         import numpy as np
         from max.dtype import DType
-        from max.graph import Graph, TensorType, TensorValue, ops
+        from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 
         @dataclass
         class Linear:
@@ -341,21 +341,19 @@ class Graph:
 
         linear_graph = Graph(
             "linear",
-            Linear(np.ones((2, 2)), np.ones((2,))),
-            input_types=[TensorType(DType.float32, (2,))]
+            Linear(np.ones((2, 2), dtype=np.float32), np.ones((2,), dtype=np.float32)),
+            input_types=[TensorType(DType.float32, (2,), DeviceRef.CPU())]
         )
 
-    You can't call a `Graph` directly from Python. You must compile it and
-    execute it with MAX Engine. For more detail, see the tutorial about how to
-    [build a graph with MAX
-    Graph](/max/tutorials/get-started-with-max-graph-in-python).
+    You can't call a :class:`Graph` directly from Python. You must compile it and
+    execute it with MAX. For more detail, see the
+    `build a graph with MAX Graph tutorial </max/develop/get-started-with-max-graph-in-python>`_.
 
-    When creating a graph, a global sequence of chains is initialized and stored
-    in Graph._current_chain. Every side-effecting op, e.g. buffer_load,
-    store_buffer, load_slice_buffer, store_slice_buffer, will use the current
-    chain to perform the op and and update Graph._current_chain with a new
-    chain. Currently, the input/output chains for mutable ops can be used at
-    most once. The goal of this design choice is to prevent data races.
+    When creating a graph, a global sequence of chains is initialized to
+    sequence side-effecting ops. Every side-effecting op, such as
+    ``buffer_load()``, ``buffer_store()``, and
+    ``buffer_store_slice()``, consumes the current chain and produces a new
+    one. Each chain can be used at most once, which prevents data races.
 
     Args:
         name: A name for the graph.
@@ -499,7 +497,13 @@ class Graph:
 
     @functools.cached_property
     def inputs(self) -> Sequence[Value[Any]]:
-        """The input values of the graph."""
+        """The input values of the graph.
+
+        Returns:
+            A sequence of :class:`~max.graph.Value` objects corresponding to
+            the ``input_types`` passed at construction, excluding internal
+            chain values.
+        """
         body_args = self._graph_body.arguments
         chain_count = 0
         if self._has_chain_input:
@@ -521,29 +525,65 @@ class Graph:
         custom_extensions: Iterable[Path] = [],
         devices: Iterable[DeviceRef] = [],
     ) -> Graph:
-        """Creates and adds a subgraph to the current graph.
+        """Creates a reusable subgraph for the current graph.
 
-        Creates a new :obj:`Graph` instance configured as a subgraph of the current
-        graph. The subgraph inherits the parent graph's module and symbolic
-        parameters. A chain type is automatically appended to the input
-        types to enable proper operation sequencing within the subgraph.
+        A subgraph is the graph equivalent of a function: you define a block of
+        ops once and call it from the parent graph as many times as you need.
+        Use a subgraph when a block of computation repeats—for example, a
+        transformer layer that appears 62 times in a model. Wrapping it in a
+        subgraph lets the compiler process the definition once instead of once
+        per repetition, which can cut compile time by 50x or more.
 
-        The created subgraph is marked with special MLIR attributes to identify it
-        as a subgraph and is registered in the parent graph's subgraph registry.
+        Trade-offs to keep in mind:
+
+        - **Memory:** Allocations inside a subgraph can't be shared with
+          allocations outside it, so peak memory may be slightly higher.
+        - **Kernel fusion:** The compiler can't fuse ops across the subgraph
+          boundary, which may reduce throughput marginally.
+
+        For models with a :class:`~max.nn.Module`, prefer
+        :meth:`~max.nn.Module.build_subgraph`, which handles weight prefixes
+        automatically.
+
+        Examples:
+            Define a subgraph that adds 1 to every element, then call it on a
+            graph input:
+
+            .. code-block:: python
+
+                from max.dtype import DType
+                from max.graph import Graph, ops
+                from max.graph.type import TensorType, DeviceRef
+
+                input_type = TensorType(DType.float32, [10], DeviceRef.CPU())
+
+                with Graph("main", input_types=[input_type]) as graph:
+                    with graph.add_subgraph(
+                        "add_one", input_types=[input_type]
+                    ) as sub:
+                        x = sub.inputs[0].tensor
+                        one = ops.constant(1, DType.float32, device=DeviceRef.CPU())
+                        sub.output(ops.elementwise.add(x, one))
+
+                    result = ops.call(sub, graph.inputs[0])
+                    graph.output(*result)
 
         Args:
-            name: The name identifier for the subgraph.
-            forward: The optional callable that defines the sequence of operations
-                for the subgraph's forward pass. If provided, the subgraph will be
-                built immediately using this callable.
-            input_types: The data types for the subgraph's input tensors. A chain
-                type will be automatically added to these input types.
-            path: The optional path to a saved subgraph definition to load from
-                disk instead of creating a new one.
-            custom_extensions: The list of paths to custom operation libraries
-                to load for the subgraph. Supports ``.mojopkg`` files and Mojo
-                source directories.
-            devices: The list of devices this subgraph is meant to use.
+            name: The name identifier for the subgraph. Must be unique within
+                the parent graph. Use the same name when calling the subgraph
+                with :func:`~max.graph.ops.call`.
+            forward: An optional callable that defines the subgraph's forward
+                pass. When provided, the subgraph is built immediately.
+            input_types: The tensor types for the subgraph's inputs. A chain
+                type is added automatically for operation sequencing.
+            path: An optional path to a saved subgraph definition to load
+                from disk.
+            custom_extensions: Paths to custom op libraries (``.mojopkg``
+                files or Mojo source directories) to load for the subgraph.
+            devices: Devices this subgraph targets.
+
+        Returns:
+            A :class:`Graph` instance registered as a subgraph of this graph.
         """
         subgraph = Graph(
             name=name,
@@ -605,7 +645,7 @@ class Graph:
 
         Created once per graph and never advanced/merged by the graph itself.
         Use it for operations that are safe to schedule without threading
-        per-device ordering (e.g., host→device transfers for staging).
+        per-device ordering (for example, host→device transfers for staging).
         """
         return self._always_ready_chain
 
@@ -755,7 +795,7 @@ class Graph:
     def current(cls) -> Graph:
         """Gets the currently active graph from the execution context.
 
-        Retrieves the :obj:`Graph` instance that is currently active within
+        Retrieves the :class:`Graph` instance that is currently active within
         the execution context. The current graph is automatically set when
         entering a graph's context using a ``with`` statement or when the
         graph is being built. This provides access to the active graph from
@@ -798,7 +838,7 @@ class Graph:
         # Convert args from instances of Python graph-api Value() to mlir.Value
         def unwrap(arg: Any) -> Any:
             if isinstance(arg, Value):
-                return mlir.Value._CAPICreate(arg._mlir_value._CAPIPtr)
+                return mlir.Value._CAPICreate(arg._mlir_value._CAPIPtr)  # type: ignore[attr-defined]
             elif isinstance(arg, Type):
                 return mlir.Type._CAPICreate(arg.to_mlir()._CAPIPtr)  # type: ignore
             elif isinstance(arg, list | tuple):
@@ -808,7 +848,7 @@ class Graph:
             elif isinstance(arg, _Type):
                 return mlir.Type._CAPICreate(arg._CAPIPtr)  # type: ignore
             elif isinstance(arg, _Value):
-                return mlir.Value._CAPICreate(arg._CAPIPtr)
+                return mlir.Value._CAPICreate(arg._CAPIPtr)  # type: ignore[attr-defined]
             else:
                 return arg
 
@@ -882,7 +922,7 @@ class Graph:
         Args:
             block: The MLIR block to build into
             block_fn: Callable that generates the block's operations and returns results
-            block_terminator_op: Operation to terminate the block (e.g. mo.YieldOp)
+            block_terminator_op: The operation to terminate the block (for example, ``mo.YieldOp``)
             block_name: Name of the block for error reporting
             expected_output_types: List of expected output types for the block
             add_chain: Whether to append the current chain to block results
@@ -901,11 +941,16 @@ class Graph:
         with self._block(block), _location():
             expected_output_types = expected_output_types or []
 
-            results = block_fn() or []
+            results = block_fn()
+            if results is None:
+                results = []
 
             results = (
                 list(results) if isinstance(results, Iterable) else [results]
             )
+            results = [
+                r if isinstance(r, Value) else TensorValue(r) for r in results
+            ]
             result_types = [result.type for result in results]
             if result_types != expected_output_types:
                 raise TypeError(
@@ -922,7 +967,32 @@ class Graph:
             )
 
     def output(self, *outputs: Value[Any] | TensorValueLike) -> None:
-        """Sets the output nodes of the :obj:`Graph`."""
+        """Sets the output values of the graph and finalizes construction.
+
+        Call this once after building all ops. The graph can't be executed
+        until ``output()`` has been called. Subsequent calls to
+        :attr:`output_types` read back the types of the values passed here.
+
+        Examples:
+            Build a graph that doubles its input and set the output:
+
+            .. code-block:: python
+
+                from max.dtype import DType
+                from max.graph import DeviceRef, Graph, ops
+                from max.graph.type import TensorType
+
+                input_type = TensorType(DType.float32, [4], DeviceRef.CPU())
+
+                with Graph("double", input_types=[input_type]) as graph:
+                    x = graph.inputs[0].tensor
+                    two = ops.constant(2.0, DType.float32, device=DeviceRef.CPU())
+                    graph.output(ops.elementwise.mul(x, two))
+
+        Args:
+            outputs: The output values of the graph. Each value may be a
+                :class:`Value` or any :obj:`TensorValueLike`.
+        """
         outputs = tuple(
             o if isinstance(o, Value) else TensorValue(o) for o in outputs
         )
@@ -990,7 +1060,16 @@ class Graph:
 
     @property
     def output_types(self) -> list[Type[Any]]:
-        """View of the types of the graph output terminator."""
+        """The types of the graph output values.
+
+        Returns:
+            A list of :class:`~max.graph.type.Type` objects corresponding to
+            the values passed to :meth:`output()`, in the same order.
+
+        Raises:
+            TypeError: If the graph has not yet been terminated by a call to
+                :meth:`output()`.
+        """
         terminator = self._body.operations[-1]
         if not isinstance(terminator, mo.OutputOp):
             raise TypeError("Graph not yet terminated by a call to output")

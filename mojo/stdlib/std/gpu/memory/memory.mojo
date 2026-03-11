@@ -26,10 +26,13 @@ The module is designed for performance-critical code and requires careful usage 
 achieve optimal memory access patterns and cache utilization.
 """
 
-from collections.optional import Optional, OptionalReg
-from collections.string import StaticString
-from collections.string.string_slice import _get_kgen_string, get_static_string
-from sys import (
+from std.collections.optional import Optional, OptionalReg
+from std.collections.string import StaticString
+from std.collections.string.string_slice import (
+    _get_kgen_string,
+    get_static_string,
+)
+from std.sys import (
     align_of,
     bit_width_of,
     is_apple_gpu,
@@ -39,21 +42,21 @@ from sys import (
     llvm_intrinsic,
     size_of,
 )
-from sys._assembly import inlined_assembly
-from sys.info import (
+from std.sys._assembly import inlined_assembly
+from std.sys.info import (
     CompilationTarget,
     _is_sm_9x_or_newer,
     _is_sm_100x_or_newer,
     is_apple_gpu,
 )
-from sys.intrinsics import _RegisterPackType
+from std.sys.intrinsics import _RegisterPackType
 
-from builtin.dtype import _uint_type_of_width
-from memory.pointer import AddressSpace, GPUAddressSpace
-from memory.unsafe import bitcast
+from std.builtin.dtype import _uint_type_of_width
+from std.memory.pointer import AddressSpace, GPUAddressSpace
+from std.memory.unsafe import bitcast
 
-from utils import IndexList, StaticTuple
-from utils.numerics import get_accum_type
+from std.utils import IndexList, StaticTuple
+from std.utils.numerics import get_accum_type
 
 from .._utils import (
     to_i16,
@@ -537,8 +540,7 @@ fn _mark_eviction[
             - Non-zero handle for fractional L2 eviction policy.
     """
 
-    @parameter
-    if eviction_policy == CacheEviction.EVICT_NORMAL:
+    comptime if eviction_policy == CacheEviction.EVICT_NORMAL:
         return 0
     elif eviction_policy == CacheEviction.EVICT_LAST:
         return inlined_assembly[
@@ -568,9 +570,9 @@ fn async_copy[
     l2_prefetch: Optional[Int] = None,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
+    src: UnsafePointer[Scalar[dtype], _, address_space=AddressSpace.GLOBAL],
     dst: UnsafePointer[
-        mut=True, Scalar[dtype], address_space = AddressSpace.SHARED
+        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
     ],
     src_size: Int32 = Int32(size),
     predicate: Bool = False,
@@ -614,23 +616,19 @@ fn async_copy[
         256,
     ), "the l2 prefetch size must be in bounds"
 
-    @parameter
-    if is_amd_gpu() or is_apple_gpu():
+    comptime if is_amd_gpu() or is_apple_gpu():
         # Use sync load and stores for now
         # TODO(KERN-1249): add async memcopy to AMD
         comptime n_scalars = size // size_of[dtype]()
         var n_src_scalars = src_size // Int32(size_of[dtype]())
 
-        @parameter
-        if fill:
+        comptime if fill:
             for i in range(n_src_scalars):
                 dst.store(i, src.load(i))
             for i in range(n_src_scalars, n_scalars):
                 dst.store(i, fill.value())
         else:
-
-            @parameter
-            for i in range(n_scalars):
+            comptime for i in range(n_scalars):
                 dst.store(i, src.load(i))
         return
     # Cache always: cache data in L1 first, then copy to shared memory.
@@ -652,17 +650,13 @@ fn async_copy[
 
     comptime cp_async_asm = "cp.async." + cache_op + ".shared.global" + cache_hint + l2_prefetch_substr
 
-    @parameter
-    if Bool(fill) and fill.value() == 0:
-        debug_assert(
-            not predicate, "Predicate bit has to be set False for zero fill."
-        )
+    comptime if Bool(fill) and fill.value() == 0:
+        assert not predicate, "Predicate bit has to be set False for zero fill."
 
         comptime args_with_fill = " [$0], [$1], $2, $3"
         comptime asm = cp_async_asm + args_with_fill
 
-        @parameter
-        if eviction_policy == CacheEviction.EVICT_NORMAL:
+        comptime if eviction_policy == CacheEviction.EVICT_NORMAL:
             inlined_assembly[asm + ";", NoneType, constraints="r,l,n,r"](
                 Int32(Int(dst)), src, Int32(size), Int32(src_size)
             )
@@ -678,8 +672,7 @@ fn async_copy[
         # Pack filling values into 4B registers.
         @always_inline
         fn _i32_repr[fill: Scalar[dtype]]() -> Int32:
-            @parameter
-            if size_of[dtype]() == 1:
+            comptime if size_of[dtype]() == 1:
                 return bitcast[DType.int32, 1](
                     SIMD[dtype, 4](fill, fill, fill, fill)
                 )
@@ -696,8 +689,7 @@ fn async_copy[
         comptime args_with_fill = " [$1], [$2], $3"
         comptime copy_asm = header_asm + "@p " + cp_async_asm + args_with_fill
 
-        @parameter
-        if eviction_policy == CacheEviction.EVICT_NORMAL:
+        comptime if eviction_policy == CacheEviction.EVICT_NORMAL:
             inlined_assembly[
                 copy_asm + ";\n" + footer_asm,
                 NoneType,
@@ -730,15 +722,12 @@ fn async_copy[
             )
 
     else:
-        debug_assert(
-            not predicate, "Predicate bit has to set False for no fill."
-        )
+        assert not predicate, "Predicate bit has to set False for no fill."
 
         comptime args = " [$0], [$1], $2"
         comptime asm = cp_async_asm + args
 
-        @parameter
-        if eviction_policy == CacheEviction.EVICT_NORMAL:
+        comptime if eviction_policy == CacheEviction.EVICT_NORMAL:
             inlined_assembly[asm + ";", NoneType, constraints="r,l,n"](
                 Int32(Int(dst)), src, Int32(size)
             )
@@ -763,15 +752,14 @@ fn async_copy_commit_group():
     - Should be paired with async_copy_wait_group() or async_copy_wait_all()
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         llvm_intrinsic["llvm.nvvm.cp.async.commit.group", NoneType]()
     elif is_amd_gpu() or is_apple_gpu() or not is_gpu():
         # This operation is a no-op on AMD and CPU.
         pass
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
@@ -793,15 +781,14 @@ fn async_copy_wait_group(n: Int32):
     - Can be used to implement a pipeline of asynchronous transfers.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         llvm_intrinsic["llvm.nvvm.cp.async.wait.group", NoneType](n)
     elif is_amd_gpu() or is_apple_gpu() or not is_gpu():
         # This operation is a no-op on AMD and CPU.
         pass
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
@@ -821,15 +808,14 @@ fn async_copy_wait_all():
     - More coarse-grained than `async_copy_wait_group()`.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         llvm_intrinsic["llvm.nvvm.cp.async.wait.all", NoneType]()
     elif is_amd_gpu() or is_apple_gpu() or not is_gpu():
         # This operation is a no-op on AMD and CPU.
         pass
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
@@ -872,13 +858,13 @@ fn external_memory[
         StaticTuple[dtype, 0], MutAnyOrigin, address_space=address_space
     ](
         __mlir_op.`pop.extern_ptr_symbol`[
-            _type = UnsafePointer[
+            _type=UnsafePointer[
                 StaticTuple[dtype, 0],
                 MutAnyOrigin,
                 address_space=address_space,
             ]._mlir_type,
-            name = _get_kgen_string[name](),
-            alignment = alignment._mlir_value,
+            name=_get_kgen_string[name](),
+            alignment=alignment._mlir_value,
         ]()
     )
     return extern_ptr_symbol.bitcast[dtype]()
@@ -893,7 +879,7 @@ fn external_memory[
 fn fence_proxy_tensormap_generic_sys_acquire[
     dtype: AnyType,
 ](
-    ptr: UnsafePointer[mut=True, dtype, address_space = AddressSpace.GENERIC],
+    ptr: UnsafePointer[mut=True, dtype, _, address_space=AddressSpace.GENERIC],
     size: Int32,
 ):
     """Acquires a system-wide memory fence for tensor map operations.
@@ -951,7 +937,7 @@ fn fence_async_view_proxy():
     and is used to synchronize async shared memory operations.
     """
     __mlir_op.`nvvm.fence.proxy`[
-        _properties = __mlir_attr.`{ kind = #nvvm.proxy_kind<async.shared>, space = #nvvm.shared_space<cta>}`
+        _properties=__mlir_attr.`{ kind = #nvvm.proxy_kind<async.shared>, space = #nvvm.shared_space<cta>}`
     ]()
 
 
@@ -983,11 +969,11 @@ fn cp_async_bulk_tensor_shared_cluster_global[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst_mem: UnsafePointer[
-        mut=True, dst_type, address_space = AddressSpace.SHARED
+        mut=True, dst_type, _, address_space=AddressSpace.SHARED
     ],
-    tma_descriptor: OpaquePointer[mut=False],
+    tma_descriptor: OpaquePointer[mut=False, _],
     mem_bar: UnsafePointer[
-        mut=False, mbr_type, address_space = AddressSpace.SHARED
+        mut=False, mbr_type, _, address_space=AddressSpace.SHARED
     ],
     coords: IndexList[rank],
 ):
@@ -1040,11 +1026,8 @@ fn cp_async_bulk_tensor_shared_cluster_global[
         ".L2::cache_hint" if cache_hint else "",
     )
 
-    @parameter
-    if cache_hint:
-
-        @parameter
-        if rank == 3:
+    comptime if cache_hint:
+        comptime if rank == 3:
             inlined_assembly[
                 tma_asm + " [$0], [$1, {$3, $4, $5}], [$2], $6;",
                 NoneType,
@@ -1115,9 +1098,7 @@ fn cp_async_bulk_tensor_shared_cluster_global[
                 Int64(eviction_policy._value),
             )
     else:
-
-        @parameter
-        if rank == 3:
+        comptime if rank == 3:
             inlined_assembly[
                 tma_asm + " [$0], [$1, {$3, $4, $5}], [$2];",
                 NoneType,
@@ -1194,11 +1175,11 @@ fn cp_async_bulk_tensor_shared_cluster_global_im2col[
     cta_group: Int = 1,
 ](
     dst_mem: UnsafePointer[
-        mut=True, dst_type, address_space = AddressSpace.SHARED
+        mut=True, dst_type, _, address_space=AddressSpace.SHARED
     ],
-    tma_descriptor: OpaquePointer[mut=False],
+    tma_descriptor: OpaquePointer[mut=False, _],
     mem_bar: UnsafePointer[
-        mut=False, mbr_type, address_space = AddressSpace.SHARED
+        mut=False, mbr_type, _, address_space=AddressSpace.SHARED
     ],
     coords: IndexList[tensor_rank],
     filter_offsets: IndexList[tensor_rank - 2],
@@ -1240,8 +1221,7 @@ fn cp_async_bulk_tensor_shared_cluster_global_im2col[
     comptime assert cta_group in (1, 2), "cta_group must be 1 or 2"
     comptime assert cta_group == 1 or _is_sm_100x_or_newer()
 
-    @parameter
-    if cta_group == 1:
+    comptime if cta_group == 1:
         # SM90-style PTX: no cta_group, no L2 hint, no Sm100MemDescDefault
         # Format: cp.async.bulk.tensor.Nd.shared::cluster.global.im2col.mbarrier::complete_tx::bytes
         comptime tma_asm_sm90 = String(
@@ -1250,8 +1230,7 @@ fn cp_async_bulk_tensor_shared_cluster_global_im2col[
             "d.shared::cluster.global.im2col.mbarrier::complete_tx::bytes",
         )
 
-        @parameter
-        if tensor_rank == 4:
+        comptime if tensor_rank == 4:
             inlined_assembly[
                 tma_asm_sm90 + " [$0], [$1, {$3, $4, $5, $6}], [$2], {$7, $8};",
                 NoneType,
@@ -1314,8 +1293,7 @@ fn cp_async_bulk_tensor_shared_cluster_global_im2col[
         # Sm100MmaPeerBitMask for mbarrier (apply to clear peer bit)
         comptime Sm100MmaPeerBitMask: Int32 = Int32(0xFEFFFFFF)
 
-        @parameter
-        if tensor_rank == 4:
+        comptime if tensor_rank == 4:
             inlined_assembly[
                 tma_asm_sm100
                 + " [$0], [$1, {$3, $4, $5, $6}], [$2], {$7, $8}, $9;",
@@ -1381,11 +1359,11 @@ fn cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
     cta_group: Int = 1,
 ](
     dst_mem: UnsafePointer[
-        mut=True, dst_type, address_space = AddressSpace.SHARED
+        mut=True, dst_type, _, address_space=AddressSpace.SHARED
     ],
-    tma_descriptor: OpaquePointer[mut=False],
+    tma_descriptor: OpaquePointer[mut=False, _],
     mem_bar: UnsafePointer[
-        mut=False, mbr_type, address_space = AddressSpace.SHARED
+        mut=False, mbr_type, _, address_space=AddressSpace.SHARED
     ],
     coords: IndexList[tensor_rank],
     filter_offsets: IndexList[tensor_rank - 2],
@@ -1427,8 +1405,7 @@ fn cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
     ), "Im2col TMA expects 3D, 4D, or 5D tensor"
     comptime assert cta_group in (1, 2), "cta_group must be 1 or 2"
 
-    @parameter
-    if cta_group == 1:
+    comptime if cta_group == 1:
         # SM90-style multicast im2col PTX: no cta_group, no L2 hint, no Sm100MemDescDefault
         # Format: cp.async.bulk.tensor.Nd.shared::cluster.global.im2col.mbarrier::complete_tx::bytes.multicast::cluster
         comptime tma_asm_sm90 = String(
@@ -1437,8 +1414,7 @@ fn cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
             "d.shared::cluster.global.im2col.mbarrier::complete_tx::bytes.multicast::cluster",
         )
 
-        @parameter
-        if tensor_rank == 4:
+        comptime if tensor_rank == 4:
             inlined_assembly[
                 tma_asm_sm90
                 + " [$0], [$1, {$3, $4, $5, $6}], [$2], {$7, $8}, $9;",
@@ -1506,8 +1482,7 @@ fn cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
         # Sm100MmaPeerBitMask for mbarrier (apply to clear peer bit)
         comptime Sm100MmaPeerBitMask: Int32 = Int32(0xFEFFFFFF)
 
-        @parameter
-        if tensor_rank == 4:
+        comptime if tensor_rank == 4:
             inlined_assembly[
                 tma_asm_sm100
                 + " [$0], [$1, {$3, $4, $5, $6}], [$2], {$7, $8}, $9, $10;",
@@ -1577,11 +1552,11 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
     cta_group: Int = 1,
 ](
     dst_mem: UnsafePointer[
-        mut=True, dst_type, address_space = AddressSpace.SHARED
+        mut=True, dst_type, _, address_space=AddressSpace.SHARED
     ],
-    tma_descriptor: OpaquePointer[mut=False],
+    tma_descriptor: OpaquePointer[mut=False, _],
     mem_bar: UnsafePointer[
-        mut=False, mbr_type, address_space = AddressSpace.SHARED
+        mut=False, mbr_type, _, address_space=AddressSpace.SHARED
     ],
     coords: IndexList[rank],
     multicast_mask: UInt16,
@@ -1637,16 +1612,13 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
         ".shared::cluster.global.mbarrier::complete_tx::bytes.multicast::cluster",
     )
 
-    @parameter
-    if rank == 3:
-
-        @parameter
-        if cta_group == 1:
+    comptime if rank == 3:
+        comptime if cta_group == 1:
             var dst_mem_cluster = dst_mem.address_space_cast[
                 AddressSpace.SHARED_CLUSTER
             ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
-                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,3,1,0,1,0,0>}`
+                _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1,1,3,1,0,1,0,0>}`
             ](
                 to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
@@ -1672,14 +1644,12 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
             )
 
     elif rank == 2:
-
-        @parameter
-        if cta_group == 1:
+        comptime if cta_group == 1:
             var dst_mem_cluster = dst_mem.address_space_cast[
                 AddressSpace.SHARED_CLUSTER
             ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
-                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,1,0,0>}`
+                _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,1,0,0>}`
             ](
                 to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
@@ -1702,14 +1672,12 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
                 Int32(coords[1]),
             )
     else:
-
-        @parameter
-        if cta_group == 1:
+        comptime if cta_group == 1:
             var dst_mem_cluster = dst_mem.address_space_cast[
                 AddressSpace.SHARED_CLUSTER
             ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
-                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,1,0,0>}`
+                _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,1,0,0>}`
             ](
                 to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
@@ -1738,8 +1706,8 @@ fn cp_async_bulk_tensor_global_shared_cta[
     /,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src_mem: UnsafePointer[src_type, address_space = AddressSpace.SHARED],
-    tma_descriptor: OpaquePointer[mut=False],
+    src_mem: UnsafePointer[src_type, _, address_space=AddressSpace.SHARED],
+    tma_descriptor: OpaquePointer[mut=False, _],
     coords: IndexList[rank],
 ):
     """Initiates an asynchronous copy operation to transfer tensor data from shared CTA
@@ -1782,8 +1750,7 @@ fn cp_async_bulk_tensor_global_shared_cta[
 
     comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
 
-    @parameter
-    if rank == 5:
+    comptime if rank == 5:
         llvm_intrinsic["llvm.nvvm.cp.async.bulk.tensor.s2g.tile.5d", NoneType](
             src_mem,
             tma_descriptor,
@@ -1845,8 +1812,8 @@ fn cp_async_bulk_tensor_reduce[
     reduction_kind: ReduceOp,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src_mem: UnsafePointer[src_type, address_space = AddressSpace.SHARED],
-    tma_descriptor: OpaquePointer[mut=False],
+    src_mem: UnsafePointer[src_type, _, address_space=AddressSpace.SHARED],
+    tma_descriptor: OpaquePointer[mut=False, _],
     coords: IndexList[rank],
 ):
     """Initiates an asynchronous reduction operation between shared CTA memory and global memory
@@ -1885,8 +1852,7 @@ fn cp_async_bulk_tensor_reduce[
     comptime assert rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"
     comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
 
-    @parameter
-    if rank == 2:
+    comptime if rank == 2:
         llvm_intrinsic[
             "llvm.nvvm.cp.async.bulk.tensor.reduce."
             + reduction_kind.mnemonic()
@@ -1932,7 +1898,7 @@ fn _load_impl[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]](),
 ](
-    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC]
+    ptr: UnsafePointer[Scalar[dtype], _, address_space=AddressSpace.GENERIC]
 ) -> SIMD[dtype, width]:
     """Internal implementation of vectorized memory loads from global memory.
 
@@ -1962,25 +1928,21 @@ fn _load_impl[
     """
     comptime assert dtype.is_numeric(), "type must be numeric"
 
-    @parameter
-    if is_amd_gpu():
+    comptime if is_amd_gpu():
         # TODO: KERN-1230
         comptime assert read_only == False
         return ptr.load[width=width]()
 
-    @parameter
-    if prefetch_size:
+    comptime if prefetch_size:
         comptime assert prefetch_size.value() in (64, 128, 256)
 
     comptime bytes_to_load = size_of[dtype]() * width
     comptime dtype_bitwidth = bit_width_of[dtype]()
 
-    @parameter
-    if bytes_to_load < size_of[DType.uint32]():
+    comptime if bytes_to_load < size_of[DType.uint32]():
         return ptr.load[width=width, alignment=alignment]()
 
-    @parameter
-    if dtype.is_floating_point() or dtype.is_signed():
+    comptime if dtype.is_floating_point() or dtype.is_signed():
         return bitcast[dtype, width](
             _load_impl[
                 width=width,
@@ -1991,14 +1953,12 @@ fn _load_impl[
             ](ptr.bitcast[Scalar[_uint_type_of_width[dtype_bitwidth]()]]())
         )
 
-    @parameter
-    if (
-        dtype_bitwidth <= 16
-        and size_of[DType.uint32]() <= bytes_to_load < size_of[DType.uint64]()
+    comptime if (
+        dtype_bitwidth < 32 and bytes_to_load >= size_of[DType.uint32]()
     ):
         return bitcast[dtype, width](
             _load_impl[
-                width = (bytes_to_load // size_of[DType.uint32]()),
+                width=(bytes_to_load // size_of[DType.uint32]()),
                 prefetch_size=prefetch_size,
                 cache_policy=cache_policy,
                 eviction_policy=eviction_policy,
@@ -2026,8 +1986,7 @@ fn _load_impl[
 
     var res = SIMD[dtype, width]()
 
-    @parameter
-    if width == 1:
+    comptime if width == 1:
         var tmp = inlined_assembly[
             "ld.global " + cache_policy_inst + cache_operation + " $0, [$2];",
             Scalar[dtype],
@@ -2053,16 +2012,52 @@ fn _load_impl[
             has_side_effect=True,
         ](ptr.bitcast[NoneType](), res[0], res[1], res[2], res[3])
         return SIMD[dtype, width](tmp[0], tmp[1], tmp[2], tmp[3])
+    elif width == 8:
+        var tmp = inlined_assembly[
+            instruction_name + " {$0, $1, $2, $3, $4, $5, $6, $7}, [$8];",
+            _RegisterPackType[
+                Scalar[dtype],
+                Scalar[dtype],
+                Scalar[dtype],
+                Scalar[dtype],
+                Scalar[dtype],
+                Scalar[dtype],
+                Scalar[dtype],
+                Scalar[dtype],
+            ],
+            constraints="=r,=r,=r,=r,=r,=r,=r,=r,l,r,r,r,r,r,r,r,r",
+            has_side_effect=True,
+        ](
+            ptr.bitcast[NoneType](),
+            res[0],
+            res[1],
+            res[2],
+            res[3],
+            res[4],
+            res[5],
+            res[6],
+            res[7],
+        )
+        return SIMD[dtype, width](
+            tmp[0],
+            tmp[1],
+            tmp[2],
+            tmp[3],
+            tmp[4],
+            tmp[5],
+            tmp[6],
+            tmp[7],
+        )
     else:
         var lhs = _load_impl[
-            width = width // 2,
+            width=width // 2,
             prefetch_size=prefetch_size,
             cache_policy=cache_policy,
             eviction_policy=eviction_policy,
             alignment=alignment,
         ](ptr)
         var rhs = _load_impl[
-            width = width // 2,
+            width=width // 2,
             prefetch_size=prefetch_size,
             cache_policy=cache_policy,
             eviction_policy=eviction_policy,
@@ -2083,7 +2078,7 @@ fn load[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]]() if is_nvidia_gpu() else 1,
 ](
-    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC]
+    ptr: UnsafePointer[Scalar[dtype], _, address_space=AddressSpace.GENERIC]
 ) -> SIMD[dtype, width]:
     """Loads data from global memory into a SIMD vector.
 
@@ -2128,7 +2123,7 @@ fn load[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]]() if is_nvidia_gpu() else 1,
 ](
-    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC],
+    ptr: UnsafePointer[Scalar[dtype], _, address_space=AddressSpace.GENERIC],
     offset: OffsetType,
 ) -> SIMD[dtype, width]:
     """Loads data from global memory with an offset into a SIMD vector.
@@ -2248,7 +2243,7 @@ fn multimem_ld_reduce[
     output_width: Int = 1,
 ](
     addr: UnsafePointer[
-        mut=False, Scalar[dtype], address_space = AddressSpace.GLOBAL
+        mut=False, Scalar[dtype], _, address_space=AddressSpace.GLOBAL
     ],
 ) -> StaticTuple[SIMD[dtype, output_width], count]:
     """Performs a vectorized load-reduce operation using NVIDIA's multimem feature.
@@ -2300,8 +2295,7 @@ fn multimem_ld_reduce[
         output_width=output_width,
     ]()
 
-    @parameter
-    if count == 1:
+    comptime if count == 1:
         var r = inlined_assembly[
             asm + " {$0}, [$1];",
             SIMD[dtype, output_width],
@@ -2370,7 +2364,7 @@ fn multimem_ld_reduce[
     accum_type: DType = get_accum_type[dtype](),
 ](
     addr: UnsafePointer[
-        mut=False, Scalar[dtype], address_space = AddressSpace.GLOBAL
+        mut=False, Scalar[dtype], _, address_space=AddressSpace.GLOBAL
     ],
 ) -> SIMD[dtype, simd_width]:
     """Simplified multimem_ld_reduce that automatically calculates optimal packing.
@@ -2431,11 +2425,8 @@ fn multimem_ld_reduce[
     # Pack results into a single SIMD vector
     var result = SIMD[dtype, simd_width]()
 
-    @parameter
-    for i in range(count):
-
-        @parameter
-        for j in range(output_width):
+    comptime for i in range(count):
+        comptime for j in range(output_width):
             result[i * output_width + j] = results[i][j]
     return result
 
@@ -2489,7 +2480,7 @@ fn multimem_st[
     width: Int = 1,
 ](
     addr: UnsafePointer[
-        mut=True, Scalar[dtype], address_space = AddressSpace.GLOBAL
+        mut=True, Scalar[dtype], _, address_space=AddressSpace.GLOBAL
     ],
     values: StaticTuple[SIMD[dtype, width], count],
 ) -> None:
@@ -2524,7 +2515,7 @@ fn multimem_st[
     Example:
 
     ```mojo
-    from gpu.memory.memory import *
+    from std.gpu.memory.memory import *
 
     # Store 2 float32 values to multimem address.
     multimem_st[DType.float32, count=2, scope=Scope.CTA, consistency=Consistency.RELAXED](
@@ -2558,8 +2549,7 @@ fn multimem_st[
         width=width,
     ]()
 
-    @parameter
-    if count == 1:
+    comptime if count == 1:
         inlined_assembly[
             asm + " [$0], {$1};",
             NoneType,
@@ -2607,7 +2597,7 @@ fn multimem_st[
     consistency: Consistency,
 ](
     addr: UnsafePointer[
-        mut=True, Scalar[dtype], address_space = AddressSpace.GLOBAL
+        mut=True, Scalar[dtype], _, address_space=AddressSpace.GLOBAL
     ],
     value: SIMD[dtype, simd_width],
 ):
@@ -2661,9 +2651,8 @@ fn multimem_st[
     # Unpack SIMD vector into StaticTuple format
     var values = StaticTuple[SIMD[dtype, width], count]()
 
-    @parameter
-    for i in range(count):
-        values[i] = value.slice[width, offset = i * width]()
+    comptime for i in range(count):
+        values[i] = value.slice[width, offset=i * width]()
 
     multimem_st[
         dtype,

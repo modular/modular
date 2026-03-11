@@ -14,8 +14,7 @@
 
 # Compiler-parameterized function
 fn repeat[count: Int](msg: String):
-    @parameter
-    for i in range(count):
+    comptime for i in range(count):
         print(msg)
 
 
@@ -25,5 +24,5 @@ fn threehello():
 
 
 # Run
-def main():
+def main() raises:
     threehello()

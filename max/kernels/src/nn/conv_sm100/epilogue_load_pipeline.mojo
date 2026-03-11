@@ -90,16 +90,13 @@ if WarpRole.is_epilogue():
 ```
 """
 
-from gpu.memory import AddressSpace
+from std.gpu.memory import AddressSpace
 from layout.tma_async import SharedMemBarrier
-from memory import LegacyUnsafePointer
 
-from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline import (
+from structured_kernels.pipeline import (
     MbarPtr,
     ProducerConsumerPipeline,
 )
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 # =============================================================================

@@ -34,7 +34,7 @@ unified interface in `gpu.compute.mma` which automatically dispatches to the
 appropriate architecture-specific implementation at compile time:
 
 ```mojo
-from gpu.compute import mma
+from std.gpu.compute import mma
 
 # Automatically dispatches to the correct architecture
 result = mma(a, b, c)
@@ -52,8 +52,7 @@ from .arch.mma_amd import _mma_amd
 And dispatches based on compile-time architecture detection:
 
 ```mojo
-@parameter
-if is_nvidia_gpu():
+comptime if is_nvidia_gpu():
     _mma_nvidia(d, a, b, c)
 elif is_amd_gpu():
     _mma_amd[block_size](d, a, b, c)

@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import UNKNOWN_VALUE, Layout, RuntimeLayout
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import IntTuple
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 # Tests for the ManagedLayoutTensor
 # Verifies that device_tensor() and tensor() methods work correctly for various ranks
@@ -114,7 +114,7 @@ fn test_managed_layout_tensor_dynamic() raises:
     assert_equal(device_tensor_dynamic.dim[2](), 4)
 
 
-def main():
+def main() raises:
     """Main test function that runs all ManagedLayoutTensor tests."""
     test_managed_layout_tensor_1d()
     test_managed_layout_tensor_2d()

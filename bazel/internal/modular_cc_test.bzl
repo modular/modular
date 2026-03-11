@@ -87,8 +87,10 @@ def modular_cc_test(
         "deps": deps + [
             "@llvm-project//third-party/unittest:gmock",
             "@llvm-project//third-party/unittest:gtest",
-            "@llvm-project//third-party/unittest:gtest_main",
-        ],
+        ] + select({
+            "@platforms//os:macos": ["//bazel/internal:gtest_main_objc_pool_check"],
+            "//conditions:default": ["@llvm-project//third-party/unittest:gtest_main"],
+        }),
         "target_compatible_with": target_compatible_with + gpu_constraints,
     }
 

@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import vectorize
-from memory import memcmp
-from testing import assert_equal
-from testing import TestSuite
-from math import iota
-from sys.intrinsics import masked_load, masked_store
+from std.algorithm import vectorize
+from std.memory import memcmp
+from std.testing import assert_equal
+from std.testing import TestSuite
+from std.math import iota
+from std.sys.intrinsics import masked_load, masked_store
 
 
-def test_vectorize():
+def test_vectorize() raises:
     # Create a mem of size 5
     var vector_stack: InlineArray[Float32, 5] = [1.0, 2.0, 3.0, 4.0, 5.0]
     var vector = Span(vector_stack)
@@ -55,7 +55,7 @@ def test_vectorize():
     assert_equal(vector[4], 14.0)
 
 
-def test_vectorize_evl():
+def test_vectorize_evl() raises:
     # Create a mem of size 5
     var vector_stack: InlineArray[Float32, 5] = [1.0, 2.0, 3.0, 4.0, 5.0]
     var vector = Span(vector_stack)
@@ -105,7 +105,7 @@ def test_vectorize_evl():
     assert_equal(vector[4], 14.0)
 
 
-def test_vectorize_unroll():
+def test_vectorize_unroll() raises:
     comptime buf_len = 23
 
     var vec_stack = InlineArray[Float32, buf_len](uninitialized=True)
@@ -143,7 +143,7 @@ def test_vectorize_unroll():
     assert_equal(err, 0)
 
 
-def test_vectorize_size_param():
+def test_vectorize_size_param() raises:
     var output = String()
 
     # remainder elements are correctly printed
@@ -158,5 +158,5 @@ def test_vectorize_size_param():
     assert_equal(output, "16 0\n16 16\n8 32\n8 0\n")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

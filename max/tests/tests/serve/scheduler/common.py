@@ -33,7 +33,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.core import TextContext
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
@@ -81,7 +81,6 @@ def create_kv_cache(
         num_layers=1,
         n_kv_heads=1,
         head_dim=1,
-        cache_strategy="paged",
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
         enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
@@ -213,7 +212,7 @@ class FakeTokenGeneratorPipeline(
                 self.kv_manager.alloc(
                     ctx, replica_idx=replica_idx, num_steps=num_steps
                 )
-        self.kv_manager.get_runtime_inputs(inputs.batches, num_steps=num_steps)
+        self.kv_manager.runtime_inputs(inputs.batches, num_steps=num_steps)
 
         # Generate the responses
         responses = {}
@@ -369,7 +368,7 @@ def create_batch_and_execute(scheduler: TokenGenerationScheduler) -> BatchInfo:
 def run_until_completion(
     scheduler: TokenGenerationScheduler,
     max_num_iters: int = 50,
-    output_list: list | None = None,
+    output_list: list | None = None,  # type: ignore[type-arg]
 ) -> list[BatchInfo]:
     if output_list is None:
         batch_infos = []

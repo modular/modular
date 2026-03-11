@@ -11,18 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceil, floor
+from std.math import ceil, floor
 
 
-from algorithm.functional import elementwise
-from algorithm.reduction import _get_nd_indices_from_flat_index
-from layout._coord import Coord, coord_to_index_list
-from layout._layout import TensorLayout, row_major
-from layout._tile_tensor import TileTensor
+from std.algorithm.functional import elementwise
+from std.algorithm.reduction import _get_nd_indices_from_flat_index
+from layout import Coord, TileTensor, coord_to_index_list, row_major
+from layout.tile_layout import TensorLayout
 from layout.int_tuple import fill_like
-from memory import memcpy
+from std.memory import memcpy
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 
 struct CoordinateTransformationMode(ImplicitlyCopyable):
@@ -48,8 +47,7 @@ fn coord_transform[
 ](out_coord: Int, in_dim: Int, out_dim: Int, scale: Float32) -> Float32:
     var out_coord_f32 = Float32(out_coord)
 
-    @parameter
-    if mode == CoordinateTransformationMode.HalfPixel:
+    comptime if mode == CoordinateTransformationMode.HalfPixel:
         # note: coordinates are for the CENTER of the pixel
         # - 0.5 term at the end is so that when we round to the nearest integer
         # coordinate, we get the coordinate whose center is closest
@@ -73,8 +71,7 @@ fn coord_transform[
     elif mode == CoordinateTransformationMode.Asymmetric:
         return out_coord_f32 / scale
     else:
-        constrained[False, "coordinate_transformation_mode not implemented"]()
-        return 0
+        comptime assert False, "coordinate_transformation_mode not implemented"
 
 
 struct RoundMode(ImplicitlyCopyable):
@@ -119,21 +116,17 @@ struct Interpolator[mode: InterpolationMode](
     @staticmethod
     @always_inline
     fn filter_length() -> Int:
-        @parameter
-        if Self.mode == InterpolationMode.Linear:
-            return 1
-        else:
-            constrained[False, "InterpolationMode not supported"]()
-            return -1
+        comptime assert (
+            Self.mode == InterpolationMode.Linear
+        ), "InterpolationMode not supported"
+        return 1
 
     @always_inline
     fn filter(self, x: Float32) -> Float32:
-        @parameter
-        if Self.mode == InterpolationMode.Linear:
-            return linear_filter(x)
-        else:
-            constrained[False, "InterpolationMode not supported"]()
-            return -1
+        comptime assert (
+            Self.mode == InterpolationMode.Linear
+        ), "InterpolationMode not supported"
+        return linear_filter(x)
 
 
 fn resize_nearest_neighbor[
@@ -156,8 +149,7 @@ fn resize_nearest_neighbor[
     @parameter
     @always_inline
     fn round[dtype: DType](val: Scalar[dtype]) -> Scalar[dtype]:
-        @parameter
-        if round_mode == RoundMode.HalfDown:
+        comptime if round_mode == RoundMode.HalfDown:
             return ceil(val - 0.5)
         elif round_mode == RoundMode.HalfUp:
             return floor(val + 0.5)
@@ -166,8 +158,7 @@ fn resize_nearest_neighbor[
         elif round_mode == RoundMode.Ceil:
             return ceil(val)
         else:
-            constrained[False, "round_mode not implemented"]()
-            return val
+            comptime assert False, "round_mode not implemented"
 
     @__copy_capture(scales)
     @parameter
@@ -176,8 +167,7 @@ fn resize_nearest_neighbor[
     ](out_coords: IndexList[_rank]):
         var in_coords = IndexList[input.rank](0)
 
-        @parameter
-        for i in range(input.rank):
+        comptime for i in range(input.rank):
             in_coords[i] = min(
                 Int(
                     round(
@@ -238,11 +228,11 @@ fn interpolate_point_1d[
         mut=True,
         dtype,
         InputLayoutType,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
 ):
     var center = (
@@ -280,11 +270,9 @@ fn resize_linear[
     antialias: Bool,
     dtype: DType,
 ](
-    input: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    input: TileTensor[mut=True, dtype, address_space=AddressSpace.GENERIC, ...],
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
 ):
     """Resizes input to output shape using linear interpolation.
@@ -314,11 +302,9 @@ fn _resize[
     antialias: Bool,
     dtype: DType,
 ](
-    input: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    input: TileTensor[mut=True, dtype, address_space=AddressSpace.GENERIC, ...],
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
 ):
     comptime assert (
@@ -330,7 +316,9 @@ fn _resize[
     ) == rebind[IndexList[input.rank]](
         coord_to_index_list(output.layout.shape_coord())
     ):
-        return memcpy(dest=output.ptr, src=input.ptr, count=input.numel())
+        return memcpy(
+            dest=output.ptr, src=input.ptr, count=input.num_elements()
+        )
     var scales = StaticTuple[Float32, input.rank]()
     var resize_dims = List[Int](capacity=input.rank)
     var tmp_dims = IndexList[input.rank](0)
@@ -375,7 +363,7 @@ fn _resize[
         var in_buf = TileTensor(in_ptr, row_major(Coord(in_shape)))
         var out_buf = TileTensor(out_ptr, row_major(Coord(out_shape)))
 
-        var num_rows = out_buf.numel() // out_shape[resize_dim]
+        var num_rows = out_buf.num_elements() // out_shape[resize_dim]
         for row_idx in range(num_rows):
             var coords = _get_nd_indices_from_flat_index(
                 row_idx, out_shape, resize_dim
@@ -383,7 +371,7 @@ fn _resize[
             for i in range(out_shape[resize_dim]):
                 coords[resize_dim] = i
                 interpolate_point_1d[
-                    InputLayoutType = in_buf.LayoutType,
+                    InputLayoutType=in_buf.LayoutType,
                     coordinate_transformation_mode,
                     antialias,
                 ](

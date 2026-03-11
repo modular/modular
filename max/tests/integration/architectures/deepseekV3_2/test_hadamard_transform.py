@@ -124,7 +124,9 @@ def generate_max_hadamard_transform(
 )
 @torch.no_grad()
 def test_hadamard_transform(
-    input_shape: tuple, scale: float, torch_dtype: Any = torch.bfloat16
+    input_shape: tuple,  # type: ignore[type-arg]
+    scale: float,
+    torch_dtype: Any = torch.bfloat16,
 ) -> None:
     """Test Hadamard transform comparing MAX vs PyTorch implementation.
 

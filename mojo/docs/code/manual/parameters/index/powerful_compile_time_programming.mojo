@@ -23,8 +23,7 @@ fn slice[
 
 
 fn reduce_add(x: SIMD) -> Int:
-    @parameter
-    if x.size == 1:
+    comptime if x.size == 1:
         return Int(x[0])
     elif x.size == 2:
         return Int(x[0]) + Int(x[1])
@@ -36,7 +35,7 @@ fn reduce_add(x: SIMD) -> Int:
     return reduce_add(lhs + rhs)
 
 
-def main():
+def main() raises:
     var x = SIMD[DType.int, 4](1, 2, 3, 4)
     print(x)
     print("Elements sum:", reduce_add(x))

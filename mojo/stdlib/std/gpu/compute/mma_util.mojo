@@ -31,14 +31,14 @@ NVIDIA PTX: https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#wa
 AMD Matrix Cores: https://gpuopen.com/learn/amd-lab-notes/amd-lab-notes-matrix-cores-readme/
 """
 
-from sys import CompilationTarget, is_amd_gpu, is_nvidia_gpu
+from std.sys import CompilationTarget, is_amd_gpu, is_nvidia_gpu
 
 
 @always_inline
 fn load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[mut=False, Float32],
+    a_ptr: UnsafePointer[mut=False, Float32, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -84,7 +84,7 @@ fn load_matrix_a[
 fn load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[mut=False, Float16],
+    a_ptr: UnsafePointer[mut=False, Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -132,7 +132,7 @@ fn load_matrix_a[
 fn load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[mut=False, BFloat16],
+    a_ptr: UnsafePointer[mut=False, BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -157,8 +157,7 @@ fn load_matrix_a[
         The tile dimensions must be m=16, n=8, k=8 or m=16, n=8, k=16.
     """
 
-    @parameter
-    if m == 16 and n == 8 and k == 8:
+    comptime if m == 16 and n == 8 and k == 8:
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 
@@ -209,7 +208,7 @@ fn load_matrix_a[
 fn load_matrix_a_amd[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[mut=False, Float32],
+    a_ptr: UnsafePointer[mut=False, Float32, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -245,7 +244,7 @@ fn load_matrix_a_amd[
 fn load_matrix_a_amd[
     dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
-    a_ptr: UnsafePointer[mut=False, Scalar[dtype]],
+    a_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -272,15 +271,13 @@ fn load_matrix_a_amd[
         The tile dimensions must be m=16, n=16, k=16 and n_blocks=1 or m=4, n=4, k=4 and n_blocks=16.
     """
 
-    @parameter
-    if m == 16 and n == 16 and k == 16 and n_blocks == 1:
+    comptime if m == 16 and n == 16 and k == 16 and n_blocks == 1:
         var lane = lane_id()
         var thread_x = lane & 15
         var thread_y = lane >> 4
         var a = SIMD[dtype, 4]()
 
-        @parameter
-        for i in range(4):
+        comptime for i in range(4):
             var a_idx = (
                 ldm * (tile_row + Int(thread_x))
                 + tile_col
@@ -299,8 +296,7 @@ fn load_matrix_a_amd[
         var batchStrideA = grid_dim.x * UInt(m) * UInt(ldm)
         var a = SIMD[dtype, 4]()
 
-        @parameter
-        for i in range(4):
+        comptime for i in range(4):
             # consecutive threads cover 16 consecutive rows
             # consecutive registers take consecutive columns
             # groups of 16 lanes cover each matrix in batch
@@ -318,7 +314,7 @@ fn load_matrix_a_amd[
 fn load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[mut=False, Float32],
+    b_ptr: UnsafePointer[mut=False, Float32, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -361,7 +357,7 @@ fn load_matrix_b[
 fn load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[mut=False, Float16],
+    b_ptr: UnsafePointer[mut=False, Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -404,7 +400,7 @@ fn load_matrix_b[
 fn load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[mut=False, BFloat16],
+    b_ptr: UnsafePointer[mut=False, BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -429,8 +425,7 @@ fn load_matrix_b[
         The tile dimensions must be m=16, n=8, k=8 or m=16, n=8, k=16.
     """
 
-    @parameter
-    if m == 16 and n == 8 and k == 8:
+    comptime if m == 16 and n == 8 and k == 8:
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 
@@ -465,7 +460,7 @@ fn load_matrix_b[
 fn load_matrix_b_amd[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[mut=False, Float32],
+    b_ptr: UnsafePointer[mut=False, Float32, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -497,7 +492,7 @@ fn load_matrix_b_amd[
 fn load_matrix_b_amd[
     dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
-    b_ptr: UnsafePointer[mut=False, Scalar[dtype]],
+    b_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -530,16 +525,14 @@ fn load_matrix_b_amd[
         The tile dimensions must be m=16, n=16, k=16 and n_blocks=1 or m=4, n=4, k=4 and n_blocks=16.
     """
 
-    @parameter
-    if m == 16 and n == 16 and k == 16 and n_blocks == 1:
+    comptime if m == 16 and n == 16 and k == 16 and n_blocks == 1:
         var lane = lane_id()
         var thread_x = Int(lane & 15)
         var thread_y = Int(lane >> 4)
 
         var b = SIMD[dtype, 4]()
 
-        @parameter
-        for i in range(4):
+        comptime for i in range(4):
             var b_idx = (
                 ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
             )
@@ -555,8 +548,7 @@ fn load_matrix_b_amd[
         var batchStrideB = tile_loops * k * ldm
         var b = SIMD[dtype, 4]()
 
-        @parameter
-        for i in range(4):
+        comptime for i in range(4):
             var b_idx = (
                 tile_col
                 + thread_x
@@ -572,7 +564,7 @@ fn load_matrix_b_amd[
 fn _store_matrix_d_nvidia[
     dtype: DType, //, m: Int, n: Int, k: Int
 ](
-    d_ptr: UnsafePointer[mut=True, Scalar[dtype]],
+    d_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     d: SIMD[dtype, 4],
     tile_row: Int,
     tile_col: Int,
@@ -623,7 +615,7 @@ fn _store_matrix_d_nvidia[
 fn _store_matrix_d_amd[
     dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
-    d_ptr: UnsafePointer[mut=True, Scalar[dtype]],
+    d_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     d: SIMD[dtype, 4],
     tile_row: Int,
     tile_col: Int,
@@ -654,16 +646,14 @@ fn _store_matrix_d_amd[
         - Each thread stores 4 elements in consecutive positions.
     """
 
-    @parameter
-    if m == 4 and n == 4 and k == 4 and n_blocks == 16:
+    comptime if m == 4 and n == 4 and k == 4 and n_blocks == 16:
         var lane = lane_id()
         # Implies 4, 16 block.
         var thread_x = Int(lane & 3)
         var thread_y = lane >> 2
         var batchStrideD = grid_dim.x * UInt(m) * UInt(ldm)
 
-        @parameter
-        for i in range(4):
+        comptime for i in range(4):
             # consecutive threads cover 4 consecutive columns
             # consecutive registers take consecutive rows
             # groups of 4 lanes cover each matrix in batch
@@ -681,8 +671,7 @@ fn _store_matrix_d_amd[
         var thread_x = Int(lane & 15)
         var thread_y = Int(lane >> 4)
 
-        @parameter
-        for i in range(4):
+        comptime for i in range(4):
             var d_idx = (
                 ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
             )
@@ -693,7 +682,7 @@ fn _store_matrix_d_amd[
 fn store_matrix_d[
     dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
-    d_ptr: UnsafePointer[mut=True, Scalar[dtype]],
+    d_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     d: SIMD[dtype, 4],
     tile_row: Int,
     tile_col: Int,
@@ -725,14 +714,13 @@ fn store_matrix_d[
         - Must be called by all threads in a warp.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         _store_matrix_d_nvidia[m, n, k](d_ptr, d, tile_row, tile_col, ldm)
     elif is_amd_gpu():
         _store_matrix_d_amd[m, n, k, n_blocks](
             d_ptr, d, tile_row, tile_col, ldm
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()

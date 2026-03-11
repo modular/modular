@@ -11,29 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import isclose
-from random import rand
+from std.math import isclose
+from std.random import rand
 
 from buffer import DimList, NDBuffer
 from nn.conv import Naive2dConvolution
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 @always_inline
 fn matmul[
     dtype: DType, //, N: Int, K: Int, M: Int, transpose_b: Bool
 ](
-    C: NDBuffer[mut=True, dtype, 2, _, _],
-    A: NDBuffer[dtype, 2, _, _],
-    B: NDBuffer[dtype, 2, _, _],
+    C: NDBuffer[mut=True, rank=2, dtype, _, _],
+    A: NDBuffer[rank=2, dtype, _, _],
+    B: NDBuffer[rank=2, dtype, _, _],
 ):
-    # TODO: Add constrained[]?
-    @parameter
-    if transpose_b:
+    # TODO: Add comptime assert?
+    comptime if transpose_b:
         for i in range(N):
             for j in range(K):
                 var sum = Scalar[dtype](0)
@@ -57,41 +53,41 @@ fn matmul[
 fn winograd_2d_convolution_3x3[
     dtype: DType
 ](
-    signal: NDBuffer[dtype, 2, _, _],
+    signal: NDBuffer[rank=2, dtype, _, _],
     kernel: NDBuffer[
-        dtype, 2, _, _
+        rank=2, dtype, _, _
     ],  # must be 3x3, let's comptime assert  somehow. Or parameter
-    output: NDBuffer[mut=True, dtype, 2, _, _],
+    output: NDBuffer[mut=True, rank=2, dtype, _, _],
 ):
     # Winograd transformation matrices as stack-allocated NDBuffers
     # fmt: off
     var b_stack = InlineArray[Scalar[dtype], 16](uninitialized=True)
-    var B = NDBuffer[dtype, 2,_, DimList((4, 4))](b_stack.unsafe_ptr())
+    var B = NDBuffer[rank=2, dtype,_, DimList(4, 4)](b_stack.unsafe_ptr())
     B[0,0] = 1.0; B[0,1] =  0.0; B[0,2] = -1.0; B[0,3] =  0.0
     B[1,0] = 0.0; B[1,1] =  1.0; B[1,2] =  1.0; B[1,3] =  0.0
     B[2,0] = 0.0; B[2,1] = -1.0; B[2,2] =  1.0; B[2,3] =  0.0
     B[3,0] = 0.0; B[3,1] =  1.0; B[3,2] =  0.0; B[3,3] = -1.0
 
     var g_stack = InlineArray[Scalar[dtype], 12](uninitialized=True)
-    var G = NDBuffer[dtype, 2, _,DimList((4, 3))](g_stack.unsafe_ptr())
+    var G = NDBuffer[rank=2, dtype, _,DimList(4, 3)](g_stack.unsafe_ptr())
     G[0,0] = 1.0; G[0,1] =  0.0; G[0,2] = 0.0
     G[1,0] = 0.5; G[1,1] =  0.5; G[1,2] = 0.5
     G[2,0] = 0.5; G[2,1] = -0.5; G[2,2] = 0.5
     G[3,0] = 0.0; G[3,1] =  0.0; G[3,2] = 1.0
 
     var a_stack = InlineArray[Scalar[dtype], 8](uninitialized=True)
-    var A = NDBuffer[dtype, 2,_, DimList((2, 4))](a_stack.unsafe_ptr())
+    var A = NDBuffer[rank=2, dtype,_, DimList(2, 4)](a_stack.unsafe_ptr())
     A[0,0] = 1.0; A[0,1] = 1.0; A[0,2] =  1.0; A[0,3] =  0.0
     A[1,0] = 0.0; A[1,1] = 1.0; A[1,2] = -1.0; A[1,3] = -1.0
     # fmt: on
 
     # Temporary buffers for intermediate results
     var scratch_stack = InlineArray[Scalar[dtype], 16](uninitialized=True)
-    var scratch = NDBuffer[dtype, 2, _, DimList((4, 4))](
+    var scratch = NDBuffer[rank=2, dtype, _, DimList(4, 4)](
         scratch_stack.unsafe_ptr()
     )
     var g_t_stack = InlineArray[Scalar[dtype], 16](uninitialized=True)
-    var g_transformed = NDBuffer[dtype, 2, _, DimList((4, 4))](
+    var g_transformed = NDBuffer[rank=2, dtype, _, DimList(4, 4)](
         g_t_stack.unsafe_ptr()
     )
 
@@ -107,20 +103,17 @@ fn winograd_2d_convolution_3x3[
 
     # Additional temporary buffers
     var d_stack = InlineArray[Scalar[dtype], 16](uninitialized=True)
-    var d = NDBuffer[dtype, 2, _, DimList((4, 4))](d_stack.unsafe_ptr())
+    var d = NDBuffer[rank=2, dtype, _, DimList(4, 4)](d_stack.unsafe_ptr())
     var m_stack = InlineArray[Scalar[dtype], 16](uninitialized=True)
-    var m = NDBuffer[dtype, 2, _, DimList((4, 4))](m_stack.unsafe_ptr())
+    var m = NDBuffer[rank=2, dtype, _, DimList(4, 4)](m_stack.unsafe_ptr())
     var y_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var y = NDBuffer[dtype, 2, _, DimList((2, 2))](y_stack.unsafe_ptr())
+    var y = NDBuffer[rank=2, dtype, _, DimList(2, 2)](y_stack.unsafe_ptr())
 
     for i in range(0, Oh, 2):
         for j in range(0, Ow, 2):
             # Extract 4x4 input tile
-            @parameter
-            for di in range(4):
-
-                @parameter
-                for dj in range(4):
+            comptime for di in range(4):
+                comptime for dj in range(4):
                     var v = Scalar[dtype](0)
                     if (i + di) < H and (j + dj) < W:
                         v = signal[i + di, j + dj]
@@ -140,11 +133,8 @@ fn winograd_2d_convolution_3x3[
             matmul[2, 2, 4, True](y, scratch, A)
 
             # Store results
-            @parameter
-            for di in range(2):
-
-                @parameter
-                for dj in range(2):
+            comptime for di in range(2):
+                comptime for dj in range(2):
                     if i + di < Oh and j + dj < Ow:
                         output[i + di, j + dj] = y[di, dj]
 
@@ -152,8 +142,8 @@ fn winograd_2d_convolution_3x3[
 fn outputs_are_close[
     dtype: DType
 ](
-    output_naive: NDBuffer[dtype, 2, _, _],
-    output_winograd: NDBuffer[dtype, 2, _, _],
+    output_naive: NDBuffer[rank=2, dtype, _, _],
+    output_winograd: NDBuffer[rank=2, dtype, _, _],
     Oh: Int,
     Ow: Int,
 ) -> Bool:
@@ -184,18 +174,18 @@ fn test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
     comptime Ow: Int = W - Kw + 1  # Output width
 
     # Allocate memory for input, filter, and both outputs
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(H * W)
-    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(Kh * Kw)
-    var output_ptr_winograd = UnsafePointer[Scalar[dtype]].alloc(Oh * Ow)
-    var output_ptr_naive = UnsafePointer[Scalar[dtype]].alloc(Oh * Ow)
+    var input_ptr = alloc[Scalar[dtype]](H * W)
+    var filter_ptr = alloc[Scalar[dtype]](Kh * Kw)
+    var output_ptr_winograd = alloc[Scalar[dtype]](Oh * Ow)
+    var output_ptr_naive = alloc[Scalar[dtype]](Oh * Ow)
 
     # Create NDBuffers
-    var input = NDBuffer[dtype, 2, _, DimList((H, W))](input_ptr)
-    var filter = NDBuffer[dtype, 2, _, DimList((Kh, Kw))](filter_ptr)
-    var output_winograd = NDBuffer[dtype, 2, _, DimList((Oh, Ow))](
+    var input = NDBuffer[rank=2, dtype, _, DimList(H, W)](input_ptr)
+    var filter = NDBuffer[rank=2, dtype, _, DimList(Kh, Kw)](filter_ptr)
+    var output_winograd = NDBuffer[rank=2, dtype, _, DimList(Oh, Ow)](
         output_ptr_winograd
     )
-    var output_naive = NDBuffer[dtype, 2, _, DimList((Oh, Ow))](
+    var output_naive = NDBuffer[rank=2, dtype, _, DimList(Oh, Ow)](
         output_ptr_naive
     )
 
@@ -245,7 +235,7 @@ fn test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
     print("Succeed")
 
 
-def main():
+def main() raises:
     comptime dtype = DType.float32
 
     # power of 2

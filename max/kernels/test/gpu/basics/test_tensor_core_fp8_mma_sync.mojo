@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from io.io import _printf
+from std.io.io import _printf
 
-from gpu.host import DeviceContext
-from gpu import thread_idx
-from gpu.compute.mma import mma
+from std.gpu.host import DeviceContext
+from std.gpu import thread_idx
+from std.gpu.compute.mma import mma
 
 
 fn mma_sync_16x8x32_E4M3():
@@ -34,7 +34,7 @@ fn mma_sync_16x8x32_E4M3():
     )
 
 
-def test_mma_sync_16x8x32_E4M3(ctx: DeviceContext):
+def test_mma_sync_16x8x32_E4M3(ctx: DeviceContext) raises:
     print("== test_mma_sync_16x8x32_E4M3")
     comptime kernel = mma_sync_16x8x32_E4M3
     ctx.enqueue_function_experimental[kernel](
@@ -60,7 +60,7 @@ fn mma_sync_16x8x32_E4M2():
     )
 
 
-def test_mma_sync_16x8x32_E5M2(ctx: DeviceContext):
+def test_mma_sync_16x8x32_E5M2(ctx: DeviceContext) raises:
     print("== test_mma_sync_16x8x32_E5M2")
     comptime kernel = mma_sync_16x8x32_E4M2
     ctx.enqueue_function_experimental[kernel](
@@ -70,7 +70,7 @@ def test_mma_sync_16x8x32_E5M2(ctx: DeviceContext):
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # CHECK-LABEL: test_mma_sync_16x8x32_E4M3
         # CHECK-DAG: thread 0 : 64 64 64 64

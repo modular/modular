@@ -25,16 +25,16 @@ struct MyPet(Copyable):
         self.name = name^
         self.age = age
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.name = copy.name
         self.age = copy.age
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         self.name = take.name^
         self.age = take.age
 
 
-def main():
+def main() raises:
     pet = MyPet("Fido", 3)
     pet2 = pet.copy()
     print(pet2.name)

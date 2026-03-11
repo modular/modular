@@ -915,7 +915,7 @@ def test_paged_scheduler_paging_to_host_on_cpu_raises() -> None:
             device=CPU(),
         )
     assert (
-        "Host device detected. Paging to host is not supported when executing on CPU."
+        "KVCacheBuffer is on the CPU. Unable to allocate host offload buffer for already-on-CPU buffers."
         in str(e.value)
     )
 

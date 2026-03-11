@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-import time
+import std.time
 
 
 @fieldwise_init
@@ -21,11 +21,11 @@ struct ConditionalTimer(ImplicitlyCopyable):
         self.start_time = 0
 
     fn __enter__(mut self) -> Self:
-        self.start_time = Int(time.perf_counter_ns())
+        self.start_time = Int(std.time.perf_counter_ns())
         return self
 
     fn __exit__(mut self):
-        end_time = time.perf_counter_ns()
+        end_time = std.time.perf_counter_ns()
         elapsed_time_ms = round(
             Float64(end_time - UInt(self.start_time)) / 1e6, 3
         )
@@ -42,7 +42,7 @@ struct ConditionalTimer(ImplicitlyCopyable):
             return False
 
 
-def flaky_identity(n: Int) -> Int:
+def flaky_identity(n: Int) raises -> Int:
     if (n % 4) == 0:
         raise "really bad"
     elif (n % 2) == 0:
@@ -51,13 +51,13 @@ def flaky_identity(n: Int) -> Int:
         return n
 
 
-def main():
+def main() raises:
     for i in range(1, 9):
         with ConditionalTimer():
             print("\nBeginning execution")
 
             print("i =", i)
-            time.sleep(0.1)
+            std.time.sleep(0.1)
 
             if i == 3:
                 print("continue executed")

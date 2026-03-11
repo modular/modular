@@ -11,22 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from random import rand
+from std.os import abort
+from std.random import rand
 
-from benchmark import *
-from benchmark import keep
+from std.benchmark import *
+from std.benchmark import keep
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
-from memory import LegacyUnsafePointer
+from std.testing import assert_almost_equal
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
-
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 fn gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, ...]):
@@ -47,8 +44,8 @@ fn verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
     var m = c.get_shape()[0]
     var n = c.get_shape()[1]
 
-    var c_ref_ptr = UnsafePointer[Scalar[c.type]].alloc(m * n)
-    var c_ref = NDBuffer[c.type, c.rank](c_ref_ptr, c.get_shape())
+    var c_ref_ptr = alloc[Scalar[c.type]](m * n)
+    var c_ref = NDBuffer[rank=c.rank, c.type](c_ref_ptr, c.get_shape())
     gemm_naive(a, b, c_ref)
 
     for i in range(m):
@@ -80,26 +77,18 @@ fn bench_matmul[
     comptime c_type = spec.static_info.c_type
     comptime b_packed = spec.static_info.b_packed
     comptime alignment = 64
-    var a_ptr = UnsafePointer[Scalar[a_type],].alloc(
-        spec.m * spec.k, alignment=alignment
-    )
-    var b_ptr = UnsafePointer[Scalar[b_type],].alloc(
-        spec.k * spec.n, alignment=alignment
-    )
-    var c_ptr = UnsafePointer[Scalar[c_type],].alloc(
-        spec.m * spec.n, alignment=alignment
-    )
-    var a = NDBuffer[a_type, 2](a_ptr, Index(spec.m, spec.k))
-    var b = NDBuffer[b_type, 2](b_ptr, Index(spec.k, spec.n))
-    var c = NDBuffer[c_type, 2](c_ptr, Index(spec.m, spec.n))
+    var a_ptr = alloc[Scalar[a_type],](spec.m * spec.k, alignment=alignment)
+    var b_ptr = alloc[Scalar[b_type],](spec.k * spec.n, alignment=alignment)
+    var c_ptr = alloc[Scalar[c_type],](spec.m * spec.n, alignment=alignment)
+    var a = NDBuffer[rank=2, a_type](a_ptr, Index(spec.m, spec.k))
+    var b = NDBuffer[rank=2, b_type](b_ptr, Index(spec.k, spec.n))
+    var c = NDBuffer[rank=2, c_type](c_ptr, Index(spec.m, spec.n))
     rand[a_type](a_ptr, len(a))
     rand[b_type](b_ptr, len(b))
     c.zero()
 
     var padded_n_k = pack_matmul_b_shape_func[
         a_type,
-        DimList.create_unknown[2](),
-        b_type,
         DimList.create_unknown[2](),
         c_type,
         DimList.create_unknown[2](),
@@ -110,16 +99,14 @@ fn bench_matmul[
     var padded_n = padded_n_k[1] if b_packed else spec.n
     var padded_k = padded_n_k[0] if b_packed else spec.k
 
-    var bp_ptr = UnsafePointer[Scalar[b_type],].alloc(
+    var bp_ptr = alloc[Scalar[b_type],](
         padded_k * padded_n, alignment=alignment
     )
-    var bp = NDBuffer[b_type, 2](bp_ptr, Index(padded_k, padded_n))
+    var bp = NDBuffer[rank=2, b_type](bp_ptr, Index(padded_k, padded_n))
 
     if b_packed:
         pack_b_ndbuffer[
             a_type,
-            DimList.create_unknown[2](),
-            b_type,
             DimList.create_unknown[2](),
             c_type,
             DimList.create_unknown[2](),
@@ -153,16 +140,23 @@ struct MatmulSpecStatic(ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct MatmulSpec[static_info: MatmulSpecStatic](
-    ImplicitlyCopyable, Stringable
-):
+struct MatmulSpec[static_info: MatmulSpecStatic](ImplicitlyCopyable, Writable):
     var m: Int
     var n: Int
     var k: Int
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
-        return String(
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the matmul spec.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
             "m=",
             self.m,
             ";n=",
@@ -183,7 +177,7 @@ struct MatmulSpec[static_info: MatmulSpecStatic](
         return 2 * self.m * self.n * self.k
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=2))
 
     comptime packed_float32 = MatmulSpecStatic(

@@ -13,24 +13,21 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from random import random_si64
+from std.random import random_si64
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
-from gpu.host.info import MI355X
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import MI355X
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from linalg.matmul.gpu import (
     _amdgpu_matmul_config_from_block_shape,
     _matmul_gpu,
 )
 from linalg.utils_gpu import MatmulConfig
-from memory import LegacyUnsafePointer
+from std.testing import assert_equal
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
-
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
@@ -68,10 +65,10 @@ fn test[
     var c_size = m * n
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
 
     # Device allocations
     var a_device_buffer = ctx.enqueue_create_buffer[a_type](a_size)
@@ -79,21 +76,21 @@ fn test[
     var c_device_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_ref_buffer = ctx.enqueue_create_buffer[c_type](c_size)
 
-    var a_device = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_device = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_device_buffer.unsafe_ptr(),
-        DimList(m, k),
+        IndexList[2](m, k),
     )
-    var b_device = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_device = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_device_buffer.unsafe_ptr(),
-        DimList(n, k) if transpose_b else DimList(k, n),
+        IndexList[2](n, k) if transpose_b else IndexList[2](k, n),
     )
-    var c_device = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_buffer.unsafe_ptr(),
-        DimList(m, n),
+        IndexList[2](m, n),
     )
-    var c_device_ref = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_ref_buffer.unsafe_ptr(),
-        DimList(m, n),
+        IndexList[2](m, n),
     )
 
     comptime rand_min = -100
@@ -180,89 +177,89 @@ fn test[
     )
 
 
-def test_bf16(ctx: DeviceContext):
+def test_bf16(ctx: DeviceContext) raises:
     print("=== test_bf16")
 
     test[
-        in_type = DType.bfloat16,
-        out_type = DType.float32,
+        in_type=DType.bfloat16,
+        out_type=DType.float32,
         transpose_b=False,
-        N = Int(256),
-        K = Int(128),
+        N=Int(256),
+        K=Int(128),
     ](ctx, 256, 256, 128)
     test[
-        in_type = DType.bfloat16,
-        out_type = DType.float32,
+        in_type=DType.bfloat16,
+        out_type=DType.float32,
         transpose_b=True,
-        N = Int(256),
-        K = Int(128),
+        N=Int(256),
+        K=Int(128),
     ](ctx, 256, 256, 128)
     test[
-        in_type = DType.bfloat16,
-        out_type = DType.bfloat16,
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
         transpose_b=False,
-        N = Int(256),
-        K = Int(128),
+        N=Int(256),
+        K=Int(128),
     ](ctx, 256, 256, 128)
     test[
-        in_type = DType.bfloat16,
-        out_type = DType.bfloat16,
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
         transpose_b=True,
-        N = Int(256),
-        K = Int(128),
+        N=Int(256),
+        K=Int(128),
     ](ctx, 256, 256, 128)
 
     test[
-        in_type = DType.bfloat16,
-        out_type = DType.bfloat16,
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
         transpose_b=False,
-        N = Int(256),
-        K = Int(128),
+        N=Int(256),
+        K=Int(128),
     ](ctx, 1024, 256, 128)
     test[
-        in_type = DType.bfloat16,
-        out_type = DType.bfloat16,
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
         transpose_b=False,
-        N = Int(256),
-        K = Int(256),
+        N=Int(256),
+        K=Int(256),
     ](ctx, 1024, 256, 256)
     test[
-        in_type = DType.bfloat16,
-        out_type = DType.float32,
+        in_type=DType.bfloat16,
+        out_type=DType.float32,
         transpose_b=True,
-        N = Int(256),
-        K = Int(1024),
+        N=Int(256),
+        K=Int(1024),
     ](ctx, 1024, 256, 1024)
     test[
-        in_type = DType.bfloat16,
-        out_type = DType.float32,
+        in_type=DType.bfloat16,
+        out_type=DType.float32,
         transpose_b=True,
-        N = Int(1024),
-        K = Int(1024),
+        N=Int(1024),
+        K=Int(1024),
     ](ctx, 1024, 1024, 1024)
 
     test[
-        in_type = DType.bfloat16,
-        out_type = DType.bfloat16,
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
         transpose_b=True,
-        N = Int(284),
-        K = Int(256),
+        N=Int(284),
+        K=Int(256),
     ](ctx, 256, 284, 256)
 
 
-def test_float8[in_type: DType](ctx: DeviceContext):
+def test_float8[in_type: DType](ctx: DeviceContext) raises:
     print("=== test_float8", in_type)
 
     test[
         in_type=in_type,
-        out_type = DType.bfloat16,
+        out_type=DType.bfloat16,
         transpose_b=True,
-        N = Int(512),
-        K = Int(640),
+        N=Int(512),
+        K=Int(640),
     ](ctx, 480, 512, 640)
 
 
-def test_block_k(ctx: DeviceContext):
+def test_block_k(ctx: DeviceContext) raises:
     print("=== test_block_k")
 
     @parameter
@@ -272,23 +269,22 @@ def test_block_k(ctx: DeviceContext):
         block_k: Int,
         N: Int,
         K: Int,
-    ](m: Int, n: Int, k: Int):
+    ](m: Int, n: Int, k: Int) raises:
         comptime config = MatmulConfig[in_type, in_type, out_type, True](
             block_tile_shape=Index(64, 64, block_k),
             warp_tile_shape=Index(32, 32, block_k),
         )
-        test[config, N = Int(N), K = Int(K)](ctx, m, n, k)
+        test[config, N=Int(N), K=Int(K)](ctx, m, n, k)
 
     comptime block_ks: List[Int] = [32, 64, 128, 256]
 
-    @parameter
-    for i in range(len(block_ks)):
+    comptime for i in range(len(block_ks)):
         test_block_k[DType.bfloat16, DType.bfloat16, block_ks[i], 1024, 1024](
             192, 1024, 1024
         )
 
 
-def test_warp_k_partitions(ctx: DeviceContext):
+def test_warp_k_partitions(ctx: DeviceContext) raises:
     print("=== test_warp_k_partitions")
 
     @parameter
@@ -297,7 +293,7 @@ def test_warp_k_partitions(ctx: DeviceContext):
         out_type: DType,
         N: Int,
         K: Int,
-    ](m: Int, n: Int, k: Int):
+    ](m: Int, n: Int, k: Int) raises:
         comptime config_type = MatmulConfig[in_type, in_type, out_type, True]
         comptime configs: List[config_type] = [
             # TEST: num_warps=(1, 4, 1).
@@ -324,16 +320,15 @@ def test_warp_k_partitions(ctx: DeviceContext):
             ),
         ]
 
-        @parameter
-        for i in range(len(configs)):
-            test[configs[i], N = Int(N), K = Int(K)](ctx, m, n, k)
+        comptime for i in range(len(configs)):
+            test[configs[i], N=Int(N), K=Int(K)](ctx, m, n, k)
 
     test_warp_k_partitions[DType.bfloat16, DType.bfloat16, 2048, 2048](
         16, 2048, 2048
     )
 
 
-def test_matmul_config_from_block_shape(ctx: DeviceContext):
+def test_matmul_config_from_block_shape(ctx: DeviceContext) raises:
     # This test takes too long to execute for CI, but is maintained here as a useful
     # unit test for verifying changes to parts of the matmul dispatcher.
     print("=== test_matmul_config_from_block_shape")
@@ -348,14 +343,11 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext):
 
     comptime block_sizes = [16, 32, 64, 96, 128, 160, 192, 224, 256]
 
-    @parameter
-    for block_m in block_sizes:
-
-        @parameter
-        for block_n in block_sizes:
+    comptime for block_m in block_sizes:
+        comptime for block_n in block_sizes:
 
             @parameter
-            def test_block_shape[block_m: Int, block_n: Int, k: Int]():
+            def test_block_shape[block_m: Int, block_n: Int, k: Int]() raises:
                 comptime config = _amdgpu_matmul_config_from_block_shape[
                     out_type, in_type, in_type, transpose_b, k
                 ](Index(block_m, block_n))
@@ -366,31 +358,27 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext):
                     config.warp_tile_shape,
                     config.num_warp_k_partitions,
                 )
-                test[config, M = Int(m_val), N = Int(n_val), K = Int(k)](
+                test[config, M=Int(m_val), N=Int(n_val), K=Int(k)](
                     ctx, m_val, n_val, k
                 )
 
-            @parameter
-            if block_m <= 32 and block_n <= 32:
+            comptime if block_m <= 32 and block_n <= 32:
                 # Exercise the warp_k partitioning where the number of partitions
                 # depends on breaking K into even chunks.
-                @parameter
-                for k in [256, 384, 512, 768, 1024]:
+                comptime for k in [256, 384, 512, 768, 1024]:
                     test_block_shape[block_m, block_n, k]()
             else:
                 # Exercise the logic where block_k is increased, but only if K is
                 # multiple of the increased block size.
-                @parameter
-                for k in [320, 768]:
+                comptime for k in [320, 768]:
                     test_block_shape[block_m, block_n, k]()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_bf16(ctx)
 
-        @parameter
-        if ctx.default_device_info == MI355X:
+        comptime if ctx.default_device_info == MI355X:
             test_float8[DType.float8_e4m3fn](ctx)
             test_float8[DType.float8_e5m2](ctx)
         else:

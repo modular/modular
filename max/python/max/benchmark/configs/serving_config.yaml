@@ -30,7 +30,8 @@ benchmark_config:
   base_url: null  # Server or API base url if not using host/port
   host: "localhost"
   port: 8000
-  endpoint: "/v1/chat/completions"  # /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream
+  endpoint: "/v1/chat/completions"  # /v1/completions, /v1/chat/completions, /v1/responses, /v2/models/ensemble/generate_stream
+  benchmark_task: "text-generation"  # choices: text-generation, text-to-image
 
   num_prompts: 1000  # Number of prompts to process (serving-specific)
 
@@ -49,14 +50,15 @@ benchmark_config:
   # Output control (serving-specific extensions)
   output_lengths: null  # Path to YAML file with output lengths or int
   max_output_len: null  # Maximum output length per request
-  temperature: 0.0  # Temperature for sampling
-  top_p: 1.0  # Top-p for sampling
+  temperature: null  # Temperature for sampling
+  top_p: null  # Top-p for sampling
   top_k: null  # Top-k for sampling
 
   # Traffic control (serving-specific)
   request_rate: "inf"  # Requests per second (finite rate for realistic benchmarking)
   burstiness: 1.0  # Burstiness factor (1.0 = Poisson process)
   skip_first_n_requests: 0  # Skip first N requests for measurements
+  skip_last_n_requests: 0  # Skip last N requests for measurements
   chat_warmup_delay_ms: 0.0  # Delay between starting chat sessions
   ignore_first_turn_stats: false # Ignore the first turn in a multi-turn chat.
 
@@ -65,9 +67,6 @@ benchmark_config:
   obfuscated_conversations_average_output_len: 175
   obfuscated_conversations_coefficient_of_variation: 0.1
   obfuscated_conversations_shuffle: false
-  random_coefficient_of_variation: "0.3,0.7"
-  random_distribution_type: "normal"  # choices: uniform, normal
-  random_first_turn_ratio: 1.0
   random_image_count: 0
   random_image_size: ""
   random_input_len: 1024

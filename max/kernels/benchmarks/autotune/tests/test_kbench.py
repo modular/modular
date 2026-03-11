@@ -16,6 +16,7 @@
 
 import os
 import string
+import subprocess
 import tempfile
 from io import StringIO
 from pathlib import Path
@@ -36,9 +37,10 @@ from kbench_model import (
 from kplot import _resolve_ytext_unit
 from kplot import cli as kplot_cli
 from kprofile import cli as kprofile_cli
+from pytest_mock import MockerFixture
 from rich.console import Console
 from terminal_viz import render_results
-from utils import check_valid_target_accelerator
+from utils import _get_gpu_count, check_valid_target_accelerator
 
 
 def get_abs_path(path: str) -> Path:
@@ -415,3 +417,161 @@ def test_terminal_viz_render() -> None:
     assert "vs base" in result
     # Check that relative comparison shown
     assert "1.00x" in result
+
+
+# --- GPU count detection tests ---
+
+
+def _nvidia_smi_output(n: int) -> bytes:
+    """Build fake nvidia-smi CSV output for n GPUs."""
+    return "\n".join([f"NVIDIA H100 {i}" for i in range(n)]).encode()
+
+
+def test_get_gpu_count_nvidia_basic(mocker: MockerFixture) -> None:
+    """_get_gpu_count returns the hardware count when no env var is set."""
+    mocker.patch("utils.get_nvidia_smi", return_value="/usr/bin/nvidia-smi")
+    mocker.patch(
+        "utils.subprocess.check_output",
+        return_value=_nvidia_smi_output(4),
+    )
+    mocker.patch.dict(os.environ, {}, clear=False)
+    os.environ.pop("CUDA_VISIBLE_DEVICES", None)
+    assert _get_gpu_count("nvidia:sm_90") == 4
+
+
+def test_get_gpu_count_nvidia_capped_by_env(mocker: MockerFixture) -> None:
+    """When CUDA_VISIBLE_DEVICES lists more IDs than hardware, cap to hardware."""
+    mocker.patch("utils.get_nvidia_smi", return_value="/usr/bin/nvidia-smi")
+    mocker.patch(
+        "utils.subprocess.check_output",
+        return_value=_nvidia_smi_output(4),
+    )
+    mocker.patch.dict(
+        os.environ,
+        {"CUDA_VISIBLE_DEVICES": "0,1,2,3,4,5,6,7,8,9"},
+        clear=False,
+    )
+    assert _get_gpu_count("nvidia:sm_90") == 4
+
+
+def test_get_gpu_count_nvidia_env_fewer_than_hw(mocker: MockerFixture) -> None:
+    """When CUDA_VISIBLE_DEVICES lists fewer IDs than hardware, use env count."""
+    mocker.patch("utils.get_nvidia_smi", return_value="/usr/bin/nvidia-smi")
+    mocker.patch(
+        "utils.subprocess.check_output",
+        return_value=_nvidia_smi_output(8),
+    )
+    mocker.patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "2,3"}, clear=False)
+    assert _get_gpu_count("nvidia:sm_90") == 2
+
+
+def test_get_gpu_count_nvidia_no_smi(mocker: MockerFixture) -> None:
+    """Returns None when nvidia-smi is not found."""
+    mocker.patch("utils.get_nvidia_smi", return_value=None)
+    assert _get_gpu_count("nvidia:sm_90") is None
+
+
+def test_get_gpu_count_unknown_accelerator() -> None:
+    """Returns None for unrecognised accelerator strings."""
+    assert _get_gpu_count("metal:1") is None
+    assert _get_gpu_count("") is None
+
+
+def test_get_gpu_count_nvidia_smi_failure(mocker: MockerFixture) -> None:
+    """Returns None when nvidia-smi fails."""
+    mocker.patch("utils.get_nvidia_smi", return_value="/usr/bin/nvidia-smi")
+    mocker.patch(
+        "utils.subprocess.check_output",
+        side_effect=subprocess.SubprocessError("boom"),
+    )
+    assert _get_gpu_count("nvidia:sm_90") is None
+
+
+def _rocm_smi_csv_output(n: int) -> bytes:
+    """Build fake rocm-smi --showproductname --csv output for n GPUs."""
+    header = "device,Card series,Card model,Card vendor,Card SKU"
+    rows = [
+        f"card{i},0x{i:04x},AMD Instinct MI355X,Advanced Micro Devices Inc. [AMD/ATI],D7520{i}"
+        for i in range(n)
+    ]
+    return "\n".join([header] + rows).encode()
+
+
+def test_get_gpu_count_amd_basic(mocker: MockerFixture) -> None:
+    """_get_gpu_count returns the hardware count for AMD GPUs."""
+    mocker.patch("utils.shutil.which", return_value="/usr/bin/rocm-smi")
+    mocker.patch(
+        "utils.subprocess.check_output",
+        return_value=_rocm_smi_csv_output(8),
+    )
+    mocker.patch.dict(os.environ, {}, clear=False)
+    os.environ.pop("ROCR_VISIBLE_DEVICES", None)
+    assert _get_gpu_count("amdgpu:mi355x") == 8
+
+
+def test_get_gpu_count_amd_capped_by_env(mocker: MockerFixture) -> None:
+    """When ROCR_VISIBLE_DEVICES lists fewer IDs than hardware, use env count."""
+    mocker.patch("utils.shutil.which", return_value="/usr/bin/rocm-smi")
+    mocker.patch(
+        "utils.subprocess.check_output",
+        return_value=_rocm_smi_csv_output(8),
+    )
+    mocker.patch.dict(os.environ, {"ROCR_VISIBLE_DEVICES": "0,1"}, clear=False)
+    assert _get_gpu_count("amdgpu:mi355x") == 2
+
+
+def test_get_gpu_count_amd_no_smi(mocker: MockerFixture) -> None:
+    """Returns None when rocm-smi is not found."""
+    mocker.patch("utils.shutil.which", return_value=None)
+    assert _get_gpu_count("amdgpu:mi355x") is None
+
+
+def test_get_gpu_count_amd_smi_failure(mocker: MockerFixture) -> None:
+    """Returns None when rocm-smi fails."""
+    mocker.patch("utils.shutil.which", return_value="/usr/bin/rocm-smi")
+    mocker.patch(
+        "utils.subprocess.check_output",
+        side_effect=subprocess.SubprocessError("boom"),
+    )
+    assert _get_gpu_count("amdgpu:mi355x") is None
+
+
+def test_cli_rejects_num_gpu_exceeding_available(mocker: MockerFixture) -> None:
+    """CLI should raise ValueError when --num-gpu exceeds detected GPUs."""
+    mocker.patch("utils.get_nvidia_smi", return_value="/usr/bin/nvidia-smi")
+    mocker.patch(
+        "utils.subprocess.check_output",
+        return_value=_nvidia_smi_output(4),
+    )
+    mocker.patch.dict(os.environ, {}, clear=False)
+    os.environ.pop("CUDA_VISIBLE_DEVICES", None)
+    os_env = os.environ.copy()
+    result = CliRunner().invoke(
+        kbench_cli,
+        f"{kernel_benchmarks_root}/autotune/test.yaml"
+        " --num-gpu 8 --target-accelerator nvidia:sm_90 --skip-clock-check --dryrun",
+        env=os_env,
+    )
+    assert result.exit_code != 0
+    assert "exceeds" in str(result.exception) or "exceeds" in (
+        result.output or ""
+    )
+
+
+def test_cli_accepts_num_gpu_within_available(mocker: MockerFixture) -> None:
+    """CLI should not raise when --num-gpu <= detected GPUs."""
+    mocker.patch("utils.get_nvidia_smi", return_value="/usr/bin/nvidia-smi")
+    mocker.patch(
+        "utils.subprocess.check_output",
+        return_value=_nvidia_smi_output(4),
+    )
+    mocker.patch.dict(os.environ, {}, clear=False)
+    os.environ.pop("CUDA_VISIBLE_DEVICES", None)
+    os_env = os.environ.copy()
+    result = CliRunner().invoke(
+        kbench_cli,
+        f"{kernel_benchmarks_root}/autotune/test.yaml"
+        " --num-gpu 4 --target-accelerator nvidia:sm_90 --skip-clock-check --dryrun",
+        env=os_env,
+    )
+    assert result.exit_code == 0, result.output

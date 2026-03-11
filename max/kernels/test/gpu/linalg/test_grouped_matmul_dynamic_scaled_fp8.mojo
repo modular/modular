@@ -23,23 +23,24 @@ test_grouped_matmul_sm100_blockwise_fp8.mojo.
 """
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
 )
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     num_experts: Int = 4,
     N: Int = 256,
     K: Int = 256,
-](num_active_experts: Int, max_num_tokens_per_expert: Int, ctx: DeviceContext,):
+](
+    num_active_experts: Int,
+    max_num_tokens_per_expert: Int,
+    ctx: DeviceContext,
+) raises:
     """Test grouped_matmul_dynamic_scaled_fp8 with zero edge cases.
 
     This test verifies that the function returns early without errors when
@@ -79,6 +80,7 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     var a_size = total_tokens * K
 
     comptime static_b_shape = DimList(num_experts, N, K)
+    var dynamic_b_shape = IndexList[3](num_experts, N, K)
     var b_size = num_experts * N * K
 
     comptime static_c_shape = DimList(Dim(), N)
@@ -89,9 +91,9 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     comptime b_layout = Layout.row_major(num_experts, N, K)
     comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
 
-    var a_host_ptr = UnsafePointer[Scalar[in_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[in_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[out_type]].alloc(c_size)
+    var a_host_ptr = alloc[Scalar[in_type]](a_size)
+    var b_host_ptr = alloc[Scalar[in_type]](b_size)
+    var c_host_ptr = alloc[Scalar[out_type]](c_size)
 
     var a_host = LayoutTensor[in_type, a_layout](
         a_host_ptr,
@@ -103,12 +105,8 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     )
 
     # Create offsets and expert_ids
-    var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_offsets
-    )
-    var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
-        num_expert_ids
-    )
+    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_offsets)
+    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_expert_ids)
 
     # Set up offsets
     for i in range(num_offsets):
@@ -126,6 +124,9 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     comptime static_b_scales_shape = DimList(
         num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
+    var dynamic_b_scales_shape = IndexList[3](
+        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
+    )
     var b_scales_size = (
         num_experts * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
     )
@@ -137,12 +138,8 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
         num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        a_scales_size
-    )
-    var b_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        b_scales_size
-    )
+    var a_scales_host_ptr = alloc[Scalar[DType.float32]](a_scales_size)
+    var b_scales_host_ptr = alloc[Scalar[DType.float32]](b_scales_size)
 
     var a_scales_host = LayoutTensor[DType.float32, a_scales_layout](
         a_scales_host_ptr,
@@ -178,33 +175,37 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
         b_scales_size
     )
 
-    var a_device = NDBuffer[in_type, 2, _, static_a_shape](
+    var a_device = NDBuffer[rank=2, in_type, _, static_a_shape](
         a_device_buffer.unsafe_ptr(),
-        DimList(total_tokens, K),
+        IndexList[2](total_tokens, K),
     )
-    var b_device = NDBuffer[in_type, 3, _, static_b_shape](
+    var b_device = NDBuffer[rank=3, in_type, _, static_b_shape](
         b_device_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
-    var c_device = NDBuffer[out_type, 2, _, static_c_shape](
+    var c_device = NDBuffer[rank=2, out_type, _, static_c_shape](
         c_device_buffer.unsafe_ptr(),
-        DimList(total_tokens, N),
+        IndexList[2](total_tokens, N),
     )
-    var a_offsets_device = NDBuffer[DType.uint32, 1](
+    var a_offsets_device = NDBuffer[rank=1, DType.uint32](
         a_offsets_device_buffer.unsafe_ptr(),
-        num_offsets,
+        IndexList[1](num_offsets),
     )
-    var expert_ids_device = NDBuffer[DType.int32, 1](
+    var expert_ids_device = NDBuffer[rank=1, DType.int32](
         expert_ids_device_buffer.unsafe_ptr(),
-        num_expert_ids,
+        IndexList[1](num_expert_ids),
     )
-    var a_scales_device = NDBuffer[DType.float32, 2, _, static_a_scales_shape](
+    var a_scales_device = NDBuffer[
+        rank=2, DType.float32, _, static_a_scales_shape
+    ](
         a_scales_device_buffer.unsafe_ptr(),
-        DimList(K // BLOCK_SCALE_K, total_tokens),
+        IndexList[2](K // BLOCK_SCALE_K, total_tokens),
     )
-    var b_scales_device = NDBuffer[DType.float32, 3, _, static_b_scales_shape](
+    var b_scales_device = NDBuffer[
+        rank=3, DType.float32, _, static_b_scales_shape
+    ](
         b_scales_device_buffer.unsafe_ptr(),
-        static_b_scales_shape,
+        dynamic_b_scales_shape,
     )
 
     # Copy to device
@@ -258,7 +259,7 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     _ = b_scales_device_buffer^
 
 
-def main():
+def main() raises:
     """Run all edge case tests for grouped_matmul_dynamic_scaled_fp8."""
     with DeviceContext() as ctx:
         # Test zero num_active_experts (with non-zero max_num_tokens_per_expert)

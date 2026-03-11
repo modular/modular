@@ -11,25 +11,31 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import fma
-from ffi import external_call
-from sys import size_of, align_of
+from std.math import fma
+from std.ffi import external_call
+from std.sys import size_of, align_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from compiler_internal import StaticTensorSpec
-from collections import InlineArray
-from gpu.host import DeviceBuffer
-from gpu.host.info import is_cpu, is_gpu
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from layout._coord import Coord, Idx
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
-from memory import memcpy
+from std.collections import InlineArray
+from std.gpu.host import DeviceBuffer
+from std.gpu.host.info import is_cpu, is_gpu
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
+from std.memory import memcpy
 
 from nn.concat import concat
 from register import register_internal
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import (
     DynamicTensor,
     InputTensor,
@@ -40,9 +46,7 @@ from tensor.io_spec import IO
 from tensor.managed_tensor_slice import get_kernel_simd_width
 from weights_registry import WeightsRegistry
 
-from utils import Index, IndexList, StaticTuple
-
-from .MOGGIntList import IntList
+from std.utils import Index, IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # Helper Structures
@@ -77,7 +81,7 @@ struct StateContext(TrivialRegisterPassable):
 
     @always_inline
     fn __getitem__(self, index: Int) -> OpaquePointer[MutAnyOrigin]:
-        debug_assert(0 <= index < self.num_slots, "index must be within bounds")
+        assert 0 <= index < self.num_slots, "index must be within bounds"
         return external_call[
             "MGP_RT_GetContextPayloadPtr",
             OpaquePointer[MutAnyOrigin],
@@ -146,7 +150,7 @@ fn create_i1_async(
 @register_internal("builtin.create_buffer_ref_async")
 @no_inline
 fn create_buffer_ref_async(
-    buffer: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
     async_ptr: OpaquePointer[MutAnyOrigin],
     call_ctx: DeviceContextPtr,
 ):
@@ -158,7 +162,7 @@ fn create_buffer_ref_async(
 @register_internal("builtin.create_non_tracked_buffer_ref_async")
 @no_inline
 fn create_non_tracked_buffer_ref_async(
-    buffer: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
     async_ptr: OpaquePointer[MutAnyOrigin],
 ):
     external_call["MGP_RT_CreateAsyncNonTrackedBufferRef", NoneType](
@@ -173,7 +177,7 @@ fn create_non_tracked_tensor_async[
     buffer_rank: Int,
     dtype: DType,
 ](
-    buffer: NDBuffer[dtype, buffer_rank, MutAnyOrigin],
+    buffer: NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin],
     async_ptr: OpaquePointer[MutAnyOrigin],
 ):
     comptime assert tensor_rank == buffer_rank or (
@@ -194,7 +198,7 @@ fn create_non_tracked_tensor_async[
 fn create_buffer_ref_with_borrow_async[
     borrowee_type: Int,
 ](
-    buffer: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
     async_to_borrow: OpaquePointer[MutAnyOrigin],
     output_async: OpaquePointer[MutAnyOrigin],
 ):
@@ -217,8 +221,7 @@ fn create_tensor_spec_async[
     # For the benefit of simplicity, allocate the shapes and ptrs and free explicitly after
     var storage = InlineArray[Int, spec_rank](uninitialized=True)
 
-    @parameter
-    for i in range(spec_rank):
+    comptime for i in range(spec_rank):
         storage[i] = spec[i]
 
     external_call["MGP_RT_CreateAsyncTensorShape", NoneType](
@@ -234,7 +237,7 @@ fn create_tensor_async[
     dtype: DType,
     borrowee_type: Int,
 ](
-    buffer: NDBuffer[dtype, buffer_rank, MutAnyOrigin],
+    buffer: NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin],
     async_to_borrow: OpaquePointer[MutAnyOrigin],
     output_async: OpaquePointer[MutAnyOrigin],
 ):
@@ -359,14 +362,14 @@ fn unpack_device_ctx(
 @no_inline
 fn unpack_buffer_ref(
     async_ptr: OpaquePointer[MutAnyOrigin],
-) -> NDBuffer[DType.int8, 1, MutAnyOrigin]:
+) -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
     var size: UInt64 = 0
     var data_ptr = external_call[
         "MGP_RT_GetDataFromBuffer",
         OpaquePointer[MutAnyOrigin],
     ](async_ptr, UnsafePointer(to=size))
     var shape = IndexList[1](Int(size))
-    return NDBuffer[DType.int8, 1](data_ptr.bitcast[Int8](), shape)
+    return NDBuffer[rank=1, DType.int8](data_ptr.bitcast[Int8](), shape)
 
 
 @register_internal("builtin.unpack_tensor")
@@ -376,7 +379,7 @@ fn unpack_tensor[
     tensor_rank: Int,
     dtype: DType,
 ](tensor_async_ptr: OpaquePointer[MutAnyOrigin]) -> NDBuffer[
-    dtype, buffer_rank, MutAnyOrigin
+    rank=buffer_rank, dtype, MutAnyOrigin
 ]:
     # Tensor and the underlying buffer must have the same rank, unless it is a
     # scalar tensor stored with a NDBuffer<[1]>
@@ -392,11 +395,10 @@ fn unpack_tensor[
         tensor_async_ptr,
     )
 
-    @parameter
-    if tensor_rank == 0:
+    comptime if tensor_rank == 0:
         shapes[0] = 1
 
-    return NDBuffer[dtype, buffer_rank](
+    return NDBuffer[rank=buffer_rank, dtype](
         buffer_ptr.bitcast[Scalar[dtype]](), shapes
     )
 
@@ -413,8 +415,7 @@ fn unpack_tensor_spec[
     ](storage.unsafe_ptr(), spec_rank, async_ptr)
     var shape = IndexList[spec_rank]()
 
-    @parameter
-    for i in range(spec_rank):
+    comptime for i in range(spec_rank):
         shape[i] = storage[i]
 
     return shape
@@ -437,7 +438,7 @@ fn unpack_context(
 @register_internal("builtin.get_buffer_data")
 @always_inline
 fn get_buffer_data(
-    buffer: NDBuffer[DType.int8, 1, MutAnyOrigin]
+    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin]
 ) -> UnsafePointer[Int8, MutAnyOrigin]:
     return buffer.data
 
@@ -454,20 +455,19 @@ fn mgp_tensor_create[
     buffer_rank: Int,
     dtype: DType,
 ](
-    buffer: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
     spec: IndexList[spec_rank],
-) -> NDBuffer[dtype, buffer_rank, MutAnyOrigin]:
-    @parameter
-    if spec_rank == 0:
+) -> NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin]:
+    comptime if spec_rank == 0:
         # We promote scalar tensor to tensor<[1]>
         comptime assert buffer_rank == 1
-        return NDBuffer[dtype, buffer_rank](
+        return NDBuffer[rank=buffer_rank, dtype](
             buffer.data.bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](IndexList[1](1)),
         )
     else:
         comptime assert spec_rank == buffer_rank
-        return NDBuffer[dtype, buffer_rank](
+        return NDBuffer[rank=buffer_rank, dtype](
             buffer.data.bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](spec),
         )
@@ -479,11 +479,10 @@ fn mgp_tensor_extract_tensor_spec[
     tensor_rank: Int,
     buffer_rank: Int,
     dtype: DType,
-](buffer: NDBuffer[dtype, buffer_rank, ImmutAnyOrigin]) -> IndexList[
+](buffer: NDBuffer[rank=buffer_rank, dtype, ImmutAnyOrigin]) -> IndexList[
     tensor_rank
 ]:
-    @parameter
-    if tensor_rank == 0:
+    comptime if tensor_rank == 0:
         comptime assert buffer_rank == 1
         return rebind[IndexList[tensor_rank]](IndexList[0]())
     else:
@@ -498,12 +497,12 @@ fn mgp_tensor_extract_tensor_spec[
 fn mgp_tensor_extract_buffer[
     buffer_rank: Int,
     dtype: DType,
-](buffer: NDBuffer[dtype, buffer_rank, MutAnyOrigin]) -> NDBuffer[
-    DType.int8, 1, MutAnyOrigin
+](buffer: NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin]) -> NDBuffer[
+    rank=1, DType.int8, MutAnyOrigin
 ]:
     # Unwrap the tensor into a size-less buffer pointer.
-    return NDBuffer[DType.int8, 1](
-        buffer.data.bitcast[Int8](), buffer.bytecount()
+    return NDBuffer[rank=1, DType.int8](
+        buffer.data.bitcast[Int8](), IndexList[1](buffer.bytecount())
     )
 
 
@@ -516,14 +515,14 @@ fn mgp_tensor_extract_buffer[
 @no_inline
 fn mgp_buffer_alloc(
     byte_size: Int, dev_context: DeviceContextPtr
-) raises -> NDBuffer[DType.int8, 1, MutAnyOrigin]:
+) raises -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
     # Default to alignment of 0 which means kPreferredMemoryAlignment if cRawAlign is kUnknownSize (SizeUtils.h).
     # alias alignment = 0 if bRawAlign == UInt64.MAX else Int(bRawAlign)
 
     # This primitive has a byte-size input, so always assume a byte format
     var shape = IndexList[1](byte_size)
     var buf = dev_context[].enqueue_create_buffer[DType.int8](byte_size)
-    return NDBuffer[DType.int8, 1](buf^.take_ptr(), shape)
+    return NDBuffer[rank=1, DType.int8](buf^.take_ptr(), shape)
 
 
 @register_internal("mgp.buffer.constant")
@@ -531,11 +530,11 @@ fn mgp_buffer_alloc(
 fn mgp_buffer_constant(
     resource_ptr: OpaquePointer[MutAnyOrigin],
     resource_bytecount: Int,
-) -> NDBuffer[DType.int8, 1, MutAnyOrigin]:
+) -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
     # Should we keep the alignment? It seems that the static alignment is
     # dropped in the kernels anyway.
-    return NDBuffer[DType.int8, 1](
-        resource_ptr.bitcast[Int8](), resource_bytecount
+    return NDBuffer[rank=1, DType.int8](
+        resource_ptr.bitcast[Int8](), IndexList[1](resource_bytecount)
     )
 
 
@@ -546,8 +545,8 @@ fn mgp_buffer_constant_external(
     name_len: UInt,
     size: UInt64,
     align: UInt64,
-) raises -> NDBuffer[DType.int8, 1, MutAnyOrigin]:
-    debug_assert(align > 0, "align must be a positive integer value")
+) raises -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
+    assert align > 0, "align must be a positive integer value"
 
     if not weights:
         raise Error(
@@ -563,13 +562,18 @@ fn mgp_buffer_constant_external(
             align,
         )
 
-    return NDBuffer[DType.int8, 1](weight_ptr.bitcast[Int8](), DimList(size))
+    return NDBuffer[rank=1, DType.int8](
+        weight_ptr.bitcast[Int8](), IndexList[1](Int(size))
+    )
 
 
 @no_inline
 fn fill_buffer[
     dtype: DType
-](buf: NDBuffer[DType.int8, 1, MutAnyOrigin], vals: VariadicList[Int]):
+](
+    buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    vals: VariadicList[Int, is_owned=False],
+):
     var ptr = buf.data.bitcast[Scalar[dtype]]()
     var offset: Int = 0
     for val in vals:
@@ -581,16 +585,13 @@ fn fill_buffer[
 @no_inline
 fn mgp_buffer_set_with_index[
     bDevice: StaticString
-](buffer: NDBuffer[DType.int8, 1, MutAnyOrigin], *vals: Int) raises:
-    debug_assert(
-        is_cpu[bDevice](), "set_with_index can only work on cpu buffers"
-    )
+](buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin], *vals: Int) raises:
+    assert is_cpu[bDevice](), "set_with_index can only work on cpu buffers"
     var bufSize = buffer.num_elements()
     var numArgs = len(vals)
-    debug_assert(
-        bufSize % numArgs == 0,
-        "buffer size not divisible by number of index args",
-    )
+    assert (
+        bufSize % numArgs == 0
+    ), "buffer size not divisible by number of index args"
 
     var elSize = bufSize // numArgs
     if elSize == 4:
@@ -605,20 +606,17 @@ fn mgp_buffer_set_with_index[
 @no_inline
 fn mgp_buffer_to_bool[
     bDevice: StaticString
-](buffer: NDBuffer[DType.int8, 1, ImmutAnyOrigin]) -> Bool:
-    debug_assert(is_cpu[bDevice](), "to_bool can only work on cpu buffers")
+](buffer: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin]) -> Bool:
+    assert is_cpu[bDevice](), "to_bool can only work on cpu buffers"
     var bufSize = buffer.num_elements()
-    debug_assert(
-        bufSize == 1,
-        "buffer size must be a size of 1",
-    )
+    assert bufSize == 1, "buffer size must be a size of 1"
     return buffer[0] != 0
 
 
 @register_internal("mgp.buffer.to_index")
 @no_inline
 fn mgp_buffer_to_index(
-    buffer: NDBuffer[DType.int8, 1, ImmutAnyOrigin]
+    buffer: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin]
 ) raises -> Int:
     var bufSize = buffer.num_elements()
     if bufSize == 4:
@@ -634,9 +632,9 @@ fn mgp_buffer_to_index(
 @register_internal("mgp.buffer.slice")
 @no_inline
 fn mgp_buffer_slice(
-    buffer: NDBuffer[DType.int8, 1, MutAnyOrigin], offset: Int, size: Int
-) -> NDBuffer[DType.int8, 1, MutAnyOrigin]:
-    return NDBuffer[DType.int8, 1](buffer.data + offset, Index(size))
+    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin], offset: Int, size: Int
+) -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
+    return NDBuffer[rank=1, DType.int8](buffer.data + offset, Index(size))
 
 
 @register_internal("mgp.buffer.concat")
@@ -644,8 +642,8 @@ fn mgp_buffer_slice(
 fn mgp_buffer_concat[
     bDevice: StaticString
 ](
-    output: NDBuffer[DType.int8, 1, MutAnyOrigin],
-    inputs: StaticTuple[NDBuffer[DType.int8, 1, MutAnyOrigin], ...],
+    output: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    inputs: StaticTuple[NDBuffer[rank=1, DType.int8, MutAnyOrigin], ...],
     call_ctx: DeviceContextPtr,
 ) raises:
     var output_lt = TileTensor(
@@ -681,12 +679,11 @@ fn mgp_buffer_device_to_host[
     cOtherDevice: StaticString,
     dHostDevice: StaticString,
 ](
-    dev_buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
-    host_buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    dev_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    host_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
     dev_ctx: DeviceContextPtr,
 ) raises:
-    @parameter
-    if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
+    comptime if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
         dev_ctx[].enqueue_copy[DType.int8](
             host_buf.data,
             DeviceBuffer[DType.int8](
@@ -706,13 +703,12 @@ fn mgp_buffer_device_to_device[
     cSrcDevice: StaticString,
     dDstDevice: StaticString,
 ](
-    src_buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
-    dst_buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    src_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    dst_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
     src_dev_ctx: DeviceContextPtr,
     dst_dev_ctx: DeviceContextPtr,
 ) raises:
-    @parameter
-    if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
+    comptime if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
         dst_dev_ctx[].enqueue_copy[DType.int8](
             DeviceBuffer[DType.int8](
                 dst_dev_ctx[],
@@ -742,12 +738,11 @@ fn mgp_buffer_host_to_device[
     cHostDevice: StaticString,
     dOtherDevice: StaticString,
 ](
-    host_buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
-    dev_buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    host_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    dev_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
     dev_ctx: DeviceContextPtr,
 ) raises:
-    @parameter
-    if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
+    comptime if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
         dev_ctx[].enqueue_copy[DType.int8](
             DeviceBuffer[DType.int8](
                 dev_ctx[],
@@ -767,7 +762,7 @@ fn mgp_buffer_get_cached(
     ctx: StateContext,
     buffer_slot: UInt,
     storage_ref_addr: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
-) raises -> NDBuffer[DType.int8, 1, MutAnyOrigin]:
+) raises -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
     var buffer_size: UInt64 = 0
     var buffer_data: OpaquePointer[MutAnyOrigin] = external_call[
         "MGP_RT_GetCachedBuffer", OpaquePointer[MutAnyOrigin]
@@ -778,7 +773,7 @@ fn mgp_buffer_get_cached(
         storage_ref_addr,
     )
 
-    return NDBuffer[DType.int8, 1](
+    return NDBuffer[rank=1, DType.int8](
         buffer_data.bitcast[Int8](), Index(buffer_size)
     )
 
@@ -793,7 +788,9 @@ fn mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: UInt64):
 
 @register_internal("mgp.buffer.get_size")
 @no_inline
-fn mgp_buffer_get_size(buf: NDBuffer[DType.int8, 1, ImmutAnyOrigin]) -> Int:
+fn mgp_buffer_get_size(
+    buf: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin]
+) -> Int:
     return buf.num_elements()
 
 
@@ -820,16 +817,16 @@ fn mgp_tensor_spec_create[
     aRawDims: DimList,
     aRawDimsRank: Int,
 ](*runtimeDims: Int) -> IndexList[aRawDimsRank]:
-    var static_shape = IntList[aRawDims]()
     var shape = IndexList[aRawDimsRank]()
     var runtimeIndex = 0
     # Update Shape with runtime elements.
-    for i in range(aRawDimsRank):
-        if static_shape[i] > -1:
-            shape[i] = static_shape[i]
+    comptime for i in range(aRawDimsRank):
+        var dim = aRawDims.at[i]()
+        if dim.get() > -1:
+            shape[i] = dim.get()
         else:
             shape[i] = runtimeDims[runtimeIndex]
-            runtimeIndex = runtimeIndex + 1
+            runtimeIndex += 1
     return shape
 
 
@@ -879,7 +876,7 @@ fn mgp_debug_tensor_print[
     spec_rank: Int,
     dtype: DType,
 ](
-    buffer: NDBuffer[DType.int8, 1, ImmutAnyOrigin],
+    buffer: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin],
     shape: IndexList[spec_rank],
     label_ptr: UnsafePointer[Byte, ImmutAnyOrigin],
     label_len: Int,
@@ -1035,7 +1032,7 @@ fn ManagedTensorSliceDef[
     rank: Int,
     //,
     io_spec: IOSpec[mut, input],
-    static_spec: StaticTensorSpec[dtype, rank],
+    static_spec: StaticTensorSpec[dtype, rank, _, _],
 ](
     ty: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
 ) -> ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]:
@@ -1063,8 +1060,8 @@ fn reshape_contiguous_buffer[
     dtype: DType, old_rank: Int, new_rank: Int, mut: Bool, input: IO
 ](
     buffer: ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec = StaticTensorSpec[dtype, old_rank].create_unknown(),
+        io_spec=IOSpec[mut, input](),
+        static_spec=StaticTensorSpec[dtype, old_rank, ...].get_unknown(),
     ],
     shape: IndexList[new_rank],
 ) -> DynamicTensor[dtype, new_rank]:
@@ -1079,14 +1076,13 @@ fn reshape_contiguous_buffer[
 @register_internal("get_simd_width_for_dtypes")
 @always_inline
 fn get_simd_width_for_dtypes[
-    dtypes: StaticTuple[DType], target: StaticString
+    dtypes: StaticTuple[DType, _], target: StaticString
 ]() -> Int:
     comptime assert dtypes.size > 0
 
     var width = get_kernel_simd_width[dtypes[0], target]()
 
-    @parameter
-    for i in range(dtypes.size - 1):
+    comptime for i in range(dtypes.size - 1):
         width = max(get_kernel_simd_width[dtypes[i + 1], target](), width)
 
     return width
@@ -1095,38 +1091,6 @@ fn get_simd_width_for_dtypes[
 @register_internal("get_address_space")
 fn get_address_space() -> AddressSpace:
     return AddressSpace.GENERIC
-
-
-# Build the StaticTensorSpec parameter for the DPS kernels
-@register_internal("build_static_tensor_specs")
-fn build_static_tensor_specs[
-    dtype: DType,
-    rank: Int,
-](
-    shape: DimList,
-    strides: DimList,
-    alignment: Int,
-    address_space: AddressSpace,
-    exclusive: Bool,
-) -> StaticTensorSpec[dtype, rank]:
-    comptime SpecType = StaticTensorSpec[dtype, rank]
-
-    return SpecType(
-        shape, strides, alignment, address_space, exclusive, None, None, None
-    )
-
-
-# Build the tuple of StaticTensorSpecs for DPS kernels
-@register_internal("build_static_tensor_specs_tuple")
-fn build_static_tensor_specs_tuple[
-    dtype: DType,
-    rank: Int,
-    size: Int,
-](
-    array_of_specs: VariadicList[StaticTensorSpec[dtype, rank]],
-    out result: StaticTuple[StaticTensorSpec[dtype, rank], size],
-):
-    return {array_of_specs}
 
 
 # TODO: this should take IOSpec as a param -- will require graph compiler changes
@@ -1139,8 +1103,8 @@ fn to_managed_tensor_slice[
     data: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     shape: UnsafePointer[Int, ImmutAnyOrigin],
 ) -> ManagedTensorSlice[
-    io_spec = IOSpec[mut, input](),
-    static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
+    io_spec=IOSpec[mut, input](),
+    static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
 ]:
     var shape_ptr = shape
     var shape_tuple = IndexList[rank]()
@@ -1148,8 +1112,7 @@ fn to_managed_tensor_slice[
     var stride_tuple = IndexList[rank]()
     var stride: Int = 1
 
-    @parameter
-    for i in reversed(range(rank)):
+    comptime for i in reversed(range(rank)):
         # Start from the back so we can accumulate the strides.
         shape_tuple[i] = shape_ptr[i]
         stride_tuple[i] = stride
@@ -1162,7 +1125,7 @@ fn to_managed_tensor_slice[
 @always_inline
 fn _get_scalar_from_managed_tensor_slice[
     dtype: DType,
-](tensor: ManagedTensorSlice[dtype=dtype]) -> Scalar[dtype]:
+](tensor: ManagedTensorSlice[dtype=dtype, ...]) -> Scalar[dtype]:
     # Assumes that tensor is on the host!
     # This is used instead of [0] since __getitem__ for `ManagedTesnorSlice`
     # does not work with `register_internal` out of the box.
@@ -1175,8 +1138,8 @@ fn get_scalar_from_managed_tensor_slice[
     dtype: DType, mut: Bool, input: IO
 ](
     tensor: ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
+        io_spec=IOSpec[mut, input](),
+        static_spec=StaticTensorSpec[dtype, 1, ...].get_unknown(),
     ]
 ) -> Scalar[dtype]:
     return _get_scalar_from_managed_tensor_slice(tensor)
@@ -1190,31 +1153,6 @@ fn get_int_from_shape[
     return shape[param_index]
 
 
-@register_internal("rebuild_static_tensor_specs_with_output_compute_lambda")
-@no_inline
-fn rebuild_static_tensor_specs_with_output_compute_lambda[
-    func_type: __TypeOfAllTypes,
-    //,
-    dtype: DType,
-    rank: Int,
-](
-    spec: StaticTensorSpec[dtype, rank],
-    out_compute_lambda: func_type,
-) -> StaticTensorSpec[dtype, rank]:
-    return StaticTensorSpec[dtype, rank](
-        shape=spec.shape,
-        strides=spec.strides,
-        alignment=spec.alignment,
-        address_space=spec.address_space,
-        exclusive=spec.exclusive,
-        in_lambda=None,
-        out_lambda=None,
-        out_compute_lambda=rebind[spec.out_compute_lambda_t](
-            out_compute_lambda
-        ),
-    )
-
-
 @always_inline
 fn _to_managed_tensor_slice_index_list_shape[
     dtype: DType, rank: Int, mut: Bool, input: IO
@@ -1222,14 +1160,13 @@ fn _to_managed_tensor_slice_index_list_shape[
     data: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     shape_tuple: IndexList[rank],
 ) -> ManagedTensorSlice[
-    io_spec = IOSpec[mut, input](),
-    static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
+    io_spec=IOSpec[mut, input](),
+    static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
 ]:
     var stride_tuple = IndexList[rank]()
     var stride: Int = 1
 
-    @parameter
-    for i in reversed(range(rank)):
+    comptime for i in reversed(range(rank)):
         # Start from the back so we can accumulate the strides.
         stride_tuple[i] = stride
         stride *= shape_tuple[i]
@@ -1246,8 +1183,8 @@ fn to_managed_tensor_slice_list[
     raw_list_ptr: OpaquePointer[MutAnyOrigin],
     out out_list: List[
         ManagedTensorSlice[
-            io_spec = IOSpec[mut, input](),
-            static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
+            io_spec=IOSpec[mut, input](),
+            static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
         ]
     ],
 ):
@@ -1274,8 +1211,7 @@ fn to_managed_tensor_slice_list[
 
         var dims = IndexList[rank]()
 
-        @parameter
-        for dim in range(rank):
+        comptime for dim in range(rank):
             dims[dim] = dim_values[dim + i * rank].__int__()
 
         var buffer = _to_managed_tensor_slice_index_list_shape[
@@ -1295,7 +1231,7 @@ struct MyInt(Movable):
     fn __init__(out self, val: Int):
         self.val = val
 
-    fn __moveinit__(out self, deinit take: MyInt):
+    fn __init__(out self, *, deinit take: MyInt):
         print("MyInt.__moveinit__", take.val)
         self.val = take.val
 
@@ -1464,12 +1400,12 @@ struct MoggAsyncPackHelper:
 
     fn __init__(
         out self,
-        data: NDBuffer[DType.int8, 1, MutAnyOrigin],
+        data: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
         device_ctx_ptr: DeviceContextPtr,
         async_ptr: AnyAsyncValueRefPtr,
     ):
         """
-        Packs a buffer reference instance (modeled by NDBuffer[DType.int8, 1, MutAnyOrigin] for now) into the asynchronous context. Calls create_buffer_ref_async to handle the packing.
+        Packs a buffer reference instance (modeled by NDBuffer[rank=1, DType.int8, MutAnyOrigin] for now) into the asynchronous context. Calls create_buffer_ref_async to handle the packing.
         """
         create_buffer_ref_async(data, async_ptr, device_ctx_ptr)
 
@@ -1526,7 +1462,7 @@ fn mogg_async_pack_borrow[
     is_tensor: Bool,
 ](
     borrower: AnyAsyncValueRefPtr,
-    buffer: NDBuffer[dtype, buffer_rank, MutAnyOrigin],
+    buffer: NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin],
     mem: TensorBufferRefPtr,
 ):
     """
@@ -1534,8 +1470,7 @@ fn mogg_async_pack_borrow[
     value to the given async value in that it's a simple refcount increment.
     """
 
-    @parameter
-    if is_tensor:
+    comptime if is_tensor:
         external_call["MGP_RT_TensorBorrowV2", NoneType](
             borrower,
             buffer.data,
@@ -1583,10 +1518,8 @@ fn mogg_tensor_init[
 ](
     ptr: OpaquePointer[MutAnyOrigin], shape: IndexList[rank]
 ) -> ManagedTensorSlice[
-    io_spec = IOSpec[mut, input](),
-    static_spec = StaticTensorSpec[dtype, rank](
-        static_shape,
-        static_stride,
+    io_spec=IOSpec[mut, input](),
+    static_spec=StaticTensorSpec[dtype, rank, static_shape, static_stride](
         alignment,
         AddressSpace.GENERIC,
         exclusive,
@@ -1610,11 +1543,32 @@ fn mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
     external_call["MGP_RT_CreateAsync_chain", NoneType](async_ptr)
 
 
+@register_internal("mogg.async.check_task_error")
+@no_inline
+fn mogg_async_check_task_error(mut error: Optional[Error]) raises:
+    """Raises the captured error from an async task, if present."""
+    if error:
+        raise error.take()
+
+
 @register_internal("mogg.async.error")
 @no_inline
-fn mogg_async_error(async_ptr: AnyAsyncValueRefPtr, err: Error):
-    """Indicates to the C++ runtime that the kernel has failed."""
+fn mogg_async_error(
+    async_ptr: AnyAsyncValueRefPtr,
+    err: Error,
+    source_notes: String = "",
+):
+    """Indicates to the C++ runtime that the kernel has failed.
+
+    When source_notes is non-empty it is prepended to the error message as a
+    Python stack trace so users can locate the failing op in their code.
+    See GEX-2678.
+    """
     var error_message = String(err)
+    if source_notes:
+        error_message = (
+            "\nSource Traceback:\n" + source_notes + "\n\n" + error_message
+        )
     external_call["MGP_RT_AsyncRT_CreateAsync_Error", NoneType](
         async_ptr,
         error_message.as_c_string_slice().unsafe_ptr(),
@@ -1630,10 +1584,10 @@ fn tmp_reshape_contiguous_buffer[
     buffer: ManagedTensorSlice,
     shape: IndexList[new_rank],
 ) -> ManagedTensorSlice[
-    io_spec = buffer.io_spec,
-    static_spec = StaticTensorSpec[buffer.dtype, new_rank](
-        static_shape,
-        static_stride,
+    io_spec=buffer.io_spec,
+    static_spec=StaticTensorSpec[
+        buffer.dtype, new_rank, static_shape, static_stride
+    ](
         1,
         AddressSpace.GENERIC,
         True,
@@ -1643,7 +1597,7 @@ fn tmp_reshape_contiguous_buffer[
     ),
 ]:
     """
-    Constructs a new ManagedTensorSlice with with a new shape and static spec.
+    Constructs a new ManagedTensorSlice with a new shape and static spec.
     """
     return {buffer._ptr, shape}
 
@@ -1658,7 +1612,7 @@ fn tmp_reshape_contiguous_buffer[
 fn tmp_mgp_buffer_get_cached(
     ctx: StateContextRef,
     buffer_slot: Int,
-) -> Tuple[NDBuffer[DType.int8, 1, MutAnyOrigin], TensorBufferRefPtr]:
+) -> Tuple[NDBuffer[rank=1, DType.int8, MutAnyOrigin], TensorBufferRefPtr]:
     """
     Get a reference to the cached tensor.
     """
@@ -1674,12 +1628,12 @@ fn tmp_mgp_buffer_get_cached(
         UnsafePointer(to=buffer_data),
     )
 
-    var buffer = NDBuffer[DType.int8, 1](
+    var buffer = NDBuffer[rank=1, DType.int8](
         buffer_data.bitcast[Int8](), Index(buffer_size)
     )
-    var res = Tuple[NDBuffer[DType.int8, 1, MutAnyOrigin], TensorBufferRefPtr](
-        buffer, buffer_ref
-    )
+    var res = Tuple[
+        NDBuffer[rank=1, DType.int8, MutAnyOrigin], TensorBufferRefPtr
+    ](buffer, buffer_ref)
 
     return res
 
@@ -1711,7 +1665,7 @@ fn mgp_assert(
 @always_inline
 fn split_dim_indices[
     rank: Int, axis: Int
-](indices: IndexList[rank], new_shape_dim: Int64) -> IndexList[rank + 1]:
+](indices: IndexList[rank], new_shape_dim: Int) -> IndexList[rank + 1]:
     var out = IndexList[rank + 1]()
 
     # This op is transforming the INDICES of an access into a reshaped tensor.
@@ -1721,14 +1675,11 @@ fn split_dim_indices[
     # Or [21 // 8, 21 % 8, ...old dims...].
     # In this case, the axis = 0 and the new_shape_dim = 8.
 
-    @parameter
-    for i in range(rank + 1):
-
-        @parameter
-        if i == axis:
-            out[i] = indices[axis] // Int(new_shape_dim)
+    comptime for i in range(rank + 1):
+        comptime if i == axis:
+            out[i] = indices[axis] // new_shape_dim
         elif i == axis + 1:
-            out[i] = indices[axis] % Int(new_shape_dim)
+            out[i] = indices[axis] % new_shape_dim
         elif i < axis:
             out[i] = indices[i]
         elif i > axis:
@@ -1741,7 +1692,7 @@ fn split_dim_indices[
 @always_inline
 fn merge_dim_indices[
     rank: Int, axis: Int
-](indices: IndexList[rank], old_shape_dim: Int64) -> IndexList[rank - 1]:
+](indices: IndexList[rank], old_shape_dim: Int) -> IndexList[rank - 1]:
     var out = IndexList[rank - 1]()
 
     # This op is transforming the INDICES of an access into a reshaped tensor.
@@ -1751,12 +1702,9 @@ fn merge_dim_indices[
     # Or [2 * 8 + 5, 16, 1].
     # In this case, the axis = 0 and the old_shape_dim = 8.
 
-    @parameter
-    for i in range(rank - 1):
-
-        @parameter
-        if i == axis:
-            out[i] = fma(indices[i], Int(old_shape_dim), indices[i + 1])
+    comptime for i in range(rank - 1):
+        comptime if i == axis:
+            out[i] = fma(indices[i], old_shape_dim, indices[i + 1])
         elif i < axis:
             out[i] = indices[i]
         elif i > axis:
@@ -1772,11 +1720,8 @@ fn insert_index[
 ](indices: IndexList[rank]) -> IndexList[rank + 1]:
     var out = IndexList[rank + 1]()
 
-    @parameter
-    for i in range(rank + 1):
-
-        @parameter
-        if i < axis:
+    comptime for i in range(rank + 1):
+        comptime if i < axis:
             out[i] = indices[i]
         elif i > axis:
             out[i] = indices[i - 1]
@@ -1787,8 +1732,7 @@ fn insert_index[
 
 
 fn all_zeros(indices: IndexList) -> Bool:
-    @parameter
-    for i in range(indices.size):
+    comptime for i in range(indices.size):
         if indices[i] != 0:
             return False
     return True

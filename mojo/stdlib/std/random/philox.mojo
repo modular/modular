@@ -30,20 +30,20 @@ It supports:
 Example:
 
 ```mojo
-from random.philox import Random
+from std.random.philox import Random
     rng = Random(seed=42)
     uniform_values = rng.step_uniform()  # Returns 4 random floats in [0,1)
     raw_values = rng.step()  # Returns 4 raw 32-bit integers
 ```
 """
 
-from sys import is_little_endian
+from std.sys import is_little_endian
 
-from math import cos, log, sin, sqrt
+from std.math import cos, log, sin, sqrt
 
-from memory import bitcast
+from std.memory import bitcast
 
-from gpu.intrinsics import mulwide
+from std.gpu.intrinsics import mulwide
 
 
 fn _mulhilow(a: UInt32, b: UInt32) -> SIMD[DType.uint32, 2]:
@@ -97,8 +97,7 @@ struct Random[rounds: Int = 10](Copyable):
         var counter = self._counter
         var key = self._key
 
-        @parameter
-        for i in range(Self.rounds - 1):
+        comptime for i in range(Self.rounds - 1):
             counter = self._single_round(counter, key)
             key += K_PHILOX_10
         var res = self._single_round(counter, key)
@@ -211,7 +210,7 @@ struct NormalRandom[rounds: Int = 10](Copyable):
         Returns:
             SIMD vector containing 8 random float32 values from a normal distribution with mean `mean` and standard deviation `stddev`.
         """
-        # Convert from range of [0,1) to (0,1]. This avoids having 0 and passing to to log.
+        # Convert from range of [0,1) to (0,1]. This avoids having 0 and passing to log.
         var u1 = 1.0 - self._rng.step_uniform()
         var u2 = 1.0 - self._rng.step_uniform()
 

@@ -14,12 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextAndVisionContext
-from max.pipelines.lib import (
-    RopeType,
-    SupportedArchitecture,
-    SupportedEncoding,
-    TextAndVisionTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture, TextAndVisionTokenizer
 
 from .model import Gemma3_MultiModalModel
 from .model_config import Gemma3ForConditionalGenerationConfig
@@ -38,19 +33,19 @@ example_repo_ids = [
 ]
 
 gemma3_multimodal_arch = SupportedArchitecture(
-    name="Gemma3ForConditionalGeneration_Legacy",
+    name="Gemma3ForConditionalGeneration",
     example_repo_ids=example_repo_ids,
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: ["paged"],
-        SupportedEncoding.float8_e4m3fn: ["paged"],
+        "bfloat16",
+        "float8_e4m3fn",
     },
     pipeline_model=Gemma3_MultiModalModel,
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=TextAndVisionTokenizer,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
-    rope_type=RopeType.normal,
+    rope_type="normal",
     required_arguments={
         "enable_prefix_caching": False,
         "enable_chunked_prefill": False,

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, exp, exp2, log, rsqrt
+from std.math import ceildiv, exp, exp2, log, rsqrt
 
 from layout import (
     UNKNOWN_VALUE,
@@ -20,13 +20,13 @@ from layout import (
     RuntimeLayout,
 )
 from layout._fillers import random
-from memory import alloc
+from std.memory import alloc
 from state_space.selective_scan import (
     mamba_split_conv1d_scan_combined_cpu,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime MAX_DSTATE = 16
 comptime LOG2E = 1.4426950408889634
@@ -311,8 +311,7 @@ fn run_mamba_split_conv1d_scan_combined[
 
     for b_idx in range(batch):
         for d_idx in range(dim):
-            var h = d_idx // headdim
-            var p = d_idx % headdim
+            var h, p = divmod(d_idx, headdim)
             var group_id = h // ngroups if ngroups > 1 else 0
 
             # Pre-load A value (same for all DSTATE entries within a head)
@@ -604,5 +603,5 @@ fn test_mamba_combined_larger_shapes() raises:
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

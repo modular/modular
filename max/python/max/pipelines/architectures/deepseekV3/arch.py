@@ -14,27 +14,23 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    SupportedEncoding,
-    TextTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 
 from . import weight_adapters
 from .model import DeepseekV3Model
 from .model_config import DeepseekV3Config
 
 deepseekV3_arch = SupportedArchitecture(
-    name="DeepseekV3ForCausalLM_Legacy",
+    name="DeepseekV3ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
         "deepseek-ai/DeepSeek-V3",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: ["paged"],
-        SupportedEncoding.float8_e4m3fn: ["paged"],
-        SupportedEncoding.float4_e2m1fnx2: ["paged"],
+        "bfloat16",
+        "float8_e4m3fn",
+        "float4_e2m1fnx2",
     },
     multi_gpu_supported=True,
     pipeline_model=DeepseekV3Model,

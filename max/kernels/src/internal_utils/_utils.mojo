@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
-from collections import Optional
-from math import ceildiv, floor
-from sys import argv, env_get_string
-from builtin.device_passable import DevicePassable
+import std.time
+from std.collections import Optional
+from std.math import ceildiv, floor
+from std.sys import argv, get_defined_string
+from std.builtin.device_passable import DevicePassable
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     Bencher,
     BenchId,
@@ -25,40 +25,14 @@ from benchmark import (
     clobber_memory,
     keep,
 )
-from buffer import Dim, DimList
-from buffer.dimlist import _make_tuple
-from compile import compile_info
-from gpu import *
-from gpu.host import DeviceBuffer, DeviceContext
-from random import Random
+from buffer import Dim
+from std.compile import compile_info
+from std.gpu import *
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.random import Random
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from tensor import DynamicTensor
-from utils import IndexList
-
-
-# ===----------------------------------------------------------------------=== #
-# Unsigned division/modulo helpers for Int
-# ===----------------------------------------------------------------------=== #
-# These helpers allow performing unsigned division and modulo operations on Int
-# arguments while using unsigned hardware operations internally. This is useful
-# when migrating from UInt to Int, as unsigned division is faster on NVIDIA GPUs.
-
-
-@always_inline
-fn ufloordiv(a: Int, b: Int) -> Int:
-    """Perform unsigned division (`//`) on Int arguments.
-
-    This function treats both arguments as unsigned values and performs
-    unsigned division, which is faster than signed division on NVIDIA GPUs.
-
-    Args:
-        a: The dividend (treated as unsigned).
-        b: The divisor (treated as unsigned).
-
-    Returns:
-        The quotient of unsigned division.
-    """
-    return Int(UInt(a) // UInt(b))
+from std.utils import IndexList
 
 
 struct ValOrDim[dim: Dim = Dim()](Defaultable):
@@ -70,6 +44,7 @@ struct ValOrDim[dim: Dim = Dim()](Defaultable):
         ), "Can't construct a dynamic dim with no runtime value"
         self.value = Self.dim.get()
 
+    @implicit
     fn __init__(out self, v: Int):
         self.value = v
 
@@ -135,8 +110,7 @@ fn bench_compile_time[
         @always_inline
         @parameter
         fn bench_iter() raises:
-            @parameter
-            if emission_kind == "asm" or emission_kind == "llvm":
+            comptime if emission_kind == "asm" or emission_kind == "llvm":
                 var s = compile_info[func, emission_kind=emission_kind]().asm
                 keep(s.unsafe_ptr())
             elif emission_kind == "ptx":
@@ -184,13 +158,11 @@ fn parse_shape[name: StaticString]() -> List[Int]:
     var vals: List[Int] = List[Int]()
     var sum: Int = 0
 
-    @parameter
-    for i in range(len(name)):
+    comptime for i in range(len(name)):
         comptime diff = Int(name_unsafe_ptr[i] - zero)
         comptime assert name_unsafe_ptr[i] == x_ptr or 0 <= diff <= 9
 
-        @parameter
-        if name_unsafe_ptr[i] == x_ptr:
+        comptime if name_unsafe_ptr[i] == x_ptr:
             vals.append(sum)
             sum = 0
             continue
@@ -199,7 +171,7 @@ fn parse_shape[name: StaticString]() -> List[Int]:
     return vals^
 
 
-fn env_get_shape[name: StaticString, default: StaticString]() -> List[Int]:
+fn get_defined_shape[name: StaticString, default: StaticString]() -> List[Int]:
     """Try to get an integer-valued shape (2+ dims) define.
     Compilation fails if the name is not defined.
 
@@ -216,7 +188,7 @@ fn env_get_shape[name: StaticString, default: StaticString]() -> List[Int]:
     Returns:
         A List[Int] parameter value.
     """
-    comptime shape_str = env_get_string[name, default]()
+    comptime shape_str = get_defined_string[name, default]()
     comptime shape: List[Int] = parse_shape[shape_str]()
     return materialize[shape]()
 
@@ -224,8 +196,7 @@ fn env_get_shape[name: StaticString, default: StaticString]() -> List[Int]:
 fn int_list_to_tuple[x: List[Int]]() -> IndexList[len(x)]:
     var t = IndexList[len(x)]()
 
-    @parameter
-    for i in range(len(x)):
+    comptime for i in range(len(x)):
         comptime xi = x[i]
         t[i] = xi
     return t
@@ -282,7 +253,7 @@ fn arg_parse(handle: String, default: Float64) raises -> Float64:
 
 
 @fieldwise_init
-struct Mode(Stringable, TrivialRegisterPassable):
+struct Mode(TrivialRegisterPassable, Writable):
     var _value: Int
     var handle: StaticString
     comptime NONE = Self(0x0, "none")
@@ -305,7 +276,16 @@ struct Mode(Stringable, TrivialRegisterPassable):
     fn append(mut self, other: Self):
         self._value |= other._value
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the mode as a string.
+
+        Args:
+            writer: The writer to write to.
+        """
         s = List[String]()
         if Self.RUN == self:
             s.append(Self.RUN.handle)
@@ -315,7 +295,7 @@ struct Mode(Stringable, TrivialRegisterPassable):
             s.append(Self.VERIFY.handle)
         if Self.NONE == self:
             s.append(Self.NONE.handle)
-        return StaticString(Self.SEP).join(s)
+        writer.write(StaticString(Self.SEP).join(s))
 
     fn __eq__(self, mode: Self) -> Bool:
         if mode._value == self._value == Self.NONE._value:
@@ -357,12 +337,12 @@ struct Timer:
     var report: List[String]
 
     fn __init__(out self):
-        self.start = Float64(time.perf_counter_ns())
+        self.start = Float64(std.time.perf_counter_ns())
         self.current = self.start
         self.report = List[String]()
 
     fn measure(mut self, msg: String):
-        var current = Float64(time.perf_counter_ns())
+        var current = Float64(std.time.perf_counter_ns())
         var elapsed = current - self.current
         self.current = current
         self.report.append("[" + msg + "] " + String(elapsed / 1e6) + " (ms)")
@@ -394,11 +374,8 @@ fn init_vector_gpu[
 
     @parameter
     fn apply(values: SIMD[dtype, 4]):
-        @parameter
-        for i in range(4):
-
-            @parameter
-            if i == 3:
+        comptime for i in range(4):
+            comptime if i == 3:
                 if tid >= UInt(len):
                     return
             x[tid] = values[i]

@@ -30,7 +30,7 @@ required to be a leaf dependency.
     > test             # stdlib unit tests
 ```
 
-All Mojo source files must end with the extension `.mojo` or `.🔥`.
+All Mojo source files must end with the extension `.mojo`.
 
 #### Mojo format
 
@@ -135,8 +135,8 @@ struct MyStruct(Sized, Stringable):
     # ===-------------------------------------------------------------------===#
 
     fn __init__(...)
-    fn __moveinit__(...)
-    fn __copyinit__(...)
+    fn __init__(out self, *, copy: Self)
+    fn __init__(out self, *, deinit take: Self)
 
     fn __del__(...)
 
@@ -219,7 +219,7 @@ The following table shows our preferred use of different case styles.
 | `enum`                 | `enum StatusCode`            | `PascalCase`
 | `var`                  | `var the_value = 5`          | `snake_case`
 | `module` / `package` | `io.mojo` / `os/__init__.mojo` | `flatcase` / `snake_case`
-| dunder               | `__copyinit__`                 | `flatcase`
+| dunder               | `__init__`                     | `flatcase`
 | decorator            | `@no_inline`           | `snake_case`
 | **Parameters — type or value**           |  &nbsp;    | &nbsp;
 | `alias` type             | `alias Int8 = Scalar[DType.int8]`                      | `PascalCase`
@@ -275,8 +275,8 @@ fn foo[Str: Stringable, //](arg0: Str, arg1: Str): ...     # 🟢 Preferred
 #### ℹ️ Prefer explicit copy constructors; avoid allowing implicit copies
 
 ```mojo
-var copy = original            # 🔴 Avoid
-var copy = MyStruct(original)  # 🟢 Preferred
+var copy = original                 # 🔴 Avoid
+var copy = MyStruct(copy=original)  # 🟢 Preferred
 ```
 
 Where you intend to make a copy, favor an explicit copy constructor to make your
@@ -293,25 +293,16 @@ resolve this shortly as new Mojo language features are shipped to help with this
 very situation.
 
 When designing a new type, don’t allow implicit copies unless
-the copy is trivial (order `O(1)`). In other words, don’t define a
-`__copyinit__()` function if the copy is expensive. Instead, define an
-*explicit* copy constructor: an `__init__()` constructor that takes a value of
-the same type:
+the copy is trivial (order `O(1)`). In other words, just conform to `Copyable`
+but not `ImplicitlyCopyable`.
 
-```mojo
-struct MyStruct:
-    # Invoked as `MyStruct(other)`
-    fn __init__(out self, other: Self):
-        # do a deep copy of MyStruct
-```
+#### ℹ️ Use `copy` initializer for explicit copying
 
-#### ℹ️ Use `copy()` method for explicit copying
-
-Many standard library types provide a `copy()` method that creates an explicit copy:
+Copyable types provide a `copy` initializer that creates an explicit copy:
 
 ```mojo
 var original = List[Int]()
-var explicit_copy = original.copy()  # 🟢 Preferred
+var explicit_copy = List[Int](copy=original)  # 🟢 Preferred
 ```
 
 This pattern is used throughout the stdlib for types like `Optional`, `String`,
@@ -363,7 +354,7 @@ The additions to the Google style guide for docstrings are `Parameters:` and
 `Constraints:`.
 
 `Constraints:` should be used to document requirements when using the
-`constrained` builtin function:
+`comptime assert` statement:
 
 ```mojo
 fn add_param_arg[foo: Int](bar: Int) -> Int:
@@ -372,7 +363,7 @@ fn add_param_arg[foo: Int](bar: Int) -> Int:
     Constraints:
         `foo` must be more than 0.
     """
-    constrained[foo > 0]()
+    comptime assert foo > 0
     return foo + bar
 ```
 
@@ -408,7 +399,7 @@ debug_assert[_test_cpu]("This code is only runnable on CPU")
 
 ### Target Specific Code
 
-When writing code that uses `@parameter if` to tailor logic based on the target
+When writing code that uses `comptime if` to tailor logic based on the target
 hardware platform or features, do not use trailing `else` statements that
 "fallthrough" to a particular hardware vendor.
 
@@ -417,27 +408,25 @@ targeted.
 
 ```mojo
 # 🔴 Avoid
-@parameter
-if is_nvidia_gpu():
+comptime if is_nvidia_gpu():
     return "llvm.nvvm..."
 else:
     # BAD: Assumes only non-NVIDIA target is AMD
     return "llvm.amdgcn..."
 ```
 
-Always gate hardware-specific logic on an explicit check that that vendor or
+Always gate hardware-specific logic on an explicit check that the vendor or
 feature is being targeted:
 
 ```mojo
 # 🟢 Prefer
 
-@parameter
-if is_nvidia_gpu():
+comptime if is_nvidia_gpu():
     ...
 elif is_amd_gpu():
     ...
 else:
-    return CompilationTarget.unsupported_target_error[Foo]()
+    CompilationTarget.unsupported_target_error()
 ```
 
 In cases where a generic, cross-platform compatible fallback implementation
@@ -446,8 +435,7 @@ is available, it is okay to use an unguarded `else` condition:
 ```mojo
 @always_inline("nodebug")
 fn prefetch[...](...):
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         inlined_assembly["prefetch.global.L2 [$0];", ...](...)
     else:
         llvm_intrinsic["llvm.prefetch", NoneType](...)

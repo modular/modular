@@ -11,31 +11,37 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_raises, assert_equal, assert_false, TestSuite
-from testing.suite import TestSuiteReport
+from std.testing import (
+    assert_raises,
+    assert_equal,
+    assert_false,
+    assert_true,
+    TestSuite,
+)
+from std.testing.suite import TestResult, TestReport, TestSuiteReport
 
 
-def nonconforming_name():
+def nonconforming_name() raises:
     raise Error("should not be run")
 
 
-def test_failing():
+def test_failing() raises:
     raise Error("should be raised")
 
 
-def test_passing_1():
+def test_passing_1() raises:
     pass
 
 
-def test_passing_2():
+def test_passing_2() raises:
     pass
 
 
-def test_skipped():
+def test_skipped() raises:
     raise Error("should be skipped")
 
 
-def main():
+def main() raises:
     comptime funcs = __functions_in_module()
     var suite = TestSuite.discover_tests[funcs]()
 
@@ -86,7 +92,7 @@ def main():
     # The `__functions_in_module()` reflection returns a Tuple, which we can't
     # slice into, so we manually build a list of functions to test that
     # discovery fails if a test function has a nonconforming signature.
-    def test_nonconforming_signature(x: Int):
+    def test_nonconforming_signature(x: Int) raises:
         raise Error("should not be run")
 
     comptime failing_funcs = Tuple(
@@ -97,3 +103,30 @@ def main():
     ):
         var suite = TestSuite.discover_tests[failing_funcs]()
         suite^.abandon()
+
+    var result_repr = String()
+    TestResult.PASS.write_repr_to(result_repr)
+    assert_equal(result_repr, "TestResult.PASS")
+
+    result_repr = String()
+    TestResult.FAIL.write_repr_to(result_repr)
+    assert_equal(result_repr, "TestResult.FAIL")
+
+    result_repr = String()
+    TestResult.SKIP.write_repr_to(result_repr)
+    assert_equal(result_repr, "TestResult.SKIP")
+
+    var test_report = TestReport.passed(name="my_test", duration_ns=1234)
+    var report_repr = String()
+    test_report.write_repr_to(report_repr)
+    assert_true(report_repr.startswith("TestReport("))
+    assert_true("name=" in report_repr)
+    assert_true("result=TestResult.PASS" in report_repr)
+    assert_true("duration_ns=1234" in report_repr)
+
+    var suite_report_repr = String()
+    report.write_repr_to(suite_report_repr)
+    assert_true(suite_report_repr.startswith("TestSuiteReport("))
+    assert_true("passed=2" in suite_report_repr)
+    assert_true("failed=1" in suite_report_repr)
+    assert_true("skipped=1" in suite_report_repr)

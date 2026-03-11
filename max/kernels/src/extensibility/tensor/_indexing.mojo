@@ -12,15 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @always_inline
 fn _dot_prod[rank: Int](x: IndexList[rank], y: IndexList[rank]) -> Int:
     var offset = 0
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         offset += x[i] * y[i]
     return offset
 
@@ -35,19 +34,6 @@ fn _slice_to_tuple[
     """
     var tuple = IndexList[rank]()
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         tuple[i] = func(slices[i])
     return tuple
-
-
-@always_inline
-fn _row_major_strides[rank: Int](shape: IndexList[rank]) -> IndexList[rank]:
-    var offset = 1
-    var strides = IndexList[rank]()
-
-    @parameter
-    for i in reversed(range(rank)):
-        strides[i] = offset
-        offset *= shape[i]
-    return strides

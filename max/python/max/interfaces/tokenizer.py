@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Defines the :class:`PipelineTokenizer` protocol for language model tokenizers used in MAX pipelines."""
+
 from __future__ import annotations
 
 from typing import Protocol, TypeVar, runtime_checkable
@@ -34,7 +37,7 @@ class PipelineTokenizer(
 
     @property
     def expects_content_wrapping(self) -> bool:
-        """If true, this tokenizer expects messages to be wrapped as a dict.
+        """If ``True``, this tokenizer expects messages to be wrapped as a dict.
 
         Text messages are formatted as:
 
@@ -51,7 +54,7 @@ class PipelineTokenizer(
 
             { "role": "user", "content": "text_content" }
 
-        NOTE: Multimodal messages omit the `content` property.
+        NOTE: Multimodal messages omit the ``content`` property.
         Both :obj:`image_urls` and :obj:`image` content parts are converted to:
 
         .. code-block:: json
@@ -59,7 +62,7 @@ class PipelineTokenizer(
             { "type": "image" }
 
         Their content is provided as byte arrays through the top-level property
-        on the request object, i.e., :obj:`RequestType.images`.
+        on the request object, that is, :obj:`RequestType.images`.
         """
         ...
 
@@ -69,10 +72,10 @@ class PipelineTokenizer(
         This is sent to the worker process once and then cached locally.
 
         Args:
-            request (RequestType): Incoming request.
+            request: Incoming request.
 
         Returns:
-            UnboundContextType: Initialized context.
+            Initialized context.
         """
         ...
 
@@ -82,8 +85,8 @@ class PipelineTokenizer(
         """Encodes text prompts as tokens.
 
         Args:
-            prompt (str): Un-encoded prompt text.
-            add_special_tokens (bool): Whether to add special tokens (e.g. BOS).
+            prompt: Un-encoded prompt text.
+            add_special_tokens: Whether to add special tokens (for example, BOS).
 
         Raises:
             ValueError: If the prompt exceeds the configured maximum length.
@@ -94,10 +97,10 @@ class PipelineTokenizer(
         """Decodes response tokens to text.
 
         Args:
-            encoded (TokenizerEncoded): Encoded response tokens.
-            **kwargs: Additional decoder options (e.g. skip_special_tokens).
+            encoded: Encoded response tokens.
+            **kwargs: Additional decoder options (for example, ``skip_special_tokens``).
 
         Returns:
-            str: Un-encoded response text.
+            Un-encoded response text.
         """
         ...

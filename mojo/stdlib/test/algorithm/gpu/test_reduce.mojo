@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm._gpu.reduction import reduce_launch
-from gpu.host import DeviceContext
-from testing import assert_equal, TestSuite
+from std.algorithm.backend.gpu.reduction import reduce_launch
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal, TestSuite
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 comptime num_reductions = 2
 
@@ -80,8 +80,7 @@ fn fused_reduce_inner_test[
         var linear_idx = 0
         var stride = 1
 
-        @parameter
-        for i in reversed(range(rank)):
+        comptime for i in reversed(range(rank)):
             linear_idx += c[i] * stride
             stride *= shape[i]
         return rebind[SIMD[dtype, width]](
@@ -100,8 +99,7 @@ fn fused_reduce_inner_test[
         var linear_idx = 0
         var stride = 1
 
-        @parameter
-        for i in reversed(range(rank)):
+        comptime for i in reversed(range(rank)):
             linear_idx += c[i] * stride
             stride *= out_shape[i]
         output_buf_device0.unsafe_ptr().store[width=width](
@@ -194,8 +192,7 @@ fn reduce_inner_test[
         var linear_idx = 0
         var stride = 1
 
-        @parameter
-        for i in reversed(range(rank)):
+        comptime for i in reversed(range(rank)):
             linear_idx += c[i] * stride
             stride *= shape[i]
         return rebind[SIMD[dtype, width]](
@@ -214,8 +211,7 @@ fn reduce_inner_test[
         var linear_idx = 0
         var stride = 1
 
-        @parameter
-        for i in reversed(range(rank)):
+        comptime for i in reversed(range(rank)):
             linear_idx += c[i] * stride
             stride *= out_shape[i]
         output_buf_device.unsafe_ptr().store[width=width](
@@ -234,7 +230,7 @@ fn reduce_inner_test[
     _ = res_device
 
 
-def test_reduce():
+def test_reduce() raises:
     @parameter
     fn reduce_add[
         dtype: DType,
@@ -431,5 +427,5 @@ def test_reduce():
         )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

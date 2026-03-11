@@ -12,16 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import iota
-from random import rand, seed
+from std.math import iota
+from std.random import rand, seed
 
-from layout._coord import Coord, DynamicCoord, Idx, coord_to_index_list
-from layout._layout import Layout, row_major
-from layout._tile_tensor import TileTensor
+from layout.coord import Coord, DynamicCoord, Idx, coord_to_index_list
+from layout.tile_layout import Layout
+from layout import TileTensor, row_major
 
 from nn.topk import _top_k_cpu, _top_k_sampling
 
-from utils.index import IndexList, product
+from std.utils.index import IndexList, product
 
 
 struct TestTensor[rank: Int, dtype: DType](Movable):
@@ -39,8 +39,8 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
     ) -> TileTensor[
         Self.dtype,
         Layout[
-            shape_types = DynamicCoord[DType.int64, Self.rank].element_types,
-            stride_types = DynamicCoord[DType.int64, Self.rank].element_types,
+            shape_types=DynamicCoord[DType.int64, Self.rank].element_types,
+            stride_types=DynamicCoord[DType.int64, Self.rank].element_types,
         ],
         origin_of(self.storage),
     ]:
@@ -48,10 +48,10 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
             TileTensor[
                 Self.dtype,
                 Layout[
-                    shape_types = DynamicCoord[
+                    shape_types=DynamicCoord[
                         DType.int64, Self.rank
                     ].element_types,
-                    stride_types = DynamicCoord[
+                    stride_types=DynamicCoord[
                         DType.int64, Self.rank
                     ].element_types,
                 ],
@@ -83,8 +83,7 @@ fn test_case_sampling[
     var output_shape: IndexList[rank]
     var output_idxs_shape: IndexList[rank]
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         output_shape = IndexList[rank](K)
         output_idxs_shape = IndexList[rank](1)
     elif rank == 2:
@@ -105,8 +104,7 @@ fn test_case_sampling[
 
     var max_k = K
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         batch_size = 1
     elif rank == 2:
         batch_size = input_shape[0]
@@ -144,7 +142,7 @@ fn test_case_sampling[
     var _xx_no_lifetimes = out_vals
     var _x_no_lifetimes = out_idxs
 
-    for i in range(out_idxs.numel()):
+    for i in range(out_idxs.num_elements()):
         print(out_idxs.ptr[i], end="")
         print(",", end="")
     print("")
@@ -196,7 +194,7 @@ fn test_case[
     print("")
 
 
-def main():
+def main() raises:
     seed(1)
 
     @parameter
@@ -320,12 +318,12 @@ def main():
     ](buf: TileTensor[mut=True, dtype, ...]):
         var flat_buf = TileTensor(
             buf.ptr,
-            row_major(Idx(buf.numel())),
+            row_major(Idx(buf.num_elements())),
         )
 
-        for i in range(flat_buf.numel()):
+        for i in range(flat_buf.num_elements()):
             var idx = flat_buf.layout(Coord(Idx(i)))
-            flat_buf.ptr[idx] = Scalar[dtype](flat_buf.numel() - i - 1)
+            flat_buf.ptr[idx] = Scalar[dtype](flat_buf.num_elements() - i - 1)
         flat_buf[0] = -1
 
     fn test_5d():

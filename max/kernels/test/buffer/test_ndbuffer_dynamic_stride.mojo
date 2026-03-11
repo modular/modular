@@ -13,13 +13,12 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from testing import TestSuite
-
-from utils.index import Index
+from std.testing import TestSuite
+from std.utils.index import Index, IndexList
 
 
 # CHECK-LABEL: test_sub_matrix
-def test_sub_matrix():
+def test_sub_matrix() raises:
     print("== test_sub_matrix")
     comptime num_row = 4
     comptime num_col = 4
@@ -28,7 +27,7 @@ def test_sub_matrix():
         uninitialized=True
     )
     # Create a 4x4 matrix.
-    var matrix = NDBuffer[DType.float32, 2, _, DimList(num_row, num_col)](
+    var matrix = NDBuffer[rank=2, DType.float32, _, DimList(num_row, num_col)](
         matrix_stack.unsafe_ptr()
     )
     for i in range(num_row):
@@ -36,9 +35,9 @@ def test_sub_matrix():
             matrix[Index(i, j)] = Float32(i * num_col + j)
 
     # Extract a sub-matrix 2x2 at (1,1).
-    var sub_matrix0 = NDBuffer[DType.float32, 2, _, DimList(2, 2)](
+    var sub_matrix0 = NDBuffer[rank=2, DType.float32, _, DimList(2, 2)](
         matrix.data + 5,
-        DimList(2, 2),
+        IndexList[2](2, 2),
         Index(4, 1),
     )
 
@@ -55,9 +54,9 @@ def test_sub_matrix():
 
     # Extract a sub-matrix 2x2 at (1,1) with discontiguous last dim.
     # It includes (1,1) (1,3) (3,1) (3,3) of the original matrix.
-    var sub_matrix1 = NDBuffer[DType.float32, 2, _, DimList(2, 2)](
+    var sub_matrix1 = NDBuffer[rank=2, DType.float32, _, DimList(2, 2)](
         matrix.data + 1,
-        DimList(2, 2),
+        IndexList[2](2, 2),
         Index(8, 2),
     )
 
@@ -68,9 +67,9 @@ def test_sub_matrix():
 
     # Extract a contiguous 2x2 buffer starting at (1,1).
     # It includes (1,1) (1,2) (1,3) (2,1) of the original matrix.
-    var sub_matrix2 = NDBuffer[DType.float32, 2, _, DimList(2, 2)](
+    var sub_matrix2 = NDBuffer[rank=2, DType.float32, _, DimList(2, 2)](
         matrix.data + 5,
-        DimList(2, 2),
+        IndexList[2](2, 2),
         Index(2, 1),
     )
 
@@ -81,13 +80,13 @@ def test_sub_matrix():
 
 
 # CHECK-LABEL: test_broadcast
-def test_broadcast():
+def test_broadcast() raises:
     print("== test_broadcast")
 
     # Create a buffer holding a single value with zero stride.
     var arr = InlineArray[Float32, 1](uninitialized=True)
-    var stride_buf = NDBuffer[DType.float32, 1, _, DimList(100)](
-        arr.unsafe_ptr(), DimList(100), Index(0)
+    var stride_buf = NDBuffer[rank=1, DType.float32, _, DimList(100)](
+        arr.unsafe_ptr(), IndexList[1](100), Index(0)
     )
 
     # CHECK: 2.0
@@ -98,5 +97,5 @@ def test_broadcast():
     print(stride_buf[99])
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

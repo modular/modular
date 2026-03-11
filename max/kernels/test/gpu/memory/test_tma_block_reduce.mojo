@@ -11,35 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from random import rand
-from sys import argv
-from sys.info import simd_width_of, size_of
+from std.math import ceildiv
+from std.random import rand
+from std.sys import argv
+from std.sys.info import simd_width_of, size_of
 
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from buffer import NDBuffer
-from gpu import WARP_SIZE, lane_id
-from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
-from gpu import block_dim, block_idx, thread_idx
-from gpu.memory import (
+from std.gpu import WARP_SIZE, lane_id
+from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
+from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu.memory import (
     AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
 )
-from gpu.sync import (
+from std.gpu.sync import (
     barrier,
     mbarrier_arrive_expect_tx_shared,
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-from memory import LegacyUnsafePointer, stack_allocation
+from std.memory import stack_allocation
+from std.testing import assert_almost_equal
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
-
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 
 @always_inline
@@ -47,10 +45,10 @@ fn block_reduce[
     dtype: DType, max_warps_per_block: Int = 32
 ](val: Scalar[dtype]) -> Scalar[dtype]:
     var m2_shared = stack_allocation[
-        max_warps_per_block, dtype, address_space = AddressSpace.SHARED
+        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
     ]()
     var m2_broadcast = stack_allocation[
-        1, dtype, address_space = AddressSpace.SHARED
+        1, dtype, address_space=AddressSpace.SHARED
     ]()
 
     var tid = thread_idx.x
@@ -89,7 +87,7 @@ fn global_reduction_kernel[
     input_fn: fn[width: Int, _rank: Int](
         idx: IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
-](d_out: UnsafePointer[Scalar[accum_type]], num_cols: Int):
+](d_out: UnsafePointer[Scalar[accum_type], MutAnyOrigin], num_cols: Int):
     var tid = thread_idx.x
     var row = block_idx.x
     var idx = tid * UInt(simd_width)
@@ -119,19 +117,19 @@ fn tma_reduction_kernel[
     descriptor: TMADescriptor,
     rows: Int,
     cols: Int,
-    d_data: UnsafePointer[Scalar[dtype]],
-    d_out: UnsafePointer[Scalar[accum_type]],
+    d_data: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    d_out: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
 ):
     var shmem = external_memory[
-        Scalar[dtype], address_space = AddressSpace.SHARED, alignment=128
+        Scalar[dtype], address_space=AddressSpace.SHARED, alignment=128
     ]()
     # Calculate elements offset for this block (row).
     var block_offset = block_idx.x
 
     # Create barrier for TMA transfer from GMEM to SMEM.
-    var mbar = stack_allocation[1, Int64, address_space = AddressSpace.SHARED]()
+    var mbar = stack_allocation[1, Int64, address_space=AddressSpace.SHARED]()
 
-    var descriptor_ptr = LegacyUnsafePointer(to=descriptor).bitcast[NoneType]()
+    var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 
     if thread_idx.x == 0:
@@ -165,13 +163,13 @@ fn tma_reduction_kernel[
 
 def test_tma_block_reduce[
     dtype: DType, use_tma: Bool
-](ctx: DeviceContext, rows: Int, cols: Int, benchmark: Bool = False,):
+](ctx: DeviceContext, rows: Int, cols: Int, benchmark: Bool = False,) raises:
     var n = rows * cols
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime accum_type = get_accum_type[dtype]()
 
-    var h_data = UnsafePointer[Scalar[dtype]].alloc(n)
+    var h_data = alloc[Scalar[dtype]](n)
     var expected_sum = Scalar[accum_type](0)
     rand[dtype](h_data, n)
     for i in range(n):
@@ -186,7 +184,7 @@ def test_tma_block_reduce[
         WARP_SIZE * max_warps_per_block,
     )
 
-    var result_host = UnsafePointer[Scalar[accum_type]].alloc(grid_dim)
+    var result_host = alloc[Scalar[accum_type]](grid_dim)
     var d_out = ctx.enqueue_create_buffer[accum_type](grid_dim)
     ctx.enqueue_memset(d_out, 0)
 
@@ -194,8 +192,7 @@ def test_tma_block_reduce[
     @parameter
     @always_inline
     fn kernel_launch(ctx: DeviceContext) raises -> None:
-        @parameter
-        if use_tma:
+        comptime if use_tma:
             var tma_desc = create_tma_descriptor[dtype, 2](
                 d_data,
                 (rows, cols),
@@ -219,7 +216,7 @@ def test_tma_block_reduce[
             )
         else:
             var shape = Index(rows, cols)
-            var data_buf = NDBuffer[dtype, 2](d_data.unsafe_ptr(), shape)
+            var data_buf = NDBuffer[rank=2, dtype](d_data.unsafe_ptr(), shape)
 
             # Change the input function to match RMS norm pattern
             @__copy_capture(data_buf)
@@ -290,7 +287,7 @@ def test_tma_block_reduce[
     _ = d_out
 
 
-def main():
+def main() raises:
     var test_sizes = [128, 256, 512, 1024]
     var depths = [64, 128, 256]
     comptime dtype = DType.bfloat16

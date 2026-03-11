@@ -10,12 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from sys.intrinsics import _type_is_eq
+from std.sys.intrinsics import _type_is_eq
 
-from algorithm.functional import unswitch
-from gpu.host import DeviceContext, DeviceBuffer
-from gpu.host.info import is_cpu, is_gpu
-from collections import OptionalReg
+from std.algorithm.functional import unswitch
+from std.gpu.host import DeviceContext, DeviceBuffer
+from std.gpu.host.info import is_cpu, is_gpu
+from std.collections import OptionalReg
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -23,10 +23,15 @@ from kv_cache.types import (
     KVCollectionT,
     PagedKVCacheCollection,
 )
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from layout._coord import Coord, Idx, coord_to_index_list
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    coord_to_index_list,
+    row_major,
+)
 from linalg.matmul import elementwise_epilogue_type, matmul
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
@@ -35,16 +40,15 @@ from nn.flash_attention import (
 from nn.fused_qk_rope import fused_qk_rope
 from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha_mask import MHAMask
-from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_utils import (
-    dispatch_mask_and_score_mod,
-    dispatch_materialized_mask_and_score_mod,
+    dispatch_mask,
+    dispatch_materialized_mask,
 )
 from nn.normalization import _rms_norm_impl
-from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from std.runtime.asyncrt import DeviceContextPtr
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 from tensor import InputTensor
 from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
@@ -60,10 +64,8 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
     dtype: DType,
     target: StaticString = "cpu",
 ](
-    hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    hidden_state: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    weight: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
@@ -139,10 +141,8 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_paged[
     dtype: DType,
     target: StaticString = "cpu",
 ](
-    hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    hidden_state: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    weight: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
@@ -222,10 +222,8 @@ fn _fused_qkv_matmul_kv_cache[
     *,
     target: StaticString,
 ](
-    hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    hidden_state: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    weight: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
@@ -254,8 +252,7 @@ fn _fused_qkv_matmul_kv_cache[
     """
     var cuda_ctx: Optional[DeviceContext] = None
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     return _fused_qkv_matmul_kv_cache_impl[target=target](
@@ -277,10 +274,8 @@ fn _fused_qkv_matmul_kv_cache_impl[
     *,
     target: StaticString,
 ](
-    hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    hidden_state: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    weight: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
@@ -391,10 +386,8 @@ fn _matmul_common[
     target: StaticString,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    hidden_state: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    weight: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     context: Optional[DeviceContext],
 ) raises:
     var BS = hidden_state.dim[0]()
@@ -408,7 +401,7 @@ fn _matmul_common[
     var hidden_state_2d = LayoutTensor[
         dtype,
         hidden_state_layout,
-        MutAnyOrigin,
+        hidden_state.origin,
     ](
         hidden_state.ptr,
         RuntimeLayout[hidden_state_layout].row_major(
@@ -419,8 +412,7 @@ fn _matmul_common[
     comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
     var c_nd: LayoutTensor[dtype, c_layout, MutAnyOrigin]
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         var c_ptr = alloc[Scalar[dtype]](BS * SEQ_LEN * N)
 
         c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
@@ -439,8 +431,7 @@ fn _matmul_common[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ](c_nd, hidden_state_2d, weight, context)
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         c_nd.ptr.free()
 
 
@@ -643,13 +634,10 @@ fn generic_flash_attention_kv_cache_padded[
     *,
     target: StaticString,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
     num_heads: Int = -1,
 ](
-    q: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
@@ -657,7 +645,7 @@ fn generic_flash_attention_kv_cache_padded[
     ],
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
@@ -688,8 +676,6 @@ fn generic_flash_attention_kv_cache_padded[
         + collection_t.name_str
         + "."
         + mask_str
-        + "."
-        + score_mod_str
         + ".nhead_"
         + String(collection_t.kv_params.num_heads)
         + ".hdim_"
@@ -700,7 +686,6 @@ fn generic_flash_attention_kv_cache_padded[
         return _flash_attention_dispatch[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             local_window_size=local_window_size,
         ](
             q,
@@ -721,24 +706,21 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
     //,
     *,
     target: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
     num_heads: Int = -1,
 ](
-    q: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     mask: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     valid_lengths: LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
@@ -766,9 +748,7 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.mha.padded.continuous_batching.tensor_mask."
-        + score_mod_str
-        + ".nhead_"
+        "mo.mha.padded.continuous_batching.tensor_mask.nhead_"
         + String(collection_t.kv_params.num_heads)
         + ".hdim_"
         + String(collection_t.kv_params.head_size),
@@ -776,7 +756,6 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
     ):
         return _flash_attention_dispatch_materialized_mask[
             target=target,
-            score_mod_str=score_mod_str,
             local_window_size=local_window_size,
         ](
             q,
@@ -794,24 +773,30 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
 fn _flash_attention_dispatch[
     dtype: DType,
     collection_t: KVCollectionT,
+    q_origin: Origin[mut=False],
+    output_origin: Origin[mut=True],
     //,
     *,
     target: StaticString,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+        dtype, _, q_origin, address_space=AddressSpace.GENERIC, ...
     ],
     kv_cache: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        mut=False, DType.uint32, Layout.row_major(UNKNOWN_VALUE), _
     ],
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True,
+        dtype,
+        _,
+        output_origin,
+        address_space=AddressSpace.GENERIC,
+        ...,
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
@@ -823,33 +808,24 @@ fn _flash_attention_dispatch[
 
     @parameter
     @__copy_capture(k, v)
-    fn _dispatch_flash_attention[
-        mask_t: MHAMask, score_mod_t: ScoreModTrait
-    ](mask: mask_t, score_mod: score_mod_t) raises:
-        @parameter
-        if is_cpu[target]():
+    fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+        comptime if is_cpu[target]():
             return flash_attention_kv_cache_cpu(
                 q, k, v, mask, scale, output, sink_weights
             )
         else:
-            comptime use_score_mod = not _type_is_eq[
-                score_mod_t, IdentityScoreMod
-            ]()
-            gpu_flash_attention[use_score_mod=use_score_mod](
+            gpu_flash_attention[](
                 output,
                 q,
                 k,
                 v,
                 mask,
-                score_mod,
                 valid_lengths,
                 scale,
                 context.get_device_context(),
             )
 
-    return dispatch_mask_and_score_mod[
-        mask_str, score_mod_str, _dispatch_flash_attention
-    ]()
+    return dispatch_mask[mask_str, _dispatch_flash_attention]()
 
 
 fn _flash_attention_dispatch_materialized_mask[
@@ -858,23 +834,20 @@ fn _flash_attention_dispatch_materialized_mask[
     //,
     *,
     target: StaticString,
-    score_mod_str: String,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
     kv_cache: collection_t,
     layer_idx: UInt32,
     mask_nd: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     valid_lengths: LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
@@ -885,14 +858,11 @@ fn _flash_attention_dispatch_materialized_mask[
     var v = kv_cache.get_value_cache(Int(layer_idx))
 
     @parameter
-    fn _dispatch_flash_attention[
-        mask_t: MHAMask, score_mod_t: ScoreModTrait
-    ](mask: mask_t, score_mod: score_mod_t) raises:
+    fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
         @always_inline
         @parameter
         fn call_flash_attention[sink: Bool]() raises:
-            @parameter
-            if is_cpu[target]():
+            comptime if is_cpu[target]():
                 return flash_attention_kv_cache_cpu(
                     q,
                     k,
@@ -903,16 +873,12 @@ fn _flash_attention_dispatch_materialized_mask[
                     sink_weights,
                 )
             else:
-                comptime use_score_mod = not _type_is_eq[
-                    score_mod_t, IdentityScoreMod
-                ]()
-                gpu_flash_attention[use_score_mod=use_score_mod, sink=sink](
+                gpu_flash_attention[sink=sink](
                     output,
                     q,
                     k,
                     v,
                     mask,
-                    score_mod,
                     valid_lengths,
                     scale,
                     context.get_device_context(),
@@ -921,12 +887,8 @@ fn _flash_attention_dispatch_materialized_mask[
 
         unswitch[call_flash_attention](Bool(sink_weights))
 
-    return dispatch_materialized_mask_and_score_mod[
-        score_mod_str,
-        _dispatch_flash_attention,
-        Int(collection_t.kv_params.num_heads),
-    ](
-        LayoutTensor[mask_nd.dtype, mask_nd.layout, MutAnyOrigin](
+    return dispatch_materialized_mask[_dispatch_flash_attention](
+        LayoutTensor[mask_nd.dtype, mask_nd.layout, mask_nd.origin](
             mask_nd.ptr,
             RuntimeLayout[mask_nd.layout].row_major(
                 mask_nd.runtime_layout.shape.value.canonicalize()
@@ -955,14 +917,14 @@ def rms_norm_kv_cache_ragged_paged[
         params,
         page_size,
     ],
-    gamma: LayoutTensor[dtype, ...],
+    gamma: TileTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
-    input_row_offsets: LayoutTensor[DType.uint32, ...],
+    input_row_offsets: TileTensor[DType.uint32, ...],
     context: DeviceContextPtr,
-):
+) raises:
     """Performs RMSNorm in place on new entries in the key cache.
 
     This is done by first creating the ragged tensor weight_shape
@@ -986,15 +948,18 @@ def rms_norm_kv_cache_ragged_paged[
     multiply the normalized values by the gamma tensor before casting to the
     output dtype or not. We set it to `True` by default.
     """
+    comptime assert gamma.flat_rank == 1, "gamma must be rank 1"
+    comptime assert (
+        input_row_offsets.flat_rank == 1
+    ), "input_row_offsets must be rank 1"
+
     # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
     comptime rank = 3 if per_head_norm else 2
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var kv_params = k_cache.kv_params
-    comptime rms_norm_cols = Int(gamma.layout.shape[0])
+    comptime rms_norm_cols = gamma.static_shape[0]
 
-    comptime assert (
-        gamma.layout.shape[0] != UNKNOWN_VALUE
-    ), "Need static shape for gamma"
+    comptime assert rms_norm_cols != -1, "Need static shape for gamma"
     comptime assert (
         rms_norm_cols <= Int(kv_collection.kv_params.head_size)
         or not per_head_norm
@@ -1003,8 +968,7 @@ def rms_norm_kv_cache_ragged_paged[
     var shape = IndexList[rank]()
     shape[0] = Int(total_seq_len)
 
-    @parameter
-    if per_head_norm:
+    comptime if per_head_norm:
         shape[1] = Int(kv_params.num_heads)
         shape[2] = rms_norm_cols
     else:
@@ -1036,8 +1000,7 @@ def rms_norm_kv_cache_ragged_paged[
         var head_idx: Int
         var head_dim_idx: Int
 
-        @parameter
-        if per_head_norm:
+        comptime if per_head_norm:
             head_idx = idx[1]
             head_dim_idx = idx[2]
         else:
@@ -1071,8 +1034,7 @@ def rms_norm_kv_cache_ragged_paged[
         var head_idx: Int
         var head_dim_idx: Int
 
-        @parameter
-        if per_head_norm:
+        comptime if per_head_norm:
             head_idx = idx[1]
             head_dim_idx = idx[2]
         else:
@@ -1102,7 +1064,7 @@ def rms_norm_kv_cache_ragged_paged[
             multiply_before_cast=multiply_before_cast,
         ](
             shape,
-            TileTensor(gamma.ptr, row_major(Coord(Idx(gamma.size())))),
+            gamma,
             epsilon,
             weight_offset,
             context,
@@ -1122,7 +1084,7 @@ def _print_cache[
     kv_collection: collection_t,
     valid_lengths: LayoutTensor[DType.uint32, ...],
     is_print_compact: Bool,
-) -> None:
+) raises -> None:
     """Prints a cache buffer, abbreviating output with ellipses."""
     comptime kv_params = collection_t.CacheType.kv_params
 
@@ -1164,7 +1126,7 @@ def print_kv_cache_cont_batch_generic_cpu[
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
-):
+) raises:
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var v_cache = kv_collection.get_value_cache(Int(layer_idx))
 
@@ -1196,7 +1158,7 @@ def print_kv_cache_paged_generic_cpu[
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
-):
+) raises:
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var v_cache = kv_collection.get_value_cache(Int(layer_idx))
 
@@ -1221,13 +1183,13 @@ def print_kv_cache_cont_batch_generic_gpu[
     target: StaticString, dtype: DType, kv_params: KVCacheStaticParams
 ](
     valid_lengths: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     kv_collection: ContinuousBatchingKVCacheCollection[dtype, kv_params],
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
-):
+) raises:
     var blocks_ptr = alloc[Scalar[dtype]](kv_collection.blocks.size())
     var blocks_host_nd = LayoutTensor[
         type_of(kv_collection.blocks).dtype, Layout.row_major[6](), MutAnyOrigin
@@ -1315,10 +1277,10 @@ def print_kv_cache_cont_batch_generic_gpu[
         is_print_compact,
     )
 
-    blocks_host_nd.ptr.free()
-    cache_lengths_host_nd.ptr.free()
-    lookup_table_host_nd.ptr.free()
-    valid_lengths_host_nd.ptr.free()
+    blocks_ptr.free()
+    cache_lengths_ptr.free()
+    lookup_table_ptr.free()
+    valid_lengths_host_ptr.free()
 
 
 def print_kv_cache_paged_generic_gpu[
@@ -1328,13 +1290,13 @@ def print_kv_cache_paged_generic_gpu[
     page_size: Int,
 ](
     valid_lengths: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size],
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
-):
+) raises:
     var blocks_ptr = alloc[Scalar[dtype]](kv_collection.blocks.size())
     var blocks_host_nd = LayoutTensor[
         type_of(kv_collection.blocks).dtype, Layout.row_major[6](), MutAnyOrigin
@@ -1418,10 +1380,10 @@ def print_kv_cache_paged_generic_gpu[
         is_print_compact,
     )
 
-    blocks_host_nd.ptr.free()
-    cache_lengths_host_nd.ptr.free()
-    lookup_table_host_nd.ptr.free()
-    valid_lengths_host_nd.ptr.free()
+    blocks_ptr.free()
+    cache_lengths_ptr.free()
+    lookup_table_ptr.free()
+    valid_lengths_host_ptr.free()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1432,10 +1394,10 @@ def print_kv_cache_paged_generic_gpu[
 fn _continuous_batch_kv_cache_collection[
     dtype: DType, //, kv_params: KVCacheStaticParams
 ](
-    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
-    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
-    lookup_table: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
-    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2]()],
+    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
+    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), _],
+    lookup_table: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), _],
+    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2](), _],
     out result: ContinuousBatchingKVCacheCollection[dtype, kv_params],
 ):
     # Marshal LayoutTensor into arguments expected by the
@@ -1453,10 +1415,10 @@ fn _continuous_batch_kv_cache_collection[
 fn generic_get_continuous_cache[
     dtype: DType, kv_params: KVCacheStaticParams
 ](
-    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
-    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
-    lookup_table: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
-    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2]()],
+    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
+    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), _],
+    lookup_table: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), _],
+    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2](), _],
 ) -> ContinuousBatchingKVCacheCollection[dtype, kv_params]:
     return _continuous_batch_kv_cache_collection[kv_params](
         blocks, cache_lengths, lookup_table, max_lengths
@@ -1466,10 +1428,10 @@ fn generic_get_continuous_cache[
 fn generic_get_paged_cache[
     dtype: DType,
 ](
-    blocks: MutableInputTensor[dtype=dtype, rank=6],
-    cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
-    lookup_table: InputTensor[dtype = DType.uint32, rank=2],
-    max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+    blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+    cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+    lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+    max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
     out result: PagedKVCacheCollection[
         dtype,
         KVCacheStaticParams(
@@ -1523,10 +1485,10 @@ fn generic_get_paged_cache[
     kv_params: KVCacheStaticParams,
     page_size: Int,
 ](
-    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
-    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
-    lookup_table: LayoutTensor[DType.uint32, Layout.row_major[2]()],
-    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2]()],
+    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
+    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), _],
+    lookup_table: LayoutTensor[DType.uint32, Layout.row_major[2](), _],
+    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2](), _],
     out result: PagedKVCacheCollection[dtype, kv_params, page_size],
 ):
     return {
@@ -1538,6 +1500,41 @@ fn generic_get_paged_cache[
     }
 
 
+fn generic_get_paged_cache_with_scales[
+    dtype: DType,
+    scale_dtype: DType,
+    kv_params: KVCacheStaticParams,
+    page_size: Int,
+    quantization_granularity: Int,
+](
+    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
+    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), _],
+    lookup_table: LayoutTensor[DType.uint32, Layout.row_major[2](), _],
+    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2](), _],
+    scales: LayoutTensor[mut=True, scale_dtype, Layout.row_major[6](), _],
+    out result: PagedKVCacheCollection[
+        dtype, kv_params, page_size, scale_dtype, quantization_granularity
+    ],
+):
+    """Create a PagedKVCacheCollection with scales for MLA attention.
+
+    Args:
+        blocks: KV cache blocks tensor [num_blocks, kv_dim, num_layers, page_size, num_heads, head_dim].
+        cache_lengths: Cache lengths per batch [batch_size].
+        lookup_table: Page lookup table [batch_size, max_pages].
+        max_lengths: Max lengths tensor [[max_seq_length, max_cache_length]].
+        scales: Scales tensor [num_blocks, kv_dim, num_layers, page_size, num_heads, head_dim_granularity].
+    """
+    return {
+        blocks = blocks.as_any_origin(),
+        cache_lengths = cache_lengths.get_immutable().as_any_origin(),
+        lookup_table = lookup_table.get_immutable().as_any_origin(),
+        max_seq_length = max_lengths[0, 0][0],
+        max_cache_length = max_lengths[0, 1][0],
+        scales = scales.as_any_origin(),
+    }
+
+
 # ===-----------------------------------------------------------------------===#
 # GPU→CPU Page Copy for KV Cache Offloading
 # ===-----------------------------------------------------------------------===#
@@ -1546,10 +1543,10 @@ fn generic_get_paged_cache[
 fn copy_kv_pages_d2h[
     dtype: DType,
 ](
-    device_kv_blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
-    host_kv_blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
-    src_page_ids: LayoutTensor[DType.int64, Layout.row_major[1]()],
-    dst_page_ids: LayoutTensor[DType.int64, Layout.row_major[1]()],
+    device_kv_blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
+    host_kv_blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
+    src_page_ids: LayoutTensor[DType.int64, Layout.row_major[1](), _],
+    dst_page_ids: LayoutTensor[DType.int64, Layout.row_major[1](), _],
     layer_idx: Int,
     ctx: DeviceContext,
 ) raises:

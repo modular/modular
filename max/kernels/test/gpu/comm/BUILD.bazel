@@ -7,7 +7,6 @@ mojo_test(
     name = "test_multimem_allreduce.mojo.test",
     size = "large",
     srcs = [
-        "comm_test_utils.mojo",
         "test_allreduce.mojo",
         "test_multimem_allreduce.mojo",
     ],
@@ -41,17 +40,19 @@ HIGH_GPU_MEMORY_TESTS = [
     "test_p2p_ep_dispatch.mojo",
 ]
 
+# Tests where assertions push register usage past hardware limits,
+# causing CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES on NVIDIA GPUs.
+DISABLE_ASSERTIONS_TESTS = []
+
 # Regular tests for all other files
 [
     mojo_test(
         name = src + ".test",
         size = "large",
-        srcs = [
-            src,
-            "comm_test_utils.mojo",
-        ],
+        srcs = [src],
         # NOTE: test_allgather.mojo tests deprecated functionality.
         copts = ["-Wno-error"] if src == "test_allgather.mojo" else [],
+        enable_assertions = src not in DISABLE_ASSERTIONS_TESTS,
         env = {
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT": "80",
@@ -78,7 +79,6 @@ HIGH_GPU_MEMORY_TESTS = [
     for src in glob(
         ["**/*.mojo"],
         exclude = [
-            "comm_test_utils.mojo",  # Imported source, not a test
             "test_multimem_allreduce.mojo",
         ],
     )

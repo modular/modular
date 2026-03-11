@@ -11,33 +11,35 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from math import ceildiv, rsqrt
-from random import random_ui64, seed
-from sys import env_get_dtype, env_get_int
+from std.collections import Set
+from std.math import ceildiv, rsqrt
+from std.random import random_ui64, seed
+from std.sys import get_defined_dtype, get_defined_int
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout._fillers import random
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
-from nn.mha_score_mod import IdentityScoreMod
 from tensor import IOUnknown, ManagedTensorSlice
 from tensor.managed_tensor_slice import StaticTensorSpec
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 def flops(
     batch: Int, nheads: Int, seqlen_q: Int, seqlen_k: Int, headdim: Int
-) -> Int:
+) raises -> Int:
     var avg_seqlen = Float64(max(seqlen_k - seqlen_q, 0) + seqlen_k) / 2
     return Int(
         Float64(batch * nheads * 2 * seqlen_q)
@@ -99,7 +101,7 @@ def execute_kv_cache_ragged_flash_attention[
     cache_len: Int,
     use_random_cache_lengths: Bool,
     run_benchmark: Bool,
-):
+) raises:
     comptime num_layers = 1
     comptime layer_idx = 0
     var num_pages = batch_size * ceildiv(seq_len + cache_len, page_size) * 2
@@ -121,12 +123,8 @@ def execute_kv_cache_ragged_flash_attention[
     )
 
     # Host allocations for row offsets and cache lengths
-    var input_row_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        batch_size + 1
-    )
-    var cache_lengths_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        batch_size
-    )
+    var input_row_offsets_host_ptr = alloc[Scalar[DType.uint32]](batch_size + 1)
+    var cache_lengths_host_ptr = alloc[Scalar[DType.uint32]](batch_size)
     var max_context_length = 0
     var max_seq_length: UInt32 = 0
     var total_seq_len: UInt32 = 0
@@ -166,7 +164,7 @@ def execute_kv_cache_ragged_flash_attention[
         batch_size + 1
     )
     ctx.enqueue_copy(input_row_offsets_dev_buffer, input_row_offsets_host_ptr)
-    var input_row_offsets_device = NDBuffer[DType.uint32, 1](
+    var input_row_offsets_device = NDBuffer[rank=1, DType.uint32](
         input_row_offsets_dev_buffer.unsafe_ptr(),
         batch_size + 1,
     )
@@ -176,7 +174,7 @@ def execute_kv_cache_ragged_flash_attention[
         batch_size
     )
     ctx.enqueue_copy(cache_lengths_dev_buffer, cache_lengths_host_ptr)
-    var cache_lengths_device = NDBuffer[DType.uint32, 1](
+    var cache_lengths_device = NDBuffer[rank=1, DType.uint32](
         cache_lengths_dev_buffer.unsafe_ptr(),
         batch_size,
     )
@@ -184,10 +182,10 @@ def execute_kv_cache_ragged_flash_attention[
     # Q tensor allocation
     comptime static_q_shape = DimList(Dim(), num_q_heads, head_dim)
     var q_size = Int(total_seq_len) * num_q_heads * head_dim
-    var q_host_ptr = UnsafePointer[Scalar[dtype]].alloc(q_size)
-    var q_host = NDBuffer[dtype, 3, _, static_q_shape](
+    var q_host_ptr = alloc[Scalar[dtype]](q_size)
+    var q_host = NDBuffer[rank=3, dtype, _, static_q_shape](
         q_host_ptr,
-        DimList(Int(total_seq_len), num_q_heads, head_dim),
+        IndexList[3](Int(total_seq_len), num_q_heads, head_dim),
     )
     random(
         LayoutTensor[
@@ -203,18 +201,18 @@ def execute_kv_cache_ragged_flash_attention[
     )
     var q_dev_buffer = ctx.enqueue_create_buffer[dtype](q_size)
     ctx.enqueue_copy(q_dev_buffer, q_host_ptr)
-    var q_device = NDBuffer[dtype, 3, _, static_q_shape](
+    var q_device = NDBuffer[rank=3, dtype, _, static_q_shape](
         q_dev_buffer.unsafe_ptr(),
-        DimList(Int(total_seq_len), num_q_heads, head_dim),
+        IndexList[3](Int(total_seq_len), num_q_heads, head_dim),
     )
 
     # Output tensor allocation
     var output_size = Int(total_seq_len) * num_q_heads * head_dim
-    var output_host_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    var output_host_ptr = alloc[Scalar[dtype]](output_size)
     var output_dev_buffer = ctx.enqueue_create_buffer[dtype](output_size)
-    var output_device = NDBuffer[dtype, 3, _, static_q_shape](
+    var output_device = NDBuffer[rank=3, dtype, _, static_q_shape](
         output_dev_buffer.unsafe_ptr(),
-        DimList(Int(total_seq_len), num_q_heads, head_dim),
+        IndexList[3](Int(total_seq_len), num_q_heads, head_dim),
     )
     comptime output_layout = Layout.row_major(
         UNKNOWN_VALUE, num_q_heads, head_dim
@@ -228,10 +226,8 @@ def execute_kv_cache_ragged_flash_attention[
     # Paged LUT allocation
     var paged_lut_cols = ceildiv(max_context_length, page_size)
     var paged_lut_size = batch_size * paged_lut_cols
-    var paged_lut_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        paged_lut_size
-    )
-    var paged_lut_host = NDBuffer[DType.uint32, 2](
+    var paged_lut_host_ptr = alloc[Scalar[DType.uint32]](paged_lut_size)
+    var paged_lut_host = NDBuffer[rank=2, DType.uint32](
         paged_lut_host_ptr,
         IndexList[2](batch_size, paged_lut_cols),
     )
@@ -250,7 +246,7 @@ def execute_kv_cache_ragged_flash_attention[
         paged_lut_size
     )
     ctx.enqueue_copy(paged_lut_dev_buffer, paged_lut_host_ptr)
-    var paged_lut_device = NDBuffer[DType.uint32, 2](
+    var paged_lut_device = NDBuffer[rank=2, DType.uint32](
         paged_lut_dev_buffer.unsafe_ptr(),
         IndexList[2](batch_size, paged_lut_cols),
     )
@@ -259,10 +255,8 @@ def execute_kv_cache_ragged_flash_attention[
     var kv_block_size = (
         num_pages * 2 * num_layers * page_size * num_kv_heads * head_dim
     )
-    var kv_block_paged_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        kv_block_size
-    )
-    var kv_block_paged_host = NDBuffer[dtype, 6](
+    var kv_block_paged_host_ptr = alloc[Scalar[dtype]](kv_block_size)
+    var kv_block_paged_host = NDBuffer[rank=6, dtype](
         kv_block_paged_host_ptr,
         IndexList[6](
             num_pages,
@@ -287,7 +281,7 @@ def execute_kv_cache_ragged_flash_attention[
         kv_block_size
     )
     ctx.enqueue_copy(kv_block_paged_dev_buffer, kv_block_paged_host_ptr)
-    var kv_block_paged_device = NDBuffer[dtype, 6](
+    var kv_block_paged_device = NDBuffer[rank=6, dtype](
         kv_block_paged_dev_buffer.unsafe_ptr(),
         IndexList[6](
             num_pages,
@@ -381,7 +375,6 @@ def execute_kv_cache_ragged_flash_attention[
                     k_cache_device,
                     v_cache_device,
                     CausalMask(),
-                    IdentityScoreMod(),
                     input_row_offsets_layout_tensor,
                     rsqrt(Float32(head_dim)),
                     ctx,
@@ -419,7 +412,6 @@ def execute_kv_cache_ragged_flash_attention[
             k_cache_device,
             v_cache_device,
             CausalMask(),
-            IdentityScoreMod(),
             input_row_offsets_layout_tensor,
             rsqrt(Float32(head_dim)),
             ctx,
@@ -442,12 +434,12 @@ def execute_kv_cache_ragged_flash_attention[
     _ = kv_block_paged_dev_buffer^
 
 
-def main():
-    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
+def main() raises:
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
 
-    comptime head_dim = env_get_int["head_dim", 128]()
-    comptime num_q_heads = env_get_int["num_q_heads", 32]()
-    comptime num_kv_heads = env_get_int["num_kv_heads", 8]()
+    comptime head_dim = get_defined_int["head_dim", 128]()
+    comptime num_q_heads = get_defined_int["num_q_heads", 32]()
+    comptime num_kv_heads = get_defined_int["num_kv_heads", 8]()
 
     var batch_size = arg_parse("batch_size", 1)
     var use_random_seq_lengths = arg_parse("use_random_seq_lengths", False)

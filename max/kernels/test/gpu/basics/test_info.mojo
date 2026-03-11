@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host.info import *
-from testing import *
+from std.gpu.host.info import *
+from std.testing import *
 
 
-def main():
+def main() raises:
     assert_true(materialize[H100.compute > A100.compute]())
     assert_false(materialize[H100.compute < A100.compute]())
     assert_true(materialize[A100.compute < H100.compute]())

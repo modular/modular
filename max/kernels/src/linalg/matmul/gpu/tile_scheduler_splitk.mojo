@@ -11,22 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
-from memory import LegacyUnsafePointer
+from std.math import align_up, ceildiv
+from std.os.atomic import Atomic
+from std.sys import size_of
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from os.atomic import Atomic
-from sys import size_of
-
-from gpu import NamedBarrierSemaphore
-from gpu.globals import WARPGROUP_SIZE
-from gpu.host.info import H100
-from gpu import block_idx, grid_dim, thread_idx
+from std.gpu import NamedBarrierSemaphore
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.host.info import H100
+from std.gpu import block_idx, grid_dim, thread_idx
 from layout import Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from std.bit import log2_floor
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from .tile_scheduler import RasterOrder, WorkInfo
 
@@ -46,23 +43,20 @@ fn _check_scheduler_constraints[
 ]():
     comptime num_k_iters = ceildiv(prob_shape_nk[1], tile_shape[2])
 
-    constrained[
-        reduction_mode == ReductionMode.Deterministic,
-        "Currently SplitK only supports Deterministic reduction",
-    ]()
+    comptime assert (
+        reduction_mode == ReductionMode.Deterministic
+    ), "Currently SplitK only supports Deterministic reduction"
 
-    constrained[
-        splits <= UInt32(H100.sm_count),
-        "splits must be less than or equal to the number of SMs",
-    ]()
+    comptime assert splits <= UInt32(
+        H100.sm_count
+    ), "splits must be less than or equal to the number of SMs"
 
-    constrained[
-        splits <= UInt32(num_k_iters),
-        "splits must be less than or equal to the number of output tiles",
-    ]()
-    constrained[
-        (UInt32(num_k_iters) % splits) == 0, "BK must be divisible by splits"
-    ]()
+    comptime assert splits <= UInt32(
+        num_k_iters
+    ), "splits must be less than or equal to the number of output tiles"
+    comptime assert (
+        UInt32(num_k_iters) % splits
+    ) == 0, "BK must be divisible by splits"
 
 
 @fieldwise_init
@@ -114,7 +108,7 @@ struct SplitKTileScheduler[
 
     var cluster_blk_major: UInt32
 
-    var locks_ptr: UnsafePointer[Int32]
+    var locks_ptr: UnsafePointer[Int32, MutAnyOrigin]
 
     comptime k_tiles_per_output_tile = UInt32(
         ceildiv(Self.problem_shape_nk[1], Self.tile_shape[2])
@@ -137,7 +131,7 @@ struct SplitKTileScheduler[
         out self,
         prob_shape: IndexList[3],
         block_id_in_cluster: IndexList[2],
-        locks_ptr: UnsafePointer[UInt8],
+        locks_ptr: UnsafePointer[mut=True, UInt8, _],
     ):
         _check_scheduler_constraints[
             Self.problem_shape_nk,
@@ -153,7 +147,9 @@ struct SplitKTileScheduler[
         self.prob_shape = prob_shape
         self.block_id_in_cluster = block_id_in_cluster
 
-        self.locks_ptr = locks_ptr.bitcast[Int32]()
+        self.locks_ptr = rebind[UnsafePointer[Int32, MutAnyOrigin]](
+            locks_ptr.bitcast[Int32]()
+        )
 
         var problem_blocks = Self.get_problem_blocks_shape(
             prob_shape, Self.tile_shape, Self.cluster_shape
@@ -167,8 +163,7 @@ struct SplitKTileScheduler[
             UInt(self.cluster_shape[1]),
         )
 
-        @parameter
-        if Self.raster_order == RasterOrder.AlongN:
+        comptime if Self.raster_order == RasterOrder.AlongN:
             self.current_work_linear_idx = UInt32(block_idx.x) + UInt32(
                 grid_dim.x
             ) * UInt32(block_idx.y)
@@ -202,8 +197,7 @@ struct SplitKTileScheduler[
 
     @always_inline
     fn get_sm_num(self) -> UInt32:
-        @parameter
-        if Self.raster_order == RasterOrder.AlongN:
+        comptime if Self.raster_order == RasterOrder.AlongN:
             return UInt32(block_idx.x) + UInt32(grid_dim.x) * UInt32(
                 block_idx.y
             )
@@ -277,8 +271,7 @@ struct SplitKTileScheduler[
 
         var cluster_minor_offset: UInt32
 
-        @parameter
-        if self.raster_order == RasterOrder.AlongN:
+        comptime if self.raster_order == RasterOrder.AlongN:
             cluster_minor_offset = UInt32(rank_m_in_cluster)
         else:
             cluster_minor_offset = UInt32(rank_n_in_cluster)
@@ -297,8 +290,7 @@ struct SplitKTileScheduler[
         var work_idx_m: UInt32
         var work_idx_n: UInt32
 
-        @parameter
-        if self.raster_order == RasterOrder.AlongN:
+        comptime if self.raster_order == RasterOrder.AlongN:
             work_idx_m = minor_work_idx
             work_idx_n = major_work_idx
         else:
@@ -335,8 +327,7 @@ struct SplitKTileScheduler[
         var rank_n_in_cluster = self.block_id_in_cluster[1]
 
         # The final linearized tile ID is in units of the cluster dimension over which we rasterize.
-        @parameter
-        if self.raster_order == RasterOrder.AlongN:
+        comptime if self.raster_order == RasterOrder.AlongN:
             linear_tile_id += (
                 UInt32(rank_n_in_cluster) << self.log_cluster_shape_minor
             )
@@ -452,10 +443,9 @@ struct SplitKTileScheduler[
         dyn_tile_shape: IndexList[3],
         dyn_cluster_shape: IndexList[2],
     ) -> Int:
-        constrained[
-            accum_type == DType.float32,
-            "Only support float32 accumulator type",
-        ]()
+        comptime assert (
+            accum_type == DType.float32
+        ), "Only support float32 accumulator type"
 
         var num_output_tiles = Self.get_num_tiles(
             problem_shape, dyn_tile_shape, dyn_cluster_shape
@@ -475,8 +465,7 @@ struct SplitKTileScheduler[
         var major_work_idx: UInt32
         var cluster_minor_offset: UInt32
 
-        @parameter
-        if self.raster_order == RasterOrder.AlongN:
+        comptime if self.raster_order == RasterOrder.AlongN:
             minor_work_idx = tile_m
             major_work_idx = tile_n
             var cluster_m = (
@@ -557,9 +546,7 @@ struct SplitKTileScheduler[
                 )
 
             else:
-
-                @parameter
-                if Self.reduction_mode == ReductionMode.Deterministic:
+                comptime if Self.reduction_mode == ReductionMode.Deterministic:
                     # Wait until the preceding split added its accumulators
                     Self.wait_eq(
                         self.locks_ptr,
@@ -617,7 +604,7 @@ struct SplitKTileScheduler[
     @staticmethod
     @always_inline
     fn wait_eq(
-        lock_ptr: UnsafePointer[Int32],
+        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -631,7 +618,7 @@ struct SplitKTileScheduler[
     @staticmethod
     @always_inline
     fn wait_lt(
-        lock_ptr: UnsafePointer[Int32],
+        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -645,7 +632,7 @@ struct SplitKTileScheduler[
     @staticmethod
     @always_inline
     fn arrive_set(
-        lock_ptr: UnsafePointer[Int32],
+        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -672,10 +659,9 @@ struct SplitKTileScheduler[
         comptime BM = workspace_layout.shape[1].value()
         comptime BN = workspace_layout.shape[2].value()
 
-        constrained[
-            accum_type == DType.float32,
-            "Only support float32 accumulator type",
-        ]()
+        comptime assert (
+            accum_type == DType.float32
+        ), "Only support float32 accumulator type"
 
         comptime num_mma = c_reg_tile.layout.shape[0].value()
         comptime c_frag_size = c_reg_tile.layout.shape[1].value()
@@ -695,11 +681,8 @@ struct SplitKTileScheduler[
             )
         ]()
 
-        @parameter
-        for mma_id in range(num_mma):
-
-            @parameter
-            for i in range(c_frag_size):
+        comptime for mma_id in range(num_mma):
+            comptime for i in range(c_frag_size):
                 work_space_tile_reshaped[
                     mma_id * c_frag_size + i, Int(warp_group_thread_idx)
                 ] = c_reg_tile[mma_id, i]
@@ -723,10 +706,9 @@ struct SplitKTileScheduler[
         comptime BM = workspace_layout.shape[1].value()
         comptime BN = workspace_layout.shape[2].value()
 
-        constrained[
-            accum_type == DType.float32,
-            "Only support float32 accumulator type",
-        ]()
+        comptime assert (
+            accum_type == DType.float32
+        ), "Only support float32 accumulator type"
 
         comptime num_mma = c_reg_tile.layout.shape[0].value()
         comptime c_frag_size = c_reg_tile.layout.shape[1].value()
@@ -746,11 +728,8 @@ struct SplitKTileScheduler[
             )
         ]()
 
-        @parameter
-        for mma_id in range(num_mma):
-
-            @parameter
-            for i in range(c_frag_size):
+        comptime for mma_id in range(num_mma):
+            comptime for i in range(c_frag_size):
                 var sum_val = (
                     work_space_tile_reshaped[
                         mma_id * c_frag_size + i,
@@ -759,11 +738,8 @@ struct SplitKTileScheduler[
                     + c_reg_tile[mma_id, i]
                 )
 
-                @parameter
-                if write_back:
-
-                    @parameter
-                    if Self.reduction_mode == ReductionMode.Nondeterministic:
+                comptime if write_back:
+                    comptime if Self.reduction_mode == ReductionMode.Nondeterministic:
                         var offset = (
                             UInt32((mma_id * c_frag_size + i) * WARPGROUP_SIZE)
                             + warp_group_thread_idx

@@ -24,17 +24,17 @@ context manager interface. It includes:
 Example:
 
 ```mojo
-from gpu import profiler
+from std.gpu import profiler
     with profiler.ProfileBlock("my_kernel"):
         # Code to profile
         run_gpu_kernel()
 ```
 """
 
-from io.io import _printf
-from time import perf_counter_ns
+from std.io.io import _printf
+from std.time import perf_counter_ns
 
-from reflection import call_location, SourceLocation
+from std.reflection import call_location, SourceLocation
 
 
 @fieldwise_init
@@ -67,8 +67,7 @@ struct ProfileBlock[enabled: Bool = False](ImplicitlyCopyable):
         """
         self.start_time = 0
 
-        @parameter
-        if Self.enabled:
+        comptime if Self.enabled:
             self.name = name
             self.loc = call_location()
         else:
@@ -79,8 +78,7 @@ struct ProfileBlock[enabled: Bool = False](ImplicitlyCopyable):
     fn __enter__(mut self):
         """Enter the profiling block and record start time if enabled."""
 
-        @parameter
-        if not Self.enabled:
+        comptime if not Self.enabled:
             return
         self.start_time = perf_counter_ns()
 
@@ -89,8 +87,7 @@ struct ProfileBlock[enabled: Bool = False](ImplicitlyCopyable):
         """Exit the profiling block, record end time and print timing if enabled.
         """
 
-        @parameter
-        if not Self.enabled:
+        comptime if not Self.enabled:
             return
 
         var end_time = perf_counter_ns()

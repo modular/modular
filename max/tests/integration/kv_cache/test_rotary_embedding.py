@@ -23,7 +23,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValueLike, ops
-from max.nn.legacy import (
+from max.nn import (
     DynamicRotaryEmbedding,
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
@@ -31,7 +31,7 @@ from max.nn.legacy import (
     LongRoPEScalingParams,
     RotaryEmbedding,
 )
-from max.nn.legacy.kernels import rope_ragged, rope_ragged_with_position_ids
+from max.nn.kernels import rope_ragged, rope_ragged_with_position_ids
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 
 MAX_SEQ_LEN = 2**14
@@ -549,11 +549,8 @@ def test_kv_cache_ragged_rope(
     # These imports are deferred to avoid Mojo module import race conditions
     # when running with pytest-xdist parallel workers.
     from max.kv_cache import PagedKVCacheManager
-    from max.nn.legacy.kernels import fused_qk_ragged_rope
-    from max.nn.legacy.kv_cache import (
-        KVCacheParams,
-        PagedCacheValues,
-    )
+    from max.nn.kernels import fused_qk_ragged_rope
+    from max.nn.kv_cache import KVCacheParams, PagedCacheValues
     from test_common.context_utils import create_text_context
 
     num_q_heads = 32
@@ -563,7 +560,6 @@ def test_kv_cache_ragged_rope(
         n_kv_heads=8,
         head_dim=head_dim,
         num_layers=1,
-        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.CPU()],
     )
@@ -600,9 +596,6 @@ def test_kv_cache_ragged_rope(
         session=session,
         max_batch_size=128,
     )
-    blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
-        kv_params.get_symbolic_inputs()[0]
-    )
 
     mrope_section = [16, 24, 24]
 
@@ -611,10 +604,7 @@ def test_kv_cache_ragged_rope(
             input_type,
             input_row_offsets_type,
             freqs_cis_type,
-            blocks_type,
-            cache_lengths_type,
-            lookup_table_type,
-            is_cache_empty_type,
+            *kv_params.get_symbolic_inputs()[0],
         ]
 
         if use_position_ids:
@@ -633,9 +623,13 @@ def test_kv_cache_ragged_rope(
             freqs_cis = g.inputs[2]
 
             kv_start = 4 if use_position_ids else 3
-            blocks, cache_lengths, lookup_table, is_cache_empty = g.inputs[
-                kv_start:
-            ]
+            (
+                blocks,
+                cache_lengths,
+                lookup_table,
+                is_cache_empty,
+                _attention_dispatch_metadata,
+            ) = g.inputs[kv_start:]
 
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
 
@@ -683,18 +677,18 @@ def test_kv_cache_ragged_rope(
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs([batch])[0]
-    )
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
 
     # Build provided_inputs with correct indices based on use_position_ids
     offset = 1 if use_position_ids else 0
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
     provided_inputs = {
         1: input_row_offsets,
-        3 + offset: blocks,
-        4 + offset: cache_lengths,
-        5 + offset: lookup_table_tensor,
-        6 + offset: is_cache_empty_buf,
+        3 + offset: kv_runtime_inputs.blocks,
+        4 + offset: kv_runtime_inputs.cache_lengths,
+        5 + offset: kv_runtime_inputs.lookup_table,
+        6 + offset: kv_runtime_inputs.max_lengths,
+        7 + offset: kv_runtime_inputs.attention_dispatch_metadata,
     }
 
     if use_position_ids:

@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, iota
-from sys.info import simd_width_of
+from std.math import ceildiv, iota
+from std.sys.info import simd_width_of
 
-from algorithm import vectorize
+from std.algorithm import vectorize
 from buffer import NDBuffer
-from complex import ComplexSIMD
-from gpu import *
-from gpu.host import DeviceContext
-from testing import assert_equal
+from std.complex import ComplexSIMD
+from std.gpu import *
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal
 
-from utils.index import Index
-from sys import has_apple_gpu_accelerator
+from std.utils.index import Index
+from std.sys import has_apple_gpu_accelerator
 
 comptime float_type = DType.float32 if has_apple_gpu_accelerator() else DType.float64
 comptime int_type = DType.int
@@ -64,7 +64,7 @@ fn mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
     if row >= height:
         return
 
-    var out = NDBuffer[int_type, 2](out_ptr, Index(height, width))
+    var out = NDBuffer[rank=2, int_type](out_ptr, Index(height, width))
 
     comptime scale_x = (max_x - min_x) / width
     comptime scale_y = (max_y - min_y) / height
@@ -129,6 +129,6 @@ fn run_mandelbrot(ctx: DeviceContext) raises:
     _ = out_host
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_mandelbrot(ctx)

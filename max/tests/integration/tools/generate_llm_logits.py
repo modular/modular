@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import copy
 import os
 import sys
 import tempfile
@@ -20,13 +21,14 @@ import tempfile
 # Standard library
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 # 3rd-party
 import click
 import torch
+import transformers
 from create_pipelines import PIPELINE_ORACLES, GenericOracle
-from max import driver
+from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
 from max.entrypoints.cli.entrypoint import configure_cli_logging
 from max.pipelines.lib.device_specs import (
@@ -50,6 +52,9 @@ from test_common import (
 )
 from test_common.evaluate import NUM_STEPS, ModelOutput
 from test_common.github_utils import github_log_group
+
+# This version is detached from the one pulled from rules_pycross, assert that the override is working.
+assert transformers.__version__ == "4.57.6"
 
 # This is far from a universal standard, but this is the closest to a standard
 # that I could find: BSD-derived programs sometimes use exit codes from
@@ -85,6 +90,7 @@ EX_TEMPFAIL = 75
 @click.option(
     "--encoding",
     "encoding_name",
+    type=click.Choice(get_args(pipelines.SupportedEncoding)),
     required=False,
     help="Quantization encoding to run pipeline with.",
 )
@@ -143,7 +149,7 @@ def main(
     device_type: str | list[int],
     framework_name: str,
     pipeline_name: str,
-    encoding_name: str | None,
+    encoding_name: pipelines.SupportedEncoding | None,
     output_path: str | None,
     reference_path: Path | None,
     print_output: bool,
@@ -206,12 +212,13 @@ def generate_llm_logits(
     pipeline_name: str,
     output_path: Path,
     print_output: bool,
-    encoding_name: str | None = None,
+    encoding_name: pipelines.SupportedEncoding | None = None,
     max_batch_size: int | None = None,
     reference: list[ModelOutput] | None = None,
     log_hf_downloads: bool = False,
     mini: bool = False,
     generate_logprobs: bool = False,
+    config_params_override: dict[str, Any] | None = None,
 ) -> None:
     """Output logits to a file for a model based on a fixed set of prompts.
 
@@ -231,12 +238,21 @@ def generate_llm_logits(
             model_path=pipeline_name,
         )
 
+    if config_params_override is not None and hasattr(
+        pipeline_oracle, "config_params"
+    ):
+        pipeline_oracle = copy.copy(pipeline_oracle)
+        pipeline_oracle.config_params = {
+            **pipeline_oracle.config_params,
+            **config_params_override,
+        }
+
     if mini:
         inputs = pipeline_oracle.inputs[:1]
         num_steps = 1
     else:
         inputs = pipeline_oracle.inputs
-        num_steps = NUM_STEPS
+        num_steps = getattr(pipeline_oracle, "num_steps", NUM_STEPS)
 
     evaluation_batch_size: int | list[int]
     if max_batch_size is None:

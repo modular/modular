@@ -22,19 +22,20 @@ To use these features import the `Path` type from this module.
 Example:
 
 ```mojo
-from pathlib import Path
+from std.pathlib import Path
 var p = Path("a") / "b" / "c.txt"
 print(p)  # a/b/c.txt
 ```
 """
 
-import os
-from hashlib.hasher import Hasher
-from os import PathLike, listdir, stat_result
-from ffi import c_char, external_call
-from sys import CompilationTarget
+import std.os
+import std.format._utils as fmt
+from std.hashlib.hasher import Hasher
+from std.os import PathLike, listdir, stat_result
+from std.ffi import c_char, external_call
+from std.sys import CompilationTarget
 
-from reflection import call_location
+from std.reflection import call_location
 
 comptime DIR_SEPARATOR = "/"
 """The directory separator character for path operations."""
@@ -52,7 +53,7 @@ fn cwd() raises -> Path:
     Example:
 
     ```mojo
-    from pathlib import cwd
+    from std.pathlib import cwd
 
     var string_path = cwd()
     print(string_path)
@@ -96,7 +97,6 @@ struct Path(
     ImplicitlyCopyable,
     KeyElement,
     PathLike,
-    Stringable,
     Writable,
 ):
     """The Path object."""
@@ -175,6 +175,7 @@ struct Path(
             self.path += DIR_SEPARATOR
             self.path += suffix
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the path.
@@ -203,6 +204,17 @@ struct Path(
 
         writer.write(self.path)
 
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this `Path` to a writer.
+
+        Writes the path in the format `Path('...')`.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "Path").fields(fmt.Repr(self.path))
+
     @always_inline
     fn __fspath__(self) -> String:
         """Returns a string representation of the path.
@@ -210,15 +222,18 @@ struct Path(
         Returns:
           A string representation of the path.
         """
-        return String(self)
+        return self.path
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Returns a printable representation of the path.
 
         Returns:
           A printable representation of the path.
         """
-        return String(self)
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     fn __eq__(self, other: Self) -> Bool:
         """Returns True if the two paths are equal.
@@ -254,12 +269,12 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
+        from std.pathlib import Path
         var p = Path()       # Path to cwd
         print(p.stat())      # os.stat_result(...)
         ```
         """
-        return os.stat(self)
+        return std.os.stat(self)
 
     fn lstat(self) raises -> stat_result:
         """Returns the lstat information on the path. This is similar to stat,
@@ -272,7 +287,7 @@ struct Path(
         Raises:
             If the operation fails.
         """
-        return os.lstat(self)
+        return std.os.lstat(self)
 
     @always_inline
     fn exists(self) -> Bool:
@@ -284,13 +299,13 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
+        from std.pathlib import Path
 
         var p = Path("./path/to/nowhere/does-not-exist")
         print("Exists" if p.exists() else "Does not exist") # Does not exist
         ```
         """
-        return os.path.exists(self)
+        return std.os.path.exists(self)
 
     fn expanduser(self) raises -> Path:
         """Expands a prefixed `~` with `$HOME` on posix
@@ -306,14 +321,14 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_true
+        from std.pathlib import Path
+        from std.testing import assert_true
 
         var p = Path("~")
         assert_true(p.expanduser() == Path.home())
         ```
         """
-        return os.path.expanduser(self)
+        return std.os.path.expanduser(self)
 
     @staticmethod
     fn home() raises -> Path:
@@ -329,14 +344,14 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_true
+        from std.pathlib import Path
+        from std.testing import assert_true
 
         var p = Path("~")
         assert_true(p.expanduser() == Path.home())
         ```
         """
-        return os.path.expanduser("~")
+        return std.os.path.expanduser("~")
 
     fn is_dir(self) -> Bool:
         """Returns True if the path is a directory and False otherwise.
@@ -348,14 +363,14 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_false
+        from std.pathlib import Path
+        from std.testing import assert_false
 
         var p = Path.home()
         assert_true(p.is_dir())
         ```
         """
-        return os.path.isdir(self)
+        return std.os.path.isdir(self)
 
     fn is_file(self) -> Bool:
         """Returns True if the path is a file and False otherwise.
@@ -367,14 +382,14 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_false
+        from std.pathlib import Path
+        from std.testing import assert_false
 
         var p = Path.home()
         assert_false(p.is_file())
         ```
         """
-        return os.path.isfile(self)
+        return std.os.path.isfile(self)
 
     fn read_text(self) raises -> String:
         """Returns content of the file.
@@ -388,7 +403,7 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
+        from std.pathlib import Path
 
         var p = Path("testfile.txt")
         p.write_text("Hello Mojo")
@@ -412,8 +427,8 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_true
+        from std.pathlib import Path
+        from std.testing import assert_true
 
         var p = Path("testfile.txt")
         p.write_text("test")
@@ -440,7 +455,7 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
+        from std.pathlib import Path
 
         var p = Path("testfile")
         p.write_text("Hello")
@@ -452,7 +467,7 @@ struct Path(
         with open(self, "w") as f:
             f.write(value)
 
-    fn write_bytes(self, bytes: Span[Byte]) raises:
+    fn write_bytes(self, bytes: Span[Byte, _]) raises:
         """Writes bytes to the file.
 
         Args:
@@ -464,7 +479,7 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
+        from std.pathlib import Path
 
         var p = Path("testfile")
         var s = "Hello"
@@ -488,8 +503,8 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_true
+        from std.pathlib import Path
+        from std.testing import assert_true
 
         var p = Path("testfile.txt")
         print(p.suffix())
@@ -524,9 +539,9 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from tempfile import gettempdir
-        from testing import assert_true
+        from std.pathlib import Path
+        from std.tempfile import gettempdir
+        from std.testing import assert_true
 
         # gettmpdir() has no guarantee of trailing /
         # Use joinpath to ensure path construction
@@ -563,7 +578,7 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path, cwd
+        from std.pathlib import Path, cwd
 
         for item in cwd().listdir():
             print(item) # each item name in working directory
@@ -586,12 +601,12 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
+        from std.pathlib import Path
 
         Path("a/path/foo.txt").name()  # returns "foo.txt"
         ```
         """
-        return os.path.basename(self)
+        return std.os.path.basename(self)
 
     fn parts(self) -> List[StringSlice[origin_of(self.path)]]:
         """Returns the parts of the path separated by `DIR_SEPARATOR`.
@@ -602,8 +617,8 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_true
+        from std.pathlib import Path
+        from std.testing import assert_true
 
         for p, q in zip(Path("a/path/foo.txt").parts(), ["a", "path", "foo.txt"]):
             assert_true(p == q)

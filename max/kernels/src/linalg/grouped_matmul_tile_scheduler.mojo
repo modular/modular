@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import block_idx, grid_dim, thread_idx
+from std.gpu import block_idx, grid_dim, thread_idx
 
-from utils.fast_div import FastDiv
-from utils.index import Index, IndexList
+from std.utils.fast_div import FastDiv
+from std.utils.index import Index, IndexList
 from layout import Layout, LayoutTensor
 
 
@@ -37,7 +37,7 @@ struct RasterOrder(TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
+struct WorkInfo(TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -62,6 +62,7 @@ struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
     fn is_done(self) -> Bool:
         return self.terminate
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)
@@ -104,7 +105,7 @@ struct TileScheduler[
 ](TrivialRegisterPassable):
     var num_active_experts: Int
     var group_offsets: LayoutTensor[
-        DType.uint32, Self.offsets_layout, MutAnyOrigin
+        DType.uint32, Self.offsets_layout, ImmutAnyOrigin
     ]
     var current_iter: Int32  # Tracks the scheduler's progress across kernel launches
     var current_group_idx: UInt32
@@ -129,7 +130,7 @@ struct TileScheduler[
         out self,
         num_active_experts: Int,
         group_offsets: LayoutTensor[
-            DType.uint32, Self.offsets_layout, MutAnyOrigin
+            DType.uint32, Self.offsets_layout, ImmutAnyOrigin
         ],
     ):
         comptime assert (

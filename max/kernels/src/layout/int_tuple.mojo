@@ -56,16 +56,16 @@ var total_size = size(shape)  # Results in 120
 ```
 """
 
-from os import abort
+from std.os import abort
 
 from buffer import DimList
-from builtin.range import _StridedRange
-from memory import memcpy
-from sys.compile import is_compile_time
-from sys.intrinsics import _type_is_eq_parse_time
+from std.builtin.range import _StridedRange
+from std.memory import memcpy
+from std.sys.compile import is_run_in_comptime_interpreter
+from std.sys.intrinsics import _type_is_eq_parse_time
 
-from utils.numerics import max_finite
-from utils import IndexList
+from std.utils.numerics import max_finite
+from std.utils import IndexList
 
 
 fn _get_index_type(address_space: AddressSpace) -> DType:
@@ -147,7 +147,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         self._size = size
 
     @always_inline("nodebug")
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Initialize by copying an existing `IntArray`.
 
         For owned arrays, this performs a deep copy of the data.
@@ -336,7 +336,6 @@ struct IntTuple(
     Intable,
     Iterable,
     Sized,
-    Stringable,
     Writable,
 ):
     """A hierarchical, nested tuple of integers with efficient memory management.
@@ -374,7 +373,7 @@ struct IntTuple(
 
     @staticmethod
     @always_inline("nodebug")
-    fn elements_size(elements: VariadicListMem[IntTuple]) -> Int:
+    fn elements_size(elements: VariadicList[IntTuple, ...]) -> Int:
         """Calculate the total storage size needed for a list of IntTuples.
 
         Computes the sum of sizes for all elements, accounting for both direct
@@ -463,7 +462,37 @@ struct IntTuple(
         self = Self(elements)
 
     @always_inline
-    fn __init__(out self, elements: VariadicList[Int]):
+    fn __init__(out self, elements: VariadicList[Int, is_owned=False]):
+        """Initialize an `IntTuple` with a list of integers.
+
+        Creates an `IntTuple` containing the provided integer values.
+
+        Args:
+            elements: List of integer values to store in the tuple.
+
+        Notes:
+
+            - Pre-allocates exact memory needed for efficiency.
+            - Validates that all values are above `MinimumValue`. If any value is
+              less than `MinimumValue`, assertion fails with an error message.
+            - Structure validation performed when assertions are enabled.
+        """
+        var size = len(elements)
+        self._store = IntArray(size + 1)
+        self._store[0] = size
+        for i in range(size):
+            var value = elements[i]
+            debug_assert(
+                value >= Self.MinimumValue,
+                "IntTuple value must be >= MinimumValue: ",
+                value,
+            )
+            self._store[i + 1] = value
+
+        self.validate_structure()
+
+    @always_inline
+    fn __init__(out self, elements: VariadicParamList[Int]):
         """Initialize an `IntTuple` with a list of integers.
 
         Creates an `IntTuple` containing the provided integer values.
@@ -504,7 +533,7 @@ struct IntTuple(
         """
         # Skip validation during compile-time interpretation since the comparison
         # may involve complex type witness expressions that can't be evaluated.
-        if not is_compile_time():
+        if not is_run_in_comptime_interpreter():
             debug_assert(
                 value >= Self.MinimumValue,
                 "IntTuple value must be >= MinimumValue: ",
@@ -644,7 +673,7 @@ struct IntTuple(
             self.append(tup)
 
     @always_inline("nodebug")
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Initialize by copying an existing `IntTuple`.
 
         Creates a deep copy of the provided `IntTuple`, copying all its data
@@ -702,7 +731,7 @@ struct IntTuple(
         """Create a deep copy of this `IntTuple` with its own memory ownership.
 
         This method creates a completely independent copy of the `IntTuple` with
-        newly allocated memory. Unlike `__copyinit__`, this method can be called
+        newly allocated memory. Unlike copy init, this method can be called
         on an existing instance to create a separate copy.
 
         Returns:
@@ -906,10 +935,9 @@ struct IntTuple(
             - This operation requires reallocating the underlying `IntArray` storage to accommodate
             the new elements, which may impact performance for large tuples.
         """
-        debug_assert(
-            self._store.owning(),
-            "Can't modify a non-owning IntTuple (sub-tuple reference)",
-        )
+        assert (
+            self._store.owning()
+        ), "Can't modify a non-owning IntTuple (sub-tuple reference)"
 
         if len(elements) == 0:
             return
@@ -961,10 +989,9 @@ struct IntTuple(
               to accommodate the new elements, which may impact performance for large tuples.
             - If the input tuple is empty, this method returns without making any changes.
         """
-        debug_assert(
-            self._store.owning(),
-            "Can't modify a non-owning IntTuple (sub-tuple reference)",
-        )
+        assert (
+            self._store.owning()
+        ), "Can't modify a non-owning IntTuple (sub-tuple reference)"
 
         if len(tuple) == 0:
             return
@@ -1303,6 +1330,7 @@ struct IntTuple(
                     writer.write(", ")
             writer.write(")")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """
         Returns a string representation of this `IntTuple`.
@@ -1377,6 +1405,7 @@ struct IntTuple(
         return not Self.is_equal(self, other)
 
     @always_inline("nodebug")
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """
         Returns a string representation of this `IntTuple` for debugging.
@@ -1384,7 +1413,7 @@ struct IntTuple(
         Returns:
             A string representation of the `IntTuple`, same as `__str__`.
         """
-        return self.__str__()
+        return String.write(self)
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:
@@ -2281,10 +2310,9 @@ fn _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
                 v_init = UNKNOWN_VALUE if is_unknown else v_init * product(v)
             return r
     else:
-        debug_assert(
-            not is_tuple(init),
-            "Invalid prefix_product: 'int' tuple case not allowed",
-        )
+        assert not is_tuple(
+            init
+        ), "Invalid prefix_product: 'int' tuple case not allowed"
 
         if is_tuple(init):  # "int" tuple
             return IntTuple()
@@ -2348,8 +2376,7 @@ fn shape_div[check: Bool = False](a: IntTuple, b: IntTuple) -> IntTuple:
             if va == UNKNOWN_VALUE or vb == UNKNOWN_VALUE:
                 return UNKNOWN_VALUE
 
-            @parameter
-            if check:
+            comptime if check:
                 debug_assert(
                     va % vb == 0 or vb % va == 0,
                     "Incompatible shape values: ",
@@ -2583,8 +2610,7 @@ fn crd2idx(
                     return UNKNOWN_VALUE
 
                 # Extract coordinates
-                var c0 = c_val % s0_prod
-                var c1 = c_val // s0_prod
+                var c1, c0 = divmod(c_val, s0_prod)
 
                 # Handle direct stride values case
                 if _stride.is_value(0) and _stride.is_value(1):
@@ -2647,10 +2673,9 @@ fn crd2idx(
                 return 0
             var result: Int = 0
             for i in range(len(shape) - 1):
-                result += crd2idx(
-                    int_crd % product(shape[i]), shape[i], stride[i]
-                )
-                int_crd = int_crd // product(shape[i])
+                var remainder: Int
+                int_crd, remainder = divmod(int_crd, product(shape[i]))
+                result += crd2idx(remainder, shape[i], stride[i])
             return result + crd2idx(int_crd, shape[-1], stride[-1])
         else:  # "int" "int" "int"
             return int_crd * Int(stride)

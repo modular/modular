@@ -11,17 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from utils import StaticTuple
-from sys import size_of
-from ffi import _Global, external_call
+from std.utils import StaticTuple
+from std.sys import size_of
 
-from gpu.host import DeviceContext
-from gpu import (
+from std.gpu.host import DeviceContext
+from std.gpu import (
     barrier,
     block_idx,
     thread_idx,
 )
-from gpu.intrinsics import (
+from std.gpu.intrinsics import (
     load_acquire,
     store_release,
 )
@@ -36,56 +35,33 @@ fn group_end():
     return
 
 
-fn _p2p_cache_destroy_wrapper(
-    ptr: MutOpaquePointer[MutExternalOrigin],
-) -> None:
-    # No resources to free for tagged-pointer encoding.
-    pass
+fn enable_p2p() -> Bool:
+    """Enable peer-to-peer memory access between all GPU pairs if supported.
 
-
-fn _p2p_cache_init_wrapper() -> MutOpaquePointer[MutExternalOrigin]:
-    """Initializer for the indexed global caching P2P availability.
-
-    Returns an OpaquePointer encoding a small integer tag:
-      1 => p2p_not_available
-      2 => p2p_available
-    """
-    comptime p2p_not_available = 1
-    comptime p2p_available = 2
-
-    try:
-        DeviceContext.enable_all_peer_access()
-        return UnsafePointer[NoneType, MutExternalOrigin](
-            unsafe_from_address=p2p_available
-        )
-    except:
-        return UnsafePointer[NoneType, MutExternalOrigin](
-            unsafe_from_address=p2p_not_available
-        )
-
-
-fn can_enable_p2p() raises -> Bool:
-    """
-    If peer-to-peer access is supported, enables it between all GPU pairs.
+    Attempts to enable P2P access between all device pairs. Returns False
+    if P2P is not supported by the hardware rather than raising.
 
     Returns:
-        True if P2P access is possible between all GPU pairs, False otherwise.
+        True if P2P access is enabled between all GPU pairs, False otherwise.
     """
-    comptime p2p_not_available = Scalar[DType.int](1)
-    comptime p2p_available = Scalar[DType.int](2)
+    try:
+        DeviceContext.enable_all_peer_access()
+        return DeviceContext.all_peer_access_enabled()
+    except:
+        return False
 
-    # Initialize once per process via indexed global, then reuse the tag.
-    var cached = external_call[
-        "KGEN_CompilerRT_GetOrCreateGlobalIndexed",
-        MutOpaquePointer[MutExternalOrigin],
-    ](
-        _Global._gpu_comm_p2p_idx,
-        _p2p_cache_init_wrapper,
-        _p2p_cache_destroy_wrapper,
-    )
 
-    var tag = Scalar[DType.int](Int(cached))
-    return tag == p2p_available
+fn is_p2p_enabled() raises -> Bool:
+    """Checks whether P2P access is available between GPUs.
+
+    This is a read-only status check. Callers must ensure `enable_p2p()`
+    has been called during initialization (e.g., during model setup or
+    via `Signals.buffers()`) before relying on this function.
+
+    Returns:
+        True if P2P access is available between all GPU pairs, False otherwise.
+    """
+    return DeviceContext.all_peer_access_enabled()
 
 
 # NOTE: the above result was true on A100, but on H100 we need more SMs to
@@ -184,8 +160,7 @@ fn _multi_gpu_barrier[
         ngpus <= MAX_GPUS
     ), "too many GPUs for barrier implementation"
 
-    @parameter
-    if not is_start:
+    comptime if not is_start:
         barrier()
 
     comptime assert not (
@@ -235,8 +210,7 @@ fn _multi_gpu_barrier[
 
         # Write the expected counter value to peer and wait for correct value from
         # peer.
-        @parameter
-        if need_fence:
+        comptime if need_fence:
             # broadcast the value to all peers that I reached the barrier
             store_release(peer_counter_ptr, val)
             while load_acquire(self_counter_ptr) != val:
@@ -246,6 +220,5 @@ fn _multi_gpu_barrier[
             while self_counter_ptr.load[volatile=True]() != val:
                 pass
 
-    @parameter
-    if is_start or need_fence:
+    comptime if is_start or need_fence:
         barrier()

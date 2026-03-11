@@ -10,30 +10,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from gpu.memory import AddressSpace
+from std.gpu.memory import AddressSpace
 from .tile_scheduler import TileScheduler as B200TileScheduler
 from .tile_scheduler import WorkInfo as B200WorkInfo
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
-from layout._layout import TensorLayout, row_major
-from layout._coord import Coord, Idx
-from layout._tile_tensor import TileTensor
+from layout.tile_layout import TensorLayout
+from layout import Coord, Idx, TileTensor, row_major
 from layout.tma_async import SharedMemBarrier, PipelineState
-from utils.static_tuple import StaticTuple
-from .tile_types import static_row_major, _StridedLayout, _strided_layout
-from gpu import (
+from std.utils.static_tuple import StaticTuple
+from structured_kernels.tile_types import (
+    static_row_major,
+    _StridedLayout,
+    _strided_layout,
+)
+from std.gpu import (
     grid_dim,
     thread_idx,
     lane_id,
     NamedBarrierSemaphore,
     WARP_SIZE,
 )
-from gpu.primitives.cluster import elect_one_sync
-from gpu.globals import WARPGROUP_SIZE
-from gpu.compute.arch.tcgen05 import *
-from gpu.sync import named_barrier
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.gpu.primitives.cluster import elect_one_sync
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.compute.arch.tcgen05 import *
+from std.gpu.sync import named_barrier
 from std.bit import prev_power_of_two
 
 from linalg.structuring import SMemPtr
@@ -41,7 +41,7 @@ from .tmem import TmemAddress, TmemTensor
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
+struct WorkInfo(TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -61,6 +61,7 @@ struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
     fn is_final_split(self, k_tiles_per_output_tile: UInt32) -> Bool:
         return (self.k_start + self.num_k_tiles) == k_tiles_per_output_tile
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)
@@ -94,7 +95,7 @@ struct AdvanceAfterWorkContextSplitK[
     state_origin: MutOrigin,
     num_stages: Int,
     reduction_tile_shape: IndexList[3],
-    cluster_shape: IndexList[3, element_type = DType.uint32],
+    cluster_shape: IndexList[3, element_type=DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
@@ -183,7 +184,7 @@ struct WaitAndAdvanceContextSplitK[
 struct WorkIteratorSplitK[
     num_stages: Int,
     reduction_tile_shape: IndexList[3],
-    cluster_shape: IndexList[3, element_type = DType.uint32],
+    cluster_shape: IndexList[3, element_type=DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
@@ -283,7 +284,7 @@ struct WorkIteratorSplitK[
 struct SchedulerWorkIteratorSplitK[
     num_stages: Int,
     reduction_tile_shape: IndexList[3],
-    cluster_shape: IndexList[3, element_type = DType.uint32],
+    cluster_shape: IndexList[3, element_type=DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
@@ -356,8 +357,7 @@ struct SchedulerWorkIteratorSplitK[
     fn drain(mut self):
         """Drain all pending CLC requests before kernel exit."""
 
-        @parameter
-        for i in range(Self.num_stages):
+        comptime for i in range(Self.num_stages):
             # Split-K wraps underlying scheduler, so access via scheduler.scheduler
             self.scheduler.scheduler.empty_mbar[
                 self.producer_state.index()
@@ -368,8 +368,8 @@ struct SchedulerWorkIteratorSplitK[
 struct TileScheduler[
     num_stages: Int,
     reduction_tile_shape: IndexList[3],
-    cluster_shape: IndexList[3, element_type = DType.uint32] = Index[
-        dtype = DType.uint32
+    cluster_shape: IndexList[3, element_type=DType.uint32] = Index[
+        dtype=DType.uint32
     ](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
@@ -392,7 +392,7 @@ struct TileScheduler[
     comptime ClcBarrierArray = Self.UnderlyingScheduler.ClcBarrierArray
     comptime ThrottleBarrierArray = Self.UnderlyingScheduler.ThrottleBarrierArray
 
-    var locks_ptr: UnsafePointer[Int32]
+    var locks_ptr: UnsafePointer[Int32, MutAnyOrigin]
     var scheduler: Self.UnderlyingScheduler
     var total_k_tiles: UInt32
     var k_tiles_per_split: UInt32
@@ -419,7 +419,7 @@ struct TileScheduler[
         clc_full: Self.ClcBarrierArray,
         clc_empty: Self.ClcBarrierArray,
         clc_throttle: Self.ThrottleBarrierArray,
-        locks_ptr: UnsafePointer[UInt8],
+        locks_ptr: UnsafePointer[UInt8, MutAnyOrigin],
     ):
         """Initialize from typed barrier arrays."""
         self.scheduler = Self.UnderlyingScheduler(
@@ -722,8 +722,7 @@ struct TileScheduler[
         )
         var stage_addr = tmem  # Track address for iteration
 
-        @parameter
-        for stage in range(num_widths):
+        comptime for stage in range(num_widths):
             comptime stage_width = widths[stage]
             comptime stage_rep = stage_width // 8
 
@@ -750,11 +749,8 @@ struct TileScheduler[
             comptime num_m = type_of(ws_upper).static_shape[0]
             comptime num_n = type_of(ws_upper).static_shape[1]
 
-            @parameter
-            for m in range(num_m):
-
-                @parameter
-                for n in range(num_n):
+            comptime for m in range(num_m):
+                comptime for n in range(num_n):
                     comptime i = m * num_n + n
 
                     var v2_upper = rebind[type_of(ws_upper).ElementType](
@@ -768,13 +764,11 @@ struct TileScheduler[
                         )
                     )
 
-                    @parameter
-                    if do_reduction:
+                    comptime if do_reduction:
                         v2_upper += ws_upper[m, n]
                         v2_lower += ws_lower[m, n]
 
-                    @parameter
-                    if write_back:
+                    comptime if write_back:
                         ws_upper[m, n] = v2_upper
                         ws_lower[m, n] = v2_lower
                     else:
@@ -784,8 +778,7 @@ struct TileScheduler[
                         frags.lower[2 * i + 1] = v2_lower[1]
 
             # Store modified fragments back to TMEM
-            @parameter
-            if not write_back:
+            comptime if not write_back:
                 stage_tmem.store_fragments[stage_rep](frags)
                 AccumTmem.wait_store()
 
@@ -864,7 +857,7 @@ struct TileScheduler[
     @always_inline
     @staticmethod
     fn wait_eq(
-        lock_ptr: UnsafePointer[Int32],
+        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -878,7 +871,7 @@ struct TileScheduler[
     @staticmethod
     @always_inline
     fn wait_lt(
-        lock_ptr: UnsafePointer[Int32],
+        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -889,7 +882,7 @@ struct TileScheduler[
     @staticmethod
     @always_inline
     fn arrive_set(
-        lock_ptr: UnsafePointer[Int32],
+        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,

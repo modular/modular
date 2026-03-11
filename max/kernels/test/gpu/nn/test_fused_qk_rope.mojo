@@ -11,16 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
-from memory import memcpy
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
+from std.memory import memcpy
 
 from nn.fused_qk_rope import fused_qk_rope
 from testdata.fused_qk_rope_goldens import (
@@ -31,10 +36,10 @@ from testdata.fused_qk_rope_goldens import (
     q_out_golden,
 )
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 
-def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
+def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
     comptime assert (
         dtype == DType.float32
@@ -213,15 +218,13 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
 
     # Create and initialize golden outputs.
     expected_q_out_buffer = q_out_golden[dtype]()
-    debug_assert(
-        len(expected_q_out_buffer) == q_shape.flattened_length(),
-        "invalid expected q out init",
-    )
+    assert (
+        len(expected_q_out_buffer) == q_shape.flattened_length()
+    ), "invalid expected q out init"
     expected_k_out_buffer = k_out_golden[dtype]()
-    debug_assert(
-        len(expected_k_out_buffer) == batch_size * seq_len * dim,
-        "invalid expected k out init",
-    )
+    assert (
+        len(expected_k_out_buffer) == batch_size * seq_len * dim
+    ), "invalid expected k out init"
 
     # Create valid_lengths device buffer - all sequences have full seq_len valid
     var valid_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
@@ -237,12 +240,14 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
     )
     var valid_lengths_tensor = TileTensor[
         DType.uint32,
-        _,
+        type_of(valid_lengths_static).LayoutType,
         MutAnyOrigin,
     ](
         valid_lengths_static.ptr.unsafe_origin_cast[MutAnyOrigin](),
         valid_lengths_static.layout,
-    ).make_dynamic[DType.int64]()
+    ).make_dynamic[
+        DType.int64
+    ]()
 
     fused_qk_rope[kv_collection.CacheType, interleaved=True, target="gpu"](
         q_proj=q_tensor,
@@ -295,6 +300,6 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
     _ = valid_lengths_device^
 
 
-def main() -> None:
+def main() raises -> None:
     with DeviceContext() as ctx:
         test_fused_qk_rope[DType.float32](ctx)

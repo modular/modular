@@ -13,13 +13,13 @@
 
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from buffer.dimlist import DimList
-from testing import TestSuite
+from std.testing import TestSuite
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 # CHECK-LABEL: test_partial_load_store
-def test_partial_load_store():
+def test_partial_load_store() raises:
     print("== test_partial_load_store")
     # The total amount of data to allocate
     comptime total_buffer_size: Int = 32
@@ -31,11 +31,11 @@ def test_partial_load_store():
         uninitialized=True
     )
 
-    var read_buffer = NDBuffer[DType.int, 1, _, total_buffer_size](
+    var read_buffer = NDBuffer[rank=1, DType.int, _, total_buffer_size](
         read_data.unsafe_ptr()
     )
 
-    var write_buffer = NDBuffer[DType.int, 1, _, total_buffer_size](
+    var write_buffer = NDBuffer[rank=1, DType.int, _, total_buffer_size](
         write_data.unsafe_ptr()
     )
 
@@ -67,11 +67,11 @@ def test_partial_load_store():
     print(partial_store_data)
 
     # Test NDBuffer partial load store
-    var read_nd_buffer = NDBuffer[DType.int, 2, _, DimList(8, 4)](
+    var read_nd_buffer = NDBuffer[rank=2, DType.int, _, DimList(8, 4)](
         read_data.unsafe_ptr()
     )
 
-    var write_nd_buffer = NDBuffer[DType.int, 2, _, DimList(8, 4)](
+    var write_nd_buffer = NDBuffer[rank=2, DType.int, _, DimList(8, 4)](
         write_data.unsafe_ptr()
     )
 
@@ -100,5 +100,5 @@ def test_partial_load_store():
     print(nd_partial_store_data)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

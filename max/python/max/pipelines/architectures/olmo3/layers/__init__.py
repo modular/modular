@@ -11,20 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ...common_layers.mlp import MLP
-from ...common_layers.rotary_embedding import (
+from max.experimental.nn.common_layers.mlp import MLP
+from max.experimental.nn.common_layers.rotary_embedding import (
     YarnRotaryEmbedding,
     YarnScalingParams,
 )
+
 from .attention import Olmo3Attention
-from .rms_norm import Olmo3RMSNorm
-from .transformer_block import Olmo3TransformerBlock
 
 __all__ = [
     "MLP",
     "Olmo3Attention",
-    "Olmo3RMSNorm",
-    "Olmo3TransformerBlock",
     "YarnRotaryEmbedding",
     "YarnScalingParams",
 ]

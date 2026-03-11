@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import size_of
-import gpu.primitives.warp as warp
-from gpu import (
+from std.math import ceildiv
+from std.sys import size_of
+import std.gpu.primitives.warp as warp
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
-    block_idx,
+    block_idx_int as block_idx,
     thread_idx,
     warp_id,
 )
-from gpu.globals import WARPGROUP_SIZE
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.primitives.grid_controls import launch_dependent_grids
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
-from gpu.compute.arch.tcgen05 import (
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.primitives.grid_controls import launch_dependent_grids
+from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
+from std.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_before,
@@ -35,17 +35,17 @@ from gpu.compute.arch.tcgen05 import (
 from layout.tma_async import (
     SharedMemBarrier,
 )
-from memory import bitcast
+from std.memory import bitcast
+from layout import TileTensor, RowMajorLayout, ComptimeInt
 from nn.mha_fa3_utils import (
     OptionalPointer,
 )
 from nn.mha_mask import MHAMask
 from nn.mha_operand import MHAOperand
-from nn.mha_score_mod import ScoreModTrait
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
-from nn.mha_sm100_2q import (
+from nn.sm100_attention_utils import (
     elect,
 )
 from nn.mha_fa3_utils import KVTMATile
@@ -84,9 +84,7 @@ struct MLA_SM100_Decode_KV_BF16[
     output_type: DType,
     SplitAccumType: OptionalPointer,
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
     config: MLA_SM100_Decode_Config,
-    use_score_mod: Bool,
     ValidLengthType: OptionalPointer,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
@@ -107,14 +105,14 @@ struct MLA_SM100_Decode_KV_BF16[
         4 // size_of[Self.output_type]()
     )
     comptime UMMAQKTSS = DecodeSM100QKTSS[
-        operand_type = Self.q_type,
-        accum_type = Self.AccumType,
-        config = Self.config,
+        operand_type=Self.q_type,
+        accum_type=Self.AccumType,
+        config=Self.config,
     ]
     comptime UMMAPVSS = DecodeSM100PVSS[
-        operand_type = Self.q_type,
-        accum_type = Self.AccumType,
-        config = Self.config,
+        operand_type=Self.q_type,
+        accum_type=Self.AccumType,
+        config=Self.config,
     ]
 
     comptime Common_MLA_Op = MLA_SM100_Decode_Common[
@@ -123,9 +121,7 @@ struct MLA_SM100_Decode_KV_BF16[
         Self.output_type,
         Self.SplitAccumType,
         Self.MaskType,
-        Self.ScoreModType,
         Self.config,
-        Self.use_score_mod,
         Self.ValidLengthType,
         Self._is_cache_length_accurate,
         Self.ragged,
@@ -183,43 +179,46 @@ struct MLA_SM100_Decode_KV_BF16[
             Int32(Self.config.num_threads)
         )
     )
+    @__llvm_metadata(`nvvm.minctasm`=Int(1))
     fn kernel(
         q_tma: QOTMATile[
-            dtype = Self.q_type,
-            BM = Self.config.BM,  # tile_m =64
-            BK = Self.config.BK0,  # tile_n =576
-            swizzle_mode = Self.config.swizzle_mode,
+            dtype=Self.q_type,
+            BM=Self.config.BM,  # tile_m =64
+            BK=Self.config.BK0,  # tile_n =576
+            swizzle_mode=Self.config.swizzle_mode,
         ],
         k_tma: KVTMATile[
-            dtype = Self.kv_type,
-            swizzle_mode = Self.config.kv_tma_swizzle_mode,
-            BN = Self.config.BK1,  # tile_m =64
-            BK = Self.config.BK0,  # tile_n =576
+            dtype=Self.kv_type,
+            swizzle_mode=Self.config.kv_tma_swizzle_mode,
+            BN=Self.config.BK1,  # tile_m =64
+            BK=Self.config.BK0,  # tile_n =576
         ],
         o_tma: QOTMATile[
-            dtype = Self.output_type,
-            BM = Self.config.out_rows,
-            BK = Self.config.BN,
-            swizzle_mode = Self.config.swizzle_mode,
+            dtype=Self.output_type,
+            BM=Self.config.out_rows,
+            BK=Self.config.BN,
+            swizzle_mode=Self.config.swizzle_mode,
         ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
-        batch_size: Int,
-        q_max_seq_len: Int,
-        num_partitions: Int,
-        max_cache_valid_length: Int,  # longest KV cache entry,
         mla_decode_pack: MLA_Decode_Pack[
-            ValidLengthType = Self.ValidLengthType,
-            MaskType = Self.MaskType,
-            ScoreModType = Self.ScoreModType,
-            SplitAccumType = Self.SplitAccumType,
+            ValidLengthType=Self.ValidLengthType,
+            MaskType=Self.MaskType,
+            SplitAccumType=Self.SplitAccumType,
+        ],
+        scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+        scalar_args: TileTensor[
+            DType.int64, RowMajorLayout[ComptimeInt[4]], MutAnyOrigin
         ],
     ):
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 184
         comptime num_reg_other = 112
+        var batch_size = Int(scalar_args.ptr[0])
+        var q_max_seq_len = Int(scalar_args.ptr[1])
+        var num_partitions = Int(scalar_args.ptr[2])
+        var max_cache_valid_length = Int(scalar_args.ptr[3])
         mask = mla_decode_pack.mask
-        score_mod = mla_decode_pack.score_mod
         valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
         var offset_position = OffsetPosition[
@@ -242,8 +241,7 @@ struct MLA_SM100_Decode_KV_BF16[
         # launch_dependent_grids() to fulfill the PDL contract with the
         # combine kernel.  Skipping launch_dependent_grids() causes the
         # combine kernel to hang, leading to CUDA_ERROR_ILLEGAL_ADDRESS.
-        @parameter
-        if Self.config.decoding_warp_split_k:
+        comptime if Self.config.decoding_warp_split_k:
             if offset_position.num_keys_this_split == 0:
                 Self.Common_MLA_Op.pdl_early_exit(
                     offset_position.split_idx,
@@ -262,14 +260,11 @@ struct MLA_SM100_Decode_KV_BF16[
         # may have fewer tokens. CTAs with block_idx.y >= seq_len must still
         # fulfill the PDL contract (write -inf LSE, zero o_accum_split, and
         # call launch_dependent_grids) or the combine kernel will hang.
-        @parameter
-        if Self.ragged:
+        comptime if Self.ragged:
             # In ragged mode, block_idx.y is the query token index (0 to q_max_seq_len-1)
             # But this batch might have fewer tokens than q_max_seq_len
-            if Int(block_idx.y) >= offset_position.seq_len:
-
-                @parameter
-                if Self.config.decoding_warp_split_k:
+            if block_idx.y >= offset_position.seq_len:
+                comptime if Self.config.decoding_warp_split_k:
                     Self.Common_MLA_Op.pdl_early_exit(
                         offset_position.split_idx,
                         offset_position.batch_idx,
@@ -283,7 +278,7 @@ struct MLA_SM100_Decode_KV_BF16[
                 return  # This query position doesn't exist for this batch
         q_smem = external_memory[
             Scalar[Self.q_type],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]()
@@ -308,12 +303,14 @@ struct MLA_SM100_Decode_KV_BF16[
 
         var out_smem = out_smem_start.bitcast[Scalar[Self.output_type]]()
 
+        # max_smem is double-buffered (2 x 128 elements) to avoid a race
+        # condition in softmax; li_smem is a single 128-element buffer.
         var max_smem = (out_smem + out_smem_total).bitcast[
             Scalar[Self.AccumType]
         ]()
 
         var li_smem = (
-            max_smem + WARPGROUP_SIZE
+            max_smem + 2 * WARPGROUP_SIZE
         )  # 128 x1 for SMEM correction for Softmax
         #  Now we have to define MBARS for the kernel
         var mbar_base: MBarType = (li_smem + WARPGROUP_SIZE).bitcast[
@@ -324,7 +321,7 @@ struct MLA_SM100_Decode_KV_BF16[
         var mbar_kv_base: MBarType = mbar_base + 1  # barrier total[1]
 
         var kv_pipeline = KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages=Self.config.num_kv_stages,  # 2
             num_qk_stages=1,
             num_producer=1,
             num_consumer=2,
@@ -375,7 +372,7 @@ struct MLA_SM100_Decode_KV_BF16[
         # num_out_stages = (Depth/BN) / blocks_per_stage = 8/2 = 4, so 4*2 = 8.
         comptime OutPipeType = DecodeOutProducer[Self.output_type, Self.config]
         var out_pipeline = OutPipeline[
-            num_out_stages = OutPipeType.num_out_stages,
+            num_out_stages=OutPipeType.num_out_stages,
             num_producer=WARPGROUP_SIZE,
             num_consumer=1,
         ](
@@ -423,9 +420,7 @@ struct MLA_SM100_Decode_KV_BF16[
                 offset_position,
                 scale,
                 mask,
-                score_mod,
                 prompt_idx=UInt32(offset_position.batch_idx),
-                max_seq_len=UInt32(q_max_seq_len),
                 lse_accum_split_ptr=lse_accum_split_ptr,
                 batch_size=batch_size,
             )
@@ -478,8 +473,7 @@ struct MLA_SM100_Decode_KV_BF16[
 
         # PDL: Signal that this CTA is done so dependent grids (combine kernel) can start.
         # This must be called by all threads in the CTA after all work is complete.
-        @parameter
-        if Self.config.decoding_warp_split_k:
+        comptime if Self.config.decoding_warp_split_k:
             launch_dependent_grids()
 
         if warp_idx == 9:
@@ -495,23 +489,23 @@ struct MLA_SM100_Decode_KV_BF16[
     @always_inline
     fn load(
         q_tma: QOTMATile[
-            dtype = Self.q_type,
-            BM = Self.config.BM,  # tile_m =64
-            BK = Self.config.BK0,  # tile_n =576
-            swizzle_mode = Self.config.swizzle_mode,
+            dtype=Self.q_type,
+            BM=Self.config.BM,  # tile_m =64
+            BK=Self.config.BK0,  # tile_n =576
+            swizzle_mode=Self.config.swizzle_mode,
         ],
         k_tma: KVTMATile[
-            dtype = Self.kv_type,
-            swizzle_mode = Self.config.kv_tma_swizzle_mode,
-            BN = Self.config.BK1,  # tile_m =64
-            BK = Self.config.BK0,  # tile_n =576
+            dtype=Self.kv_type,
+            swizzle_mode=Self.config.kv_tma_swizzle_mode,
+            BN=Self.config.BK1,  # tile_m =64
+            BK=Self.config.BK0,  # tile_n =576
         ],
         kv_lut: Self.KVLUTType,
         q_smem: SharedMemPointer[Scalar[Self.q_type]],
         kv_smem: SharedMemPointer[Scalar[Self.kv_type]],
         mbar_q: MBarType,
         kv_pipeline: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages=Self.config.num_kv_stages,  # 2
             num_qk_stages=1,
             num_producer=1,
             num_consumer=2,
@@ -525,13 +519,13 @@ struct MLA_SM100_Decode_KV_BF16[
             Self.config.decoding_warp_split_k,
         ],
     ):
+        # Early exit if this split has no work (prevents producer/consumer deadlock)
+        if offset_position.num_keys_this_split == 0:
+            return
+
         num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN
         )
-
-        # Early exit if this split has no work (prevents producer/consumer deadlock)
-        if num_k_tiles == 0:
-            return
 
         var kv_prod = DecodeKVProducer[Self.kv_type, Self.config](
             kv_pipeline, kv_smem
@@ -541,17 +535,9 @@ struct MLA_SM100_Decode_KV_BF16[
         var row: UInt = UInt(offset_position.q_row_offset)
         # Start KV from kv_start_row for split-K support
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
-        # Clamp kv_row to the last physical cache token to prevent OOB
-        # lookup_table access on the last tile.
-        var physical_cache_len = UInt32(offset_position.num_keys)
-
-        # When !_is_cache_length_accurate, num_keys includes seq_len
-        # padding; subtract it to recover the physical cache length.
-        @parameter
-        if not Self._is_cache_length_accurate:
-            physical_cache_len -= UInt32(offset_position.seq_len)
-        # Clamp kv_row to physical cache boundary.
-        kv_row = min(kv_row, max(physical_cache_len, UInt32(1)) - 1)
+        # Clamp kv_row to prevent OOB lookup_table access on the last tile.
+        var num_keys_u32 = UInt32(offset_position.num_keys)
+        kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
         var kv_gmem_row: UInt32 = kv_lut.row_idx(
             UInt32(offset_position.batch_idx), kv_row
         )
@@ -590,8 +576,7 @@ struct MLA_SM100_Decode_KV_BF16[
             kv_prod.acquire[qk_stage=0]()
             var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
             var k_mbar = kv_prod.producer_mbar[qk_stage=0]()
-            # Clamp kv_row to physical cache boundary.
-            kv_row = min(kv_row, max(physical_cache_len, UInt32(1)) - 1)
+            kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
             var kv_gmem_row: UInt32 = kv_lut.row_idx(
                 UInt32(offset_position.batch_idx), kv_row
             )
@@ -672,7 +657,7 @@ struct MLA_SM100_Decode_KV_BF16[
             num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
         ],
         kv_pipeline: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages=Self.config.num_kv_stages,  # 2
             num_qk_stages=1,
             num_producer=1,
             num_consumer=2,
@@ -745,7 +730,7 @@ struct MLA_SM100_Decode_KV_BF16[
             num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
         ],
         kv_pipeline: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages=Self.config.num_kv_stages,  # 2
             num_qk_stages=1,
             num_producer=1,
             num_consumer=2,
@@ -791,8 +776,7 @@ struct MLA_SM100_Decode_KV_BF16[
             var v_slot_index = kv_cons.stage_index[qk_stage=0]()
 
             # PV does not have the k-rope so we don't need to do the last block
-            @parameter
-            for block in range(0, Self.NumVOBlocks, block_step):
+            comptime for block in range(0, Self.NumVOBlocks, block_step):
                 o_prod.acquire()
                 Self.UMMAPVSS.mma[stage_idx=0](
                     a=p_descriptor

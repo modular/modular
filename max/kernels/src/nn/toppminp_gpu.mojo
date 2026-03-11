@@ -12,19 +12,23 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import ceildiv
-from sys import align_of, bit_width_of
+from std.math import ceildiv
+from std.sys import align_of, bit_width_of
 
-from builtin.dtype import _uint_type_of_width
-from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
-from gpu.host import DeviceContext, DeviceBuffer
-from gpu.host.dim import Dim
-from gpu.memory import external_memory
-from random import Random
-from layout._coord import Coord, CoordLike, Idx
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
-from memory import bitcast, stack_allocation
+from std.builtin.dtype import _uint_type_of_width
+from std.gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
+from std.gpu.host import DeviceContext, DeviceBuffer
+from std.gpu.host.dim import Dim
+from std.gpu.memory import external_memory
+from std.random import Random
+from layout import (
+    Coord,
+    CoordLike,
+    Idx,
+    TileTensor,
+    row_major,
+)
+from std.memory import bitcast, stack_allocation
 from nn.softmax import _softmax_gpu
 from nn.topk import (
     TopK_2,
@@ -33,7 +37,7 @@ from nn.topk import (
     _topk_dead_val,
 )
 
-from utils import IndexList
+from std.utils import IndexList
 
 comptime DEBUG_FILE = False
 comptime SEED = 42
@@ -93,8 +97,8 @@ fn topk_wrapper[
     # # Allocate shared memory for the values and indices
     var topk_sram = external_memory[
         TopK_2[T, largest],
-        address_space = AddressSpace.SHARED,
-        alignment = align_of[TopK_2[T, largest]](),
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[TopK_2[T, largest]](),
     ]()
 
     # Pack the topk_vals and topk_idxs into shared memory
@@ -122,8 +126,7 @@ fn topk_wrapper[
                 vector_idx
             ).cast[out_idx_type]()
 
-            @parameter
-            if is_top_p:
+            comptime if is_top_p:
                 # In top-p sampling, we check if the highest probability token exceeds
                 # the probability threshold (p_threshold). If it does, we can skip sorting
                 # since we'll just sample this token. Otherwise, we need to sort to find
@@ -221,8 +224,7 @@ fn normalize(
     """
     comptime dtype = value.dtype
 
-    @parameter
-    if dtype == DType.int32:
+    comptime if dtype == DType.int32:
         return normalize(rebind[Int32](value)).cast[result.dtype]()
     elif dtype == DType.uint32:
         return normalize(rebind[UInt32](value)).cast[result.dtype]()
@@ -236,8 +238,7 @@ fn normalize(
     elif dtype == DType.bfloat16:
         return normalize(rebind[BFloat16](value)).cast[result.dtype]()
     else:
-        constrained[False, "unhandled normalize type"]()
-        return 0
+        comptime assert False, "unhandled normalize type"
 
 
 @always_inline
@@ -301,27 +302,27 @@ fn radix_sort_pairs_kernel[
     var s_counts = stack_allocation[
         BLOCK_SIZE * NUM_BUCKETS,
         Int32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var total_counts = stack_allocation[
         NUM_BUCKETS,
         Int32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var total_offsets = stack_allocation[
         (NUM_BUCKETS + 1),  # +1 extended size for descending
         Int32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var total_offsets_descending = stack_allocation[
         NUM_BUCKETS,
         Int32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var s_thread_offsets = stack_allocation[
         BLOCK_SIZE * NUM_BUCKETS,
         Int32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     # Initialize counts[NUM_BUCKETS]
@@ -343,8 +344,7 @@ fn radix_sort_pairs_kernel[
             counts[radix] += 1
 
     # Store counts[NUM_BUCKETS] per thread into shared memory s_counts
-    @parameter
-    for i in range(NUM_BUCKETS):
+    comptime for i in range(NUM_BUCKETS):
         s_counts[tid * UInt(NUM_BUCKETS) + UInt(i)] = counts[i]
     barrier()
 
@@ -353,8 +353,7 @@ fn radix_sort_pairs_kernel[
         var sum = Int32(0)
         bucket_offset = tid
 
-        @parameter
-        for t in range(BLOCK_SIZE):
+        comptime for t in range(BLOCK_SIZE):
             sum += s_counts[t * NUM_BUCKETS + Int(bucket_offset)]
         total_counts[bucket_offset] = sum
     barrier()
@@ -363,21 +362,18 @@ fn radix_sort_pairs_kernel[
     if tid == 0:
         total_offsets[0] = 0
 
-        @parameter
-        for i in range(1, NUM_BUCKETS + 1):
+        comptime for i in range(1, NUM_BUCKETS + 1):
             total_offsets[i] = total_offsets[i - 1] + total_counts[i - 1]
 
     # Compute per-thread starting offsets per radix value
-    @parameter
-    for i in range(NUM_BUCKETS):
+    comptime for i in range(NUM_BUCKETS):
         s_thread_offsets[tid * UInt(NUM_BUCKETS) + UInt(i)] = s_counts[
             tid * UInt(NUM_BUCKETS) + UInt(i)
         ]
     barrier()
 
     # Perform exclusive scan over s_thread_offsets per radix value
-    @parameter
-    for radix in range(NUM_BUCKETS):
+    comptime for radix in range(NUM_BUCKETS):
         # Initialize the offset to 1, which will be used to determine the distance
         # between threads whose values will be reduced/summed.
         var offset = 1
@@ -411,8 +407,7 @@ fn radix_sort_pairs_kernel[
         barrier()
 
     # Compute total_offsets_descending[NUM_BUCKETS] if needed
-    @parameter
-    if not ascending:
+    comptime if not ascending:
         if tid < UInt(NUM_BUCKETS):
             total_offsets_descending[tid] = (
                 total_offsets[NUM_BUCKETS] - total_offsets[tid + 1]
@@ -444,8 +439,7 @@ fn radix_sort_pairs_kernel[
             # Adjust global_offset for ascending or descending order
             var global_offset: Int
 
-            @parameter
-            if ascending:
+            comptime if ascending:
                 global_offset = Int(
                     total_offsets[radix]
                     + s_thread_offsets[tid * UInt(NUM_BUCKETS) + UInt(radix)]
@@ -460,8 +454,7 @@ fn radix_sort_pairs_kernel[
 
             output_keys[global_offset] = key
 
-            @parameter
-            if current_bit == 0:
+            comptime if current_bit == 0:
                 output_key_ids[global_offset] = Scalar[out_idx_type](index)
             else:
                 output_key_ids[global_offset] = input_key_ids[index]
@@ -491,7 +484,7 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
         self._selection = 0
         self._size = size
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self._d_buffers = copy._d_buffers.copy()
         self._selection = copy._selection
         self._size = copy._size
@@ -530,7 +523,7 @@ fn run_radix_sort_pairs_gpu[
     ctx: DeviceContext,
     mut keys: DoubleBuffer[dtype, ...],
     mut key_ids: DoubleBuffer[out_idx_type, ...],
-    skip_sort: UnsafePointer[mut=True, Scalar[DType.bool]],
+    skip_sort: UnsafePointer[mut=True, Scalar[DType.bool], _],
     in_shape: IndexList,
 ) raises:
     var batch_size = in_shape[0]
@@ -543,8 +536,9 @@ fn run_radix_sort_pairs_gpu[
         owning=False,
     )
 
-    @parameter
-    for current_bit in range(0, bit_width_of[dtype](), NUM_BITS_PER_PASS):
+    comptime for current_bit in range(
+        0, bit_width_of[dtype](), NUM_BITS_PER_PASS
+    ):
         comptime kernel = radix_sort_pairs_kernel[
             dtype, out_idx_type, current_bit, ascending, BLOCK_SIZE
         ]
@@ -601,8 +595,7 @@ fn topp_minp_sampling_kernel[
     var sorted_probs = sorted_probs_ + batch_id * UInt(vocab_size)
     var sorted_ids = sorted_ids_ + batch_id * UInt(vocab_size)
 
-    @parameter
-    if is_top_p:
+    comptime if is_top_p:
         if tid == 0:
             var rng_state = Random(seed=SEED)
             var rng = rng_state.step_uniform()
@@ -611,9 +604,7 @@ fn topp_minp_sampling_kernel[
                 r -= sorted_probs[i]
 
                 if r <= 0.0 or i == vocab_size - 1:
-
-                    @parameter
-                    if DEBUG_FILE:
+                    comptime if DEBUG_FILE:
                         print("sorted_probs[i]: ", sorted_probs[i])
                         print("r: ", r)
                         print("p_threshold: ", p_threshold)
@@ -645,8 +636,7 @@ fn topp_minp_sampling_kernel[
                 if r <= 0.0 or i == vocab_size - 1:
                     out_token_ids[batch_id] = sorted_ids[i]
 
-                    @parameter
-                    if DEBUG_FILE:
+                    comptime if DEBUG_FILE:
                         print("sorted_probs[i]: ", sorted_probs[i])
                         print("r: ", r)
                         print("p_threshold: ", p_threshold)
@@ -677,9 +667,9 @@ fn _topp_minp_sampling_gpu[
 ](
     ctx: DeviceContext,
     p_thresholds: TileTensor[dtype, ...],
-    input_logits: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    input_logits: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     out_token_ids: TileTensor[
-        mut=True, out_idx_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, out_idx_type, address_space=AddressSpace.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:
@@ -753,7 +743,7 @@ fn _topp_minp_sampling_gpu[
         var val = input_logits.ptr.load[width=_simd_width](idx)
         return val / temperature
 
-    var input_size = input_logits.numel()
+    var input_size = input_logits.num_elements()
     # TODO: Should softmax be done in-place without needing this other buffer?
     var probs_buf = ctx.enqueue_create_buffer[dtype](input_size * 2)
     var input_probs = TileTensor(
@@ -820,8 +810,7 @@ fn _topp_minp_sampling_gpu[
         input_shape,
     )
 
-    @parameter
-    if _test_sort:
+    comptime if _test_sort:
         # Copy output of sort & softmax back to original input tensor
         # for testing and debugging purposes
         ctx.enqueue_copy(
@@ -859,9 +848,9 @@ fn top_p_sampling_gpu[
 ](
     ctx: DeviceContext,
     top_ps: TileTensor[dtype, ...],
-    input_logits: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    input_logits: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     out_token_ids: TileTensor[
-        mut=True, out_idx_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, out_idx_type, address_space=AddressSpace.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:
@@ -888,10 +877,10 @@ fn min_p_sampling_gpu[
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    min_ps: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    input_logits: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    min_ps: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input_logits: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     out_token_ids: TileTensor[
-        mut=True, out_idx_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, out_idx_type, address_space=AddressSpace.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:

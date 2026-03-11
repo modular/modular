@@ -11,16 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from layout._layout import row_major
-from layout._coord import Coord
-from layout._tile_tensor import TileTensor
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.gpu.host import DeviceContext
+from layout import Coord, TileTensor, row_major
 from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 def execute_gather_nd_test[
@@ -30,12 +25,12 @@ def execute_gather_nd_test[
     indices_rank: Int,
     batch_dims: Int,
 ](
-    data_host_ptr: UnsafePointer[Scalar[data_type]],
+    data_host_ptr: UnsafePointer[Scalar[data_type], _],
     data_shape: IndexList[data_rank],
-    indices_host_ptr: UnsafePointer[Scalar[indices_type]],
+    indices_host_ptr: UnsafePointer[Scalar[indices_type], _],
     indices_shape: IndexList[indices_rank],
     ctx: DeviceContext,
-):
+) raises:
     # Compute sizes
     var data_size = 1
     for i in range(data_rank):
@@ -112,7 +107,7 @@ fn test_gather_nd_oob(ctx: DeviceContext) raises:
     comptime data_type = DType.int32
     var data_shape = IndexList[data_rank](2, 2)
     var data_size = 4
-    var data_host_ptr = UnsafePointer[Scalar[data_type]].alloc(data_size)
+    var data_host_ptr = alloc[Scalar[data_type]](data_size)
     var data_tensor = TileTensor(data_host_ptr, row_major(Coord(data_shape)))
 
     data_tensor[0, 0] = 0
@@ -123,9 +118,7 @@ fn test_gather_nd_oob(ctx: DeviceContext) raises:
     comptime indices_rank = 2
     var indices_shape = IndexList[indices_rank](2, 2)
     var indices_size = 4
-    var indices_host_ptr = UnsafePointer[Scalar[DType.int64]].alloc(
-        indices_size
-    )
+    var indices_host_ptr = alloc[Scalar[DType.int64]](indices_size)
     var indices_tensor = TileTensor(
         indices_host_ptr, row_major(Coord(indices_shape))
     )
@@ -145,7 +138,7 @@ fn test_gather_nd_oob(ctx: DeviceContext) raises:
     indices_host_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # CHECK: {{.*}}data index out of bounds{{.*}}
         test_gather_nd_oob(ctx)

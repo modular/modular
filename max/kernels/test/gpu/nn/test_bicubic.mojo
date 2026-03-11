@@ -11,16 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isclose
+from std.math import isclose
 
-from gpu.host import DeviceContext
-from layout._coord import Coord, CoordLike, coord
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.gpu.host import DeviceContext
+from layout import (
+    Coord,
+    CoordLike,
+    TileTensor,
+    coord,
+    row_major,
+)
 
 from nn.bicubic import cpu_bicubic_kernel, gpu_bicubic_kernel, resize_bicubic
-from testing import assert_almost_equal
-from utils import Index, IndexList
+from std.testing import assert_almost_equal
+from std.utils import Index, IndexList
 
 comptime num_elements = 20
 
@@ -678,10 +682,10 @@ fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
 
     comptime kernel = gpu_bicubic_kernel[
         dtype,
-        output_origin = output_dev_nd.origin,
-        OutputLayoutType = output_dev_nd.LayoutType,
-        input_origin = ImmutOrigin(input_dev_nd.origin),
-        InputLayoutType = input_dev_nd.LayoutType,
+        output_origin=output_dev_nd.origin,
+        OutputLayoutType=output_dev_nd.LayoutType,
+        input_origin=ImmutOrigin(input_dev_nd.origin),
+        InputLayoutType=input_dev_nd.LayoutType,
     ]
 
     # This would fail with block_dim=(64, 64) = 4096 threads.
@@ -720,7 +724,7 @@ fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     _ = output_dev^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_bicubic_kernel[DType.float32,](  # data_type
             coord[1, 3, 5, 5](),  # input  (NCHW)

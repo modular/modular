@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import align_of
+from std.math import ceildiv
+from std.sys import align_of
 
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, product
 from layout.layout import Layout
 from layout.layout_tensor import *
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 fn print_raw_major_tensor(tensor: LayoutTensor):
@@ -179,7 +179,7 @@ fn test_tesnsor_fragments() raises:
     # CHECK: 13.0    15.0
     # CHECK: 21.0    23.0
     # CHECK: 29.0    31.0
-    for th_i in range(UInt(4)):
+    for th_i in range(4):
         print("----fragments-data[", th_i, "]----")
         var fragment_4x2 = tensor.distribute[Layout(IntTuple(2, 2))](th_i)
         print_tile_tensor(fragment_4x2)
@@ -274,7 +274,7 @@ fn test_tensor_tile_and_distribute() raises:
             for th_i in range(4):
                 var fragment_2x2 = tile_4x4.distribute[
                     Layout(IntTuple(2, 2), IntTuple(2, 1))
-                ](UInt(th_i))
+                ](th_i)
                 print("----fragments-data[", th_i, "]----")
                 print_tile_tensor(fragment_2x2)
     _ = managed_tensor^
@@ -302,7 +302,7 @@ fn test_tensor_tile_and_distribute_custom_layout() raises:
     # CHECK: ----fragments-data[ 3 ]----
     # CHECK: 5.0   7.0
     print("row-major-thread-layout")
-    for th_i in range(UInt(4)):
+    for th_i in range(4):
         var fragments_1x2 = tensor.distribute[
             Layout(IntTuple(2, 2), IntTuple(2, 1))
         ](th_i)
@@ -319,7 +319,7 @@ fn test_tensor_tile_and_distribute_custom_layout() raises:
     # CHECK: ----fragments-data[ 3 ]----
     # CHECK: 5.0   7.0
     print("col-major-thread-layout")
-    for th_i in range(UInt(4)):
+    for th_i in range(4):
         var fragments_1x2 = tensor.distribute[
             Layout(IntTuple(2, 2), IntTuple(1, 2))
         ](th_i)
@@ -422,7 +422,7 @@ fn test_distribute_tiled_layout():
     # CHECK: ----fragments-data[ 7 ]----
     # CHECK: 11.0   15.0
     # CHECK: 27.0   31.0
-    for th_i in range(UInt(8)):
+    for th_i in range(8):
         var thread_tile = tensor.distribute[threads_2x4_layout](th_i)
         print("----fragments-data[", th_i, "]----")
         print(thread_tile)
@@ -502,9 +502,7 @@ fn test_distribute_with_tile_size():
 
     for tid in range(comptime (thread_layout.size())):
         print("----thread[", tid, "]----")
-        var tile = tensor0.vectorize[2, 2]().distribute[thread_layout](
-            UInt(tid)
-        )
+        var tile = tensor0.vectorize[2, 2]().distribute[thread_layout](tid)
         print(tile)
     var tensor8x1 = LayoutTensor[
         DType.float32, Layout(IntTuple(8, 1)), MutAnyOrigin
@@ -546,7 +544,7 @@ fn test_distribute_with_tile_size():
         print("----thread[", tid, "]----")
         var tile = tensor8x1.vectorize[2, 1]().distribute[
             thread_layout, axis=0
-        ](UInt(tid))
+        ](tid)
         print(tile)
 
 
@@ -690,9 +688,7 @@ fn test_copy_vectorized():
             Layout(IntTuple(8, 8), IntTuple(8, 1)),
             MutAnyOrigin,
         ]
-        .stack_allocation[
-            stack_alignment = align_of[SIMD[DType.float32, 4]]()
-        ]()
+        .stack_allocation[stack_alignment=align_of[SIMD[DType.float32, 4]]()]()
         .vectorize[1, 4]()
         .fill(0)
     )
@@ -738,9 +734,7 @@ fn test_copy_vectorized():
             Layout(IntTuple(8, 8), IntTuple(8, 1)),
             MutAnyOrigin,
         ]
-        .stack_allocation[
-            stack_alignment = align_of[SIMD[DType.float32, 4]]()
-        ]()
+        .stack_allocation[stack_alignment=align_of[SIMD[DType.float32, 4]]()]()
         .vectorize[4, 4]()
         .fill(0)
     )
@@ -790,7 +784,7 @@ fn test_distribute_vectorized():
     # CHECK: [28.0, 29.0, 30.0, 31.0]
     # CHECK: [44.0, 45.0, 46.0, 47.0]
     # CHECK: [60.0, 61.0, 62.0, 63.0]
-    for tid in range(UInt(4)):
+    for tid in range(4):
         var fragments = tensor_8_2xv4.distribute[Layout(IntTuple(2, 2))](tid)
         print("----thread[", tid, "]----")
         print(fragments)
@@ -805,7 +799,7 @@ fn test_distribute_vectorized():
         DType.float32,
         Layout(IntTuple(IntTuple(16, 16), 4), IntTuple(IntTuple(32, 2), 512)),
         MutAnyOrigin,
-        element_layout = Layout(2),
+        element_layout=Layout(2),
     ](ptr)
 
     comptime thread_layout = Layout(
@@ -887,7 +881,7 @@ fn test_distribute_axis_projection():
     # CHECK: =====
     # CHECK: th_id 15
     # CHECK: [12.0, 13.0, 14.0, 15.0]
-    for th_id in range(UInt(16)):
+    for th_id in range(16):
         print("th_id", th_id)
         var tensor = tensor_4x4.vectorize[1, 4]().distribute[
             Layout.row_major(4, 4), axis=0
@@ -942,7 +936,7 @@ fn test_distribute_axis_projection():
     # CHECK: =====
     # CHECK: th_id 15
     # CHECK: [3.0, 7.0, 11.0, 15.0]
-    for th_id in range(UInt(16)):
+    for th_id in range(16):
         print("th_id", th_id)
         var tensor = tensor_4x4.vectorize[4, 1]().distribute[
             Layout.row_major(4, 4), axis=1
@@ -1437,7 +1431,7 @@ fn test_slice_with_offsets():
     # CHECK: 12.0 14.0
     print("slice-of[0:3,:2,0]")
     print(
-        tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices= (0, 1)](
+        tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices=(0, 1)](
             IndexList[1](0)
         )
     )
@@ -1448,7 +1442,7 @@ fn test_slice_with_offsets():
     # CHECK: 13.0 15.0
     print("slice-of-[0:3,:2,1]")
     print(
-        tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices= (0, 1)](
+        tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices=(0, 1)](
             IndexList[1](1)
         )
     )
@@ -1459,7 +1453,7 @@ fn test_slice_with_offsets():
     # CHECK: 16.0 17.0
     print("slice-of-[2,:,:]")
     print(
-        tensor_4x3x2_row_major.slice[:, :, slice_indices= (1, 2)](
+        tensor_4x3x2_row_major.slice[:, :, slice_indices=(1, 2)](
             IndexList[1](2)
         )
     )
@@ -1471,7 +1465,7 @@ fn test_slice_with_offsets():
     # CHECK: 14.0 15.0
     # CHECK: 20.0 21.0
     print(
-        tensor_4x3x2_row_major.slice[:, :, slice_indices= (0, 2)](
+        tensor_4x3x2_row_major.slice[:, :, slice_indices=(0, 2)](
             IndexList[1](1)
         )
     )
@@ -1483,7 +1477,7 @@ fn test_slice_with_offsets():
     # CHECK: 18.0
     print("slice-of-[:,0,0]")
     print(
-        tensor_4x3x2_row_major.slice_1d[:, slice_indices = IndexList[1](0)](
+        tensor_4x3x2_row_major.slice_1d[:, slice_indices=IndexList[1](0)](
             IndexList[2](0, 0)
         )
     )
@@ -1494,7 +1488,7 @@ fn test_slice_with_offsets():
     # CHECK: 17.0
     print("slice-of-[2,:,1]")
     print(
-        tensor_4x3x2_row_major.slice_1d[:, slice_indices = IndexList[1](1)](
+        tensor_4x3x2_row_major.slice_1d[:, slice_indices=IndexList[1](1)](
             IndexList[2](2, 1)
         )
     )
@@ -2030,7 +2024,7 @@ fn test_merge():
     print(a)
 
 
-def main():
+def main() raises:
     test_basic_tensor_ops()
     test_tesnsor_fragments()
     test_tensor_tile_and_distribute()

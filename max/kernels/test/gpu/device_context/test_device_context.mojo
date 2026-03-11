@@ -11,28 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
+from std.math import iota
 
-from builtin.device_passable import DevicePassable
-from gpu import *
-from gpu.host import DeviceBuffer, DeviceContext
-from memory import (
-    UnsafePointer as UnsafePointerV2,
-)
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
-from testing import assert_equal
+from std.builtin.device_passable import DevicePassable
+from std.gpu import *
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.testing import assert_equal
 
 
 # A Simple Kernel performing the sum of two arrays
 fn vec_func(
-    in0: UnsafePointer[Float32],
-    in1: UnsafePointer[Float32],
-    output: UnsafePointer[Float32],
+    in0: UnsafePointer[Float32, ImmutAnyOrigin],
+    in1: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
     supplement: Int,
 ):
@@ -42,7 +33,7 @@ fn vec_func(
     output[tid] = in0[tid] + in1[tid] + Float32(supplement)
 
 
-def test_is_compatible(ctx: DeviceContext):
+def test_is_compatible(ctx: DeviceContext) raises:
     assert_equal(ctx.is_compatible(), True)
 
 
@@ -50,9 +41,9 @@ fn test_basic(ctx: DeviceContext) raises:
     comptime length = 1024
 
     # Host memory buffers for input and output data
-    var in0_host = UnsafePointer[Float32].alloc(length)
-    var in1_host = UnsafePointer[Float32].alloc(length)
-    var out_host = UnsafePointer[Float32].alloc(length)
+    var in0_host = alloc[Float32](length)
+    var in1_host = alloc[Float32](length)
+    var out_host = alloc[Float32](length)
 
     # Initialize inputs
     for i in range(length):
@@ -111,18 +102,18 @@ fn test_basic(ctx: DeviceContext) raises:
     out_host.free()
 
 
-def test_move(ctx: DeviceContext):
+def test_move(ctx: DeviceContext) raises:
     var b = ctx
     var c = b^
     c.synchronize()
 
 
-def test_id(ctx: DeviceContext):
+def test_id(ctx: DeviceContext) raises:
     # CPU always gets id 0 so test for that.
     assert_equal(ctx.id(), 0)
 
 
-def test_print(ctx: DeviceContext):
+def test_print(ctx: DeviceContext) raises:
     comptime size = 15
 
     var host_buffer = ctx.enqueue_create_host_buffer[DType.uint16](size)
@@ -156,57 +147,7 @@ def test_print(ctx: DeviceContext):
     assert_equal(String(large_buffer), expected_large)
 
 
-@fieldwise_init
-struct ToLegacyUnsafePointer(Copyable, DevicePassable):
-    comptime device_type: AnyType = LegacyUnsafePointer[mut=True, Float32]
-
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = Self.device_type()
-
-    @staticmethod
-    fn get_type_name() -> String:
-        return ""
-
-
-@fieldwise_init
-struct ToUnsafePointer(Copyable, DevicePassable):
-    comptime device_type: AnyType = UnsafePointerV2[Float32, MutAnyOrigin]
-
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = Self.device_type()
-
-    @staticmethod
-    fn get_type_name() -> String:
-        return ""
-
-
-def test_kernel_pointer_conversions(ctx: DeviceContext):
-    fn kernel(
-        legacy: LegacyUnsafePointer[mut=True, Float32],
-        unsafe_pointer: UnsafePointerV2[Float32, MutAnyOrigin],
-    ):
-        pass
-
-    # No conversion needed
-    ctx.enqueue_function_experimental[kernel](
-        ToLegacyUnsafePointer(),
-        ToUnsafePointer(),
-        grid_dim=1,
-        block_dim=1,
-    )
-
-    # Converts from UnsafePointer <-> LegacyUnsafePointer
-    ctx.enqueue_function_experimental[kernel](
-        ToUnsafePointer(),
-        ToLegacyUnsafePointer(),
-        grid_dim=1,
-        block_dim=1,
-    )
-
-    ctx.synchronize()
-
-
-def main():
+def main() raises:
     # Create an instance of the DeviceContext
     with DeviceContext() as ctx:
         # Execute our test with the context
@@ -215,4 +156,3 @@ def main():
         test_move(ctx)
         test_id(ctx)
         test_print(ctx)
-        test_kernel_pointer_conversions(ctx)

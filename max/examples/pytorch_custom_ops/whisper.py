@@ -16,7 +16,7 @@ from pathlib import Path
 import torch
 import transformers
 from datasets import load_dataset
-from max.torch import CustomOpLibrary
+from max.experimental.torch import CustomOpLibrary
 from torch import nn
 from transformers import (
     CompileConfig,

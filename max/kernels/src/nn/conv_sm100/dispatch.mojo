@@ -19,16 +19,13 @@ is only compiled when `dispatch_sm100_conv2d` is called with a supported
 dtype inside a @parameter if guard.
 """
 
-from math import ceildiv
+from std.math import ceildiv
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import block_dim, block_idx, thread_idx
-from gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from memory import LegacyUnsafePointer
-
-comptime MutPointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 # =========================================================================
@@ -39,8 +36,8 @@ from utils.index import IndexList
 fn _transpose_rscf_to_krsc[
     dtype: DType,
 ](
-    src_ptr: MutPointer[Scalar[dtype]],
-    dst_ptr: MutPointer[Scalar[dtype]],
+    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     R: Int,
     S: Int,
     C: Int,
@@ -64,8 +61,8 @@ fn _transpose_rscf_to_krsc[
 fn _transpose_fcrs_to_krsc[
     dtype: DType,
 ](
-    src_ptr: MutPointer[Scalar[dtype]],
-    dst_ptr: MutPointer[Scalar[dtype]],
+    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     F: Int,
     C: Int,
     R: Int,
@@ -112,8 +109,7 @@ fn dispatch_sm100_conv2d[
     on dtype, so the kernel is never compiled for unsupported dtypes.
     """
 
-    @parameter
-    if input_type == DType.bfloat16:
+    comptime if input_type == DType.bfloat16:
         from .conv2d import conv2d_fprop
         from .conv_config import Conv2dConfig, Conv2dProblemShape
 
@@ -129,8 +125,7 @@ fn dispatch_sm100_conv2d[
         var fh: Int
         var fw: Int
 
-        @parameter
-        if filter_is_fcrs:
+        comptime if filter_is_fcrs:
             fh = filter.dim[2]()
             fw = filter.dim[3]()
         else:
@@ -145,8 +140,7 @@ fn dispatch_sm100_conv2d[
         comptime transpose_block = 256
         var grid = ceildiv(filter_size, transpose_block)
 
-        @parameter
-        if filter_is_fcrs:
+        comptime if filter_is_fcrs:
             var F = filter.dim[0]()
             var C = filter.dim[1]()
             var R = filter.dim[2]()
@@ -197,20 +191,26 @@ fn dispatch_sm100_conv2d[
         )
 
         comptime static_shape = DimList(-1, -1, -1, -1)
-        var act_nd = NDBuffer[input_type, 4, _, static_shape](
-            input.ptr, DimList(batch, in_h, in_w, in_c)
+        var act_nd = NDBuffer[rank=4, input_type, _, static_shape](
+            input.ptr, IndexList[4](batch, in_h, in_w, in_c)
         )
-        var filter_nd = NDBuffer[filter_type, 4, _, static_shape](
-            filter_krsc_ptr, DimList(out_c, fh, fw, in_c)
+        var filter_nd = NDBuffer[rank=4, filter_type, _, static_shape](
+            filter_krsc_ptr, IndexList[4](out_c, fh, fw, in_c)
         )
-        var out_nd = NDBuffer[output_type, 4, _, static_shape](
-            output.ptr, DimList(batch, out_h, out_w, out_c)
+        var out_nd = NDBuffer[rank=4, output_type, _, static_shape](
+            output.ptr, IndexList[4](batch, out_h, out_w, out_c)
         )
 
         comptime config = Conv2dConfig[
             input_type, filter_type, output_type
         ].default_bf16_1sm()
 
-        conv2d_fprop[config=config](out_nd, act_nd, filter_nd, problem, ctx)
+        conv2d_fprop[config=config](
+            out_nd.make_dims_unknown(),
+            act_nd.make_dims_unknown(),
+            filter_nd.make_dims_unknown(),
+            problem,
+            ctx,
+        )
 
         _ = filter_buf^

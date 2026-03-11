@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from math import ceildiv, rsqrt
-from random import random_ui64, seed
+from std.collections import Set
+from std.math import ceildiv, rsqrt
+from std.random import random_ui64, seed
 
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -22,13 +22,13 @@ from kv_cache.types import (
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from memory import alloc, memcpy
+from std.memory import alloc, memcpy
 from nn.flash_attention import flash_attention_kv_cache
 from nn.mha_mask import CausalMask
-from testing import assert_almost_equal
-from sys import size_of
+from std.testing import assert_almost_equal
+from std.sys import size_of
 
-from utils import IndexList
+from std.utils import IndexList
 
 comptime kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime replit_num_q_heads = 24
@@ -45,7 +45,7 @@ def execute_ragged_flash_attention[
     cache_lengths: List[Int],
     num_layers: Int,
     layer_idx: Int,
-):
+) raises:
     comptime num_continuous_blocks = 32
     comptime page_size = 512
     comptime num_paged_blocks = 512
@@ -58,10 +58,9 @@ def execute_ragged_flash_attention[
         num_continuous_blocks,
         ")",
     )
-    debug_assert(
-        len(valid_lengths) == len(cache_lengths),
-        "expected valid_lengths and cache_lengths size to be equal",
-    )
+    assert len(valid_lengths) == len(
+        cache_lengths
+    ), "expected valid_lengths and cache_lengths size to be equal"
 
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     var input_row_offsets_heap = alloc[Scalar[DType.uint32]](batch_size + 1)
@@ -368,7 +367,7 @@ def execute_ragged_flash_attention[
 comptime dtype = DType.float32
 
 
-def execute_flash_attention_suite():
+def execute_flash_attention_suite() raises:
     for bs in [1, 16]:
         ce_cache_sizes = List[Int]()
         ce_seq_lens = List[Int]()
@@ -398,6 +397,6 @@ def execute_flash_attention_suite():
     )
 
 
-def main():
+def main() raises:
     seed(42)
     execute_flash_attention_suite()

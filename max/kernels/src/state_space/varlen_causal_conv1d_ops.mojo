@@ -18,14 +18,14 @@ This module registers operations for variable-length causal 1D convolution:
 - causal_conv1d_varlen_states: Extract states from varlen sequences
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
 import compiler_internal as compiler
-from gpu.host import DeviceContext
-from gpu.host.info import is_cpu, is_gpu
-from runtime.asyncrt import DeviceContextPtr
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import is_cpu, is_gpu
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_cpu,
@@ -69,14 +69,14 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
         dtype: DType,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=2],
-        conv_states: OutputTensor[dtype=dtype, rank=3],
-        x: InputTensor[dtype=dtype, rank=2],
-        weight: InputTensor[dtype=dtype, rank=2],
-        bias: InputTensor[dtype=dtype, rank=1],
-        query_start_loc: InputTensor[dtype = DType.int32, rank=1],
-        cache_indices: InputTensor[dtype = DType.int32, rank=1],
-        has_initial_state: InputTensor[dtype = DType.bool, rank=1],
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        conv_states: OutputTensor[dtype=dtype, rank=3, ...],
+        x: InputTensor[dtype=dtype, rank=2, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        bias: InputTensor[dtype=dtype, rank=1, ...],
+        query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
+        cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+        has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         var dim = x.dim_size(0)
@@ -124,8 +124,7 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
         var silu_activation = Self.activation == "silu"
         comptime PAD_SLOT_ID: Int32 = -1
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             causal_conv1d_varlen_fwd_cpu[
                 x_lt.dtype,
                 x_lt.layout,
@@ -498,12 +497,12 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
     fn shape[
         dtype: DType,
     ](
-        x: InputTensor[dtype=dtype, rank=2],
-        weight: InputTensor[dtype=dtype, rank=2],
-        bias: InputTensor[dtype=dtype, rank=1],
-        query_start_loc: InputTensor[dtype = DType.int32, rank=1],
-        cache_indices: InputTensor[dtype = DType.int32, rank=1],
-        has_initial_state: InputTensor[dtype = DType.bool, rank=1],
+        x: InputTensor[dtype=dtype, rank=2, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        bias: InputTensor[dtype=dtype, rank=1, ...],
+        query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
+        cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+        has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
     ) -> IndexList[2]:
         return x.shape()
 
@@ -538,13 +537,13 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
         dtype: DType,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=3],
-        conv_state: OutputTensor[dtype=dtype, rank=3],
-        x: InputTensor[dtype=dtype, rank=3],
-        weight: InputTensor[dtype=dtype, rank=2],
-        bias: InputTensor[dtype=dtype, rank=1],
-        cache_seqlens: InputTensor[dtype = DType.int32, rank=1],
-        conv_state_indices: InputTensor[dtype = DType.int32, rank=1],
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        conv_state: OutputTensor[dtype=dtype, rank=3, ...],
+        x: InputTensor[dtype=dtype, rank=3, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        bias: InputTensor[dtype=dtype, rank=1, ...],
+        cache_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
+        conv_state_indices: InputTensor[dtype=DType.int32, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         var batch = x.dim_size(0)
@@ -585,8 +584,7 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
         var silu_activation = Self.activation == "silu"
         comptime PAD_SLOT_ID: Int32 = -1
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             causal_conv1d_varlen_update_cpu[
                 x_lt.dtype,
                 x_lt.layout,
@@ -937,11 +935,11 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
     fn shape[
         dtype: DType,
     ](
-        x: InputTensor[dtype=dtype, rank=3],
-        weight: InputTensor[dtype=dtype, rank=2],
-        bias: InputTensor[dtype=dtype, rank=1],
-        cache_seqlens: InputTensor[dtype = DType.int32, rank=1],
-        conv_state_indices: InputTensor[dtype = DType.int32, rank=1],
+        x: InputTensor[dtype=dtype, rank=3, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        bias: InputTensor[dtype=dtype, rank=1, ...],
+        cache_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
+        conv_state_indices: InputTensor[dtype=DType.int32, rank=1, ...],
     ) -> IndexList[3]:
         return x.shape()
 
@@ -969,9 +967,9 @@ struct CausalConv1DVarlenStates:
         dtype: DType,
         target: StaticString,
     ](
-        states: OutputTensor[dtype=dtype, rank=3],
-        x: InputTensor[dtype=dtype, rank=2],
-        cu_seqlens: InputTensor[dtype = DType.int32, rank=1],
+        states: OutputTensor[dtype=dtype, rank=3, ...],
+        x: InputTensor[dtype=dtype, rank=2, ...],
+        cu_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         var total_tokens = x.dim_size(0)
@@ -992,8 +990,7 @@ struct CausalConv1DVarlenStates:
         var states_dim_stride = UInt32(states_strides[1])
         var states_seqlen_stride = UInt32(states_strides[2])
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             causal_conv1d_varlen_states_cpu[
                 x_lt.dtype,
                 x_lt.layout,
@@ -1064,8 +1061,8 @@ struct CausalConv1DVarlenStates:
     fn shape[
         dtype: DType,
     ](
-        x: InputTensor[dtype=dtype, rank=2],
-        cu_seqlens: InputTensor[dtype = DType.int32, rank=1],
+        x: InputTensor[dtype=dtype, rank=2, ...],
+        cu_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
     ) -> IndexList[3]:
         var batch = cu_seqlens.dim_size(0) - 1
         var dim = x.dim_size(1)

@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
+from std.math import iota
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: test_memset_async
@@ -53,6 +53,6 @@ fn test_memset_async(ctx: DeviceContext) raises:
     test_memset[DType.int8](3)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_memset_async(ctx)

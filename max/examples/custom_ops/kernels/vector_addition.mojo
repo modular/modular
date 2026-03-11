@@ -13,19 +13,19 @@
 
 # DOC: max/develop/build-custom-ops.mdx
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import block_dim, block_idx, thread_idx
-from runtime.asyncrt import DeviceContextPtr
+from std.gpu import block_dim, block_idx, thread_idx
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn _vector_addition_cpu(
-    output: ManagedTensorSlice[mut=True],
-    lhs: ManagedTensorSlice[dtype = output.dtype, rank = output.rank],
-    rhs: ManagedTensorSlice[dtype = output.dtype, rank = output.rank],
+    output: ManagedTensorSlice[mut=True, ...],
+    lhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
+    rhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
     ctx: DeviceContextPtr,
 ):
     # Warning: This is an extremely inefficient implementation! It's merely an
@@ -39,9 +39,9 @@ fn _vector_addition_cpu(
 
 
 fn _vector_addition_gpu(
-    output: ManagedTensorSlice[mut=True],
-    lhs: ManagedTensorSlice[dtype = output.dtype, rank = output.rank],
-    rhs: ManagedTensorSlice[dtype = output.dtype, rank = output.rank],
+    output: ManagedTensorSlice[mut=True, ...],
+    lhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
+    rhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
     ctx: DeviceContextPtr,
 ) raises:
     # Note: The following has not been tuned for any GPU hardware, and is an
@@ -78,9 +78,9 @@ struct VectorAddition:
         # The kind of device this will be run on: "cpu" or "gpu"
         target: StaticString,
     ](
-        output: OutputTensor[rank=1],
-        lhs: InputTensor[dtype = output.dtype, rank = output.rank],
-        rhs: InputTensor[dtype = output.dtype, rank = output.rank],
+        output: OutputTensor[rank=1, ...],
+        lhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        rhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
     ) raises:
@@ -91,8 +91,7 @@ struct VectorAddition:
 
         # At graph compilation time, we will know what device we are compiling
         # this operation for, so we can specialize it for the target hardware.
-        @parameter
-        if target == "cpu":
+        comptime if target == "cpu":
             _vector_addition_cpu(output, lhs, rhs, ctx)
         elif target == "gpu":
             _vector_addition_gpu(output, lhs, rhs, ctx)

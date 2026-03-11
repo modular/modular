@@ -25,9 +25,9 @@ There are a few main tools in this module:
     These are useful helpers to specialize for the general bytes implementation.
 """
 
-from builtin.constrained import _constrained_field_conforms_to
-from memory import Span
-from reflection import get_type_name, struct_field_names, struct_field_types
+from std.builtin.constrained import _constrained_field_conforms_to
+from std.memory import Span
+from std.reflection import get_type_name, struct_field_names, struct_field_types
 
 from .hasher import Hasher, default_hasher
 
@@ -83,8 +83,7 @@ trait Hashable:
         comptime names = struct_field_names[Self]()
         comptime types = struct_field_types[Self]()
 
-        @parameter
-        for i in range(names.size):
+        comptime for i in range(names.size):
             comptime T = types[i]
             _constrained_field_conforms_to[
                 conforms_to(T, Hashable),
@@ -118,7 +117,7 @@ fn hash[
 
 fn hash[
     HasherType: Hasher = default_hasher
-](bytes: UnsafePointer[mut=False, UInt8], n: Int) -> UInt64:
+](bytes: UnsafePointer[mut=False, UInt8, _], n: Int) -> UInt64:
     """Hash a sequence of bytes using the specified hasher.
 
     Parameters:

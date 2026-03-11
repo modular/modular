@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes the builtin breakpoint function."""
 
-from sys import breakpointhook
+from std.sys import breakpointhook
 
 
 @always_inline("nodebug")

@@ -27,23 +27,21 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.legacy.attention.multi_latent_attention import MLAPrefillMetadata
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.data_parallelism import split_batch_replicated
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.legacy.layer import Module
-from max.nn.legacy.linear import ColumnParallelLinear, Linear
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.rotary_embedding import (
+from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
+from max.nn.comm import Signals
+from max.nn.comm.ep import EPBatchManager
+from max.nn.data_parallelism import split_batch_replicated
+from max.nn.embedding import VocabParallelEmbedding
+from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.layer import Module
+from max.nn.linear import ColumnParallelLinear, Linear
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates
-from max.nn.legacy.transformer.distributed_transformer import (
-    forward_sharded_layers,
-)
+from max.nn.transformer import ReturnHiddenStates
+from max.nn.transformer.distributed_transformer import forward_sharded_layers
 
 from ..deepseekV3.deepseekV3 import DeepseekV3DecoderLayer
 from .model_config import DeepseekV3NextNConfig
@@ -133,7 +131,6 @@ class DeepseekV3NextN(Module):
             config,
             layer_idx=nextn_layer_idx,
             ep_manager=self.ep_manager,
-            is_nextn=True,
         )
 
         self.shared_head_norm = RMSNorm(
@@ -186,6 +183,7 @@ class DeepseekV3NextN(Module):
             )
 
         h_embed = self.embed_tokens(tokens, signal_buffers)
+
         norm_embed = forward_sharded_layers(self.enorm_shards, h_embed)
         norm_hidden = forward_sharded_layers(self.hnorm_shards, hidden_states)
         freqs_cis = [self.rope.freqs_cis.to(device) for device in devices]
@@ -256,6 +254,7 @@ class DeepseekV3NextN(Module):
                 ]
             )
 
+        kv_scales: list[BufferValue] = []
         h = self.decoder_layer(
             ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
             h,
@@ -264,6 +263,7 @@ class DeepseekV3NextN(Module):
             [kv_collection.cache_lengths for kv_collection in kv_collections],
             [kv_collection.lookup_table for kv_collection in kv_collections],
             [kv_collection.max_lengths for kv_collection in kv_collections],
+            kv_scales,
             freqs_cis=freqs_cis,
             mla_prefill_metadata_flat=mla_inputs,
             input_row_offsets=input_row_offsets_,
@@ -289,6 +289,7 @@ class DeepseekV3NextN(Module):
         norm_last_token = forward_sharded_layers(
             self.shared_head_norm_shards, last_token_distributed
         )
+
         last_logits = ops.cast(
             self.lm_head(norm_last_token, signal_buffers)[0],
             DType.float32,
@@ -298,9 +299,7 @@ class DeepseekV3NextN(Module):
 
         ret_val: tuple[TensorValue, ...] = (last_logits,)
 
-        if self.return_hidden_states == ReturnHiddenStates.ALL:
-            ret_val += tuple(h)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST:
+        if self.return_hidden_states == ReturnHiddenStates.LAST:
             if self.config.data_parallel_degree > 1:
                 ret_val += tuple(last_token_per_dev)
             else:
@@ -308,13 +307,11 @@ class DeepseekV3NextN(Module):
         elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
             norm_h = forward_sharded_layers(self.shared_head_norm_shards, h)
             ret_val += tuple(norm_h)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
-            ret_val += tuple(norm_last_token)
 
         return ret_val
 
     def input_types(
-        self, kv_params: KVCacheParams
+        self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
         devices = self.config.devices
         device_ref = devices[0]

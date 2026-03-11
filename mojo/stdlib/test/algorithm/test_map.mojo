@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import map
-from testing import assert_equal
-from testing import TestSuite
+from std.algorithm import map
+from std.testing import assert_equal
+from std.testing import TestSuite
 
 
-def test_map():
+def test_map() raises:
     var vector_stack: InlineArray[Float32, 5] = [1.0, 2.0, 3.0, 4.0, 5.0]
     var vector = Span(vector_stack)
 
@@ -47,5 +47,5 @@ def test_map():
     assert_equal(vector[4], 14.0)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

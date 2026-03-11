@@ -86,9 +86,10 @@ class PrefillScheduler(Scheduler):
 
         self.transfer_engine = KVTransferEngine(
             name=f"prefill_agent_{uuid.uuid4()}",
+            # TODO: Also support scales tensors
             tensors=[
-                kv_cache.get_device_tensors(replica_idx)
-                for replica_idx in range(kv_cache.num_replicas)
+                kv_cache.get_device_buffer(replica_idx).values
+                for replica_idx in range(scheduler_config.data_parallel_degree)
             ],
             # Assume all replicas have the same number of pages.
             total_num_pages=kv_cache.get_num_pages(replica_idx=0),
@@ -332,16 +333,10 @@ def load_prefill_scheduler(
         pipeline_config
     )
 
-    if len(pipeline.kv_managers) != 1:
-        raise ValueError(
-            "Expected exactly one KV cache manager in pipeline for PrefillScheduler, found: "
-            f"{len(pipeline.kv_managers)}"
-        )
-
     return PrefillScheduler(
         pipeline=pipeline,
         scheduler_config=scheduler_config,
-        kv_cache=pipeline.kv_managers[0],
+        kv_cache=pipeline.kv_manager,
         dispatcher=PrefillDispatcherServerV2(
             bind_addr=settings.di_bind_address
         ),

@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.intrinsics import _type_is_eq
-from builtin.rebind import downcast
+from std.sys.intrinsics import _type_is_eq
+from std.builtin.rebind import downcast
 
 
 trait DevicePassable:
@@ -23,8 +23,7 @@ trait DevicePassable:
 
     @staticmethod
     fn _is_convertible_to_device_type[SrcT: AnyType]() -> Bool:
-        @parameter
-        if not _type_is_eq[Self, Self.device_type]() and conforms_to(
+        comptime if not _type_is_eq[Self, Self.device_type]() and conforms_to(
             Self.device_type, DevicePassable
         ):
             return downcast[

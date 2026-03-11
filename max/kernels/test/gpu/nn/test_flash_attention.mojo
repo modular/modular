@@ -11,16 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.math import exp
+from std.random import rand, random_float64, seed
+from std.sys import argv, has_amd_gpu_accelerator
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import exp
-from random import rand, random_float64, seed
-from sys import argv, has_amd_gpu_accelerator
-
-from gpu import *
-from gpu.host import DeviceContext
-from gpu.host.info import A100, B200, H100, GPUInfo, Vendor
+from std.gpu import *
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import A100, B200, H100, GPUInfo, Vendor
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import (
     _naive_attention_with_transpose,
@@ -28,10 +25,9 @@ from nn.mha import (
     mha_gpu_naive,
 )
 from nn.mha_mask import MaterializedMask, NullMask
-from nn.mha_score_mod import IdentityScoreMod
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 fn is_benchmark() -> Bool:
@@ -110,16 +106,16 @@ fn test[
     )
 
     # Allocate memory for all variables.
-    var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
-    var k_ptr = UnsafePointer[Scalar[qkv_type]].alloc(k_size)
-    var v_ptr = UnsafePointer[Scalar[qkv_type]].alloc(v_size)
-    var mask_ptr = UnsafePointer[Scalar[mask_type]].alloc(mask_size)
-    var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
-    var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
+    var q_ptr = alloc[Scalar[qkv_type]](q_size)
+    var k_ptr = alloc[Scalar[qkv_type]](k_size)
+    var v_ptr = alloc[Scalar[qkv_type]](v_size)
+    var mask_ptr = alloc[Scalar[mask_type]](mask_size)
+    var output_ptr = alloc[Scalar[qkv_type]](o_size)
+    var flash_output_ptr = alloc[Scalar[qkv_type]](o_size)
 
     # Q, K, V are randomly initialized.
     if use_index_input:
-        debug_assert(batch_size == 1)
+        assert batch_size == 1
         for i in range(seq_len):
             for h in range(num_heads):
                 for j in range(depth):
@@ -139,8 +135,7 @@ fn test[
                         qkv_type
                     ](i * depth + j)
 
-        @parameter
-        if mask_rank == 3:
+        comptime if mask_rank == 3:
             for i in range(seq_len):
                 for j in range(num_keys):
                     mask_ptr[i * num_keys + j] = Scalar[mask_type](
@@ -202,8 +197,7 @@ fn test[
         ),
     )
 
-    @parameter
-    if not against_gpu_naive:
+    comptime if not against_gpu_naive:
         comptime assert (
             qkv_type == mask_type
         ), "expect qkv and mask have same type for CPU."
@@ -281,15 +275,13 @@ fn test[
     @always_inline
     @__copy_capture(q_device, k_device, v_device, mask3d, mask4d, output_device)
     fn kernel_launch(ctx: DeviceContext) raises:
-        @parameter
-        if mask_rank == 3:
+        comptime if mask_rank == 3:
             flash_attention[decoding_warp_split_k=decoding_warp_split_k](
                 output_device,
                 q_device,
                 k_device,
                 v_device,
                 MaterializedMask(mask3d),
-                IdentityScoreMod(),
                 scale,
                 ctx,
                 num_partitions,
@@ -301,7 +293,6 @@ fn test[
                 k_device,
                 v_device,
                 MaterializedMask(mask4d),
-                IdentityScoreMod(),
                 scale,
                 ctx,
                 num_partitions,
@@ -326,8 +317,7 @@ fn test[
 
     ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
-    @parameter
-    if against_gpu_naive:
+    comptime if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
         comptime output_ref_layout = Layout.row_major(
             UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
@@ -340,8 +330,7 @@ fn test[
         )
         ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-        @parameter
-        if mask_rank == 3:
+        comptime if mask_rank == 3:
             mha_gpu_naive(
                 q_device,
                 k_device,
@@ -398,7 +387,7 @@ fn test[
                     expect,
                     atol=1e-5,
                     rtol=rtol,
-                    msg=String(h, s, d, actual, expect, rerr, sep=" "),
+                    msg=t"{h} {s} {d} {actual} {expect} {rerr}",
                 )
 
     _ = q_device_ptr
@@ -429,8 +418,7 @@ fn test_context_encoding(ctx: DeviceContext) raises:
 
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
-    @parameter
-    for d in range(len(depths)):
+    comptime for d in range(len(depths)):
         comptime depth = depths[d]
         # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
         test[
@@ -629,8 +617,7 @@ fn test_decoding[
 ](ctx: DeviceContext, use_index_input: Bool) raises:
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
-    @parameter
-    for d in range(len(depths)):
+    comptime for d in range(len(depths)):
         comptime depth = depths[d]
         test[
             3,
@@ -644,8 +631,7 @@ fn test_decoding[
             decoding_warp_split_k=split_k,
         ](1, 11, ctx, use_index_input=use_index_input)
 
-        @parameter
-        if (
+        comptime if (
             not is_sm8(ctx.default_device_info)
             or num_partitions
             and num_partitions.value() == 1
@@ -709,8 +695,7 @@ fn test_decoding_large_group[
 ](ctx: DeviceContext, use_index_input: Bool = False) raises:
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
-    @parameter
-    for d in range(len(depths)):
+    comptime for d in range(len(depths)):
         comptime depth = depths[d]
         test[
             4,
@@ -737,22 +722,20 @@ fn test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     comptime mask_type = DType.float32
     comptime scale = Float32(0.0)  # force QK logits to exactly 0
 
-    var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+    var q_ptr = alloc[Scalar[qkv_type]](
         batch_size * seq_len * num_heads * depth
     )
-    var k_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+    var k_ptr = alloc[Scalar[qkv_type]](
         batch_size * num_keys * kv_heads * depth
     )
-    var v_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+    var v_ptr = alloc[Scalar[qkv_type]](
         batch_size * num_keys * kv_heads * depth
     )
-    var mask_ptr = UnsafePointer[Scalar[mask_type]].alloc(
-        batch_size * seq_len * num_keys
-    )
-    var out_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+    var mask_ptr = alloc[Scalar[mask_type]](batch_size * seq_len * num_keys)
+    var out_ptr = alloc[Scalar[qkv_type]](
         batch_size * seq_len * num_heads * depth
     )
-    var sinks_ptr = UnsafePointer[Scalar[qkv_type]].alloc(num_heads)
+    var sinks_ptr = alloc[Scalar[qkv_type]](num_heads)
 
     # Q,K don't matter when scale=0, but set deterministically
     for i in range(batch_size * seq_len * num_heads * depth):
@@ -881,7 +864,6 @@ fn test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
             k_device,
             v_device,
             NullMask(),
-            IdentityScoreMod(),
             scale,  # 0.0 -> all QK logits are exactly zero
             ctx,
             None,
@@ -915,7 +897,7 @@ fn test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     sinks_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_context_encoding(ctx)
         # Test flash attention with sink kernel during encoding
@@ -923,21 +905,16 @@ def main():
         # Test flash attention with sink kernel during decoding
         test_flash_attention_sink_kernel(ctx, 1)
 
-        @parameter
-        for split_k in range(1):
-
-            @parameter
-            for batch_size in range(1, 5, 3):
+        comptime for split_k in range(1):
+            comptime for batch_size in range(1, 5, 3):
                 test_decoding[batch_size, 1, Bool(split_k)](ctx, False)
 
-                @parameter
-                if not split_k:
+                comptime if not split_k:
                     test_decoding[batch_size, 1, Bool(split_k), DType.float32](
                         ctx, False
                     )
 
-                @parameter
-                if (
+                comptime if (
                     ctx.default_device_info == A100
                     or ctx.default_device_info == H100
                 ):
@@ -946,8 +923,7 @@ def main():
                 test_decoding[batch_size, 2, Bool(split_k)](ctx, False)
                 test_decoding[batch_size, 4, Bool(split_k)](ctx, False)
 
-                @parameter
-                if not split_k:
+                comptime if not split_k:
                     test_decoding[batch_size, 4, Bool(split_k), DType.float32](
                         ctx, False
                     )

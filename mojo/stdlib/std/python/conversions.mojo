@@ -15,7 +15,7 @@
 You can import these APIs from the `python` package. For example:
 
 ```mojo
-from python import ConvertibleToPython
+from std.python import ConvertibleToPython
 ```
 """
 
@@ -52,14 +52,3 @@ trait ConvertibleFromPython(Copyable, ImplicitlyDestructible):
             If conversion was not successful.
         """
         ...
-
-
-__extension SIMD(ConvertibleToPython):
-    fn to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-        """
-        comptime assert size == 1, "only works with scalar values"
-        return PythonObject(self._refine[new_size=1]())

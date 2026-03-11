@@ -22,11 +22,10 @@ from collections.abc import Sequence
 import numpy as np
 from huggingface_hub import hf_hub_download
 from PIL import Image
-from scipy.optimize import minimize
-from scipy.stats import gamma  # type: ignore[attr-defined]
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from typing_extensions import override
 
+from .distribution import BaseDistribution, DistributionParameter
 from .local import LocalBenchmarkDataset
 from .types import (
     ChatSamples,
@@ -42,177 +41,6 @@ logger = logging.getLogger(__name__)
 # Maximum ratio of model's max context length to use for random sequences.
 # Set to 95% to leave buffer room for other overheads, like re-tokenization and special tokens.
 MAX_CONTEXT_USAGE_RATIO = 0.95
-
-
-def _parse_percentile_spec(spec: str) -> dict[int, int]:
-    """Parse a percentile specification string into a dictionary.
-
-    Args:
-        spec: A string like "p5:10,p25:30,p75:91,p95:190"
-
-    Returns:
-        A dictionary mapping percentile (int) to value (int),
-        e.g., {5: 10, 25: 30, 75: 91, 95: 190}
-        Note: Fractional percentiles are truncated to integers.
-    """
-    result: dict[int, int] = {}
-    for pair in spec.split(","):
-        pair = pair.strip()
-        if not pair:
-            continue
-        if ":" not in pair:
-            raise ValueError(
-                f"Invalid percentile format: '{pair}'. Expected 'pX:Y' format."
-            )
-        raw_key, raw_value = pair.split(":", 1)
-        key = raw_key.strip().lower()
-        if not key.startswith("p"):
-            raise ValueError(
-                f"Invalid percentile key: '{key}'. Must start with 'p'."
-            )
-        try:
-            # Fractional part is dropped when converting to int.
-            percentile = int(float(key[1:]))
-            value = int(raw_value.strip())
-        except ValueError as e:
-            raise ValueError(
-                f"Invalid percentile specification: '{pair}'. {e}"
-            ) from e
-        result[percentile] = value
-    return result
-
-
-def _fit_gamma_parameters(
-    percentiles: dict[int, int],
-) -> tuple[float, float]:
-    """Fit gamma distribution parameters (shape k, scale theta) from percentile specs.
-
-    Uses least-(relative-error-or-log-space)-squares optimization to find the
-    gamma distribution parameters that best match the given percentile targets.
-
-    Args:
-        percentiles: A dictionary mapping percentile (int) to target value.
-            e.g., {5: 70, 25: 85, 50: 100, 75: 140, 95: 190}
-            Must contain keys 5, 50, and 95.
-
-    Returns:
-        A tuple (k, theta) representing the fitted gamma distribution parameters.
-    """
-    # Threshold for switching objective function from relative error to log-space
-    OBJECTIVE_SWITCH_THRESHOLD = (
-        1000  # use log-space when median percentile is above this value
-    )
-
-    if not all(k in percentiles for k in (5, 50, 95)):
-        raise ValueError("Percentiles must contain keys 5, 50, and 95.")
-    # Gamma distribution is always right-skewed.
-    # Validate that the upper tail (50->95) is longer than the lower tail (5->50).
-    if percentiles[95] - percentiles[50] <= percentiles[50] - percentiles[5]:
-        raise ValueError(
-            "Target percentiles are not right-skewed, which is incompatible with"
-            " a gamma distribution. "
-            f"(p5: {percentiles[5]}, p50: {percentiles[50]}, p95: {percentiles[95]})"
-        )
-    # Validate that values are non-decreasing with increasing percentile.
-    ordered_pct = sorted(percentiles.items())
-    if any(
-        ordered_pct[i][1] > ordered_pct[i + 1][1]
-        for i in range(len(ordered_pct) - 1)
-    ):
-        raise ValueError(
-            "Percentile values must increase as percentiles increase."
-        )
-
-    p = np.array(list(percentiles.keys()))
-    q_target = np.array(list(percentiles.values()))
-
-    def objective(params: np.typing.NDArray[np.floating]) -> float:
-        k, theta = params
-        if k <= 0 or theta <= 0:
-            return 1e9
-        q_model = gamma.ppf(p, a=k, scale=theta)
-        if np.any(q_model == 0):
-            return 1e9
-
-        if percentiles[50] > OBJECTIVE_SWITCH_THRESHOLD:
-            errors = np.log(q_model) - np.log(q_target)
-        else:
-            errors = (q_model - q_target) / q_target
-        return float(np.sum(errors**2))
-
-    # Initial guess from mean and variance estimates
-    # Use p50 for mean guess
-    mean_guess = percentiles[50]
-    # Estimate variance from p5-p95 range (covers ~90% of distribution)
-    # In a normal distribution, p5 and p95 lie at -/+ 1.645 standard deviations
-    # from the mean, so the total width (p95 - p5) is about 3.29 * sigma.
-    # We divide by 4.0 (a conservative approximation for skewed distributions)
-    # to get an initial sigma estimate, then square it to obtain variance.
-    var_guess = ((percentiles[95] - percentiles[5]) / 4.0) ** 2
-
-    # Gamma distribution: mean = k*theta, var = k*theta^2
-    # So: theta = var/mean and k = mean/theta = mean^2/var
-    k0 = mean_guess**2 / var_guess if var_guess > 0 else 1.0
-    theta0 = var_guess / mean_guess if mean_guess > 0 else 1.0
-
-    res = minimize(
-        objective,
-        x0=np.array([k0, theta0]),
-        bounds=[(1e-6, None), (1e-6, None)],
-        options={"maxiter": 2000},
-    )
-
-    k_hat, theta_hat = res.x
-    logger.debug(
-        f"Fitted gamma parameters: k={k_hat:.4f}, theta={theta_hat:.4f}"
-    )
-    # Theoretical quantiles
-    q_model = gamma.ppf(p, a=k_hat, scale=theta_hat)
-    logger.debug(
-        f"Theoretical percentiles {list(percentiles.keys())}: {q_model.tolist()}"
-    )
-    return float(k_hat), float(theta_hat)
-
-
-def _sample_gamma_lengths(
-    percentiles: dict[int, int],
-    num_samples: int,
-    min_len: int,
-    random_state: np.random.Generator,
-) -> list[int]:
-    """Sample integer lengths from a gamma distribution fitted to percentile specs.
-
-    Args:
-        percentiles: A dictionary mapping percentile (int) to target value.
-            e.g., {5: 10, 50: 50, 95: 190}
-            Must at least contain keys 5, 50, and 95.
-        num_samples: Number of samples to generate.
-        min_len: Minimum allowed length.
-        random_state: Random state for reproducibility.
-
-    Returns:
-        A list of sampled integer lengths.
-    """
-    percentile_keys = sorted(percentiles.keys())
-    logger.debug(
-        f"Target percentiles {percentile_keys}: {[percentiles[k] for k in percentile_keys]}"
-    )
-    k, theta = _fit_gamma_parameters(percentiles)
-
-    # Sample integers from the fitted gamma distribution.
-    samples = gamma.rvs(
-        a=k, scale=theta, size=num_samples, random_state=random_state
-    )
-    samples_int = np.maximum(np.round(samples).astype(int), min_len)
-
-    # Log empirical percentiles from sampled integer lengths
-    empirical_percentiles = np.percentile(samples_int, percentile_keys)
-    logger.info(
-        f"Empirical percentiles {percentile_keys}: "
-        f"{empirical_percentiles.tolist()}"
-    )
-
-    return samples_int.tolist()
 
 
 def log_request_actual_length_percentiles(
@@ -242,49 +70,116 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
     def gen_multiturn_random_requests(
         self,
-        input_len: int,
-        output_len: int,
+        input_len: DistributionParameter,
+        output_len: DistributionParameter,
         num_chat_sessions: int,
-        num_turns: int,
-        coefficient_of_variation: str,
+        num_turns: DistributionParameter,
+        delay_between_chat_turns: DistributionParameter | None,
         tokenizer: PreTrainedTokenizerBase,
         sys_prompt_ratio: float,
         max_num_unique_sys_prompt: int,
-        distribution_type: str,
-        random_state: np.random.Generator,
         min_input_len: int = 4,
         min_output_len: int = 1,
-        first_turn_ratio: float = 1.0,
     ) -> ChatSamples:
+        """Generate multiturn random chat requests.
+
+        Args:
+            input_len: Distribution parameter for input lengths. Use ';' to
+                separate first-turn and remaining-turn distributions, e.g.
+                "N(10000,2000);N(1024,200)". Without ';', all turns share the
+                same distribution.
+            output_len: Distribution parameter for output lengths. Same ';' format
+                as input_len.
+            num_chat_sessions: Number of chat sessions to generate.
+            num_turns: Distribution parameter for number of turns per session.
+            delay_between_chat_turns: Optional Distribution parameter for delay
+                between turns.
+            tokenizer: Tokenizer for encoding prompts.
+            sys_prompt_ratio: Ratio of system prompt to input length.
+            max_num_unique_sys_prompt: Max unique system prompts.
+            min_input_len: Minimum input token length.
+            min_output_len: Minimum output token length.
+        """
+        first_turn_input: DistributionParameter
+        remaining_input: DistributionParameter
+        if isinstance(input_len, str):
+            input_parts = input_len.split(";")
+            if len(input_parts) > 2:
+                raise ValueError(
+                    "Support more turns' input length distributions yet,"
+                    " expected at most 2 input parts (first-turn and"
+                    f" remaining-turn), got {len(input_parts)}"
+                )
+            first_turn_input = input_parts[0].strip()
+            remaining_input = (
+                input_parts[1].strip()
+                if len(input_parts) == 2
+                else first_turn_input
+            )
+        else:
+            first_turn_input = input_len
+            remaining_input = input_len
+
+        first_turn_output: DistributionParameter
+        remaining_output: DistributionParameter
+        if isinstance(output_len, str):
+            output_parts = output_len.split(";")
+            if len(output_parts) > 2:
+                raise ValueError(
+                    "Support more turns' output length distributions yet,"
+                    " expected at most 2 output parts (first-turn and"
+                    f" remaining-turn), got {len(output_parts)}"
+                )
+            first_turn_output = output_parts[0].strip()
+            remaining_output = (
+                output_parts[1].strip()
+                if len(output_parts) == 2
+                else first_turn_output
+            )
+        else:
+            first_turn_output = output_len
+            remaining_output = output_len
+
+        delay_dist = BaseDistribution.from_distribution_parameter(
+            delay_between_chat_turns
+        )
+
+        model_max_length = min(
+            tokenizer.model_max_length, np.iinfo(np.int64).max
+        )
+        max_context_length = int(model_max_length * MAX_CONTEXT_USAGE_RATIO)
+
+        num_turns_dist = BaseDistribution.from_distribution_parameter(num_turns)
+        assert num_turns_dist is not None
+        num_turns_per_session = [
+            max(round(num_turns_dist.sample_value()), 1)
+            for _ in range(num_chat_sessions)
+        ]
+
         first_turn_samples = self.sample_requests(
             num_requests=num_chat_sessions,
             tokenizer=tokenizer,
-            input_len=int(input_len * first_turn_ratio),
-            output_len=output_len,
-            coefficient_of_variation=coefficient_of_variation,
+            input_len=first_turn_input,
+            output_len=first_turn_output,
             sys_prompt_ratio=sys_prompt_ratio,
             max_num_unique_sys_prompt=max_num_unique_sys_prompt,
-            distribution_type=distribution_type,
             min_input_len=min_input_len,
             min_output_len=min_output_len,
-            random_state=random_state,
         )
         first_turns = first_turn_samples.requests
 
         follow_up_turn_samples = self.sample_requests(
-            num_requests=num_chat_sessions * (num_turns - 1),
+            num_requests=(sum(num_turns_per_session) - num_chat_sessions),
             tokenizer=tokenizer,
-            input_len=input_len,
-            output_len=output_len,
-            coefficient_of_variation=coefficient_of_variation,
+            input_len=remaining_input,
+            output_len=remaining_output,
             sys_prompt_ratio=0,
             max_num_unique_sys_prompt=1,
-            distribution_type=distribution_type,
             min_input_len=min_input_len,
             min_output_len=min_output_len,
-            random_state=random_state,
         )
         follow_up_turns = follow_up_turn_samples.requests
+        follow_up_turn_idx_offset = 0
 
         sessions: list[ChatSession] = []
         for session_id, first_turn in enumerate(first_turns):
@@ -294,29 +189,51 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                     "user", first_turn.prompt_formatted, tokenizer
                 ),
                 build_chat_message(
-                    "assistant", "", tokenizer, first_turn.output_len
+                    "assistant",
+                    "",
+                    tokenizer,
+                    first_turn.output_len,
+                    delay_until_next_message=max(delay_dist.sample_value(), 0)
+                    if delay_dist
+                    else None,
                 ),
             ]
 
-            num_turns_this_session = np.random.randint(
-                low=int(num_turns / 2), high=num_turns + 1
-            )
-
-            for i in range(num_turns_this_session - 1):
-                follow_up_turn = follow_up_turns[
-                    session_id * (num_turns - 1) + i
-                ]
+            current_context_length = sum(msg.num_tokens for msg in messages)
+            for i in range(num_turns_per_session[session_id] - 1):
+                follow_up_turn = follow_up_turns[follow_up_turn_idx_offset + i]
                 assert isinstance(follow_up_turn.prompt_formatted, str)
+                user_msg = build_chat_message(
+                    "user", follow_up_turn.prompt_formatted, tokenizer
+                )
+                turn_tokens = user_msg.num_tokens + (
+                    follow_up_turn.output_len or 0
+                )
+                if current_context_length + turn_tokens > max_context_length:
+                    logger.info(
+                        f"Session {session_id}: stopping early at turn {i + 1}"
+                        f"(original: {num_turns_per_session[session_id]}):"
+                        f" context would be {current_context_length + turn_tokens}"
+                        f" > max {max_context_length} at turn {i + 2}"
+                    )
+                    break
+                current_context_length += turn_tokens
+                messages.append(user_msg)
                 messages.append(
                     build_chat_message(
-                        "user", follow_up_turn.prompt_formatted, tokenizer
+                        "assistant",
+                        "",
+                        tokenizer,
+                        follow_up_turn.output_len,
+                        delay_until_next_message=max(
+                            delay_dist.sample_value(), 0
+                        )
+                        if delay_dist
+                        else None,
                     )
                 )
-                messages.append(
-                    build_chat_message(
-                        "assistant", "", tokenizer, follow_up_turn.output_len
-                    )
-                )
+
+            follow_up_turn_idx_offset += num_turns_per_session[session_id] - 1
 
             sessions.append(ChatSession(session_id, messages))
 
@@ -437,14 +354,28 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         shuffle: bool = True,
         **kwargs,
     ) -> RequestSamples:
-        # Extract required parameters from kwargs
+        """Sample random benchmark requests with configurable length distributions.
+
+        Args:
+            num_requests: Number of requests to generate.
+            tokenizer: Tokenizer for encoding prompts.
+            output_lengths: Optional fixed output lengths per request.
+            shuffle: Whether to shuffle requests.
+            **kwargs: Additional parameters:
+                input_len (str): Distribution spec for input lengths, e.g.
+                    "1024", "N(1024, 200)", "U(500, 1500)", "G(2, 500)".
+                output_len (str): Distribution spec for output lengths.
+                sys_prompt_ratio (float): Ratio of system prompt to input.
+                max_num_unique_sys_prompt (int): Max unique system prompts.
+                min_input_len (int): Minimum input length (default: 4).
+                min_output_len (int): Minimum output length (default: 1).
+                image_size (str): Image dimensions as "width,height".
+                image_count (int): Number of images per request.
+        """
         input_len = kwargs.get("input_len")
         output_len = kwargs.get("output_len")
-        coefficient_of_variation = kwargs.get("coefficient_of_variation")
-        random_state = kwargs.get("random_state")
         sys_prompt_ratio = kwargs.get("sys_prompt_ratio", 0.0)
         max_num_unique_sys_prompt = kwargs.get("max_num_unique_sys_prompt", 1)
-        distribution_type = kwargs.get("distribution_type", "uniform")
         min_input_len = kwargs.get("min_input_len", 4)
         min_output_len = kwargs.get("min_output_len", 1)
         image_size = kwargs.get("image_size", "")
@@ -453,113 +384,34 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             tokenizer.model_max_length, np.iinfo(np.int64).max
         )
 
-        # Validate required parameters
         if input_len is None:
             raise ValueError("input_len is required for RandomBenchmarkDataset")
         if output_len is None:
             raise ValueError(
                 "output_len is required for RandomBenchmarkDataset"
             )
-        if coefficient_of_variation is None:
-            raise ValueError(
-                "coefficient_of_variation is required for"
-                " RandomBenchmarkDataset"
-            )
         if (image_size and not image_count) or (not image_size and image_count):
             raise ValueError(
                 "both image_size and image_count are required when generating"
                 " an image benchmark"
             )
-        if distribution_type == "gamma":
-            if len(coefficient_of_variation.split(";")) != 2:
-                raise ValueError(
-                    "For right-skewed gamma distributions, coefficient_of_variation must"
-                    " be two lists of percentiles:values separated by a semicolon"
-                    " for input and output (e.g., 'p5:7000,p95:19000;p5:70,p95:190')."
-                    f" Instead got: {coefficient_of_variation}"
-                )
-            if random_state is None:
-                raise ValueError(
-                    f"random_state is required for RandomBenchmarkDataset with {distribution_type} distribution"
-                )
 
-        logger.info(f"Random samples in {distribution_type} distribution")
+        input_dist = BaseDistribution.from_distribution_parameter(input_len)
+        output_dist = BaseDistribution.from_distribution_parameter(output_len)
+        logger.info(
+            f"Random samples: input_len={input_len}, output_len={output_len}"
+        )
 
-        # Parse coefficient_of_variation based on distribution type
-        if distribution_type == "gamma":  # asymmetric distribution
-            # Parse percentile specifications for input and output lengths.
-            input_spec, output_spec = coefficient_of_variation.split(";")
-            input_percentiles = _parse_percentile_spec(input_spec)
-            output_percentiles = _parse_percentile_spec(output_spec)
-            # Add P50 to the input and output percentiles.
-            input_percentiles[50] = input_len
-            output_percentiles[50] = output_len
-
-            # Sample input and output lengths from gamma distributions fit to percentiles.
-            assert random_state is not None, (
-                "random_state is required for gamma distribution"
-            )
-            input_lens = _sample_gamma_lengths(
-                percentiles=input_percentiles,
-                num_samples=num_requests,
-                min_len=min_input_len,
-                random_state=random_state,
-            )
-            output_lens = _sample_gamma_lengths(
-                percentiles=output_percentiles,
-                num_samples=num_requests,
-                min_len=min_output_len,
-                random_state=random_state,
-            )
-
-        elif distribution_type in [
-            "normal",
-            "uniform",
-        ]:  # symmetric distribution
-            if len(coefficient_of_variation.split(",")) == 2:
-                input_ratio, output_ratio = map(
-                    float, coefficient_of_variation.split(",")
-                )
-                input_scale = input_len * input_ratio
-                output_scale = output_len * output_ratio
-            else:
-                inout_ratio = float(coefficient_of_variation)
-                input_scale = input_len * inout_ratio
-                output_scale = output_len * inout_ratio
-
-            if distribution_type == "normal":
-                input_lens = np.random.normal(
-                    loc=input_len, scale=input_scale, size=num_requests
-                ).tolist()
-                input_lens = np.round(input_lens).astype(int).tolist()
-                input_lens = [
-                    max(input_len, min_input_len) for input_len in input_lens
-                ]
-                output_lens = np.random.normal(
-                    loc=output_len, scale=output_scale, size=num_requests
-                ).tolist()
-                output_lens = np.round(output_lens).astype(int).tolist()
-                output_lens = [
-                    max(output_len, min_output_len)
-                    for output_len in output_lens
-                ]
-            elif distribution_type == "uniform":
-                input_scale = min(input_scale, input_len)  # full length cap
-                output_scale = min(output_scale, output_len)  # full length cap
-                input_lens = np.random.randint(
-                    max(int(input_scale), min_input_len),
-                    input_len + 1,
-                    size=num_requests,
-                ).tolist()
-                output_lens = np.random.randint(
-                    max(int(output_scale), min_output_len),
-                    output_len + 1,
-                    size=num_requests,
-                ).tolist()
-        else:
-            raise ValueError(
-                f"Unknown probability distribution type: {distribution_type}"
-            )
+        assert input_dist is not None
+        assert output_dist is not None
+        input_lens = [
+            max(round(input_dist.sample_value()), min_input_len)
+            for _ in range(num_requests)
+        ]
+        output_lens = [
+            max(round(output_dist.sample_value()), min_output_len)
+            for _ in range(num_requests)
+        ]
 
         image_width, image_height = None, None
         if image_size:

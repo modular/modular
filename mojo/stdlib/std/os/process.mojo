@@ -15,15 +15,15 @@
 Example:
 
 ```mojo
-from os import Process
-from collections import List
+from std.os import Process
+from std.collections import List
 _ = Process.run("echo", ["== TEST_ECHO"])
 ```
 """
-from collections import List, Optional
-from collections.string import StringSlice
-from sys import CompilationTarget
-from sys._libc import (
+from std.collections import List, Optional
+from std.collections.string import StringSlice
+from std.sys import CompilationTarget
+from std.sys._libc import (
     waitpid,
     posix_spawnp,
     kill,
@@ -35,8 +35,8 @@ from sys._libc import (
     close,
     WaitFlags,
 )
-from ffi import c_char, c_int, c_pid_t, get_errno
-from sys.os import abort, sep
+from std.ffi import c_char, c_int, c_pid_t, get_errno
+from .os import abort, sep
 
 
 # ===----------------------------------------------------------------------=== #
@@ -124,10 +124,14 @@ struct Pipe:
 
         if in_close_on_exec:
             if not self._set_close_on_exec(pipe_fds[0]):
+                _ = close(pipe_fds[0])
+                _ = close(pipe_fds[1])
                 raise Error("Failed to configure input pipe close on exec")
 
         if out_close_on_exec:
             if not self._set_close_on_exec(pipe_fds[1]):
+                _ = close(pipe_fds[0])
+                _ = close(pipe_fds[1])
                 raise Error("Failed to configure output pipe close on exec")
 
         self.fd_in = FileDescriptor(Int(pipe_fds[0]))
@@ -180,7 +184,7 @@ struct Pipe:
             raise Error("Can not write from read only side of pipe")
 
     @always_inline
-    fn read_bytes(mut self, buffer: Span[mut=True, Byte]) raises -> UInt:
+    fn read_bytes(mut self, buffer: Span[mut=True, Byte, _]) raises -> UInt:
         """Read a number of bytes from this pipe.
 
         Args:
@@ -375,62 +379,56 @@ struct Process:
             Error: If the process fails to spawn.
         """
 
-        @parameter
-        if CompilationTarget.is_linux() or CompilationTarget.is_macos():
-            var file_name = String(path.split(sep)[-1])
+        comptime assert (
+            CompilationTarget.is_linux() or CompilationTarget.is_macos()
+        ), "Unknown platform process execution not implemented"
+        var file_name = String(path.split(sep)[-1])
 
-            var arg_count = len(argv)
-            var argv_array_ptr_cstr_ptr = List[
-                UnsafePointer[mut=False, c_char, ImmutAnyOrigin]
-            ](
-                length=arg_count + 2,
-                fill=UnsafePointer[mut=False, c_char, ImmutAnyOrigin](),
-            )
-            var offset = 0
-            # Arg 0 in `argv` ptr array should be the file name
+        var arg_count = len(argv)
+        var argv_array_ptr_cstr_ptr = List[
+            UnsafePointer[mut=False, c_char, ImmutAnyOrigin]
+        ](
+            length=arg_count + 2,
+            fill=UnsafePointer[mut=False, c_char, ImmutAnyOrigin](),
+        )
+        var offset = 0
+        # Arg 0 in `argv` ptr array should be the file name
+        argv_array_ptr_cstr_ptr[
+            offset
+        ] = file_name.as_c_string_slice().unsafe_ptr()
+        offset += 1
+
+        for var arg in argv:
             argv_array_ptr_cstr_ptr[
                 offset
-            ] = file_name.as_c_string_slice().unsafe_ptr()
+            ] = arg.as_c_string_slice().unsafe_ptr()
             offset += 1
 
-            for var arg in argv:
-                argv_array_ptr_cstr_ptr[
-                    offset
-                ] = arg.as_c_string_slice().unsafe_ptr()
-                offset += 1
+        # `argv` ptr array terminates with NULL PTR
+        argv_array_ptr_cstr_ptr[offset] = UnsafePointer[
+            mut=False, c_char, ImmutAnyOrigin
+        ]()
+        var path_cptr = path.as_c_string_slice().unsafe_ptr()
 
-            # `argv` ptr array terminates with NULL PTR
-            argv_array_ptr_cstr_ptr[offset] = UnsafePointer[
-                mut=False, c_char, ImmutAnyOrigin
-            ]()
-            var path_cptr = path.as_c_string_slice().unsafe_ptr()
+        var pid: c_pid_t = 0
 
-            var pid: c_pid_t = 0
+        var has_error_code = posix_spawnp(
+            UnsafePointer(to=pid),
+            path_cptr,
+            argv_array_ptr_cstr_ptr.unsafe_ptr(),
+            UnsafePointer[
+                mut=False,
+                UnsafePointer[mut=False, Int8, ImmutAnyOrigin],
+                ImmutAnyOrigin,
+            ](),
+        )
 
-            var has_error_code = posix_spawnp(
-                UnsafePointer(to=pid),
-                path_cptr,
-                argv_array_ptr_cstr_ptr.unsafe_ptr(),
-                UnsafePointer[
-                    mut=False,
-                    UnsafePointer[mut=False, Int8, ImmutAnyOrigin],
-                    ImmutAnyOrigin,
-                ](),
+        if has_error_code > 0:
+            raise Error(
+                "Failed to execute "
+                + path
+                + ", EINT error code: "
+                + String(has_error_code)
             )
 
-            if has_error_code > 0:
-                raise Error(
-                    "Failed to execute "
-                    + path
-                    + ", EINT error code: "
-                    + String(has_error_code)
-                )
-
-            return Process(child_pid=pid)
-        else:
-            constrained[
-                False, "Unknown platform process execution not implemented"
-            ]()
-            abort[prefix="ERROR:"](
-                "Unknown platform process execution not implemented"
-            )
+        return Process(child_pid=pid)

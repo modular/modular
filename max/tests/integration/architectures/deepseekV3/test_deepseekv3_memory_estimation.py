@@ -24,12 +24,14 @@ MAX_SEND_TOKENS_PER_RANK = 128
 NUM_RANKS = 8
 
 
-def mock_pipeline_config(pipeline_role: PipelineRole) -> NonCallableMock:
+def mock_pipeline_config(
+    pipeline_role: PipelineRole,
+    quantization_encoding: SupportedEncoding = "float8_e4m3fn",
+) -> NonCallableMock:
     pipeline_config = NonCallableMock(spec=PipelineConfig)
     pipeline_config.model = MagicMock()
-    pipeline_config.model.quantization_encoding = (
-        SupportedEncoding.float8_e4m3fn
-    )
+    pipeline_config.runtime = MagicMock()
+    pipeline_config.model.quantization_encoding = quantization_encoding
     pipeline_config.model.kv_cache.cache_dtype = DType.bfloat16
     pipeline_config.model.data_parallel_degree = NUM_RANKS
     pipeline_config.model.device_specs = [
@@ -37,11 +39,11 @@ def mock_pipeline_config(pipeline_role: PipelineRole) -> NonCallableMock:
     ]
 
     # Pipeline config attributes
-    pipeline_config.pipeline_role = pipeline_role
-    pipeline_config.max_length = 1024 * 1024  # ~million tokens
-    pipeline_config.max_batch_total_tokens = None
-    pipeline_config.ep_size = NUM_RANKS
-    pipeline_config.max_batch_input_tokens = MAX_SEND_TOKENS_PER_RANK
+    pipeline_config.runtime.pipeline_role = pipeline_role
+    pipeline_config.model.max_length = 1024 * 1024  # ~million tokens
+    pipeline_config.runtime.max_batch_total_tokens = None
+    pipeline_config.runtime.ep_size = NUM_RANKS
+    pipeline_config.runtime.max_batch_input_tokens = MAX_SEND_TOKENS_PER_RANK
 
     return pipeline_config
 
@@ -62,13 +64,14 @@ def mock_huggingface_config() -> MagicMock:
     huggingface_config.num_nextn_predict_layers = 1
     huggingface_config.vocab_size = 129280
     huggingface_config.n_shared_experts = 1
+    huggingface_config.num_experts_per_tok = 8
 
     return huggingface_config
 
 
 def test_deepseekv3_memory_estimation() -> None:
     deepseek_model = deepseekV3_arch.pipeline_model
-    pipeline_config = mock_pipeline_config(PipelineRole.DecodeOnly)
+    pipeline_config = mock_pipeline_config("decode_only")
     huggingface_config = mock_huggingface_config()
     assert huggingface_config is not None
 
@@ -96,18 +99,25 @@ def test_deepseekv3_memory_estimation_exact() -> None:
     assert huggingface_config is not None
 
     # For DecodeOnly, we only need to consider moe_activation_memory
-    pipeline_config = mock_pipeline_config(PipelineRole.DecodeOnly)
+    pipeline_config = mock_pipeline_config("decode_only")
     mem = deepseek_model.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
-    assert mem == 6442450944
+    assert mem == 5225054208
 
     # For PrefillAndDecode, we also need to consider mla_activation_memory
-    pipeline_config = mock_pipeline_config(PipelineRole.PrefillAndDecode)
+    pipeline_config = mock_pipeline_config("prefill_and_decode")
     mem = deepseek_model.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
-    assert mem == 549755813888
+    assert mem == 551759642624
+
+    # Also check model with different quantization encoding
+    pipeline_config = mock_pipeline_config("decode_only", "float4_e2m1fnx2")
+    mem = deepseek_model.estimate_activation_memory(
+        pipeline_config, huggingface_config
+    )
+    assert mem == 4399759360
 
 
 def mock_weights_pipeline_config(
@@ -119,9 +129,8 @@ def mock_weights_pipeline_config(
 
     pipeline_config = NonCallableMock(spec=PipelineConfig)
     pipeline_config.model = MagicMock()
-    pipeline_config.model.quantization_encoding = (
-        SupportedEncoding.float8_e4m3fn
-    )
+    pipeline_config.runtime = MagicMock()
+    pipeline_config.model.quantization_encoding = "float8_e4m3fn"
     pipeline_config.model.data_parallel_degree = dp_degree
     pipeline_config.model.device_specs = [
         NonCallableMock(spec=DeviceSpec) for _ in range(n_gpus)
@@ -130,7 +139,7 @@ def mock_weights_pipeline_config(
     # Use a large enough weights size to account for the algorithm's subtractions.
     # DeepSeek-V3 has ~671B parameters, ~700GB at FP8.
     pipeline_config.model.weights_size.return_value = 700 * 1024**3
-    pipeline_config.ep_size = ep_size
+    pipeline_config.runtime.ep_size = ep_size
 
     return pipeline_config
 

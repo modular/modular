@@ -17,22 +17,23 @@ from __future__ import annotations
 
 import math
 
-from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.nn import Linear, Module
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues, uses_opaque
-from max.tensor import Tensor
-
-from ...common_layers.functional_kernels import (
+from max.experimental import functional as F
+from max.experimental.nn import Linear, Module
+from max.experimental.nn.common_layers.functional_kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
     rms_norm_key_cache,
 )
-from ...common_layers.rotary_embedding import RotaryEmbedding
-from .rms_norm import Olmo3RMSNorm
+from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.experimental.tensor import Tensor
+from max.nn.attention import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.pipelines.architectures.olmo2_modulev3.layers.rms_norm import (
+    Olmo2RMSNorm,
+)
 
 
 class Olmo3Attention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
@@ -95,12 +96,6 @@ class Olmo3Attention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
         self.local_window_size = local_window_size
         self.mask_variant = mask_variant
 
-        if not uses_opaque(self.kv_params.cache_strategy):
-            raise ValueError(
-                f"{self.kv_params.cache_strategy} cache strategy, not supported"
-                " in Attention layer."
-            )
-
         self.q_weight_dim = self.kv_params.head_dim * num_attention_heads
         self.kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
 
@@ -127,11 +122,11 @@ class Olmo3Attention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
         )
 
         # QK normalization layers (used in Olmo3)
-        self.q_norm = Olmo3RMSNorm(
+        self.q_norm = Olmo2RMSNorm(
             self.q_weight_dim,
             self.qk_norm_eps,
         )
-        self.k_norm = Olmo3RMSNorm(
+        self.k_norm = Olmo2RMSNorm(
             self.kv_weight_dim,
             self.qk_norm_eps,
         )

@@ -11,13 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from gpu import global_idx
-from gpu.host import DeviceBuffer, DeviceContext, DeviceStream
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import (
+from std.math import ceildiv
+from std.gpu import global_idx
+from std.gpu.host import DeviceBuffer, DeviceContext, DeviceStream
+from std.testing import (
     assert_equal,
     assert_false,
     assert_not_equal,
@@ -28,8 +25,8 @@ from testing import (
 
 # Simple kernel for testing stream execution
 fn simple_kernel(
-    input: UnsafePointer[Float32],
-    output: UnsafePointer[Float32],
+    input: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
     multiplier: Float32,
 ):
@@ -40,7 +37,7 @@ fn simple_kernel(
     output[tid] = input[tid] * multiplier
 
 
-def test_stream_priority_range(ctx: DeviceContext):
+def test_stream_priority_range(ctx: DeviceContext) raises:
     print("Test that stream_priority_range() returns a valid priority range.")
     var priority_range = ctx.stream_priority_range()
 
@@ -52,7 +49,7 @@ def test_stream_priority_range(ctx: DeviceContext):
     )
 
 
-def test_create_stream_default(ctx: DeviceContext):
+def test_create_stream_default(ctx: DeviceContext) raises:
     print("Test creating a stream with default parameters (blocking=True).")
     var stream = ctx.create_stream()
 
@@ -60,7 +57,7 @@ def test_create_stream_default(ctx: DeviceContext):
     stream.synchronize()
 
 
-def test_create_stream_with_priority(ctx: DeviceContext):
+def test_create_stream_with_priority(ctx: DeviceContext) raises:
     print("Test creating streams with different priority values.")
     var priority_range = ctx.stream_priority_range()
 
@@ -141,7 +138,7 @@ def test_create_stream_with_priority(ctx: DeviceContext):
         mid_priority_stream.synchronize()
 
 
-def test_multiple_priority_streams(ctx: DeviceContext):
+def test_multiple_priority_streams(ctx: DeviceContext) raises:
     print(
         "Test creating multiple streams with different priorities and"
         " concurrent kernel execution."
@@ -220,7 +217,7 @@ def test_multiple_priority_streams(ctx: DeviceContext):
             assert_equal(output_host[i], expected)
 
 
-def test_concurrent_priority_streams(ctx: DeviceContext):
+def test_concurrent_priority_streams(ctx: DeviceContext) raises:
     print("Test concurrent execution on streams with different priorities.")
     var priority_range = ctx.stream_priority_range()
 
@@ -299,7 +296,7 @@ def test_concurrent_priority_streams(ctx: DeviceContext):
         assert_equal(low_output_host[i], expected_low_val)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_stream_priority_range(ctx)
         test_create_stream_default(ctx)

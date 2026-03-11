@@ -11,12 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import exp
-from memory import LegacyUnsafePointer
+from std.math import exp
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
-from gpu import (
+from std.gpu import (
     AMDScheduleBarrierMask,
     barrier,
     block_dim,
@@ -28,23 +25,23 @@ from gpu import (
     s_waitcnt,
     s_waitcnt_barrier,
 )
-from gpu.globals import WARP_SIZE
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from gpu.intrinsics import (
+from std.gpu.globals import WARP_SIZE
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.gpu.intrinsics import (
     ds_read_tr16_b64,
     load_acquire,
     store_release,
     permlane_shuffle,
     permlane_swap,
 )
-from gpu.primitives.warp import (
+from std.gpu.primitives.warp import (
     shuffle_down,
     shuffle_idx,
     shuffle_up,
     shuffle_xor,
 )
-from benchmark import keep
+from std.benchmark import keep
 
 comptime MI300X_TARGET = get_gpu_target["mi300x"]()
 comptime MI355X_TARGET = get_gpu_target["mi355x"]()
@@ -52,42 +49,44 @@ comptime MI355X_TARGET = get_gpu_target["mi355x"]()
 comptime FULL_MASK_AMD = 2**WARP_SIZE - 1
 
 
-fn kernel(x: UnsafePointer[Int]):
+fn kernel(x: UnsafePointer[Int, MutAnyOrigin]):
     x[0] = Int(thread_idx.x)
 
 
-fn kernel_laneid(x: UnsafePointer[Int]):
+fn kernel_laneid(x: UnsafePointer[Int, MutAnyOrigin]):
     x[0] = Int(lane_id())
 
 
 fn kernel_exp[
     dtype: DType
-](x: UnsafePointer[Scalar[dtype]]) where dtype.is_floating_point():
+](
+    x: UnsafePointer[Scalar[dtype], MutAnyOrigin]
+) where dtype.is_floating_point():
     x[0] = exp(x[0])
 
 
-fn kernel_shuffle_down(x: UnsafePointer[UInt32]):
+fn kernel_shuffle_down(x: UnsafePointer[UInt32, MutAnyOrigin]):
     var val = x[0]
     var mask = UInt(FULL_MASK_AMD)
     var offset = x[0]
     x[0] = shuffle_down(mask, val, offset)
 
 
-fn kernel_shuffle_up(x: UnsafePointer[UInt32]):
+fn kernel_shuffle_up(x: UnsafePointer[UInt32, MutAnyOrigin]):
     var val = x[0]
     var mask = UInt(FULL_MASK_AMD)
     var offset = x[0]
     x[0] = shuffle_up(mask, val, offset)
 
 
-fn kernel_shuffle_xor(x: UnsafePointer[UInt32]):
+fn kernel_shuffle_xor(x: UnsafePointer[UInt32, MutAnyOrigin]):
     var val = x[0]
     var mask = UInt(FULL_MASK_AMD)
     var offset = x[0]
     x[0] = shuffle_xor(mask, val, offset)
 
 
-fn kernel_shuffle_idx(x: UnsafePointer[UInt32]):
+fn kernel_shuffle_idx(x: UnsafePointer[UInt32, MutAnyOrigin]):
     var val = x[0]
     var mask = UInt(FULL_MASK_AMD)
     var offset = x[0]
@@ -96,15 +95,18 @@ fn kernel_shuffle_idx(x: UnsafePointer[UInt32]):
 
 fn kernel_cast[
     dtype: DType, target: DType
-](x: UnsafePointer[Scalar[dtype]], y: UnsafePointer[Scalar[target]]):
+](
+    x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    y: UnsafePointer[Scalar[target], MutAnyOrigin],
+):
     y[0] = x[0].cast[target]()
 
 
 fn kernel_atomic[
     dtype: DType, memory: Bool = True
 ](
-    output: UnsafePointer[Scalar[dtype]],
-    ptr: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     val: Scalar[dtype],
 ):
     output[] = ptr[]
@@ -112,20 +114,24 @@ fn kernel_atomic[
     output[] = load_acquire[memory=memory](ptr)
 
 
-fn parametric[f: fn(UnsafePointer[Int]) -> None](ptr: UnsafePointer[Int]):
+fn parametric[
+    f: fn(UnsafePointer[Int, MutAnyOrigin]) -> None
+](ptr: UnsafePointer[Int, MutAnyOrigin]):
     f(ptr)
 
 
 # from https://rocm.blogs.amd.com/software-tools-optimization/amdgcn-isa/README.html#naive-load-and-store
 fn load_store(
-    n: Int, input: UnsafePointer[Float32], output: UnsafePointer[Float32]
+    n: Int,
+    input: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: UnsafePointer[Float32, MutAnyOrigin],
 ):
     var tid = thread_idx.x + block_dim.x * grid_dim.x
     output[tid] = input[tid]
 
 
 # CHECK-LABEL: test_shuffle_compile
-def test_shuffle_compile():
+def test_shuffle_compile() raises:
     print("== test_shuffle_compile")
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
     # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
@@ -188,7 +194,7 @@ def test_shuffle_compile():
 
 
 # CHECK-LABEL: test_cast_fp32_bf16_compile
-def test_cast_fp32_bf16_compile():
+def test_cast_fp32_bf16_compile() raises:
     print("== test_cast_fp32_bf16_compile")
 
     # CHECK: tail call i64 asm "v_cmp_u_f32 $0, $1, $1"
@@ -205,7 +211,7 @@ def test_cast_fp32_bf16_compile():
 
 
 # CHECK-LABEL: test_exp_f32_compile
-def test_exp_f32_compile():
+def test_exp_f32_compile() raises:
     print("== test_exp_f32_compile")
 
     # CHECK: tail call float @llvm.amdgcn.exp2.f32(float %4)
@@ -219,7 +225,7 @@ def test_exp_f32_compile():
 
 
 # CHECK-LABEL: test_exp_f16_compile
-def test_exp_f16_compile():
+def test_exp_f16_compile() raises:
     print("== test_exp_f16_compile")
 
     # CHECK: tail call half @llvm.amdgcn.exp2.f16(half %4)
@@ -233,7 +239,7 @@ def test_exp_f16_compile():
 
 
 # CHECK-LABEL: test_laneid_compile
-def test_laneid_compile():
+def test_laneid_compile() raises:
     print("== test_laneid_compile")
 
     # CHECK: %3 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
@@ -246,7 +252,7 @@ def test_laneid_compile():
 
 
 # CHECK-LABEL: test_barrier_compile
-def test_barrier_compile():
+def test_barrier_compile() raises:
     print("== test_barrier_compile")
 
     # CHECK: fence syncscope("workgroup") release
@@ -258,7 +264,7 @@ def test_barrier_compile():
 
 
 # CHECK-LABEL: test_threadid_compile
-def test_threadid_compile():
+def test_threadid_compile() raises:
     print("== test_threadid_compile")
 
     # CHECK: .amdgcn_target "amdgcn-amd-amdhsa--gfx942"
@@ -291,7 +297,7 @@ def test_threadid_compile():
 
 
 # CHECK-LABEL: test_schedule_barrier_compile
-def test_schedule_barrier_compile():
+def test_schedule_barrier_compile() raises:
     print("== test_schedule_barrier_compile")
 
     fn schedule_kernel():
@@ -328,7 +334,7 @@ def test_schedule_barrier_compile():
 
 
 # CHECK-LABEL: test_schedule_group_barrier_compile
-def test_schedule_group_barrier_compile():
+def test_schedule_group_barrier_compile() raises:
     print("== test_schedule_group_barrier_compile")
 
     fn schedule_kernel():
@@ -348,7 +354,7 @@ def test_schedule_group_barrier_compile():
     )
 
 
-def test_atomic_compile():
+def test_atomic_compile() raises:
     print("== test_atomic_compile")
 
     # Memory model reference: https://llvm.org/docs/AMDGPUUsage.html#memory-model-gfx942.
@@ -377,12 +383,12 @@ def test_atomic_compile():
 
 
 # CHECK-LABEL: test_ds_read_tr16_b64_compile
-def test_ds_read_tr16_b64_compile():
+def test_ds_read_tr16_b64_compile() raises:
     print("== test_ds_read_tr16_b64_compile")
 
     fn test_kernel[dtype: DType]():
         var x = UnsafePointer[
-            Scalar[dtype], address_space = AddressSpace.SHARED
+            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
         ]()
         var y = ds_read_tr16_b64(x)
         y[0] = y[0] + 1
@@ -419,7 +425,7 @@ def test_ds_read_tr16_b64_compile():
 
 
 # CHECK-LABEL: test_permlane_compile
-def test_permlane_compile():
+def test_permlane_compile() raises:
     print("== test_permlane_compile")
 
     fn test_kernel[dtype: DType]():
@@ -446,7 +452,7 @@ def test_permlane_compile():
 
 
 # CHECK-LABEL: test_waitcnt_compile
-def test_waitcnt_compile():
+def test_waitcnt_compile() raises:
     print("== test_waitcnt_compile")
 
     fn test_kernel_1():
@@ -503,7 +509,37 @@ def test_waitcnt_compile():
     )
 
 
-def main():
+# CHECK-LABEL: test_nt_load_compile
+def test_nt_load_compile() raises:
+    print("== test_nt_load_compile")
+
+    fn kernel(x: UnsafePointer[Float32, ImmutAnyOrigin]):
+        var ptr = x + Int(thread_idx.x) * 4
+        var val = ptr.load[width=4, non_temporal=True]()
+        keep(val)
+
+    # CHECK: global_load_dwordx4 {{.*}} nt
+    print(_compile_code[kernel, target=MI355X_TARGET]())
+
+
+# CHECK-LABEL: test_nt_store_compile
+def test_nt_store_compile() raises:
+    print("== test_nt_store_compile")
+
+    fn kernel(
+        x: UnsafePointer[Float32, ImmutAnyOrigin],
+        y: UnsafePointer[Float32, MutAnyOrigin],
+    ):
+        var ptr_in = x + Int(thread_idx.x) * 4
+        var ptr_out = y + Int(thread_idx.x) * 4
+        var val = ptr_in.load[width=4]()
+        ptr_out.store[non_temporal=True](val)
+
+    # CHECK: global_store_dwordx4 {{.*}} nt
+    print(_compile_code[kernel, target=MI355X_TARGET]())
+
+
+def main() raises:
     test_shuffle_compile()
     test_cast_fp32_bf16_compile()
     test_exp_f32_compile()
@@ -517,3 +553,5 @@ def main():
     test_ds_read_tr16_b64_compile()
     test_permlane_compile()
     test_waitcnt_compile()
+    test_nt_load_compile()
+    test_nt_store_compile()

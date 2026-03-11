@@ -15,19 +15,19 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections import List, Set
-from hashlib.hasher import Hasher
+from std.collections import List, Set
+from std.hashlib.hasher import Hasher
 
-from python import (
+from std.python import (
     ConvertibleFromPython,
     ConvertibleToPython,
     Python,
     PythonObject,
 )
 
-from builtin.rebind import trait_downcast
-from utils._select import _select_register_value as select
-from utils._visualizers import lldb_formatter_wrapping_type
+from std.builtin.rebind import trait_downcast
+from std.utils._select import _select_register_value as select
+from std.utils._visualizers import lldb_formatter_wrapping_type
 
 # ===----------------------------------------------------------------------=== #
 #  Boolable
@@ -74,10 +74,7 @@ struct Bool(
     Floatable,
     Hashable,
     ImplicitlyCopyable,
-    Indexer,
     Intable,
-    Representable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -105,8 +102,8 @@ struct Bool(
     # ===-------------------------------------------------------------------===#
 
     comptime __del__is_trivial: Bool = True
-    comptime __moveinit__is_trivial: Bool = True
-    comptime __copyinit__is_trivial: Bool = True
+    comptime __move_ctor_is_trivial: Bool = True
+    comptime __copy_ctor_is_trivial: Bool = True
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -137,7 +134,7 @@ struct Bool(
             mlir_value: The initial value.
         """
         self._mlir_value = __mlir_op.`pop.cast_to_builtin`[
-            _type = __mlir_type.i1
+            _type=__mlir_type.i1
         ](mlir_value)
 
     @always_inline("nodebug")
@@ -180,6 +177,7 @@ struct Bool(
         """
         return self
 
+    @doc_private
     @always_inline("builtin")
     fn __mlir_i1__(self) -> __mlir_type.i1:
         """Convert this Bool to __mlir_type.i1.
@@ -194,6 +192,7 @@ struct Bool(
         """
         return self._mlir_value
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Get the bool as a string.
@@ -228,6 +227,7 @@ struct Bool(
         """
         self.write_to(writer)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Get the bool as a string.
 
@@ -256,15 +256,6 @@ struct Bool(
             The integral representation of the value.
         """
         return self.__int__()
-
-    @always_inline("builtin")
-    fn __mlir_index__(self) -> __mlir_type.index:
-        """Convert to index.
-
-        Returns:
-            1 if the Bool is True, 0 otherwise.
-        """
-        return self.__int__()._mlir_value
 
     @always_inline("nodebug")
     fn __float__(self) -> Float64:

@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from sys import argv
+from std.math import ceildiv, isclose
+from std.sys import argv
 
 from std.builtin.variadics import Variadic
-from gpu import WARP_SIZE
-from gpu.host import DeviceContext
-from gpu import block_idx, thread_idx, warp_id, global_idx, lane_id
-from gpu.memory import async_copy_wait_all
-from gpu.sync import barrier
-from memory import alloc
-from testing import assert_almost_equal
-from utils import Index
-from utils.numerics import get_accum_type
+from std.gpu import WARP_SIZE
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, thread_idx, warp_id, global_idx, lane_id
+from std.gpu.memory import async_copy_wait_all
+from std.gpu.sync import barrier
+from std.memory import alloc
+from std.testing import assert_almost_equal
+from std.utils import Index
+from std.utils.numerics import get_accum_type
 
 from layout.layout_tensor import (
     Layout,
@@ -32,9 +32,9 @@ from layout.layout_tensor import (
     copy_local_to_dram,
 )
 
-from layout._tile_tensor import TileTensor, stack_allocation
-from layout._layout import TensorLayout, row_major
-from layout._coord import (
+from layout import TileTensor, row_major, stack_allocation
+from layout.tile_layout import TensorLayout
+from layout.coord import (
     Coord,
     coord,
     Idx,
@@ -80,12 +80,12 @@ fn gemm_kernel[
 
     var a_tile_sram = stack_allocation[
         mat_a.dtype,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](row_major[BM, BK]())
 
     var b_tile_sram = stack_allocation[
         mat_b.dtype,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](row_major[BK, BN]())
 
     var n_warp_n = BN // WN
@@ -95,19 +95,19 @@ fn gemm_kernel[
     # Allocate register tiles.
     var a_reg = stack_allocation[
         mat_a.dtype,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ](
         row_major[TM]()
     )  # TM elements for M-dimension vector
     var b_reg = stack_allocation[
         mat_b.dtype,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ](
         row_major[TN]()
     )  # TN elements for N-dimension vector
     var c_reg = stack_allocation[
         mat_c.dtype,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ](row_major[TM, TN]()).fill(0)
 
     comptime warp_layout = row_major[8, 4]()
@@ -117,21 +117,20 @@ fn gemm_kernel[
             (Idx(Int(block_idx.y)), Idx(Int(k_i)))
         )
         copy_dram_to_sram_async[
-            thread_layout = Layout.row_major(NUM_THREADS // BK, BK)
+            thread_layout=Layout.row_major(NUM_THREADS // BK, BK)
         ](a_tile_sram.to_layout_tensor(), a_tile_dram.to_layout_tensor())
 
         var b_tile_dram = mat_b.tile[BK, BN](
             (Idx(Int(k_i)), Idx(Int(block_idx.x)))
         )
         copy_dram_to_sram_async[
-            thread_layout = Layout.row_major(NUM_THREADS // BN, BN)
+            thread_layout=Layout.row_major(NUM_THREADS // BN, BN)
         ](b_tile_sram.to_layout_tensor(), b_tile_dram.to_layout_tensor())
 
         async_copy_wait_all()
         barrier()
 
-        @parameter
-        for k_j in range(BK):  # Renamed to avoid shadowing outer k_i
+        comptime for k_j in range(BK):  # Renamed to avoid shadowing outer k_i
             var a_smem_warp_row = a_tile_sram.tile[WM, BK](
                 (Idx(warp_m), Idx(0))
             ).slice[:, k_j : k_j + 1]()
@@ -139,12 +138,12 @@ fn gemm_kernel[
             var b_smem_warp_row = b_tile_sram.tile[BK, WN](
                 (Idx[0](), Idx(warp_n))
             ).slice[k_j : k_j + 1, :]()
-            copy_sram_to_local[
-                src_warp_layout = warp_layout.to_layout(), axis=0
-            ](a_reg.to_layout_tensor(), a_smem_warp_row.to_layout_tensor())
-            copy_sram_to_local[
-                src_warp_layout = warp_layout.to_layout(), axis=1
-            ](b_reg.to_layout_tensor(), b_smem_warp_row.to_layout_tensor())
+            copy_sram_to_local[src_warp_layout=warp_layout.to_layout(), axis=0](
+                a_reg.to_layout_tensor(), a_smem_warp_row.to_layout_tensor()
+            )
+            copy_sram_to_local[src_warp_layout=warp_layout.to_layout(), axis=1](
+                b_reg.to_layout_tensor(), b_smem_warp_row.to_layout_tensor()
+            )
             outer_product_acc(c_reg, a_reg, b_reg)
 
         # Otherwise a data race, faster threads will modify shared memory.
@@ -154,7 +153,7 @@ fn gemm_kernel[
         (Idx(Int(block_idx.y)), Idx(Int(block_idx.x)))
     ).tile[WM, WN]((Idx(warp_m), Idx(warp_n)))
 
-    copy_local_to_dram[dst_thread_layout = warp_layout.to_layout()](
+    copy_local_to_dram[dst_thread_layout=warp_layout.to_layout()](
         c_warp_tile.to_layout_tensor(), c_reg.to_layout_tensor()
     )
 
@@ -479,7 +478,7 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
     b_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Run minimal test first for debugging
         var run_minimal = False
@@ -522,8 +521,7 @@ fn matmul_kernel_naive[
 
     var accum = Scalar[s_type]()
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         for i in range(k):
             accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
                 Scalar[s_type]
@@ -570,11 +568,8 @@ fn outer_product_acc(
     comptime M = res.static_shape[0]
     comptime N = res.static_shape[1]
 
-    @parameter
-    for i in range(M):
-
-        @parameter
-        for j in range(N):
+    comptime for i in range(M):
+        comptime for j in range(N):
             res[i, j] += rebind[res.ElementType](
                 (lhs[(Idx[i](),)]).cast[dtype]()
             ) * rebind[res.ElementType](rhs[(Idx[j](),)].cast[dtype]())

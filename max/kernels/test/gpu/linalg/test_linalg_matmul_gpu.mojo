@@ -13,22 +13,18 @@
 
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from linalg.matmul import matmul
 from linalg.matmul.gpu import _matmul_gpu
-from memory import LegacyUnsafePointer
+from std.testing import assert_almost_equal
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
-
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn _size[rank: Int](dims: IndexList[rank, ...]) -> Int:
     var size = 1
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         size *= dims[i]
     return size
 
@@ -36,12 +32,12 @@ fn _size[rank: Int](dims: IndexList[rank, ...]) -> Int:
 fn _create_device_buffer[
     dtype: DType, rank: Int, shape: DimList
 ](ctx: DeviceContext, dynamic_shape: IndexList[rank]) raises -> Tuple[
-    DeviceBuffer[dtype], NDBuffer[dtype, rank, MutAnyOrigin, shape]
+    DeviceBuffer[dtype], NDBuffer[rank=rank, dtype, MutAnyOrigin, shape]
 ]:
     var storage = ctx.enqueue_create_buffer[dtype](_size(dynamic_shape))
     return (
         storage,
-        NDBuffer[dtype, rank, _, shape](
+        NDBuffer[rank=rank, dtype, _, shape](
             storage.unsafe_ptr(), dynamic_shape=dynamic_shape
         ),
     )
@@ -50,25 +46,25 @@ fn _create_device_buffer[
 fn _create_host_buffer[
     dtype: DType, rank: Int, shape: DimList
 ](dynamic_shape: IndexList[rank, ...]) raises -> NDBuffer[
-    dtype, rank, MutAnyOrigin, shape
+    rank=rank, dtype, MutAnyOrigin, shape
 ]:
-    var storage_ptr = UnsafePointer[Scalar[dtype]].alloc(_size(dynamic_shape))
-    return NDBuffer[dtype, rank, _, shape](
+    var storage_ptr = alloc[Scalar[dtype]](_size(dynamic_shape))
+    return NDBuffer[rank=rank, dtype, MutAnyOrigin, shape](
         storage_ptr, dynamic_shape=dynamic_shape
     )
 
 
 fn _linspace_fill[
     dtype: DType, rank: Int, shape: DimList
-](mut buff: NDBuffer[mut=True, dtype, rank, _, shape]):
+](mut buff: NDBuffer[mut=True, rank=rank, dtype, _, shape]):
     for i in range(buff.size()):
         buff.data[i] = Scalar[dtype](i)
 
 
 fn _create_host_buffer_like[
     dtype: DType, rank: Int, shape: DimList
-](buff: NDBuffer[dtype, rank, _, shape]) raises -> NDBuffer[
-    dtype, rank, MutAnyOrigin, shape
+](buff: NDBuffer[rank=rank, dtype, _, shape]) raises -> NDBuffer[
+    rank=rank, dtype, MutAnyOrigin, shape
 ]:
     return _create_host_buffer[dtype, rank, shape](buff.dynamic_shape)
 
@@ -82,24 +78,20 @@ fn _get_test_name[
 ) -> String:
     return String(
         "test-case(",
-        dtype.__str__(),
+        dtype,
         ") : ",
-        shape_c_dim[0].__str__(),
+        shape_c_dim[0],
         (
             "_dynamic"
             + " x "
-            + shape_b_dim[1]
-            .__str__() if shape_c.at[0]()
-            .is_dynamic() else " x "
-            + shape_b_dim[1].__str__()
+            + String(shape_b_dim[1]) if shape_c.at[0]().is_dynamic() else " x "
+            + String(shape_b_dim[1])
         ),
         (
             "_dynamic"
             + " x "
-            + shape_a_dim[1]
-            .__str__() if shape_b.at[1]()
-            .is_dynamic() else " x "
-            + shape_a_dim[1].__str__()
+            + String(shape_a_dim[1]) if shape_b.at[1]().is_dynamic() else " x "
+            + String(shape_a_dim[1])
         ),
         "_dynamic" if shape_a.at[1]().is_dynamic() else "",
         ", ... ",
@@ -196,7 +188,7 @@ fn create_matmul_test_case[
     ]((m.value, n.value), (m.value, k.value), (k.value, n.value), ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         create_matmul_test_case[DType.float32](
             ctx, dynamic(8), static[8](), static[4]()

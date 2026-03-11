@@ -61,8 +61,17 @@ struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):
         self.splits = splits
         self.raster_order = raster_order
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
-        return String("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the tuning config as a string.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
 
 
 fn _get_tuning_list_bf16[mma_k: Int, BK: Int]() -> List[TuningConfigSM90]:

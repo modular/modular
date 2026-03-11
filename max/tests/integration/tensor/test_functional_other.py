@@ -18,12 +18,13 @@ They don't otherwise make any attempt at coverage, edge cases, or correctness.
 
 from typing import cast
 
+import numpy as np
 import pytest
-from max import functional as F
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
-from max.graph import DeviceRef
-from max.tensor import Tensor
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
+from max.graph import DeviceRef, TensorType
 
 DEVICE = Accelerator() if accelerator_count() else CPU()
 
@@ -134,6 +135,82 @@ def test_concat() -> None:
     result = F.concat([tensor_2d, tensor_2d], axis=0)
     assert result.real
     assert result.shape.static_dims == [8, 6]
+
+
+def test_cond_true_branch() -> None:
+    pred = Tensor.full([], True, dtype=DType.bool, device=DEVICE)
+
+    def then_fn():  # noqa: ANN202
+        return F.constant(42.0, DType.float32, DEVICE)
+
+    def else_fn():  # noqa: ANN202
+        return F.constant(0.0, DType.float32, DEVICE)
+
+    results = F.cond(
+        pred,
+        [TensorType(DType.float32, [], device=DEVICE)],
+        then_fn,
+        else_fn,
+    )
+    assert len(results) == 1
+    result_cpu = results[0].to(CPU())
+    np.testing.assert_equal(np.from_dlpack(result_cpu), 42.0)
+
+
+def test_cond_false_branch() -> None:
+    pred = Tensor.full([], False, dtype=DType.bool, device=DEVICE)
+
+    def then_fn():  # noqa: ANN202
+        return F.constant(42.0, DType.float32, DEVICE)
+
+    def else_fn():  # noqa: ANN202
+        return F.constant(0.0, DType.float32, DEVICE)
+
+    results = F.cond(
+        pred,
+        [TensorType(DType.float32, [], device=DEVICE)],
+        then_fn,
+        else_fn,
+    )
+    assert len(results) == 1
+    result_cpu = results[0].to(CPU())
+    np.testing.assert_equal(np.from_dlpack(result_cpu), 0.0)
+
+
+def test_cond_with_functional_ops_in_branches() -> None:
+    """Branches using F.xxx operations return Tensor, which must be converted."""
+    pred = Tensor.full([], True, dtype=DType.bool, device=DEVICE)
+    x = Tensor.ones([4], dtype=DType.float32, device=DEVICE)
+
+    def then_fn():  # noqa: ANN202
+        return F.mul(x, F.constant(2.0, DType.float32, DEVICE))
+
+    def else_fn():  # noqa: ANN202
+        return F.negate(x)
+
+    results = F.cond(
+        pred,
+        [TensorType(DType.float32, [4], device=DEVICE)],
+        then_fn,
+        else_fn,
+    )
+    assert len(results) == 1
+    result_cpu = results[0].to(CPU())
+    expected = np.array([2.0, 2.0, 2.0, 2.0], dtype=np.float32)
+    np.testing.assert_array_equal(np.from_dlpack(result_cpu), expected)
+
+
+def test_cond_no_results() -> None:
+    pred = Tensor.full([], True, dtype=DType.bool, device=DEVICE)
+
+    def then_fn() -> None:
+        _ = F.constant(1.0, DType.float32, DEVICE)
+
+    def else_fn() -> None:
+        _ = F.constant(0.0, DType.float32, DEVICE)
+
+    results = F.cond(pred, None, then_fn, else_fn)
+    assert len(results) == 0
 
 
 def test_constant() -> None:
@@ -410,7 +487,7 @@ def test_functional_returns_tensor() -> None:
 def test_sum_axis_none() -> None:
     """Test that F.sum with axis=None reduces over all dimensions."""
     data = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
-    tensor = Tensor.constant(data, dtype=DType.float32, device=DEVICE)
+    tensor = Tensor(data, dtype=DType.float32, device=DEVICE)
     result = F.sum(tensor, axis=None)
     assert isinstance(result, Tensor)
     result._sync_realize()
@@ -423,7 +500,7 @@ def test_sum_axis_none() -> None:
 def test_min_axis_none() -> None:
     """Test that F.min with axis=None reduces over all dimensions."""
     data = [[1.2, 3.5, 2.1], [2.3, 1.9, 4.2]]
-    tensor = Tensor.constant(data, dtype=DType.float32, device=DEVICE)
+    tensor = Tensor(data, dtype=DType.float32, device=DEVICE)
     result = F.min(tensor, axis=None)
     assert isinstance(result, Tensor)
     result._sync_realize()
@@ -436,7 +513,7 @@ def test_min_axis_none() -> None:
 def test_argmin_axis_none() -> None:
     """Test that F.argmin with axis=None returns flattened index."""
     data = [[1.2, 3.5, 2.1], [2.3, 1.9, 4.2]]
-    tensor = Tensor.constant(data, dtype=DType.float32, device=DEVICE)
+    tensor = Tensor(data, dtype=DType.float32, device=DEVICE)
     result = F.argmin(tensor, axis=None)
     assert isinstance(result, Tensor)
     result._sync_realize()
@@ -451,7 +528,7 @@ def test_argmin_axis_none() -> None:
 def test_axis_none_preserves_default_behavior() -> None:
     """Test that default axis=-1 behavior is unchanged."""
     data = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
-    tensor = Tensor.constant(data, dtype=DType.float32, device=DEVICE)
+    tensor = Tensor(data, dtype=DType.float32, device=DEVICE)
     # Default behavior (axis=-1)
     result_default = F.sum(tensor)
     assert isinstance(result_default, Tensor)

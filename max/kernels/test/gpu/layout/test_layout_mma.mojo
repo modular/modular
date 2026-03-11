@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from os import abort
-from random import random_float64
-from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from std.math import ceildiv, isclose
+from std.os import abort
+from std.random import random_float64
+from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
-from gpu import WARP_SIZE, block_dim, global_idx, grid_dim
-from gpu.host import DeviceContext
+from std.gpu import WARP_SIZE, block_dim, global_idx, grid_dim
+from std.gpu.host import DeviceContext
 from layout import *
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core import *
-from testing import *
+from std.testing import *
 
 
 fn mma_layout_tc[
@@ -159,19 +159,10 @@ fn test_layout_mma[
                     print(i, out_val, out_ref)
             testing.assert_true(isclose(out_val, out_ref, rtol=rtol))
 
-    _ = mat_a^
-    _ = mat_b^
-    _ = mat_c^
-    _ = mat_a_n^
-    _ = mat_b_n^
-    _ = mat_c_n^
 
-
-def main():
+def main() raises:
     with DeviceContext() as ctx:
-
-        @parameter
-        if has_nvidia_gpu_accelerator():
+        comptime if has_nvidia_gpu_accelerator():
             comptime shape_884 = IndexList[3](8, 8, 4)
             comptime shape_1684 = IndexList[3](16, 8, 4)
             comptime shape_1688 = IndexList[3](16, 8, 8)

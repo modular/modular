@@ -15,35 +15,57 @@ from .arxiv_summarization import ArxivSummarizationBenchmarkDataset
 from .axolotl import AxolotlBenchmarkDataset
 from .batch_job import BatchJobBenchmarkDataset
 from .code_debug import CodeDebugBenchmarkDataset
+from .distribution import (
+    BaseDistribution,
+    ContinuousDistribution,
+    DiscreteDistribution,
+    DistributionParameter,
+)
 from .huggingface import HuggingFaceBenchmarkDataset
 from .interface import BenchmarkDataset
 from .local import LocalBenchmarkDataset
 from .obfuscated_conversations import ObfuscatedConversationsBenchmarkDataset
+from .pixel import PixelBenchmarkDataset, SyntheticPixelBenchmarkDataset
 from .random import RandomBenchmarkDataset, SyntheticBenchmarkDataset
 from .registry import DATASET_REGISTRY, DatasetRegistryEntry
 from .sharegpt import ShareGPTBenchmarkDataset
 from .sonnet import SonnetBenchmarkDataset
-from .types import ChatSession, DatasetMode, OpenAIImage, SampledRequest
+from .types import (
+    ChatSession,
+    DatasetMode,
+    OpenAIImage,
+    PixelGenerationImageOptions,
+    PixelGenerationSampledRequest,
+    SampledRequest,
+)
 from .vision_arena import VisionArenaBenchmarkDataset
 
 __all__ = [
     "DATASET_REGISTRY",
     "ArxivSummarizationBenchmarkDataset",
     "AxolotlBenchmarkDataset",
+    "BaseDistribution",
     "BatchJobBenchmarkDataset",
     "BenchmarkDataset",
     "ChatSession",
     "CodeDebugBenchmarkDataset",
+    "ContinuousDistribution",
     "DatasetMode",
     "DatasetRegistryEntry",
+    "DiscreteDistribution",
+    "DistributionParameter",
     "HuggingFaceBenchmarkDataset",
     "LocalBenchmarkDataset",
     "ObfuscatedConversationsBenchmarkDataset",
     "OpenAIImage",
+    "PixelBenchmarkDataset",
+    "PixelGenerationImageOptions",
+    "PixelGenerationSampledRequest",
     "RandomBenchmarkDataset",
     "SampledRequest",
     "ShareGPTBenchmarkDataset",
     "SonnetBenchmarkDataset",
     "SyntheticBenchmarkDataset",
+    "SyntheticPixelBenchmarkDataset",
     "VisionArenaBenchmarkDataset",
 ]

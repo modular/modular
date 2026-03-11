@@ -11,15 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import global_idx
-from gpu.host import DeviceContext
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from tensor import InputTensor, OutputTensor, StaticTensorSpec
-from testing import TestSuite, assert_equal
-
-from utils import IndexList
+from std.testing import TestSuite, assert_equal
+from std.utils import IndexList
 
 comptime WIDTH = 5
 comptime HEIGHT = 10
@@ -29,9 +28,9 @@ comptime int_dtype = DType.uint8
 comptime float_dtype = DType.float32
 comptime rgb_layout_orig = Layout.row_major(HEIGHT, WIDTH, NUM_CHANNELS)
 comptime gray_layout_orig = Layout.row_major(HEIGHT, WIDTH)
-comptime rgb_spec = StaticTensorSpec[int_dtype, 3].create_unknown()
+comptime rgb_spec = StaticTensorSpec[int_dtype, 3, ...].get_unknown()
 comptime rgb_layout = rgb_spec.to_layout()
-comptime gray_spec = StaticTensorSpec[int_dtype, 2].create_unknown()
+comptime gray_spec = StaticTensorSpec[int_dtype, 2, ...].get_unknown()
 comptime gray_layout = gray_spec.to_layout()
 
 
@@ -53,7 +52,9 @@ fn color_to_grayscale(
         gray_tensor[row, col] = gray.cast[int_dtype]()
 
 
-def print_image(gray_tensor: LayoutTensor[int_dtype, gray_layout_orig]):
+def print_image(
+    gray_tensor: LayoutTensor[int_dtype, gray_layout_orig, ...]
+) raises:
     """A helper function to print out the grayscale channel intensities."""
     for row in range(HEIGHT):
         for col in range(WIDTH):
@@ -66,7 +67,7 @@ def print_image(gray_tensor: LayoutTensor[int_dtype, gray_layout_orig]):
         print("")
 
 
-def test_color_to_grayscale():
+def test_color_to_grayscale() raises:
     with DeviceContext() as ctx:
         var rgb_buffer = ctx.enqueue_create_buffer[int_dtype](
             comptime (rgb_layout_orig.size())
@@ -114,7 +115,9 @@ def test_color_to_grayscale():
         )
 
         with gray_buffer.map_to_host() as host_buffer:
-            host_tensor = LayoutTensor[int_dtype, gray_layout_orig](host_buffer)
+            host_tensor = LayoutTensor[int_dtype, gray_layout_orig, ...](
+                host_buffer
+            )
             print("Resulting grayscale image:")
             print_image(host_tensor)
             assert_equal(host_tensor[0, 0], 17)
@@ -127,7 +130,7 @@ def test_color_to_grayscale():
         _ = gray_buffer
 
 
-def main():
+def main() raises:
     # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
     # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()

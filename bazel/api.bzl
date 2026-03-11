@@ -111,4 +111,5 @@ def copy_files(srcs, **kwargs):
 def _noop(**_kwargs):
     pass
 
+install_docs = _noop
 modular_nanobind_extension = _noop

@@ -30,7 +30,7 @@ class Qwen3EmbeddingConfig(ArchConfig):
         model_max = getattr(
             huggingface_config, "max_position_embeddings", 32768
         )
-        configured_max = self.pipeline_config.max_length or 8192
+        configured_max = self.pipeline_config.model.max_length or 8192
 
         if configured_max > model_max:
             raise ValueError(

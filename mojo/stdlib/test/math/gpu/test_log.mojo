@@ -11,23 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import log, log2, log10
-from sys import simd_width_of
+from std.math import log, log2, log10
+from std.sys import simd_width_of
 
-from algorithm.functional import elementwise
-from gpu import *
-from gpu.host import DeviceContext, get_gpu_target
-from testing import assert_almost_equal, TestSuite
+from std.algorithm.functional import elementwise
+from std.gpu import *
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.testing import assert_almost_equal, TestSuite
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 def run_elementwise[
     dtype: DType, log_fn: fn(x: SIMD) -> type_of(x)
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime length = 8192
 
-    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     var in_device = ctx.enqueue_create_buffer[dtype](length)
     var out_device = ctx.enqueue_create_buffer[dtype](length)
@@ -72,7 +72,7 @@ def run_elementwise[
             )
 
 
-def test_log():
+def test_log() raises:
     with DeviceContext() as ctx:
         run_elementwise[DType.float32, log](ctx)
         run_elementwise[DType.float32, log10](ctx)
@@ -93,5 +93,5 @@ def test_log10_comptime():
     assert_almost_equal(v2, 1.0)
     assert_almost_equal(v3, 2.0)
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

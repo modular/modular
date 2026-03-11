@@ -16,8 +16,8 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy.hooks.print_hook import PrintHook
-from max.nn.legacy.layer import Layer
+from max.nn.hooks.print_hook import PrintHook
+from max.nn.layer import Layer
 
 
 class OuterLayer(Layer):
@@ -38,7 +38,8 @@ class InnerLayer(Layer):
 
 
 def test_unnamed_print_hook(
-    session: InferenceSession, capfd: pytest.CaptureFixture
+    session: InferenceSession,
+    capfd: pytest.CaptureFixture,  # type: ignore[type-arg]
 ) -> None:
     print_hook = PrintHook()
     layer = OuterLayer()
@@ -69,7 +70,8 @@ def test_unnamed_print_hook(
 
 
 def test_named_print_hook(
-    session: InferenceSession, capfd: pytest.CaptureFixture
+    session: InferenceSession,
+    capfd: pytest.CaptureFixture,  # type: ignore[type-arg]
 ) -> None:
     print_hook = PrintHook()
     layer = OuterLayer()

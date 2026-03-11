@@ -41,43 +41,12 @@ def test_allreduce_per_device_counts_without_merge() -> None:
 
     ir = str(graph)
 
-    # Exactly one allreduce per device.
+    # Exactly one allreduce op (single multi-device op).
     allreduces = re.findall(r"mo\.distributed\.allreduce\.sum\(", ir)
-    assert len(allreduces) == 2, ir
+    assert len(allreduces) == 1, ir
 
     # No multi-operand chain merges (device chains must remain independent).
     assert not re.search(r"mo\.chain\.create\([^)]*,[^)]*\)", ir), ir
-
-
-def test_allreduce_has_device_barrier_attribute() -> None:
-    """Verify that allreduce ops are created with hasDeviceBarrier attribute.
-
-    The hasDeviceBarrier attribute enables the same-device chain optimization
-    during lowering, so allreduce ops only wait for operand chains from the
-    same device (cross-device synchronization is handled internally).
-    """
-    t0 = TensorType(DType.float32, [4], device=DeviceRef.GPU(0))
-    t1 = TensorType(DType.float32, [4], device=DeviceRef.GPU(1))
-    sb0 = BufferType(DType.int64, [1], device=DeviceRef.GPU(0))
-    sb1 = BufferType(DType.int64, [1], device=DeviceRef.GPU(1))
-
-    with Graph(
-        "allreduce_device_barrier",
-        input_types=[t0, t1, sb0, sb1],
-    ) as graph:
-        x0, x1, s0, s1 = graph.inputs
-        outs = ops.allreduce.sum([x0.tensor, x1.tensor], [s0.buffer, s1.buffer])
-        graph.output(*outs)
-
-    ir = str(graph)
-
-    # Each allreduce op should have the hasDeviceBarrier attribute.
-    # Pattern: mo.distributed.allreduce.sum(...) {device = ..., hasDeviceBarrier}
-    device_barrier_matches = re.findall(r"hasDeviceBarrier", ir)
-    assert len(device_barrier_matches) == 2, (
-        f"Expected 2 hasDeviceBarrier attributes, found {len(device_barrier_matches)}."
-        f"\nIR:\n{ir}"
-    )
 
 
 def test_transfer_h2d_uses_root_chain_not_device_chain() -> None:
@@ -110,13 +79,13 @@ def test_transfer_h2d_uses_root_chain_not_device_chain() -> None:
 
     ir = str(graph)
 
-    # Collect all allreduce out-chain SSA ids (second result of the op).
-    # Pattern: %res, %ch = mo.distributed_allreduce_sum(...)
+    # Collect the allreduce out-chain SSA id (last result of the single op).
+    # Pattern: %outputs:N, %outChain = mo.distributed.allreduce.sum(...)
     allreduce_chain_ids = re.findall(
-        r"%[A-Za-z0-9_]+,\s*(%[A-Za-z0-9_]+)\s*=\s*mo\.distributed\.allreduce\.sum\(",
+        r"%[A-Za-z0-9_:]+,\s*(%[A-Za-z0-9_]+)\s*=\s*mo\.distributed\.allreduce\.sum\(",
         ir,
     )
-    assert len(allreduce_chain_ids) == 2, ir
+    assert len(allreduce_chain_ids) == 1, ir
 
     # Capture transfer chains and destination device ids.
     # Pattern examples:

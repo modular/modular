@@ -13,21 +13,21 @@
 
 """Mojo kernel wrappers for reduce MO interpreter operations."""
 
-from os import abort
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
-from sys.info import has_accelerator
+from std.os import abort
+from std.python import PythonObject
+from std.python.bindings import PythonModuleBuilder
+from std.sys.info import has_accelerator
 
-from algorithm import max as reduce_max
-from algorithm import min as reduce_min
-from algorithm import sum as reduce_sum
-from algorithm import mean as reduce_mean
-from algorithm import product as reduce_product
-from algorithm.functional import IndexList
-from memory import OpaquePointer
-from runtime.asyncrt import DeviceContextPtr
+from std.algorithm import max as reduce_max
+from std.algorithm import min as reduce_min
+from std.algorithm import sum as reduce_sum
+from std.algorithm import mean as reduce_mean
+from std.algorithm import product as reduce_product
+from std.algorithm.functional import IndexList
+from std.memory import OpaquePointer
+from std.runtime.asyncrt import DeviceContextPtr
 
-from _common import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
+from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 # =============================================================================
@@ -57,7 +57,7 @@ fn PyInit_reduce_ops() -> PythonObject:
 
         return b.finalize()
     except e:
-        abort(String("failed to create reduce op bindings module: ", e))
+        abort(t"failed to create reduce op bindings module: {e}")
 
 
 # =============================================================================
@@ -79,7 +79,7 @@ comptime ReduceFn = fn[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[_, element_type = DType.int64],
+    input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr,
 ) capturing raises -> None
@@ -97,7 +97,7 @@ fn _reduce_max[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[_, element_type = DType.int64],
+    input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr,
 ) raises:
@@ -123,7 +123,7 @@ fn _reduce_min[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[_, element_type = DType.int64],
+    input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr,
 ) raises:
@@ -149,7 +149,7 @@ fn _reduce_sum[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[_, element_type = DType.int64],
+    input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr,
 ) raises:
@@ -175,7 +175,7 @@ fn _reduce_mean[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[_, element_type = DType.int64],
+    input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr,
 ) raises:
@@ -207,7 +207,7 @@ fn _reduce_mul[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[_, element_type = DType.int64],
+    input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr,
 ) raises:
@@ -431,12 +431,8 @@ fn reduce_op[
             target="cpu",
         ](normalized_shape, 1, DeviceContextPtr(ctx))
     else:
-
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if dtype in (
+        comptime if has_accelerator():
+            comptime if dtype in (
                 DType.float32,
                 DType.float16,
                 DType.bfloat16,

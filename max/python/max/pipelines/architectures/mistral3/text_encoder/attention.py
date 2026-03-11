@@ -17,14 +17,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from max import functional as F
-from max.nn import Linear, Module
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_gpu as _flash_attention_gpu
-from max.tensor import Tensor
+from max.experimental import functional as F
+from max.experimental.nn import Linear, Module
+from max.experimental.tensor import Tensor
+from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
 
 if TYPE_CHECKING:
-    from ...common_layers.rotary_embedding import RotaryEmbedding
+    from max.experimental.nn.common_layers.rotary_embedding import (
+        RotaryEmbedding,
+    )
 
 flash_attention_gpu = F.functional(_flash_attention_gpu)
 
@@ -107,8 +109,10 @@ class EncoderAttention(Module[..., Tensor]):
         head_dim = x.shape[2]
 
         # [S, H_kv, D] -> [S, H_kv, 1, D] -> [S, H_kv, n_rep, D] -> [S, H, D]
+        # Use concat instead of tile: tile has no GPU implementation and forces
+        # a CPU round-trip (DtoH + tile + HtoD) for every layer.
         x = F.unsqueeze(x, 2)
-        x = F.tile(x, [1, 1, n_rep, 1])
+        x = F.concat([x] * n_rep, axis=2)
         x = F.reshape(x, (seq_len, n_kv_heads * n_rep, head_dim))
 
         return x

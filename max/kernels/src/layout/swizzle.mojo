@@ -33,13 +33,13 @@ conflicts can degrade performance.  Applying swizzle layouts
 optimizes memory access patterns for higher throughput.
 """
 
-from sys import is_compile_time, simd_width_of, size_of
+from std.sys import is_run_in_comptime_interpreter, simd_width_of, size_of
 
-from bit import log2_floor
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.bit import log2_floor
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 
 from .int_tuple import flatten
-from .layout import LayoutTrait
+from .layout import Layout
 
 # ===-----------------------------------------------------------------------===#
 # Motivation of thread swizzling                                               #
@@ -304,7 +304,9 @@ fn shiftl(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
 # ===-----------------------------------------------------------------------===#
 
 
-struct Swizzle(LayoutTrait, Stringable, TrivialRegisterPassable, Writable):
+struct Swizzle(
+    Copyable, ImplicitlyDestructible, TrivialRegisterPassable, Writable
+):
     """Swizzle functor for memory access pattern optimization.
 
     Implements a swizzling pattern to reduce bank conflicts in shared
@@ -360,12 +362,12 @@ struct Swizzle(LayoutTrait, Stringable, TrivialRegisterPassable, Writable):
             base: Least significant bits to keep constant.
             shift: Distance to shift the mask.
         """
-        if not is_compile_time():
-            debug_assert(
-                bits >= 0 and base >= 0,
-                "Require non-negative mask bits and base",
-            )
-            debug_assert(abs(shift) >= bits, "shift should be less than bits")
+        if not is_run_in_comptime_interpreter():
+            assert (
+                bits >= 0 and base >= 0
+            ), "Require non-negative mask bits and base"
+
+            assert abs(shift) >= bits, "shift should be less than bits"
 
         self.bits = bits
         self.base = base
@@ -460,6 +462,7 @@ struct Swizzle(LayoutTrait, Stringable, TrivialRegisterPassable, Writable):
         """
         writer.write("(", self.bits, ",", self.base, ",", self.shift, ")")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Convert the swizzle to a string representation.
 
@@ -554,17 +557,13 @@ fn make_swizzle[dtype: DType, mode: TensorMapSwizzle]() -> Swizzle:
     """
     comptime type_size = size_of[dtype]()
 
-    @parameter
-    if mode in (
+    comptime assert mode in (
         TensorMapSwizzle.SWIZZLE_128B,
         TensorMapSwizzle.SWIZZLE_64B,
         TensorMapSwizzle.SWIZZLE_32B,
         TensorMapSwizzle.SWIZZLE_NONE,
-    ):
-        return Swizzle(Int(mode), log2_floor(16 // type_size), 3)
-    else:
-        constrained[False, "Only support 32B, 64B, 128B, or no swizzle"]()
-        return Swizzle(0, 0, 0)
+    ), "Only support 32B, 64B, 128B, or no swizzle"
+    return Swizzle(Int(mode), log2_floor(16 // type_size), 3)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -572,59 +571,53 @@ fn make_swizzle[dtype: DType, mode: TensorMapSwizzle]() -> Swizzle:
 # ===-----------------------------------------------------------------------===#
 
 
-struct ComposedLayout[
-    LayoutA: LayoutTrait, LayoutB: LayoutTrait, offset: Optional[Int] = 0
-](LayoutTrait):
-    """Layout composed of two layouts applied sequentially.
+struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
+    """Layout composed of a Layout and a Swizzle applied sequentially.
 
-    Combines two layouts. Output of the first (`LayoutA`) is input to
-    the second (`LayoutB`), with optional offset in between.
+    Combines a base layout with a swizzle. The output of the layout is
+    input to the swizzle, with an optional offset in between.
 
     Parameters:
-        LayoutA: The first layout to apply.
-        LayoutB: The second layout to apply.
         offset: Optional offset between layouts (default: 0).
     """
 
-    comptime has_shape = Self.LayoutA.has_shape or Self.LayoutB.has_shape
-    """True if either layout has a shape."""
+    comptime has_shape = True
+    """True because the base layout always has a shape."""
 
-    var layout_a: Self.LayoutA
-    """The first layout to apply."""
-    var layout_b: Self.LayoutB
-    """The second layout to apply."""
+    var layout_a: Layout
+    """The base layout to apply."""
+    var layout_b: Swizzle
+    """The swizzle to apply."""
 
     @always_inline
-    fn __init__(
-        out self, var layout_a: Self.LayoutA, var layout_b: Self.LayoutB
-    ):
-        """Initialize ComposedLayout with two layouts.
+    fn __init__(out self, var layout_a: Layout, layout_b: Swizzle):
+        """Initialize ComposedLayout with a layout and swizzle.
 
         Args:
-            layout_a: The first layout.
-            layout_b: The second layout.
+            layout_a: The base layout.
+            layout_b: The swizzle.
         """
         comptime assert (
             not Self.offset or Self.offset.value() >= 0
         ), "Requires non-negative offset if present"
         self.layout_a = layout_a^
-        self.layout_b = layout_b^
+        self.layout_b = layout_b
 
     @always_inline
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copy constructor for ComposedLayout.
 
         Args:
             copy: The ComposedLayout to copy from.
         """
         self.layout_a = copy.layout_a.copy()
-        self.layout_b = copy.layout_b.copy()
+        self.layout_b = copy.layout_b
 
     @always_inline
     fn __call__(self, idx: IntTuple) -> Int:
         """Apply composed layout to an index.
 
-        Applies `LayoutA`, then adds offset, then applies `LayoutB`.
+        Applies the layout, then adds offset, then applies the swizzle.
 
         Args:
             idx: The index to transform.
@@ -639,7 +632,7 @@ struct ComposedLayout[
     fn __call__(self, idx: IntTuple, offset_val: Int) -> Int:
         """Apply composed layout with runtime offset.
 
-        Applies `LayoutA`, then adds runtime `offset_val`, then `LayoutB`.
+        Applies the layout, then adds runtime `offset_val`, then the swizzle.
         Static offset must not be set when using runtime offset.
 
         Args:
@@ -658,10 +651,10 @@ struct ComposedLayout[
     fn size(self) -> Int:
         """Get the size of the composed layout.
 
-        Returns the size of the first layout (`LayoutA`).
+        Returns the size of the base layout.
 
         Returns:
-            The size of the first layout.
+            The size of the base layout.
         """
         return self.layout_a.size()
 
@@ -669,27 +662,25 @@ struct ComposedLayout[
     fn cosize(self) -> Int:
         """Get the cosize of the composed layout.
 
-        Returns the cosize of the second layout (`LayoutB`).
+        Returns the cosize of the swizzle.
 
         Returns:
-            The cosize of the second layout.
+            The cosize of the swizzle.
         """
         return self.layout_b.cosize()
 
 
 @always_inline
 fn eval_composed[
-    # Need concrete types for LayoutTrait; limits usage to single comb.
-    composed_layout: ComposedLayout[Layout, Swizzle]
+    composed_layout: ComposedLayout
 ](idx: UInt, offset: UInt = 0) -> UInt:
     """Evaluate a composed layout with swizzle.
 
-    Evaluates a `ComposedLayout[Layout, Swizzle]`. Applies the base
-    layout, adds an optional offset, and then applies the swizzle.
+    Applies the base layout, adds an optional offset, and then applies
+    the swizzle.
 
     Parameters:
-        composed_layout: The composed layout to evaluate, consisting of a base Layout
-                         and a Swizzle transformation.
+        composed_layout: The composed layout to evaluate.
 
     Args:
         idx: The input index to transform.
@@ -701,40 +692,16 @@ fn eval_composed[
     var a_idx = idx
     var b_idx = 0
 
-    # layout or composed layout
-    @parameter
-    if composed_layout.layout_a.has_shape:
-        comptime shape_a = flatten(composed_layout.layout_a.shape)
-        comptime stride_a = flatten(composed_layout.layout_a.stride)
+    comptime shape_a = flatten(composed_layout.layout_a.shape)
+    comptime stride_a = flatten(composed_layout.layout_a.stride)
 
-        @parameter
-        for i in range(len(stride_a)):
-            comptime s = shape_a[i].value()
-            comptime st = stride_a[i].value()
-            a_idx, coord_i = divmod(a_idx, UInt(s))
-            b_idx += Int(coord_i * UInt(st))
-    # swizzle
-    else:
-        b_idx = materialize[composed_layout.layout_a]()(b_idx)
+    comptime for i in range(len(stride_a)):
+        comptime s = shape_a[i].value()
+        comptime st = stride_a[i].value()
+        a_idx, coord_i = divmod(a_idx, UInt(s))
+        b_idx += Int(coord_i * UInt(st))
 
     b_idx += Int(offset)
 
-    # !!! The following check must be commented out because layout_b is limited
-    # to be a swizzle, which doesn't have shape or stride.
-    # # layout or composed layout
-    # @parameter
-    # if composed_layout.layout_b.has_shape:
-    #     var res = 0
-
-    #     alias shape_b = flatten(composed_layout.layout_b.shape)
-    #     alias stride_b = flatten(composed_layout.layout_b.stride)
-
-    #     @parameter
-    #     for i in range(len(stride_b)):
-    #         var coor_i = b_idx % shape_b[i].value()
-    #         res += coor_i * stride_b[i].value()
-    #         b_idx = b_idx // shape_b[i].value()
-    # # swizzle
-    # else:
     comptime layout_b = composed_layout.layout_b
     return UInt(layout_b(b_idx))

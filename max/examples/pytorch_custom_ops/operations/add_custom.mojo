@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor, foreach
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 @compiler.register("add_constant_custom")
@@ -25,7 +25,7 @@ struct AddConstantCustom[value: Int]:
         target: StaticString,
     ](
         outp: OutputTensor,
-        x: InputTensor[dtype = outp.dtype, rank = outp.rank],
+        x: InputTensor[dtype=outp.dtype, rank=outp.rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter

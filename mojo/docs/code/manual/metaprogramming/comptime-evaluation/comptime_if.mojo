@@ -1,0 +1,28 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+from std.sys import has_accelerator
+
+
+fn run_on_gpu():
+    pass
+
+
+fn run_on_cpu():
+    pass
+
+
+def main() raises:
+    comptime if has_accelerator():
+        run_on_gpu()
+    else:
+        run_on_cpu()

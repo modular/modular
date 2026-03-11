@@ -11,9 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.gpu.host import DeviceContext
+from layout import TileTensor, row_major
 from nn.gather_scatter import gather
 
 
@@ -101,6 +100,6 @@ fn test_gather(ctx: DeviceContext) raises:
     _test_gather[DType.int64]()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_gather(ctx)

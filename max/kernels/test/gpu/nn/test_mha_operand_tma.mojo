@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from random import random_ui64, seed
-from sys import size_of
+from std.collections import Set
+from std.random import random_ui64, seed
+from std.sys import size_of
 
-from gpu import barrier
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_idx, thread_idx
-from gpu.memory import fence_async_view_proxy
+from std.gpu import barrier
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import block_idx, thread_idx
+from std.gpu.memory import fence_async_view_proxy
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -28,8 +28,8 @@ from kv_cache.types import (
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
-from layout.tma_async import SharedMemBarrier, TMATensorTile
-from memory import stack_allocation
+from layout.tma_async import SharedMemBarrier, TMATensorTile, _idx_product
+from std.memory import stack_allocation
 from nn.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
@@ -37,29 +37,33 @@ from nn.mha_operand import (
     RaggedMHAOperand,
 )
 from nn.mha_fa3_utils import kv_coord
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @__llvm_arg_metadata(src_tma_tile, `nvvm.grid_constant`)
 @__llvm_arg_metadata(dst_tma_tile, `nvvm.grid_constant`)
 fn mha_operand_tma_copy_kernel[
-    layout: Layout,
-    desc_layout: Layout,
+    rank: Int,
+    tile_shape: IndexList[rank],
+    desc_shape: IndexList[rank],
+    smem_layout: Layout,
     kv_t: MHAOperand,
     swizzle_mode: TensorMapSwizzle,
     head_size: Int,
 ](
     src_tma_tile: TMATensorTile[
         kv_t.dtype,
-        layout,
-        desc_layout,
+        rank,
+        tile_shape,
+        desc_shape,
     ],
     dst_tma_tile: TMATensorTile[
         kv_t.dtype,
-        layout,
-        desc_layout,
+        rank,
+        tile_shape,
+        desc_shape,
     ],
     src_operand: kv_t,
     dst_operand: kv_t,
@@ -73,9 +77,9 @@ fn mha_operand_tma_copy_kernel[
     # Allocate shared memory tile
     smem_tile = LayoutTensor[
         kv_t.dtype,
-        layout,
+        smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -83,7 +87,7 @@ fn mha_operand_tma_copy_kernel[
     ref mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()[0]
 
@@ -95,8 +99,8 @@ fn mha_operand_tma_copy_kernel[
     # Calculate col coordinates
     # Declare row coordinates
 
-    comptime tile_m = layout.shape[0].size()
-    comptime elements = layout.size()
+    comptime tile_m = tile_shape[0]
+    comptime elements = _idx_product[rank, tile_shape]()
     comptime swizzle_granularity = swizzle_mode.bytes() // size_of[kv_t.dtype]()
     # Loop over columns to copy full head size
     for kv_tile_start_row in range(0, num_keys, tile_m):
@@ -108,9 +112,7 @@ fn mha_operand_tma_copy_kernel[
             src_tma_tile.async_copy(
                 smem_tile,
                 mbar,
-                kv_coord[
-                    depth=head_size, swizzle_granularity=swizzle_granularity
-                ](src_row, head_idx),
+                kv_coord[depth=head_size](src_row, head_idx),
             )
 
         # Synchronize all threads
@@ -130,9 +132,7 @@ fn mha_operand_tma_copy_kernel[
             # Initiate TMA store
             dst_tma_tile.async_store(
                 smem_tile,
-                kv_coord[
-                    depth=head_size, swizzle_granularity=swizzle_granularity
-                ](dst_row, head_idx),
+                kv_coord[depth=head_size](dst_row, head_idx),
             )
 
             dst_tma_tile.commit_group()
@@ -158,10 +158,10 @@ fn mha_operand_copy[
 
     # Create TMA tiles
     src_tma = src.create_tma_tile[
-        swizzle_mode, BN=tile_m, depth = Int(head_size)
+        swizzle_mode, BN=tile_m, depth=Int(head_size)
     ](ctx)
     dst_tma = dst.create_tma_tile[
-        swizzle_mode, BN=tile_m, depth = Int(head_size)
+        swizzle_mode, BN=tile_m, depth=Int(head_size)
     ](ctx)
 
     # Calculate grid dimensions
@@ -173,8 +173,10 @@ fn mha_operand_copy[
     grid_z = batch_size
 
     comptime kernel = mha_operand_tma_copy_kernel[
-        src_tma.layout,
-        src_tma.desc_layout,
+        type_of(src_tma).rank,
+        type_of(src_tma).tile_shape,
+        type_of(src_tma).desc_shape,
+        Layout.row_major(type_of(src_tma).tile_shape),
         kv_t,
         swizzle_mode,
         Int(head_size),
@@ -796,7 +798,7 @@ fn test_ragged[
     print("    RaggedTensor test passed!")
 
 
-def main():
+def main() raises:
     seed(42)
     with DeviceContext() as ctx:
         comptime batch_size = 4
@@ -807,15 +809,13 @@ def main():
 
         print("Testing TMA copy with different tile configurations")
 
-        @parameter
-        for i in range(6, 9):
+        comptime for i in range(6, 9):
             comptime head_size = 1 << i  # 64, 128, 256
             comptime kv_params = KVCacheStaticParams(
                 num_heads=8, head_size=UInt(head_size)
             )
 
-            @parameter
-            for j in range(6, 15 - i):
+            comptime for j in range(6, 15 - i):
                 comptime block_m = 1 << j  # 64, ..., (64 * 256) // block_m
 
                 comptime msg = "\nTesting block_m=" + String(

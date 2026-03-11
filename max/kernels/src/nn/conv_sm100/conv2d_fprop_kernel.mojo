@@ -34,67 +34,68 @@ Supported configurations (Flux VAE optimized):
 - BF16/FP16 data types
 """
 
-from collections import Optional
-from math import ceildiv
+from std.collections import Optional
+from std.math import ceildiv
 
-from sys import align_of, size_of
+from std.sys import align_of, size_of
 
-from gpu import WARP_SIZE, barrier
-from gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE, barrier
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
 )
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.sync import syncwarp
-from gpu.compute.arch.tcgen05 import *
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.sync import syncwarp
+from std.gpu.compute.arch.tcgen05 import *
 from layout import Layout as LegacyLayout
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
     TMATensorTileIm2col,
 )
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
-    TMATile,
+from structured_kernels.tile_types import (
     TmaOpType,
     TmaOpTypeIm2col,
     static_row_major,
 )
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     SMemTileArray2DRowMajor,
 )
 
 # Import shared components from matmul structured kernels
-from linalg.matmul.gpu.sm100_structured.structured_kernels.kernel_common import (
+from structured_kernels.kernel_common import (
     WarpRole,
     KernelContext,
 )
-from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline import (
+from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import (
-    TilePipeline,
     InputTilePipeline,
     StandardTilePayload,
-    InputProducerStage,
-    InputConsumerStage,
+    ProducerTiles,
+    ConsumerTiles,
     InputProducer,
     InputConsumer,
     OutputTilePipeline,
 )
-from linalg.matmul.gpu.sm100_structured.structured_kernels.barriers import (
-    TmemDeallocBarrier,
+from structured_kernels.barriers import (
     WarpGroupBarrier,
+)
+from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
+    OutputPipelineConfig,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAllocation,
+    TmemDeallocBarrier,
     TmemTensor,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.warp_context import (
@@ -241,7 +242,7 @@ struct Conv2dFpropKernel[
         Self.act_type,
         Self.filter_type,
         Self.out_type,
-        config = Self.config,
+        config=Self.config,
     ]
 
     # ========== MMA Operation Type ==========
@@ -251,33 +252,31 @@ struct Conv2dFpropKernel[
         Self.filter_type,
         Self.config.block_tile_shape,
         Self.config.mma_shape,
-        accum_type = Self.accum_type,
-        cta_group = Self.cta_group,
-        cluster_shape = Self.config.cluster_shape,
-        a_swizzle = Self.config.a_swizzle,
-        b_swizzle = Self.config.b_swizzle,
+        accum_type=Self.accum_type,
+        cta_group=Self.cta_group,
+        cluster_shape=Self.config.cluster_shape,
+        a_swizzle=Self.config.a_swizzle,
+        b_swizzle=Self.config.b_swizzle,
         transpose_b=True,  # Filter is transposed
     ]
 
     # ========== Tile Scheduler Type ==========
     comptime Scheduler = TileScheduler[
-        num_stages = Self.num_clc_pipeline_stages,
-        cluster_shape = Index[dtype = DType.uint32](
+        num_stages=Self.num_clc_pipeline_stages,
+        cluster_shape=Index[dtype=DType.uint32](
             Self.config.cluster_shape[0],
             Self.config.cluster_shape[1],
             Self.config.cluster_shape[2],
         ),
-        block_swizzle_size = Self.config.block_swizzle_size,
+        block_swizzle_size=Self.config.block_swizzle_size,
     ]
 
     # ========== Tile Pipeline Type ==========
     comptime TilePayload = StandardTilePayload[
         Self.act_type,
         Self.filter_type,
-        Self.BM,
-        Self.BK,
-        Self.BN,
-        Self.BK,
+        IndexList[2](Self.BM, Self.BK),
+        IndexList[2](Self.BN, Self.BK),
         Self.SmemType.num_pipeline_stages,
     ]
     comptime InputTilePipelineType = InputTilePipeline[
@@ -288,11 +287,11 @@ struct Conv2dFpropKernel[
 
     # ========== Tile Loader Types ==========
     comptime ActTileLoaderTypeIm2col = TileLoaderTMAIm2col[
-        cta_group = Self.cta_group
+        ..., cta_group=Self.cta_group
     ]
-    comptime FilterTileLoaderType = TileLoaderTMA[cta_group = Self.cta_group]
+    comptime FilterTileLoaderType = TileLoaderTMA[..., cta_group=Self.cta_group]
     # Source C tile loader for residual (same structure as output)
-    comptime SrcTileLoaderType = TileLoaderTMA[cta_group=1]
+    comptime SrcTileLoaderType = TileLoaderTMA[..., cta_group=1]
 
     # TMA expected bytes
     comptime act_expected_bytes = Self.SmemType.act_smem_layout.size() * size_of[
@@ -355,18 +354,15 @@ struct Conv2dFpropKernel[
     comptime ActTmaOp = TmaOpTypeIm2col[
         Self.act_type, Self.ActTileLayout, Self.ActDescLayout
     ]
-    comptime FilterTmaTile = TMATile[
+    comptime FilterTmaOp = TmaOpType[
         Self.filter_type, Self.FilterTileLayout, Self.FilterDescLayout
     ]
-    comptime FilterTmaOp = Self.FilterTmaTile.InnerType
-    comptime OutTmaTile = TMATile[
+    comptime OutTmaOp = TmaOpType[
         Self.out_type, Self.OutTileLayout, Self.OutDescLayout
     ]
-    comptime OutTmaOp = Self.OutTmaTile.InnerType
-    comptime SrcTmaTile = TMATile[
+    comptime SrcTmaOp = TmaOpType[
         Self.out_type, Self.SrcTileLayout, Self.SrcDescLayout
     ]
-    comptime SrcTmaOp = Self.SrcTmaTile.InnerType
 
     # TMA load size constants
     comptime act_tma_load_size = Self.act_tile_dim0 * Self.act_swizzle_elems
@@ -374,19 +370,22 @@ struct Conv2dFpropKernel[
     comptime act_tma_rows = Self.act_tile_dim0
     comptime filter_tma_rows = Self.filter_tile_dim0
 
+    # ========== Output Pipeline Configuration ==========
+    comptime opc = OutputPipelineConfig(
+        Self.num_accum_pipeline_stages,
+        Self.stage_stride_cols,
+        Self.cta_group,
+    )
+
     # ========== Tensor Memory Type ==========
-    comptime Tmem = TmemAllocation[Self.cta_group]
+    comptime Tmem = TmemAllocation[Self.opc.cta_group]
     comptime accum_layout = LegacyLayout.row_major(Self.MMA_M, Self.MMA_N)
     comptime AccumTensor = TmemTensor[
-        Self.accum_type, Self.accum_layout, cta_group = Self.cta_group
+        Self.accum_type, Self.accum_layout, cta_group=Self.cta_group
     ]
 
     # ========== Output Pipeline Type ==========
-    comptime OutputPipeline = OutputTilePipeline[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-    ]
+    comptime OutputPipeline = OutputTilePipeline[Self.opc]
 
     # ========== Epilogue Load Pipeline Type ==========
     # For source C loading (residual add: D = Conv + beta*C)
@@ -403,42 +402,36 @@ struct Conv2dFpropKernel[
     comptime MmaEpilogueSync = WarpGroupBarrier[
         Self.MMA_THREADS + Self.EPILOGUE_THREADS, 1
     ]
-    comptime TmemDealloc = TmemDeallocBarrier[Self.cta_group]
+    comptime TmemDealloc = TmemDeallocBarrier[Self.opc.cta_group]
 
     # Warp contexts
     comptime MmaCtx = MmaWarpContext[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
     comptime EpilogueCtx = EpilogueWarpContext[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
 
     # ========== Output Writer ==========
     comptime TileWriterType = TileWriter[
-        a_type = Self.act_type,
-        accum_type = Self.accum_type,
-        block_tile_shape = Self.config.block_tile_shape,
-        mma_shape = Self.config.mma_shape,
-        cta_group = Self.cta_group,
-        num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages,
-        c_swizzle = Self.config.c_swizzle,
+        a_type=Self.act_type,
+        accum_type=Self.accum_type,
+        block_tile_shape=Self.config.block_tile_shape,
+        mma_shape=Self.config.mma_shape,
+        opc=Self.opc,
+        c_swizzle=Self.config.c_swizzle,
         transpose_c=False,
-        c_smem_dim0 = Self.SmemType.OutputM,
-        c_smem_dim1 = Self.SmemType.OutputN,
-        num_output_stages = Self.SmemType.num_output_stages,
-        stage_stride_cols = Self.stage_stride_cols,
-        num_output_warps = Self.num_output_warps,
+        c_smem_dim0=Self.SmemType.OutputM,
+        c_smem_dim1=Self.SmemType.OutputN,
+        num_output_stages=Self.SmemType.num_output_stages,
+        num_output_warps=Self.num_output_warps,
         # Epilogue lambda for fusion (bias, activation, residual add)
-        elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
-        register_based_epilogue = Self.register_based_epilogue,
+        elementwise_compute_lambda_fn=Self.elementwise_compute_lambda_fn,
+        register_based_epilogue=Self.register_based_epilogue,
     ]
 
     # ========== Source C Tile Type (for write_with_residual) ==========
@@ -469,7 +462,7 @@ struct Conv2dFpropKernel[
         //,
     ](
         tmem_stage: Self.OutputPipeline.Stage.Tmem,
-        tiles: InputConsumerStage[
+        tiles: ConsumerTiles[
             tiles_origin,
             Self.TilePayload,
             Self.SmemType.num_group_pipeline_stages,
@@ -484,9 +477,7 @@ struct Conv2dFpropKernel[
         var accum = tmem_stage.tensor[Self.accum_type, Self.accum_layout]()
 
         if elect_one_sync():
-
-            @parameter
-            for j in range(Self.config.k_group_size):
+            comptime for j in range(Self.config.k_group_size):
                 var act_tile, filter_tile = tiles.payload().get_tile[
                     Self.config.k_group_size
                 ](tiles.stage(), j)
@@ -551,8 +542,7 @@ struct Conv2dFpropKernel[
             )
 
             # Initialize CLC barriers
-            @parameter
-            for i in range(Self.config.num_clc_pipeline_stages):
+            comptime for i in range(Self.config.num_clc_pipeline_stages):
                 clc_full.ptr[i].init(Self.clc_producer_arv_count)
                 clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
 
@@ -583,18 +573,20 @@ struct Conv2dFpropKernel[
         act_loader: TileLoaderTMAIm2col[
             act_tma_origin,
             Self.act_type,
-            Self.ActTmaOp.layout,
-            Self.ActTmaOp.desc_layout,
-            cta_group = Self.cta_group,
+            Self.ActTmaOp.rank,
+            Self.ActTmaOp.tile_shape,
+            Self.ActTmaOp.desc_shape,
+            cta_group=Self.cta_group,
         ],
         filter_loader: TileLoaderTMA[
             filter_tma_origin,
             Self.filter_type,
-            Self.FilterTmaOp.layout,
-            Self.FilterTmaOp.desc_layout,
-            cta_group = Self.cta_group,
+            Self.FilterTmaOp.rank,
+            Self.FilterTmaOp.tile_shape,
+            Self.FilterTmaOp.desc_shape,
+            cta_group=Self.cta_group,
         ],
-        tiles: InputProducerStage[
+        tiles: ProducerTiles[
             tiles_origin,
             Self.TilePayload,
             Self.SmemType.num_group_pipeline_stages,
@@ -634,8 +626,7 @@ struct Conv2dFpropKernel[
 
             var barrier = tiles.barrier()
 
-            @parameter
-            for j in range(Self.config.k_group_size):
+            comptime for j in range(Self.config.k_group_size):
                 var act_tile, filter_tile = tiles.payload().get_tile[
                     Self.config.k_group_size
                 ](tiles.stage(), j)
@@ -691,8 +682,9 @@ struct Conv2dFpropKernel[
         """
         Self._run_impl[
             has_residual=False,
-            _src_layout = Self.OutTmaOp.layout,
-            _src_desc_layout = Self.OutTmaOp.desc_layout,
+            _src_rank=Self.OutTmaOp.rank,
+            _src_tile_shape=Self.OutTmaOp.tile_shape,
+            _src_desc_shape=Self.OutTmaOp.desc_shape,
         ](
             act_tma_op,
             filter_tma_op,
@@ -732,8 +724,9 @@ struct Conv2dFpropKernel[
         """
         Self._run_impl[
             has_residual=True,
-            _src_layout = Self.SrcTmaOp.layout,
-            _src_desc_layout = Self.SrcTmaOp.desc_layout,
+            _src_rank=Self.SrcTmaOp.rank,
+            _src_tile_shape=Self.SrcTmaOp.tile_shape,
+            _src_desc_shape=Self.SrcTmaOp.desc_shape,
         ](
             act_tma_op,
             filter_tma_op,
@@ -750,13 +743,16 @@ struct Conv2dFpropKernel[
     @always_inline
     fn _run_impl[
         has_residual: Bool,
-        _src_layout: LegacyLayout = Self.SrcTmaOp.layout,
-        _src_desc_layout: LegacyLayout = Self.SrcTmaOp.desc_layout,
+        _src_rank: Int = Self.SrcTmaOp.rank,
+        _src_tile_shape: IndexList[_src_rank] = Self.SrcTmaOp.tile_shape,
+        _src_desc_shape: IndexList[_src_rank] = Self.SrcTmaOp.desc_shape,
     ](
         act_tma_op: Self.ActTmaOp,
         filter_tma_op: Self.FilterTmaOp,
         out_tma_op: Self.OutTmaOp,
-        src_tma_op: TMATensorTile[Self.out_type, _src_layout, _src_desc_layout],
+        src_tma_op: TMATensorTile[
+            Self.out_type, _src_rank, _src_tile_shape, _src_desc_shape
+        ],
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
         beta: Float32,
@@ -770,9 +766,11 @@ struct Conv2dFpropKernel[
 
         Parameters:
             has_residual: Whether to load source C and apply residual add.
-            _src_layout: Source C global memory layout (internal, set by
+            _src_rank: Rank of source C TMA tile/descriptor shapes (internal,
+                set by entry points).
+            _src_tile_shape: Source C TMA tile shape (internal, set by
                 entry points).
-            _src_desc_layout: Source C TMA descriptor layout (internal, set
+            _src_desc_shape: Source C TMA descriptor shape (internal, set
                 by entry points).
 
         Args:
@@ -788,7 +786,7 @@ struct Conv2dFpropKernel[
         # Access shared memory
         ref smem = external_memory[
             Scalar[DType.uint8],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 
@@ -907,9 +905,7 @@ struct Conv2dFpropKernel[
                 producer.drain()
 
         if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
-
-            @parameter
-            if Self.config.num_clc_pipeline_stages == 0:
+            comptime if Self.config.num_clc_pipeline_stages == 0:
                 return
 
             var sched_iter = scheduler.scheduler_iterator()
@@ -927,8 +923,7 @@ struct Conv2dFpropKernel[
                 with work_iter.next() as current:
                     load_order_barrier.wait_and_step()
 
-                    @parameter
-                    if has_residual:
+                    comptime if has_residual:
                         # Produce C tile into SMEM via epi_load_pipeline
                         epi_load_pipeline.wait_consumer()
                         if elect_one_sync():
@@ -953,7 +948,7 @@ struct Conv2dFpropKernel[
             var mma_ctx = Self.MmaCtx(
                 tmem,
                 Self.OutputPipeline(
-                    smem.pipelines.accum_barriers(),
+                    smem.pipelines.accum_barriers().ptr,
                     tmem,
                     UInt16(ctx.mma_complete_mask),
                 ),
@@ -988,7 +983,7 @@ struct Conv2dFpropKernel[
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    smem.pipelines.accum_barriers(),
+                    smem.pipelines.accum_barriers().ptr,
                     tmem,
                     UInt16(ctx.mma_complete_mask),
                 ),
@@ -1001,9 +996,7 @@ struct Conv2dFpropKernel[
                 while work_iter.has_work():
                     with work_iter.next() as current:
                         with epi_ctx.output_pipeline.consumer() as output_stage:
-
-                            @parameter
-                            if has_residual:
+                            comptime if has_residual:
                                 # Wait for epilogue load warp to fill C tile
                                 epi_load_pipeline.wait_producer()
                                 var src_stage_idx = (

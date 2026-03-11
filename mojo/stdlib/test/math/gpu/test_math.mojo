@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import *
+from std.math import *
 
-from gpu.host import DeviceContext
-from testing import TestSuite
+from std.gpu.host import DeviceContext
+from std.testing import TestSuite
 
 
 fn run_func[
@@ -36,15 +36,15 @@ fn run_func[
     _ = out
 
 
-fn hypot_fn(val: SIMD) -> type_of(val):
+fn hypot_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return hypot(val, val)
 
 
-fn remainder_fn(val: SIMD) -> type_of(val):
+fn remainder_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return remainder(val, val)
 
 
-fn scalb_fn(val: SIMD) -> type_of(val):
+fn scalb_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return scalb(val, val)
 
 
@@ -60,11 +60,11 @@ fn sqrt_fn(val: SIMD) -> type_of(val):
     return sqrt(val)
 
 
-fn ldexp_fn(val: SIMD) -> type_of(val):
+fn ldexp_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return ldexp(val, 1)
 
 
-fn frexp_fn(val: SIMD) -> type_of(val):
+fn frexp_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return frexp(val)[0]
 
 
@@ -88,7 +88,7 @@ fn powf_fn(val: SIMD) -> type_of(val):
     return val**3.2
 
 
-def test_math():
+def test_math() raises:
     with DeviceContext() as ctx:
 
         @parameter
@@ -99,11 +99,10 @@ def test_math():
         ](ctx: DeviceContext) raises:
             comptime ls = std.builtin.Variadic.size(kernel_fns)
 
-            @parameter
-            for idx in range(ls):
+            comptime for idx in range(ls):
                 comptime kernel_fn = kernel_fns[idx]
-                run_func[DType.float32, kernel_fn[]](ctx)
-                run_func[DType.float16, kernel_fn[]](ctx)
+                run_func[DType.float32, kernel_fn[...]](ctx)
+                run_func[DType.float16, kernel_fn[...]](ctx)
 
         # Anything that's commented does not work atm and needs to be
         # implemented. This list is also not exhaustive and needs to be
@@ -149,5 +148,5 @@ def test_math():
         ](ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

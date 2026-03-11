@@ -17,19 +17,19 @@ Supports both BF16 and FP8 via compile-time flag:
   mojo -D FP8=true test_ping_pong.mojo   # FP8
 """
 
-from sys import env_get_bool
+from std.sys import get_defined_bool
 
-from gpu import WARP_SIZE
+from std.gpu import WARP_SIZE
 from layout import Layout, LayoutTensor
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout._fillers import random
 import linalg.matmul.vendor.blas as vendor_blas
-from testing import assert_equal
-from random import random_si64
+from std.testing import assert_equal
+from std.random import random_si64
 from linalg.matmul.gpu.amd.pingpong_kernel import ping_pong_matmul
 
 # Compile-time dtype selection: -D FP8=true for FP8, otherwise BF16
-comptime USE_FP8 = env_get_bool["FP8", False]()
+comptime USE_FP8 = get_defined_bool["FP8", False]()
 comptime input_dtype = DType.float8_e4m3fn if USE_FP8 else DType.bfloat16
 
 comptime test_size = 4 * 1024
@@ -41,7 +41,7 @@ def test_ping_pong_kernel_amd[
     N: Int,
     K: Int,
     enable_swizzle: Bool = False,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     """Test ping-pong kernel with parameterized input dtype."""
     var device_a = ctx.enqueue_create_buffer[in_dtype](M * K)
     var device_b = ctx.enqueue_create_buffer[in_dtype](N * K)
@@ -50,8 +50,7 @@ def test_ping_pong_kernel_amd[
 
     with device_a.map_to_host() as host_a, device_b.map_to_host() as host_b:
         # Use deterministic pattern for FP8, random for BF16
-        @parameter
-        if in_dtype == DType.float8_e4m3fn:
+        comptime if in_dtype == DType.float8_e4m3fn:
             for i in range(M * K):
                 # Alternate between 1 and 2
                 host_a[i] = Scalar[in_dtype](Float32(1 + (i % 2)))
@@ -109,11 +108,12 @@ def test_ping_pong_kernel_amd[
             ) if in_dtype == DType.float8_e4m3fn else Float32(0.0)
             if diff > tol and host_c[i] != host_c_ref[i]:
                 if printed < 10:
+                    var row, col = divmod(i, N)
                     print(
                         "Mismatch at (",
-                        i // N,
+                        row,
                         ",",
-                        i % N,
+                        col,
                         ") ",
                         host_c[i],
                         " vs ",
@@ -130,7 +130,7 @@ def test_ping_pong_kernel_amd[
         assert_equal(errors, 0)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("Running AMD Ping-Pong Kernel Tests")
         print("  Input dtype:", input_dtype)

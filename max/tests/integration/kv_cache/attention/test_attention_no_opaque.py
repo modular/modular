@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, cast
 
 import numpy as np
@@ -31,18 +31,19 @@ from max.graph import (
     ops,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.attention.attention_with_rope import (
+from max.nn.attention.attention_with_rope import (
     AttentionWithRope,
     AttentionWithRopeNoOpaque,
     Module,
     PagedKVCacheTensorsNoOpaque,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
+    AttentionDispatchMetadata,
     KVCacheParams,
     NestedIterableDataclass,
     PagedCacheValues,
 )
-from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.rotary_embedding import RotaryEmbedding
 from test_common.context_utils import create_text_context
 
 AttentionFn = Callable[
@@ -50,6 +51,7 @@ AttentionFn = Callable[
         TensorValue,
         TensorValue,
         BufferValue,
+        TensorValue,
         TensorValue,
         TensorValue,
         TensorValue,
@@ -66,7 +68,7 @@ def build_and_execute_graph(
     device: Device,
     attention_fn: AttentionFn,
     model: Module,
-    kv_inputs: PagedKVCacheTensorsNoOpaque,
+    kv_inputs: Sequence[Buffer],
     kv_input_symbols: NestedIterableDataclass,
 ) -> npt.NDArray[np.floating[Any]]:
     device_ref = DeviceRef.from_device(device)
@@ -89,14 +91,13 @@ def build_and_execute_graph(
             *kv_input_symbols,
         ],
     ) as g:
-        (
-            hidden_state,
-            input_row_offsets_symbol,
-            blocks,
-            cache_lengths,
-            lookup_table,
-            max_lengths,
-        ) = g.inputs
+        hidden_state = g.inputs[0]
+        input_row_offsets_symbol = g.inputs[1]
+        blocks = g.inputs[2]
+        cache_lengths = g.inputs[3]
+        lookup_table = g.inputs[4]
+        max_lengths = g.inputs[5]
+        attention_dispatch_metadata = g.inputs[-1]
         layer_idx = ops.constant(0, dtype=DType.uint32, device=device_ref)
 
         output = attention_fn(
@@ -106,6 +107,7 @@ def build_and_execute_graph(
             cache_lengths.tensor,
             lookup_table.tensor,
             max_lengths.tensor,
+            attention_dispatch_metadata.tensor,
             layer_idx.tensor,
         )
 
@@ -135,7 +137,6 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         dtype=DType.float32,
         num_layers=1,
         page_size=page_size,
-        cache_strategy="paged",
         devices=[DeviceRef.from_device(device)],
     )
 
@@ -191,9 +192,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch.append(context)
 
-    kv_inputs = PagedKVCacheTensorsNoOpaque(
-        *kv_manager.get_runtime_inputs([batch])[0]
-    )
+    kv_inputs = list(kv_manager.runtime_inputs([batch]).inputs[0])
     kv_input_symbols = kv_params.get_symbolic_inputs()[0]
 
     def reference_attention_fn(
@@ -203,6 +202,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         cache_lengths: TensorValue,
         lookup_table: TensorValue,
         max_lengths: TensorValue,
+        attention_dispatch_metadata: TensorValue,
         layer_idx: TensorValue,
     ) -> TensorValue:
         kv_collection = PagedCacheValues(
@@ -210,6 +210,9 @@ def test_compare_attention_with_rope_no_opaque() -> None:
             cache_lengths.tensor,
             lookup_table.tensor,
             max_lengths.tensor,
+            dispatch_metadata=AttentionDispatchMetadata(
+                attention_dispatch_metadata.tensor
+            ),
         )
 
         return reference_attention(
@@ -227,8 +230,10 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         cache_lengths: TensorValue,
         lookup_table: TensorValue,
         max_lengths: TensorValue,
+        attention_dispatch_metadata: TensorValue,
         layer_idx: TensorValue,
     ) -> TensorValue:
+        _ = attention_dispatch_metadata
         kv_cache_tensors = PagedKVCacheTensorsNoOpaque(
             blocks=blocks,
             cache_lengths=cache_lengths,

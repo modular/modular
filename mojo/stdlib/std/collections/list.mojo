@@ -16,20 +16,20 @@ These APIs are imported automatically, just like builtins.
 """
 
 
-from builtin.constrained import _constrained_conforms_to
-from builtin.rebind import downcast
-import format._utils as fmt
-from reflection import get_type_name
-from collections._index_normalization import normalize_index
-from collections._asan_annotations import (
+from std.builtin.constrained import _constrained_conforms_to
+from std.builtin.rebind import downcast
+import std.format._utils as fmt
+from std.reflection import get_type_name
+from std.collections._index_normalization import normalize_index
+from std.collections._asan_annotations import (
     __sanitizer_annotate_contiguous_container,
 )
-from os import abort
-from sys import size_of
-from sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
+from std.os import abort
+from std.sys import size_of
+from std.sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
-from memory import Pointer, memcpy
-from builtin.builtin_slice import ContiguousSlice, StridedSlice
+from std.memory import Pointer, destroy_n, memcpy, uninit_copy_n, uninit_move_n
+from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
 
 # ===-----------------------------------------------------------------------===#
@@ -70,8 +70,7 @@ struct _ListIter[
     fn __next__(
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             if self.index >= len(self.src[]):
                 raise StopIteration()
             self.index += 1
@@ -86,8 +85,7 @@ struct _ListIter[
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         var iter_len: Int
 
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             iter_len = len(self.src[]) - self.index
         else:
             iter_len = self.index
@@ -99,12 +97,10 @@ struct List[T: Copyable](
     Boolable,
     Copyable,
     Defaultable,
-    Equatable,
+    Equatable where conforms_to(T, Equatable),
     Iterable,
-    Representable,
     Sized,
-    Stringable,
-    Writable,
+    Writable where conforms_to(T, Writable),
 ):
     """A dynamically-allocated and resizable list.
 
@@ -349,7 +345,7 @@ struct List[T: Copyable](
         """
         self = Self(elements=values^)
 
-    fn __init__(out self, *, var elements: VariadicListMem[Self.T, _]):
+    fn __init__(out self, *, var elements: VariadicList[Self.T, _]):
         """Constructs a list from the given values.
 
         Args:
@@ -410,7 +406,7 @@ struct List[T: Copyable](
         self._annotate_increase(unsafe_uninit_length)
         self._len = unsafe_uninit_length
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a deep copy of the given list.
 
         Args:
@@ -425,15 +421,12 @@ struct List[T: Copyable](
         _constrained_conforms_to[
             conforms_to(Self.T, ImplicitlyDestructible),
             Parent=Self,
-            Element = Self.T,
+            Element=Self.T,
             ParentConformsTo="ImplicitlyDestructible",
         ]()
         comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
 
-        @parameter
-        if not TDestructible.__del__is_trivial:
-            for i in range(len(self)):
-                (self._data + i).bitcast[TDestructible]().destroy_pointee()
+        destroy_n(self._data.bitcast[TDestructible](), count=len(self))
         self._annotate_delete()
         self._data.free()
 
@@ -442,11 +435,8 @@ struct List[T: Copyable](
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    fn __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Checks if two lists are equal.
-
-        Constraints:
-            `T` must conform to `Equatable`.
 
         Args:
             other: The list to compare with.
@@ -462,13 +452,6 @@ struct List[T: Copyable](
         print("x and y are equal" if x == y else "x and y are not equal")
         ```
         """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Equatable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Equatable",
-        ]()
-
         if len(self) != len(other):
             return False
 
@@ -480,32 +463,6 @@ struct List[T: Copyable](
                 return False
             index += 1
         return True
-
-    @always_inline
-    fn __ne__[
-        U: Equatable & Copyable, //
-    ](self: List[U, ...], other: List[U, ...]) -> Bool:
-        """Checks if two lists are not equal.
-
-        Parameters:
-            U: The type of the elements in the list. Must implement the
-               trait `Equatable`.
-
-        Args:
-            other: The list to compare with.
-
-        Returns:
-            True if the lists are not equal, False otherwise.
-
-        Examples:
-
-        ```mojo
-        var x = [1, 2, 3]
-        var y = [1, 2, 4]
-        print("x and y are not equal" if x != y else "x and y are equal")
-        ```
-        """
-        return not (self == other)
 
     fn __contains__[
         U: Equatable & Copyable, //
@@ -642,8 +599,9 @@ struct List[T: Copyable](
         """
         return len(self) > 0
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
-    fn __str__(self) -> String:
+    fn __str__(self) -> String where conforms_to(Self.T, Writable):
         """Returns a string representation of a `List`.
 
         Returns:
@@ -655,8 +613,9 @@ struct List[T: Copyable](
         self.write_to(output)
         return output^
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
-    fn __repr__(self) -> String:
+    fn __repr__(self) -> String where conforms_to(Self.T, Writable):
         """Returns a string representation of a `List`.
 
         Returns:
@@ -668,9 +627,7 @@ struct List[T: Copyable](
 
     fn _write_self_to[
         f: fn(Self.T, mut Some[Writer])
-    ](self, mut writer: Some[Writer]):
-        fmt.constrained_conforms_to_writable[Self.T, Parent=Self]()
-
+    ](self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         var iterator = self.__iter__()
 
         @parameter
@@ -681,23 +638,21 @@ struct List[T: Copyable](
         _ = iterator^
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Write this list to a `Writer`.
-
-        Constraints:
-            `T` must conform to `Writable`.
 
         Args:
             writer: The object to write to.
         """
-        self._write_self_to[f = fmt.write_to[Self.T]](writer)
+        self._write_self_to[f=fmt.write_to[Self.T]](writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    fn write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Write this list to a `Writer`.
-
-        Constraints:
-            `T` must conform to `Writable`.
 
         Args:
             writer: The object to write to.
@@ -705,7 +660,7 @@ struct List[T: Copyable](
 
         @parameter
         fn write_fields(mut w: Some[Writer]):
-            self._write_self_to[f = fmt.write_repr_to[Self.T]](w)
+            self._write_self_to[f=fmt.write_repr_to[Self.T]](w)
 
         fmt.FormatStruct(writer, "List").params(
             fmt.TypeNames[Self.T](),
@@ -727,12 +682,9 @@ struct List[T: Copyable](
     fn _realloc(mut self, new_capacity: Int):
         var new_data = alloc[Self.T](new_capacity)
 
-        @parameter
-        if Self.T.__moveinit__is_trivial:
-            memcpy(dest=new_data, src=self._data, count=len(self))
-        else:
-            for i in range(len(self)):
-                (new_data + i).init_pointee_move_from(self._data + i)
+        uninit_move_n[overlapping=False](
+            dest=new_data, src=self._data, count=len(self)
+        )
 
         if self._data:
             self._annotate_delete()
@@ -784,7 +736,7 @@ struct List[T: Copyable](
         print(list) # ['one', 'two', 'three']
         ```
         """
-        debug_assert(i <= len(self), "insert index out of range")
+        assert i <= len(self), "insert index out of range"
 
         var normalized_idx = i
         if i < 0:
@@ -831,14 +783,9 @@ struct List[T: Copyable](
         var src_ptr = other.unsafe_ptr()
         self._annotate_increase(other_len)
 
-        @parameter
-        if Self.T.__moveinit__is_trivial:
-            memcpy(dest=dest_ptr, src=src_ptr, count=other_len)
-        else:
-            for _ in range(other_len):
-                dest_ptr.init_pointee_move_from(src_ptr)
-                src_ptr += 1
-                dest_ptr += 1
+        uninit_move_n[overlapping=False](
+            dest=dest_ptr, src=src_ptr, count=other_len
+        )
 
         # Update the size now since all elements have been moved into this list.
         self._len = final_size
@@ -860,7 +807,7 @@ struct List[T: Copyable](
         numbers = [1, 2, 3]
         more = [4, 5, 6]
         numbers.extend(Span(more))
-        print(numbers.__str__())   # [1, 2, 3, 4, 5, 6]
+        print(numbers)   # [1, 2, 3, 4, 5, 6]
         ```
         """
         var elements_len = len(elements)
@@ -873,17 +820,11 @@ struct List[T: Copyable](
         var i = self._len
         self._len = new_num_elts
 
-        @parameter
-        if Self.T.__copyinit__is_trivial:
-            memcpy(
-                dest=self.unsafe_ptr() + i,
-                src=elements.unsafe_ptr(),
-                count=elements_len,
-            )
-        else:
-            for elt in elements:
-                UnsafePointer(to=self[i]).init_pointee_copy(elt)
-                i += 1
+        uninit_copy_n[overlapping=False](
+            dest=self.unsafe_ptr() + i,
+            src=elements.unsafe_ptr(),
+            count=elements_len,
+        )
 
     fn extend[
         dtype: DType, //
@@ -902,7 +843,7 @@ struct List[T: Copyable](
         Examples:
 
         ```mojo
-        from collections import List
+        from std.collections import List
 
         numbers: List[Int64] = [1, 2]
         more = SIMD[DType.int64, 2](3, 4)
@@ -940,7 +881,7 @@ struct List[T: Copyable](
         Examples:
 
         ```mojo
-        from collections import List
+        from std.collections import List
 
         numbers: List[Int64] = [1, 2]
         more = SIMD[DType.int64, 4](3, 4, 5, 6)
@@ -949,7 +890,7 @@ struct List[T: Copyable](
                        #  SIMD[DType.int64, 1](3), SIMD[DType.int64, 1](4)]
         ```
         """
-        debug_assert(count <= value.size, "count must be <= value.size")
+        assert count <= value.size, "count must be <= value.size"
         self.reserve(self._len + count)
         self._annotate_increase(count)
         var v_ptr = UnsafePointer(to=value).bitcast[Scalar[dtype]]()
@@ -976,15 +917,18 @@ struct List[T: Copyable](
         value = numbers.pop(-2); print(value) # 2, negative index
         ```
         """
-        var normalized_idx = normalize_index["List", assert_always=False](
-            i, UInt(len(self))
+        var normalized_idx = Int(
+            normalize_index["List", assert_always=False](i, UInt(len(self)))
         )
 
-        debug_assert(Int(normalized_idx) < self._len, "pop index out of range")
+        assert normalized_idx < self._len, "pop index out of range"
 
         var ret_val = (self._data + normalized_idx).take_pointee()
-        for j in range(normalized_idx + 1, self._len):
-            (self._data + j - 1).init_pointee_move_from(self._data + j)
+        uninit_move_n[overlapping=True](
+            dest=self._data + normalized_idx,
+            src=self._data + normalized_idx + 1,
+            count=len(self) - normalized_idx - 1,
+        )
         self._len -= 1
         self._annotate_shrink(self._len + 1)
         return ret_val^
@@ -1036,7 +980,7 @@ struct List[T: Copyable](
             self._unchecked_grow(new_size, value)
 
     fn _unchecked_grow(mut self, new_size: Int, value: Self.T):
-        debug_assert(new_size >= self._len)
+        assert new_size >= self._len
 
         self.reserve(new_size)
         self._annotate_increase(new_size - self._len)
@@ -1108,10 +1052,8 @@ struct List[T: Copyable](
                 " size is smaller than the current size."
             )
 
-        @parameter
-        if not _T.__del__is_trivial:
-            for i in range(new_size, len(self)):
-                (self._data + i).destroy_pointee()
+        destroy_n(self._data + new_size, count=len(self) - new_size)
+
         var old_size: Int = self._len
         self._len = new_size
         self._annotate_shrink(old_size)
@@ -1219,8 +1161,7 @@ struct List[T: Copyable](
         print(len(list))  # 0
         ```
         """
-        for i in range(self._len):
-            (self._data + i).destroy_pointee()
+        destroy_n(self._data, count=self._len)
         var old_size: Int = self._len
         self._len = 0
         self._annotate_shrink(old_size)
@@ -1234,7 +1175,7 @@ struct List[T: Copyable](
         Examples:
 
         ```mojo
-        from collections import List
+        from std.collections import List
 
         list: List[Int64] = [1, 2, 3, 4]
         ptr = list.steal_data() # list is no longer available
@@ -1329,12 +1270,9 @@ struct List[T: Copyable](
             Never use `my_list.unsafe_get(-1)` to get the last element of the
             list. Instead, do `my_list.unsafe_get(len(my_list) - 1)`.
         """
-        debug_assert(
-            0 <= idx < len(self),
-            (
-                "The index provided must be within the range [0, len(List) -1]"
-                " when using List.unsafe_get()"
-            ),
+        assert 0 <= idx < len(self), (
+            "The index provided must be within the range [0, len(List) -1]"
+            " when using List.unsafe_get()"
         )
         return (self._data + idx)[]
 
@@ -1361,12 +1299,9 @@ struct List[T: Copyable](
             Never use `my_list.unsafe_set(-1, value)` to set the last element of
             the list. Instead, do `my_list.unsafe_set(len(my_list) - 1, value)`.
         """
-        debug_assert(
-            0 <= idx < len(self),
-            (
-                "The index provided must be within the range [0, len(List) -1]"
-                " when using List.unsafe_set()"
-            ),
+        assert 0 <= idx < len(self), (
+            "The index provided must be within the range [0, len(List) -1]"
+            " when using List.unsafe_set()"
         )
         (self._data + idx).destroy_pointee()
         (self._data + idx).init_pointee_move(value^)
@@ -1418,12 +1353,9 @@ struct List[T: Copyable](
             This is useful because `swap(my_list[i], my_list[j])` cannot be
             supported by Mojo, because a mutable alias may be formed.
         """
-        debug_assert(
-            0 <= elt_idx_1 < len(self) and 0 <= elt_idx_2 < len(self),
-            (
-                "The indices provided to swap_elements must be within the range"
-                " [0, len(List)-1]"
-            ),
+        assert 0 <= elt_idx_1 < len(self) and 0 <= elt_idx_2 < len(self), (
+            "The indices provided to swap_elements must be within the range"
+            " [0, len(List)-1]"
         )
         var ptr = self._data
         (ptr + elt_idx_1).swap_pointees(ptr + elt_idx_2)
@@ -1468,12 +1400,9 @@ struct List[T: Copyable](
             after the last initialized element. This is equivalent to
             `list.unsafe_ptr() + len(list)`.
         """
-        debug_assert(
-            self.capacity > 0 and self.capacity > self._len,
-            (
-                "safety violation: Insufficient capacity to retrieve pointer to"
-                " next uninitialized element"
-            ),
+        assert self.capacity > 0 and self.capacity > self._len, (
+            "safety violation: Insufficient capacity to retrieve pointer to"
+            " next uninitialized element"
         )
 
         # self.unsafe_ptr() + self._len won't work because .unsafe_ptr()

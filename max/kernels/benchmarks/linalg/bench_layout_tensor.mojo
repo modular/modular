@@ -11,20 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import math
-from collections.string import StaticString
-from random import rand
-from sys import align_of, simd_width_of
+import std.math
+from std.collections.string import StaticString
+from std.random import rand
+from std.sys import align_of, simd_width_of
 
-import benchmark
-from algorithm import Static2DTileUnitFunc as Tile2DFunc
-from algorithm import sync_parallelize, vectorize
+import std.benchmark
+from std.algorithm import Static2DTileUnitFunc as Tile2DFunc
+from std.algorithm import sync_parallelize, vectorize
 from layout import *
 from layout.layout_tensor import LayoutTensor
-from memory import LegacyUnsafePointer, memset_zero
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from python import Python
+from std.memory import memset_zero
+from std.python import Python
 
 comptime M = 512  # rows of A and C
 comptime N = 4096  # cols of B and C
@@ -34,21 +32,21 @@ comptime dtype = DType.float32
 
 
 struct Matrix[rows: Int, cols: Int]:
-    var data: UnsafePointer[Scalar[dtype]]
+    var data: UnsafePointer[Scalar[dtype], MutAnyOrigin]
 
     # Initialize zeroeing all values
     fn __init__(out self):
-        self.data = UnsafePointer[Scalar[dtype]].alloc(Self.rows * Self.cols)
+        self.data = alloc[Scalar[dtype]](Self.rows * Self.cols)
         memset_zero(self.data, Self.rows * Self.cols)
 
     # Initialize taking a pointer, don't set any elements
-    fn __init__(out self, data: UnsafePointer[Scalar[dtype]]):
+    fn __init__(out self, data: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
         self.data = data
 
     ## Initialize with random values
     @staticmethod
     fn rand() -> Self:
-        var data = UnsafePointer[Scalar[dtype]].alloc(Self.rows * Self.cols)
+        var data = alloc[Scalar[dtype]](Self.rows * Self.cols)
         rand(data, Self.rows * Self.cols)
         return Self(data)
 
@@ -99,8 +97,7 @@ fn matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
 
             @parameter
             fn calc_tile[tile_x: Int, tile_y: Int](x: Int, y: Int):
-                @parameter
-                for _k in range(tile_y):
+                comptime for _k in range(tile_y):
                     var k = _k + y
                     var A_val = A[m, k]
 
@@ -152,11 +149,8 @@ fn matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
                 var dst_view = dst.tile[tile_m, tile_n](m_1, n_1)
                 var rhs_view = rhs.tile[tile_k, tile_n](k_1, n_1)
 
-                @parameter
-                for m in range(tile_m):
-
-                    @parameter
-                    for k in range(tile_k):
+                comptime for m in range(tile_m):
+                    comptime for k in range(tile_k):
                         var lhs_val = rebind[Scalar[dtype]](lhs_view[m, k])
 
                         fn dot[simd_size: Int](n: Int) unified {mut}:
@@ -186,12 +180,10 @@ fn matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
 
 fn alloc_aligned_tile[
     M: Int, N: Int, dtype: DType
-]() -> UnsafePointer[Scalar[dtype]]:
+]() -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
     comptime alignment = align_of[SIMD[dtype, simd_width_of[dtype]()]]()
     comptime cache_width = ((N + alignment - 1) // alignment) * alignment
-    return UnsafePointer[Scalar[dtype],].alloc(
-        M * cache_width, alignment=alignment
-    )
+    return alloc[Scalar[dtype]](M * cache_width, alignment=alignment)
 
 
 fn matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
@@ -223,11 +215,8 @@ fn matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
 
                 rhs_cache.copy_from(rhs_view)
 
-                @parameter
-                for m in range(tile_m):
-
-                    @parameter
-                    for k in range(tile_k):
+                comptime for m in range(tile_m):
+                    comptime for k in range(tile_k):
                         var lhs_val = rebind[Scalar[dtype]](lhs_view[m, k])
 
                         fn dot[simd_size: Int](n: Int) unified {mut}:
@@ -295,7 +284,7 @@ fn matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
                         var sum = SIMD[dtype, vec_size](0)
 
                         fn dot[simd_size: Int](k: Int) unified {mut}:
-                            sum = math.fma(
+                            sum = std.math.fma(
                                 lhs_cache.load[vec_size](m, k),
                                 rhs_cache.aligned_load[vec_size](n, k),
                                 sum,
@@ -326,7 +315,7 @@ fn bench[
     fn test_fn():
         _ = func(C, A, B)
 
-    var secs = benchmark.run[test_fn](max_runtime_secs=0.5).mean()
+    var secs = std.benchmark.run[test_fn](max_runtime_secs=0.5).mean()
 
     A.data.free()
     B.data.free()
@@ -384,7 +373,7 @@ fn test_all() raises:
     C.data.free()
 
 
-def main():
+def main() raises:
     test_all()
     print("CPU Results\n")
 

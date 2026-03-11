@@ -2,6 +2,20 @@ load("//bazel:api.bzl", "modular_generate_stubfiles", "modular_nanobind_extensio
 
 package(default_visibility = ["//max:consumers"])
 
+# Type stub files for the _core C extension. These .pyi files define the
+# Python nanobind-generated symbols whose source lives in C++. The Sphinx docs
+# build uses them at runtime to resolve "source" links for C-extension APIs
+# (see _find_pyi_stub in conf.py.in). They are kept in this separate filegroup
+# so that only the docs build — not every binary — carries them in its runfiles.
+filegroup(
+    name = "_core_pyi_stubs",
+    srcs = glob(["_core/**/*.pyi"]),
+    visibility = [
+        "//bazel/internal:__pkg__",
+        "//oss/modular/bazel/internal:__pkg__",
+    ],
+)
+
 modular_nanobind_extension(
     name = "_core.bindings",
     srcs = ["//max/python/max/_core/internal:_core.cpp"],
@@ -77,34 +91,9 @@ modular_py_library(
     ],
 )
 
-modular_py_library(
+alias(
     name = "tensor",
-    srcs = [
-        "_passes.py",
-        "_realization_context.py",
-        "_support.py",
-        "_tensor_repr.py",
-        "functional.py",
-        "random.py",
-        "tensor.py",
-    ],
-    # engine is used via engine.api.InferenceSession in _realization_context.py
-    # interpreter is used via lazy import in _realization_context.py
-    ignore_extra_deps = [
-        "//max/python/max/engine",
-        ":interpreter",
-    ],
-    deps = [
-        ":_core",
-        ":_mlir_context",
-        ":interpreter",
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        requirement("rich"),
-        requirement("typing-extensions"),
-    ],
+    actual = "//max/python/max/experimental",
 )
 
 modular_py_library(
@@ -123,10 +112,13 @@ modular_py_library(
         "//max/python/max/entrypoints:gpu-query",
         "//max/python/max/entrypoints:pipelines",
         "//max/python/max/entrypoints:replay_recording",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/experimental/torch",
         "//max/python/max/graph",
         "//max/python/max/interfaces",
         "//max/python/max/mlir",
         "//max/python/max/nn",
+        "//max/python/max/nn/hooks",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/profiler",
@@ -134,6 +126,5 @@ modular_py_library(
         "//max/python/max/serve:debug",
         "//max/python/max/serve/mocks",
         "//max/python/max/support",
-        "//max/python/max/torch",
     ],
 )

@@ -12,19 +12,27 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple, UNKNOWN_VALUE
-from layout._coord import Coord, Idx
-from layout._layout import Layout as TileLayout, row_major
-from layout._tile_tensor import TileTensor
-from memory import memcpy
+from layout import (
+    Coord,
+    Idx,
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
+from layout.tile_layout import Layout as TileLayout
+from std.memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
@@ -37,10 +45,10 @@ from testdata.fused_qk_rope_goldens import (
     q_out_golden_with_position_ids,
 )
 
-from utils import IndexList
+from std.utils import IndexList
 
 
-def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
+def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
     """Verifies fused_qk_rope_ragged with explicit position_ids against golden values computed with PyTorch.
     """
     comptime assert (
@@ -137,9 +145,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
 
     # Create and initialize query buffer.
     q_buffer = q_input[dtype]()
-    debug_assert(
-        len(q_buffer) == batch_size * seq_len * dim, "invalid q_buffer init"
-    )
+    assert len(q_buffer) == batch_size * seq_len * dim, "invalid q_buffer init"
 
     # Create query tensor as a TileTensor view of the query buffer.
     var q = TileTensor(q_buffer.unsafe_ptr(), q_layout)
@@ -163,21 +169,22 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     )
     var position_ids = TileTensor[
         DType.uint32,
-        _,
+        type_of(position_ids_static).LayoutType,
         ImmutAnyOrigin,
     ](
         position_ids_static.ptr.as_immutable().unsafe_origin_cast[
             ImmutAnyOrigin
         ](),
         position_ids_static.layout,
-    ).make_dynamic[DType.int64]()
+    ).make_dynamic[
+        DType.int64
+    ]()
 
     # Create and init rotary matrix (frequencies as cos(x) + i*sin(x)).
     freqs_cis_table_buffer = freqs_cis_table_input[dtype]()
-    debug_assert(
-        len(freqs_cis_table_buffer) == 2 * max_seq_len * head_dim,
-        "invalid freqs_cis_table init",
-    )
+    assert (
+        len(freqs_cis_table_buffer) == 2 * max_seq_len * head_dim
+    ), "invalid freqs_cis_table init"
     # Create a TileTensor view into freqs_cis that only includes the roped dimensions.
     # Offset to last rope_dim elements.
     # Note: This tensor has non-row-major strides (head_dim, 1) to select every
@@ -193,25 +200,23 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
 
     # Create and initialize golden outputs.
     expected_q_out_buffer = q_out_golden_with_position_ids[dtype]()
-    debug_assert(
-        len(expected_q_out_buffer) == len(q_buffer),
-        "invalid expected q out init",
-    )
+    assert len(expected_q_out_buffer) == len(
+        q_buffer
+    ), "invalid expected q out init"
     var expected_q_out = TileTensor(
         expected_q_out_buffer.unsafe_ptr(), q_layout
     )
     expected_k_out_buffer = k_out_golden_with_position_ids[dtype]()
-    debug_assert(
-        len(expected_k_out_buffer) == batch_size * seq_len * dim,
-        "invalid expected k out init",
-    )
+    assert (
+        len(expected_k_out_buffer) == batch_size * seq_len * dim
+    ), "invalid expected k out init"
 
     # Create output buffer and TileTensor.
     q_out_buffer = List[Scalar[dtype]](length=len(q_buffer), fill=0)
     var q_out = TileTensor(q_out_buffer.unsafe_ptr(), q_layout)
 
     fused_qk_rope_ragged[
-        kv_collection.CacheType, interleaved=True, target = StaticString("cpu")
+        kv_collection.CacheType, interleaved=True, target=StaticString("cpu")
     ](
         q_proj=q,
         input_row_offsets=input_row_offsets,
@@ -292,7 +297,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     _ = position_ids_input_buffer^
 
 
-def main() -> None:
+def main() raises -> None:
     # Full head RoPE
     test_fused_qk_rope[8, DType.float32]()
     # Partial RoPE (last 4 elements of each head)

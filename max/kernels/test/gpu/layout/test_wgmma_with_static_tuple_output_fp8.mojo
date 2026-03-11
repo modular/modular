@@ -13,19 +13,19 @@
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import DimList, NDBuffer
-from gpu import barrier, warp_id, lane_id
-from gpu.host import DeviceContext
+from std.gpu import barrier, warp_id, lane_id_int as lane_id
+from std.gpu.host import DeviceContext
 
 # from testing import assert_almost_equal
-from gpu import thread_idx
-from gpu.compute.mma import (
+from std.gpu import thread_idx
+from std.gpu.compute.mma import (
     wgmma_async,
     wgmma_commit_group_sync,
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
 from internal_utils import assert_equal
-from random import rand
+from std.random import rand
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.tensor_core_async import (
@@ -33,11 +33,7 @@ from layout.tensor_core_async import (
     _rhs_descriptor,
     tile_layout_k_major,
 )
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 
 fn wgmma_kernel_ss[
@@ -54,22 +50,22 @@ fn wgmma_kernel_ss[
     b_smem_layout: Layout,
     transpose_b: Bool = False,
 ](
-    a_gmem: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b_gmem: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    a_gmem: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    b_gmem: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
     c_gmem: LayoutTensor[c_type, c_layout, MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     comptime num_output_regs = WMMA_M * WMMA_N // 128
@@ -143,30 +139,34 @@ fn wgmma_e4m3_e4m3_f32[
     comptime static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
     comptime static_c_shape = DimList(M, N)
 
-    var a_host_ptr = UnsafePointer[Scalar[DType.float8_e4m3fn]].alloc(M * K)
-    var a_host = NDBuffer[DType.float8_e4m3fn, 2, _, static_a_shape](a_host_ptr)
+    var a_host_ptr = alloc[Scalar[DType.float8_e4m3fn]](M * K)
+    var a_host = NDBuffer[rank=2, DType.float8_e4m3fn, _, static_a_shape](
+        a_host_ptr
+    )
     var b_size = N * K if transpose_b else K * N
-    var b_host_ptr = UnsafePointer[Scalar[DType.float8_e4m3fn]].alloc(b_size)
-    var b_host = NDBuffer[DType.float8_e4m3fn, 2, _, static_b_shape](b_host_ptr)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
-    var c_host = NDBuffer[c_type, 2, _, static_c_shape](c_host_ptr)
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
-    var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](c_host_ref_ptr)
+    var b_host_ptr = alloc[Scalar[DType.float8_e4m3fn]](b_size)
+    var b_host = NDBuffer[rank=2, DType.float8_e4m3fn, _, static_b_shape](
+        b_host_ptr
+    )
+    var c_host_ptr = alloc[Scalar[c_type]](M * N)
+    var c_host = NDBuffer[rank=2, c_type, _, static_c_shape](c_host_ptr)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](M * N)
+    var c_host_ref = NDBuffer[rank=2, c_type, _, static_c_shape](c_host_ref_ptr)
 
     var a_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](M * K)
-    var a_device_nd = NDBuffer[DType.float8_e4m3fn, 2, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=2, DType.float8_e4m3fn, _, static_a_shape](
         a_device.unsafe_ptr()
     )
     var b_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](b_size)
-    var b_device_nd = NDBuffer[DType.float8_e4m3fn, 2, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=2, DType.float8_e4m3fn, _, static_b_shape](
         b_device.unsafe_ptr()
     )
     var c_device = ctx.enqueue_create_buffer[c_type](M * N)
-    var c_device_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device.unsafe_ptr()
     )
     var c_device_ref = ctx.enqueue_create_buffer[c_type](M * N)
-    var c_device_ref_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_ref.unsafe_ptr()
     )
 
@@ -230,11 +230,9 @@ fn wgmma_e4m3_e4m3_f32[
 
     else:
         # TODO: Matrix B should always be in col-major layout for cublasLt to work
-        var b_host_col_major_ptr = UnsafePointer[
-            Scalar[DType.float8_e4m3fn]
-        ].alloc(N * K)
+        var b_host_col_major_ptr = alloc[Scalar[DType.float8_e4m3fn]](N * K)
         var b_host_col_major = NDBuffer[
-            DType.float8_e4m3fn, 2, _, DimList(N, K)
+            rank=2, DType.float8_e4m3fn, _, DimList(N, K)
         ](b_host_col_major_ptr)
 
         for i in range(N):
@@ -245,7 +243,7 @@ fn wgmma_e4m3_e4m3_f32[
             N * K
         )
         var b_device_col_major_nd = NDBuffer[
-            DType.float8_e4m3fn, 2, _, DimList(N, K)
+            rank=2, DType.float8_e4m3fn, _, DimList(N, K)
         ](b_device_col_major.unsafe_ptr())
         ctx.enqueue_copy(b_device_col_major, b_host_col_major_ptr)
 
@@ -278,11 +276,9 @@ fn wgmma_e4m3_e4m3_f32[
     _ = c_device_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
-
-        @parameter
-        for n in range(8, 32, 8):
+        comptime for n in range(8, 32, 8):
             wgmma_e4m3_e4m3_f32[
                 64,
                 n,

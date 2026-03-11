@@ -10,29 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""This test showcases how one can launch a precompile device binary from Mojo."""
+"""This test showcases how one can launch a precompiled device binary from Mojo."""
 
-from gpu import *
-from gpu.host import DeviceContext
-from gpu.host.device_context import DeviceExternalFunction
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from gpu.host.compile import _compile_code
-from testing import assert_equal
+from std.gpu import *
+from std.gpu.host import DeviceContext
+from std.gpu.host.device_context import DeviceExternalFunction
+from std.gpu.host.compile import _compile_code
+from std.testing import assert_equal
 
 
 fn vec_func(
-    in0: UnsafePointer[Float32],
-    in1: UnsafePointer[Float32],
-    output: UnsafePointer[Float32],
+    in0: UnsafePointer[Float32, ImmutAnyOrigin],
+    in1: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x
     output[tid] = in0[tid] + in1[tid]
 
 
-def test_vec_add(ctx: DeviceContext):
+def test_vec_add(ctx: DeviceContext) raises:
     comptime length = 1024
 
     var in0_device = ctx.enqueue_create_buffer[DType.float32](length)
@@ -66,10 +63,10 @@ def test_vec_add(ctx: DeviceContext):
             assert_equal(
                 out_host[i],
                 Float32(i + 2),
-                msg=String("at index", i, "the value is", out_host[i]),
+                msg=t"at index{i} the value is{out_host[i]}",
             )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_vec_add(ctx)

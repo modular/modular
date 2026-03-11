@@ -8,6 +8,7 @@ modular_py_library(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/profiler",
+        requirement("httpx"),
         requirement("msgspec"),
         requirement("numpy"),
         requirement("pillow"),

@@ -12,17 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul_vendor, naive_grouped_matmul
-from memory import LegacyUnsafePointer
+from std.testing import assert_almost_equal
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
-
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 fn test_vendor[
@@ -74,6 +71,7 @@ fn test_vendor[
     var a_size = total_num_tokens * K
 
     comptime static_b_shape = DimList(num_experts, N, K)
+    var dynamic_b_shape = IndexList[3](num_experts, N, K)
     var b_size = num_experts * N * K
 
     comptime static_c_shape = DimList(Dim(), N)
@@ -85,16 +83,12 @@ fn test_vendor[
     comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_ref_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_active_experts + 1
-    )
-    var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
-        num_active_experts
-    )
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_ref_host_ptr = alloc[Scalar[c_type]](c_size)
+    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
+    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
 
     var a_host = LayoutTensor[a_type, a_layout](
         a_host_ptr,
@@ -114,13 +108,13 @@ fn test_vendor[
     )
 
     # Create host NDBuffers for offsets and expert_ids (needed for function calls)
-    var a_offsets_host = NDBuffer[DType.uint32, 1](
+    var a_offsets_host = NDBuffer[rank=1, DType.uint32, MutAnyOrigin](
         a_offsets_host_ptr,
-        num_active_experts + 1,
+        IndexList[1](num_active_experts + 1),
     )
-    var expert_ids_host = NDBuffer[DType.int32, 1](
+    var expert_ids_host = NDBuffer[rank=1, DType.int32, MutAnyOrigin](
         expert_ids_host_ptr,
-        num_active_experts,
+        IndexList[1](num_active_experts),
     )
 
     # Setup offsets and expert ids
@@ -147,29 +141,29 @@ fn test_vendor[
         num_active_experts
     )
 
-    var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_dev = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, K),
+        IndexList[2](total_num_tokens, K),
     )
-    var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
+    var b_dev = NDBuffer[rank=3, b_type, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
-    var c_dev = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_dev = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, N),
+        IndexList[2](total_num_tokens, N),
     )
-    var c_ref_dev = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_ref_dev = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_ref_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, N),
+        IndexList[2](total_num_tokens, N),
     )
-    var a_offsets_dev = NDBuffer[DType.uint32, 1](
+    var a_offsets_dev = NDBuffer[rank=1, DType.uint32](
         a_offsets_dev_buffer.unsafe_ptr(),
-        num_active_experts + 1,
+        IndexList[1](num_active_experts + 1),
     )
-    var expert_ids_dev = NDBuffer[DType.int32, 1](
+    var expert_ids_dev = NDBuffer[rank=1, DType.int32](
         expert_ids_dev_buffer.unsafe_ptr(),
-        num_active_experts,
+        IndexList[1](num_active_experts),
     )
 
     # Move inputs to device
@@ -213,9 +207,7 @@ fn test_vendor[
         for n in range(N):
             var expect = c_ref_host[m, n][0]
             var actual = c_host[m, n][0]
-            assert_almost_equal(
-                actual, expect, msg=String("m: ", m, " n: ", n), rtol=rtol
-            )
+            assert_almost_equal(actual, expect, msg=t"m: {m} n: {n}", rtol=rtol)
 
     print("✓ Vendor grouped matmul test passed")
 
@@ -283,6 +275,7 @@ fn test_negative_lora_id_vendor[
     var a_size = total_num_tokens * K
 
     comptime static_b_shape = DimList(num_experts, N, K)
+    var dynamic_b_shape = IndexList[3](num_experts, N, K)
     var b_size = num_experts * N * K
 
     comptime static_c_shape = DimList(Dim(), N)
@@ -294,15 +287,11 @@ fn test_negative_lora_id_vendor[
     comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_active_experts + 1
-    )
-    var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
-        num_active_experts
-    )
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
+    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
 
     var a_host = LayoutTensor[a_type, a_layout](
         a_host_ptr,
@@ -318,13 +307,13 @@ fn test_negative_lora_id_vendor[
     )
 
     # Create host NDBuffers for offsets and expert_ids (needed for function calls)
-    var a_offsets_host = NDBuffer[DType.uint32, 1](
+    var a_offsets_host = NDBuffer[rank=1, DType.uint32, MutAnyOrigin](
         a_offsets_host_ptr,
-        num_active_experts + 1,
+        IndexList[1](num_active_experts + 1),
     )
-    var expert_ids_host = NDBuffer[DType.int32, 1](
+    var expert_ids_host = NDBuffer[rank=1, DType.int32, MutAnyOrigin](
         expert_ids_host_ptr,
-        num_active_experts,
+        IndexList[1](num_active_experts),
     )
 
     # Setup offsets and expert ids
@@ -350,17 +339,17 @@ fn test_negative_lora_id_vendor[
         num_active_experts
     )
 
-    var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_dev = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, K),
+        IndexList[2](total_num_tokens, K),
     )
-    var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
+    var b_dev = NDBuffer[rank=3, b_type, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
-    var c_dev = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_dev = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, N),
+        IndexList[2](total_num_tokens, N),
     )
 
     # Move inputs to device
@@ -453,21 +442,21 @@ fn test_negative_lora_id_vendor[
     _ = expert_ids_dev_buffer^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Single matmul
         test_vendor[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=1,
-            expert_shape = Index(256, 256),
+            expert_shape=Index(256, 256),
         ](1, [128], [0], ctx)
 
         test_vendor[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=1,
-            expert_shape = Index(512, 1024),
+            expert_shape=Index(512, 1024),
         ](1, [256], [0], ctx)
 
         # Multiple matmuls selecting part of experts
@@ -475,7 +464,7 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(768, 1024),
+            expert_shape=Index(768, 1024),
         ](2, [128, 256], [0, 2], ctx)
 
         # Multiple matmuls selecting part of experts
@@ -484,7 +473,7 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             num_experts=6,
-            expert_shape = Index(1280, 1024),
+            expert_shape=Index(1280, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts
@@ -494,7 +483,7 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             num_experts=6,
-            expert_shape = Index(192, 1024),
+            expert_shape=Index(192, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Test that expert id of -1 results in 0s in the output
@@ -502,7 +491,7 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             num_experts=2,
-            expert_shape = Index(256, 512),
+            expert_shape=Index(256, 512),
         ](2, [64, 128], [0, -1], ctx)
 
         # Test negative lora_id behavior with vendor matmul
@@ -510,7 +499,7 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             num_experts=2,
-            expert_shape = Index(256, 512),
+            expert_shape=Index(256, 512),
         ](2, [64, 128], [0, -1], ctx)
 
         # Additional test cases for different data types
@@ -518,7 +507,7 @@ def main():
             DType.float32,
             DType.float32,
             num_experts=3,
-            expert_shape = Index(384, 768),
+            expert_shape=Index(384, 768),
         ](2, [100, 200], [1, 2], ctx)
 
         # Test with mixed valid and invalid expert ids
@@ -526,7 +515,7 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(512, 512),
+            expert_shape=Index(512, 512),
         ](3, [50, 100, 75], [0, -1, 2], ctx)
 
         print("\n✅ All vendor grouped matmul tests passed!")

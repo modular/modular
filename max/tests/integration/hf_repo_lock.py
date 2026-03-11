@@ -17,7 +17,7 @@ import csv
 import functools
 import logging
 from collections.abc import Mapping
-from importlib import resources
+from pathlib import Path
 
 import huggingface_hub
 from max import pipelines
@@ -29,7 +29,8 @@ logger = logging.getLogger(__name__)
 def load_db() -> Mapping[str, str]:
     db = {}
     last_key = None
-    with resources.files(__name__).joinpath("hf-repo-lock.tsv").open() as f:
+    # TODO: Switch back to resources.files(__name__).joinpath once support for Python 3.10 is dropped.
+    with (Path(__file__).parent / "hf-repo-lock.tsv").open() as f:
         for row in csv.DictReader(f, dialect="excel-tab"):
             key = row["hf_repo"]
             value = row["revision"]

@@ -31,33 +31,30 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.legacy.attention.multi_latent_attention import (
+from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
+    MLADecodeMetadata,
     MLAPrefillMetadata,
 )
-from max.nn.legacy.attention.multi_latent_attention_fp8 import (
+from max.nn.attention.multi_latent_attention_fp8 import (
     DataParallelLatentAttentionWithRopeFp8,
 )
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.data_parallelism import split_batch_replicated
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.legacy.layer import LayerList, Module
-from max.nn.legacy.linear import (
-    MLP,
-    ColumnParallelLinear,
-)
-from max.nn.legacy.moe import MoE, MoEQuantized
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.rotary_embedding import (
+from max.nn.comm import Signals
+from max.nn.comm.ep import EPBatchManager
+from max.nn.data_parallelism import split_batch_replicated
+from max.nn.embedding import VocabParallelEmbedding
+from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.layer import LayerList, Module
+from max.nn.linear import MLP, ColumnParallelLinear
+from max.nn.moe import MoE, MoEQuantized
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
+    RotaryEmbedding,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
-from max.nn.legacy.transformer.distributed_transformer import (
-    forward_sharded_layers,
-)
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.transformer.distributed_transformer import forward_sharded_layers
 
 from .layers.moe_gate import DeepseekV3TopKRouter
 from .model_config import DeepseekV3Config
@@ -66,18 +63,26 @@ from .model_config import DeepseekV3Config
 def _unpack_kv_collections(
     kv_collections: Sequence[PagedCacheValues],
 ) -> tuple[
-    list[BufferValue], list[TensorValue], list[TensorValue], list[TensorValue]
+    list[BufferValue],
+    list[TensorValue],
+    list[TensorValue],
+    list[TensorValue],
+    list[BufferValue],
 ]:
     """Unpack KV collections into component lists.
 
     Returns:
-        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_lengths).
+        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_lengths, kv_scales). kv_scales is empty when KV cache is not quantized.
     """
+    kv_scales = [
+        kv.kv_scales for kv in kv_collections if kv.kv_scales is not None
+    ]
     return (
         [kv.kv_blocks for kv in kv_collections],
         [kv.cache_lengths for kv in kv_collections],
         [kv.lookup_table for kv in kv_collections],
         [kv.max_lengths for kv in kv_collections],
+        kv_scales,
     )
 
 
@@ -104,16 +109,14 @@ def _validate_parallelism_config(config: DeepseekV3Config) -> None:
 class DeepseekV3DecoderLayer(Module):
     def __init__(
         self,
-        rope: DeepseekYarnRotaryEmbedding,
+        rope: RotaryEmbedding,
         config: DeepseekV3Config,
         layer_idx: int,
         ep_manager: EPBatchManager | None = None,
-        is_nextn: bool = False,
     ) -> None:
         super().__init__()
         self.config = config
         self.ep_manager = ep_manager
-        self.is_nextn = is_nextn
         num_devices = len(config.devices)
 
         # Create Multi-head Latent Attention layer.
@@ -138,7 +141,12 @@ class DeepseekV3DecoderLayer(Module):
         )
         use_fp8_mla = config.float8_config is not None and not nvfp4_enabled
 
-        if config.float8_config is not None and nvfp4_enabled:
+        if (
+            config.float8_config is not None
+            and nvfp4_enabled
+            and config.n_routed_experts
+            != 384  # nvidia/KimiK2.5-NVFP4 out projections are not quantized
+        ):
             mla_kwargs["o_proj_float8_config"] = config.float8_config
             mla_kwargs["o_proj_dtype"] = config.dtype
 
@@ -272,9 +280,11 @@ class DeepseekV3DecoderLayer(Module):
         kv_cache_lengths: list[TensorValue],
         kv_lookup_table: list[TensorValue],
         kv_max_lengths: list[TensorValue],
+        kv_scales: list[BufferValue],
         freqs_cis: list[TensorValue],
         mla_prefill_metadata_flat: list[TensorValue],
         input_row_offsets: list[TensorValue],
+        mla_decode_scalar_args: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
     ) -> list[TensorValue]:
         # We have to unpack our PagedCacheValues into constituent parts so
@@ -286,6 +296,7 @@ class DeepseekV3DecoderLayer(Module):
                 kv_cache_lengths[i],
                 kv_lookup_table[i],
                 kv_max_lengths[i],
+                kv_scales=kv_scales[i] if kv_scales else None,
             )
             for i in range(len(kv_blocks))
         ]
@@ -293,14 +304,24 @@ class DeepseekV3DecoderLayer(Module):
         # Re-pack flat MLA inputs into MLAPrefillMetadata dataclasses
         num_devices = len(kv_blocks)
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
-        for i in range(num_devices):
-            mla_prefill_metadata.append(
-                MLAPrefillMetadata(
-                    buffer_row_offsets=mla_prefill_metadata_flat[3 * i],
-                    cache_offsets=mla_prefill_metadata_flat[3 * i + 1],
-                    buffer_lengths=mla_prefill_metadata_flat[3 * i + 2],
+        if self.config.graph_mode != "decode":
+            assert len(mla_prefill_metadata_flat) == 3 * num_devices
+            for i in range(num_devices):
+                mla_prefill_metadata.append(
+                    MLAPrefillMetadata(
+                        buffer_row_offsets=mla_prefill_metadata_flat[3 * i],
+                        cache_offsets=mla_prefill_metadata_flat[3 * i + 1],
+                        buffer_lengths=mla_prefill_metadata_flat[3 * i + 2],
+                    )
                 )
-            )
+
+        # Wrap already-GPU scalar args into MLADecodeMetadata.
+        mla_decode_metadata: list[MLADecodeMetadata] | None = None
+        if mla_decode_scalar_args is not None:
+            mla_decode_metadata = [
+                MLADecodeMetadata(scalar_args=mla_decode_scalar_args[i])
+                for i in range(num_devices)
+            ]
 
         # Apply input layer norm to each shard
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
@@ -313,6 +334,7 @@ class DeepseekV3DecoderLayer(Module):
             freqs_cis=freqs_cis,
             input_row_offsets=input_row_offsets,
             mla_prefill_metadata=mla_prefill_metadata,
+            mla_decode_metadata=mla_decode_metadata,
         )
 
         hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
@@ -333,12 +355,7 @@ class DeepseekV3DecoderLayer(Module):
             # Single-GPU non-EP path
             mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
 
-        if self.is_nextn:
-            # NextN/MTP decoder: skip the second residual connection.
-            # The MoE output is used directly as hidden_states.
-            hs = mlp_outs
-        else:
-            hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
+        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
         return hs
 
@@ -371,24 +388,33 @@ class DeepseekV3(Module):
             quantization_encoding=None,
         )
 
-        assert config.rope_scaling is not None
-        scaling_params = DeepseekYarnRopeScalingParams(
-            scaling_factor=config.rope_scaling["factor"],
-            original_max_position_embeddings=config.rope_scaling[
-                "original_max_position_embeddings"
-            ],
-            beta_fast=config.rope_scaling["beta_fast"],
-            beta_slow=config.rope_scaling["beta_slow"],
-            mscale=config.rope_scaling["mscale"],
-            mscale_all_dim=config.rope_scaling["mscale_all_dim"],
-        )
-        self.rope = DeepseekYarnRotaryEmbedding(
-            config.qk_rope_head_dim,
-            n_heads=config.num_attention_heads,
-            theta=config.rope_theta,
-            max_seq_len=config.max_position_embeddings,
-            scaling_params=scaling_params,
-        )
+        if config.rope_scaling is not None:
+            scaling_params = DeepseekYarnRopeScalingParams(
+                scaling_factor=config.rope_scaling["factor"],
+                original_max_position_embeddings=config.rope_scaling[
+                    "original_max_position_embeddings"
+                ],
+                beta_fast=config.rope_scaling["beta_fast"],
+                beta_slow=config.rope_scaling["beta_slow"],
+                mscale=config.rope_scaling["mscale"],
+                mscale_all_dim=config.rope_scaling["mscale_all_dim"],
+            )
+            self.rope: RotaryEmbedding = DeepseekYarnRotaryEmbedding(
+                config.qk_rope_head_dim,
+                n_heads=config.num_attention_heads,
+                theta=config.rope_theta,
+                max_seq_len=config.max_position_embeddings,
+                scaling_params=scaling_params,
+            )
+        else:
+            self.rope = RotaryEmbedding(
+                dim=config.qk_rope_head_dim,
+                n_heads=config.num_attention_heads,
+                theta=config.rope_theta,
+                max_seq_len=config.max_position_embeddings,
+                head_dim=config.qk_rope_head_dim,
+                interleaved=config.rope_interleave,
+            )
 
         self.ep_manager: EPBatchManager | None = None
         if config.ep_config is not None:
@@ -508,9 +534,19 @@ class DeepseekV3(Module):
             )
 
         # Unpack KV collections once for use throughout the method
-        kv_blocks, cache_lengths, lookup_tables, max_lengths = (
+        kv_blocks, cache_lengths, lookup_tables, max_lengths, kv_scales = (
             _unpack_kv_collections(kv_collections)
         )
+
+        # Extract dispatch metadata from KV collections (already on GPU
+        # for MLA, on CPU for MHA — placed by the KV cache manager).
+        mla_decode_scalar_args: list[TensorValue] | None = None
+        if kv_collections[0].dispatch_metadata is not None:
+            mla_decode_scalar_args = [
+                kv.dispatch_metadata.tensor
+                for kv in kv_collections
+                if kv.dispatch_metadata is not None
+            ]
 
         subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [
             TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
@@ -520,10 +556,16 @@ class DeepseekV3(Module):
             [length.type for length in cache_lengths],
             [table.type for table in lookup_tables],
             [length.type for length in max_lengths],
+            [scale.type for scale in kv_scales],
             [freq.type for freq in freqs_cis],
             [val.type for val in mla_prefill_metadata_flat],
             [offset.type for offset in input_row_offsets_],
         ]
+
+        if mla_decode_scalar_args is not None:
+            subgraph_input_types.append(
+                [m.type for m in mla_decode_scalar_args]
+            )
 
         if self.ep_manager is not None:
             subgraph_input_types.append(list(self.ep_manager.input_types()))
@@ -563,9 +605,15 @@ class DeepseekV3(Module):
                             *cache_lengths,
                             *lookup_tables,
                             *max_lengths,
+                            *kv_scales,
                             *freqs_cis,
                             *mla_prefill_metadata_flat,
                             *input_row_offsets_,
+                            *(
+                                mla_decode_scalar_args
+                                if mla_decode_scalar_args is not None
+                                else ()
+                            ),
                             *(ep_inputs if ep_inputs is not None else ()),
                             prefix=f"layers.{idx}.",
                         )
@@ -580,9 +628,11 @@ class DeepseekV3(Module):
                     cache_lengths,
                     lookup_tables,
                     max_lengths,
+                    kv_scales,
                     freqs_cis=freqs_cis,
                     mla_prefill_metadata_flat=mla_prefill_metadata_flat,
                     input_row_offsets=input_row_offsets_,
+                    mla_decode_scalar_args=mla_decode_scalar_args,
                     ep_inputs=ep_inputs,
                 )
                 assert isinstance(h, list)
@@ -716,9 +766,7 @@ class DeepseekV3(Module):
         if logits is not None and offsets is not None:
             ret_val += (logits, offsets)
 
-        if self.return_hidden_states == ReturnHiddenStates.ALL:
-            ret_val += tuple(h)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST:
+        if self.return_hidden_states == ReturnHiddenStates.LAST:
             if self.config.data_parallel_degree > 1:
                 ret_val += tuple(last_token_per_dev)
             else:
@@ -726,13 +774,11 @@ class DeepseekV3(Module):
         elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
             norm_h = forward_sharded_layers(self.norm_shards, h)
             ret_val += tuple(norm_h)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
-            ret_val += tuple(norm_last_token)
 
         return ret_val
 
     def input_types(
-        self, kv_params: KVCacheParams
+        self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model

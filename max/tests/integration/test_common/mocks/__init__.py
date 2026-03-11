@@ -14,17 +14,11 @@
 
 from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Optional, Union
 
 import hf_repo_lock
 from max.driver import DeviceSpec, scan_available_devices
-from max.engine import GPUProfilingMode
 from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    SupportedEncoding,
-    TextGenerationPipeline,
-    generate_local_model_path,
-)
+from max.pipelines.lib import TextGenerationPipeline, generate_local_model_path
 
 from .pipeline_config import (
     DummyMAXModelConfig,
@@ -51,7 +45,7 @@ def retrieve_mock_text_generation_pipeline(
     max_length: int | None = None,
     max_new_tokens: int | None = None,
     device_specs: list[DeviceSpec] | None = None,
-) -> Generator[tuple[MockTextTokenizer, TextGenerationPipeline], None, None]:
+) -> Generator[tuple[MockTextTokenizer, TextGenerationPipeline], None, None]:  # type: ignore[type-arg]
     if eos_token > vocab_size:
         raise ValueError(
             f"eos_token provided '{eos_token}' must be less than vocab_size provided '{vocab_size}'"
@@ -68,8 +62,7 @@ def retrieve_mock_text_generation_pipeline(
         max_length=max_length,
         max_batch_size=None,
         device_specs=device_specs,
-        quantization_encoding=SupportedEncoding.float32,
-        kv_cache_strategy="paged",
+        quantization_encoding="float32",
         eos_prob=eos_prob,
         vocab_size=vocab_size,
         eos_token=eos_token,

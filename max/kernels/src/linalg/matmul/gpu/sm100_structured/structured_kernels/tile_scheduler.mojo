@@ -11,32 +11,32 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import _RegisterPackType, size_of
-from sys._assembly import inlined_assembly
+from std.math import ceildiv
+from std.sys import _RegisterPackType, size_of
+from std.sys._assembly import inlined_assembly
 
-from gpu.primitives.cluster import (
+from std.gpu.primitives.cluster import (
     clusterlaunchcontrol_query_cancel_get_first_ctaid_v4,
     clusterlaunchcontrol_query_cancel_is_canceled,
     clusterlaunchcontrol_try_cancel,
     elect_one_sync,
 )
-from gpu import block_id_in_cluster, block_idx, lane_id, warp_id
-from gpu.memory import fence_async_view_proxy
+from std.gpu import block_id_in_cluster, block_idx, lane_id, warp_id
+from std.gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 
-from utils.fast_div import FastDiv
+from std.utils.fast_div import FastDiv
 
 from linalg.structuring import SMemPtr, SMemArray
-from .pipeline import ProducerConsumerPipeline
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from structured_kernels.pipeline import ProducerConsumerPipeline
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
+struct WorkInfo(TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -54,6 +54,7 @@ struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
         """Get (m, n) tile coordinates as a tuple."""
         return (UInt(self.m), UInt(self.n))
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)
@@ -102,7 +103,7 @@ struct AdvanceAfterWorkContext[
     work_origin: MutOrigin,
     state_origin: MutOrigin,
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type = DType.uint32],
+    cluster_shape: IndexList[3, element_type=DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
 ](TrivialRegisterPassable):
@@ -197,7 +198,7 @@ struct WaitAndAdvanceContext[
 
 struct WorkIterator[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type = DType.uint32],
+    cluster_shape: IndexList[3, element_type=DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
 ](TrivialRegisterPassable):
@@ -311,7 +312,7 @@ struct WorkIterator[
 
 struct SchedulerWorkIterator[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type = DType.uint32],
+    cluster_shape: IndexList[3, element_type=DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
 ](TrivialRegisterPassable):
@@ -405,8 +406,7 @@ struct SchedulerWorkIterator[
         CLC pipeline stages are properly synchronized before exit.
         """
 
-        @parameter
-        for i in range(Self.num_stages):
+        comptime for i in range(Self.num_stages):
             self.scheduler.empty_mbar[self.producer_state.index()].wait(
                 self.producer_state.phase()
             )
@@ -415,8 +415,8 @@ struct SchedulerWorkIterator[
 
 struct TileScheduler[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type = DType.uint32] = Index[
-        dtype = DType.uint32
+    cluster_shape: IndexList[3, element_type=DType.uint32] = Index[
+        dtype=DType.uint32
     ](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
@@ -468,10 +468,13 @@ struct TileScheduler[
         clc_throttle: Self.ThrottleBarrierArray,
     ):
         """Initialize from typed barrier arrays."""
-        constrained[
-            Self.block_swizzle_size in [0, 1, 2, 4, 8],
-            "block_swizzle_size must be 0, 1, 2, 4, or 8",
-        ]()
+        comptime assert Self.block_swizzle_size in [
+            0,
+            1,
+            2,
+            4,
+            8,
+        ], "block_swizzle_size must be 0, 1, 2, 4, or 8"
 
         self.cluster_dim = cluster_dim
         self.log_cluster_dim_m = FastDiv[DType.uint32](Int(cluster_dim[0]))
@@ -530,16 +533,14 @@ struct TileScheduler[
         )
 
         # CLC rasterize along M by default.
-        @parameter
-        if Self.rasterize_order == RasterOrder.AlongM:
+        comptime if Self.rasterize_order == RasterOrder.AlongM:
             new_normalized_m = normalized_m
             new_normalized_n = normalized_n
         else:
             new_normalized_m = linear_cluster_id % log_cluster_dim_m
             new_normalized_n = linear_cluster_id / log_cluster_dim_m
 
-        @parameter
-        if Self.block_swizzle_size != 0:
+        comptime if Self.block_swizzle_size != 0:
             var swizzle_m_size = (
                 FastUInt(cluster_dim[0]) / log_block_swizzle_size
             )
@@ -608,8 +609,7 @@ struct TileScheduler[
     ) -> WorkInfo:
         # num_stages == 0 implies there is only one wave. Only initial
         # work info is valid, next work info is invalid.
-        @parameter
-        if Self.num_stages == 0:
+        comptime if Self.num_stages == 0:
             return WorkInfo(0, 0, 0, False)
 
         self.full_mbar[consumer_state.index()].wait(consumer_state.phase())

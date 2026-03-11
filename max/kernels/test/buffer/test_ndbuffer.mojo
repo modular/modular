@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
-from sys.intrinsics import PrefetchOptions
-from tempfile import NamedTemporaryFile
+from std.math import iota
+from std.sys.intrinsics import PrefetchOptions
+from std.tempfile import NamedTemporaryFile
 
 from buffer.buffer import NDBuffer, _compute_ndbuffer_offset
 from buffer.dimlist import DimList
-from memory import memcmp, memset_zero
-from testing import TestSuite, assert_equal
+from std.memory import memcmp, memset_zero
+from std.testing import TestSuite, assert_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 # CHECK-LABEL: test_ndbuffer
-def test_ndbuffer():
+def test_ndbuffer() raises:
     print("== test_ndbuffer")
     # Create a matrix of the form
     # [[0, 1, 2, 3],
@@ -33,8 +33,8 @@ def test_ndbuffer():
     #  [12, 13, 14, 15]]
     var matrix_stack = InlineArray[Scalar[DType.int], 4 * 4](uninitialized=True)
     var matrix = NDBuffer[
+        rank=2,
         DType.int,
-        2,
         _,
         DimList(4, 4),
     ](matrix_stack.unsafe_ptr())
@@ -121,11 +121,13 @@ def test_ndbuffer():
 
 
 # CHECK-LABEL: test_fill
-def test_fill():
+def test_fill() raises:
     print("== test_fill")
 
     var buf_stack = InlineArray[Scalar[DType.int], 3 * 3](uninitialized=True)
-    var buf = NDBuffer[DType.int, 2, _, DimList(3, 3)](buf_stack.unsafe_ptr())
+    var buf = NDBuffer[rank=2, DType.int, _, DimList(3, 3)](
+        buf_stack.unsafe_ptr()
+    )
     buf[IndexList[2](0, 0)] = 1
     buf[IndexList[2](0, 1)] = 1
     buf[IndexList[2](0, 2)] = 1
@@ -137,7 +139,7 @@ def test_fill():
     buf[IndexList[2](2, 2)] = 1
 
     var filled_stack = InlineArray[Scalar[DType.int], 3 * 3](uninitialized=True)
-    var filled = NDBuffer[DType.int, 2, _, DimList(3, 3)](
+    var filled = NDBuffer[rank=2, DType.int, _, DimList(3, 3)](
         filled_stack.unsafe_ptr()
     )
     filled.fill(1)
@@ -160,13 +162,13 @@ def test_fill():
 
 
 # CHECK-LABEL: test_ndbuffer_prefetch
-def test_ndbuffer_prefetch():
+def test_ndbuffer_prefetch() raises:
     print("== test_ndbuffer_prefetch")
     # Create a matrix of the form
     # [[0, 1, 2],
     #  [3, 4, 5]]
     var matrix_stack = InlineArray[Scalar[DType.int], 2 * 3](uninitialized=True)
-    var matrix = NDBuffer[DType.int, 2, _, DimList(2, 3)](
+    var matrix = NDBuffer[rank=2, DType.int, _, DimList(2, 3)](
         matrix_stack.unsafe_ptr()
     )
 
@@ -209,11 +211,11 @@ def test_ndbuffer_prefetch():
 
 
 # CHECK-LABEL: test_aligned_load_store
-def test_aligned_load_store():
+def test_aligned_load_store() raises:
     print("== test_aligned_load_store")
     var matrix = NDBuffer[
+        rank=2,
         DType.int,
-        2,
         MutAnyOrigin,
         DimList(4, 4),
     ].stack_allocation[alignment=128]()
@@ -234,19 +236,19 @@ def test_aligned_load_store():
     print(matrix.load[width=4, alignment=32](3, 0))
 
 
-def test_get_nd_index():
+def test_get_nd_index() raises:
     print("== test_get_nd_index\n")
     var matrix0_stack = InlineArray[Scalar[DType.int], 2 * 3](
         uninitialized=True
     )
-    var matrix0 = NDBuffer[DType.int, 2, _, DimList(2, 3)](
+    var matrix0 = NDBuffer[rank=2, DType.int, _, DimList(2, 3)](
         matrix0_stack.unsafe_ptr()
     )
 
     var matrix1_stack = InlineArray[Scalar[DType.int], 3 * 5 * 7](
         uninitialized=True
     )
-    var matrix1 = NDBuffer[DType.int, 3, _, DimList(3, 5, 7)](
+    var matrix1 = NDBuffer[rank=3, DType.int, _, DimList(3, 5, 7)](
         matrix1_stack.unsafe_ptr()
     )
 
@@ -270,12 +272,12 @@ def test_get_nd_index():
 
 
 # CHECK-LABEL: test_print
-def test_print():
+def test_print() raises:
     print("== test_print")
     var buf_stack = InlineArray[Scalar[DType.int], 2 * 2 * 3](
         uninitialized=True
     )
-    var buffer = NDBuffer[DType.int, 3, _, DimList(2, 2, 3)](
+    var buffer = NDBuffer[rank=3, DType.int, _, DimList(2, 2, 3)](
         buf_stack.unsafe_ptr()
     )
     for i in range(2):
@@ -297,10 +299,10 @@ def test_print():
 
 
 # CHECK-LABEL: test_ndbuffer_tofile
-def test_ndbuffer_tofile():
+def test_ndbuffer_tofile() raises:
     print("== test_ndbuffer_tofile")
     var buf_stack = InlineArray[Float32, 2 * 2](uninitialized=True)
-    var buf = NDBuffer[DType.float32, 2, _, DimList(2, 2)](
+    var buf = NDBuffer[rank=2, DType.float32, _, DimList(2, 2)](
         buf_stack.unsafe_ptr()
     )
     buf.fill(2.0)
@@ -309,7 +311,7 @@ def test_ndbuffer_tofile():
 
         with open(TEMP_FILE.name, "r") as f:
             var str = f.read()
-            var buf_read = NDBuffer[DType.float32, 2, _, DimList(2, 2)](
+            var buf_read = NDBuffer[rank=2, DType.float32, _, DimList(2, 2)](
                 str.unsafe_ptr().bitcast[Float32]()
             )
             for i in range(2):
@@ -322,7 +324,7 @@ def test_ndbuffer_tofile():
 
 
 # CHECK-LABEL: test_ndbuffer_tile
-def test_ndbuffer_tile():
+def test_ndbuffer_tile() raises:
     print("== test_ndbuffer_tile")
 
     comptime M = 8
@@ -333,7 +335,7 @@ def test_ndbuffer_tile():
     comptime n1_tile_size = 2
 
     var buf_stack = InlineArray[Float32, M * N](uninitialized=True)
-    var buff = NDBuffer[DType.float32, 2, _, DimList(M, N)](
+    var buff = NDBuffer[rank=2, DType.float32, _, DimList(M, N)](
         buf_stack.unsafe_ptr()
     )
 
@@ -465,5 +467,5 @@ def test_ndbuffer_tile():
                     print("------")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

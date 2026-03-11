@@ -17,9 +17,9 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
-from max.nn.legacy.conv import Conv2d
-from max.nn.legacy.layer import Module
-from max.nn.legacy.norm import RMSNorm
+from max.nn.conv import Conv2d
+from max.nn.layer import Module
+from max.nn.norm import RMSNorm
 
 from .rotary_embedding_2d import RotaryEmbedding2D, patch_position_ids
 from .transformer import Transformer

@@ -11,15 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from nn.index_fp8 import fp8_index, fp8_index_naive
-from random import rand
+from std.random import rand
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout.layout_tensor import LayoutTensor
-from utils.index import Index
-from testing import assert_almost_equal
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.utils.index import Index
+from std.testing import assert_almost_equal
 
 
 fn test_index_fp8[
@@ -45,14 +43,14 @@ fn test_index_fp8[
     var ks_size = batch_size * num_keys
     var o_size = batch_size * seq_len * num_keys
 
-    var q_ptr = UnsafePointer[Scalar[DType.float8_e4m3fn]].alloc(q_size)
-    var qs_ptr = UnsafePointer[Scalar[DType.float32]].alloc(qs_size)
-    var k_ptr = UnsafePointer[Scalar[DType.float8_e4m3fn]].alloc(k_size)
-    var ks_ptr = UnsafePointer[Scalar[DType.float32]].alloc(ks_size)
-    var o_ptr = UnsafePointer[Scalar[DType.float32]].alloc(o_size)
-    var o_ref_ptr = UnsafePointer[Scalar[DType.float32]].alloc(o_size)
-    var input_row_offsets = UnsafePointer[UInt32].alloc(batch_size + 1)
-    var cache_row_offsets = UnsafePointer[UInt32].alloc(batch_size + 1)
+    var q_ptr = alloc[Scalar[DType.float8_e4m3fn]](q_size)
+    var qs_ptr = alloc[Scalar[DType.float32]](qs_size)
+    var k_ptr = alloc[Scalar[DType.float8_e4m3fn]](k_size)
+    var ks_ptr = alloc[Scalar[DType.float32]](ks_size)
+    var o_ptr = alloc[Scalar[DType.float32]](o_size)
+    var o_ref_ptr = alloc[Scalar[DType.float32]](o_size)
+    var input_row_offsets = alloc[UInt32](batch_size + 1)
+    var cache_row_offsets = alloc[UInt32](batch_size + 1)
 
     var q_device_ptr = ctx.enqueue_create_buffer[DType.float8_e4m3fn](q_size)
     var qs_device_ptr = ctx.enqueue_create_buffer[DType.float32](qs_size)
@@ -86,10 +84,10 @@ fn test_index_fp8[
     ctx.enqueue_copy(input_row_offsets_device_ptr, input_row_offsets)
     ctx.enqueue_copy(cache_row_offsets_device_ptr, cache_row_offsets)
 
-    # ragged intputs
+    # Ragged Q tensor: [total_seq_len, num_heads, depth]
     comptime q_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, depth)
     var q_device = LayoutTensor[DType.float8_e4m3fn, q_layout](
-        q_device_ptr.unsafe_ptr(),
+        q_device_ptr.unsafe_ptr().as_immutable(),
         RuntimeLayout[q_layout].row_major(
             Index(batch_size * seq_len, num_heads, depth)
         ),
@@ -105,7 +103,7 @@ fn test_index_fp8[
 
     comptime k_layout = Layout.row_major(UNKNOWN_VALUE, 1, depth)
     var k_device = LayoutTensor[DType.float8_e4m3fn, k_layout](
-        k_device_ptr.unsafe_ptr(),
+        k_device_ptr.unsafe_ptr().as_immutable(),
         RuntimeLayout[k_layout].row_major(
             Index(batch_size * num_keys, 1, depth)
         ),
@@ -147,7 +145,7 @@ fn test_index_fp8[
     var cache_row_offsets_device = LayoutTensor[
         DType.uint32, cache_row_offsets_layout
     ](
-        cache_row_offsets_device_ptr.unsafe_ptr(),
+        cache_row_offsets_device_ptr.unsafe_ptr().as_immutable(),
         RuntimeLayout[cache_row_offsets_layout].row_major(
             Index(batch_size + 1)
         ),
@@ -215,7 +213,7 @@ fn test_index_fp8[
     o_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_index_fp8[num_heads=128, depth=128](2, 128, 128, ctx)
         test_index_fp8[num_heads=128, depth=128](2, 32, 32, ctx)
@@ -225,3 +223,12 @@ def main():
         test_index_fp8[num_heads=128, depth=128](4, 722, 722, ctx)
         test_index_fp8[num_heads=128, depth=128](5, 32, 64, ctx)
         test_index_fp8[num_heads=128, depth=128](2, 128, 256, ctx)
+
+        test_index_fp8[num_heads=64, depth=128](2, 128, 128, ctx)
+        test_index_fp8[num_heads=64, depth=128](2, 32, 32, ctx)
+        test_index_fp8[num_heads=64, depth=128](4, 200, 200, ctx)
+        test_index_fp8[num_heads=64, depth=128](1, 501, 501, ctx)
+        test_index_fp8[num_heads=64, depth=128](3, 600, 600, ctx)
+        test_index_fp8[num_heads=64, depth=128](4, 722, 722, ctx)
+        test_index_fp8[num_heads=64, depth=128](5, 32, 64, ctx)
+        test_index_fp8[num_heads=64, depth=128](2, 128, 256, ctx)

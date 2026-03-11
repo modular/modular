@@ -10,17 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from complex import ComplexFloat32
-from gpu.host import DeviceContext
-from gpu.host.info import Vendor
-from layout._coord import Coord, Idx, coord
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
-from math import sqrt
+from std.complex import ComplexFloat32
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import Vendor
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord,
+    row_major,
+)
+from std.math import sqrt
 from nn.irfft import irfft
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 comptime dtype = DType.float32
 
@@ -125,7 +129,7 @@ fn test_irfft_basic[
     print("Succeed")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Check if we're running on an NVIDIA GPU
         if ctx.default_device_info.vendor != Vendor.NVIDIA_GPU:

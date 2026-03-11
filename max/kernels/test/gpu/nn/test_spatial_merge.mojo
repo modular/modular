@@ -11,15 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from layout._coord import Idx
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.gpu.host import DeviceContext
+from layout import Idx, TileTensor, row_major
 from nn.spatial_merge import spatial_merge
-from testing import assert_equal
+from std.testing import assert_equal
 
 
-def test_spatial_merge(ctx: DeviceContext):
+def test_spatial_merge(ctx: DeviceContext) raises:
     comptime dtype = DType.float32
     comptime merge_size = 2
     comptime hidden_size = 4
@@ -194,6 +192,6 @@ def test_spatial_merge(ctx: DeviceContext):
                     )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_spatial_merge(ctx)

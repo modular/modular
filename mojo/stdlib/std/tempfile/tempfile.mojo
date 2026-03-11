@@ -22,16 +22,16 @@ To use these features, import the desired functions or classes from this module.
 
 ```mojo
 # Import from the tempfile module
-from tempfile import gettempdir
+from std.tempfile import gettempdir
 ```
 """
 
-import os
-from format._utils import _WriteBufferStack
-from pathlib import Path
-from sys import CompilationTarget
+import std.os
+from std.format._utils import _WriteBufferStack
+from std.pathlib import Path
+from std.sys import CompilationTarget
 
-from memory import Span
+from std.memory import Span
 
 comptime TMP_MAX = 10_000
 """Maximum number of attempts when generating unique temporary file names."""
@@ -58,7 +58,7 @@ fn _candidate_tempdir_list() -> List[String]:
 
     # First, try the environment.
     for env_var in possible_env_vars:
-        if dirname := os.getenv(String(env_var)):
+        if dirname := std.os.getenv(String(env_var)):
             dirlist.append(dirname^)
 
     # Failing that, try OS-specific locations.
@@ -85,7 +85,7 @@ fn _get_default_tempdir() raises -> String:
     var dirlist = _candidate_tempdir_list()
 
     for dir_name in dirlist:
-        if not os.path.isdir(dir_name):
+        if not std.os.path.isdir(dir_name):
             continue
         if _try_to_create_file(dir_name):
             return dir_name
@@ -100,19 +100,19 @@ fn _try_to_create_file(dir: StringSlice) -> Bool:
         var filename = Path(dir) / name
 
         # prevent overwriting existing file
-        if os.path.exists(filename):
+        if std.os.path.exists(filename):
             continue
 
         # verify that we have writing access in the target directory
         try:
             with FileHandle(String(filename), "w"):
                 pass
-            os.remove(filename)
+            std.os.remove(filename)
             return True
         except:
-            if os.path.exists(filename):
+            if std.os.path.exists(filename):
                 try:
-                    os.remove(filename)
+                    std.os.remove(filename)
                 except:
                     pass
             return False
@@ -129,7 +129,7 @@ fn gettempdir() -> Optional[String]:
     Example:
 
     ```mojo
-    from tempfile import gettempdir
+    from std.tempfile import gettempdir
 
     print(gettempdir())
     ```
@@ -164,7 +164,7 @@ fn mkdtemp(
     Example:
 
     ```mojo
-    from tempfile import mkdtemp
+    from std.tempfile import mkdtemp
     from import os import rmdir
 
     var temp_dir = mkdtemp()
@@ -176,10 +176,10 @@ fn mkdtemp(
 
     for _ in range(TMP_MAX):
         var dir_name = final_dir / (prefix + _get_random_name() + suffix)
-        if os.path.exists(dir_name):
+        if std.os.path.exists(dir_name):
             continue
         try:
-            os.mkdir(dir_name, mode=0o700)
+            std.os.mkdir(dir_name, mode=0o700)
             # TODO for now this name could be relative,
             # python implementation expands the path,
             # but several functions are not yet implemented in mojo
@@ -208,8 +208,8 @@ fn _rmtree(path: String, ignore_errors: Bool = False) raises:
     Example:
 
     ```mojo
-    from tempfile import mkdtemp, _rmtree
-    import os
+    from std.tempfile import mkdtemp, _rmtree
+    import std.os
 
     var dir_path = mkdtemp()
 
@@ -218,19 +218,19 @@ fn _rmtree(path: String, ignore_errors: Bool = False) raises:
     _rmtree(dir_path)
     ```
     """
-    if os.path.islink(path):
+    if std.os.path.islink(path):
         raise Error("`path`can not be a symbolic link: ", path)
 
-    for file_or_dir in os.listdir(path):
-        var curr_path = os.path.join(path, file_or_dir)
-        if os.path.isfile(curr_path):
+    for file_or_dir in std.os.listdir(path):
+        var curr_path = std.os.path.join(path, file_or_dir)
+        if std.os.path.isfile(curr_path):
             try:
-                os.remove(curr_path)
+                std.os.remove(curr_path)
             except e:
                 if not ignore_errors:
                     raise e^
             continue
-        if os.path.isdir(curr_path):
+        if std.os.path.isdir(curr_path):
             try:
                 _rmtree(curr_path, ignore_errors)
             except e:
@@ -238,7 +238,7 @@ fn _rmtree(path: String, ignore_errors: Bool = False) raises:
                     continue
                 raise e^
     try:
-        os.rmdir(path)
+        std.os.rmdir(path)
     except e:
         if not ignore_errors:
             raise e^
@@ -249,10 +249,10 @@ struct TemporaryDirectory:
 
     Creates a directory that's deleted when the context exits:
     ```mojo
-    from tempfile import TemporaryDirectory
-    import os
+    from std.tempfile import TemporaryDirectory
+    import std.os
 
-    def main():
+    def main() raises:
         var temp_path: String
         with TemporaryDirectory() as tmpdir:
             temp_path = tmpdir
@@ -333,7 +333,7 @@ struct NamedTemporaryFile(Movable):
 
     Creates a file that's deleted when closed (by default):
     ```mojo
-    from tempfile import NamedTemporaryFile
+    from std.tempfile import NamedTemporaryFile
 
     with NamedTemporaryFile(mode="rw") as f:
         f.write("Hello world!")
@@ -393,9 +393,13 @@ struct NamedTemporaryFile(Movable):
         else:
             for _ in range(TMP_MAX):
                 var potential_name = (
-                    final_dir + os.sep + prefix + _get_random_name() + suffix
+                    final_dir
+                    + std.os.sep
+                    + prefix
+                    + _get_random_name()
+                    + suffix
                 )
-                if not os.path.exists(potential_name):
+                if not std.os.path.exists(potential_name):
                     self.name = potential_name
                     break
         try:
@@ -424,24 +428,24 @@ struct NamedTemporaryFile(Movable):
         Example:
 
         ```mojo
-        from tempfile import NamedTemporaryFile
-        import os
+        from std.tempfile import NamedTemporaryFile
+        import std.os
 
         var temp_file = NamedTemporaryFile() # delete=True by default
         temp_file.write("Temporary data")
         temp_file.close() # File is deleted if delete=True
-        print(os.path.exists(temp_file.name)) # False
+        print(std.os.path.exists(temp_file.name)) # False
 
         temp_file = NamedTemporaryFile(delete=False)
         temp_file.write("Temporary data")
         temp_file.close() # File is not deleted
-        print(os.path.exists(temp_file.name)) # True
-        os.remove(temp_file.name) # Clean up manually
+        print(std.os.path.exists(temp_file.name)) # True
+        std.os.remove(temp_file.name) # Clean up manually
         ```
         """
         self._file_handle.close()
         if self._delete:
-            os.remove(self.name)
+            std.os.remove(self.name)
 
     fn read(self, size: Int = -1) raises -> String:
         """Reads the data from the file.
@@ -458,8 +462,8 @@ struct NamedTemporaryFile(Movable):
         Example:
 
         ```mojo
-        from tempfile import NamedTemporaryFile
-        from pathlib import Path
+        from std.tempfile import NamedTemporaryFile
+        from std.pathlib import Path
 
         var p: Path
         with NamedTemporaryFile(mode="rw") as f:
@@ -490,8 +494,8 @@ struct NamedTemporaryFile(Movable):
         Example:
 
         ```mojo
-        from tempfile import NamedTemporaryFile
-        from pathlib import Path
+        from std.tempfile import NamedTemporaryFile
+        from std.pathlib import Path
 
         var p: Path
         var bytes = [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F] # "Hello"
@@ -512,7 +516,9 @@ struct NamedTemporaryFile(Movable):
         """
         return self._file_handle.read_bytes(size)
 
-    fn seek(self, offset: UInt64, whence: UInt8 = os.SEEK_SET) raises -> UInt64:
+    fn seek(
+        self, offset: UInt64, whence: UInt8 = std.os.SEEK_SET
+    ) raises -> UInt64:
         """Seeks to the given offset in the file.
 
         Args:
@@ -532,8 +538,8 @@ struct NamedTemporaryFile(Movable):
         Example:
 
         ```mojo
-        from tempfile import NamedTemporaryFile
-        from pathlib import Path
+        from std.tempfile import NamedTemporaryFile
+        from std.pathlib import Path
 
         var p: Path
         var bytes = [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F] # "Hello"
@@ -561,8 +567,8 @@ struct NamedTemporaryFile(Movable):
 
         Example:
         ```mojo
-        from tempfile import NamedTemporaryFile
-        from pathlib import Path
+        from std.tempfile import NamedTemporaryFile
+        from std.pathlib import Path
 
         var p: Path
         with NamedTemporaryFile(mode="rw") as f:
@@ -577,8 +583,7 @@ struct NamedTemporaryFile(Movable):
         var file = FileDescriptor(self._file_handle._get_raw_fd())
         var buffer = _WriteBufferStack(file)
 
-        @parameter
-        for i in range(args.__len__()):
+        comptime for i in range(args.__len__()):
             args[i].write_to(buffer)
 
         buffer.flush()
@@ -594,7 +599,7 @@ struct NamedTemporaryFile(Movable):
         Example:
 
         ```mojo
-        from tempfile import NamedTemporaryFile
+        from std.tempfile import NamedTemporaryFile
 
         var bytes = [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F]  # "Hello" in ASCII
 

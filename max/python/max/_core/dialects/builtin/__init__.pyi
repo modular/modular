@@ -13,6 +13,8 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""None"""
+
 import enum
 from collections.abc import Callable, Sequence
 from typing import Protocol, overload
@@ -990,7 +992,7 @@ class PtrLikeTypeInterface(Protocol):
     def element_type(self) -> max._core.Type | None: ...
     def has_ptr_metadata(self) -> bool: ...
     def clone_ptr_with(
-        self, arg0: max._core.Attribute, arg1: max._core.Type, /
+        self, arg0: max._core.Attribute, arg1: max._core.Type | None
     ) -> PtrLikeTypeInterface | None: ...
 
 class ShapedType(Protocol):
@@ -1010,7 +1012,7 @@ class ShapedType(Protocol):
     @property
     def shape(self) -> Sequence[int]: ...
     def clone_with(
-        self, arg0: Sequence[int], arg1: max._core.Type, /
+        self, arg0: Sequence[int] | None, arg1: max._core.Type
     ) -> ShapedType: ...
     def has_rank(self) -> bool: ...
 

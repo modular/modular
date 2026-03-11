@@ -32,13 +32,18 @@ However, none of these currently run major GenAI models with MAX:
 - Apple silicon GPUs (M1 - M5)
 - NVIDIA RTX 20XX series (Turing)
 - NVIDIA T4 (Turing)
-- NVIDIA GTX 10XX series (Pascal)
-- NVIDIA Tesla P100 (Pascal)
 - AMD Radeon RX 9000 series (RDNA4)
 - AMD Radeon 800M series (RDNA3.5)
 - AMD Radeon 8050S / 8060S (RDNA3.5)
 - AMD Radeon 700M series (RDNA3)
 - AMD Radeon RX 7000 series (RDNA3)
+
+#### Pre-Turing NVIDIA GPUs
+
+Pre-Turing NVIDIA GPUs (such as Pascal-generation GTX 10XX and Tesla P100) are
+not supported out of the box. To use Mojo and MAX on these GPUs, set the
+`MODULAR_NVPTX_COMPILER_PATH` environment variable to point to a system
+`ptxas` binary compatible with your hardware and driver version.
 
 If you've had success with any GPUs not listed here, please [let us know on
 Discord](https://discord.gg/modular).
@@ -55,6 +60,9 @@ Make sure you have the corresponding GPU software:
   [nvidia-smi](https://developer.nvidia.com/system-management-interface)
     - To update, see the [NVIDIA driver
     docs](https://www.nvidia.com/en-us/drivers/)
+    - For older driver versions, you can set the
+    `MODULAR_NVPTX_COMPILER_PATH` environment variable to point to a
+    system `ptxas` binary to bypass this requirement
 
 - If you're on an **AMD GPU**:
 

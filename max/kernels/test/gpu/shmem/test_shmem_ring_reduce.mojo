@@ -12,17 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo %s
-from algorithm import parallelize
-from gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
-from math import iota
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from os import abort
+from std.algorithm import parallelize
+from std.gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
+from std.math import iota
+from std.os import abort
 from shmem import *
-from ffi import c_int
-from sys.info import size_of
-from gpu.host import DeviceBuffer
+from std.ffi import c_int
+from std.sys.info import size_of
+from std.gpu.host import DeviceBuffer
 
 comptime min_size = 1024 * 1024 * 32
 comptime max_size = min_size * 16
@@ -35,10 +32,10 @@ comptime chunk_size = 1024 * 256
 
 
 fn ring_reduce(
-    dst_ptr: UnsafePointer[c_int],
-    src_ptr: UnsafePointer[c_int],
+    dst_ptr: UnsafePointer[c_int, MutAnyOrigin],
+    src_ptr: UnsafePointer[c_int, ImmutAnyOrigin],
     nreduce: Int,
-    signal_ptr: UnsafePointer[UInt64],
+    signal_ptr: UnsafePointer[UInt64, MutAnyOrigin],
     chunk_size: Int,
 ):
     """Perform Allreduce using ring algorithm.
@@ -120,11 +117,11 @@ fn ring_reduce(
         signal[0] = 0
 
 
-def bench_ring_reduce(ctx: SHMEMContext):
+def bench_ring_reduce(ctx: SHMEMContext) raises:
     var min_ints = min_size // size_of[DType.int32]()
-    debug_assert(
-        min_ints % num_blocks == 0, "min_size must be divisible by num_blocks"
-    )
+    assert (
+        min_ints % num_blocks == 0
+    ), "min_size must be divisible by num_blocks"
 
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
@@ -168,7 +165,7 @@ def bench_ring_reduce(ctx: SHMEMContext):
         ctx.synchronize()
 
         @parameter
-        def benchmark():
+        def benchmark() raises:
             ctx.enqueue_function_collective_checked[ring_reduce, ring_reduce](
                 dst,
                 src,
@@ -223,5 +220,5 @@ def bench_ring_reduce(ctx: SHMEMContext):
         size *= step_factor
 
 
-def main():
+def main() raises:
     shmem_launch[bench_ring_reduce]()

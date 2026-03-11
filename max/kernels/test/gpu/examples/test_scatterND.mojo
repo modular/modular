@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import block_dim, global_idx
-from gpu.host import DeviceContext
-from memory import memcpy
-from testing import assert_false
+from std.gpu import block_dim, global_idx
+from std.gpu.host import DeviceContext
+from std.memory import memcpy
+from std.testing import assert_false
 
-from utils.index import Index
+from std.utils.index import Index
 
 # This is DeviceAttribute.MAX_THREADS_PER_BLOCK (in ONNXRT it is a global
 # with value of 256).
@@ -44,7 +44,7 @@ fn scatter_nd_gpu[
     if id >= num_indices:
         return
 
-    var element_counts_and_input_dims = NDBuffer[DType.int64, 1](
+    var element_counts_and_input_dims = NDBuffer[rank=1, DType.int64](
         element_counts_and_input_dims_ptr, Index(last_index_dimension * 2)
     )
 
@@ -98,10 +98,10 @@ fn scatter_nd[
     indices_rank: Int,
     updates_rank: Int,
 ](
-    data: NDBuffer[dtype, data_rank, _, _, _],
-    indices: NDBuffer[indices_type, indices_rank, _, _, _],
-    updates: NDBuffer[dtype, updates_rank, _, _, _],
-    output: NDBuffer[dtype, data_rank, _, _, _],
+    data: NDBuffer[rank=data_rank, dtype, _, _, _],
+    indices: NDBuffer[rank=indices_rank, indices_type, _, _, _],
+    updates: NDBuffer[rank=updates_rank, dtype, _, _, _],
+    output: NDBuffer[rank=data_rank, dtype, _, _, _],
     ctx: DeviceContext,
 ) raises:
     """
@@ -183,7 +183,7 @@ fn scatter_nd[
     # NDBuffer below will store both input_strides and data NDBuffer dimensions.
     # (combine both in one to reduce number of memcpy from H->D).
     var ptr = alloc[Int64](last_shape_of_indices * 2)
-    var element_counts_and_input_dims = NDBuffer[DType.int64, 1](
+    var element_counts_and_input_dims = NDBuffer[rank=1, DType.int64](
         ptr, DimList(last_shape_of_indices * 2)
     )
 
@@ -191,7 +191,7 @@ fn scatter_nd[
     # e.g., for a shape of 2, 3, 4, 5
     #       input_strides --> [3*4*5, 4*5, 5, 1]
     var input_strides = NDBuffer[
-        DType.int64, 1, MutAnyOrigin, DimList(data_rank)
+        rank=1, DType.int64, MutAnyOrigin, DimList(data_rank)
     ]().stack_allocation()
     for i in range(data_rank):
         var total_stride = 1
@@ -257,13 +257,8 @@ fn scatter_nd[
 
 fn linear_fill[
     dtype: DType
-](
-    buf: NDBuffer[dtype, _, MutAnyOrigin, ...],
-    elems: VariadicList[Scalar[dtype]],
-):
-    debug_assert(
-        buf.num_elements() == len(elems), "must fill all elements of tensor"
-    )
+](buf: NDBuffer[rank=_, dtype, MutAnyOrigin, ...], elems: Span[Scalar[dtype]],):
+    assert buf.num_elements() == len(elems), "must fill all elements of tensor"
 
     for i in range(buf.num_elements()):
         buf[i] = elems[i]
@@ -275,23 +270,25 @@ fn test_case[
     indices_shape: DimList,
     updates_shape: DimList,
 ](
-    data_vals: VariadicList[Scalar[dtype]],
-    indices_vals: VariadicList[Int64],
-    updates_vals: VariadicList[Scalar[dtype]],
-    output_ref_vals: VariadicList[Scalar[dtype]],
+    data_vals: Span[Scalar[dtype]],
+    indices_vals: Span[Int64],
+    updates_vals: Span[Scalar[dtype]],
+    output_ref_vals: Span[Scalar[dtype]],
 ) raises:
-    var data = NDBuffer[dtype, 3, MutAnyOrigin, input_shape].stack_allocation()
+    var data = NDBuffer[
+        rank=3, dtype, MutAnyOrigin, input_shape
+    ].stack_allocation()
     linear_fill(data, data_vals)
     var indices = NDBuffer[
-        DType.int64, 2, MutAnyOrigin, indices_shape
+        rank=2, DType.int64, MutAnyOrigin, indices_shape
     ].stack_allocation()
     linear_fill(indices, indices_vals)
     var updates = NDBuffer[
-        dtype, 3, MutAnyOrigin, updates_shape
+        rank=3, dtype, MutAnyOrigin, updates_shape
     ].stack_allocation()
     linear_fill(updates, updates_vals)
     var output = NDBuffer[
-        dtype, 3, MutAnyOrigin, input_shape
+        rank=3, dtype, MutAnyOrigin, input_shape
     ].stack_allocation()
 
     # Note: This is for the specific set of examples
@@ -304,7 +301,7 @@ fn test_case[
     _ = updates
 
     var output_ref = NDBuffer[
-        dtype, 3, MutAnyOrigin, input_shape
+        rank=3, dtype, MutAnyOrigin, input_shape
     ].stack_allocation()
     linear_fill(output_ref, output_ref_vals)
 
@@ -318,7 +315,7 @@ fn test_case[
 fn main():
     fn test_scatternd_gpu():
         print("== test_scatternd_gpu")
-        var data = VariadicList[Float32](
+        var data: List[Float32] = [
             # fmt: off
             1, 2, 3, 4,
             5, 6, 7, 8,
@@ -337,11 +334,11 @@ fn main():
             1, 2, 3, 4,
             5, 6, 7, 8,
             # fmt: on
-        )
+        ]
 
-        var indices = VariadicList[Int64](0, 2)
+        var indices: List[Int64] = [0, 2]
 
-        var updates = VariadicList[Float32](
+        var updates: List[Float32] = [
             # fmt: off
             5, 5, 5, 5,
             6, 6, 6, 6,
@@ -352,9 +349,9 @@ fn main():
             3, 3, 3, 3,
             4, 4, 4, 4,
             # fmt: on
-        )
+        ]
 
-        var output_ref = VariadicList[Float32](
+        var output_ref: List[Float32] = [
             # fmt: off
             5, 5, 5, 5,
             6, 6, 6, 6,
@@ -373,13 +370,13 @@ fn main():
             1, 2, 3, 4,
             5, 6, 7, 8,
             # fmt: on
-        )
+        ]
 
         _ = test_case[
             DType.float32,
-            input_shape = DimList(4, 4, 4),
-            indices_shape = DimList(2, 1),
-            updates_shape = DimList(2, 4, 4),
+            input_shape=DimList(4, 4, 4),
+            indices_shape=DimList(2, 1),
+            updates_shape=DimList(2, 4, 4),
         ]
         (
             data,

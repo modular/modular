@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import sys
+import std.sys
 
 
 fn main():
-    sys.exit(0)
+    std.sys.exit(0)

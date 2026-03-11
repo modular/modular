@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import exp, exp2, log
-from sys.info import simd_width_of
+from std.math import exp, exp2, log
+from std.sys.info import simd_width_of
 
 from layout import (
     UNKNOWN_VALUE,
@@ -21,14 +21,14 @@ from layout import (
     RuntimeLayout,
 )
 from layout._fillers import random
-from memory import alloc
+from std.memory import alloc
 from state_space.varlen_selective_scan import (
     varlen_selective_scan_fwd_cpu,
     varlen_selective_state_update_cpu,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 # LOG2E constant for converting exp to exp2
@@ -689,5 +689,5 @@ fn test_varlen_selective_state_update_with_dt_softplus() raises:
     ](batch=2, nheads=2, dim=4, ngroups=1)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -11,38 +11,36 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of, align_of
-from math import ceildiv
-from gpu import barrier
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_idx, grid_dim, thread_idx, lane_id
+from std.sys import size_of, align_of
+from std.math import ceildiv
+from std.gpu import barrier
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import block_idx, grid_dim, thread_idx, lane_id
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from memory import stack_allocation
-from testing import assert_equal
+from std.memory import stack_allocation
+from std.testing import assert_equal
 from buffer.dimlist import DimList, Dim
-from utils.index import Index, IndexList
-from memory import LegacyUnsafePointer
+from std.utils.index import Index, IndexList
 from buffer.buffer import NDBuffer
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from gpu.memory import (
+from std.gpu.memory import (
     AddressSpace,
     external_memory,
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from math import recip
+from std.math import recip
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from layout.layout_tensor import LayoutTensorIter
-from gpu.host import DeviceContext, FuncAttribute
-from utils.static_tuple import StaticTuple
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.utils.static_tuple import StaticTuple
 from linalg.matmul.gpu.sm100.pipeline import ProducerConsumerPipeline
-from gpu.sync import named_barrier
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu.sync import named_barrier
+from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
     NVFP4_SF_DTYPE,
@@ -60,7 +58,7 @@ from linalg.fp4_quantization import (
     quantize_dynamic_scaled_fp4_async,
 )
 from layout._fillers import random
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 def test_nvfp4_quantization[
@@ -73,7 +71,7 @@ def test_nvfp4_quantization[
     m: ValOrDim,
     n: ValOrDim,
     tensor_sf: Float32,
-):
+) raises:
     comptime out_dtype = DType.uint8
 
     var B = batch.value
@@ -81,32 +79,28 @@ def test_nvfp4_quantization[
     var N = n.value
 
     comptime input_static_shape = DimList(m.dim, n.dim)
-    var input_dynamic_shape = DimList(m.value, n.value)
+    var input_dynamic_shape = IndexList[2](m.value, n.value)
 
-    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(M * N)
-    var host_buffer = NDBuffer[dtype, 2, _, input_static_shape](
+    var host_ptr = alloc[Scalar[dtype]](M * N)
+    var host_buffer = NDBuffer[rank=2, dtype, _, input_static_shape](
         host_ptr, input_dynamic_shape
     )
 
     comptime output_static_shape = DimList(m.dim, ceildiv(n.dim, 2))
-    var output_dynamic_shape = DimList(m.value, ceildiv(n.value, 2))
+    var output_dynamic_shape = IndexList[2](m.value, ceildiv(n.value, 2))
 
-    var host_ptr_output = UnsafePointer[Scalar[out_dtype]].alloc(
-        M * ceildiv(N, 2)
-    )
-    var host_buffer_output = NDBuffer[out_dtype, 2, _, output_static_shape](
-        host_ptr_output, output_dynamic_shape
-    )
+    var host_ptr_output = alloc[Scalar[out_dtype]](M * ceildiv(N, 2))
+    var host_buffer_output = NDBuffer[
+        rank=2, out_dtype, _, output_static_shape
+    ](host_ptr_output, output_dynamic_shape)
 
-    var host_ptr_output_ref = UnsafePointer[Scalar[out_dtype]].alloc(
-        M * ceildiv(N, 2)
-    )
-    var host_buffer_output_ref = NDBuffer[out_dtype, 2, _, output_static_shape](
-        host_ptr_output_ref, output_dynamic_shape
-    )
+    var host_ptr_output_ref = alloc[Scalar[out_dtype]](M * ceildiv(N, 2))
+    var host_buffer_output_ref = NDBuffer[
+        rank=2, out_dtype, _, output_static_shape
+    ](host_ptr_output_ref, output_dynamic_shape)
 
     var device_buffer = ctx.enqueue_create_buffer[dtype](M * N)
-    var device_nd_buffer = NDBuffer[dtype, 2, _, input_static_shape](
+    var device_nd_buffer = NDBuffer[rank=2, dtype, _, input_static_shape](
         device_buffer.unsafe_ptr(), input_dynamic_shape
     )
 
@@ -114,14 +108,14 @@ def test_nvfp4_quantization[
         M * ceildiv(N, 2)
     )
     var device_nd_buffer_output = NDBuffer[
-        out_dtype, 2, _, output_static_shape
+        rank=2, out_dtype, _, output_static_shape
     ](device_buffer_output.unsafe_ptr(), output_dynamic_shape)
 
     var device_buffer_output_ref = ctx.enqueue_create_buffer[out_dtype](
         M * ceildiv(N, 2)
     )
     var device_nd_buffer_output_ref = NDBuffer[
-        out_dtype, 2, _, output_static_shape
+        rank=2, out_dtype, _, output_static_shape
     ](device_buffer_output_ref.unsafe_ptr(), output_dynamic_shape)
 
     var host_tensor = from_ndbuffer_row_major(host_buffer)
@@ -132,17 +126,17 @@ def test_nvfp4_quantization[
     comptime static_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(n.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
-    var dynamic_scales_shape = DimList(
+    var dynamic_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
         ceildiv(n.value, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
     var scales_total = (
@@ -153,30 +147,26 @@ def test_nvfp4_quantization[
         * SF_ATOM_K
     )
 
-    var scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        scales_total
-    )
-    var scales_host = NDBuffer[scales_dtype, 5, _, static_scales_shape](
+    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_total)
+    var scales_host = NDBuffer[rank=5, scales_dtype, _, static_scales_shape](
         scales_host_ptr, dynamic_scales_shape
     )
 
-    var scales_host_ptr_ref = UnsafePointer[Scalar[scales_dtype]].alloc(
-        scales_total
-    )
-    var scales_host_ref = NDBuffer[scales_dtype, 5, _, static_scales_shape](
-        scales_host_ptr_ref, dynamic_scales_shape
-    )
+    var scales_host_ptr_ref = alloc[Scalar[scales_dtype]](scales_total)
+    var scales_host_ref = NDBuffer[
+        rank=5, scales_dtype, _, static_scales_shape
+    ](scales_host_ptr_ref, dynamic_scales_shape)
 
     var scales_device = ctx.enqueue_create_buffer[scales_dtype](scales_total)
-    var scales_device_nd = NDBuffer[scales_dtype, 5, _, static_scales_shape](
-        scales_device.unsafe_ptr(), dynamic_scales_shape
-    )
+    var scales_device_nd = NDBuffer[
+        rank=5, scales_dtype, _, static_scales_shape
+    ](scales_device.unsafe_ptr(), dynamic_scales_shape)
 
     var scales_device_ref = ctx.enqueue_create_buffer[scales_dtype](
         scales_total
     )
     var scales_device_nd_ref = NDBuffer[
-        scales_dtype, 5, _, static_scales_shape
+        rank=5, scales_dtype, _, static_scales_shape
     ](scales_device_ref.unsafe_ptr(), dynamic_scales_shape)
 
     var input_tensor = from_ndbuffer_row_major(device_nd_buffer)
@@ -243,11 +233,11 @@ def test_nvfp4_quantization[
             ](row_idx, col_idx)
 
             var output_fp32 = cast_uint_to_fp4e2m1[
-                out_dtype = DType.float32,
+                out_dtype=DType.float32,
                 out_width=SF_VECTOR_SIZE,
             ](output_vector)
             var output_fp32_ref = cast_uint_to_fp4e2m1[
-                out_dtype = DType.float32,
+                out_dtype=DType.float32,
                 out_width=SF_VECTOR_SIZE,
             ](output_vector_ref)
 
@@ -261,7 +251,7 @@ def test_nvfp4_quantization[
     scales_host_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_nvfp4_quantization[
             DType.bfloat16,

@@ -15,21 +15,21 @@
 You can import these APIs from the `time` package. For example:
 
 ```mojo
-from time import perf_counter_ns
+from std.time import perf_counter_ns
 ```
 """
 
-from math import floor
-from os import abort
-from ffi import external_call
-from sys import (
+from std.math import floor
+from std.os import abort
+from std.ffi import external_call
+from std.sys import (
     CompilationTarget,
     is_amd_gpu,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
 )
-from sys._assembly import inlined_assembly
+from std.sys._assembly import inlined_assembly
 
 # ===-----------------------------------------------------------------------===#
 # Utilities
@@ -51,7 +51,7 @@ comptime _NSEC_PER_SEC = _NSEC_PER_USEC * _USEC_PER_MSEC * _MSEC_PER_SEC
 
 
 @fieldwise_init
-struct _CTimeSpec(Defaultable, Stringable, TrivialRegisterPassable, Writable):
+struct _CTimeSpec(Defaultable, TrivialRegisterPassable, Writable):
     var tv_sec: Int  # Seconds
     var tv_subsec: Int  # subsecond (nanoseconds on linux and usec on mac)
 
@@ -60,14 +60,14 @@ struct _CTimeSpec(Defaultable, Stringable, TrivialRegisterPassable, Writable):
         self.tv_subsec = 0
 
     fn as_nanoseconds(self) -> UInt:
-        @parameter
-        if CompilationTarget.is_linux():
+        comptime if CompilationTarget.is_linux():
             return UInt(self.tv_sec * _NSEC_PER_SEC + self.tv_subsec)
         else:
             return UInt(
                 self.tv_sec * _NSEC_PER_SEC + self.tv_subsec * _NSEC_PER_USEC
             )
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)
@@ -90,8 +90,7 @@ fn _clock_gettime(clockid: Int) -> _CTimeSpec:
 
 @always_inline
 fn _gettime_as_nsec_unix(clockid: Int) -> UInt:
-    @parameter
-    if CompilationTarget.is_linux():
+    comptime if CompilationTarget.is_linux():
         var ts = _clock_gettime(clockid)
         return ts.as_nanoseconds()
     else:
@@ -108,16 +107,12 @@ fn _gpu_clock() -> UInt:
 
 
 fn _gpu_clock_inst() -> StaticString:
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return "llvm.nvvm.read.ptx.sreg.clock64"
     elif is_amd_gpu():
         return "llvm.amdgcn.s.memtime"
     else:
-        return CompilationTarget.unsupported_target_error[
-            StaticString,
-            operation="_gpu_clock",
-        ]()
+        CompilationTarget.unsupported_target_error[operation="_gpu_clock",]()
 
 
 @always_inline
@@ -151,8 +146,7 @@ fn _realtime_nanoseconds() -> UInt:
 fn _monotonic_nanoseconds() -> UInt:
     """Returns the current monotonic time in nanoseconds"""
 
-    @parameter
-    if is_gpu():
+    comptime if is_gpu():
         return _gpu_clock()
     else:
         return _gettime_as_nsec_unix(_CLOCK_MONOTONIC)
@@ -235,8 +229,7 @@ fn global_perf_counter_ns() -> SIMD[DType.uint64, 1]:
         The current time in ns.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return llvm_intrinsic[
             "llvm.nvvm.read.ptx.sreg.globaltimer",
             UInt64,
@@ -332,11 +325,8 @@ fn sleep(sec: Float64):
     if sec <= 0.0:
         return
 
-    @parameter
-    if is_gpu():
-
-        @parameter
-        if is_nvidia_gpu():
+    comptime if is_gpu():
+        comptime if is_nvidia_gpu():
             # NVIDIA's nanosleep has a max duration of 1ms (1,000,000 ns).
             # Loop to handle longer sleep durations.
             comptime MAX_SLEEP_NS = 1_000_000  # 1ms in nanoseconds
@@ -381,7 +371,7 @@ fn sleep(sec: Float64):
             return
         else:
             # Other GPUs are not supported.
-            return CompilationTarget.unsupported_target_error[
+            CompilationTarget.unsupported_target_error[
                 operation="time.sleep()",
                 note="time.sleep() is only supported on NVIDIA and AMD GPUs",
             ]()
@@ -404,8 +394,7 @@ fn sleep(sec: UInt):
         sec: The number of seconds to sleep for.
     """
 
-    @parameter
-    if is_gpu():
+    comptime if is_gpu():
         return sleep(Float64(sec))
 
     external_call["sleep", NoneType](Int32(sec))

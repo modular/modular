@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from os import Atomic
+from std.math import ceildiv
+from std.os import Atomic
 
-from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, thread_idx
-from gpu.host.info import is_cpu
-from gpu.host import DeviceBuffer
-from gpu.memory import AddressSpace
-from memory import stack_allocation
-from runtime.asyncrt import DeviceContextPtr
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, thread_idx
+from std.gpu.host.info import is_cpu
+from std.gpu.host import DeviceBuffer
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 comptime bin_width = Int(UInt8.MAX)
 
@@ -60,7 +60,7 @@ fn _histogram_gpu(
 
         # Allocate shared memory for the histogram
         var shared_mem = stack_allocation[
-            bin_width, Int64, address_space = AddressSpace.SHARED
+            bin_width, Int64, address_space=AddressSpace.SHARED
         ]()
 
         # Initialize the shared memory to 0
@@ -109,12 +109,11 @@ struct Histogram:
     fn execute[
         target: StaticString
     ](
-        output: OutputTensor[dtype = DType.int64, rank=1],
-        input: InputTensor[dtype = DType.uint8, rank=1],
+        output: OutputTensor[dtype=DType.int64, rank=1, ...],
+        input: InputTensor[dtype=DType.uint8, rank=1, ...],
         ctx: DeviceContextPtr,
     ) raises:
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             _histogram_cpu(output, input)
         else:
             _histogram_gpu(output, input, ctx)

@@ -11,20 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.math import rsqrt
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import rsqrt
-
-from itertools import product
-from layout._coord import Coord, Idx, coord_to_index_list
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.itertools import product
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from layout.math import mean, variance
 from nn.normalization import *
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn run_layer_norm_cpu[
@@ -105,7 +106,7 @@ fn run_layer_norm_cpu[
     beta_ptr.free()
 
 
-def main():
+def main() raises:
     print("0")
     run_layer_norm_cpu[DType.float32](Index(3, 5))
     print("1")

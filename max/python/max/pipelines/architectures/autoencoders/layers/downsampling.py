@@ -13,12 +13,12 @@
 
 """Downsampling utilities for MAX framework."""
 
-from max import functional as F
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.nn import Conv2d, Module
+from max.experimental.nn.norm import LayerNorm, RMSNorm
+from max.experimental.tensor import Tensor
 from max.graph import DeviceRef
-from max.nn import Conv2d, Module
-from max.nn.norm import LayerNorm, RMSNorm
-from max.tensor import Tensor
 
 
 class Downsample2D(Module[[Tensor], Tensor]):

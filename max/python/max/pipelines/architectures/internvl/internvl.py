@@ -32,29 +32,29 @@ from max.graph import (
 from max.graph.ops.allgather import allgather
 from max.graph.ops.resize import InterpolationMode
 from max.graph.weight import _compute_shard_range
-from max.nn.legacy.attention import TensorParallelAttentionWithRope
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.comm import Allreduce
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kernels import flash_attention_gpu
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.layer import LayerList, Module, Shardable
-from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.legacy.norm import LayerNorm, RMSNorm
-from max.nn.legacy.rotary_embedding import DynamicRotaryEmbedding
-from max.nn.legacy.transformer.distributed_transformer import (
+from max.nn.attention import (
+    TensorParallelAttentionWithRope,
+    num_heads_for_device,
+)
+from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.comm import Allreduce
+from max.nn.embedding import VocabParallelEmbedding
+from max.nn.kernels import flash_attention_gpu
+from max.nn.kv_cache import PagedCacheValues
+from max.nn.layer import LayerList, Module, Shardable
+from max.nn.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.norm import LayerNorm, RMSNorm
+from max.nn.rotary_embedding import DynamicRotaryEmbedding
+from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
-from max.pipelines.architectures.llama3_legacy.model_config import (
+from max.pipelines.architectures.llama3.model_config import (
     Llama3Config as Qwen2Config,
 )
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 
 from .embedding_utils import merge_multimodal_embeddings
-from .layers.attention import (
-    InternVLMultiheadAttention,
-    compute_heads_per_device,
-)
+from .layers.attention import InternVLMultiheadAttention
 from .model_config import InternVLConfig
 
 
@@ -197,8 +197,8 @@ class InternVLDecoderLayer(Module):
             norm_xs,
             signal_buffers,
             kv_collections,
-            freqs_cis=freqs_cis,
-            input_row_offsets=input_row_offsets,
+            freqs_cis,
+            input_row_offsets,
         )
 
         # Add residual.
@@ -412,7 +412,7 @@ class InternVisionEmbeddings(Module, Shardable):
             in_dim=3 * self.patch_size * self.patch_size,
             out_dim=self.embed_dim,
             dtype=self.dtype,
-            device=device if device else DeviceRef.CPU(),
+            device=device or DeviceRef.CPU(),
             has_bias=True,
         )
 
@@ -423,14 +423,14 @@ class InternVisionEmbeddings(Module, Shardable):
             "class_embedding",
             dtype=self.dtype,
             shape=(1, 1, self.embed_dim),
-            device=device if device else DeviceRef.CPU(),
+            device=device or DeviceRef.CPU(),
         )
 
         self.position_embedding = Weight(
             "position_embedding",
             dtype=self.dtype,
             shape=(1, self.num_positions, self.embed_dim),
-            device=device if device else DeviceRef.CPU(),
+            device=device or DeviceRef.CPU(),
         )
 
     @property
@@ -1005,8 +1005,8 @@ class InternVisionEncoderLayer(Module):
             DeviceAttentionParams with device-specific attention parameters
         """
         num_heads = self.config.vision_config.num_attention_heads
-        device_heads = compute_heads_per_device(
-            total_heads=num_heads,
+        device_heads = num_heads_for_device(
+            num_heads=num_heads,
             device_idx=device_idx,
             num_devices=len(self.devices),
         )

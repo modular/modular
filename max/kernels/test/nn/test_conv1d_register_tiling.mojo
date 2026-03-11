@@ -13,18 +13,15 @@
 
 # Use `kgen --emit=asm %s -o %t.asm` to exam the assembly code.
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import simd_width_of
+from std.sys import simd_width_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from nn.conv import conv1d_update_wo_tile
 from nn.conv_utils import ConvShape
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils.index import Index
+from std.utils.index import Index
 
 comptime type = DType.float32
 comptime micro_kernel_height = 2
@@ -61,9 +58,9 @@ comptime filter_shape = DimList(num_micro_tile, S, C, micro_kernel_f_size)
 
 @export(ABI="C")
 fn conv1d_register_tiling(
-    output: UnsafePointer[Scalar[type]],
-    input: UnsafePointer[Scalar[type]],
-    filter: UnsafePointer[Scalar[type]],
+    output: UnsafePointer[Scalar[type], MutAnyOrigin],
+    input: UnsafePointer[Scalar[type], MutAnyOrigin],
+    filter: UnsafePointer[Scalar[type], MutAnyOrigin],
     c_tile_size: Int,
     f_tile_offset: Int,
     f_tile_size: Int,
@@ -110,15 +107,19 @@ fn test_conv1d_register_tiling() raises:
     var output_stack = InlineArray[Scalar[type], Int(output_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[type, 3, _, output_shape](output_stack.unsafe_ptr())
+    var output = NDBuffer[rank=3, type, _, output_shape](
+        output_stack.unsafe_ptr()
+    )
     var input_stack = InlineArray[Scalar[type], Int(input_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[type, 3, _, input_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[rank=3, type, _, input_shape](input_stack.unsafe_ptr())
     var filter_stack = InlineArray[Scalar[type], Int(filter_shape.product())](
         uninitialized=True
     )
-    var filter = NDBuffer[type, 4, _, filter_shape](filter_stack.unsafe_ptr())
+    var filter = NDBuffer[rank=4, type, _, filter_shape](
+        filter_stack.unsafe_ptr()
+    )
 
     output.fill(0.0)
     input.fill(1.0)
@@ -164,5 +165,5 @@ fn test_conv1d_register_tiling() raises:
     assert_equal(SIMD[type, simd_size](0), actual)
 
 
-def main():
+def main() raises:
     test_conv1d_register_tiling()

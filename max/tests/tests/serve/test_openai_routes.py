@@ -13,13 +13,17 @@
 
 
 import logging
+from collections.abc import Generator
+from contextlib import contextmanager
 from threading import Thread
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient as AsyncTestClient
 from fastapi.testclient import TestClient as SyncTestClient
-from max.interfaces import GenerationStatus, PipelineTask
+from max.interfaces import GenerationStatus, PipelineTask, RequestID
 from max.pipelines.core import TextContext
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
@@ -30,11 +34,16 @@ from max.serve.pipelines.echo_gen import (
     EchoTokenGenerator,
 )
 from max.serve.pipelines.llm import TokenGeneratorOutput
-from max.serve.router.openai_routes import _process_chat_log_probabilities
+from max.serve.router.openai_routes import (
+    OpenAIChatResponseGenerator,
+    _process_chat_log_probabilities,
+)
 from max.serve.schemas.openai import (
+    ChatCompletionStreamOptions,
     ChatCompletionTokenLogprob,
     CreateChatCompletionRequest,
     CreateChatCompletionResponse,
+    CreateChatCompletionStreamResponse,
     Logprobs2,
 )
 
@@ -63,9 +72,7 @@ def patch_pipeline_registry_context_type(
 
 @pytest_asyncio.fixture(scope="function")
 def app(fixture_tokenizer, mock_pipeline_config: PipelineConfig):  # noqa: ANN001, ANN201
-    settings = Settings(
-        api_types=[APIType.OPENAI], MAX_SERVE_USE_HEARTBEAT=False
-    )
+    settings = Settings(api_types=[APIType.OPENAI], use_heartbeat=False)
 
     model_factory = EchoTokenGenerator
     tokenizer = EchoPipelineTokenizer()
@@ -440,3 +447,303 @@ def test_max_server_response_with_logprobs() -> None:
     assert choice.logprobs.content[0].token == "Hello"
     assert choice.logprobs.content[0].logprob == -0.5
     assert len(choice.logprobs.content[0].top_logprobs) == 2
+
+
+# ============================================================================
+# Tests for reasoning functionality
+# ============================================================================
+
+
+def _make_mock_request() -> Mock:
+    """Create a mock request for reasoning tests."""
+    mock_request = Mock()
+    mock_request.request_id = RequestID("test")
+    mock_request.model_name = "test-model"
+    mock_request.tools = None
+    mock_request.response_format = None
+    mock_request.timestamp_ns = 1
+    mock_request.request_path = "/v1/chat/completions"
+    mock_request.sampling_params = Mock()
+    mock_request.sampling_params.stop = []
+    return mock_request
+
+
+@contextmanager
+def _patch_openai_metrics() -> Generator[None, None, None]:
+    """Patch metrics for reasoning tests."""
+    with (
+        patch("max.serve.router.openai_routes.METRICS", MagicMock()),
+        patch("max.serve.router.openai_routes.record_request_start"),
+        patch("max.serve.router.openai_routes.record_request_end"),
+    ):
+        yield
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "chunks,expected_reasoning,expected_content,expected_completion_tokens",
+    [
+        pytest.param(
+            [
+                TokenGeneratorOutput(
+                    status=GenerationStatus.ACTIVE,
+                    decoded_reasoning_tokens="thinking...",
+                    reasoning_token_count=3,
+                    decoded_tokens=None,
+                    token_count=0,
+                    prompt_token_count=5,
+                ),
+                TokenGeneratorOutput(
+                    status=GenerationStatus.END_OF_SEQUENCE,
+                    decoded_reasoning_tokens=None,
+                    reasoning_token_count=0,
+                    decoded_tokens="hello world",
+                    token_count=2,
+                    prompt_token_count=5,
+                ),
+            ],
+            "thinking...",
+            "hello world",
+            5,
+            id="with_reasoning",
+        ),
+        pytest.param(
+            [
+                TokenGeneratorOutput(
+                    status=GenerationStatus.ACTIVE,
+                    decoded_reasoning_tokens=None,
+                    reasoning_token_count=0,
+                    decoded_tokens="hello",
+                    token_count=1,
+                    prompt_token_count=5,
+                ),
+                TokenGeneratorOutput(
+                    status=GenerationStatus.END_OF_SEQUENCE,
+                    decoded_reasoning_tokens=None,
+                    reasoning_token_count=0,
+                    decoded_tokens=" world",
+                    token_count=1,
+                    prompt_token_count=5,
+                ),
+            ],
+            None,
+            "hello world",
+            2,
+            id="no_reasoning",
+        ),
+        pytest.param(
+            [
+                TokenGeneratorOutput(
+                    status=GenerationStatus.ACTIVE,
+                    decoded_reasoning_tokens="thinking deeply",
+                    reasoning_token_count=5,
+                    decoded_tokens=None,
+                    token_count=0,
+                    prompt_token_count=8,
+                ),
+                TokenGeneratorOutput(
+                    status=GenerationStatus.END_OF_SEQUENCE,
+                    decoded_reasoning_tokens=None,
+                    reasoning_token_count=0,
+                    decoded_tokens="here is my answer",
+                    token_count=10,
+                    prompt_token_count=8,
+                ),
+            ],
+            "thinking deeply",
+            "here is my answer",
+            15,
+            id="usage_sums",
+        ),
+        pytest.param(
+            [
+                TokenGeneratorOutput(
+                    status=GenerationStatus.ACTIVE,
+                    decoded_reasoning_tokens="A",
+                    reasoning_token_count=1,
+                    decoded_tokens=None,
+                    token_count=0,
+                    prompt_token_count=5,
+                ),
+                TokenGeneratorOutput(
+                    status=GenerationStatus.ACTIVE,
+                    decoded_reasoning_tokens="B",
+                    reasoning_token_count=1,
+                    decoded_tokens=None,
+                    token_count=0,
+                    prompt_token_count=5,
+                ),
+                TokenGeneratorOutput(
+                    status=GenerationStatus.END_OF_SEQUENCE,
+                    decoded_reasoning_tokens=None,
+                    reasoning_token_count=0,
+                    decoded_tokens="C",
+                    token_count=1,
+                    prompt_token_count=5,
+                ),
+            ],
+            "AB",
+            "C",
+            3,
+            id="multiple_reasoning_chunks_joined",
+        ),
+        pytest.param(
+            [
+                TokenGeneratorOutput(
+                    status=GenerationStatus.ACTIVE,
+                    decoded_reasoning_tokens="",
+                    reasoning_token_count=0,
+                    decoded_tokens=None,
+                    token_count=0,
+                    prompt_token_count=5,
+                ),
+                TokenGeneratorOutput(
+                    status=GenerationStatus.END_OF_SEQUENCE,
+                    decoded_reasoning_tokens=None,
+                    reasoning_token_count=0,
+                    decoded_tokens="hello",
+                    token_count=1,
+                    prompt_token_count=5,
+                ),
+            ],
+            None,
+            "hello",
+            1,
+            id="empty_string_reasoning_is_none",
+        ),
+    ],
+)
+async def test_openai_chat_completion_reasoning(
+    chunks: list[TokenGeneratorOutput],
+    expected_reasoning: str | None,
+    expected_content: str,
+    expected_completion_tokens: int,
+) -> None:
+    """Test non-streaming response with various reasoning scenarios."""
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(return_value=chunks)
+
+    mock_request = _make_mock_request()
+
+    with _patch_openai_metrics():
+        generator = OpenAIChatResponseGenerator(mock_pipeline)
+        response = await generator.complete([mock_request])
+
+    assert response.choices[0].message.reasoning == expected_reasoning
+    assert response.choices[0].message.content == expected_content
+    assert response.usage is not None
+    assert response.usage.completion_tokens == expected_completion_tokens
+
+
+async def _run_stream(
+    chunks: list[TokenGeneratorOutput],
+    *,
+    stream_options: ChatCompletionStreamOptions | None = None,
+) -> list[CreateChatCompletionStreamResponse]:
+    """Run streaming generator and return parsed responses."""
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+
+    async def mock_next_token_chunk(request: Any) -> Any:
+        for chunk in chunks:
+            yield chunk
+
+    mock_pipeline.next_token_chunk = mock_next_token_chunk
+    mock_request = _make_mock_request()
+
+    with _patch_openai_metrics():
+        generator = OpenAIChatResponseGenerator(
+            mock_pipeline, stream_options=stream_options
+        )
+        payloads = [
+            p
+            async for p in generator.stream(mock_request)
+            if isinstance(p, str) and p != "[DONE]"
+        ]
+
+    return [
+        CreateChatCompletionStreamResponse.model_validate_json(p)
+        for p in payloads
+    ]
+
+
+_STREAM_REASONING_CHUNKS = [
+    TokenGeneratorOutput(
+        status=GenerationStatus.ACTIVE,
+        decoded_reasoning_tokens="thinking",
+        reasoning_token_count=2,
+        decoded_tokens=None,
+        token_count=0,
+        prompt_token_count=5,
+    ),
+    TokenGeneratorOutput(
+        status=GenerationStatus.END_OF_SEQUENCE,
+        decoded_reasoning_tokens=None,
+        reasoning_token_count=0,
+        decoded_tokens="answer",
+        token_count=1,
+        prompt_token_count=5,
+    ),
+]
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_stream_reasoning_in_delta() -> None:
+    """Test that streaming response includes reasoning in delta."""
+    responses = await _run_stream(_STREAM_REASONING_CHUNKS)
+    assert len(responses) == 2
+    assert responses[0].choices[0].delta.reasoning == "thinking"
+    assert responses[0].choices[0].delta.content is None
+    assert responses[1].choices[0].delta.content == "answer"
+    assert responses[1].choices[0].delta.reasoning is None
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_stream_usage_includes_reasoning_tokens() -> None:
+    """Test streaming usage with stream_options.include_usage=True."""
+    responses = await _run_stream(
+        _STREAM_REASONING_CHUNKS,
+        stream_options=ChatCompletionStreamOptions(include_usage=True),
+    )
+    usage = responses[-1].usage
+    assert usage is not None
+    assert usage.completion_tokens == 3
+    assert usage.prompt_tokens == 5
+    assert usage.total_tokens == 8
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_stream_reasoning_finish_reason() -> None:
+    """Test that intermediate chunks have finish_reason=None and final has 'stop'."""
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="thinking",
+            reasoning_token_count=2,
+            decoded_tokens=None,
+            token_count=0,
+            prompt_token_count=5,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens="partial",
+            token_count=1,
+            prompt_token_count=5,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens=" answer",
+            token_count=1,
+            prompt_token_count=5,
+        ),
+    ]
+    responses = await _run_stream(chunks)
+    assert len(responses) == 3
+    assert responses[0].choices[0].finish_reason is None
+    assert responses[1].choices[0].finish_reason is None
+    assert responses[2].choices[0].finish_reason == "stop"

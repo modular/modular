@@ -16,13 +16,13 @@
 # _argn
 # ===-----------------------------------------------------------------------===#
 
-from math import align_down, ceildiv, iota
-from sys.info import simd_width_of
+from std.math import align_down, ceildiv, iota
+from std.sys.info import simd_width_of
 
-from algorithm import sync_parallelize
-from algorithm.functional import _get_num_workers
-from math.math import min as _min
-from layout._tile_tensor import TileTensor
+from std.algorithm import sync_parallelize
+from std.algorithm.functional import _get_num_workers
+from std.math.math import min as _min
+from layout import TileTensor
 
 
 fn _argn[
@@ -53,8 +53,7 @@ fn _argn[
     if canonical_axis != rank - 1:
         raise Error("axis other than innermost not supported yet")
 
-    @parameter
-    for subaxis in range(rank):
+    comptime for subaxis in range(rank):
         var output_subaxis = output.dim(subaxis)
         var input_subaxis = output.dim(subaxis)
         if subaxis == canonical_axis:
@@ -69,10 +68,9 @@ fn _argn[
     var chunk_size: Int
     var parallel_size = 1
 
-    @parameter
-    if rank == 1:
-        input_stride = input.numel()
-        output_stride = output.numel()
+    comptime if rank == 1:
+        input_stride = input.num_elements()
+        output_stride = output.num_elements()
         chunk_size = 1
     else:
         input_stride = Int(input.dynamic_stride(canonical_axis - 1))
@@ -83,7 +81,7 @@ fn _argn[
 
         # don't over-schedule if parallel_size < _get_num_workers output
         var num_workers = _min(
-            _get_num_workers(input.numel()),
+            _get_num_workers(input.num_elements()),
             parallel_size,
         )
         chunk_size = ceildiv(parallel_size, num_workers)
@@ -100,8 +98,7 @@ fn _argn[
         ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
-            @parameter
-            if is_max:
+            comptime if is_max:
                 return a.le(b)
             else:
                 return a.ge(b)
@@ -113,8 +110,7 @@ fn _argn[
         ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
-            @parameter
-            if is_max:
+            comptime if is_max:
                 return a.lt(b)
             else:
                 return a.gt(b)
@@ -130,8 +126,7 @@ fn _argn[
             var global_val: Scalar[input.dtype]
 
             # initialize limits
-            @parameter
-            if is_max:
+            comptime if is_max:
                 global_val = Scalar[input.dtype].MIN
             else:
                 global_val = Scalar[input.dtype].MAX
@@ -155,8 +150,7 @@ fn _argn[
                 global_indices = mask.select(global_indices, indices)
                 global_values = mask.select(global_values, curr_values)
 
-            @parameter
-            if is_max:
+            comptime if is_max:
                 global_val = global_values.reduce_max()
             else:
                 global_val = global_values.reduce_min()

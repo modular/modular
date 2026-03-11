@@ -11,14 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import block_dim, block_idx, grid_dim, thread_idx
-from gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
-from layout._coord import Coord, Idx
-from layout._layout import TensorLayout, Layout
-from layout._tile_tensor import TileTensor
-from math import ceildiv
-from sys.info import align_of
-from utils.index import IndexList
+from std.gpu import (
+    block_dim,
+    block_idx_int as block_idx,
+    grid_dim,
+    thread_idx_int as thread_idx,
+)
+from std.gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
+from layout import Coord, Idx, TileTensor
+from layout.tile_layout import TensorLayout, Layout
+from std.math import ceildiv
+from std.sys.info import align_of
+from std.utils.index import IndexList
 
 
 fn _fill_strides_indexlist[
@@ -33,8 +37,7 @@ fn _fill_strides_indexlist[
     comptime assert rank > 0
     strides[rank - 1] = 1
 
-    @parameter
-    for idx in range(rank - 1):
+    comptime for idx in range(rank - 1):
         comptime axis = rank - idx - 2
         var next_axis_stride = strides[axis + 1]
         var next_axis_dim = input_shape[axis + 1]
@@ -60,12 +63,12 @@ fn get_row_offset[
 fn scalar_copy_row[
     dtype: DType,
 ](
-    input_ptr: UnsafePointer[Scalar[dtype]],
-    output_ptr: UnsafePointer[mut=True, Scalar[dtype]],
+    input_ptr: UnsafePointer[Scalar[dtype], _],
+    output_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     row_length: Int,
     threads_per_row: Int,
 ):
-    var start_col = Int(thread_idx.x) % threads_per_row
+    var start_col = thread_idx.x % threads_per_row
     for col in range(start_col, row_length, threads_per_row):
         output_ptr[col] = input_ptr[col]
 
@@ -75,8 +78,8 @@ fn vector_copy_row[
     dtype: DType,
     simd_width: Int,
 ](
-    input_ptr: UnsafePointer[Scalar[dtype]],
-    output_ptr: UnsafePointer[mut=True, Scalar[dtype]],
+    input_ptr: UnsafePointer[Scalar[dtype], _],
+    output_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     scaled_row_length: Int,
     row_length: Int,
     threads_per_row: Int,
@@ -91,7 +94,7 @@ fn vector_copy_row[
 
     if input_aligned and output_aligned and simd_width > 1:  # vectorized loads
         var iter_width = threads_per_row * simd_width
-        var start_col = (Int(thread_idx.x) % threads_per_row) * simd_width
+        var start_col = (thread_idx.x % threads_per_row) * simd_width
         for col in range(start_col, scaled_row_length, iter_width):
             output_ptr.store[width=simd_width](
                 col, input_ptr.load[width=simd_width](col)
@@ -123,13 +126,13 @@ fn padded_copy_kernel[
     row_length: Int,
     scaled_row_length: Int,
 ):
-    var start_row = Int(block_idx.x) * rows_per_sm
+    var start_row = block_idx.x * rows_per_sm
     var threads_per_row = Int(block_dim.x)
 
     var rows_per_iter = Int(block_dim.y)
     var end_row = min(start_row + rows_per_sm, total_rows)
 
-    start_row += Int(thread_idx.y)
+    start_row += thread_idx.y
 
     for row in range(start_row, end_row, rows_per_iter):
         var output_offset = get_row_offset(
@@ -155,14 +158,14 @@ fn _pad_constant_impl[
     max_threads: Int = 256,
     threads_per_row: Int = 16,
 ](
-    input_tensor: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    input_tensor: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     output_tensor: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
     var row_length = Int(input_tensor.dim(input_tensor.rank - 1))
-    var total_rows = input_tensor.numel() // row_length
+    var total_rows = input_tensor.num_elements() // row_length
 
     comptime assert threads_per_row > 0 and max_threads % threads_per_row == 0
 
@@ -182,10 +185,10 @@ fn _pad_constant_impl[
     var scaled_row_length = (row_length // simd_width) * simd_width
     comptime block_rows = max_threads // threads_per_row
     comptime kernel = padded_copy_kernel[
-        input_origin = ImmutOrigin(input_tensor.origin),
-        InputLayoutType = input_tensor.LayoutType,
-        output_origin = output_tensor.origin,
-        OutputLayoutType = output_tensor.LayoutType,
+        input_origin=ImmutOrigin(input_tensor.origin),
+        InputLayoutType=input_tensor.LayoutType,
+        output_origin=output_tensor.origin,
+        OutputLayoutType=output_tensor.LayoutType,
         dtype=dtype,
         simd_width=simd_width,
     ]
@@ -205,11 +208,11 @@ fn _pad_constant_impl[
 fn pad_constant[
     rank: Int, dtype: DType, padding_type: DType
 ](
-    output: UnsafePointer[mut=True, Scalar[dtype]],
+    output: UnsafePointer[mut=True, Scalar[dtype], _],
     output_shape: IndexList[rank],
-    input: UnsafePointer[Scalar[dtype]],
+    input: UnsafePointer[Scalar[dtype], _],
     input_shape: IndexList[rank],
-    paddings: UnsafePointer[Scalar[padding_type]],
+    paddings: UnsafePointer[Scalar[padding_type], _],
     constant: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
@@ -244,8 +247,7 @@ fn pad_constant[
 
     var output_size: Int = 1
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         output_size *= output_shape[i]
 
     var output_buffer = DeviceBuffer[dtype](

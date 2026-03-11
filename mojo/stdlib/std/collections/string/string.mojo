@@ -12,32 +12,34 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the core `String` type and related utilities."""
 
-from collections import KeyElement
-from collections.string import CodepointsIter
-from collections.string._parsing_numbers.parsing_floats import _atof
-from collections.string._utf8 import UTF8Chunks, _is_valid_utf8
-from collections.string.format import _FormatUtils
-from collections.string.string_slice import (
+from std.builtin.globals import global_constant
+from std.collections import KeyElement
+from std.collections.string import CodepointsIter
+from std.collections.string._parsing_numbers.parsing_floats import _atof
+from std.collections.string._utf8 import UTF8Chunks, _is_valid_utf8
+from std.collections.string.format import _FormatUtils
+from std.collections.string.string_slice import (
     CodepointSliceIter,
     _to_string_list,
     _unsafe_strlen,
 )
-from builtin.builtin_slice import ContiguousSlice
-from hashlib.hasher import Hasher
-from format._utils import (
+from std.builtin.builtin_slice import ContiguousSlice
+from std.hashlib.hasher import Hasher
+from std.format.tstring import TString
+from std.format._utils import (
     STACK_BUFFER_BYTES,
     _TotalWritableBytes,
     _WriteBufferStack,
 )
-from os import PathLike, abort
-from os.atomic import Atomic, Consistency, fence
-from sys import size_of, bit_width_of
-from ffi import c_char, CStringSlice
-from sys.info import is_32bit
+from std.os import PathLike, abort
+from std.os.atomic import Atomic, Consistency, fence
+from std.sys import size_of, bit_width_of
+from std.ffi import c_char, CStringSlice
+from std.sys.info import is_32bit
 
-from bit import count_leading_zeros
-from memory import memcmp, memcpy, memset
-from python import ConvertibleFromPython, ConvertibleToPython, PythonObject
+from std.bit import count_leading_zeros
+from std.memory import memcmp, memcpy, memset
+from std.python import ConvertibleFromPython, ConvertibleToPython, PythonObject
 
 # ===----------------------------------------------------------------------=== #
 # String
@@ -55,9 +57,7 @@ struct String(
     IntableRaising,
     KeyElement,
     PathLike,
-    Representable,
     Sized,
-    Stringable,
     Writable,
     Writer,
 ):
@@ -353,15 +353,20 @@ struct String(
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = Self.FLAG_HAS_NUL_TERMINATOR
 
-    @deprecated(
-        "Strings must contain valid utf8, use `String(unsafe_from_utf8=...)`"
-        " instead"
-    )
-    @doc_private
-    fn __init__(out self, *, bytes: Span[Byte, ...]):
-        self = Self(unsafe_from_utf8=bytes)
+    @implicit
+    fn __init__(out self, tstring: TString):
+        """Construct a string from a TString (template string).
 
-    fn __init__(out self, *, unsafe_from_utf8: Span[Byte]):
+        This constructor enables implicit conversion from TString to String,
+        allowing t-strings to be used seamlessly where strings are expected.
+
+        Args:
+            tstring: The TString to convert to a String.
+        """
+        self = Self()
+        tstring.write_to(self)
+
+    fn __init__(out self, *, unsafe_from_utf8: Span[Byte, _]):
         """Construct a string by copying the data. This constructor is explicit
         because it can involve memory allocation.
 
@@ -375,10 +380,9 @@ struct String(
         Safety:
             `unsafe_from_utf8` MUST be valid UTF-8 encoded data.
         """
-        debug_assert(
-            _is_valid_utf8(unsafe_from_utf8),
-            "String: span is not valid UTF-8",
-        )
+        assert _is_valid_utf8(
+            unsafe_from_utf8
+        ), "String: span is not valid UTF-8"
         var length = len(unsafe_from_utf8)
         self = Self(unsafe_uninit_length=length)
         memcpy(
@@ -387,7 +391,7 @@ struct String(
             count=length,
         )
 
-    fn __init__(out self, *, from_utf8_lossy: Span[Byte]):
+    fn __init__(out self, *, from_utf8_lossy: Span[Byte, _]):
         """Construct a string from a span of bytes, including invalid UTF-8.
 
         Since `String` is guaranteed to be valid UTF-8, invalid UTF-8 sequences
@@ -420,7 +424,7 @@ struct String(
             if len(chunk.invalid) > 0:
                 self += REPLACEMENT
 
-    fn __init__(out self, *, from_utf8: Span[Byte]) raises:
+    fn __init__(out self, *, from_utf8: Span[Byte, _]) raises:
         """Construct a string from a span of bytes, raising an error if the data
         is not valid UTF-8.
 
@@ -433,17 +437,6 @@ struct String(
         if not _is_valid_utf8(from_utf8):
             raise Error("Cannot construct a String from invalid UTF-8 data")
         self = String(unsafe_from_utf8=from_utf8)
-
-    fn __init__[T: Stringable](out self, value: T):
-        """Initialize from a type conforming to `Stringable`.
-
-        Parameters:
-            T: The type conforming to Stringable.
-
-        Args:
-            value: The object to get the string representation of.
-        """
-        self = value.__str__()
 
     # ===------------------------------------------------------------------=== #
     # Writables
@@ -634,7 +627,7 @@ struct String(
     fn __init__(
         out self,
         *,
-        unsafe_from_utf8_ptr: UnsafePointer[mut=False, c_char],
+        unsafe_from_utf8_ptr: UnsafePointer[mut=False, c_char, _],
     ):
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
@@ -649,7 +642,7 @@ struct String(
         self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     fn __init__(
-        out self, *, unsafe_from_utf8_ptr: UnsafePointer[mut=False, UInt8]
+        out self, *, unsafe_from_utf8_ptr: UnsafePointer[mut=False, UInt8, _]
     ):
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
@@ -664,7 +657,7 @@ struct String(
         self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     @always_inline("nodebug")
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copy initialize the string from another string.
 
         Args:
@@ -742,9 +735,7 @@ struct String(
     fn _is_unique(mut self) -> Bool:
         """Return true if the refcount is 1."""
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
-            return (
-                self._refcount().load[ordering = Consistency.MONOTONIC]() == 1
-            )
+            return self._refcount().load[ordering=Consistency.MONOTONIC]() == 1
         else:
             return False
 
@@ -754,7 +745,7 @@ struct String(
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             # See `ArcPointer`'s refcount implementation for more details on the
             # use of memory orderings.
-            _ = self._refcount().fetch_add[ordering = Consistency.MONOTONIC](1)
+            _ = self._refcount().fetch_add[ordering=Consistency.MONOTONIC](1)
 
     @always_inline("nodebug")
     fn _drop_ref(mut self):
@@ -764,7 +755,7 @@ struct String(
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             var ptr = self._ptr_or_data - Self.REF_COUNT_SIZE
             var refcount = ptr.bitcast[Atomic[DType.int]]()
-            if refcount[].fetch_sub[ordering = Consistency.RELEASE](1) == 1:
+            if refcount[].fetch_sub[ordering=Consistency.RELEASE](1) == 1:
                 fence[Consistency.ACQUIRE]()
                 ptr.free()
 
@@ -896,7 +887,7 @@ struct String(
         return StringSlice(self) < StringSlice(rhs)
 
     @staticmethod
-    fn _add(lhs: Span[Byte], rhs: Span[Byte]) -> String:
+    fn _add(lhs: Span[Byte, _], rhs: Span[Byte, _]) -> String:
         var lhs_len = len(lhs)
         var rhs_len = len(rhs)
 
@@ -923,29 +914,12 @@ struct String(
         This helper is inherently unsafe as it does not check if the capacity is
         sufficient and does not check UTF-8 validity.
         """
-        debug_assert(
-            self.capacity() > self.byte_length(),
-            "String: capacity is not sufficient",
-        )
+        assert (
+            self.capacity() > self.byte_length()
+        ), "String: capacity is not sufficient"
         var length = self.byte_length()
         (self.unsafe_ptr_mut() + length).init_pointee_move(byte)
         self.set_byte_length(length + 1)
-
-    @deprecated(
-        "Appending arbitrary bytes can create invalid UTF-8, breaking String's"
-        " safety guarantees. Use `append(Codepoint)` instead."
-    )
-    fn append_byte(mut self, byte: Byte):
-        """Append a byte to the string.
-
-        Args:
-            byte: The byte to append.
-        """
-        self._clear_nul_terminator()
-        var len = self.byte_length()
-        self.reserve(len + 1)
-        self.unsafe_ptr_mut()[len] = byte
-        self.set_byte_length(len + 1)
 
     fn append(mut self, codepoint: Codepoint):
         """Append a codepoint to the string.
@@ -960,7 +934,7 @@ struct String(
         _ = codepoint.unsafe_write_utf8(self.unsafe_ptr_mut() + length)
         self.set_byte_length(new_length)
 
-    fn __radd__(self, other: StringSlice[mut=False]) -> String:
+    fn __radd__(self, other: StringSlice[mut=False, _]) -> String:
         """Creates a string by prepending another string slice to the start.
 
         Args:
@@ -971,7 +945,7 @@ struct String(
         """
         return Self._add(other.as_bytes(), self.as_bytes())
 
-    fn _iadd(mut self, other: Span[mut=False, Byte]):
+    fn _iadd(mut self, other: Span[mut=False, Byte, _]):
         var other_len = len(other)
         if other_len == 0:
             return
@@ -985,7 +959,7 @@ struct String(
         self.set_byte_length(new_len)
         self._clear_nul_terminator()
 
-    fn __iadd__(mut self, other: StringSlice[mut=False]):
+    fn __iadd__(mut self, other: StringSlice[mut=False, _]):
         """Appends another string slice to this string.
 
         Args:
@@ -1041,7 +1015,7 @@ struct String(
         Query the length of a string, in bytes and Unicode codepoints:
 
         ```mojo
-        from testing import assert_equal
+        from std.testing import assert_equal
 
         var s = "ನಮಸ್ಕಾರ"
 
@@ -1053,7 +1027,7 @@ struct String(
         Unicode codepoint length:
 
         ```mojo
-        from testing import assert_equal
+        from std.testing import assert_equal
 
         var s = "abc"
 
@@ -1063,6 +1037,7 @@ struct String(
         """
         return self.byte_length()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @always_inline("nodebug")
     fn __str__(self) -> String:
         """Gets the string itself.
@@ -1075,13 +1050,14 @@ struct String(
         """
         return self
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Return a Mojo-compatible representation of the `String` instance.
 
         Returns:
             A new representation of the string.
         """
-        return StringSlice(self).__repr__()
+        return repr(StringSlice(self))
 
     @always_inline("nodebug")
     fn __fspath__(self) -> String:
@@ -1182,7 +1158,7 @@ struct String(
         Print the characters in a string:
 
         ```mojo
-        from testing import assert_equal, assert_raises
+        from std.testing import assert_equal, assert_raises
 
         var s = "abc"
         var iter = s.codepoints()
@@ -1197,7 +1173,7 @@ struct String(
         codepoints:
 
         ```mojo
-        from testing import assert_equal, assert_raises
+        from std.testing import assert_equal, assert_raises
 
         # A visual character composed of a combining sequence of 2 codepoints.
         var s = "á"
@@ -1227,7 +1203,7 @@ struct String(
         Iterate over the character slices in a string:
 
         ```mojo
-        from testing import assert_equal, assert_raises, assert_true
+        from std.testing import assert_equal, assert_raises, assert_true
 
         var s = "abc"
         var iter = s.codepoint_slices()
@@ -1318,26 +1294,6 @@ struct String(
 
         # Safety: we ensure the string is null-terminated above.
         return CStringSlice(unsafe_from_ptr=self.unsafe_ptr().bitcast[c_char]())
-
-    @deprecated("Use `String.as_c_string_slice()` instead.")
-    fn unsafe_cstr_ptr(
-        mut self,
-    ) -> UnsafePointer[c_char, ImmutOrigin(origin_of(self))]:
-        """Retrieves a C-string-compatible pointer to the underlying memory.
-
-        The returned pointer is guaranteed to be null, or NUL terminated.
-
-        Returns:
-            The pointer to the underlying memory.
-        """
-        # Add a nul terminator, making the string mutable if not already
-        if not self._has_nul_terminator():
-            var ptr = self.unsafe_ptr_mut(capacity=len(self) + 1)
-            var len = self.byte_length()
-            ptr[len] = 0
-            self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
-
-        return self.unsafe_ptr().bitcast[c_char]()
 
     fn as_bytes(self) -> Span[Byte, origin_of(self)]:
         """Returns a contiguous slice of the bytes owned by this string.
@@ -2176,7 +2132,7 @@ fn chr(c: Int) -> String:
     var char_opt = Codepoint.from_u32(UInt32(c))
     if not char_opt:
         # TODO: Raise ValueError instead.
-        abort(String("chr(", c, ") is not a valid Unicode codepoint"))
+        abort(t"chr({c}) is not a valid Unicode codepoint")
 
     # SAFETY: We just checked that `char` is present.
     return String(char_opt.unsafe_value())
@@ -2199,9 +2155,9 @@ fn _unsafe_chr_ascii(c: UInt8) -> String:
     Safety:
         The byte must be a valid single byte ASCII character (0-127).
     """
-    debug_assert(
-        c <= _LARGEST_UNICODE_ASCII_BYTE, "Character is not single byte unicode"
-    )
+    assert (
+        c <= _LARGEST_UNICODE_ASCII_BYTE
+    ), "Character is not single byte unicode"
 
     return String(unsafe_from_utf8=Span(ptr=UnsafePointer(to=c), length=1))
 
@@ -2258,9 +2214,9 @@ fn ascii(value: StringSlice) -> String:
         use_dquote = use_dquote or (char == ord_squote)
 
     if use_dquote:
-        return String('"', result, '"')
+        return t'"{result}"'
     else:
-        return String("'", result, "'")
+        return t"'{result}'"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2480,7 +2436,7 @@ fn _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
     if start == (length - 1):
         return 10, start
     if str_slice[byte=start] == "0":
-        var second_digit = str_slice[byte = start + 1]
+        var second_digit = str_slice[byte=start + 1]
         if second_digit == "b" or second_digit == "B":
             return 2, start + 2
         if second_digit == "o" or second_digit == "O":
@@ -2509,8 +2465,7 @@ fn _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
 
 
 fn _atof_error[reason: StaticString = ""](str_ref: StringSlice) -> Error:
-    @parameter
-    if reason:
+    comptime if reason:
         return Error(
             "String is not convertible to float: '",
             str_ref,
@@ -2559,7 +2514,7 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
     # See https://commaok.xyz/post/lookup_tables/ and
     # https://lemire.me/blog/2021/06/03/computing-the-number-of-digits-of-an-integer-even-faster/
     # for a description.
-    comptime lookup_table = VariadicList[Int](
+    comptime lookup_table: InlineArray[Int, 32] = [
         4294967296,
         8589934582,
         8589934582,
@@ -2592,12 +2547,15 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
         41949672960,
         42949672960,
         42949672960,
-    )
+    ]
+
+    ref lookup_table_ref = global_constant[lookup_table]()
+
     var n = UInt32(n0)
     var log2 = Int(
         UInt32(bit_width_of[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
     )
-    return (n0 + lookup_table[log2]) >> 32
+    return (n0 + lookup_table_ref[log2]) >> 32
 
 
 fn _calc_initial_buffer_size_int64(n0: UInt64) -> Int:
@@ -2617,7 +2575,7 @@ fn _calc_initial_buffer_size_int64(n0: UInt64) -> Int:
 
 
 fn _calc_initial_buffer_size(n0: Int) -> Int:
-    var sign = 0 if n0 > 0 else 1
+    var sign = 0 if n0 >= 0 else 1
 
     # Add 1 for the terminator
     return sign + n0._decimal_digit_count() + 1
@@ -2628,13 +2586,11 @@ fn _calc_initial_buffer_size(n: Float64) -> Int:
 
 
 fn _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
-    @parameter
-    if dtype.is_integral():
+    comptime if dtype.is_integral():
         var n = abs(n0)
-        var sign = 0 if n0 > 0 else 1
+        var sign = 0 if n0 >= 0 else 1
 
-        @parameter
-        if is_32bit() or bit_width_of[dtype]() <= 32:
+        comptime if is_32bit() or bit_width_of[dtype]() <= 32:
             return sign + _calc_initial_buffer_size_int32(Int(n)) + 1
         else:
             return (
@@ -2654,8 +2610,7 @@ fn _calc_format_buffer_size[dtype: DType]() -> Int:
     # TODO:
     #   Use a smaller size based on the `dtype`, e.g. we don't need as much
     #   space to store a formatted int8 as a float64.
-    @parameter
-    if dtype.is_integral():
+    comptime if dtype.is_integral():
         return 64 + 1
     else:
         return 128 + 1  # Add 1 for the terminator

@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Provides device query utilities for communication primitives. """
 
-from sys.info import _accelerator_arch
+from std.sys.info import _accelerator_arch
 from internal_utils import TuningConfig, Table
-from gpu.host.info import GPUInfo
+from std.gpu.host.info import GPUInfo
 
 
 @fieldwise_init
@@ -32,8 +32,17 @@ struct TuningConfigAllreduce(TrivialRegisterPassable, TuningConfig):
     var sm_version: StaticString
     var num_blocks: Int
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
-        return String(
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the tuning config as a string.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
             self.ngpus, self.num_bytes, self.sm_version, self.num_blocks
         )
 
@@ -100,8 +109,24 @@ fn _dispatch_max_num_blocks[
     (encoded with ngpus=-1 and num_bytes=-1)
     """
 
+    # Validate that every entry has num_blocks <= 512 (MAX_NUM_BLOCKS_UPPER_BOUND
+    # from sync.mojo). _multi_gpu_barrier indexes Signal.self_counter and
+    # Signal.peer_counter with block_idx.x; those arrays are statically sized
+    # to MAX_NUM_BLOCKS_UPPER_BOUND, so an entry exceeding 512 would silently
+    # corrupt barrier state.
+    @parameter
+    fn _entry_exceeds_block_bound(x: TuningConfigAllreduce) -> Bool:
+        return x.num_blocks > 512
+
+    comptime _over_limit = allreduce_table.query_index[
+        _entry_exceeds_block_bound
+    ]()
+    comptime assert (
+        len(_over_limit) == 0
+    ), "allreduce_table entry has num_blocks > MAX_NUM_BLOCKS_UPPER_BOUND (512)"
+
     # get default entry
-    # TODO: first search for default for that sm
+    # TODO(KERN-2503): first search for default for that sm
     # if not found look for a generic config
     @parameter
     fn rule_eq_arch_default(x: TuningConfigAllreduce) -> Bool:
@@ -115,8 +140,7 @@ fn _dispatch_max_num_blocks[
     # Override defaults for specific AMD CDNA3 parts regardless of sm_version aliasing
     comptime arch = _accelerator_arch()
 
-    @parameter
-    if "gfx950" in arch:  # MI355 family
+    comptime if "gfx950" in arch:  # MI355 family
         default_num_blocks = 64
     elif "gfx942" in arch:  # MI300 family
         default_num_blocks = 32
@@ -128,8 +152,7 @@ fn _dispatch_max_num_blocks[
 
     comptime search_domain = allreduce_table.query_index[rule_eq_arch_ngpus]()
 
-    @parameter
-    if not search_domain:
+    comptime if not search_domain:
         return default_num_blocks
 
     # get all static num_bytes values in table within the search space
@@ -141,8 +164,7 @@ fn _dispatch_max_num_blocks[
         Int, rule_get_num_bytes, search_domain
     ]()
 
-    @parameter
-    for nb in all_num_bytes_values:
+    comptime for nb in all_num_bytes_values:
 
         @parameter
         fn rule_eq_nb(x: TuningConfigAllreduce) -> Bool:
@@ -154,8 +176,7 @@ fn _dispatch_max_num_blocks[
                 rule_eq_nb, domain=search_domain
             ]()
 
-            @parameter
-            if idx_list:
+            comptime if idx_list:
                 comptime entry = allreduce_table.configs[idx_list[0]]
                 return entry.num_blocks
             else:

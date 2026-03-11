@@ -72,7 +72,7 @@ unified into a single parametric function:
 ```mojo
 # In tile_types.mojo
 from layout._layout import Layout
-from layout._coord import Coord, Idx
+from layout import Coord, Idx
 
 comptime _CM_NUM_ROWS = 8
 
@@ -489,7 +489,7 @@ tile_types.mojo
 ├── Conversion: lt_to_tt, lt_to_tt_1d (host-side, at enqueue boundary)
 └── Helpers: _to_legacy_layout, _int_to_dim
 
-_tile_tensor.mojo
+tile_tensor.mojo
 ├── tile / tile_with_offset (standard + stride_layout overloads)
 ├── distribute / distribute_with_offset
 ├── vectorize
@@ -602,7 +602,7 @@ complex operations. TileTensor now has `ViewType[new_layout]` which
 preserves dtype, origin, address_space, etc. while replacing LayoutType.
 
 ```mojo
-# On TileTensor struct (in _tile_tensor.mojo):
+# On TileTensor struct (in tile_tensor.mojo):
 comptime ViewType[new_layout: TensorLayout] = TileTensor[
     dtype = Self.dtype,
     LayoutType = new_layout,
@@ -800,9 +800,12 @@ tiles), compute the layout internally.
     `blocked_product`)
 11. **Migrate conv2d** -- im2col TMA is a separate concern.
 12. **Extend `lt_to_tt` to arbitrary ranks** (currently only 2D)
-13. **Compiler bug**: `TileTensor(NDBuffer)` crashes when NDBuffer
+13. ~~**Compiler bug**: `TileTensor(NDBuffer)` crashes when NDBuffer
     DimList contains complex expressions like `ceildiv(...)`.
-    Workaround: create NDBuffer with `DimList.create_unknown[rank]()`.
+    Workaround: create NDBuffer with `DimList.create_unknown[rank]()`.~~
+    **Resolved**: Use `TileTensor(ptr, row_major(Coord(...)))` directly
+    instead of going through NDBuffer. This avoids the compiler bug entirely
+    and removes the NDBuffer dependency.
 
 ## Gotchas (continued)
 

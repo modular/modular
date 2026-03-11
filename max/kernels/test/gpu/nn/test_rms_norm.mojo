@@ -11,17 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import sqrt
-from random import rand
+from std.math import sqrt
+from std.random import rand
 
-from gpu.host import DeviceContext
-from layout._coord import Coord, Idx
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.gpu.host import DeviceContext
+from layout import Coord, Idx, TileTensor, row_major
 from nn.normalization import *
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn compute_rms[
@@ -36,7 +34,7 @@ fn compute_rms[
         var val = data[i][0].cast[accum_type]()
         sum_of_squares += val * val
     var result = sqrt(
-        (sum_of_squares / Scalar[accum_type](data.numel()))
+        (sum_of_squares / Scalar[accum_type](data.num_elements()))
         + eps.cast[accum_type]()
     )
     return result.cast[dtype]()
@@ -115,7 +113,7 @@ fn run_rms_norm_gpu[
     gamma_h.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_rms_norm_gpu[DType.float32](ctx, Index(5))
         run_rms_norm_gpu[DType.float32](ctx, Index(3, 4, 10, 20, 8))

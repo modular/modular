@@ -21,12 +21,12 @@ Note: These are low-level primitives that correspond directly to PTX/NVVM instru
 with careful consideration of the underlying hardware synchronization mechanisms.
 """
 
-from sys import _RegisterPackType, llvm_intrinsic
-from sys._assembly import inlined_assembly
-from sys.info import _is_sm_9x_or_newer, _is_sm_100x_or_newer
+from std.sys import _RegisterPackType, llvm_intrinsic
+from std.sys._assembly import inlined_assembly
+from std.sys.info import _is_sm_9x_or_newer, _is_sm_100x_or_newer
 
 
-from utils.index import IndexList, product
+from std.utils.index import IndexList, product
 
 # ===-----------------------------------------------------------------------===#
 #  1D ctaid in a cluster
@@ -73,7 +73,7 @@ fn elect_one_sync() -> Bool:
     comptime assert (
         _is_sm_9x_or_newer()
     ), "elect one sync is only implemented for NVIDIA SM90+ GPUs"
-    return Bool(__mlir_op.`nvvm.elect.sync`[_type = __mlir_type.`i1`]())
+    return Bool(__mlir_op.`nvvm.elect.sync`[_type=__mlir_type.`i1`]())
 
 
 @always_inline("nodebug")
@@ -120,7 +120,7 @@ fn cluster_arrive_relaxed():
     ), "cluster arrive relaxed is only supported by NVIDIA SM90+ GPUs"
     __mlir_op.`nvvm.cluster.arrive.relaxed`[
         _type=None,
-        aligned = __mlir_attr.unit,
+        aligned=__mlir_attr.unit,
     ]()
 
 
@@ -136,7 +136,7 @@ fn cluster_arrive():
     ), "cluster arrive is only supported by NVIDIA SM90+ GPUs"
     __mlir_op.`nvvm.cluster.arrive`[
         _type=None,
-        aligned = __mlir_attr.unit,
+        aligned=__mlir_attr.unit,
     ]()
 
 
@@ -152,7 +152,7 @@ fn cluster_wait():
     ), "cluster wait is only supported by NVIDIA SM90+ GPUs"
     __mlir_op.`nvvm.cluster.wait`[
         _type=None,
-        aligned = __mlir_attr.unit,
+        aligned=__mlir_attr.unit,
     ]()
 
 
@@ -216,7 +216,7 @@ fn cluster_sync_release():
 @always_inline("nodebug")
 fn clusterlaunchcontrol_query_cancel_is_canceled(
     result: UnsafePointer[
-        mut=True, UInt128, address_space = AddressSpace.SHARED
+        mut=True, UInt128, _, address_space=AddressSpace.SHARED
     ]
 ) -> UInt32:
     """Decodes the cancellation request.
@@ -255,7 +255,7 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid[
     id: String
 ](
     result: UnsafePointer[
-        mut=True, UInt128, address_space = AddressSpace.SHARED
+        mut=True, UInt128, _, address_space=AddressSpace.SHARED
     ]
 ) -> UInt32:
     """Decodes the cancellation request.
@@ -302,7 +302,7 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid[
 @always_inline("nodebug")
 fn clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
     result: UnsafePointer[
-        mut=True, UInt128, address_space = AddressSpace.SHARED
+        mut=True, UInt128, _, address_space=AddressSpace.SHARED
     ],
 ) -> Tuple[UInt32, UInt32, UInt32]:
     """Decodes the cancellation request.
@@ -344,9 +344,9 @@ fn clusterlaunchcontrol_try_cancel[
     multicast: Bool = False
 ](
     result: UnsafePointer[
-        mut=True, UInt128, address_space = AddressSpace.SHARED
+        mut=True, UInt128, _, address_space=AddressSpace.SHARED
     ],
-    mbar: UnsafePointer[mut=True, Int64, address_space = AddressSpace.SHARED],
+    mbar: UnsafePointer[mut=True, Int64, _, address_space=AddressSpace.SHARED],
 ):
     """Requests to atomically cancel the cluster launch if it has not started running yet.
 
@@ -409,14 +409,12 @@ fn cluster_mask_base[
         product(cluster_shape) <= 16
     ), "cluster size must be less than or equal to 16"
 
-    @parameter
-    if axis == 0:
+    comptime if axis == 0:
         return UInt16((1 << cluster_shape[0]) - 1)
 
     var mask: UInt16 = 1
 
-    @parameter
-    for i in range(cluster_shape[1]):
+    comptime for i in range(cluster_shape[1]):
         mask |= mask << UInt16(i * cluster_shape[0])
 
     return mask

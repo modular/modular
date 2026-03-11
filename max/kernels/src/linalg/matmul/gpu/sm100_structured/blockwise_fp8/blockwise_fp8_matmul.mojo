@@ -17,18 +17,17 @@ Creates TMA descriptors for A, B, C and A-scales, then launches the
 warp-specialized blockwise FP8 kernel with register-based accumulation.
 """
 
-from math import align_up, ceildiv
-from sys import env_get_bool, size_of
+from std.math import align_up, ceildiv
+from std.sys import get_defined_bool, size_of
 
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
-from layout import Layout as LegacyLayout, LayoutTensor
-from layout._tile_tensor import TileTensor
-from ..structured_kernels.tile_types import create_tma_tile, lt_to_tt
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200
+from layout import Layout as LegacyLayout, TileTensor
+from structured_kernels.tile_types import create_tma_tile
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from ..structured_kernels.config import MatmulConfig
 from .blockwise_fp8_smem import BlockwiseFP8Smem
@@ -76,22 +75,22 @@ fn blockwise_fp8_matmul[
         USE_LEGACY_BLOCKWISE_FP8: If True, use legacy kernel instead of structured.
     """
 
-    # Legacy kernel path disabled -- incompatible with TileTensor API.
-    # To re-enable, update sm100_warp_specialized_blockwise_fp8 to accept TileTensor.
-    constrained[
-        not env_get_bool["USE_LEGACY_BLOCKWISE_FP8", False](),
-        "Legacy blockwise FP8 kernel not supported with TileTensor API",
-    ]()
+    comptime if get_defined_bool["USE_LEGACY_BLOCKWISE_FP8", False]():
+        sm100_warp_specialized_blockwise_fp8[
+            transpose_b=transpose_b,
+            a_scales_type=a_scales_type,
+            b_scales_type=b_scales_type,
+            config=config,
+        ](c, a, b, a_scales, b_scales, ctx)
+        return
 
-    constrained[transpose_b, "Only support transposed B"]()
-    constrained[
-        a_type == b_type and a_type == DType.float8_e4m3fn,
-        "Only support float8_e4m3fn",
-    ]()
-    constrained[
-        a_scales_type == b_scales_type,
-        "Only support float32 for scales",
-    ]()
+    comptime assert transpose_b, "Only support transposed B"
+    comptime assert (
+        a_type == b_type and a_type == DType.float8_e4m3fn
+    ), "Only support float8_e4m3fn"
+    comptime assert (
+        a_scales_type == b_scales_type
+    ), "Only support float32 for scales"
 
     if (Int(a_scales.dim[1]()) * size_of[a_scales_type]()) % 16 != 0:
         raise Error(
@@ -106,67 +105,17 @@ fn blockwise_fp8_matmul[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
-    constrained[
-        config.cta_group in (1, 2), "Only support cta_group == 1 or 2"
-    ]()
-    constrained[not config.AB_swapped, "Swapped AB is not supported"]()
+    comptime assert config.cta_group in (
+        1,
+        2,
+    ), "Only support cta_group == 1 or 2"
+    comptime assert not config.AB_swapped, "Swapped AB is not supported"
 
-    # ==== Compute correct max_pipeline_stages for blockwise FP8 ====
-    # MatmulConfig._maximize_pipeline_stages_by_default() doesn't account for
-    # a_scales_smem, so we must recalculate and potentially reduce num_pipeline_stages.
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
-    comptime MBAR_BYTES_EARLY = size_of[Int64]()
-    comptime CLC_RESPONSE_BYTES_EARLY = size_of[Int128]()
-    comptime TMEM_ADDR_BYTES_EARLY = size_of[Int32]()
-
-    comptime a_smem_bytes_per_stage_early = BM * BK * size_of[a_type]()
-    comptime b_smem_bytes_per_stage_early = BN * BK * size_of[b_type]()
-    comptime a_scales_smem_bytes_per_stage_early = BM * size_of[a_scales_type]()
-    comptime AB_smem_per_stage_early = a_smem_bytes_per_stage_early + b_smem_bytes_per_stage_early
-
-    comptime c_smem_bytes_early = config.output_tile_shape[
-        0
-    ] * config.output_tile_shape[1] * config.num_output_stages * size_of[
-        c_type
-    ]()
-
-    comptime accum_full_mbar_bytes_early = MBAR_BYTES_EARLY * config.num_accum_pipeline_stages
-    comptime accum_empty_mbar_bytes_early = MBAR_BYTES_EARLY * config.num_accum_pipeline_stages
-    comptime clc_response_bytes_early = CLC_RESPONSE_BYTES_EARLY * config.num_clc_pipeline_stages
-    comptime clc_full_mbar_bytes_early = MBAR_BYTES_EARLY * config.num_clc_pipeline_stages
-    comptime clc_empty_mbar_bytes_early = MBAR_BYTES_EARLY * config.num_clc_pipeline_stages
-    comptime clc_throttle_full_mbar_bytes_early = MBAR_BYTES_EARLY * config.num_clc_pipeline_stages
-    comptime clc_throttle_empty_mbar_bytes_early = MBAR_BYTES_EARLY * config.num_clc_pipeline_stages
-    comptime tmem_writeout_smem_early = c_smem_bytes_early + TMEM_ADDR_BYTES_EARLY + MBAR_BYTES_EARLY
-    comptime accum_smem_early = accum_full_mbar_bytes_early + accum_empty_mbar_bytes_early
-    comptime clc_smem_early = (
-        clc_response_bytes_early
-        + clc_full_mbar_bytes_early
-        + clc_empty_mbar_bytes_early
-        + clc_throttle_full_mbar_bytes_early
-        + clc_throttle_empty_mbar_bytes_early
-    )
-    comptime smem_leftover_early = b200_smem - (
-        clc_smem_early + accum_smem_early + tmem_writeout_smem_early
-    )
-
-    comptime tma_mbar_bytes_per_stage_early = MBAR_BYTES_EARLY
-    comptime mma_mbar_bytes_per_stage_early = MBAR_BYTES_EARLY
-    comptime producer_consumer_smem_per_stage_early = (
-        AB_smem_per_stage_early
-        + a_scales_smem_bytes_per_stage_early
-        + tma_mbar_bytes_per_stage_early
-        + mma_mbar_bytes_per_stage_early
-    )
-
-    comptime max_pipeline_stages_early = smem_leftover_early // producer_consumer_smem_per_stage_early
-
-    # Use the minimum of config value and computed max to avoid SMEM overflow
-    comptime corrected_pipeline_stages = min(
-        config.num_pipeline_stages, max_pipeline_stages_early
-    )
-
-    # Create corrected config with proper pipeline stages for blockwise FP8
+    # Re-create config with extra_smem_per_stage to account for A-scales SMEM.
+    # The caller's config was computed without a_scales overhead, so pipeline
+    # stages may be too high. _maximize_pipeline_stages handles the correction
+    # when given extra_smem_per_stage = BM * size_of[a_scales_type].
+    comptime a_scales_smem_per_stage = BM * size_of[a_scales_type]()
     comptime corrected_config = MatmulConfig[
         a_type, b_type, c_type, transpose_b
     ](
@@ -174,19 +123,19 @@ fn blockwise_fp8_matmul[
         mma_shape=config.mma_shape,
         cluster_shape=config.cluster_shape,
         AB_swapped=config.AB_swapped,
-        num_pipeline_stages=corrected_pipeline_stages,
         num_accum_pipeline_stages=config.num_accum_pipeline_stages,
         num_clc_pipeline_stages=config.num_clc_pipeline_stages,
         block_swizzle_size=config.block_swizzle_size,
         raster_order=config.raster_order,
         k_group_size=config.k_group_size,
+        extra_smem_per_stage=a_scales_smem_per_stage,
     )
 
     var M = Int(c.dim[0]())
     var N = Int(c.dim[1]())
     var K = Int(a.dim[1]())
 
-    # Compute SMEM size - use corrected_config which accounts for a_scales
+    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
     comptime SmemType = BlockwiseFP8Smem[
         a_type,
         b_type,
@@ -195,16 +144,7 @@ fn blockwise_fp8_matmul[
         transpose_b,
         config=corrected_config,
     ]
-
-    # Use the values computed earlier (with _early suffix) - they're the same
-    comptime producer_consumer_smem = producer_consumer_smem_per_stage_early * corrected_pipeline_stages
-
-    comptime smem_size = (
-        clc_smem_early
-        + accum_smem_early
-        + producer_consumer_smem
-        + tmem_writeout_smem_early
-    )
+    comptime smem_size = size_of[SmemType]()
 
     # Instantiate kernel type - use corrected_config which has proper num_pipeline_stages
     comptime Kernel = BlackwellBlockwiseFP8MatmulKernel[
@@ -216,35 +156,35 @@ fn blockwise_fp8_matmul[
         type_of(b_scales).LayoutType,
         transpose_b=transpose_b,
         config=corrected_config,
-        cluster_shape = StaticTuple[Int32, 3](
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(corrected_config.cluster_shape[0]),
             Int32(corrected_config.cluster_shape[1]),
             Int32(corrected_config.cluster_shape[2]),
         ),
     ]
 
-    # Create TMA descriptors using kernel's derived legacy layouts
+    # Create TMA descriptors using kernel's layout types
     a_tma_op = create_tma_tile[
-        Kernel.ATmaTile.tile_layout,
-        Kernel.ATmaTile.desc_layout,
+        Kernel.ATileLayout,
+        Kernel.ADescLayout,
         Index(BM // config.cluster_shape[1], BK),
-        swizzle_mode = config.a_swizzle,
+        swizzle_mode=config.a_swizzle,
     ](ctx, a)
 
     b_tma_op = create_tma_tile[
-        Kernel.BTmaTile.tile_layout,
-        Kernel.BTmaTile.desc_layout,
+        Kernel.BTileLayout,
+        Kernel.BDescLayout,
         Index(
             BN // (config.cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
             BK, BN // (config.cluster_shape[0] // config.cta_group)
         ),
-        swizzle_mode = config.b_swizzle,
+        swizzle_mode=config.b_swizzle,
     ](ctx, b)
 
     a_scales_tma_op = create_tma_tile[
-        Kernel.AScalesTmaTile.tile_layout,
-        Kernel.AScalesTmaTile.desc_layout,
+        Kernel.AScalesLayout,
+        Kernel.AScalesLayout,
         Index(1, BM),
     ](ctx, a_scales)
 
@@ -254,10 +194,10 @@ fn blockwise_fp8_matmul[
     ) else c_tma_tile_shape_mma128
 
     var c_tma_op = create_tma_tile[
-        Kernel.CTmaTile.tile_layout,
-        Kernel.CTmaTile.desc_layout,
+        Kernel.CTileLayout,
+        Kernel.CDescLayout,
         c_tma_tile_shape,
-        swizzle_mode = config.c_swizzle,
+        swizzle_mode=config.c_swizzle,
     ](ctx, c)
 
     var grid_dim = (
@@ -288,6 +228,6 @@ fn blockwise_fp8_matmul[
         block_dim=(32 * 7),
         shared_mem_bytes=smem_size,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_size)
+            UInt32(b200_smem)
         ),
     )

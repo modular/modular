@@ -11,32 +11,34 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from algorithm.functional import elementwise
+from std.algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
-from gpu import *
-from gpu.host import DeviceContext, get_gpu_target
-from random import NormalRandom, Random
-from testing import *
-from sys import has_apple_gpu_accelerator
+from std.gpu import *
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.random import NormalRandom, Random
+from std.testing import *
+from std.sys import has_apple_gpu_accelerator
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 def run_elementwise[
     dtype: DType, distribution: String = "uniform"
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime length = 256
 
-    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     var out_host = NDBuffer[
-        dtype, 1, MutAnyOrigin, DimList(length)
+        rank=1, dtype, MutAnyOrigin, DimList(length)
     ].stack_allocation()
 
     var out_device = ctx.enqueue_create_buffer[dtype](length)
-    var out_buffer = NDBuffer[dtype, 1](out_device.unsafe_ptr(), Index(length))
+    var out_buffer = NDBuffer[rank=1, dtype](
+        out_device.unsafe_ptr(), Index(length)
+    )
 
     @always_inline
     @__copy_capture(out_buffer)
@@ -49,13 +51,10 @@ def run_elementwise[
         var rng_state = Random(seed=UInt64(idx0[0]))
         var rng = rng_state.step_uniform()
 
-        @parameter
-        if simd_width == 1:
+        comptime if simd_width == 1:
             out_buffer[idx] = rng[0].cast[dtype]()
         else:
-
-            @parameter
-            for i in range(simd_width):
+            comptime for i in range(simd_width):
                 out_buffer[idx + IndexList[1](i)] = rng[i % len(rng)].cast[
                     dtype
                 ]()
@@ -70,19 +69,15 @@ def run_elementwise[
         var rng_state = NormalRandom(seed=UInt64(idx0[0]))
         var rng = rng_state.step_normal()
 
-        @parameter
-        if simd_width == 1:
+        comptime if simd_width == 1:
             out_buffer[idx] = rng[0].cast[dtype]()
         else:
-
-            @parameter
-            for i in range(simd_width):
+            comptime for i in range(simd_width):
                 out_buffer[idx + IndexList[1](i)] = rng[i % len(rng)].cast[
                     dtype
                 ]()
 
-    @parameter
-    if distribution == "uniform":
+    comptime if distribution == "uniform":
         elementwise[func_uniform, 4, target="gpu"](Index(length), ctx)
     else:
         elementwise[func_normal, 4, target="gpu"](Index(length), ctx)
@@ -97,7 +92,7 @@ def run_elementwise[
     _ = out_device
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_elementwise[DType.float16](ctx)
         run_elementwise[DType.float32](ctx)

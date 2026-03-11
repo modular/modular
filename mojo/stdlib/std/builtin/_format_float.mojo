@@ -23,14 +23,14 @@
 # is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 # KIND, either express or implied.
 # ===----------------------------------------------------------------------=== #
-from collections import InlineArray
-from sys.info import size_of
+from std.collections import InlineArray
+from std.sys.info import size_of
 
-from memory import bitcast
+from std.memory import bitcast
 
 from .globals import global_constant
 
-from utils.numerics import FPUtils, isinf, isnan
+from std.utils.numerics import FPUtils, isinf, isnan
 
 
 @always_inline
@@ -109,8 +109,7 @@ fn _write_float[
         value: The float to write into the Writer.
     """
 
-    @parameter
-    if dtype == DType.float8_e5m2:
+    comptime if dtype == DType.float8_e5m2:
         return writer.write(
             materialize[float8_e5m2_to_str]()[Int(bitcast[DType.uint8](value))]
         )
@@ -393,8 +392,7 @@ fn _to_decimal[
 fn _compute_endpoint[
     CarrierDType: DType, sig_bits: Int, total_bits: Int, cache_bits: Int
 ](cache_index: Int, beta: Int, left_endpoint: Bool) -> Scalar[CarrierDType]:
-    @parameter
-    if CarrierDType == DType.uint64:
+    comptime if CarrierDType == DType.uint64:
         var cache = global_constant[cache_f64]()[cache_index]
         var cache_high = _uint128_high(cache)
         if left_endpoint:
@@ -425,8 +423,7 @@ fn _print_bits[dtype: DType](x: Scalar[dtype]) -> String:
     comptime total_bits = size_of[dtype]() * 8
     var output = String()
 
-    @parameter
-    if not dtype.is_floating_point():
+    comptime if not dtype.is_floating_point():
         for i in reversed(range(total_bits)):
             output.write((x >> Scalar[dtype](i)) & 1)
             if i % 8 == 0:
@@ -459,8 +456,7 @@ fn _print_bits[dtype: DType](x: Scalar[dtype]) -> String:
 fn _rotr[
     CarrierDType: DType
 ](n: Scalar[CarrierDType], r: Scalar[CarrierDType]) -> Scalar[CarrierDType]:
-    @parameter
-    if CarrierDType == DType.uint32:
+    comptime if CarrierDType == DType.uint32:
         var r_masked = r & 31
         return (n >> r_masked) | (n << ((32 - r_masked) & 31))
     else:
@@ -517,8 +513,7 @@ fn _remove_trailing_zeros[
     https://github.com/jk-jeon/rtz_benchmark.
     """
 
-    @parameter
-    if CarrierDType == DType.uint64:
+    comptime if CarrierDType == DType.uint64:
         var r = _rotr(sig * 28999941890838049, 8)
         var b = r < 184467440738
         var s = Int(b)
@@ -569,20 +564,15 @@ fn _remove_trailing_zeros[
 fn _divide_by_pow10[
     CarrierDType: DType, //, N: Int, n_max: Scalar[CarrierDType]
 ](n: Scalar[CarrierDType]) -> Scalar[CarrierDType]:
-    @parameter
-    if CarrierDType == DType.uint64:
-
-        @parameter
-        if N == 1 and n_max <= 4611686018427387908:
+    comptime if CarrierDType == DType.uint64:
+        comptime if N == 1 and n_max <= 4611686018427387908:
             return _umul128_upper64(n, 1844674407370955162)
         elif N == 3 and n_max <= 15534100272597517998:
             return _umul128_upper64(n, 4722366482869645214) >> 8
         else:
             return n / Scalar[CarrierDType](pow(10, N))
     else:
-
-        @parameter
-        if N == 1 and n_max <= 1073741828:
+        comptime if N == 1 and n_max <= 1073741828:
             return (_umul64(n.cast[DType.uint32](), 429496730) >> 32).cast[
                 CarrierDType
             ]()
@@ -610,7 +600,7 @@ fn _compute_mul_parity[
     CarrierDType: DType
 ](two_f: Scalar[CarrierDType], cache_index: Int, beta: Int) -> _MulParity:
     if CarrierDType == DType.uint64:
-        debug_assert(1 <= beta < 64, "beta must be between 1 and 64")
+        assert 1 <= beta < 64, "beta must be between 1 and 64"
         var r = _umul192_lower128(
             two_f.cast[DType.uint64](),
             global_constant[cache_f64]()[cache_index],
@@ -626,10 +616,9 @@ fn _compute_mul_parity[
             == 0,
         )
     else:
-        debug_assert(
-            1 <= beta < 32,
-            "beta for float types 32bits must be between 1 and 32",
-        )
+        assert (
+            1 <= beta < 32
+        ), "beta for float types 32bits must be between 1 and 32"
         var r = _umul96_lower64(
             two_f.cast[DType.uint32](),
             global_constant[cache_f32]()[cache_index],
@@ -652,7 +641,7 @@ fn _check_divisibility_and_divide_by_pow10[
     divide_magic_number: InlineArray[UInt32, 2],
 ](mut n: Scalar[CarrierDType], N: Int) -> Bool:
     # Make sure the computation for max_n does not overflow.
-    debug_assert(N + 1 <= _floor_log10_pow2(carrier_bits))
+    assert N + 1 <= _floor_log10_pow2(carrier_bits)
 
     var magic_number = materialize[divide_magic_number]()[N - 1]
     var prod = (n * magic_number.cast[CarrierDType]()).cast[DType.uint32]()
@@ -750,7 +739,7 @@ fn _is_finite[exp_bits: Int](exponent: Int) -> Bool:
 fn _count_factors[
     CarrierDType: DType
 ](var n: Scalar[CarrierDType], a: Int) -> Int:
-    debug_assert(a > 1)
+    assert a > 1
     var c = 0
     while n % Scalar[CarrierDType](a) == 0:
         n /= Scalar[CarrierDType](a)

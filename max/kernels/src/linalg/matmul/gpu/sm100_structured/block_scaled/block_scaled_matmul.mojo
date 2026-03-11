@@ -17,28 +17,30 @@ Creates TMA descriptors for A, B, C and scaling factors (SFA, SFB),
 then launches the warp-specialized kernel.
 """
 
-from math import align_up, ceildiv
-from memory import LegacyUnsafePointer
+from std.math import align_up, ceildiv
+from std.sys import size_of
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import size_of
-
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
-from gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200
+from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
+    ComptimeInt,
+    Coord,
+    Idx,
     Layout as LegacyLayout,
     LayoutTensor,
+    RuntimeInt,
     RuntimeLayout,
+    TileTensor,
+    row_major,
 )
-from layout._layout import RowMajorLayout, TensorLayout, row_major
-from layout._coord import ComptimeInt, RuntimeInt, Coord, Idx
-from layout._tile_tensor import TileTensor
-from ..structured_kernels.tile_types import create_tma_tile
+from layout.tile_layout import RowMajorLayout, TensorLayout
+from structured_kernels.tile_types import create_tma_tile
+from structured_kernels.kernel_common import _to_batched_3d
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.utils import (
     elementwise_compute_lambda_type,
@@ -62,7 +64,7 @@ from .block_scaled_smem import BlockScaledSmem
 
 # =============================================================================
 # LayoutTensor helpers (kept for grouped_block_scaled_matmul.mojo which imports
-# these). New code should use _to_batched_3d below.
+# these). New code should use _to_batched_3d from kernel_common.
 # =============================================================================
 
 
@@ -71,8 +73,7 @@ fn _reshape_to_3d[layout: LegacyLayout]() -> LegacyLayout:
     """Reshape 2D layout to 3D by prepending batch dimension of 1."""
     comptime rank = len(layout.shape)
 
-    @parameter
-    if rank == 3:
+    comptime if rank == 3:
         return materialize[layout]()
     else:
         return LegacyLayout.row_major(
@@ -92,14 +93,14 @@ fn _convert_input_to_batched_tensor[
     tensor.dtype,
     reshape_layout,
     tensor.origin,
-    address_space = tensor.address_space,
+    address_space=tensor.address_space,
 ]:
     """Convert 2D tensor to 3D batched tensor with batch=1."""
     return LayoutTensor[
         dtype,
         reshape_layout,
         tensor.origin,
-        address_space = tensor.address_space,
+        address_space=tensor.address_space,
     ](
         tensor.ptr,
         RuntimeLayout[reshape_layout].row_major(
@@ -115,32 +116,6 @@ fn _convert_input_to_batched_tensor[
 # =============================================================================
 # TileTensor reshape helpers
 # =============================================================================
-
-
-comptime _Batched3DLayout[L: TensorLayout] = RowMajorLayout[
-    ComptimeInt[1], L._shape_types[0], L._shape_types[1]
-]
-"""3D batched layout from a 2D layout: prepend batch=1, preserve shape types."""
-
-
-fn _to_batched_3d(
-    tensor: TileTensor[...],
-) -> tensor.ViewType[_Batched3DLayout[type_of(tensor).LayoutType]]:
-    """Reshape 2D TileTensor to 3D by prepending batch=1: (M, K) -> (1, M, K).
-
-    The input must be rank 2. Shape types (static/dynamic) are preserved.
-    """
-    comptime L = type_of(tensor).LayoutType
-    constrained[L.rank == 2, "expected rank-2 TileTensor"]()
-    return tensor.reshape(
-        row_major(
-            Coord(
-                Idx[1](),
-                tensor.layout.shape[0](),
-                tensor.layout.shape[1](),
-            )
-        )
-    )
 
 
 comptime _Scales5DLayoutBatched[L: TensorLayout] = RowMajorLayout[
@@ -268,7 +243,7 @@ fn _create_tma_and_launch[
         sfb_dtype,
         transpose_b,
         config=config,
-        cluster_shape = StaticTuple[Int32, 3](
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
@@ -288,10 +263,10 @@ fn _create_tma_and_launch[
     # A matrix TMA
     comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
     a_tma_op = create_tma_tile[
-        matmul_kernel.ATmaTile.tile_layout,
-        matmul_kernel.ATmaTile.desc_layout,
+        matmul_kernel.ATileLayout,
+        matmul_kernel.ADescLayout,
         a_tma_tile_shape,
-        swizzle_mode = config.a_swizzle,
+        swizzle_mode=config.a_swizzle,
     ](ctx, a_3d)
 
     # B matrix TMA
@@ -301,10 +276,10 @@ fn _create_tma_and_launch[
         1, BK, BN // (cluster_shape[0] // config.cta_group)
     )
     b_tma_op = create_tma_tile[
-        matmul_kernel.BTmaTile.tile_layout,
-        matmul_kernel.BTmaTile.desc_layout,
+        matmul_kernel.BTileLayout,
+        matmul_kernel.BDescLayout,
         b_tma_tile_shape,
-        swizzle_mode = config.b_swizzle,
+        swizzle_mode=config.b_swizzle,
     ](ctx, b_3d)
 
     # C matrix TMA
@@ -320,10 +295,10 @@ fn _create_tma_and_launch[
         config.c_swizzle.bytes() // size_of[c_type](),
     )
     var c_tma_op = create_tma_tile[
-        matmul_kernel.CTmaTile.tile_layout,
-        matmul_kernel.CTmaTile.desc_layout,
+        matmul_kernel.CTileLayout,
+        matmul_kernel.CDescLayout,
         c_tma_tile_shape_final,
-        swizzle_mode = config.c_swizzle,
+        swizzle_mode=config.c_swizzle,
     ](ctx, c_3d)
 
     # Scale factors TMA
@@ -335,10 +310,10 @@ fn _create_tma_and_launch[
         SF_ATOM_M[1] * SF_ATOM_K,
     )
     var sfa_tma_op = create_tma_tile[
-        matmul_kernel.SFATmaTile.tile_layout,
-        matmul_kernel.SFATmaTile.desc_layout,
+        matmul_kernel.SFATileLayout,
+        matmul_kernel.SFADescLayout,
         sfa_tma_tile_shape,
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
     ](ctx, sfa_5d)
 
     comptime sfb_tma_tile_shape = Index(
@@ -349,10 +324,10 @@ fn _create_tma_and_launch[
         SF_ATOM_M[1] * SF_ATOM_K,
     )
     var sfb_tma_op = create_tma_tile[
-        matmul_kernel.SFBTmaTile.tile_layout,
-        matmul_kernel.SFBTmaTile.desc_layout,
+        matmul_kernel.SFBTileLayout,
+        matmul_kernel.SFBDescLayout,
         sfb_tma_tile_shape,
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
     ](ctx, sfb_5d)
 
     # Shared Memory
@@ -391,8 +366,7 @@ fn _create_tma_and_launch[
     # Profiling workspace
     var workspace: Span[UInt64, MutAnyOrigin]
 
-    @parameter
-    if enable_profiling:
+    comptime if enable_profiling:
         workspace = MatmulWarpSpecializationWorkSpaceManager[
             max_profiled_tiles
         ].get_workspace(ctx)
@@ -423,8 +397,7 @@ fn _create_tma_and_launch[
         attributes=pdl_launch_attributes(pdl_level),
     )
 
-    @parameter
-    if enable_profiling:
+    comptime if enable_profiling:
         ctx.synchronize()
         MatmulWarpSpecializationWorkSpaceManager[
             max_profiled_tiles
@@ -485,8 +458,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         If configuration constraints are violated.
     """
 
-    @parameter
-    if config.AB_swapped:
+    comptime if config.AB_swapped:
         # When both A and B are K-major, C = A @ B'.
         # If we swap A and B: D = B @ A', and D' = (B @ A')' = A @ B' = C.
         # So swapping + transposing the output gives the same result.
@@ -590,8 +562,7 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # ===== Reshape and create TMA descriptors =====
     # Non-batched: reshape 2D→3D and 5D→5D (prepend batch=1).
     # Batched: 3D pass-through and 6D→5D (merge atom dims).
-    @parameter
-    if is_batched_matmul:
+    comptime if is_batched_matmul:
         _create_tma_and_launch[
             config=config,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,

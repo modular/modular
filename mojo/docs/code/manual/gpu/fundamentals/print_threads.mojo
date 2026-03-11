@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import exit, has_accelerator, has_apple_gpu_accelerator
+from std.sys import exit, has_accelerator, has_apple_gpu_accelerator
 
-from gpu.host import DeviceContext
-from gpu import block_dim, block_idx, global_idx, grid_dim, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, global_idx, grid_dim, thread_idx
 
 
 fn print_threads():
@@ -41,9 +41,8 @@ fn print_threads():
     )
 
 
-def main():
-    @parameter
-    if not has_accelerator():
+def main() raises:
+    comptime if not has_accelerator():
         print("No compatible GPU found")
     elif has_apple_gpu_accelerator():
         print(

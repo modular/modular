@@ -1,0 +1,157 @@
+---
+title: Using AI coding assistants
+sidebar_label: AI coding assistants
+description: Use AI coding assistants such as Cursor, Claude Code, Copilot, and Windsurf with Modular.
+---
+
+This page describes how you can accelerate your MAX and Mojo development with
+popular AI coding assistants (Cursor, Claude Code, GitHub Copilot, Windsurf,
+and others) using the following resources:
+
+- **Documentation files** (`llms.txt`): Raw text files that AI tools use for
+website navigation hints and direct access to up-to-date API documentation.
+
+- **Project context files** (`CLAUDE.md` and `AGENTS.md`): Markdown files in your
+project that provide AI assistants with build commands, coding conventions,
+and project structure.
+
+- **Cursor project rules** (`.cursor/rules/`): Modular-specific rules that
+activate based on the files you're editing, providing consistent guidance for
+MAX and Mojo development.
+
+## Giving our docs to your AI assistant
+
+To improve code quality and accuracy from your AI assistant, add Modular's
+documentation to your AI tool's context. We provide different `llms.txt` files
+that are optimized for different use cases:
+
+- [`llms.txt`](/llms.txt) for a list of links with brief descriptions
+- [`llms-full.txt`](/llms-full.txt) for comprehensive documentation (requires large context window)
+- [`llms-python.txt`](/llms-python.txt) for MAX Python APIs, pipelines, or graph construction
+- [`llms-mojo.txt`](/llms-mojo.txt) for Mojo code, GPU kernels, or MAX library APIs
+
+
+If you're in Cursor, use the `@` syntax in the chat window to reference
+documentation directly. For example, to insert the MAX Python API documentation,
+add this to your chat:
+
+```text
+@docs.modular.com/llms-python.txt
+```
+
+:::tip Cursor tip
+
+To make the docs a permanent knowledge resource, type `@docs.new` in the chat
+and hit <kbd>Enter</kbd> (select **Add new doc**), then paste the `llms.txt`
+URL such as `docs.modular.com/llms-python.txt`. Edit the name and click
+**Confirm**. Read more about the [Cursor @Docs
+command](https://cursor.com/docs/context/mentions#docs).
+
+:::
+
+For all other tools (Claude Code, Copilot, Windsurf, and others), just
+tell the AI to fetch the documentation:
+
+```text
+Read https://docs.modular.com/llms-python.txt for MAX Python API documentation
+```
+
+For more details, see the section below about [our `llms.txt`
+files](#modular-llmstxt-files).
+
+## Working in the Modular repository
+
+When you clone the [Modular repo](https://github.com/modular/modular),
+your AI tool will automatically discover project context (either `CLAUDE.md` or
+`AGENTS.md`) files that provide:
+
+- Build and test commands
+- Project architecture overview
+- Coding conventions and commit message guidelines
+- Common development workflows
+
+Different tools look for different files (either `CLAUDE.md` or `AGENTS.md`,
+which are identical)—for compatibility details, see the section below about
+[Modular context files](#modular-context-files).
+
+**Cursor users**: The repository also includes project rules in `.cursor/rules/`
+that activate based on the files you're editing. These rules provide
+file-specific guidance for Mojo and MAX development. See
+[Modular Cursor rules](#modular-cursor-rules) for the full list.
+
+## Starting a new project
+
+For your own MAX and Mojo projects, the entirety of our
+[`CLAUDE.md`](https://github.com/modular/modular/blob/main/CLAUDE.md) and
+[`AGENTS.md`](https://github.com/modular/modular/blob/main/AGENTS.md)
+files are probably not useful for your own projects because they're specific to
+the Modular repository.
+
+However, you might find some parts useful, such as the section about
+[Critical development
+notes](https://github.com/modular/modular/blob/main/CLAUDE.md#critical-development-notes),
+which you can copy to your own `CLAUDE.md` or `AGENTS.md` file.
+
+**Cursor users**: You also might want to copy the [Modular Cursor
+rules](#modular-cursor-rules) below to your `.cursor/rules/` directory.
+
+## Resources for AI assistants
+
+Here are all the resources we provide for AI assistants.
+
+### Modular `llms.txt` files
+
+Our documentation supports the [llms.txt](https://llmstxt.org/) proposed
+standard, providing LLM-friendly documentation files:
+
+| File | Description | Best for |
+|------|-------------|----------|
+| <a href="/llms.txt" target="_blank">llms.txt</a> | Index of links with brief descriptions | Tools that can follow links |
+| <a href="/llms-full.txt" target="_blank">llms-full.txt</a> | All docs in a single file (huge) | Comprehensive context |
+| <a href="/llms-python.txt" target="_blank">llms-python.txt</a> | MAX Python APIs | Python-based MAX development |
+| <a href="/llms-mojo.txt" target="_blank">llms-mojo.txt</a> | Mojo stdlib, MAX AI Kernels, MAX library | Mojo and kernel development |
+
+### Modular Cursor rules
+
+Copy these rules to your `.cursor/rules/` directory for consistent AI
+assistance with Mojo and MAX development:
+
+- **[`general_behavior_rules.mdc`](https://github.com/modular/modular/blob/main/.cursor/rules/general_behavior_rules.mdc)**:
+General rules for code creation. Emphasizes simplicity, thorough investigation,
+using existing solutions, descriptive naming, robust error handling, and
+documentation.
+
+- **[`git.mdc`](https://github.com/modular/modular/blob/main/.cursor/rules/git.mdc)**:
+Best practices for Git including code organization, commit strategies,
+branching models, and collaborative workflows.
+
+- **[`max_development.mdc`](https://github.com/modular/modular/blob/main/.cursor/rules/max_development.mdc)**:
+Guidelines for MAX development covering project context, task execution, code
+quality, testing practices, and documentation.
+
+- **[`mojo.mdc`](https://github.com/modular/modular/blob/main/.cursor/rules/mojo.mdc)**:
+Mojo coding standards, performance optimizations, and best practices for
+GPU-accelerated code.
+
+### Modular context files
+
+Project context files (`CLAUDE.md` and `AGENTS.md`) provide AI coding
+assistants with essential project information, such as:
+
+- Build and test commands
+- Project architecture overview
+- Coding conventions and commit message guidelines
+- Common development workflows
+
+Although `CLAUDE.md` is primarily used for Claude Code, some other AI tools
+also read it, but perhaps not by default when working in the repository—you
+might need to explicitly tell your AI to read it.
+
+The [`AGENTS.md` filename](https://agents.md/) is a more generic name that
+other coding assistants have adopted.
+
+To ensure compatibility with other tools, we provide both `CLAUDE.md` and
+`AGENTS.md` files—our
+[`AGENTS.md`](https://github.com/modular/modular/blob/main/AGENTS.md) file is
+just a symlink to the
+[`CLAUDE.md`](https://github.com/modular/modular/blob/main/CLAUDE.md) file.

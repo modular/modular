@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import simd_width_of
+from std.sys.info import simd_width_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.packing import PackMatrixCols
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils.index import Index
+from std.utils.index import Index
 
 comptime type = DType.float32
 comptime simd_size: Int = simd_width_of[DType.float32]()
@@ -34,9 +34,12 @@ comptime kc = 128
 @export(ABI="C")
 fn pack_b(
     packed_b: NDBuffer[
-        type, 3, MutAnyOrigin, DimList(width // kernel_cols, K, kernel_cols)
+        rank=3,
+        type,
+        MutAnyOrigin,
+        DimList(width // kernel_cols, K, kernel_cols),
     ],
-    b: NDBuffer[type, 2, MutAnyOrigin, DimList(K, N)],
+    b: NDBuffer[rank=2, type, MutAnyOrigin, DimList(K, N)],
 ):
     PackMatrixCols[
         DimList(K, N),
@@ -59,17 +62,20 @@ fn pack_b(
 
 fn test_pack_b() raises:
     var packed_b = NDBuffer[
-        type, 3, MutAnyOrigin, DimList(width // kernel_cols, K, kernel_cols)
+        rank=3,
+        type,
+        MutAnyOrigin,
+        DimList(width // kernel_cols, K, kernel_cols),
     ].stack_allocation[alignment=64]()
     packed_b.fill(1)
-    var b = NDBuffer[type, 2, MutAnyOrigin, DimList(K, N)].stack_allocation[
-        alignment=64
-    ]()
+    var b = NDBuffer[
+        rank=2, type, MutAnyOrigin, DimList(K, N)
+    ].stack_allocation[alignment=64]()
     b.fill(1)
     pack_b(packed_b, b)
 
     assert_equal(packed_b[0, 0, 0], 1.0)
 
 
-def main():
+def main() raises:
     test_pack_b()

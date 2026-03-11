@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import align_down, ceildiv
-from sys import (
+from std.math import align_down, ceildiv
+from std.sys import (
     align_of,
-    env_get_bool,
-    env_get_int,
+    get_defined_bool,
+    get_defined_int,
     has_accelerator,
     has_amd_gpu_accelerator,
     has_amd_rdna_gpu_accelerator,
@@ -23,23 +23,24 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys.info import _accelerator_arch
+from std.sys.info import _accelerator_arch, _has_blackwell_tcgen05
 
-from algorithm.functional import elementwise, tile_and_unswitch
+from std.algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import barrier, block_dim, global_idx, thread_idx
-from gpu.primitives.grid_controls import PDLLevel
-from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from gpu.host.info import A100, B200, H100, MI355X, GPUInfo
+from std.gpu import barrier, block_dim, global_idx, thread_idx
+from std.gpu.primitives.grid_controls import PDLLevel
+from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from std.gpu.host.info import A100, B200, H100, MI355X, GPUInfo
 from layout import LayoutTensor, RuntimeLayout
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout.tile_layout import TensorLayout
+from layout.tile_tensor import TileTensor
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
-from logger import Logger
-from memory import bitcast, stack_allocation
-from utils import Index, IndexList
-from utils.numerics import get_accum_type
+from std.logger import Logger
+from std.memory import bitcast, stack_allocation
+from std.utils import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 from ...gemv import gemv_gpu
 from ...utils import (
@@ -92,20 +93,20 @@ fn matmul_kernel[
     (N/tile_size, M/tile_size, 1). N is the first dimension for coalesced
     access.
     """
-    var a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
-    var b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
-    var c = NDBuffer[c_type, 2](c_ptr, Index(m, n))
+    var a = NDBuffer[rank=2, a_type](a_ptr, Index(m, k))
+    var b = NDBuffer[rank=2, b_type](b_ptr, Index(k, n))
+    var c = NDBuffer[rank=2, c_type](c_ptr, Index(m, n))
 
     # Allocate A, B tile in shared memory.
     var a_shared = stack_allocation[
         tile_size * tile_size,
         a_type,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var b_shared = stack_allocation[
         tile_size * tile_size,
         b_type,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     # Global index in C.
@@ -136,8 +137,7 @@ fn matmul_kernel[
         # Load A tile into shared memory.
         var a_val: Scalar[a_type]
 
-        @parameter
-        if not full_tile:
+        comptime if not full_tile:
             a_val = a[Int(row), offset + Int(localCol)] if (
                 row < UInt(m) and offset + Int(localCol) < k
             ) else 0.0
@@ -150,8 +150,7 @@ fn matmul_kernel[
         # Load B tile into shared memory.
         var b_val: Scalar[b_type]
 
-        @parameter
-        if not full_tile:
+        comptime if not full_tile:
             b_val = b[offset + Int(localRow), Int(col)] if (
                 col < UInt(n) and offset + Int(localRow) < k
             ) else 0.0
@@ -171,14 +170,10 @@ fn matmul_kernel[
 
         barrier()
 
-    tile_and_unswitch[update_tile](
-        0, k, VariadicList[Int](tile_size, K_remainder)
-    )
+    tile_and_unswitch[update_tile](0, k, tile_size, K_remainder)
 
     if row < UInt(m) and col < UInt(n):
-
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, 1](
                 Index(row, col), result.cast[c_type]()
@@ -191,21 +186,25 @@ fn matmul_kernel_naive[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
+    c_layout_type: TensorLayout,
+    a_layout_type: TensorLayout,
+    b_layout_type: TensorLayout,
     BLOCK_DIM: Int,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    c: TileTensor[c_type, c_layout_type, MutAnyOrigin],
+    a: TileTensor[a_type, a_layout_type, ImmutAnyOrigin],
+    b: TileTensor[b_type, b_layout_type, ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
 ):
+    comptime assert c.flat_rank == 2, "expected 2D tensor for c"
+    comptime assert a.flat_rank == 2, "expected 2D tensor for a"
+    comptime assert b.flat_rank == 2, "expected 2D tensor for b"
+
     var x = Int(global_idx.x)
     var y = Int(global_idx.y)
 
@@ -214,8 +213,7 @@ fn matmul_kernel_naive[
 
     var accum = Scalar[s_type]()
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         for i in range(k):
             var a_val = a[x, i]
             accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
@@ -228,8 +226,7 @@ fn matmul_kernel_naive[
                 Scalar[s_type]
             ](b[i, y].cast[s_type]())
 
-    @parameter
-    if elementwise_lambda_fn:
+    comptime if elementwise_lambda_fn:
         comptime elementwise_lambda = elementwise_lambda_fn.value()
         elementwise_lambda[c_type, 1](Index(x, y), accum.cast[c_type]())
     else:
@@ -237,11 +234,8 @@ fn matmul_kernel_naive[
 
 
 fn _amdgpu_get_mma_shape[dtype: DType, transpose_b: Bool]() -> IndexList[3]:
-    @parameter
-    if transpose_b and _accelerator_arch() == "amdgpu:gfx950":
-
-        @parameter
-        if dtype.is_half_float():
+    comptime if transpose_b and _accelerator_arch() == "amdgpu:gfx950":
+        comptime if dtype.is_half_float():
             return Index(16, 16, 32)
 
     return get_mma_shape[dtype, DType.float32]()
@@ -399,9 +393,9 @@ fn _matmul_gpu[
     pdl_level: PDLLevel = PDLLevel(),
     register_based_epilogue: Bool = True,
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[mut=False, a_type, 2, _, _],
-    b: NDBuffer[mut=False, b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[mut=False, rank=2, a_type, _, _],
+    b: NDBuffer[mut=False, rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises:
     comptime a_shape = a.shape
@@ -455,15 +449,13 @@ fn _matmul_gpu[
     fn compute_lambda_wrapper[
         _dtype: DType, _width: Int, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[_dtype, _width]):
-        @parameter
-        if elementwise_compute_lambda_fn:
+        comptime if elementwise_compute_lambda_fn:
             comptime compute_lambda = elementwise_compute_lambda_fn.value()
             var output = compute_lambda(coords, val)
-            constrained[
-                output.dtype == c.type,
-                "compute epilogue lambda output and c type mismatch",
-            ]()
-            c.store[alignment = alignment * size_of[c.type]()](
+            comptime assert (
+                output.dtype == c.type
+            ), "compute epilogue lambda output and c type mismatch"
+            c.store[alignment=alignment * size_of[c.type]()](
                 coords, rebind[SIMD[c.type, _width]](output)
             )
 
@@ -480,13 +472,7 @@ fn _matmul_gpu[
     )
     var amdgpu_matmul_cond = has_amd_gpu_accelerator() and n % 4 == 0
     var multi_gemm_cond = (
-        (
-            m > 1
-            or (
-                has_amd_gpu_accelerator()
-                and (transpose_b == False or a_type.is_float8())
-            )
-        )
+        (m > 1 or has_amd_gpu_accelerator())
         and (n % 128 == 0 or h100_matmul_cond or amdgpu_matmul_cond)
         and k % 32 == 0
         and k >= 128
@@ -500,8 +486,7 @@ fn _matmul_gpu[
     logger.info("Static shapes available: N=", b_shape.has_value[1](), " K=", a_shape.has_value[1]())
     # fmt: on
 
-    @parameter
-    if env_get_bool["MODULE_USE_VENDOR_BLAS", False]():
+    comptime if get_defined_bool["MODULE_USE_VENDOR_BLAS", False]():
         logger.info("Executing: Vendor BLAS")
         return matmul_vendor[
             transpose_b=transpose_b,
@@ -510,17 +495,13 @@ fn _matmul_gpu[
         ](c, a, b, ctx)
 
     comptime use_experimental_kernels = Bool(
-        env_get_int["USE_EXPERIMENTAL_KERNELS", 0]()
+        get_defined_int["USE_EXPERIMENTAL_KERNELS", 0]()
     )
 
     comptime bf16_or_fp16 = (DType.bfloat16, DType.float16)
     comptime bf16_or_fp16_fp32 = (DType.bfloat16, DType.float16, DType.float32)
 
-    @parameter
-    if (
-        has_nvidia_gpu_accelerator()
-        and ctx.default_device_info.compute > H100.compute
-    ):
+    comptime if (has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05()):
         return matmul_dispatch_sm100[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
@@ -530,8 +511,7 @@ fn _matmul_gpu[
             pdl_level=pdl_level,
         ](c, a, b, ctx)
 
-    @parameter
-    if ctx.default_device_info == H100:
+    comptime if ctx.default_device_info == H100:
         var status = matmul_dispatch_sm90[
             c_type,
             a_type,
@@ -544,8 +524,7 @@ fn _matmul_gpu[
         if status:
             return
 
-    @parameter
-    if (
+    comptime if (
         matmul_supported_format
         and has_accelerator()
         and not has_apple_gpu_accelerator()
@@ -568,9 +547,9 @@ fn _matmul_gpu[
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_wrapper,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b_shape]](b),
                     runtime_config,
                     ctx,
                 )
@@ -580,8 +559,7 @@ fn _matmul_gpu[
             fn _multistage_gemm[
                 config: MatmulConfig[a_type, b_type, c_type, transpose_b]
             ]() raises:
-                @parameter
-                if config.num_k_partitions > 1:
+                comptime if config.num_k_partitions > 1:
                     return _multistage_gemm[config](config)
 
                 return multistage_gemm[
@@ -589,22 +567,20 @@ fn _matmul_gpu[
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_wrapper,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b_shape]](b),
                     ctx,
                 )
 
             # Allow caller to overwrite dispatch heuristic with their own config.
-            @parameter
-            if config:
+            comptime if config:
                 return _multistage_gemm[config.value()]()
 
             comptime static_N = c_shape.get[1]()
             comptime static_K = a_shape.get[1]()
 
-            @parameter
-            if has_amd_gpu_accelerator():
+            comptime if has_amd_gpu_accelerator():
 
                 @always_inline
                 @parameter
@@ -631,13 +607,19 @@ fn _matmul_gpu[
                     )
                     return _multistage_gemm[config]()
 
-                @parameter
-                if not transpose_b:
+                if m == 1:
+                    return gemv_gpu[
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=elementwise_lambda_wrapper,
+                        pdl_level=pdl_level,
+                    ](c, a, b, ctx)
+
+                comptime if not transpose_b:
                     return kernel_helper[128, 128, num_pipeline_stages=2]()
-                elif env_get_bool["AUTOTUNING_MODE", False]():
-                    comptime block_m = env_get_int["TUNE_BM", 128]()
-                    comptime block_n = env_get_int["TUNE_BN", 128]()
-                    comptime num_k_partitions = env_get_int[
+                elif get_defined_bool["AUTOTUNING_MODE", False]():
+                    comptime block_m = get_defined_int["TUNE_BM", 128]()
+                    comptime block_n = get_defined_int["TUNE_BN", 128]()
+                    comptime num_k_partitions = get_defined_int[
                         "TUNE_NUM_K_PARTITIONS", 1
                     ]()
                     return kernel_helper[
@@ -655,8 +637,7 @@ fn _matmul_gpu[
                 var best_idx = 0
                 var best_score = Int.MAX
 
-                @parameter
-                for i in range(len(block_shape_list)):
+                comptime for i in range(len(block_shape_list)):
                     comptime block_shape = block_shape_list[i]
                     comptime block_m = block_shape[0]
                     comptime block_n = block_shape[1]
@@ -671,8 +652,7 @@ fn _matmul_gpu[
                         best_idx = i
                         best_score = score
 
-                @parameter
-                for i in range(len(block_shape_list)):
+                comptime for i in range(len(block_shape_list)):
                     if best_idx == i:
                         comptime config = _amdgpu_matmul_config_from_block_shape[
                             c_type,
@@ -689,9 +669,7 @@ fn _matmul_gpu[
                 return kernel_helper[128, 128]()
 
             else:
-
-                @parameter
-                if (
+                comptime if (
                     a_type == b_type
                     and a_type.is_half_float()
                     and ctx.default_device_info == A100
@@ -710,9 +688,7 @@ fn _matmul_gpu[
                         4096,
                     ]
                     try:
-
-                        @parameter
-                        for M in Ms:
+                        comptime for M in Ms:
                             if M <= Int32(m):
                                 comptime key = String(
                                     M, "_", static_N, "_", static_K
@@ -745,8 +721,7 @@ fn _matmul_gpu[
                     _multistage_gemm[kernels.ampere_128x128_4](best_config)
                 return
 
-    @parameter
-    if not a_type.is_float8():
+    comptime if not a_type.is_float8():
         if n == 1 or m == 1:
             gemv_gpu[
                 transpose_b=transpose_b,
@@ -761,8 +736,7 @@ fn _matmul_gpu[
         DType.bfloat16,
     )
 
-    @parameter
-    if (
+    comptime if (
         a_type in vendor_blas_fallback_dtypes
         and b_type in vendor_blas_fallback_dtypes
         and c_type in vendor_blas_fallback_dtypes
@@ -782,8 +756,10 @@ fn _matmul_gpu[
             # Fallback to the naive kernel.
             logger.warning("Vendor BLAS failed")
 
-    @parameter
-    if has_amd_rdna_gpu_accelerator() and not a_type.is_float8():
+    comptime if has_amd_rdna_gpu_accelerator() and a_type in (
+        DType.float16,
+        DType.bfloat16,
+    ):
         if m > 1 and n > 1 and k >= 16 and k % 16 == 0:
             logger.info("Executing: RDNA WMMA MATMUL kernel")
             comptime _BLOCK_M = 64
@@ -791,25 +767,25 @@ fn _matmul_gpu[
             comptime _NUM_WARPS = 4
             comptime _WARP_SIZE = 32
 
-            var c_lt = from_ndbuffer_row_major(c)
-            var a_lt = from_ndbuffer_row_major(a)
-            var b_lt = from_ndbuffer_row_major(b)
+            var c_tt = TileTensor(c)
+            var a_tt = TileTensor(a)
+            var b_tt = TileTensor(b)
 
             comptime rdna_kernel = gemm_kernel_rdna[
                 c_type,
                 a_type,
                 b_type,
-                c_lt.layout,
-                a_lt.layout,
-                b_lt.layout,
+                type_of(c_tt).LayoutType,
+                type_of(a_tt).LayoutType,
+                type_of(b_tt).LayoutType,
                 transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
             ]
 
             ctx.enqueue_function[rdna_kernel, rdna_kernel](
-                c_lt,
-                a_lt,
-                b_lt,
+                c_tt,
+                a_tt,
+                b_tt,
                 m,
                 n,
                 k,
@@ -821,26 +797,26 @@ fn _matmul_gpu[
     logger.info("Executing: Naive MATMUL kernel")
     comptime BLOCK_DIM = 16
 
-    var c_layout_tensor = from_ndbuffer_row_major(c)
-    var a_layout_tensor = from_ndbuffer_row_major(a)
-    var b_layout_tensor = from_ndbuffer_row_major(b)
+    var c_tensor = TileTensor(c)
+    var a_tensor = TileTensor(a)
+    var b_tensor = TileTensor(b)
 
     comptime kernel = matmul_kernel_naive[
         c_type,
         a_type,
         b_type,
-        c_layout_tensor.layout,
-        a_layout_tensor.layout,
-        b_layout_tensor.layout,
+        type_of(c_tensor).LayoutType,
+        type_of(a_tensor).LayoutType,
+        type_of(b_tensor).LayoutType,
         BLOCK_DIM,
         transpose_b,
         elementwise_lambda_fn=elementwise_lambda_wrapper,
     ]
 
     ctx.enqueue_function[kernel, kernel](
-        c_layout_tensor,
-        a_layout_tensor,
-        b_layout_tensor,
+        c_tensor,
+        a_tensor,
+        b_tensor,
         m,
         n,
         k,
@@ -857,11 +833,11 @@ fn split_k_reduce[
     work_space_layout: Layout,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[mut=True, c_type, c_layout],
-    work_space: LayoutTensor[work_space_type, work_space_layout],
+    c: LayoutTensor[mut=True, c_type, c_layout, ...],
+    work_space: LayoutTensor[work_space_type, work_space_layout, ...],
     ctx: DeviceContext,
 ) raises:
-    comptime simd_width = simd_width_of[c_type, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[c_type, target=get_gpu_target()]()
     var num_partitions = work_space.dim[0]()
     var M = c.dim[0]()
     var N = c.dim[1]()
@@ -881,8 +857,7 @@ fn split_k_reduce[
 
         comptime align = align_of[SIMD[c_type, simd_width]]()
 
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime epilogue = elementwise_lambda_fn.value()
             epilogue[alignment=align](
                 rebind[IndexList[2]](c_coord), vec.cast[c_type]()
@@ -908,9 +883,9 @@ fn multistage_gemm[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, c_shape],
-    a: NDBuffer[a_type, 2, _, a_shape],
-    b: NDBuffer[b_type, 2, _, b_shape],
+    c: NDBuffer[mut=True, rank=2, c_type, _, c_shape],
+    a: NDBuffer[rank=2, a_type, _, a_shape],
+    b: NDBuffer[rank=2, b_type, _, b_shape],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()
@@ -919,12 +894,11 @@ fn multistage_gemm[
     logger.info("------ Dispatching to Multistage GEMM ------")
     logger.info(config)
 
-    var tensor_c = from_ndbuffer_row_major(c)
-    var tensor_a = from_ndbuffer_row_major(a)
-    var tensor_b = from_ndbuffer_row_major(b)
+    var tensor_c = TileTensor(c).to_layout_tensor()
+    var tensor_a = TileTensor(a).to_layout_tensor()
+    var tensor_b = TileTensor(b).to_layout_tensor()
 
-    @parameter
-    if (
+    comptime if (
         has_amd_gpu_accelerator()
         and not has_amd_rdna_gpu_accelerator()
         and transpose_b
@@ -1001,9 +975,9 @@ fn multistage_gemm[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, c_shape],
-    a: NDBuffer[mut=False, a_type, 2, _, a_shape],
-    b: NDBuffer[mut=False, b_type, 2, _, b_shape],
+    c: NDBuffer[mut=True, rank=2, c_type, _, c_shape],
+    a: NDBuffer[mut=False, rank=2, a_type, _, a_shape],
+    b: NDBuffer[mut=False, rank=2, b_type, _, b_shape],
     runtime_config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     ctx: DeviceContext,
 ) raises:
@@ -1014,9 +988,9 @@ fn multistage_gemm[
     logger.info(config)
     logger.info("K partitions:", runtime_config.num_k_partitions)
 
-    var tensor_c = from_ndbuffer_row_major(c)
-    var tensor_a = from_ndbuffer_row_major(a)
-    var tensor_b = from_ndbuffer_row_major(b)
+    var tensor_c = TileTensor(c).to_layout_tensor()
+    var tensor_a = TileTensor(a).to_layout_tensor()
+    var tensor_b = TileTensor(b).to_layout_tensor()
 
     if runtime_config.num_k_partitions > 1:
         logger.info(
@@ -1054,8 +1028,7 @@ fn multistage_gemm[
             elementwise_lambda_fn,
         ]
 
-        @parameter
-        if has_amd_gpu_accelerator() and not has_amd_rdna_gpu_accelerator():
+        comptime if has_amd_gpu_accelerator() and not has_amd_rdna_gpu_accelerator():
             ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
                 tensor_c,
                 tensor_a,
@@ -1088,8 +1061,7 @@ fn multistage_gemm[
         return
 
     # Dispatch w/o split K
-    @parameter
-    if (
+    comptime if (
         has_amd_gpu_accelerator()
         and not has_amd_rdna_gpu_accelerator()
         and transpose_b

@@ -18,15 +18,16 @@ formatted reporting. It includes support for colored output, timing statistics,
 and flexible test selection via CLI arguments.
 """
 
-from math import ceil, floor
-from os import sep
-from time import perf_counter_ns
-from utils._ansi import Color, Text
-from collections import Set
+from std.math import ceil, floor
+from std.os import sep
+from std.time import perf_counter_ns
+from std.utils._ansi import Color, Text
+from std.collections import Set
+import std.format._utils as fmt
 
-from reflection import get_function_name, call_location, SourceLocation
-from sys.intrinsics import _type_is_eq
-from sys import argv
+from std.reflection import get_function_name, call_location, SourceLocation
+from std.sys.intrinsics import _type_is_eq
+from std.sys import argv
 
 
 struct _Indent[W: Writable, origin: ImmutOrigin](Writable):
@@ -52,8 +53,7 @@ fn _format_nsec(nanoseconds: UInt) -> String:
 
     The returned string is in the format of "NNN.NNN"
     """
-    var ms_total = nanoseconds // 1_000_000
-    var ns_remainder = nanoseconds % 1_000_000
+    var ms_total, ns_remainder = divmod(nanoseconds, 1_000_000)
 
     var fractional_ms = (ns_remainder * 1000) // 1_000_000
 
@@ -75,8 +75,7 @@ fn _format_nsec(nanoseconds: UInt) -> String:
 fn _writeln[
     *Ts: Writable
 ](mut writer: Some[Writer], *args: *Ts, sep: StaticString = StaticString("")):
-    @parameter
-    for i in range(args.__len__()):
+    comptime for i in range(args.__len__()):
         args[i].write_to(writer)
         sep.write_to(writer)
     writer.write("\n")
@@ -120,6 +119,21 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
             writer.write(Text[Color.RED]("FAIL"))
         elif self == Self.SKIP:
             writer.write(Text[Color.YELLOW]("SKIP"))
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this test result to a writer.
+
+        Args:
+            writer: The writer to output to.
+        """
+        writer.write_string("TestResult.")
+        if self == Self.PASS:
+            writer.write_string("PASS")
+        elif self == Self.FAIL:
+            writer.write_string("FAIL")
+        elif self == Self.SKIP:
+            writer.write_string("SKIP")
 
 
 struct TestReport(Copyable, Writable):
@@ -205,7 +219,7 @@ struct TestReport(Copyable, Writable):
     @staticmethod
     fn _format_error(e: Error) -> String:
         var replacement = String("\n", _Indent("", level=Self._ErrorIndent))
-        return e.__str__().replace("\n", replacement)
+        return String(e).replace("\n", replacement)
 
     fn write_to(self, mut writer: Some[Writer]):
         """Write the formatted test report to the writer.
@@ -226,6 +240,19 @@ struct TestReport(Copyable, Writable):
                     level=Self._ErrorIndent,
                 ),
             )
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this test report to a writer.
+
+        Args:
+            writer: The writer to output to.
+        """
+        fmt.FormatStruct(writer, "TestReport").fields(
+            fmt.Named("name", fmt.Repr(self.name)),
+            fmt.Named("result", fmt.Repr(self.result)),
+            fmt.Named("duration_ns", self.duration_ns),
+        )
 
 
 struct TestSuiteReport(Copyable, Writable):
@@ -321,6 +348,20 @@ struct TestSuiteReport(Copyable, Writable):
                 sep=" ",
             )
 
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this test suite report to a writer.
+
+        Args:
+            writer: The writer to output to.
+        """
+        fmt.FormatStruct(writer, "TestSuiteReport").fields(
+            fmt.Named("passed", self.passed),
+            fmt.Named("failed", self.failures),
+            fmt.Named("skipped", self.skipped),
+            fmt.Named("total_duration_ns", self.total_duration_ns),
+        )
+
 
 @fieldwise_init
 struct _Test(Copyable):
@@ -342,27 +383,27 @@ struct TestSuite(Movable):
     Example:
 
     ```mojo
-    from testing import assert_equal, TestSuite
+    from std.testing import assert_equal, TestSuite
 
-    def test_something():
+    def test_something() raises:
         assert_equal(1 + 1, 2)
 
-    def test_some_other_thing():
+    def test_some_other_thing() raises:
         assert_equal(2 + 2, 4)
 
-    def main():
+    def main() raises:
         TestSuite.discover_tests[__functions_in_module()]().run()
     ```
 
     Alternatively, you can manually register tests by calling the `test` method.
 
     ```mojo
-    from testing import assert_equal, TestSuite
+    from std.testing import assert_equal, TestSuite
 
-    def some_test():
+    def some_test() raises:
         assert_equal(1 + 1, 2)
 
-    def main():
+    def main() raises:
         var suite = TestSuite()
         suite.test[some_test]()
         suite^.run()
@@ -403,20 +444,16 @@ struct TestSuite(Movable):
         self.location = location.or_else(call_location())
         self.skip_list = {}
         self.allow_list = None  # None means no allow list specified.
-        self.cli_args = cli_args.or_else(List[StaticString](argv()))
+        self.cli_args = cli_args^.or_else(List[StaticString](argv()))
 
     fn _register_tests[test_funcs: Tuple, /](mut self) raises:
         """Internal function to prevent all registrations from being inlined."""
 
-        @parameter
-        for idx in range(len(test_funcs)):
+        comptime for idx in range(len(test_funcs)):
             comptime test_func = test_funcs[idx]
 
-            @parameter
-            if get_function_name[test_func]().startswith("test_"):
-
-                @parameter
-                if _type_is_eq[type_of(test_func), _Test.fn_type]():
+            comptime if get_function_name[test_func]().startswith("test_"):
+                comptime if _type_is_eq[type_of(test_func), _Test.fn_type]():
                     self.test[rebind[_Test.fn_type](test_func)]()
                 else:
                     raise Error(

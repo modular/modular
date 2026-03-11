@@ -12,15 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import iota
+from std.math import iota
 
-from random import random_float64
-from layout._coord import Coord, Idx, coord_to_index_list
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.random import random_float64
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from nn.softmax import softmax
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @always_inline
@@ -96,9 +100,9 @@ fn _topp_minp_sampling[
             sorted probs are in descending order. If true, copies the sorted
             probs back into input_logits.
     Args:
-        p_thresholds: NDBuffer[dtype, 1] - Sampling thresholds, one per batch.
-        input_logits: NDBuffer[dtype, rank] - Input logits (modified in-place).
-        out_token_ids: NDBuffer[out_idx_type, rank] - Output sampled token IDs.
+        p_thresholds: NDBuffer[rank=1, dtype] - Sampling thresholds, one per batch.
+        input_logits: NDBuffer[rank=rank, dtype] - Input logits (modified in-place).
+        out_token_ids: NDBuffer[rank=rank, out_idx_type] - Output sampled token IDs.
         temperature: Scalar[dtype] - Temperature for logits scaling.
     """
     comptime assert (
@@ -148,21 +152,19 @@ fn _topp_minp_sampling[
 
     var shape = IndexList[input_logits.rank]()
 
-    @parameter
-    for i in range(input_logits.rank):
+    comptime for i in range(input_logits.rank):
         shape[i] = input_logits.layout.shape[i]().value()
 
     softmax[simd_width=1, input_fn=apply_temperature](
         shape,
-        sorted_probs.to_layout_tensor(),
+        sorted_probs,
         axis=input_logits.rank - 1,
     )
 
     sort_buf_descending(sorted_probs, sorted_ids, vocab_size)
 
     # Copy sorted probs back to input_logits if testing
-    @parameter
-    if _test_sort:
+    comptime if _test_sort:
         for i in range(batch_size * vocab_size):
             input_logits.ptr[i] = sorted_probs.ptr[i]
 
@@ -170,8 +172,7 @@ fn _topp_minp_sampling[
     for batch in range(batch_size):
         var p_threshold = p_thresholds[batch]
 
-        @parameter
-        if is_top_p:
+        comptime if is_top_p:
             # Sample using top-p (nucleus) sampling
             var r = p_threshold * random_float64().cast[dtype]()
             for i in range(vocab_size):
@@ -220,7 +221,7 @@ fn sort_buf_descending[
     """Sort each batch separately in descending order using parallel merge sort.
     """
     comptime assert buf_keys.rank == 2, "rank must be 2"
-    var batch_size = buf_keys.numel() // vocab_size
+    var batch_size = buf_keys.num_elements() // vocab_size
 
     for batch_id in range(batch_size):
         var start = batch_id * vocab_size

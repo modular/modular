@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements the dim type."""
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 @fieldwise_init("implicit")
-struct Dim(Stringable, TrivialRegisterPassable, Writable):
+struct Dim(TrivialRegisterPassable, Writable):
     """Represents a dimension with up to three components (x, y, z).
 
     This struct is commonly used to represent grid and block dimensions
@@ -141,6 +141,7 @@ struct Dim(Stringable, TrivialRegisterPassable, Writable):
         """
         return self._value[idx]
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the Dim.
@@ -150,6 +151,7 @@ struct Dim(Stringable, TrivialRegisterPassable, Writable):
         """
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Returns a string representation of the Dim.
 

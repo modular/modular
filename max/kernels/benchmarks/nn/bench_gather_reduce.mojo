@@ -11,19 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.random import random_si64
+from std.sys import simd_width_of, size_of
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from random import random_si64
-from sys import simd_width_of, size_of
-
-from benchmark import Bench, Bencher, BenchId
-from layout._layout import row_major
-from layout._coord import Coord, Idx
-from layout._tile_tensor import TileTensor
+from std.benchmark import Bench, Bencher, BenchId
+from layout import Coord, Idx, TileTensor, row_major
 from nn.gather_scatter import gather_reduce
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @always_inline
@@ -45,15 +40,9 @@ fn bench_gather_reduce(mut b: Bencher):
     var input_shape = IndexList[2](num_rows, embedding_dim)
     var output_shape = IndexList[2](num_indices, embedding_dim)
     var indices_shape = IndexList[2](num_indices, multi_hot_dim)
-    var input_storage = UnsafePointer[Scalar[type]].alloc(
-        input_shape.flattened_length()
-    )
-    var output_storage = UnsafePointer[Scalar[type]].alloc(
-        output_shape.flattened_length()
-    )
-    var indices_storage = UnsafePointer[Int32].alloc(
-        indices_shape.flattened_length()
-    )
+    var input_storage = alloc[Scalar[type]](input_shape.flattened_length())
+    var output_storage = alloc[Scalar[type]](output_shape.flattened_length())
+    var indices_storage = alloc[Int32](indices_shape.flattened_length())
     var input = TileTensor(input_storage, row_major(Coord(input_shape))).fill(1)
     var output = TileTensor(
         output_storage, row_major(Coord(output_shape))
@@ -80,7 +69,7 @@ fn bench_gather_reduce(mut b: Bencher):
     indices.ptr.free()
 
 
-def main():
+def main() raises:
     var m = Bench()
     m.bench_function[bench_gather_reduce](
         BenchId("gather_reduce_dlrm1_multihot")

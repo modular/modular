@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
-from os import abort
-from gpu import block_dim, block_idx, global_idx
-from memory import UnsafePointer, alloc
+from std.os import abort
+from std.gpu import block_dim, block_idx, global_idx
+from std.memory import UnsafePointer, alloc
 from shmem import *
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 fn set_and_shift_kernel(
@@ -58,10 +58,9 @@ fn set_and_shift_kernel(
 fn test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
     comptime num_elems: UInt = 8192
     comptime threads_per_block: UInt = 256
-    debug_assert(
-        num_elems % threads_per_block == 0,
-        "num_elems must be divisible by threads_per_block",
-    )
+    assert (
+        num_elems % threads_per_block == 0
+    ), "num_elems must be divisible by threads_per_block"
     comptime num_blocks = num_elems // threads_per_block
 
     var mype = shmem_my_pe()
@@ -98,14 +97,14 @@ fn test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
         assert_equal(
             host[Int(i)],
             expected,
-            String("unexpected value on PE: ", mype, " at idx: ", i),
+            t"unexpected value on PE: {mype} at idx: {i}",
         )
 
     print("[", mype, "of", npes, "] run complete. use_nbi=", use_nbi)
 
 
-def main():
-    def test_both(ctx: SHMEMContext):
+def main() raises:
+    def test_both(ctx: SHMEMContext) raises:
         test_shmem_put[False](ctx)
         # Test the non-blocking version of `shmem_put` primitive, which returns
         # after initiating the operation.

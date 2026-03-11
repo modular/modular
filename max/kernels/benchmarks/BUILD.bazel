@@ -33,10 +33,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
-    "gpu/bench_split_matmul_allreduce.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
     "gpu/bench_matmul.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -64,6 +60,14 @@ _EXTRA_CONSTRAINTS = {
     }),  # FIXME: MOCO-3161
     "gpu/bench_conv2d_sm100.mojo": ["//:b200_gpu"],  # SM100-specific TMA im2col
     "gpu/bench_block_scaled_matmul.mojo": ["//:b200_gpu"],  # SM100-specific block-scaled matmul
+    "gpu/bench_dual_gemm.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # Requires NVIDIA GPU tensor cores
+    "gpu/bench_moe_routing.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # Requires NVIDIA GPU warp primitives
 }
 
 _CPU_TESTS = glob(
@@ -142,6 +146,7 @@ _CPU_TESTS = glob(
             "//max:layout",
             "//max:nn",
             "//max:shmem",
+            "//max:structured_kernels",
             "@mojo//:std",
         ],
     )

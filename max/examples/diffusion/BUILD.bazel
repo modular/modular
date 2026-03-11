@@ -10,6 +10,22 @@ modular_py_library(
     ],
     deps = [
         "//max/python/max:tensor",  # Provides max.functional and max.tensor.Tensor
+        requirement("torch"),
+    ],
+)
+
+modular_py_binary(
+    name = "flux2_comparison",
+    srcs = ["flux2_comparison.py"],
+    tags = ["no-pydeps"],
+    deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        requirement("diffusers"),
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
 

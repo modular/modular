@@ -15,14 +15,14 @@
 You can import these APIs from the `sys` package. For example:
 
 ```mojo
-from sys import PrefetchLocality
+from std.sys import PrefetchLocality
 ```
 """
 
-import math
-from collections.string.string_slice import _get_kgen_string
-from sys import is_compile_time
-from sys.info import _is_sm_9x_or_newer, is_gpu
+import std.math
+from std.collections.string.string_slice import _get_kgen_string
+from std.sys import is_run_in_comptime_interpreter
+from std.sys.info import _is_sm_9x_or_newer, is_gpu
 
 
 from ._assembly import inlined_assembly
@@ -61,12 +61,11 @@ fn llvm_intrinsic[
 
     comptime intrin_kgen_string = _get_kgen_string[intrin]()
 
-    @parameter
-    if _mlirtype_is_eq[type, NoneType]():
+    comptime if _mlirtype_is_eq[type, NoneType]():
         __mlir_op.`pop.call_llvm_intrinsic`[
             intrin=intrin_kgen_string,
             _type=None,
-            hasSideEffects = has_side_effect._mlir_value,
+            hasSideEffects=has_side_effect._mlir_value,
         ](loaded_pack)
         return rebind[type](None)
 
@@ -74,7 +73,7 @@ fn llvm_intrinsic[
         return __mlir_op.`pop.call_llvm_intrinsic`[
             intrin=intrin_kgen_string,
             _type=type,
-            hasSideEffects = has_side_effect._mlir_value,
+            hasSideEffects=has_side_effect._mlir_value,
         ](loaded_pack)
 
 
@@ -138,18 +137,15 @@ fn gather[
       A SIMD[dtype, size] containing the result of the gather operation.
     """
 
-    @parameter
-    if size == 1:
+    comptime if size == 1:
         return UnsafePointer[Scalar[dtype], MutExternalOrigin](
             unsafe_from_address=Int(base[0])
         ).load[invariant=invariant]() if mask else passthrough[0]
 
-    @parameter
-    if is_gpu() and invariant:
+    comptime if is_gpu() and invariant:
         var result = SIMD[dtype, size]()
 
-        @parameter
-        for i in range(size):
+        comptime for i in range(size):
             result[i] = UnsafePointer[Scalar[dtype], MutExternalOrigin](
                 unsafe_from_address=Int(base[i])
             ).load[invariant=invariant]() if mask[i] else passthrough[i]
@@ -233,8 +229,7 @@ fn scatter[
         the base vector.
     """
 
-    @parameter
-    if size == 1:
+    comptime if size == 1:
         if mask:
             var ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin](
                 unsafe_from_address=Int(base[0])
@@ -490,8 +485,7 @@ fn prefetch[
         params.rw == PrefetchRW.READ or type_of(addr).mut == True
     ), "prefetch pointer mutability must match the prefetch read-write option"
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         inlined_assembly[
             "prefetch.global.L2 [$0];",
             NoneType,
@@ -545,10 +539,9 @@ fn masked_load[
     Returns:
       The loaded memory stored in a vector of type SIMD[dtype, size].
     """
-    debug_assert(Bool(addr), "masked_load requires a valid (non-null) pointer")
+    assert Bool(addr), "masked_load requires a valid (non-null) pointer"
 
-    @parameter
-    if size == 1:
+    comptime if size == 1:
         return addr.load() if mask else passthrough[0]
 
     return llvm_intrinsic["llvm.masked.load", SIMD[dtype, size]](
@@ -586,10 +579,9 @@ fn masked_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
-    debug_assert(Bool(addr), "masked_store requires a valid (non-null) pointer")
+    assert Bool(addr), "masked_store requires a valid (non-null) pointer"
 
-    @parameter
-    if size == 1:
+    comptime if size == 1:
         if mask:
             addr.store(value[0])
         return
@@ -628,12 +620,9 @@ fn compressed_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
-    debug_assert(
-        Bool(addr), "compressed_store requires a valid (non-null) pointer"
-    )
+    assert Bool(addr), "compressed_store requires a valid (non-null) pointer"
 
-    @parameter
-    if size == 1:
+    comptime if size == 1:
         if mask:
             addr.store(value[0])
         return
@@ -676,16 +665,15 @@ fn strided_load[
     Returns:
       A vector containing the loaded data.
     """
-    debug_assert(Bool(addr), "strided_load requires a valid (non-null) pointer")
+    assert Bool(addr), "strided_load requires a valid (non-null) pointer"
 
-    @parameter
-    if simd_width == 1:
+    comptime if simd_width == 1:
         return addr.load[invariant=invariant]() if mask else Scalar[dtype]()
 
     var offset = (
         SIMD[DType.int, simd_width](Int(addr))
         + SIMD[DType.int, simd_width](stride * size_of[dtype]())
-        * math.iota[DType.int, simd_width]()
+        * std.math.iota[DType.int, simd_width]()
     )
     var passthrough = SIMD[dtype, simd_width]()
     return gather[invariant=invariant](offset, mask, passthrough)
@@ -720,12 +708,9 @@ fn strided_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
-    debug_assert(
-        Bool(addr), "strided_store requires a valid (non-null) pointer"
-    )
+    assert Bool(addr), "strided_store requires a valid (non-null) pointer"
 
-    @parameter
-    if simd_width == 1:
+    comptime if simd_width == 1:
         if mask:
             addr.store(value[0])
         return
@@ -733,7 +718,7 @@ fn strided_store[
     var offset = (
         SIMD[DType.int, simd_width](Int(addr))
         + SIMD[DType.int, simd_width](stride * size_of[dtype]())
-        * math.iota[DType.int, simd_width]()
+        * std.math.iota[DType.int, simd_width]()
     )
     scatter(value, offset, mask)
 
@@ -833,7 +818,7 @@ struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
         Returns:
             The tuple element at the requested index.
         """
-        return __mlir_op.`kgen.pack.extract`[index = i.__mlir_index__()](
+        return __mlir_op.`kgen.pack.extract`[index=i.__mlir_index__()](
             self._mlir_value
         )
 
@@ -861,7 +846,7 @@ fn expect[T: TrivialRegisterPassable, //, expected_val: T](val: T) -> T:
     Notes:
         Only works with integer/boolean types.
     """
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         return val
     return llvm_intrinsic["llvm.expect", T, has_side_effect=False](
         val, expected_val
@@ -919,7 +904,7 @@ fn assume(val: Bool):
     Args:
       val: The input value which is assumed to be `True`.
     """
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         return
     llvm_intrinsic["llvm.assume", NoneType](val)
 
@@ -932,7 +917,7 @@ fn assume(val: Bool):
 @always_inline
 fn implicitarg_ptr(
     out result: UnsafePointer[
-        UInt8, MutExternalOrigin, address_space = AddressSpace.CONSTANT
+        UInt8, MutExternalOrigin, address_space=AddressSpace.CONSTANT
     ]
 ):
     """

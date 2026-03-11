@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import align_of, simd_width_of, size_of, has_nvidia_gpu_accelerator
-from sys.info import _is_sm_100x_or_newer
+from std.sys import align_of, simd_width_of, size_of, has_nvidia_gpu_accelerator
+from std.sys.info import _is_sm_100x_or_newer
 
-from algorithm import elementwise
+from std.algorithm import elementwise
 from buffer.buffer import NDBuffer
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import B200
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import B200
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 from ...utils import elementwise_epilogue_type
 from ...utils_gpu import MatmulConfig
@@ -35,9 +35,9 @@ fn matmul[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     config: Optional[MatmulConfig[a_type, b_type, c_type, transpose_b]] = None,
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[mut=False, rank=2, a_type, _, _],
+    b: NDBuffer[mut=False, rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises:
     """This implements the matmul kernel for the Blackwell architecture. Note
@@ -45,8 +45,7 @@ fn matmul[
     architectures, so in place we just call the CUBLAS library.
     """
 
-    @parameter
-    if not elementwise_lambda_fn:
+    comptime if not elementwise_lambda_fn:
         if not c.data:
             raise "c must be allocated"
         vendor_matmul[use_tf32=True](
@@ -62,7 +61,7 @@ fn matmul[
             and ctx.default_device_info.compute >= B200.compute
         )
         comptime simd_size = 32 // size_of[c.type]() if use_32b_simd else (
-            simd_width_of[c.type, target = get_gpu_target()]()
+            simd_width_of[c.type, target=get_gpu_target()]()
         )
 
         @parameter
@@ -74,7 +73,7 @@ fn matmul[
             var c_val = c.load[
                 width=simd_width,
                 # Load takes alignment in bytes, lambda takes number of elements
-                alignment = alignment * size_of[c_type](),
+                alignment=alignment * size_of[c_type](),
             ](c_coord)
             epilogue[c.type, simd_width, alignment=alignment](c_coord, c_val)
 
@@ -100,7 +99,7 @@ fn matmul[
         )
 
         # Construct a new buffer with external origin pointing to the temporary storage.
-        var c_tmp = NDBuffer[c.type, 2, MutExternalOrigin](
+        var c_tmp = NDBuffer[rank=2, c.type, MutExternalOrigin](
             rebind[UnsafePointer[Scalar[c.type], MutExternalOrigin]](
                 tmp_device_buffer.unsafe_ptr()
             ),

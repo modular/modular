@@ -20,7 +20,9 @@ import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig, SupportedEncoding
+from max.pipelines import PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
     CreateCompletionResponse,
@@ -32,13 +34,15 @@ MAX_READ_SIZE = 10 * 1024
 MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
 
 pipeline_config = PipelineConfig(
-    model_path=MODEL_NAME,
-    max_length=512,
-    device_specs=[DeviceSpec.cpu()],
-    quantization_encoding=SupportedEncoding.float32,
-    cache_strategy="paged",
-    max_batch_size=16,
-    allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+    model=MAXModelConfig(
+        model_path=MODEL_NAME,
+        device_specs=[DeviceSpec.cpu()],
+        quantization_encoding="float32",
+        allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+        kv_cache=KVCacheConfig(),
+        max_length=512,
+    ),
+    runtime=PipelineRuntimeConfig(max_batch_size=16),
 )
 
 

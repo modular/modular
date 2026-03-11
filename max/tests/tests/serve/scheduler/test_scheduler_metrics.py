@@ -41,6 +41,8 @@ def test_metric_to_string() -> None:
         total_host_kv_blocks=21,
         h2d_blocks_copied=22,
         d2h_blocks_copied=23,
+        disk_blocks_written=0,
+        disk_blocks_read=0,
     )
 
     assert (

@@ -130,6 +130,8 @@ modular_py_library(
 
 modular_py_test(
     name = "autotune_tests",
+    # test_kbench compiles multiple Mojo binaries which can be slow on CI.
+    size = "large",
     srcs = glob(["tests/*.py"]),
     data = glob(["tests/*.csv"]) + [
         "sample.mojo",
@@ -160,6 +162,7 @@ modular_py_test(
         ":kbench",
         ":kplot",
         ":kprofile",
+        requirement("pytest-mock"),
     ],
 )
 

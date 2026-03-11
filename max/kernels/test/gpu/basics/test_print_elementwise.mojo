@@ -11,25 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from algorithm.functional import elementwise
-from gpu.host import DeviceContext, get_gpu_target
+from std.algorithm.functional import elementwise
+from std.gpu.host import DeviceContext, get_gpu_target
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn test_elementwise_print[
     c_type: DType,
     c_layout: Layout,
-](c01: LayoutTensor[c_type, c_layout], ctx: DeviceContext) raises:
+](c01: LayoutTensor[c_type, c_layout, ...], ctx: DeviceContext) raises:
     var M = c01.dim[0]()
     var N = c01.dim[1]() // 2
     comptime simd_width = simd_width_of[
-        c_type, target = get_gpu_target["sm_80"]()
+        c_type, target=get_gpu_target["sm_80"]()
     ]()
 
     @always_inline
@@ -72,9 +72,8 @@ fn test_dual_matmul[
         ctx,
     )
     print("returned from test_elementwise_print")
-    _ = mat_c01^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_dual_matmul(ctx)
