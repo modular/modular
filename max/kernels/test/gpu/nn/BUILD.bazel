@@ -180,10 +180,6 @@ mojo_test(
     size = "large",
     srcs = ["test_allreduce_residual_rmsnorm_fp8.mojo"],
     enable_assertions = False,  # MSTDL-2301: register pressure
-    env = {
-        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
-        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT": "80",
-    },
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
