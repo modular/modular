@@ -265,7 +265,7 @@ M::KGEN::getMLIRBufferFromPackage(llvm::MemoryBufferRef buffer,
   if (mlirBufferAndHeaderOrErr.isError())
     return mlirBufferAndHeaderOrErr.takeError();
   auto &[header, mlirBuffer] = *mlirBufferAndHeaderOrErr;
-  if (llvm::sys::Process::GetEnv("MOJO_VALIDATE_MOJOPKG") &&
+  if (!llvm::sys::Process::GetEnv("MOJO_NO_VALIDATE_MOJOPKG") &&
       !ignoreIncompatiblePackageErrs) {
     if (auto err = KGEN::checkCompatiblePackage(header,
                                                 buffer.getBufferIdentifier())) {
