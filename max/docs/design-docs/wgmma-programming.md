@@ -72,6 +72,8 @@ Every thread will have 4 registers.
 
 Here is the CUDA implementation of the this example:
 
+{% raw %}
+
 ```cpp
 
 __device__ void wgmma_8(uint64_t const &desc_a, uint64_t const &desc_b, float d[4]) {
@@ -198,6 +200,8 @@ void run_8()
 
 }
 ```
+
+{% endraw %}
 
 Now lets consider the case when `B` is also row major—ie transposed (denoted by
 `B'`). Two things would need to changed for it to work correctly. First is
