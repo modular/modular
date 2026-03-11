@@ -50,6 +50,20 @@ inline mlir::InFlightDiagnostic emitError(OpT *op, DiagID id, Args &&...args) {
   return op->emitError(diagMsg(id, std::forward<Args>(args)...));
 }
 
+/// Emit an MLIR op error via a registered DiagID (reference overload).
+template <typename OpT, typename... Args>
+inline mlir::InFlightDiagnostic emitOpError(OpT &&op, DiagID id,
+                                            Args &&...args) {
+  return op.emitOpError(diagMsg(id, std::forward<Args>(args)...));
+}
+
+/// Emit an MLIR op error via a registered DiagID (pointer overload).
+template <typename OpT, typename... Args>
+inline mlir::InFlightDiagnostic emitOpError(OpT *op, DiagID id,
+                                            Args &&...args) {
+  return op->emitOpError(diagMsg(id, std::forward<Args>(args)...));
+}
+
 /// Emit an error via a registered DiagID at a given location.
 template <typename ObjT, typename LocT, typename... Args>
 inline auto emitError(ObjT &&obj, LocT loc, DiagID id, Args &&...args) {
@@ -60,6 +74,14 @@ inline auto emitError(ObjT &&obj, LocT loc, DiagID id, Args &&...args) {
 template <typename ObjT, typename LocT, typename... Args>
 inline auto emitWarning(ObjT &&obj, LocT loc, DiagID id, Args &&...args) {
   return obj.emitWarning(loc, diagMsg(id, std::forward<Args>(args)...));
+}
+
+/// Attach note to a given location and diagnostic
+template <typename... Args>
+inline mlir::Diagnostic &attachNote(mlir::InFlightDiagnostic &diag,
+                                    mlir::Location loc, DiagID id,
+                                    Args &&...args) {
+  return diag.attachNote(loc) << diagMsg(id, std::forward<Args>(args)...);
 }
 
 } // namespace M::KGEN::Diag

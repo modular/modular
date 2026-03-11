@@ -390,11 +390,363 @@ DIAG(warn_alias_deprecated_use_comptime_instead, Warning, Parser,
 // Notes
 
 //===----------------------------------------------------------------------===//
+// Type System — type checking, conversion, and inference
+//===----------------------------------------------------------------------===//
+
+DIAG(err_byref_result_argument_last_argument, Error, Type,
+     "'byref_result' argument must be the last argument")
+DIAG(err_func_type_byref_error_argument_throws, Error, Type,
+     "func type with 'byref_error' argument must be 'throws'")
+DIAG(err_incorrect_input_conventions_specified, Error, Type,
+     "incorrect # of input conventions specified")
+
+//===----------------------------------------------------------------------===//
 // MLIR Operations — op verification and lowering passes
 //===----------------------------------------------------------------------===//
 
+DIAG(err_accelerator_arch_expected_no_operands, Error, MLIR,
+     "'accelerator_arch' expected no operands")
+DIAG(err_accelerator_arch_return_string_type, Error, MLIR,
+     "'accelerator_arch' must return a string type")
+DIAG(err_apply_function_return_one_result, Error, MLIR,
+     "'apply' function must return one result")
+DIAG(err_bind_params_more_parameters_than_generator, Error, MLIR,
+     "bind_params has more parameters than the generator expects")
 DIAG(err_cannot_convert_2, Error, MLIR,
      "cannot convert {0} to trait {1}")
+DIAG(err_cannot_create_pack_parametric_element, Error, MLIR,
+     "cannot create pack with parametric element types")
+DIAG(err_cannot_verify_struct_attribute_parametric, Error, MLIR,
+     "cannot verify struct attribute with parametric type")
+DIAG(err_casting_variadic_type_variadic_type, Error, MLIR,
+     "must be casting from a variadic type to a variadic type")
+DIAG(err_comparison_operators_two_operands, Error, MLIR,
+     "comparison operators must have two operands")
+DIAG(err_comparisons_return_i1, Error, MLIR,
+     "comparisons return i1")
+DIAG(err_conditional_expression_operand_0_i1, Error, MLIR,
+     "conditional expression operand 0 must be i1")
+DIAG(err_conditional_expressions_three_operands, Error, MLIR,
+     "conditional expressions must have three operands")
+DIAG(err_cross_compilation_expected_no_operands, Error, MLIR,
+     "'cross_compilation' expected no operands")
+DIAG(err_cross_compilation_return_i1, Error, MLIR,
+     "cross_compilation return i1")
+DIAG(err_current_target_expected_no_operands, Error, MLIR,
+     "'current_target' expected no operands")
+DIAG(err_current_target_return_target_type, Error, MLIR,
+     "'current_target' must return a target type")
+DIAG(err_emissionkind_operand_index_type, Error, MLIR,
+     "emissionKind operand should have index type")
+DIAG(err_emissionoptions_operand_kgen_string_type, Error, MLIR,
+     "emissionOptions operand must be of `!kgen.string` type")
+DIAG(err_expected_callee_1_result, Error, MLIR,
+     "expected callee to have 1 result")
+DIAG(err_expected_concat_variadic_variadic_values, Error, MLIR,
+     "expected to concat a variadic of variadic values")
+DIAG(err_expected_generatorattr_takes_3_argument, Error, MLIR,
+     "expected a GeneratorAttr that takes 3 argument")
+DIAG(err_expected_pack_type, Error, MLIR,
+     "expected a pack type")
+DIAG(err_expected_symbols_match_number_capture, Error, MLIR,
+     "expected symbols to match number of capture types")
+DIAG(err_expected_valid_input_convention, Error, MLIR,
+     "expected a valid input convention")
+DIAG(err_expected_zip_variadic_variadic_values, Error, MLIR,
+     "expected to zip a variadic of variadic values")
+DIAG(err_get_env_expects_one_string_typed, Error, MLIR,
+     "'get_env' expects one string-typed operand")
+DIAG(err_get_env_return_index_i1_string, Error, MLIR,
+     "'get_env' must return index, i1, or string")
+DIAG(err_index_reference_no_contextual_signature, Error, MLIR,
+     "index reference has no contextual signature")
+DIAG(err_kgen_deferred_can_only_used, Error, MLIR,
+     "`#kgen.deferred` can only be used for non-typed attributes")
+DIAG(err_load_from_mem_expects_one_operand, Error, MLIR,
+     "'load_from_mem' expects one operand")
+DIAG(err_neg_operator_expects_single_operand, Error, MLIR,
+     "neg operator expects a single operand")
+DIAG(err_operand_type_mismatch, Error, MLIR,
+     "operand type mismatch")
+DIAG(err_operation_parameter_expression_concrete_signature, Error, MLIR,
+     "operation parameter expression must be a concrete signature")
+DIAG(err_operation_parameter_expression_return_one, Error, MLIR,
+     "operation parameter expression must return one result")
+DIAG(err_operator_requires_index_integer_type, Error, MLIR,
+     "operator requires an index or integer type")
+DIAG(err_operator_requires_least_one_operand, Error, MLIR,
+     "operator requires at least one operand")
+DIAG(err_operator_returns_single_i1_operand, Error, MLIR,
+     "not operator returns a single i1 operand")
+DIAG(err_ptr_bitcast_expects_one_operand, Error, MLIR,
+     "'ptr_bitcast' expects one operand")
+DIAG(err_rebind_expects_one_operand, Error, MLIR,
+     "'rebind' expects one operand")
+DIAG(err_result_type_match_operand_types, Error, MLIR,
+     "result type should match operand types")
+DIAG(err_result_type_match_operands_1, Error, MLIR,
+     "result type should match operands 1 and 2 types")
+DIAG(err_staged_closures_cannot_parameters, Error, MLIR,
+     "staged closures cannot have parameters")
+DIAG(err_str_concat_expects_two_kgen_string, Error, MLIR,
+     "'str_concat' expects two !kgen.string operands")
+DIAG(err_string_address_expects_one_kgen_string, Error, MLIR,
+     "'string_address' expects one '!kgen.string'")
+DIAG(err_struct_instance_cannot_parameterized, Error, MLIR,
+     "struct.instance cannot be parameterized")
+DIAG(err_sub_operator_expects_two_operands, Error, MLIR,
+     "sub operator expects two operands")
+DIAG(err_target_get_field_operand_0_target_type, Error, MLIR,
+     "target_get_field operand 0 must be a target type")
+DIAG(err_target_get_field_operand_1_string_type, Error, MLIR,
+     "target_get_field operand 1 must be a string type")
+DIAG(err_target_get_field_two_operands, Error, MLIR,
+     "target_get_field must have two operands")
+DIAG(err_target_operand_kgen_target_type, Error, MLIR,
+     "target operand must be of `!kgen.target` type")
+DIAG(err_variadic_get_expected_first_operand_variadic, Error, MLIR,
+     "'variadic_get' expected first operand to be a variadic value")
+DIAG(err_variadic_get_expected_second_operand_index, Error, MLIR,
+     "'variadic_get' expected second operand to be an index")
+DIAG(err_variadic_get_expected_two_operands, Error, MLIR,
+     "'variadic_get' expected two operands")
+DIAG(err_variadic_ptr_map_addr_space_operand_index, Error, MLIR,
+     "'variadic_ptr_map' addr space operand should have 'index' type")
+DIAG(err_variadic_ptr_map_requires_2_operands, Error, MLIR,
+     "'variadic_ptr_map' requires 2 operands")
+DIAG(err_variadic_ptrremove_map_requires_1_operand, Error, MLIR,
+     "'variadic_ptrremove_map' requires 1 operand")
+
+//===----------------------------------------------------------------------===//
+// Dialect Ops — dialect-level op and attribute verification
+//===----------------------------------------------------------------------===//
+
+DIAG(err_alignment_index_type_got_2, Error, Dialect,
+     "alignment must have index type, but got {0}")
+DIAG(err_apply_function_expected_2, Error, Dialect,
+     "'apply' function expected {0} inputs but got {1}\n")
+DIAG(err_apply_function_result_type_2, Error, Dialect,
+     "'apply' function result type must be '{0}' but got '{1}'")
+DIAG(err_apply_operand_2, Error, Dialect,
+     "'apply' operand #{0} type {1} does not match expected type {2}")
+DIAG(err_apply_result_function_result_type_2, Error, Dialect,
+     "'apply_result' function result type must be {0} but got {1}")
+DIAG(err_argument_func_type_pointer, Error, Dialect,
+     "argument #{0} with convention '{1}' in func type should be a `!kgen.pointer` but got: {2}")
+DIAG(err_bind_params_generator_operand_generatortype_got_2, Error, Dialect,
+     "bind_params generator operand must have a GeneratorType, got {0}")
+DIAG(err_byref_error_argument_last_argument_before, Error, Dialect,
+     "'byref_error' argument must be the last argument before any `byref_result` argument")
+DIAG(err_c_exported_lacks_export_symbol, Error, Dialect,
+     "is C exported but lacks an export symbol alias")
+DIAG(err_callee_argument, Error, Dialect,
+     "callee argument #{0} expected type {1} but operation argument has type {2}")
+DIAG(err_callee_expected_arguments, Error, Dialect,
+     "callee expected {0} arguments but operation only has {1}")
+DIAG(err_callee_expected_results, Error, Dialect,
+     "callee expected {0} results but operation only has {1}")
+DIAG(err_callee_parameter_type_func_type_2, Error, Dialect,
+     "callee parameter type must be a func type generator type. Got {0}")
+DIAG(err_callee_result, Error, Dialect,
+     "callee result #{0} expected type {1} but operation result has type {2}")
+DIAG(err_callee_signature_concrete, Error, Dialect,
+     "callee signature must be concrete")
+DIAG(err_cannot_reference_generator_input_parameters, Error, Dialect,
+     "cannot reference generator with input parameters from within a concrete 'kgen.func' ")
+DIAG(err_captures_so_result_signature_capturing, Error, Dialect,
+     "has captures, so result signature must be 'capturing'")
+DIAG(err_conditional_expression_operands_1_2_2, Error, Dialect,
+     "conditional expression operands 1 and 2 must have the same type")
+DIAG(err_constant_index_requires_pointer_concrete, Error, Dialect,
+     "constant index requires pointer to concrete struct type, got {0}")
+DIAG(err_constraint_proposition_i1_type_got_2, Error, Dialect,
+     "constraint proposition must have i1 type, but got '{0}'")
+DIAG(err_data_to_str_expects_two_operands_one, Error, Dialect,
+     "'data_to_str' expects two operands, one string slice and a variadic of string slices")
+DIAG(err_data_to_str_expects_two_operands_one_2, Error, Dialect,
+     "'data_to_str' expects two operands, one string slice and a variadic of string slices{0}\n{1}")
+DIAG(err_declares_parameter_type, Error, Dialect,
+     "declares a parameter with type '{0}' but parameter expression has type '{1}'")
+DIAG(err_determine_alignment_field_type, Error, Dialect,
+     "could not determine alignment for field type")
+DIAG(err_determine_size_alignment_field_type, Error, Dialect,
+     "could not determine size or alignment for field type")
+DIAG(err_element_index, Error, Dialect,
+     "element index {0} out of bounds (>={1})")
+DIAG(err_emissionkind_operand_evaluate_either_asm, Error, Dialect,
+     "emissionKind operand should evaluate to either 'asm', 'llvm', 'llvm-opt', 'object', 'llvm-bitcode', or 'llvm-opt-bitcode'")
+DIAG(err_environment_value_integer_not_index, Error, Dialect,
+     "environment value \"{0}\" is an integer not of `index` type")
+DIAG(err_environment_value_not_index_string_unit, Error, Dialect,
+     "environment value \"{0}\" is neither an index, string, or unit attribute")
+DIAG(err_environment_value_string_not_kgen_string, Error, Dialect,
+     "environment value \"{0}\" is a string not of `!kgen.string` type")
+DIAG(err_expected_1_operand, Error, Dialect,
+     "expected 1 operand")
+DIAG(err_expected_n_operands_but_got, Error, Dialect,
+     "expected {0} operands, but got {1}")
+DIAG(err_expected_closure_type, Error, Dialect,
+     "expected closure type")
+DIAG(err_expected_count_0_got_2, Error, Dialect,
+     "expected count > 0, but got {0}")
+DIAG(err_expected_escaping_nonescaping_closure_type, Error, Dialect,
+     "expected escaping/nonescaping closure type if type is a pointer")
+DIAG(err_expected_generatorattr_output_type_2, Error, Dialect,
+     "expected a GeneratorAttr with an output type of {0}, but got {1}")
+DIAG(err_expected_generatorattr_takes_2, Error, Dialect,
+     "expected a GeneratorAttr that takes [{0} ,{1}, index] for the mapper, but got [{2}, {3}, {4}]")
+DIAG(err_expected_index_attribute, Error, Dialect,
+     "expected an index attribute")
+DIAG(err_expected_index_type_count_got_2, Error, Dialect,
+     "expected a 'index' type for the count, got: {0}")
+DIAG(err_expected_input_variadic_type_generatorattr_2, Error, Dialect,
+     "expected an input of variadic type and a GeneratorAttr for the mapper")
+DIAG(err_expected_nested_inside_function, Error, Dialect,
+     "expected to be nested inside a function")
+DIAG(err_expected_operand_variadic_type_got_2, Error, Dialect,
+     "expected an operand of variadic type, but got {0}")
+DIAG(err_expected_operand_variadic_type_type_2, Error, Dialect,
+     "expected an operand of variadic or type type, but got {0}")
+DIAG(err_expected_pointer_operand, Error, Dialect,
+     "expected pointer operand")
+DIAG(err_expected_pointer_pack_type, Error, Dialect,
+     "expected pointer to pack type")
+DIAG(err_expected_pointer_struct_parametric_type, Error, Dialect,
+     "expected pointer to struct or parametric type, got {0}")
+DIAG(err_expected_register_passable_closure_type, Error, Dialect,
+     "expected register passable closure type if type is not a pointer")
+DIAG(err_expected_same_input_output_type_2, Error, Dialect,
+     "expected same input/output type, input type: {0}, output type: {1}")
+DIAG(err_expected_struct_operand, Error, Dialect,
+     "expected struct operand")
+DIAG(err_expected_symbol_constant_attribute_unit, Error, Dialect,
+     "expected symbol constant attribute or unit attribute")
+DIAG(err_expected_variadic_strings_trait_names_2, Error, Dialect,
+     "expected a variadic of strings for trait names, but got {0}")
+DIAG(err_expected_variadic_type_count_got_2, Error, Dialect,
+     "expected a 'variadic' type for the count, got: {0}")
+DIAG(err_func_type_cannot_more_than_2, Error, Dialect,
+     "func type cannot have more than one argument with 'byref_result'")
+DIAG(err_func_type_cannot_more_than_3, Error, Dialect,
+     "func type cannot have more than one argument with 'byref_error'")
+DIAG(err_function_get_arg_types_expects_one_kgen_func, Error, Dialect,
+     "'function_get_arg_types' expects one !kgen.func operand, but got nothing.")
+DIAG(err_function_get_arg_types_expects_one_kgen_paramref_2, Error, Dialect,
+     "'function_get_arg_types' expects one kgen.paramref or typeconstantattr operand, but got: {0}")
+DIAG(err_function_get_arg_types_operand_paramrefs_type, Error, Dialect,
+     "'function_get_arg_types' operand paramref's type should be a typeconstantattr, but got: {0}")
+DIAG(err_function_get_arg_types_operand_paramrefs_type_signature, Error, Dialect,
+     "'function_get_arg_types' operand paramref's type should be a signature, but got: {0}")
+DIAG(err_function_get_arg_types_operand_typeconstantattrs_mlir_2, Error, Dialect,
+     "'function_get_arg_types' operand typeconstantattr's mlir type should be a signature, but got: {0}")
+DIAG(err_function_get_arg_types_operand_paramindexrefs_type_2, Error, Dialect,
+     "'function_get_arg_types' operand paramindexref's type should be a paramref or signature, but got: {0}")
+
+DIAG(err_has, Error, Dialect,
+     "has {0} operands but {1} results; it should be the same")
+DIAG(err_index_reference_2, Error, Dialect,
+     "index reference {0} is out of bounds: referenced signature has {1} input parameters")
+DIAG(err_index_reference_depth_2, Error, Dialect,
+     "index reference depth {0} exceeds depth of contextual signatures: {1}")
+DIAG(err_invalid_symbol_use_within_operator, Error, Dialect,
+     "invalid symbol use within this operator")
+DIAG(err_invalid_use_parameter_no_declaration, Error, Dialect,
+     "invalid use of parameter with no declaration \"{0}\"")
+DIAG(err_kgen_attr_ctor_deferred_can_only_used_2, Error, Dialect,
+     "`#kgen.attr_ctor_deferred` can only be used for 'StringAttr', or '#kgen.to_string_deferred', but got '{0}'")
+DIAG(err_library_attribute_either_stringattr_file, Error, Dialect,
+     "library attribute must be either StringAttr (for file paths) or DenseResourceElementsAttr (for package bitcode)")
+DIAG(err_llvmargmetadataarray_size_not_equal_number, Error, Dialect,
+     "LLVMArgMetadataArray size does not equal number of arguments, got {0}")
+DIAG(err_expected_index_type_for_count, Error, Dialect,
+     "expected 'index' type for count, got {0}")
+DIAG(err_expected_generator_type, Error, Dialect,
+     "expected generator to have GeneratorType, got: {0}")
+DIAG(err_expected_generator_single_index_parameter, Error, Dialect,
+     "expected generator to take single index parameter, got {0} parameter(s)")
+DIAG(err_expected_generator_body_match_elt_type, Error, Dialect,
+     "expected generator body type to match variadic element type: {0}, got: {1}")
+DIAG(err_mismatch_between_reduce_base_value_2, Error, Dialect,
+     "mismatch between reduce base value type and output type, expected output type: {0}, got: {1}")
+DIAG(err_mismatch_between_variadics_concatenate_output, Error, Dialect,
+     "mismatch between variadics to concatenate and output type, expected output type: {0}, got:{1}")
+DIAG(err_only_allowed_generators_pre_elaboration, Error, Dialect,
+     "is only allowed in generators pre-elaboration")
+DIAG(err_only_single_kgen_variadic_splat_type, Error, Dialect,
+     "only single `!kgen.variadic_splat` type allowed")
+DIAG(err_operand_2, Error, Dialect,
+     "operand #{0} has type {1} but corresponding result has type {2}")
+DIAG(err_operand_callee_type, Error, Dialect,
+     "operand #{0} has type {1} but callee argument type expected {2}")
+DIAG(err_operand_should_have_type, Error, Dialect,
+     "operand #{0} should have type '{1}' but got '{2}'")
+DIAG(err_pack_attribute_element, Error, Dialect,
+     "pack attribute element #{0} has type {1} but expected {2}")
+DIAG(err_pack_attribute_expected_variadic_constant_3, Error, Dialect,
+     "pack attribute expected a variadic constant type, but got {0}")
+DIAG(err_pack_attribute_type_requires_2, Error, Dialect,
+     "pack attribute type requires {0} elements, but got {1}")
+DIAG(err_parameter_name_parameter_value_length_2, Error, Dialect,
+     "parameter name and parameter value length mismatch. Expected {0}, got {1}")
+DIAG(err_parameter_type_2, Error, Dialect,
+     "parameter type {0} does not match result type {1}")
+DIAG(err_pointer_address_space_parameter, Error, Dialect,
+     "pointer address space parameter `{0}` must be an index type")
+DIAG(err_provided_2, Error, Dialect,
+     "provided {0} operands but callee only has {1} to bind")
+DIAG(err_ptr_bitcast_requires_operand_result_types_2, Error, Dialect,
+     "'ptr_bitcast' requires operand and result types to both be pointers")
+DIAG(err_reference_parameter, Error, Dialect,
+     "reference to parameter \"{0}\" with incorrect type '{1}'")
+DIAG(err_relational_comparisons_only_allowed_index_2, Error, Dialect,
+     "relational comparisons only allowed on index or integer values")
+DIAG(err_result_element_type, Error, Dialect,
+     "result element type '{0}' does not match struct element type '{1}' at index {2}")
+DIAG(err_result_signature, Error, Dialect,
+     "result signature has {0} arguments but expected {1}")
+DIAG(err_result_signature_arg_callee, Error, Dialect,
+     "result signature argument #{0} type is {1} but callee signature argument is {2}")
+DIAG(err_result_signature_argument, Error, Dialect,
+     "result signature argument #{0} type is {1} but expected to be {2}")
+DIAG(err_result_signature_expected_count, Error, Dialect,
+     "result signature has {0} arguments, but the expected count is {1}")
+DIAG(err_result_signature_output_types_supported, Error, Dialect,
+     "result signature with output types not supported")
+DIAG(err_struct_attribute_type_requires_2, Error, Dialect,
+     "struct attribute type requires {0} elements but value has {1}")
+DIAG(err_struct_element_2, Error, Dialect,
+     "struct element #{0} has type {1} but expected {2}")
+DIAG(err_struct_field_index, Error, Dialect,
+     "struct field index {0} is out of bounds for struct with {1} elements")
+DIAG(err_throwing_function_supported, Error, Dialect,
+     "throwing function not supported")
+DIAG(err_type_index_reference_2, Error, Dialect,
+     "type of index reference {0} does not match parameter type '{1}'")
+DIAG(err_unknown_expression_2, Error, Dialect,
+     "unknown expression {0}")
+DIAG(err_variadic_get_result_type_variadic_element, Error, Dialect,
+     "'variadic_get' result type should be variadic element type: expected '{0}' but got '{1}'")
+DIAG(err_variadic_ptr_map_operand_kgen_variadic_kgen, Error, Dialect,
+     "'variadic_ptr_map' operand should have !kgen.variadic<!kgen.type> type, not {0}")
+DIAG(err_variadic_ptrremove_map_operand_kgen_variadic_kgen, Error, Dialect,
+     "'variadic_ptrremove_map' operand should have !kgen.variadic<!kgen.type> type, not {0}")
+DIAG(err_variadic_ptrremove_map_result_kgen_variadic_kgen, Error, Dialect,
+     "'variadic_ptrremove_map' result should be !kgen.variadic<!kgen.type> type, not {0}")
+DIAG(err_variadic_sequence_element_2, Error, Dialect,
+     "variadic sequence element #{0} has type {1} but expected {2}")
+DIAG(err_variant_attribute_value_type_2, Error, Dialect,
+     "variant attribute value type '{0}' does not match type at index {1} which is '{2}'")
+DIAG(err_variant_element_index, Error, Dialect,
+     "variant element at index {0} expected type {1} but operand has type {2}")
+DIAG(err_variant_index_out_of_bounds, Error, Dialect,
+     "variant index {0} is out of bounds")
+DIAG(err_variant_index_out_of_bounds_range, Error, Dialect,
+     "variant index {0} is out of bounds in range [0, {1})")
+DIAG(err_export_c_function_invalid_identifier, Error, Dialect,
+     "C exported function name is not a valid C identifier, allowed characters: [a-zA-Z0-9_]: {0}")
+
+// Notes
+DIAG(note_within_kgen_func, Note, Dialect, "within 'kgen.func' @{0}")
 
 //===----------------------------------------------------------------------===//
 // Trait/Conformance — trait declaration and conformance checks

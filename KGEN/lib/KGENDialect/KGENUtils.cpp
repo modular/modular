@@ -10,6 +10,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/Diagnostics/DiagnosticEmitter.h"
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -30,6 +31,7 @@
 
 using namespace M;
 using namespace KGEN;
+using namespace KGEN::Diag;
 
 //===----------------------------------------------------------------------===//
 // Parameter Type and Value Printing and Parsing
@@ -1125,7 +1127,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
         return success();
       }
 
-      return p.emitError(loc, "unknown expression ") << keyword;
+      return p.emitError(loc,
+                         diagMsg(DiagID::err_unknown_expression_2, keyword));
     }
 
     // Otherwise it is a ParamOperatorAttr.  Parse the operand list.
@@ -1164,7 +1167,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
     // Desugar the negation operator from `neg(a)` to `mul(a, -1)`
     if (opcode == (uint32_t)POCAliases::NEG) {
       if (operands.size() != 1)
-        return p.emitError(loc, "neg operator expects a single operand");
+        return p.emitError(
+            loc, diagMsg(DiagID::err_neg_operator_expects_single_operand));
       operands.emplace_back(
           p.getBuilder().getIntegerAttr(operands[0].getType(), -1));
       opcode = (uint32_t)POC::Mul;
@@ -1173,7 +1177,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
     // Desugar the subtract operator from `sub(a, b)` to `add(a, mul(b, -1))`
     if (opcode == (uint32_t)POCAliases::SUB) {
       if (operands.size() != 2)
-        return p.emitError(loc, "sub operator expects two operands");
+        return p.emitError(
+            loc, diagMsg(DiagID::err_sub_operator_expects_two_operands));
       operands[1] = ParamOperatorAttr::getNeg(operands[1]);
       opcode = (uint32_t)POC::Add;
     }
@@ -1199,7 +1204,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
       break;
     case (uint32_t)POCAliases::NOT:
       if (operands.size() != 1 || !operands[0].getType().isSignlessInteger(1))
-        return p.emitError(loc, "not operator returns a single i1 operand");
+        return p.emitError(
+            loc, diagMsg(DiagID::err_operator_returns_single_i1_operand));
       value = ParamOperatorAttr::getNot(operands[0]);
       return success();
     }
@@ -1668,7 +1674,8 @@ ParseResult KGEN::parseArgConvention(AsmParser &p, ArgConvention &convention) {
     if (std::optional<ArgConvention> conv = symbolizeArgConvention(effectStr)) {
       convention = *conv;
     } else {
-      return p.emitError(loc, "expected a valid input convention");
+      return p.emitError(loc,
+                         diagMsg(DiagID::err_expected_valid_input_convention));
     }
   }
   return success();
@@ -2061,10 +2068,9 @@ ParseResult KGEN::parseParametricCallee(OpAsmParser &p, TypedAttr &callee) {
     return failure();
 
   if (!isa<ParamType, FuncTypeGeneratorType>(callee.getType()))
-    return p.emitError(
-               loc,
-               "callee parameter type must be a func type generator type. Got ")
-           << callee.getType();
+    return p.emitError(loc,
+                       diagMsg(DiagID::err_callee_parameter_type_func_type_2,
+                               callee.getType()));
   return success();
 }
 
@@ -2232,16 +2238,14 @@ LogicalResult KGEN::verifyCallOperands(Operation *op, ValueRange args,
                                        FuncType callee, bool ignoreByRef) {
   unsigned numByRef = ignoreByRef * callee.getNumAsyncReturnSlots();
   if (args.size() != callee.getNumArguments() - numByRef) {
-    return op->emitOpError("callee expected ")
-           << callee.getNumArguments() << " arguments but operation only has "
-           << args.size();
+    return KGEN::Diag::emitError(op, DiagID::err_callee_expected_arguments,
+                                 callee.getNumArguments(), args.size());
   }
   for (auto [i, arg, type] :
        llvm::enumerate(args, callee.getArguments().drop_back(numByRef))) {
     if (arg.getType() != type) {
-      return op->emitOpError("callee argument #")
-             << i << " expected type " << type
-             << " but operation argument has type " << arg.getType();
+      return KGEN::Diag::emitError(op, DiagID::err_callee_argument, i, type,
+                                   arg.getType());
     }
   }
   return success();
@@ -2250,15 +2254,13 @@ LogicalResult KGEN::verifyCallOperands(Operation *op, ValueRange args,
 LogicalResult KGEN::verifyCallResults(Operation *op, ValueRange results,
                                       FuncType callee) {
   if (results.size() != callee.getNumResults()) {
-    return op->emitOpError("callee expected ")
-           << callee.getNumArguments() << " results but operation only has "
-           << results.size();
+    return KGEN::Diag::emitError(op, DiagID::err_callee_expected_results,
+                                 callee.getNumArguments(), results.size());
   }
   for (auto [i, res, type] : llvm::enumerate(results, callee.getResults())) {
     if (res.getType() != type) {
-      return op->emitOpError("callee result #")
-             << i << " expected type " << type
-             << " but operation result has type " << res.getType();
+      return KGEN::Diag::emitError(op, DiagID::err_callee_result, i, type,
+                                   res.getType());
     }
   }
   return success();
