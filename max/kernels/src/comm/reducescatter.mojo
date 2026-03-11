@@ -47,6 +47,7 @@ from .sync import (
     MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
+    circular_add,
     is_p2p_enabled,
 )
 
@@ -366,7 +367,7 @@ fn _reducescatter_kernel[
         ](uninitialized=True)
 
         comptime for i in range(ngpus):
-            reordered[i] = in_bufs[(my_rank + i) % ngpus]
+            reordered[i] = in_bufs[circular_add[ngpus](my_rank, i)]
 
         var u_start = config.rank_unit_start(my_rank)
         var n_units = config.rank_units(my_rank)

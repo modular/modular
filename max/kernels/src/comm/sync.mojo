@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.utils import StaticTuple
+from std.math.uutils import umod
 from std.sys import size_of
 
 from std.gpu.host import DeviceContext
@@ -75,6 +76,23 @@ This value has been empirically optimized through grid search across different G
 While this value is optimal for A100 GPUs, H100 GPUs may benefit from more blocks to fully
 saturate NVLink bandwidth.
 """
+
+
+@always_inline
+fn circular_add[n: Int](x: Int, y: Int) -> Int:
+    """Addition modulo n, assuming 0 <= x < n and 0 <= y < n.
+
+    Equivalent to (x + y) % n. When n is a power of 2, uses unsigned
+    modulo which compiles to a single `and` instruction. Otherwise uses
+    a conditional subtract to avoid expensive integer division on GPU.
+    """
+
+    comptime if n.is_power_of_two():
+        return umod(x + y, n)
+    else:
+        var z = x + y
+        return z - n if z >= n else z
+
 
 comptime MAX_GPUS = 8
 """Maximum number of GPUs supported in the allreduce implementation.

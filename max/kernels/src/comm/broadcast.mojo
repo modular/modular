@@ -40,6 +40,7 @@ from .sync import (
     MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
+    circular_add,
     is_p2p_enabled,
 )
 from .device_query import _dispatch_max_num_blocks, get_sm_version
@@ -357,7 +358,7 @@ fn broadcast_pull_2stage_kernel[
         for idx in range(thr_local_start, max_aligned_chunk_size, elem_stride):
             comptime for offset in range(1, ngpus):
                 # Round-robin: each GPU gathers from other peers
-                var src_rank = (my_rank + offset) % ngpus
+                var src_rank = circular_add[ngpus](my_rank, offset)
 
                 var chunk_start = src_rank * part_size
                 # Use aligned size for last chunk, full size for others
