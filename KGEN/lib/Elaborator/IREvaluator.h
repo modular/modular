@@ -72,6 +72,8 @@ protected:
   /// Emit an error using the elaborator's error infrastructure.
   void emitMaterializationError(const Twine &message) override;
 
+  TargetInfoAttr getTargetInfo() const override;
+
 public:
   /// Given a generic parameter expression, substitute known values for
   /// parameters into it and fold it down to a simple constant. This returns an

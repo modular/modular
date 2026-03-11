@@ -365,6 +365,10 @@ void IREvaluator::emitMaterializationError(const Twine &message) {
   IREvaluatorContext::emitError({*errorLoc, message.str()});
 }
 
+TargetInfoAttr IREvaluator::getTargetInfo() const {
+  return elaborator->getTarget();
+}
+
 //===----------------------------------------------------------------------===//
 // Base Type Reflection Evaluators
 //===----------------------------------------------------------------------===//
