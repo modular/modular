@@ -199,14 +199,6 @@ struct UnsafePointer[
     for accessing the values once they are initialized. You should instead use
     safer pointers when possible.
 
-    Differences from `LegacyUnsafePointer`:
-
-    - `UnsafePointer` fixes the unsafe implicit mutability and origin casting
-      issues of `LegacyUnsafePointer`.
-    - `UnsafePointer` has an inferred mutability parameter.
-    - `UnsafePointer` does _not_ have a defaulted origin parameter, this must
-      be explicitly specified or unbound.
-
     Important things to know:
 
     - This pointer is unsafe and nullable. No bounds checks; reading before
