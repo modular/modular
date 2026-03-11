@@ -554,36 +554,6 @@ struct VariadicParamList[type: TrivialRegisterPassable](
         iterable_origin: The origin of the iterable.
     """
 
-    @always_inline
-    fn __init__(out self, *values: Self.type, comptime_only: ()):
-        """Constructs a VariadicParamList from a variadic list of values at comptime.
-        NOTE: this initializer only works at comptime.
-
-        Args:
-            values: The variadic argument list to construct the variadic list
-              with.
-            comptime_only: Tell callers that this only works at comptime.
-        """
-        self = Self(values=values, comptime_only=())
-
-    @always_inline
-    fn __init__(
-        out self,
-        values: VariadicList[Self.type, is_owned=False],
-        comptime_only: (),
-    ):
-        """Constructs a VariadicParamList from a variadic list of values at comptime.
-        NOTE: this initializer only works at comptime.
-
-        Args:
-            values: The variadic argument list to construct the variadic list
-              with.
-            comptime_only: Tell callers that this only works at comptime.
-        """
-        self.value = __mlir_op.`pop.variadic.load.values`[
-            _type=type_of(self.value)
-        ](values.value)
-
     @doc_private
     @always_inline
     @implicit
