@@ -721,6 +721,10 @@ void ParametricIREvaluator::emitMaterializationError(const Twine &message) {
   IREvaluatorContext::emitError({*errorLoc, message.str()});
 }
 
+TargetInfoAttr ParametricIREvaluator::getTargetInfo() const {
+  return elaborator->getTarget();
+}
+
 ParamNodeBase *
 ParametricIREvaluator::lookupParamNodeBase(SymbolRefAttr symbol) {
   return elaborator->lookupImplNode(symbol)->parent;

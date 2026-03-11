@@ -171,6 +171,10 @@ public:
   /// This is a no-op in non-materialization contexts, but callers can
   /// always call this method regardless of context.
   virtual void emitMaterializationError(const Twine &message);
+
+  /// Returns the target info for the context, which may not be available in all
+  /// contexts. If target info is not available, returns null.
+  virtual TargetInfoAttr getTargetInfo() const { return {}; }
 };
 
 /// An evaluation context that exposes a LockedSymbolTableCollection.
