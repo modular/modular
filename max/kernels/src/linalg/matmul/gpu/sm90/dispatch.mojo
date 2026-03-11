@@ -566,8 +566,8 @@ fn matmul_dispatch_sm90_fp8[
             block_tile_shape=entry.block_tile_shape,
             mma_shape=entry.mma_shape,
             cluster_shape=entry.cluster_shape,
-            num_pipeline_stages=entry.num_pipeline_stages,
-            num_consumer=entry.num_consumer,
+            num_pipeline_stages=UInt(entry.num_pipeline_stages),
+            num_consumer=UInt(entry.num_consumer),
             partitioned_multicast=entry.partitioned_multicast,
             pdl_level=pdl_level,
         )
@@ -2343,8 +2343,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
             block_tile_shape=entry.block_tile_shape,
             mma_shape=entry.mma_shape,
             cluster_shape=entry.cluster_shape,
-            num_pipeline_stages=entry.num_pipeline_stages,
-            num_consumer=entry.num_consumer,
+            num_pipeline_stages=UInt(entry.num_pipeline_stages),
+            num_consumer=UInt(entry.num_consumer),
             partitioned_multicast=entry.partitioned_multicast,
             pdl_level=pdl_level,
         )
@@ -2462,9 +2462,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     prioritize_compute_over_ctas=True,
                     transpose_b=transpose_b,
                 ](
-                    UInt(m),
-                    UInt(static_N),
-                    UInt(static_K),
+                    m,
+                    static_N,
+                    static_K,
                     Index(1, 1, 1),
                     1,
                     1,
@@ -2485,9 +2485,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                         prioritize_compute_over_ctas=True,
                         transpose_b=transpose_b,
                     ](
-                        UInt(m),
-                        UInt(static_N),
-                        UInt(static_K),
+                        m,
+                        static_N,
+                        static_K,
                         Index(1, 1, 1),
                         1,
                         1,
@@ -3264,7 +3264,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             if m < 41:
                 var runtime_config = swapAB_smallM_ceildiv[
                     a_type, b_type, c_type, transpose_b
-                ](UInt(m), pdl_level)
+                ](m, pdl_level)
 
                 @parameter
                 fn config_fn_small(
@@ -3272,7 +3272,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
                     return swapAB_smallM_ceildiv[
                         a_type, b_type, c_type, transpose_b
-                    ](UInt(m_val), pdl_level)
+                    ](m_val, pdl_level)
 
                 comptime configs_small = build_configs_generic[
                     1, 41, config_fn_small
@@ -3309,7 +3309,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             elif m < 129:
                 var runtime_config = swapAB_midM_linear[
                     a_type, b_type, c_type, transpose_b
-                ](UInt(m), pdl_level)
+                ](m, pdl_level)
 
                 @parameter
                 fn config_fn_mid(
@@ -3317,7 +3317,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
                     return swapAB_midM_linear[
                         a_type, b_type, c_type, transpose_b
-                    ](UInt(m_val), pdl_level)
+                    ](m_val, pdl_level)
 
                 comptime configs_mid = build_configs_generic[
                     65, 129, config_fn_mid
@@ -3351,7 +3351,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             elif m <= 240:
                 var runtime_config = swapAB_largeM_clustered[
                     a_type, b_type, c_type, transpose_b
-                ](UInt(m), pdl_level)
+                ](m, pdl_level)
 
                 @parameter
                 fn config_fn_large(
@@ -3359,7 +3359,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
                     return swapAB_largeM_clustered[
                         a_type, b_type, c_type, transpose_b
-                    ](UInt(m_val), pdl_level)
+                    ](m_val, pdl_level)
 
                 comptime configs_large = build_configs_generic[
                     129, 241, config_fn_large
@@ -3390,11 +3390,11 @@ fn matmul_dispatch_sm90_bf16_fp32[
                         return DISPATCH_HIT
 
         @parameter
-        fn get_k_groups[N: Int]() -> Optional[UInt]:
+        fn get_k_groups[N: Int]() -> Optional[Int]:
             comptime if N == 1536:
                 return None
             else:
-                return UInt(1)
+                return 1
 
         @parameter
         fn get_consumer_groups[N: Int]() -> Optional[Int]:

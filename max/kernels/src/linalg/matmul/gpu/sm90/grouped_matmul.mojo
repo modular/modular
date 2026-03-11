@@ -110,9 +110,6 @@ fn grouped_matmul_sm90[
         Int32(config.cluster_shape[2]),
     )
 
-    comptime CLUSTER_N = UInt(cluster_shape[0])
-    comptime CLUSTER_M = UInt(cluster_shape[1])
-
     comptime k_group_size = config.k_group_size
 
     comptime c_smem_layout = _get_c_smem_layout[
