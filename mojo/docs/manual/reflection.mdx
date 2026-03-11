@@ -188,7 +188,7 @@ reflection enables generic, type-safe operations without hardcoding field access
 
 When a struct conforms to `MakeCopyable`, it gains the `copy_to()` method that
 uses reflection to perform the copy. Like all methods, you call it from an
-instance. For this method, you provide it with target instance.
+instance. For this method, you provide it with a target instance.
 
 Its behavior is similar in spirit to `ImplicitlyCopyable`, but `copy_to()`
 limits copying to fields whose types conform to `Copyable`. It requires an
@@ -294,7 +294,7 @@ fn test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
     return True
 ```
 
-# Insights
+### Insights
 
 - This example uses two key elements to ensure smooth operation:
   `conforms_to()` and `trait_downcast[]()`.
@@ -308,11 +308,11 @@ fn test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
 - As its name suggests, `__struct_field_ref()` is limited to use with
   struct types.
 
-# Calling the tests
+### Calling the tests
 
 To demonstrate this function, the following `main()` first
 copies values (equal), and then mutates `original_instance`
-and tests again (inequal):
+and tests again (unequal):
 
 ```mojo
 fn main():

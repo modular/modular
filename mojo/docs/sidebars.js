@@ -65,14 +65,15 @@ const mojoSidebars = {
       ],
     },
     {
-      label : "Traits and parameters",
+      label : "Metaprogramming",
       type : "category",
       className : "sidebar-heading",
       collapsed : false,
       items : [
-        "mojo/manual/traits",
+        "mojo/manual/metaprogramming/index",
         "mojo/manual/metaprogramming/comptime-evaluation",
         "mojo/manual/parameters/index",
+        "mojo/manual/traits",
         "mojo/manual/generics/generics",
         "mojo/manual/metaprogramming/materialization",
         "mojo/manual/reflection",
