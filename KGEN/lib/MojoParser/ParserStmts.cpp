@@ -3127,36 +3127,25 @@ ParseResult StmtParser::parseImportStmt() {
   do {
     SMLoc importLoc = getToken().getLoc();
     StringAttr moduleAttr;
-    StringRef boundModuleName;
-    if (parseImportModuleName(moduleAttr, &boundModuleName))
+    if (parseImportModuleName(moduleAttr))
       return failure();
 
     // Check for a name binding.
+    StringRef boundModuleName = moduleAttr;
     LocationAttr boundModuleLocAttr;
-    bool hasAsClause = consumeIf(Token::kw_as);
-    if (hasAsClause) {
+    if (consumeIf(Token::kw_as)) {
       boundModuleName = getTokenSpelling();
       boundModuleLocAttr = translateLocation(getToken().getLoc());
       if (parseIdentifier("expected name to bind import"))
         return failure();
     }
 
-    // A "leaf binding" is a multi-component import without 'as', e.g.
-    // `import a.b` which currently binds `b`. Unqualified use of `b` is
-    // deprecated — the user should use `import a.b as b` or `from a import b`.
-    // Single-component relative imports like `import .x` are NOT leaf
-    // bindings — the leading dots are a relative prefix, not a separator.
-    bool isLeafBinding =
-        !hasAsClause && moduleAttr.getValue()
-                            .drop_while([](char c) { return c == '.'; })
-                            .contains('.');
-
     // Create an unresolved decl for the import.
     StringAttr importDestNameAttr = builder.getStringAttr(boundModuleName);
     auto importDecl = LIT::UnresolvedImportOp::create(
         builder, translateLocation(importLoc), moduleAttr, importDestNameAttr,
         /*declName=*/StringAttr(), boundModuleLocAttr,
-        /*declNameLoc=*/LocationAttr(), builder.getBoolAttr(isLeafBinding));
+        /*declNameLoc=*/LocationAttr());
     getDeclResolver().addDecl(importDecl, importLoc, importDestNameAttr,
                               curDeclScope, getLexer().getCursor(),
                               getLexer().getCursor(), /*indentation=*/-1);

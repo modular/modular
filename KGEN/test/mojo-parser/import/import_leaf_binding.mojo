@@ -6,18 +6,18 @@
 
 # RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I=%S %s
 
-# Test that `import a.b` emits a deprecation warning when the leaf name `b` is
-# used unqualified. Also verify that `import a.b as b` and `from a import b` do
-# NOT emit the warning.
+# Test that `import a.b` emits errors the leaf name `b` is used unqualified.
+# Also verify that `import a.b as b` and `from a import b` do NOT emit any
+# diagnostic.
 
-# Leaf import without 'as': should warn
+# Leaf import without 'as': should error
 
 import test_package.module
 
 fn test_leaf_import():
-    # expected-warning @below {{use of unqualified 'module' is deprecated; use fully-qualified 'test_package.module' here, or a different import statement, e.g., 'import test_package.module as module' or 'from test_package import module'}}
+    # expected-error @below {{use of unknown declaration 'module'}}
     module.function()
-    # should not warn
+    # should not emit a diagnostic
     test_package.module.function()
 
 # // -----

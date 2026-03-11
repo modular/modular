@@ -144,32 +144,6 @@ void M::KGEN::LIT::checkDeprecationAndWarn(ASTDecl &decl, SMLoc useLoc,
   diag.attachNote(decl.getLoc()) << "'" << declName << "' declared here";
 }
 
-void M::KGEN::LIT::checkLeafImportAndWarn(ASTDecl &decl, SMLoc useLoc,
-                                          SharedState &shared,
-                                          SourceRange range, SMLoc fixitLoc) {
-  auto it = shared.deprecatedLeafImportModuleNames.find(&decl);
-  if (it == shared.deprecatedLeafImportModuleNames.end())
-    return;
-
-  StringRef moduleName = it->second.getValue();
-  auto [parentModule, leafName] = moduleName.rsplit('.');
-  if (leafName.empty())
-    return; // Single-component import, not a leaf binding.
-
-  auto diag = shared.emitWarning(useLoc)
-              << "use of unqualified '" << leafName
-              << "' is deprecated; use fully-qualified '" << moduleName
-              << "' here, or a different import statement, e.g., 'import "
-              << moduleName << " as " << leafName << "' or 'from "
-              << parentModule << " import " << leafName << "'";
-
-  if (range.isValid())
-    diag << range;
-
-  SMLoc loc = fixitLoc.isValid() ? fixitLoc : useLoc;
-  diag << FixIt::replaceToken(loc, moduleName);
-}
-
 void M::KGEN::LIT::checkDeclUsageWarnings(ASTDecl &decl, SMLoc useLoc,
                                           ASTDecl &useSiteDecl,
                                           SharedState &shared,
@@ -180,9 +154,6 @@ void M::KGEN::LIT::checkDeclUsageWarnings(ASTDecl &decl, SMLoc useLoc,
 
   // Check for stability warning.
   checkStabilityAndWarn(decl, useLoc, useSiteDecl, shared, range);
-
-  // Check for deprecated leaf import binding.
-  checkLeafImportAndWarn(decl, useLoc, shared, range, fixitLoc);
 }
 
 void M::KGEN::LIT::checkStableTraitMemberImplementation(

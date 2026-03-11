@@ -4883,10 +4883,9 @@ ParseResult DeclResolver::resolveSignature(LIT::UnresolvedImportOp op,
         op.getImportNameAttr(), decl.getLoc(), declNameLoc, importNameLoc,
         resolveTarget);
   }
-  return getDeclResolver().importModule(*decl.getParentDecl(), packageOp,
-                                        op.getModuleNameAttr(),
-                                        op.getImportNameAttr(), decl.getLoc(),
-                                        importNameLoc, op.getIsLeafBinding());
+  return getDeclResolver().importModule(
+      *decl.getParentDecl(), packageOp, op.getModuleNameAttr(),
+      op.getImportNameAttr(), decl.getLoc(), importNameLoc);
 }
 
 //===----------------------------------------------------------------------===//
