@@ -151,7 +151,6 @@ class Flux2KleinPipeline(Flux2Pipeline):
             num_inference_steps=base_inputs.num_inference_steps,
             num_images_per_prompt=base_inputs.num_images_per_prompt,
             input_image=base_inputs.input_image,
-            step_cache_flag=base_inputs.step_cache_flag,
             rdt_tensor=base_inputs.rdt_tensor,
             prev_residual=base_inputs.prev_residual,
             prev_output=base_inputs.prev_output,

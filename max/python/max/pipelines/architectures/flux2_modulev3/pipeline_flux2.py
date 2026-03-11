@@ -89,9 +89,6 @@ class Flux2ModelInputs:
     input_image: npt.NDArray[np.uint8] | None
     """Optional input image for image-to-image generation (HWC uint8)."""
 
-    step_cache_flag: Tensor | None = None
-    """FBC: boolean flag tensor indicating step caching is enabled."""
-
     rdt_tensor: Tensor | None = None
     """FBC: residual difference threshold tensor for cache reuse decisions."""
 
@@ -185,7 +182,6 @@ class Flux2Pipeline(DiffusionPipeline):
         self._cached_text_ids: dict[str, Tensor] = {}
         self._cached_sigmas: dict[str, Tensor] = {}
         self._cached_shape_carriers: dict[int, Tensor] = {}
-        self._cached_step_cache_flag: Tensor | None = None
         self._cached_rdt: dict[str, Tensor] = {}
         self._cached_prev_residual: dict[str, Tensor] = {}
         self._cached_prev_output: dict[str, Tensor] = {}
@@ -254,18 +250,10 @@ class Flux2Pipeline(DiffusionPipeline):
         # Retrieve cached FBC (Fast Block Caching) tensors, if enabled.
         # All tensors use non-eager creation (Buffer-based) to avoid the
         # overhead of graph compilation that Tensor.full / Tensor.zeros incur.
-        step_cache_flag: Tensor | None = None
         rdt_tensor: Tensor | None = None
         prev_residual: Tensor | None = None
         prev_output: Tensor | None = None
         if self._enable_fbc:
-            # step_cache_flag is always the same boolean scalar.
-            if self._cached_step_cache_flag is None:
-                self._cached_step_cache_flag = Tensor(
-                    storage=Buffer.from_dlpack(np.array([True])).to(device)
-                )
-            step_cache_flag = self._cached_step_cache_flag
-
             # rdt_tensor varies only by threshold value.
             rdt_key = str(context.residual_threshold)
             if rdt_key in self._cached_rdt:
@@ -347,7 +335,6 @@ class Flux2Pipeline(DiffusionPipeline):
             num_images_per_prompt=context.num_images_per_prompt,
             residual_threshold=context.residual_threshold,
             input_image=context.input_image,
-            step_cache_flag=step_cache_flag,
             rdt_tensor=rdt_tensor,
             prev_residual=prev_residual,
             prev_output=prev_output,
@@ -879,7 +866,6 @@ class Flux2Pipeline(DiffusionPipeline):
                                 guidance,
                                 prev_residual,
                                 prev_output,
-                                model_inputs.step_cache_flag,
                                 model_inputs.rdt_tensor,
                             )
                             prev_residual = new_residual

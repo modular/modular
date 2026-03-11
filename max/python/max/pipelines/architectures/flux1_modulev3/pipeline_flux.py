@@ -473,12 +473,6 @@ class FluxPipeline(DiffusionPipeline):
             * (cfg.out_channels or cfg.in_channels)
         )
         if step_cache_enabled:
-            step_cache_flag = Tensor.full(
-                [1],
-                True,
-                dtype=DType.bool,
-                device=dev,
-            )
             rdt_tensor = Tensor.full(
                 [1],
                 model_inputs.rdt,
@@ -525,7 +519,6 @@ class FluxPipeline(DiffusionPipeline):
                     guidance,
                     prev_residual,
                     prev_output,
-                    step_cache_flag,
                     rdt_tensor,
                 )
             else:
@@ -557,7 +550,6 @@ class FluxPipeline(DiffusionPipeline):
                         guidance,
                         prev_neg_residual,
                         prev_neg_output,
-                        step_cache_flag,
                         rdt_tensor,
                     )
                 else:

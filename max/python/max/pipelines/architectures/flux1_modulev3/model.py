@@ -89,7 +89,6 @@ class Flux1TransformerModel(ComponentModel):
         guidance: Tensor | None,
         prev_residual: Tensor | None = None,
         prev_output: Tensor | None = None,
-        step_cache_flag: Tensor | None = None,
         rdt: Tensor | None = None,
     ) -> Any:
         if self._enable_fbc:
@@ -103,7 +102,6 @@ class Flux1TransformerModel(ComponentModel):
                 guidance,
                 prev_residual,
                 prev_output,
-                step_cache_flag,
                 rdt,
             )
 
