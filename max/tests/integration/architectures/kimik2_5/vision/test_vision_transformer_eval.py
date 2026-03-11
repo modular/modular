@@ -410,8 +410,6 @@ def _build_and_run_max_transformer(
             [max_seq_len_in],
             [position_ids_in],
             signal_buffers,
-            max_h=max_h,
-            max_w=max_w,
             total_output_patches=total_output_patches,
         )
         graph.output(outs[0])

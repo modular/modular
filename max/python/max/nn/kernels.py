@@ -5688,9 +5688,9 @@ def tpool_patch_merger(
     grid_thws: TensorValue,
     kH: int,
     kW: int,
-    max_h: int,
-    max_w: int,
-    total_output_patches: int,
+    max_h: int | TensorValue,
+    max_w: int | TensorValue,
+    total_output_patches: int | str = "total_output_patches",
 ) -> TensorValue:
     """Performs temporal pooling patch merger on ragged video tokens.
 
@@ -5707,9 +5707,14 @@ def tpool_patch_merger(
         kH: Merge kernel height.
         kW: Merge kernel width.
         max_h: Maximum ``H`` across all videos in the batch (for grid sizing).
+            May be a Python int (baked as a graph constant) or a
+            ``TensorValue`` computed at runtime (e.g. via ``ops.max``).
         max_w: Maximum ``W`` across all videos in the batch (for grid sizing).
-        total_output_patches: Total number of output patches, that is,
-            ``sum(H_i * W_i)`` over all videos.
+            May be a Python int or a ``TensorValue``.
+        total_output_patches: Total number of output patches, i.e.
+            ``sum(H_i * W_i)`` over all videos.  Pass an ``int`` for a
+            statically-shaped output or a ``str`` dimension name (default
+            ``"total_output_patches"``) for a dynamically-shaped output.
 
     Returns:
         Output tensor of shape ``[total_output_patches, D]``.
@@ -5737,6 +5742,17 @@ def tpool_patch_merger(
 
     D = input.shape[-1]
 
+    max_h_val = (
+        ops.constant(max_h, dtype=DType.int32, device=DeviceRef.CPU())
+        if isinstance(max_h, int)
+        else max_h
+    )
+    max_w_val = (
+        ops.constant(max_w, dtype=DType.int32, device=DeviceRef.CPU())
+        if isinstance(max_w, int)
+        else max_w
+    )
+
     return ops.custom(
         "tpool_patch_merger",
         device=input.device,
@@ -5745,8 +5761,8 @@ def tpool_patch_merger(
             grid_thws,
             ops.constant(kH, dtype=DType.int32, device=DeviceRef.CPU()),
             ops.constant(kW, dtype=DType.int32, device=DeviceRef.CPU()),
-            ops.constant(max_h, dtype=DType.int32, device=DeviceRef.CPU()),
-            ops.constant(max_w, dtype=DType.int32, device=DeviceRef.CPU()),
+            max_h_val,
+            max_w_val,
         ],
         out_types=[
             TensorType(
