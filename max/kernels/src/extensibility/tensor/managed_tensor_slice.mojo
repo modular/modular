@@ -1108,7 +1108,7 @@ struct ManagedTensorSlice[
 
         return {
             self.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
-            layout.tile_layout.Layout(shape_tuple, stride_tuple),
+            TileLayout(shape_tuple, stride_tuple),
         }
 
     fn write_to(self, mut writer: Some[Writer]):

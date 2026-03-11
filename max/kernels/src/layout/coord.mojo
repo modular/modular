@@ -14,6 +14,7 @@
 
 from std.os import abort
 from std.sys.intrinsics import _type_is_eq
+from std.utils import IndexList
 
 from std.builtin.variadics import (
     Variadic,
@@ -394,7 +395,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         out self: Coord[
             *Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[dtype]]
         ],
-        index_list: std.utils.IndexList[rank, element_type=dtype],
+        index_list: IndexList[rank, element_type=dtype],
     ):
         """Construct a Coord from an IndexList.
 
@@ -1220,7 +1221,7 @@ fn coord_to_int_tuple[
 @always_inline
 fn coord_to_index_list[
     *element_types: CoordLike
-](value: Coord[*element_types]) -> std.utils.IndexList[value.rank]:
+](value: Coord[*element_types]) -> IndexList[value.rank]:
     """Convert a flat Coord to an IndexList.
 
     Parameters:
@@ -1232,7 +1233,7 @@ fn coord_to_index_list[
     Returns:
         An IndexList with the same rank and values as the input Coord.
     """
-    var result = std.utils.IndexList[value.rank]()
+    var result = IndexList[value.rank]()
 
     comptime for i in range(Coord[*element_types].__len__()):
         result[i] = value[i].value()
