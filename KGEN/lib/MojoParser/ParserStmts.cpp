@@ -2672,29 +2672,6 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   return success();
 }
 
-/// Returns true if `expr` is (or wraps) a zero-argument call to
-/// `is_run_in_comptime_interpreter()`. Peels through unary `not` to catch
-/// `not is_run_in_comptime_interpreter()` and binary `and` (`or`) to catch
-//  `is_run_in_comptime_interpreter() and(or) xxx` as well.
-static bool containsIsRunInComptimeInterpreterCall(const ExprNode *expr) {
-  if (!expr)
-    return false;
-  expr = expr->getWithoutParens();
-  if (auto *call = dyn_cast<CallNode>(expr)) {
-    if (auto *ref = dyn_cast<DeclRefNode>(call->callee)) {
-      if (ref->spelling == "is_run_in_comptime_interpreter")
-        return true;
-    }
-  }
-  if (auto *unary = dyn_cast<UnaryOpNode>(expr))
-    return containsIsRunInComptimeInterpreterCall(unary->subExpr);
-  if (auto *binary = dyn_cast<BinOpNode>(expr)) {
-    return (containsIsRunInComptimeInterpreterCall(binary->lhs) ||
-            containsIsRunInComptimeInterpreterCall(binary->rhs));
-  }
-  return false;
-}
-
 ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
                                      size_t curIndent) {
   // We will be moving the builder into sub-regions that are created, make sure
@@ -2719,15 +2696,6 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
       return emitError(condExp->getLoc(), "'comptime if' requires a "
                                           "parameter expression as a condition")
              << condExp->getRange();
-
-    if (containsIsRunInComptimeInterpreterCall(condExp)) {
-      shared.emitWarning(
-          condExp->getLoc(),
-          "'is_run_in_comptime_interpreter()' is always true as a 'comptime "
-          "if' condition; use runtime 'if' for conditioning different code "
-          "execution path in comptime interpreter.")
-          << condExp->getRange();
-    }
 
     paramIfOp = ParamIfOp::create(builder, loc, condPVal.get());
     return success();
