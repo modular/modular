@@ -415,42 +415,6 @@ class LTX2AudioUpsample(nn.Module[[Tensor], Tensor]):
         return x
 
 
-class LTX2AudioAudioPatchifier(nn.Module[[Tensor], Tensor]):
-    """Patchifier for spectrogram/audio latents."""
-
-    def __init__(
-        self,
-        patch_size: int,
-        sample_rate: int = 16000,
-        hop_length: int = 160,
-        audio_latent_downsample_factor: int = 4,
-        is_causal: bool = True,
-    ):
-        self.hop_length = hop_length
-        self.sample_rate = sample_rate
-        self.audio_latent_downsample_factor = audio_latent_downsample_factor
-        self.is_causal = is_causal
-        self._patch_size = (1, patch_size, patch_size)
-
-    def patchify(self, audio_latents: Tensor) -> Tensor:
-        batch, channels, time, freq = audio_latents.shape
-        return audio_latents.permute([0, 2, 1, 3]).reshape(
-            (batch, time, channels * freq)
-        )
-
-    def unpatchify(
-        self, audio_latents: Tensor, channels: int, mel_bins: int
-    ) -> Tensor:
-        batch, time, _ = audio_latents.shape
-        return audio_latents.reshape((batch, time, channels, mel_bins)).permute(
-            [0, 2, 1, 3]
-        )
-
-    @property
-    def patch_size(self) -> tuple[int, int, int]:
-        return self._patch_size
-
-
 class LTX2AudioDecoderMid(nn.Module[..., Any]):
     """Container for the middle block of the LTX2 Audio Decoder."""
 
@@ -504,13 +468,6 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
         self.mel_bins = mel_bins
         self.device = device
         self.dtype = dtype
-        self.patchifier = LTX2AudioAudioPatchifier(
-            patch_size=1,
-            audio_latent_downsample_factor=LATENT_DOWNSAMPLE_FACTOR,
-            sample_rate=sample_rate,
-            hop_length=mel_hop_length,
-            is_causal=is_causal,
-        )
 
         self.base_channels = base_channels
         self.temb_ch = 0
