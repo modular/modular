@@ -44,7 +44,7 @@ fn gemm_naive[
 
 @fieldwise_init
 struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
-    Benchmarkable, ImplicitlyCopyable
+    Benchmarkable, ImplicitlyCopyable, Writable
 ):
     var m: Int
     var n: Int
@@ -72,10 +72,6 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
         self.cm = NDBuffer[rank=2, c_type, DimList.create_unknown[2]()](
             self.c_ptr, Index(self.m, self.n)
         )
-
-    @no_inline
-    fn __str__(self) -> String:
-        return t"m = {self.m}, n = {self.n}, k = {self.k}"
 
     fn __del__(deinit self):
         self.a_ptr.free()
@@ -117,7 +113,7 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
 
 @fieldwise_init
 struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](
-    Benchmarkable, ImplicitlyCopyable
+    Benchmarkable, ImplicitlyCopyable, Writable
 ):
     var m: Int
     var n: Int
@@ -145,10 +141,6 @@ struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](
         self.cm = NDBuffer[rank=2, c_type, DimList.create_unknown[2]()](
             self.c_ptr, Index(self.m, self.n)
         )
-
-    @no_inline
-    fn __str__(self) -> String:
-        return t"m = {self.m}, n = {self.n}, k = {self.k}"
 
     fn __del__(deinit self):
         self.a_ptr.free()

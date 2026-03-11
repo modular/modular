@@ -293,7 +293,7 @@ struct CacheEviction(Equatable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct Fill(Equatable, TrivialRegisterPassable):
+struct Fill(Equatable, TrivialRegisterPassable, Writable):
     """Represents memory fill patterns for GPU memory operations.
 
     This struct defines different fill patterns that can be used when allocating or
@@ -324,22 +324,22 @@ struct Fill(Equatable, TrivialRegisterPassable):
         return self._value == other._value
 
     @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the fill pattern.
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the fill pattern.
 
         Converts the fill pattern into a human-readable string for debugging
         and display purposes.
 
-        Returns:
-            A string describing the fill pattern.
+        Args:
+            writer: The object to write to.
         """
         if self == Self.NONE:
-            return "none"
+            return writer.write_string("none")
         if self == Self.ZERO:
-            return "zero"
+            return writer.write_string("zero")
         if self == Self.NAN:
-            return "nan"
-        return "unknown fill"
+            return writer.write_string("nan")
+        writer.write_string("unknown fill")
 
 
 # ===-----------------------------------------------------------------------===#
@@ -348,7 +348,7 @@ struct Fill(Equatable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct Consistency(Equatable, TrivialRegisterPassable):
+struct Consistency(Equatable, TrivialRegisterPassable, Writable):
     """Represents memory consistency models for GPU memory operations.
 
     This struct defines different memory consistency levels that control how memory
@@ -393,13 +393,21 @@ struct Consistency(Equatable, TrivialRegisterPassable):
         """
         return self._value == other._value
 
-    fn __str__(self) -> String:
-        """Returns a string representation of the consistency level.
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the consistency level.
 
-        Returns:
-            A string describing the consistency level.
+        Args:
+            writer: The object to write to.
         """
-        return String(self.mnemonic())
+        writer.write_string(self.mnemonic())
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the consistency level.
+
+        Args:
+            writer: The object to write to.
+        """
+        t"Consistency({self})".write_to(writer)
 
     @always_inline
     fn mnemonic(self) -> StaticString:
@@ -426,7 +434,7 @@ struct Consistency(Equatable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct ReduceOp(Equatable, TrivialRegisterPassable):
+struct ReduceOp(Equatable, TrivialRegisterPassable, Writable):
     """Represents reduction operations for parallel reduction algorithms.
 
     This struct defines different reduction operations that can be performed
@@ -489,13 +497,22 @@ struct ReduceOp(Equatable, TrivialRegisterPassable):
         return self == other
 
     @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the reduction operation.
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the reduction operation.
 
-        Returns:
-            A string describing the reduction operation.
+        Args:
+            writer: The object to write to.
         """
-        return String(self.mnemonic())
+        writer.write_string(self.mnemonic())
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the reduction operation.
+
+        Args:
+            writer: The object to write to.
+        """
+        t"ReduceOp({self})".write_to(writer)
 
     @always_inline
     fn mnemonic(self) -> StaticString:

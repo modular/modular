@@ -393,88 +393,94 @@ struct cudnnFusedOpsConstParamLabel_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_PARAM_XDESC:
-            return writer.write("CUDNN_PARAM_XDESC")
+            return writer.write_string("CUDNN_PARAM_XDESC")
         if self is Self.CUDNN_PARAM_XDATA_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_XDATA_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_XDATA_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_BN_MODE:
-            return writer.write("CUDNN_PARAM_BN_MODE")
+            return writer.write_string("CUDNN_PARAM_BN_MODE")
         if self is Self.CUDNN_PARAM_BN_EQSCALEBIAS_DESC:
-            return writer.write("CUDNN_PARAM_BN_EQSCALEBIAS_DESC")
+            return writer.write_string("CUDNN_PARAM_BN_EQSCALEBIAS_DESC")
         if self is Self.CUDNN_PARAM_BN_EQSCALE_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_BN_EQSCALE_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_BN_EQSCALE_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_BN_EQBIAS_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_BN_EQBIAS_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_BN_EQBIAS_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_ACTIVATION_DESC:
-            return writer.write("CUDNN_PARAM_ACTIVATION_DESC")
+            return writer.write_string("CUDNN_PARAM_ACTIVATION_DESC")
         if self is Self.CUDNN_PARAM_CONV_DESC:
-            return writer.write("CUDNN_PARAM_CONV_DESC")
+            return writer.write_string("CUDNN_PARAM_CONV_DESC")
         if self is Self.CUDNN_PARAM_WDESC:
-            return writer.write("CUDNN_PARAM_WDESC")
+            return writer.write_string("CUDNN_PARAM_WDESC")
         if self is Self.CUDNN_PARAM_WDATA_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_WDATA_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_WDATA_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_DWDESC:
-            return writer.write("CUDNN_PARAM_DWDESC")
+            return writer.write_string("CUDNN_PARAM_DWDESC")
         if self is Self.CUDNN_PARAM_DWDATA_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_DWDATA_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_DWDATA_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_YDESC:
-            return writer.write("CUDNN_PARAM_YDESC")
+            return writer.write_string("CUDNN_PARAM_YDESC")
         if self is Self.CUDNN_PARAM_YDATA_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_YDATA_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_YDATA_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_DYDESC:
-            return writer.write("CUDNN_PARAM_DYDESC")
+            return writer.write_string("CUDNN_PARAM_DYDESC")
         if self is Self.CUDNN_PARAM_DYDATA_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_DYDATA_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_DYDATA_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_YSTATS_DESC:
-            return writer.write("CUDNN_PARAM_YSTATS_DESC")
+            return writer.write_string("CUDNN_PARAM_YSTATS_DESC")
         if self is Self.CUDNN_PARAM_YSUM_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_YSUM_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_YSUM_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_YSQSUM_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_YSQSUM_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_YSQSUM_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_BN_SCALEBIAS_MEANVAR_DESC:
-            return writer.write("CUDNN_PARAM_BN_SCALEBIAS_MEANVAR_DESC")
+            return writer.write_string("CUDNN_PARAM_BN_SCALEBIAS_MEANVAR_DESC")
         if self is Self.CUDNN_PARAM_BN_SCALE_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_BN_SCALE_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_BN_SCALE_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_BN_BIAS_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_BN_BIAS_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_BN_BIAS_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_BN_SAVED_MEAN_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_BN_SAVED_MEAN_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_BN_SAVED_MEAN_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_BN_SAVED_INVSTD_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_BN_SAVED_INVSTD_PLACEHOLDER")
+            return writer.write_string(
+                "CUDNN_PARAM_BN_SAVED_INVSTD_PLACEHOLDER"
+            )
         if self is Self.CUDNN_PARAM_BN_RUNNING_MEAN_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_BN_RUNNING_MEAN_PLACEHOLDER")
+            return writer.write_string(
+                "CUDNN_PARAM_BN_RUNNING_MEAN_PLACEHOLDER"
+            )
         if self is Self.CUDNN_PARAM_BN_RUNNING_VAR_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_BN_RUNNING_VAR_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_BN_RUNNING_VAR_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_ZDESC:
-            return writer.write("CUDNN_PARAM_ZDESC")
+            return writer.write_string("CUDNN_PARAM_ZDESC")
         if self is Self.CUDNN_PARAM_ZDATA_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_ZDATA_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_ZDATA_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_BN_Z_EQSCALEBIAS_DESC:
-            return writer.write("CUDNN_PARAM_BN_Z_EQSCALEBIAS_DESC")
+            return writer.write_string("CUDNN_PARAM_BN_Z_EQSCALEBIAS_DESC")
         if self is Self.CUDNN_PARAM_BN_Z_EQSCALE_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_BN_Z_EQSCALE_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_BN_Z_EQSCALE_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_BN_Z_EQBIAS_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_BN_Z_EQBIAS_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_BN_Z_EQBIAS_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_ACTIVATION_BITMASK_DESC:
-            return writer.write("CUDNN_PARAM_ACTIVATION_BITMASK_DESC")
+            return writer.write_string("CUDNN_PARAM_ACTIVATION_BITMASK_DESC")
         if self is Self.CUDNN_PARAM_ACTIVATION_BITMASK_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_ACTIVATION_BITMASK_PLACEHOLDER")
+            return writer.write_string(
+                "CUDNN_PARAM_ACTIVATION_BITMASK_PLACEHOLDER"
+            )
         if self is Self.CUDNN_PARAM_DXDESC:
-            return writer.write("CUDNN_PARAM_DXDESC")
+            return writer.write_string("CUDNN_PARAM_DXDESC")
         if self is Self.CUDNN_PARAM_DXDATA_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_DXDATA_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_DXDATA_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_DZDESC:
-            return writer.write("CUDNN_PARAM_DZDESC")
+            return writer.write_string("CUDNN_PARAM_DZDESC")
         if self is Self.CUDNN_PARAM_DZDATA_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_DZDATA_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_DZDATA_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_BN_DSCALE_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_BN_DSCALE_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_BN_DSCALE_PLACEHOLDER")
         if self is Self.CUDNN_PARAM_BN_DBIAS_PLACEHOLDER:
-            return writer.write("CUDNN_PARAM_BN_DBIAS_PLACEHOLDER")
+            return writer.write_string("CUDNN_PARAM_BN_DBIAS_PLACEHOLDER")
         abort("invalid cudnnFusedOpsConstParamLabel_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnFusedOpsConstParamLabel_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnFusedOpsConstParamLabel_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -510,14 +516,14 @@ struct cudnnReorderType_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_DEFAULT_REORDER:
-            return writer.write("CUDNN_DEFAULT_REORDER")
+            return writer.write_string("CUDNN_DEFAULT_REORDER")
         if self is Self.CUDNN_NO_REORDER:
-            return writer.write("CUDNN_NO_REORDER")
+            return writer.write_string("CUDNN_NO_REORDER")
         abort("invalid cudnnReorderType_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnReorderType_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnReorderType_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -651,24 +657,34 @@ struct cudnnFusedOps_t(
                 "CUDNN_FUSED_SCALE_BIAS_ACTIVATION_CONV_BNSTATS"
             )
         if self is Self.CUDNN_FUSED_SCALE_BIAS_ACTIVATION_WGRAD:
-            return writer.write("CUDNN_FUSED_SCALE_BIAS_ACTIVATION_WGRAD")
+            return writer.write_string(
+                "CUDNN_FUSED_SCALE_BIAS_ACTIVATION_WGRAD"
+            )
         if self is Self.CUDNN_FUSED_BN_FINALIZE_STATISTICS_TRAINING:
-            return writer.write("CUDNN_FUSED_BN_FINALIZE_STATISTICS_TRAINING")
+            return writer.write_string(
+                "CUDNN_FUSED_BN_FINALIZE_STATISTICS_TRAINING"
+            )
         if self is Self.CUDNN_FUSED_BN_FINALIZE_STATISTICS_INFERENCE:
-            return writer.write("CUDNN_FUSED_BN_FINALIZE_STATISTICS_INFERENCE")
+            return writer.write_string(
+                "CUDNN_FUSED_BN_FINALIZE_STATISTICS_INFERENCE"
+            )
         if self is Self.CUDNN_FUSED_CONV_SCALE_BIAS_ADD_ACTIVATION:
-            return writer.write("CUDNN_FUSED_CONV_SCALE_BIAS_ADD_ACTIVATION")
+            return writer.write_string(
+                "CUDNN_FUSED_CONV_SCALE_BIAS_ADD_ACTIVATION"
+            )
         if self is Self.CUDNN_FUSED_SCALE_BIAS_ADD_ACTIVATION_GEN_BITMASK:
             return writer.write(
                 "CUDNN_FUSED_SCALE_BIAS_ADD_ACTIVATION_GEN_BITMASK"
             )
         if self is Self.CUDNN_FUSED_DACTIVATION_FORK_DBATCHNORM:
-            return writer.write("CUDNN_FUSED_DACTIVATION_FORK_DBATCHNORM")
+            return writer.write_string(
+                "CUDNN_FUSED_DACTIVATION_FORK_DBATCHNORM"
+            )
         abort("invalid cudnnFusedOps_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnFusedOps_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnFusedOps_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -713,16 +729,16 @@ struct cudnnFusedOpsPointerPlaceHolder_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_PTR_NULL:
-            return writer.write("CUDNN_PTR_NULL")
+            return writer.write_string("CUDNN_PTR_NULL")
         if self is Self.CUDNN_PTR_ELEM_ALIGNED:
-            return writer.write("CUDNN_PTR_ELEM_ALIGNED")
+            return writer.write_string("CUDNN_PTR_ELEM_ALIGNED")
         if self is Self.CUDNN_PTR_16B_ALIGNED:
-            return writer.write("CUDNN_PTR_16B_ALIGNED")
+            return writer.write_string("CUDNN_PTR_16B_ALIGNED")
         abort("invalid cudnnFusedOpsPointerPlaceHolder_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnFusedOpsPointerPlaceHolder_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnFusedOpsPointerPlaceHolder_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -841,66 +857,70 @@ struct cudnnFusedOpsVariantParamLabel_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_PTR_XDATA:
-            return writer.write("CUDNN_PTR_XDATA")
+            return writer.write_string("CUDNN_PTR_XDATA")
         if self is Self.CUDNN_PTR_BN_EQSCALE:
-            return writer.write("CUDNN_PTR_BN_EQSCALE")
+            return writer.write_string("CUDNN_PTR_BN_EQSCALE")
         if self is Self.CUDNN_PTR_BN_EQBIAS:
-            return writer.write("CUDNN_PTR_BN_EQBIAS")
+            return writer.write_string("CUDNN_PTR_BN_EQBIAS")
         if self is Self.CUDNN_PTR_WDATA:
-            return writer.write("CUDNN_PTR_WDATA")
+            return writer.write_string("CUDNN_PTR_WDATA")
         if self is Self.CUDNN_PTR_DWDATA:
-            return writer.write("CUDNN_PTR_DWDATA")
+            return writer.write_string("CUDNN_PTR_DWDATA")
         if self is Self.CUDNN_PTR_YDATA:
-            return writer.write("CUDNN_PTR_YDATA")
+            return writer.write_string("CUDNN_PTR_YDATA")
         if self is Self.CUDNN_PTR_DYDATA:
-            return writer.write("CUDNN_PTR_DYDATA")
+            return writer.write_string("CUDNN_PTR_DYDATA")
         if self is Self.CUDNN_PTR_YSUM:
-            return writer.write("CUDNN_PTR_YSUM")
+            return writer.write_string("CUDNN_PTR_YSUM")
         if self is Self.CUDNN_PTR_YSQSUM:
-            return writer.write("CUDNN_PTR_YSQSUM")
+            return writer.write_string("CUDNN_PTR_YSQSUM")
         if self is Self.CUDNN_PTR_WORKSPACE:
-            return writer.write("CUDNN_PTR_WORKSPACE")
+            return writer.write_string("CUDNN_PTR_WORKSPACE")
         if self is Self.CUDNN_PTR_BN_SCALE:
-            return writer.write("CUDNN_PTR_BN_SCALE")
+            return writer.write_string("CUDNN_PTR_BN_SCALE")
         if self is Self.CUDNN_PTR_BN_BIAS:
-            return writer.write("CUDNN_PTR_BN_BIAS")
+            return writer.write_string("CUDNN_PTR_BN_BIAS")
         if self is Self.CUDNN_PTR_BN_SAVED_MEAN:
-            return writer.write("CUDNN_PTR_BN_SAVED_MEAN")
+            return writer.write_string("CUDNN_PTR_BN_SAVED_MEAN")
         if self is Self.CUDNN_PTR_BN_SAVED_INVSTD:
-            return writer.write("CUDNN_PTR_BN_SAVED_INVSTD")
+            return writer.write_string("CUDNN_PTR_BN_SAVED_INVSTD")
         if self is Self.CUDNN_PTR_BN_RUNNING_MEAN:
-            return writer.write("CUDNN_PTR_BN_RUNNING_MEAN")
+            return writer.write_string("CUDNN_PTR_BN_RUNNING_MEAN")
         if self is Self.CUDNN_PTR_BN_RUNNING_VAR:
-            return writer.write("CUDNN_PTR_BN_RUNNING_VAR")
+            return writer.write_string("CUDNN_PTR_BN_RUNNING_VAR")
         if self is Self.CUDNN_PTR_ZDATA:
-            return writer.write("CUDNN_PTR_ZDATA")
+            return writer.write_string("CUDNN_PTR_ZDATA")
         if self is Self.CUDNN_PTR_BN_Z_EQSCALE:
-            return writer.write("CUDNN_PTR_BN_Z_EQSCALE")
+            return writer.write_string("CUDNN_PTR_BN_Z_EQSCALE")
         if self is Self.CUDNN_PTR_BN_Z_EQBIAS:
-            return writer.write("CUDNN_PTR_BN_Z_EQBIAS")
+            return writer.write_string("CUDNN_PTR_BN_Z_EQBIAS")
         if self is Self.CUDNN_PTR_ACTIVATION_BITMASK:
-            return writer.write("CUDNN_PTR_ACTIVATION_BITMASK")
+            return writer.write_string("CUDNN_PTR_ACTIVATION_BITMASK")
         if self is Self.CUDNN_PTR_DXDATA:
-            return writer.write("CUDNN_PTR_DXDATA")
+            return writer.write_string("CUDNN_PTR_DXDATA")
         if self is Self.CUDNN_PTR_DZDATA:
-            return writer.write("CUDNN_PTR_DZDATA")
+            return writer.write_string("CUDNN_PTR_DZDATA")
         if self is Self.CUDNN_PTR_BN_DSCALE:
-            return writer.write("CUDNN_PTR_BN_DSCALE")
+            return writer.write_string("CUDNN_PTR_BN_DSCALE")
         if self is Self.CUDNN_PTR_BN_DBIAS:
-            return writer.write("CUDNN_PTR_BN_DBIAS")
+            return writer.write_string("CUDNN_PTR_BN_DBIAS")
         if self is Self.CUDNN_SCALAR_SIZE_T_WORKSPACE_SIZE_IN_BYTES:
-            return writer.write("CUDNN_SCALAR_SIZE_T_WORKSPACE_SIZE_IN_BYTES")
+            return writer.write_string(
+                "CUDNN_SCALAR_SIZE_T_WORKSPACE_SIZE_IN_BYTES"
+            )
         if self is Self.CUDNN_SCALAR_INT64_T_BN_ACCUMULATION_COUNT:
-            return writer.write("CUDNN_SCALAR_INT64_T_BN_ACCUMULATION_COUNT")
+            return writer.write_string(
+                "CUDNN_SCALAR_INT64_T_BN_ACCUMULATION_COUNT"
+            )
         if self is Self.CUDNN_SCALAR_DOUBLE_BN_EXP_AVG_FACTOR:
-            return writer.write("CUDNN_SCALAR_DOUBLE_BN_EXP_AVG_FACTOR")
+            return writer.write_string("CUDNN_SCALAR_DOUBLE_BN_EXP_AVG_FACTOR")
         if self is Self.CUDNN_SCALAR_DOUBLE_BN_EPSILON:
-            return writer.write("CUDNN_SCALAR_DOUBLE_BN_EPSILON")
+            return writer.write_string("CUDNN_SCALAR_DOUBLE_BN_EPSILON")
         abort("invalid cudnnFusedOpsVariantParamLabel_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnFusedOpsVariantParamLabel_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnFusedOpsVariantParamLabel_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1317,14 +1337,14 @@ struct cudnnConvolutionMode_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_CONVOLUTION:
-            return writer.write("CUDNN_CONVOLUTION")
+            return writer.write_string("CUDNN_CONVOLUTION")
         if self is Self.CUDNN_CROSS_CORRELATION:
-            return writer.write("CUDNN_CROSS_CORRELATION")
+            return writer.write_string("CUDNN_CROSS_CORRELATION")
         abort("invalid cudnnConvolutionMode_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnConvolutionMode_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnConvolutionMode_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)

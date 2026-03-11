@@ -194,14 +194,6 @@ struct ThroughputMeasure(ImplicitlyCopyable, Writable):
         self.metric = metric
         self.value = value
 
-    fn __str__(self) -> String:
-        """Gets a string representation of this `ThroughputMeasure`.
-
-        Returns:
-            The string representation.
-        """
-        return String(self.metric)
-
     fn write_to(self, mut writer: Some[Writer]):
         """Formats this ThroughputMeasure to the provided Writer.
 

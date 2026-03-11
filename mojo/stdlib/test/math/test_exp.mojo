@@ -87,8 +87,8 @@ struct Float32Expable(Equatable, Writable, _Expable):
     fn __ne__(self, other: Self) -> Bool:
         return self.x != other.x
 
-    fn __str__(self) -> String:
-        return String("Float32Expable(", self.x, ")")
+    fn write_to(self, mut writer: Some[Writer]):
+        t"Float32Expable({self.x})".write_to(writer)
 
 
 @fieldwise_init
@@ -102,8 +102,8 @@ struct FakeExpable(Equatable, Writable, _Expable):
 
     # Uses default reflection-based __eq__ from Equatable trait
 
-    fn __str__(self) -> String:
-        return String("FakeExpable(", self.x, ")")
+    fn write_to(self, mut writer: Some[Writer]):
+        t"FakeExpable({self.x})".write_to(writer)
 
 
 def test_exapble_trait() raises:

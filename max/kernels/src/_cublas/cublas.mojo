@@ -797,7 +797,7 @@ fn cublasStrmv(
 
 
 @fieldwise_init
-struct cublasPointerMode_t(TrivialRegisterPassable):
+struct cublasPointerMode_t(TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime CUBLAS_POINTER_MODE_HOST = cublasPointerMode_t(0)
     comptime CUBLAS_POINTER_MODE_DEVICE = cublasPointerMode_t(1)
@@ -812,11 +812,11 @@ struct cublasPointerMode_t(TrivialRegisterPassable):
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
+    fn write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLAS_POINTER_MODE_HOST:
-            return "CUBLAS_POINTER_MODE_HOST"
+            return writer.write_string("CUBLAS_POINTER_MODE_HOST")
         if self == Self.CUBLAS_POINTER_MODE_DEVICE:
-            return "CUBLAS_POINTER_MODE_DEVICE"
+            return writer.write_string("CUBLAS_POINTER_MODE_DEVICE")
         abort("invalid cublasPointerMode_t entry")
 
     fn __int__(self) -> Int:
@@ -957,7 +957,7 @@ fn cublasDgemmStridedBatched(
 
 
 @fieldwise_init
-struct cublasMath_t(TrivialRegisterPassable):
+struct cublasMath_t(TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime CUBLAS_DEFAULT_MATH = cublasMath_t(0)
     comptime CUBLAS_TENSOR_OP_MATH = cublasMath_t(1)
@@ -975,17 +975,19 @@ struct cublasMath_t(TrivialRegisterPassable):
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
+    fn write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLAS_DEFAULT_MATH:
-            return "CUBLAS_DEFAULT_MATH"
+            return writer.write_string("CUBLAS_DEFAULT_MATH")
         if self == Self.CUBLAS_TENSOR_OP_MATH:
-            return "CUBLAS_TENSOR_OP_MATH"
+            return writer.write_string("CUBLAS_TENSOR_OP_MATH")
         if self == Self.CUBLAS_PEDANTIC_MATH:
-            return "CUBLAS_PEDANTIC_MATH"
+            return writer.write_string("CUBLAS_PEDANTIC_MATH")
         if self == Self.CUBLAS_TF32_TENSOR_OP_MATH:
-            return "CUBLAS_TF32_TENSOR_OP_MATH"
+            return writer.write_string("CUBLAS_TF32_TENSOR_OP_MATH")
         if self == Self.CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION:
-            return "CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION"
+            return writer.write_string(
+                "CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION"
+            )
         abort("invalid cublasMath_t entry")
 
     fn __int__(self) -> Int:
@@ -2074,7 +2076,7 @@ fn cublasSrotm(
 
 
 @fieldwise_init
-struct Algorithm(TrivialRegisterPassable):
+struct Algorithm(TrivialRegisterPassable, Writable):
     var _value: Int32
 
     # According to https://docs.nvidia.com/cuda/cublas/#cublasgemmalgo-t, the
@@ -2134,91 +2136,91 @@ struct Algorithm(TrivialRegisterPassable):
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
+    fn write_to(self, mut writer: Some[Writer]):
         if self == Self.DEFAULT:
-            return "DEFAULT"
+            return writer.write_string("DEFAULT")
         if self == Self.ALGO0:
-            return "ALGO0"
+            return writer.write_string("ALGO0")
         if self == Self.ALGO1:
-            return "ALGO1"
+            return writer.write_string("ALGO1")
         if self == Self.ALGO2:
-            return "ALGO2"
+            return writer.write_string("ALGO2")
         if self == Self.ALGO3:
-            return "ALGO3"
+            return writer.write_string("ALGO3")
         if self == Self.ALGO4:
-            return "ALGO4"
+            return writer.write_string("ALGO4")
         if self == Self.ALGO5:
-            return "ALGO5"
+            return writer.write_string("ALGO5")
         if self == Self.ALGO6:
-            return "ALGO6"
+            return writer.write_string("ALGO6")
         if self == Self.ALGO7:
-            return "ALGO7"
+            return writer.write_string("ALGO7")
         if self == Self.ALGO8:
-            return "ALGO8"
+            return writer.write_string("ALGO8")
         if self == Self.ALGO9:
-            return "ALGO9"
+            return writer.write_string("ALGO9")
         if self == Self.ALGO10:
-            return "ALGO10"
+            return writer.write_string("ALGO10")
         if self == Self.ALGO11:
-            return "ALGO11"
+            return writer.write_string("ALGO11")
         if self == Self.ALGO12:
-            return "ALGO12"
+            return writer.write_string("ALGO12")
         if self == Self.ALGO13:
-            return "ALGO13"
+            return writer.write_string("ALGO13")
         if self == Self.ALGO14:
-            return "ALGO14"
+            return writer.write_string("ALGO14")
         if self == Self.ALGO15:
-            return "ALGO15"
+            return writer.write_string("ALGO15")
         if self == Self.ALGO16:
-            return "ALGO16"
+            return writer.write_string("ALGO16")
         if self == Self.ALGO17:
-            return "ALGO17"
+            return writer.write_string("ALGO17")
         if self == Self.ALGO18:
-            return "ALGO18"
+            return writer.write_string("ALGO18")
         if self == Self.ALGO19:
-            return "ALGO19"
+            return writer.write_string("ALGO19")
         if self == Self.ALGO20:
-            return "ALGO20"
+            return writer.write_string("ALGO20")
         if self == Self.ALGO21:
-            return "ALGO21"
+            return writer.write_string("ALGO21")
         if self == Self.ALGO22:
-            return "ALGO22"
+            return writer.write_string("ALGO22")
         if self == Self.ALGO23:
-            return "ALGO23"
+            return writer.write_string("ALGO23")
         if self == Self.DEFAULT_TENSOR_OP:
-            return "DEFAULT_TENSOR_OP"
+            return writer.write_string("DEFAULT_TENSOR_OP")
         if self == Self.ALGO0_TENSOR_OP:
-            return "ALGO0_TENSOR_OP"
+            return writer.write_string("ALGO0_TENSOR_OP")
         if self == Self.ALGO1_TENSOR_OP:
-            return "ALGO1_TENSOR_OP"
+            return writer.write_string("ALGO1_TENSOR_OP")
         if self == Self.ALGO2_TENSOR_OP:
-            return "ALGO2_TENSOR_OP"
+            return writer.write_string("ALGO2_TENSOR_OP")
         if self == Self.ALGO3_TENSOR_OP:
-            return "ALGO3_TENSOR_OP"
+            return writer.write_string("ALGO3_TENSOR_OP")
         if self == Self.ALGO4_TENSOR_OP:
-            return "ALGO4_TENSOR_OP"
+            return writer.write_string("ALGO4_TENSOR_OP")
         if self == Self.ALGO5_TENSOR_OP:
-            return "ALGO5_TENSOR_OP"
+            return writer.write_string("ALGO5_TENSOR_OP")
         if self == Self.ALGO6_TENSOR_OP:
-            return "ALGO6_TENSOR_OP"
+            return writer.write_string("ALGO6_TENSOR_OP")
         if self == Self.ALGO7_TENSOR_OP:
-            return "ALGO7_TENSOR_OP"
+            return writer.write_string("ALGO7_TENSOR_OP")
         if self == Self.ALGO8_TENSOR_OP:
-            return "ALGO8_TENSOR_OP"
+            return writer.write_string("ALGO8_TENSOR_OP")
         if self == Self.ALGO9_TENSOR_OP:
-            return "ALGO9_TENSOR_OP"
+            return writer.write_string("ALGO9_TENSOR_OP")
         if self == Self.ALGO10_TENSOR_OP:
-            return "ALGO10_TENSOR_OP"
+            return writer.write_string("ALGO10_TENSOR_OP")
         if self == Self.ALGO11_TENSOR_OP:
-            return "ALGO11_TENSOR_OP"
+            return writer.write_string("ALGO11_TENSOR_OP")
         if self == Self.ALGO12_TENSOR_OP:
-            return "ALGO12_TENSOR_OP"
+            return writer.write_string("ALGO12_TENSOR_OP")
         if self == Self.ALGO13_TENSOR_OP:
-            return "ALGO13_TENSOR_OP"
+            return writer.write_string("ALGO13_TENSOR_OP")
         if self == Self.ALGO14_TENSOR_OP:
-            return "ALGO14_TENSOR_OP"
+            return writer.write_string("ALGO14_TENSOR_OP")
         if self == Self.ALGO15_TENSOR_OP:
-            return "ALGO15_TENSOR_OP"
+            return writer.write_string("ALGO15_TENSOR_OP")
         abort("invalid Algorithm entry")
 
     fn __int__(self) -> Int:
@@ -2644,7 +2646,7 @@ fn cublasRotgEx(
 
 
 @fieldwise_init
-struct cublasDiagType_t(TrivialRegisterPassable):
+struct cublasDiagType_t(TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime CUBLAS_DIAG_NON_UNIT = cublasDiagType_t(0)
     comptime CUBLAS_DIAG_UNIT = cublasDiagType_t(1)
@@ -2659,11 +2661,11 @@ struct cublasDiagType_t(TrivialRegisterPassable):
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
+    fn write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLAS_DIAG_NON_UNIT:
-            return "CUBLAS_DIAG_NON_UNIT"
+            return writer.write_string("CUBLAS_DIAG_NON_UNIT")
         if self == Self.CUBLAS_DIAG_UNIT:
-            return "CUBLAS_DIAG_UNIT"
+            return writer.write_string("CUBLAS_DIAG_UNIT")
         abort("invalid cublasDiagType_t entry")
 
     fn __int__(self) -> Int:
@@ -2671,7 +2673,7 @@ struct cublasDiagType_t(TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct ComputeType(TrivialRegisterPassable):
+struct ComputeType(TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime COMPUTE_16F = Self(64)
     comptime COMPUTE_16F_PEDANTIC = Self(65)
@@ -2695,29 +2697,29 @@ struct ComputeType(TrivialRegisterPassable):
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
+    fn write_to(self, mut writer: Some[Writer]):
         if self == Self.COMPUTE_16F:
-            return "COMPUTE_16F"
+            return writer.write_string("COMPUTE_16F")
         if self == Self.COMPUTE_16F_PEDANTIC:
-            return "COMPUTE_16F_PEDANTIC"
+            return writer.write_string("COMPUTE_16F_PEDANTIC")
         if self == Self.COMPUTE_32F:
-            return "COMPUTE_32F"
+            return writer.write_string("COMPUTE_32F")
         if self == Self.COMPUTE_32F_PEDANTIC:
-            return "COMPUTE_32F_PEDANTIC"
+            return writer.write_string("COMPUTE_32F_PEDANTIC")
         if self == Self.COMPUTE_32F_FAST_16F:
-            return "COMPUTE_32F_FAST_16F"
+            return writer.write_string("COMPUTE_32F_FAST_16F")
         if self == Self.COMPUTE_32F_FAST_16BF:
-            return "COMPUTE_32F_FAST_16BF"
+            return writer.write_string("COMPUTE_32F_FAST_16BF")
         if self == Self.COMPUTE_32F_FAST_TF32:
-            return "COMPUTE_32F_FAST_TF32"
+            return writer.write_string("COMPUTE_32F_FAST_TF32")
         if self == Self.COMPUTE_64F:
-            return "COMPUTE_64F"
+            return writer.write_string("COMPUTE_64F")
         if self == Self.COMPUTE_64F_PEDANTIC:
-            return "COMPUTE_64F_PEDANTIC"
+            return writer.write_string("COMPUTE_64F_PEDANTIC")
         if self == Self.COMPUTE_32I:
-            return "COMPUTE_32I"
+            return writer.write_string("COMPUTE_32I")
         if self == Self.COMPUTE_32I_PEDANTIC:
-            return "COMPUTE_32I_PEDANTIC"
+            return writer.write_string("COMPUTE_32I_PEDANTIC")
         abort("invalid ComputeType entry")
 
     fn __int__(self) -> Int:
@@ -4689,7 +4691,7 @@ fn cublasAsumEx(
 
 
 @fieldwise_init
-struct FillMode(TrivialRegisterPassable):
+struct FillMode(TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime LOWER = Self(0)
     comptime UPPER = Self(1)
@@ -4704,13 +4706,13 @@ struct FillMode(TrivialRegisterPassable):
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __str__(self) -> String:
+    fn write_to(self, mut writer: Some[Writer]):
         if self == Self.LOWER:
-            return "LOWER"
+            return writer.write_string("LOWER")
         if self == Self.UPPER:
-            return "UPPER"
+            return writer.write_string("UPPER")
         if self == Self.FULL:
-            return "FULL"
+            return writer.write_string("FULL")
         abort("invalid FillMode entry")
 
     fn __int__(self) -> Int:
@@ -6144,7 +6146,7 @@ fn cublasDtbmv(
 
 
 @fieldwise_init
-struct cublasAtomicsMode_t(TrivialRegisterPassable):
+struct cublasAtomicsMode_t(TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime CUBLAS_ATOMICS_NOT_ALLOWED = cublasAtomicsMode_t(0)
     comptime CUBLAS_ATOMICS_ALLOWED = cublasAtomicsMode_t(1)
@@ -6159,11 +6161,11 @@ struct cublasAtomicsMode_t(TrivialRegisterPassable):
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
+    fn write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLAS_ATOMICS_NOT_ALLOWED:
-            return "CUBLAS_ATOMICS_NOT_ALLOWED"
+            return writer.write_string("CUBLAS_ATOMICS_NOT_ALLOWED")
         if self == Self.CUBLAS_ATOMICS_ALLOWED:
-            return "CUBLAS_ATOMICS_ALLOWED"
+            return writer.write_string("CUBLAS_ATOMICS_ALLOWED")
         abort("invalid cublasAtomicsMode_t entry")
 
     fn __int__(self) -> Int:
@@ -6444,7 +6446,7 @@ fn cublasCherkEx(
 
 
 @fieldwise_init
-struct cublasSideMode_t(TrivialRegisterPassable):
+struct cublasSideMode_t(TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime CUBLAS_SIDE_LEFT = cublasSideMode_t(0)
     comptime CUBLAS_SIDE_RIGHT = cublasSideMode_t(1)
@@ -6459,11 +6461,11 @@ struct cublasSideMode_t(TrivialRegisterPassable):
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
+    fn write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLAS_SIDE_LEFT:
-            return "CUBLAS_SIDE_LEFT"
+            return writer.write_string("CUBLAS_SIDE_LEFT")
         if self == Self.CUBLAS_SIDE_RIGHT:
-            return "CUBLAS_SIDE_RIGHT"
+            return writer.write_string("CUBLAS_SIDE_RIGHT")
         abort("invalid cublasSideMode_t entry")
 
     fn __int__(self) -> Int:
@@ -7071,7 +7073,7 @@ fn cublasStrmm(
 
 
 @fieldwise_init
-struct cublasOperation_t(TrivialRegisterPassable):
+struct cublasOperation_t(TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime CUBLAS_OP_N = cublasOperation_t(0)
     comptime CUBLAS_OP_T = cublasOperation_t(1)
@@ -7089,17 +7091,17 @@ struct cublasOperation_t(TrivialRegisterPassable):
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
+    fn write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLAS_OP_N:
-            return "CUBLAS_OP_N"
+            return writer.write_string("CUBLAS_OP_N")
         if self == Self.CUBLAS_OP_T:
-            return "CUBLAS_OP_T"
+            return writer.write_string("CUBLAS_OP_T")
         if self == Self.CUBLAS_OP_C:
-            return "CUBLAS_OP_C"
+            return writer.write_string("CUBLAS_OP_C")
         if self == Self.CUBLAS_OP_HERMITAN:
-            return "CUBLAS_OP_HERMITAN"
+            return writer.write_string("CUBLAS_OP_HERMITAN")
         if self == Self.CUBLAS_OP_CONJG:
-            return "CUBLAS_OP_CONJG"
+            return writer.write_string("CUBLAS_OP_CONJG")
         abort("invalid cublasOperation_t entry")
 
     fn __int__(self) -> Int:

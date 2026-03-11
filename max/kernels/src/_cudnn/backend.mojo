@@ -137,86 +137,86 @@ struct cudnnBackendKnobType_t(Equatable, TrivialRegisterPassable, Writable):
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_KNOB_TYPE_SPLIT_K:
-            return writer.write("CUDNN_KNOB_TYPE_SPLIT_K")
+            return writer.write_string("CUDNN_KNOB_TYPE_SPLIT_K")
         if self is Self.CUDNN_KNOB_TYPE_SWIZZLE:
-            return writer.write("CUDNN_KNOB_TYPE_SWIZZLE")
+            return writer.write_string("CUDNN_KNOB_TYPE_SWIZZLE")
         if self is Self.CUDNN_KNOB_TYPE_TILE_SIZE:
-            return writer.write("CUDNN_KNOB_TYPE_TILE_SIZE")
+            return writer.write_string("CUDNN_KNOB_TYPE_TILE_SIZE")
         if self is Self.CUDNN_KNOB_TYPE_USE_TEX:
-            return writer.write("CUDNN_KNOB_TYPE_USE_TEX")
+            return writer.write_string("CUDNN_KNOB_TYPE_USE_TEX")
         if self is Self.CUDNN_KNOB_TYPE_EDGE:
-            return writer.write("CUDNN_KNOB_TYPE_EDGE")
+            return writer.write_string("CUDNN_KNOB_TYPE_EDGE")
         if self is Self.CUDNN_KNOB_TYPE_KBLOCK:
-            return writer.write("CUDNN_KNOB_TYPE_KBLOCK")
+            return writer.write_string("CUDNN_KNOB_TYPE_KBLOCK")
         if self is Self.CUDNN_KNOB_TYPE_LDGA:
-            return writer.write("CUDNN_KNOB_TYPE_LDGA")
+            return writer.write_string("CUDNN_KNOB_TYPE_LDGA")
         if self is Self.CUDNN_KNOB_TYPE_LDGB:
-            return writer.write("CUDNN_KNOB_TYPE_LDGB")
+            return writer.write_string("CUDNN_KNOB_TYPE_LDGB")
         if self is Self.CUDNN_KNOB_TYPE_CHUNK_K:
-            return writer.write("CUDNN_KNOB_TYPE_CHUNK_K")
+            return writer.write_string("CUDNN_KNOB_TYPE_CHUNK_K")
         if self is Self.CUDNN_KNOB_TYPE_SPLIT_H:
-            return writer.write("CUDNN_KNOB_TYPE_SPLIT_H")
+            return writer.write_string("CUDNN_KNOB_TYPE_SPLIT_H")
         if self is Self.CUDNN_KNOB_TYPE_WINO_TILE:
-            return writer.write("CUDNN_KNOB_TYPE_WINO_TILE")
+            return writer.write_string("CUDNN_KNOB_TYPE_WINO_TILE")
         if self is Self.CUDNN_KNOB_TYPE_MULTIPLY:
-            return writer.write("CUDNN_KNOB_TYPE_MULTIPLY")
+            return writer.write_string("CUDNN_KNOB_TYPE_MULTIPLY")
         if self is Self.CUDNN_KNOB_TYPE_SPLIT_K_BUF:
-            return writer.write("CUDNN_KNOB_TYPE_SPLIT_K_BUF")
+            return writer.write_string("CUDNN_KNOB_TYPE_SPLIT_K_BUF")
         if self is Self.CUDNN_KNOB_TYPE_TILEK:
-            return writer.write("CUDNN_KNOB_TYPE_TILEK")
+            return writer.write_string("CUDNN_KNOB_TYPE_TILEK")
         if self is Self.CUDNN_KNOB_TYPE_STAGES:
-            return writer.write("CUDNN_KNOB_TYPE_STAGES")
+            return writer.write_string("CUDNN_KNOB_TYPE_STAGES")
         if self is Self.CUDNN_KNOB_TYPE_REDUCTION_MODE:
-            return writer.write("CUDNN_KNOB_TYPE_REDUCTION_MODE")
+            return writer.write_string("CUDNN_KNOB_TYPE_REDUCTION_MODE")
         if self is Self.CUDNN_KNOB_TYPE_CTA_SPLIT_K_MODE:
-            return writer.write("CUDNN_KNOB_TYPE_CTA_SPLIT_K_MODE")
+            return writer.write_string("CUDNN_KNOB_TYPE_CTA_SPLIT_K_MODE")
         if self is Self.CUDNN_KNOB_TYPE_SPLIT_K_SLC:
-            return writer.write("CUDNN_KNOB_TYPE_SPLIT_K_SLC")
+            return writer.write_string("CUDNN_KNOB_TYPE_SPLIT_K_SLC")
         if self is Self.CUDNN_KNOB_TYPE_IDX_MODE:
-            return writer.write("CUDNN_KNOB_TYPE_IDX_MODE")
+            return writer.write_string("CUDNN_KNOB_TYPE_IDX_MODE")
         if self is Self.CUDNN_KNOB_TYPE_SLICED:
-            return writer.write("CUDNN_KNOB_TYPE_SLICED")
+            return writer.write_string("CUDNN_KNOB_TYPE_SLICED")
         if self is Self.CUDNN_KNOB_TYPE_SPLIT_RS:
-            return writer.write("CUDNN_KNOB_TYPE_SPLIT_RS")
+            return writer.write_string("CUDNN_KNOB_TYPE_SPLIT_RS")
         if self is Self.CUDNN_KNOB_TYPE_SINGLEBUFFER:
-            return writer.write("CUDNN_KNOB_TYPE_SINGLEBUFFER")
+            return writer.write_string("CUDNN_KNOB_TYPE_SINGLEBUFFER")
         if self is Self.CUDNN_KNOB_TYPE_LDGC:
-            return writer.write("CUDNN_KNOB_TYPE_LDGC")
+            return writer.write_string("CUDNN_KNOB_TYPE_LDGC")
         if self is Self.CUDNN_KNOB_TYPE_SPECFILT:
-            return writer.write("CUDNN_KNOB_TYPE_SPECFILT")
+            return writer.write_string("CUDNN_KNOB_TYPE_SPECFILT")
         if self is Self.CUDNN_KNOB_TYPE_KERNEL_CFG:
-            return writer.write("CUDNN_KNOB_TYPE_KERNEL_CFG")
+            return writer.write_string("CUDNN_KNOB_TYPE_KERNEL_CFG")
         if self is Self.CUDNN_KNOB_TYPE_WORKSPACE:
-            return writer.write("CUDNN_KNOB_TYPE_WORKSPACE")
+            return writer.write_string("CUDNN_KNOB_TYPE_WORKSPACE")
         if self is Self.CUDNN_KNOB_TYPE_TILE_CGA:
-            return writer.write("CUDNN_KNOB_TYPE_TILE_CGA")
+            return writer.write_string("CUDNN_KNOB_TYPE_TILE_CGA")
         if self is Self.CUDNN_KNOB_TYPE_TILE_CGA_M:
-            return writer.write("CUDNN_KNOB_TYPE_TILE_CGA_M")
+            return writer.write_string("CUDNN_KNOB_TYPE_TILE_CGA_M")
         if self is Self.CUDNN_KNOB_TYPE_TILE_CGA_N:
-            return writer.write("CUDNN_KNOB_TYPE_TILE_CGA_N")
+            return writer.write_string("CUDNN_KNOB_TYPE_TILE_CGA_N")
         if self is Self.CUDNN_KNOB_TYPE_BLOCK_SIZE:
-            return writer.write("CUDNN_KNOB_TYPE_BLOCK_SIZE")
+            return writer.write_string("CUDNN_KNOB_TYPE_BLOCK_SIZE")
         if self is Self.CUDNN_KNOB_TYPE_OCCUPANCY:
-            return writer.write("CUDNN_KNOB_TYPE_OCCUPANCY")
+            return writer.write_string("CUDNN_KNOB_TYPE_OCCUPANCY")
         if self is Self.CUDNN_KNOB_TYPE_ARRAY_SIZE_PER_THREAD:
-            return writer.write("CUDNN_KNOB_TYPE_ARRAY_SIZE_PER_THREAD")
+            return writer.write_string("CUDNN_KNOB_TYPE_ARRAY_SIZE_PER_THREAD")
         if self is Self.CUDNN_KNOB_TYPE_NUM_C_PER_BLOCK:
-            return writer.write("CUDNN_KNOB_TYPE_NUM_C_PER_BLOCK")
+            return writer.write_string("CUDNN_KNOB_TYPE_NUM_C_PER_BLOCK")
         if self is Self.CUDNN_KNOB_TYPE_SPLIT_COLS:
-            return writer.write("CUDNN_KNOB_TYPE_SPLIT_COLS")
+            return writer.write_string("CUDNN_KNOB_TYPE_SPLIT_COLS")
         if self is Self.CUDNN_KNOB_TYPE_TILE_ROWS:
-            return writer.write("CUDNN_KNOB_TYPE_TILE_ROWS")
+            return writer.write_string("CUDNN_KNOB_TYPE_TILE_ROWS")
         if self is Self.CUDNN_KNOB_TYPE_TILE_COLS:
-            return writer.write("CUDNN_KNOB_TYPE_TILE_COLS")
+            return writer.write_string("CUDNN_KNOB_TYPE_TILE_COLS")
         if self is Self.CUDNN_KNOB_TYPE_LOAD_SIZE:
-            return writer.write("CUDNN_KNOB_TYPE_LOAD_SIZE")
+            return writer.write_string("CUDNN_KNOB_TYPE_LOAD_SIZE")
         if self is Self.CUDNN_KNOB_TYPE_COUNTS:
-            return writer.write("CUDNN_KNOB_TYPE_COUNTS")
+            return writer.write_string("CUDNN_KNOB_TYPE_COUNTS")
         abort("invalid cudnnBackendKnobType_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnBackendKnobType_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnBackendKnobType_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -288,110 +288,110 @@ struct cudnnPointwiseMode_t(Equatable, TrivialRegisterPassable, Writable):
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_POINTWISE_ADD:
-            return writer.write("CUDNN_POINTWISE_ADD")
+            return writer.write_string("CUDNN_POINTWISE_ADD")
         if self is Self.CUDNN_POINTWISE_ADD_SQUARE:
-            return writer.write("CUDNN_POINTWISE_ADD_SQUARE")
+            return writer.write_string("CUDNN_POINTWISE_ADD_SQUARE")
         if self is Self.CUDNN_POINTWISE_DIV:
-            return writer.write("CUDNN_POINTWISE_DIV")
+            return writer.write_string("CUDNN_POINTWISE_DIV")
         if self is Self.CUDNN_POINTWISE_MAX:
-            return writer.write("CUDNN_POINTWISE_MAX")
+            return writer.write_string("CUDNN_POINTWISE_MAX")
         if self is Self.CUDNN_POINTWISE_MIN:
-            return writer.write("CUDNN_POINTWISE_MIN")
+            return writer.write_string("CUDNN_POINTWISE_MIN")
         if self is Self.CUDNN_POINTWISE_MOD:
-            return writer.write("CUDNN_POINTWISE_MOD")
+            return writer.write_string("CUDNN_POINTWISE_MOD")
         if self is Self.CUDNN_POINTWISE_MUL:
-            return writer.write("CUDNN_POINTWISE_MUL")
+            return writer.write_string("CUDNN_POINTWISE_MUL")
         if self is Self.CUDNN_POINTWISE_POW:
-            return writer.write("CUDNN_POINTWISE_POW")
+            return writer.write_string("CUDNN_POINTWISE_POW")
         if self is Self.CUDNN_POINTWISE_SUB:
-            return writer.write("CUDNN_POINTWISE_SUB")
+            return writer.write_string("CUDNN_POINTWISE_SUB")
         if self is Self.CUDNN_POINTWISE_ABS:
-            return writer.write("CUDNN_POINTWISE_ABS")
+            return writer.write_string("CUDNN_POINTWISE_ABS")
         if self is Self.CUDNN_POINTWISE_CEIL:
-            return writer.write("CUDNN_POINTWISE_CEIL")
+            return writer.write_string("CUDNN_POINTWISE_CEIL")
         if self is Self.CUDNN_POINTWISE_COS:
-            return writer.write("CUDNN_POINTWISE_COS")
+            return writer.write_string("CUDNN_POINTWISE_COS")
         if self is Self.CUDNN_POINTWISE_EXP:
-            return writer.write("CUDNN_POINTWISE_EXP")
+            return writer.write_string("CUDNN_POINTWISE_EXP")
         if self is Self.CUDNN_POINTWISE_FLOOR:
-            return writer.write("CUDNN_POINTWISE_FLOOR")
+            return writer.write_string("CUDNN_POINTWISE_FLOOR")
         if self is Self.CUDNN_POINTWISE_LOG:
-            return writer.write("CUDNN_POINTWISE_LOG")
+            return writer.write_string("CUDNN_POINTWISE_LOG")
         if self is Self.CUDNN_POINTWISE_NEG:
-            return writer.write("CUDNN_POINTWISE_NEG")
+            return writer.write_string("CUDNN_POINTWISE_NEG")
         if self is Self.CUDNN_POINTWISE_RSQRT:
-            return writer.write("CUDNN_POINTWISE_RSQRT")
+            return writer.write_string("CUDNN_POINTWISE_RSQRT")
         if self is Self.CUDNN_POINTWISE_SIN:
-            return writer.write("CUDNN_POINTWISE_SIN")
+            return writer.write_string("CUDNN_POINTWISE_SIN")
         if self is Self.CUDNN_POINTWISE_SQRT:
-            return writer.write("CUDNN_POINTWISE_SQRT")
+            return writer.write_string("CUDNN_POINTWISE_SQRT")
         if self is Self.CUDNN_POINTWISE_TAN:
-            return writer.write("CUDNN_POINTWISE_TAN")
+            return writer.write_string("CUDNN_POINTWISE_TAN")
         if self is Self.CUDNN_POINTWISE_ERF:
-            return writer.write("CUDNN_POINTWISE_ERF")
+            return writer.write_string("CUDNN_POINTWISE_ERF")
         if self is Self.CUDNN_POINTWISE_IDENTITY:
-            return writer.write("CUDNN_POINTWISE_IDENTITY")
+            return writer.write_string("CUDNN_POINTWISE_IDENTITY")
         if self is Self.CUDNN_POINTWISE_RECIPROCAL:
-            return writer.write("CUDNN_POINTWISE_RECIPROCAL")
+            return writer.write_string("CUDNN_POINTWISE_RECIPROCAL")
         if self is Self.CUDNN_POINTWISE_RELU_FWD:
-            return writer.write("CUDNN_POINTWISE_RELU_FWD")
+            return writer.write_string("CUDNN_POINTWISE_RELU_FWD")
         if self is Self.CUDNN_POINTWISE_TANH_FWD:
-            return writer.write("CUDNN_POINTWISE_TANH_FWD")
+            return writer.write_string("CUDNN_POINTWISE_TANH_FWD")
         if self is Self.CUDNN_POINTWISE_SIGMOID_FWD:
-            return writer.write("CUDNN_POINTWISE_SIGMOID_FWD")
+            return writer.write_string("CUDNN_POINTWISE_SIGMOID_FWD")
         if self is Self.CUDNN_POINTWISE_ELU_FWD:
-            return writer.write("CUDNN_POINTWISE_ELU_FWD")
+            return writer.write_string("CUDNN_POINTWISE_ELU_FWD")
         if self is Self.CUDNN_POINTWISE_GELU_FWD:
-            return writer.write("CUDNN_POINTWISE_GELU_FWD")
+            return writer.write_string("CUDNN_POINTWISE_GELU_FWD")
         if self is Self.CUDNN_POINTWISE_SOFTPLUS_FWD:
-            return writer.write("CUDNN_POINTWISE_SOFTPLUS_FWD")
+            return writer.write_string("CUDNN_POINTWISE_SOFTPLUS_FWD")
         if self is Self.CUDNN_POINTWISE_SWISH_FWD:
-            return writer.write("CUDNN_POINTWISE_SWISH_FWD")
+            return writer.write_string("CUDNN_POINTWISE_SWISH_FWD")
         if self is Self.CUDNN_POINTWISE_GELU_APPROX_TANH_FWD:
-            return writer.write("CUDNN_POINTWISE_GELU_APPROX_TANH_FWD")
+            return writer.write_string("CUDNN_POINTWISE_GELU_APPROX_TANH_FWD")
         if self is Self.CUDNN_POINTWISE_RELU_BWD:
-            return writer.write("CUDNN_POINTWISE_RELU_BWD")
+            return writer.write_string("CUDNN_POINTWISE_RELU_BWD")
         if self is Self.CUDNN_POINTWISE_TANH_BWD:
-            return writer.write("CUDNN_POINTWISE_TANH_BWD")
+            return writer.write_string("CUDNN_POINTWISE_TANH_BWD")
         if self is Self.CUDNN_POINTWISE_SIGMOID_BWD:
-            return writer.write("CUDNN_POINTWISE_SIGMOID_BWD")
+            return writer.write_string("CUDNN_POINTWISE_SIGMOID_BWD")
         if self is Self.CUDNN_POINTWISE_ELU_BWD:
-            return writer.write("CUDNN_POINTWISE_ELU_BWD")
+            return writer.write_string("CUDNN_POINTWISE_ELU_BWD")
         if self is Self.CUDNN_POINTWISE_GELU_BWD:
-            return writer.write("CUDNN_POINTWISE_GELU_BWD")
+            return writer.write_string("CUDNN_POINTWISE_GELU_BWD")
         if self is Self.CUDNN_POINTWISE_SOFTPLUS_BWD:
-            return writer.write("CUDNN_POINTWISE_SOFTPLUS_BWD")
+            return writer.write_string("CUDNN_POINTWISE_SOFTPLUS_BWD")
         if self is Self.CUDNN_POINTWISE_SWISH_BWD:
-            return writer.write("CUDNN_POINTWISE_SWISH_BWD")
+            return writer.write_string("CUDNN_POINTWISE_SWISH_BWD")
         if self is Self.CUDNN_POINTWISE_GELU_APPROX_TANH_BWD:
-            return writer.write("CUDNN_POINTWISE_GELU_APPROX_TANH_BWD")
+            return writer.write_string("CUDNN_POINTWISE_GELU_APPROX_TANH_BWD")
         if self is Self.CUDNN_POINTWISE_CMP_EQ:
-            return writer.write("CUDNN_POINTWISE_CMP_EQ")
+            return writer.write_string("CUDNN_POINTWISE_CMP_EQ")
         if self is Self.CUDNN_POINTWISE_CMP_NEQ:
-            return writer.write("CUDNN_POINTWISE_CMP_NEQ")
+            return writer.write_string("CUDNN_POINTWISE_CMP_NEQ")
         if self is Self.CUDNN_POINTWISE_CMP_GT:
-            return writer.write("CUDNN_POINTWISE_CMP_GT")
+            return writer.write_string("CUDNN_POINTWISE_CMP_GT")
         if self is Self.CUDNN_POINTWISE_CMP_GE:
-            return writer.write("CUDNN_POINTWISE_CMP_GE")
+            return writer.write_string("CUDNN_POINTWISE_CMP_GE")
         if self is Self.CUDNN_POINTWISE_CMP_LT:
-            return writer.write("CUDNN_POINTWISE_CMP_LT")
+            return writer.write_string("CUDNN_POINTWISE_CMP_LT")
         if self is Self.CUDNN_POINTWISE_CMP_LE:
-            return writer.write("CUDNN_POINTWISE_CMP_LE")
+            return writer.write_string("CUDNN_POINTWISE_CMP_LE")
         if self is Self.CUDNN_POINTWISE_LOGICAL_AND:
-            return writer.write("CUDNN_POINTWISE_LOGICAL_AND")
+            return writer.write_string("CUDNN_POINTWISE_LOGICAL_AND")
         if self is Self.CUDNN_POINTWISE_LOGICAL_OR:
-            return writer.write("CUDNN_POINTWISE_LOGICAL_OR")
+            return writer.write_string("CUDNN_POINTWISE_LOGICAL_OR")
         if self is Self.CUDNN_POINTWISE_LOGICAL_NOT:
-            return writer.write("CUDNN_POINTWISE_LOGICAL_NOT")
+            return writer.write_string("CUDNN_POINTWISE_LOGICAL_NOT")
         if self is Self.CUDNN_POINTWISE_GEN_INDEX:
-            return writer.write("CUDNN_POINTWISE_GEN_INDEX")
+            return writer.write_string("CUDNN_POINTWISE_GEN_INDEX")
         if self is Self.CUDNN_POINTWISE_BINARY_SELECT:
-            return writer.write("CUDNN_POINTWISE_BINARY_SELECT")
+            return writer.write_string("CUDNN_POINTWISE_BINARY_SELECT")
         abort("invalid cudnnPointwiseMode_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnPointwiseMode_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnPointwiseMode_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -455,25 +455,29 @@ struct cudnnBackendDescriptorType_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_BACKEND_POINTWISE_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_POINTWISE_DESCRIPTOR")
+            return writer.write_string("CUDNN_BACKEND_POINTWISE_DESCRIPTOR")
         if self is Self.CUDNN_BACKEND_CONVOLUTION_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_CONVOLUTION_DESCRIPTOR")
+            return writer.write_string("CUDNN_BACKEND_CONVOLUTION_DESCRIPTOR")
         if self is Self.CUDNN_BACKEND_ENGINE_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_ENGINE_DESCRIPTOR")
+            return writer.write_string("CUDNN_BACKEND_ENGINE_DESCRIPTOR")
         if self is Self.CUDNN_BACKEND_ENGINECFG_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_ENGINECFG_DESCRIPTOR")
+            return writer.write_string("CUDNN_BACKEND_ENGINECFG_DESCRIPTOR")
         if self is Self.CUDNN_BACKEND_ENGINEHEUR_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_ENGINEHEUR_DESCRIPTOR")
+            return writer.write_string("CUDNN_BACKEND_ENGINEHEUR_DESCRIPTOR")
         if self is Self.CUDNN_BACKEND_EXECUTION_PLAN_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_EXECUTION_PLAN_DESCRIPTOR")
+            return writer.write_string(
+                "CUDNN_BACKEND_EXECUTION_PLAN_DESCRIPTOR"
+            )
         if self is Self.CUDNN_BACKEND_INTERMEDIATE_INFO_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_INTERMEDIATE_INFO_DESCRIPTOR")
+            return writer.write_string(
+                "CUDNN_BACKEND_INTERMEDIATE_INFO_DESCRIPTOR"
+            )
         if self is Self.CUDNN_BACKEND_KNOB_CHOICE_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_KNOB_CHOICE_DESCRIPTOR")
+            return writer.write_string("CUDNN_BACKEND_KNOB_CHOICE_DESCRIPTOR")
         if self is Self.CUDNN_BACKEND_KNOB_INFO_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_KNOB_INFO_DESCRIPTOR")
+            return writer.write_string("CUDNN_BACKEND_KNOB_INFO_DESCRIPTOR")
         if self is Self.CUDNN_BACKEND_LAYOUT_INFO_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_LAYOUT_INFO_DESCRIPTOR")
+            return writer.write_string("CUDNN_BACKEND_LAYOUT_INFO_DESCRIPTOR")
         if self is Self.CUDNN_BACKEND_OPERATION_CONVOLUTION_FORWARD_DESCRIPTOR:
             return writer.write(
                 "CUDNN_BACKEND_OPERATION_CONVOLUTION_FORWARD_DESCRIPTOR"
@@ -493,19 +497,27 @@ struct cudnnBackendDescriptorType_t(
                 "CUDNN_BACKEND_OPERATION_CONVOLUTION_BACKWARD_DATA_DESCRIPTOR"
             )
         if self is Self.CUDNN_BACKEND_OPERATION_POINTWISE_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_OPERATION_POINTWISE_DESCRIPTOR")
+            return writer.write_string(
+                "CUDNN_BACKEND_OPERATION_POINTWISE_DESCRIPTOR"
+            )
         if self is Self.CUDNN_BACKEND_OPERATION_GEN_STATS_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_OPERATION_GEN_STATS_DESCRIPTOR")
+            return writer.write_string(
+                "CUDNN_BACKEND_OPERATION_GEN_STATS_DESCRIPTOR"
+            )
         if self is Self.CUDNN_BACKEND_OPERATIONGRAPH_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_OPERATIONGRAPH_DESCRIPTOR")
+            return writer.write_string(
+                "CUDNN_BACKEND_OPERATIONGRAPH_DESCRIPTOR"
+            )
         if self is Self.CUDNN_BACKEND_VARIANT_PACK_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_VARIANT_PACK_DESCRIPTOR")
+            return writer.write_string("CUDNN_BACKEND_VARIANT_PACK_DESCRIPTOR")
         if self is Self.CUDNN_BACKEND_TENSOR_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_TENSOR_DESCRIPTOR")
+            return writer.write_string("CUDNN_BACKEND_TENSOR_DESCRIPTOR")
         if self is Self.CUDNN_BACKEND_MATMUL_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_MATMUL_DESCRIPTOR")
+            return writer.write_string("CUDNN_BACKEND_MATMUL_DESCRIPTOR")
         if self is Self.CUDNN_BACKEND_OPERATION_MATMUL_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_OPERATION_MATMUL_DESCRIPTOR")
+            return writer.write_string(
+                "CUDNN_BACKEND_OPERATION_MATMUL_DESCRIPTOR"
+            )
         if (
             self
             is Self.CUDNN_BACKEND_OPERATION_BN_FINALIZE_STATISTICS_DESCRIPTOR
@@ -514,15 +526,17 @@ struct cudnnBackendDescriptorType_t(
                 "CUDNN_BACKEND_OPERATION_BN_FINALIZE_STATISTICS_DESCRIPTOR"
             )
         if self is Self.CUDNN_BACKEND_REDUCTION_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_REDUCTION_DESCRIPTOR")
+            return writer.write_string("CUDNN_BACKEND_REDUCTION_DESCRIPTOR")
         if self is Self.CUDNN_BACKEND_OPERATION_REDUCTION_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_OPERATION_REDUCTION_DESCRIPTOR")
+            return writer.write_string(
+                "CUDNN_BACKEND_OPERATION_REDUCTION_DESCRIPTOR"
+            )
         if self is Self.CUDNN_BACKEND_OPERATION_BN_BWD_WEIGHTS_DESCRIPTOR:
             return writer.write(
                 "CUDNN_BACKEND_OPERATION_BN_BWD_WEIGHTS_DESCRIPTOR"
             )
         if self is Self.CUDNN_BACKEND_RESAMPLE_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_RESAMPLE_DESCRIPTOR")
+            return writer.write_string("CUDNN_BACKEND_RESAMPLE_DESCRIPTOR")
         if self is Self.CUDNN_BACKEND_OPERATION_RESAMPLE_FWD_DESCRIPTOR:
             return writer.write(
                 "CUDNN_BACKEND_OPERATION_RESAMPLE_FWD_DESCRIPTOR"
@@ -532,9 +546,13 @@ struct cudnnBackendDescriptorType_t(
                 "CUDNN_BACKEND_OPERATION_RESAMPLE_BWD_DESCRIPTOR"
             )
         if self is Self.CUDNN_BACKEND_OPERATION_CONCAT_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_OPERATION_CONCAT_DESCRIPTOR")
+            return writer.write_string(
+                "CUDNN_BACKEND_OPERATION_CONCAT_DESCRIPTOR"
+            )
         if self is Self.CUDNN_BACKEND_OPERATION_SIGNAL_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_OPERATION_SIGNAL_DESCRIPTOR")
+            return writer.write_string(
+                "CUDNN_BACKEND_OPERATION_SIGNAL_DESCRIPTOR"
+            )
         if self is Self.CUDNN_BACKEND_OPERATION_NORM_FORWARD_DESCRIPTOR:
             return writer.write(
                 "CUDNN_BACKEND_OPERATION_NORM_FORWARD_DESCRIPTOR"
@@ -544,16 +562,18 @@ struct cudnnBackendDescriptorType_t(
                 "CUDNN_BACKEND_OPERATION_NORM_BACKWARD_DESCRIPTOR"
             )
         if self is Self.CUDNN_BACKEND_OPERATION_RESHAPE_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_OPERATION_RESHAPE_DESCRIPTOR")
+            return writer.write_string(
+                "CUDNN_BACKEND_OPERATION_RESHAPE_DESCRIPTOR"
+            )
         if self is Self.CUDNN_BACKEND_RNG_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_RNG_DESCRIPTOR")
+            return writer.write_string("CUDNN_BACKEND_RNG_DESCRIPTOR")
         if self is Self.CUDNN_BACKEND_OPERATION_RNG_DESCRIPTOR:
-            return writer.write("CUDNN_BACKEND_OPERATION_RNG_DESCRIPTOR")
+            return writer.write_string("CUDNN_BACKEND_OPERATION_RNG_DESCRIPTOR")
         abort("invalid cudnnBackendDescriptorType_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnBackendDescriptorType_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnBackendDescriptorType_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -606,7 +626,9 @@ struct cudnnBackendBehaviorNote_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_BEHAVIOR_NOTE_RUNTIME_COMPILATION:
-            return writer.write("CUDNN_BEHAVIOR_NOTE_RUNTIME_COMPILATION")
+            return writer.write_string(
+                "CUDNN_BEHAVIOR_NOTE_RUNTIME_COMPILATION"
+            )
         if self is Self.CUDNN_BEHAVIOR_NOTE_REQUIRES_FILTER_INT8x32_REORDER:
             return writer.write(
                 "CUDNN_BEHAVIOR_NOTE_REQUIRES_FILTER_INT8x32_REORDER"
@@ -616,12 +638,12 @@ struct cudnnBackendBehaviorNote_t(
                 "CUDNN_BEHAVIOR_NOTE_REQUIRES_BIAS_INT8x32_REORDER"
             )
         if self is Self.CUDNN_BEHAVIOR_NOTE_TYPE_COUNT:
-            return writer.write("CUDNN_BEHAVIOR_NOTE_TYPE_COUNT")
+            return writer.write_string("CUDNN_BEHAVIOR_NOTE_TYPE_COUNT")
         abort("invalid cudnnBackendBehaviorNote_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnBackendBehaviorNote_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnBackendBehaviorNote_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -650,20 +672,20 @@ struct cudnnBackendLayoutType_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_LAYOUT_TYPE_PREFERRED_NCHW:
-            return writer.write("CUDNN_LAYOUT_TYPE_PREFERRED_NCHW")
+            return writer.write_string("CUDNN_LAYOUT_TYPE_PREFERRED_NCHW")
         if self is Self.CUDNN_LAYOUT_TYPE_PREFERRED_NHWC:
-            return writer.write("CUDNN_LAYOUT_TYPE_PREFERRED_NHWC")
+            return writer.write_string("CUDNN_LAYOUT_TYPE_PREFERRED_NHWC")
         if self is Self.CUDNN_LAYOUT_TYPE_PREFERRED_PAD4CK:
-            return writer.write("CUDNN_LAYOUT_TYPE_PREFERRED_PAD4CK")
+            return writer.write_string("CUDNN_LAYOUT_TYPE_PREFERRED_PAD4CK")
         if self is Self.CUDNN_LAYOUT_TYPE_PREFERRED_PAD8CK:
-            return writer.write("CUDNN_LAYOUT_TYPE_PREFERRED_PAD8CK")
+            return writer.write_string("CUDNN_LAYOUT_TYPE_PREFERRED_PAD8CK")
         if self is Self.CUDNN_LAYOUT_TYPE_COUNT:
-            return writer.write("CUDNN_LAYOUT_TYPE_COUNT")
+            return writer.write_string("CUDNN_LAYOUT_TYPE_COUNT")
         abort("invalid cudnnBackendLayoutType_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnBackendLayoutType_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnBackendLayoutType_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -689,14 +711,14 @@ struct cudnnBackendNormFwdPhase_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_NORM_FWD_INFERENCE:
-            return writer.write("CUDNN_NORM_FWD_INFERENCE")
+            return writer.write_string("CUDNN_NORM_FWD_INFERENCE")
         if self is Self.CUDNN_NORM_FWD_TRAINING:
-            return writer.write("CUDNN_NORM_FWD_TRAINING")
+            return writer.write_string("CUDNN_NORM_FWD_TRAINING")
         abort("invalid cudnnBackendNormFwdPhase_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnBackendNormFwdPhase_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnBackendNormFwdPhase_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -725,20 +747,20 @@ struct cudnnBackendHeurMode_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_HEUR_MODE_INSTANT:
-            return writer.write("CUDNN_HEUR_MODE_INSTANT")
+            return writer.write_string("CUDNN_HEUR_MODE_INSTANT")
         if self is Self.CUDNN_HEUR_MODE_B:
-            return writer.write("CUDNN_HEUR_MODE_B")
+            return writer.write_string("CUDNN_HEUR_MODE_B")
         if self is Self.CUDNN_HEUR_MODE_FALLBACK:
-            return writer.write("CUDNN_HEUR_MODE_FALLBACK")
+            return writer.write_string("CUDNN_HEUR_MODE_FALLBACK")
         if self is Self.CUDNN_HEUR_MODE_A:
-            return writer.write("CUDNN_HEUR_MODE_A")
+            return writer.write_string("CUDNN_HEUR_MODE_A")
         if self is Self.CUDNN_HEUR_MODES_COUNT:
-            return writer.write("CUDNN_HEUR_MODES_COUNT")
+            return writer.write_string("CUDNN_HEUR_MODES_COUNT")
         abort("invalid cudnnBackendHeurMode_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnBackendHeurMode_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnBackendHeurMode_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -777,32 +799,36 @@ struct cudnnBackendNumericalNote_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_NUMERICAL_NOTE_TENSOR_CORE:
-            return writer.write("CUDNN_NUMERICAL_NOTE_TENSOR_CORE")
+            return writer.write_string("CUDNN_NUMERICAL_NOTE_TENSOR_CORE")
         if self is Self.CUDNN_NUMERICAL_NOTE_DOWN_CONVERT_INPUTS:
-            return writer.write("CUDNN_NUMERICAL_NOTE_DOWN_CONVERT_INPUTS")
+            return writer.write_string(
+                "CUDNN_NUMERICAL_NOTE_DOWN_CONVERT_INPUTS"
+            )
         if self is Self.CUDNN_NUMERICAL_NOTE_REDUCED_PRECISION_REDUCTION:
             return writer.write(
                 "CUDNN_NUMERICAL_NOTE_REDUCED_PRECISION_REDUCTION"
             )
         if self is Self.CUDNN_NUMERICAL_NOTE_FFT:
-            return writer.write("CUDNN_NUMERICAL_NOTE_FFT")
+            return writer.write_string("CUDNN_NUMERICAL_NOTE_FFT")
         if self is Self.CUDNN_NUMERICAL_NOTE_NONDETERMINISTIC:
-            return writer.write("CUDNN_NUMERICAL_NOTE_NONDETERMINISTIC")
+            return writer.write_string("CUDNN_NUMERICAL_NOTE_NONDETERMINISTIC")
         if self is Self.CUDNN_NUMERICAL_NOTE_WINOGRAD:
-            return writer.write("CUDNN_NUMERICAL_NOTE_WINOGRAD")
+            return writer.write_string("CUDNN_NUMERICAL_NOTE_WINOGRAD")
         if self is Self.CUDNN_NUMERICAL_NOTE_WINOGRAD_TILE_4x4:
-            return writer.write("CUDNN_NUMERICAL_NOTE_WINOGRAD_TILE_4x4")
+            return writer.write_string("CUDNN_NUMERICAL_NOTE_WINOGRAD_TILE_4x4")
         if self is Self.CUDNN_NUMERICAL_NOTE_WINOGRAD_TILE_6x6:
-            return writer.write("CUDNN_NUMERICAL_NOTE_WINOGRAD_TILE_6x6")
+            return writer.write_string("CUDNN_NUMERICAL_NOTE_WINOGRAD_TILE_6x6")
         if self is Self.CUDNN_NUMERICAL_NOTE_WINOGRAD_TILE_13x13:
-            return writer.write("CUDNN_NUMERICAL_NOTE_WINOGRAD_TILE_13x13")
+            return writer.write_string(
+                "CUDNN_NUMERICAL_NOTE_WINOGRAD_TILE_13x13"
+            )
         if self is Self.CUDNN_NUMERICAL_NOTE_TYPE_COUNT:
-            return writer.write("CUDNN_NUMERICAL_NOTE_TYPE_COUNT")
+            return writer.write_string("CUDNN_NUMERICAL_NOTE_TYPE_COUNT")
         abort("invalid cudnnBackendNumericalNote_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnBackendNumericalNote_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnBackendNumericalNote_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -866,70 +892,70 @@ struct cudnnBackendAttributeType_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_TYPE_HANDLE:
-            return writer.write("CUDNN_TYPE_HANDLE")
+            return writer.write_string("CUDNN_TYPE_HANDLE")
         if self is Self.CUDNN_TYPE_DATA_TYPE:
-            return writer.write("CUDNN_TYPE_DATA_TYPE")
+            return writer.write_string("CUDNN_TYPE_DATA_TYPE")
         if self is Self.CUDNN_TYPE_BOOLEAN:
-            return writer.write("CUDNN_TYPE_BOOLEAN")
+            return writer.write_string("CUDNN_TYPE_BOOLEAN")
         if self is Self.CUDNN_TYPE_INT64:
-            return writer.write("CUDNN_TYPE_INT64")
+            return writer.write_string("CUDNN_TYPE_INT64")
         if self is Self.CUDNN_TYPE_FLOAT:
-            return writer.write("CUDNN_TYPE_FLOAT")
+            return writer.write_string("CUDNN_TYPE_FLOAT")
         if self is Self.CUDNN_TYPE_DOUBLE:
-            return writer.write("CUDNN_TYPE_DOUBLE")
+            return writer.write_string("CUDNN_TYPE_DOUBLE")
         if self is Self.CUDNN_TYPE_VOID_PTR:
-            return writer.write("CUDNN_TYPE_VOID_PTR")
+            return writer.write_string("CUDNN_TYPE_VOID_PTR")
         if self is Self.CUDNN_TYPE_CONVOLUTION_MODE:
-            return writer.write("CUDNN_TYPE_CONVOLUTION_MODE")
+            return writer.write_string("CUDNN_TYPE_CONVOLUTION_MODE")
         if self is Self.CUDNN_TYPE_HEUR_MODE:
-            return writer.write("CUDNN_TYPE_HEUR_MODE")
+            return writer.write_string("CUDNN_TYPE_HEUR_MODE")
         if self is Self.CUDNN_TYPE_KNOB_TYPE:
-            return writer.write("CUDNN_TYPE_KNOB_TYPE")
+            return writer.write_string("CUDNN_TYPE_KNOB_TYPE")
         if self is Self.CUDNN_TYPE_NAN_PROPOGATION:
-            return writer.write("CUDNN_TYPE_NAN_PROPOGATION")
+            return writer.write_string("CUDNN_TYPE_NAN_PROPOGATION")
         if self is Self.CUDNN_TYPE_NUMERICAL_NOTE:
-            return writer.write("CUDNN_TYPE_NUMERICAL_NOTE")
+            return writer.write_string("CUDNN_TYPE_NUMERICAL_NOTE")
         if self is Self.CUDNN_TYPE_LAYOUT_TYPE:
-            return writer.write("CUDNN_TYPE_LAYOUT_TYPE")
+            return writer.write_string("CUDNN_TYPE_LAYOUT_TYPE")
         if self is Self.CUDNN_TYPE_ATTRIB_NAME:
-            return writer.write("CUDNN_TYPE_ATTRIB_NAME")
+            return writer.write_string("CUDNN_TYPE_ATTRIB_NAME")
         if self is Self.CUDNN_TYPE_POINTWISE_MODE:
-            return writer.write("CUDNN_TYPE_POINTWISE_MODE")
+            return writer.write_string("CUDNN_TYPE_POINTWISE_MODE")
         if self is Self.CUDNN_TYPE_BACKEND_DESCRIPTOR:
-            return writer.write("CUDNN_TYPE_BACKEND_DESCRIPTOR")
+            return writer.write_string("CUDNN_TYPE_BACKEND_DESCRIPTOR")
         if self is Self.CUDNN_TYPE_GENSTATS_MODE:
-            return writer.write("CUDNN_TYPE_GENSTATS_MODE")
+            return writer.write_string("CUDNN_TYPE_GENSTATS_MODE")
         if self is Self.CUDNN_TYPE_BN_FINALIZE_STATS_MODE:
-            return writer.write("CUDNN_TYPE_BN_FINALIZE_STATS_MODE")
+            return writer.write_string("CUDNN_TYPE_BN_FINALIZE_STATS_MODE")
         if self is Self.CUDNN_TYPE_REDUCTION_OPERATOR_TYPE:
-            return writer.write("CUDNN_TYPE_REDUCTION_OPERATOR_TYPE")
+            return writer.write_string("CUDNN_TYPE_REDUCTION_OPERATOR_TYPE")
         if self is Self.CUDNN_TYPE_BEHAVIOR_NOTE:
-            return writer.write("CUDNN_TYPE_BEHAVIOR_NOTE")
+            return writer.write_string("CUDNN_TYPE_BEHAVIOR_NOTE")
         if self is Self.CUDNN_TYPE_TENSOR_REORDERING_MODE:
-            return writer.write("CUDNN_TYPE_TENSOR_REORDERING_MODE")
+            return writer.write_string("CUDNN_TYPE_TENSOR_REORDERING_MODE")
         if self is Self.CUDNN_TYPE_RESAMPLE_MODE:
-            return writer.write("CUDNN_TYPE_RESAMPLE_MODE")
+            return writer.write_string("CUDNN_TYPE_RESAMPLE_MODE")
         if self is Self.CUDNN_TYPE_PADDING_MODE:
-            return writer.write("CUDNN_TYPE_PADDING_MODE")
+            return writer.write_string("CUDNN_TYPE_PADDING_MODE")
         if self is Self.CUDNN_TYPE_INT32:
-            return writer.write("CUDNN_TYPE_INT32")
+            return writer.write_string("CUDNN_TYPE_INT32")
         if self is Self.CUDNN_TYPE_CHAR:
-            return writer.write("CUDNN_TYPE_CHAR")
+            return writer.write_string("CUDNN_TYPE_CHAR")
         if self is Self.CUDNN_TYPE_SIGNAL_MODE:
-            return writer.write("CUDNN_TYPE_SIGNAL_MODE")
+            return writer.write_string("CUDNN_TYPE_SIGNAL_MODE")
         if self is Self.CUDNN_TYPE_FRACTION:
-            return writer.write("CUDNN_TYPE_FRACTION")
+            return writer.write_string("CUDNN_TYPE_FRACTION")
         if self is Self.CUDNN_TYPE_NORM_MODE:
-            return writer.write("CUDNN_TYPE_NORM_MODE")
+            return writer.write_string("CUDNN_TYPE_NORM_MODE")
         if self is Self.CUDNN_TYPE_NORM_FWD_PHASE:
-            return writer.write("CUDNN_TYPE_NORM_FWD_PHASE")
+            return writer.write_string("CUDNN_TYPE_NORM_FWD_PHASE")
         if self is Self.CUDNN_TYPE_RNG_DISTRIBUTION:
-            return writer.write("CUDNN_TYPE_RNG_DISTRIBUTION")
+            return writer.write_string("CUDNN_TYPE_RNG_DISTRIBUTION")
         abort("invalid cudnnBackendAttributeType_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnBackendAttributeType_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnBackendAttributeType_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -956,16 +982,16 @@ struct cudnnRngDistribution_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_RNG_DISTRIBUTION_BERNOULLI:
-            return writer.write("CUDNN_RNG_DISTRIBUTION_BERNOULLI")
+            return writer.write_string("CUDNN_RNG_DISTRIBUTION_BERNOULLI")
         if self is Self.CUDNN_RNG_DISTRIBUTION_UNIFORM:
-            return writer.write("CUDNN_RNG_DISTRIBUTION_UNIFORM")
+            return writer.write_string("CUDNN_RNG_DISTRIBUTION_UNIFORM")
         if self is Self.CUDNN_RNG_DISTRIBUTION_NORMAL:
-            return writer.write("CUDNN_RNG_DISTRIBUTION_NORMAL")
+            return writer.write_string("CUDNN_RNG_DISTRIBUTION_NORMAL")
         abort("invalid cudnnRngDistribution_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnRngDistribution_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnRngDistribution_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -998,16 +1024,16 @@ struct cudnnBackendTensorReordering_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_TENSOR_REORDERING_NONE:
-            return writer.write("CUDNN_TENSOR_REORDERING_NONE")
+            return writer.write_string("CUDNN_TENSOR_REORDERING_NONE")
         if self is Self.CUDNN_TENSOR_REORDERING_INT8x32:
-            return writer.write("CUDNN_TENSOR_REORDERING_INT8x32")
+            return writer.write_string("CUDNN_TENSOR_REORDERING_INT8x32")
         if self is Self.CUDNN_TENSOR_REORDERING_F16x16:
-            return writer.write("CUDNN_TENSOR_REORDERING_F16x16")
+            return writer.write_string("CUDNN_TENSOR_REORDERING_F16x16")
         abort("invalid cudnnBackendTensorReordering_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnBackendTensorReordering_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnBackendTensorReordering_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1249,59 +1275,65 @@ struct cudnnBackendAttributeName_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_ATTR_POINTWISE_MODE:
-            return writer.write("CUDNN_ATTR_POINTWISE_MODE")
+            return writer.write_string("CUDNN_ATTR_POINTWISE_MODE")
         if self is Self.CUDNN_ATTR_POINTWISE_MATH_PREC:
-            return writer.write("CUDNN_ATTR_POINTWISE_MATH_PREC")
+            return writer.write_string("CUDNN_ATTR_POINTWISE_MATH_PREC")
         if self is Self.CUDNN_ATTR_POINTWISE_NAN_PROPAGATION:
-            return writer.write("CUDNN_ATTR_POINTWISE_NAN_PROPAGATION")
+            return writer.write_string("CUDNN_ATTR_POINTWISE_NAN_PROPAGATION")
         if self is Self.CUDNN_ATTR_POINTWISE_RELU_LOWER_CLIP:
-            return writer.write("CUDNN_ATTR_POINTWISE_RELU_LOWER_CLIP")
+            return writer.write_string("CUDNN_ATTR_POINTWISE_RELU_LOWER_CLIP")
         if self is Self.CUDNN_ATTR_POINTWISE_RELU_UPPER_CLIP:
-            return writer.write("CUDNN_ATTR_POINTWISE_RELU_UPPER_CLIP")
+            return writer.write_string("CUDNN_ATTR_POINTWISE_RELU_UPPER_CLIP")
         if self is Self.CUDNN_ATTR_POINTWISE_RELU_LOWER_CLIP_SLOPE:
-            return writer.write("CUDNN_ATTR_POINTWISE_RELU_LOWER_CLIP_SLOPE")
+            return writer.write_string(
+                "CUDNN_ATTR_POINTWISE_RELU_LOWER_CLIP_SLOPE"
+            )
         if self is Self.CUDNN_ATTR_POINTWISE_ELU_ALPHA:
-            return writer.write("CUDNN_ATTR_POINTWISE_ELU_ALPHA")
+            return writer.write_string("CUDNN_ATTR_POINTWISE_ELU_ALPHA")
         if self is Self.CUDNN_ATTR_POINTWISE_SOFTPLUS_BETA:
-            return writer.write("CUDNN_ATTR_POINTWISE_SOFTPLUS_BETA")
+            return writer.write_string("CUDNN_ATTR_POINTWISE_SOFTPLUS_BETA")
         if self is Self.CUDNN_ATTR_POINTWISE_SWISH_BETA:
-            return writer.write("CUDNN_ATTR_POINTWISE_SWISH_BETA")
+            return writer.write_string("CUDNN_ATTR_POINTWISE_SWISH_BETA")
         if self is Self.CUDNN_ATTR_POINTWISE_AXIS:
-            return writer.write("CUDNN_ATTR_POINTWISE_AXIS")
+            return writer.write_string("CUDNN_ATTR_POINTWISE_AXIS")
         if self is Self.CUDNN_ATTR_CONVOLUTION_COMP_TYPE:
-            return writer.write("CUDNN_ATTR_CONVOLUTION_COMP_TYPE")
+            return writer.write_string("CUDNN_ATTR_CONVOLUTION_COMP_TYPE")
         if self is Self.CUDNN_ATTR_CONVOLUTION_CONV_MODE:
-            return writer.write("CUDNN_ATTR_CONVOLUTION_CONV_MODE")
+            return writer.write_string("CUDNN_ATTR_CONVOLUTION_CONV_MODE")
         if self is Self.CUDNN_ATTR_CONVOLUTION_DILATIONS:
-            return writer.write("CUDNN_ATTR_CONVOLUTION_DILATIONS")
+            return writer.write_string("CUDNN_ATTR_CONVOLUTION_DILATIONS")
         if self is Self.CUDNN_ATTR_CONVOLUTION_FILTER_STRIDES:
-            return writer.write("CUDNN_ATTR_CONVOLUTION_FILTER_STRIDES")
+            return writer.write_string("CUDNN_ATTR_CONVOLUTION_FILTER_STRIDES")
         if self is Self.CUDNN_ATTR_CONVOLUTION_POST_PADDINGS:
-            return writer.write("CUDNN_ATTR_CONVOLUTION_POST_PADDINGS")
+            return writer.write_string("CUDNN_ATTR_CONVOLUTION_POST_PADDINGS")
         if self is Self.CUDNN_ATTR_CONVOLUTION_PRE_PADDINGS:
-            return writer.write("CUDNN_ATTR_CONVOLUTION_PRE_PADDINGS")
+            return writer.write_string("CUDNN_ATTR_CONVOLUTION_PRE_PADDINGS")
         if self is Self.CUDNN_ATTR_CONVOLUTION_SPATIAL_DIMS:
-            return writer.write("CUDNN_ATTR_CONVOLUTION_SPATIAL_DIMS")
+            return writer.write_string("CUDNN_ATTR_CONVOLUTION_SPATIAL_DIMS")
         if self is Self.CUDNN_ATTR_ENGINEHEUR_MODE:
-            return writer.write("CUDNN_ATTR_ENGINEHEUR_MODE")
+            return writer.write_string("CUDNN_ATTR_ENGINEHEUR_MODE")
         if self is Self.CUDNN_ATTR_ENGINEHEUR_OPERATION_GRAPH:
-            return writer.write("CUDNN_ATTR_ENGINEHEUR_OPERATION_GRAPH")
+            return writer.write_string("CUDNN_ATTR_ENGINEHEUR_OPERATION_GRAPH")
         if self is Self.CUDNN_ATTR_ENGINEHEUR_RESULTS:
-            return writer.write("CUDNN_ATTR_ENGINEHEUR_RESULTS")
+            return writer.write_string("CUDNN_ATTR_ENGINEHEUR_RESULTS")
         if self is Self.CUDNN_ATTR_ENGINEHEUR_SM_COUNT_TARGET:
-            return writer.write("CUDNN_ATTR_ENGINEHEUR_SM_COUNT_TARGET")
+            return writer.write_string("CUDNN_ATTR_ENGINEHEUR_SM_COUNT_TARGET")
         if self is Self.CUDNN_ATTR_ENGINECFG_ENGINE:
-            return writer.write("CUDNN_ATTR_ENGINECFG_ENGINE")
+            return writer.write_string("CUDNN_ATTR_ENGINECFG_ENGINE")
         if self is Self.CUDNN_ATTR_ENGINECFG_INTERMEDIATE_INFO:
-            return writer.write("CUDNN_ATTR_ENGINECFG_INTERMEDIATE_INFO")
+            return writer.write_string("CUDNN_ATTR_ENGINECFG_INTERMEDIATE_INFO")
         if self is Self.CUDNN_ATTR_ENGINECFG_KNOB_CHOICES:
-            return writer.write("CUDNN_ATTR_ENGINECFG_KNOB_CHOICES")
+            return writer.write_string("CUDNN_ATTR_ENGINECFG_KNOB_CHOICES")
         if self is Self.CUDNN_ATTR_EXECUTION_PLAN_HANDLE:
-            return writer.write("CUDNN_ATTR_EXECUTION_PLAN_HANDLE")
+            return writer.write_string("CUDNN_ATTR_EXECUTION_PLAN_HANDLE")
         if self is Self.CUDNN_ATTR_EXECUTION_PLAN_ENGINE_CONFIG:
-            return writer.write("CUDNN_ATTR_EXECUTION_PLAN_ENGINE_CONFIG")
+            return writer.write_string(
+                "CUDNN_ATTR_EXECUTION_PLAN_ENGINE_CONFIG"
+            )
         if self is Self.CUDNN_ATTR_EXECUTION_PLAN_WORKSPACE_SIZE:
-            return writer.write("CUDNN_ATTR_EXECUTION_PLAN_WORKSPACE_SIZE")
+            return writer.write_string(
+                "CUDNN_ATTR_EXECUTION_PLAN_WORKSPACE_SIZE"
+            )
         if self is Self.CUDNN_ATTR_EXECUTION_PLAN_COMPUTED_INTERMEDIATE_UIDS:
             return writer.write(
                 "CUDNN_ATTR_EXECUTION_PLAN_COMPUTED_INTERMEDIATE_UIDS"
@@ -1311,11 +1343,13 @@ struct cudnnBackendAttributeName_t(
                 "CUDNN_ATTR_EXECUTION_PLAN_RUN_ONLY_INTERMEDIATE_UIDS"
             )
         if self is Self.CUDNN_ATTR_EXECUTION_PLAN_JSON_REPRESENTATION:
-            return writer.write("CUDNN_ATTR_EXECUTION_PLAN_JSON_REPRESENTATION")
+            return writer.write_string(
+                "CUDNN_ATTR_EXECUTION_PLAN_JSON_REPRESENTATION"
+            )
         if self is Self.CUDNN_ATTR_INTERMEDIATE_INFO_UNIQUE_ID:
-            return writer.write("CUDNN_ATTR_INTERMEDIATE_INFO_UNIQUE_ID")
+            return writer.write_string("CUDNN_ATTR_INTERMEDIATE_INFO_UNIQUE_ID")
         if self is Self.CUDNN_ATTR_INTERMEDIATE_INFO_SIZE:
-            return writer.write("CUDNN_ATTR_INTERMEDIATE_INFO_SIZE")
+            return writer.write_string("CUDNN_ATTR_INTERMEDIATE_INFO_SIZE")
         if self is Self.CUDNN_ATTR_INTERMEDIATE_INFO_DEPENDENT_DATA_UIDS:
             return writer.write(
                 "CUDNN_ATTR_INTERMEDIATE_INFO_DEPENDENT_DATA_UIDS"
@@ -1325,25 +1359,33 @@ struct cudnnBackendAttributeName_t(
                 "CUDNN_ATTR_INTERMEDIATE_INFO_DEPENDENT_ATTRIBUTES"
             )
         if self is Self.CUDNN_ATTR_KNOB_CHOICE_KNOB_TYPE:
-            return writer.write("CUDNN_ATTR_KNOB_CHOICE_KNOB_TYPE")
+            return writer.write_string("CUDNN_ATTR_KNOB_CHOICE_KNOB_TYPE")
         if self is Self.CUDNN_ATTR_KNOB_CHOICE_KNOB_VALUE:
-            return writer.write("CUDNN_ATTR_KNOB_CHOICE_KNOB_VALUE")
+            return writer.write_string("CUDNN_ATTR_KNOB_CHOICE_KNOB_VALUE")
         if self is Self.CUDNN_ATTR_OPERATION_CONVOLUTION_FORWARD_ALPHA:
             return writer.write(
                 "CUDNN_ATTR_OPERATION_CONVOLUTION_FORWARD_ALPHA"
             )
         if self is Self.CUDNN_ATTR_OPERATION_CONVOLUTION_FORWARD_BETA:
-            return writer.write("CUDNN_ATTR_OPERATION_CONVOLUTION_FORWARD_BETA")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_CONVOLUTION_FORWARD_BETA"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_CONVOLUTION_FORWARD_CONV_DESC:
             return writer.write(
                 "CUDNN_ATTR_OPERATION_CONVOLUTION_FORWARD_CONV_DESC"
             )
         if self is Self.CUDNN_ATTR_OPERATION_CONVOLUTION_FORWARD_W:
-            return writer.write("CUDNN_ATTR_OPERATION_CONVOLUTION_FORWARD_W")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_CONVOLUTION_FORWARD_W"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_CONVOLUTION_FORWARD_X:
-            return writer.write("CUDNN_ATTR_OPERATION_CONVOLUTION_FORWARD_X")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_CONVOLUTION_FORWARD_X"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_CONVOLUTION_FORWARD_Y:
-            return writer.write("CUDNN_ATTR_OPERATION_CONVOLUTION_FORWARD_Y")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_CONVOLUTION_FORWARD_Y"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_DATA_ALPHA:
             return writer.write(
                 "CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_DATA_ALPHA"
@@ -1357,11 +1399,17 @@ struct cudnnBackendAttributeName_t(
                 "CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_DATA_CONV_DESC"
             )
         if self is Self.CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_DATA_W:
-            return writer.write("CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_DATA_W")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_DATA_W"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_DATA_DX:
-            return writer.write("CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_DATA_DX")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_DATA_DX"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_DATA_DY:
-            return writer.write("CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_DATA_DY")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_DATA_DY"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_FILTER_ALPHA:
             return writer.write(
                 "CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_FILTER_ALPHA"
@@ -1379,53 +1427,71 @@ struct cudnnBackendAttributeName_t(
                 "CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_FILTER_DW"
             )
         if self is Self.CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_FILTER_X:
-            return writer.write("CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_FILTER_X")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_FILTER_X"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_FILTER_DY:
             return writer.write(
                 "CUDNN_ATTR_OPERATION_CONVOLUTION_BWD_FILTER_DY"
             )
         if self is Self.CUDNN_ATTR_OPERATION_POINTWISE_PW_DESCRIPTOR:
-            return writer.write("CUDNN_ATTR_OPERATION_POINTWISE_PW_DESCRIPTOR")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_POINTWISE_PW_DESCRIPTOR"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_POINTWISE_XDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_POINTWISE_XDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_POINTWISE_XDESC")
         if self is Self.CUDNN_ATTR_OPERATION_POINTWISE_BDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_POINTWISE_BDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_POINTWISE_BDESC")
         if self is Self.CUDNN_ATTR_OPERATION_POINTWISE_YDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_POINTWISE_YDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_POINTWISE_YDESC")
         if self is Self.CUDNN_ATTR_OPERATION_POINTWISE_ALPHA1:
-            return writer.write("CUDNN_ATTR_OPERATION_POINTWISE_ALPHA1")
+            return writer.write_string("CUDNN_ATTR_OPERATION_POINTWISE_ALPHA1")
         if self is Self.CUDNN_ATTR_OPERATION_POINTWISE_ALPHA2:
-            return writer.write("CUDNN_ATTR_OPERATION_POINTWISE_ALPHA2")
+            return writer.write_string("CUDNN_ATTR_OPERATION_POINTWISE_ALPHA2")
         if self is Self.CUDNN_ATTR_OPERATION_POINTWISE_DXDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_POINTWISE_DXDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_POINTWISE_DXDESC")
         if self is Self.CUDNN_ATTR_OPERATION_POINTWISE_DYDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_POINTWISE_DYDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_POINTWISE_DYDESC")
         if self is Self.CUDNN_ATTR_OPERATION_POINTWISE_TDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_POINTWISE_TDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_POINTWISE_TDESC")
         if self is Self.CUDNN_ATTR_OPERATION_GENSTATS_MODE:
-            return writer.write("CUDNN_ATTR_OPERATION_GENSTATS_MODE")
+            return writer.write_string("CUDNN_ATTR_OPERATION_GENSTATS_MODE")
         if self is Self.CUDNN_ATTR_OPERATION_GENSTATS_MATH_PREC:
-            return writer.write("CUDNN_ATTR_OPERATION_GENSTATS_MATH_PREC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_GENSTATS_MATH_PREC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_GENSTATS_XDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_GENSTATS_XDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_GENSTATS_XDESC")
         if self is Self.CUDNN_ATTR_OPERATION_GENSTATS_SUMDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_GENSTATS_SUMDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_GENSTATS_SUMDESC")
         if self is Self.CUDNN_ATTR_OPERATION_GENSTATS_SQSUMDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_GENSTATS_SQSUMDESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_GENSTATS_SQSUMDESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_BN_FINALIZE_STATS_MODE:
-            return writer.write("CUDNN_ATTR_OPERATION_BN_FINALIZE_STATS_MODE")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_BN_FINALIZE_STATS_MODE"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_BN_FINALIZE_MATH_PREC:
-            return writer.write("CUDNN_ATTR_OPERATION_BN_FINALIZE_MATH_PREC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_BN_FINALIZE_MATH_PREC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_BN_FINALIZE_Y_SUM_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_BN_FINALIZE_Y_SUM_DESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_BN_FINALIZE_Y_SUM_DESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_BN_FINALIZE_Y_SQ_SUM_DESC:
             return writer.write(
                 "CUDNN_ATTR_OPERATION_BN_FINALIZE_Y_SQ_SUM_DESC"
             )
         if self is Self.CUDNN_ATTR_OPERATION_BN_FINALIZE_SCALE_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_BN_FINALIZE_SCALE_DESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_BN_FINALIZE_SCALE_DESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_BN_FINALIZE_BIAS_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_BN_FINALIZE_BIAS_DESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_BN_FINALIZE_BIAS_DESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_BN_FINALIZE_PREV_RUNNING_MEAN_DESC:
             return writer.write(
                 "CUDNN_ATTR_OPERATION_BN_FINALIZE_PREV_RUNNING_MEAN_DESC"
@@ -1461,13 +1527,17 @@ struct cudnnBackendAttributeName_t(
                 "CUDNN_ATTR_OPERATION_BN_FINALIZE_EQ_SCALE_DESC"
             )
         if self is Self.CUDNN_ATTR_OPERATION_BN_FINALIZE_EQ_BIAS_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_BN_FINALIZE_EQ_BIAS_DESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_BN_FINALIZE_EQ_BIAS_DESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_BN_FINALIZE_ACCUM_COUNT_DESC:
             return writer.write(
                 "CUDNN_ATTR_OPERATION_BN_FINALIZE_ACCUM_COUNT_DESC"
             )
         if self is Self.CUDNN_ATTR_OPERATION_BN_FINALIZE_EPSILON_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_BN_FINALIZE_EPSILON_DESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_BN_FINALIZE_EPSILON_DESC"
+            )
         if (
             self
             is Self.CUDNN_ATTR_OPERATION_BN_FINALIZE_EXP_AVERATE_FACTOR_DESC
@@ -1476,79 +1546,81 @@ struct cudnnBackendAttributeName_t(
                 "CUDNN_ATTR_OPERATION_BN_FINALIZE_EXP_AVERATE_FACTOR_DESC"
             )
         if self is Self.CUDNN_ATTR_OPERATIONGRAPH_HANDLE:
-            return writer.write("CUDNN_ATTR_OPERATIONGRAPH_HANDLE")
+            return writer.write_string("CUDNN_ATTR_OPERATIONGRAPH_HANDLE")
         if self is Self.CUDNN_ATTR_OPERATIONGRAPH_OPS:
-            return writer.write("CUDNN_ATTR_OPERATIONGRAPH_OPS")
+            return writer.write_string("CUDNN_ATTR_OPERATIONGRAPH_OPS")
         if self is Self.CUDNN_ATTR_OPERATIONGRAPH_ENGINE_GLOBAL_COUNT:
-            return writer.write("CUDNN_ATTR_OPERATIONGRAPH_ENGINE_GLOBAL_COUNT")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATIONGRAPH_ENGINE_GLOBAL_COUNT"
+            )
         if self is Self.CUDNN_ATTR_TENSOR_BYTE_ALIGNMENT:
-            return writer.write("CUDNN_ATTR_TENSOR_BYTE_ALIGNMENT")
+            return writer.write_string("CUDNN_ATTR_TENSOR_BYTE_ALIGNMENT")
         if self is Self.CUDNN_ATTR_TENSOR_DATA_TYPE:
-            return writer.write("CUDNN_ATTR_TENSOR_DATA_TYPE")
+            return writer.write_string("CUDNN_ATTR_TENSOR_DATA_TYPE")
         if self is Self.CUDNN_ATTR_TENSOR_DIMENSIONS:
-            return writer.write("CUDNN_ATTR_TENSOR_DIMENSIONS")
+            return writer.write_string("CUDNN_ATTR_TENSOR_DIMENSIONS")
         if self is Self.CUDNN_ATTR_TENSOR_STRIDES:
-            return writer.write("CUDNN_ATTR_TENSOR_STRIDES")
+            return writer.write_string("CUDNN_ATTR_TENSOR_STRIDES")
         if self is Self.CUDNN_ATTR_TENSOR_VECTOR_COUNT:
-            return writer.write("CUDNN_ATTR_TENSOR_VECTOR_COUNT")
+            return writer.write_string("CUDNN_ATTR_TENSOR_VECTOR_COUNT")
         if self is Self.CUDNN_ATTR_TENSOR_VECTORIZED_DIMENSION:
-            return writer.write("CUDNN_ATTR_TENSOR_VECTORIZED_DIMENSION")
+            return writer.write_string("CUDNN_ATTR_TENSOR_VECTORIZED_DIMENSION")
         if self is Self.CUDNN_ATTR_TENSOR_UNIQUE_ID:
-            return writer.write("CUDNN_ATTR_TENSOR_UNIQUE_ID")
+            return writer.write_string("CUDNN_ATTR_TENSOR_UNIQUE_ID")
         if self is Self.CUDNN_ATTR_TENSOR_IS_VIRTUAL:
-            return writer.write("CUDNN_ATTR_TENSOR_IS_VIRTUAL")
+            return writer.write_string("CUDNN_ATTR_TENSOR_IS_VIRTUAL")
         if self is Self.CUDNN_ATTR_TENSOR_IS_BY_VALUE:
-            return writer.write("CUDNN_ATTR_TENSOR_IS_BY_VALUE")
+            return writer.write_string("CUDNN_ATTR_TENSOR_IS_BY_VALUE")
         if self is Self.CUDNN_ATTR_TENSOR_REORDERING_MODE:
-            return writer.write("CUDNN_ATTR_TENSOR_REORDERING_MODE")
+            return writer.write_string("CUDNN_ATTR_TENSOR_REORDERING_MODE")
         if self is Self.CUDNN_ATTR_TENSOR_RAGGED_OFFSET_DESC:
-            return writer.write("CUDNN_ATTR_TENSOR_RAGGED_OFFSET_DESC")
+            return writer.write_string("CUDNN_ATTR_TENSOR_RAGGED_OFFSET_DESC")
         if self is Self.CUDNN_ATTR_VARIANT_PACK_UNIQUE_IDS:
-            return writer.write("CUDNN_ATTR_VARIANT_PACK_UNIQUE_IDS")
+            return writer.write_string("CUDNN_ATTR_VARIANT_PACK_UNIQUE_IDS")
         if self is Self.CUDNN_ATTR_VARIANT_PACK_DATA_POINTERS:
-            return writer.write("CUDNN_ATTR_VARIANT_PACK_DATA_POINTERS")
+            return writer.write_string("CUDNN_ATTR_VARIANT_PACK_DATA_POINTERS")
         if self is Self.CUDNN_ATTR_VARIANT_PACK_INTERMEDIATES:
-            return writer.write("CUDNN_ATTR_VARIANT_PACK_INTERMEDIATES")
+            return writer.write_string("CUDNN_ATTR_VARIANT_PACK_INTERMEDIATES")
         if self is Self.CUDNN_ATTR_VARIANT_PACK_WORKSPACE:
-            return writer.write("CUDNN_ATTR_VARIANT_PACK_WORKSPACE")
+            return writer.write_string("CUDNN_ATTR_VARIANT_PACK_WORKSPACE")
         if self is Self.CUDNN_ATTR_LAYOUT_INFO_TENSOR_UID:
-            return writer.write("CUDNN_ATTR_LAYOUT_INFO_TENSOR_UID")
+            return writer.write_string("CUDNN_ATTR_LAYOUT_INFO_TENSOR_UID")
         if self is Self.CUDNN_ATTR_LAYOUT_INFO_TYPES:
-            return writer.write("CUDNN_ATTR_LAYOUT_INFO_TYPES")
+            return writer.write_string("CUDNN_ATTR_LAYOUT_INFO_TYPES")
         if self is Self.CUDNN_ATTR_KNOB_INFO_TYPE:
-            return writer.write("CUDNN_ATTR_KNOB_INFO_TYPE")
+            return writer.write_string("CUDNN_ATTR_KNOB_INFO_TYPE")
         if self is Self.CUDNN_ATTR_KNOB_INFO_MAXIMUM_VALUE:
-            return writer.write("CUDNN_ATTR_KNOB_INFO_MAXIMUM_VALUE")
+            return writer.write_string("CUDNN_ATTR_KNOB_INFO_MAXIMUM_VALUE")
         if self is Self.CUDNN_ATTR_KNOB_INFO_MINIMUM_VALUE:
-            return writer.write("CUDNN_ATTR_KNOB_INFO_MINIMUM_VALUE")
+            return writer.write_string("CUDNN_ATTR_KNOB_INFO_MINIMUM_VALUE")
         if self is Self.CUDNN_ATTR_KNOB_INFO_STRIDE:
-            return writer.write("CUDNN_ATTR_KNOB_INFO_STRIDE")
+            return writer.write_string("CUDNN_ATTR_KNOB_INFO_STRIDE")
         if self is Self.CUDNN_ATTR_ENGINE_OPERATION_GRAPH:
-            return writer.write("CUDNN_ATTR_ENGINE_OPERATION_GRAPH")
+            return writer.write_string("CUDNN_ATTR_ENGINE_OPERATION_GRAPH")
         if self is Self.CUDNN_ATTR_ENGINE_GLOBAL_INDEX:
-            return writer.write("CUDNN_ATTR_ENGINE_GLOBAL_INDEX")
+            return writer.write_string("CUDNN_ATTR_ENGINE_GLOBAL_INDEX")
         if self is Self.CUDNN_ATTR_ENGINE_KNOB_INFO:
-            return writer.write("CUDNN_ATTR_ENGINE_KNOB_INFO")
+            return writer.write_string("CUDNN_ATTR_ENGINE_KNOB_INFO")
         if self is Self.CUDNN_ATTR_ENGINE_NUMERICAL_NOTE:
-            return writer.write("CUDNN_ATTR_ENGINE_NUMERICAL_NOTE")
+            return writer.write_string("CUDNN_ATTR_ENGINE_NUMERICAL_NOTE")
         if self is Self.CUDNN_ATTR_ENGINE_LAYOUT_INFO:
-            return writer.write("CUDNN_ATTR_ENGINE_LAYOUT_INFO")
+            return writer.write_string("CUDNN_ATTR_ENGINE_LAYOUT_INFO")
         if self is Self.CUDNN_ATTR_ENGINE_BEHAVIOR_NOTE:
-            return writer.write("CUDNN_ATTR_ENGINE_BEHAVIOR_NOTE")
+            return writer.write_string("CUDNN_ATTR_ENGINE_BEHAVIOR_NOTE")
         if self is Self.CUDNN_ATTR_ENGINE_SM_COUNT_TARGET:
-            return writer.write("CUDNN_ATTR_ENGINE_SM_COUNT_TARGET")
+            return writer.write_string("CUDNN_ATTR_ENGINE_SM_COUNT_TARGET")
         if self is Self.CUDNN_ATTR_MATMUL_COMP_TYPE:
-            return writer.write("CUDNN_ATTR_MATMUL_COMP_TYPE")
+            return writer.write_string("CUDNN_ATTR_MATMUL_COMP_TYPE")
         if self is Self.CUDNN_ATTR_MATMUL_PADDING_VALUE:
-            return writer.write("CUDNN_ATTR_MATMUL_PADDING_VALUE")
+            return writer.write_string("CUDNN_ATTR_MATMUL_PADDING_VALUE")
         if self is Self.CUDNN_ATTR_OPERATION_MATMUL_ADESC:
-            return writer.write("CUDNN_ATTR_OPERATION_MATMUL_ADESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_MATMUL_ADESC")
         if self is Self.CUDNN_ATTR_OPERATION_MATMUL_BDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_MATMUL_BDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_MATMUL_BDESC")
         if self is Self.CUDNN_ATTR_OPERATION_MATMUL_CDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_MATMUL_CDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_MATMUL_CDESC")
         if self is Self.CUDNN_ATTR_OPERATION_MATMUL_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_MATMUL_DESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_MATMUL_DESC")
         if (
             self
             is Self.CUDNN_ATTR_OPERATION_MATMUL_IRREGULARLY_STRIDED_BATCH_COUNT
@@ -1569,19 +1641,23 @@ struct cudnnBackendAttributeName_t(
                 "CUDNN_ATTR_OPERATION_MATMUL_GEMM_K_OVERRIDE_DESC"
             )
         if self is Self.CUDNN_ATTR_REDUCTION_OPERATOR:
-            return writer.write("CUDNN_ATTR_REDUCTION_OPERATOR")
+            return writer.write_string("CUDNN_ATTR_REDUCTION_OPERATOR")
         if self is Self.CUDNN_ATTR_REDUCTION_COMP_TYPE:
-            return writer.write("CUDNN_ATTR_REDUCTION_COMP_TYPE")
+            return writer.write_string("CUDNN_ATTR_REDUCTION_COMP_TYPE")
         if self is Self.CUDNN_ATTR_OPERATION_REDUCTION_XDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_REDUCTION_XDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_REDUCTION_XDESC")
         if self is Self.CUDNN_ATTR_OPERATION_REDUCTION_YDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_REDUCTION_YDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_REDUCTION_YDESC")
         if self is Self.CUDNN_ATTR_OPERATION_REDUCTION_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_REDUCTION_DESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_REDUCTION_DESC")
         if self is Self.CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_MATH_PREC:
-            return writer.write("CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_MATH_PREC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_MATH_PREC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_MEAN_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_MEAN_DESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_MEAN_DESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_INVSTD_DESC:
             return writer.write(
                 "CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_INVSTD_DESC"
@@ -1591,9 +1667,13 @@ struct cudnnBackendAttributeName_t(
                 "CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_BN_SCALE_DESC"
             )
         if self is Self.CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_X_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_X_DESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_X_DESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_DY_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_DY_DESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_DY_DESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_DBN_SCALE_DESC:
             return writer.write(
                 "CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_DBN_SCALE_DESC"
@@ -1611,89 +1691,125 @@ struct cudnnBackendAttributeName_t(
                 "CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_EQ_X_SCALE_DESC"
             )
         if self is Self.CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_EQ_BIAS:
-            return writer.write("CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_EQ_BIAS")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_BN_BWD_WEIGHTS_EQ_BIAS"
+            )
         if self is Self.CUDNN_ATTR_RESAMPLE_MODE:
-            return writer.write("CUDNN_ATTR_RESAMPLE_MODE")
+            return writer.write_string("CUDNN_ATTR_RESAMPLE_MODE")
         if self is Self.CUDNN_ATTR_RESAMPLE_COMP_TYPE:
-            return writer.write("CUDNN_ATTR_RESAMPLE_COMP_TYPE")
+            return writer.write_string("CUDNN_ATTR_RESAMPLE_COMP_TYPE")
         if self is Self.CUDNN_ATTR_RESAMPLE_SPATIAL_DIMS:
-            return writer.write("CUDNN_ATTR_RESAMPLE_SPATIAL_DIMS")
+            return writer.write_string("CUDNN_ATTR_RESAMPLE_SPATIAL_DIMS")
         if self is Self.CUDNN_ATTR_RESAMPLE_POST_PADDINGS:
-            return writer.write("CUDNN_ATTR_RESAMPLE_POST_PADDINGS")
+            return writer.write_string("CUDNN_ATTR_RESAMPLE_POST_PADDINGS")
         if self is Self.CUDNN_ATTR_RESAMPLE_PRE_PADDINGS:
-            return writer.write("CUDNN_ATTR_RESAMPLE_PRE_PADDINGS")
+            return writer.write_string("CUDNN_ATTR_RESAMPLE_PRE_PADDINGS")
         if self is Self.CUDNN_ATTR_RESAMPLE_STRIDES:
-            return writer.write("CUDNN_ATTR_RESAMPLE_STRIDES")
+            return writer.write_string("CUDNN_ATTR_RESAMPLE_STRIDES")
         if self is Self.CUDNN_ATTR_RESAMPLE_WINDOW_DIMS:
-            return writer.write("CUDNN_ATTR_RESAMPLE_WINDOW_DIMS")
+            return writer.write_string("CUDNN_ATTR_RESAMPLE_WINDOW_DIMS")
         if self is Self.CUDNN_ATTR_RESAMPLE_NAN_PROPAGATION:
-            return writer.write("CUDNN_ATTR_RESAMPLE_NAN_PROPAGATION")
+            return writer.write_string("CUDNN_ATTR_RESAMPLE_NAN_PROPAGATION")
         if self is Self.CUDNN_ATTR_RESAMPLE_PADDING_MODE:
-            return writer.write("CUDNN_ATTR_RESAMPLE_PADDING_MODE")
+            return writer.write_string("CUDNN_ATTR_RESAMPLE_PADDING_MODE")
         if self is Self.CUDNN_ATTR_OPERATION_RESAMPLE_FWD_XDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_RESAMPLE_FWD_XDESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_RESAMPLE_FWD_XDESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_RESAMPLE_FWD_YDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_RESAMPLE_FWD_YDESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_RESAMPLE_FWD_YDESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_RESAMPLE_FWD_IDXDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_RESAMPLE_FWD_IDXDESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_RESAMPLE_FWD_IDXDESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_RESAMPLE_FWD_ALPHA:
-            return writer.write("CUDNN_ATTR_OPERATION_RESAMPLE_FWD_ALPHA")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_RESAMPLE_FWD_ALPHA"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_RESAMPLE_FWD_BETA:
-            return writer.write("CUDNN_ATTR_OPERATION_RESAMPLE_FWD_BETA")
+            return writer.write_string("CUDNN_ATTR_OPERATION_RESAMPLE_FWD_BETA")
         if self is Self.CUDNN_ATTR_OPERATION_RESAMPLE_FWD_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_RESAMPLE_FWD_DESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_RESAMPLE_FWD_DESC")
         if self is Self.CUDNN_ATTR_OPERATION_RESAMPLE_BWD_DXDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_RESAMPLE_BWD_DXDESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_RESAMPLE_BWD_DXDESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_RESAMPLE_BWD_DYDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_RESAMPLE_BWD_DYDESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_RESAMPLE_BWD_DYDESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_RESAMPLE_BWD_IDXDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_RESAMPLE_BWD_IDXDESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_RESAMPLE_BWD_IDXDESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_RESAMPLE_BWD_ALPHA:
-            return writer.write("CUDNN_ATTR_OPERATION_RESAMPLE_BWD_ALPHA")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_RESAMPLE_BWD_ALPHA"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_RESAMPLE_BWD_BETA:
-            return writer.write("CUDNN_ATTR_OPERATION_RESAMPLE_BWD_BETA")
+            return writer.write_string("CUDNN_ATTR_OPERATION_RESAMPLE_BWD_BETA")
         if self is Self.CUDNN_ATTR_OPERATION_RESAMPLE_BWD_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_RESAMPLE_BWD_DESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_RESAMPLE_BWD_DESC")
         if self is Self.CUDNN_ATTR_OPERATION_RESAMPLE_BWD_XDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_RESAMPLE_BWD_XDESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_RESAMPLE_BWD_XDESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_RESAMPLE_BWD_YDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_RESAMPLE_BWD_YDESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_RESAMPLE_BWD_YDESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_CONCAT_AXIS:
-            return writer.write("CUDNN_ATTR_OPERATION_CONCAT_AXIS")
+            return writer.write_string("CUDNN_ATTR_OPERATION_CONCAT_AXIS")
         if self is Self.CUDNN_ATTR_OPERATION_CONCAT_INPUT_DESCS:
-            return writer.write("CUDNN_ATTR_OPERATION_CONCAT_INPUT_DESCS")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_CONCAT_INPUT_DESCS"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_CONCAT_INPLACE_INDEX:
-            return writer.write("CUDNN_ATTR_OPERATION_CONCAT_INPLACE_INDEX")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_CONCAT_INPLACE_INDEX"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_CONCAT_OUTPUT_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_CONCAT_OUTPUT_DESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_CONCAT_OUTPUT_DESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_SIGNAL_MODE:
-            return writer.write("CUDNN_ATTR_OPERATION_SIGNAL_MODE")
+            return writer.write_string("CUDNN_ATTR_OPERATION_SIGNAL_MODE")
         if self is Self.CUDNN_ATTR_OPERATION_SIGNAL_FLAGDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_SIGNAL_FLAGDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_SIGNAL_FLAGDESC")
         if self is Self.CUDNN_ATTR_OPERATION_SIGNAL_VALUE:
-            return writer.write("CUDNN_ATTR_OPERATION_SIGNAL_VALUE")
+            return writer.write_string("CUDNN_ATTR_OPERATION_SIGNAL_VALUE")
         if self is Self.CUDNN_ATTR_OPERATION_SIGNAL_XDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_SIGNAL_XDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_SIGNAL_XDESC")
         if self is Self.CUDNN_ATTR_OPERATION_SIGNAL_YDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_SIGNAL_YDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_SIGNAL_YDESC")
         if self is Self.CUDNN_ATTR_OPERATION_NORM_FWD_MODE:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_FWD_MODE")
+            return writer.write_string("CUDNN_ATTR_OPERATION_NORM_FWD_MODE")
         if self is Self.CUDNN_ATTR_OPERATION_NORM_FWD_PHASE:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_FWD_PHASE")
+            return writer.write_string("CUDNN_ATTR_OPERATION_NORM_FWD_PHASE")
         if self is Self.CUDNN_ATTR_OPERATION_NORM_FWD_XDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_FWD_XDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_NORM_FWD_XDESC")
         if self is Self.CUDNN_ATTR_OPERATION_NORM_FWD_MEAN_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_FWD_MEAN_DESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_NORM_FWD_MEAN_DESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_NORM_FWD_INV_VARIANCE_DESC:
             return writer.write(
                 "CUDNN_ATTR_OPERATION_NORM_FWD_INV_VARIANCE_DESC"
             )
         if self is Self.CUDNN_ATTR_OPERATION_NORM_FWD_SCALE_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_FWD_SCALE_DESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_NORM_FWD_SCALE_DESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_NORM_FWD_BIAS_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_FWD_BIAS_DESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_NORM_FWD_BIAS_DESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_NORM_FWD_EPSILON_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_FWD_EPSILON_DESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_NORM_FWD_EPSILON_DESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_NORM_FWD_EXP_AVG_FACTOR_DESC:
             return writer.write(
                 "CUDNN_ATTR_OPERATION_NORM_FWD_EXP_AVG_FACTOR_DESC"
@@ -1715,62 +1831,80 @@ struct cudnnBackendAttributeName_t(
                 "CUDNN_ATTR_OPERATION_NORM_FWD_OUTPUT_RUNNING_VAR_DESC"
             )
         if self is Self.CUDNN_ATTR_OPERATION_NORM_FWD_YDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_FWD_YDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_NORM_FWD_YDESC")
         if self is Self.CUDNN_ATTR_OPERATION_NORM_FWD_PEER_STAT_DESCS:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_FWD_PEER_STAT_DESCS")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_NORM_FWD_PEER_STAT_DESCS"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_NORM_BWD_MODE:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_BWD_MODE")
+            return writer.write_string("CUDNN_ATTR_OPERATION_NORM_BWD_MODE")
         if self is Self.CUDNN_ATTR_OPERATION_NORM_BWD_XDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_BWD_XDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_NORM_BWD_XDESC")
         if self is Self.CUDNN_ATTR_OPERATION_NORM_BWD_MEAN_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_BWD_MEAN_DESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_NORM_BWD_MEAN_DESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_NORM_BWD_INV_VARIANCE_DESC:
             return writer.write(
                 "CUDNN_ATTR_OPERATION_NORM_BWD_INV_VARIANCE_DESC"
             )
         if self is Self.CUDNN_ATTR_OPERATION_NORM_BWD_DYDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_BWD_DYDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_NORM_BWD_DYDESC")
         if self is Self.CUDNN_ATTR_OPERATION_NORM_BWD_SCALE_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_BWD_SCALE_DESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_NORM_BWD_SCALE_DESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_NORM_BWD_EPSILON_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_BWD_EPSILON_DESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_NORM_BWD_EPSILON_DESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_NORM_BWD_DSCALE_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_BWD_DSCALE_DESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_NORM_BWD_DSCALE_DESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_NORM_BWD_DBIAS_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_BWD_DBIAS_DESC")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_NORM_BWD_DBIAS_DESC"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_NORM_BWD_DXDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_BWD_DXDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_NORM_BWD_DXDESC")
         if self is Self.CUDNN_ATTR_OPERATION_NORM_BWD_PEER_STAT_DESCS:
-            return writer.write("CUDNN_ATTR_OPERATION_NORM_BWD_PEER_STAT_DESCS")
+            return writer.write_string(
+                "CUDNN_ATTR_OPERATION_NORM_BWD_PEER_STAT_DESCS"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_RESHAPE_XDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_RESHAPE_XDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_RESHAPE_XDESC")
         if self is Self.CUDNN_ATTR_OPERATION_RESHAPE_YDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_RESHAPE_YDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_RESHAPE_YDESC")
         if self is Self.CUDNN_ATTR_RNG_DISTRIBUTION:
-            return writer.write("CUDNN_ATTR_RNG_DISTRIBUTION")
+            return writer.write_string("CUDNN_ATTR_RNG_DISTRIBUTION")
         if self is Self.CUDNN_ATTR_RNG_NORMAL_DIST_MEAN:
-            return writer.write("CUDNN_ATTR_RNG_NORMAL_DIST_MEAN")
+            return writer.write_string("CUDNN_ATTR_RNG_NORMAL_DIST_MEAN")
         if self is Self.CUDNN_ATTR_RNG_NORMAL_DIST_STANDARD_DEVIATION:
-            return writer.write("CUDNN_ATTR_RNG_NORMAL_DIST_STANDARD_DEVIATION")
+            return writer.write_string(
+                "CUDNN_ATTR_RNG_NORMAL_DIST_STANDARD_DEVIATION"
+            )
         if self is Self.CUDNN_ATTR_RNG_UNIFORM_DIST_MAXIMUM:
-            return writer.write("CUDNN_ATTR_RNG_UNIFORM_DIST_MAXIMUM")
+            return writer.write_string("CUDNN_ATTR_RNG_UNIFORM_DIST_MAXIMUM")
         if self is Self.CUDNN_ATTR_RNG_UNIFORM_DIST_MINIMUM:
-            return writer.write("CUDNN_ATTR_RNG_UNIFORM_DIST_MINIMUM")
+            return writer.write_string("CUDNN_ATTR_RNG_UNIFORM_DIST_MINIMUM")
         if self is Self.CUDNN_ATTR_RNG_BERNOULLI_DIST_PROBABILITY:
-            return writer.write("CUDNN_ATTR_RNG_BERNOULLI_DIST_PROBABILITY")
+            return writer.write_string(
+                "CUDNN_ATTR_RNG_BERNOULLI_DIST_PROBABILITY"
+            )
         if self is Self.CUDNN_ATTR_OPERATION_RNG_YDESC:
-            return writer.write("CUDNN_ATTR_OPERATION_RNG_YDESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_RNG_YDESC")
         if self is Self.CUDNN_ATTR_OPERATION_RNG_SEED:
-            return writer.write("CUDNN_ATTR_OPERATION_RNG_SEED")
+            return writer.write_string("CUDNN_ATTR_OPERATION_RNG_SEED")
         if self is Self.CUDNN_ATTR_OPERATION_RNG_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_RNG_DESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_RNG_DESC")
         if self is Self.CUDNN_ATTR_OPERATION_RNG_OFFSET_DESC:
-            return writer.write("CUDNN_ATTR_OPERATION_RNG_OFFSET_DESC")
+            return writer.write_string("CUDNN_ATTR_OPERATION_RNG_OFFSET_DESC")
         abort("invalid cudnnBackendAttributeName_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnBackendAttributeName_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnBackendAttributeName_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1799,20 +1933,20 @@ struct cudnnBackendNormMode_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_LAYER_NORM:
-            return writer.write("CUDNN_LAYER_NORM")
+            return writer.write_string("CUDNN_LAYER_NORM")
         if self is Self.CUDNN_INSTANCE_NORM:
-            return writer.write("CUDNN_INSTANCE_NORM")
+            return writer.write_string("CUDNN_INSTANCE_NORM")
         if self is Self.CUDNN_BATCH_NORM:
-            return writer.write("CUDNN_BATCH_NORM")
+            return writer.write_string("CUDNN_BATCH_NORM")
         if self is Self.CUDNN_GROUP_NORM:
-            return writer.write("CUDNN_GROUP_NORM")
+            return writer.write_string("CUDNN_GROUP_NORM")
         if self is Self.CUDNN_RMS_NORM:
-            return writer.write("CUDNN_RMS_NORM")
+            return writer.write_string("CUDNN_RMS_NORM")
         abort("invalid cudnnBackendNormMode_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnBackendNormMode_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnBackendNormMode_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1838,14 +1972,14 @@ struct cudnnSignalMode_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_SIGNAL_SET:
-            return writer.write("CUDNN_SIGNAL_SET")
+            return writer.write_string("CUDNN_SIGNAL_SET")
         if self is Self.CUDNN_SIGNAL_WAIT:
-            return writer.write("CUDNN_SIGNAL_WAIT")
+            return writer.write_string("CUDNN_SIGNAL_WAIT")
         abort("invalid cudnnSignalMode_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnSignalMode_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnSignalMode_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1874,14 +2008,14 @@ struct cudnnBnFinalizeStatsMode_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_BN_FINALIZE_STATISTICS_TRAINING:
-            return writer.write("CUDNN_BN_FINALIZE_STATISTICS_TRAINING")
+            return writer.write_string("CUDNN_BN_FINALIZE_STATISTICS_TRAINING")
         if self is Self.CUDNN_BN_FINALIZE_STATISTICS_INFERENCE:
-            return writer.write("CUDNN_BN_FINALIZE_STATISTICS_INFERENCE")
+            return writer.write_string("CUDNN_BN_FINALIZE_STATISTICS_INFERENCE")
         abort("invalid cudnnBnFinalizeStatsMode_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnBnFinalizeStatsMode_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnBnFinalizeStatsMode_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1906,12 +2040,12 @@ struct cudnnGenStatsMode_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_GENSTATS_SUM_SQSUM:
-            return writer.write("CUDNN_GENSTATS_SUM_SQSUM")
+            return writer.write_string("CUDNN_GENSTATS_SUM_SQSUM")
         abort("invalid cudnnGenStatsMode_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnGenStatsMode_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnGenStatsMode_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1965,22 +2099,22 @@ struct cudnnResampleMode_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_RESAMPLE_NEAREST:
-            return writer.write("CUDNN_RESAMPLE_NEAREST")
+            return writer.write_string("CUDNN_RESAMPLE_NEAREST")
         if self is Self.CUDNN_RESAMPLE_BILINEAR:
-            return writer.write("CUDNN_RESAMPLE_BILINEAR")
+            return writer.write_string("CUDNN_RESAMPLE_BILINEAR")
         if self is Self.CUDNN_RESAMPLE_AVGPOOL:
-            return writer.write("CUDNN_RESAMPLE_AVGPOOL")
+            return writer.write_string("CUDNN_RESAMPLE_AVGPOOL")
         if self is Self.CUDNN_RESAMPLE_AVGPOOL_INCLUDE_PADDING:
-            return writer.write("CUDNN_RESAMPLE_AVGPOOL_INCLUDE_PADDING")
+            return writer.write_string("CUDNN_RESAMPLE_AVGPOOL_INCLUDE_PADDING")
         if self is Self.CUDNN_RESAMPLE_AVGPOOL_EXCLUDE_PADDING:
-            return writer.write("CUDNN_RESAMPLE_AVGPOOL_EXCLUDE_PADDING")
+            return writer.write_string("CUDNN_RESAMPLE_AVGPOOL_EXCLUDE_PADDING")
         if self is Self.CUDNN_RESAMPLE_MAXPOOL:
-            return writer.write("CUDNN_RESAMPLE_MAXPOOL")
+            return writer.write_string("CUDNN_RESAMPLE_MAXPOOL")
         abort("invalid cudnnResampleMode_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnResampleMode_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnResampleMode_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2038,16 +2172,16 @@ struct cudnnPaddingMode_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_ZERO_PAD:
-            return writer.write("CUDNN_ZERO_PAD")
+            return writer.write_string("CUDNN_ZERO_PAD")
         if self is Self.CUDNN_NEG_INF_PAD:
-            return writer.write("CUDNN_NEG_INF_PAD")
+            return writer.write_string("CUDNN_NEG_INF_PAD")
         if self is Self.CUDNN_EDGE_VAL_PAD:
-            return writer.write("CUDNN_EDGE_VAL_PAD")
+            return writer.write_string("CUDNN_EDGE_VAL_PAD")
         abort("invalid cudnnPaddingMode_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnPaddingMode_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnPaddingMode_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
