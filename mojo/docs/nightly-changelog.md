@@ -6,6 +6,13 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- `is_run_in_comptime_interpreter()` has been renamed to
+  `__is_run_in_comptime_interpreter` keyword which provides
+  a mechanism for supporting different code execution
+  path in comptime interpreter from runtime generated code.
+  This value cannot be used as a constant in any comptime expressions because
+  it is always evaluated as `True` for comptime expressions.
+
 ## Language changes
 
 ## Library changes
