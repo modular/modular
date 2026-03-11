@@ -740,6 +740,11 @@ This version is still a work in progress.
   operations for extracting the `DType` of a `SIMD` in generic code. There are
   better alternatives available in Mojo today using reflection capabilities.
 
+- The `DimList` type has moved to representing its dimensions as parameters to
+  the type instead of values inside the type, directly reflecting that the
+  dimensions are known at compile time.  Please change `DimList(x, y)`
+  into `DimList[x, y]()`.
+
 ## Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the
