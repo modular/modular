@@ -41,8 +41,16 @@ from max.profiler import traced
 from transformers import AutoConfig
 
 from ..sampling import PenaltyInputs, SamplerInputs, token_sampler
-from .base import SpeculativeDecodingPipelineBase, compute_max_num_draft_steps
+from .base import SpeculativeDecodingPipelineBase
 from .eagle_hidden_state_graphs import build_gather_graph
+from .utils import (
+    ModelInputsWithTokensAndOffsets,
+    build_response,
+    compute_max_num_draft_steps,
+    seek_processing_position,
+    shift_draft_tokens,
+    update_contexts_and_compute_metrics_eagle,
+)
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
@@ -161,43 +169,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         return sampled_tokens
 
-    def _seek_processing_position(
-        self,
-        context: TextContext,
-        target_position: int,
-    ) -> None:
-        delta = target_position - context.tokens.processed_length
-        if delta > 0:
-            context.tokens.skip_processing(delta)
-        elif delta < 0:
-            context.tokens.rewind_processing(-delta)
-
-    def _shift_draft_tokens(
-        self,
-        base_inputs: ModelInputs,
-        batch: list[TextContext],
-        shift_next_tokens: npt.NDArray[np.int64],
-    ) -> None:
-        """Shift each context's tokens left by 1, appending the given token.
-
-        For chunked prefill, the draft model needs to see the same prompt
-        tokens but with positions shifted so the last token in each
-        context's span is replaced by the target-sampled next token.
-        """
-        tokens_np = base_inputs.tokens.to_numpy()  # type: ignore[attr-defined]
-        shifted = np.empty_like(tokens_np)
-        offset = 0
-        for i, ctx in enumerate(batch):
-            n = ctx.tokens.active_length
-            shifted[offset : offset + n - 1] = tokens_np[
-                offset + 1 : offset + n
-            ]
-            shifted[offset + n - 1] = shift_next_tokens[i]
-            offset += n
-        base_inputs.tokens = Buffer.from_numpy(shifted).to(  # type: ignore[attr-defined]
-            base_inputs.tokens.device  # type: ignore[attr-defined]
-        )
-
     def _prepare_draft_batch(
         self,
         batch: list[TextContext],
@@ -235,7 +206,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         ]
 
         for context in batch:
-            self._seek_processing_position(
+            seek_processing_position(
                 context, context.spec_decoding_state.draft_kv_start_idx
             )
 
@@ -254,7 +225,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 if shift_next_tokens is None:
                     context.tokens.skip_processing(1)
             else:
-                self._seek_processing_position(context, saved_positions[i])
+                seek_processing_position(context, saved_positions[i])
 
         base_inputs = self._draft_model.prepare_initial_token_inputs(
             replica_batches=replica_batches,
@@ -263,7 +234,15 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         )
 
         if shift_next_tokens is not None:
-            self._shift_draft_tokens(base_inputs, batch, shift_next_tokens)
+            assert isinstance(base_inputs, ModelInputsWithTokensAndOffsets)
+            tokens = base_inputs.tokens
+            shifted = shift_draft_tokens(
+                tokens.to_numpy(),
+                batch,
+                shift_next_tokens,
+            )
+            device = tokens.device
+            base_inputs.tokens = Buffer.from_numpy(shifted).to(device)
 
         if hidden_states is not None:
             base_inputs.hidden_states = (
@@ -303,7 +282,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         for i, context in enumerate(batch):
             state = context.spec_decoding_state
             state.draft_kv_start_idx += context.tokens.active_length
-            self._seek_processing_position(context, saved_positions[i])
+            seek_processing_position(context, saved_positions[i])
             context.apply_processing_offset(0)
 
         return base_inputs, num_steps
@@ -377,8 +356,8 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         replica_batches: list[list[TextContext]],
         num_draft_tokens_generated: int,
         draft_tokens: Buffer,
-        merged_tokens: Buffer | None = None,
-        merged_offsets: Buffer | None = None,
+        merged_tokens: Buffer,
+        merged_offsets: Buffer,
         host_merged_offsets: Buffer | None = None,
     ) -> tuple[
         npt.NDArray[np.integer[Any]],
@@ -411,8 +390,9 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             return_n_logits=num_draft_tokens_generated + 1,
         )
 
-        target_inputs.tokens = merged_tokens  # type: ignore[attr-defined]
-        target_inputs.input_row_offsets = merged_offsets  # type: ignore[attr-defined]
+        assert isinstance(target_inputs, ModelInputsWithTokensAndOffsets)
+        target_inputs.tokens = merged_tokens
+        target_inputs.input_row_offsets = merged_offsets
         target_inputs.host_input_row_offsets = host_merged_offsets  # type: ignore[attr-defined]
 
         # Fix batch_context_lengths: prepare_initial_token_inputs computed
@@ -472,77 +452,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             bonus_tokens_np,
             target_hidden_states,
             logit_offsets_np,
-        )
-
-    def update_contexts(
-        self,
-        context_batch: list[TextContext],
-        first_rejected_tokens: npt.NDArray[np.integer[Any]],
-        recovered_tokens: npt.NDArray[np.integer[Any]],
-        bonus_tokens: npt.NDArray[np.integer[Any]] | None,
-        draft_tokens: npt.NDArray[np.integer[Any]],
-        num_draft_tokens_generated: int,
-        data_parallel_splits: npt.NDArray[np.int64] | None = None,
-    ) -> None:
-        """Update contexts after EAGLE verification.
-
-        EAGLE-specific behavior:
-        - Target token was already added via jump_ahead (start_idx not updated)
-        - Draft indices were bumped for KV cache but tokens not written
-        - After verification, we "commit" the target token and write accepted draft tokens
-        """
-        total_draft_generated = num_draft_tokens_generated * len(context_batch)
-        total_draft_accepted = 0
-        total_bonus_used = 0
-        acceptance_lengths = []
-
-        for idx, context in enumerate(context_batch):
-            rejected_token_idx = int(first_rejected_tokens[idx].item())
-
-            for token_idx in range(rejected_token_idx):
-                if context.is_done:
-                    break
-                token = int(draft_tokens[idx, token_idx])
-                context.update(token)
-
-            if not context.is_done:
-                if rejected_token_idx < num_draft_tokens_generated:
-                    # Draft token rejected - use recovered token from target
-                    # Greedy sampler: recovered_tokens shape is [batch_size, 1]
-                    # Residuals sampler: recovered_tokens shape is [batch_size, num_steps]
-                    if bonus_tokens is None:
-                        # Greedy sampler - only one recovered token per batch
-                        token = int(recovered_tokens[idx, 0])
-                    else:
-                        # Residual sampler - tokens for all positions
-                        token = int(recovered_tokens[idx, rejected_token_idx])
-                    context.update(token)
-                elif bonus_tokens is not None:
-                    # All drafts accepted + bonus token available
-                    token = int(bonus_tokens[idx, 0])
-                    total_bonus_used += 1
-                    context.update(token)
-
-            # This is added because the draft needs to process the same tokens but with the hidden states received from the target model. This will also set the start index to the correct position for the kv cache
-            context.apply_processing_offset(-rejected_token_idx)
-
-            # Cap draft_kv_start_idx to processed_length so stale draft KV
-            # entries (from rejected tokens) get overwritten on the next
-            # iteration.
-            state = context.spec_decoding_state
-            state.draft_kv_start_idx = min(
-                state.draft_kv_start_idx,
-                context.tokens.processed_length,
-            )
-
-            total_draft_accepted += rejected_token_idx
-            acceptance_lengths.append(rejected_token_idx)
-
-        self._metrics.update(
-            total_draft_generated,
-            total_draft_accepted,
-            total_bonus_used,
-            acceptance_lengths,
         )
 
     def _save_draft_tokens(
@@ -722,7 +631,9 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             token = int(target_sampled_tokens_np[i].item())
             ctx.update(token)
 
-        return self.build_response(context_batch=context_batch)
+        return build_response(
+            context_batch=context_batch, max_seq_len=self._max_seq_len
+        )
 
     def _execute_token_generation(
         self,
@@ -747,7 +658,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         draft_input_offsets = Buffer.from_numpy(draft_input_offsets_np).to(
             self.devices[0]
         )
-        merged_tokens, merged_offsets = self._ragged_token_merger(
+        merged_tokens, merged_offsets = self._ragged_token_merger.run(
             draft_input_tokens,
             draft_input_offsets,
             draft_tokens,
@@ -776,15 +687,15 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             host_merged_offsets=host_merged_offsets,
         )
 
-        self.update_contexts(
+        metrics = update_contexts_and_compute_metrics_eagle(
             context_batch=context_batch,
             first_rejected_tokens=first_rejected_np,
             recovered_tokens=recovered_np,
             bonus_tokens=bonus_np,
             draft_tokens=draft_tokens.to_numpy(),
             num_draft_tokens_generated=num_draft_tokens_generated,
-            data_parallel_splits=data_parallel_splits_np,
         )
+        self._metrics.update(metrics)
 
         draft_hidden_states = self._extract_hs_for_draft(
             target_hs,
@@ -808,7 +719,9 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             context_batch, new_draft_tokens, new_num_draft_tokens
         )
 
-        res = self.build_response(context_batch=context_batch)
+        res = build_response(
+            context_batch=context_batch, max_seq_len=self._max_seq_len
+        )
 
         self._target_kv_manager.step(replica_batches)
 
