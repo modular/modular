@@ -10820,19 +10820,21 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output: OutputTensor[dtype=output_type, rank=rank, ...],
-        output_scales: OutputTensor[dtype=scales_type, rank=rank, ...],
-        output_residual: OutputTensor[dtype=dtype, rank=rank, ...],
+        outputs: OutputVariadicTensors[dtype=output_type, rank=rank, ...],
+        outputs_scales: OutputVariadicTensors[
+            dtype=scales_type, rank=rank, ...
+        ],
+        outputs_residual: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
-        residual: InputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
-        weight_offset: Scalar[dtype=dtype],
-        scale_ub: Float32,
-        device_ctx: DeviceContextPtr,
+        residuals: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
+        epsilons: InputVariadicTensors[dtype=dtype, ...],
+        weight_offsets: InputVariadicTensors[dtype=dtype, ...],
+        scales_ub: InputVariadicTensors[dtype=DType.float32, ...],
+        dev_ctxs_input: DeviceContextPtrList,
     ) capturing raises:
         comptime num_devices = inputs.size
         comptime assert signal_buffers.size == num_devices, (
@@ -10843,50 +10845,104 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         var input_size_bytes = inputs[0].size() * size_of[dtype]()
         _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
-        # Marshal input tensors into the expected format.
+        # Filter the dev_ctxs_list to have only the GPU devices
+        # The kernel also takes CPU operands, so the CPU devices must be removed.
+        var gpu_ctxs_tuple = StaticTuple[DeviceContextPtr, num_devices]()
+        var dev_idx = 0
+        for i in range(dev_ctxs_input.size):
+            if dev_idx < num_devices and dev_ctxs_input[i].api() != "cpu":
+                gpu_ctxs_tuple[dev_idx] = dev_ctxs_input.ptrs[i]
+                dev_idx += 1
+        if dev_idx != num_devices:
+            raise Error("Invalid number of device contexts")
+        var dev_ctxs = DeviceContextPtrList[num_devices](gpu_ctxs_tuple)
+
+        # Marshal input tensors / output tensors into the expected format.
+        var out_bufs = InlineArray[
+            NDBuffer[rank=rank, output_type, MutAnyOrigin], inputs.size
+        ](fill={})
+        var out_scale_bufs = InlineArray[
+            NDBuffer[rank=rank, scales_type, MutAnyOrigin], inputs.size
+        ](fill={})
+        var out_residual_bufs = InlineArray[
+            NDBuffer[rank=rank, dtype, MutAnyOrigin], inputs.size
+        ](fill={})
         var in_bufs = InlineArray[
             NDBuffer[rank=rank, dtype, ImmutAnyOrigin], inputs.size
         ](fill={})
-
-        comptime for i in range(inputs.size):
-            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
-                inputs[i]
-            ).make_dims_unknown()
-
-        # Marshal output tensors
-        var out_buf = managed_tensor_slice_to_ndbuffer(output)
-        var out_scales_buf = managed_tensor_slice_to_ndbuffer(output_scales)
-        var out_residual_buf = managed_tensor_slice_to_ndbuffer(output_residual)
+        var residual_bufs = InlineArray[
+            NDBuffer[rank=rank, dtype, ImmutAnyOrigin], inputs.size
+        ](fill={})
 
         # Marshal signal buffers.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
-        comptime for i in range(signal_buffers.size):
+        comptime for i in range(inputs.size):
+            # Outputs
+            out_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                outputs[i]
+            ).make_dims_unknown()
+            out_scale_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                outputs_scales[i]
+            ).make_dims_unknown()
+            out_residual_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                outputs_residual[i]
+            ).make_dims_unknown()
+
+            # Inputs
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                inputs[i]
+            ).make_dims_unknown()
+            residual_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                residuals[i]
+            ).make_dims_unknown()
+
+            # Signal buffers
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
-        # Marshal gamma
-        var gamma_tensor = gamma.to_tile_tensor[DType.int64]()
+        @always_inline
+        fn launch_fused_allreduce[
+            index: Int
+        ]() raises unified {
+            read out_bufs,
+            read out_scale_bufs,
+            read out_residual_bufs,
+            read in_bufs,
+            read residual_bufs,
+            read rank_sigs,
+            read dev_ctxs,
+            read gammas,
+            read epsilons,
+            read weight_offsets,
+            read scales_ub,
+        }:
+            # Marshal gamma
+            var gamma_tensor = gammas[index].to_tile_tensor[DType.int64]()
 
-        # Marshal residual
-        var residual_buf = managed_tensor_slice_to_ndbuffer(
-            residual
-        ).make_dims_unknown()
+            # TODO: Add a new struct like `VariadicInputScalar`` to represent instead of manually loading the values in the kernel code.
+            var epsilon = epsilons[index].unsafe_ptr()[]
+            var weight_offset = weight_offsets[index].unsafe_ptr()[]
+            var scale_ub = scales_ub[index].unsafe_ptr()[]
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
             allreduce_residual_rmsnorm_fp8(
                 in_bufs,
-                residual_buf,
-                out_buf,
-                out_residual_buf,
+                residual_bufs[index],
+                out_bufs[index],
+                out_residual_bufs[index],
                 gamma_tensor,
                 epsilon,
                 weight_offset,
                 scale_ub,
-                out_scales_buf,
+                out_scale_bufs[index],
                 rank_sigs,
-                device_ctx[],
+                dev_ctxs[index],
+            )
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            _launch_device_collective[num_devices](
+                launch_fused_allreduce, dev_ctxs
             )
 
 
