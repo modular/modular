@@ -263,7 +263,7 @@ def BoolScalar : ScalarOfDType<BoundAnd<BoolDType>, "!pop.scalar<bool>">,
 def UnboundOrArithmeticScalar : ScalarOfDType<UnboundOr<ArithmeticDType>,
     "whose type is an arithmetic dtype">;
 
-def UI8Scalar : ScalarOfDType<BoundAnd<UI8DType>, "!pop.scalar<1, ui8>">,
+def UI8Scalar : ScalarOfDType<BoundAnd<UI8DType>, "!pop.scalar<ui8>">,
     BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get("
                                    "$_builder.getContext(), KGENDType::ui8))">;
 def SI8Scalar : ScalarOfDType<BoundAnd<SI8DType>, "!pop.scalar<si8>">,
