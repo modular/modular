@@ -17,6 +17,7 @@
 #include "KGEN/Support/CLOptionUtils.h"
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/Support/ForceLinkMLIRC.h"
+#include "KGEN/ToolCommon/OOMHandler.h"
 #include "Support/CrashReporting/CrashReporting.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/LogicalResult.h"
@@ -57,6 +58,9 @@ int main(int argc, char **argv) {
   // Install LLVM signal handlers and convert `argc` and `argv` for Windows
   // hosts.
   llvm::InitLLVM initLLVM(argc, argv);
+
+  KGEN::installOOMHandler();
+
   llvm::setBugReportMsg(
       "Please submit a bug report to https://github.com/modular/modular/issues "
       "and include the crash backtrace along with all the relevant source "
