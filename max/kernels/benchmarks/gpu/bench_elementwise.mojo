@@ -30,14 +30,14 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from buffer import NDBuffer
-from buffer.buffer import _compute_ndbuffer_offset
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import B200
 from internal_utils import arg_parse, parse_shape, CacheBustingBuffer
 
 from std.utils import IndexList
 from std.utils.index import product
+
+from layout import TileTensor, Coord, row_major
 
 
 fn add_const_fn(x: SIMD) -> type_of(x):
@@ -55,55 +55,54 @@ fn simd_sqrt(x: SIMD) -> type_of(x):
 @always_inline
 fn _simd_load_internal[
     simd_width: Int
-](buffer: NDBuffer, index: Int) -> SIMD[buffer.type, simd_width]:
-    comptime if buffer.type == DType.bool:
-        var v = buffer.data.bitcast[UInt8]().load[width=simd_width](index)
-        return v.cast[buffer.type]()
-    return buffer.data.load[width=simd_width](index)
+](buffer: TileTensor, index: Int) -> SIMD[buffer.dtype, simd_width]:
+    comptime if buffer.dtype == DType.bool:
+        var v = buffer.ptr.bitcast[UInt8]().load[width=simd_width](index)
+        return v.cast[buffer.dtype]()
+    return buffer.ptr.load[width=simd_width](index)
 
 
 @always_inline
 fn simd_load[
     simd_width: Int
-](
-    buffer: NDBuffer,
-    index: IndexList[buffer.rank],
-) -> SIMD[
-    buffer.type, simd_width
-]:
-    var flat_index = _compute_ndbuffer_offset(buffer, index)
+](buffer: TileTensor, index: IndexList,) -> SIMD[buffer.dtype, simd_width]:
+    var coord = Coord(index)
+    comptime assert coord.flat_rank == buffer.flat_rank
+    var flat_index = Int(buffer.layout(coord))
 
-    if buffer.is_contiguous():
+    if buffer.is_row_major:
         return _simd_load_internal[simd_width](buffer, flat_index)
 
-    var stride = buffer.stride[buffer.rank - 1]()
+    var stride = buffer.static_stride[buffer.rank - 1]
     if stride == 0:
-        return buffer.data.load(flat_index)
+        return buffer.ptr.load(flat_index)
 
-    if buffer.type == DType.bool:
+    if buffer.dtype == DType.bool:
         var v = strided_load[simd_width](
-            buffer.data.bitcast[UInt8]() + flat_index,
+            buffer.ptr.bitcast[UInt8]() + flat_index,
             stride,
         )
-        return v.cast[buffer.type]()
-    return strided_load[simd_width](buffer.data + flat_index, stride)
+        return v.cast[buffer.dtype]()
+    return strided_load[simd_width](buffer.ptr + flat_index, stride)
 
 
 @always_inline
 fn simd_store[
     simd_width: Int
 ](
-    buffer: NDBuffer[mut=True, ...],
-    index: IndexList[buffer.rank],
-    val: SIMD[buffer.type, simd_width],
+    buffer: TileTensor[mut=True, ...],
+    index: IndexList,
+    val: SIMD[buffer.dtype, simd_width],
 ):
-    var flat_index = _compute_ndbuffer_offset(buffer, index)
+    var coord = Coord(index)
+    comptime assert coord.flat_rank == buffer.flat_rank
+    var flat_index = buffer.layout(coord)
 
     # We have to cast bools into their runtime storage type.
-    comptime if buffer.type == DType.bool:
-        buffer.data.bitcast[UInt8]().store(flat_index, val.cast[DType.uint8]())
+    comptime if buffer.dtype == DType.bool:
+        buffer.ptr.bitcast[UInt8]().store(flat_index, val.cast[DType.uint8]())
     else:
-        buffer.data.store(flat_index, val)
+        buffer.ptr.store(flat_index, val)
 
 
 @no_inline
@@ -145,13 +144,13 @@ fn run_elementwise[
         cb_out.alloc_size(), alignment=align
     )
 
-    var in_host = NDBuffer[rank=rank, dtype](in_host_ptr, dims)
-    var out_host = NDBuffer[rank=rank, dtype](out_host_ptr, dims)
+    var in_host = TileTensor(in_host_ptr, row_major(Coord(dims)))
+    var out_host = TileTensor(out_host_ptr, row_major(Coord(dims)))
 
     for i in range(cb_in.alloc_size()):
         in_host_ptr[i] = Scalar[dtype](i)
 
-    ctx.enqueue_copy(cb_in.device_buffer(), in_host.data)
+    ctx.enqueue_copy(cb_in.device_buffer(), in_host.ptr)
 
     @parameter
     @__copy_capture(cb_in, cb_out)
@@ -161,11 +160,11 @@ fn run_elementwise[
         @__copy_capture(N)
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            var in_tensor = NDBuffer[rank=rank, dtype](
-                cb_in.offset_ptr(iteration), dims
+            var in_tensor = TileTensor(
+                cb_in.offset_ptr(iteration), row_major(Coord(dims))
             )
-            var out_tensor = NDBuffer[rank=rank, dtype](
-                cb_out.offset_ptr(iteration), dims
+            var out_tensor = TileTensor(
+                cb_out.offset_ptr(iteration), row_major(Coord(dims))
             )
 
             @always_inline
@@ -175,6 +174,9 @@ fn run_elementwise[
                 simd_width: Int, rank_: Int, alignment: Int = 1
             ](idx0: IndexList[rank_]):
                 var idx = rebind[IndexList[rank]](idx0)
+                var coord = Coord(idx)
+                comptime assert coord.flat_rank == out_tensor.flat_rank
+                comptime assert coord.flat_rank == in_tensor.flat_rank
 
                 comptime if emulate_graph_compiler:
                     # In this mode we use the simd_store / simd_load that are copied
@@ -187,10 +189,10 @@ fn run_elementwise[
                     )
                 else:
                     out_tensor.store[alignment=align](
-                        idx,
+                        coord,
                         kernel_fn(
                             in_tensor.load[width=simd_width, alignment=align](
-                                idx
+                                coord
                             )
                         ),
                     )
@@ -222,7 +224,7 @@ fn run_elementwise[
     )
 
     ctx.synchronize()
-    ctx.enqueue_copy(out_host.data, cb_out.device_buffer())
+    ctx.enqueue_copy(out_host.ptr, cb_out.device_buffer())
 
     _ = cb_in
     _ = cb_out

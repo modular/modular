@@ -25,7 +25,6 @@ This module defines two traits that define the roles of the different structs
 from std.math import align_up
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from buffer import Dim, DimList
 from layout import (
     ComptimeInt,
     Coord,
@@ -48,8 +47,8 @@ from layout.tma_async import (
     create_split_tma,
     RaggedTMA3DTile,
 )
-from layout.tile_layout import Layout as InternalLayout
-from layout.coord import _DimsToCoordLike, DynamicCoord
+from layout.tile_layout import RowMajorLayout, Layout as InternalLayout
+from layout.coord import DynamicCoord
 
 from std.collections import OptionalReg
 from std.utils import Index, IndexList
@@ -863,25 +862,11 @@ struct PagedKVCache[
         Self.scale_dtype, Self.scales_layout, MutAnyOrigin
     ]
 
-    comptime scales_tt_layout = InternalLayout[
-        shape_types=_DimsToCoordLike[
-            DType.int64,
-            DimList[
-                Dim(),
-                Dim(Self.page_size),
-                Dim(Int(Self.kv_params.num_heads)),
-                Dim(Self.head_dim_granularity),
-            ](),
-        ],
-        stride_types=_DimsToCoordLike[
-            DType.int64,
-            DimList[
-                Dim(),
-                Dim(Int(Self.kv_params.num_heads) * Self.head_dim_granularity),
-                Dim(Self.head_dim_granularity),
-                Dim(1),
-            ](),
-        ],
+    comptime scales_tt_layout = RowMajorLayout[
+        RuntimeInt[DType.int64],
+        ComptimeInt[Self.page_size],
+        ComptimeInt[Int(Self.kv_params.num_heads)],
+        ComptimeInt[Self.head_dim_granularity],
     ]
     comptime scales_tt_type = TileTensor[
         Self.scale_dtype, Self.scales_tt_layout, MutAnyOrigin

@@ -17,7 +17,6 @@ from std.sys import argv
 from std.sys.info import simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
-from buffer import NDBuffer
 from std.gpu import WARP_SIZE, lane_id
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
@@ -38,6 +37,8 @@ from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
+
+from layout import TileTensor, Coord, Idx, row_major
 
 
 @always_inline
@@ -215,8 +216,7 @@ def test_tma_block_reduce[
                 shared_mem_bytes=shared_mem_bytes,
             )
         else:
-            var shape = Index(rows, cols)
-            var data_buf = NDBuffer[rank=2, dtype](d_data.unsafe_ptr(), shape)
+            var data_buf = TileTensor(d_data, row_major((Idx(rows), Idx(cols))))
 
             # Change the input function to match RMS norm pattern
             @__copy_capture(data_buf)
@@ -225,7 +225,9 @@ def test_tma_block_reduce[
             fn input_fn_2d[
                 width: Int, _rank: Int
             ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
-                return data_buf.load[width=width](rebind[IndexList[2]](idx))
+                var coord = Coord(idx)
+                comptime assert coord.flat_rank == 2
+                return data_buf.load[width=width](coord)
 
             comptime kernel = global_reduction_kernel[
                 dtype,
