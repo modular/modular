@@ -58,6 +58,7 @@ _THIRD_PARTY_IMPORTS = {
     "ruamel_yaml": ["ruamel.yaml"],
     "pytest": ["pytest", "_pytest"],
     "pyyaml": ["yaml"],
+    "pygithub": ["github"],
     "pyzmq": ["zmq"],
 }
 

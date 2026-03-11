@@ -122,6 +122,7 @@ PINS = {
     "pydantic-core": "pydantic-core@2.41.5",
     "pydantic-settings": "pydantic-settings@2.3.4",
     "pygame-ce": "pygame-ce@2.5.6",
+    "pygithub": "pygithub@2.8.1",
     "pygments": "pygments@2.18.0",
     "pyinstrument": "pyinstrument@5.1.1",
     "pytest": "pytest@8.2.2",
@@ -7487,6 +7488,26 @@ def targets():
         testonly = "pygame-ce" in _TESTONLY_DEPS,
     )
 
+    _pygithub_2_8_1_deps = [
+        ":pyjwt@2.11.0",
+        ":pynacl@1.6.2",
+        ":requests@2.32.3",
+        ":typing-extensions@4.15.0",
+        ":urllib3@1.26.19",
+    ]
+
+    native.alias(
+        name = "_wheel_pygithub@2.8.1",
+        actual = "@pycross_lock_file_wheel_pygithub_2.8.1_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "pygithub@2.8.1",
+        deps = _pygithub_2_8_1_deps,
+        wheel = ":_wheel_pygithub@2.8.1",
+        testonly = "pygithub" in _TESTONLY_DEPS,
+    )
+
     native.alias(
         name = "_wheel_pygments@2.18.0",
         actual = "@pycross_lock_file_wheel_pygments_2.18.0_py3_none_any//file",
@@ -7526,6 +7547,57 @@ def targets():
         name = "pyinstrument@5.1.1",
         wheel = ":_wheel_pyinstrument@5.1.1",
         testonly = "pyinstrument" in _TESTONLY_DEPS,
+    )
+
+    _pyjwt_2_11_0_deps = [
+        ":cryptography@46.0.5",
+    ]
+
+    native.alias(
+        name = "_wheel_pyjwt@2.11.0",
+        actual = "@pycross_lock_file_wheel_pyjwt_2.11.0_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "pyjwt@2.11.0",
+        deps = _pyjwt_2_11_0_deps,
+        wheel = ":_wheel_pyjwt@2.11.0",
+        testonly = "pyjwt" in _TESTONLY_DEPS,
+    )
+
+    _pynacl_1_6_2_deps = [
+        ":cffi@2.0.0",
+    ]
+
+    native.alias(
+        name = "_wheel_pynacl@1.6.2",
+        actual = select({
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_pynacl_1.6.2_cp38_abi3_macosx_10_10_universal2//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pynacl_1.6.2_cp38_abi3_manylinux_2_34_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pynacl_1.6.2_cp38_abi3_manylinux_2_34_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_pynacl_1.6.2_cp38_abi3_macosx_10_10_universal2//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pynacl_1.6.2_cp38_abi3_manylinux_2_34_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pynacl_1.6.2_cp38_abi3_manylinux_2_34_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_pynacl_1.6.2_cp38_abi3_macosx_10_10_universal2//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pynacl_1.6.2_cp38_abi3_manylinux_2_34_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pynacl_1.6.2_cp38_abi3_manylinux_2_34_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_pynacl_1.6.2_cp38_abi3_macosx_10_10_universal2//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pynacl_1.6.2_cp38_abi3_manylinux_2_34_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pynacl_1.6.2_cp38_abi3_manylinux_2_34_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_pynacl_1.6.2_cp38_abi3_macosx_10_10_universal2//file",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_pynacl_1.6.2_cp314_cp314t_macosx_10_10_universal2//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pynacl_1.6.2_cp38_abi3_manylinux_2_34_aarch64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_pynacl_1.6.2_cp314_cp314t_manylinux_2_34_aarch64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pynacl_1.6.2_cp38_abi3_manylinux_2_34_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_pynacl_1.6.2_cp314_cp314t_manylinux_2_34_x86_64//file",
+        }),
+    )
+
+    pycross_wheel_library(
+        name = "pynacl@1.6.2",
+        deps = _pynacl_1_6_2_deps,
+        wheel = ":_wheel_pynacl@1.6.2",
+        testonly = "pynacl" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -23366,6 +23438,16 @@ def repositories():
 
     maybe(
         http_file,
+        name = "pycross_lock_file_wheel_pygithub_2.8.1_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/07/ba/7049ce39f653f6140aac4beb53a5aaf08b4407b6a3019aae394c1c5244ff/pygithub-2.8.1-py3-none-any.whl",
+        ],
+        sha256 = "23a0a5bca93baef082e03411bf0ce27204c32be8bfa7abc92fe4a3e132936df0",
+        downloaded_file_path = "pygithub-2.8.1-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
         name = "pycross_lock_file_wheel_pygments_2.18.0_py3_none_any",
         urls = [
             "https://files.pythonhosted.org/packages/f7/3f/01c8b82017c199075f8f788d0d906b9ffbbc5a47dc9918a945e13d5a2bda/pygments-2.18.0-py3-none-any.whl",
@@ -23552,6 +23634,76 @@ def repositories():
         ],
         sha256 = "c156eb442f9f22960ae16bd195051863d5e8a68b877926e88bbaf8bbdc1456d1",
         downloaded_file_path = "pyinstrument-5.1.1-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_pyjwt_2.11.0_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/6f/01/c26ce75ba460d5cd503da9e13b21a33804d38c2165dec7b716d06b13010c/pyjwt-2.11.0-py3-none-any.whl",
+        ],
+        sha256 = "94a6bde30eb5c8e04fee991062b534071fd1439ef58d2adc9ccb823e7bcd0469",
+        downloaded_file_path = "pyjwt-2.11.0-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_pynacl_1.6.2_cp314_cp314t_macosx_10_10_universal2",
+        urls = [
+            "https://files.pythonhosted.org/packages/4b/79/0e3c34dc3c4671f67d251c07aa8eb100916f250ee470df230b0ab89551b4/pynacl-1.6.2-cp314-cp314t-macosx_10_10_universal2.whl",
+        ],
+        sha256 = "622d7b07cc5c02c666795792931b50c91f3ce3c2649762efb1ef0d5684c81594",
+        downloaded_file_path = "pynacl-1.6.2-cp314-cp314t-macosx_10_10_universal2.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_pynacl_1.6.2_cp314_cp314t_manylinux_2_34_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/78/b7/928ee9c4779caa0a915844311ab9fb5f99585621c5d6e4574538a17dca07/pynacl-1.6.2-cp314-cp314t-manylinux_2_34_aarch64.whl",
+        ],
+        sha256 = "a9f9932d8d2811ce1a8ffa79dcbdf3970e7355b5c8eb0c1a881a57e7f7d96e88",
+        downloaded_file_path = "pynacl-1.6.2-cp314-cp314t-manylinux_2_34_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_pynacl_1.6.2_cp314_cp314t_manylinux_2_34_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/f7/a9/1bdba746a2be20f8809fee75c10e3159d75864ef69c6b0dd168fc60e485d/pynacl-1.6.2-cp314-cp314t-manylinux_2_34_x86_64.whl",
+        ],
+        sha256 = "bc4a36b28dd72fb4845e5d8f9760610588a96d5a51f01d84d8c6ff9849968c14",
+        downloaded_file_path = "pynacl-1.6.2-cp314-cp314t-manylinux_2_34_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_pynacl_1.6.2_cp38_abi3_macosx_10_10_universal2",
+        urls = [
+            "https://files.pythonhosted.org/packages/be/7b/4845bbf88e94586ec47a432da4e9107e3fc3ce37eb412b1398630a37f7dd/pynacl-1.6.2-cp38-abi3-macosx_10_10_universal2.whl",
+        ],
+        sha256 = "c949ea47e4206af7c8f604b8278093b674f7c79ed0d4719cc836902bf4517465",
+        downloaded_file_path = "pynacl-1.6.2-cp38-abi3-macosx_10_10_universal2.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_pynacl_1.6.2_cp38_abi3_manylinux_2_34_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/c4/58/fc6e649762b029315325ace1a8c6be66125e42f67416d3dbd47b69563d61/pynacl-1.6.2-cp38-abi3-manylinux_2_34_aarch64.whl",
+        ],
+        sha256 = "26bfcd00dcf2cf160f122186af731ae30ab120c18e8375684ec2670dccd28130",
+        downloaded_file_path = "pynacl-1.6.2-cp38-abi3-manylinux_2_34_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_pynacl_1.6.2_cp38_abi3_manylinux_2_34_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/c9/a8/b917096b1accc9acd878819a49d3d84875731a41eb665f6ebc826b1af99e/pynacl-1.6.2-cp38-abi3-manylinux_2_34_x86_64.whl",
+        ],
+        sha256 = "c8a231e36ec2cab018c4ad4358c386e36eede0319a0c41fed24f840b1dac59f6",
+        downloaded_file_path = "pynacl-1.6.2-cp38-abi3-manylinux_2_34_x86_64.whl",
     )
 
     maybe(
