@@ -117,10 +117,13 @@ def _convert_image_mode(image: Image.Image, to_mode: str):  # noqa: ANN202
         return image.convert(to_mode)
 
 
-def load_from_tar(tar_s3_path: str) -> str:
-    """Loads and untars a file from S3."""
-    tar_path = load_from_s3(tar_s3_path)
+def load_from_tar(tar_path: str) -> str:
+    """Loads and untars a file from S3, or disk"""
+    if tar_path.startswith("s3://"):
+        on_disk_tar_path = load_from_s3(tar_path)
+    else:
+        on_disk_tar_path = tar_path
     temp_dir = tempfile.mkdtemp()
-    with tarfile.open(tar_path, "r:gz") as tar:
+    with tarfile.open(on_disk_tar_path, "r:gz") as tar:
         tar.extractall(path=temp_dir)
     return temp_dir
