@@ -244,6 +244,14 @@ class Float8Config:
         """``True`` if this config represents modelopt NVFP4."""
         return self.quant_method == "modelopt" and self.quant_algo == "NVFP4"
 
+    @property
+    def is_mxfp4(self) -> bool:
+        """Returns ``True`` if this config represents MXFP4 quantization."""
+        return self.quant_algo == "MXFP4" and self.quant_method in (
+            "mxfp4",
+            "modelopt",
+        )
+
     def quantized_scales_type(
         self, quantized_shape: Shape, device_ref: DeviceRef
     ) -> TensorType:

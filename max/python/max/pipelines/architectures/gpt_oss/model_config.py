@@ -18,11 +18,13 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
+from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import YarnScalingParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
+from max.pipelines.lib.float8 import parse_float8_config
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -124,6 +126,9 @@ class GptOssConfig(ArchConfigWithKVCache):
 
     kv_params: KVCacheParams
     """KV cache parameters."""
+
+    float8_config: Float8Config | None = None
+    """Float8/Float4 quantization configuration, if applicable."""
 
     tie_word_embeddings: bool = False
     """Whether to tie weight embeddings. When true, the output linear layer
@@ -227,6 +232,11 @@ class GptOssConfig(ArchConfigWithKVCache):
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = supported_encoding_dtype(quantization_encoding)
+        # For MXFP4 models, non-quantized layers (embedding, attention, norm,
+        # lm_head) are BF16.  The MoE expert weights use MXFP4 packed uint8
+        # but are initialized separately via StackedMoE._init_mxfp4_weights.
+        if quantization_encoding == "float4_e2m1fnx2":
+            dtype = DType.bfloat16
         cache_dtype = pipeline_config.model.kv_cache.cache_dtype
 
         _weights_format = weights_format(pipeline_config.model.weight_path)
@@ -365,6 +375,22 @@ class GptOssConfig(ArchConfigWithKVCache):
             or "language_model.lm_head.weight" not in state_dict
         )
 
+        # Normalize state dict keys for float8 config parsing.
+        has_lm_prefix = any(k.startswith("language_model.") for k in state_dict)
+        if has_lm_prefix:
+            normalized_state_dict = {
+                k.removeprefix("language_model."): v
+                for k, v in state_dict.items()
+                if k.startswith("language_model.")
+            }
+        else:
+            normalized_state_dict = dict(state_dict)
+
+        float8_config = parse_float8_config(
+            huggingface_config, normalized_state_dict, self.dtype
+        )
+
+        self.float8_config = float8_config
         self.tie_word_embeddings = tie_word_embeddings
         self.return_logits = return_logits
 

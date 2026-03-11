@@ -8,6 +8,8 @@ This version is still a work in progress.
 
 ## MAX models {#26-3-models}
 
+- Add MXFP4 quantization support for GPT-OSS models (e.g openai/gpt-oss-20b).
+
 ## MAX framework {#26-3-max}
 
 ### Inference server {#26-3-max-serve}
