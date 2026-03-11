@@ -47,7 +47,7 @@ def pixel_shuffle_3d_merge(x: Tensor, stride: tuple[int, int, int]) -> Tensor:
     """
     # b, c, D, d, H, h, W, w = x.shape
     # return x.reshape((b, c, D * d, H * h, W * w))
-    b, c, D, d, H, h, W, w = x.shape
+    # b, c, D, d, H, h, W, w = x.shape
     x = F.flatten(x, 6, 7)
     x = F.flatten(x, 4, 5)
     # x = F.rebind(x, (b, c, D, d, H * h, W * w))
