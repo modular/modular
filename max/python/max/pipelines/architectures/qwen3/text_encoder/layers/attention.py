@@ -15,16 +15,13 @@
 
 from __future__ import annotations
 
+from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Linear, Module
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
 
 from .rotary_embedding import RotaryEmbedding
-
-flash_attention_gpu = F.functional(_flash_attention_gpu)
 
 
 class EncoderAttention(Module[..., Tensor]):
@@ -82,7 +79,12 @@ class EncoderAttention(Module[..., Tensor]):
 
         return x
 
-    def forward(self, x: Tensor, rope: RotaryEmbedding) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        rope: RotaryEmbedding,
+        attention_bias: Tensor,
+    ) -> Tensor:
         """Forward pass computing causal self-attention.
 
         Args:
@@ -115,19 +117,25 @@ class EncoderAttention(Module[..., Tensor]):
             k = self._repeat_kv(k, n_rep)
             v = self._repeat_kv(v, n_rep)
 
-        # flash_attention_gpu expects [B, S, heads, head_dim]
         q = F.unsqueeze(q, 0)
         k = F.unsqueeze(k, 0)
         v = F.unsqueeze(v, 0)
+        q = F.transpose(q, 1, 2)  # [1, H, S, D]
+        k = F.transpose(k, 1, 2)
+        v = F.transpose(v, 1, 2)
 
-        attn_out = flash_attention_gpu(
-            q,
-            k,
-            v,
-            mask_variant=MHAMaskVariant.CAUSAL_MASK,
-            scale=self.scale,
+        attn_weights = (
+            F.matmul(q, F.transpose(k, -1, -2)) * self.scale
         )
-
+        attn_weights = attn_weights + F.cast(attention_bias, x.dtype)
+        attn_weights = F.softmax(
+            F.cast(attn_weights, DType.float32), axis=-1
+        )
+        attn_weights = F.cast(attn_weights, x.dtype)
+        attn_out = F.matmul(attn_weights, v)
+        attn_out = F.transpose(attn_out, 1, 2)  # [1, S, H, D]
+        attn_out = F.reshape(
+            attn_out, (1, total_seq_len, self.n_heads * self.head_dim)
+        )
         attn_out = F.squeeze(attn_out, 0)
-        attn_out = F.reshape(attn_out, (total_seq_len, -1))
         return self.o_proj(attn_out)
