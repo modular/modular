@@ -181,5 +181,75 @@ def main() raises:
         test_shape[DType.float8_e4m3fn, 1001, 4096, 4096](ctx)
         print(" PASSED")
 
+        # Skinny 128x256 dispatch: large N (>=4096) uses skinny for 150 < M <= 512
+        print("\nFP8 - Testing skinny 128x256 block (large N, 150 < M <= 512):")
+        print("  M=200 N=4096 (skinny range)...", end="")
+        test_shape[DType.float8_e4m3fn, 200, 4096, 4096](ctx)
+        print(" PASSED")
+
+        print("  M=256 N=4096 (skinny range)...", end="")
+        test_shape[DType.float8_e4m3fn, 256, 4096, 4096](ctx)
+        print(" PASSED")
+
+        print("  M=512 N=4096 (skinny boundary)...", end="")
+        test_shape[DType.float8_e4m3fn, 512, 4096, 4096](ctx)
+        print(" PASSED")
+
+        print("  M=300 N=16384 (skinny, large N)...", end="")
+        test_shape[DType.float8_e4m3fn, 300, 16384, 2048](ctx)
+        print(" PASSED")
+
+        # Skinny 128x256 dispatch: small N (<4096) uses skinny for 512 < M <= 2048
+        print(
+            "\nFP8 - Testing skinny 128x256 block (small N, 512 < M <= 2048):"
+        )
+        print("  M=600 N=2304 (skinny range)...", end="")
+        test_shape[DType.float8_e4m3fn, 600, 2304, 16384](ctx)
+        print(" PASSED")
+
+        print("  M=1024 N=2304 (skinny range)...", end="")
+        test_shape[DType.float8_e4m3fn, 1024, 2304, 16384](ctx)
+        print(" PASSED")
+
+        # Baseline 256x256: outside skinny bands
+        print("\nFP8 - Testing baseline 256x256 (outside skinny bands):")
+        print("  M=128 N=4096 (below skinny, baseline)...", end="")
+        test_shape[DType.float8_e4m3fn, 128, 4096, 4096](ctx)
+        print(" PASSED")
+
+        print("  M=750 N=16384 (above skinny, baseline)...", end="")
+        test_shape[DType.float8_e4m3fn, 750, 16384, 2048](ctx)
+        print(" PASSED")
+
+        print("  M=4096 N=4096 (large M, baseline)...", end="")
+        test_shape[DType.float8_e4m3fn, 4096, 4096, 4096](ctx)
+        print(" PASSED")
+
+        print("\nBF16 - Testing small M values:")
+        print("  M=128 (small)...", end="")
+        test_shape[DType.bfloat16, 128, 4096, 4096](ctx)
+        print(" PASSED")
+
+        print("  M=192...", end="")
+        test_shape[DType.bfloat16, 192, 4096, 4096](ctx)
+        print(" PASSED")
+
+        print("\nFP8 - Testing llama3-8B shapes:")
+        print("  M=256 N=2304 K=16384...", end="")
+        test_shape[DType.float8_e4m3fn, 256, 2304, 16384](ctx)
+        print(" PASSED")
+
+        print("  M=256 N=16384 K=2048...", end="")
+        test_shape[DType.float8_e4m3fn, 256, 16384, 2048](ctx)
+        print(" PASSED")
+
+        print("  M=2048 N=2304 K=16384...", end="")
+        test_shape[DType.float8_e4m3fn, 2048, 2304, 16384](ctx)
+        print(" PASSED")
+
+        print("  M=2048 N=16384 K=2048...", end="")
+        test_shape[DType.float8_e4m3fn, 2048, 16384, 2048](ctx)
+        print(" PASSED")
+
         print("\n" + "=" * 60)
         print("All tests passed!")
