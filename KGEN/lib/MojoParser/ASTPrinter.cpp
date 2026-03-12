@@ -519,6 +519,34 @@ static ParamDeclRefAttr findDeclRefForIndexRef(ParamIndexRefAttr idxRef,
   return {};
 }
 
+/// Find the argument name for the specified implicit origin reference.
+static StringAttr
+findArgNameForImplicitOriginRef(ImplicitOriginRefAttr originRef,
+                                SharedState *diagShared) {
+  if (!diagShared)
+    return {};
+  ASTDecl *ctxDecl = diagShared->declResolver->getDiagnosticDeclContext();
+  if (!ctxDecl)
+    return {};
+
+  // Find the named param decl from the param list and print a reference
+  // to it instead.
+  for (; ctxDecl; ctxDecl = ctxDecl->getParentDecl()) {
+    if (auto op = ctxDecl->getIfOperation()) {
+      if (auto fn = dyn_cast<LIT::FnOp>(op)) {
+        for (auto [idx, argType] :
+             llvm::enumerate(fn.getFuncTypeGenerator().getArguments())) {
+          if (auto refType = dyn_cast<RefType>(argType))
+            if (refType.getOrigin() == originRef)
+              return fn.getFuncTypeGenerator().getArgName(idx);
+        }
+      }
+    }
+  }
+
+  return {};
+}
+
 /// Pretty print a parameter value.
 void ASTType::printParam(raw_ostream &os, TypedAttr param,
                          SharedState *diagShared) {
@@ -1263,13 +1291,6 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto originRef = dyn_cast<ImplicitOriginRefAttr>(param)) {
-    // TODO: Should improve this when diagShared is present so references to
-    // function types know what context they are in and can resolve these.
-    os << "*[" << originRef.getDepth() << ',' << originRef.getIndex() << ']';
-    return;
-  }
-
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(param)) {
     // Escape any weird characters in the parameter name that might have
     // been introduced with backticks.
@@ -1300,6 +1321,19 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(param)) {
     if (auto declRef = findDeclRefForIndexRef(indexRef, diagShared))
       return printOriginParam(os, declRef, diagShared);
+  }
+
+  if (auto originRef = dyn_cast<ImplicitOriginRefAttr>(param)) {
+    if (StringAttr argName =
+            findArgNameForImplicitOriginRef(originRef, diagShared)) {
+      os << argName.strref();
+      return;
+    }
+
+    // TODO: Should improve this when diagShared is present so references to
+    // function types know what context they are in and can resolve these.
+    os << "*[" << originRef.getDepth() << ',' << originRef.getIndex() << ']';
+    return;
   }
 
   if (isa<StructExtractAttr, ParamIndexRefAttr, UnknownAttr>(param))

@@ -891,6 +891,16 @@ fn test3830_2[o: Origin[]](f: fn(ref[o] x: Int) -> None, x: Int):
     # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'o'}}
     f(x)
 
+struct Struct3855:
+    var l: Int
+    fn do(self, ref[self.l] e: Int): pass # expected-note {{function declared here}}
+
+def testStruct3855(t: Struct3855):
+    # expected-error @+2 {{value passed to 'e' cannot be converted from 'Int' to ref 'Int'}}
+    # expected-note @+1 {{operand origin 't.l' doesn't match expected origin 'self.l'}}
+    t.do(t.l)
+
+
 struct MovableAndExplicitCopyable(Copyable):
     fn __init__(out self): pass
 
