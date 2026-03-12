@@ -40,8 +40,8 @@ from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import (
-    compute_mla_dispatch_args_scalar,
     flare_mla_decode_ragged,
+    flare_mla_decode_ragged_scaled,
 )
 from max.nn.kv_cache import (
     KVCacheParams,
@@ -96,6 +96,7 @@ def calculate_mla_memory_bytes(
     dtype: torch.dtype,
     model_config: Config,
     q_dtype: torch.dtype | None = None,
+    per_token_scale_rope_aware: bool = False,
 ) -> int:
     """Calculate memory throughput for MLA operations.
 
@@ -106,6 +107,10 @@ def calculate_mla_memory_bytes(
         dtype: Data type of KV cache tensors
         model_config: Model configuration
         q_dtype: Data type of Q tensor (defaults to dtype if not specified)
+        per_token_scale_rope_aware: When True, accounts for the interleaved
+            FP8+BF16 layout (640 bytes/row) instead of uniform dtype,
+            plus per-token scale memory (1 float32 per KV token for sigma_KV,
+            1 float32 per Q token for sigma_Q).
 
     Returns:
         Total memory bytes read and written
@@ -139,22 +144,44 @@ def calculate_mla_memory_bytes(
     else:
         output_bytes_per_element = 4
 
-    # Input: query [batch_size, q_len_per_request, num_q_heads, kv_lora_rank + qk_rope_head_dim]
-    query_bytes = (
-        batch_size
-        * q_len_per_request
-        * num_q_heads
-        * (kv_lora_rank + qk_rope_head_dim)
-        * q_bytes_per_element
-    )
+    if per_token_scale_rope_aware:
+        # Per-token-scale rope-aware: each row = FP8 content (kv_lora_rank bytes)
+        # + BF16 rope (qk_rope_head_dim * 2 bytes) = 640 bytes/row.
+        bytes_per_row = kv_lora_rank + qk_rope_head_dim * 2  # 512 + 128 = 640
 
-    # KV cache: [num_blocks, page_size, kv_lora_rank + qk_rope_head_dim] (read only what's needed)
-    kv_bytes = (
-        batch_size
-        * cache_len
-        * (kv_lora_rank + qk_rope_head_dim)
-        * kv_bytes_per_element
-    )
+        # Query: [batch_size, q_len, num_q_heads, 640] in FP8 (1 byte/elem)
+        query_bytes = (
+            batch_size * q_len_per_request * num_q_heads * bytes_per_row
+        )
+
+        # KV cache: [batch_size, cache_len, 640] in FP8 (1 byte/elem)
+        kv_bytes = batch_size * cache_len * bytes_per_row
+
+        # Per-token scales: sigma_KV (1 float32 per KV token) +
+        # sigma_Q (1 float32 per Q token, negligible for decode).
+        # In MLA absorbed mode, K and V share one scale per token.
+        kv_scale_bytes = batch_size * cache_len * 4  # float32
+        q_scale_bytes = batch_size * q_len_per_request * 4  # float32
+        kv_bytes += kv_scale_bytes + q_scale_bytes
+
+    else:
+        # Standard: uniform dtype for all dimensions
+        # Input: query [batch_size, q_len, num_q_heads, kv_lora_rank + qk_rope_head_dim]
+        query_bytes = (
+            batch_size
+            * q_len_per_request
+            * num_q_heads
+            * (kv_lora_rank + qk_rope_head_dim)
+            * q_bytes_per_element
+        )
+
+        # KV cache: [num_blocks, page_size, kv_lora_rank + qk_rope_head_dim]
+        kv_bytes = (
+            batch_size
+            * cache_len
+            * (kv_lora_rank + qk_rope_head_dim)
+            * kv_bytes_per_element
+        )
 
     # Output: [batch_size, q_len_per_request, num_q_heads, kv_lora_rank]
     output_bytes = (
@@ -341,6 +368,7 @@ def bench_max(
     no_kineto: bool = False,
     q_dtype_override: torch.dtype | None = None,
     num_iters: int = 100,
+    per_token_scale_rope_aware: bool = False,
 ) -> tuple[float, int]:
     """Benchmark MAX MLA decode with paged KV cache.
 
@@ -354,6 +382,13 @@ def bench_max(
         q_dtype_override: Override Q tensor dtype. If None, Q is BF16 (legacy).
             Set to torch.float8_e4m3fn for native QKV FP8 mode.
         num_iters: Number of benchmark iterations for noise reduction.
+        per_token_scale_rope_aware: When True, uses the FP8 per-token-scale rope-aware
+            path where content (kv_lora_rank=512 dims) is FP8 and rope
+            (qk_rope_head_dim=64 dims) stays BF16. Q and KV cache rows are
+            640 bytes each (512 FP8 + 128 BF16). The kernel uses real per-token
+            FP8 scaling: sigma_KV (random in [0.8, 1.2]) per KV token and
+            sigma_Q (random in [0.8, 1.2]) per Q token, passed as explicit
+            scale tensors through the scaled graph API.
     """
     is_fp8_kv = dtype in (torch.float8_e4m3fn, torch.float8_e5m2)
 
@@ -376,14 +411,27 @@ def bench_max(
     qk_nope_head_dim = model_config.qk_nope_head_dim
     qk_rope_head_dim = model_config.qk_rope_head_dim
     kv_lora_rank = model_config.kv_lora_rank
-    qk_head_dim = kv_lora_rank + qk_rope_head_dim  # Total query/key dimension
+    # For per_token_scale_rope_aware: Q and KV rows are interleaved FP8+BF16.
+    # FP8 content (kv_lora_rank=512 bytes) + BF16 rope (qk_rope_head_dim*2=128 bytes)
+    # = 640 bytes/row. Since Q dtype is FP8 (1 byte/element), the last dim = 640.
+    # For standard: qk_head_dim = kv_lora_rank + qk_rope_head_dim = 576.
+    if per_token_scale_rope_aware:
+        qk_head_dim = kv_lora_rank + qk_rope_head_dim * 2  # 512 + 128 = 640
+    else:
+        qk_head_dim = kv_lora_rank + qk_rope_head_dim  # 512 + 64 = 576
 
     # Setup KV cache configuration for MLA
     # MLA stores compressed KV (kv_lora_rank) + rope embeddings (qk_rope_head_dim)
+    # For per_token_scale_rope_aware: KV cache head_dim is 640 (FP8 content + BF16 rope)
+    kv_cache_head_dim = (
+        qk_head_dim
+        if per_token_scale_rope_aware
+        else (kv_lora_rank + qk_rope_head_dim)
+    )
     kv_params = KVCacheParams(
         dtype=max_kv_dtype,
         n_kv_heads=num_kv_heads,
-        head_dim=kv_lora_rank + qk_rope_head_dim,  # Compressed dimension
+        head_dim=kv_cache_head_dim,
         num_layers=1,  # Benchmarking a single layer
         page_size=page_size,
         devices=[DeviceRef.GPU()],
@@ -391,23 +439,86 @@ def bench_max(
         num_q_heads=num_q_heads,
     )
 
-    num_blocks_per_seq = (cache_len + page_size - 1) // page_size
+    num_blocks_per_seq = (
+        cache_len + q_len_per_request + page_size - 1
+    ) // page_size
 
     # For MLA: [num_pages, 1 (K and V compressed together), 1 layer, page_size, 1 kv_head, compressed_dim]
     # MLA stores compressed KV cache, not separate K and V
     # For FP8: generate in bf16 first then cast (torch.randn doesn't support FP8)
-    paged_blocks_torch = torch.randn(
-        batch_size * num_blocks_per_seq,
-        1,  # MLA uses compressed KV format, not separate K and V
-        1,
-        page_size,
-        num_kv_heads,
-        kv_lora_rank + qk_rope_head_dim,
-        dtype=torch.bfloat16,
-        device="cuda",
-    )
-    if is_fp8_kv:
-        paged_blocks_torch = paged_blocks_torch.to(kv_dtype)
+    # For per_token_scale_rope_aware: KV cache uses interleaved FP8+BF16 layout (640 bytes/row)
+    if per_token_scale_rope_aware:
+        # SnapMLA Scale Domain Alignment (Eq. 6):
+        # K_rope_aligned[t] = K_rope[t] / sigma_KV[t]
+        # Generate content and rope separately, apply scale alignment, then pack.
+        num_blocks = batch_size * num_blocks_per_seq
+
+        # Generate per-token KV scales first (needed for alignment).
+        # Shape: [num_blocks, 1, 1, page_size, 1, 1] to match 6D paged layout.
+        kv_scales_torch = 0.8 + 0.4 * torch.rand(
+            num_blocks,
+            1,
+            1,
+            page_size,
+            num_kv_heads,
+            1,
+            dtype=torch.float32,
+            device="cuda",
+        )
+
+        # Content portion: [num_blocks, 1, 1, page_size, 1, kv_lora_rank] in bf16 -> fp8
+        kv_content_bf16 = torch.randn(
+            num_blocks,
+            1,
+            1,
+            page_size,
+            num_kv_heads,
+            kv_lora_rank,
+            dtype=torch.bfloat16,
+            device="cuda",
+        )
+        kv_content_fp8 = kv_content_bf16.to(
+            torch.float8_e4m3fn
+        )  # [.., 512] fp8 = 512 bytes
+
+        # Rope portion: [num_blocks, 1, 1, page_size, 1, qk_rope_head_dim] in bf16
+        kv_rope_bf16 = torch.randn(
+            num_blocks,
+            1,
+            1,
+            page_size,
+            num_kv_heads,
+            qk_rope_head_dim,
+            dtype=torch.bfloat16,
+            device="cuda",
+        )
+
+        # Scale Domain Alignment: divide rope by per-token sigma_KV.
+        # kv_scales_torch shape [num_blocks,1,1,page_size,1,1] broadcasts over rope dim.
+        kv_rope_aligned = kv_rope_bf16 / kv_scales_torch.to(torch.bfloat16)
+
+        # Pack into interleaved byte layout: FP8 content (512 bytes) + BF16 rope (128 bytes) = 640 bytes.
+        # View content as uint8 [.., 512] and rope as uint8 [.., 128], concatenate on last dim.
+        content_bytes = kv_content_fp8.view(torch.uint8)  # [.., 512]
+        rope_bytes = kv_rope_aligned.view(torch.uint8)  # [.., 128]
+        packed_bytes = torch.cat(
+            [content_bytes, rope_bytes], dim=-1
+        )  # [.., 640]
+        # Reinterpret as fp8 (the kernel knows the byte layout).
+        paged_blocks_torch = packed_bytes.view(torch.float8_e4m3fn)
+    else:
+        paged_blocks_torch = torch.randn(
+            batch_size * num_blocks_per_seq,
+            1,  # MLA uses compressed KV format, not separate K and V
+            1,
+            page_size,
+            num_kv_heads,
+            kv_cache_head_dim,
+            dtype=torch.bfloat16,
+            device="cuda",
+        )
+        if is_fp8_kv:
+            paged_blocks_torch = paged_blocks_torch.to(kv_dtype)
 
     lut_torch = (
         torch.arange(
@@ -462,7 +573,7 @@ def bench_max(
             1,
             page_size,
             num_kv_heads,
-            kv_lora_rank + qk_rope_head_dim,
+            kv_cache_head_dim,
         ],
         device=DeviceRef.GPU(),
     )
@@ -485,78 +596,117 @@ def bench_max(
         device=DeviceRef.CPU(),
     )
 
-    batch_size_type = TensorType(
-        DType.int64,
-        shape=[1],
-        device=DeviceRef.CPU(),
+    # Additional types for per-token scale path
+    # kv_scales: [num_blocks, 1, 1, page_size, 1, 1] float32 (one scale per KV token)
+    # q_scales: [total_tokens] float32 (one scale per Q token)
+    kv_scales_type = BufferType(
+        DType.float32,
+        shape=["total_num_pages", 1, 1, page_size, num_kv_heads, 1],
+        device=DeviceRef.GPU(),
     )
-
-    max_cache_valid_length_type = TensorType(
-        DType.int64,
-        shape=[1],
-        device=DeviceRef.CPU(),
+    q_scales_type = TensorType(
+        DType.float32,
+        shape=["total_tokens"],
+        device=DeviceRef.GPU(),
     )
 
     # Build graph with MLA decode
-    with Graph(
-        "mla_decode_max",
-        input_types=[
-            q_type,
-            input_row_offsets_type,
-            blocks_type,
-            cache_lengths_type,
-            lookup_table_type,
-            max_lengths_type,
-            batch_size_type,
-            max_cache_valid_length_type,
-        ],
-    ) as graph:
-        (
-            q,
-            input_row_offsets,
-            blocks,
-            cache_lengths,
-            lookup_table,
-            max_lengths,
-            batch_size_input,
-            max_cache_valid_length_input,
-        ) = graph.inputs
+    if per_token_scale_rope_aware:
+        # Scaled path: pass explicit kv_scales and q_scales tensors
+        with Graph(
+            "mla_decode_max_scaled",
+            input_types=[
+                q_type,
+                input_row_offsets_type,
+                blocks_type,
+                cache_lengths_type,
+                lookup_table_type,
+                max_lengths_type,
+                kv_scales_type,
+                q_scales_type,
+            ],
+        ) as graph:
+            (
+                q,
+                input_row_offsets,
+                blocks,
+                cache_lengths,
+                lookup_table,
+                max_lengths,
+                kv_scales_graph,
+                q_scales_graph,
+            ) = graph.inputs
 
-        layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
+            layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
 
-        kv_collection = PagedCacheValues(
-            blocks.buffer,
-            cache_lengths.tensor,
-            lookup_table.tensor,
-            max_lengths.tensor,
-        )
+            kv_collection = PagedCacheValues(
+                blocks.buffer,
+                cache_lengths.tensor,
+                lookup_table.tensor,
+                max_lengths.tensor,
+            )
 
-        q_max_seq_len = ops.constant(
-            1, DType.int64, device=DeviceRef.CPU()
-        ).reshape([1])
-        scalar_args = compute_mla_dispatch_args_scalar(
-            batch_size_input.tensor,
-            max_cache_valid_length_input.tensor,
-            q_max_seq_len,
-            num_heads=num_q_heads,
-            device=DeviceRef.GPU(),
-            is_fp8_kv=is_fp8_kv,
-        ).to(DeviceRef.GPU())
+            result = flare_mla_decode_ragged_scaled(
+                kv_params,
+                q.tensor,
+                input_row_offsets.tensor,
+                kv_collection,
+                kv_scales=kv_scales_graph.buffer,
+                q_scales=q_scales_graph.tensor,
+                layer_idx=layer_idx,
+                mask_variant=MHAMaskVariant.CAUSAL_MASK,
+                scale=1.0 / math.sqrt(qk_nope_head_dim + qk_rope_head_dim),
+                qk_rope_dim=qk_rope_head_dim,
+                per_token_scale_rope_aware=True,
+                quantization_granularity=kv_cache_head_dim,
+            )
 
-        # Use MLA decode kernel
-        result = flare_mla_decode_ragged(
-            kv_params,
-            q.tensor,
-            input_row_offsets.tensor,
-            kv_collection,
-            layer_idx,
-            mask_variant=MHAMaskVariant.CAUSAL_MASK,
-            scale=1.0 / math.sqrt(qk_nope_head_dim + qk_rope_head_dim),
-            scalar_args=scalar_args,
-            qk_rope_dim=qk_rope_head_dim,
-        )
+            graph.output(result)
+    else:
+        # Standard path — legacy pattern (1 op) to match the rope_aware path
+        # and avoid ~5 µs overhead from compute_mla_dispatch_args_scalar's
+        # H2D memcpy that would make QKV FP8 look unfairly slower.
+        with Graph(
+            "mla_decode_max",
+            input_types=[
+                q_type,
+                input_row_offsets_type,
+                blocks_type,
+                cache_lengths_type,
+                lookup_table_type,
+                max_lengths_type,
+            ],
+        ) as graph:
+            (
+                q,
+                input_row_offsets,
+                blocks,
+                cache_lengths,
+                lookup_table,
+                max_lengths,
+            ) = graph.inputs
 
-        graph.output(result)
+            layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
+
+            kv_collection = PagedCacheValues(
+                blocks.buffer,
+                cache_lengths.tensor,
+                lookup_table.tensor,
+                max_lengths.tensor,
+            )
+
+            result = flare_mla_decode_ragged(
+                kv_params,
+                q.tensor,
+                input_row_offsets.tensor,
+                kv_collection,
+                layer_idx,
+                mask_variant=MHAMaskVariant.CAUSAL_MASK,
+                scale=1.0 / math.sqrt(qk_nope_head_dim + qk_rope_head_dim),
+                qk_rope_dim=qk_rope_head_dim,
+            )
+
+            graph.output(result)
 
     # Compile model
     model = session.load(graph)
@@ -565,48 +715,105 @@ def bench_max(
     # Query: [batch_size * q_len_per_request, num_q_heads, qk_head_dim]
     # Q is BF16 by default, or FP8 in native QKV FP8 mode
     total_tokens = batch_size * q_len_per_request
-    q_input_torch = torch.randn(
-        total_tokens,
-        num_q_heads,
-        qk_head_dim,
-        dtype=torch.bfloat16,
-        device="cuda",
-    )
-    if is_fp8_q:
-        q_input_torch = q_input_torch.to(q_dtype)
 
-    # For FP8 Q: DLPack doesn't support float8 types, use uint8 view workaround
-    if is_fp8_q:
+    if per_token_scale_rope_aware:
+        # SnapMLA Scale Domain Alignment (Eq. 6):
+        # Q_rope_aligned[q] = Q_rope[q] / sigma_Q[q]
+        # Generate Q content and rope separately, apply scale alignment, then pack.
+
+        # Generate per-token Q scales first (needed for alignment).
+        q_scales_torch = 0.8 + 0.4 * torch.rand(
+            total_tokens,
+            dtype=torch.float32,
+            device="cuda",
+        )
+
+        # Content portion: [total_tokens, num_q_heads, kv_lora_rank] in bf16 -> fp8
+        q_content_bf16 = torch.randn(
+            total_tokens,
+            num_q_heads,
+            kv_lora_rank,
+            dtype=torch.bfloat16,
+            device="cuda",
+        )
+        q_content_fp8 = q_content_bf16.to(torch.float8_e4m3fn)  # [.., 512] fp8
+
+        # Rope portion: [total_tokens, num_q_heads, qk_rope_head_dim] in bf16
+        q_rope_bf16 = torch.randn(
+            total_tokens,
+            num_q_heads,
+            qk_rope_head_dim,
+            dtype=torch.bfloat16,
+            device="cuda",
+        )
+
+        # Scale Domain Alignment: divide rope by per-token sigma_Q.
+        # q_scales shape [total_tokens] -> [total_tokens, 1, 1] for broadcasting.
+        q_rope_aligned = q_rope_bf16 / q_scales_torch.to(
+            torch.bfloat16
+        ).unsqueeze(-1).unsqueeze(-1)
+
+        # Pack into interleaved byte layout: FP8 content (512 bytes) + BF16 rope (128 bytes) = 640 bytes.
+        q_content_bytes = q_content_fp8.view(torch.uint8)  # [.., 512]
+        q_rope_bytes = q_rope_aligned.view(torch.uint8)  # [.., 128]
+        q_packed_bytes = torch.cat(
+            [q_content_bytes, q_rope_bytes], dim=-1
+        )  # [.., 640]
+        q_input_torch = q_packed_bytes.view(torch.float8_e4m3fn)
+
+        # Use uint8 view workaround for DLPack (FP8 not supported by DLPack).
         q_input = Buffer.from_dlpack(q_input_torch.view(torch.uint8)).view(
             max_q_dtype
         )
+
+        # kv_scales_torch was already generated during KV cache construction above.
+        kv_scales_max = Buffer.from_dlpack(kv_scales_torch)
+        q_scales_max = q_scales_torch
     else:
-        q_input = q_input_torch
+        q_input_torch = torch.randn(
+            total_tokens,
+            num_q_heads,
+            qk_head_dim,
+            dtype=torch.bfloat16,
+            device="cuda",
+        )
+        if is_fp8_q:
+            q_input_torch = q_input_torch.to(q_dtype)
+
+        # For FP8 Q: DLPack doesn't support float8 types, use uint8 view workaround
+        if is_fp8_q:
+            q_input = Buffer.from_dlpack(q_input_torch.view(torch.uint8)).view(
+                max_q_dtype
+            )
+        else:
+            q_input = q_input_torch
 
     # Input row offsets for ragged tensor
     input_row_offsets = torch.arange(
         0, total_tokens + 1, q_len_per_request, dtype=torch.int32, device="cuda"
     ).to(torch.uint32)
 
-    # Dispatch args inputs (batch_size and max_cache_valid_length for scalar_args computation)
-    batch_size_tensor = torch.tensor(
-        [batch_size], dtype=torch.int64, device="cpu"
-    )
-    max_cache_valid_length_tensor = torch.tensor(
-        [cache_len], dtype=torch.int64, device="cpu"
-    )
-
     def run_kernel() -> Any:
-        output = model.execute(
-            q_input if is_fp8_q else q_input_torch.detach(),
-            input_row_offsets.detach(),
-            paged_blocks_max,
-            cache_lengths_max,
-            lut_max,
-            max_lengths_max,
-            batch_size_tensor,
-            max_cache_valid_length_tensor,
-        )[0]
+        if per_token_scale_rope_aware:
+            output = model.execute(
+                q_input if is_fp8_q else q_input_torch.detach(),
+                input_row_offsets.detach(),
+                paged_blocks_max,
+                cache_lengths_max,
+                lut_max,
+                max_lengths_max,
+                kv_scales_max,
+                q_scales_max,
+            )[0]
+        else:
+            output = model.execute(
+                q_input if is_fp8_q else q_input_torch.detach(),
+                input_row_offsets.detach(),
+                paged_blocks_max,
+                cache_lengths_max,
+                lut_max,
+                max_lengths_max,
+            )[0]
         return output
 
     # Warmup
@@ -621,6 +828,7 @@ def bench_max(
         dtype,
         model_config=model_config,
         q_dtype=q_dtype,
+        per_token_scale_rope_aware=per_token_scale_rope_aware,
     )
 
     # If running under external profilers (ncu/nsys), skip kineto to avoid assertion failures.
@@ -682,9 +890,10 @@ def bench_mla_decode(
         backend: Backend for FlashInfer ("trtllm-gen" or "xqa")
         enable_pdl: Enable PDL optimization for FlashInfer
         no_kineto: Skip kineto timing (for ncu/nsys)
-        q_dtype: Query dtype ("bf16" or "fp8"). When "fp8", Q is float8_e4m3fn
-            for native QKV FP8 mode. Only affects MAX engine; FlashInfer always
-            uses whatever dtype is passed (already FP8 when dtype=float8_e4m3fn).
+        q_dtype: Query dtype ("bf16", "fp8", or "fp8_rope_aware"). When "fp8",
+            Q is float8_e4m3fn for native QKV FP8 mode. When "fp8_rope_aware",
+            uses FP8 per-token-scale rope-aware path (content FP8 + rope BF16).
+            Only affects MAX engine; FlashInfer always matches Q dtype to dtype.
         num_iters: Number of benchmark iterations for noise reduction.
 
     Returns:
@@ -694,10 +903,14 @@ def bench_mla_decode(
     flashinfer_page_size = 64  # FlashInfer TRT-LLM tested with 32 and 64
     max_page_size = 128  # MAX only supports 128
 
-    # Resolve Q dtype override for MAX engine
+    # Resolve Q dtype override and per_token_scale_rope_aware for MAX engine
     q_dtype_override: torch.dtype | None = None
+    rope_aware: bool = False
     if q_dtype == "fp8":
         q_dtype_override = torch.float8_e4m3fn
+    elif q_dtype == "fp8_rope_aware":
+        q_dtype_override = torch.float8_e4m3fn
+        rope_aware = True
 
     result: tuple[float, int] | None = None
     if engine == "flashinfer":
@@ -735,6 +948,7 @@ def bench_mla_decode(
                 no_kineto=no_kineto,
                 q_dtype_override=q_dtype_override,
                 num_iters=num_iters,
+                per_token_scale_rope_aware=rope_aware,
             )
         except Exception as e:
             print(f"MAX benchmark failed: {e}")
@@ -817,10 +1031,11 @@ if __name__ == "__main__":
         "--q-dtype",
         type=str,
         default="bf16",
-        choices=["bf16", "fp8"],
+        choices=["bf16", "fp8", "fp8_rope_aware"],
         help=(
-            "Query tensor dtype: 'bf16' (default) or 'fp8' for native QKV FP8. "
-            "Only affects MAX engine. FlashInfer always matches Q dtype to --dtype."
+            "Query tensor dtype: 'bf16' (default), 'fp8' for native QKV FP8, "
+            "or 'fp8_rope_aware' for FP8 per-token-scale rope-aware (content FP8 + "
+            "rope BF16). Only affects MAX engine."
         ),
     )
 
@@ -877,7 +1092,17 @@ if __name__ == "__main__":
         num_iters=args.num_iters,
     )
 
-    met_sec, bytes = result if result else [0, 0]
+    if result is None:
+        print(
+            "Benchmark returned no result (kernel error or unsupported config)"
+        )
+        sys.exit(1)
+
+    met_sec, bytes = result
+    if met_sec <= 0:
+        print(f"Benchmark returned invalid time: {met_sec}")
+        sys.exit(1)
+
     bytes_per_sec = ThroughputMeasure(Bench.bytes, bytes)
 
     name = (

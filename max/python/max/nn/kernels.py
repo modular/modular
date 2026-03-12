@@ -2151,6 +2151,107 @@ def flare_mla_decode_ragged(
     )[0].tensor
 
 
+def flare_mla_decode_ragged_scaled(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    kv_collection: PagedCacheValues,
+    kv_scales: BufferValue,
+    q_scales: TensorValue,
+    layer_idx: TensorValue,
+    mask_variant: MHAMaskVariant,
+    scale: float,
+    qk_rope_dim: int = 64,
+    per_token_scale_rope_aware: bool = False,
+    quantization_granularity: int = 640,
+) -> TensorValue:
+    """MLA decode with explicit per-token KV and Q scale tensors.
+
+    Like ``flare_mla_decode_ragged`` but accepts explicit scale tensors so the
+    per-token-scale rope-aware kernel receives real (non-identity) scales.
+
+    Args:
+        kv_params: KV cache parameters.
+        input: Query tensor [total_tokens, num_heads, head_dim].
+        input_row_offsets: Ragged row offsets [batch_size + 1].
+        kv_collection: Paged KV cache collection.
+        kv_scales: Per-token KV scales buffer
+            [num_blocks, 1, 1, page_size, 1, 1] float32.
+        q_scales: Per-token Q scales tensor [total_tokens] float32.
+        layer_idx: Layer index (uint32, on CPU).
+        mask_variant: Attention mask variant.
+        scale: Softmax scale (typically 1/sqrt(d_qk)).
+        qk_rope_dim: Rope head dimension (default 64).
+        per_token_scale_rope_aware: Use FP8+BF16 interleaved layout.
+        quantization_granularity: Granularity for KV scale quantization.
+            Should equal the KV cache head_dim (640 for rope-aware).
+
+    Returns:
+        Output tensor [total_tokens, num_heads, output_dim].
+    """
+    input_rank_expected = 3
+    if input.rank != input_rank_expected:
+        raise ValueError(
+            f"expected input of rank {input_rank_expected} but got {input.rank}"
+        )
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
+
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            f"expected uint32 input_row_offsets but got"
+            f" {input_row_offsets.dtype}"
+        )
+
+    if kv_collection.kv_blocks.shape[1] != 1:
+        raise ValueError(
+            f"expected kv_collection.kv_blocks.shape[1] to be 1, got"
+            f" {kv_collection.kv_blocks.shape[1]}"
+        )
+
+    assert kv_params.page_size is not None
+    parameters = _mha_parameters(mask_variant)
+    if per_token_scale_rope_aware:
+        parameters["per_token_scale_rope_aware"] = 1
+    parameters["quantization_granularity"] = quantization_granularity
+
+    output_dtype = (
+        DType.bfloat16 if input.dtype == DType.float8_e4m3fn else input.dtype
+    )
+
+    if per_token_scale_rope_aware:
+        output_last_dim = input.shape[2] - qk_rope_dim * 2
+    else:
+        output_last_dim = input.shape[2] - qk_rope_dim
+
+    return ops.inplace_custom(
+        "mo.mla.decode.ragged.paged.scaled",
+        device=input.device,
+        values=[
+            input,
+            input_row_offsets,
+            *kv_collection,
+            kv_scales,
+            q_scales,
+            layer_idx,
+            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=output_dtype,
+                shape=[
+                    input.shape[0],
+                    input.shape[1],
+                    output_last_dim,
+                ],
+                device=input.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
 def flare_mla_prefill_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,

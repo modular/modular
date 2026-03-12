@@ -7540,6 +7540,108 @@ struct Struct_mla_decode_ragged_paged:
         )
 
 
+@compiler.register("mo.mla.decode.ragged.paged.scaled")
+struct Struct_mla_decode_ragged_paged_scaled:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        q_dtype: DType,
+        kv_dtype: DType,
+        //,
+        mask_str: StaticString,
+        target: StaticString,
+        per_token_scale_rope_aware: Int = 0,
+        quantization_granularity: Int = 640,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=q_dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        kv_scales: MutableInputTensor[dtype=DType.float32, rank=6, ...],
+        q_scales: InputTensor[dtype=DType.float32, rank=1, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert (
+            kv_blocks.static_spec.shape.get[1]() == 1
+        ), "Only support only_k=True for MLA decompress"
+
+        comptime page_size = kv_blocks.static_spec.shape.get[3]()
+        comptime head_dim = kv_blocks.static_spec.shape.get[5]()
+        comptime kv_num_heads = kv_blocks.static_spec.shape.get[4]()
+        comptime kv_params = KVCacheStaticParams(
+            UInt(kv_num_heads), UInt(head_dim), True
+        )
+
+        var kv_collection = generic_get_paged_cache_with_scales[
+            kv_dtype,
+            DType.float32,
+            kv_params,
+            page_size,
+            quantization_granularity,
+        ](
+            LayoutTensor[kv_dtype, Layout.row_major[6](), MutAnyOrigin](
+                kv_blocks.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    kv_blocks.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+                cache_lengths.to_layout_tensor().ptr,
+                RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                    cache_lengths.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                kv_lookup_table.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    kv_lookup_table.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                max_lengths.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    max_lengths.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.float32, Layout.row_major[6](), MutAnyOrigin](
+                kv_scales.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    kv_scales.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+        )
+
+        # Get the q_scales raw pointer for per-token Q scaling.
+        var q_scale_ptr = UnsafePointer[
+            Scalar[DType.float32], origin=MutAnyOrigin
+        ](q_scales.to_layout_tensor().ptr)
+
+        var null_scalar_args = LayoutTensor[
+            DType.int64, Layout.row_major(4), MutAnyOrigin
+        ](UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]())
+        generic_flare_mla_decode_kv_cache_ragged[
+            target=target,
+            mask_str=mask_str,
+            per_token_scale_rope_aware=per_token_scale_rope_aware != 0,
+        ](
+            q.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            scale,
+            output.to_layout_tensor(),
+            null_scalar_args,
+            context,
+            q_scale_ptr,
+        )
+
+
 @compiler.register("mo.mla.prefill.ragged.paged")
 struct Struct_mla_prefill_ragged_paged:
     @always_inline
