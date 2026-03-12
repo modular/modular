@@ -20,7 +20,7 @@ from std.python._cpython import PyObjectPtr
 
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     """Create a Python module with function bindings for `mojo_block_hasher`."""
     try:
         var b = PythonModuleBuilder("mojo_module")
@@ -55,7 +55,7 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     # version dependent private members are omitted
     # ...
 
-    fn num_elts(self) -> Int:
+    def num_elts(self) -> Int:
         var num_elts = 1
         for i in range(self.nd):
             num_elts *= self.dimensions[i]
@@ -63,7 +63,7 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
 
 
 @always_inline
-fn _mojo_block_hasher[
+def _mojo_block_hasher[
     dtype: DType,
     //,
 ](
@@ -102,7 +102,7 @@ fn _mojo_block_hasher[
 
 
 @export
-fn mojo_block_hasher(
+def mojo_block_hasher(
     py_array_object: PythonObject,
     block_size_obj: PythonObject,
     parent_hash_obj: PythonObject,

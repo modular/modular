@@ -38,7 +38,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
 # =============================================================================
 
 
-fn _is_gpu_allowed_mixed_unary_op[op: ElementwiseUnaryMixedOp]() -> Bool:
+def _is_gpu_allowed_mixed_unary_op[op: ElementwiseUnaryMixedOp]() -> Bool:
     """Check if a mixed-type unary op is allowed on GPU at compile time."""
     comptime name = get_base_type_name[op]()
     return name == "Cast"
@@ -50,7 +50,7 @@ fn _is_gpu_allowed_mixed_unary_op[op: ElementwiseUnaryMixedOp]() -> Bool:
 
 
 @export
-fn PyInit_elementwise_cast_ops() -> PythonObject:
+def PyInit_elementwise_cast_ops() -> PythonObject:
     """Create a Python module with cast kernel function bindings."""
     try:
         var b = PythonModuleBuilder("elementwise_cast_ops")
@@ -70,7 +70,7 @@ fn PyInit_elementwise_cast_ops() -> PythonObject:
 # =============================================================================
 
 
-fn cast_dispatcher(
+def cast_dispatcher(
     out_buffer: PythonObject,
     in_buffer: PythonObject,
     device_context_ptr: PythonObject,
@@ -143,7 +143,7 @@ fn cast_dispatcher(
         raise Error("Unsupported input dtype for cast: " + String(in_dtype))
 
 
-fn _cast_dispatch_out[
+def _cast_dispatch_out[
     in_dtype: DType
 ](
     out_buffer: PythonObject,
@@ -228,7 +228,7 @@ fn _cast_dispatch_out[
 
 
 @always_inline
-fn unary_mixed_op[
+def unary_mixed_op[
     op: ElementwiseUnaryMixedOp, dtype: DType, out_dtype: DType
 ](
     out_ptr: UnsafePointer[Scalar[out_dtype], MutExternalOrigin],
@@ -253,7 +253,7 @@ fn unary_mixed_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, in_ptr)
-    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         var i = rebind[IndexList[1]](idx)[0]
 
         var res = op.elementwise[dtype, out_dtype, width](

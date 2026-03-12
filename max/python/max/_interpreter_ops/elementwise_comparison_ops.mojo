@@ -48,7 +48,7 @@ comptime BINARY_COMPARISON_OPS = Variadic.types[
 # =============================================================================
 
 
-fn _is_gpu_allowed_comparison_op[op: ElementwiseBinaryComparisonOp]() -> Bool:
+def _is_gpu_allowed_comparison_op[op: ElementwiseBinaryComparisonOp]() -> Bool:
     """Check if a comparison op is allowed on GPU at compile time."""
     comptime name = get_base_type_name[op]()
     return (
@@ -65,7 +65,7 @@ fn _is_gpu_allowed_comparison_op[op: ElementwiseBinaryComparisonOp]() -> Bool:
 
 
 @export
-fn PyInit_elementwise_comparison_ops() -> PythonObject:
+def PyInit_elementwise_comparison_ops() -> PythonObject:
     """Create a Python module with comparison elementwise kernel function bindings.
     """
     try:
@@ -99,7 +99,7 @@ fn PyInit_elementwise_comparison_ops() -> PythonObject:
 # =============================================================================
 
 
-fn bin_comparison_dispatcher[
+def bin_comparison_dispatcher[
     op: ElementwiseBinaryComparisonOp
 ](
     out_buffer: PythonObject,
@@ -231,7 +231,7 @@ fn bin_comparison_dispatcher[
         )
 
 
-fn select_dispatcher(
+def select_dispatcher(
     out_buffer: PythonObject,
     cond_buffer: PythonObject,
     true_buffer: PythonObject,
@@ -393,7 +393,7 @@ fn select_dispatcher(
 
 
 @always_inline
-fn bin_elementwise_comparison_op[
+def bin_elementwise_comparison_op[
     op: ElementwiseBinaryComparisonOp, dtype: DType
 ](
     out_ptr: UnsafePointer[Scalar[DType.uint8], MutExternalOrigin],
@@ -420,7 +420,7 @@ fn bin_elementwise_comparison_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, lhs_ptr, rhs_ptr)
-    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         var i = rebind[IndexList[1]](idx)[0]
 
         var res = op.elementwise(
@@ -455,7 +455,7 @@ fn bin_elementwise_comparison_op[
 
 
 @always_inline
-fn select_elementwise_op[
+def select_elementwise_op[
     dtype: DType
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -482,7 +482,7 @@ fn select_elementwise_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, cond_ptr, true_ptr, false_ptr)
-    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         var i = rebind[IndexList[1]](idx)[0]
 
         var cond = cond_ptr.load[width=width](i)

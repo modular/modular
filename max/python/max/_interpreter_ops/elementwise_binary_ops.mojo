@@ -61,7 +61,7 @@ comptime BINARY_BOOLEAN_OPS = Variadic.types[
 # =============================================================================
 
 
-fn _is_gpu_allowed_binary_op[op: ElementwiseBinaryOp]() -> Bool:
+def _is_gpu_allowed_binary_op[op: ElementwiseBinaryOp]() -> Bool:
     """Check if a binary op is allowed on GPU at compile time."""
     comptime name = get_base_type_name[op]()
     # Arithmetic and boolean ops that work on GPU
@@ -85,7 +85,7 @@ fn _is_gpu_allowed_binary_op[op: ElementwiseBinaryOp]() -> Bool:
 
 
 @export
-fn PyInit_elementwise_binary_ops() -> PythonObject:
+def PyInit_elementwise_binary_ops() -> PythonObject:
     """Create a Python module with binary elementwise kernel function bindings.
     """
     try:
@@ -125,7 +125,7 @@ fn PyInit_elementwise_binary_ops() -> PythonObject:
 # =============================================================================
 
 
-fn bin_elementwise_dispatcher[
+def bin_elementwise_dispatcher[
     op: ElementwiseBinaryOp
 ](
     out_buffer: PythonObject,
@@ -257,7 +257,7 @@ fn bin_elementwise_dispatcher[
         )
 
 
-fn pow_dispatcher(
+def pow_dispatcher(
     out_buffer: PythonObject,
     lhs_buffer: PythonObject,
     rhs_buffer: PythonObject,
@@ -387,7 +387,7 @@ fn pow_dispatcher(
         raise Error("Unsupported dtype for pow: " + String(dtype))
 
 
-fn bin_bool_dispatcher[
+def bin_bool_dispatcher[
     op: ElementwiseBinaryOp
 ](
     out_buffer: PythonObject,
@@ -425,7 +425,7 @@ fn bin_bool_dispatcher[
 
 
 @always_inline
-fn bin_elementwise_op[
+def bin_elementwise_op[
     op: ElementwiseBinaryOp, dtype: DType
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -452,7 +452,7 @@ fn bin_elementwise_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, lhs_ptr, rhs_ptr)
-    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         var i = rebind[IndexList[1]](idx)[0]
 
         var res = op.elementwise(
@@ -487,7 +487,7 @@ fn bin_elementwise_op[
 
 
 @always_inline
-fn pow_elementwise_op[
+def pow_elementwise_op[
     dtype: DType
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -515,7 +515,7 @@ fn pow_elementwise_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, lhs_ptr, rhs_ptr)
-    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         var i = rebind[IndexList[1]](idx)[0]
 
         var res = Pow.elementwise[dtype, dtype, width](

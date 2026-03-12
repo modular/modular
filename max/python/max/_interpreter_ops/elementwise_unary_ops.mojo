@@ -86,7 +86,7 @@ comptime UNARY_PREDICATE_OPS = Variadic.types[
 # =============================================================================
 
 
-fn _is_gpu_allowed_unary_op[op: ElementwiseUnaryOp]() -> Bool:
+def _is_gpu_allowed_unary_op[op: ElementwiseUnaryOp]() -> Bool:
     """Check if a unary op is allowed on GPU at compile time."""
     comptime name = get_base_type_name[op]()
     # Basic ops, float ops, and boolean ops that work on GPU
@@ -110,7 +110,7 @@ fn _is_gpu_allowed_unary_op[op: ElementwiseUnaryOp]() -> Bool:
     )
 
 
-fn _is_gpu_allowed_mixed_unary_op[op: ElementwiseUnaryMixedOp]() -> Bool:
+def _is_gpu_allowed_mixed_unary_op[op: ElementwiseUnaryMixedOp]() -> Bool:
     """Check if a mixed-type unary op is allowed on GPU at compile time."""
     comptime name = get_base_type_name[op]()
     return name == "IsNan" or name == "IsInf"
@@ -122,7 +122,7 @@ fn _is_gpu_allowed_mixed_unary_op[op: ElementwiseUnaryMixedOp]() -> Bool:
 
 
 @export
-fn PyInit_elementwise_unary_ops() -> PythonObject:
+def PyInit_elementwise_unary_ops() -> PythonObject:
     """Create a Python module with unary elementwise kernel function bindings.
     """
     try:
@@ -174,7 +174,7 @@ fn PyInit_elementwise_unary_ops() -> PythonObject:
 # =============================================================================
 
 
-fn unary_elementwise_dispatcher[
+def unary_elementwise_dispatcher[
     op: ElementwiseUnaryOp, *, float_only: Bool = False
 ](
     out_buffer: PythonObject,
@@ -318,7 +318,7 @@ fn unary_elementwise_dispatcher[
             )
 
 
-fn unary_bool_dispatcher[
+def unary_bool_dispatcher[
     op: ElementwiseUnaryOp
 ](
     out_buffer: PythonObject,
@@ -347,7 +347,7 @@ fn unary_bool_dispatcher[
         )
 
 
-fn unary_predicate_dispatcher[
+def unary_predicate_dispatcher[
     op: ElementwiseUnaryMixedOp
 ](
     out_buffer: PythonObject,
@@ -406,7 +406,7 @@ fn unary_predicate_dispatcher[
 
 
 @always_inline
-fn unary_elementwise_op[
+def unary_elementwise_op[
     op: ElementwiseUnaryOp, dtype: DType
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -430,7 +430,7 @@ fn unary_elementwise_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, in_ptr)
-    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         var i = rebind[IndexList[1]](idx)[0]
 
         var res = op.elementwise(in_ptr.load[width=width](i))
@@ -463,7 +463,7 @@ fn unary_elementwise_op[
 
 
 @always_inline
-fn unary_mixed_op[
+def unary_mixed_op[
     op: ElementwiseUnaryMixedOp, dtype: DType, out_dtype: DType
 ](
     out_ptr: UnsafePointer[Scalar[out_dtype], MutExternalOrigin],
@@ -488,7 +488,7 @@ fn unary_mixed_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, in_ptr)
-    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         var i = rebind[IndexList[1]](idx)[0]
 
         var res = op.elementwise[dtype, out_dtype, width](
