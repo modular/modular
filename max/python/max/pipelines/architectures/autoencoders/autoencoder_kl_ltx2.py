@@ -401,14 +401,29 @@ class LTXVideoUpsampler3d(nn.Module[..., Tensor]):
         hidden_states = hidden_states.permute([0, 1, 5, 2, 6, 3, 7, 4])
         depth, h_stride, w_stride = self.stride
         c_out = num_channels // stride_prod
-        # rebind (assertion) then reshape (drop 1s, trivially verifiable)
-        hidden_states = F.rebind(
-            hidden_states,
-            (batch_size, c_out, num_frames * depth, 1, height * h_stride, 1, width * w_stride, 1),
+        residual = F.rebind(
+            residual,
+            [batch_size, num_channels // stride_prod, num_frames,
+                depth, height, h_stride, width, w_stride],
         )
-        hidden_states = F.reshape(
-            hidden_states,
-            (batch_size, c_out, num_frames * depth, height * h_stride, width * w_stride),
+        residual = F.flatten(residual, 6, 7)
+        residual = F.rebind(
+            residual,
+            [batch_size, num_channels // stride_prod, num_frames, depth, height, h_stride, width * w_stride],
+        )
+        residual = F.flatten(residual, 4, 5)
+        residual = F.rebind(
+            residual,
+            [batch_size, num_channels // stride_prod, num_frames, depth, height * h_stride, width * w_stride],
+        )
+        # rebind (assertion) then reshape (drop 1s, trivially verifiable)
+        residual = F.rebind(
+            residual,
+            [batch_size, num_channels // stride_prod, num_frames * depth, 1, height * h_stride, width * w_stride],
+        )
+        residual = F.reshape(
+            residual,
+            [batch_size, num_channels // stride_prod, num_frames * depth, height * h_stride, width * w_stride],
         )
         # Already 5D [B, C, D, H, W]
         hidden_states = hidden_states[:, :, self.stride[0] - 1 :]
