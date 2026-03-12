@@ -898,9 +898,14 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
           p.getCurrentLocation(),
           "'apply_result_slot' callee must have at least one result");
     // Parse each operand besides the result slot.
+    // Adjust depth when the argument types in the signature have a
+    // different depth than what the actual given arguments' types are, see
+    // STCHDDDOS.
+    IndexDepthAdjuster adjuster(/*adjustDepth=*/-1);
     auto argTypes = sig.getArguments().drop_back(sig.hasMemoryOnlyResult());
     for (Type type : argTypes)
-      if (p.parseComma() || parseParamValue(p, operands.emplace_back(), type))
+      if (p.parseComma() ||
+          parseParamValue(p, operands.emplace_back(), adjuster.replace(type)))
         return failure();
     return success();
   }
