@@ -628,8 +628,8 @@ logit_verification_pipelines:
     encoding: bfloat16
     tags: [nvidia-only]
     pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_idefics3_8b_llama3_golden/1/c50d33d355c5594d57336cd9b2b46fbb27b3f8a06f58d72e1078cc5c3fb6ffde/torch_idefics3_8b_llama3_golden.tar.gz"
-      json_file: "idefics3_8b_llama3_torch_goldens.json"
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_idefics3_8b_llama3_golden/3/996834f83014e543593c5a9ae283b16e33e05575720cce9ec4e175c0ad3a5283/torch_idefics3_8b_llama3_golden.tar.gz"
+      json_file: "torch_HuggingFaceM4_Idefics3-8B-Llama3_bfloat16_golden.json"
     # TODO: Accuracy is much worse on AMD.
     # so we might have an AMD kernel bug here
     # TODO(MODELS-730): With the update to transformers=4.55, the
