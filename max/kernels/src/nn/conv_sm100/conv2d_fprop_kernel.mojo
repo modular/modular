@@ -600,8 +600,8 @@ struct Conv2dFpropKernel[
             Self.config.k_group_size,
         ],
         iter_idx: UInt32,
-        work_m_coord: UInt,
-        work_n_coord: UInt,
+        work_m_coord: Int,
+        work_n_coord: Int,
         peer_cta_coord: Tuple[UInt, UInt, UInt],
         elect_one_cta: Bool,
     ):
@@ -613,18 +613,18 @@ struct Conv2dFpropKernel[
         - work_n_coord: N coordinate (output channels)
         - iter_idx: K dimension tile index (C * R * S)
         """
-        var peer_rank_n = peer_cta_coord[0]
-        var peer_rank_m = peer_cta_coord[1]
-        var peer_m_rank = peer_cta_coord[2]
+        var peer_rank_n = Int(peer_cta_coord[0])
+        var peer_rank_m = Int(peer_cta_coord[1])
+        var peer_m_rank = Int(peer_cta_coord[2])
 
         # Coordinates for TMA
-        var act_gmem_m_coord = peer_m_rank * UInt(
-            Self.act_tma_rows
-        ) + work_m_coord * UInt(Self.BM)
+        var act_gmem_m_coord = (
+            peer_m_rank * Self.act_tma_rows + work_m_coord * Self.BM
+        )
         var filter_gmem_n_coord = (
-            peer_rank_m * UInt(Self.filter_tma_rows)
-            + peer_rank_n * UInt(Self.BN)
-            + work_n_coord * UInt(Self.MMA_N)
+            peer_rank_m * Self.filter_tma_rows
+            + peer_rank_n * Self.BN
+            + work_n_coord * Self.MMA_N
         )
 
         if elect_one_sync():
@@ -640,16 +640,15 @@ struct Conv2dFpropKernel[
 
                 # Peer CTA slicing
                 var act_peer_tile = type_of(act_tile)(
-                    act_tile.ptr + peer_m_rank * UInt(Self.act_tma_load_size),
+                    act_tile.ptr + peer_m_rank * Self.act_tma_load_size,
                     act_tile.layout,
                 )
                 var filter_peer_tile = type_of(filter_tile)(
-                    filter_tile.ptr
-                    + peer_rank_m * UInt(Self.filter_tma_load_size),
+                    filter_tile.ptr + peer_rank_m * Self.filter_tma_load_size,
                     filter_tile.layout,
                 )
 
-                var k_coord = UInt(iter_idx + UInt32(j)) * UInt(Self.BK)
+                var k_coord = Int(iter_idx + UInt32(j)) * Self.BK
 
                 # Load tiles - act_loader uses im2col TMA
                 act_loader.load(
@@ -879,8 +878,8 @@ struct Conv2dFpropKernel[
                                     filter_loader,
                                     tiles,
                                     UInt32(i),
-                                    UInt(current.m),
-                                    UInt(current.n),
+                                    Int(current.m),
+                                    Int(current.n),
                                     ctx.peer_cta_coord,
                                     ctx.elect_one_cta,
                                 )
@@ -901,8 +900,8 @@ struct Conv2dFpropKernel[
                                     filter_loader,
                                     tiles,
                                     UInt32(i),
-                                    UInt(current.m),
-                                    UInt(current.n),
+                                    Int(current.m),
+                                    Int(current.n),
                                     ctx.peer_cta_coord,
                                     ctx.elect_one_cta,
                                 )

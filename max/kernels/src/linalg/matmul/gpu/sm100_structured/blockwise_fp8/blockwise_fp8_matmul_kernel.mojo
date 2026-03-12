@@ -493,7 +493,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         ],
         peer_cta_coord: Tuple[UInt, UInt, UInt],
         work_tile_coord: Tuple[UInt, UInt],
-        iter_idx: UInt,
+        iter_idx: Int,
         elect_one_cta: Bool,
     ):
         """Load A, B, and A-scales tiles using TMA.
@@ -508,17 +508,17 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             iter_idx: K iteration index.
             elect_one_cta: Whether this is the elected CTA in the cluster.
         """
-        var peer_rank_n = peer_cta_coord[0]
-        var peer_rank_m = peer_cta_coord[1]
-        var peer_m_rank = peer_cta_coord[2]
+        var peer_rank_n = Int(peer_cta_coord[0])
+        var peer_rank_m = Int(peer_cta_coord[1])
+        var peer_m_rank = Int(peer_cta_coord[2])
 
-        var a_gmem_m_coord = peer_m_rank * UInt(
-            Self.a_tma_rows
-        ) + work_tile_coord[0] * UInt(Self.BM)
+        var a_gmem_m_coord = (
+            peer_m_rank * Self.a_tma_rows + Int(work_tile_coord[0]) * Self.BM
+        )
         var b_gmem_n_coord = (
-            peer_rank_m * UInt(Self.b_tma_rows)
-            + peer_rank_n * UInt(Self.BN)
-            + work_tile_coord[1] * UInt(Self.MMA_N)
+            peer_rank_m * Self.b_tma_rows
+            + peer_rank_n * Self.BN
+            + Int(work_tile_coord[1]) * Self.MMA_N
         )
 
         if elect_one_sync():
@@ -535,11 +535,11 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
             # Peer CTA slicing using TileTensor pattern (ptr + layout)
             var a_peer_tile = type_of(a_tile)(
-                a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size),
+                a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
                 a_tile.layout,
             )
             var b_peer_tile = type_of(b_tile)(
-                b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size),
+                b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
                 b_tile.layout,
             )
 
@@ -547,20 +547,20 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             a_loader.load(
                 a_peer_tile,
                 barrier[0],
-                iter_idx * UInt(Self.BK),
+                iter_idx * Self.BK,
                 a_gmem_m_coord,
             )
             b_loader.load(
                 b_peer_tile,
                 barrier[0],
-                iter_idx * UInt(Self.BK),
+                iter_idx * Self.BK,
                 b_gmem_n_coord,
             )
             a_scales_loader.load(
                 a_scales_tile,
                 barrier[0],
                 Int(work_tile_coord[0]) * Self.BM,
-                Int(iter_idx),
+                iter_idx,
             )
 
     # ========== MMA Operation ==========
@@ -793,7 +793,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                 with work_iter.next() as current:
                     work_iter.throttle_signal(ctx.is_first_cta_in_cluster)
 
-                    for i in range(num_iters):
+                    for i in range(Int(num_iters)):
                         # Acquire tiles (waits for consumer to free slot)
                         var tiles = producer.acquire_stage()
                         Self.load_input_tiles(

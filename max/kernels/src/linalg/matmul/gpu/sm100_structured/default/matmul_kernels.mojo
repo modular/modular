@@ -911,8 +911,8 @@ struct BlackwellMatmulSM100Kernel[
             Self.config.k_group_size,
         ],
         iter_idx: UInt32,
-        work_m_coord: UInt,
-        work_n_coord: UInt,
+        work_m_coord: Int,
+        work_n_coord: Int,
         peer_cta_coord: Tuple[UInt, UInt, UInt],
         elect_one_cta: Bool,
     ):
@@ -933,18 +933,18 @@ struct BlackwellMatmulSM100Kernel[
             peer_cta_coord: Peer CTA coordinates (rank_n, rank_m, peer_m_rank).
             elect_one_cta: True if this CTA should call expect_bytes.
         """
-        var peer_rank_n = peer_cta_coord[0]
-        var peer_rank_m = peer_cta_coord[1]
-        var peer_m_rank = peer_cta_coord[2]
+        var peer_rank_n = Int(peer_cta_coord[0])
+        var peer_rank_m = Int(peer_cta_coord[1])
+        var peer_m_rank = Int(peer_cta_coord[2])
 
         # Global memory coordinates for A (M) and B (N)
-        var a_gmem_m_coord = peer_m_rank * UInt(
-            Self.a_tma_rows
-        ) + work_m_coord * UInt(Self.BM)
+        var a_gmem_m_coord = (
+            peer_m_rank * Self.a_tma_rows + work_m_coord * Self.BM
+        )
         var b_gmem_n_coord = (
-            peer_rank_m * UInt(Self.b_tma_rows)
-            + peer_rank_n * UInt(Self.BN)
-            + work_n_coord * UInt(Self.MMA_N)
+            peer_rank_m * Self.b_tma_rows
+            + peer_rank_n * Self.BN
+            + work_n_coord * Self.MMA_N
         )
 
         if elect_one_sync():
@@ -966,15 +966,15 @@ struct BlackwellMatmulSM100Kernel[
                 # TMA descriptor layout. Pointer arithmetic with a_tma_load_size
                 # preserves the original working behavior.
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size),
+                    a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
                     a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size),
+                    b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
                     b_tile.layout,
                 )
 
-                var k_coord = UInt(iter_idx + UInt32(j)) * UInt(Self.BK)
+                var k_coord = Int(iter_idx + UInt32(j)) * Self.BK
 
                 # TileTensor directly to loader (uses TileTensor TMA overload)
                 a_loader.load(
@@ -1341,8 +1341,8 @@ struct BlackwellMatmulSM100Kernel[
                                         b_loader,
                                         tiles,
                                         UInt32(i),
-                                        UInt(current.m),
-                                        UInt(current.n),
+                                        Int(current.m),
+                                        Int(current.n),
                                         ctx.peer_cta_coord,
                                         ctx.elect_one_cta,
                                     )
