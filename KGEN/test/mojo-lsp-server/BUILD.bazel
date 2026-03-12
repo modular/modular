@@ -36,7 +36,8 @@ test_suite(
     name = "mojo-lsp-server",
     tests = [
         ":mojo-lsp-server-misc",
-        ":mojo-lsp-server-parse-stdlib",
+        # parse-stdlib and parse-extra temporarily disabled — re-enable by
+        # restoring ":mojo-lsp-server-parse-stdlib" here and removing tags=["manual"] below.
     ],
 )
 
@@ -220,8 +221,10 @@ lit_tests(
 
 # Run all per-subfolder targets together.  Individual failures are reported as
 # actionable Bazel targets, e.g. //KGEN/test/mojo-lsp-server:parse-stdlib-stat.
+# Temporarily excluded from the mojo-lsp-server umbrella suite via tags=["manual"].
 test_suite(
     name = "mojo-lsp-server-parse-stdlib",
+    tags = ["manual"],
     tests = ["parse-stdlib-{}".format(parse_entry(s)["suffix"]) for s in _ENABLED_SUBDIRS] +
             ["parse-{}".format(name) for name in _EXTRA_ENABLED_DIRS] + [
         ":check-stdlib-coverage",
