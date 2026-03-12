@@ -356,28 +356,28 @@ class LTXVideoUpsampler3d(nn.Module[..., Tensor]):
             )
             residual = residual.permute([0, 1, 5, 2, 6, 3, 7, 4])
             depth, h_stride, w_stride = self.stride
-            # The symbolic verifier cannot prove that the 8D product
-            # (nf * d * h * hs * w * ws) equals the 5D product
-            # (mul_no_wrap(nf,d) * mul_no_wrap(h,hs) * mul_no_wrap(w,ws))
-            # in one step.  Instead:
-            #   1. rebind (assertion, bypasses verification): express the 8D
-            #      shape with merged dims and explicit Dim(1) placeholders.
-            #   2. reshape (verified): drop the 1s — trivially X*1 == X.
             residual = F.rebind(
                 residual,
-                (batch_size, num_channels // stride_prod, num_frames * depth, 1, height * h_stride, 1, width * w_stride, 1),
+                [batch_size, num_channels // stride_prod, num_frames,
+                 depth, height, h_stride, width, w_stride],
             )
-            residual = F.reshape(
+            residual = F.flatten(residual, 6, 7)
+            residual = F.rebind(
                 residual,
-                (batch_size, num_channels // stride_prod, num_frames * depth, height * h_stride, width * w_stride),
+                [batch_size, num_channels // stride_prod, num_frames, depth, height, h_stride, width * w_stride],
             )
-            # Already 5D [B, C, D, H, W]
-            repeats = (
-                self.stride[0] * self.stride[1] * self.stride[2]
-            ) // self.upscale_factor
-            if repeats > 1:
-                # Use concat instead of tile for 5D
-                residual = F.concat([residual] * repeats, axis=1)
+            residual = F.flatten(residual, 4, 5)
+            residual = F.rebind(
+                residual,
+                [batch_size, num_channels // stride_prod, num_frames, depth, height * h_stride, width * w_stride],
+            )
+            residual = F.flatten(residual, 2, 3)
+            residual = F.rebind(
+                residual,
+                [batch_size, num_channels // stride_prod, num_frames * depth, height * h_stride, width * w_stride],
+            )
+            repeats = stride_prod // self.upscale_factor
+            residual = F.concat([residual] * repeats, axis=1)
             residual = residual[:, :, self.stride[0] - 1 :]
 
         hidden_states = self.conv(hidden_states, causal=causal)
