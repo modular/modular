@@ -356,18 +356,20 @@ class LTXVideoUpsampler3d(nn.Module[..., Tensor]):
             )
             residual = residual.permute([0, 1, 5, 2, 6, 3, 7, 4])
             depth, h_stride, w_stride = self.stride
-            # Direct reshape on the permuted 8D tensor: all dims are still
-            # primitive symbols here, so the verifier can prove element-count
-            # equality without hitting opaque mul_no_wrap products.
+            # The symbolic verifier cannot prove that the 8D product
+            # (nf * d * h * hs * w * ws) equals the 5D product
+            # (mul_no_wrap(nf,d) * mul_no_wrap(h,hs) * mul_no_wrap(w,ws))
+            # in one step.  Instead:
+            #   1. rebind (assertion, bypasses verification): express the 8D
+            #      shape with merged dims and explicit Dim(1) placeholders.
+            #   2. reshape (verified): drop the 1s — trivially X*1 == X.
+            residual = F.rebind(
+                residual,
+                (batch_size, num_channels // stride_prod, num_frames * depth, 1, height * h_stride, 1, width * w_stride, 1),
+            )
             residual = F.reshape(
                 residual,
-                (
-                    batch_size,
-                    num_channels // stride_prod,
-                    num_frames * depth,
-                    height * h_stride,
-                    width * w_stride,
-                ),
+                (batch_size, num_channels // stride_prod, num_frames * depth, height * h_stride, width * w_stride),
             )
             # Already 5D [B, C, D, H, W]
             repeats = (
@@ -394,18 +396,15 @@ class LTXVideoUpsampler3d(nn.Module[..., Tensor]):
         )
         hidden_states = hidden_states.permute([0, 1, 5, 2, 6, 3, 7, 4])
         depth, h_stride, w_stride = self.stride
-        # Direct reshape on the permuted 8D tensor: all dims are still
-        # primitive symbols here, so the verifier can prove element-count
-        # equality without hitting opaque mul_no_wrap products.
+        c_out = num_channels // stride_prod
+        # rebind (assertion) then reshape (drop 1s, trivially verifiable)
+        hidden_states = F.rebind(
+            hidden_states,
+            (batch_size, c_out, num_frames * depth, 1, height * h_stride, 1, width * w_stride, 1),
+        )
         hidden_states = F.reshape(
             hidden_states,
-            (
-                batch_size,
-                num_channels // stride_prod,
-                num_frames * depth,
-                height * h_stride,
-                width * w_stride,
-            ),
+            (batch_size, c_out, num_frames * depth, height * h_stride, width * w_stride),
         )
         # Already 5D [B, C, D, H, W]
         hidden_states = hidden_states[:, :, self.stride[0] - 1 :]
@@ -774,18 +773,14 @@ class LTX2VideoDecoder3d(nn.Module[..., Tensor]):
             ),
         )
         hidden_states = hidden_states.permute([0, 1, 5, 2, 6, 4, 7, 3])
-        # Direct reshape on the permuted 8D tensor: all dims are still
-        # primitive symbols here, so the verifier can prove element-count
-        # equality without hitting opaque mul_no_wrap products.
+        # rebind (assertion) then reshape (drop 1s, trivially verifiable)
+        hidden_states = F.rebind(
+            hidden_states,
+            (batch_size, target_padding_channels, num_frames * p_t, 1, height * p, 1, width * p, 1),
+        )
         hidden_states = F.reshape(
             hidden_states,
-            (
-                batch_size,
-                target_padding_channels,
-                num_frames * p_t,
-                height * p,
-                width * p,
-            ),
+            (batch_size, target_padding_channels, num_frames * p_t, height * p, width * p),
         )
         # Already 5D [B, C, D, H, W]
 
