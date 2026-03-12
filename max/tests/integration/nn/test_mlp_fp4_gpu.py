@@ -29,12 +29,12 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, TensorValue
 from max.graph.weights import WeightData
 from max.nn import MLP
-from max.nn.float8_config import (
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
-    Float8WeightScaleSpec,
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
 )
 from test_common.graph_utils import is_b100_b200
 
@@ -49,32 +49,32 @@ def _skip_if_not_supported() -> None:
         pytest.skip("FP4 kernel requires B100 or B200")
 
 
-def _create_nvfp4_config() -> Float8Config:
-    """Creates Float8Config matching nvidia/Llama-3.1-8B-Instruct-NVFP4.
+def _create_nvfp4_config() -> QuantConfig:
+    """Creates QuantConfig matching nvidia/Llama-3.1-8B-Instruct-NVFP4.
 
     NVFP4 format uses:
     - Static, block-wise (1, 16) input scaling
     - Static, block-wise (1, 8) weight scaling
 
     Returns:
-        Float8Config for NVFP4 quantization.
+        QuantConfig for NVFP4 quantization.
     """
-    input_spec = Float8InputScaleSpec(
-        granularity=Float8ScaleGranularity.BLOCK,
-        origin=Float8ScaleOrigin.STATIC,
+    input_spec = InputScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        origin=ScaleOrigin.STATIC,
         dtype=DType.float32,
         block_size=(1, 16),
     )
-    weight_spec = Float8WeightScaleSpec(
-        granularity=Float8ScaleGranularity.BLOCK,
+    weight_spec = WeightScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
         dtype=DType.float8_e4m3fn,
         block_size=(1, 8),
     )
-    return Float8Config(
+    return QuantConfig(
         input_scale=input_spec,
         weight_scale=weight_spec,
-        mlp_in_float8={0},
-        attn_qkv_in_float8=set(),
+        mlp_quantized_layers={0},
+        attn_quantized_layers=set(),
         embedding_output_dtype=DType.bfloat16,
         quant_method="modelopt",
         quant_algo="NVFP4",
@@ -213,7 +213,7 @@ def test_mlp_fp4_nvfp4() -> None:
         devices=[device_ref],
         activation_function="silu",
         has_bias=False,
-        float8_config=fp4_config,
+        quant_config=fp4_config,
     )
     mlp.load_state_dict(state_dict)
 

@@ -18,8 +18,8 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams
+from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import LinearScalingParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
@@ -121,8 +121,8 @@ class Gemma3Config(ArchConfigWithKVCache):
     """Whether to tie weight embeddings. When true, the output linear layer
     uses the same weight as the embedding layer."""
 
-    float8_config: Float8Config | None = None
-    """Float8 quantization configuration."""
+    quant_config: QuantConfig | None = None
+    """Scaled quantization configuration."""
 
     def get_kv_params(self) -> KVCacheParams:
         return self.kv_params
@@ -216,7 +216,7 @@ class Gemma3Config(ArchConfigWithKVCache):
 
         This method creates a config instance with all fields that can be determined
         from the pipeline and HuggingFace configuration, without needing the state_dict.
-        Fields that depend on the state_dict (like tie_word_embeddings, float8_config)
+        Fields that depend on the state_dict (like tie_word_embeddings, quant_config)
         should be set via the `finalize()` method.
 
         Args:
@@ -324,19 +324,19 @@ class Gemma3Config(ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
         state_dict: dict[str, WeightData],
         return_logits: ReturnLogits,
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
     ) -> None:
         """Define parameters that can't be determined just from the pipeline config.
 
         This method sets fields that require introspection of the model weights
-        (state_dict), such as tie_word_embeddings and float8_config.
+        (state_dict), such as tie_word_embeddings and quant_config.
 
         Args:
             huggingface_config: The HuggingFace model configuration object.
             state_dict: The model's state dictionary containing weights.
             return_logits: Whether to return the last token, all tokens or a
                 variable number of logits.
-            float8_config: Float8 quantization configuration (optional).
+            quant_config: Scaled quantization configuration (optional).
         """
         # When tie_word_embeddings=True, the embedding weights are shared with
         # the output weights.
@@ -346,7 +346,7 @@ class Gemma3Config(ArchConfigWithKVCache):
         )
 
         self.tie_word_embeddings = tie_word_embeddings
-        self.float8_config = float8_config
+        self.quant_config = quant_config
         self.return_logits = return_logits
 
 

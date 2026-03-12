@@ -17,10 +17,10 @@ from collections.abc import Iterable
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
-from max.nn.float8_config import Float8Config
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.norm import LayerNorm
+from max.nn.quant_config import QuantConfig
 
 
 class PatchMergerMLP(Module, Shardable):
@@ -42,7 +42,7 @@ class PatchMergerMLP(Module, Shardable):
         hidden_size: int,
         merge_kernel_size: tuple[int, int],
         eps: float = 1e-5,
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
         _is_sharding: bool = False,
     ) -> None:
         super().__init__()
@@ -52,7 +52,7 @@ class PatchMergerMLP(Module, Shardable):
         self.hidden_size = hidden_size
         self.merge_kernel_size = merge_kernel_size
         self.eps = eps
-        self.float8_config = float8_config
+        self.quant_config = quant_config
 
         self.input_dim = mm_hidden_size * (
             merge_kernel_size[0] * merge_kernel_size[1]
@@ -72,7 +72,7 @@ class PatchMergerMLP(Module, Shardable):
                 dtype=dtype,
                 device=device,
                 has_bias=True,
-                float8_config=float8_config,
+                quant_config=quant_config,
             )
 
             self.linear2 = Linear(
@@ -81,7 +81,7 @@ class PatchMergerMLP(Module, Shardable):
                 dtype=dtype,
                 device=device,
                 has_bias=True,
-                float8_config=float8_config,
+                quant_config=quant_config,
             )
 
         self._sharding_strategy: ShardingStrategy | None = None
@@ -147,7 +147,7 @@ class PatchMergerMLP(Module, Shardable):
                 hidden_size=self.hidden_size,
                 merge_kernel_size=self.merge_kernel_size,
                 eps=self.eps,
-                float8_config=self.float8_config,
+                quant_config=self.quant_config,
                 _is_sharding=True,
             )
             sharded.pre_norm = norm

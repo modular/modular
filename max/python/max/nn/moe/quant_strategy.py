@@ -21,7 +21,6 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 
 from ..comm.ep.ep_kernels import fused_silu_quantized
-from ..float8_config import Float8Config
 from ..kernels import (
     block_scales_interleave,
     grouped_dynamic_scaled_fp8_matmul,
@@ -29,6 +28,7 @@ from ..kernels import (
     quantize_dynamic_block_scaled_fp4,
     quantize_dynamic_scaled_float8,
 )
+from ..quant_config import QuantConfig
 
 
 @dataclass
@@ -92,7 +92,7 @@ class QuantStrategy(Protocol):
 class Fp8Strategy:
     """FP8 quantization for MoE."""
 
-    def __init__(self, config: Float8Config, dtype: DType):
+    def __init__(self, config: QuantConfig, dtype: DType):
         self.config = config
         self.dtype = dtype
 
@@ -166,7 +166,7 @@ class Fp8Strategy:
 class Nvfp4Strategy:
     """NVFP4 quantization for MoE."""
 
-    def __init__(self, config: Float8Config, dtype: DType):
+    def __init__(self, config: QuantConfig, dtype: DType):
         self.config = config
         self.dtype = dtype
 

@@ -41,7 +41,7 @@ class KimiK2_5TextConfig(DeepseekV3Config):
 
         This method creates a config instance with all fields that can be determined
         from the pipeline configuration, without needing the state_dict.
-        Fields that depend on the state_dict (like norm_dtype, float8_config, etc.)
+        Fields that depend on the state_dict (like norm_dtype, quant_config, etc.)
         should be set via the `finalize()` method.
 
         Args:

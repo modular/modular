@@ -61,8 +61,8 @@ class DeepseekV3NextN(Module):
         )
 
         embedding_output_dtype = config.dtype
-        if config.float8_config and config.float8_config.embedding_output_dtype:
-            embedding_output_dtype = config.float8_config.embedding_output_dtype
+        if config.quant_config and config.quant_config.embedding_output_dtype:
+            embedding_output_dtype = config.quant_config.embedding_output_dtype
         self.embedding_output_dtype = embedding_output_dtype
         self.embed_tokens = VocabParallelEmbedding(
             config.vocab_size,

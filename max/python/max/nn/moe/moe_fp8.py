@@ -50,17 +50,17 @@ class MoEQuantized(MoE):
 
     def _strategy(self) -> QuantStrategy:
         """Selects the quantization strategy for this MoE."""
-        assert self.float8_config is not None
-        if self.float8_config.is_nvfp4:
-            return Nvfp4Strategy(self.float8_config, self.dtype)
-        return Fp8Strategy(self.float8_config, self.dtype)
+        assert self.quant_config is not None
+        if self.quant_config.is_nvfp4:
+            return Nvfp4Strategy(self.quant_config, self.dtype)
+        return Fp8Strategy(self.quant_config, self.dtype)
 
     @property
     def _token_group_size(self) -> int:
         """Returns the activation token-group size for quantization."""
-        assert self.float8_config is not None
-        assert self.float8_config.input_scale.block_size is not None
-        return self.float8_config.input_scale.block_size[1]
+        assert self.quant_config is not None
+        assert self.quant_config.input_scale.block_size is not None
+        return self.quant_config.input_scale.block_size[1]
 
     def _with_shared_expert(
         self, values: list[_T], shared: _T | None
@@ -121,10 +121,10 @@ class MoEQuantized(MoE):
     @property
     def gate_up_proj_scales(self) -> TensorValue:
         """Returns stacked gate/up weight scales for grouped matmul."""
-        assert self.float8_config is not None
-        assert self.float8_config.weight_scale.block_size is not None
-        if not self.float8_config.is_nvfp4:
-            assert self.float8_config.weight_scale.block_size == (128, 128), (
+        assert self.quant_config is not None
+        assert self.quant_config.weight_scale.block_size is not None
+        if not self.quant_config.is_nvfp4:
+            assert self.quant_config.weight_scale.block_size == (128, 128), (
                 "Only support block_size=[128, 128] for weights."
             )
 
@@ -180,8 +180,8 @@ class MoEQuantized(MoE):
 
     @property
     def _is_nvfp4(self) -> bool:
-        """Whether the current float8 config uses NVFP4."""
-        return self.float8_config is not None and self.float8_config.is_nvfp4
+        """Whether the current quant config uses NVFP4."""
+        return self.quant_config is not None and self.quant_config.is_nvfp4
 
     def _ep_call(
         self,

@@ -22,8 +22,8 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams
+from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
@@ -36,7 +36,7 @@ from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
     PipelineConfig,
-    parse_float8_config,
+    parse_quant_config,
     upper_bounded_default,
 )
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
@@ -122,7 +122,7 @@ class Llama3Config(ArchConfigWithKVCache):
     residual_multiplier: float
     devices: list[DeviceRef]
     clip_qkv: float | None
-    float8_config: Float8Config | None = None
+    quant_config: QuantConfig | None = None
     lora_config: LoRAConfig | None = None
     longrope_scaling_params: LongRoPEScalingParams | None = None
     logits_scaling: float = 1.0
@@ -381,7 +381,7 @@ class Llama3Config(ArchConfigWithKVCache):
             normalized_state_dict = dict(state_dict)
 
         # Parse the float8 config from compressed-tensors or FBGEMM.
-        float8_config = parse_float8_config(
+        quant_config = parse_quant_config(
             huggingface_config, normalized_state_dict, self.dtype
         )
 
@@ -416,7 +416,7 @@ class Llama3Config(ArchConfigWithKVCache):
         self.norm_dtype = norm_dtype
         self.rms_norm_eps = rms_norm_eps
         self.tie_word_embeddings = tie_word_embeddings
-        self.float8_config = float8_config
+        self.quant_config = quant_config
         self.stacked_mlp = (
             "layers.0.mlp.gate_up_proj.weight" in normalized_state_dict
         )

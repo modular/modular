@@ -20,8 +20,8 @@ from typing import Any
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.ep import EPConfig
-from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParamInterface, KVCacheQuantizationConfig
+from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
@@ -84,7 +84,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     norm_dtype: DType = DType.bfloat16
     correction_bias_dtype: DType | None = None
     max_batch_context_length: int = 131072
-    float8_config: Float8Config | None = None
+    quant_config: QuantConfig | None = None
     ep_config: EPConfig | None = None
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
 
@@ -174,7 +174,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
         This method creates a config instance with all fields that can be determined
         from the pipeline configuration, without needing the state_dict.
-        Fields that depend on the state_dict (like norm_dtype, float8_config, etc.)
+        Fields that depend on the state_dict (like norm_dtype, quant_config, etc.)
         should be set via the `finalize()` method.
 
         Args:

@@ -18,6 +18,13 @@ This version is still a work in progress.
 
 ### Python API {#26-3-max-python}
 
+- Renamed `Float8Config` to `QuantConfig` (and related types/functions)
+  to reflect that the config now covers FP8, NVFP4, and MXFP4 quantization.
+- Renamed related public Python quantization APIs from `Float8*` names to
+  `Quant*` names, including `parse_float8_config()` to
+  `parse_quant_config()`, and the public `quant` modules in `max.nn` and
+  `max.pipelines.lib`.
+
 ## Breaking changes {#26-3-breaking}
 
 ### Mojo API {#26-3-max-mojo}

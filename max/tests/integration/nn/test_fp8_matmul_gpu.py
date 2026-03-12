@@ -20,10 +20,10 @@ from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn import (
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
-    Float8WeightScaleSpec,
+    InputScaleSpec,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
 )
 from max.nn.kernels import (
     dynamic_scaled_matmul,
@@ -241,8 +241,8 @@ def create_max_fp8_result(
     weight_scales: torch.Tensor,
     a_tile_size: tuple[int, int],
     b_tile_size: tuple[int, int],
-    input_scale_spec: Float8InputScaleSpec,
-    weight_scale_spec: Float8WeightScaleSpec,
+    input_scale_spec: InputScaleSpec,
+    weight_scale_spec: WeightScaleSpec,
 ) -> torch.Tensor:
     K = input_tensor.shape[-1]
     N = weight_tensor.shape[0]
@@ -314,8 +314,8 @@ def create_max_fp8_result(
             2048,
             (1, 2048),
             (1, 2048),
-            Float8ScaleGranularity.COLWISE,
-            Float8ScaleGranularity.ROWWISE,
+            ScaleGranularity.COLWISE,
+            ScaleGranularity.ROWWISE,
         ),
         (
             32,
@@ -323,8 +323,8 @@ def create_max_fp8_result(
             2048,
             (1, 2048),
             (1, 2048),
-            Float8ScaleGranularity.COLWISE,
-            Float8ScaleGranularity.ROWWISE,
+            ScaleGranularity.COLWISE,
+            ScaleGranularity.ROWWISE,
         ),
         (
             81,
@@ -332,8 +332,8 @@ def create_max_fp8_result(
             2048,
             (1, 2048),
             (1, 2048),
-            Float8ScaleGranularity.COLWISE,
-            Float8ScaleGranularity.ROWWISE,
+            ScaleGranularity.COLWISE,
+            ScaleGranularity.ROWWISE,
         ),
         # per-token quantization scaling for the input tensor, and 2D quantization
         # scaling for the weight tensor
@@ -343,8 +343,8 @@ def create_max_fp8_result(
             2048,
             (1, 128),
             (128, 128),
-            Float8ScaleGranularity.BLOCK,
-            Float8ScaleGranularity.BLOCK,
+            ScaleGranularity.BLOCK,
+            ScaleGranularity.BLOCK,
         ),
         (
             32,
@@ -352,8 +352,8 @@ def create_max_fp8_result(
             2048,
             (1, 128),
             (128, 128),
-            Float8ScaleGranularity.BLOCK,
-            Float8ScaleGranularity.BLOCK,
+            ScaleGranularity.BLOCK,
+            ScaleGranularity.BLOCK,
         ),
         (
             81,
@@ -361,8 +361,8 @@ def create_max_fp8_result(
             2048,
             (1, 128),
             (128, 128),
-            Float8ScaleGranularity.BLOCK,
-            Float8ScaleGranularity.BLOCK,
+            ScaleGranularity.BLOCK,
+            ScaleGranularity.BLOCK,
         ),
     ],
 )
@@ -373,8 +373,8 @@ def test_linear_gpu(
     K: int,
     a_tile_size: tuple[int, int],
     b_tile_size: tuple[int, int],
-    input_scale_granularity: Float8ScaleGranularity,
-    weight_scale_granularity: Float8ScaleGranularity,
+    input_scale_granularity: ScaleGranularity,
+    weight_scale_granularity: ScaleGranularity,
 ) -> None:
     assert a_tile_size[0] == 1, "a_tile_size[0] must be 1"
     assert a_tile_size[1] == b_tile_size[1], (
@@ -421,13 +421,13 @@ def test_linear_gpu(
         weight_scales,
         a_tile_size,
         b_tile_size,
-        input_scale_spec=Float8InputScaleSpec(
+        input_scale_spec=InputScaleSpec(
             granularity=input_scale_granularity,
-            origin=Float8ScaleOrigin.DYNAMIC,
+            origin=ScaleOrigin.DYNAMIC,
             dtype=DType.float32,
             block_size=a_tile_size,
         ),
-        weight_scale_spec=Float8WeightScaleSpec(
+        weight_scale_spec=WeightScaleSpec(
             granularity=weight_scale_granularity,
             dtype=DType.float32,
             block_size=b_tile_size,

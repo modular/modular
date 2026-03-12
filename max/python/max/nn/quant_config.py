@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Float8 configuration data structures for models."""
+"""Scaled quantization configuration data structures for models."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, Dim, DimLike, Shape, TensorType
 
 
-class Float8ScaleGranularity(Enum):
+class ScaleGranularity(Enum):
     """Specifies the granularity of the quantization scale factor.
 
     Determines whether a scale factor applies per-tensor, per-row (often for
@@ -45,7 +45,7 @@ class Float8ScaleGranularity(Enum):
         return self.value
 
 
-class Float8ScaleOrigin(Enum):
+class ScaleOrigin(Enum):
     """Specifies whether the quantization scale is determined statically or dynamically."""
 
     STATIC = "static"
@@ -56,11 +56,11 @@ class Float8ScaleOrigin(Enum):
 
 
 @dataclass
-class Float8WeightScaleSpec:
-    """Specifies how weights are scaled for float8 quantization."""
+class WeightScaleSpec:
+    """Specifies how weights are scaled for scaled quantization."""
 
-    granularity: Float8ScaleGranularity
-    """The :class:`~max.nn.float8_config.Float8ScaleGranularity` of the weight scale factor application."""
+    granularity: ScaleGranularity
+    """The :class:`~max.nn.quant_config.ScaleGranularity` of the weight scale factor application."""
 
     dtype: DType
     """The :class:`~max.dtype.DType` of the weight scale factor(s)."""
@@ -69,7 +69,7 @@ class Float8WeightScaleSpec:
     """The :obj:`tuple[int, int]` of the block size for block-wise scaling."""
 
     def __post_init__(self):
-        if self.granularity == Float8ScaleGranularity.BLOCK:
+        if self.granularity == ScaleGranularity.BLOCK:
             if self.block_size is None:
                 raise ValueError(
                     "block_size must be specified for block-wise scaling"
@@ -80,33 +80,33 @@ class Float8WeightScaleSpec:
     @property
     def is_tensor(self) -> bool:
         """Whether the weight scale granularity is per-tensor."""
-        return self.granularity == Float8ScaleGranularity.TENSOR
+        return self.granularity == ScaleGranularity.TENSOR
 
     @property
     def is_rowwise(self) -> bool:
         """Whether the weight scale granularity is row-wise."""
-        return self.granularity == Float8ScaleGranularity.ROWWISE
+        return self.granularity == ScaleGranularity.ROWWISE
 
     @property
     def is_colwise(self) -> bool:
         """Whether the weight scale granularity is column-wise."""
-        return self.granularity == Float8ScaleGranularity.COLWISE
+        return self.granularity == ScaleGranularity.COLWISE
 
     @property
     def is_block(self) -> bool:
         """Whether the weight scale granularity is block-wise."""
-        return self.granularity == Float8ScaleGranularity.BLOCK
+        return self.granularity == ScaleGranularity.BLOCK
 
 
 @dataclass
-class Float8InputScaleSpec:
-    """Specifies how input activations are scaled for float8 quantization."""
+class InputScaleSpec:
+    """Specifies how input activations are scaled for scaled quantization."""
 
-    granularity: Float8ScaleGranularity
-    """The :class:`~max.nn.float8_config.Float8ScaleGranularity` of the input scale factor application."""
+    granularity: ScaleGranularity
+    """The :class:`~max.nn.quant_config.ScaleGranularity` of the input scale factor application."""
 
-    origin: Float8ScaleOrigin
-    """The :class:`~max.nn.float8_config.Float8ScaleOrigin` (static or dynamic) of the input scale factor."""
+    origin: ScaleOrigin
+    """The :class:`~max.nn.quant_config.ScaleOrigin` (static or dynamic) of the input scale factor."""
 
     dtype: DType
     """The :class:`~max.dtype.DType` of the input scale factor(s)."""
@@ -118,7 +118,7 @@ class Float8InputScaleSpec:
     """The :obj:`tuple[int, int]` of the block size for block-wise scaling."""
 
     def __post_init__(self):
-        if self.granularity == Float8ScaleGranularity.BLOCK:
+        if self.granularity == ScaleGranularity.BLOCK:
             if self.block_size is None:
                 raise ValueError(
                     "block_size must be specified for block-wise scaling"
@@ -129,48 +129,48 @@ class Float8InputScaleSpec:
     @property
     def is_tensor(self) -> bool:
         """Whether the input scale granularity is per-tensor."""
-        return self.granularity == Float8ScaleGranularity.TENSOR
+        return self.granularity == ScaleGranularity.TENSOR
 
     @property
     def is_rowwise(self) -> bool:
         """Whether the input scale granularity is row-wise."""
-        return self.granularity == Float8ScaleGranularity.ROWWISE
+        return self.granularity == ScaleGranularity.ROWWISE
 
     @property
     def is_colwise(self) -> bool:
         """Whether the input scale granularity is column-wise."""
-        return self.granularity == Float8ScaleGranularity.COLWISE
+        return self.granularity == ScaleGranularity.COLWISE
 
     @property
     def is_block(self) -> bool:
         """Whether the input scale granularity is block-wise."""
-        return self.granularity == Float8ScaleGranularity.BLOCK
+        return self.granularity == ScaleGranularity.BLOCK
 
 
 @dataclass
-class Float8Config:
-    """Configures float8 quantization settings for a layer or model section."""
+class QuantConfig:
+    """Configures scaled quantization settings for a layer or model section."""
 
-    input_scale: Float8InputScaleSpec
-    """:class:`~max.nn.float8_config.Float8InputScaleSpec` for input activation scaling."""
+    input_scale: InputScaleSpec
+    """:class:`~max.nn.quant_config.InputScaleSpec` for input activation scaling."""
 
-    weight_scale: Float8WeightScaleSpec
-    """:class:`~max.nn.float8_config.Float8WeightScaleSpec` for weight scaling."""
+    weight_scale: WeightScaleSpec
+    """:class:`~max.nn.quant_config.WeightScaleSpec` for weight scaling."""
 
-    mlp_in_float8: set[int]
-    """Set of layer indices with MLPs in float8.
+    mlp_quantized_layers: set[int]
+    """Set of layer indices with quantized MLPs.
 
     MLPs are considered to be either "all quantized" or all not quantized per
     layer.
-    So either all of gate proj, down proj, and up proj are float8, or all bfloat16.
+    So either all of gate proj, down proj, and up proj are quantized, or all bfloat16.
     """
 
-    attn_qkv_in_float8: set[int]
-    """Set of layer indices with attention QKV projections in float8.
+    attn_quantized_layers: set[int]
+    """Set of layer indices with quantized attention QKV projections.
 
     QKV projections are considered to be either "all quantized" or all not
     quantized per layer.
-    So either all of {q,k,v,o}_proj are float8, or all bfloat16.
+    So either all of {q,k,v,o}_proj are quantized, or all bfloat16.
     """
 
     embedding_output_dtype: DType | None = None
@@ -232,12 +232,12 @@ class Float8Config:
     @property
     def is_static(self) -> bool:
         """``True`` if this input scale is static."""
-        return self.input_scale.origin == Float8ScaleOrigin.STATIC
+        return self.input_scale.origin == ScaleOrigin.STATIC
 
     @property
     def is_dynamic(self) -> bool:
         """``True`` if this input scale is dynamic."""
-        return self.input_scale.origin == Float8ScaleOrigin.DYNAMIC
+        return self.input_scale.origin == ScaleOrigin.DYNAMIC
 
     @property
     def is_nvfp4(self) -> bool:
@@ -267,11 +267,11 @@ class Float8Config:
             raise ValueError("Can not determine the quantized scales type")
 
 
-def nvfp4_packed_k(in_dim: int, float8_config: Float8Config | None) -> int:
+def nvfp4_packed_k(in_dim: int, quant_config: QuantConfig | None) -> int:
     """Returns packed K dimension for NVFP4 weights, else returns in_dim."""
     return (
         in_dim // 2
-        if float8_config is not None and float8_config.is_nvfp4
+        if quant_config is not None and quant_config.is_nvfp4
         else in_dim
     )
 

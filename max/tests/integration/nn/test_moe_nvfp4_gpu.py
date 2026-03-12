@@ -19,14 +19,14 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType
 from max.graph.weights import WeightData
-from max.nn.float8_config import (
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
-    Float8WeightScaleSpec,
-)
 from max.nn.moe import MoEQuantized
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+)
 from torch.utils.dlpack import from_dlpack
 
 HIDDEN_DIM = 256
@@ -60,20 +60,20 @@ def test_moe_nvfp4_single_gpu() -> None:
     """Verify single-GPU NVFP4 MoEQuantized builds and produces finite output."""
     torch.manual_seed(42)
 
-    fp4_config = Float8Config(
-        input_scale=Float8InputScaleSpec(
-            granularity=Float8ScaleGranularity.BLOCK,
-            origin=Float8ScaleOrigin.STATIC,
+    fp4_config = QuantConfig(
+        input_scale=InputScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            origin=ScaleOrigin.STATIC,
             dtype=DType.float32,
             block_size=(1, 16),
         ),
-        weight_scale=Float8WeightScaleSpec(
-            granularity=Float8ScaleGranularity.BLOCK,
+        weight_scale=WeightScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
             dtype=DType.float8_e4m3fn,
             block_size=(1, 8),
         ),
-        mlp_in_float8=set(),
-        attn_qkv_in_float8=set(),
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
         embedding_output_dtype=None,
         quant_method="modelopt",
         quant_algo="NVFP4",
@@ -86,7 +86,7 @@ def test_moe_nvfp4_single_gpu() -> None:
         num_experts_per_token=NUM_EXPERTS_PER_TOKEN,
         moe_dim=MOE_DIM,
         dtype=DType.uint8,
-        float8_config=fp4_config,
+        quant_config=fp4_config,
     )
 
     # Build FP4 weights inline

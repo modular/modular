@@ -14,7 +14,6 @@
 from max.dtype import DType
 from max.graph import TensorValue
 
-from .float8_config import Float8Config
 from .kernels import (
     block_scales_interleave,
     convert_weights_to_fp8_fnuz_if_needed,
@@ -25,6 +24,7 @@ from .kernels import (
     quantize_dynamic_scaled_float8,
     quantize_static_scaled_float8,
 )
+from .quant_config import QuantConfig
 
 
 def matmul_float4(
@@ -33,7 +33,7 @@ def matmul_float4(
     weight_scale: TensorValue,
     input_scale: TensorValue,
     weight_scale_2: TensorValue,
-    float8_config: Float8Config,
+    quant_config: QuantConfig,
 ) -> TensorValue:
     """Computes x @ weight.T with modelopt NVFP4 quantization.
 
@@ -43,12 +43,12 @@ def matmul_float4(
         weight_scale: The weight scale tensor in f8e4m3fn.
         input_scale: The input scale factor in f32 (used with vLLM convention by kernel).
         weight_scale_2: Additional weight scale factor in f32.
-        float8_config: The float8 configuration.
+        quant_config: The quantization configuration.
 
     Returns:
         The output tensor in bf16.
     """
-    if not float8_config.is_nvfp4:
+    if not quant_config.is_nvfp4:
         raise ValueError(
             "matmul_float4 only supports modelopt NVFP4 quantization"
         )
@@ -81,7 +81,7 @@ def matmul_float8(
     weight: TensorValue,
     weight_scale: TensorValue,
     input_scale: TensorValue | None,
-    float8_config: Float8Config,
+    quant_config: QuantConfig,
     group_size_or_per_token: int = -1,
 ) -> TensorValue:
     """Computes x @ weight.T with float8 quantization.
@@ -92,14 +92,14 @@ def matmul_float8(
         weight_scale: The weight scale tensor.
         input_scale: The input scale tensor (only required for static
             fp8 quantization).
-        float8_config: The float8 configuration.
+        quant_config: The quantization configuration.
         group_size_or_per_token: The group size for quantization. When set to -1,
             the quantization is column-wise.
 
     Returns:
         The output tensor.
     """
-    if float8_config.is_nvfp4:
+    if quant_config.is_nvfp4:
         raise ValueError(
             "matmul_float8 does not support modelopt NVFP4 quantization"
         )
@@ -115,8 +115,8 @@ def matmul_float8(
     else:
         x, x_scales = quantize_dynamic_scaled_float8(
             x,
-            float8_config.input_scale,
-            float8_config.weight_scale,
+            quant_config.input_scale,
+            quant_config.weight_scale,
             scales_type=weight_scale.dtype,
             group_size_or_per_token=group_size_or_per_token,
             out_type=weight.dtype,
@@ -128,7 +128,7 @@ def matmul_float8(
             weight,
             x_scales,
             weight_scale,
-            float8_config.input_scale,
-            float8_config.weight_scale,
+            quant_config.input_scale,
+            quant_config.weight_scale,
             out_type=DType.bfloat16,
         )

@@ -75,8 +75,8 @@ class DistributedLlama3(DistributedTransformer):
             eps=config.rms_norm_eps,
         )
 
-        fp8_cfg = config.float8_config
-        linear_cls = functools.partial(Linear, float8_config=fp8_cfg)
+        quant_cfg = config.quant_config
+        linear_cls = functools.partial(Linear, quant_config=quant_cfg)
 
         layers = []
         sublayer_groupings_dict = defaultdict(list)
@@ -87,12 +87,13 @@ class DistributedLlama3(DistributedTransformer):
             # quantized models.
             attn_qkv_dtype = (
                 DType.bfloat16
-                if fp8_cfg and layer_idx not in fp8_cfg.attn_qkv_in_float8
+                if quant_cfg
+                and layer_idx not in quant_cfg.attn_quantized_layers
                 else config.dtype
             )
             mlp_dtype = (
                 DType.bfloat16
-                if fp8_cfg and layer_idx not in fp8_cfg.mlp_in_float8
+                if quant_cfg and layer_idx not in quant_cfg.mlp_quantized_layers
                 else config.dtype
             )
 
@@ -107,9 +108,10 @@ class DistributedLlama3(DistributedTransformer):
                 config.intermediate_size,
                 config.devices,
                 linear_cls,
-                float8_config=(
-                    fp8_cfg
-                    if fp8_cfg and (layer_idx in fp8_cfg.mlp_in_float8)
+                quant_config=(
+                    quant_cfg
+                    if quant_cfg
+                    and (layer_idx in quant_cfg.mlp_quantized_layers)
                     else None
                 ),
             )
@@ -130,10 +132,10 @@ class DistributedLlama3(DistributedTransformer):
                         devices=config.devices,
                         has_bias=config.attention_bias,
                         # Only pass the float8 config if this attention layer is quantized.
-                        float8_config=(
-                            fp8_cfg
-                            if fp8_cfg
-                            and (layer_idx in fp8_cfg.attn_qkv_in_float8)
+                        quant_config=(
+                            quant_cfg
+                            if quant_cfg
+                            and (layer_idx in quant_cfg.attn_quantized_layers)
                             else None
                         ),
                     ),
@@ -154,8 +156,8 @@ class DistributedLlama3(DistributedTransformer):
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             embedding_output_dtype = DType.bfloat16
             embedding_output_quantization = None
-        if fp8_cfg and fp8_cfg.embedding_output_dtype:
-            embedding_output_dtype = fp8_cfg.embedding_output_dtype
+        if quant_cfg and quant_cfg.embedding_output_dtype:
+            embedding_output_dtype = quant_cfg.embedding_output_dtype
 
         embedding_layer = VocabParallelEmbedding(
             config.vocab_size,

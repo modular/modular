@@ -23,14 +23,14 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, ShardingStrategy, TensorType
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.float8_config import (
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
-    Float8WeightScaleSpec,
-)
 from max.nn.moe import MoEQuantized
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+)
 from max.nn.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
@@ -83,22 +83,22 @@ def test_ep_moe_fp4(
     session = InferenceSession(devices=devices)
 
     # Create fp4 config (NVFP4)
-    fp4_input_config = Float8InputScaleSpec(
-        granularity=Float8ScaleGranularity.BLOCK,
-        origin=Float8ScaleOrigin.STATIC,
+    fp4_input_config = InputScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        origin=ScaleOrigin.STATIC,
         dtype=DType.float32,
         block_size=(1, 16),
     )
-    fp4_weight_config = Float8WeightScaleSpec(
-        granularity=Float8ScaleGranularity.BLOCK,
+    fp4_weight_config = WeightScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
         dtype=DType.float8_e4m3fn,
         block_size=(1, 8),
     )
-    fp4_config = Float8Config(
+    fp4_config = QuantConfig(
         input_scale=fp4_input_config,
         weight_scale=fp4_weight_config,
-        mlp_in_float8=set(),
-        attn_qkv_in_float8=set(),
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
         embedding_output_dtype=None,
         quant_method="modelopt",
         quant_algo="NVFP4",
@@ -114,7 +114,7 @@ def test_ep_moe_fp4(
         max_tokens_per_rank=max_tokens_per_rank,
         n_gpus_per_node=n_devices,
         n_nodes=int(os.environ.get("SHMEM_TOTAL_NODES", "1")),
-        dispatch_fp8_config=fp4_config,
+        dispatch_quant_config=fp4_config,
         fused_shared_expert=True,
     )
 
@@ -135,7 +135,7 @@ def test_ep_moe_fp4(
         dtype=dtype,
         apply_router_weight_first=False,
         ep_batch_manager=ep_batch_manager,
-        float8_config=fp4_config,
+        quant_config=fp4_config,
     )
     moe.sharding_strategy = ShardingStrategy.expert_parallel(n_devices)
     moe_shards = moe.shard(devices_ref)

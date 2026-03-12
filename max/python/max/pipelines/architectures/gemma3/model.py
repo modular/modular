@@ -37,11 +37,11 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
-from max.pipelines.lib.float8 import parse_float8_config
 from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
     log_probabilities_ragged_graph,
 )
+from max.pipelines.lib.quant import parse_quant_config
 from transformers import AutoConfig
 
 from .gemma3 import Gemma3
@@ -275,7 +275,7 @@ class Gemma3Model(
             }
 
         state_dict_prefix = "language_model." if self._is_multimodal else ""
-        float8_config = parse_float8_config(
+        quant_config = parse_quant_config(
             text_config,
             state_dict,
             self.dtype,
@@ -290,7 +290,7 @@ class Gemma3Model(
             huggingface_config=text_config,
             state_dict=state_dict,
             return_logits=self.return_logits,
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
         nn_model = Gemma3(model_config)
         nn_model.load_state_dict(

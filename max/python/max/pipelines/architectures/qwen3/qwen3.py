@@ -80,7 +80,7 @@ class Qwen3TransformerBlock(Module):
             scale=config.attention_multiplier,
             has_bias=config.attention_bias,
             norm_dtype=config.norm_dtype or config.dtype,
-            float8_config=config.float8_config,
+            quant_config=config.quant_config,
         )
         self.self_attn.sharding_strategy = ShardingStrategy.tensor_parallel(
             num_devices
@@ -127,7 +127,7 @@ class Qwen3TransformerBlock(Module):
         )
 
         if use_moe:
-            moe_cls = MoEQuantized if config.float8_config is not None else MoE
+            moe_cls = MoEQuantized if config.quant_config is not None else MoE
             return moe_cls(
                 devices=config.devices,
                 hidden_dim=config.hidden_size,
@@ -136,7 +136,7 @@ class Qwen3TransformerBlock(Module):
                 moe_dim=config.moe_intermediate_size,
                 gate_cls=Qwen3MoEGate,
                 dtype=config.dtype,
-                float8_config=config.float8_config,
+                quant_config=config.quant_config,
             )
         else:
             return MLP(
@@ -146,7 +146,7 @@ class Qwen3TransformerBlock(Module):
                 config.intermediate_size,
                 config.devices,
                 linear_cls,
-                float8_config=config.float8_config,
+                quant_config=config.quant_config,
             )
 
     def __call__(
@@ -255,9 +255,7 @@ class Qwen3(DistributedLogitsPostprocessMixin, Module):
             multiply_before_cast=False,
         )
 
-        linear_cls = functools.partial(
-            Linear, float8_config=config.float8_config
-        )
+        linear_cls = functools.partial(Linear, quant_config=config.quant_config)
 
         # Create transformer layers
         self.layers = LayerList(
@@ -283,8 +281,8 @@ class Qwen3(DistributedLogitsPostprocessMixin, Module):
         # Embedding and output layers - always use parallel versions
         # They work correctly for single GPU too (parallel ops become no-ops)
         embedding_dtype = config.dtype
-        if config.float8_config and config.float8_config.embedding_output_dtype:
-            embedding_dtype = config.float8_config.embedding_output_dtype
+        if config.quant_config and config.quant_config.embedding_output_dtype:
+            embedding_dtype = config.quant_config.embedding_output_dtype
 
         self.embed_tokens = VocabParallelEmbedding(
             config.vocab_size,

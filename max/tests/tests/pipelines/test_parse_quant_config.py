@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for parse_float8_config in Llama3 model_config."""
+"""Tests for parse_quant_config in Llama3 model_config."""
 
 from __future__ import annotations
 
@@ -23,17 +23,17 @@ import torch
 from max.dtype import DType
 from max.graph import Shape
 from max.graph.weights import WeightData
-from max.nn.float8_config import (
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
+from max.nn.quant_config import (
+    ScaleGranularity,
+    ScaleOrigin,
 )
-from max.pipelines.lib.float8 import parse_float8_config
+from max.pipelines.lib.quant import parse_quant_config
 from transformers import AutoConfig
 
 # Define a base path for test data.
 # Note: Bazel runs tests from the workspace root, but puts datafiles
 # in a path relative to the test file's location.
-# tests/pipelines/test_parse_float8_config.py
+# tests/pipelines/test_parse_quant_config.py
 # tests/pipelines/testdata/llama_3_1_405b_fp8.json
 TEST_DATA_PATH = Path(__file__).parent / "testdata"
 
@@ -96,32 +96,28 @@ def test_parse_fbgemm_instruct_config(
     state_dict = state_dict_with_lm_head_and_fbgemm_scales
     dtype = DType.float8_e4m3fn
 
-    float8_config = parse_float8_config(hf_config, state_dict, dtype)
+    quant_config = parse_quant_config(hf_config, state_dict, dtype)
 
-    assert float8_config is not None
-    assert float8_config.quant_method == "fbgemm_fp8"
+    assert quant_config is not None
+    assert quant_config.quant_method == "fbgemm_fp8"
+    assert quant_config.input_scale.granularity == ScaleGranularity.COLWISE
+    assert quant_config.input_scale.origin == ScaleOrigin.DYNAMIC
+    assert quant_config.input_scale.dtype == dtype
     assert (
-        float8_config.input_scale.granularity == Float8ScaleGranularity.COLWISE
-    )
-    assert float8_config.input_scale.origin == Float8ScaleOrigin.DYNAMIC
-    assert float8_config.input_scale.dtype == dtype
-    assert (
-        float8_config.input_scale.activation_scale_ub
+        quant_config.input_scale.activation_scale_ub
         == hf_config.quantization_config["activation_scale_ub"]
     )
-    assert (
-        float8_config.weight_scale.granularity == Float8ScaleGranularity.ROWWISE
-    )
+    assert quant_config.weight_scale.granularity == ScaleGranularity.ROWWISE
 
     # Check dtypes originating from the state dict.
-    assert float8_config.weight_scale.dtype == DType.float8_e4m3fn
-    assert float8_config.embedding_output_dtype == DType.bfloat16
+    assert quant_config.weight_scale.dtype == DType.float8_e4m3fn
+    assert quant_config.embedding_output_dtype == DType.bfloat16
 
     # Layer 0 MLP and Attn are in modules_to_not_convert
-    expected_mlp_in_float8 = set(range(1, hf_config.num_hidden_layers))
-    expected_attn_qkv_in_float8 = set(range(1, hf_config.num_hidden_layers))
-    assert float8_config.mlp_in_float8 == expected_mlp_in_float8
-    assert float8_config.attn_qkv_in_float8 == expected_attn_qkv_in_float8
+    expected_mlp_quantized_layers = set(range(1, hf_config.num_hidden_layers))
+    expected_attn_quantized_layers = set(range(1, hf_config.num_hidden_layers))
+    assert quant_config.mlp_quantized_layers == expected_mlp_quantized_layers
+    assert quant_config.attn_quantized_layers == expected_attn_quantized_layers
 
 
 def test_parse_fbgemm_base_config(
@@ -137,28 +133,27 @@ def test_parse_fbgemm_base_config(
     state_dict = state_dict_with_lm_head_and_fbgemm_scales
     dtype = DType.float8_e4m3fn
 
-    float8_config = parse_float8_config(hf_config, state_dict, dtype)
+    quant_config = parse_quant_config(hf_config, state_dict, dtype)
 
-    assert float8_config is not None
-    assert float8_config.quant_method == "fbgemm_fp8"
+    assert quant_config is not None
+    assert quant_config.quant_method == "fbgemm_fp8"
 
     # Check output dtype from the state dict.
-    assert float8_config.embedding_output_dtype == DType.bfloat16
+    assert quant_config.embedding_output_dtype == DType.bfloat16
 
-    expected_mlp_in_float8 = set(range(1, hf_config.num_hidden_layers))
-    expected_attn_qkv_in_float8 = set(range(1, hf_config.num_hidden_layers))
-    assert float8_config.mlp_in_float8 == expected_mlp_in_float8
-    assert float8_config.attn_qkv_in_float8 == expected_attn_qkv_in_float8
+    expected_mlp_quantized_layers = set(range(1, hf_config.num_hidden_layers))
+    expected_attn_quantized_layers = set(range(1, hf_config.num_hidden_layers))
+    assert quant_config.mlp_quantized_layers == expected_mlp_quantized_layers
+    assert quant_config.attn_quantized_layers == expected_attn_quantized_layers
 
 
 # --- Error Cases --- #
 
 
 def test_error_wrong_dtype(hf_config_instruct_fbgemm: AutoConfig) -> None:
-    """Tests parse_float8_config returns None if dtype is not float8_e4m3fn."""
+    """Tests parse_quant_config returns None if dtype is not float8_e4m3fn."""
     assert (
-        parse_float8_config(hf_config_instruct_fbgemm, {}, DType.float16)
-        is None
+        parse_quant_config(hf_config_instruct_fbgemm, {}, DType.float16) is None
     )
 
 
@@ -171,7 +166,7 @@ def test_error_missing_quantization_config(
     with pytest.raises(
         ValueError, match="expected a `quantization_config` field"
     ):
-        parse_float8_config(hf_config_no_quant, {}, DType.float8_e4m3fn)
+        parse_quant_config(hf_config_no_quant, {}, DType.float8_e4m3fn)
 
 
 def test_error_unsupported_quant_method(
@@ -184,7 +179,7 @@ def test_error_unsupported_quant_method(
         "unsupported_method"
     )
     with pytest.raises(ValueError, match="unsupported or incompatible"):
-        parse_float8_config(
+        parse_quant_config(
             hf_config_bad_method,
             state_dict_with_lm_head_and_fbgemm_scales,
             DType.float8_e4m3fn,
@@ -205,7 +200,7 @@ def test_error_fbgemm_missing_weight_scale(
         )
     }
     with pytest.raises(ValueError, match="could not find weight scale dtype"):
-        parse_float8_config(
+        parse_quant_config(
             hf_config_instruct_fbgemm, state_dict_no_scales, DType.float8_e4m3fn
         )
 
@@ -240,7 +235,7 @@ def test_error_fbgemm_inconsistent_weight_scale_dtype(
     with pytest.raises(
         ValueError, match="uniform weight scale dtype is supported"
     ):
-        parse_float8_config(
+        parse_quant_config(
             hf_config, state_dict_inconsistent_ws_dtype, DType.float8_e4m3fn
         )
 
@@ -267,7 +262,7 @@ def test_error_fbgemm_bad_weight_scale_shape(
     hf_config.quantization_config["quant_method"] = "fbgemm_fp8"
 
     with pytest.raises(ValueError, match="only row-wise weight quantization"):
-        parse_float8_config(
+        parse_quant_config(
             hf_config, state_dict_bad_ws_shape, DType.float8_e4m3fn
         )
 
@@ -289,7 +284,7 @@ def test_error_partial_mlp_quantization(
         "model.layers.0.self_attn.v_proj",
     ]
     with pytest.raises(ValueError, match="uniform quantization for MLPs"):
-        parse_float8_config(
+        parse_quant_config(
             hf_config_partial_mlp,
             state_dict_with_lm_head_and_fbgemm_scales,
             DType.float8_e4m3fn,
@@ -315,7 +310,7 @@ def test_error_partial_attn_qkv_quantization(
     with pytest.raises(
         ValueError, match="uniform quantization for attention QKV"
     ):
-        parse_float8_config(
+        parse_quant_config(
             hf_config_partial_attn,
             state_dict_with_lm_head_and_fbgemm_scales,
             DType.float8_e4m3fn,
@@ -332,7 +327,7 @@ def test_error_lm_head_ignored_no_weights(
     with pytest.raises(
         ValueError, match="cannot determine original type from checkpoint"
     ):
-        parse_float8_config(
+        parse_quant_config(
             hf_config_base_fbgemm,
             state_dict_fbgemm_scales_only,
             DType.float8_e4m3fn,
@@ -372,7 +367,7 @@ def test_error_ct_unsupported_input_strategy(
     with pytest.raises(
         ValueError, match="unsupported FP8 input activation strategy"
     ):
-        parse_float8_config(
+        parse_quant_config(
             config,
             state_dict_with_lm_head_and_fbgemm_scales,
             DType.float8_e4m3fn,
@@ -389,7 +384,7 @@ def test_error_ct_unsupported_weight_strategy(
         "strategy"
     ] = "unsupported_weight_strat"
     with pytest.raises(ValueError, match="unsupported FP8 weight strategy"):
-        parse_float8_config(
+        parse_quant_config(
             config,
             state_dict_with_lm_head_and_fbgemm_scales,
             DType.float8_e4m3fn,
@@ -409,7 +404,7 @@ def test_error_ct_dynamic_weight_scaling(
         ValueError,
         match="dynamic weight scaling is not supported for compressed-tensors",
     ):
-        parse_float8_config(
+        parse_quant_config(
             config,
             state_dict_with_lm_head_and_fbgemm_scales,
             DType.float8_e4m3fn,
@@ -480,7 +475,7 @@ def test_parse_gemma3_compressed_tensors(
     dtype = DType.float8_e4m3fn
 
     # Call with Gemma3's language_model prefix
-    float8_config = parse_float8_config(
+    quant_config = parse_quant_config(
         hf_config.text_config,
         state_dict,
         dtype,
@@ -488,24 +483,24 @@ def test_parse_gemma3_compressed_tensors(
         ignored_modules_prefix="language_model.",
     )
 
-    assert float8_config is not None
-    assert float8_config.quant_method == "compressed-tensors"
-    assert (
-        float8_config.input_scale.granularity == Float8ScaleGranularity.COLWISE
-    )
-    assert float8_config.input_scale.origin == Float8ScaleOrigin.DYNAMIC
-    assert float8_config.input_scale.dtype == DType.float32
+    assert quant_config is not None
+    assert quant_config.quant_method == "compressed-tensors"
+    assert quant_config.input_scale.granularity == ScaleGranularity.COLWISE
+    assert quant_config.input_scale.origin == ScaleOrigin.DYNAMIC
+    assert quant_config.input_scale.dtype == DType.float32
 
     # Check dtypes from state dict - embed_tokens takes priority
-    assert float8_config.embedding_output_dtype == DType.bfloat16
+    assert quant_config.embedding_output_dtype == DType.bfloat16
 
     # All language model layers should be quantized (lm_head is ignored, but layers are not)
-    expected_mlp_in_float8 = set(range(hf_config.text_config.num_hidden_layers))
-    expected_attn_qkv_in_float8 = set(
+    expected_mlp_quantized_layers = set(
         range(hf_config.text_config.num_hidden_layers)
     )
-    assert float8_config.mlp_in_float8 == expected_mlp_in_float8
-    assert float8_config.attn_qkv_in_float8 == expected_attn_qkv_in_float8
+    expected_attn_quantized_layers = set(
+        range(hf_config.text_config.num_hidden_layers)
+    )
+    assert quant_config.mlp_quantized_layers == expected_mlp_quantized_layers
+    assert quant_config.attn_quantized_layers == expected_attn_quantized_layers
 
 
 def test_gemma3_layer_prefix_handling(
@@ -534,7 +529,7 @@ def test_gemma3_layer_prefix_handling(
         ),
     }
 
-    float8_config = parse_float8_config(
+    quant_config = parse_quant_config(
         hf_config_gemma3_compressed_tensors.text_config,
         state_dict_lm_head_only,
         DType.float8_e4m3fn,
@@ -542,9 +537,9 @@ def test_gemma3_layer_prefix_handling(
         ignored_modules_prefix="language_model.",
     )
 
-    assert float8_config is not None
+    assert quant_config is not None
     # Should fall back to lm_head dtype when embed_tokens is missing
-    assert float8_config.embedding_output_dtype == DType.float8_e4m3fn
+    assert quant_config.embedding_output_dtype == DType.float8_e4m3fn
 
 
 def test_gemma3_vs_llama3_prefix_difference(
@@ -588,7 +583,7 @@ def test_gemma3_vs_llama3_prefix_difference(
     }
 
     # Parse with Gemma3 prefixes - should use bfloat16 from language_model.embed_tokens.weight
-    float8_config = parse_float8_config(
+    quant_config = parse_quant_config(
         hf_config_gemma3_compressed_tensors.text_config,
         state_dict_with_both_prefixes,
         DType.float8_e4m3fn,
@@ -596,15 +591,15 @@ def test_gemma3_vs_llama3_prefix_difference(
         ignored_modules_prefix="language_model.",
     )
 
-    assert float8_config is not None
-    assert float8_config.embedding_output_dtype == DType.bfloat16
+    assert quant_config is not None
+    assert quant_config.embedding_output_dtype == DType.bfloat16
 
 
 def test_parse_fbgemm_bias_dtype(
     hf_config_instruct_fbgemm: AutoConfig,
     state_dict_with_lm_head_and_fbgemm_scales: dict[str, WeightData],
 ) -> None:
-    """Tests that parse_float8_config correctly extracts bias_dtype from state dict."""
+    """Tests that parse_quant_config correctly extracts bias_dtype from state dict."""
     hf_config = hf_config_instruct_fbgemm
     state_dict = state_dict_with_lm_head_and_fbgemm_scales.copy()
 
@@ -623,32 +618,32 @@ def test_parse_fbgemm_bias_dtype(
     )
 
     dtype = DType.float8_e4m3fn
-    float8_config = parse_float8_config(hf_config, state_dict, dtype)
+    quant_config = parse_quant_config(hf_config, state_dict, dtype)
 
-    assert float8_config is not None
-    assert float8_config.bias_dtype == DType.float32
+    assert quant_config is not None
+    assert quant_config.bias_dtype == DType.float32
 
 
 def test_parse_fbgemm_bias_dtype_none(
     hf_config_instruct_fbgemm: AutoConfig,
     state_dict_with_lm_head_and_fbgemm_scales: dict[str, WeightData],
 ) -> None:
-    """Tests that parse_float8_config returns None for bias_dtype when no bias weights exist."""
+    """Tests that parse_quant_config returns None for bias_dtype when no bias weights exist."""
     hf_config = hf_config_instruct_fbgemm
     state_dict = state_dict_with_lm_head_and_fbgemm_scales
     dtype = DType.float8_e4m3fn
 
-    float8_config = parse_float8_config(hf_config, state_dict, dtype)
+    quant_config = parse_quant_config(hf_config, state_dict, dtype)
 
-    assert float8_config is not None
-    assert float8_config.bias_dtype is None
+    assert quant_config is not None
+    assert quant_config.bias_dtype is None
 
 
 def test_parse_fbgemm_bias_dtype_inconsistent(
     hf_config_instruct_fbgemm: AutoConfig,
     state_dict_with_lm_head_and_fbgemm_scales: dict[str, WeightData],
 ) -> None:
-    """Tests that parse_float8_config raises error for inconsistent bias dtypes."""
+    """Tests that parse_quant_config raises error for inconsistent bias dtypes."""
     hf_config = hf_config_instruct_fbgemm
     state_dict = state_dict_with_lm_head_and_fbgemm_scales.copy()
 
@@ -668,14 +663,14 @@ def test_parse_fbgemm_bias_dtype_inconsistent(
 
     dtype = DType.float8_e4m3fn
     with pytest.raises(ValueError, match="Inconsistent bias dtypes found"):
-        parse_float8_config(hf_config, state_dict, dtype)
+        parse_quant_config(hf_config, state_dict, dtype)
 
 
 def test_parse_compressed_tensors_bias_dtype(
     hf_config_compressed_tensors: AutoConfig,
     state_dict_with_lm_head_and_fbgemm_scales: dict[str, WeightData],
 ) -> None:
-    """Tests that parse_float8_config correctly extracts bias_dtype for compressed-tensors."""
+    """Tests that parse_quant_config correctly extracts bias_dtype for compressed-tensors."""
     config = hf_config_compressed_tensors
     state_dict = state_dict_with_lm_head_and_fbgemm_scales.copy()
 
@@ -702,10 +697,10 @@ def test_parse_compressed_tensors_bias_dtype(
     )
 
     dtype = DType.float8_e4m3fn
-    float8_config = parse_float8_config(config, state_dict, dtype)
+    quant_config = parse_quant_config(config, state_dict, dtype)
 
-    assert float8_config is not None
-    assert float8_config.bias_dtype == DType.bfloat16
+    assert quant_config is not None
+    assert quant_config.bias_dtype == DType.bfloat16
 
 
 @pytest.fixture
@@ -722,7 +717,7 @@ def test_parse_fp8_bias_dtype(
     hf_config_fp8: AutoConfig,
     state_dict_with_lm_head_and_fbgemm_scales: dict[str, WeightData],
 ) -> None:
-    """Tests that parse_float8_config correctly extracts bias_dtype for fp8 method."""
+    """Tests that parse_quant_config correctly extracts bias_dtype for fp8 method."""
     config = hf_config_fp8
     state_dict = state_dict_with_lm_head_and_fbgemm_scales.copy()
 
@@ -743,11 +738,11 @@ def test_parse_fp8_bias_dtype(
     )
 
     dtype = DType.float8_e4m3fn
-    float8_config = parse_float8_config(config, state_dict, dtype)
+    quant_config = parse_quant_config(config, state_dict, dtype)
 
-    assert float8_config is not None
-    assert float8_config.quant_method == "fp8"
-    assert float8_config.bias_dtype == DType.float16
+    assert quant_config is not None
+    assert quant_config.quant_method == "fp8"
+    assert quant_config.bias_dtype == DType.float16
 
 
 def test_parse_float4_from_standalone_hf_quant_config(
@@ -772,11 +767,11 @@ def test_parse_float4_from_standalone_hf_quant_config(
         del hf_config.quantization_config
     hf_config._name_or_path = str(repo_dir)
 
-    float8_config = parse_float8_config(hf_config, {}, DType.uint8)
+    quant_config = parse_quant_config(hf_config, {}, DType.uint8)
 
-    assert float8_config is not None
-    assert float8_config.quant_method == "modelopt"
-    assert float8_config.quant_algo == "NVFP4"
+    assert quant_config is not None
+    assert quant_config.quant_method == "modelopt"
+    assert quant_config.quant_algo == "NVFP4"
 
 
 def test_parse_float4_skips_gptq_quant_method(
@@ -786,6 +781,6 @@ def test_parse_float4_skips_gptq_quant_method(
     hf_config = deepcopy(hf_config_instruct_fbgemm)
     hf_config.quantization_config = {"quant_method": "gptq"}
 
-    float8_config = parse_float8_config(hf_config, {}, DType.uint8)
+    quant_config = parse_quant_config(hf_config, {}, DType.uint8)
 
-    assert float8_config is None
+    assert quant_config is None

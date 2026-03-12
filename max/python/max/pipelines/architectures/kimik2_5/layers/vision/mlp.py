@@ -23,9 +23,9 @@ from max.graph import (
 )
 from max.graph.quantization import QuantizationEncoding
 from max.nn.activation import activation_function_from_name
-from max.nn.float8_config import Float8Config
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
+from max.nn.quant_config import QuantConfig
 
 
 # TODO: (MODELS-1084) generalize this (non-gated) MLP layer and move it somewhere central
@@ -41,7 +41,7 @@ class MLP2(Module, Shardable):
         linear_cls: Callable[..., Linear] = Linear,
         has_bias: bool = False,
         activation_function: str = "gelu_tanh",
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
         _is_sharding: bool = False,
     ) -> None:
         """Initializes the MLP2 layer.
@@ -57,7 +57,7 @@ class MLP2(Module, Shardable):
 
                 - ``gelu_tanh``
 
-            float8_config: :obj:`Float8Config` for float8 quantization.
+            quant_config: :obj:`QuantConfig` for scaled quantization.
             _is_sharding: Used internally to disable child layer creation during sharding.
         """
         super().__init__()
@@ -68,7 +68,7 @@ class MLP2(Module, Shardable):
                 device=device,
                 quantization_encoding=quantization_encoding,
                 has_bias=has_bias,
-                float8_config=float8_config,
+                quant_config=quant_config,
             )
             self.up_proj = linear_cls(in_dim=dim[0], out_dim=dim[1], **common)
             self.down_proj = linear_cls(in_dim=dim[1], out_dim=dim[2], **common)
@@ -81,7 +81,7 @@ class MLP2(Module, Shardable):
         self.activation_function = activation_function_from_name(
             activation_function
         )
-        self.float8_config = float8_config
+        self.quant_config = quant_config
         self._sharding_strategy: ShardingStrategy | None = None
 
     def __call__(self, x: TensorValue) -> TensorValue:
@@ -158,7 +158,7 @@ class MLP2(Module, Shardable):
                 quantization_encoding=self.quantization_encoding,
                 has_bias=self.has_bias,
                 activation_function=self._activation_function_name,
-                float8_config=self.float8_config,
+                quant_config=self.quant_config,
                 _is_sharding=True,
             )
             sharded.down_proj = down_proj
