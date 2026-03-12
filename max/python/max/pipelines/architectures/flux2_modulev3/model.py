@@ -73,6 +73,7 @@ class Flux2TransformerModel(ComponentModel):
 
     def use_standard_model(self) -> None:
         if self._standard_model is None:
+            self._flux_model._step_cache_enabled = False
             self._standard_model = self._flux_model.compile(
                 *self._flux_model.input_types(step_cache_enabled=False),
                 weights=self._state_dict,
@@ -81,9 +82,11 @@ class Flux2TransformerModel(ComponentModel):
             self._step_cache_model = None
         self.model = self._standard_model
 
-    def use_step_cache_model(self) -> None:
+    def use_step_cache_model(self, rdt: float = 0.05) -> None:
         if self._step_cache_model is None:
             assert self._flux_model is not None
+            self._flux_model._step_cache_enabled = True
+            self._flux_model._rdt_value = rdt
             self._step_cache_model = self._flux_model.compile(
                 *self._flux_model.input_types(step_cache_enabled=True),
                 weights=self._state_dict,
@@ -102,8 +105,6 @@ class Flux2TransformerModel(ComponentModel):
         guidance: Tensor,
         prev_residual: Tensor | None = None,
         prev_output: Tensor | None = None,
-        step_cache_flag: Tensor | None = None,
-        rdt: Tensor | None = None,
     ) -> Any:
         args = (
             hidden_states,
@@ -114,5 +115,5 @@ class Flux2TransformerModel(ComponentModel):
             guidance,
         )
         if prev_residual is not None:
-            args += (prev_residual, prev_output, step_cache_flag, rdt)
+            args += (prev_residual, prev_output)
         return self.model(*args)

@@ -401,8 +401,6 @@ class FluxPipeline(DiffusionPipeline, CacheMixin):
             guidance,
             prev_residual=cache_state.prev_residual,
             prev_output=cache_state.prev_output,
-            step_cache_flag=self._cache_step_cache_flag,
-            rdt=self._cache_rdt_tensor,
         )
 
     def execute(  # type: ignore[override]

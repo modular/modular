@@ -254,7 +254,7 @@ class DiffusionPipeline(ABC):
         # 3. Full compute path
         result = self.run_transformer(cache_state, **kwargs)
         if cache_config.step_cache:
-            noise_pred, new_residual = result
+            new_residual, noise_pred = result
             cache_state.prev_residual = new_residual
             cache_state.prev_output = noise_pred
         else:

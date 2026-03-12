@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -22,7 +23,7 @@ from max._core.driver import Device
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
-from max.graph import TensorType
+from max.graph import TensorType, TensorValue
 
 from .component_model import ComponentModel
 from .diffusion_pipeline import max_compile
@@ -73,8 +74,6 @@ class CacheMixin:
     _gpu_scalar_cache: dict[tuple[Any, float], Tensor]
 
     # Pre-allocated tensors (created once at init, reused across requests)
-    _cache_step_cache_flag: Tensor | None
-    _cache_rdt_tensor: Tensor | None
     _cache_taylor_max_order_tensor: Tensor | None
 
     _cache_dtype: DType
@@ -106,28 +105,12 @@ class CacheMixin:
 
         rdt = cache_config.rdt if cache_config.rdt is not None else default_rdt
 
-        # Graph selection (init-time, not per-request)
+        # Graph selection (init-time, not per-request).
+        # rdt is baked into the step-cache graph as a constant.
         if cache_config.step_cache:
-            transformer.use_step_cache_model()
+            transformer.use_step_cache_model(rdt=rdt)
         else:
             transformer.use_standard_model()
-
-        # Pre-allocate constant tensors
-        self._cache_step_cache_flag = None
-        self._cache_rdt_tensor = None
-        if cache_config.step_cache:
-            self._cache_step_cache_flag = Tensor.full(
-                [1],
-                True,
-                dtype=DType.bool,
-                device=device,
-            )
-            self._cache_rdt_tensor = Tensor.full(
-                [1],
-                rdt,
-                dtype=DType.float32,
-                device=device,
-            )
 
         self._cache_taylor_max_order_tensor = None
         if cache_config.taylorseer:
@@ -305,6 +288,67 @@ class CacheMixin:
         if step < warmup_steps:
             return False
         return (step - warmup_steps - 1) % cache_interval != 0
+
+
+def fbcache_conditional_execution(
+    first_block_residual: Tensor,
+    prev_residual: Tensor,
+    prev_output: Tensor,
+    rdt_value: float,
+    run_remaining_blocks: Callable[..., Tensor],
+    run_remaining_kwargs: dict[str, Any],
+    output_types: list[TensorType],
+) -> tuple[Tensor, Tensor]:
+    """Handle FBCache F.cond branching pattern shared across DiT models.
+
+    This is only called from the step-cache graph path (where step-cache is
+    always enabled), so there is no outer ``F.cond`` on a cache-enabled flag.
+    The single ``F.cond`` checks the RDT (relative difference threshold) to
+    decide whether to reuse the cached output or run the remaining blocks.
+
+    The caller provides:
+    - first_block_residual: computed as ``new_hidden_states - hidden_states``
+      after running the first transformer block.
+    - rdt_value: the relative difference threshold as a Python float.
+    - run_remaining_blocks: model-specific callable that runs remaining
+      blocks + norm + proj.  Called with ``**run_remaining_kwargs`` and must
+      return a single output ``Tensor``.
+    - run_remaining_kwargs: keyword arguments forwarded to
+      *run_remaining_blocks*.
+    - output_types: ``[residual_type, output_type]`` passed directly to
+      ``F.cond``.
+
+    Returns:
+        (first_block_residual, output) tensors.
+    """
+    rdt = F.broadcast_to(
+        F.constant(rdt_value, DType.float32, device=first_block_residual.device),
+        [1],
+    )
+    use_step_cache = can_use_step_cache(first_block_residual, prev_residual, rdt)
+
+    def then_fn(
+        _prev_output: Tensor = prev_output,
+        _first_block_residual: Tensor = first_block_residual,
+    ) -> tuple[TensorValue, TensorValue]:
+        return (
+            TensorValue(_first_block_residual),
+            TensorValue(_prev_output),
+        )
+
+    def else_fn(
+        _fbr: Tensor = first_block_residual,
+    ) -> tuple[TensorValue, TensorValue]:
+        out = run_remaining_blocks(**run_remaining_kwargs)
+        return (TensorValue(_fbr), TensorValue(out))
+
+    result = F.cond(
+        use_step_cache,
+        output_types,
+        then_fn,
+        else_fn,
+    )
+    return (result[0], result[1])
 
 
 def can_use_step_cache(
