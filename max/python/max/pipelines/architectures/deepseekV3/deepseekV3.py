@@ -370,6 +370,8 @@ class DeepseekV3(Module):
     classes from the HuggingFace Transformers implementation.
     """
 
+    subgraph_layer_prefix: str = "layers"
+
     def __init__(self, config: DeepseekV3Config) -> None:
         super().__init__()
         self.config = config
@@ -479,14 +481,38 @@ class DeepseekV3(Module):
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
     ) -> tuple[TensorValue, ...]:
+        h = self.embed_tokens(tokens, signal_buffers)
+
+        return self._process_hidden_states(
+            h,
+            signal_buffers,
+            kv_collections,
+            return_n_logits,
+            input_row_offsets,
+            host_input_row_offsets,
+            data_parallel_splits,
+            batch_context_lengths,
+            ep_inputs,
+        )
+
+    def _process_hidden_states(
+        self,
+        h: list[TensorValue],
+        signal_buffers: list[BufferValue],
+        kv_collections: list[PagedCacheValues],
+        return_n_logits: TensorValue,
+        input_row_offsets: TensorValue,
+        host_input_row_offsets: TensorValue,
+        data_parallel_splits: TensorValue,
+        batch_context_lengths: list[TensorValue],
+        ep_inputs: list[Value[Any]] | None = None,
+    ) -> tuple[TensorValue, ...]:
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("input_row_offsets must be located on CPU")
         if not data_parallel_splits.device == DeviceRef.CPU():
             raise ValueError("data_parallel_splits must be located on CPU")
 
         devices = self.config.devices
-        h = self.embed_tokens(tokens, signal_buffers)
-
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
         # Keep this as explicit per-device `.to()` copies.
         # Broadcasting graph-time constants can hang when chained after
@@ -586,7 +612,7 @@ class DeepseekV3(Module):
                 subgraph_layer.build_subgraph(
                     f"dist_transformer_block_{group_idx}",
                     subgraph_input_types,
-                    f"layers.{layer_group[0]}.",
+                    f"{self.subgraph_layer_prefix}.{layer_group[0]}.",
                 )
             )
 
@@ -618,7 +644,7 @@ class DeepseekV3(Module):
                                 else ()
                             ),
                             *(ep_inputs if ep_inputs is not None else ()),
-                            prefix=f"layers.{idx}.",
+                            prefix=f"{self.subgraph_layer_prefix}.{idx}.",
                         )
                     ]
                     break

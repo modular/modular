@@ -13,7 +13,7 @@
 from max.nn import Module
 
 from ..deepseekV3.deepseekV3 import DeepseekV3
-from .layers.language_model import KimiDecoder
+from .layers.language_model import KimiK2_5MoEDecoder
 from .layers.vision.transformer import Transformer
 from .model_config import (
     KimiK2_5Config,
@@ -35,7 +35,7 @@ class KimiK2_5(Module):
 
     def build_language_model(self) -> DeepseekV3:
         """Return the language model component."""
-        return KimiDecoder(self.config.llm_config)
+        return KimiK2_5MoEDecoder(self.config.llm_config)
 
     def __call__(self, *args, **kwargs):
         """This class is not meant to be called directly. Use the component models instead."""
