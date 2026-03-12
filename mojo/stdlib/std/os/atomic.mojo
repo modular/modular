@@ -135,7 +135,7 @@ struct Consistency(
             writer: The object to write to.
         """
         comptime prefix_len = len("Consistency.")
-        writer.write_string(self.as_string_slice()[prefix_len:])
+        writer.write_string(self.as_string_slice()[byte=prefix_len:])
 
     def write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this `Consistency` to a writer.

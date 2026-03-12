@@ -183,7 +183,7 @@ def to_lowercase(s: StringSlice[mut=False, _]) -> String:
         var lowercase_char_opt = _get_lowercase_mapping(rune_and_size[0])
         if lowercase_char_opt is None:
             result.write_string(
-                s[input_offset : input_offset + rune_and_size[1]]
+                s[byte = input_offset : input_offset + rune_and_size[1]]
             )
         else:
             result += String(lowercase_char_opt.unsafe_value())
@@ -222,7 +222,7 @@ def to_uppercase(s: StringSlice[mut=False, _]) -> String:
                 result += String(uppercase_replacement_chars[char_idx])
         else:
             result.write_string(
-                s[input_offset : input_offset + rune_and_size[1]]
+                s[byte = input_offset : input_offset + rune_and_size[1]]
             )
 
         input_offset += rune_and_size[1]

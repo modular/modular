@@ -689,9 +689,9 @@ is the same as specifying the length of the string.
 
 ```mojo
 var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" # String type value
-print(alphabet[1:4])  # The 2nd through 4th characters
-print(alphabet[:6])   # The first 6 characters
-print(alphabet[-6:])  # The last 6 characters
+print(alphabet[byte=1:4])  # The 2nd through 4th characters
+print(alphabet[byte=:6])   # The first 6 characters
+print(alphabet[byte=-6:])  # The last 6 characters
 ```
 
 ```output
@@ -700,23 +700,6 @@ ABCDEF
 UVWXYZ
 ```
 
-You can also specify a slice with a `step` value, as in `[start:end:step]`
-indicating the increment between subsequent indices of the slide. (This is also
-sometimes referred to as a "stride.") If you provide a negative value for
-`step`, characters are selected in reverse order starting with `start` but then
-with *decreasing* index values up to but not including `end`.
-
-```mojo
-print(alphabet[1:6:2])     # The 2nd, 4th, and 6th characters
-print(alphabet[-1:-4:-1])  # The last 3 characters in reverse order
-print(alphabet[::-1])      # The entire string reversed
-```
-
-```output
-BDF
-ZYX
-ZYXWVUTSRQPONMLKJIHGFEDCBA
-```
 
 ### In-place assignment operators
 

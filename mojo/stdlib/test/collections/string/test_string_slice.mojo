@@ -200,11 +200,11 @@ def test_string_byte_span() raises:
     var unicode_str1 = StringSlice("Hi👋!")
 
     # Test slicing 0:{0–7}
-    assert_equal(unicode_str1[0:0], "")
-    assert_equal(unicode_str1[0:1], "H")
-    assert_equal(unicode_str1[0:2], "Hi")
-    assert_equal(unicode_str1[0:6], "Hi👋")
-    assert_equal(unicode_str1[0:7], "Hi👋!")
+    assert_equal(unicode_str1[byte=0:0], "")
+    assert_equal(unicode_str1[byte=0:1], "H")
+    assert_equal(unicode_str1[byte=0:2], "Hi")
+    assert_equal(unicode_str1[byte=0:6], "Hi👋")
+    assert_equal(unicode_str1[byte=0:7], "Hi👋!")
 
     # -------------------------------------------------------------------
     # Test that slicing through combining codepoint graphemes is allowed
@@ -226,12 +226,12 @@ def test_string_byte_span() raises:
     #   0   1   2   3
     var unicode_str2 = StringSlice("yö")
 
-    assert_equal(unicode_str2[0:1], "y")
-    assert_equal(unicode_str2[0:2], "yo")
-    assert_equal(unicode_str2[0:4], unicode_str2)
+    assert_equal(unicode_str2[byte=0:1], "y")
+    assert_equal(unicode_str2[byte=0:2], "yo")
+    assert_equal(unicode_str2[byte=0:4], unicode_str2)
     # NOTE: This renders weirdly, but is a single-codepoint string containing
     #   <https://www.compart.com/en/unicode/U+0308>.
-    assert_equal(unicode_str2[2:4], "̈")
+    assert_equal(unicode_str2[byte=2:4], "̈")
 
 
 def test_heap_string_from_string_slice() raises:
@@ -258,7 +258,7 @@ def test_string_substring() raises:
     # ----------------------------------
 
     # Slice the whole thing
-    var sub1 = str_slice[:5]
+    var sub1 = str_slice[byte=:5]
     assert_equal(len(sub1), 5)
     assert_equal(sub1[byte=0], "H")
     assert_equal(sub1[byte=1], "e")
@@ -267,14 +267,14 @@ def test_string_substring() raises:
     assert_equal(sub1[byte=4], "o")
 
     # Slice the end
-    var sub2 = str_slice[2:5]
+    var sub2 = str_slice[byte=2:5]
     assert_equal(len(sub2), 3)
     assert_equal(sub2[byte=0], "l")
     assert_equal(sub2[byte=1], "l")
     assert_equal(sub2[byte=2], "o")
 
     # Slice the first element
-    var sub3 = str_slice[0:1]
+    var sub3 = str_slice[byte=0:1]
     assert_equal(len(sub3), 1)
     assert_equal(sub3[byte=0], "H")
     assert_equal(sub3[byte=-1], "H")
@@ -283,10 +283,10 @@ def test_string_substring() raises:
     # Test empty subslicing
     # ----------------------------------
 
-    var sub4 = str_slice[0:0]
+    var sub4 = str_slice[byte=0:0]
     assert_equal(len(sub4), 0)
 
-    var sub5 = str_slice[2:2]
+    var sub5 = str_slice[byte=2:2]
     assert_equal(len(sub5), 0)
 
     # Empty slices still have a pointer value

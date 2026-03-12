@@ -161,7 +161,7 @@ def strip_unused_characters(x: StringSlice[mut=False, _]) -> type_of(x):
 
 def get_sign(x: StringSlice[mut=False, _]) -> Tuple[Float64, type_of(x)]:
     if x.startswith("-"):
-        return (-1.0, x[1:])
+        return (-1.0, x[byte=1:])
     return (1.0, x)
 
 

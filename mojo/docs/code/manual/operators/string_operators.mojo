@@ -95,9 +95,9 @@ def main() raises:
     # The following would produce a run-time error
     # print(alphabet[45])
 
-    print(alphabet[1:4])  # The 2nd through 4th characters
-    print(alphabet[:6])  # The first 6 characters
-    print(alphabet[-6:])  # The last 6 characters
+    print(alphabet[byte=1:4])  # The 2nd through 4th characters
+    print(alphabet[byte=:6])  # The first 6 characters
+    print(alphabet[byte= -6:])  # The last 6 characters
 
     # TODO: the current example in "Assignment expressions" isn't
     # readily testable, because it uses command-line input.

@@ -1106,15 +1106,15 @@ def _macos_version() raises -> Tuple[Int, Int, Int]:
     var patch = 0
 
     if "." in osver:
-        major = Int(osver[: osver.find(".")])
-        osver = String(osver[osver.find(".") + 1 :])
+        major = Int(osver[byte = : osver.find(".")])
+        osver = String(osver[byte = osver.find(".") + 1 :])
 
     if "." in osver:
-        minor = Int(osver[: osver.find(".")])
-        osver = String(osver[osver.find(".") + 1 :])
+        minor = Int(osver[byte = : osver.find(".")])
+        osver = String(osver[byte = osver.find(".") + 1 :])
 
     if "." in osver:
-        patch = Int(osver[: osver.find(".")])
+        patch = Int(osver[byte = : osver.find(".")])
 
     return (major, minor, patch)
 

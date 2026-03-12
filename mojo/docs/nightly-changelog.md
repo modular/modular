@@ -42,6 +42,9 @@ This version is still a work in progress.
   print(t"C:\{name}\Documents") # prints "C:\Mojo\Documents"
 ```
 
+- Subscripting `String` and `StringSlice` now requires a named parameter for range
+  indexing, for example `s[1:3]` is now `s[byte=1:3]`.
+
 ## Tooling changes
 
 ## ❌ Removed

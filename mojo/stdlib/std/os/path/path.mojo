@@ -76,7 +76,7 @@ def _user_home_path(path: String) -> String:
     # Special POSIX syntax for ~[user-name]/path
     if len(path) > 1 and user_end > 1:
         try:
-            return pwd.getpwnam(String(path[1:user_end])).pw_dir
+            return pwd.getpwnam(String(path[byte=1:user_end])).pw_dir
         except:
             return ""
     else:
@@ -221,7 +221,7 @@ def dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
     """
     var fspath = path.__fspath__()
     var i = fspath.rfind(os.sep) + 1
-    var head = String(fspath[:i])
+    var head = String(fspath[byte=:i])
     if head and head != os.sep * len(head):
         return String(head.rstrip(os.sep))
     return head
@@ -439,7 +439,7 @@ def split[PathLike: os.PathLike, //](path: PathLike) -> Tuple[String, String]:
     """
     var fspath = path.__fspath__()
     var i = fspath.rfind(os.sep) + 1
-    var head, tail = fspath[:i], fspath[i:]
+    var head, tail = fspath[byte=:i], fspath[byte=i:]
     if head and head != String(os.sep) * len(head):
         head = head.rstrip(sep)
     return String(head), String(tail)
@@ -465,7 +465,7 @@ def basename[PathLike: os.PathLike, //](path: PathLike) -> String:
     """
     var fspath = path.__fspath__()
     var i = fspath.rfind(os.sep) + 1
-    var head = fspath[i:]
+    var head = fspath[byte=i:]
     if head and head != os.sep * len(head):
         return String(head.rstrip(os.sep))
     return String(head)
@@ -530,7 +530,9 @@ def _split_extension(
         var file_start = head_end + 1
         while file_start < file_end:
             if StringSlice(path[byte=file_start]) != extension_sep:
-                return String(path[:file_end]), String(path[file_end:])
+                return String(path[byte=:file_end]), String(
+                    path[byte=file_end:]
+                )
             file_start += 1
 
     return String(path), ""
@@ -579,17 +581,17 @@ def splitroot[
     comptime empty = ""
 
     # Relative path, e.g.: 'foo'
-    if p[:1] != StringSlice(sep):
+    if p[byte=:1] != StringSlice(sep):
         return empty, empty, p
 
     # Absolute path, e.g.: '/foo', '///foo', '////foo', etc.
-    elif p[1:2] != StringSlice(sep) or p[2:3] == StringSlice(sep):
-        return empty, String(sep), String(p[1:])
+    elif p[byte=1:2] != StringSlice(sep) or p[byte=2:3] == StringSlice(sep):
+        return empty, String(sep), String(p[byte=1:])
 
     # Precisely two leading slashes, e.g.: '//foo'. Implementation defined per POSIX, see
     # https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13
     else:
-        return empty, String(p[:2]), String(p[2:])
+        return empty, String(p[byte=:2]), String(p[byte=2:])
 
 
 # ===----------------------------------------------------------------------=== #
@@ -711,23 +713,23 @@ def expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
         if bytes[j] == UInt8(ord("$")) and j + 1 < len(bytes):
             if not buf:
                 buf.reserve(new_capacity=2 * len(bytes))
-            buf.write_string(path_str[i:j])
+            buf.write_string(path_str[byte=i:j])
 
             var name, length = _parse_variable_name(bytes[j + 1 :])
 
             # Invalid syntax (`${}` or `${`) or $ was not followed by a name; write as is.
             if name.startswith("{") or name == "":
-                buf.write_string(path_str[j : j + length + 1])
+                buf.write_string(path_str[byte = j : j + length + 1])
             # Shell variable (eg `$@` or `$*`); write as is.
             elif _is_shell_special_variable(name.as_bytes()[0]):
-                buf.write_string(path_str[j : j + 2])
+                buf.write_string(path_str[byte = j : j + 2])
             # Environment variable; expand it. If no value, write as is.
             else:
                 value = os.getenv(String(name))
                 if value != "":
                     buf.write(value)
                 else:
-                    buf.write_string(path_str[j : j + length + 1])
+                    buf.write_string(path_str[byte = j : j + length + 1])
 
             j += length
             i = j + 1
@@ -736,5 +738,5 @@ def expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
     if not buf:
         return path_str
 
-    buf.write_string(path_str[i:])
+    buf.write_string(path_str[byte=i:])
     return buf

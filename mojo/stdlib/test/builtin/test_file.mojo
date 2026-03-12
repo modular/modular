@@ -303,7 +303,7 @@ def test_file_seek() raises:
             _ = f.seek(-12)
         except e:
             comptime expected_msg = "Failed to seek"
-            assert_equal(String(e)[: len(expected_msg)], expected_msg)
+            assert_equal(String(e)[byte = : len(expected_msg)], expected_msg)
 
 
 def test_file_open_nodir() raises:
