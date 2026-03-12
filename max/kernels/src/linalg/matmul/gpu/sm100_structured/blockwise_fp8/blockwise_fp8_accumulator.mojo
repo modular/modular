@@ -57,7 +57,7 @@ from ..structured_kernels.tmem import TmemAddress, TmemFragments
 
 
 @always_inline
-fn get_accumulator_dims[
+def get_accumulator_dims[
     *,
     c_smem_dim1: Int,
     block_tile_shape: IndexList[3],
@@ -94,7 +94,7 @@ fn get_accumulator_dims[
 
 
 @always_inline
-fn is_lower_fragment_required[
+def is_lower_fragment_required[
     cta_group: Int,
     block_tile_shape: IndexList[3],
 ]() -> Bool:
@@ -174,7 +174,7 @@ struct BlockwiseFP8Accumulator[
     var lower: Self.RegTileType
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Create accumulator with zero-initialized register tiles."""
         var accum_layout = row_major[Self.num_stages, Self.num_elements]()
         self.upper = stack_allocation[dtype=Self.accum_type](accum_layout)
@@ -185,7 +185,7 @@ struct BlockwiseFP8Accumulator[
             _ = self.lower.fill(0.0)
 
     @always_inline
-    fn promote[
+    def promote[
         # Parameters derived from argument types (use _ for inference)
         num_pipeline_stages: Int,
         opc: OutputPipelineConfig,

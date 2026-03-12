@@ -87,7 +87,7 @@ from structured_kernels.tile_types import (
 
 
 @always_inline
-fn _get_accumulator_size[
+def _get_accumulator_size[
     *,
     c_smem_layout: Layout,
     block_tile_shape: IndexList[3],
@@ -122,7 +122,7 @@ fn _get_accumulator_size[
 
 
 @always_inline
-fn load_AB[
+def load_AB[
     a_type: DType,
     b_type: DType,
     a_scales_type: DType,
@@ -256,7 +256,7 @@ fn load_AB[
 
 
 @always_inline
-fn multi_stage_reg_epilogue[
+def multi_stage_reg_epilogue[
     c_smem_layout: Layout,
     c_rank: Int,
     c_tile_shape: IndexList[c_rank],
@@ -437,7 +437,7 @@ fn multi_stage_reg_epilogue[
 
 
 @always_inline
-fn promote_accumulators[
+def promote_accumulators[
     pipeline_stages: Int,
     num_accum_pipeline_stages: Int,
     accum_type: DType,
@@ -761,7 +761,7 @@ fn promote_accumulators[
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
-fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
+def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -1333,7 +1333,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         _ = tmem_dealloc_mbar[].arrive()
 
 
-fn sm100_warp_specialized_blockwise_fp8[
+def sm100_warp_specialized_blockwise_fp8[
     transpose_b: Bool,
     a_scales_type: DType,
     b_scales_type: DType,

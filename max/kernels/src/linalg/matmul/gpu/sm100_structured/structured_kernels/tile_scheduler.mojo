@@ -51,16 +51,16 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
     var is_valid_tile: Bool
 
     @always_inline
-    fn is_valid(self) -> Bool:
+    def is_valid(self) -> Bool:
         return self.is_valid_tile
 
     @always_inline
-    fn coord(self) -> Tuple[Int, Int]:
+    def coord(self) -> Tuple[Int, Int]:
         """Get (m, n) tile coordinates as a tuple."""
         return (Int(self.m), Int(self.n))
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "(",
             self.m,
@@ -127,7 +127,7 @@ struct AdvanceAfterWorkContext[
     ]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         scheduler: Self.SchedulerType,
         work_info_ptr: Pointer[WorkInfo, Self.work_origin],
@@ -140,11 +140,11 @@ struct AdvanceAfterWorkContext[
         self.consumer_state_ptr = consumer_state_ptr
 
     @always_inline
-    fn __enter__(self) -> WorkInfo:
+    def __enter__(self) -> WorkInfo:
         return self.work_info_ptr[]
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         var next = self.scheduler.fetch_next_work(
             self.work_info_ptr[],
             self.consumer_state_ptr[],
@@ -174,7 +174,7 @@ struct WaitAndAdvanceContext[
     var next_work: WorkInfo
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         work_info_ptr: Pointer[WorkInfo, Self.work_origin],
         next_work: WorkInfo,
@@ -183,11 +183,11 @@ struct WaitAndAdvanceContext[
         self.next_work = next_work
 
     @always_inline
-    fn __enter__(self) -> WorkInfo:
+    def __enter__(self) -> WorkInfo:
         return self.work_info_ptr[]
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         self.work_info_ptr[] = self.next_work
 
 
@@ -230,7 +230,7 @@ struct WorkIterator[
     var throttle_pipeline: Self.ThrottlePipeline
 
     @always_inline
-    fn __init__(out self, scheduler: Self.SchedulerType, work_info: WorkInfo):
+    def __init__(out self, scheduler: Self.SchedulerType, work_info: WorkInfo):
         """Create work iterator with initial work_info. Throttle from scheduler.
         """
         self.scheduler = scheduler
@@ -239,12 +239,12 @@ struct WorkIterator[
         self.throttle_pipeline = scheduler.throttle_pipeline
 
     @always_inline
-    fn has_work(self) -> Bool:
+    def has_work(self) -> Bool:
         """Check if there is more work to process."""
         return self.work_info.is_valid()
 
     @always_inline
-    fn next[
+    def next[
         state_origin: MutOrigin, //
     ](
         ref[state_origin] self,
@@ -264,7 +264,7 @@ struct WorkIterator[
         )
 
     @always_inline
-    fn wait_and_advance[
+    def wait_and_advance[
         state_origin: MutOrigin, //
     ](
         ref[state_origin] self,
@@ -291,7 +291,7 @@ struct WorkIterator[
     # ========== CLC Throttle (Producer Side) ==========
 
     @always_inline
-    fn throttle_signal(mut self, is_first_cta_in_cluster: Bool):
+    def throttle_signal(mut self, is_first_cta_in_cluster: Bool):
         """Signal CLC throttle if this is the first CTA in cluster.
 
         The Load warp acts as producer for CLC throttle, signaling that it has
@@ -346,7 +346,7 @@ struct SchedulerWorkIterator[
     var throttle_pipeline: Self.ThrottlePipeline
 
     @always_inline
-    fn __init__(out self, scheduler: Self.SchedulerType, work_info: WorkInfo):
+    def __init__(out self, scheduler: Self.SchedulerType, work_info: WorkInfo):
         """Create scheduler iterator. Throttle pipeline from scheduler."""
         self.scheduler = scheduler
         self.work_info = work_info
@@ -355,14 +355,14 @@ struct SchedulerWorkIterator[
         self.throttle_pipeline = scheduler.throttle_pipeline
 
     @always_inline
-    fn has_work(self) -> Bool:
+    def has_work(self) -> Bool:
         """Check if there is more work to process."""
         return self.work_info.is_valid()
 
     # ========== Work Iteration (Consumer Side) ==========
 
     @always_inline
-    fn next[
+    def next[
         state_origin: MutOrigin, //
     ](
         ref[state_origin] self,
@@ -384,7 +384,7 @@ struct SchedulerWorkIterator[
     # ========== CLC Throttle + Work Request ==========
 
     @always_inline
-    fn signal_and_advance(mut self):
+    def signal_and_advance(mut self):
         """Signal CLC throttle consumer and advance to next work request.
 
         Combines two operations that always happen together in Scheduler warp:
@@ -399,7 +399,7 @@ struct SchedulerWorkIterator[
     # ========== Cleanup ==========
 
     @always_inline
-    fn drain(mut self):
+    def drain(mut self):
         """Drain all pending CLC requests before kernel exit.
 
         Must be called after the work loop completes to ensure all
@@ -448,7 +448,7 @@ struct TileScheduler[
     var throttle_pipeline: Self.ThrottlePipeline
 
     @staticmethod
-    fn init_throttle_barriers(
+    def init_throttle_barriers(
         storage_ptr: SMemPtr[SharedMemBarrier],
         producer_arv_count: Int32,
         consumer_arv_count: Int32,
@@ -459,7 +459,7 @@ struct TileScheduler[
         pipeline.init_mbars(producer_arv_count, consumer_arv_count)
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         cluster_dim: StaticTuple[Int32, 3],
         clc_response: Self.ClcResponseArray,
@@ -487,7 +487,7 @@ struct TileScheduler[
 
     @always_inline
     @staticmethod
-    fn work_info_from_clc_response(result: SMemPtr[UInt128]) -> WorkInfo:
+    def work_info_from_clc_response(result: SMemPtr[UInt128]) -> WorkInfo:
         comptime asm = """{
             .reg .pred p1;
             .reg .b128 clc_result;
@@ -514,7 +514,7 @@ struct TileScheduler[
 
     @always_inline
     @staticmethod
-    fn work_info_from_cluster(
+    def work_info_from_cluster(
         work_info: WorkInfo,
         cluster_dim: StaticTuple[Int32, 3],
         log_cluster_dim_m: FastDiv[DType.uint32],
@@ -588,7 +588,7 @@ struct TileScheduler[
         )
 
     @always_inline
-    fn initial_work_info(self) -> WorkInfo:
+    def initial_work_info(self) -> WorkInfo:
         return self.work_info_from_cluster(
             WorkInfo(
                 UInt32(block_idx.x),
@@ -602,7 +602,7 @@ struct TileScheduler[
         )
 
     @always_inline
-    fn fetch_next_work(
+    def fetch_next_work(
         self,
         work_info: WorkInfo,
         consumer_state: PipelineState[Self.num_stages],
@@ -630,7 +630,7 @@ struct TileScheduler[
     # =========================================================================
 
     @always_inline
-    fn advance_after_work[
+    def advance_after_work[
         work_origin: MutOrigin, state_origin: MutOrigin, //
     ](
         self,
@@ -659,7 +659,7 @@ struct TileScheduler[
         )
 
     @always_inline
-    fn wait_and_advance_work[
+    def wait_and_advance_work[
         work_origin: MutOrigin, //
     ](
         self,
@@ -680,7 +680,7 @@ struct TileScheduler[
         return WaitAndAdvanceContext(Pointer(to=work_info), next)
 
     @always_inline
-    fn work_iterator(
+    def work_iterator(
         self,
     ) -> WorkIterator[
         Self.num_stages,
@@ -703,7 +703,7 @@ struct TileScheduler[
         return WorkIterator(self, self.initial_work_info())
 
     @always_inline
-    fn scheduler_iterator(
+    def scheduler_iterator(
         self,
     ) -> SchedulerWorkIterator[
         Self.num_stages,
@@ -726,7 +726,7 @@ struct TileScheduler[
         return SchedulerWorkIterator(self, self.initial_work_info())
 
     @always_inline
-    fn advance_to_next_work(
+    def advance_to_next_work(
         self,
         mut clc_state: PipelineState[Self.num_stages],
     ) -> PipelineState[Self.num_stages]:

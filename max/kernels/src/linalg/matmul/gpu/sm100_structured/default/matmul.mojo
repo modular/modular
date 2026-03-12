@@ -62,7 +62,7 @@ from .matmul_kernels import (
 )
 
 
-fn _blackwell_matmul_tma_umma_warp_specialized[
+def _blackwell_matmul_tma_umma_warp_specialized[
     transpose_b: Bool,
     *,
     config: MatmulConfig[_, _, _, transpose_b],
@@ -301,7 +301,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         ].dump_workspace_as_csv(ctx, workspace, "profile")
 
 
-fn blackwell_matmul_tma_umma_warp_specialized[
+def blackwell_matmul_tma_umma_warp_specialized[
     transpose_b: Bool,
     *,
     config: MatmulConfig[_, _, _, transpose_b],
@@ -362,7 +362,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         ](c_device, a_device, b_device, ctx)
 
 
-fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
+def _blackwell_matmul_tma_umma_warp_specialized_split_k[
     transpose_b: Bool,
     *,
     config: MatmulConfig[_, _, _, transpose_b],
@@ -609,7 +609,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
 # =============================================================================
 
 
-fn blackwell_batched_matmul_tma_umma_warp_specialized[
+def blackwell_batched_matmul_tma_umma_warp_specialized[
     transpose_b: Bool,
     *,
     config: MatmulConfig[_, _, _, transpose_b],
@@ -688,7 +688,7 @@ fn blackwell_batched_matmul_tma_umma_warp_specialized[
             ](c_device, a_device, b_device, ctx)
 
 
-fn matmul_sm100_fallback[
+def matmul_sm100_fallback[
     c_type: DType,
     a_type: DType,
     b_type: DType,

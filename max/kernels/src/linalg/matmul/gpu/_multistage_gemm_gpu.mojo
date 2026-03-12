@@ -65,7 +65,7 @@ from ...structuring import SMemTile
 
 
 @always_inline
-fn distance[
+def distance[
     dtype: DType, //
 ](
     arg0: UnsafePointer[Scalar[dtype], _],
@@ -83,7 +83,7 @@ comptime WarpSplitKReductionSMem[
 
 
 @always_inline
-fn warp_split_k_reduction[
+def warp_split_k_reduction[
     c_type: DType,
     c_layout: Layout,
     //,
@@ -144,7 +144,7 @@ fn warp_split_k_reduction[
 
 
 @always_inline
-fn warp_split_k_reduction[
+def warp_split_k_reduction[
     c_type: DType,
     c_layout: Layout,
     //,
@@ -172,7 +172,7 @@ fn warp_split_k_reduction[
 
 
 @always_inline
-fn multistage_mma[
+def multistage_mma[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -287,7 +287,7 @@ fn multistage_mma[
 
     @always_inline
     @parameter
-    fn _mask_tensor_row(
+    def _mask_tensor_row(
         tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
     ):
         return {
@@ -305,7 +305,7 @@ fn multistage_mma[
 
     @always_inline
     @parameter
-    fn _copy_tensor_to_sram[
+    def _copy_tensor_to_sram[
         thread_layout: Layout, swizzle: Bool
     ](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
         comptime if is_nvidia_gpu():
@@ -688,7 +688,7 @@ fn multistage_mma[
                 )
 
 
-fn multistage_gemm_kernel[
+def multistage_gemm_kernel[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -902,7 +902,7 @@ fn multistage_gemm_kernel[
 
     @always_inline
     @parameter
-    fn apply_epilogue():
+    def apply_epilogue():
         # This block is identical to the one used for f32 case
         # but putting this in a lambda function leads to test failures
         # TODO: Refactor to remove code duplication
@@ -1077,7 +1077,7 @@ fn multistage_gemm_kernel[
         Int32(config.num_threads())
     )
 )
-fn multistage_gemm_split_k_kernel[
+def multistage_gemm_split_k_kernel[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,

@@ -71,7 +71,7 @@ comptime DISPATCH_MISS = 0
 comptime DISPATCH_HIT = 1
 
 
-fn heuristic_and_outliers_dispatch[
+def heuristic_and_outliers_dispatch[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -151,7 +151,7 @@ fn heuristic_and_outliers_dispatch[
 
     @parameter
     @always_inline
-    fn rule(x: TuningConfigSM100) -> Bool:
+    def rule(x: TuningConfigSM100) -> Bool:
         return x.K == static_K and x.N == static_N
 
     comptime outlier_configs = outliers.find[rule]()
@@ -219,7 +219,7 @@ fn heuristic_and_outliers_dispatch[
     return DISPATCH_MISS
 
 
-fn small_bn_dispatch[
+def small_bn_dispatch[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -282,7 +282,7 @@ fn small_bn_dispatch[
 ########################################################
 
 
-fn _block_scaled_matmul_small_bn_with_epilogue[
+def _block_scaled_matmul_small_bn_with_epilogue[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -341,7 +341,7 @@ fn _block_scaled_matmul_small_bn_with_epilogue[
 
         @parameter
         @__copy_capture(c, n)
-        fn epilogue_wrapper[
+        def epilogue_wrapper[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])
@@ -398,7 +398,7 @@ fn _block_scaled_matmul_small_bn_with_epilogue[
         _ = tmp_device_buffer^
 
 
-fn _block_scaled_matmul_with_epilogue[
+def _block_scaled_matmul_with_epilogue[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -467,7 +467,7 @@ fn _block_scaled_matmul_with_epilogue[
         # can't be proved when c's layout type is fully inferred.
         @parameter
         @__copy_capture(c, n)
-        fn epilogue_wrapper[
+        def epilogue_wrapper[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])
@@ -527,7 +527,7 @@ fn _block_scaled_matmul_with_epilogue[
         _ = tmp_device_buffer^
 
 
-fn _vendor_blas_block_scaled_matmul_with_epilogue[
+def _vendor_blas_block_scaled_matmul_with_epilogue[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -612,7 +612,7 @@ fn _vendor_blas_block_scaled_matmul_with_epilogue[
 
         @parameter
         @__copy_capture(c)
-        fn epilogue_wrapper[
+        def epilogue_wrapper[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])

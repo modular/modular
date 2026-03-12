@@ -39,7 +39,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
     # Parameters for global reference.
 
     @always_inline
-    fn _accumulate[
+    def _accumulate[
         is_tail: Bool,
         simd_size: Int,
         kernel_rows: Int,
@@ -167,7 +167,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                 c_local[idx0, idx1] = c_val
 
     @always_inline
-    fn __inner_matmul__[
+    def __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
         simd_size: Int,

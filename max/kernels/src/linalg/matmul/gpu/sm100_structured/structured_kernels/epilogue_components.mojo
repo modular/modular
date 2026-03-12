@@ -74,7 +74,7 @@ from structured_kernels.tile_types import (
 
 
 @always_inline
-fn tma_wait_pipelined[
+def tma_wait_pipelined[
     c_type: DType,
     tma_rank: Int,
     tile_shape: IndexList[tma_rank],
@@ -106,7 +106,7 @@ struct AccumTile[dtype: DType, size: Int](Copyable, Movable):
     var lower: InlineArray[Scalar[Self.dtype], Self.size]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         upper: InlineArray[Scalar[Self.dtype], Self.size],
         lower: InlineArray[Scalar[Self.dtype], Self.size],
@@ -125,7 +125,7 @@ struct AccumBarrier[cta_group: Int](TrivialRegisterPassable):
 
     @staticmethod
     @always_inline
-    fn arrive(pipeline: ProducerConsumerPipeline, stage: UInt32):
+    def arrive(pipeline: ProducerConsumerPipeline, stage: UInt32):
         """Signal accumulator arrival on pipeline barrier."""
 
         comptime if Self.cta_group == 1:
@@ -148,7 +148,7 @@ from structured_kernels.pipeline import ProducerConsumerPipeline
 
 
 @always_inline
-fn store_fragment_to_smem[
+def store_fragment_to_smem[
     vec_dtype: DType,
     vec_size: Int,
     //,
@@ -230,7 +230,7 @@ fn store_fragment_to_smem[
 
 
 @always_inline
-fn fp8_frag_to_smem[
+def fp8_frag_to_smem[
     swizzle_mode: TensorMapSwizzle,
     stageN: Int,
     transpose_c: Bool,
@@ -312,7 +312,7 @@ fn fp8_frag_to_smem[
 
 
 @always_inline
-fn store_fragment_to_smem[
+def store_fragment_to_smem[
     vec_dtype: DType,
     vec_size: Int,
     //,
@@ -426,7 +426,7 @@ struct EpilogueConfig(Copyable, Equatable, TrivialRegisterPassable):
     var fragment_size: Int
 
     @staticmethod
-    fn create(
+    def create(
         *,
         MMA_M: Int,
         MMA_N: Int,
@@ -495,7 +495,7 @@ struct TMAStoreCoords[
     var c_smem_coord_m: Int
 
     @always_inline
-    fn __init__(out self, c_coord: Tuple[UInt32, UInt32], warp_id: UInt32):
+    def __init__(out self, c_coord: Tuple[UInt32, UInt32], warp_id: UInt32):
         """Compute TMA store coordinates from 2D tile coords and warp ID."""
         # Warp election
         var cg2_elect = warp_id == 0 if Self.MMA_M == 256 else warp_id % 2 == 0
@@ -526,7 +526,7 @@ struct TMAStoreCoords[
         self.c_smem_coord_m = cg2_smem_m if Self.cta_group == 2 else 0
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self, c_coord: Tuple[UInt32, UInt32, UInt32], warp_id: UInt32
     ):
         """Compute TMA store coordinates from 3D tile coords and warp ID."""
@@ -603,7 +603,7 @@ struct TMAStoreExecutor[
 
     @staticmethod
     @always_inline
-    fn execute[
+    def execute[
         tma_rank: Int,
         tile_shape: IndexList[tma_rank],
         desc_shape: IndexList[tma_rank],
@@ -634,7 +634,7 @@ struct TMAStoreExecutor[
 
     @staticmethod
     @always_inline
-    fn _store_transpose_lt[
+    def _store_transpose_lt[
         tma_rank: Int,
         tile_shape: IndexList[tma_rank],
         desc_shape: IndexList[tma_rank],
@@ -711,7 +711,7 @@ struct TMAStoreExecutor[
 
     @staticmethod
     @always_inline
-    fn _store_non_transpose[
+    def _store_non_transpose[
         tma_rank: Int,
         tile_shape: IndexList[tma_rank],
         desc_shape: IndexList[tma_rank],
@@ -750,7 +750,7 @@ struct TMAStoreExecutor[
 
     @staticmethod
     @always_inline
-    fn execute[
+    def execute[
         tma_rank: Int,
         tile_shape: IndexList[tma_rank],
         desc_shape: IndexList[tma_rank],
@@ -789,7 +789,7 @@ struct TMAStoreExecutor[
 
     @staticmethod
     @always_inline
-    fn _store_transpose[
+    def _store_transpose[
         tma_rank: Int,
         tile_shape: IndexList[tma_rank],
         desc_shape: IndexList[tma_rank],
@@ -918,7 +918,7 @@ struct FragmentCoords[stageN: Int, repeats: Int](TrivialRegisterPassable):
     var bottom_lower: StaticTuple[UInt32, 2]
 
     @always_inline
-    fn __init__(out self, lane_id: UInt32):
+    def __init__(out self, lane_id: UInt32):
         """Compute (row, col) for each fragment position from lane ID."""
         var row = lane_id // UInt32(Self.threads_per_row)
         var col = (lane_id % UInt32(Self.threads_per_row)) * UInt32(
@@ -955,7 +955,7 @@ struct EpilogueApplier[
     var N: UInt32
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         warp_id: UInt32,
         lane_id: UInt32,
@@ -968,7 +968,7 @@ struct EpilogueApplier[
         self.N = c_shape[1]
 
     @always_inline
-    fn compute_staged_coords(
+    def compute_staged_coords(
         self, stage: UInt32, c_row: UInt32, c_col: UInt32
     ) -> Tuple[UInt32, UInt32]:
         """Compute global coords with warp and stage offsets (layout-dependent).
@@ -991,7 +991,7 @@ struct EpilogueApplier[
         return (staged_row, staged_col)
 
     @always_inline
-    fn apply_to_fragment[
+    def apply_to_fragment[
         epilogue_dtype: DType,
         frag_size: Int,
         compute_lambda_fn: elementwise_compute_lambda_type,
@@ -1055,7 +1055,7 @@ struct EpilogueApplier[
             frag[offset + 3] = elem3
 
     @always_inline
-    fn apply_to_both_fragments[
+    def apply_to_both_fragments[
         epilogue_dtype: DType,
         frag_size: Int,
         compute_lambda_fn: elementwise_compute_lambda_type,
@@ -1088,7 +1088,7 @@ struct EpilogueApplier[
         return (upper_frag.copy(), lower_frag.copy())
 
     @always_inline
-    fn apply_elementwise_epilogue_to_fragment[
+    def apply_elementwise_epilogue_to_fragment[
         epilogue_dtype: DType,
         frag_size: Int,
         elementwise_lambda_fn: elementwise_epilogue_type,
@@ -1168,7 +1168,7 @@ struct EpilogueApplier[
                     )
 
     @always_inline
-    fn apply_elementwise_epilogue_to_both_fragments[
+    def apply_elementwise_epilogue_to_both_fragments[
         epilogue_dtype: DType,
         frag_size: Int,
         elementwise_lambda_fn: elementwise_epilogue_type,
@@ -1209,7 +1209,7 @@ struct EpilogueApplier[
     # =========================================================================
 
     @always_inline
-    fn add_residual_to_fragment[
+    def add_residual_to_fragment[
         epilogue_dtype: DType,
         frag_size: Int,
         c_type: DType,
@@ -1278,7 +1278,7 @@ struct EpilogueApplier[
             frag[offset + 3] += beta * c3
 
     @always_inline
-    fn add_residual_to_both_fragments[
+    def add_residual_to_both_fragments[
         epilogue_dtype: DType,
         frag_size: Int,
         is_lower_frag_required: Bool,
@@ -1368,12 +1368,12 @@ struct TMEMToSMemWriter[
     var lane_id: UInt32
 
     @always_inline
-    fn __init__(out self, warp_id: UInt32, lane_id: UInt32):
+    def __init__(out self, warp_id: UInt32, lane_id: UInt32):
         self.warp_id = warp_id
         self.lane_id = lane_id
 
     @always_inline
-    fn write_fragments[
+    def write_fragments[
         repeat: Int
     ](
         self,
@@ -1398,7 +1398,7 @@ struct TMEMToSMemWriter[
             )
 
     @always_inline
-    fn _write_transpose_lt[
+    def _write_transpose_lt[
         repeat: Int, is_lower_required: Bool
     ](
         self,
@@ -1544,7 +1544,7 @@ struct TMEMToSMemWriter[
                 ](upper_casted, c_smem_warp_tile_upper)
 
     @always_inline
-    fn _write_non_transpose_lt[
+    def _write_non_transpose_lt[
         repeat: Int, is_lower_required: Bool
     ](
         self,
@@ -1584,7 +1584,7 @@ struct TMEMToSMemWriter[
             ](lower_casted, c_smem_warp_tile_lower)
 
     @always_inline
-    fn write_fragments[
+    def write_fragments[
         repeat: Int
     ](
         self,
@@ -1609,7 +1609,7 @@ struct TMEMToSMemWriter[
             )
 
     @always_inline
-    fn _write_transpose[
+    def _write_transpose[
         repeat: Int, is_lower_required: Bool
     ](
         self,
@@ -1754,7 +1754,7 @@ struct TMEMToSMemWriter[
                 ](upper_casted, c_smem_warp_tile_upper)
 
     @always_inline
-    fn _write_non_transpose[
+    def _write_non_transpose[
         repeat: Int, is_lower_required: Bool
     ](
         self,
@@ -1862,7 +1862,7 @@ struct SMemEpilogueWriter[
     var c_col: UInt32
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         warp_id: UInt32,
         c_tiles: SMemTileArray[
@@ -1883,7 +1883,7 @@ struct SMemEpilogueWriter[
         self.c_col = c_coord[1] * UInt32(Self.MMA_N)
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         warp_id: UInt32,
         c_tiles: SMemTileArray2DRowMajor[
@@ -1905,7 +1905,7 @@ struct SMemEpilogueWriter[
         self.c_col = c_coord[1] * UInt32(Self.MMA_N)
 
     @always_inline
-    fn write_tile(self, tile: Self.Tile):
+    def write_tile(self, tile: Self.Tile):
         """Write accumulator tile to SMEM and apply epilogue lambda."""
         # Double-buffer tile selection
         var c_smem_tile = self.c_tiles[Self.stage % Self.num_output_stages]
@@ -1916,7 +1916,7 @@ struct SMemEpilogueWriter[
             self._write_non_transpose(tile.upper, tile.lower, c_smem_tile)
 
     @always_inline
-    fn _write_transpose(
+    def _write_transpose(
         self,
         upper_frag: InlineArray[
             Scalar[Self.epilogue_dtype], Self.rep_frag_size
@@ -2043,7 +2043,7 @@ struct SMemEpilogueWriter[
             )
 
     @always_inline
-    fn _write_non_transpose(
+    def _write_non_transpose(
         self,
         upper_frag: InlineArray[
             Scalar[Self.epilogue_dtype], Self.rep_frag_size
@@ -2109,7 +2109,7 @@ struct SMemEpilogueWriter[
 
 
 @always_inline
-fn shared_memory_epilogue_transpose[
+def shared_memory_epilogue_transpose[
     stage: Int,
     stageN: Int,
     c_type: DType,
@@ -2285,7 +2285,7 @@ fn shared_memory_epilogue_transpose[
 
 
 @always_inline
-fn shared_memory_epilogue[
+def shared_memory_epilogue[
     MMA_M: Int,
     data_paths: Int,
     num_stages: Int,

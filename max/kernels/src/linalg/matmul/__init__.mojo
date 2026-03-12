@@ -41,7 +41,7 @@ from .gpu import _matmul_gpu
 
 
 @always_inline
-fn matmul[
+def matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
     b_packed: Bool = False,
@@ -111,7 +111,7 @@ fn matmul[
 
 
 @always_inline
-fn matmul[
+def matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
     b_packed: Bool = False,
@@ -147,7 +147,7 @@ fn matmul[
 
 
 @always_inline
-fn matmul[
+def matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
     b_packed: Bool = False,
@@ -177,7 +177,7 @@ fn matmul[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         var shape = GemmShape.get[transpose_b](c, a, b)
         # fmt: off
         return String(
@@ -211,7 +211,7 @@ fn matmul[
             # We wrap it around an epilogue lambda instead.
             @parameter
             @always_inline
-            fn compute_lambda_wrapper[
+            def compute_lambda_wrapper[
                 _type: DType, _width: Int, *, alignment: Int = 1
             ](coords: IndexList[2], val: SIMD[_type, _width]):
                 comptime if elementwise_compute_lambda_fn:
@@ -244,7 +244,7 @@ fn matmul[
             ](c, a, b, ctx.value())
 
 
-fn _to_value_or_dim(value: Int) -> Dim:
+def _to_value_or_dim(value: Int) -> Dim:
     if value != UNKNOWN_VALUE:
         return Dim(value)
     else:

@@ -29,7 +29,7 @@ from .impl import InnerMatmulKernel
 @fieldwise_init
 struct Inner_matmul_default(InnerMatmulKernel, Movable):
     @always_inline
-    fn _accumulate[
+    def _accumulate[
         simd_size: Int, kernel_rows: Int, kernel_cols: Int
     ](
         self,
@@ -96,7 +96,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
                 c_local.fma(idx0, idx1, a_val, b_val)
 
     @always_inline
-    fn __inner_matmul__[
+    def __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
         simd_size: Int,

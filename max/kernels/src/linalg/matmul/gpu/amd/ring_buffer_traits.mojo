@@ -36,7 +36,7 @@ from .structured import SMemBuffer
 
 
 @always_inline
-fn wait_for_counter(
+def wait_for_counter(
     counter: UnsafePointer[
         mut=True, Int32, _, address_space=AddressSpace.SHARED
     ],
@@ -50,7 +50,7 @@ fn wait_for_counter(
 
 
 @always_inline
-fn increment_counter_if_first_thread(
+def increment_counter_if_first_thread(
     counter: UnsafePointer[
         mut=True, Int32, _, address_space=AddressSpace.SHARED
     ],
@@ -78,12 +78,12 @@ trait SyncStrategy(TrivialRegisterPassable):
     """
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize with internally allocated sync counter."""
         ...
 
     @always_inline
-    fn get_staged_idx(self, tile_idx: Int, stage: Int) -> Int:
+    def get_staged_idx(self, tile_idx: Int, stage: Int) -> Int:
         """Convert tile index and stage to a flat index in the counter arrays.
 
         Args:
@@ -96,7 +96,7 @@ trait SyncStrategy(TrivialRegisterPassable):
         ...
 
     @always_inline
-    fn wait_producer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
+    def wait_producer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
         """Producer waits until it can write to the specified tile.
 
         Blocks until all consumers have finished reading from this tile
@@ -105,7 +105,7 @@ trait SyncStrategy(TrivialRegisterPassable):
         ...
 
     @always_inline
-    fn signal_producer_release(mut self, tile_idx: Int, stage: Int):
+    def signal_producer_release(mut self, tile_idx: Int, stage: Int):
         """Producer signals that it has finished writing to the tile.
 
         Increments the appropriate counter to notify waiting consumers.
@@ -113,7 +113,7 @@ trait SyncStrategy(TrivialRegisterPassable):
         ...
 
     @always_inline
-    fn wait_consumer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
+    def wait_consumer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
         """Consumer waits until it can read from the specified tile.
 
         Blocks until producer has finished writing to this tile
@@ -122,7 +122,7 @@ trait SyncStrategy(TrivialRegisterPassable):
         ...
 
     @always_inline
-    fn signal_consumer_release(mut self, tile_idx: Int, stage: Int):
+    def signal_consumer_release(mut self, tile_idx: Int, stage: Int):
         """Consumer signals that it has finished reading from the tile.
 
         Increments the appropriate counter to notify waiting producers.
@@ -130,7 +130,7 @@ trait SyncStrategy(TrivialRegisterPassable):
         ...
 
     @always_inline
-    fn get_producer_phase_increment(self) -> Int32:
+    def get_producer_phase_increment(self) -> Int32:
         """Returns how much to advance the producer phase after each acquisition.
 
         This determines when producers can reuse a tile after consumers finish.
@@ -138,7 +138,7 @@ trait SyncStrategy(TrivialRegisterPassable):
         ...
 
     @always_inline
-    fn get_consumer_phase_increment(self) -> Int32:
+    def get_consumer_phase_increment(self) -> Int32:
         """Returns how much to advance the consumer phase after each acquisition.
 
         This determines when consumers can read a tile after producers finish.
@@ -176,7 +176,7 @@ struct SingleCounterSync[
     var sync_counter: Self.SyncCounterArray
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize with internally allocated sync counter."""
         self.sync_counter = Self.SyncCounterArray.stack_allocation[
             alignment=32
@@ -186,39 +186,39 @@ struct SingleCounterSync[
             self.sync_counter[i][] = 0
 
     @always_inline
-    fn get_staged_idx(self, tile_idx: Int, stage: Int) -> Int:
+    def get_staged_idx(self, tile_idx: Int, stage: Int) -> Int:
         return tile_idx * Self.pipeline_stages + stage
 
     @always_inline
-    fn wait_producer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
+    def wait_producer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
         var staged_idx = self.get_staged_idx(tile_idx, stage)
         wait_for_counter(self.sync_counter[staged_idx], phase)
 
     @always_inline
-    fn signal_producer_release(mut self, tile_idx: Int, stage: Int):
+    def signal_producer_release(mut self, tile_idx: Int, stage: Int):
         var staged_idx = self.get_staged_idx(tile_idx, stage)
         increment_counter_if_first_thread(
             self.sync_counter[staged_idx], Int32(1)
         )
 
     @always_inline
-    fn wait_consumer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
+    def wait_consumer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
         var staged_idx = self.get_staged_idx(tile_idx, stage)
         wait_for_counter(self.sync_counter[staged_idx], phase)
 
     @always_inline
-    fn signal_consumer_release(mut self, tile_idx: Int, stage: Int):
+    def signal_consumer_release(mut self, tile_idx: Int, stage: Int):
         var staged_idx = self.get_staged_idx(tile_idx, stage)
         increment_counter_if_first_thread(
             self.sync_counter[staged_idx], Int32(1)
         )
 
     @always_inline
-    fn get_producer_phase_increment(self) -> Int32:
+    def get_producer_phase_increment(self) -> Int32:
         return Int32(Self.writes_per_warp_block + Self.reads_per_warp_block)
 
     @always_inline
-    fn get_consumer_phase_increment(self) -> Int32:
+    def get_consumer_phase_increment(self) -> Int32:
         return Int32(Self.writes_per_warp_block + Self.reads_per_warp_block)
 
 
@@ -250,7 +250,7 @@ struct SplitCounterSync[
     var consumer_counters: Self.ConsumerCounterArray
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize with internally allocated producer and consumer counters.
         """
         self.producer_counters = Self.ProducerCounterArray.stack_allocation[
@@ -265,17 +265,17 @@ struct SplitCounterSync[
             self.consumer_counters[i][] = 0
 
     @always_inline
-    fn get_staged_idx(self, tile_idx: Int, stage: Int) -> Int:
+    def get_staged_idx(self, tile_idx: Int, stage: Int) -> Int:
         return tile_idx * Self.pipeline_stages + stage
 
     @always_inline
-    fn wait_producer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
+    def wait_producer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
         """Producer waits on consumer counter."""
         var staged_idx = self.get_staged_idx(tile_idx, stage)
         wait_for_counter(self.consumer_counters[staged_idx], phase)
 
     @always_inline
-    fn signal_producer_release(mut self, tile_idx: Int, stage: Int):
+    def signal_producer_release(mut self, tile_idx: Int, stage: Int):
         """Producer increments producer counter."""
         var staged_idx = self.get_staged_idx(tile_idx, stage)
         increment_counter_if_first_thread(
@@ -284,13 +284,13 @@ struct SplitCounterSync[
         )
 
     @always_inline
-    fn wait_consumer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
+    def wait_consumer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
         """Consumer waits on producer counter."""
         var staged_idx = self.get_staged_idx(tile_idx, stage)
         wait_for_counter(self.producer_counters[staged_idx], phase)
 
     @always_inline
-    fn signal_consumer_release(mut self, tile_idx: Int, stage: Int):
+    def signal_consumer_release(mut self, tile_idx: Int, stage: Int):
         """Consumer increments consumer counter by 1."""
         var staged_idx = self.get_staged_idx(tile_idx, stage)
         increment_counter_if_first_thread(
@@ -298,11 +298,11 @@ struct SplitCounterSync[
         )
 
     @always_inline
-    fn get_producer_phase_increment(self) -> Int32:
+    def get_producer_phase_increment(self) -> Int32:
         """Producer phase advances by reads_per_warp_block."""
         return Int32(Self.reads_per_warp_block)
 
     @always_inline
-    fn get_consumer_phase_increment(self) -> Int32:
+    def get_consumer_phase_increment(self) -> Int32:
         """Consumer phase advances by writes_per_warp_block."""
         return Int32(Self.writes_per_warp_block)

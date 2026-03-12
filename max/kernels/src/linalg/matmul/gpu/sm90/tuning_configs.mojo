@@ -31,7 +31,7 @@ struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):
     var splits: OptionalReg[Int]
     var raster_order: OptionalReg[RasterOrder]
 
-    fn __init__(
+    def __init__(
         out self,
         M: Int,
         N: Int,
@@ -61,7 +61,7 @@ struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):
         self.splits = splits
         self.raster_order = raster_order
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the tuning config as a string.
 
         Args:
@@ -70,7 +70,7 @@ struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):
         writer.write("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
 
 
-fn _get_tuning_list_bf16[mma_k: Int, BK: Int]() -> List[TuningConfigSM90]:
+def _get_tuning_list_bf16[mma_k: Int, BK: Int]() -> List[TuningConfigSM90]:
     # kprofile -s oss/modular/max/kernels/src/linalg/matmul/gpu/sm90/tuning.mojo.snippet oss/modular/max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml
     # ----------------BEGIN-TUNING-LIST-BF16----------------
     comptime config_list = [

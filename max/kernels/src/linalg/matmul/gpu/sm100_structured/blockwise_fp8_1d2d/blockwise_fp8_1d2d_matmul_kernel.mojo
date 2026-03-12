@@ -352,7 +352,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     # ========== Validation ==========
 
     @staticmethod
-    fn validate_config():
+    def validate_config():
         """Compile-time validation of kernel configuration."""
         comptime assert Self.transpose_b, "Only support transposed B"
         comptime assert (
@@ -380,7 +380,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn init_barriers(
+    def init_barriers(
         elect_one_warp: Bool,
         elect_one_thread: Bool,
         a_tma_op: Self.ATmaOp,
@@ -429,7 +429,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
-    fn run(
+    def run(
         # Grid-constant TMA descriptors
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
@@ -671,7 +671,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn load_input_tiles[
+    def load_input_tiles[
         tiles_origin: MutOrigin,
         //,
     ](
@@ -757,7 +757,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn mma[
+    def mma[
         tiles_origin: MutOrigin,
         //,
     ](

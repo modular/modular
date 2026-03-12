@@ -466,7 +466,7 @@ struct Grouped1D1DMatmulKernel[
     # ========== Validation ==========
 
     @staticmethod
-    fn validate_config():
+    def validate_config():
         """Compile-time validation of kernel configuration."""
         comptime assert (
             Self.a_type == Self.b_type
@@ -484,7 +484,7 @@ struct Grouped1D1DMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn init_barriers(
+    def init_barriers(
         elect_one_warp: Bool,
         elect_one_thread: Bool,
         a_tma_op: Self.ATmaOp,
@@ -534,7 +534,7 @@ struct Grouped1D1DMatmulKernel[
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
-    fn run(
+    def run(
         # Grid-constant TMA descriptors
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
@@ -778,7 +778,7 @@ struct Grouped1D1DMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn _get_sf_coords(
+    def _get_sf_coords(
         m_coord: UInt32,
         n_coord: UInt32,
         expert_id: Int32,
@@ -810,7 +810,7 @@ struct Grouped1D1DMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn load_input_tiles[
+    def load_input_tiles[
         tiles_origin: MutOrigin,
         //,
     ](
@@ -969,7 +969,7 @@ struct Grouped1D1DMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn _compute_sfb_tmem_adj(
+    def _compute_sfb_tmem_adj(
         m_coord: UInt32, n_coord: UInt32, m_start: UInt32
     ) -> UInt32:
         """Compute SFB TMEM column adjustment for MMA_N < SF_MN_GROUP_SIZE.
@@ -995,7 +995,7 @@ struct Grouped1D1DMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn mma[
+    def mma[
         tiles_origin: MutOrigin,
         //,
     ](
@@ -1051,7 +1051,7 @@ struct Grouped1D1DMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn epilogue(
+    def epilogue(
         c_tiles: Self.SmemType.Core.CTileArray,
         c_tma_op: Self.CTmaOp,
         c_device: Self.CDeviceTile,

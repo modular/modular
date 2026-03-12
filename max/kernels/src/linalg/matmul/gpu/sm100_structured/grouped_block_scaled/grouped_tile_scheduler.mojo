@@ -78,7 +78,7 @@ struct GroupedAdvanceContext[
     var next_linear_idx: UInt32
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         work_info_ptr: Pointer[GroupedWorkInfo, Self.work_origin],
         linear_idx_ptr: Pointer[UInt32, Self.idx_origin],
@@ -91,11 +91,11 @@ struct GroupedAdvanceContext[
         self.next_linear_idx = next_linear_idx
 
     @always_inline
-    fn __enter__(self) -> GroupedWorkInfo:
+    def __enter__(self) -> GroupedWorkInfo:
         return self.work_info_ptr[]
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         self.work_info_ptr[] = self.next_work
         self.linear_idx_ptr[] = self.next_linear_idx
 
@@ -136,7 +136,7 @@ struct GroupedWorkInfo(
     """True if group changed since last tile (triggers tensormap update)."""
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Create an invalid/empty work info."""
         self.m = 0
         self.n = 0
@@ -147,17 +147,17 @@ struct GroupedWorkInfo(
         self.group_changed = False
 
     @always_inline
-    fn is_valid(self) -> Bool:
+    def is_valid(self) -> Bool:
         """Check if this work tile is valid."""
         return self.is_valid_tile
 
     @always_inline
-    fn coord(self) -> Tuple[UInt, UInt]:
+    def coord(self) -> Tuple[UInt, UInt]:
         """Get (m, n) tile coordinates as a tuple."""
         return (UInt(self.m), UInt(self.n))
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "GroupedWorkInfo(m=",
             self.m,
@@ -230,7 +230,7 @@ struct GroupedWorkIterator[
     """Number of active groups."""
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         problem_sizes: _ProblemSizesTile[Self.max_groups],
         num_groups: Int,
@@ -297,17 +297,17 @@ struct GroupedWorkIterator[
         self.work_info.group_changed = True  # First tile always triggers update
 
     @always_inline
-    fn has_work(self) -> Bool:
+    def has_work(self) -> Bool:
         """Check if there is more work to process."""
         return self.work_info.is_valid()
 
     @always_inline
-    fn current(self) -> GroupedWorkInfo:
+    def current(self) -> GroupedWorkInfo:
         """Get current work item."""
         return self.work_info
 
     @always_inline
-    fn advance(mut self):
+    def advance(mut self):
         """Advance to next tile."""
         self.prev_group_idx = self.work_info.group_idx
 
@@ -324,7 +324,7 @@ struct GroupedWorkIterator[
         )
 
     @always_inline
-    fn next[
+    def next[
         state_origin: MutOrigin, //
     ](
         ref[state_origin] self,
@@ -362,7 +362,7 @@ struct GroupedWorkIterator[
         )
 
     @always_inline
-    fn wait_and_advance[
+    def wait_and_advance[
         state_origin: MutOrigin, //
     ](
         ref[state_origin] self,
@@ -396,7 +396,7 @@ struct GroupedWorkIterator[
         )
 
     @always_inline
-    fn _delinearize_to_group(self, linear_idx: UInt32) -> GroupedWorkInfo:
+    def _delinearize_to_group(self, linear_idx: UInt32) -> GroupedWorkInfo:
         """Map linear tile index to group + local coordinates.
 
         Uses binary search to find the group containing this tile index.
@@ -478,7 +478,7 @@ struct GroupedTileScheduler[
     """Problem sizes tensor (num_groups, 4) with [M, N, K, L] per group."""
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         problem_sizes: _ProblemSizesTile[Self.max_groups],
         num_groups: Int,
@@ -493,7 +493,7 @@ struct GroupedTileScheduler[
         self.num_groups = num_groups
 
     @always_inline
-    fn work_iterator(
+    def work_iterator(
         self,
     ) -> GroupedWorkIterator[
         Self.tile_m, Self.tile_n, Self.tile_k, Self.max_groups, Self.cta_group
@@ -518,7 +518,7 @@ struct GroupedTileScheduler[
         )
 
     @always_inline
-    fn total_tiles(self) -> Int:
+    def total_tiles(self) -> Int:
         """Compute total number of tiles across all groups."""
         var total = 0
         for g in range(self.num_groups):
@@ -556,7 +556,7 @@ struct GroupedCLCWaitAndAdvanceContext[
     var next_work: GroupedWorkInfo
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         work_info_ptr: Pointer[GroupedWorkInfo, Self.work_origin],
         next_work: GroupedWorkInfo,
@@ -565,11 +565,11 @@ struct GroupedCLCWaitAndAdvanceContext[
         self.next_work = next_work
 
     @always_inline
-    fn __enter__(self) -> GroupedWorkInfo:
+    def __enter__(self) -> GroupedWorkInfo:
         return self.work_info_ptr[]
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         self.work_info_ptr[] = self.next_work
 
 
@@ -638,7 +638,7 @@ struct GroupedCLCWorkIterator[
     """Total tiles across all groups."""
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         problem_sizes: _ProblemSizesTile[Self.max_groups],
         num_groups: Int,
@@ -697,12 +697,12 @@ struct GroupedCLCWorkIterator[
         self.total_tiles = cumsum
 
     @always_inline
-    fn has_work(self) -> Bool:
+    def has_work(self) -> Bool:
         """Check if there is more work to process."""
         return self.work_info.is_valid()
 
     @always_inline
-    fn wait_and_advance[
+    def wait_and_advance[
         state_origin: MutOrigin, //
     ](
         ref[state_origin] self,
@@ -724,7 +724,7 @@ struct GroupedCLCWorkIterator[
         return GroupedCLCWaitAndAdvanceContext(Pointer(to=self.work_info), next)
 
     @always_inline
-    fn next[
+    def next[
         state_origin: MutOrigin, //
     ](
         ref[state_origin] self,
@@ -747,7 +747,7 @@ struct GroupedCLCWorkIterator[
         )
 
     @always_inline
-    fn throttle_signal(mut self, is_first_cta_in_cluster: Bool):
+    def throttle_signal(mut self, is_first_cta_in_cluster: Bool):
         """Signal CLC throttle if this is the first CTA in cluster.
 
         NOTE: For software CLC simulation, this is a no-op. The throttle
@@ -762,7 +762,7 @@ struct GroupedCLCWorkIterator[
         pass
 
     @always_inline
-    fn _fetch_next_work(self) -> GroupedWorkInfo:
+    def _fetch_next_work(self) -> GroupedWorkInfo:
         """Fetch next work item with CLC barrier synchronization.
 
         This is the key synchronization point - waits on CLC full barrier
@@ -793,7 +793,7 @@ struct GroupedCLCWorkIterator[
         return self._delinearize_to_group(linear_idx, self.work_info.group_idx)
 
     @always_inline
-    fn _read_linear_idx_from_clc(self) -> UInt32:
+    def _read_linear_idx_from_clc(self) -> UInt32:
         """Read linear tile index from CLC response.
 
         The CLC response contains: (linear_idx, 0, 0, is_valid).
@@ -806,7 +806,7 @@ struct GroupedCLCWorkIterator[
         # we just cast the UInt128 to UInt32 to get the first component
 
     @always_inline
-    fn _compute_next_work(self) -> GroupedWorkInfo:
+    def _compute_next_work(self) -> GroupedWorkInfo:
         """Compute next work item without CLC wait (for non-MMA warps)."""
         # Simple linear advance
         var linear_idx = self._current_linear_idx() + UInt32(
@@ -817,7 +817,7 @@ struct GroupedCLCWorkIterator[
         return self._delinearize_to_group(linear_idx, self.work_info.group_idx)
 
     @always_inline
-    fn _current_linear_idx(self) -> UInt32:
+    def _current_linear_idx(self) -> UInt32:
         """Compute current linear tile index from work_info."""
         var g = Int(self.work_info.group_idx)
         var m_tiles = ceildiv(Int(self.problem_m[g]), Self.tile_m)
@@ -828,7 +828,7 @@ struct GroupedCLCWorkIterator[
         )
 
     @always_inline
-    fn _delinearize_to_group(
+    def _delinearize_to_group(
         self, linear_idx: UInt32, prev_group_idx: UInt32
     ) -> GroupedWorkInfo:
         """Map linear tile index to group + local coordinates."""
@@ -921,7 +921,7 @@ struct GroupedCLCSchedulerIterator[
     """Number of signals sent (for pipeline fill tracking)."""
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         problem_sizes: _ProblemSizesTile[Self.max_groups],
         num_groups: Int,
@@ -975,12 +975,12 @@ struct GroupedCLCSchedulerIterator[
         self.total_tiles = cumsum
 
     @always_inline
-    fn has_work(self) -> Bool:
+    def has_work(self) -> Bool:
         """Check if there is more work to process."""
         return self.work_info.is_valid()
 
     @always_inline
-    fn next[
+    def next[
         state_origin: MutOrigin, //
     ](
         ref[state_origin] self,
@@ -1008,7 +1008,7 @@ struct GroupedCLCSchedulerIterator[
         )
 
     @always_inline
-    fn signal_and_advance(mut self):
+    def signal_and_advance(mut self):
         """Signal CLC throttle and produce next work request.
 
         This is called inside the work loop after processing current work.
@@ -1069,7 +1069,7 @@ struct GroupedCLCSchedulerIterator[
             )
 
     @always_inline
-    fn drain(mut self):
+    def drain(mut self):
         """Drain all pending CLC requests before kernel exit.
 
         Only waits for slots that were actually signaled to avoid deadlock
@@ -1090,7 +1090,7 @@ struct GroupedCLCSchedulerIterator[
             self.empty_mbar[stage].wait(phase)
 
     @always_inline
-    fn _delinearize_to_group(
+    def _delinearize_to_group(
         self, linear_idx: UInt32, prev_group_idx: UInt32
     ) -> GroupedWorkInfo:
         """Map linear tile index to group + local coordinates."""

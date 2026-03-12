@@ -188,7 +188,7 @@ struct TileWriter[
     var c_tma_op: Self.TmaOpPtr
 
     @always_inline
-    fn __init__(out self, c_tma_op: Self.TmaOpPtr):
+    def __init__(out self, c_tma_op: Self.TmaOpPtr):
         """Initialize with pointer to TMA descriptor."""
         comptime assert (
             Self.stage_stride_cols > 0
@@ -198,7 +198,7 @@ struct TileWriter[
     # ========== Public Write Methods ==========
 
     @always_inline
-    fn write(
+    def write(
         self,
         c_tiles: Self.CTileArray,
         stage: Self.Stage,
@@ -210,7 +210,7 @@ struct TileWriter[
         self._copy_to_gmem(c_tiles, stage, tile_coord, shape)
 
     @always_inline
-    fn write_batched(
+    def write_batched(
         self,
         c_tiles: Self.CTileArray,
         stage: Self.Stage,
@@ -230,7 +230,7 @@ struct TileWriter[
         self._copy_to_gmem_batched(c_tiles, stage, tile_coord, shape, alpha)
 
     @always_inline
-    fn write_splitk[
+    def write_splitk[
         reduction_layout: TensorLayout,
     ](
         self,
@@ -263,7 +263,7 @@ struct TileWriter[
         self._copy_to_gmem(c_tiles, stage, (work_info.m, work_info.n), shape)
 
     @always_inline
-    fn write_absolute_with_bounds_check[
+    def write_absolute_with_bounds_check[
         c_tensor_layout: Layout,
     ](
         self,
@@ -290,7 +290,7 @@ struct TileWriter[
         )
 
     @always_inline
-    fn _copy_to_gmem(
+    def _copy_to_gmem(
         self,
         c_tiles: Self.CTileArray,
         output_stage: Self.Stage,
@@ -306,7 +306,7 @@ struct TileWriter[
             self._copy_to_gmem_impl(c_tiles, output_stage, c_coord, c_shape)
 
     @always_inline
-    fn _copy_to_gmem_batched(
+    def _copy_to_gmem_batched(
         self,
         c_tiles: Self.CTileArray,
         output_stage: Self.Stage,
@@ -340,7 +340,7 @@ struct TileWriter[
             )
 
     @always_inline
-    fn _copy_to_gmem_with_elementwise_epilogue_impl(
+    def _copy_to_gmem_with_elementwise_epilogue_impl(
         self,
         c_tiles: Self.CTileArray,
         output_stage: Self.Stage,
@@ -456,7 +456,7 @@ struct TileWriter[
             WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
 
     @always_inline
-    fn _copy_to_gmem_impl(
+    def _copy_to_gmem_impl(
         self,
         c_tiles: Self.CTileArray,
         output_stage: Self.Stage,
@@ -695,7 +695,7 @@ struct TileWriter[
                 WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
 
     @always_inline
-    fn _write_absolute_with_bounds_check[
+    def _write_absolute_with_bounds_check[
         c_tensor_layout: Layout,
     ](
         self,
@@ -955,7 +955,7 @@ struct TileWriter[
 
     @staticmethod
     @always_inline
-    fn _store_with_bounds_check[
+    def _store_with_bounds_check[
         c_tensor_layout: Layout,
     ](
         c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
@@ -1065,7 +1065,7 @@ struct TileWriter[
 
     @staticmethod
     @always_inline
-    fn _store_with_bounds_check_transpose[
+    def _store_with_bounds_check_transpose[
         c_tensor_layout: Layout,
     ](
         c_smem_ptr: UnsafePointer[
@@ -1140,7 +1140,7 @@ struct TileWriter[
     # Methods for D = lambda(accum) + beta * C residual operations
 
     @always_inline
-    fn write_with_residual(
+    def write_with_residual(
         self,
         out_tiles: Self.CTileArray,
         stage: Self.Stage,
@@ -1186,7 +1186,7 @@ struct TileWriter[
         )
 
     @always_inline
-    fn _copy_to_gmem_with_residual(
+    def _copy_to_gmem_with_residual(
         self,
         out_tiles: Self.CTileArray,
         output_stage: Self.Stage,
