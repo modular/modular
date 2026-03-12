@@ -27,6 +27,14 @@ This version is still a work in progress.
   dimensions are known at compile time.  Please change `DimList(x, y)`
   into `DimList[x, y]()`.
 
+- T-strings now support the raw prefix (`rt"..."`) which preserves backslashes
+  as literal characters while still supporting interpolation.
+
+```mojo
+  var name = "Mojo"
+  print(t"C:\{name}\Documents") # prints "C:\Mojo\Documents"
+```
+
 ## Tooling changes
 
 ## ❌ Removed
