@@ -429,15 +429,23 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Burstiness factor (1.0 = Poisson process)."""
 
-    skip_first_n_requests: int = field(
-        default=0, metadata={"group": "Traffic Control"}
+    skip_first_n_requests: int | None = field(
+        default=None, metadata={"group": "Traffic Control"}
     )
-    """Skip first N requests for measurements."""
+    """Skip first N requests for measurements.
 
-    skip_last_n_requests: int = field(
-        default=0, metadata={"group": "Traffic Control"}
+    None = auto-set to max_concurrency when request_rate=inf.
+    0 = explicitly no skipping.
+    """
+
+    skip_last_n_requests: int | None = field(
+        default=None, metadata={"group": "Traffic Control"}
     )
-    """Skip last N requests for measurements."""
+    """Skip last N requests for measurements.
+
+    None = auto-set to max_concurrency when request_rate=inf.
+    0 = explicitly no skipping.
+    """
 
     chat_warmup_delay_ms: float = field(
         default=0.0, metadata={"group": "Traffic Control"}
@@ -611,8 +619,8 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "image_seed": "Optional deterministic seed for pixel generation.",
             "request_rate": "Requests per second (finite rate for realistic benchmarking).",
             "burstiness": "Burstiness factor (1.0 = Poisson process).",
-            "skip_first_n_requests": "Skip first N requests for measurements.",
-            "skip_last_n_requests": "Skip last N requests for measurements.",
+            "skip_first_n_requests": "Skip first N requests for measurements. Omit to auto-set to max_concurrency; pass 0 to disable.",
+            "skip_last_n_requests": "Skip last N requests for measurements. Omit to auto-set to max_concurrency; pass 0 to disable.",
             "chat_warmup_delay_ms": "Delay between starting chat sessions.",
             "sonnet_input_len": "Number of input tokens per request, used only for sonnet dataset.",
             "sonnet_prefix_len": "Number of prefix tokens per request, used only for sonnet dataset.",
