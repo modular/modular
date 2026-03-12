@@ -48,7 +48,7 @@ PINS = {
     "cyclopts": "cyclopts@4.2.5",
     "datasets": "datasets@2.21.0",
     "device-smi": "device-smi@0.4.1",
-    "diffusers": "diffusers@0.36.0",
+    "diffusers": "diffusers@0.37.0",
     "docutils": "docutils@0.20.1",
     "einops": "einops@0.8.0",
     "einx": "einx@0.3.0",
@@ -1980,7 +1980,7 @@ def targets():
         testonly = "device-smi" in _TESTONLY_DEPS,
     )
 
-    _diffusers_0_36_0_deps = [
+    _diffusers_0_37_0_deps = [
         ":filelock@3.16.1",
         ":httpx@0.27.2",
         ":huggingface-hub@0.34.3",
@@ -1993,14 +1993,14 @@ def targets():
     ]
 
     native.alias(
-        name = "_wheel_diffusers@0.36.0",
-        actual = "@pycross_lock_file_wheel_diffusers_0.36.0_py3_none_any//file",
+        name = "_wheel_diffusers@0.37.0",
+        actual = "@pycross_lock_file_wheel_diffusers_0.37.0_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "diffusers@0.36.0",
-        deps = _diffusers_0_36_0_deps,
-        wheel = ":_wheel_diffusers@0.36.0",
+        name = "diffusers@0.37.0",
+        deps = _diffusers_0_37_0_deps,
+        wheel = ":_wheel_diffusers@0.37.0",
         testonly = "diffusers" in _TESTONLY_DEPS,
     )
 
@@ -15198,12 +15198,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_diffusers_0.36.0_py3_none_any",
+        name = "pycross_lock_file_wheel_diffusers_0.37.0_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/35/50/281f92cb1f83854dbd79b6e958b3bc5018607e2542971d41604ba7a14b2f/diffusers-0.36.0-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/f7/55/586a3a2b9c95f371c9c3cb048c3cac15aedcce8d6d53ebd6bbc46860722d/diffusers-0.37.0-py3-none-any.whl",
         ],
-        sha256 = "525d42abc74bfc3b2db594999961295c054b48ef40a11724dacf50e6abd1af98",
-        downloaded_file_path = "diffusers-0.36.0-py3-none-any.whl",
+        sha256 = "7eab74bf896974250b5e1027cae813aba1004f02d97c9b44891b83713386aa08",
+        downloaded_file_path = "diffusers-0.37.0-py3-none-any.whl",
     )
 
     maybe(
