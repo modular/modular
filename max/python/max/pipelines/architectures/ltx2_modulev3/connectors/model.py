@@ -11,18 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections.abc import Callable
 from typing import Any
 
 from max.driver import Device
-from max.engine import Model
 from max.experimental import functional as F
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 
-from .ltx2_connectors import LTX2TextConnectors
-from .model_config import LTX2TextConnectorsConfig, LTX2TextConnectorsConfigBase
-from .weight_adapters import convert_safetensor_state_dict
+from .connectors import LTX2TextConnectors
+from .model_config import LTX2TextConnectorsConfig
 
 
 class LTX2TextConnectorsModel(ComponentModel):
@@ -34,24 +33,21 @@ class LTX2TextConnectorsModel(ComponentModel):
         weights: Weights,
     ) -> None:
         super().__init__(config, encoding, devices, weights)
-        self.config: LTX2TextConnectorsConfigBase = (
-            LTX2TextConnectorsConfig.generate(
-                config,
-                encoding,
-                devices,
-            )
+        self.config = LTX2TextConnectorsConfig.initialize_from_config(
+            config,
+            encoding,
+            devices,
         )
         self.load_model()
 
-    def load_model(self) -> Model:
+    def load_model(self) -> Callable[..., Any]:
         state_dict = {key: value.data() for key, value in self.weights.items()}
-        state_dict = convert_safetensor_state_dict(state_dict)
         with F.lazy():
-            connectors = LTX2TextConnectors(self.config)  # type: ignore[arg-type]
+            connectors = LTX2TextConnectors(self.config)
             connectors.to(self.devices[0])
-        self.model: Model = connectors.compile(
+        self.model = connectors.compile(
             *connectors.input_types(), weights=state_dict
-        )  # type: ignore[assignment]
+        )
         return self.model
 
     def __call__(self, *args, **kwargs):

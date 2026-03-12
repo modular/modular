@@ -17,12 +17,83 @@ import max.experimental.functional as F
 from max.driver import Device
 from max.dtype import DType
 from max.experimental import nn, random
-from max.experimental.nn import FeedForward
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
 
-from ..ltx2.ltx2 import LTX2Attention
-from .model_config import LTX2TextConnectorsConfigBase
+from ..ltx2 import LTX2Attention
+from .model_config import LTX2TextConnectorsConfig
+
+
+class GELU(nn.Module[..., tuple[Tensor]]):
+    r"""
+    GELU activation function with tanh approximation support with `approximate="tanh"`.
+
+    Parameters:
+        dim_in (`int`): The number of channels in the input.
+        dim_out (`int`): The number of channels in the output.
+        approximate (`str`, *optional*, defaults to `"none"`): If `"tanh"`, use tanh approximation.
+        bias (`bool`, defaults to True): Whether to use a bias in the linear layer.
+    """
+
+    def __init__(self, dim_in: int, dim_out: int, approximate: str = "none", bias: bool = True):
+        super().__init__()
+        self.proj = nn.Linear(dim_in, dim_out, bias=bias)
+        self.approximate = approximate
+
+    def gelu(self, gate: Tensor) -> Tensor:
+        return F.gelu(gate, approximate=self.approximate)
+
+    def forward(self, hidden_states):
+        hidden_states = self.proj(hidden_states)
+        hidden_states = self.gelu(hidden_states)
+        return hidden_states
+
+
+class FeedForward(nn.Module[..., tuple[Tensor]]):
+    r"""
+    A feed-forward layer.
+
+    Parameters:
+        dim (`int`): The number of channels in the input.
+        dim_out (`int`, *optional*): The number of channels in the output. If not given, defaults to `dim`.
+        mult (`int`, *optional*, defaults to 4): The multiplier to use for the hidden dimension.
+        dropout (`float`, *optional*, defaults to 0.0): The dropout probability to use.
+        activation_fn (`str`, *optional*, defaults to `"geglu"`): Activation function to be used in feed-forward.
+        bias (`bool`, defaults to True): Whether to use a bias in the linear layer.
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        dim_out: int | None = None,
+        mult: int = 4,
+        dropout: float = 0.0,
+        activation_fn: str = "gelu",
+        inner_dim=None,
+        bias: bool = True,
+    ):
+        super().__init__()
+        if inner_dim is None:
+            inner_dim = int(dim * mult)
+        dim_out = dim_out if dim_out is not None else dim
+
+        if activation_fn == "gelu":
+            act_fn = GELU(dim, inner_dim, bias=bias)
+        if activation_fn == "gelu-approximate":
+            act_fn = GELU(dim, inner_dim, approximate="tanh", bias=bias)
+
+        self.net = nn.ModuleList([])
+        # project in
+        self.net.append(act_fn)
+        # project dropout
+        self.net.append(nn.Dropout(dropout))  # TODO?
+        # project out
+        self.net.append(nn.Linear(inner_dim, dim_out, bias=bias))
+
+    def forward(self, hidden_states: Tensor) -> Tensor:
+        for module in self.net:
+            hidden_states = module(hidden_states)
+        return hidden_states
 
 
 class LTX2RotaryPosEmbed1d(nn.Module[..., tuple[Tensor, Tensor]]):
@@ -303,7 +374,7 @@ class LTX2TextConnectors(nn.Module[..., tuple[Tensor, Tensor, Tensor]]):
 
     def __init__(
         self,
-        config: LTX2TextConnectorsConfigBase,
+        config: LTX2TextConnectorsConfig,
     ):
         super().__init__()
         self.config = config
