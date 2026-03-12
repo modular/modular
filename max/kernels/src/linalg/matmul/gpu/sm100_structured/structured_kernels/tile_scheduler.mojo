@@ -21,7 +21,12 @@ from std.gpu.primitives.cluster import (
     clusterlaunchcontrol_try_cancel,
     elect_one_sync,
 )
-from std.gpu import block_id_in_cluster, block_idx, lane_id, warp_id
+from std.gpu import (
+    block_id_in_cluster,
+    block_idx,
+    lane_id_int as lane_id,
+    warp_id,
+)
 from std.gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 
@@ -50,9 +55,9 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
         return self.is_valid_tile
 
     @always_inline
-    fn coord(self) -> Tuple[UInt, UInt]:
+    fn coord(self) -> Tuple[Int, Int]:
         """Get (m, n) tile coordinates as a tuple."""
-        return (UInt(self.m), UInt(self.n))
+        return (Int(self.m), Int(self.n))
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -727,9 +732,9 @@ struct TileScheduler[
     ) -> PipelineState[Self.num_stages]:
         comptime multicast = True if Self.cluster_size > 1 else False
         var lane_id = lane_id()
-        var pred: UInt32 = UInt32(1) if lane_id < UInt(
-            Self.cluster_size
-        ) else UInt32(0)
+        var pred: UInt32 = UInt32(1) if lane_id < Self.cluster_size else UInt32(
+            0
+        )
         self.empty_mbar[clc_state.index()].wait(clc_state.phase())
         self.full_mbar[clc_state.index()].arrive_and_expect_bytes(
             Int32(size_of[UInt128]()),

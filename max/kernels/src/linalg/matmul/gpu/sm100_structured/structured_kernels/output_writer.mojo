@@ -24,7 +24,7 @@ from std.collections import Optional
 from std.memory import Pointer, UnsafePointer
 from std.sys import simd_width_of, size_of, align_of
 
-from std.gpu import WARP_SIZE, thread_idx
+from std.gpu import WARP_SIZE, thread_idx_int as thread_idx
 from std.gpu import lane_id
 from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
@@ -921,17 +921,13 @@ struct TileWriter[
                 comptime if Self.transpose_c:
                     # Transpose: coord_m→tc0→N(weights),
                     # coord_n→tc1→M(tokens)
-                    store_coords.coord_m = UInt(n_abs)
-                    store_coords.coord_n = UInt(m_abs) + UInt(
-                        loop_stage * Self.stageN
-                    )
+                    store_coords.coord_m = Int(n_abs)
+                    store_coords.coord_n = Int(m_abs) + loop_stage * Self.stageN
                 else:
                     # Non-transpose: coord_m→tc1→M(tokens),
                     # coord_n→tc0→N(weights)
-                    store_coords.coord_m = UInt(m_abs)
-                    store_coords.coord_n = UInt(n_abs) + UInt(
-                        loop_stage * Self.stageN
-                    )
+                    store_coords.coord_m = Int(m_abs)
+                    store_coords.coord_n = Int(n_abs) + loop_stage * Self.stageN
 
                 StoreExecutorLocal.execute[
                     Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
@@ -1018,7 +1014,7 @@ struct TileWriter[
                 var input_crd = RuntimeTuple[
                     IntTuple(UNKNOWN_VALUE, j),
                     element_type=DType.uint32,
-                ](Int(thread_idx.x), j)
+                ](thread_idx.x, j)
                 var linear_idx = rt_crd2idx[
                     IntTuple(UNKNOWN_VALUE, j),
                     zipped.shape,

@@ -758,7 +758,7 @@ fn matmul_sm100_fallback[
         a_tma_op,
         b_tma_op,
         c,
-        UInt(ceildiv(K, BK)),
+        ceildiv(K, BK),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,

@@ -984,12 +984,12 @@ struct Grouped1D1DMatmulKernel[
         internally.
         """
         comptime if Self.MMA_N % SF_MN_GROUP_SIZE != 0:
-            var effective_n: UInt
+            var effective_n: Int
             comptime if Self.config.AB_swapped:
-                effective_n = UInt(m_coord) - UInt(m_start)
+                effective_n = Int(m_coord) - Int(m_start)
             else:
-                effective_n = UInt(n_coord)
-            return UInt32(Int(effective_n) // Self.MMA_N % 2) * 2
+                effective_n = Int(n_coord)
+            return UInt32(effective_n // Self.MMA_N % 2) * 2
         else:
             return UInt32(0)
 

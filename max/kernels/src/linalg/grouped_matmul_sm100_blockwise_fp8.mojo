@@ -964,7 +964,7 @@ fn multi_stage_reg_epilogue[
             var casted = src.cast[c_type]()
             comptime for _j in range(cast_width):
                 upper_st[offset + _j] = casted[_j]
-        stsm_helper[swizzle, UInt(stageN), swizzle_mode=c_swizzle](
+        stsm_helper[swizzle, stageN, swizzle_mode=c_swizzle](
             upper_st, c_smem_warp_tile_upper
         )
 
@@ -985,7 +985,7 @@ fn multi_stage_reg_epilogue[
                 var casted = src.cast[c_type]()
                 comptime for _j in range(cast_width):
                     lower_st[offset + _j] = casted[_j]
-            stsm_helper[swizzle, UInt(stageN), swizzle_mode=c_swizzle](
+            stsm_helper[swizzle, stageN, swizzle_mode=c_swizzle](
                 lower_st, c_smem_warp_tile_lower
             )
 

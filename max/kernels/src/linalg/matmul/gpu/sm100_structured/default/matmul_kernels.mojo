@@ -39,7 +39,11 @@ from std.gpu.primitives.cluster import (
     elect_one_sync,
 )
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_idx, lane_id, thread_idx
+from std.gpu import (
+    block_idx_int as block_idx,
+    lane_id_int as lane_id,
+    thread_idx_int as thread_idx,
+)
 from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
@@ -1552,7 +1556,7 @@ struct BlackwellMatmulSM100FallbackKernel[
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
         c: TileTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
-        num_iters: UInt,
+        num_iters: Int,
     ):
         """Run the fallback matmul kernel.
 
@@ -1634,17 +1638,17 @@ struct BlackwellMatmulSM100FallbackKernel[
                 a_tma_op.async_copy(
                     a_smem_tile,
                     tma_mbar[0],
-                    (Int(i) * Self.BK, Int(block_idx.y) * Self.BM),
+                    (i * Self.BK, block_idx.y * Self.BM),
                 )
                 b_tma_op.async_copy(
                     b_smem_tile,
                     tma_mbar[0],
                     (
-                        Int(i) * Self.BK,
-                        Int(block_idx.x) * Self.BN,
+                        i * Self.BK,
+                        block_idx.x * Self.BN,
                     ) if Self.transpose_b else (
-                        Int(block_idx.x) * Self.BN,
-                        Int(i) * Self.BK,
+                        block_idx.x * Self.BN,
+                        i * Self.BK,
                     ),
                 )
 
@@ -1687,7 +1691,7 @@ struct BlackwellMatmulSM100FallbackKernel[
 
         var ctile, ctile_coords, _ = c.tile_with_offset[
             Self.BM, Self.BN, stride_layout=Self.CGmemStrideLayout
-        ](Coord(Idx(Int(block_idx.y)), Idx(Int(block_idx.x))))
+        ](Coord(Idx(block_idx.y), Idx(block_idx.x)))
 
         var M = c.dim[0]()
 
@@ -1709,7 +1713,7 @@ struct BlackwellMatmulSM100FallbackKernel[
                 var vectorized = warp_tile.vectorize[1, 2]()
                 var dist_result = vectorized.distribute_with_offset[
                     row_major[8, 4]()
-                ](Int(lane_id()))
+                ](lane_id())
                 var frag = dist_result[0]
                 var frag_coords = dist_result[1]
                 var frag_m = warp_m + frag_coords[0]

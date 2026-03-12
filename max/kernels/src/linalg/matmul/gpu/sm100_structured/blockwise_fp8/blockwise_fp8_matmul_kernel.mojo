@@ -333,9 +333,6 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         Self.CLUSTER_N,
     ]
 
-    # TMEM allocation size
-    comptime max_tmem_cols: UInt = 512
-
     # ========== Tile Scheduler Type ==========
     comptime Scheduler = StructuredTileScheduler[
         num_stages=Self.num_clc_pipeline_stages,
@@ -492,7 +489,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             Self.config.k_group_size,
         ],
         peer_cta_coord: Tuple[UInt, UInt, UInt],
-        work_tile_coord: Tuple[UInt, UInt],
+        work_tile_coord: Tuple[Int, Int],
         iter_idx: Int,
         elect_one_cta: Bool,
     ):
@@ -513,12 +510,12 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         var peer_m_rank = Int(peer_cta_coord[2])
 
         var a_gmem_m_coord = (
-            peer_m_rank * Self.a_tma_rows + Int(work_tile_coord[0]) * Self.BM
+            peer_m_rank * Self.a_tma_rows + work_tile_coord[0] * Self.BM
         )
         var b_gmem_n_coord = (
             peer_rank_m * Self.b_tma_rows
             + peer_rank_n * Self.BN
-            + Int(work_tile_coord[1]) * Self.MMA_N
+            + work_tile_coord[1] * Self.MMA_N
         )
 
         if elect_one_sync():
@@ -559,7 +556,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             a_scales_loader.load(
                 a_scales_tile,
                 barrier[0],
-                Int(work_tile_coord[0]) * Self.BM,
+                work_tile_coord[0] * Self.BM,
                 iter_idx,
             )
 
@@ -703,7 +700,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         c_tma_op: Self.CTmaOp,
         a_scales_tma_op: Self.AScalesTmaOp,
         cluster_dim: StaticTuple[Int32, 3],
-        num_iters: UInt,
+        num_iters: Int,
         b_scales: Self.BScalesTile,
         problem_shape: StaticTuple[Int32, 3],
     ):
@@ -793,7 +790,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                 with work_iter.next() as current:
                     work_iter.throttle_signal(ctx.is_first_cta_in_cluster)
 
-                    for i in range(Int(num_iters)):
+                    for i in range(num_iters):
                         # Acquire tiles (waits for consumer to free slot)
                         var tiles = producer.acquire_stage()
                         Self.load_input_tiles(

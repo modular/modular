@@ -3734,8 +3734,8 @@ struct RaggedTMA3DTile[
 
         """
 
-        var offset_ragged_idx: UInt = UInt(ragged_idx + dynamic_dim)
-        var box_idx: UInt = UInt(UInt32(Self.BM) - dynamic_dim)
+        var offset_ragged_idx = Int(ragged_idx + dynamic_dim)
+        var box_idx = Int(UInt32(Self.BM) - dynamic_dim)
 
         comptime for col in range(ceildiv(Self.BN, Self.swizzle_granularity)):
             comptime copy_offset = col * Self.BM * Self.swizzle_granularity
@@ -3745,9 +3745,9 @@ struct RaggedTMA3DTile[
                 UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                 mem_barrier.unsafe_ptr(),
                 Index(
-                    UInt(col * Self.swizzle_granularity),
+                    col * Self.swizzle_granularity,
                     box_idx,
-                    UInt(middle_idx),
+                    Int(middle_idx),
                     offset_ragged_idx,
                 ),
             )
@@ -3782,17 +3782,17 @@ struct RaggedTMA3DTile[
             dynamic_dim: Number of rows to copy.
             middle_idx: Index into the middle (generally head) dimension.
         """
-        var offset_ragged_idx: UInt = UInt(ragged_idx + dynamic_dim)
-        var box_idx: UInt = UInt(UInt32(Self.BM) - dynamic_dim)
+        var offset_ragged_idx = Int(ragged_idx + dynamic_dim)
+        var box_idx = Int(UInt32(Self.BM) - dynamic_dim)
         comptime copy_offset = col * Self.BM * Self.swizzle_granularity
 
         cp_async_bulk_tensor_global_shared_cta[eviction_policy=eviction_policy](
             src + copy_offset,
             UnsafePointer(to=self.descriptor).bitcast[NoneType](),
             Index(
-                UInt(col * Self.swizzle_granularity),
+                col * Self.swizzle_granularity,
                 box_idx,
-                UInt(middle_idx),
+                Int(middle_idx),
                 offset_ragged_idx,
             ),
         )
