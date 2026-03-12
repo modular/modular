@@ -700,6 +700,9 @@ class PixelContext:
     negative_tokens: TokenBuffer | None = field(default=None)
     """Negative tokens for primary encoder."""
 
+    negative_mask: npt.NDArray[np.bool_] | None = field(default=None)
+    """Mask for the negative text encoder path."""
+
     negative_tokens_2: TokenBuffer | None = field(default=None)
     """Negative tokens for secondary encoder. None for single-encoder models."""
 
