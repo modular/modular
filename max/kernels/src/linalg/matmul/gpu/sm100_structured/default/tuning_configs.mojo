@@ -35,7 +35,7 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
     var num_clc_pipeline_stages: UInt
     var num_split_k: Int
 
-    fn __init__(
+    def __init__(
         out self,
         M: Int,
         N: Int,
@@ -68,7 +68,7 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
         self.num_split_k = num_split_k
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the tuning config as a string.
 
         Args:
@@ -76,7 +76,7 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         """
         writer.write("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
 
-    fn __init__(
+    def __init__(
         out self,
         M: Int,
         M_end: Int,
@@ -131,7 +131,7 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
 # ===----------------------------------------------------------------------=== #
 
 
-fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
+def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
     return [
         TuningConfigSM100(
             M=2048,
@@ -386,7 +386,9 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
 # ===----------------------------------------------------------------------=== #
 
 
-fn _get_tuning_list_sm100_fp8[mma_k: Int, bk: Int]() -> List[TuningConfigSM100]:
+def _get_tuning_list_sm100_fp8[
+    mma_k: Int, bk: Int
+]() -> List[TuningConfigSM100]:
     # ----------------BEGIN-TUNING-LIST-SM100-FP8----------------
     comptime config_list = [
         # Automatically generated from [tuning_table_sm100_fp8.yaml]
@@ -1547,7 +1549,7 @@ fn _get_tuning_list_sm100_fp8[mma_k: Int, bk: Int]() -> List[TuningConfigSM100]:
     return materialize[config_list]()
 
 
-fn _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
+def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
     comptime config_list = [
         TuningConfigSM100(
             M=1,
@@ -1638,7 +1640,7 @@ fn _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
     return materialize[config_list]()
 
 
-fn _get_tuning_list_sm100_mxfp8() -> List[TuningConfigSM100]:
+def _get_tuning_list_sm100_mxfp8() -> List[TuningConfigSM100]:
     comptime config_list = [
         TuningConfigSM100(
             M=1,

@@ -23,11 +23,11 @@ struct Buffer[capacity: Int](Defaultable, Writer):
     var data: InlineArray[UInt8, Self.capacity]
     var pos: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.data = InlineArray[UInt8, Self.capacity](fill=0)
         self.pos = 0
 
-    fn write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSlice):
         len_bytes = string.byte_length()
         # If empty then return
         if len_bytes == 0:
@@ -41,7 +41,7 @@ struct Buffer[capacity: Int](Defaultable, Writer):
         self.pos += len_bytes
 
 
-fn check_float[
+def check_float[
     dtype: DType, //, expected: StaticString
 ](f8: Scalar[dtype]) where dtype.is_floating_point():
     var f8_str = Buffer[len(expected)]()
@@ -53,15 +53,15 @@ fn check_float[
         abort()
 
 
-fn check_8e5m2[expected: StaticString](f8: Float8_e5m2):
+def check_8e5m2[expected: StaticString](f8: Float8_e5m2):
     check_float[expected](f8)
 
 
-fn check_8e4m3[expected: StaticString](f8: Float8_e4m3fn):
+def check_8e4m3[expected: StaticString](f8: Float8_e4m3fn):
     check_float[expected](f8)
 
 
-fn test_format_float8_e5m2():
+def test_format_float8_e5m2():
     check_8e5m2["0.0"](0)
     check_8e5m2["0.125"](0.125)
     check_8e5m2["1.25"](1.25)
@@ -74,7 +74,7 @@ fn test_format_float8_e5m2():
     check_8e5m2["-0.0"](FloatLiteral.negative_zero)
 
 
-fn test_format_float8_e4m3fn():
+def test_format_float8_e4m3fn():
     check_8e4m3["0.0"](0)
     check_8e4m3["0.001953125"](0.001953125)
     check_8e4m3["-0.01953125"](-0.01953125)

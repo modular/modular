@@ -19,7 +19,7 @@ from std.utils.index import Index
 from std.testing import assert_almost_equal
 
 
-fn test_index_fp8[
+def test_index_fp8[
     num_heads: Int,
     depth: Int,
 ](batch_size: Int, seq_len: Int, num_keys: Int, ctx: DeviceContext) raises:

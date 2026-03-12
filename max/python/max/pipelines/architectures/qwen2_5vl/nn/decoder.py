@@ -35,7 +35,6 @@ from max.graph import (
 from max.nn.attention.attention_with_rope import _compute_shard_range
 from max.nn.comm.allreduce import Allreduce
 from max.nn.embedding import VocabParallelEmbedding
-from max.nn.float8_config import Float8Config
 from max.nn.kernels import (
     MHAMaskVariant,
     flash_attention_ragged,
@@ -46,6 +45,7 @@ from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import LayerList, Module, Shardable
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.norm import RMSNorm
+from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
@@ -87,7 +87,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
         linear_cls: Callable[..., Linear] = Linear,
         scale: float | None = None,
         has_bias: bool = True,
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
     ) -> None:
         """Initializes the Qwen2.5VL attention layer with mrope support.
 
@@ -116,7 +116,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             if scale is not None
             else math.sqrt(1.0 / self.kv_params.head_dim)
         )
-        self.float8_config = float8_config
+        self.quant_config = quant_config
 
         self.devices = devices or [DeviceRef.CPU()]
 
@@ -131,7 +131,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=has_bias,
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
         self.k_proj = linear_cls(
             in_dim=hidden_size,
@@ -139,7 +139,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=has_bias,
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
         self.v_proj = linear_cls(
             in_dim=hidden_size,
@@ -147,7 +147,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=has_bias,
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
 
         self.o_proj = linear_cls(
@@ -155,7 +155,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             out_dim=hidden_size,
             dtype=dtype,
             device=self.devices[0],
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
 
     @property
@@ -357,7 +357,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
                 linear_cls=self.o_proj.__class__,
                 scale=self.scale,
                 has_bias=self.has_bias,
-                float8_config=self.float8_config,
+                quant_config=self.quant_config,
             )
 
             # Assign sharded weights
@@ -503,7 +503,7 @@ class Qwen25VLDecoder(DistributedLogitsPostprocessMixin, Module):
             Qwen25VLDecoderAttentionWithRope,
             scale=config.attention_multiplier,
             has_bias=config.attention_bias,
-            float8_config=config.float8_config,
+            quant_config=config.quant_config,
         )
 
         layers = [
@@ -524,7 +524,7 @@ class Qwen25VLDecoder(DistributedLogitsPostprocessMixin, Module):
                     hidden_dim=config.hidden_size,
                     feed_forward_length=config.intermediate_size,
                     devices=config.devices,
-                    float8_config=config.float8_config,
+                    quant_config=config.quant_config,
                 ),
                 attention_norm=create_norm(),
                 mlp_norm=create_norm(),
@@ -534,8 +534,8 @@ class Qwen25VLDecoder(DistributedLogitsPostprocessMixin, Module):
         ]
 
         embedding_output_dtype = config.dtype
-        if config.float8_config and config.float8_config.embedding_output_dtype:
-            embedding_output_dtype = config.float8_config.embedding_output_dtype
+        if config.quant_config and config.quant_config.embedding_output_dtype:
+            embedding_output_dtype = config.quant_config.embedding_output_dtype
 
         embedding_layer = VocabParallelEmbedding(
             config.vocab_size,

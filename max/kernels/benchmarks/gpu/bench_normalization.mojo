@@ -23,7 +23,7 @@ from nn.normalization import layer_norm_gpu, rms_norm_gpu
 from std.utils.index import Index, IndexList
 
 
-fn bench_layer_norm_gpu[
+def bench_layer_norm_gpu[
     rank: Int, //, dtype: DType, shape: IndexList[rank]
 ](ctx: DeviceContext, mut b: Bench, fn_name: String) raises:
     comptime cols = shape[rank - 1]
@@ -60,7 +60,7 @@ fn bench_layer_norm_gpu[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
@@ -70,7 +70,7 @@ fn bench_layer_norm_gpu[
     @__copy_capture(gamma)
     @always_inline
     @parameter
-    fn gamma_fn[
+    def gamma_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Idx(coords[0]))
@@ -80,7 +80,7 @@ fn bench_layer_norm_gpu[
     @always_inline
     @__copy_capture(beta)
     @parameter
-    fn output_fn[
+    def output_fn[
         width: Int, rank_: Int, alignment: Int
     ](coords: IndexList[rank_], val: SIMD[dtype, width]) -> None:
         var idx = data_buf.layout(Coord(coords))
@@ -90,10 +90,10 @@ fn bench_layer_norm_gpu[
     @always_inline
     @__copy_capture(shape, beta, epsilon, data_buf)
     @parameter
-    fn bench_fn(mut b: Bencher) raises:
+    def bench_fn(mut b: Bencher) raises:
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             layer_norm_gpu[input_fn, gamma_fn, output_fn](
                 shape, beta, epsilon, ctx=ctx
             )
@@ -116,7 +116,7 @@ fn bench_layer_norm_gpu[
     beta_h.free()
 
 
-fn bench_rms_norm_gpu[
+def bench_rms_norm_gpu[
     rank: Int, //, dtype: DType, shape: IndexList[rank]
 ](ctx: DeviceContext, mut b: Bench, fn_name: String) raises:
     comptime cols = shape[rank - 1]
@@ -149,7 +149,7 @@ fn bench_rms_norm_gpu[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
@@ -159,7 +159,7 @@ fn bench_rms_norm_gpu[
     @always_inline
     @__copy_capture(data_buf)
     @parameter
-    fn identity_output_fn[
+    def identity_output_fn[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var idx = data_buf.layout(Coord(coords))
@@ -168,10 +168,10 @@ fn bench_rms_norm_gpu[
     @always_inline
     @__copy_capture(shape, gamma, epsilon, weight_offset)
     @parameter
-    fn bench_fn(mut b: Bencher) raises:
+    def bench_fn(mut b: Bencher) raises:
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             rms_norm_gpu[
                 input_fn, identity_output_fn, multiply_before_cast=True
             ](shape, gamma, epsilon, weight_offset, ctx)

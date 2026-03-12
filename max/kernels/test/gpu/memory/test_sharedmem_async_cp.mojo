@@ -18,7 +18,7 @@ from std.gpu.host import DeviceContext
 from std.memory import stack_allocation
 
 
-fn copy_via_shared(
+def copy_via_shared(
     src: UnsafePointer[Float32, ImmutAnyOrigin],
     dst: UnsafePointer[Float32, MutAnyOrigin],
 ):
@@ -50,7 +50,7 @@ fn copy_via_shared(
 
 
 # CHECK-LABEL: run_copy_via_shared
-fn run_copy_via_shared(ctx: DeviceContext) raises:
+def run_copy_via_shared(ctx: DeviceContext) raises:
     print("== run_copy_via_shared")
     var in_data = alloc[Float32](16)
     var out_data = alloc[Float32](16)

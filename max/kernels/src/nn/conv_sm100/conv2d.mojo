@@ -70,7 +70,7 @@ from .conv2d_fprop_kernel import Conv2dFpropKernel
 # =============================================================================
 
 
-fn conv2d_fprop[
+def conv2d_fprop[
     act_type: DType,
     filter_type: DType,
     out_type: DType,
@@ -338,7 +338,7 @@ fn conv2d_fprop[
 # =============================================================================
 
 
-fn conv2d_fprop_with_residual[
+def conv2d_fprop_with_residual[
     act_type: DType,
     filter_type: DType,
     out_type: DType,
@@ -607,7 +607,7 @@ fn conv2d_fprop_with_residual[
 # =============================================================================
 
 
-fn im2col[
+def im2col[
     dtype: DType,
 ](
     output: NDBuffer[mut=True, rank=2, dtype, ...],  # [M, K] output

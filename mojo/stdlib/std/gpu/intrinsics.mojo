@@ -61,7 +61,7 @@ from .memory.memory import CacheOperation, _int_to_str
 
 
 @always_inline
-fn ldg[
+def ldg[
     dtype: DType,
     //,
     width: Int = 1,
@@ -101,7 +101,7 @@ fn ldg[
 # ===-----------------------------------------------------------------------===#
 
 
-fn warpgroup_reg_alloc[count: Int]():
+def warpgroup_reg_alloc[count: Int]():
     """Allocates additional registers for the executing warp group.
 
     Hints to the system to increase per-thread registers owned by the
@@ -137,7 +137,7 @@ fn warpgroup_reg_alloc[count: Int]():
         ](Int32(count))
 
 
-fn warpgroup_reg_dealloc[count: Int]():
+def warpgroup_reg_dealloc[count: Int]():
     """Deallocates additional registers for the executing warp group.
 
     Hints to the system to decrease per-thread registers owned by the
@@ -177,7 +177,7 @@ fn warpgroup_reg_dealloc[count: Int]():
 
 
 @always_inline
-fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
+def lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
     """Performs an arbitrary logical operation on 3 inputs using a lookup table.
 
     Implements a 3-input lookup table (LUT) operation. The result is
@@ -220,7 +220,7 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
 
 
 @always_inline
-fn byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
+def byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
     """Permutes bytes from two 32-bit integers based on a control mask.
 
     Selects and rearranges bytes from two source integers based on a control
@@ -246,7 +246,7 @@ fn byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
     return llvm_intrinsic[asm, UInt32, has_side_effect=False](a, b, c)
 
 
-fn _byte_permute_inst() -> StaticString:
+def _byte_permute_inst() -> StaticString:
     comptime if is_nvidia_gpu():
         return "llvm.nvvm.prmt"
     elif is_amd_gpu():
@@ -263,7 +263,7 @@ fn _byte_permute_inst() -> StaticString:
 
 
 @always_inline
-fn mulhi(a: UInt16, b: UInt16) -> UInt32:
+def mulhi(a: UInt16, b: UInt16) -> UInt32:
     """Calculates the most significant 32 bits of the product of two 16-bit
     unsigned integers.
 
@@ -294,7 +294,7 @@ fn mulhi(a: UInt16, b: UInt16) -> UInt32:
 
 
 @always_inline
-fn mulhi(a: Int16, b: Int16) -> Int32:
+def mulhi(a: Int16, b: Int16) -> Int32:
     """Calculates the most significant 32 bits of the product of two 16-bit
     signed integers.
 
@@ -324,7 +324,7 @@ fn mulhi(a: Int16, b: Int16) -> Int32:
 
 
 @always_inline
-fn mulhi(a: UInt32, b: UInt32) -> UInt32:
+def mulhi(a: UInt32, b: UInt32) -> UInt32:
     """Calculates the most significant 32 bits of the product of two 32-bit
     unsigned integers.
 
@@ -354,7 +354,7 @@ fn mulhi(a: UInt32, b: UInt32) -> UInt32:
 
 
 @always_inline
-fn mulhi(a: Int32, b: Int32) -> Int32:
+def mulhi(a: Int32, b: Int32) -> Int32:
     """Calculates the most significant 32 bits of the product of two 32-bit
     signed integers.
 
@@ -389,7 +389,7 @@ fn mulhi(a: Int32, b: Int32) -> Int32:
 
 
 @always_inline
-fn mulwide(a: UInt32, b: UInt32) -> UInt64:
+def mulwide(a: UInt32, b: UInt32) -> UInt64:
     """Performs a wide multiplication of two 32-bit unsigned integers.
 
     Multiplies two 32-bit unsigned integers and returns the full 64-bit result.
@@ -421,7 +421,7 @@ fn mulwide(a: UInt32, b: UInt32) -> UInt64:
 
 
 @always_inline
-fn mulwide(a: Int32, b: Int32) -> Int64:
+def mulwide(a: Int32, b: Int32) -> Int64:
     """Performs a wide multiplication of two 32-bit signed integers.
 
     Multiplies two 32-bit signed integers and returns the full 64-bit result.
@@ -453,7 +453,7 @@ fn mulwide(a: Int32, b: Int32) -> Int64:
 
 
 @always_inline
-fn get_ib_sts() -> Int32:
+def get_ib_sts() -> Int32:
     """Returns the IB status of the current thread.
 
     Returns:
@@ -510,7 +510,7 @@ struct Scope(Equatable, ImplicitlyCopyable, Writable):
     comptime SYSTEM = Self(6)
     """System-wide scope. Memory operations ordered across the entire system."""
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Checks if two `Scope` instances are equal.
 
         Uses pointer comparison for efficiency.
@@ -524,7 +524,7 @@ struct Scope(Equatable, ImplicitlyCopyable, Writable):
         return self._value == other._value
 
     @no_inline
-    fn write_to(self, mut w: Some[Writer]):
+    def write_to(self, mut w: Some[Writer]):
         """Writes the string representation of the scope to a writer.
 
         Args:
@@ -547,7 +547,7 @@ struct Scope(Equatable, ImplicitlyCopyable, Writable):
 
         return w.write("<<unknown scope>>")
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Writes the string representation of the scope to a writer.
 
         Args:
@@ -556,7 +556,7 @@ struct Scope(Equatable, ImplicitlyCopyable, Writable):
         t"Scope({self})".write_to(writer)
 
     @always_inline("nodebug")
-    fn mnemonic(self) -> StaticString:
+    def mnemonic(self) -> StaticString:
         """Returns the mnemonic string representation of the memory scope.
 
         Converts the memory scope level into a string mnemonic used by LLVM/NVVM
@@ -579,7 +579,7 @@ struct Scope(Equatable, ImplicitlyCopyable, Writable):
 
 
 @always_inline
-fn threadfence[scope: Scope = Scope.GPU]():
+def threadfence[scope: Scope = Scope.GPU]():
     """Enforces ordering of memory operations across threads.
 
     Acts as a memory fence/barrier that ensures all memory operations (both
@@ -616,14 +616,14 @@ fn threadfence[scope: Scope = Scope.GPU]():
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_type_suffix[dtype: DType]() -> StaticString:
+def _get_type_suffix[dtype: DType]() -> StaticString:
     comptime str = get_static_string[
         "u", _int_to_str[bit_width_of[dtype]()]()
     ]()
     return str
 
 
-fn _get_air_atomic_suffix[dtype: DType]() -> StaticString:
+def _get_air_atomic_suffix[dtype: DType]() -> StaticString:
     comptime if dtype == DType.float32:
         return "f32"
     elif dtype in (DType.int32, DType.uint32):
@@ -632,7 +632,7 @@ fn _get_air_atomic_suffix[dtype: DType]() -> StaticString:
         comptime assert False, "unsupported dtype for air atomic intrinsics"
 
 
-fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
+def _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
     comptime assert is_nvidia_gpu(), (
         "the _get_nvtx_register_constraint function is currently restricted"
         " to only be defined on NVIDIA GPUs"
@@ -657,7 +657,7 @@ fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
     return "<<unknown_register_constraint>>"
 
 
-fn _get_nvtx_pointer_constraint() -> StaticString:
+def _get_nvtx_pointer_constraint() -> StaticString:
     comptime assert is_nvidia_gpu(), (
         "the _get_nvtx_pointer_constraint function is currently restricted"
         " to only be defined on NVIDIA GPUs"
@@ -693,7 +693,7 @@ struct _AirMemOrder:
 
 
 @always_inline
-fn store_release[
+def store_release[
     dtype: DType,
     //,
     scope: Scope = Scope.SYSTEM,
@@ -771,7 +771,7 @@ fn store_release[
 
 
 @always_inline
-fn store_relaxed[
+def store_relaxed[
     dtype: DType,
     //,
     *,
@@ -822,7 +822,7 @@ fn store_relaxed[
 
 
 @always_inline
-fn load_acquire[
+def load_acquire[
     dtype: DType,
     //,
     *,
@@ -903,7 +903,7 @@ fn load_acquire[
 
 
 @always_inline
-fn load_relaxed[
+def load_relaxed[
     dtype: DType,
     //,
     *,
@@ -956,7 +956,7 @@ fn load_relaxed[
 
 
 @always_inline
-fn store_volatile[
+def store_volatile[
     dtype: DType, //, memory: Bool = True
 ](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], value: Scalar[dtype]):
     """Performs a volatile store operation that cannot be optimized away.
@@ -994,7 +994,7 @@ fn store_volatile[
 
 
 @always_inline
-fn load_volatile[
+def load_volatile[
     dtype: DType, //, memory: Bool = True
 ](ptr: UnsafePointer[mut=False, Scalar[dtype], ...]) -> Scalar[dtype]:
     """Performs a volatile load operation that cannot be optimized away.
@@ -1043,7 +1043,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
     """The 128-bit buffer descriptor encoded as four 32-bit values."""
 
     @always_inline("nodebug")
-    fn __init__[
+    def __init__[
         dtype: DType
     ](
         out self,
@@ -1089,7 +1089,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
             self.desc[3] = 0x00020000
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         """Constructs a zeroed AMD buffer resource descriptor."""
         comptime assert (
             is_amd_gpu()
@@ -1097,7 +1097,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
         self.desc = 0
 
     @always_inline("nodebug")
-    fn get_base_ptr(self) -> Int:
+    def get_base_ptr(self) -> Int:
         """Gets the base pointer address from the buffer resource descriptor.
 
         Returns:
@@ -1110,7 +1110,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
         )
 
     @always_inline("nodebug")
-    fn load[
+    def load[
         dtype: DType,
         width: Int,
         *,
@@ -1159,7 +1159,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
         return bitcast[dtype, width](load_val)
 
     @always_inline("nodebug")
-    fn load_to_lds[
+    def load_to_lds[
         dtype: DType,
         *,
         width: Int = 1,
@@ -1211,7 +1211,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
         )
 
     @always_inline("nodebug")
-    fn store[
+    def store[
         dtype: DType,
         width: Int,
         *,
@@ -1272,7 +1272,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
 
 
 @parameter
-fn _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
+def _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
     """Converts CacheOperation to AMD auxiliary parameter at compile time.
 
     Parameters:
@@ -1305,7 +1305,7 @@ fn _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
     # CacheOperation.VOLATILE_STREAMING -> 0x13 (SC=11, NT=1) - Volatile + streaming
 
 
-fn _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
+def _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
     comptime if bytes == 1:
         return DType.uint8
     elif bytes == 2:
@@ -1316,7 +1316,7 @@ fn _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
 
 
 @parameter
-fn _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:
+def _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:
     return bytes // size_of[DType.uint32]() if bytes >= 4 else 1
 
 
@@ -1326,7 +1326,7 @@ fn _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:
 
 
 @always_inline
-fn ds_read_tr16_b64[
+def ds_read_tr16_b64[
     dtype: DType,
     //,
 ](
@@ -1374,7 +1374,7 @@ fn ds_read_tr16_b64[
 
 
 @always_inline
-fn permlane_swap[
+def permlane_swap[
     dtype: DType, //, stride: Int
 ](val1: Scalar[dtype], val2: Scalar[dtype]) -> SIMD[dtype, 2]:
     """Swaps values between lanes using AMD permlane swap instruction.
@@ -1415,7 +1415,7 @@ fn permlane_swap[
     )
 
 
-fn permlane_shuffle[
+def permlane_shuffle[
     dtype: DType, simd_width: Int, //, stride: Int
 ](val: SIMD[dtype, simd_width], out res: type_of(val)):
     """Shuffles SIMD values across lanes using AMD permlane operations.

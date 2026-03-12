@@ -79,7 +79,7 @@ def test_list() raises:
 
 
 struct WeirdList[T: AnyType]:
-    fn __init__(out self, var *values: Self.T, __list_literal__: ()):
+    def __init__(out self, var *values: Self.T, __list_literal__: ()):
         pass
 
 
@@ -655,7 +655,7 @@ def test_list_iter() raises:
     vs.append(3)
 
     # Borrow immutably
-    fn sum(vs: List[Int]) -> Int:
+    def sum(vs: List[Int]) -> Int:
         var sum = 0
         for v in vs:
             sum += v

@@ -45,7 +45,7 @@ from std.testing import assert_true
 
 @always_inline
 @parameter
-fn _chunk_value[dtype: DType](dp_idx: Int, j: Int) -> Scalar[dtype]:
+def _chunk_value[dtype: DType](dp_idx: Int, j: Int) -> Scalar[dtype]:
     """Generate position-based value that includes the DP replica index.
 
     Each element has a unique value based on position and replica,
@@ -57,7 +57,7 @@ fn _chunk_value[dtype: DType](dp_idx: Int, j: Int) -> Scalar[dtype]:
     )
 
 
-fn _get_test_str[
+def _get_test_str[
     dtype: DType,
     cache_busting: Bool,
 ](ngpus: Int, dp_size: Int, num_elems: Int) -> String:
@@ -76,7 +76,7 @@ fn _get_test_str[
     )
 
 
-fn bench_scatter[
+def bench_scatter[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -174,12 +174,12 @@ fn bench_scatter[
 
     @parameter
     @always_inline
-    fn bench_iter(
+    def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
         @parameter
         @always_inline
-        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             # Update input pointers to the cache-busted offset.
             comptime for dp_idx in range(dp_size):
                 in_bufs[dp_idx] = NDBuffer[rank=rank, dtype](

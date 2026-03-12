@@ -239,15 +239,15 @@ struct B200MatmulSmem[
 
     # ========== Tile Accessors (Delegated) ==========
     @always_inline
-    fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
+    def a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
         return self.input_tiles.a_tiles()
 
     @always_inline
-    fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
+    def b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
         return self.input_tiles.b_tiles()
 
     @always_inline
-    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
+    def c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
         return self.output_tiles.c_tiles()
 
     # ========== Pipeline Storage (Composed Bundle) ==========
@@ -269,19 +269,19 @@ struct B200MatmulSmem[
 
     @staticmethod
     @always_inline
-    fn ab_pipeline_size() -> Int:
+    def ab_pipeline_size() -> Int:
         """Total size of A+B tiles for all pipeline stages (in elements)."""
         return Self.ATileArray.num_elements + Self.BTileArray.num_elements
 
     @staticmethod
     @always_inline
-    fn c_output_size() -> Int:
+    def c_output_size() -> Int:
         """Size of C tiles for all output stages (in elements)."""
         return Self.CTileArray.num_elements
 
     @staticmethod
     @always_inline
-    fn total_tile_size() -> Int:
+    def total_tile_size() -> Int:
         """Total tile storage size (A+B+C) in elements."""
         return Self.ab_pipeline_size() + Self.c_output_size()
 
@@ -668,7 +668,7 @@ struct BlackwellMatmulSM100Kernel[
 
     @staticmethod
     @always_inline
-    fn validate_constraints():
+    def validate_constraints():
         """Validate parameter constraints at compile time."""
         comptime assert Self.c_type in (
             DType.bfloat16,
@@ -695,7 +695,7 @@ struct BlackwellMatmulSM100Kernel[
 
     @staticmethod
     @always_inline
-    fn init_barriers(
+    def init_barriers(
         ctx: Self.Context,
         input_barriers: Self.SmemType.Pipelines.InputBarriers,
         accum_barriers: Self.SmemType.Pipelines.AccumBarriers,
@@ -743,7 +743,7 @@ struct BlackwellMatmulSM100Kernel[
 
     @staticmethod
     @always_inline
-    fn mma[
+    def mma[
         tiles_origin: MutOrigin,
         //,
     ](
@@ -796,7 +796,7 @@ struct BlackwellMatmulSM100Kernel[
 
     @staticmethod
     @always_inline
-    fn load_input_tiles[
+    def load_input_tiles[
         tiles_origin: MutOrigin,
         //,
     ](
@@ -888,7 +888,7 @@ struct BlackwellMatmulSM100Kernel[
 
     @staticmethod
     @always_inline
-    fn load_input_tiles_splitk[
+    def load_input_tiles_splitk[
         a_tma_origin: ImmutOrigin,
         b_tma_origin: ImmutOrigin,
         tiles_origin: MutOrigin,
@@ -1000,7 +1000,7 @@ struct BlackwellMatmulSM100Kernel[
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-    fn run(
+    def run(
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
         c_tma_op: Self.CTmaOp,
@@ -1203,7 +1203,7 @@ struct BlackwellMatmulSM100Kernel[
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-    fn run_splitk[
+    def run_splitk[
         reduction_layout: TensorLayout,
     ](
         a_tma_op: Self.ATmaOp_splitk,
@@ -1536,7 +1536,7 @@ struct BlackwellMatmulSM100FallbackKernel[
     # ========== Validation ==========
     @staticmethod
     @always_inline
-    fn validate_constraints():
+    def validate_constraints():
         """Validate compile-time constraints for this kernel configuration."""
         comptime assert Self.num_threads == 128 or Self.num_threads == 256
         comptime assert (
@@ -1552,7 +1552,7 @@ struct BlackwellMatmulSM100FallbackKernel[
     @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-    fn run(
+    def run(
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
         c: TileTensor[Self.c_type, Self.c_layout, MutAnyOrigin],

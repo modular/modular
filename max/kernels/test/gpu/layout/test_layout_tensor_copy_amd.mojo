@@ -26,7 +26,7 @@ from std.utils import IndexList
 from std.benchmark import keep
 
 
-fn copy_dram_to_sram_buffer_load_kernel[
+def copy_dram_to_sram_buffer_load_kernel[
     dtype: DType,
     BM: Int,
     BN: Int,
@@ -75,7 +75,7 @@ fn copy_dram_to_sram_buffer_load_kernel[
         print(smem)
 
 
-fn run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
+def run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
     # CHECK: === test_copy_dram_to_sram_buffer_load_tests
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
     # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
@@ -99,7 +99,7 @@ fn run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-fn copy_dram_to_local_buffer_load_kernel[
+def copy_dram_to_local_buffer_load_kernel[
     dtype: DType,
     BM: Int,
     BN: Int,
@@ -152,7 +152,7 @@ fn copy_dram_to_local_buffer_load_kernel[
     print("tid =", thread_idx.x, "reg =", load_to_simd(a_reg_tile))
 
 
-fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
+def run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
     # CHECK: === test_copy_dram_to_local_buffer_load_tests
     # CHECK: tid = 0 reg = [0.0, 1.0, 8.0, 9.0]
     # CHECK: tid = 1 reg = [2.0, 3.0, 10.0, 11.0]
@@ -187,8 +187,8 @@ fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-fn test_codegen_copy_dram_to_local(ctx: DeviceContext) raises:
-    fn kernel[
+def test_codegen_copy_dram_to_local(ctx: DeviceContext) raises:
+    def kernel[
         cache_policy: CacheOperation
     ](ptr: UnsafePointer[BFloat16, ImmutAnyOrigin]):
         comptime simd_width = simd_width_of[DType.bfloat16]()

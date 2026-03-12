@@ -21,7 +21,7 @@ def main() raises:
     # CHECK: block: [0,0,0] thread: [0,0,0] Assert Error: forcing failure on thread: 0 with multiple args: 2.0 True
     with DeviceContext() as ctx:
 
-        fn fail_assert():
+        def fail_assert():
             debug_assert(
                 False,
                 "forcing failure on thread: ",

@@ -53,7 +53,7 @@ trait CoordLike(
 
     # Note that unlike the __len__() from Sized, this is a static method.
     @staticmethod
-    fn __len__() -> Int:
+    def __len__() -> Int:
         """Get the number of elements in this type.
 
         Returns:
@@ -61,7 +61,7 @@ trait CoordLike(
         """
         ...
 
-    fn value(self) -> Int:
+    def value(self) -> Int:
         """Get the integer value of this coordinate.
 
         Only valid for value types (not tuples).
@@ -71,7 +71,7 @@ trait CoordLike(
         """
         ...
 
-    fn tuple(var self) -> Coord[*Self.VariadicType]:
+    def tuple(var self) -> Coord[*Self.VariadicType]:
         """Get this coordinate as a Coord tuple.
 
         Only valid for tuple types.
@@ -81,7 +81,7 @@ trait CoordLike(
         """
         ...
 
-    fn product(self) -> Int:
+    def product(self) -> Int:
         """Calculate the product of all elements.
 
         Returns:
@@ -89,7 +89,7 @@ trait CoordLike(
         """
         ...
 
-    fn sum(self) -> Int:
+    def sum(self) -> Int:
         """Calculate the sum of all elements.
 
         Returns:
@@ -119,13 +119,13 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
     comptime is_static_value = True
     """True, indicating this is a compile-time known value."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize a compile-time integer with the specified value."""
         pass
 
     @staticmethod
     @always_inline("nodebug")
-    fn __len__() -> Int:
+    def __len__() -> Int:
         """Get the length (always 1 for scalar types).
 
         Returns:
@@ -133,7 +133,7 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
         """
         return 1
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write this compile-time integer to a writer.
 
         Args:
@@ -141,7 +141,7 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
         """
         writer.write(self.value())
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this compile-time integer to a writer.
 
         Args:
@@ -150,7 +150,7 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
         t"ComptimeInt[{self.value()}]()".write_to(writer)
 
     @always_inline("nodebug")
-    fn product(self) -> Int:
+    def product(self) -> Int:
         """Calculate the product (returns the value for scalar types).
 
         Returns:
@@ -159,7 +159,7 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
         return self.value()
 
     @always_inline("nodebug")
-    fn sum(self) -> Int:
+    def sum(self) -> Int:
         """Calculate the sum (returns the value for scalar types).
 
         Returns:
@@ -168,7 +168,7 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
         return self.value()
 
     @always_inline("nodebug")
-    fn value(self) -> Int:
+    def value(self) -> Int:
         """Get the integer value.
 
         Returns:
@@ -177,7 +177,7 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
         return Self.val
 
     @always_inline("nodebug")
-    fn tuple(var self) -> Coord[*Self.VariadicType]:
+    def tuple(var self) -> Coord[*Self.VariadicType]:
         """Get as a tuple (not valid for ComptimeInt).
 
         Returns:
@@ -207,11 +207,11 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
     var _value: Scalar[Self.dtype]
     """The runtime scalar value."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize a runtime integer with value 0."""
         self._value = 0
 
-    fn __init__(out self, value: Scalar[Self.dtype]):
+    def __init__(out self, value: Scalar[Self.dtype]):
         """Initialize a runtime integer with the given value.
 
         Args:
@@ -221,7 +221,7 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
 
     @staticmethod
     @always_inline("nodebug")
-    fn __len__() -> Int:
+    def __len__() -> Int:
         """Get the length (always 1 for scalar types).
 
         Returns:
@@ -229,7 +229,7 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
         """
         return 1
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write this runtime integer to a writer.
 
         Args:
@@ -237,7 +237,7 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
         """
         writer.write(self.value())
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this runtime integer to a writer.
 
         Args:
@@ -246,7 +246,7 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
         t"RuntimeInt({self.value()})".write_to(writer)
 
     @always_inline("nodebug")
-    fn product(self) -> Int:
+    def product(self) -> Int:
         """Calculate the product (returns the value for scalar types).
 
         Returns:
@@ -255,7 +255,7 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
         return self.value()
 
     @always_inline("nodebug")
-    fn sum(self) -> Int:
+    def sum(self) -> Int:
         """Calculate the sum (returns the value for scalar types).
 
         Returns:
@@ -264,7 +264,7 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
         return self.value()
 
     @always_inline("nodebug")
-    fn value(self) -> Int:
+    def value(self) -> Int:
         """Get the integer value.
 
         Returns:
@@ -273,7 +273,7 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
         return Int(self._value)
 
     @always_inline("nodebug")
-    fn tuple(var self) -> Coord[*Self.VariadicType]:
+    def tuple(var self) -> Coord[*Self.VariadicType]:
         """Get as a tuple (not valid for RuntimeInt).
 
         Returns:
@@ -282,7 +282,7 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
         comptime assert False, "RuntimeInt is not a tuple type"
 
 
-fn Idx(value: Int) -> RuntimeInt[DType.int]:
+def Idx(value: Int) -> RuntimeInt[DType.int]:
     """Helper to create runtime indices.
 
     Args:
@@ -296,7 +296,7 @@ fn Idx(value: Int) -> RuntimeInt[DType.int]:
     return RuntimeInt[DType.int](Scalar[DType.int](value))
 
 
-fn Idx[value: Int]() -> ComptimeInt[value]:
+def Idx[value: Int]() -> ComptimeInt[value]:
     """Helper to create compile-time indices.
 
     Parameters:
@@ -310,7 +310,7 @@ fn Idx[value: Int]() -> ComptimeInt[value]:
     return ComptimeInt[value]()
 
 
-fn Idx(
+def Idx(
     value: IntLiteral,
 ) -> ComptimeInt[
     Int(
@@ -334,7 +334,7 @@ fn Idx(
     return {}
 
 
-fn Idx(
+def Idx(
     value: Scalar,
 ) -> RuntimeInt[value.dtype] where value.dtype.is_integral():
     """Create a runtime index from a scalar value.
@@ -380,7 +380,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     var _storage: _RegTuple[*Self.element_types]
     """The underlying MLIR storage for the tuple elements."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """
         Empty initialize a tensor with static dims.
         """
@@ -389,7 +389,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         comptime for i in range(self.rank):
             self[i] = Self.element_types[i]()
 
-    fn __init__[
+    def __init__[
         rank: Int, dtype: DType
     ](
         out self: Coord[
@@ -417,7 +417,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
     @staticmethod
     @always_inline("nodebug")
-    fn size() -> Int:
+    def size() -> Int:
         """Get the total number of elements including nested ones.
 
         Returns:
@@ -432,7 +432,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return count
 
     @staticmethod
-    fn __len__() -> Int:
+    def __len__() -> Int:
         """Get the length of the tuple.
 
         Returns:
@@ -442,7 +442,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         comptime result = Variadic.size(Self.element_types)
         return result
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this Coord to a writer.
 
         Args:
@@ -450,7 +450,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         """
         t"Coord({self})".write_to(writer)
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Get the length of the tuple.
 
         Returns:
@@ -459,7 +459,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return Self.__len__()
 
     @always_inline("nodebug")
-    fn __init__(out self, var *args: * Self.element_types):
+    def __init__(out self, var *args: * Self.element_types):
         """Construct tuple from variadic arguments.
 
         Args:
@@ -469,7 +469,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
     @implicit
     @always_inline("nodebug")
-    fn __init__(out self, var tuple: Tuple[*Self.element_types]):
+    def __init__(out self, var tuple: Tuple[*Self.element_types]):
         """Construct from a Tuple with matching element types.
 
         Args:
@@ -481,7 +481,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
             self._storage[i] = tuple[i]
 
     @always_inline("nodebug")
-    fn __init__(
+    def __init__(
         out self,
         *,
         var storage: VariadicPack[_, CoordLike, *Self.element_types],
@@ -506,7 +506,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         self._storage = rebind[_RegTuple[*Self.element_types]](t)
 
     @always_inline("nodebug")
-    fn __getitem__[
+    def __getitem__[
         idx: Int
     ](ref self) -> ref[self._storage] Self.element_types[idx]:
         """Get a reference to an element in the tuple.
@@ -520,7 +520,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return self._storage[idx]
 
     @always_inline("nodebug")
-    fn product(self) -> Int:
+    def product(self) -> Int:
         """Calculate the product of all elements recursively.
 
         Returns:
@@ -534,7 +534,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return result
 
     @always_inline("nodebug")
-    fn sum(self) -> Int:
+    def sum(self) -> Int:
         """Calculate the sum of all elements recursively.
 
         Returns:
@@ -548,7 +548,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return result
 
     @always_inline("nodebug")
-    fn value(self) -> Int:
+    def value(self) -> Int:
         """Get the value (not valid for Coord tuples).
 
         Returns:
@@ -557,7 +557,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         comptime assert False, "Coord is not a value type"
 
     @always_inline("nodebug")
-    fn inner_product(self, t: IntTuple) -> Int:
+    def inner_product(self, t: IntTuple) -> Int:
         """Calculate the inner product with an IntTuple.
 
         Args:
@@ -600,7 +600,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return result
 
     @always_inline("nodebug")
-    fn inner_product[
+    def inner_product[
         *other_types: CoordLike
     ](self, other: Coord[*other_types]) -> Int:
         """Calculate the inner product with another CoordLike.
@@ -641,7 +641,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return result
 
     @always_inline("nodebug")
-    fn __eq__[
+    def __eq__[
         *other_types: CoordLike
     ](self, other: Coord[*other_types]) -> Bool:
         """Check if this Coord equals another.
@@ -685,7 +685,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return True
 
     @always_inline("nodebug")
-    fn __ne__[
+    def __ne__[
         *other_types: CoordLike
     ](self, other: Coord[*other_types]) -> Bool:
         """Check if this Coord is not equal to another.
@@ -702,7 +702,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return not self == other
 
     @always_inline("nodebug")
-    fn tuple(var self) -> Coord[*Self.VariadicType]:
+    def tuple(var self) -> Coord[*Self.VariadicType]:
         """Get this Coord as a tuple.
 
         Returns:
@@ -711,7 +711,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return rebind[Coord[*Self.VariadicType]](self)
 
     @always_inline("nodebug")
-    fn reverse(var self) -> Coord[*Variadic.reverse[*Self.element_types]]:
+    def reverse(var self) -> Coord[*Variadic.reverse[*Self.element_types]]:
         """Reverse the order of elements in this Coord.
 
         Returns:
@@ -724,7 +724,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         )
 
     @always_inline("nodebug")
-    fn concat[
+    def concat[
         *other_element_types: CoordLike
     ](var self, var other: Coord[*other_element_types]) -> Coord[
         *Variadic.concat_types[Self.element_types, other_element_types]
@@ -753,7 +753,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         )
 
     @always_inline("nodebug")
-    fn flatten(var self) -> Coord[*_Flattened[*Self.element_types]]:
+    def flatten(var self) -> Coord[*_Flattened[*Self.element_types]]:
         """Convert a nested Coord to a flattened Coord.
 
 
@@ -803,7 +803,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return Coord(flat_tuple)
 
     @always_inline("nodebug")
-    fn make_dynamic[
+    def make_dynamic[
         dtype: DType
     ](self) -> Coord[*_CoordToDynamic[dtype, *Self.element_types]]:
         """Convert all elements to RuntimeInt[dtype].
@@ -838,7 +838,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
         return result
 
-    fn write_to(self, mut w: Some[Writer]):
+    def write_to(self, mut w: Some[Writer]):
         """Write this Coord to a Writer.
 
         Args:
@@ -858,7 +858,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
 
 # Helper for flat indexing with nested shape/stride.
-fn _crd2idx_flat[
+def _crd2idx_flat[
     out_type: DType,
 ](crd_t: Coord, shape_t: Coord, stride_t: Coord) -> Scalar[out_type]:
     """Compute index from flat coordinate with nested shape/stride.
@@ -889,7 +889,7 @@ fn _crd2idx_flat[
 
 
 # Implementation based off runtime_tuple.mojo's crd2idx.
-fn crd2idx[
+def crd2idx[
     Index: CoordLike,
     Shape: CoordLike,
     Stride: CoordLike,
@@ -965,7 +965,7 @@ fn crd2idx[
 
 # Implementation based off crd2idx - computes the inverse operation.
 # Uses the per-element formula: coord[i] = (idx // stride[i]) % shape[i]
-fn idx2crd[
+def idx2crd[
     Shape: CoordLike,
     Stride: CoordLike,
     out_dtype: DType = DType.int64,
@@ -1075,7 +1075,7 @@ fn idx2crd[
     return result
 
 
-fn idx2crd[
+def idx2crd[
     Index: CoordLike,
     Shape: CoordLike,
     Stride: CoordLike,
@@ -1185,7 +1185,7 @@ fn idx2crd[
     return result
 
 
-fn coord_to_int_tuple[
+def coord_to_int_tuple[
     *element_types: CoordLike
 ](value: Coord[*element_types]) -> IntTuple:
     """Convert a Coord to an IntTuple, preserving the nested structure.
@@ -1219,7 +1219,7 @@ fn coord_to_int_tuple[
 
 
 @always_inline
-fn coord_to_index_list[
+def coord_to_index_list[
     *element_types: CoordLike
 ](value: Coord[*element_types]) -> IndexList[value.rank]:
     """Convert a flat Coord to an IndexList.
@@ -1241,7 +1241,7 @@ fn coord_to_index_list[
     return result
 
 
-fn coord_to_int_tuple[*element_types: CoordLike]() -> IntTuple:
+def coord_to_int_tuple[*element_types: CoordLike]() -> IntTuple:
     """Convert a Coord to an IntTuple, preserving the nested structure.
 
     This function recursively traverses the Coord and converts each element:
@@ -1271,7 +1271,7 @@ fn coord_to_int_tuple[*element_types: CoordLike]() -> IntTuple:
     return result
 
 
-fn coord[
+def coord[
     dtype: DType, *element_types: Movable
 ](
     var values: Tuple[*element_types],
@@ -1303,7 +1303,7 @@ fn coord[
         )
 
 
-fn coord[*values: Int]() -> Coord[*_IntToComptimeInt[*values]]:
+def coord[*values: Int]() -> Coord[*_IntToComptimeInt[*values]]:
     """Create a Coord from compile-time integer values.
 
     Parameters:
@@ -1403,7 +1403,7 @@ comptime _FlattenedOffsets[
 ]
 
 
-fn _get_flattened_helper[
+def _get_flattened_helper[
     flat_idx: Int,
     current_offset: Int,
     i: Int,
@@ -1435,7 +1435,7 @@ fn _get_flattened_helper[
             )
 
 
-fn _get_flattened[
+def _get_flattened[
     flat_idx: Int, *element_types: CoordLike
 ](tuple: Coord[*element_types]) -> Int:
     """Access an element from a nested Coord using a flat index.
@@ -1812,14 +1812,14 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
 
     # Overload that crushes down IR generated on the caller side.
     @always_inline("nodebug")
-    fn __init__(out self: _RegTuple[]):
+    def __init__(out self: _RegTuple[]):
         """Construct an empty tuple."""
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(self._mlir_value)
         )
 
     @always_inline("nodebug")
-    fn __init__(out self, var *args: * Self.element_types):
+    def __init__(out self, var *args: * Self.element_types):
         """Construct the tuple.
 
         Args:
@@ -1828,7 +1828,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
         self = Self(storage=args^)
 
     @always_inline("nodebug")
-    fn __init__(
+    def __init__(
         out self,
         *,
         var storage: VariadicPack[
@@ -1848,14 +1848,14 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
 
         # Move each element into the tuple storage.
         @parameter
-        fn init_elt[idx: Int](var elt: Self.element_types[idx]):
+        def init_elt[idx: Int](var elt: Self.element_types[idx]):
             UnsafePointer(to=self[idx]).init_pointee_move(elt)
 
         storage^.consume_elements[init_elt]()
 
     @always_inline("builtin")
     @staticmethod
-    fn __len__() -> Int:
+    def __len__() -> Int:
         """Return the number of elements in the tuple.
 
         Returns:
@@ -1866,7 +1866,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
         return result
 
     @always_inline("nodebug")
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Get the number of elements in the tuple.
 
         Returns:
@@ -1875,7 +1875,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
         return Self.__len__()
 
     @always_inline("nodebug")
-    fn __getitem__[idx: Int](ref self) -> ref[self] Self.element_types[idx]:
+    def __getitem__[idx: Int](ref self) -> ref[self] Self.element_types[idx]:
         """Get a reference to an element in the tuple.
 
         Parameters:
@@ -1895,7 +1895,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
         return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
 
     @always_inline("nodebug")
-    fn __init__[
+    def __init__[
         *elt_types: TrivialRegisterPassable & Defaultable
     ](out self: _RegTuple[*elt_types]):
         """Construct a tuple with default-initialized elements.
@@ -1913,7 +1913,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
             UnsafePointer(to=self[i]).init_pointee_move(elt_types[i]())
 
     @always_inline
-    fn __eq__[
+    def __eq__[
         self_elt_types: Variadic.TypesOfTrait[
             TrivialRegisterPassable & Equatable
         ],
@@ -1955,7 +1955,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
         return True
 
     @always_inline
-    fn __ne__[
+    def __ne__[
         self_elt_types: Variadic.TypesOfTrait[
             TrivialRegisterPassable & Equatable
         ],
@@ -1981,7 +1981,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
         return not self == other
 
     @always_inline
-    fn _compare[
+    def _compare[
         self_elt_types: Variadic.TypesOfTrait[
             TrivialRegisterPassable & Comparable
         ],
@@ -2020,7 +2020,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
             return 0
 
     @always_inline
-    fn __lt__[
+    def __lt__[
         self_elt_types: Variadic.TypesOfTrait[
             TrivialRegisterPassable & Comparable
         ],
@@ -2046,7 +2046,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
         return self._compare(other) < 0
 
     @always_inline
-    fn __le__[
+    def __le__[
         self_elt_types: Variadic.TypesOfTrait[
             TrivialRegisterPassable & Comparable
         ],
@@ -2072,7 +2072,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
         return self._compare(other) <= 0
 
     @always_inline
-    fn __gt__[
+    def __gt__[
         self_elt_types: Variadic.TypesOfTrait[
             TrivialRegisterPassable & Comparable
         ],
@@ -2100,7 +2100,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
         return self._compare(other) > 0
 
     @always_inline
-    fn __ge__[
+    def __ge__[
         self_elt_types: Variadic.TypesOfTrait[
             TrivialRegisterPassable & Comparable
         ],
@@ -2127,7 +2127,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
         return self._compare(other) >= 0
 
     @always_inline("nodebug")
-    fn reverse(
+    def reverse(
         self,
         out result: _RegTuple[*Variadic.reverse[*Self.element_types]],
     ):
@@ -2157,7 +2157,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
             )
 
     @always_inline("nodebug")
-    fn concat[
+    def concat[
         *other_element_types: TrivialRegisterPassable
     ](
         self,
@@ -2203,7 +2203,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
             )
 
     @always_inline("nodebug")
-    fn __contains__[T: Equatable](self, value: T) -> Bool:
+    def __contains__[T: Equatable](self, value: T) -> Bool:
         """Return whether the tuple contains the specified value.
 
         For example:

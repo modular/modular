@@ -28,7 +28,7 @@ comptime LOG2E = 1.4426950408889634
 
 
 @always_inline
-fn softplus_ref(val: Float32) -> Float32:
+def softplus_ref(val: Float32) -> Float32:
     """Reference softplus: log(1 + exp(x)) with numerical stability."""
     if val > 20.0:
         return val
@@ -36,14 +36,14 @@ fn softplus_ref(val: Float32) -> Float32:
 
 
 @always_inline
-fn silu_ref(val: Float32) -> Float32:
+def silu_ref(val: Float32) -> Float32:
     """Reference SiLU: x * sigmoid(x) = x / (1 + exp(-x))."""
     if val < -20.0:
         return 0.0
     return val / (Float32(1.0) + exp(-val))
 
 
-fn run_ssd_combined_gpu[
+def run_ssd_combined_gpu[
     dtype: DType,
     DSTATE: Int,
     has_D: Bool = True,
@@ -589,7 +589,7 @@ fn run_ssd_combined_gpu[
     _ = gamma_gpu^
 
 
-fn test_ssd_combined_gpu_basic() raises:
+def test_ssd_combined_gpu_basic() raises:
     """Test basic ssd_combined on GPU."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -604,7 +604,7 @@ fn test_ssd_combined_gpu_basic() raises:
     ](batch=2, dim=4, seqlen=8, n_groups=1, ctx=ctx)
 
 
-fn test_ssd_combined_gpu_without_D() raises:
+def test_ssd_combined_gpu_without_D() raises:
     """Test ssd_combined on GPU without D."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -619,7 +619,7 @@ fn test_ssd_combined_gpu_without_D() raises:
     ](batch=2, dim=4, seqlen=8, n_groups=1, ctx=ctx)
 
 
-fn test_ssd_combined_gpu_without_z() raises:
+def test_ssd_combined_gpu_without_z() raises:
     """Test ssd_combined on GPU without z."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -634,7 +634,7 @@ fn test_ssd_combined_gpu_without_z() raises:
     ](batch=2, dim=4, seqlen=8, n_groups=1, ctx=ctx)
 
 
-fn test_ssd_combined_gpu_without_delta_bias() raises:
+def test_ssd_combined_gpu_without_delta_bias() raises:
     """Test ssd_combined on GPU without delta_bias."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -649,7 +649,7 @@ fn test_ssd_combined_gpu_without_delta_bias() raises:
     ](batch=2, dim=4, seqlen=8, n_groups=1, ctx=ctx)
 
 
-fn test_ssd_combined_gpu_with_delta_softplus() raises:
+def test_ssd_combined_gpu_with_delta_softplus() raises:
     """Test ssd_combined on GPU with delta_softplus."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -664,7 +664,7 @@ fn test_ssd_combined_gpu_with_delta_softplus() raises:
     ](batch=2, dim=4, seqlen=8, n_groups=1, ctx=ctx)
 
 
-fn test_ssd_combined_gpu_larger_shapes() raises:
+def test_ssd_combined_gpu_larger_shapes() raises:
     """Test ssd_combined on GPU with larger shapes."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():

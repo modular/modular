@@ -52,7 +52,7 @@ comptime OPTIMIZED_BLOCK_SIZE = 16 if has_amd_gpu_accelerator() else 32
 # ===-----------------------------------------------------------------------=== #
 
 
-fn naive_matrix_multiplication_cpu(
+def naive_matrix_multiplication_cpu(
     output: ManagedTensorSlice,
     a: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
     b: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
@@ -75,7 +75,7 @@ fn naive_matrix_multiplication_cpu(
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn naive_matrix_multiplication[
+def naive_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -145,7 +145,7 @@ fn naive_matrix_multiplication[
         Int32(OPTIMIZED_NUM_THREADS)
     )
 )
-fn coalescing_matrix_multiplication[
+def coalescing_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -215,7 +215,7 @@ fn coalescing_matrix_multiplication[
         Int32(OPTIMIZED_NUM_THREADS)
     )
 )
-fn tiled_matrix_multiplication[
+def tiled_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -318,7 +318,7 @@ fn tiled_matrix_multiplication[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn tiled_register_matrix_multiplication[
+def tiled_register_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -439,7 +439,7 @@ fn tiled_register_matrix_multiplication[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn block_tiled_matrix_multiplication[
+def block_tiled_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -560,7 +560,7 @@ fn block_tiled_matrix_multiplication[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn block_tiled_vectorized_matrix_multiplication[
+def block_tiled_vectorized_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -707,7 +707,7 @@ fn block_tiled_vectorized_matrix_multiplication[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn tensor_core_matrix_multiplication[
+def tensor_core_matrix_multiplication[
     dtype: DType,
     layout_a: Layout,
     layout_b: Layout,
@@ -875,7 +875,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         # The kind of device this will be run on: "cpu" or "gpu"
         target: StaticString,
     ](

@@ -24,7 +24,7 @@ from linalg.matmul.gpu import matmul_kernel_naive
 from linalg.matmul.vendor.blas import matmul
 
 
-fn test_matmul[
+def test_matmul[
     input_type: DType, M: Int, N: Int, K: Int
 ](ctx: DeviceContext) raises:
     print("== test_vendor_blas", input_type, "x", M, "x", N, "x", K)
@@ -147,7 +147,7 @@ fn test_matmul[
     _ = c_device_ref^
 
 
-fn test_matmul[input_types: List[DType]]() raises:
+def test_matmul[input_types: List[DType]]() raises:
     with DeviceContext() as ctx:
         comptime for input_type in input_types:
             test_matmul[input_type, 64, 16, 32](ctx)

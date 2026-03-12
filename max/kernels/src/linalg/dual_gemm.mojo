@@ -58,7 +58,7 @@ from .utils_gpu import MatmulConfig, MatmulKernels, _bk_base, block_swizzle
 
 
 @always_inline
-fn multistage_dual_mma[
+def multistage_dual_mma[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -155,7 +155,7 @@ fn multistage_dual_mma[
 
     @always_inline
     @parameter
-    fn _mask_tensor_row(
+    def _mask_tensor_row(
         tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
     ):
         return {
@@ -173,7 +173,7 @@ fn multistage_dual_mma[
 
     @always_inline
     @parameter
-    fn _copy_single_tensor_to_sram(
+    def _copy_single_tensor_to_sram(
         dst: LayoutTensor[mut=True, ...], src: LayoutTensor
     ):
         copy_dram_to_sram_async[
@@ -186,7 +186,7 @@ fn multistage_dual_mma[
 
     @always_inline
     @parameter
-    fn _copy_dual_tensor_to_sram(
+    def _copy_dual_tensor_to_sram(
         b0_dst: LayoutTensor[mut=True, ...],
         b1_dst: LayoutTensor[mut=True, ...],
         b0_src: LayoutTensor,
@@ -466,7 +466,7 @@ comptime binary_fn_type = fn[type: DType, width: Int](
         Int32(config.num_threads())
     )
 )
-fn multistage_dual_gemm_kernel[
+def multistage_dual_gemm_kernel[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -772,7 +772,7 @@ fn multistage_dual_gemm_kernel[
             )
 
 
-fn swilu[
+def swilu[
     dtype: DType, width: Int
 ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[
     dtype, width
@@ -781,7 +781,7 @@ fn swilu[
 
 
 @always_inline
-fn multistage_dual_gemm[
+def multistage_dual_gemm[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -841,7 +841,7 @@ fn multistage_dual_gemm[
     ctx.synchronize()
 
 
-fn multistage_dual_gemm[
+def multistage_dual_gemm[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -873,7 +873,7 @@ fn multistage_dual_gemm[
     ](tensor_c, tensor_a, tensor_b0, tensor_b1, ctx)
 
 
-fn config_in_smem[
+def config_in_smem[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -929,7 +929,7 @@ fn config_in_smem[
     return c
 
 
-fn dual_gemm[
+def dual_gemm[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -1193,7 +1193,7 @@ fn dual_gemm[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-fn dual_gemv_kernel[
+def dual_gemv_kernel[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -1321,7 +1321,7 @@ fn dual_gemv_kernel[
             c.data.store(output_idx + mid * n + nid, val0.cast[c_type]())
 
 
-fn dual_gemv[
+def dual_gemv[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -1379,7 +1379,7 @@ fn dual_gemv[
 
 @register_internal("swishGLU")
 @always_inline
-fn swishGLU[
+def swishGLU[
     target: StaticString = "cpu",
 ](
     a: NDBuffer[rank=2, _, ImmutAnyOrigin, _],
@@ -1401,7 +1401,7 @@ fn swishGLU[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         var shape = GemmShape.get[True](c, a, b0)
         return ";".join(
             Span(

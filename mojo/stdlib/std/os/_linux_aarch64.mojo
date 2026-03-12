@@ -64,7 +64,7 @@ struct _c_stat(Copyable, Defaultable, Writable):
     var unused: InlineArray[Int64, 2]
     """RESERVED: DO NOT USE!."""
 
-    fn __init__(out self):
+    def __init__(out self):
         self.st_dev = 0
         self.st_mode = 0
         self.st_nlink = 0
@@ -83,7 +83,7 @@ struct _c_stat(Copyable, Defaultable, Writable):
         self.st_birthtimespec = _CTimeSpec()
         self.unused: InlineArray[Int64, 2] = [0, 0]
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         # fmt: off
         writer.write(
             "{\nst_dev: ", self.st_dev,
@@ -104,7 +104,7 @@ struct _c_stat(Copyable, Defaultable, Writable):
         )
         # fmt: on
 
-    fn _to_stat_result(self) -> stat_result:
+    def _to_stat_result(self) -> stat_result:
         return stat_result(
             st_dev=Int(self.st_dev),
             st_mode=Int(self.st_mode),
@@ -125,7 +125,7 @@ struct _c_stat(Copyable, Defaultable, Writable):
 
 
 @always_inline
-fn _stat(var path: String) raises -> _c_stat:
+def _stat(var path: String) raises -> _c_stat:
     var stat = _c_stat()
     var err = external_call["__xstat", Int32](
         Int32(0), path.as_c_string_slice().unsafe_ptr(), Pointer(to=stat)
@@ -136,7 +136,7 @@ fn _stat(var path: String) raises -> _c_stat:
 
 
 @always_inline
-fn _lstat(var path: String) raises -> _c_stat:
+def _lstat(var path: String) raises -> _c_stat:
     var stat = _c_stat()
     var err = external_call["__lxstat", Int32](
         Int32(0), path.as_c_string_slice().unsafe_ptr(), Pointer(to=stat)

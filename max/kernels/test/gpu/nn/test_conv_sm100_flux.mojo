@@ -34,7 +34,7 @@ from nn.conv import conv_gpu, conv_cudnn
 from std.utils.index import IndexList
 
 
-fn test_flux_conv_layer[
+def test_flux_conv_layer[
     # Input NHWC
     N: Int,
     H: Int,

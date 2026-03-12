@@ -56,7 +56,7 @@ struct test_matmul[
     var c_device_buffer: DeviceBuffer[Self.dtype]
     var c_device_buffer_ref: DeviceBuffer[Self.dtype]
 
-    fn __init__(out self, mut m: Bench, ctx: DeviceContext) raises:
+    def __init__(out self, mut m: Bench, ctx: DeviceContext) raises:
         self.ctx = ctx
         self.M = Self.a_layout.shape[0].value()
         self.N = Self.b_layout.shape[1].value()
@@ -111,12 +111,12 @@ struct test_matmul[
             self.c_device_buffer_ref.unsafe_ptr(),
         )
 
-    fn run_test[gemm: run_gemm_kernel_type](self, mut m: Bench) raises:
+    def run_test[gemm: run_gemm_kernel_type](self, mut m: Bench) raises:
         print("=== test_matmul")
 
         var ctx = self.ctx
 
-        fn create_tensor[
+        def create_tensor[
             layout: Layout
         ](
             m: Int,

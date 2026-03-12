@@ -59,7 +59,7 @@ from std.utils.numerics import get_accum_type, max_finite, min_finite
 from std.utils.static_tuple import StaticTuple
 
 
-fn cpu_matmul_naive[
+def cpu_matmul_naive[
     *, transpose_a: Bool, transpose_b: Bool
 ](C: LayoutTensor[mut=True, ...], A: LayoutTensor, B: LayoutTensor):
     comptime M = C.layout[0].size()
@@ -104,7 +104,7 @@ fn cpu_matmul_naive[
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
-fn tma_umma_kernel_sgs[
+def tma_umma_kernel_sgs[
     a_type: DType,  # A type in gmem and smem (bfloat16)
     b_gmem_type: DType,  # B type in gmem (float8_e4m3fn)
     c_type: DType,  # Output type (bfloat16)

@@ -24,7 +24,7 @@ from std.utils.index import IndexList
 
 
 # CHECK-LABEL: test_transpose_4x4_ndbuffer
-fn test_transpose_4x4_ndbuffer():
+def test_transpose_4x4_ndbuffer():
     print("== test_transpose_4x4_ndbuffer")
 
     # Create a matrix of the form
@@ -108,7 +108,7 @@ fn test_transpose_4x4_ndbuffer():
 
 
 # CHECK-LABEL: test_transpose_8x8_ndbuffer
-fn test_transpose_8x8_ndbuffer():
+def test_transpose_8x8_ndbuffer():
     print("== test_transpose_8x8_ndbuffer")
 
     comptime num_rows: Int = 8
@@ -138,7 +138,7 @@ fn test_transpose_8x8_ndbuffer():
 
 
 # CHECK-LABEL: test_transpose_16x16
-fn test_transpose_16x16_ndbuffer():
+def test_transpose_16x16_ndbuffer():
     print("== test_transpose_16x16_ndbuffer")
 
     comptime num_rows: Int = 16
@@ -168,7 +168,7 @@ fn test_transpose_16x16_ndbuffer():
 
 
 # CHECK-LABEL: test_transpose_2d_identity_ndbuffer
-fn test_transpose_2d_identity_ndbuffer() raises:
+def test_transpose_2d_identity_ndbuffer() raises:
     print("== test_transpose_2d_identity_ndbuffer")
 
     comptime in_shape = DimList[3, 3]()
@@ -236,7 +236,7 @@ fn test_transpose_2d_identity_ndbuffer() raises:
 
 
 # CHECK-LABEL: test_transpose_2d_ndbuffer
-fn test_transpose_2d_ndbuffer() raises:
+def test_transpose_2d_ndbuffer() raises:
     print("== test_transpose_2d_ndbuffer")
 
     comptime in_shape = DimList[3, 3]()
@@ -304,7 +304,7 @@ fn test_transpose_2d_ndbuffer() raises:
 
 
 # CHECK-LABEL: test_transpose_3d_identity_ndbuffer
-fn test_transpose_3d_identity_ndbuffer() raises:
+def test_transpose_3d_identity_ndbuffer() raises:
     print("== test_transpose_3d_identity_ndbuffer")
 
     comptime in_shape = DimList[2, 2, 3]()
@@ -385,7 +385,7 @@ fn test_transpose_3d_identity_ndbuffer() raises:
 
 
 # CHECK-LABEL: test_transpose_3d_ndbuffer
-fn test_transpose_3d_ndbuffer() raises:
+def test_transpose_3d_ndbuffer() raises:
     print("== test_transpose_3d_ndbuffer")
 
     comptime in_shape = DimList[2, 2, 3]()
@@ -468,7 +468,7 @@ fn test_transpose_3d_ndbuffer() raises:
 
 
 # CHECK-LABEL: test_transpose_si64_ndbuffer
-fn test_transpose_si64_ndbuffer() raises:
+def test_transpose_si64_ndbuffer() raises:
     print("== test_transpose_si64_ndbuffer")
 
     comptime in_shape = DimList[2, 2, 3]()
@@ -551,7 +551,7 @@ fn test_transpose_si64_ndbuffer() raises:
 
 
 # CHECK-LABEL: test_simplify_perm_ndbuffer
-fn test_simplify_perm_ndbuffer():
+def test_simplify_perm_ndbuffer():
     print("== test_simplify_perm_ndbuffer")
     var perm = IndexList[4](0, 2, 3, 1)
     var shape = IndexList[4](8, 3, 200, 200)
@@ -676,7 +676,7 @@ fn test_simplify_perm_ndbuffer():
 
 
 # CHECK-LABEL: test_transpose_4x4
-fn test_transpose_4x4():
+def test_transpose_4x4():
     print("== test_transpose_4x4")
 
     # Create a matrix of the form
@@ -759,7 +759,7 @@ fn test_transpose_4x4():
 
 
 # CHECK-LABEL: test_transpose_8x8
-fn test_transpose_8x8():
+def test_transpose_8x8():
     print("== test_transpose_8x8")
 
     comptime num_rows: Int = 8
@@ -788,7 +788,7 @@ fn test_transpose_8x8():
 
 
 # CHECK-LABEL: test_transpose_16x16
-fn test_transpose_16x16():
+def test_transpose_16x16():
     print("== test_transpose_16x16")
 
     comptime num_rows: Int = 16

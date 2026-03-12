@@ -41,7 +41,7 @@ comptime ASSERT_MODE = get_defined_string["ASSERT", "safe"]()
 
 
 @always_inline("nodebug")
-fn _string_free_comptime_assert[
+def _string_free_comptime_assert[
     cond: Bool, msg: StaticString, *extra: StaticString
 ]():
     """Compile-time assertion that avoids `String` to prevent circular deps.
@@ -58,7 +58,7 @@ fn _string_free_comptime_assert[
 
 
 @no_inline
-fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
+def _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
     _string_free_comptime_assert[
         ASSERT_MODE == "none"
         or ASSERT_MODE == "warn"
@@ -87,7 +87,7 @@ fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
 
 
 @always_inline
-fn debug_assert[
+def debug_assert[
     cond: fn() capturing[_] -> Bool,
     assert_mode: StaticString = "none",
     *Ts: Writable,
@@ -146,7 +146,7 @@ fn debug_assert[
     on:
 
     ```mojo
-    fn check_name() capturing -> Bool:
+    def check_name() capturing -> Bool:
         return String("name: ", name) in person
 
     debug_assert[check_name]("unexpected name")
@@ -193,7 +193,7 @@ fn debug_assert[
 
 
 @always_inline
-fn debug_assert[
+def debug_assert[
     assert_mode: StaticString = "none",
     *Ts: Writable,
     cpu_only: Bool = False,
@@ -252,7 +252,7 @@ fn debug_assert[
     on:
 
     ```mojo
-    fn check_name() capturing -> Bool:
+    def check_name() capturing -> Bool:
         return String("name: ", name) in person
 
     debug_assert[check_name]("unexpected name")
@@ -305,7 +305,7 @@ fn debug_assert[
 
 
 @always_inline
-fn debug_assert[
+def debug_assert[
     assert_mode: StaticString = "none",
     cpu_only: Bool = False,
     _use_compiler_assume: Bool = False,
@@ -363,7 +363,7 @@ fn debug_assert[
     on:
 
     ```mojo
-    fn check_name() capturing -> Bool:
+    def check_name() capturing -> Bool:
         return String("name: ", name) in person
 
     debug_assert[check_name]("unexpected name")
@@ -405,7 +405,7 @@ fn debug_assert[
 
 
 @no_inline
-fn _debug_assert_msg(
+def _debug_assert_msg(
     message: UnsafePointer[mut=False, Byte, _], length: Int, loc: SourceLocation
 ):
     """Aborts with (or prints) the given message and location.

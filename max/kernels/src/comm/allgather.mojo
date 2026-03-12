@@ -43,7 +43,7 @@ from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, is_p2p_enabled
 
 
 @always_inline
-fn _allgather_naive[
+def _allgather_naive[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -96,7 +96,7 @@ fn _allgather_naive[
             )
 
 
-fn _allgather_p2p_kernel[
+def _allgather_p2p_kernel[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -152,7 +152,7 @@ fn _allgather_p2p_kernel[
 
 
 @always_inline
-fn _allgather_p2p[
+def _allgather_p2p[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -226,7 +226,7 @@ fn _allgather_p2p[
 
 
 @always_inline
-fn allgather[
+def allgather[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -290,7 +290,7 @@ fn allgather[
 # Backward compatibility overload without rank_sigs.
 @deprecated("Use the `signal_buffers` overload of `allgather` instead.")
 @always_inline
-fn allgather[
+def allgather[
     dtype: DType,
     rank: Int,
     ngpus: Int,

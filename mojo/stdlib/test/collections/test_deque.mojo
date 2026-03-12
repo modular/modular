@@ -22,7 +22,7 @@ from std.testing import TestSuite
 # ===-----------------------------------------------------------------------===#
 
 
-fn test_impl_init_default() raises:
+def test_impl_init_default() raises:
     q = Deque[Int]()
 
     assert_equal(q._capacity, q.default_capacity)
@@ -33,7 +33,7 @@ fn test_impl_init_default() raises:
     assert_equal(q._shrink, True)
 
 
-fn test_impl_init_capacity() raises:
+def test_impl_init_capacity() raises:
     q = Deque[Int](capacity=-10)
     assert_equal(q._capacity, q.default_capacity)
     assert_equal(q._min_capacity, q.default_capacity)
@@ -51,7 +51,7 @@ fn test_impl_init_capacity() raises:
     assert_equal(q._min_capacity, q.default_capacity)
 
 
-fn test_impl_init_min_capacity() raises:
+def test_impl_init_min_capacity() raises:
     q = Deque[Int](min_capacity=-10)
     assert_equal(q._min_capacity, q.default_capacity)
     assert_equal(q._capacity, q.default_capacity)
@@ -69,7 +69,7 @@ fn test_impl_init_min_capacity() raises:
     assert_equal(q._capacity, q.default_capacity)
 
 
-fn test_impl_init_maxlen() raises:
+def test_impl_init_maxlen() raises:
     q = Deque[Int](maxlen=-10)
     assert_equal(q._maxlen, -1)
     assert_equal(q._capacity, q.default_capacity)
@@ -94,13 +94,13 @@ fn test_impl_init_maxlen() raises:
     assert_equal(q._capacity, q.default_capacity)
 
 
-fn test_impl_init_shrink() raises:
+def test_impl_init_shrink() raises:
     q = Deque[Int](shrink=False)
     assert_equal(q._shrink, False)
     assert_equal(q._capacity, q.default_capacity)
 
 
-fn test_impl_shrink_realloc_empty_deque() raises:
+def test_impl_shrink_realloc_empty_deque() raises:
     # Regression test for issue #5635:
     # When capacity > min_capacity and deque is empty (head == tail),
     # _realloc must recognize this as empty (not full) and shrink correctly.
@@ -128,7 +128,7 @@ fn test_impl_shrink_realloc_empty_deque() raises:
     assert_equal(q[0], 42)
 
 
-fn test_impl_init_list() raises:
+def test_impl_init_list() raises:
     q = Deque(elements=Optional([Int(0), 1, 2]))
     assert_equal(q._head, 0)
     assert_equal(q._tail, 3)
@@ -140,7 +140,7 @@ fn test_impl_init_list() raises:
     _ = q^
 
 
-fn test_impl_init_list_args() raises:
+def test_impl_init_list_args() raises:
     q = Deque(elements=Optional([0, 1, 2]), maxlen=2, capacity=10)
     assert_equal(q._head, 0)
     assert_equal(q._tail, 2)
@@ -151,7 +151,7 @@ fn test_impl_init_list_args() raises:
     _ = q^
 
 
-fn test_impl_init_variadic() raises:
+def test_impl_init_variadic() raises:
     q = Deque(0, 1, 2)
 
     assert_equal(q._head, 0)
@@ -164,7 +164,7 @@ fn test_impl_init_variadic() raises:
     _ = q^
 
 
-fn test_impl_len() raises:
+def test_impl_len() raises:
     q = Deque[Int]()
 
     q._head = 0
@@ -176,7 +176,7 @@ fn test_impl_len() raises:
     assert_equal(len(q), 10)
 
 
-fn test_impl_bool() raises:
+def test_impl_bool() raises:
     q = Deque[Int]()
     assert_false(q)
 
@@ -184,7 +184,7 @@ fn test_impl_bool() raises:
     assert_true(q)
 
 
-fn test_impl_append() raises:
+def test_impl_append() raises:
     q = Deque[Int](capacity=2)
 
     q.append(0)
@@ -232,7 +232,7 @@ fn test_impl_append() raises:
     _ = q^
 
 
-fn test_impl_append_with_maxlen() raises:
+def test_impl_append_with_maxlen() raises:
     q = Deque[Int](maxlen=3)
 
     assert_equal(q._maxlen, 3)
@@ -257,7 +257,7 @@ fn test_impl_append_with_maxlen() raises:
     _ = q^
 
 
-fn test_impl_appendleft() raises:
+def test_impl_appendleft() raises:
     q = Deque[Int](capacity=2)
 
     q.appendleft(0)
@@ -307,7 +307,7 @@ fn test_impl_appendleft() raises:
     _ = q^
 
 
-fn test_impl_appendleft_with_maxlen() raises:
+def test_impl_appendleft_with_maxlen() raises:
     q = Deque[Int](maxlen=3)
 
     assert_equal(q._maxlen, 3)
@@ -332,7 +332,7 @@ fn test_impl_appendleft_with_maxlen() raises:
     _ = q^
 
 
-fn test_impl_extend() raises:
+def test_impl_extend() raises:
     q = Deque[Int](maxlen=4)
     lst = [0, 1, 2]
 
@@ -396,7 +396,7 @@ fn test_impl_extend() raises:
     _ = q^
 
 
-fn test_impl_extendleft() raises:
+def test_impl_extendleft() raises:
     q = Deque[Int](maxlen=4)
     lst = [0, 1, 2]
 
@@ -461,7 +461,7 @@ fn test_impl_extendleft() raises:
     _ = q^
 
 
-fn test_impl_insert() raises:
+def test_impl_insert() raises:
     q = Deque[Int](0, 1, 2, 3, 4, 5)
 
     q.insert(0, 6)
@@ -487,7 +487,7 @@ fn test_impl_insert() raises:
     _ = q^
 
 
-fn test_impl_pop() raises:
+def test_impl_pop() raises:
     q = Deque[Int](capacity=2, min_capacity=2)
     with assert_raises():
         _ = q.pop()
@@ -501,7 +501,7 @@ fn test_impl_pop() raises:
     assert_equal(q._capacity, 2)
 
 
-fn test_popleft() raises:
+def test_popleft() raises:
     q = Deque[Int](capacity=2, min_capacity=2)
     assert_equal(q._capacity, 2)
     with assert_raises():
@@ -516,7 +516,7 @@ fn test_popleft() raises:
     assert_equal(q._capacity, 2)
 
 
-fn test_impl_clear() raises:
+def test_impl_clear() raises:
     q = Deque[Int](capacity=2)
     q.append(1)
     assert_equal(q._tail, 1)
@@ -527,7 +527,7 @@ fn test_impl_clear() raises:
     assert_equal(q._capacity, q._min_capacity)
 
 
-fn test_impl_add() raises:
+def test_impl_add() raises:
     l1 = [1, 2, 3, 4, 5, 6, 7, 8]
     l2 = [9, 10, 11, 12, 13, 14, 15, 16]
     q1 = Deque(elements=l1^, capacity=20, maxlen=30)
@@ -593,7 +593,7 @@ fn test_impl_add() raises:
     _ = q6^
 
 
-fn test_impl_iadd() raises:
+def test_impl_iadd() raises:
     l1 = [1, 2, 3, 4, 5, 6, 7, 8]
     l2 = [9, 10, 11, 12, 13, 14, 15, 16]
     q1 = Deque(elements=l1^, maxlen=10)
@@ -627,7 +627,7 @@ fn test_impl_iadd() raises:
     _ = q2^
 
 
-fn test_impl_mul() raises:
+def test_impl_mul() raises:
     l = [1, 2, 3]
     q = Deque(elements=l^, capacity=3, min_capacity=2, maxlen=7, shrink=False)
 
@@ -674,7 +674,7 @@ fn test_impl_mul() raises:
     _ = q4^
 
 
-fn test_impl_imul() raises:
+def test_impl_imul() raises:
     l = [1, 2, 3]
 
     q = Deque(
@@ -740,7 +740,7 @@ fn test_impl_imul() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-fn test_init_variadic_list() raises:
+def test_init_variadic_list() raises:
     lst1 = [0, 1]
     lst2 = [2, 3]
 
@@ -756,7 +756,7 @@ fn test_init_variadic_list() raises:
     assert_equal(p[1], [2, 3])
 
 
-fn test_copy_trivial() raises:
+def test_copy_trivial() raises:
     q = Deque(1, 2, 3)
 
     p = q.copy()
@@ -767,7 +767,7 @@ fn test_copy_trivial() raises:
     assert_equal(q[0], 1)
 
 
-fn test_copy_list() raises:
+def test_copy_list() raises:
     q = Deque[List[Int]]()
     lst1 = [1, 2, 3]
     lst2 = [4, 5, 6]
@@ -786,7 +786,7 @@ fn test_copy_list() raises:
     assert_equal(q[0], [1, 2, 3])
 
 
-fn test_move_list() raises:
+def test_move_list() raises:
     q = Deque[List[Int]]()
     lst1 = [1, 2, 3]
     lst2 = [4, 5, 6]
@@ -802,7 +802,7 @@ fn test_move_list() raises:
     assert_equal(p[0], [1, 2, 3])
 
 
-fn test_getitem() raises:
+def test_getitem() raises:
     q = Deque(1, 2)
     assert_equal(q[0], 1)
     assert_equal(q[1], 2)
@@ -810,7 +810,7 @@ fn test_getitem() raises:
     assert_equal(q[-2], 1)
 
 
-fn test_setitem() raises:
+def test_setitem() raises:
     q = Deque(1, 2)
     assert_equal(q[0], 1)
 
@@ -821,7 +821,7 @@ fn test_setitem() raises:
     assert_equal(q[1], 4)
 
 
-fn test_eq() raises:
+def test_eq() raises:
     q = Deque[Int](1, 2, 3)
     p = Deque[Int](1, 2, 3)
 
@@ -832,7 +832,7 @@ fn test_eq() raises:
     assert_true(q == r)
 
 
-fn test_ne() raises:
+def test_ne() raises:
     q = Deque[Int](1, 2, 3)
     p = Deque[Int](3, 2, 1)
 
@@ -843,7 +843,7 @@ fn test_ne() raises:
     assert_true(q != p)
 
 
-fn test_count() raises:
+def test_count() raises:
     q = Deque(1, 2, 1, 2, 3, 1)
 
     assert_equal(q.count(1), 3)
@@ -855,14 +855,14 @@ fn test_count() raises:
     assert_equal(q.count(2), 3)
 
 
-fn test_contains() raises:
+def test_contains() raises:
     q = Deque[Int](1, 2, 3)
 
     assert_true(1 in q)
     assert_false(4 in q)
 
 
-fn test_index() raises:
+def test_index() raises:
     q = Deque(1, 2, 1, 2, 3, 1)
 
     assert_equal(q.index(2), 1)
@@ -876,7 +876,7 @@ fn test_index() raises:
         _ = q.index(4)
 
 
-fn test_insert() raises:
+def test_insert() raises:
     q = Deque[Int](capacity=4, maxlen=7)
 
     # negative index outbound
@@ -935,7 +935,7 @@ fn test_insert() raises:
         q.insert(3, 7)
 
 
-fn test_remove() raises:
+def test_remove() raises:
     q = Deque[Int](min_capacity=32)
     q.extend([0, 1, 0, 2, 3, 0, 4, 5])
     assert_equal(len(q), 8)
@@ -974,7 +974,7 @@ fn test_remove() raises:
         q.remove(5)
 
 
-fn test_peek_and_peekleft() raises:
+def test_peek_and_peekleft() raises:
     q = Deque[Int](capacity=4)
     assert_equal(q._capacity, 4)
 
@@ -1002,7 +1002,7 @@ fn test_peek_and_peekleft() raises:
     assert_equal(q.peek(), 5)
 
 
-fn test_reverse() raises:
+def test_reverse() raises:
     q = Deque(0, 1, 2, 3)
 
     q.reverse()
@@ -1017,7 +1017,7 @@ fn test_reverse() raises:
     assert_equal(q[4], 4)
 
 
-fn test_rotate() raises:
+def test_rotate() raises:
     q = Deque(0, 1, 2, 3)
 
     q.rotate()
@@ -1037,7 +1037,7 @@ fn test_rotate() raises:
     assert_equal(q[3], 3)
 
 
-fn test_iter() raises:
+def test_iter() raises:
     q = Deque(1, 2, 3)
 
     i = 0
@@ -1053,7 +1053,7 @@ fn test_iter() raises:
     assert_equal(q[0], 4)
 
 
-fn test_iter_with_list() raises:
+def test_iter_with_list() raises:
     q = Deque[List[Int]]()
     lst1 = [1, 2, 3]
     lst2 = [4, 5, 6]
@@ -1080,7 +1080,7 @@ fn test_iter_with_list() raises:
     assert_equal(q[1], [1, 2, 3])
 
 
-fn test_reversed_iter() raises:
+def test_reversed_iter() raises:
     q = Deque(1, 2, 3)
 
     i = 0

@@ -47,7 +47,7 @@ comptime rank = 1
 comptime dtype = DType.uint32
 
 
-fn _test_pull[
+def _test_pull[
     ngpus: Int,
     dp_size: Int,
 ](expected: List[List[Scalar[dtype]]]) raises:
@@ -168,7 +168,7 @@ fn _test_pull[
     _ = input_devbufs^
 
 
-fn _test_dp2() raises:
+def _test_dp2() raises:
     """2 GPUs, DP=2."""
     var expected = List[List[Scalar[DType.uint32]]]()
     expected.append([0, 5, 12])  # Replica A
@@ -176,7 +176,7 @@ fn _test_dp2() raises:
     _test_pull[ngpus=2, dp_size=2](expected)
 
 
-fn _test_dp4[ngpus: Int]() raises:
+def _test_dp4[ngpus: Int]() raises:
     """DP=4 with configurable ngpus (KERN-2435 data)."""
     var expected = List[List[Scalar[DType.uint32]]]()
     expected.append([0, 5, 12])  # Replica A
@@ -186,7 +186,7 @@ fn _test_dp4[ngpus: Int]() raises:
     _test_pull[ngpus=ngpus, dp_size=4](expected)
 
 
-fn _test_dp2_fewer_elems_gpu0() raises:
+def _test_dp2_fewer_elems_gpu0() raises:
     """2 GPUs, DP=2: GPU-0's replica gets fewer elements than GPU-1's."""
     var expected = List[List[Scalar[DType.uint32]]]()
     expected.append([42])  # Replica A (1 element)
@@ -194,7 +194,7 @@ fn _test_dp2_fewer_elems_gpu0() raises:
     _test_pull[ngpus=2, dp_size=2](expected)
 
 
-fn _test_dp2_single_elem() raises:
+def _test_dp2_single_elem() raises:
     """2 GPUs, DP=2: each GPU gets exactly 1 element."""
     var expected = List[List[Scalar[DType.uint32]]]()
     expected.append([7])  # Replica A
@@ -202,7 +202,7 @@ fn _test_dp2_single_elem() raises:
     _test_pull[ngpus=2, dp_size=2](expected)
 
 
-fn _test_dp4_large_chunks() raises:
+def _test_dp4_large_chunks() raises:
     """8 GPUs, DP=4: large chunks that require multiple thread blocks."""
     comptime NUM_ELEMS = 16384
 

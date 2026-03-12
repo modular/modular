@@ -150,7 +150,7 @@ struct BlockwiseFP8TileWriter[
 
     @staticmethod
     @always_inline
-    fn write[
+    def write[
         c_rank: Int,
         c_tile_shape: IndexList[c_rank],
         c_desc_shape: IndexList[c_rank],
@@ -180,7 +180,7 @@ struct BlockwiseFP8TileWriter[
 
     @staticmethod
     @always_inline
-    fn _write_impl[
+    def _write_impl[
         c_rank: Int,
         c_tile_shape: IndexList[c_rank],
         c_desc_shape: IndexList[c_rank],
@@ -289,7 +289,7 @@ struct BlockwiseFP8TileWriter[
 
     @staticmethod
     @always_inline
-    fn write_absolute_with_bounds_check[
+    def write_absolute_with_bounds_check[
         c_tensor_layout: TensorLayout,
         cluster_size: Int,
     ](
@@ -327,7 +327,7 @@ struct BlockwiseFP8TileWriter[
 
     @staticmethod
     @always_inline
-    fn _write_absolute_impl[
+    def _write_absolute_impl[
         c_tensor_layout: TensorLayout,
         cluster_size: Int,
     ](
@@ -442,7 +442,7 @@ struct BlockwiseFP8TileWriter[
 
     @staticmethod
     @always_inline
-    fn _store_with_bounds_check[
+    def _store_with_bounds_check[
         c_tensor_layout: TensorLayout,
     ](
         c_smem_tile: SMemTile[

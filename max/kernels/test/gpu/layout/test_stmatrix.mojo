@@ -35,7 +35,7 @@ from std.testing import assert_almost_equal
 from std.utils.numerics import get_accum_type
 
 
-fn test_stmatrix(
+def test_stmatrix(
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     a_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
     b_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
@@ -104,7 +104,7 @@ fn test_stmatrix(
         c_ptr[d] = c_shared[src]
 
 
-fn test_stmatrix_gen[
+def test_stmatrix_gen[
     input_type: DType, output_type: DType
 ](
     c_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -171,7 +171,7 @@ fn test_stmatrix_gen[
         c_ptr[d] = c_shared[src].cast[output_type]()
 
 
-fn check_stmatrix_gen[
+def check_stmatrix_gen[
     input_type: DType,
     output_type: DType,
 ](ctx: DeviceContext) raises:
@@ -284,7 +284,7 @@ fn check_stmatrix_gen[
     _ = c_host_ref
 
 
-fn check_stmatrix(
+def check_stmatrix(
     M: Int, N: Int, K: Int, rand_min: Int64, rand_max: Int64, ctx: DeviceContext
 ) raises:
     print("== test stmatrix instruction")

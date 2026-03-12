@@ -38,7 +38,7 @@ comptime dtype = DType.float32
 
 
 # CHECK-LABEL: test_direct_conv
-fn test[
+def test[
     dtype: DType, filter_packed: Bool
 ](
     N: Int,

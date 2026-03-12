@@ -27,7 +27,7 @@ from nn.conv_utils import (
 from std.utils.index import Index, IndexList
 
 
-fn test[
+def test[
     N: Int,
     H: Int,
     W: Int,

@@ -19,7 +19,7 @@ from nn.moe import router_group_limited
 from std.testing import assert_equal
 
 
-fn test_warp_bitonic_sort_interleaved[
+def test_warp_bitonic_sort_interleaved[
     n_experts: Int,
     n_groups: Int,
     topk_experts: Int,

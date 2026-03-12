@@ -198,7 +198,7 @@ struct MLA_SM100_Decode_QKV_FP8[
             Int32(Self.config.num_threads)
         )
     )
-    fn kernel(
+    def kernel(
         # Q TMA is FP8 with SWIZZLE_64B (same as KV)
         q_tma: QOTMATile[
             dtype=Self.kv_type,
@@ -484,7 +484,7 @@ struct MLA_SM100_Decode_QKV_FP8[
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
-    fn load(
+    def load(
         q_tma: QOTMATile[
             dtype=Self.kv_type,
             BM=Self.config.BM,
@@ -605,7 +605,7 @@ struct MLA_SM100_Decode_QKV_FP8[
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
-    fn mmaQK(
+    def mmaQK(
         tmem_addr: UInt32,
         q_smem: SharedMemPointer[Scalar[Self.fp8_type]],
         kv_smem: SharedMemPointer[Scalar[Self.fp8_type]],
@@ -683,7 +683,7 @@ struct MLA_SM100_Decode_QKV_FP8[
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
-    fn mmaPV(
+    def mmaPV(
         tmem_addr: UInt32,
         kv_smem: SharedMemPointer[Scalar[Self.fp8_type]],
         p_smem: SharedMemPointer[Scalar[Self.fp8_type]],

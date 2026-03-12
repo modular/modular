@@ -35,7 +35,7 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
@@ -136,7 +136,7 @@ def test_matmul_sm100_epilogue[
     @parameter
     @always_inline
     @__copy_capture(c_tensor)
-    fn test_lambda_add_coords_prod[
+    def test_lambda_add_coords_prod[
         _dtype: DType,
         width: Int,
         *,
@@ -188,7 +188,7 @@ def test_matmul_sm100_epilogue[
     @parameter
     @always_inline
     @__copy_capture(c_dev, a_dev, b_dev)
-    fn kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(ctx: DeviceContext) raises:
         blackwell_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
             config=matmul_config,
@@ -236,7 +236,7 @@ def test_matmul_sm100_epilogue[
         @parameter
         @always_inline
         @__copy_capture(c_tensor_host)
-        fn test_lambda_add_coords_prod_local[
+        def test_lambda_add_coords_prod_local[
             _dtype: DType,
             width: Int,
             *,

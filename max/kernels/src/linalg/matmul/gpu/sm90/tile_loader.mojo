@@ -55,7 +55,7 @@ trait TileLoader(TrivialRegisterPassable):
     comptime _dtype: DType
 
     @always_inline
-    fn load_tile(
+    def load_tile(
         self,
         dst: SMemTile[Self._dtype, _, alignment=128, ...],
         mem_barrier: SMemBarrier,
@@ -83,7 +83,7 @@ trait BarrierHandler(TrivialRegisterPassable):
     """
 
     @always_inline
-    fn prepare_stage(self, mem_barrier: SMemBarrier):
+    def prepare_stage(self, mem_barrier: SMemBarrier):
         """Prepare barrier for incoming transfers.
 
         For TMA: sets expected transaction bytes.
@@ -95,7 +95,7 @@ trait BarrierHandler(TrivialRegisterPassable):
         ...
 
     @always_inline
-    fn complete_stage(self, mem_barrier: SMemBarrier):
+    def complete_stage(self, mem_barrier: SMemBarrier):
         """Signal that all transfers for this stage are done.
 
         For TMA: noop (hardware auto-signals).
@@ -116,7 +116,7 @@ struct TMABarrierHandler[expected_bytes: Int](BarrierHandler):
         expected_bytes: Total bytes expected per stage across all loaders.
     """
 
-    fn __init__[
+    def __init__[
         num_stages: Int
     ](
         out self,
@@ -132,11 +132,11 @@ struct TMABarrierHandler[expected_bytes: Int](BarrierHandler):
             )
 
     @always_inline
-    fn prepare_stage(self, mem_barrier: SMemBarrier):
+    def prepare_stage(self, mem_barrier: SMemBarrier):
         mem_barrier[].expect_bytes(Int32(Self.expected_bytes))
 
     @always_inline
-    fn complete_stage(self, mem_barrier: SMemBarrier):
+    def complete_stage(self, mem_barrier: SMemBarrier):
         pass
 
 
@@ -146,7 +146,7 @@ struct CPAsyncBarrierHandler(BarrierHandler):
     Initializes the pipeline on construction (phase=0, barrier counts).
     """
 
-    fn __init__[
+    def __init__[
         num_stages: Int
     ](
         out self,
@@ -162,11 +162,11 @@ struct CPAsyncBarrierHandler(BarrierHandler):
             )
 
     @always_inline
-    fn prepare_stage(self, mem_barrier: SMemBarrier):
+    def prepare_stage(self, mem_barrier: SMemBarrier):
         pass
 
     @always_inline
-    fn complete_stage(self, mem_barrier: SMemBarrier):
+    def complete_stage(self, mem_barrier: SMemBarrier):
         async_copy_arrive(mem_barrier)
         _ = mem_barrier[].arrive()
 
@@ -213,7 +213,7 @@ struct TileLoaderTMA[
     var multicast_mask: UInt16
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         tma_op: Self.TMATensorTilePtr,
         rank: Int,
@@ -231,7 +231,7 @@ struct TileLoaderTMA[
         self.multicast_mask = multicast_mask
 
     @always_inline
-    fn load_tile(
+    def load_tile(
         self,
         dst: SMemTile[Self._dtype, _, alignment=128, ...],
         mem_barrier: SMemBarrier,
@@ -327,7 +327,7 @@ struct TileLoaderCPAsync[
     ]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         src: LayoutTensor[
             Self.dtype,
@@ -343,7 +343,7 @@ struct TileLoaderCPAsync[
         """
         self.src = src
 
-    fn load_tile(
+    def load_tile(
         self,
         dst: SMemTile[Self._dtype, _, alignment=128, ...],
         mem_barrier: SMemBarrier,
@@ -382,7 +382,7 @@ struct TileLoaderCPAsync[
 
 
 @always_inline
-fn async_copy_with_bound_check[
+def async_copy_with_bound_check[
     dtype: DType,
     src_layout: Layout,
     dst_layout: Layout,

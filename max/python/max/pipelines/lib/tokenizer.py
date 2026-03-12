@@ -190,7 +190,7 @@ class PreTrainedPipelineTokenizer(
     ) -> str:
         """Decodes token ids to text via the delegate."""
         try:
-            return self.delegate.decode(encoded, **kwargs)
+            return self.delegate.decode(encoded.tolist(), **kwargs)
         except OverflowError as e:
             error_msg = _handle_decode_overflow(encoded, len(self.delegate))
             raise OverflowError(error_msg) from e
@@ -417,7 +417,7 @@ class TextTokenizer(
             return self._decode_with_llama_whitespace_fix(encoded, **kwargs)
 
         try:
-            return self.delegate.decode(encoded, **kwargs)
+            return self.delegate.decode(encoded.tolist(), **kwargs)
         except OverflowError as e:
             error_msg = _handle_decode_overflow(encoded, len(self.delegate))
             raise OverflowError(error_msg) from e
@@ -543,7 +543,9 @@ class TextTokenizer(
             encoded = encoded.reshape((1,))
 
         decoded = self.delegate.decode(
-            np.insert(encoded, 0, self._llama_whitespace_fix_dummy_token_id),
+            np.insert(
+                encoded, 0, self._llama_whitespace_fix_dummy_token_id
+            ).tolist(),
             **kwargs,
         )
         return decoded[self._llama_whitespace_fix_dummy_token_len :]
@@ -696,7 +698,7 @@ class TextAndVisionTokenizer(
     ) -> str:
         """Transformer a provided encoded token array, back into readable text."""
         try:
-            return self.delegate.decode(encoded, **kwargs)
+            return self.delegate.decode(encoded.tolist(), **kwargs)
         except OverflowError as e:
             error_msg = _handle_decode_overflow(encoded, len(self.delegate))
             raise OverflowError(error_msg) from e

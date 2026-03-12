@@ -27,7 +27,7 @@ from std.testing import assert_almost_equal
 from std.utils import Index, IndexList
 
 
-fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
+def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     print("== run_matmul naive kernel")
 
     var a_host = alloc[BFloat16](M * K)
@@ -90,7 +90,7 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
 
     @always_inline
     @parameter
-    fn run_func_bf16() raises:
+    def run_func_bf16() raises:
         comptime kernel = matmul_kernel_naive[
             DType.bfloat16,
             DType.bfloat16,
@@ -139,7 +139,7 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
 
     @always_inline
     @parameter
-    fn run_func_fp32() raises:
+    def run_func_fp32() raises:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
@@ -187,7 +187,7 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     _ = c_host_n
 
 
-fn run_matmul[
+def run_matmul[
     dtype: DType,
     M: Int,
     N: Int,
@@ -283,7 +283,7 @@ fn run_matmul[
 
     @always_inline
     @parameter
-    fn run_func_naive() raises:
+    def run_func_naive() raises:
         comptime kernel = matmul_kernel_naive[
             dtype,
             dtype,
@@ -334,7 +334,7 @@ fn run_matmul[
     _ = c_host_n
 
 
-fn run_matmul_split_k[
+def run_matmul_split_k[
     dtype: DType,
     M: Int,
     N: Int,
@@ -487,7 +487,7 @@ fn run_matmul_split_k[
     _ = c_host_n
 
 
-fn run_matmul_transpose[
+def run_matmul_transpose[
     dtype: DType,
     M: Int,
     N: Int,
@@ -586,7 +586,7 @@ fn run_matmul_transpose[
 
     @always_inline
     @parameter
-    fn run_func_naive() raises:
+    def run_func_naive() raises:
         comptime kernel = matmul_kernel_naive[
             dtype,
             dtype,
@@ -638,7 +638,7 @@ fn run_matmul_transpose[
     _ = c_host_n
 
 
-fn run_batched_matmul(
+def run_batched_matmul(
     ctx: DeviceContext, B: Int, M: Int, N: Int, K: Int
 ) raises:
     print("== test_batched_matmul")
@@ -699,7 +699,7 @@ fn run_batched_matmul(
     @always_inline
     @__copy_capture(c_buf)
     @parameter
-    fn elementwise_epilogue_fn1[
+    def elementwise_epilogue_fn1[
         c_type: DType,
         width: Int,
         rank: Int,
@@ -720,7 +720,7 @@ fn run_batched_matmul(
     @always_inline
     @__copy_capture(c_buf_n)
     @parameter
-    fn elementwise_epilogue_fn2[
+    def elementwise_epilogue_fn2[
         c_type: DType,
         width: Int,
         rank: Int,

@@ -17,7 +17,7 @@ from std.os import abort
 from layout import Layout, LayoutTensor
 
 
-fn qr_factorization[
+def qr_factorization[
     dtype: DType,
     element_layout: Layout,
 ](
@@ -88,7 +88,7 @@ fn qr_factorization[
                 )  # v[i + 1] -= s * w
 
 
-fn apply_q[
+def apply_q[
     dtype: DType,
     element_layout: Layout,
 ](
@@ -119,7 +119,7 @@ fn apply_q[
                 X[k + i + 1, j] -= s * A[k + i + 1, k]  # v[i + 1] -= s * w
 
 
-fn form_q[
+def form_q[
     dtype: DType,
     element_layout: Layout,
 ](

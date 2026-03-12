@@ -60,7 +60,7 @@ comptime AB_FRAG_SIZE = 16
 comptime CD_FRAG_SIZE = 8
 
 
-fn gemm_kernel_rdna[
+def gemm_kernel_rdna[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -117,7 +117,7 @@ fn gemm_kernel_rdna[
         ](c, a, b, m, n, k)
 
 
-fn _naive_matmul_kernel[
+def _naive_matmul_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -180,7 +180,7 @@ fn _naive_matmul_kernel[
                 c[global_row, global_col] = accum.cast[c_type]()
 
 
-fn _wmma_matmul_kernel[
+def _wmma_matmul_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,

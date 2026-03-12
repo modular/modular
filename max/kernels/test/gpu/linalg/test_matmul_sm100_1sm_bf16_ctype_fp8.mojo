@@ -37,7 +37,7 @@ from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 
-fn simple_init() -> Bool:
+def simple_init() -> Bool:
     for arg in argv():
         if arg == "--simple-init":
             return True

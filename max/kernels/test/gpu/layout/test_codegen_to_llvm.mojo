@@ -17,10 +17,10 @@ from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 
 
 # CHECK-LABEL: test_no_alloca_fill
-fn test_no_alloca_fill():
+def test_no_alloca_fill():
     print("== test_no_alloca_fill")
 
-    fn layout_tensor_kernel(
+    def layout_tensor_kernel(
         output: LayoutTensor[
             DType.float32,
             Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
@@ -47,5 +47,5 @@ fn test_no_alloca_fill():
     )
 
 
-fn main():
+def main():
     test_no_alloca_fill()

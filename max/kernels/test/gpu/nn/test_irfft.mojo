@@ -23,7 +23,7 @@ from std.utils.index import IndexList
 comptime dtype = DType.float32
 
 
-fn test_irfft_basic[
+def test_irfft_basic[
     batch_size: Int,
     input_size: Int,  # Size of complex input (number of complex values)
     output_size: Int,  # Size of real output

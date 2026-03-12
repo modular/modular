@@ -340,7 +340,7 @@ def test_float_conversion() raises:
 
 
 # If this compiles, then the format method does not raise.
-fn _test_format_does_not_raise():
+def _test_format_does_not_raise():
     var _hello = "Hello, {}! I am {} years old.".format("world", 42)
 
 

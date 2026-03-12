@@ -25,7 +25,7 @@ from nn.conv import Naive2dConvolution, conv_gpu
 from std.utils.index import Index, IndexList
 
 
-fn test_grouped_conv2d[
+def test_grouped_conv2d[
     N: Int,
     H: Int,
     W: Int,

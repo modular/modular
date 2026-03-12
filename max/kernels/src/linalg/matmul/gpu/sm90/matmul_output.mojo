@@ -116,7 +116,7 @@ struct MatmulTileWriter[
     var block_x: Int
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         tensor: Self.CTensorType,
         smem_tile: SMemTile[Self.dtype, Self.smem_tile_layout, alignment=128],
@@ -135,7 +135,7 @@ struct MatmulTileWriter[
         self.block_x = block_x
 
     @always_inline
-    fn _calculate_output_bounds(self) -> Tuple[UInt32, UInt32]:
+    def _calculate_output_bounds(self) -> Tuple[UInt32, UInt32]:
         """Calculate valid output bounds for the current block's tile."""
         var rows = self.tensor.dim[0]()
         var max_row: UInt32
@@ -153,7 +153,7 @@ struct MatmulTileWriter[
         return max_row, max_col
 
     @always_inline
-    fn _apply_epilogue[
+    def _apply_epilogue[
         epilogue_fn: Self.lambda_type
     ](
         self,
@@ -200,7 +200,7 @@ struct MatmulTileWriter[
                 )
 
     @always_inline
-    fn _write_tile_to_gmem[
+    def _write_tile_to_gmem[
         accum_type: DType,
         reg_tile_layout: Layout,
         //,
@@ -273,7 +273,7 @@ struct MatmulTileWriter[
             )
 
     @always_inline
-    fn _write_tile_stmatrix[
+    def _write_tile_stmatrix[
         tma_rank: Int,
         tma_tile_shape: IndexList[tma_rank],
         tma_desc_shape: IndexList[tma_rank],
@@ -370,7 +370,7 @@ struct MatmulTileWriter[
             )
 
             @parameter
-            fn apply_epilogue[lambda_fn: Self.lambda_type]():
+            def apply_epilogue[lambda_fn: Self.lambda_type]():
                 self._apply_epilogue[lambda_fn](
                     workgroup_tile,
                     global_coords[0],
@@ -383,7 +383,7 @@ struct MatmulTileWriter[
                 comptime compute_fn = Self.elementwise_compute_lambda_fn.value()
 
                 @parameter
-                fn _compute[
+                def _compute[
                     dtype: DType, width: Int, *, alignment: Int = 1
                 ](
                     index: IndexList[2], mut val: SIMD[dtype, width]
@@ -397,7 +397,7 @@ struct MatmulTileWriter[
                 comptime epilogue_fn = Self.elementwise_lambda_fn.value()
 
                 @parameter
-                fn _epilogue[
+                def _epilogue[
                     dtype: DType, width: Int, *, alignment: Int = 1
                 ](
                     index: IndexList[2], mut val: SIMD[dtype, width]
@@ -447,7 +447,7 @@ struct MatmulTileWriter[
             named_barrier[Int32(Self.num_consumer_threads)](10)
 
     @always_inline
-    fn write_tile[
+    def write_tile[
         tma_rank: Int,
         tma_tile_shape: IndexList[tma_rank],
         tma_desc_shape: IndexList[tma_rank],

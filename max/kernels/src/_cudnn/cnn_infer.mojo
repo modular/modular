@@ -46,7 +46,7 @@ comptime CUDA_CUDNN_CNN_INFER_LIBRARY_PATHS: List[Path] = [
 ]
 
 
-fn _on_error_msg() -> Error:
+def _on_error_msg() -> Error:
     return Error(
         (
             "Cannot find the CUDNN libraries. Please make sure that "
@@ -66,14 +66,14 @@ comptime CUDA_CUDNN_CNN_INFER_LIBRARY = _Global[
 ]
 
 
-fn _init_dylib() -> OwnedDLHandle:
+def _init_dylib() -> OwnedDLHandle:
     return _find_dylib[abort_on_failure=False](
         materialize[CUDA_CUDNN_CNN_INFER_LIBRARY_PATHS]()
     )
 
 
 @always_inline
-fn _get_dylib_function[
+def _get_dylib_function[
     func_name: StaticString, result_type: __TypeOfAllTypes
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
@@ -96,7 +96,7 @@ comptime cudnnFusedOpsVariantParamStruct = NoneType
 comptime cudnnFusedOpsConstParamStruct = NoneType
 
 
-fn cudnnGetConvolutionMathType(
+def cudnnGetConvolutionMathType(
     conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
     math_type: UnsafePointer[cudnnMathType_t, _],
 ) raises -> cudnnStatus_t:
@@ -109,7 +109,7 @@ fn cudnnGetConvolutionMathType(
     ]()(conv_desc, math_type)
 
 
-fn cudnnIm2Col(
+def cudnnIm2Col(
     handle: UnsafePointer[cudnnContext, _],
     x_desc: UnsafePointer[cudnnTensorStruct, _],
     x: OpaquePointer,
@@ -130,7 +130,7 @@ fn cudnnIm2Col(
     ]()(handle, x_desc, x, w_desc, conv_desc, col_buffer)
 
 
-fn cudnnConvolutionBiasActivationForward(
+def cudnnConvolutionBiasActivationForward(
     handle: UnsafePointer[cudnnContext, _],
     alpha1: OpaquePointer,
     x_desc: UnsafePointer[cudnnTensorStruct, _],
@@ -204,7 +204,7 @@ struct cudnnConvolutionFwdAlgoPerfStruct(TrivialRegisterPassable):
     var reserved: StaticTuple[Int32, 3]
 
 
-fn cudnnSetConvolution2dDescriptor(
+def cudnnSetConvolution2dDescriptor(
     conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
     pad_h: Int16,
     pad_w: Int16,
@@ -241,7 +241,7 @@ fn cudnnSetConvolution2dDescriptor(
     )
 
 
-fn cudnnCreateConvolutionDescriptor(
+def cudnnCreateConvolutionDescriptor(
     conv_desc: DoubleNestedPointer[cudnnConvolutionStruct],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -250,7 +250,7 @@ fn cudnnCreateConvolutionDescriptor(
     ]()(conv_desc)
 
 
-fn cudnnSetConvolutionGroupCount(
+def cudnnSetConvolutionGroupCount(
     conv_desc: UnsafePointer[cudnnConvolutionStruct, _], group_count: Int16
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -276,7 +276,7 @@ struct cudnnConvolutionBwdDataAlgoPerfStruct(TrivialRegisterPassable):
     var reserved: StaticTuple[Int32, 3]
 
 
-fn cudnnGetConvolutionForwardWorkspaceSize(
+def cudnnGetConvolutionForwardWorkspaceSize(
     handle: UnsafePointer[cudnnContext, _],
     x_desc: UnsafePointer[cudnnTensorStruct, _],
     w_desc: UnsafePointer[cudnnFilterStruct, _],
@@ -299,7 +299,7 @@ fn cudnnGetConvolutionForwardWorkspaceSize(
     ]()(handle, x_desc, w_desc, conv_desc, y_desc, algo, size_in_bytes)
 
 
-fn cudnnGetConvolution2dDescriptor(
+def cudnnGetConvolution2dDescriptor(
     conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
     pad_h: UnsafePointer[Int16, _],
     pad_w: UnsafePointer[Int16, _],
@@ -381,17 +381,17 @@ struct cudnnFusedOpsConstParamLabel_t(
     comptime CUDNN_PARAM_BN_DSCALE_PLACEHOLDER = Self(37)
     comptime CUDNN_PARAM_BN_DBIAS_PLACEHOLDER = Self(38)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_PARAM_XDESC:
             return writer.write_string("CUDNN_PARAM_XDESC")
         if self is Self.CUDNN_PARAM_XDATA_PLACEHOLDER:
@@ -479,14 +479,14 @@ struct cudnnFusedOpsConstParamLabel_t(
         abort("invalid cudnnFusedOpsConstParamLabel_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnFusedOpsConstParamLabel_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnSetConvolutionReorderType(
+def cudnnSetConvolutionReorderType(
     conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
     reorder_type: cudnnReorderType_t,
 ) raises -> cudnnStatus_t:
@@ -504,17 +504,17 @@ struct cudnnReorderType_t(
     comptime CUDNN_DEFAULT_REORDER = Self(0)
     comptime CUDNN_NO_REORDER = Self(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_DEFAULT_REORDER:
             return writer.write_string("CUDNN_DEFAULT_REORDER")
         if self is Self.CUDNN_NO_REORDER:
@@ -522,17 +522,17 @@ struct cudnnReorderType_t(
         abort("invalid cudnnReorderType_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnReorderType_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
 comptime cudnnConvolutionBwdDataAlgoPerf_t = cudnnConvolutionBwdDataAlgoPerfStruct
 
 
-fn cudnnGetConvolution2dForwardOutputDim(
+def cudnnGetConvolution2dForwardOutputDim(
     conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
     input_tensor_desc: UnsafePointer[cudnnTensorStruct, _],
     filter_desc: UnsafePointer[cudnnFilterStruct, _],
@@ -555,7 +555,7 @@ fn cudnnGetConvolution2dForwardOutputDim(
     ]()(conv_desc, input_tensor_desc, filter_desc, n, c, h, w)
 
 
-fn cudnnFindConvolutionForwardAlgorithm(
+def cudnnFindConvolutionForwardAlgorithm(
     handle: UnsafePointer[cudnnContext, _],
     x_desc: UnsafePointer[cudnnTensorStruct, _],
     w_desc: UnsafePointer[cudnnFilterStruct, _],
@@ -594,7 +594,7 @@ comptime cudnnFusedOpsConstParamPack_t = UnsafePointer[
 ]
 
 
-fn cudnnGetConvolutionForwardAlgorithm_v7(
+def cudnnGetConvolutionForwardAlgorithm_v7(
     handle: UnsafePointer[cudnnContext, _],
     src_desc: UnsafePointer[cudnnTensorStruct, _],
     filter_desc: UnsafePointer[cudnnFilterStruct, _],
@@ -641,17 +641,17 @@ struct cudnnFusedOps_t(
     comptime CUDNN_FUSED_SCALE_BIAS_ADD_ACTIVATION_GEN_BITMASK = Self(5)
     comptime CUDNN_FUSED_DACTIVATION_FORK_DBATCHNORM = Self(6)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_FUSED_SCALE_BIAS_ACTIVATION_CONV_BNSTATS:
             return writer.write(
                 "CUDNN_FUSED_SCALE_BIAS_ACTIVATION_CONV_BNSTATS"
@@ -683,14 +683,14 @@ struct cudnnFusedOps_t(
         abort("invalid cudnnFusedOps_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnFusedOps_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnGetConvolutionBackwardDataAlgorithmMaxCount(
+def cudnnGetConvolutionBackwardDataAlgorithmMaxCount(
     handle: UnsafePointer[cudnnContext, _], count: UnsafePointer[Int16, _]
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -699,7 +699,7 @@ fn cudnnGetConvolutionBackwardDataAlgorithmMaxCount(
     ]()(handle, count)
 
 
-fn cudnnDestroyConvolutionDescriptor(
+def cudnnDestroyConvolutionDescriptor(
     conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -717,17 +717,17 @@ struct cudnnFusedOpsPointerPlaceHolder_t(
     comptime CUDNN_PTR_ELEM_ALIGNED = Self(1)
     comptime CUDNN_PTR_16B_ALIGNED = Self(2)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_PTR_NULL:
             return writer.write_string("CUDNN_PTR_NULL")
         if self is Self.CUDNN_PTR_ELEM_ALIGNED:
@@ -737,10 +737,10 @@ struct cudnnFusedOpsPointerPlaceHolder_t(
         abort("invalid cudnnFusedOpsPointerPlaceHolder_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnFusedOpsPointerPlaceHolder_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -749,7 +749,7 @@ comptime cudnnFusedOpsPlan_t = UnsafePointer[cudnnFusedOpsPlanStruct, _]
 comptime cudnnConvolutionDescriptor_t = UnsafePointer[cudnnConvolutionStruct, _]
 
 
-fn cudnnConvolutionForward(
+def cudnnConvolutionForward(
     handle: UnsafePointer[cudnnContext, _],
     alpha: OpaquePointer,
     x_desc: UnsafePointer[cudnnTensorStruct, _],
@@ -798,7 +798,7 @@ fn cudnnConvolutionForward(
     )
 
 
-fn cudnnGetConvolutionReorderType(
+def cudnnGetConvolutionReorderType(
     conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
     reorder_type: UnsafePointer[cudnnReorderType_t, _],
 ) raises -> cudnnStatus_t:
@@ -845,17 +845,17 @@ struct cudnnFusedOpsVariantParamLabel_t(
     comptime CUDNN_SCALAR_DOUBLE_BN_EXP_AVG_FACTOR = Self(26)
     comptime CUDNN_SCALAR_DOUBLE_BN_EPSILON = Self(27)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_PTR_XDATA:
             return writer.write_string("CUDNN_PTR_XDATA")
         if self is Self.CUDNN_PTR_BN_EQSCALE:
@@ -919,14 +919,14 @@ struct cudnnFusedOpsVariantParamLabel_t(
         abort("invalid cudnnFusedOpsVariantParamLabel_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnFusedOpsVariantParamLabel_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnGetConvolutionBackwardDataAlgorithm_v7(
+def cudnnGetConvolutionBackwardDataAlgorithm_v7(
     handle: UnsafePointer[cudnnContext, _],
     filter_desc: UnsafePointer[cudnnFilterStruct, _],
     diff_desc: UnsafePointer[cudnnTensorStruct, _],
@@ -960,7 +960,7 @@ fn cudnnGetConvolutionBackwardDataAlgorithm_v7(
     )
 
 
-fn cudnnGetConvolutionGroupCount(
+def cudnnGetConvolutionGroupCount(
     conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
     group_count: UnsafePointer[Int16, _],
 ) raises -> cudnnStatus_t:
@@ -970,7 +970,7 @@ fn cudnnGetConvolutionGroupCount(
     ]()(conv_desc, group_count)
 
 
-fn cudnnGetConvolutionNdDescriptor(
+def cudnnGetConvolutionNdDescriptor(
     conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
     array_length_requested: Int16,
     array_length: UnsafePointer[Int16, _],
@@ -1004,7 +1004,7 @@ fn cudnnGetConvolutionNdDescriptor(
     )
 
 
-fn cudnnGetConvolutionBackwardDataWorkspaceSize(
+def cudnnGetConvolutionBackwardDataWorkspaceSize(
     handle: UnsafePointer[cudnnContext, _],
     w_desc: UnsafePointer[cudnnFilterStruct, _],
     dy_desc: UnsafePointer[cudnnTensorStruct, _],
@@ -1027,7 +1027,7 @@ fn cudnnGetConvolutionBackwardDataWorkspaceSize(
     ]()(handle, w_desc, dy_desc, conv_desc, dx_desc, algo, size_in_bytes)
 
 
-fn cudnnReorderFilterAndBias(
+def cudnnReorderFilterAndBias(
     handle: UnsafePointer[cudnnContext, _],
     filter_desc: UnsafePointer[cudnnFilterStruct, _],
     reorder_type: cudnnReorderType_t,
@@ -1061,7 +1061,7 @@ fn cudnnReorderFilterAndBias(
     )
 
 
-fn cudnnFindConvolutionBackwardDataAlgorithm(
+def cudnnFindConvolutionBackwardDataAlgorithm(
     handle: UnsafePointer[cudnnContext, _],
     w_desc: UnsafePointer[cudnnFilterStruct, _],
     dy_desc: UnsafePointer[cudnnTensorStruct, _],
@@ -1095,7 +1095,7 @@ fn cudnnFindConvolutionBackwardDataAlgorithm(
     )
 
 
-fn cudnnConvolutionBackwardData(
+def cudnnConvolutionBackwardData(
     handle: UnsafePointer[cudnnContext, _],
     alpha: OpaquePointer,
     w_desc: UnsafePointer[cudnnFilterStruct, _],
@@ -1144,7 +1144,7 @@ fn cudnnConvolutionBackwardData(
     )
 
 
-fn cudnnSetConvolutionNdDescriptor(
+def cudnnSetConvolutionNdDescriptor(
     conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
     array_length: Int16,
     pad_a: OpaquePointer,
@@ -1175,13 +1175,13 @@ fn cudnnSetConvolutionNdDescriptor(
     )
 
 
-fn cudnnCnnInferVersionCheck() raises -> cudnnStatus_t:
+def cudnnCnnInferVersionCheck() raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCnnInferVersionCheck", fn() -> cudnnStatus_t
     ]()()
 
 
-fn cudnnSetConvolutionMathType(
+def cudnnSetConvolutionMathType(
     conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
     math_type: cudnnMathType_t,
 ) raises -> cudnnStatus_t:
@@ -1191,7 +1191,7 @@ fn cudnnSetConvolutionMathType(
     ]()(conv_desc, math_type)
 
 
-fn cudnnFindConvolutionBackwardDataAlgorithmEx(
+def cudnnFindConvolutionBackwardDataAlgorithmEx(
     handle: UnsafePointer[cudnnContext, _],
     w_desc: UnsafePointer[cudnnFilterStruct, _],
     w: OpaquePointer,
@@ -1240,7 +1240,7 @@ fn cudnnFindConvolutionBackwardDataAlgorithmEx(
     )
 
 
-fn cudnnFindConvolutionForwardAlgorithmEx(
+def cudnnFindConvolutionForwardAlgorithmEx(
     handle: UnsafePointer[cudnnContext, _],
     x_desc: UnsafePointer[cudnnTensorStruct, _],
     x: OpaquePointer,
@@ -1289,7 +1289,7 @@ fn cudnnFindConvolutionForwardAlgorithmEx(
     )
 
 
-fn cudnnGetConvolutionNdForwardOutputDim(
+def cudnnGetConvolutionNdForwardOutputDim(
     conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
     input_tensor_desc: UnsafePointer[cudnnTensorStruct, _],
     filter_desc: UnsafePointer[cudnnFilterStruct, _],
@@ -1308,7 +1308,7 @@ fn cudnnGetConvolutionNdForwardOutputDim(
     ]()(conv_desc, input_tensor_desc, filter_desc, nb_dims, tensor_output_dim_a)
 
 
-fn cudnnGetConvolutionForwardAlgorithmMaxCount(
+def cudnnGetConvolutionForwardAlgorithmMaxCount(
     handle: UnsafePointer[cudnnContext, _], count: UnsafePointer[Int16, _]
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -1325,17 +1325,17 @@ struct cudnnConvolutionMode_t(
     comptime CUDNN_CONVOLUTION = Self(0)
     comptime CUDNN_CROSS_CORRELATION = Self(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_CONVOLUTION:
             return writer.write_string("CUDNN_CONVOLUTION")
         if self is Self.CUDNN_CROSS_CORRELATION:
@@ -1343,14 +1343,14 @@ struct cudnnConvolutionMode_t(
         abort("invalid cudnnConvolutionMode_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnConvolutionMode_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnGetFoldedConvBackwardDataDescriptors(
+def cudnnGetFoldedConvBackwardDataDescriptors(
     handle: UnsafePointer[cudnnContext, _],
     filter_desc: UnsafePointer[cudnnFilterStruct, _],
     diff_desc: UnsafePointer[cudnnTensorStruct, _],

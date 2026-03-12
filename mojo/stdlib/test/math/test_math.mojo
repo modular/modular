@@ -62,7 +62,7 @@ from std.testing import (
 from std.utils.numerics import inf, isinf, isnan, nan, neg_inf
 
 
-fn test_sin() raises:
+def test_sin() raises:
     assert_almost_equal(sin(Float32(1.0)), 0.841470956802)
 
     comptime s_45 = sin(pi / 4)
@@ -81,7 +81,7 @@ fn test_sin() raises:
     assert_almost_equal(s_60, sin(pi / 3))
 
 
-fn test_cos() raises:
+def test_cos() raises:
     assert_almost_equal(cos(Float32(1.0)), 0.540302276611)
 
     assert_equal(cos(BFloat16(2.0)), -0.416015625)
@@ -102,14 +102,14 @@ fn test_cos() raises:
     assert_almost_equal(c_60, cos(pi / 3))
 
 
-fn test_factorial() raises:
+def test_factorial() raises:
     assert_equal(factorial(0), 1)
     assert_equal(factorial(1), 1)
     assert_equal(factorial(15), 1307674368000)
     assert_equal(factorial(20), 2432902008176640000)
 
 
-fn test_comb() raises:
+def test_comb() raises:
     assert_equal(comb(0, 0), 1)
     assert_equal(comb(5, 0), 1)
     assert_equal(comb(5, 5), 1)
@@ -121,7 +121,7 @@ fn test_comb() raises:
     assert_equal(comb(10, 4), comb(10, 6))
 
 
-fn test_perm() raises:
+def test_perm() raises:
     assert_equal(perm(5, 0), 1)
     assert_equal(perm(5, 1), 5)
     assert_equal(perm(5, 2), 20)
@@ -156,7 +156,7 @@ def test_copysign() raises:
     # TODO: Add some test cases for SIMD vector with width > 1
 
 
-fn _test_isclose_numerics[*, symm: Bool]() raises:
+def _test_isclose_numerics[*, symm: Bool]() raises:
     comptime dtype = DType.float64
     comptime T = SIMD[dtype, 2]
 
@@ -167,7 +167,7 @@ fn _test_isclose_numerics[*, symm: Bool]() raises:
     comptime nan_ = nan[dtype]()
     comptime v = T(0.1, 0.2)
 
-    fn edge_val[symm: Bool](a: T, atol: T, rtol: T) -> T:
+    def edge_val[symm: Bool](a: T, atol: T, rtol: T) -> T:
         """Creates a value at the tolerance boundary that should be considered close to `a`.
         """
         assert all(a.ge(0))

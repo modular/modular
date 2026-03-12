@@ -27,7 +27,7 @@ trait Strategy(ImplicitlyDestructible, Movable):
     comptime Value: Copyable
     """The type the strategy produces."""
 
-    fn value(mut self, mut rng: Rng) raises -> Self.Value:
+    def value(mut self, mut rng: Rng) raises -> Self.Value:
         """Produces a random value using this strategy.
 
         Args:

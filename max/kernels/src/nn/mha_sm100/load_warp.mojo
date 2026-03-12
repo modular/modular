@@ -42,7 +42,7 @@ from std.utils.static_tuple import StaticTuple
 
 
 @always_inline
-fn fa4_load[
+def fa4_load[
     KVLUTType: MHAOperand,
     MaskType: MHAMask,
     config: FA4Config,

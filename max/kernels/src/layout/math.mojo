@@ -24,7 +24,7 @@ from std.utils.index import IndexList
 
 
 @always_inline
-fn outer_product_acc(
+def outer_product_acc(
     res: LayoutTensor[mut=True, ...],
     lhs: LayoutTensor,
     rhs: LayoutTensor,
@@ -72,7 +72,7 @@ fn outer_product_acc(
 
 
 @always_inline
-fn _reduce[
+def _reduce[
     axis: Int,
     init_func: fn[dtype: DType, width: Int]() -> SIMD[dtype, width],
     func: fn[dtype: DType, width: Int](
@@ -130,7 +130,7 @@ fn _reduce[
 
 
 @always_inline
-fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
+def sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     """Computes sum reduction along specified axis.
 
     Reduces the input tensor by summing elements along the specified axis
@@ -172,10 +172,10 @@ fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     ```
     """
 
-    fn sum_init[dtype: DType, width: Int]() -> SIMD[dtype, width]:
+    def sum_init[dtype: DType, width: Int]() -> SIMD[dtype, width]:
         return 0
 
-    fn sum_func[
+    def sum_func[
         dtype: DType, width: Int
     ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return a + b
@@ -184,7 +184,7 @@ fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
 
 
 @always_inline
-fn max[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
+def max[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     """Computes maximum reduction along specified axis.
 
     Reduces the input tensor by taking maximum elements along the specified
@@ -204,10 +204,10 @@ fn max[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
         Currently only supports rank-2 inputs.
     """
 
-    fn max_init[dtype: DType, width: Int]() -> SIMD[dtype, width]:
+    def max_init[dtype: DType, width: Int]() -> SIMD[dtype, width]:
         return SIMD[dtype, width].MIN
 
-    fn max_func[
+    def max_func[
         dtype: DType, width: Int
     ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return b_max(a, b)
@@ -215,7 +215,7 @@ fn max[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     _reduce[axis, max_init, max_func](inp, outp)
 
 
-fn _reduce_res_row_major_shape(axis: Int, in_layout: Layout) -> Layout:
+def _reduce_res_row_major_shape(axis: Int, in_layout: Layout) -> Layout:
     var res_shape = IntTuple()
     for dim in range(0, axis):
         res_shape.append(Int(in_layout.shape[dim]))
@@ -225,7 +225,7 @@ fn _reduce_res_row_major_shape(axis: Int, in_layout: Layout) -> Layout:
 
 
 @always_inline
-fn max[
+def max[
     axis: Int
 ](
     inp: LayoutTensor,
@@ -266,7 +266,7 @@ fn max[
 
 
 @always_inline
-fn max[
+def max[
     dtype: DType, layout: Layout
 ](
     x: LayoutTensor[dtype, layout, ...], y: LayoutTensor[dtype, layout, ...]
@@ -303,7 +303,7 @@ fn max[
 
 
 @always_inline
-fn sum[
+def sum[
     axis: Int,
 ](
     inp: LayoutTensor,
@@ -343,7 +343,7 @@ fn sum[
     return res_tensor
 
 
-fn mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
+def mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
     """Computes the mean value of the elements in a buffer.
 
     Args:
@@ -361,7 +361,7 @@ fn mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
 
     @parameter
     @always_inline
-    fn input_fn_1d[
+    def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
         var src_idx = src.runtime_layout(
@@ -372,7 +372,7 @@ fn mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
     return reduction.mean[src.dtype, input_fn_1d](src.size())
 
 
-fn mean[
+def mean[
     reduce_axis: Int
 ](src: LayoutTensor[...], dst: LayoutTensor[mut=True, src.dtype, ...]) raises:
     """Computes the mean across reduce_axis of a LayoutTensor.
@@ -407,7 +407,7 @@ fn mean[
     comptime if dst.dtype.is_integral():
 
         @always_inline
-        fn normalize_integral[
+        def normalize_integral[
             simd_width: Int
         ](idx: Int) unified {var dst_1d, var n}:
             var idx_1d = dst_1d.runtime_layout(
@@ -422,7 +422,7 @@ fn mean[
         var n_recip = Scalar[dst.dtype](1) / Scalar[src.dtype](n)
 
         @always_inline
-        fn normalize_floating[
+        def normalize_floating[
             simd_width: Int
         ](idx: Int) unified {var dst_1d, var n, var n_recip}:
             var idx_1d = dst_1d.runtime_layout(
@@ -435,7 +435,7 @@ fn mean[
         vectorize[simd_width](dst_1d.size(), normalize_floating)
 
 
-fn variance(
+def variance(
     src: LayoutTensor[...], correction: Int = 1
 ) raises -> Scalar[src.dtype]:
     """Computes the variance value of the elements in a buffer.
@@ -457,7 +457,7 @@ fn variance(
 
     @always_inline
     @parameter
-    fn input_fn_1d[
+    def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
         var src_idx = src.runtime_layout(
@@ -468,7 +468,7 @@ fn variance(
     return reduction.variance[src.dtype, input_fn_1d](src.size(), correction)
 
 
-fn variance(
+def variance(
     src: TileTensor[...], correction: Int = 1
 ) raises -> Scalar[src.dtype]:
     """Computes the variance value of the elements in a buffer.
@@ -490,7 +490,7 @@ fn variance(
 
     @always_inline
     @parameter
-    fn input_fn_1d[
+    def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
         var src_idx = src.layout(Idx(idx))
@@ -501,7 +501,7 @@ fn variance(
     )
 
 
-fn mean(src: TileTensor[...]) raises -> Scalar[src.dtype]:
+def mean(src: TileTensor[...]) raises -> Scalar[src.dtype]:
     """Computes the mean value of the elements in a buffer.
 
     Args:
@@ -519,7 +519,7 @@ fn mean(src: TileTensor[...]) raises -> Scalar[src.dtype]:
 
     @parameter
     @always_inline
-    fn input_fn_1d[
+    def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
         var src_idx = src.layout(Idx(idx))

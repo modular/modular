@@ -54,7 +54,7 @@ from max.pipelines.lib.config.config_enums import (
     is_float4_encoding,
     supported_encoding_dtype,
 )
-from max.pipelines.lib.float8 import parse_float8_config
+from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
@@ -203,9 +203,9 @@ class KimiK2_5Model(
 
         dtype = self.dtype
         if dtype in (DType.float8_e4m3fn, DType.uint8, DType.float4_e2m1fn):
-            float8_config = parse_float8_config(config, state_dict, dtype)
+            quant_config = parse_quant_config(config, state_dict, dtype)
         else:
-            float8_config = None
+            quant_config = None
 
         # Check if EP should be configured
         if self.pipeline_config.runtime.ep_size == 1:
@@ -226,7 +226,7 @@ class KimiK2_5Model(
                 max_tokens_per_rank=self.pipeline_config.runtime.max_batch_input_tokens,
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
-                dispatch_fp8_config=None,
+                dispatch_quant_config=None,
             )
 
             if config.n_shared_experts == 1:
@@ -234,8 +234,8 @@ class KimiK2_5Model(
                 # the same shape as routed experts.
                 ep_kwargs["fused_shared_expert"] = True
 
-            if float8_config is not None:
-                ep_kwargs["dispatch_fp8_config"] = float8_config
+            if quant_config is not None:
+                ep_kwargs["dispatch_quant_config"] = quant_config
 
             ep_config = EPConfig(**ep_kwargs)
 
@@ -272,7 +272,7 @@ class KimiK2_5Model(
         model_config.norm_dtype = norm_dtype
         model_config.correction_bias_dtype = correction_bias_dtype
         model_config.max_batch_context_length = max_batch_total_tokens
-        model_config.float8_config = float8_config
+        model_config.quant_config = quant_config
         model_config.ep_config = ep_config
         model_config.graph_mode = graph_mode
         model_config.data_parallel_degree = data_parallel_degree

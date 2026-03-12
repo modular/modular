@@ -43,14 +43,14 @@ from std.testing import assert_almost_equal, assert_equal
 from std.utils import IndexList
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark":
             return True
     return False
 
 
-fn is_pressure_test() -> Bool:
+def is_pressure_test() -> Bool:
     for arg in argv():
         if arg == "--pressure-test":
             return True
@@ -58,7 +58,7 @@ fn is_pressure_test() -> Bool:
 
 
 @always_inline
-fn welford_update(
+def welford_update(
     mut mean: Float64, mut m2: Float64, count: Int, new_value: Float64
 ):
     var delta: Float64
@@ -69,7 +69,7 @@ fn welford_update(
     m2 += delta * delta2
 
 
-fn legalize_topk_ids[
+def legalize_topk_ids[
     n_experts: Int, top_k: Int
 ](topk_ids: UnsafePointer[mut=True, Int32, _], n_tokens: Int):
     for tok_id in range(n_tokens):
@@ -77,7 +77,7 @@ fn legalize_topk_ids[
 
         # The top-k ids for a token should be unique. If not, we will assign a
         # random id to the duplicate id.
-        fn is_duplicate() -> Int:
+        def is_duplicate() -> Int:
             for i in range(top_k):
                 for j in range(i + 1, top_k):
                     if topk_ids_for_token[i] == topk_ids_for_token[j]:
@@ -90,7 +90,7 @@ fn legalize_topk_ids[
             duplicate_idx = is_duplicate()
 
 
-fn test_dispatch[
+def test_dispatch[
     fp8_dtype: DType,
     scales_dtype: DType,
     hidden_size: Int,
@@ -285,7 +285,7 @@ fn test_dispatch[
 
     @always_inline
     @parameter
-    fn run_dispatch_async(ctx: DeviceContext) raises:
+    def run_dispatch_async(ctx: DeviceContext) raises:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
         var recv_buf_ptrs = InlineArray[UnsafePointer[UInt8, MutAnyOrigin], 1](
             fill={}
@@ -311,7 +311,7 @@ fn test_dispatch[
 
     @always_inline
     @parameter
-    fn run_dispatch_async_wait(ctx: DeviceContext) raises:
+    def run_dispatch_async_wait(ctx: DeviceContext) raises:
         ctx.enqueue_function(
             func_wait,
             format_handler,
@@ -331,13 +331,13 @@ fn test_dispatch[
 
     @always_inline
     @parameter
-    fn run_e2e(ctx: DeviceContext) raises:
+    def run_e2e(ctx: DeviceContext) raises:
         run_dispatch_async(ctx)
         run_dispatch_async_wait(ctx)
 
     @always_inline
     @parameter
-    fn clean_up(ctx: DeviceContext) raises:
+    def clean_up(ctx: DeviceContext) raises:
         ctx.enqueue_memset(atomic_counter, Int32(0))
 
     for i in range(num_iters):

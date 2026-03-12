@@ -22,7 +22,7 @@ from std.testing import assert_true
 from std.utils import IndexList
 
 
-fn _run_test_quant[group_size: Int, tolerance: Float32]() -> Bool:
+def _run_test_quant[group_size: Int, tolerance: Float32]() -> Bool:
     var uniform = SIMD[DType.float32, group_size]()
     for i in range(group_size):
         uniform[i] = i
@@ -35,7 +35,7 @@ fn _run_test_quant[group_size: Int, tolerance: Float32]() -> Bool:
     var big_range = uniform * 1000
     var unitary = SIMD[DType.float32, group_size](1.0)
 
-    fn run_fake_quant(input_vec: SIMD[DType.float32, group_size]) -> Bool:
+    def run_fake_quant(input_vec: SIMD[DType.float32, group_size]) -> Bool:
         var packed_result = Q4sym[group_size, DType.float32](input_vec)
         var decoded_result = packed_result.decode_fully()
         print("input_vec        :", input_vec)
@@ -66,7 +66,7 @@ fn _run_test_quant[group_size: Int, tolerance: Float32]() -> Bool:
     return allPass
 
 
-fn test_fake_quant_error[l2_tolerance: Float32]() raises:
+def test_fake_quant_error[l2_tolerance: Float32]() raises:
     # Tests round-trippability of encoding/decoding groups of numbers
     print("------------test_fake_quant_error------------")
     print("********** GROUP SIZE 08 **********")
@@ -89,7 +89,7 @@ fn test_fake_quant_error[l2_tolerance: Float32]() raises:
     assert_true(g32_result)
 
 
-fn test_alignment_and_size():
+def test_alignment_and_size():
     # Tests the total size and alignment of structs is as expected
     print("-------test_alignment_and_size-------")
     print("StructType, size_of, Alignment")
@@ -132,7 +132,7 @@ fn test_alignment_and_size():
     print()
 
 
-fn _read_write_to_tensors[
+def _read_write_to_tensors[
     group_size: Int,
     rtol: Float32,
     atol: Float32,
@@ -215,7 +215,7 @@ fn _read_write_to_tensors[
     return allClose
 
 
-fn test_read_write_to_tensors[rtol: FloatLiteral, atol: FloatLiteral]() raises:
+def test_read_write_to_tensors[rtol: FloatLiteral, atol: FloatLiteral]() raises:
     print("------------test_read_write_to_tensors------------")
 
     print("********** GROUP SIZE 08 **********")

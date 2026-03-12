@@ -34,7 +34,7 @@ from std.testing import assert_true
 from std.collections import Set
 
 
-fn test_mla_index_fp8_paged_variable_lengths[
+def test_mla_index_fp8_paged_variable_lengths[
     num_heads: Int,
     depth: Int,
     page_size: Int,

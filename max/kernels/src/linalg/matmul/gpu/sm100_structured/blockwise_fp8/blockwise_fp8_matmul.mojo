@@ -44,7 +44,7 @@ from ...sm100.warp_specialized_blockwise_fp8 import (
 # =============================================================================
 
 
-fn blockwise_fp8_matmul[
+def blockwise_fp8_matmul[
     transpose_b: Bool,
     a_scales_type: DType,
     b_scales_type: DType,

@@ -42,7 +42,7 @@ comptime PAD_SLOT_ID: Int32 = -1
 
 
 @always_inline
-fn silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
+def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     """Reference SiLU implementation: x * sigmoid(x) = x / (1 + exp(-x))."""
     var x_f32 = x.cast[DType.float32]()
     var neg_x = -x_f32
@@ -52,7 +52,7 @@ fn silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     return (x_f32 * sigmoid_x).cast[dtype]()
 
 
-fn run_varlen_causal_conv1d_fwd_gpu[
+def run_varlen_causal_conv1d_fwd_gpu[
     dtype: DType,
     activation: StaticString,
 ](
@@ -631,7 +631,7 @@ fn run_varlen_causal_conv1d_fwd_gpu[
     output_cpu_heap.free()
 
 
-fn run_varlen_causal_conv1d_update_gpu[
+def run_varlen_causal_conv1d_update_gpu[
     dtype: DType,
     activation: StaticString,
 ](
@@ -1198,7 +1198,7 @@ fn run_varlen_causal_conv1d_update_gpu[
 # =============================================================================
 
 
-fn test_varlen_causal_conv1d_fwd_gpu_equal_lengths() raises:
+def test_varlen_causal_conv1d_fwd_gpu_equal_lengths() raises:
     """Test varlen causal conv1d forward GPU with equal-length sequences."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1208,7 +1208,7 @@ fn test_varlen_causal_conv1d_fwd_gpu_equal_lengths() raises:
     )
 
 
-fn test_varlen_causal_conv1d_fwd_gpu_variable_lengths() raises:
+def test_varlen_causal_conv1d_fwd_gpu_variable_lengths() raises:
     """Test varlen causal conv1d forward GPU with variable-length sequences."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1218,7 +1218,7 @@ fn test_varlen_causal_conv1d_fwd_gpu_variable_lengths() raises:
     )
 
 
-fn test_varlen_causal_conv1d_fwd_gpu_with_silu() raises:
+def test_varlen_causal_conv1d_fwd_gpu_with_silu() raises:
     """Test varlen causal conv1d forward GPU with SiLU activation."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1228,7 +1228,7 @@ fn test_varlen_causal_conv1d_fwd_gpu_with_silu() raises:
     )
 
 
-fn test_varlen_causal_conv1d_fwd_gpu_various_widths() raises:
+def test_varlen_causal_conv1d_fwd_gpu_various_widths() raises:
     """Test varlen causal conv1d forward GPU with various kernel widths."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1246,7 +1246,7 @@ fn test_varlen_causal_conv1d_fwd_gpu_various_widths() raises:
 # =============================================================================
 
 
-fn test_varlen_causal_conv1d_update_gpu_basic() raises:
+def test_varlen_causal_conv1d_update_gpu_basic() raises:
     """Test basic varlen causal conv1d update on GPU."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1256,7 +1256,7 @@ fn test_varlen_causal_conv1d_update_gpu_basic() raises:
     )
 
 
-fn test_varlen_causal_conv1d_update_gpu_with_silu() raises:
+def test_varlen_causal_conv1d_update_gpu_with_silu() raises:
     """Test varlen causal conv1d update GPU with SiLU activation."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1266,7 +1266,7 @@ fn test_varlen_causal_conv1d_update_gpu_with_silu() raises:
     )
 
 
-fn test_varlen_causal_conv1d_update_gpu_seqlen_gt_1() raises:
+def test_varlen_causal_conv1d_update_gpu_seqlen_gt_1() raises:
     """Test varlen causal conv1d update GPU with seqlen > 1."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1276,7 +1276,7 @@ fn test_varlen_causal_conv1d_update_gpu_seqlen_gt_1() raises:
     )
 
 
-fn test_varlen_causal_conv1d_update_gpu_various_widths() raises:
+def test_varlen_causal_conv1d_update_gpu_various_widths() raises:
     """Test varlen causal conv1d update GPU with various kernel widths."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():

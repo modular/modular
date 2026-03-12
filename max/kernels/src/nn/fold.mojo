@@ -20,7 +20,7 @@ from std.runtime.asyncrt import DeviceContextPtr
 from std.utils.index import IndexList
 
 
-fn fold[
+def fold[
     dtype: DType,
     stride: Tuple[Int, Int],
     dilation: Tuple[Int, Int],
@@ -110,7 +110,7 @@ fn fold[
         height_col,
         width_col,
     )
-    fn fold_fn[
+    def fold_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank_]):
         comptime assert rank_ == 4, "fold_fn: rank must be 4"
@@ -167,7 +167,7 @@ fn fold[
     ](dispatch_shape, ctx)
 
 
-fn fold_shape[
+def fold_shape[
     dtype: DType
 ](
     input: TileTensor[dtype, ...],

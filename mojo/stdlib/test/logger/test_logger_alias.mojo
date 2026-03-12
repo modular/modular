@@ -27,5 +27,5 @@ def test_log_alias() raises:
     log.info("hello")
 
 
-fn main() raises:
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

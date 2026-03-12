@@ -58,7 +58,7 @@ def matrix_band_part[
     var input_shape: IndexList[rank] = to_index_list[rank](input.layout.shape)
 
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int,
         _rank: Int,
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:

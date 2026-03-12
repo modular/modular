@@ -52,7 +52,7 @@ For further visualization and analysis involving this sequence, see:
 # ===----------------------------------------------------------------------=== #
 
 
-fn test_string_slice_layout() raises:
+def test_string_slice_layout() raises:
     # Test that the layout of `StringSlice` is the same as `llvm::StringRef`.
     # This is necessary for `StringSlice` to be validly bitcasted to and from
     # `llvm::StringRef`
@@ -84,7 +84,7 @@ def test_constructors() raises:
     some_func_mut(StringSlice(a))
 
 
-fn test_string_literal_byte_span() raises:
+def test_string_literal_byte_span() raises:
     comptime slc = "Hello".as_bytes()
 
     assert_equal(len(slc), 5)
@@ -95,7 +95,7 @@ fn test_string_literal_byte_span() raises:
     assert_equal(slc[4], Byte(ord("o")))
 
 
-fn test_string_byte_span() raises:
+def test_string_byte_span() raises:
     var string = "Hello"
     var str_slice = string.as_bytes_mut()
 
@@ -234,7 +234,7 @@ fn test_string_byte_span() raises:
     assert_equal(unicode_str2[byte=2:4], "̈")
 
 
-fn test_heap_string_from_string_slice() raises:
+def test_heap_string_from_string_slice() raises:
     comptime static_str = StringSlice("Hello")
 
     comptime heap_string = String(static_str)
@@ -242,7 +242,7 @@ fn test_heap_string_from_string_slice() raises:
     assert_equal(heap_string, "Hello")
 
 
-fn test_string_substring() raises:
+def test_string_substring() raises:
     var string = "Hello"
     var str_slice = StringSlice(string)
 
@@ -293,7 +293,7 @@ fn test_string_substring() raises:
     assert_equal(Int(sub5.unsafe_ptr()) - Int(sub4.unsafe_ptr()), 2)
 
 
-fn test_slice_len() raises:
+def test_slice_len() raises:
     assert_equal(5, len(StringSlice("12345")))
     assert_equal(4, len(StringSlice("1234")))
     assert_equal(3, len(StringSlice("123")))
@@ -312,7 +312,7 @@ fn test_slice_len() raises:
     assert_equal(len(s1.codepoints()), 3)
 
 
-fn test_slice_count_codepoints() raises:
+def test_slice_count_codepoints() raises:
     var s0 = StringSlice("")
     assert_equal(s0.byte_length(), 0)
     assert_equal(s0.count_codepoints(), 0)
@@ -339,7 +339,7 @@ fn test_slice_count_codepoints() raises:
     # TODO: assert_equal(s4.grapheme_count(), 1)
 
 
-fn test_slice_eq() raises:
+def test_slice_eq() raises:
     var str1: String = "12345"
     var str2: String = "12345"
     var str3: StaticString = "12345"
@@ -364,7 +364,7 @@ fn test_slice_eq() raises:
     assert_true(StringSlice(str1).__ne__(str6))
 
 
-fn test_slice_bool() raises:
+def test_slice_bool() raises:
     var str1: String = "abc"
     assert_true(StringSlice(str1).__bool__())
     var str2: String = ""
@@ -1138,7 +1138,7 @@ def test_merge() raises:
     var a = ""
     var b = "hi"
 
-    fn cond(
+    def cond(
         pred: Bool, a: StringSlice, b: StringSlice
     ) -> StringSlice[origin_of(a.origin, b.origin)]:
         return a if pred else b

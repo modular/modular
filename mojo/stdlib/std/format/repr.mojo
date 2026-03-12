@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn repr[T: Writable](value: T) -> String:
+def repr[T: Writable](value: T) -> String:
     """Returns the string representation of the given value.
 
     Args:
@@ -29,7 +29,7 @@ fn repr[T: Writable](value: T) -> String:
     return string^
 
 
-fn repr(value: None) -> String:
+def repr(value: None) -> String:
     """Returns the string representation of `None`.
 
     Args:

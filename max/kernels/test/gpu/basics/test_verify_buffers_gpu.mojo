@@ -23,7 +23,7 @@ from std.testing import assert_equal, assert_true
 # Kernel under test — copied from bench_matmul.mojo (cannot import from a
 # mojo_binary target, so duplication is the standard pattern).
 # ---------------------------------------------------------------------------
-fn _verify_buffers_gpu[
+def _verify_buffers_gpu[
     c_type: DType, BLOCK_SIZE: Int
 ](
     output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
@@ -80,7 +80,7 @@ fn _verify_buffers_gpu[
 # ---------------------------------------------------------------------------
 # Helper kernel to fill a device buffer with a constant value.
 # ---------------------------------------------------------------------------
-fn _fill_buffer[
+def _fill_buffer[
     dtype: DType,
 ](
     ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -110,7 +110,7 @@ struct VerifyMetrics:
 # Host-side helper: launch the verification kernel, copy back partial
 # results, reduce them, and return the 5 final metrics.
 # ---------------------------------------------------------------------------
-fn run_verify_kernel[
+def run_verify_kernel[
     dtype: DType,
     NUM_BLOCKS: Int,
     BLOCK_SIZE: Int,
@@ -168,7 +168,7 @@ fn run_verify_kernel[
 # ---------------------------------------------------------------------------
 # Helper to fill a device buffer using the GPU fill kernel.
 # ---------------------------------------------------------------------------
-fn fill_on_device[
+def fill_on_device[
     dtype: DType,
 ](
     ctx: DeviceContext,

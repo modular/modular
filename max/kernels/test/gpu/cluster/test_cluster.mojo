@@ -38,7 +38,7 @@ from layout import TileTensor, row_major
 
 
 # Derived from https://docs.nvidia.com/cuda/cuda-c-programming-guide/#kernel-example-vector-scalar-multiplication
-fn cluster_launch_control(data: UnsafePointer[Float32, MutAnyOrigin], n: Int):
+def cluster_launch_control(data: UnsafePointer[Float32, MutAnyOrigin], n: Int):
     result = stack_allocation[
         1,
         UInt128,
@@ -101,7 +101,7 @@ fn cluster_launch_control(data: UnsafePointer[Float32, MutAnyOrigin], n: Int):
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
-fn pipeline_test_kernel[
+def pipeline_test_kernel[
     num_stages: Int, cluster_shape: StaticTuple[Int32, 3]
 ]():
     var clc_response = stack_allocation[
@@ -193,7 +193,7 @@ fn pipeline_test_kernel[
     cluster_sync()
 
 
-fn test_cluster_launch_control(ctx: DeviceContext) raises:
+def test_cluster_launch_control(ctx: DeviceContext) raises:
     comptime n = 4000
 
     data = ctx.enqueue_create_buffer[DType.float32](n)
@@ -216,7 +216,7 @@ fn test_cluster_launch_control(ctx: DeviceContext) raises:
         assert_almost_equal(data_host[i], Float32(i % 1024))
 
 
-fn test_cluster_pipeline(ctx: DeviceContext) raises:
+def test_cluster_pipeline(ctx: DeviceContext) raises:
     comptime kernel = pipeline_test_kernel[1, StaticTuple[Int32, 3](2, 2, 1)]
     ctx.enqueue_function[kernel, kernel](
         # Use more blocks than SMs to ensure cancel happens.

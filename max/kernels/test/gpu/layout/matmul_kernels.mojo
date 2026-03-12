@@ -39,15 +39,15 @@ comptime NWARMUP = 1
 comptime NRUN = 1
 
 
-fn time_kernel[
+def time_kernel[
     func: fn(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, size: Int, kernel_name: String) raises:
     @parameter
     @always_inline
-    fn bench_func(mut m: Bencher):
+    def bench_func(mut m: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             func(ctx)
 
         m.iter_custom[kernel_launch](ctx)
@@ -58,7 +58,7 @@ fn time_kernel[
     )
 
 
-fn run_cublas[
+def run_cublas[
     dtype: DType, enable_tc: Bool = False
 ](
     mut m: Bench,
@@ -77,10 +77,10 @@ fn run_cublas[
     with vendor_blas.Handle() as handle:
 
         @parameter
-        fn bench_func(mut m: Bencher):
+        def bench_func(mut m: Bencher):
             @parameter
             @always_inline
-            fn kernel_launch(ctx: DeviceContext) raises:
+            def kernel_launch(ctx: DeviceContext) raises:
                 vendor_blas.matmul[use_tf32=enable_tc](
                     ctx,
                     handle,
@@ -94,7 +94,7 @@ fn run_cublas[
             m.iter_custom[kernel_launch](ctx)
 
         @parameter
-        fn get_bench_id() -> String:
+        def get_bench_id() -> String:
             comptime if enable_tc:
                 return "cublas_tensorcore"
             else:
@@ -117,7 +117,7 @@ fn run_cublas[
         )
 
 
-fn gemm_kernel_1[
+def gemm_kernel_1[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -180,7 +180,7 @@ fn gemm_kernel_1[
     dst[row, col] += dst_reg
 
 
-fn run_gemm_kernel_1[
+def run_gemm_kernel_1[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -202,7 +202,7 @@ fn run_gemm_kernel_1[
 
     @always_inline
     @parameter
-    fn run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function_experimental[func](
             a,
             b,
@@ -232,7 +232,7 @@ fn run_gemm_kernel_1[
     )
 
 
-fn gemm_kernel_2[
+def gemm_kernel_2[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -295,7 +295,7 @@ fn gemm_kernel_2[
     dst[row, col] += dst_reg
 
 
-fn run_gemm_kernel_2[
+def run_gemm_kernel_2[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -317,7 +317,7 @@ fn run_gemm_kernel_2[
 
     @always_inline
     @parameter
-    fn run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function_experimental[kernel](
             a,
             b,
@@ -347,7 +347,7 @@ fn run_gemm_kernel_2[
     )
 
 
-fn gemm_kernel_3[
+def gemm_kernel_3[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -444,7 +444,7 @@ fn gemm_kernel_3[
     dst[row, col] += dst_reg
 
 
-fn run_gemm_kernel_3[
+def run_gemm_kernel_3[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -469,7 +469,7 @@ fn run_gemm_kernel_3[
 
     @always_inline
     @parameter
-    fn run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function_experimental[kernel](
             a,
             b,
@@ -499,7 +499,7 @@ fn run_gemm_kernel_3[
     )
 
 
-fn gemm_kernel_4[
+def gemm_kernel_4[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -613,7 +613,7 @@ fn gemm_kernel_4[
     dst.copy_from(dst_reg)
 
 
-fn run_gemm_kernel_4[
+def run_gemm_kernel_4[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -640,7 +640,7 @@ fn run_gemm_kernel_4[
 
     @always_inline
     @parameter
-    fn run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function_experimental[kernel](
             a,
             b,
@@ -670,7 +670,7 @@ fn run_gemm_kernel_4[
     )
 
 
-fn gemm_kernel_5[
+def gemm_kernel_5[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -779,7 +779,7 @@ fn gemm_kernel_5[
     dst.copy_from(dst_reg)
 
 
-fn run_gemm_kernel_5[
+def run_gemm_kernel_5[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -808,7 +808,7 @@ fn run_gemm_kernel_5[
 
     @always_inline
     @parameter
-    fn run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function_experimental[kernel](
             a,
             b,
@@ -837,7 +837,7 @@ fn run_gemm_kernel_5[
     )
 
 
-fn gemm_kernel_6[
+def gemm_kernel_6[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -972,7 +972,7 @@ fn gemm_kernel_6[
     dst_vec.copy_from(dst_reg_vec)
 
 
-fn run_gemm_kernel_6[
+def run_gemm_kernel_6[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -1000,7 +1000,7 @@ fn run_gemm_kernel_6[
 
     @always_inline
     @parameter
-    fn run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function_experimental[kernel](
             a,
             b,
@@ -1029,7 +1029,7 @@ fn run_gemm_kernel_6[
     )
 
 
-fn matmul_kernel_tc[
+def matmul_kernel_tc[
     dtype: DType,
     layout_a: Layout,
     layout_b: Layout,
@@ -1184,7 +1184,7 @@ fn matmul_kernel_tc[
             mma_op.store_d(C_mma_tile, c_reg_m_n)
 
 
-fn run_gemm_kernel_tc[
+def run_gemm_kernel_tc[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -1226,7 +1226,7 @@ fn run_gemm_kernel_tc[
 
     @always_inline
     @parameter
-    fn run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function_experimental[kernel](
             a,
             b,

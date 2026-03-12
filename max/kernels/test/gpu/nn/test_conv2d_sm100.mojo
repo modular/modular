@@ -56,7 +56,7 @@ from nn.conv_sm100.conv_config import (
 from linalg.utils import elementwise_compute_lambda_type
 
 
-fn test_conv2d_implicit_im2col[
+def test_conv2d_implicit_im2col[
     act_type: DType,
     filter_type: DType,
     out_type: DType,
@@ -252,7 +252,7 @@ fn test_conv2d_implicit_im2col[
     _ = im2col_device
 
 
-fn test_conv2d_1sm[
+def test_conv2d_1sm[
     act_type: DType,
     filter_type: DType,
     out_type: DType,
@@ -451,7 +451,7 @@ fn test_conv2d_1sm[
     _ = im2col_device
 
 
-fn test_conv2d_epilogue_lambda[
+def test_conv2d_epilogue_lambda[
     act_type: DType,
     filter_type: DType,
     out_type: DType,
@@ -591,7 +591,7 @@ fn test_conv2d_epilogue_lambda[
     @parameter
     @always_inline
     @__copy_capture(bias_tensor)
-    fn epilogue_add_bias[
+    def epilogue_add_bias[
         _dtype: DType,
         width: Int,
         *,
@@ -699,7 +699,7 @@ fn test_conv2d_epilogue_lambda[
     _ = im2col_device
 
 
-fn test_conv2d_bias_fusion[
+def test_conv2d_bias_fusion[
     dtype: DType,
     use_1sm: Bool,
 ](
@@ -812,7 +812,7 @@ fn test_conv2d_bias_fusion[
     @parameter
     @always_inline
     @__copy_capture(bias_tensor)
-    fn add_bias[
+    def add_bias[
         _dtype: DType,
         width: Int,
         *,
@@ -910,7 +910,7 @@ fn test_conv2d_bias_fusion[
     _ = im2col_dev^
 
 
-fn test_conv2d_residual_api[
+def test_conv2d_residual_api[
     dtype: DType,
 ](
     ctx: DeviceContext,
@@ -1148,7 +1148,7 @@ fn test_conv2d_residual_api[
     _ = im2col_device
 
 
-fn test_conv2d_problem_shape():
+def test_conv2d_problem_shape():
     """Test Conv2dProblemShape computations."""
     print("Testing Conv2dProblemShape...")
 
@@ -1237,7 +1237,7 @@ fn test_conv2d_problem_shape():
 # ============================================================
 
 
-fn test_conv_gpu_scale_epilogue[
+def test_conv_gpu_scale_epilogue[
     N: Int,
     H: Int,
     W: Int,
@@ -1291,7 +1291,7 @@ fn test_conv_gpu_scale_epilogue[
     @parameter
     @always_inline
     @__copy_capture(out_epilogue_tt)
-    fn scale_epilogue[
+    def scale_epilogue[
         _dtype: DType, _rank: Int, _width: Int
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
@@ -1375,7 +1375,7 @@ fn test_conv_gpu_scale_epilogue[
     _ = out_ref_dev^
 
 
-fn test_conv_gpu_additive_epilogue[
+def test_conv_gpu_additive_epilogue[
     N: Int,
     H: Int,
     W: Int,
@@ -1433,7 +1433,7 @@ fn test_conv_gpu_additive_epilogue[
     @parameter
     @always_inline
     @__copy_capture(out_epilogue_tt)
-    fn add_bias_epilogue[
+    def add_bias_epilogue[
         _dtype: DType, _rank: Int, _width: Int
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         var coord = Coord(
@@ -1521,7 +1521,7 @@ fn test_conv_gpu_additive_epilogue[
     _ = out_ref_dev^
 
 
-fn test_conv_gpu_residual[
+def test_conv_gpu_residual[
     N: Int,
     H: Int,
     W: Int,

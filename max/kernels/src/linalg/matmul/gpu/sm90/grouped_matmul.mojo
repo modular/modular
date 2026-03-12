@@ -54,7 +54,7 @@ from ....utils_gpu import MatmulConfig, block_swizzle
 
 
 @always_inline
-fn default_config_sm90[
+def default_config_sm90[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -72,7 +72,7 @@ fn default_config_sm90[
     )
 
 
-fn grouped_matmul_sm90[
+def grouped_matmul_sm90[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,

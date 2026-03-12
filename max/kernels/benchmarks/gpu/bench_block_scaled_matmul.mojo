@@ -72,14 +72,14 @@ from std.gpu.host.info import B200
 # float8_e8m0fnu: exponent-only format, value = 2^(stored_value - 127).
 # Random exponents 127 + (0,1,2,3) -> scale values of 1, 2, 4, 8.
 # Each thread processes 4 elements for better memory throughput.
-fn _init_block_scaled_scales_gpu[
+def _init_block_scaled_scales_gpu[
     dtype: DType
 ](x: UnsafePointer[Scalar[dtype], MutAnyOrigin], len: Int):
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
 
     @parameter
-    fn apply(values: SIMD[dtype, 4]):
+    def apply(values: SIMD[dtype, 4]):
         comptime for i in range(4):
             comptime if i == 3:
                 if tid >= UInt(len):
@@ -103,7 +103,7 @@ fn _init_block_scaled_scales_gpu[
         apply(values)
 
 
-fn _init_block_scaled_scales_launch[
+def _init_block_scaled_scales_launch[
     dtype: DType, block_dim: Int = 256
 ](out_device: DeviceBuffer[dtype], length: Int, context: DeviceContext,) raises:
     var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
@@ -118,7 +118,7 @@ fn _init_block_scaled_scales_launch[
     )
 
 
-fn _get_run_name[
+def _get_run_name[
     dtype: DType,
     shape_c: DimList,
     shape_a: DimList,
@@ -163,7 +163,7 @@ fn _get_run_name[
     )
 
 
-fn bench_matmul[
+def bench_matmul[
     dtype: DType,
     shape_c: DimList,
     shape_a: DimList,
@@ -188,7 +188,7 @@ fn bench_matmul[
     # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
     # update: using 512 to be 2x the infinity cache on MI300x
     @always_inline
-    fn get_size(shape: IndexList[2]) -> Int:
+    def get_size(shape: IndexList[2]) -> Int:
         return shape[0] * shape[1]
 
     comptime simd_size = 4
@@ -306,7 +306,7 @@ fn bench_matmul[
     # Helper to run vendor BLAS matmul - used by both benchmark and verification
     @parameter
     @__copy_capture(dynamic_a_scales_shape, dynamic_b_scales_shape)
-    fn run_vendor_blas(
+    def run_vendor_blas(
         ctx: DeviceContext,
         tensor_a: NDBuffer[rank=2, dtype, MutAnyOrigin, shape_a],
         tensor_b: NDBuffer[rank=2, dtype, MutAnyOrigin, shape_b],
@@ -347,10 +347,10 @@ fn bench_matmul[
         dynamic_b_scales_shape,
     )
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             var tensor_a = NDBuffer[rank=2, dtype, MutAnyOrigin, shape_a](
                 cb_a.offset_ptr(iteration), shape_a_dim
             )
@@ -371,7 +371,7 @@ fn bench_matmul[
             @parameter
             @always_inline
             @__copy_capture(tensor_c)
-            fn test_lambda_add_coords_prod[
+            def test_lambda_add_coords_prod[
                 _dtype: DType,
                 width: Int,
                 *,
@@ -464,7 +464,7 @@ fn bench_matmul[
             ctx.synchronize()
 
             # Sanity check: verify outputs match expected zero/non-zero state
-            fn is_all_zeros(
+            def is_all_zeros(
                 ptr: UnsafePointer[Scalar[DType.bfloat16], _], size: Int
             ) -> Bool:
                 for i in range(size):
@@ -531,7 +531,7 @@ fn bench_matmul[
     _ = buffer_b_scales^
 
 
-fn create_matmul_bench[
+def create_matmul_bench[
     dtype: DType,
     *,
     transpose_b: Bool,
@@ -579,7 +579,7 @@ fn create_matmul_bench[
     )
 
 
-fn get_dtype[micro_scaling_mode: StaticString]() -> DType:
+def get_dtype[micro_scaling_mode: StaticString]() -> DType:
     comptime assert (
         micro_scaling_mode == "mxfp8" or micro_scaling_mode == "nvfp4"
     ), "invalid micro_scaling_mode"

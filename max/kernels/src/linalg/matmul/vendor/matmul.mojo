@@ -26,7 +26,7 @@ from ...utils_gpu import MatmulConfig
 from .blas import matmul as vendor_matmul
 
 
-fn matmul[
+def matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -66,7 +66,7 @@ fn matmul[
 
         @parameter
         @__copy_capture(c)
-        fn epilogue_wrapper[
+        def epilogue_wrapper[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])

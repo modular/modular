@@ -44,7 +44,7 @@ from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 
-fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
+def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     a_type: DType,
     b_type: DType,
     c_type: DType,

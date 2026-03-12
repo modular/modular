@@ -35,7 +35,7 @@ from std.testing import assert_almost_equal
 from std.utils.numerics import get_accum_type
 
 
-fn test_ldmatrix_fp8[
+def test_ldmatrix_fp8[
     input_type: DType,
 ](
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
@@ -88,7 +88,7 @@ fn test_ldmatrix_fp8[
     )
 
 
-fn check_ldmatrix_fp8[
+def check_ldmatrix_fp8[
     input_type: DType,
 ](ctx: DeviceContext) raises:
     print("== test ldmatrix transposed fp8")

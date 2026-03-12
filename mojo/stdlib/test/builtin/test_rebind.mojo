@@ -22,7 +22,7 @@ from test_utils import MoveCopyCounter, DelCounter
 # ===----------------------------------------------------------------------=== #
 
 
-fn indirect_rebind_reg[X: Int](a: SIMD[DType.int32, X]) -> String:
+def indirect_rebind_reg[X: Int](a: SIMD[DType.int32, X]) -> String:
     return String(rebind[SIMD[DType.int32, 4]](a))
 
 
@@ -42,11 +42,11 @@ def test_rebind_register() raises:
 struct MyMemStruct[size: Int](Movable):
     var value: Int
 
-    fn sizes(self) -> Tuple[Int, Int]:
+    def sizes(self) -> Tuple[Int, Int]:
         return (Self.size, self.value)
 
 
-fn indirect_with_rebind[X: Int](a: MyMemStruct[X]) -> Tuple[Int, Int]:
+def indirect_with_rebind[X: Int](a: MyMemStruct[X]) -> Tuple[Int, Int]:
     return rebind[MyMemStruct[4]](a).sizes()
 
 
@@ -63,7 +63,7 @@ def test_rebind_memory() raises:
 # ===----------------------------------------------------------------------=== #
 
 
-fn indirect_with_rebind_var[x: Int](var a: MyMemStruct[x]) -> MyMemStruct[4]:
+def indirect_with_rebind_var[x: Int](var a: MyMemStruct[x]) -> MyMemStruct[4]:
     return rebind_var[MyMemStruct[4]](a^)
 
 

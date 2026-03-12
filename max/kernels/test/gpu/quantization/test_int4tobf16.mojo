@@ -26,7 +26,7 @@ from std.testing import assert_equal
 
 
 # 8xint4 -> 8xbfloat16 interleaved conversion
-fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
+def int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
     comptime MASK: Int32 = 0x000F000F
     comptime I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
 
@@ -60,7 +60,7 @@ fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
     return bitcast[DType.bfloat16, 8](v)
 
 
-fn call_int4tobf16[
+def call_int4tobf16[
     no_lop: Bool
 ](i4: Int32, out_ptr: UnsafePointer[BFloat16, MutAnyOrigin],):
     var v = int4tobf16[no_lop](i4)

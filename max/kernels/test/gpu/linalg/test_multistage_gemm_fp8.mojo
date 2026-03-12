@@ -24,7 +24,7 @@ from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils_gpu import MatmulKernels
 
 
-fn test_fp8_multistage_gemm[
+def test_fp8_multistage_gemm[
     dtype: DType,
     M: Int,
     N: Int,

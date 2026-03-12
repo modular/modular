@@ -48,14 +48,14 @@ struct Config(ImplicitlyCopyable, Writable):
     comptime PEER_TO_PEER = Self(Self.P2P, False)
     comptime UNDEFINED = Self(-1, False)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return (
             self.direction == other.direction
             and self.pinned_memory == other.pinned_memory
         )
 
     @staticmethod
-    fn get(handle: String) -> Self:
+    def get(handle: String) -> Self:
         if handle == "host_to_device":
             return Self.HOST_TO_DEVICE
         elif handle == "host_pinned_to_device":
@@ -77,7 +77,7 @@ struct Config(ImplicitlyCopyable, Writable):
             )
             return Self.UNDEFINED
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self.direction == Self.DToD:
             writer.write("device_to_device")
             return
@@ -95,7 +95,7 @@ struct Config(ImplicitlyCopyable, Writable):
 
 
 @no_inline
-fn bench_memcpy(
+def bench_memcpy(
     mut b: Bench,
     length_in_bytes: Int,
     *,
@@ -126,10 +126,10 @@ fn bench_memcpy(
 
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             if config.direction == Config.DToH:
                 context.enqueue_copy(mem_host, mem_device)
             elif config.direction == Config.HToD:
@@ -165,7 +165,7 @@ fn bench_memcpy(
 
 
 @no_inline
-fn bench_p2p(
+def bench_p2p(
     mut b: Bench,
     length_in_bytes: Int,
     *,
@@ -191,10 +191,10 @@ fn bench_p2p(
 
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             ctx2.enqueue_copy(dst_buf, src_buf)
 
         b.iter_custom[kernel_launch](ctx1)
@@ -219,7 +219,7 @@ fn bench_p2p(
 
     # Parallel verification
     @parameter
-    fn verify_chunk(start: Int, end: Int):
+    def verify_chunk(start: Int, end: Int):
         for i in range(start, end):
             try:
                 assert_almost_equal(host_ptr[i], Float32(i))

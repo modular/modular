@@ -123,7 +123,7 @@ from .softmax import (
 # ===-----------------------------------------------------------------------===#
 
 
-fn flash_attention[
+def flash_attention[
     dtype: DType,
     q_layout: Layout,
     //,
@@ -152,7 +152,7 @@ fn flash_attention[
     # TODO docstring
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return String(";").join(
             Span(
                 [
@@ -202,7 +202,7 @@ fn flash_attention[
         )
 
 
-fn get_mha_decoding_num_partitions[
+def get_mha_decoding_num_partitions[
     num_heads: Int, group: Int
 ](batch_size: Int, num_keys: Int, ctx: DeviceContext) -> Int:
     comptime sm_count = ctx.default_device_info.sm_count
@@ -251,7 +251,7 @@ struct MHADecodeDispatchMetadata(TrivialRegisterPassable):
 
     @staticmethod
     @always_inline
-    fn from_runtime_values[
+    def from_runtime_values[
         num_heads: Int,
         group: Int,
     ](
@@ -272,13 +272,13 @@ struct MHADecodeDispatchMetadata(TrivialRegisterPassable):
         )
 
 
-fn flash_attention_hw_supported[qkv_type: DType]() -> Bool:
+def flash_attention_hw_supported[qkv_type: DType]() -> Bool:
     return has_nvidia_gpu_accelerator() or (
         has_amd_gpu_accelerator() and qkv_type == DType.bfloat16
     )
 
 
-fn depth_supported_by_gpu[
+def depth_supported_by_gpu[
     depth: Int,
     mask_t: MHAMask,
     config: MHAConfig,
@@ -304,7 +304,7 @@ fn depth_supported_by_gpu[
 
 # Entry point for flash_attention with batch_size > 1.
 @always_inline
-fn flash_attention[
+def flash_attention[
     cache_t: KVCacheT,
     mask_t: MHAMask,
     dtype: DType,
@@ -383,7 +383,7 @@ fn flash_attention[
     # TODO docstring
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return String(";").join(
             Span(
                 [
@@ -463,7 +463,7 @@ fn flash_attention[
 
 
 @always_inline
-fn q_num_matrix_view_rows[
+def q_num_matrix_view_rows[
     dtype: DType, //
 ](q: LayoutTensor[mut=False, dtype, ...]) -> Int:
     # for tma if decoding, we view q as a rows x depth matrix
@@ -476,7 +476,7 @@ fn q_num_matrix_view_rows[
 
 
 @always_inline
-fn q_num_matrix_view_rows[dtype: DType, //](q: TileTensor[dtype, ...]) -> Int:
+def q_num_matrix_view_rows[dtype: DType, //](q: TileTensor[dtype, ...]) -> Int:
     # TileTensor overload for the same computation.
     var num_rows: Int = Int(q.dim[0]())
 
@@ -486,7 +486,7 @@ fn q_num_matrix_view_rows[dtype: DType, //](q: TileTensor[dtype, ...]) -> Int:
 
 
 @always_inline
-fn flash_attention_dispatch[
+def flash_attention_dispatch[
     k_t: MHAOperand,
     v_t: MHAOperand,
     mask_t: MHAMask,
@@ -1194,7 +1194,7 @@ fn flash_attention_dispatch[
         )
 
 
-fn flash_attention[
+def flash_attention[
     mask_t: MHAMask,
     dtype: DType,
     q_layout: Layout,
@@ -1298,7 +1298,7 @@ fn flash_attention[
     )
 
 
-fn flash_attention_ragged[
+def flash_attention_ragged[
     mask_t: MHAMask,
     type: DType,
     q_layout: Layout,
@@ -1414,7 +1414,7 @@ fn flash_attention_ragged[
         Int32(config.num_threads())
     )
 )
-fn mha[
+def mha[
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
@@ -1465,7 +1465,7 @@ fn mha[
     var start_pos: UInt32 = 0
 
     @always_inline
-    fn q_block_idx() -> UInt:
+    def q_block_idx() -> UInt:
         return block_idx.x if is_nvidia_gpu() else block_idx.y
 
     comptime if ragged:
@@ -1618,7 +1618,7 @@ fn mha[
         Int32(config.num_threads())
     )
 )
-fn mha_single_batch[
+def mha_single_batch[
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
@@ -1911,7 +1911,7 @@ fn mha_single_batch[
     @__copy_capture(seq_len, max_seq_len, num_keys, start_pos)
     @always_inline
     @parameter
-    fn loop_over_kvcache[
+    def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
         if (
@@ -1982,7 +1982,7 @@ fn mha_single_batch[
 
         @always_inline
         @parameter
-        fn _mask_tensor_row(
+        def _mask_tensor_row(
             tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
         ):
             return {
@@ -2053,7 +2053,7 @@ fn mha_single_batch[
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
         @parameter
-        fn _apply_mask[masked: Bool]():
+        def _apply_mask[masked: Bool]():
             var scale_log2e: Scalar[accum_type] = (
                 scale.cast[
                     accum_type
@@ -2353,7 +2353,7 @@ fn mha_single_batch[
         Int32(config.num_threads())
     )
 )
-fn mha_single_batch_pipelined[
+def mha_single_batch_pipelined[
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
@@ -2614,7 +2614,7 @@ fn mha_single_batch_pipelined[
     # Only the last iteration is doing boundary check.
     @always_inline
     @parameter
-    fn loop_over_kvcache[
+    def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
         if (
@@ -2761,7 +2761,7 @@ fn mha_single_batch_pipelined[
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
         @parameter
-        fn _apply_mask[masked: Bool]():
+        def _apply_mask[masked: Bool]():
             var scale_log2e: Scalar[accum_type] = (
                 scale.cast[
                     accum_type
@@ -3040,7 +3040,7 @@ fn mha_single_batch_pipelined[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-fn mha_decoding[
+def mha_decoding[
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
@@ -3302,7 +3302,7 @@ fn mha_decoding[
 
 
 @always_inline
-fn scale_and_mask_helper[
+def scale_and_mask_helper[
     p_type: DType,
     p_layout: Layout,
     mask_t: MHAMask,
@@ -3392,7 +3392,7 @@ fn scale_and_mask_helper[
                 )
 
 
-fn mha_decoding_single_batch[
+def mha_decoding_single_batch[
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
@@ -3647,7 +3647,9 @@ fn mha_decoding_single_batch[
 
     @always_inline
     @parameter
-    fn _mask_tensor_row(tensor: LayoutTensor, num_rows: Int) -> type_of(tensor):
+    def _mask_tensor_row(
+        tensor: LayoutTensor, num_rows: Int
+    ) -> type_of(tensor):
         return {
             tensor.ptr,
             {{num_rows, tensor.dim[1]()}, tensor.runtime_layout.stride},
@@ -3680,7 +3682,7 @@ fn mha_decoding_single_batch[
 
     @always_inline
     @parameter
-    fn loop_over_kvcache[
+    def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
         var k_ptr = k.block_paged_ptr[Int(BN)](
@@ -4087,7 +4089,7 @@ fn mha_decoding_single_batch[
     )
 
 
-fn mha_decoding_single_batch_pipelined[
+def mha_decoding_single_batch_pipelined[
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
@@ -4341,7 +4343,7 @@ fn mha_decoding_single_batch_pipelined[
 
     @always_inline
     @parameter
-    fn loop_over_kvcache[
+    def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, seq_len: Int):
         var k_ptr = k.block_paged_ptr[Int(BN)](
@@ -4555,7 +4557,7 @@ fn mha_decoding_single_batch_pipelined[
     )
 
 
-fn mha_splitk_reduce[
+def mha_splitk_reduce[
     intermediate_type: DType,
     output_type: DType,
     depth: UInt,
@@ -4672,7 +4674,7 @@ fn mha_splitk_reduce[
     var base_ptr = intermediate_output.ptr + base_offset
 
     @parameter
-    fn accum_fn[simd_width: Int](partition_idx: Int) unified {mut}:
+    def accum_fn[simd_width: Int](partition_idx: Int) unified {mut}:
         var partition_exp_sum = exp_sums.vectorize[simd_width]()[
             partition_idx // simd_width
         ]
@@ -4724,7 +4726,7 @@ comptime _NAIVE_BMM_BLOCK_TUPLE = StaticTuple[Int32, 1](
 )
 
 
-fn mha_gpu_naive[
+def mha_gpu_naive[
     output_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
@@ -4817,7 +4819,7 @@ fn mha_gpu_naive[
 
     @parameter
     @__copy_capture(p_buffer)
-    fn input_fn_device[
+    def input_fn_device[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
         return p_buffer.load[width=_simd_width](coords)
@@ -4861,7 +4863,7 @@ fn mha_gpu_naive[
 
 @always_inline
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=_NAIVE_BMM_BLOCK_TUPLE)
-fn _bmm0_bs[
+def _bmm0_bs[
     q_type: DType,
     k_t: MHAOperand,
     mask_t: MHAMask,
@@ -4953,7 +4955,7 @@ fn _bmm0_bs[
         comptime if is_amd_gpu():
             var accum_vec = SIMD[p_type, simd_width_of[p_type]()](0)
 
-            fn accum_fn[width: Int](offset: Int) unified {mut}:
+            def accum_fn[width: Int](offset: Int) unified {mut}:
                 comptime alignment = align_of[SIMD[p_type, width]]()
                 var q_val = q.load[width=width, alignment=alignment](
                     y * UInt(num_heads) * UInt(depth) + UInt(offset)
@@ -4992,7 +4994,7 @@ fn _bmm0_bs[
 
 @always_inline
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=_NAIVE_BMM_BLOCK_TUPLE)
-fn _bmm1_bs[
+def _bmm1_bs[
     output_type: DType,
     p_type: DType,
     v_t: MHAOperand,
@@ -5086,7 +5088,7 @@ fn _bmm1_bs[
 # ===-----------------------------------------------------------------------===#
 
 
-fn mha_gpu_naive[
+def mha_gpu_naive[
     q_type: DType,
     k_type: DType,
     v_type: DType,
@@ -5145,7 +5147,7 @@ fn mha_gpu_naive[
     )
 
 
-fn mha_gpu_naive[
+def mha_gpu_naive[
     q_type: DType,
     k_type: DType,
     v_type: DType,
@@ -5215,7 +5217,7 @@ fn mha_gpu_naive[
     )
 
 
-fn mha_gpu_naive[
+def mha_gpu_naive[
     q_type: DType,
     output_type: DType,
     cache_t: KVCacheT,
@@ -5275,7 +5277,7 @@ fn mha_gpu_naive[
 # ===-----------------------------------------------------------------------===#
 
 
-fn _naive_attention_with_transpose[
+def _naive_attention_with_transpose[
     dtype: DType,
     transpose_k: Bool = False,
 ](
@@ -5428,7 +5430,7 @@ fn _naive_attention_with_transpose[
     ot_ptr.free()
 
 
-fn _naive_attention[
+def _naive_attention[
     dtype: DType,
     transpose_k: Bool = False,
 ](
@@ -5474,7 +5476,7 @@ fn _naive_attention[
     @__copy_capture(score)
     @parameter
     @always_inline
-    fn scale_and_mask[
+    def scale_and_mask[
         width: Int, _rank: Int, alignment: Int = 1
     ](coords: IndexList[_rank]):
         var vec = score.load[width=width](rebind[IndexList[4]](coords))

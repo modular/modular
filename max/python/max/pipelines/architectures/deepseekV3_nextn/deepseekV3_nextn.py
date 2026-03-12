@@ -61,8 +61,8 @@ class DeepseekV3NextN(Module):
         )
 
         embedding_output_dtype = config.dtype
-        if config.float8_config and config.float8_config.embedding_output_dtype:
-            embedding_output_dtype = config.float8_config.embedding_output_dtype
+        if config.quant_config and config.quant_config.embedding_output_dtype:
+            embedding_output_dtype = config.quant_config.embedding_output_dtype
         self.embedding_output_dtype = embedding_output_dtype
         self.embed_tokens = VocabParallelEmbedding(
             config.vocab_size,
@@ -188,24 +188,36 @@ class DeepseekV3NextN(Module):
         input_row_offsets_ = ops.distributed_broadcast(
             input_row_offsets.to(devices[0]), signal_buffers
         )
-        # Split embeddings FIRST to match already-split hidden_states from target model
-        # hidden_states are already data-parallel split (different sizes per device),
-        # while norm_embed is replicated (same size on all devices).
-        # We must split norm_embed before concatenating with norm_hidden.
+        # Both norm_embed and norm_hidden are replicated (full batch on each
+        # device). In the DP case, split both before concatenating.
         if self.use_data_parallel_attention:
+            host_offsets_i64 = host_input_row_offsets.cast(DType.int64)
+            unsplit_row_offsets = input_row_offsets_
             norm_embed, input_row_offsets_ = split_batch_replicated(
                 devices,
                 norm_embed,
-                input_row_offsets_,
-                host_input_row_offsets.cast(DType.int64),
+                unsplit_row_offsets,
+                host_offsets_i64,
                 data_parallel_splits,
             )
-            # Rebind split embeddings to match hidden_states dimension names
-            # split_batch_replicated uses 'input_split_{i}' but hidden_states use
-            # 'seq_len_device_{i}' - they're logically the same size at runtime
+            norm_hidden, _ = split_batch_replicated(
+                devices,
+                norm_hidden,
+                unsplit_row_offsets,
+                host_offsets_i64,
+                data_parallel_splits,
+            )
+
             norm_embed = [
                 ops.rebind(
                     norm_embed[i],
+                    [f"seq_len_device_{i}", self.config.hidden_size],
+                )
+                for i in range(len(devices))
+            ]
+            norm_hidden = [
+                ops.rebind(
+                    norm_hidden[i],
                     [f"seq_len_device_{i}", self.config.hidden_size],
                 )
                 for i in range(len(devices))

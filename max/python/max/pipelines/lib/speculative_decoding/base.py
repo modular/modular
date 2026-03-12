@@ -317,7 +317,7 @@ class SpeculativeDecodingPipelineBase(
         # TODO: do this properly once the kv cache manager is refactored to support
         # spec decoding.
         draft_kv_inputs = draft_kv_manager.runtime_inputs(
-            [[] * multi_kv_params.data_parallel_degree]
+            [[] for _ in range(multi_kv_params.data_parallel_degree)]
         )
         self._draft_kv_buffers = [
             replica_input.blocks for replica_input in draft_kv_inputs.inputs

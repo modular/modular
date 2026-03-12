@@ -41,7 +41,7 @@ struct MatmulConfig[
     var _pdl_level: PDLLevel
     var k_group_size: Int
 
-    fn __init__(
+    def __init__(
         out self,
         block_tile_shape: IndexList[3],
         mma_shape: IndexList[3],
@@ -64,7 +64,7 @@ struct MatmulConfig[
         self._pdl_level = pdl_level
         self.k_group_size = k_group_size
 
-    fn __init__(
+    def __init__(
         out self,
         m: Int,
         n: Int,
@@ -171,7 +171,7 @@ struct MatmulConfig[
         )
 
     @staticmethod
-    fn adjust_kgroup_size(
+    def adjust_kgroup_size(
         mma_m: Int, mma_n: Int, K: Int, BK: Int, num_pipeline_stages: Int
     ) -> Int:
         var output_block_size = mma_m * mma_n
@@ -187,7 +187,7 @@ struct MatmulConfig[
 
         return ualign_down(num_pipeline_stages, k_group_size)
 
-    fn _maximize_pipeline_stages_by_default(mut self):
+    def _maximize_pipeline_stages_by_default(mut self):
         var BM: Int = self.block_tile_shape[0]
         var BN: Int = self.block_tile_shape[1]
         var BK: Int = self.block_tile_shape[2]
@@ -215,10 +215,10 @@ struct MatmulConfig[
             smem_leftover // producer_consumer_smem_per_stage
         )
 
-    fn pdl_level(self) -> PDLLevel:
+    def pdl_level(self) -> PDLLevel:
         return self._pdl_level
 
-    fn to_base_config(
+    def to_base_config(
         self,
     ) -> BaseMatmulConfig[
         Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
@@ -238,7 +238,7 @@ struct MatmulConfig[
             k_group_size=UInt(self.k_group_size),
         )
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return (
             self.block_tile_shape == other.block_tile_shape
             and self.mma_shape == other.mma_shape
@@ -250,7 +250,7 @@ struct MatmulConfig[
             and self.k_group_size == other.k_group_size
         )
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("MatmulConfig(\n")
         writer.write("  a_type: ", Self.a_type, "\n")
         writer.write("  c_type: ", Self.c_type, "\n")
@@ -292,10 +292,10 @@ struct MatmulConfig[
         writer.write("  transpose_b: ", "K" if Self.transpose_b else "MN", "\n")
         writer.write(")")
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         self.write_to(writer)
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
+    def __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
 
         Parameters:
@@ -317,7 +317,7 @@ struct MatmulConfig[
         hasher.update(self.partitioned_multicast)
 
 
-fn build_configs[
+def build_configs[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -366,7 +366,7 @@ fn build_configs[
     return set^
 
 
-fn swapAB_smallM[
+def swapAB_smallM[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -455,7 +455,7 @@ fn swapAB_smallM[
     return config
 
 
-fn swapAB_smallM_ceildiv[
+def swapAB_smallM_ceildiv[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -483,7 +483,7 @@ fn swapAB_smallM_ceildiv[
     )
 
 
-fn swapAB_midM_linear[
+def swapAB_midM_linear[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -512,7 +512,7 @@ fn swapAB_midM_linear[
     )
 
 
-fn swapAB_largeM_clustered[
+def swapAB_largeM_clustered[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -552,7 +552,7 @@ fn swapAB_largeM_clustered[
     )
 
 
-fn build_configs_generic[
+def build_configs_generic[
     a_type: DType,
     b_type: DType,
     c_type: DType,

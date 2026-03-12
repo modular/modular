@@ -87,7 +87,7 @@ from std.algorithm import vectorize
 # ===----------------------------------------------------------------------=== #
 
 
-fn naive_grouped_matmul[
+def naive_grouped_matmul[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -139,7 +139,7 @@ fn naive_grouped_matmul[
 #     C[a_offsets[i]:a_offsets[i+1], :] = A[a_offsets[i]:a_offsets[i+1], :] @ B[expert_ids[i], :, :].T
 
 
-fn naive_grouped_matmul_kernel[
+def naive_grouped_matmul_kernel[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -199,7 +199,7 @@ fn naive_grouped_matmul_kernel[
         c_by_expert[m * UInt(N) + n] = accum.cast[c_type]()
 
 
-fn naive_epilogue[
+def naive_epilogue[
     c_type: DType,
     c_shape: DimList,
     *,
@@ -224,7 +224,7 @@ fn naive_epilogue[
     )
 
 
-fn naive_epilogue_kernel[
+def naive_epilogue_kernel[
     c_type: DType,
     c_shape: DimList,
     *,
@@ -257,7 +257,7 @@ fn naive_epilogue_kernel[
 )
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-fn grouped_matmul_kernel_sm100[
+def grouped_matmul_kernel_sm100[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -586,7 +586,7 @@ fn grouped_matmul_kernel_sm100[
                             ](c_mn)
 
 
-fn grouped_matmul_sm100[
+def grouped_matmul_sm100[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -688,7 +688,7 @@ fn grouped_matmul_sm100[
     )
 
 
-fn grouped_matmul_amd_kernel_launcher[
+def grouped_matmul_amd_kernel_launcher[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -744,7 +744,7 @@ fn grouped_matmul_amd_kernel_launcher[
 
     @always_inline
     @parameter
-    fn elementwise_epilogue_fn_wrapper[
+    def elementwise_epilogue_fn_wrapper[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         comptime if elementwise_lambda_fn:
@@ -806,7 +806,7 @@ fn grouped_matmul_amd_kernel_launcher[
             var elements_to_process = thread_end - thread_start
 
             @always_inline
-            fn process_elements[width: Int](idx: Int) unified {mut}:
+            def process_elements[width: Int](idx: Int) unified {mut}:
                 var elem_idx = thread_start + idx
                 var tile_row, tile_col = divmod(elem_idx, BN)
                 var local_row: UInt32 = UInt32(block_m * BM + tile_row)
@@ -845,7 +845,7 @@ fn grouped_matmul_amd_kernel_launcher[
 
 
 @always_inline
-fn dispatch_amd_matmul_by_block_shape[
+def dispatch_amd_matmul_by_block_shape[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -903,7 +903,7 @@ fn dispatch_amd_matmul_by_block_shape[
     # Fallback to default config
     @always_inline
     @parameter
-    fn default_config_launcher[
+    def default_config_launcher[
         block_m: Int,
         block_n: Int,
         block_k: Int,
@@ -937,7 +937,7 @@ fn dispatch_amd_matmul_by_block_shape[
         default_config_launcher[64, 64, 64]()
 
 
-fn grouped_matmul_amd[
+def grouped_matmul_amd[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -992,7 +992,7 @@ fn grouped_matmul_amd[
         num_active_experts,
         max_num_tokens_per_expert,
     )
-    fn launch_kernel[
+    def launch_kernel[
         config: MatmulConfig[a_type, b_type, c_type, transpose_b]
     ]() raises:
         comptime kernel = grouped_matmul_amd_kernel_launcher[
@@ -1039,7 +1039,7 @@ fn grouped_matmul_amd[
 # ===----------------------------------------------------------------------=== #
 
 
-fn grouped_matmul[
+def grouped_matmul[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -1087,7 +1087,7 @@ fn grouped_matmul[
         comptime K = b.shape.get[2]()
         comptime contiguous_bytes = K * size_of[a_type]()
 
-        fn get_swizzle_mode(contiguous_bytes: Int) -> TensorMapSwizzle:
+        def get_swizzle_mode(contiguous_bytes: Int) -> TensorMapSwizzle:
             if contiguous_bytes >= TensorMapSwizzle.SWIZZLE_128B.bytes():
                 return TensorMapSwizzle.SWIZZLE_128B
             elif contiguous_bytes >= TensorMapSwizzle.SWIZZLE_64B.bytes():
@@ -1164,7 +1164,7 @@ fn grouped_matmul[
 # ===----------------------------------------------------------------------===#
 
 
-fn grouped_matmul_vendor[
+def grouped_matmul_vendor[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,

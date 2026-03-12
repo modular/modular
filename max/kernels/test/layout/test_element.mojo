@@ -29,7 +29,7 @@ from std.utils import IndexList
 
 
 # CHECK-LABEL: test_element_load
-fn test_element_load():
+def test_element_load():
     print("== test_element_load")
     var tensor_8x8 = LayoutTensor[
         DType.float32, Layout.row_major(8, 8), MutAnyOrigin
@@ -86,7 +86,7 @@ fn test_element_load():
 
 
 # CHECK-LABEL: test_element_store
-fn test_element_store():
+def test_element_store():
     print("== test_element_store")
     var tensor_8x8 = LayoutTensor[
         DType.float32, Layout.row_major(8, 8), MutAnyOrigin
@@ -158,7 +158,7 @@ fn test_element_store():
     print(tensor_8x8)
 
 
-fn test_element_dynamic_layout() raises:
+def test_element_dynamic_layout() raises:
     print("== test_element_dynamic_layout")
 
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
@@ -277,7 +277,7 @@ fn test_element_dynamic_layout() raises:
 
 
 # CHECK-LABEL: test_element_masked_load
-fn test_element_masked_load():
+def test_element_masked_load():
     print("== test_element_masked_load")
     var tensor_4x4_stack = InlineArray[Float32, 4 * 4](uninitialized=True)
     var tensor_4x4 = LayoutTensor[DType.float32, Layout.row_major(4, 4)](
@@ -333,7 +333,7 @@ fn test_element_masked_load():
 
 
 # CHECK-LABEL: test_element_masked_store
-fn test_element_masked_store():
+def test_element_masked_store():
     print("== test_element_masked_store")
     var tensor_4x4_stack = InlineArray[Float32, 4 * 4](uninitialized=True)
     var tensor_4x4 = LayoutTensor[DType.float32, Layout.row_major(4, 4)](
