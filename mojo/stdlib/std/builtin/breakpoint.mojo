@@ -16,7 +16,7 @@ from std.sys import breakpointhook
 
 
 @always_inline("nodebug")
-fn breakpoint():
+def breakpoint():
     """Cause an execution trap with the intention of requesting the attention
     of a debugger."""
     breakpointhook()

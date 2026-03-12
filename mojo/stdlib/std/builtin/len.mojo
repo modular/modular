@@ -35,7 +35,7 @@ trait Sized:
     struct Foo(Sized):
         var length: Int
 
-        fn __len__(self) -> Int:
+        def __len__(self) -> Int:
             return self.length
     ```
 
@@ -56,7 +56,7 @@ trait Sized:
 
     """
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Get the length of the type.
 
         Returns:
@@ -80,7 +80,7 @@ trait UIntSized:
     struct Foo(Sized):
         var length: Int
 
-        fn __len__(self) -> Int:
+        def __len__(self) -> Int:
             return self.length
     ```
 
@@ -101,7 +101,7 @@ trait UIntSized:
 
     """
 
-    fn __len__(self) -> UInt:
+    def __len__(self) -> UInt:
         """Get the length of the type.
 
         Returns:
@@ -125,7 +125,7 @@ trait SizedRaising:
     struct Foo(SizedRaising):
         var length: Int
 
-        fn __len__(self) raises -> Int:
+        def __len__(self) raises -> Int:
             if self.length < 0:
                 raise Error("Length is negative")
             return self.length
@@ -145,7 +145,7 @@ trait SizedRaising:
     ```
     """
 
-    fn __len__(self) raises -> Int:
+    def __len__(self) raises -> Int:
         """Get the length of the type.
 
         Returns:
@@ -163,7 +163,7 @@ trait SizedRaising:
 
 
 @always_inline
-fn len[T: Sized](value: T) -> Int:
+def len[T: Sized](value: T) -> Int:
     """Get the length of a value.
 
     Parameters:
@@ -179,7 +179,7 @@ fn len[T: Sized](value: T) -> Int:
 
 
 @always_inline
-fn len[T: SizedRaising](value: T) raises -> Int:
+def len[T: SizedRaising](value: T) raises -> Int:
     """Get the length of a value.
 
     Parameters:

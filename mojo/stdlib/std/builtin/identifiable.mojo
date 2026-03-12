@@ -24,7 +24,7 @@ trait Identifiable:
     which can be compared with other instances of itself.
     """
 
-    fn __is__(self, rhs: Self) -> Bool:
+    def __is__(self, rhs: Self) -> Bool:
         """Define whether `self` has the same identity as `rhs`.
 
         Args:
@@ -36,7 +36,7 @@ trait Identifiable:
         ...
 
     @always_inline
-    fn __isnot__(self, rhs: Self) -> Bool:
+    def __isnot__(self, rhs: Self) -> Bool:
         """Define whether `self` has a different identity than `rhs`.
 
         Args:

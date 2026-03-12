@@ -30,7 +30,7 @@ from std.utils._select import _select_register_value as select
 
 
 @always_inline
-fn _sign(x: Int) -> Int:
+def _sign(x: Int) -> Int:
     var result = 0
     result = select(x > 0, 1, result)
     result = select(x < 0, -1, result)
@@ -53,16 +53,16 @@ struct _ZeroStartingRange(
     var end: Int
 
     @always_inline
-    fn __init__(out self, end: Int):
+    def __init__(out self, end: Int):
         self.curr = max(end, 0)
         self.end = self.curr
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
-    fn __next__(mut self) raises StopIteration -> Int:
+    def __next__(mut self) raises StopIteration -> Int:
         var curr = self.curr
         if curr == 0:
             raise StopIteration()
@@ -70,21 +70,21 @@ struct _ZeroStartingRange(
         return self.end - curr
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         return self.curr
 
     @always_inline
-    fn __getitem__[I: Indexer](self, idx: I) -> Int:
+    def __getitem__[I: Indexer](self, idx: I) -> Int:
         var i = index(idx)
         assert i < self.__len__(), "index out of range"
         return i
 
     @always_inline
-    fn __reversed__(self) -> _StridedRange:
+    def __reversed__(self) -> _StridedRange:
         return range(self.end - 1, -1, -1)
 
     @always_inline
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         var len = len(self)
         return (len, {len})
 
@@ -100,16 +100,16 @@ struct _SequentialRange(
     var end: Int
 
     @always_inline
-    fn __init__(out self, start: Int, end: Int):
+    def __init__(out self, start: Int, end: Int):
         self.start = start
         self.end = max(start, end)
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
-    fn __next__(mut self) raises StopIteration -> Int:
+    def __next__(mut self) raises StopIteration -> Int:
         var start = self.start
         if start == self.end:
             raise StopIteration()
@@ -117,20 +117,20 @@ struct _SequentialRange(
         return start
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         return self.end - self.start
 
     @always_inline
-    fn __getitem__[I: Indexer](self, idx: I) -> Int:
+    def __getitem__[I: Indexer](self, idx: I) -> Int:
         assert self.__len__() > index(idx), "index out of range"
         return self.start + index(idx)
 
     @always_inline
-    fn __reversed__(self) -> _StridedRange:
+    def __reversed__(self) -> _StridedRange:
         return range(self.end - 1, self.start - 1, -1)
 
     @always_inline
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         var len = len(self)
         return (len, {len})
 
@@ -148,11 +148,11 @@ struct _StridedRangeIterator(
     var step: Int
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         if self.step > 0 and self.start < self.end:
             return self.end - self.start
         elif self.step < 0 and self.start > self.end:
@@ -161,7 +161,7 @@ struct _StridedRangeIterator(
             return 0
 
     @always_inline
-    fn __next__(mut self) raises StopIteration -> Int:
+    def __next__(mut self) raises StopIteration -> Int:
         if self.__len__() <= 0:
             raise StopIteration()
         var result = self.start
@@ -171,17 +171,17 @@ struct _StridedRangeIterator(
     # FIXME(GENAI-359): Opt'ing into old-style foreach code generation is
     # necessary to get an AMD355 test working.
     @always_inline
-    fn __next_old__(mut self) -> Self.Element:
+    def __next_old__(mut self) -> Self.Element:
         var result = self.start
         self.start += self.step
         return result
 
     @always_inline
-    fn __has_next__(self) -> Bool:
+    def __has_next__(self) -> Bool:
         return self.__len__() > 0
 
     @always_inline
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         var len = len(self)
         return (len, {len})
 
@@ -198,17 +198,17 @@ struct _StridedRange(
     var step: Int
 
     @always_inline
-    fn __init__(out self, start: Int, end: Int, step: Int = 1):
+    def __init__(out self, start: Int, end: Int, step: Int = 1):
         self.start = start
         self.end = end
         self.step = step
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return _StridedRangeIterator(self.start, self.end, self.step)
 
     @always_inline
-    fn __next__(mut self) raises StopIteration -> Int:
+    def __next__(mut self) raises StopIteration -> Int:
         if self.__len__() <= 0:
             raise StopIteration()
         var result = self.start
@@ -216,7 +216,7 @@ struct _StridedRange(
         return result
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         # If the step is positive we want to check that the start is smaller
         # than the end, if the step is negative we want to check the reverse.
         # We break this into selects to avoid generating branches.
@@ -233,12 +233,12 @@ struct _StridedRange(
         return ceildiv(select(cnd, 0, numerator), select(cnd, 1, denominator))
 
     @always_inline
-    fn __getitem__[I: Indexer](self, idx: I) -> Int:
+    def __getitem__[I: Indexer](self, idx: I) -> Int:
         assert self.__len__() > index(idx), "index out of range"
         return self.start + index(idx) * self.step
 
     @always_inline
-    fn __reversed__(self) -> _StridedRange:
+    def __reversed__(self) -> _StridedRange:
         var shifted_end = self.end - _sign(self.step)
         var start = shifted_end - ((shifted_end - self.start) % self.step)
         var end = self.start - self.step
@@ -246,13 +246,13 @@ struct _StridedRange(
         return range(start, end, step)
 
     @always_inline
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         var len = len(self)
         return (len, {len})
 
 
 @always_inline
-fn range[T: Indexer, //](end: T) -> _ZeroStartingRange:
+def range[T: Indexer, //](end: T) -> _ZeroStartingRange:
     """Constructs a [0; end) Range.
 
     Parameters:
@@ -268,7 +268,7 @@ fn range[T: Indexer, //](end: T) -> _ZeroStartingRange:
 
 
 @always_inline
-fn range[T: IntableRaising, //](end: T) raises -> _ZeroStartingRange:
+def range[T: IntableRaising, //](end: T) raises -> _ZeroStartingRange:
     """Constructs a [0; end) Range.
 
     Parameters:
@@ -287,7 +287,7 @@ fn range[T: IntableRaising, //](end: T) raises -> _ZeroStartingRange:
 
 
 @always_inline
-fn range[T0: Indexer, T1: Indexer, //](start: T0, end: T1) -> _SequentialRange:
+def range[T0: Indexer, T1: Indexer, //](start: T0, end: T1) -> _SequentialRange:
     """Constructs a [start; end) Range.
 
     Parameters:
@@ -305,7 +305,7 @@ fn range[T0: Indexer, T1: Indexer, //](start: T0, end: T1) -> _SequentialRange:
 
 
 @always_inline
-fn range[
+def range[
     T0: IntableRaising, T1: IntableRaising
 ](start: T0, end: T1) raises -> _SequentialRange:
     """Constructs a [start; end) Range.
@@ -328,7 +328,7 @@ fn range[
 
 
 @always_inline
-fn range[
+def range[
     T0: Indexer, T1: Indexer, T2: Indexer, //
 ](start: T0, end: T1, step: T2) -> _StridedRange:
     """Constructs a [start; end) Range with a given step.
@@ -350,7 +350,7 @@ fn range[
 
 
 @always_inline
-fn range[
+def range[
     T0: IntableRaising, T1: IntableRaising, T2: IntableRaising, //
 ](start: T0, end: T1, step: T2) raises -> _StridedRange:
     """Constructs a [start; end) Range with a given step.
@@ -379,7 +379,7 @@ fn range[
 # ===----------------------------------------------------------------------=== #
 
 
-fn _scalar_range_bounds[
+def _scalar_range_bounds[
     dtype: DType
 ](len: Scalar[dtype]) -> Tuple[Int, Optional[Int]]:
     comptime if size_of[Scalar[dtype]]() >= size_of[Int]():
@@ -400,16 +400,16 @@ struct _ZeroStartingScalarRange[dtype: DType](
     var end: Scalar[Self.dtype]
 
     @always_inline
-    fn __init__(out self, end: Scalar[Self.dtype]):
+    def __init__(out self, end: Scalar[Self.dtype]):
         self.curr = max(end, 0)
         self.end = self.curr
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
-    fn __next__(mut self) raises StopIteration -> Scalar[Self.dtype]:
+    def __next__(mut self) raises StopIteration -> Scalar[Self.dtype]:
         var curr = self.curr
         if curr == 0:
             raise StopIteration()
@@ -419,26 +419,26 @@ struct _ZeroStartingScalarRange[dtype: DType](
     # FIXME(GENAI-359): Remove __next_old__ and __has_next__ once we figure out
     # why doing so regresses code generation.
     @always_inline
-    fn __next_old__(mut self) -> Scalar[Self.dtype]:
+    def __next_old__(mut self) -> Scalar[Self.dtype]:
         var curr = self.curr
         self.curr -= 1
         return self.end - curr
 
     @always_inline
-    fn __has_next__(self) -> Bool:
+    def __has_next__(self) -> Bool:
         return self.__len__() > 0
 
     @always_inline
-    fn __len__(self) -> Scalar[Self.dtype]:
+    def __len__(self) -> Scalar[Self.dtype]:
         return self.curr
 
     @always_inline
-    fn __getitem__(self, idx: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
+    def __getitem__(self, idx: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
         assert idx < self.__len__(), "index out of range"
         return idx
 
     @always_inline
-    fn __reversed__(self) -> _StridedScalarRange[Self.dtype]:
+    def __reversed__(self) -> _StridedScalarRange[Self.dtype]:
         comptime assert (
             not Self.dtype.is_unsigned()
         ), "cannot reverse an unsigned range"
@@ -447,7 +447,7 @@ struct _ZeroStartingScalarRange[dtype: DType](
         )
 
     @always_inline
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         return _scalar_range_bounds(self.__len__())
 
 
@@ -462,16 +462,16 @@ struct _SequentialScalarRange[dtype: DType](
     var end: Scalar[Self.dtype]
 
     @always_inline
-    fn __init__(out self, start: Scalar[Self.dtype], end: Scalar[Self.dtype]):
+    def __init__(out self, start: Scalar[Self.dtype], end: Scalar[Self.dtype]):
         self.start = start
         self.end = max(start, end)
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
-    fn __next__(mut self) raises StopIteration -> Scalar[Self.dtype]:
+    def __next__(mut self) raises StopIteration -> Scalar[Self.dtype]:
         var start = self.start
         if start == self.end:
             raise StopIteration()
@@ -479,23 +479,23 @@ struct _SequentialScalarRange[dtype: DType](
         return start
 
     @always_inline
-    fn __len__(self) -> Scalar[Self.dtype]:
+    def __len__(self) -> Scalar[Self.dtype]:
         return self.end - self.start
 
     @always_inline
-    fn __getitem__(self, idx: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
+    def __getitem__(self, idx: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
         assert idx < self.__len__(), "index out of range"
         return self.start + idx
 
     @always_inline
-    fn __reversed__(self) -> _StridedScalarRange[Self.dtype]:
+    def __reversed__(self) -> _StridedScalarRange[Self.dtype]:
         comptime assert (
             not Self.dtype.is_unsigned()
         ), "cannot reverse an unsigned range"
         return range(self.end - 1, self.start - 1, Scalar[Self.dtype](-1))
 
     @always_inline
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         return _scalar_range_bounds(self.__len__())
 
 
@@ -512,11 +512,11 @@ struct _StridedScalarRange[dtype: DType](
     var step: Scalar[Self.dtype]
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
-    fn __next__(mut self) raises StopIteration -> Scalar[Self.dtype]:
+    def __next__(mut self) raises StopIteration -> Scalar[Self.dtype]:
         # If the type is unsigned, then 'step' cannot be negative.
         comptime if Self.dtype.is_unsigned():
             if self.start >= self.end:
@@ -533,7 +533,7 @@ struct _StridedScalarRange[dtype: DType](
         return result
 
     @always_inline
-    fn __len__(self) -> Scalar[Self.dtype]:
+    def __len__(self) -> Scalar[Self.dtype]:
         comptime assert Self.dtype.is_integral(), "dtype must be integral"
 
         comptime if Self.dtype.is_unsigned():
@@ -550,17 +550,17 @@ struct _StridedScalarRange[dtype: DType](
             )
 
     @always_inline
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         return _scalar_range_bounds(self.__len__())
 
     @always_inline
-    fn __getitem__(self, idx: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
+    def __getitem__(self, idx: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
         assert idx < self.__len__(), "index out of range"
         return self.start + idx * self.step
 
 
 @always_inline
-fn range[
+def range[
     dtype: DType, //
 ](end: Scalar[dtype]) -> _ZeroStartingScalarRange[dtype]:
     """Constructs a [start; end) Range with a given step.
@@ -578,7 +578,7 @@ fn range[
 
 
 @always_inline
-fn range[
+def range[
     dtype: DType, //
 ](start: Scalar[dtype], end: Scalar[dtype]) -> _SequentialScalarRange[dtype]:
     """Constructs a [start; end) Range with a given step.
@@ -597,7 +597,7 @@ fn range[
 
 
 @always_inline
-fn range[
+def range[
     dtype: DType, //
 ](
     start: Scalar[dtype], end: Scalar[dtype], step: Scalar[dtype]

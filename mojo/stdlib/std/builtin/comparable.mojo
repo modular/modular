@@ -43,7 +43,7 @@ trait Equatable(ImplicitlyDestructible):
     """
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Define whether two instances of the object are equal to each other.
 
         The default implementation uses reflection to compare all fields for
@@ -76,7 +76,7 @@ trait Equatable(ImplicitlyDestructible):
         return True
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Define whether two instances of the object are not equal to each
         other.
 
@@ -100,7 +100,7 @@ trait Comparable(Equatable):
     types, it is recommended to override all the default implementations.
     """
 
-    fn __lt__(self, rhs: Self) -> Bool:
+    def __lt__(self, rhs: Self) -> Bool:
         """Define whether `self` is less than `rhs`.
 
         Args:
@@ -112,7 +112,7 @@ trait Comparable(Equatable):
         ...
 
     @always_inline
-    fn __gt__(self, rhs: Self) -> Bool:
+    def __gt__(self, rhs: Self) -> Bool:
         """Define whether `self` is greater than `rhs`.
 
         Args:
@@ -124,7 +124,7 @@ trait Comparable(Equatable):
         return rhs < self
 
     @always_inline
-    fn __le__(self, rhs: Self) -> Bool:
+    def __le__(self, rhs: Self) -> Bool:
         """Define whether `self` is less than or equal to `rhs`.
 
         Args:
@@ -136,7 +136,7 @@ trait Comparable(Equatable):
         return not rhs < self
 
     @always_inline
-    fn __ge__(self, rhs: Self) -> Bool:
+    def __ge__(self, rhs: Self) -> Bool:
         """Define whether `self` is greater than or equal to `rhs`.
 
         Args:

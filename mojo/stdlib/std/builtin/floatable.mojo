@@ -28,7 +28,7 @@ trait Floatable:
     struct Foo(Floatable):
         var i: Float64
 
-        fn __float__(self) -> Float64:
+        def __float__(self) -> Float64:
             return self.i
     ```
 
@@ -43,7 +43,7 @@ trait Floatable:
     trait instead.
     """
 
-    fn __float__(self) -> Float64:
+    def __float__(self) -> Float64:
         """Get the float point representation of the value.
 
         Returns:
@@ -67,7 +67,7 @@ trait FloatableRaising:
     struct MaybeFloat(FloatableRaising):
         var value: Variant[Float64, NoneType]
 
-        fn __float__(self) raises -> Float64:
+        def __float__(self) raises -> Float64:
             if self.value.isa[NoneType]():
                 raise "Float expected"
             return self.value[Float64]
@@ -83,7 +83,7 @@ trait FloatableRaising:
     ```
     """
 
-    fn __float__(self) raises -> Float64:
+    def __float__(self) raises -> Float64:
         """Get the float point representation of the value.
 
         Returns:

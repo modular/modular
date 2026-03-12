@@ -46,7 +46,7 @@ struct StackTrace(Copyable, Movable, Writable):
     var _data: OwnedPointer[UInt8]
     """An owned pointer to a null-terminated C string containing the stack trace."""
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         unsafe_from_raw_pointer: UnsafePointer[UInt8, MutExternalOrigin],
@@ -65,7 +65,7 @@ struct StackTrace(Copyable, Movable, Writable):
             unsafe_from_raw_pointer=unsafe_from_raw_pointer
         )
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Copy constructor - copies the stack trace string.
 
         Args:
@@ -78,7 +78,7 @@ struct StackTrace(Copyable, Movable, Writable):
         memcpy(dest=new_ptr, src=src_ptr, count=str_len + 1)
         self._data = OwnedPointer(unsafe_from_raw_pointer=new_ptr)
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         """Move constructor.
 
         Args:
@@ -88,7 +88,7 @@ struct StackTrace(Copyable, Movable, Writable):
 
     @staticmethod
     @no_inline
-    fn collect_if_enabled(depth: Int = 0) -> Optional[StackTrace]:
+    def collect_if_enabled(depth: Int = 0) -> Optional[StackTrace]:
         """Collect a stack trace if enabled by environment variable.
 
         This method checks the `MOJO_ENABLE_STACK_TRACE_ON_ERROR` environment
@@ -121,7 +121,7 @@ struct StackTrace(Copyable, Movable, Writable):
 
         return StackTrace(unsafe_from_raw_pointer=buffer)
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the StackTrace to the provided Writer.
 
         Args:
@@ -131,7 +131,7 @@ struct StackTrace(Copyable, Movable, Writable):
             StringSlice(unsafe_from_utf8_ptr=self._data.unsafe_ptr())
         )
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Writes the StackTrace to the provided Writer in repr format.
 
         Args:
@@ -172,7 +172,7 @@ struct Error(
 
     @always_inline
     @implicit
-    fn __init__(out self, var value: String, *, depth: Int = -1):
+    def __init__(out self, var value: String, *, depth: Int = -1):
         """Construct an Error object with a given String.
 
         Args:
@@ -185,7 +185,7 @@ struct Error(
 
     @always_inline
     @implicit
-    fn __init__(out self, value: StringLiteral):
+    def __init__(out self, value: StringLiteral):
         """Construct an Error object with a given string literal.
 
         Args:
@@ -196,7 +196,7 @@ struct Error(
 
     @no_inline
     @implicit
-    fn __init__(out self, value: Some[Writable]):
+    def __init__(out self, value: Some[Writable]):
         """Construct an Error object from a Writable argument.
 
         Args:
@@ -206,7 +206,7 @@ struct Error(
         self._stack_trace = StackTrace.collect_if_enabled(0)
 
     @no_inline
-    fn __init__[*Ts: Writable](out self, *args: *Ts):
+    def __init__[*Ts: Writable](out self, *args: *Ts):
         """Construct an Error by concatenating a sequence of Writable arguments.
 
         Args:
@@ -223,7 +223,7 @@ struct Error(
     # ===-------------------------------------------------------------------===#
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """
         Formats this error to the provided Writer.
 
@@ -233,7 +233,7 @@ struct Error(
         self._error.write_to(writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """
         Formats this error to the provided Writer.
 
@@ -246,7 +246,7 @@ struct Error(
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn get_stack_trace(self) -> Optional[String]:
+    def get_stack_trace(self) -> Optional[String]:
         """Returns the stack trace of the error, if available.
 
         Returns:
@@ -260,6 +260,6 @@ struct Error(
 
 
 @doc_private
-fn __mojo_debugger_raise_hook():
+def __mojo_debugger_raise_hook():
     """This function is used internally by the Mojo Debugger."""
     pass

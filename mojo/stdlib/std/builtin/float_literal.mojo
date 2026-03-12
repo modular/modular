@@ -40,13 +40,13 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     # ===------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __init__(out self):
+    def __init__(out self):
         """Create a FloatLiteral for any parameter value."""
         pass
 
     @always_inline("builtin")
     @implicit
-    fn __init__(
+    def __init__(
         _value: IntLiteral[_],
     ) -> FloatLiteral[
         __mlir_attr[
@@ -79,7 +79,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     """Negative zero value."""
 
     @always_inline("builtin")
-    fn is_nan(self) -> Bool:
+    def is_nan(self) -> Bool:
         """Return whether the FloatLiteral is nan.
 
         Since `nan == nan` is False, this provides a way to check for nan-ness.
@@ -90,7 +90,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return __mlir_attr[`#pop<float_literal_isa<nan `, self.value, `>> : i1`]
 
     @always_inline("builtin")
-    fn is_neg_zero(self) -> Bool:
+    def is_neg_zero(self) -> Bool:
         """Return whether the FloatLiteral is negative zero.
 
         Since `FloatLiteral.negative_zero == 0.0` is True, this provides a way
@@ -104,7 +104,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         ]
 
     @always_inline("builtin")
-    fn _is_normal(self) -> Bool:
+    def _is_normal(self) -> Bool:
         """Return whether the FloatLiteral is a normal (i.e. not special) value.
 
         Returns:
@@ -119,7 +119,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     # ===------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __int_literal__(
+    def __int_literal__(
         self,
     ) -> IntLiteral[
         __mlir_attr[
@@ -140,7 +140,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         """Converts the FloatLiteral value to an Int. If there is a fractional
         component, then the value is truncated towards zero.
 
@@ -152,7 +152,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return self.__int_literal__().__int__()
 
     @always_inline("nodebug")
-    fn __float__(self) -> Float64:
+    def __float__(self) -> Float64:
         """Converts the FloatLiteral to a concrete Float64.
 
         Returns:
@@ -161,7 +161,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return Float64(self)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the FloatLiteral in string form.
 
         Args:
@@ -170,7 +170,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         Float64(self).write_to(writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Writes the FloatLiteral in repr form.
 
         Args:
@@ -183,7 +183,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     # ===------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """A FloatLiteral value is true if it is non-zero.
 
         Returns:
@@ -192,7 +192,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return self != 0.0
 
     @always_inline("builtin")
-    fn __neg__(self) -> type_of(self * -1):
+    def __neg__(self) -> type_of(self * -1):
         """Return the negation of the FloatLiteral value.
 
         Returns:
@@ -205,7 +205,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     # ===------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __add__(
+    def __add__(
         self, rhs: FloatLiteral
     ) -> FloatLiteral[
         __mlir_attr[
@@ -227,7 +227,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __sub__(
+    def __sub__(
         self, rhs: FloatLiteral
     ) -> FloatLiteral[
         __mlir_attr[
@@ -249,7 +249,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __mul__(
+    def __mul__(
         self, rhs: FloatLiteral
     ) -> FloatLiteral[
         __mlir_attr[
@@ -271,7 +271,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __truediv__(
+    def __truediv__(
         self, rhs: FloatLiteral
     ) -> FloatLiteral[
         __mlir_attr[
@@ -294,7 +294,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __floordiv__(
+    def __floordiv__(
         self, rhs: FloatLiteral
     ) -> FloatLiteral[
         __mlir_attr[
@@ -317,7 +317,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __mod__(
+    def __mod__(
         self, rhs: FloatLiteral
     ) -> type_of(self - (self.__floordiv__(rhs) * rhs)):
         """Return the remainder of self divided by rhs.
@@ -331,7 +331,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __ceildiv__(
+    def __ceildiv__(
         self, denominator: FloatLiteral
     ) -> type_of(-(self // -denominator)):
         """Return the rounded-up result of dividing self by denominator.
@@ -351,7 +351,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     # ===------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __radd__(self, rhs: FloatLiteral) -> type_of(rhs + self):
+    def __radd__(self, rhs: FloatLiteral) -> type_of(rhs + self):
         """Reversed addition operator.
 
         Args:
@@ -363,7 +363,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __rsub__(self, rhs: FloatLiteral) -> type_of(rhs - self):
+    def __rsub__(self, rhs: FloatLiteral) -> type_of(rhs - self):
         """Reversed subtraction operator.
 
         Args:
@@ -375,7 +375,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __rmul__(self, rhs: FloatLiteral) -> type_of(rhs * self):
+    def __rmul__(self, rhs: FloatLiteral) -> type_of(rhs * self):
         """Reversed multiplication operator.
 
         Args:
@@ -387,7 +387,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __rmod__(self, rhs: FloatLiteral) -> type_of(rhs.__mod__(self)):
+    def __rmod__(self, rhs: FloatLiteral) -> type_of(rhs.__mod__(self)):
         """Return the remainder of rhs divided by self.
 
         Args:
@@ -399,7 +399,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __rfloordiv__(self, rhs: FloatLiteral) -> type_of(rhs // self):
+    def __rfloordiv__(self, rhs: FloatLiteral) -> type_of(rhs // self):
         """Returns rhs divided by self, rounded down to the nearest integer.
 
         Args:
@@ -411,7 +411,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __rtruediv__(self, rhs: FloatLiteral) -> type_of(rhs / self):
+    def __rtruediv__(self, rhs: FloatLiteral) -> type_of(rhs / self):
         """Reversed division.
 
         Args:
@@ -427,7 +427,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     # ===------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __eq__(self, rhs: FloatLiteral) -> Bool:
+    def __eq__(self, rhs: FloatLiteral) -> Bool:
         """Compare for equality.
 
         Args:
@@ -447,7 +447,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         )
 
     @always_inline("builtin")
-    fn __ne__(self, rhs: FloatLiteral) -> Bool:
+    def __ne__(self, rhs: FloatLiteral) -> Bool:
         """Compare for inequality.
 
         Args:
@@ -467,7 +467,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         )
 
     @always_inline("builtin")
-    fn __lt__(self, rhs: FloatLiteral) -> Bool:
+    def __lt__(self, rhs: FloatLiteral) -> Bool:
         """Less than comparison.
 
         Args:
@@ -487,7 +487,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         )
 
     @always_inline("builtin")
-    fn __le__(self, rhs: FloatLiteral) -> Bool:
+    def __le__(self, rhs: FloatLiteral) -> Bool:
         """Less than or equal to comparison.
 
         Args:
@@ -507,7 +507,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         )
 
     @always_inline("builtin")
-    fn __gt__(self, rhs: FloatLiteral) -> Bool:
+    def __gt__(self, rhs: FloatLiteral) -> Bool:
         """Greater than comparison.
 
         Args:
@@ -527,7 +527,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         )
 
     @always_inline("builtin")
-    fn __ge__(self, rhs: FloatLiteral) -> Bool:
+    def __ge__(self, rhs: FloatLiteral) -> Bool:
         """Greater than or equal to comparison.
 
         Args:
