@@ -16,6 +16,7 @@ import gc
 import logging
 import math
 import os
+import pickle
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -26,7 +27,6 @@ import pandas as pd
 import rich
 from kbench_model import (
     KBENCH_MODE,
-    ExecTaskArgs,
     KbenchCache,
     Scheduler,
     Spec,
@@ -47,7 +47,6 @@ from utils import (
     _get_core_count,
     _get_gpu_count,
     _get_visible_device_prefix,
-    _percentage,
     check_gpu_clock,
     check_valid_target_accelerator,
     get_target_accelerator_helpstr,
@@ -57,7 +56,6 @@ from utils import (
 ##### Utilities and configurations #####
 
 CONSOLE = Console(width=80)
-CURRENT_FILE = Path(__file__).resolve()
 
 pd.set_option("display.float_format", str)
 
@@ -124,6 +122,7 @@ def run(
     target_accelerator: str | None = None,
     timeout_secs: int | None = None,
     plot: str = "bars",
+    use_shared_lib: bool = False,
 ) -> None:
     if yaml_path_list:
         # Load specs from a list of YAML files and join them in 'spec'.
@@ -193,104 +192,49 @@ def run(
         dryrun=dryrun,
         output_suffix="output.csv",
         progress=progress,
+        use_shared_lib=use_shared_lib,
     )
 
     visible_device_prefix = _get_visible_device_prefix(str(target_accelerator))
 
+    # 0 means no timeout (infinite wait).
+    effective_timeout = timeout_secs if timeout_secs else None
+
     # Run the code over the mesh of param/values
     t_start_total = time()
-    t_benchmark_total = 0.0
 
     with progress:
         try:
-            # Get the binary path for the unique list of build items
-            # Build the binary if:
-            # - could not find executable in the cache or cache is not active,
-            # - could not find executable in the unique list of scheduled build items
             scheduler.build_all()
             obj_cache.dump()
 
-            t_build_total = time() - t_start_total
-
-            t_benchmark_start = time()
             if mode in [KBENCH_MODE.RUN, KBENCH_MODE.BUILD_AND_RUN]:
-                scheduler.setup_execution_pool(
+                scheduler.execute_all(
                     visible_device_prefix=visible_device_prefix,
-                    use_mpirun="mpirun" in exec_prefix,
+                    timeout_secs=effective_timeout,
+                    profile=profile,
+                    exec_prefix=exec_prefix,
+                    exec_suffix=exec_suffix,
                 )
-                num_build_items = len(scheduler.build_items)
-                exec_progress = scheduler.progress.add_task(
-                    "run",
-                    total=num_build_items,
-                )
-
-                # execute build items in batches of size Scheduler.EXEC_STRIDE
-                for lower_bound in range(
-                    0, num_build_items, Scheduler.EXEC_STRIDE
-                ):
-                    upper_bound = min(
-                        lower_bound + Scheduler.EXEC_STRIDE, num_build_items
-                    )
-
-                    tasks: list[ExecTaskArgs] = []
-                    for cnt in range(lower_bound, upper_bound):
-                        tasks.append(
-                            ExecTaskArgs(
-                                build_item=scheduler.build_items[cnt],
-                                profile=profile,
-                                exec_prefix=exec_prefix,
-                                exec_suffix=exec_suffix,
-                                timeout_secs=timeout_secs,
-                            )
-                        )
-
-                    for b in scheduler.execution_pool.imap_unordered(
-                        scheduler._pool_execute_item_wrapper,
-                        tasks,
-                        chunksize=1,
-                    ):
-                        scheduler.build_items[b.idx] = b
-                        logging.info(
-                            f"running binary [{b.idx}/{num_build_items - 1}] ({_percentage(b.idx + 1, num_build_items)}%)"
-                        )
-                        scheduler.progress.update(exec_progress, advance=1)
-
-                    t_benchmark_total = time() - t_benchmark_start
-                    t_elapsed_total = time() - t_start_total
-
-                    # dump results that have been executed so far
-                    # ensure there are more than one iterations of stride loop.
-                    if num_build_items >= Scheduler.EXEC_STRIDE:
-                        Scheduler.dump(
-                            scheduler.build_items[0:upper_bound],
-                            spec,
-                            output_path,
-                            mode,
-                            t_build_total,
-                            t_benchmark_total,
-                            t_elapsed_total,
-                            verbose=False,
-                        )
-                logging.info("finished running all binaries")
-                scheduler.close_execution_pool()
 
         except KeyboardInterrupt:
             scheduler.close_build_pool()
-            scheduler.close_execution_pool()
+            scheduler.shutdown_workers()
             obj_cache.dump()
             sys.exit(0)
 
+    t_elapsed_total = time() - t_start_total
+
     ###############################
     # dump all the details
-    t_elapsed_total = time() - t_start_total
     gc.collect()
     Scheduler.dump(
         scheduler.build_items,
         spec,
         output_path,
         mode,
-        t_build_total,
-        t_benchmark_total,
+        scheduler.t_build_total,
+        scheduler.t_benchmark_total,
         t_elapsed_total,
         verbose=verbose,
     )
@@ -300,8 +244,6 @@ def run(
     if plot != "none" and mode in [KBENCH_MODE.RUN, KBENCH_MODE.BUILD_AND_RUN]:
         pkl_path = output_path.with_suffix(output_path.suffix + ".pkl")
         if pkl_path.exists():
-            import pickle
-
             with open(pkl_path, "rb") as f:
                 pkl_data = pickle.load(f)
             if "merged_df" in pkl_data:
@@ -492,7 +434,7 @@ def set_build_opts(
 )
 @click.option(
     "--profile",
-    default=(),
+    default="",
     help="Set the profiler [ncu, ncu-single, rocm, rocprof-compute].",
     multiple=False,
 )
@@ -510,8 +452,9 @@ def set_build_opts(
 )
 @click.option(
     "--timeout-secs",
-    default=None,
-    help="Timeout seconds for executing each binary. (default=None)",
+    default=60,
+    show_default=True,
+    help="Timeout seconds for executing each benchmark. 0 disables timeout.",
     multiple=False,
     type=click.INT,
 )
@@ -686,6 +629,12 @@ def cli(
     if mpirun_np > 1:
         exec_prefix_list.extend(["mpirun", "-np", str(mpirun_np)])
 
+    # Auto-select: use shared lib (.so) mode when possible for faster execution.
+    # Falls back to subprocess mode when profiling or using custom exec wrappers.
+    use_shared_lib = not profile and not exec_prefix and not exec_suffix
+    if use_shared_lib:
+        logging.info("Using shared library (.so) mode for faster execution")
+
     shapes_per_partition = math.ceil(len(shape_list) / num_partitions)
     shape_idx_lb = partition_idx * shapes_per_partition
     shape_idx_ub = min(shape_idx_lb + shapes_per_partition, len(shape_list))
@@ -712,6 +661,7 @@ def cli(
             target_accelerator=target_accelerator,
             timeout_secs=timeout_secs,
             plot=plot,
+            use_shared_lib=use_shared_lib,
         )
         if obj_cache.is_active:
             obj_cache.dump()
