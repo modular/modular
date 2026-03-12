@@ -19,15 +19,17 @@ import enum
 import functools
 import json
 import os
+import shutil
 import sys
 import time
 import traceback
-from collections.abc import Generator, Mapping
+from collections.abc import Generator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
 
 import click
+import numpy as np
 from generate_llm_logits import Flake, generate_llm_logits
 from max.pipelines.lib.device_specs import (
     device_specs_from_normalized_device_handle,
@@ -47,6 +49,7 @@ from test_common.process_isolation import run_in_isolated_process
 from test_common.storage import load_from_tar
 from verify import DiscrepancyReport, verify
 from verify import ModelModality as Modality
+from PIL import Image
 
 # This is far from a universal standard, but this is the closest to a standard
 # that I could find: BSD-derived programs sometimes use exit codes from
@@ -172,6 +175,69 @@ def load_verdicts_from_json(filepath: Path) -> dict[str, VerificationVerdict]:
     except Exception as e:
         print(f"Error loading verdicts from JSON: {e}", file=sys.stderr)
         return {}
+
+def _to_uint8_image(image: np.ndarray) -> np.ndarray:
+    """Convert a normalized HWC image array to uint8 for preview output."""
+    image_array = np.asarray(image)
+    if image_array.ndim != 3:
+        raise ValueError(
+            f"Expected image with shape [height, width, channels], got {image_array.shape}"
+        )
+    if image_array.dtype == np.uint8:
+        return image_array
+    return (np.clip(image_array, 0.0, 1.0) * 255.0).astype(np.uint8)
+
+
+def _save_pixel_outputs(
+    *,
+    results: Sequence[ModelOutput],
+    output_root: Path,
+    pipeline: str,
+    encoding: SupportedEncoding,
+    framework_label: str,
+) -> Path:
+    """Write preview PNGs and a manifest for pixel-generation results."""
+    output_dir = (
+        output_root
+        / pipeline.replace("/", "__")
+        / str(encoding)
+        / framework_label
+    )
+    shutil.rmtree(output_dir, ignore_errors=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest: dict[str, Any] = {
+        "pipeline": pipeline,
+        "encoding": str(encoding),
+        "framework": framework_label,
+        "samples": [],
+    }
+
+    for index, result in enumerate(results):
+        image = result.get("images")
+        if image is None:
+            continue
+
+        prompt = str(result.get("prompt", f"sample_{index:03d}"))
+        image_path = output_dir / f"{index:03d}.png"
+        Image.fromarray(_to_uint8_image(image)).save(image_path)
+        manifest["samples"].append(
+            {
+                "index": index,
+                "image": image_path.name,
+                "prompt": prompt,
+            }
+        )
+
+    manifest_path = output_dir / "manifest.json"
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, ensure_ascii=False)
+
+    print(
+        f"Saved {framework_label} pixel outputs to {output_dir}",
+        flush=True,
+    )
+    return output_dir
 
 
 def display_name(name: str) -> str:
@@ -849,6 +915,7 @@ def _run_pixel_generation_verification(
     devices: str,
     find_tolerances: bool,
     print_suggested_tolerances: bool,
+    pixel_results_dir: Path | None = None,
 ) -> VerificationVerdict:
     """Run pixel generation verification with the given model and weights encoding.
 
@@ -883,6 +950,14 @@ def _run_pixel_generation_verification(
     torch_results: list[ModelOutput] = NumpyDecoder().decode(
         torch_golden_path.read_text()
     )
+    if pixel_results_dir is not None:
+        _save_pixel_outputs(
+            results=torch_results,
+            output_root=pixel_results_dir,
+            pipeline=config.pipeline,
+            encoding=encoding,
+            framework_label="diffusers",
+        )
 
     absolute_tolerance = config.absolute_tolerance
     relative_tolerance = config.relative_tolerance
@@ -908,6 +983,14 @@ def _run_pixel_generation_verification(
         reference=torch_results,
         timeout=config.timeout,
     )
+    if pixel_results_dir is not None:
+        _save_pixel_outputs(
+            results=NumpyDecoder().decode(max_golden_path.read_text()),
+            output_root=pixel_results_dir,
+            pipeline=config.pipeline,
+            encoding=encoding,
+            framework_label="max",
+        )
 
     eval_metrics = []
     if absolute_tolerance is not None and relative_tolerance is not None:
@@ -955,6 +1038,7 @@ def run_pixel_generation_verification(
     devices: str,
     find_tolerances: bool,
     print_suggested_tolerances: bool,
+    pixel_results_dir: Path | None = None,
 ) -> VerificationVerdict:
     """Run pixel generation verification with error handling for flakes and infra issues."""
     try:
@@ -965,6 +1049,7 @@ def run_pixel_generation_verification(
                 devices=devices,
                 find_tolerances=find_tolerances,
                 print_suggested_tolerances=print_suggested_tolerances,
+                pixel_results_dir=pixel_results_dir,
             )
     except Flake:
         return VerificationVerdict(status=VerificationStatus.FLAKE)
@@ -1051,6 +1136,14 @@ def _is_pixel_generation(config: PipelineConfig) -> bool:
     type=click.Path(path_type=Path),
     help="Load previous verdicts from JSON file to compare changes",
 )
+@click.option(
+    "--pixel-results-dir",
+    type=click.Path(path_type=Path, file_okay=False),
+    help=(
+        "Save generated image outputs for pixel pipelines under this"
+        " directory. Disabled if omitted."
+    ),
+)
 @click.option("--devices", "devices_str", help="Devices to run pipeline on")
 @click.option(
     "--pipeline",
@@ -1118,6 +1211,7 @@ def main(
     report: TextIO | None,
     store_verdicts_json: Path | None,
     load_verdicts_json: Path | None,
+    pixel_results_dir: Path | None,
     devices_str: str | None,
     pipelines: tuple[str, ...],
     tag_filter: TagFilter,
@@ -1212,6 +1306,7 @@ def main(
                 devices=devices_str,
                 find_tolerances=find_tolerances,
                 print_suggested_tolerances=print_suggested_tolerances,
+                pixel_results_dir=pixel_results_dir,
             )
         else:
             verdicts[pipeline_name] = run_llm_verification(

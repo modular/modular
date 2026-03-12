@@ -238,6 +238,17 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_verify_pipelines_results",
+    size = "small",
+    srcs = ["test_verify_pipelines_results.py"],
+    deps = [
+        ":verify_pipelines",
+        requirement("click"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_generate_llm_logits_gpu",
     size = "medium",
     srcs = ["test_generate_llm_logits_gpu.py"],

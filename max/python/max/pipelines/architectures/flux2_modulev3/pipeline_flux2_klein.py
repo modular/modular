@@ -234,6 +234,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
             )
 
         # 6) Denoising loop.
+        self.transformer.use_standard_model()
         is_img2img = image_latents is not None
         with Tracer("denoising_loop"):
             for i in range(model_inputs.num_inference_steps):
