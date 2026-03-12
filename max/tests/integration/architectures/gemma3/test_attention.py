@@ -56,17 +56,31 @@ def _get_position_embeddings(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Generates rotary position embeddings based on the input tensor shape."""
     seq_len = input_tensor.shape[1]
-    if use_global_rope:
-        rotary_emb = Gemma3RotaryEmbedding(config=text_config, device="cuda")
-    else:
-        config = copy.deepcopy(text_config)
-        config.rope_theta = config.rope_local_base_freq
-        config.rope_scaling = {"rope_type": "default"}
-        rotary_emb = Gemma3RotaryEmbedding(config=config, device="cuda")
     position_ids = torch.arange(
         seq_len, dtype=torch.long, device="cuda"
     ).unsqueeze(0)
-    cos, sin = rotary_emb(input_tensor, position_ids)
+
+    rope_params = getattr(text_config, "rope_parameters", None)
+    if isinstance(rope_params, dict) and "sliding_attention" in rope_params:
+        # v5: single embedding handles both layer types natively
+        rotary_emb = Gemma3RotaryEmbedding(config=text_config, device="cuda")
+        layer_type = (
+            "full_attention" if use_global_rope else "sliding_attention"
+        )
+        cos, sin = rotary_emb(input_tensor, position_ids, layer_type=layer_type)
+    else:
+        # v4: need separate embedding with hacked config for local rope
+        if use_global_rope:
+            rotary_emb = Gemma3RotaryEmbedding(
+                config=text_config, device="cuda"
+            )
+        else:
+            config = copy.deepcopy(text_config)
+            config.rope_theta = config.rope_local_base_freq
+            config.rope_scaling = {"rope_type": "default"}
+            rotary_emb = Gemma3RotaryEmbedding(config=config, device="cuda")
+        cos, sin = rotary_emb(input_tensor, position_ids)
+
     return cos.to(torch.bfloat16).to("cuda"), sin.to(torch.bfloat16).to("cuda")
 
 
@@ -156,11 +170,19 @@ def generate_max_outputs(
 
     session = InferenceSession(devices=[Accelerator(0)])
 
+    rope_params = getattr(text_config, "rope_parameters", None)
+    if isinstance(rope_params, dict) and "full_attention" in rope_params:
+        rope_theta = rope_params["full_attention"]["rope_theta"]
+        rope_local_base_freq = rope_params["sliding_attention"]["rope_theta"]
+    else:
+        rope_theta = text_config.rope_theta
+        rope_local_base_freq = text_config.rope_local_base_freq
+
     attention = MaxGemma3Attention(
         rope_global=Llama3RotaryEmbedding(
             text_config.hidden_size,
             text_config.num_attention_heads,
-            text_config.rope_theta,
+            rope_theta,
             MAX_SEQ_LEN,
             interleaved=False,
             head_dim=text_config.head_dim,
@@ -168,7 +190,7 @@ def generate_max_outputs(
         rope_local=Llama3RotaryEmbedding(
             text_config.hidden_size,
             text_config.num_attention_heads,
-            text_config.rope_local_base_freq,
+            rope_local_base_freq,
             MAX_SEQ_LEN,
             interleaved=False,
             head_dim=text_config.head_dim,

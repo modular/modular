@@ -36,6 +36,12 @@ def text_config() -> Olmo2Config:
     with open(config_path) as file:
         data = json.load(file)
     config.update(data)
+    # v5 requires rope_parameters; v4 configs don't set it
+    if getattr(config, "rope_parameters", None) is None:
+        config.rope_parameters = {
+            "rope_type": "default",
+            "rope_theta": config.rope_theta,
+        }
     return config
 
 
