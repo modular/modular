@@ -47,7 +47,7 @@ fn test():
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
                        EXPECT_EQ(signatureHelp.activeParameter, 0);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
-                                 "fn __init__() -> Self");
+                                 "def __init__() -> Self");
                        EXPECT_EQ(signatureHelp.signatures[1].label,
                                  "fn __init__(out self, *, deinit take: Self)");
                        EXPECT_EQ(signatureHelp.signatures[2].label,
@@ -71,7 +71,7 @@ fn test():
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
                        EXPECT_EQ(signatureHelp.activeParameter, 1);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
-                                 "fn __init__() -> Self");
+                                 "def __init__() -> Self");
                        EXPECT_EQ(signatureHelp.signatures[1].label,
                                  "fn __init__(out self, *, deinit take: Self)");
                        EXPECT_EQ(signatureHelp.signatures[2].label,
