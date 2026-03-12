@@ -256,20 +256,20 @@ def test_string_indexing() raises:
     assert_equal("H", str[byte=0])
     assert_equal("!", str[byte=-1])
     assert_equal("H", str[byte=-len(str)])
-    assert_equal("llo Mojo!!", str[2:])
-    assert_equal("lo Mojo!", str[3:-1])
-    assert_equal("lo Moj", str[3:-3])
+    assert_equal("llo Mojo!!", str[byte=2:])
+    assert_equal("lo Mojo!", str[byte=3:-1])
+    assert_equal("lo Moj", str[byte=3:-3])
 
-    assert_equal("Hello Mojo!!", str[-50::])
-    assert_equal("Hello Mojo!!", str[:50:])
+    assert_equal("Hello Mojo!!", str[byte=-50::])
+    assert_equal("Hello Mojo!!", str[byte=:50:])
 
     var str2 = "😌😃"
     assert_equal("😌", str2[byte=0])
-    assert_equal("😌", str2[0:4])
+    assert_equal("😌", str2[byte=0:4])
     assert_equal("😃", str2[byte=4])
-    assert_equal("😃", str2[4:])
+    assert_equal("😃", str2[byte=4:])
     var str3 = "😌😃🥰😋"
-    assert_equal("😃🥰", str3[4:12])
+    assert_equal("😃🥰", str3[byte=4:12])
 
 
 def test_atol() raises:

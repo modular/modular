@@ -262,7 +262,7 @@ struct PythonVersion(ImplicitlyCopyable, RegisterPassable):
             if version[byte=next_idx] == "." or (
                 version[byte=next_idx] == " " and i == 2
             ):
-                var c = version[start:next_idx]
+                var c = version[byte=start:next_idx]
                 try:
                     components[i] = atol(c)
                 except:

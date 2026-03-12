@@ -123,8 +123,8 @@ fn _unqualified_type_name[type: AnyType]() -> StaticString:
     if parameter_list_start == -1:
         return name.split(".")[-1]
     else:
-        comptime base_name = name[:parameter_list_start].split(".")[-1]
-        comptime parameters = name[parameter_list_start:]
+        comptime base_name = name[byte=:parameter_list_start].split(".")[-1]
+        comptime parameters = name[byte=parameter_list_start:]
         return get_static_string[base_name, parameters]()
 
 

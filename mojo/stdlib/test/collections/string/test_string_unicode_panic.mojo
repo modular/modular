@@ -60,4 +60,4 @@ def main() raises:
     elif test == "7":
         var s = String("😌😃")
         # CHECK_7: is not a codepoint boundary.
-        var y = s[0:5]
+        var y = s[byte=0:5]
