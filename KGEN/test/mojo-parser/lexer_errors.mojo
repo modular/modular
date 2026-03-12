@@ -154,3 +154,121 @@ t"Missing closing brace {expr}"
 # expected-error @+1 {{unterminated t-string (missing closing quote)}}
 t"Nested {t"inner} incomplete"
 t"Nested {t"inner"} incomplete"
+
+# // -----
+
+# Raw t-string: unescaped newline with double quotes (rt prefix)
+# expected-error @+1 {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+rt"Hello
+rt"Hello"
+
+# // -----
+
+# Raw t-string: unescaped newline with single quotes (rt prefix)
+# expected-error @+1 {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+rt'Hello
+rt'Hello'
+
+# // -----
+
+# Raw t-string: unescaped newline with double quotes (tr prefix)
+# expected-error @+1 {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+tr"Hello
+tr"Hello"
+
+# // -----
+
+# Raw t-string: unescaped newline with single quotes (tr prefix)
+# expected-error @+1 {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+tr'Hello
+tr'Hello'
+
+# // -----
+
+# Raw t-string: unterminated triple-quoted (rt prefix)
+# expected-error @+1 {{unterminated t-string (missing closing quote)}}
+rt"""Hello
+
+# // -----
+
+# Raw t-string: unterminated triple-quoted single quotes (rt prefix)
+# expected-error @+1 {{unterminated t-string (missing closing quote)}}
+rt'''Hello
+
+# // -----
+
+# Raw t-string: unclosed expression
+# expected-error @+1 {{unterminated t-string (missing closing quote)}}
+rt"Hello{name
+
+# // -----
+
+# Raw t-string: newline in middle of string (double quotes)
+# expected-error @+1 {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+rt"Hello
+World"
+
+# // -----
+
+# Raw t-string: newline in middle of string (single quotes)
+# expected-error @+1 {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+rt'Hello
+World'
+
+# // -----
+
+# Raw t-string: uppercase prefix variants
+# expected-error @+1 {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+Rt"Hello
+Rt"Hello"
+
+# // -----
+
+# expected-error @+1 {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+rT"Hello
+rT"Hello"
+
+# // -----
+
+# expected-error @+1 {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+RT"Hello
+RT"Hello"
+
+# // -----
+
+# expected-error @+1 {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+tR"Hello
+tR"Hello"
+
+# // -----
+
+# expected-error @+1 {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+Tr"Hello
+Tr"Hello"
+
+# // -----
+
+# expected-error @+1 {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+TR"Hello
+TR"Hello"
+
+# // -----
+
+# Raw t-string: unclosed expression with recovery line
+# expected-error @+1 {{unterminated t-string (missing closing quote)}}
+rt"Unclosed {expr
+rt"Unclosed {expr}"
+
+# // -----
+
+# Raw t-string: missing closing brace
+# expected-error @+1 {{unterminated t-string (missing closing quote)}}
+rt"Missing closing brace {expr"
+rt"Missing closing brace {expr}"
+
+# // -----
+
+# Raw t-string: nested raw t-string incomplete
+# expected-error @+1 {{unterminated t-string (missing closing quote)}}
+rt"Nested {rt"inner} incomplete"
+rt"Nested {rt"inner"} incomplete"

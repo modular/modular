@@ -144,11 +144,19 @@ public:
   static std::string getStringLiteralValue(StringRef spelling);
   /// Return the string value of a t-string literal part after processing
   /// escape sequences. Unlike getStringLiteralValue, this expects raw content
-  /// without quotes.
-  static std::string getTStringLiteralValue(StringRef bytes);
+  /// without quotes. When \p isRaw is true, backslashes are treated as literal
+  /// characters (for raw t-strings like rt"..." or tr"...").
+  static std::string getTStringLiteralValue(StringRef bytes,
+                                            bool isRaw = false);
   /// Return a location to the start of the given string, after stripping the
   /// wrapping quotes.
   static SMLoc getStringLiteralStartLoc(StringRef spelling);
+
+  /// Detect and skip a t-string prefix at \p ptr. Handles t, T, rt, rT, Rt,
+  /// RT, tr, tR, Tr, TR. Advances \p ptr past the prefix. Returns true if
+  /// the prefix includes 'r'/'R' (i.e. this is a raw t-string).
+  /// Caller must ensure \p ptr starts at a valid t-string prefix character.
+  static bool skipTStringPrefix(const char *&ptr);
 
   /// Check if \p ptr points to a triple-quote sequence of \p quoteChar
   /// within the bounds [ptr, end). Used by both lexer and parser.

@@ -44,17 +44,17 @@ name = "Łukasz"
 (f"hello {name}", f"hello {name}")
 (b"", b"")
 ("", "")
-(r"", R"")
+(r"", r"")
 
-(rf"", rf"", Rf"", Rf"", rf"", rf"", Rf"", Rf"")
-(rb"", rb"", Rb"", Rb"", rb"", rb"", Rb"", Rb"")
+(rf"", rf"", rf"", rf"", rf"", rf"", rf"", rf"")
+(rb"", rb"", rb"", rb"", rb"", rb"", rb"", rb"")
 
 
 def docstring_singleline():
-    R"""2020 was one hell of a year. The good news is that we were able to"""
+    r"""2020 was one hell of a year. The good news is that we were able to"""
 
 
 def docstring_multiline():
-    R"""
+    r"""
     clear out all of the issues opened in that time :p
     """
