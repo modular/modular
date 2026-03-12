@@ -113,7 +113,7 @@ comptime WarpRole = _WarpRole[has_scheduler=False]
 
 
 @always_inline
-fn copy_accum_to_gmem[
+def copy_accum_to_gmem[
     c_type: DType,
     c_tile_rank: Int,
     c_tile_shape: IndexList[c_tile_rank],
@@ -587,7 +587,7 @@ fn copy_accum_to_gmem[
 
 
 @always_inline
-fn multi_stage_store_C[
+def multi_stage_store_C[
     c_type: DType,
     c_tile_rank: Int,
     c_tile_shape: IndexList[c_tile_rank],
@@ -776,7 +776,7 @@ struct B200BlockScaledMatmulSmem[
 
 
 @always_inline
-fn load_AB[
+def load_AB[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -997,7 +997,7 @@ fn load_AB[
 
 
 @always_inline
-fn consumer_main_loop[
+def consumer_main_loop[
     accum_type: DType,
     c_type: DType,
     a_type: DType,
@@ -1128,7 +1128,7 @@ fn consumer_main_loop[
         mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
 
 
-fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -1284,7 +1284,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         )
 
 
-fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -1626,7 +1626,7 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
-fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
+def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -2163,7 +2163,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         _ = tmem_dealloc_mbar[].arrive()
 
 
-fn grouped_matmul_dynamic_scaled_nvfp4[
+def grouped_matmul_dynamic_scaled_nvfp4[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,

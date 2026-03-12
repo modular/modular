@@ -28,7 +28,7 @@ from .mxfp4_dequant import dequant_mxfp4
 from .matmul.gpu import _matmul_gpu
 
 
-fn mxfp4_matmul_sm90(
+def mxfp4_matmul_sm90(
     c: TileTensor,
     a: TileTensor,
     b_packed: TileTensor,
@@ -116,7 +116,7 @@ fn mxfp4_matmul_sm90(
     _ = a_fp8_buf^
 
 
-fn _cast_bf16_to_fp8(
+def _cast_bf16_to_fp8(
     ctx: DeviceContext,
     output: TileTensor,
     input: TileTensor,
@@ -132,7 +132,7 @@ fn _cast_bf16_to_fp8(
     @always_inline
     @__copy_capture(out_tt, in_tt)
     @parameter
-    fn cast_fn[
+    def cast_fn[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank],):
         comptime assert rank == 2, "cast_fn only supports rank-2 tensors"

@@ -47,7 +47,7 @@ struct TMADescriptor[
 
     @always_inline
     @implicit
-    fn __init__(out self, tensormap: TensorMap):
+    def __init__(out self, tensormap: TensorMap):
         """
         Initializes a new TMADescriptor with the provided TMA tensormap.
 
@@ -57,7 +57,7 @@ struct TMADescriptor[
         self.tensormap = tensormap
 
     @always_inline
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """
         Copy initializes this `TMADescriptor` from another instance.
 
@@ -67,7 +67,7 @@ struct TMADescriptor[
         self.tensormap = copy.tensormap
 
 
-fn create_tma_descriptor[
+def create_tma_descriptor[
     dtype: DType,
     tile_shape: IntTuple,
     /,
@@ -135,11 +135,11 @@ struct TMALoad[
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         return String(
             "TMALoad[dtype = ",
             Self.dtype,
@@ -152,7 +152,7 @@ struct TMALoad[
 
     @always_inline
     @implicit
-    fn __init__(
+    def __init__(
         out self,
         ref descriptor: TMADescriptor[
             Self.dtype, Self.tile_shape, Self.swizzle_mode
@@ -161,7 +161,7 @@ struct TMALoad[
         self.descriptor = descriptor
 
     @staticmethod
-    fn verify_destination_tensor(dst: LayoutTensor):
+    def verify_destination_tensor(dst: LayoutTensor):
         comptime assert Self.dtype == dst.dtype, String(
             "type mismatch: expected ", Self.dtype, " passed in ", dst.dtype
         )
@@ -181,7 +181,7 @@ struct TMALoad[
         )
 
     @staticmethod
-    fn verify_source_tensor(src: LayoutTensor):
+    def verify_source_tensor(src: LayoutTensor):
         comptime assert src.address_space == AddressSpace.GLOBAL, String(
             "address space mismatch: expected ",
             AddressSpace.GLOBAL,
@@ -190,7 +190,7 @@ struct TMALoad[
         )
 
     @staticmethod
-    fn layout_is_tma_compatible[repeat_pattern: Layout]() -> Bool:
+    def layout_is_tma_compatible[repeat_pattern: Layout]() -> Bool:
         comptime shape = repeat_pattern.shape
         comptime stride = repeat_pattern.stride
 
@@ -204,7 +204,7 @@ struct TMALoad[
         return True
 
     @staticmethod
-    fn get_2D_smem_layout[m: Int, n: Int]() -> Layout:
+    def get_2D_smem_layout[m: Int, n: Int]() -> Layout:
         comptime desc_layout = Layout.row_major(Self.tile_shape)
 
         comptime blocked_smem_layout = blocked_product(
@@ -219,7 +219,7 @@ struct TMALoad[
         return materialize[blocked_smem_layout]()
 
     @staticmethod
-    fn get_repeat_pattern[
+    def get_repeat_pattern[
         dst_layout: Layout, check_tma_compatibility: Bool = True
     ]() -> Layout:
         comptime descriptor_layout = Layout(
@@ -244,7 +244,7 @@ comptime MBarPtr = UnsafePointer[
 ]
 
 
-fn copy[
+def copy[
     rank: Int,
     //,
     cta_group: Int = 1,
@@ -376,7 +376,7 @@ fn copy[
 
 
 @parameter
-fn to_swizzle[dtype: DType, mode: SwizzleMode]() -> Swizzle:
+def to_swizzle[dtype: DType, mode: SwizzleMode]() -> Swizzle:
     """Create swizzle based on predefined swizzle modes.
 
     Returns a swizzle pattern based on standard modes (32B, 64B,

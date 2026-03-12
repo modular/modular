@@ -22,7 +22,7 @@ from std.sys import is_amd_gpu
 
 
 @always_inline
-fn compute_dynamic_fp8_scale[
+def compute_dynamic_fp8_scale[
     out_dtype: DType,
 ](
     row_max: Scalar,
@@ -60,7 +60,7 @@ fn compute_dynamic_fp8_scale[
 
 
 @always_inline
-fn fp8_quantize[
+def fp8_quantize[
     out_dtype: DType,
     *,
     use_clamp: Bool = is_amd_gpu(),

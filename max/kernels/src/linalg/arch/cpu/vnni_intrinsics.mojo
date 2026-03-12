@@ -25,7 +25,7 @@ from std.memory.unsafe import bitcast
 # ===-----------------------------------------------------------------------===#
 
 
-fn vpdpwssd[
+def vpdpwssd[
     width: Int, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width],
@@ -54,7 +54,7 @@ fn vpdpwssd[
 # ===-----------------------------------------------------------------------===#
 
 
-fn vpdpwssds[
+def vpdpwssds[
     width: Int, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width],
@@ -83,7 +83,7 @@ fn vpdpwssds[
 # ===-----------------------------------------------------------------------===#
 
 
-fn vpdpbusd[
+def vpdpbusd[
     width: Int, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
@@ -122,7 +122,7 @@ fn vpdpbusd[
 # ===-----------------------------------------------------------------------===#
 
 
-fn vpdpbusds[
+def vpdpbusds[
     width: Int, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
@@ -156,7 +156,7 @@ fn vpdpbusds[
         )
 
 
-fn _dot_i8_to_i32_16(
+def _dot_i8_to_i32_16(
     src: SIMD[DType.int32, 16], a: SIMD[DType.int8, 64], b: SIMD[DType.int8, 64]
 ) -> SIMD[DType.int32, 16]:
     var mask_hi = bitcast[DType.int8, 64](SIMD[DType.int16, 32](0x0100))
@@ -182,7 +182,7 @@ fn _dot_i8_to_i32_16(
     return src + t1 + t2
 
 
-fn _dot_i8_to_i32_8(
+def _dot_i8_to_i32_8(
     src: SIMD[DType.int32, 8], a: SIMD[DType.int8, 32], b: SIMD[DType.int8, 32]
 ) -> SIMD[DType.int32, 8]:
     var mask_hi = bitcast[DType.int8, 32](SIMD[DType.int16, 16](0x0100))
@@ -209,7 +209,7 @@ fn _dot_i8_to_i32_8(
     return src + t1 + t2
 
 
-fn _dot_i8_to_i32_4(
+def _dot_i8_to_i32_4(
     src: SIMD[DType.int32, 4], a: SIMD[DType.int8, 16], b: SIMD[DType.int8, 16]
 ) -> SIMD[DType.int32, 4]:
     var mask_hi = bitcast[DType.int8, 16](SIMD[DType.int16, 8](0x0100))
@@ -236,7 +236,7 @@ fn _dot_i8_to_i32_4(
     return src + t1 + t2
 
 
-fn pmaddubs[
+def pmaddubs[
     width: Int
 ](a: SIMD[DType.int32, width], b: SIMD[DType.int32, width]) -> SIMD[
     DType.int32, width
@@ -277,7 +277,7 @@ fn pmaddubs[
         )
 
 
-fn pmaddw[
+def pmaddw[
     width: Int
 ](a: SIMD[DType.int32, width], b: SIMD[DType.int32, width]) -> SIMD[
     DType.int32, width
@@ -318,7 +318,7 @@ fn pmaddw[
         )
 
 
-fn _dot_i8_to_i32_saturated_16(
+def _dot_i8_to_i32_saturated_16(
     src: SIMD[DType.int32, 16], a: SIMD[DType.int8, 64], b: SIMD[DType.int8, 64]
 ) -> SIMD[DType.int32, 16]:
     var t1 = llvm_intrinsic[
@@ -330,7 +330,7 @@ fn _dot_i8_to_i32_saturated_16(
     return t2 + src
 
 
-fn _dot_i8_to_i32_saturated_8(
+def _dot_i8_to_i32_saturated_8(
     src: SIMD[DType.int32, 8], a: SIMD[DType.int8, 32], b: SIMD[DType.int8, 32]
 ) -> SIMD[DType.int32, 8]:
     var t1 = llvm_intrinsic["llvm.x86.avx2.pmadd.ub.sw", SIMD[DType.int16, 16]](
@@ -342,7 +342,7 @@ fn _dot_i8_to_i32_saturated_8(
     return t2 + src
 
 
-fn _dot_i8_to_i32_saturated_4(
+def _dot_i8_to_i32_saturated_4(
     src: SIMD[DType.int32, 4],
     a: SIMD[DType.int8, 16],
     b: SIMD[DType.int8, 16],
@@ -356,7 +356,7 @@ fn _dot_i8_to_i32_saturated_4(
     return t2 + src
 
 
-fn dot_i8_to_i32_AVX2[
+def dot_i8_to_i32_AVX2[
     width: Int, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
@@ -411,7 +411,7 @@ fn dot_i8_to_i32_AVX2[
         )
 
 
-fn dot_i8_to_i32_saturated_AVX2[
+def dot_i8_to_i32_saturated_AVX2[
     width: Int, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
@@ -466,7 +466,7 @@ fn dot_i8_to_i32_saturated_AVX2[
         )
 
 
-fn dot_i8_to_i32_x86[
+def dot_i8_to_i32_x86[
     width: Int, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
@@ -501,7 +501,7 @@ fn dot_i8_to_i32_x86[
 
 
 # Saturation is much faster but limits input a to range [0, 127] instead of [0, 255]
-fn dot_i8_to_i32_saturated_x86[
+def dot_i8_to_i32_saturated_x86[
     width: Int, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
@@ -535,7 +535,7 @@ fn dot_i8_to_i32_saturated_x86[
         return dot_i8_to_i32_saturated_AVX2(src, a, b)
 
 
-fn dot_i16_to_i32_AVX2[
+def dot_i16_to_i32_AVX2[
     width: Int, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width],
@@ -578,7 +578,7 @@ fn dot_i16_to_i32_AVX2[
     return src + t
 
 
-fn dot_i16_to_i32_x86[
+def dot_i16_to_i32_x86[
     width: Int, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width],

@@ -21,7 +21,7 @@ from std.utils.index import IndexList
 
 
 @always_inline
-fn matrix_band_part[
+def matrix_band_part[
     dtype: DType,
     int_type: DType,
     cond_type: DType,
@@ -47,7 +47,7 @@ fn matrix_band_part[
         input_shape, lower_diagonal_index, upper_diagonal_index, output
     )
     @parameter
-    fn dispatch[exclude: Bool]() raises:
+    def dispatch[exclude: Bool]() raises:
         _matrix_band_part_impl[
             dtype,
             int_type,
@@ -64,7 +64,7 @@ fn matrix_band_part[
 
 
 @always_inline
-fn _matrix_band_part_impl[
+def _matrix_band_part_impl[
     dtype: DType,
     int_type: DType,
     cond_type: DType,
@@ -88,7 +88,7 @@ fn _matrix_band_part_impl[
     @__copy_capture(lower_diagonal_index, upper_diagonal_index, output)
     @parameter
     @always_inline
-    fn func[
+    def func[
         simd_width: Int, inner_rank: Int, alignment: Int = 1
     ](index: IndexList[inner_rank]):
         var idx = rebind[IndexList[rank]](index)
