@@ -729,25 +729,6 @@ LoadOp::parametric_interpret(ArrayRef<Attribute> operands,
 // CmpOp
 //===----------------------------------------------------------------------===//
 
-template <typename ArgT>
-static bool compareConstants(CmpPredicate pred, ArgT lhs, ArgT rhs) {
-  switch (pred) {
-  case CmpPredicate::EQ:
-    return lhs == rhs;
-  case CmpPredicate::NE:
-    return lhs != rhs;
-  case CmpPredicate::LT:
-    return lhs < rhs;
-  case CmpPredicate::GT:
-    return lhs > rhs;
-  case CmpPredicate::LE:
-    return lhs <= rhs;
-  case CmpPredicate::GE:
-    return lhs >= rhs;
-  }
-  llvm_unreachable("invalid cmp predicate");
-}
-
 static OpFoldResult cmpOpfoldHelper(SIMDType lhsType, SIMDType resultType,
                                     Value lhs, Value rhs,
                                     POP::CmpPredicate pred,
@@ -785,19 +766,8 @@ static OpFoldResult cmpOpfoldHelper(SIMDType lhsType, SIMDType resultType,
   if (target)
     indexBitWidth = target.resolveIndexBitWidth();
 
-  if (auto fold = foldSIMDOpResult<POP::kOtherResult>(
-          operands, KGENDType::kBool, indexBitWidth,
-          [&](APSInt lhs, APSInt rhs) {
-            return compareConstants(pred, lhs, rhs);
-          },
-          [&](APFloat lhs, APFloat rhs) {
-            return compareConstants(pred, lhs, rhs);
-          },
-          [&](bool lhs, bool rhs) {
-            return compareConstants(pred, lhs, rhs);
-          })) {
+  if (auto fold = foldSIMDCmp(pred, operands, KGENDType::kBool, indexBitWidth))
     return fold;
-  }
 
   // Fold `eq(true, x) -> x` and `ne(false, x) -> x`.
   if (operandTy && operandTy == DType::kBool &&

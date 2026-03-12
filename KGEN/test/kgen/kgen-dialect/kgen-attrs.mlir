@@ -471,6 +471,15 @@ kgen.generator @closureSymbol(){
   c4 = #pop.simd_cmp<le, #pop<simd "NaN"> : !pop.scalar<f32>, #pop<simd "1.0"> : !pop.scalar<f32>> : !pop.scalar<bool>
 } : () -> ()
 
+// Index comparisons fold when 32-bit and 64-bit results agree.
+// Comparisons that disagree remain unfolded (require target info).
+"some.op"() {
+  // CHECK: a = #pop<simd true> : !pop.scalar<bool>
+  a = #pop.simd_cmp<eq, #pop<simd 5> : !pop.scalar<index>, #pop<simd 5> : !pop.scalar<index>> : !pop.scalar<bool>,
+  // CHECK: b = #pop.simd_cmp<lt, #pop<simd 3000000000> : !pop.scalar<index>, #pop<simd 0> : !pop.scalar<index>> : !pop.scalar<bool>
+  b = #pop.simd_cmp<lt, #pop<simd 3000000000> : !pop.scalar<index>, #pop<simd 0> : !pop.scalar<index>> : !pop.scalar<bool>
+} : () -> ()
+
 // CHECK-LABEL: @simd_cmp_folding
 kgen.generator @simd_cmp_folding<dt: dtype>() {
   // CHECK-NEXT: kgen.param.if <eq(:ui8 #pop.dtype_to_ui8<dtype>, 1)> {

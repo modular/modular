@@ -2155,36 +2155,8 @@ TypedAttr SIMDCmpAttr::get(MLIRContext *ctx, NormalizedCmpPredicate cc,
   if (auto outDType = outType.getResolvedDType(),
       inDType = cast<SIMDType>(lhs.getType()).getResolvedDType();
       outDType && inDType && outDType->isBool()) {
-    bool isSignedCompare = inDType->isSInt();
-    std::function<bool(APSInt, APSInt)> intCompare;
-    std::function<bool(APFloat, APFloat)> fpCompare;
-    std::function<bool(bool, bool)> boolCompare;
-    switch (cc) {
-    case NormalizedCmpPredicate::EQ:
-      intCompare = [](APSInt lhs, APSInt rhs) { return lhs.eq(rhs); };
-      fpCompare = [](APFloat lhs, APFloat rhs) { return lhs == rhs; };
-      boolCompare = [](bool lhs, bool rhs) { return lhs == rhs; };
-      break;
-    case NormalizedCmpPredicate::LT:
-      intCompare = [isSignedCompare](APSInt lhs, APSInt rhs) {
-        return isSignedCompare ? lhs.slt(rhs) : lhs.ult(rhs);
-      };
-      fpCompare = [](APFloat lhs, APFloat rhs) { return lhs < rhs; };
-      boolCompare = [](bool lhs, bool rhs) { return lhs < rhs; };
-      break;
-    case NormalizedCmpPredicate::LE:
-      intCompare = [isSignedCompare](APSInt lhs, APSInt rhs) {
-        return isSignedCompare ? lhs.sle(rhs) : lhs.ule(rhs);
-      };
-      fpCompare = [](APFloat lhs, APFloat rhs) { return lhs <= rhs; };
-      boolCompare = [](bool lhs, bool rhs) { return lhs <= rhs; };
-      break;
-    }
-    if (auto fold = foldSIMDOpResult<kOtherResult>(
-            {lhs, rhs}, *outDType, intCompare, fpCompare, boolCompare)) {
-      if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-        return ret;
-    }
+    if (auto fold = foldSIMDCmp(toCmpPredicate(cc), {lhs, rhs}, *outDType))
+      return fold;
 
     // If either input is a cast_from_builtin, then the width is 1 and we can
     // perform this as a ParameterOperatorAttr comparison to crush the

@@ -323,6 +323,35 @@ OpFoldResult POP::foldSIMDReduceAnd(Value vectorVal, Attribute vectorAttr,
       [](bool lhs, bool rhs) { return lhs & rhs; });
 }
 
+template <typename T>
+static bool compareConstants(CmpPredicate pred, T lhs, T rhs) {
+  switch (pred) {
+  case CmpPredicate::EQ:
+    return lhs == rhs;
+  case CmpPredicate::NE:
+    return lhs != rhs;
+  case CmpPredicate::LT:
+    return lhs < rhs;
+  case CmpPredicate::GT:
+    return lhs > rhs;
+  case CmpPredicate::LE:
+    return lhs <= rhs;
+  case CmpPredicate::GE:
+    return lhs >= rhs;
+  }
+  llvm_unreachable("invalid CmpPredicate");
+}
+
+SIMDAttr POP::foldSIMDCmp(CmpPredicate cc, ArrayRef<Attribute> operands,
+                          KGENDType outDType,
+                          std::optional<int64_t> indexBitWidth) {
+  return foldSIMDOpResult<kOtherResult>(
+      operands, outDType, indexBitWidth,
+      [&](APSInt lhs, APSInt rhs) { return compareConstants(cc, lhs, rhs); },
+      [&](APFloat lhs, APFloat rhs) { return compareConstants(cc, lhs, rhs); },
+      [&](bool lhs, bool rhs) { return compareConstants(cc, lhs, rhs); });
+}
+
 OpFoldResult POP::foldSIMDShl(Attribute val, Attribute shft,
                               TargetInfoAttr targetInfo) {
   auto valSIMD = dyn_cast_if_present<SIMDAttr>(val);

@@ -967,7 +967,9 @@ def POP_SIMDShrAttr : POP_SIMDShiftAttr<"Shr"> {
 // SIMDCmp
 //===----------------------------------------------------------------------===//
 
-def POP_SIMDCmpAttr : POP_ExprAttr<"SIMDCmp", "simd_cmp"> {
+def POP_SIMDCmpAttr : POP_ExprAttr<"SIMDCmp", "simd_cmp",
+    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                 ["evaluateWithContext"]>]> {
   let summary = "SIMD cmp.";
   let description = [{
     The `#pop.simd_cmp` attribute performs a comparison between two SIMD
