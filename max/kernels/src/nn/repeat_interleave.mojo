@@ -19,7 +19,7 @@ from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 from std.utils import IndexList
 
 
-fn _collapse_dims_around_axis(
+def _collapse_dims_around_axis(
     shape: IndexList, axis: Int, out result: IndexList[3]
 ) raises:
     if axis >= shape.size:
@@ -42,7 +42,7 @@ fn _collapse_dims_around_axis(
 
 
 @always_inline
-fn repeat_interleave[
+def repeat_interleave[
     dtype: DType,
     type_repeats: DType,
 ](
@@ -115,7 +115,7 @@ fn repeat_interleave[
 
     @always_inline
     @parameter
-    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         var output_index = rebind[IndexList[3]](idx)
         var input_index = output_index
         input_index[1] = offset_mapping[output_index[1]]
@@ -132,7 +132,7 @@ fn repeat_interleave[
 
 
 @always_inline
-fn repeat_interleave_shape[
+def repeat_interleave_shape[
     type_repeats: DType,
 ](
     input: TileTensor[...],

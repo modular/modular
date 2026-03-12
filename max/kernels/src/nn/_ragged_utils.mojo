@@ -23,7 +23,7 @@ from std.utils import IndexList
 
 
 @always_inline
-fn get_batch_from_row_offsets(
+def get_batch_from_row_offsets(
     row_offsets: LayoutTensor[DType.uint32, ...], tok_idx: Int
 ) -> Int:
     """Calculate the batch_idx for the given flattened token_idx using row_offsets.
@@ -48,7 +48,7 @@ fn get_batch_from_row_offsets(
 
 
 @always_inline
-fn get_batch_from_row_offsets(
+def get_batch_from_row_offsets(
     row_offsets: TileTensor[DType.uint32, ...], tok_idx: Int
 ) -> Int:
     """Calculate the batch_idx for the given flattened token_idx using row_offsets.
@@ -75,7 +75,7 @@ fn get_batch_from_row_offsets(
 
 
 @always_inline
-fn get_batch_and_token_idx_from_row_offsets(
+def get_batch_and_token_idx_from_row_offsets(
     row_offsets: TileTensor[DType.uint32, ...], tok_idx: Int
 ) -> Tuple[Int, Int]:
     """Calculate the batch_idx for the given flattened token_idx using row_offsets.
@@ -101,7 +101,7 @@ fn get_batch_and_token_idx_from_row_offsets(
     return Int(low), Int(tok_idx - Int(row_offsets[low]))
 
 
-fn merge_ragged_tensors[
+def merge_ragged_tensors[
     rank: Int,
     dtype: DType,
     //,
@@ -130,7 +130,7 @@ fn merge_ragged_tensors[
 
     @always_inline
     @parameter
-    fn merge_fn[
+    def merge_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](idx: IndexList[rank_]):
         comptime assert rank_ == rank, "Invalid rank passed to the kernel"
@@ -160,7 +160,7 @@ fn merge_ragged_tensors[
         # Inner dimensions are the same across a, b, and c.
         @always_inline
         @parameter
-        fn _flat_offset[r: Int](index: IndexList[r]) -> Int:
+        def _flat_offset[r: Int](index: IndexList[r]) -> Int:
             comptime assert r == rank
             var flat = index[0]
             comptime for i in range(1, rank):

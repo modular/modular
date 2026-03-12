@@ -99,7 +99,7 @@ from std.utils.static_tuple import StaticTuple
 
 
 @always_inline
-fn mha_sm90_dispatch[
+def mha_sm90_dispatch[
     q_type: DType,
     KVType: MHAOperand,
     MaskType: MHAMask,
@@ -360,7 +360,7 @@ fn mha_sm90_dispatch[
 
 # materializes max prompt len, call partition
 @always_inline
-fn _mha_sm90_sink_dispatch[
+def _mha_sm90_sink_dispatch[
     SchedulerType: MHATileScheduler,
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -493,7 +493,7 @@ fn _mha_sm90_sink_dispatch[
 
 
 @always_inline
-fn _mha_sm90_kv_input_row_offset_dispatch[
+def _mha_sm90_kv_input_row_offset_dispatch[
     KVLUTType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
@@ -620,7 +620,7 @@ fn _mha_sm90_kv_input_row_offset_dispatch[
 
 
 @always_inline
-fn _mha_sm90_valid_length_dispatch[
+def _mha_sm90_valid_length_dispatch[
     KVLUTType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
@@ -742,7 +742,7 @@ fn _mha_sm90_valid_length_dispatch[
 
 
 @always_inline
-fn _mha_sm90_enqueue[
+def _mha_sm90_enqueue[
     KVLUTType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
@@ -860,7 +860,7 @@ fn _mha_sm90_enqueue[
         Int32(config.num_threads[True]())
     )
 )
-fn _mha_sm90[
+def _mha_sm90[
     KVLUTType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
@@ -1169,7 +1169,7 @@ fn _mha_sm90[
     # returns `true` if we are done
     @parameter
     @always_inline
-    fn advance[
+    def advance[
         producer: Bool,
         sync: MHASchedulerSynchronization = MHASchedulerSynchronization.DEFAULT,
     ](pipeline_idx: UInt32) -> OptionalReg[SeqInfo]:
@@ -1215,7 +1215,7 @@ fn _mha_sm90[
 
     @parameter
     @always_inline
-    fn k_tile(
+    def k_tile(
         idx: UInt32,
         out k_smem: LayoutTensor[
             kv_type,
@@ -1232,7 +1232,7 @@ fn _mha_sm90[
 
     @parameter
     @always_inline
-    fn v_tile(
+    def v_tile(
         idx: UInt32,
         out v_smem: LayoutTensor[
             kv_type,
@@ -1249,7 +1249,7 @@ fn _mha_sm90[
 
     @parameter
     @always_inline
-    fn get_position(seq_info: SeqInfo) -> PositionType:
+    def get_position(seq_info: SeqInfo) -> PositionType:
         return _get_position[
             Int(BM),
             Int(BN),
@@ -1322,7 +1322,7 @@ fn _mha_sm90[
 
         @parameter
         @always_inline("nodebug")
-        fn q_consumer(
+        def q_consumer(
             q_idx: UInt32,
         ) -> LayoutTensor[
             kv_type,
@@ -1370,7 +1370,7 @@ fn _mha_sm90[
 
         @parameter
         @always_inline
-        fn vectorize_p_reg_tile(
+        def vectorize_p_reg_tile(
             out result: LayoutTensor[
                 accum_type,
                 p_vec_output_layout,
@@ -1383,7 +1383,7 @@ fn _mha_sm90[
 
         @parameter
         @always_inline
-        fn vectorize_o_reg_tile(
+        def vectorize_o_reg_tile(
             out result: LayoutTensor[
                 accum_type,
                 o_vec_output_layout,
@@ -1418,7 +1418,7 @@ fn _mha_sm90[
 
         @parameter
         @always_inline
-        fn q_mul_k(read_idx: UInt32, read_phase: UInt32, q_idx: UInt32):
+        def q_mul_k(read_idx: UInt32, read_phase: UInt32, q_idx: UInt32):
             k_smem_sub = k_tile(read_idx)
             var q_smem_sub = q_consumer(q_idx)
             produced_mbar_kv[read_idx].wait(read_phase)
@@ -1442,7 +1442,7 @@ fn _mha_sm90[
 
         @parameter
         @always_inline
-        fn p_mul_v(read_idx: UInt32, read_phase: UInt32):
+        def p_mul_v(read_idx: UInt32, read_phase: UInt32):
             v_smem_sub = v_tile(read_idx)
             produced_mbar_kv[read_idx].wait(read_phase)
             warpgroup_fence(output_reg_tile)
@@ -1457,19 +1457,19 @@ fn _mha_sm90[
 
         @parameter
         @always_inline
-        fn wait_for_q_mul_k[wgmma_left_in_flight: Int](read_idx: UInt32):
+        def wait_for_q_mul_k[wgmma_left_in_flight: Int](read_idx: UInt32):
             wgmma_0.wait_group[wgmma_left_in_flight]()  # P is available
             _ = consumed_mbar_kv[read_idx].arrive()
 
         @parameter
         @always_inline
-        fn wait_for_p_mul_v(read_idx: UInt32):
+        def wait_for_p_mul_v(read_idx: UInt32):
             wgmma_1.wait_group[0]()  # output is available
             _ = consumed_mbar_kv[read_idx].arrive()
 
         @parameter
         @always_inline
-        fn apply_mask(
+        def apply_mask(
             position: PositionType,
             mask_status: TileMaskStatus,
             kv_tile_start_row: UInt32,
@@ -1491,7 +1491,7 @@ fn _mha_sm90[
 
         @parameter
         @always_inline
-        fn scale_output(correction: type_of(rowmax)):
+        def scale_output(correction: type_of(rowmax)):
             # we are now able to read/modify `output_reg_tile` and modify `p_frag`
             vout = vectorize_o_reg_tile()
 
@@ -1508,7 +1508,7 @@ fn _mha_sm90[
                     vout[row, col] = vout[row, col] * c
 
         @always_inline
-        fn elementwise_reciprocal(
+        def elementwise_reciprocal(
             old_rowsum: type_of(rowsum), new_rowsum: type_of(rowsum)
         ):
             # new_rowsum, old_rowsum = 1/old_rowsum, new_rowsum
@@ -1520,7 +1520,7 @@ fn _mha_sm90[
 
         @parameter
         @always_inline
-        fn write_output(
+        def write_output(
             position: PositionType,
             q_idx: UInt32,
             rowsum_inv: type_of(rowsum),

@@ -78,7 +78,7 @@ struct Conv2dProblemShape(Copyable, Movable):
     var groups: Int
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         batch: Int,
         in_height: Int,
@@ -113,7 +113,7 @@ struct Conv2dProblemShape(Copyable, Movable):
     # ========== Derived Dimensions ==========
 
     @always_inline
-    fn out_height(self) -> Int:
+    def out_height(self) -> Int:
         """Compute output height."""
         var effective_filter_h = (self.filter_h - 1) * self.dilation_h + 1
         return (
@@ -121,7 +121,7 @@ struct Conv2dProblemShape(Copyable, Movable):
         ) // self.stride_h + 1
 
     @always_inline
-    fn out_width(self) -> Int:
+    def out_width(self) -> Int:
         """Compute output width."""
         var effective_filter_w = (self.filter_w - 1) * self.dilation_w + 1
         return (
@@ -131,34 +131,34 @@ struct Conv2dProblemShape(Copyable, Movable):
     # ========== GEMM Dimension Mapping ==========
 
     @always_inline
-    fn gemm_m(self) -> Int:
+    def gemm_m(self) -> Int:
         """GEMM M dimension = batch * output_height * output_width."""
         return self.batch * self.out_height() * self.out_width()
 
     @always_inline
-    fn gemm_n(self) -> Int:
+    def gemm_n(self) -> Int:
         """GEMM N dimension = output_channels."""
         return self.out_channels
 
     @always_inline
-    fn gemm_k(self) -> Int:
+    def gemm_k(self) -> Int:
         """GEMM K dimension = input_channels * filter_height * filter_width."""
         return self.in_channels * self.filter_h * self.filter_w
 
     # ========== Tile Count Helpers ==========
 
     @always_inline
-    fn num_m_tiles(self, tile_m: Int) -> Int:
+    def num_m_tiles(self, tile_m: Int) -> Int:
         """Number of tiles in M dimension."""
         return ceildiv(self.gemm_m(), tile_m)
 
     @always_inline
-    fn num_n_tiles(self, tile_n: Int) -> Int:
+    def num_n_tiles(self, tile_n: Int) -> Int:
         """Number of tiles in N dimension."""
         return ceildiv(self.gemm_n(), tile_n)
 
     @always_inline
-    fn num_k_tiles(self, tile_k: Int) -> Int:
+    def num_k_tiles(self, tile_k: Int) -> Int:
         """Number of tiles in K dimension."""
         return ceildiv(self.gemm_k(), tile_k)
 
@@ -220,13 +220,13 @@ struct Conv2dConfig[
 
     @staticmethod
     @always_inline
-    fn accum_type() -> DType:
+    def accum_type() -> DType:
         """Accumulator type derived from output type."""
         return get_accum_type[Self.out_type]()
 
     @staticmethod
     @always_inline
-    fn default_bf16() -> Self:
+    def default_bf16() -> Self:
         """Default configuration for BF16 conv2d (VAE-optimized).
 
         Uses 2-SM cluster mode (cta_group=2) with 128×128 block tiles, matching
@@ -270,7 +270,7 @@ struct Conv2dConfig[
 
     @staticmethod
     @always_inline
-    fn default_bf16_1sm() -> Self:
+    def default_bf16_1sm() -> Self:
         """Default configuration for BF16 conv2d using 1-SM mode.
 
         Uses 1-SM mode (cta_group=1) with 128×128 block tiles, matching
@@ -316,12 +316,12 @@ struct Conv2dConfig[
 
     @staticmethod
     @always_inline
-    fn default_fp16() -> Self:
+    def default_fp16() -> Self:
         """Default configuration for FP16 conv2d."""
         # Same as BF16 for now - inherits dynamic pipeline stages
         return Self.default_bf16()
 
-    fn _maximize_pipeline_stages_by_default(mut self):
+    def _maximize_pipeline_stages_by_default(mut self):
         """Dynamically compute optimal pipeline stages based on SMEM budget.
 
         This mirrors MatmulConfig._maximize_pipeline_stages_by_default() since

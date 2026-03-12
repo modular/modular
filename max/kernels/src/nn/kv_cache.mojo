@@ -60,7 +60,7 @@ from tensor.managed_tensor_slice import (
 
 
 @always_inline
-fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
+def generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
     dtype: DType,
     target: StaticString = "cpu",
 ](
@@ -95,7 +95,7 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return String(";").join(
             Span(
                 [
@@ -137,7 +137,7 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
 
 
 @always_inline
-fn generic_fused_qkv_matmul_kv_cache_bshd_paged[
+def generic_fused_qkv_matmul_kv_cache_bshd_paged[
     dtype: DType,
     target: StaticString = "cpu",
 ](
@@ -172,7 +172,7 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_paged[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return String(";").join(
             Span(
                 [
@@ -214,7 +214,7 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_paged[
 
 
 @always_inline
-fn _fused_qkv_matmul_kv_cache[
+def _fused_qkv_matmul_kv_cache[
     dtype: DType,
     collection_t: KVCollectionT,
     //,
@@ -267,7 +267,7 @@ fn _fused_qkv_matmul_kv_cache[
 
 
 @always_inline
-fn _fused_qkv_matmul_kv_cache_impl[
+def _fused_qkv_matmul_kv_cache_impl[
     dtype: DType,
     collection_t: KVCollectionT,
     //,
@@ -329,7 +329,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
     @parameter
     @__copy_capture(q_dim, qk_offset, SEQ_LEN, k_cache, v_cache, valid_lengths)
     @always_inline
-    fn write_to_cache[
+    def write_to_cache[
         dtype_: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype_, width]):
         var b_idx, t_idx = divmod(UInt(idx[0]), SEQ_LEN)
@@ -379,7 +379,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
 
 
 @always_inline
-fn _matmul_common[
+def _matmul_common[
     dtype: DType,
     //,
     *,
@@ -441,7 +441,7 @@ fn _matmul_common[
 
 
 @always_inline
-fn generic_fused_qk_rope_bshd_continuous_batch[
+def generic_fused_qk_rope_bshd_continuous_batch[
     dtype: DType,
     //,
     *,
@@ -480,7 +480,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return String(";").join(
             Span(
                 [
@@ -534,7 +534,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
 
 
 @always_inline
-fn generic_fused_qk_rope_bshd_paged[
+def generic_fused_qk_rope_bshd_paged[
     dtype: DType,
     //,
     *,
@@ -568,7 +568,7 @@ fn generic_fused_qk_rope_bshd_paged[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return String(";").join(
             Span(
                 [
@@ -627,7 +627,7 @@ fn generic_fused_qk_rope_bshd_paged[
 
 
 @always_inline
-fn generic_flash_attention_kv_cache_padded[
+def generic_flash_attention_kv_cache_padded[
     collection_t: KVCollectionT,
     dtype: DType,
     //,
@@ -654,7 +654,7 @@ fn generic_flash_attention_kv_cache_padded[
 ) raises:
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return String(";").join(
             Span(
                 [
@@ -700,7 +700,7 @@ fn generic_flash_attention_kv_cache_padded[
 
 
 @always_inline
-fn generic_flash_attention_kv_cache_padded_materialized_mask[
+def generic_flash_attention_kv_cache_padded_materialized_mask[
     collection_t: KVCollectionT,
     dtype: DType,
     //,
@@ -729,7 +729,7 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
 ) raises:
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return String(";").join(
             Span(
                 [
@@ -770,7 +770,7 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
         )
 
 
-fn _flash_attention_dispatch[
+def _flash_attention_dispatch[
     dtype: DType,
     collection_t: KVCollectionT,
     q_origin: Origin[mut=False],
@@ -808,7 +808,7 @@ fn _flash_attention_dispatch[
 
     @parameter
     @__copy_capture(k, v)
-    fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+    def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
         comptime if is_cpu[target]():
             return flash_attention_kv_cache_cpu(
                 q, k, v, mask, scale, output, sink_weights
@@ -828,7 +828,7 @@ fn _flash_attention_dispatch[
     return dispatch_mask[mask_str, _dispatch_flash_attention]()
 
 
-fn _flash_attention_dispatch_materialized_mask[
+def _flash_attention_dispatch_materialized_mask[
     dtype: DType,
     collection_t: KVCollectionT,
     //,
@@ -858,10 +858,10 @@ fn _flash_attention_dispatch_materialized_mask[
     var v = kv_cache.get_value_cache(Int(layer_idx))
 
     @parameter
-    fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+    def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
         @always_inline
         @parameter
-        fn call_flash_attention[sink: Bool]() raises:
+        def call_flash_attention[sink: Bool]() raises:
             comptime if is_cpu[target]():
                 return flash_attention_kv_cache_cpu(
                     q,
@@ -977,7 +977,7 @@ def rms_norm_kv_cache_ragged_paged[
     @always_inline
     @parameter
     @__copy_capture(k_cache, input_row_offsets)
-    fn key_cache_input_fn[
+    def key_cache_input_fn[
         width: Int, rank_: Int
     ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
         comptime assert (
@@ -1017,7 +1017,7 @@ def rms_norm_kv_cache_ragged_paged[
     @always_inline
     @parameter
     @__copy_capture(k_cache)
-    fn key_cache_output_fn[
+    def key_cache_output_fn[
         width: Int, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var global_token_idx = idx[0]
@@ -1391,7 +1391,7 @@ def print_kv_cache_paged_generic_gpu[
 # ===-----------------------------------------------------------------------===#
 
 
-fn _continuous_batch_kv_cache_collection[
+def _continuous_batch_kv_cache_collection[
     dtype: DType, //, kv_params: KVCacheStaticParams
 ](
     blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
@@ -1412,7 +1412,7 @@ fn _continuous_batch_kv_cache_collection[
 
 
 @always_inline
-fn generic_get_continuous_cache[
+def generic_get_continuous_cache[
     dtype: DType, kv_params: KVCacheStaticParams
 ](
     blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
@@ -1425,7 +1425,7 @@ fn generic_get_continuous_cache[
     )
 
 
-fn generic_get_paged_cache[
+def generic_get_paged_cache[
     dtype: DType,
 ](
     blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
@@ -1480,7 +1480,7 @@ fn generic_get_paged_cache[
     )
 
 
-fn generic_get_paged_cache[
+def generic_get_paged_cache[
     dtype: DType,
     kv_params: KVCacheStaticParams,
     page_size: Int,
@@ -1500,7 +1500,7 @@ fn generic_get_paged_cache[
     }
 
 
-fn generic_get_paged_cache_with_scales[
+def generic_get_paged_cache_with_scales[
     dtype: DType,
     scale_dtype: DType,
     kv_params: KVCacheStaticParams,
@@ -1540,7 +1540,7 @@ fn generic_get_paged_cache_with_scales[
 # ===-----------------------------------------------------------------------===#
 
 
-fn copy_kv_pages_d2h[
+def copy_kv_pages_d2h[
     dtype: DType,
 ](
     device_kv_blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],

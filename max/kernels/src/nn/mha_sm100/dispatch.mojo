@@ -42,7 +42,7 @@ comptime logger = Logger()
 
 
 @always_inline
-fn mha_sm100_dispatch[
+def mha_sm100_dispatch[
     q_type: DType,
     KVType: MHAOperand,
     MaskType: MHAMask,
@@ -146,15 +146,15 @@ fn mha_sm100_dispatch[
 
     @parameter
     @always_inline
-    fn with_sink[SinkType: OptionalPointer](sink_ptr: SinkType) raises:
+    def with_sink[SinkType: OptionalPointer](sink_ptr: SinkType) raises:
         @parameter
         @always_inline
-        fn with_kv_offsets[
+        def with_kv_offsets[
             KVRowOffsetsType: OptionalPointer
         ](kv_row_offsets: KVRowOffsetsType) raises:
             @parameter
             @always_inline
-            fn with_valid_length[
+            def with_valid_length[
                 ValidLengthType: OptionalPointer
             ](valid_len: ValidLengthType) raises:
                 # the pack contains all possibly 0-sized objects

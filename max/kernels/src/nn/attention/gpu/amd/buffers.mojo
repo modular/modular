@@ -50,23 +50,23 @@ trait KVBuffer:
     comptime _num_stages: Int
 
     @staticmethod
-    fn get_dtype() -> DType:
+    def get_dtype() -> DType:
         ...
 
-    fn load_from_dram(mut self):
+    def load_from_dram(mut self):
         ...
 
-    fn get_mma_tile(
+    def get_mma_tile(
         self,
     ) -> LocalLayoutTensor[Self._dtype, Self.mma_tile_layout,]:
         ...
 
-    fn copy_to_shared[
+    def copy_to_shared[
         tile_id: Int = 0
     ](self,):
         ...
 
-    fn load_from_shared[
+    def load_from_shared[
         k_mma: Int,
     ](self):
         ...
@@ -77,13 +77,13 @@ trait RegisterBuffer:
     comptime reg_tile_layout: Layout
 
     @staticmethod
-    fn get_dtype() -> DType:
+    def get_dtype() -> DType:
         ...
 
-    fn zero(self):
+    def zero(self):
         ...
 
-    fn get_reg_tile[
+    def get_reg_tile[
         stage: Int = 0
     ](self,) -> LocalLayoutTensor[Self.reg_dtype, Self.reg_tile_layout,]:
         ...
@@ -93,7 +93,7 @@ trait RegisterMMABuffer(RegisterBuffer):
     comptime mma_dtype: DType
     comptime mma_tile_layout: Layout
 
-    fn get_mma_tile[
+    def get_mma_tile[
         tile_idx: Int, k_idx: Int
     ](self,) -> LocalLayoutTensor[Self.mma_dtype, Self.mma_tile_layout,]:
         ...
@@ -111,7 +111,7 @@ trait KVBufferConfig:
 
     @staticmethod
     @always_inline
-    fn get_wtile_coord() -> IndexList[2]:
+    def get_wtile_coord() -> IndexList[2]:
         ...
 
 
@@ -128,7 +128,7 @@ struct KBufferConfig[BN: Int, BK: Int, WN: Int](KVBufferConfig):
 
     @staticmethod
     @always_inline
-    fn get_wtile_coord() -> IndexList[2]:
+    def get_wtile_coord() -> IndexList[2]:
         var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
         return IndexList[2](warp_col, 0)
 
@@ -146,7 +146,7 @@ struct VBufferConfig[BN: Int, BK: Int, WN: Int, depth: Int](KVBufferConfig):
 
     @staticmethod
     @always_inline
-    fn get_wtile_coord() -> IndexList[2]:
+    def get_wtile_coord() -> IndexList[2]:
         var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
         return IndexList[2](0, warp_col)
 
@@ -267,7 +267,7 @@ struct KVBufferImpl[
     var global_iterator: Self.GlobalTiledIteratorType
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         global_tile: Self.GlobalTensorType,
         num_b_rows: Optional[Int],
@@ -292,11 +292,11 @@ struct KVBufferImpl[
 
     @always_inline
     @staticmethod
-    fn get_dtype() -> DType:
+    def get_dtype() -> DType:
         return Self._dtype
 
     @always_inline
-    fn load_from_dram(
+    def load_from_dram(
         mut self,
     ):
         copy_dram_to_local[src_thread_layout=Self.thread_layout,](
@@ -310,11 +310,11 @@ struct KVBufferImpl[
         self.load_tile_id = (self.load_tile_id + 1) % Self.num_stages
 
     @always_inline
-    fn get_mma_tile(self) -> Self.MMATileType:
+    def get_mma_tile(self) -> Self.MMATileType:
         return self.mma_tile
 
     @always_inline
-    fn copy_to_shared[
+    def copy_to_shared[
         tile_id: Int = 0
     ](self,):
         var smem_tile = Self.SharedTileType(self.smem_ptr)
@@ -330,7 +330,7 @@ struct KVBufferImpl[
         )
 
     @always_inline
-    fn load_from_shared[
+    def load_from_shared[
         k_mma: Int,
     ](self):
         comptime num_warps_n = Self.BN // Self.WN
@@ -556,7 +556,7 @@ struct VBufferTransposeLoads[
     var current_stage: Int
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         global_tile: Self.GlobalTensorType,
         shared_ptr: UnsafePointer[
@@ -587,16 +587,16 @@ struct VBufferTransposeLoads[
 
     @always_inline
     @staticmethod
-    fn get_dtype() -> DType:
+    def get_dtype() -> DType:
         return Self._dtype
 
     @always_inline
     @staticmethod
-    fn pad[dim: Int]() -> Int:
+    def pad[dim: Int]() -> Int:
         return pad[Self.dtype, Self.depth, dim]()
 
     @always_inline
-    fn load_from_dram(
+    def load_from_dram(
         mut self,
     ):
         var global_tile = self.global_iterator[]
@@ -665,11 +665,11 @@ struct VBufferTransposeLoads[
         self.global_iterator._incr()
 
     @always_inline
-    fn get_mma_tile(self) -> Self.MMATileType:
+    def get_mma_tile(self) -> Self.MMATileType:
         return self.mma_tile
 
     @always_inline
-    fn copy_to_shared[
+    def copy_to_shared[
         tile_id: Int = 0
     ](self,):
         # we multiply v^T x p^T instead of p x v
@@ -718,7 +718,7 @@ struct VBufferTransposeLoads[
                 lane_tile[j, 0] = rebind[lane_tile.element_type](reg_pair)
 
     @always_inline
-    fn load_from_shared[
+    def load_from_shared[
         k_mma: Int,
     ](self):
         # MMA
@@ -790,11 +790,11 @@ struct QRegisterBuffer[
 
     @staticmethod
     @always_inline
-    fn get_dtype() -> DType:
+    def get_dtype() -> DType:
         return Self.reg_dtype
 
     @always_inline
-    fn __init__(out self, tensor: LayoutTensor[Self.dtype, ...]):
+    def __init__(out self, tensor: LayoutTensor[Self.dtype, ...]):
         self.reg_tile = type_of(self.reg_tile).stack_allocation()
 
         comptime num_warps_n = Self.BN // Self.WN
@@ -822,23 +822,23 @@ struct QRegisterBuffer[
             gmem_warp_iter._incr()
 
     @always_inline
-    fn get_iter(self) -> Self.TiledIteratorType:
+    def get_iter(self) -> Self.TiledIteratorType:
         return self.reg_tile.tiled_iterator[
             Self.num_mmas * Self.num_k_tiles, Self.simd_width, axis=0
         ]()
 
     @always_inline
-    fn get_mma_tile[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
+    def get_mma_tile[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
         return self.reg_tile.split[Self.num_tiles]()[tile_idx].split[
             Self.num_k_tiles
         ]()[k_idx]
 
     @always_inline
-    fn get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
+    def get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
         return self.reg_tile
 
     @always_inline
-    fn zero(self):
+    def zero(self):
         _ = self.reg_tile.fill(0)
 
 
@@ -861,22 +861,22 @@ struct OutputRegisterBuffer[
     var reg_tile: Self.RegisterTileType
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         self.reg_tile = Self.RegisterTileType.stack_allocation()
 
     @staticmethod
     @always_inline
-    fn get_dtype() -> DType:
+    def get_dtype() -> DType:
         return Self.reg_dtype
 
     @always_inline
-    fn vectorize(
+    def vectorize(
         self,
     ) -> Self.RegisterTileType.VectorizedType[1, Self.output_frag_size]:
         return self.reg_tile.vectorize[1, Self.output_frag_size]()
 
     @always_inline
-    fn apply_softmax_denominator(self, rowsum: LayoutTensor[Self.dtype, ...]):
+    def apply_softmax_denominator(self, rowsum: LayoutTensor[Self.dtype, ...]):
         comptime for m_mma in range(Self.num_m_mmas):
             var rowsum_inv = recip(rowsum[m_mma, 0])
 
@@ -887,11 +887,11 @@ struct OutputRegisterBuffer[
                     ](rowsum_inv)
 
     @always_inline
-    fn zero(self):
+    def zero(self):
         _ = self.reg_tile.fill(0)
 
     @always_inline
-    fn get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
+    def get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
         return self.reg_tile
 
 
@@ -955,7 +955,7 @@ struct PRegisterBuffer[
     var shared_memory_tile: Self.SharedMemoryTileType
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         shared_ptr: UnsafePointer[
             Scalar[Self.dtype],
@@ -967,7 +967,7 @@ struct PRegisterBuffer[
         self.shared_memory_tile = Self.SharedMemoryTileType(shared_ptr)
 
     @always_inline
-    fn get_mma_tile_reg[
+    def get_mma_tile_reg[
         tile_idx: Int, k_idx: Int, stage: Int = 0
     ](self) -> Self.MMATileType:
         comptime OutputTileType = LocalLayoutTensor[
@@ -1033,7 +1033,9 @@ struct PRegisterBuffer[
         )
 
     @always_inline
-    fn get_mma_tile_shared[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
+    def get_mma_tile_shared[
+        tile_idx: Int, k_idx: Int
+    ](self) -> Self.MMATileType:
         var mma_reg_tile = Self.MMATileType.stack_allocation()
         comptime num_warps_n = Self.WN // Self.BN
         var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
@@ -1057,11 +1059,11 @@ struct PRegisterBuffer[
         return mma_reg_tile
 
     @always_inline
-    fn get_mma_tile[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
+    def get_mma_tile[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
         return self.get_mma_tile[tile_idx, k_idx, 0]()
 
     @always_inline
-    fn get_mma_tile[
+    def get_mma_tile[
         tile_idx: Int, k_idx: Int, stage: Int
     ](self) -> Self.MMATileType:
         return self.get_mma_tile_reg[
@@ -1072,11 +1074,11 @@ struct PRegisterBuffer[
 
     @staticmethod
     @always_inline
-    fn get_dtype() -> DType:
+    def get_dtype() -> DType:
         return Self.mma_dtype
 
     @always_inline
-    fn vectorize[
+    def vectorize[
         stage: Int = 0
     ](
         self,
@@ -1089,27 +1091,27 @@ struct PRegisterBuffer[
         )
 
     @always_inline
-    fn zero[stage: Int](self):
+    def zero[stage: Int](self):
         _ = self.reg_tile.split[Self.num_stages]()[stage].fill(0)
 
     @always_inline
-    fn zero(self):
+    def zero(self):
         self.zero[0]()
 
     @always_inline
-    fn get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
+    def get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
         return rebind[Self.RegisterTileType](
             self.reg_tile.split[Self.num_stages]()[stage]
         )
 
     @always_inline
-    fn get_shared_memory_tile(
+    def get_shared_memory_tile(
         self, tile_idx: Int
     ) -> Self.SharedMemoryTileType.TileType[Self.BM, Self.BK]:
         return self.shared_memory_tile.tile[Self.BM, Self.BK](0, tile_idx)
 
     @always_inline
-    fn copy_to_shared(self):
+    def copy_to_shared(self):
         comptime warp_layout = get_warp_layout[Self.mma_shape]()
         comptime fragment_layout = get_fragment_layout[Self.mma_shape]()
         comptime num_warps_n = Self.BN // Self.WN

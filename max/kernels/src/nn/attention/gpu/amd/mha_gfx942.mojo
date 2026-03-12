@@ -64,7 +64,7 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
 
     @staticmethod
     @always_inline
-    fn q_head_idx() -> UInt:
+    def q_head_idx() -> UInt:
         comptime if Self.token_gen:
             comptime mma_shape = Self.get_mma_shape()
             var group_idx = lane_id() % UInt(mma_shape[0])
@@ -74,12 +74,12 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
 
     @staticmethod
     @always_inline
-    fn q_tile_idx() -> UInt:
+    def q_tile_idx() -> UInt:
         return block_idx.y if not Self.token_gen else 0
 
     @staticmethod
     @always_inline
-    fn kv_head_idx() -> UInt:
+    def kv_head_idx() -> UInt:
         # decode and prefill have different launch configs
         return block_idx.y if Self.token_gen else Self.q_head_idx() // UInt(
             Self.group
@@ -87,7 +87,7 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
 
     @staticmethod
     @always_inline
-    fn get_mma_shape() -> IndexList[3]:
+    def get_mma_shape() -> IndexList[3]:
         comptime wider_mfma_supported = (
             _cdna_4_or_newer() and Self.config.depth != 64
         )
@@ -106,7 +106,7 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
 
     @staticmethod
     @always_inline
-    fn get_q_offset[q_depth: UInt]() -> UInt32:
+    def get_q_offset[q_depth: UInt]() -> UInt32:
         return UInt32(
             q_depth
             * (
@@ -122,20 +122,20 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
 
     @staticmethod
     @always_inline
-    fn get_output_offset[output_depth: UInt]() -> UInt32:
+    def get_output_offset[output_depth: UInt]() -> UInt32:
         return Self.get_q_offset[output_depth]()
 
 
 __extension Attention:
     @always_inline
-    fn mha_prefill(
+    def mha_prefill(
         mut self,
     ):
         comptime assert Self.BK == 32, "BK must be 32"
 
         @always_inline
         @parameter
-        fn loop_over_kvcache[
+        def loop_over_kvcache[
             tile_size: Int
         ](kv_tile_start_row: UInt32, end: UInt32, not_last_iter: Bool):
             if self.mask_skip_and_advance(
@@ -197,7 +197,7 @@ __extension Attention:
 
             @parameter
             @always_inline
-            fn prefetch_function():
+            def prefetch_function():
                 v_buffer.load_from_dram()
 
             self.mma_qk[prefetch_function=prefetch_function](k_buffer)
@@ -229,7 +229,7 @@ __extension Attention:
         self.store_output()
 
     @always_inline
-    fn mha_decoding(
+    def mha_decoding(
         mut self,
         exp_sum_ptr: UnsafePointer[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
@@ -243,7 +243,7 @@ __extension Attention:
 
         @always_inline
         @parameter
-        fn loop_over_kvcache[
+        def loop_over_kvcache[
             tile_size: Int
         ](kv_tile_start_row: Int, end: Int, not_last_iter: Bool):
             if self.mask_skip_and_advance(
@@ -315,7 +315,7 @@ __extension Attention:
 
             @parameter
             @always_inline
-            fn prefetch_function():
+            def prefetch_function():
                 v_buffer.load_from_dram()
 
             self.mma_qk[prefetch_function=prefetch_function](k_buffer)

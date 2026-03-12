@@ -19,7 +19,7 @@ from tensor._indexing import _dot_prod
 from std.utils import IndexList
 
 
-fn random_normal[
+def random_normal[
     dtype: DType,
     rank: Int,
     //,
@@ -59,7 +59,7 @@ fn random_normal[
     @parameter
     @always_inline
     @__copy_capture(strides)
-    fn generate[
+    def generate[
         width: Int, _rank: Int, alignment: Int = 1
     ](idx: IndexList[_rank],):
         comptime assert width <= 8  # NormalRandom generates 8 values at a time

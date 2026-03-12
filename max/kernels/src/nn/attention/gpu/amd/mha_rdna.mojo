@@ -69,7 +69,7 @@ struct MHAAttentionConfigRDNA[token_gen: Bool, config: MHAConfig, group: Int](
 
     @staticmethod
     @always_inline
-    fn q_head_idx() -> UInt:
+    def q_head_idx() -> UInt:
         comptime if Self.token_gen:
             var group_idx = lane_id() % UInt(Self.group)
             return block_idx.y * UInt(Self.group) + UInt(group_idx)
@@ -78,25 +78,25 @@ struct MHAAttentionConfigRDNA[token_gen: Bool, config: MHAConfig, group: Int](
 
     @staticmethod
     @always_inline
-    fn q_tile_idx() -> UInt:
+    def q_tile_idx() -> UInt:
         return block_idx.y if not Self.token_gen else 0
 
     @staticmethod
     @always_inline
-    fn kv_head_idx() -> UInt:
+    def kv_head_idx() -> UInt:
         return block_idx.y if Self.token_gen else Self.q_head_idx() // UInt(
             Self.group
         )
 
     @staticmethod
     @always_inline
-    fn get_mma_shape() -> IndexList[3]:
+    def get_mma_shape() -> IndexList[3]:
         """Get MMA shape - always 16x16x16 for RDNA."""
         return IndexList[3](RDNA_MMA_M, RDNA_MMA_N, RDNA_MMA_K)
 
     @staticmethod
     @always_inline
-    fn get_q_offset[q_depth: UInt]() -> UInt32:
+    def get_q_offset[q_depth: UInt]() -> UInt32:
         return UInt32(
             q_depth
             * (
@@ -112,13 +112,13 @@ struct MHAAttentionConfigRDNA[token_gen: Bool, config: MHAConfig, group: Int](
 
     @staticmethod
     @always_inline
-    fn get_output_offset[output_depth: UInt]() -> UInt32:
+    def get_output_offset[output_depth: UInt]() -> UInt32:
         return Self.get_q_offset[output_depth]()
 
 
 __extension AttentionRDNA:
     @always_inline
-    fn mha_prefill_rdna(
+    def mha_prefill_rdna(
         mut self,
     ):
         """RDNA-optimized prefill (context encoding) kernel.
@@ -130,7 +130,7 @@ __extension AttentionRDNA:
 
         @always_inline
         @parameter
-        fn loop_over_kvcache[
+        def loop_over_kvcache[
             tile_size: Int
         ](kv_tile_start_row: UInt32, end: UInt32, not_last_iter: Bool):
             if self.mask_skip_and_advance(
@@ -197,7 +197,7 @@ __extension AttentionRDNA:
 
             @parameter
             @always_inline
-            fn prefetch_function():
+            def prefetch_function():
                 v_buffer.load_from_dram()
 
             self.mma_qk[prefetch_function=prefetch_function](k_buffer)
@@ -227,7 +227,7 @@ __extension AttentionRDNA:
         self.store_output()
 
     @always_inline
-    fn mha_decoding_rdna(
+    def mha_decoding_rdna(
         mut self,
         exp_sum_ptr: UnsafePointer[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
@@ -245,7 +245,7 @@ __extension AttentionRDNA:
 
         @always_inline
         @parameter
-        fn loop_over_kvcache[
+        def loop_over_kvcache[
             tile_size: Int
         ](kv_tile_start_row: Int, end: Int, not_last_iter: Bool):
             if self.mask_skip_and_advance(
@@ -313,7 +313,7 @@ __extension AttentionRDNA:
 
             @parameter
             @always_inline
-            fn prefetch_function():
+            def prefetch_function():
                 v_buffer.load_from_dram()
 
             self.mma_qk[prefetch_function=prefetch_function](k_buffer)

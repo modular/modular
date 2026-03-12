@@ -25,7 +25,7 @@ from std.utils import IndexList
 
 
 @always_inline
-fn tile[
+def tile[
     dtype: DType, type_repeats: DType
 ](
     input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
@@ -230,7 +230,7 @@ fn tile[
 
 
 @always_inline
-fn tile_shape[
+def tile_shape[
     input_type: DType,
     repeats_type: DType,
     single_thread_blocking_override: Bool,

@@ -28,7 +28,7 @@ from std.utils import IndexList, StaticTuple
 
 
 @always_inline
-fn _fill[
+def _fill[
     dtype: DType
 ](
     dst: UnsafePointer[mut=True, Scalar[dtype], _],
@@ -61,7 +61,7 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
     var loop_bounds: Self.LoopBoundSpec
     var early_stop: Bool
 
-    fn __init__(out self, loop_bounds: Self.LoopBoundSpec):
+    def __init__(out self, loop_bounds: Self.LoopBoundSpec):
         assert len(loop_bounds) == Self.n_loops, (
             "Number of entries in loop_bounds doesn't match the number of"
             " loops specified"
@@ -83,21 +83,21 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
             var invalid_bound = lb >= ub
             self.early_stop = self.early_stop or invalid_bound
 
-    fn _lb_loop(self, axis: Int) -> Int:
+    def _lb_loop(self, axis: Int) -> Int:
         return self.loop_bounds[axis][0]
 
-    fn _ub_loop(self, axis: Int) -> Int:
+    def _ub_loop(self, axis: Int) -> Int:
         return self.loop_bounds[axis][1]
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.cur = copy.cur
         self.loop_bounds = copy.loop_bounds.copy()
         self.early_stop = copy.early_stop
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
-    fn __next__(mut self) raises StopIteration -> Self.Element:
+    def __next__(mut self) raises StopIteration -> Self.Element:
         if self.__len__() <= 0:
             raise StopIteration()
 
@@ -112,14 +112,14 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
         return cur
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         if self.cur[0] >= self._ub_loop(0) or self.early_stop:
             return 0
         else:
             return 1
 
 
-fn pad_constant[
+def pad_constant[
     dtype: DType,
     paddings_type: DType,
     constant_type: DType,
@@ -159,7 +159,7 @@ fn pad_constant[
 
     @__copy_capture(constant_cast)
     @parameter
-    fn pad_constant_wrapper(
+    def pad_constant_wrapper(
         output: UnsafePointer[
             mut=True, Scalar[dtype], address_space=AddressSpace.GENERIC, ...
         ],
@@ -188,7 +188,7 @@ fn pad_constant[
     ](output, input, paddings)
 
 
-fn pad_reflect[
+def pad_reflect[
     dtype: DType,
     paddings_type: DType,
 ](
@@ -227,7 +227,7 @@ fn pad_reflect[
     comptime output_rank = output.rank
 
     @parameter
-    fn pad_reflect_wrapper(
+    def pad_reflect_wrapper(
         output: UnsafePointer[
             mut=True, Scalar[dtype], address_space=AddressSpace.GENERIC, ...
         ],
@@ -251,7 +251,7 @@ fn pad_reflect[
 
 
 @always_inline
-fn pad_shape[
+def pad_shape[
     input_type: DType,
     paddings_type: DType,
     single_thread_blocking_override: Bool,
@@ -298,7 +298,7 @@ fn pad_shape[
     return output_shape
 
 
-fn _do_pad[
+def _do_pad[
     OutputLayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -374,7 +374,7 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
     """
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         axis: Int,
         paddings: UnsafePointer[Scalar[Self.paddings_type], _],
@@ -395,7 +395,7 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
         self.next_pad_with_constant = False
 
     @always_inline
-    fn init_offsets(
+    def init_offsets(
         mut self,
         output_offset: Int,
         input_offset: Int,
@@ -406,7 +406,7 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
         self.pad_with_constant = pad_with_constant
 
     @always_inline
-    fn pre_check(mut self, i: Int):
+    def pre_check(mut self, i: Int):
         self.is_within_padding = (i < self.pre_pad) or (
             self.pre_pad + self.non_pad <= i
         )
@@ -415,13 +415,13 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
         )
 
     @always_inline
-    fn post_check(mut self, output_axis_stride: Int, input_axis_stride: Int):
+    def post_check(mut self, output_axis_stride: Int, input_axis_stride: Int):
         if not self.is_within_padding:
             self.input_offset += input_axis_stride
         self.output_offset += output_axis_stride
 
     @always_inline
-    fn base(
+    def base(
         mut self,
         output: UnsafePointer[mut=True, Scalar[Self.dtype], _],
         input: UnsafePointer[Scalar[Self.dtype], _],
@@ -445,7 +445,7 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
 
 
 @always_inline
-fn _pad_constant_axis[
+def _pad_constant_axis[
     rank: Int, dtype: DType, paddings_type: DType, axis: Int
 ](
     output: UnsafePointer[mut=True, Scalar[dtype], _],
@@ -482,7 +482,7 @@ fn _pad_constant_axis[
             axis_params[axis].post_check(output_axis_stride, input_axis_stride)
 
 
-fn _pad_constant_impl[
+def _pad_constant_impl[
     rank: Int, dtype: DType, paddings_type: DType
 ](
     output: UnsafePointer[mut=True, Scalar[dtype], _],
@@ -534,7 +534,7 @@ fn _pad_constant_impl[
 
 
 @always_inline
-fn _memcpy_regions_fast[
+def _memcpy_regions_fast[
     dtype: DType
 ](
     pre_pad: Int,
@@ -544,7 +544,7 @@ fn _memcpy_regions_fast[
     pre_pad_start_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
 ):
     @always_inline
-    fn modulo_inc(mut cnt: Int, modulo: Int):
+    def modulo_inc(mut cnt: Int, modulo: Int):
         """
         Returns '(cnt+1)%modulo', provided that 'cnt' is initialized to zero
         and all the increments are via this function.
@@ -554,7 +554,7 @@ fn _memcpy_regions_fast[
             cnt = 0
 
     @parameter
-    fn _common_loop[pre_copy: Bool, singleton: Bool]():
+    def _common_loop[pre_copy: Bool, singleton: Bool]():
         var curr_rem: Int = 0
         var num_iters = pre_pad if pre_copy else post_pad
         var copy_to: Int = (pre_pad - 1) if pre_copy else (pre_pad + non_pad)
@@ -602,7 +602,7 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
     var next_output_offset: Int
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         axis: Int,
         paddings: UnsafePointer[Scalar[Self.paddings_type], _],
@@ -621,7 +621,7 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
         self.next_output_offset = 0
 
     @always_inline
-    fn init_offsets(
+    def init_offsets(
         mut self,
         output_offset: Int,
         input_offset: Int,
@@ -634,14 +634,14 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
         )
 
     @always_inline
-    fn update_next_offsets(
+    def update_next_offsets(
         mut self, output_axis_stride: Int, input_axis_stride: Int
     ):
         self.next_output_offset += output_axis_stride
         self.next_input_offset += input_axis_stride
 
     @always_inline
-    fn base(
+    def base(
         mut self,
         output_offset: Int,
         input_offset: Int,
@@ -661,7 +661,7 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
         memcpy(dest=non_pad_start_ptr, src=input_start_ptr, count=self.non_pad)
 
     @always_inline
-    fn memcpy_regions(
+    def memcpy_regions(
         mut self,
         output_axis_stride: Int,
         output_offset: Int,
@@ -679,7 +679,7 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
 
 
 @always_inline
-fn _pad_reflect_axis[
+def _pad_reflect_axis[
     rank: Int,
     dtype: DType,
     paddings_type: DType,
@@ -738,7 +738,7 @@ fn _pad_reflect_axis[
     axis_params[axis].memcpy_regions(output_axis_stride, output_offset, output)
 
 
-fn _pad_reflect_impl[
+def _pad_reflect_impl[
     rank: Int,
     dtype: DType,
     paddings_type: DType,
@@ -782,7 +782,7 @@ fn _pad_reflect_impl[
 
 
 @always_inline
-fn pad_repeat[
+def pad_repeat[
     dtype: DType,
     paddings_type: DType,
 ](

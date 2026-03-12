@@ -70,7 +70,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
     var num_groups: Int
 
     @always_inline
-    fn d(self) -> Int:
+    def d(self) -> Int:
         """Input depth."""
 
         comptime if Self.rank >= 3:
@@ -79,7 +79,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
             return 1
 
     @always_inline
-    fn h(self) -> Int:
+    def h(self) -> Int:
         """Input height."""
 
         comptime if Self.rank >= 2:
@@ -88,12 +88,12 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
             return 1
 
     @always_inline
-    fn w(self) -> Int:
+    def w(self) -> Int:
         """Input width."""
         return self.input_dims[Self.rank - 1]
 
     @always_inline
-    fn do(self) -> Int:
+    def do(self) -> Int:
         """Output depth."""
 
         comptime if Self.rank >= 3:
@@ -102,7 +102,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
             return 1
 
     @always_inline
-    fn ho(self) -> Int:
+    def ho(self) -> Int:
         """Output height."""
 
         comptime if Self.rank >= 2:
@@ -111,12 +111,12 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
             return 1
 
     @always_inline
-    fn wo(self) -> Int:
+    def wo(self) -> Int:
         """Output width."""
         return self.output_dims[Self.rank - 1]
 
     @always_inline
-    fn q(self) -> Int:
+    def q(self) -> Int:
         """Filter window depth."""
 
         comptime if Self.rank >= 3:
@@ -125,7 +125,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
             return 1
 
     @always_inline
-    fn r(self) -> Int:
+    def r(self) -> Int:
         """Filter window height."""
 
         comptime if Self.rank >= 2:
@@ -134,28 +134,28 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
             return 1
 
     @always_inline
-    fn s(self) -> Int:
+    def s(self) -> Int:
         """Filter windown width."""
         return self.filter_dims[Self.rank - 1]
 
     @always_inline
-    fn filter_window_flat_size(self) -> Int:
+    def filter_window_flat_size(self) -> Int:
         return self.filter_dims.flattened_length()
 
     @always_inline
-    fn input_image_flat_size(self) -> Int:
+    def input_image_flat_size(self) -> Int:
         return self.input_dims.flattened_length()
 
     @always_inline
-    fn output_image_flat_size(self) -> Int:
+    def output_image_flat_size(self) -> Int:
         return self.output_dims.flattened_length()
 
     @always_inline
-    fn output_space_dims(self) -> IndexList[Self.rank]:
+    def output_space_dims(self) -> IndexList[Self.rank]:
         return self.output_dims
 
     @always_inline
-    fn output_flat_coord_to_input_offset(
+    def output_flat_coord_to_input_offset(
         self, n: Int, output_flat_coord: Int
     ) -> Int:
         comptime assert (
@@ -199,19 +199,19 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
             return -1
 
     @always_inline
-    fn matmul_M(self) -> Int:
+    def matmul_M(self) -> Int:
         return self.n * self.output_dims.flattened_length() * self.num_groups
 
     @always_inline
-    fn matmul_N(self) -> Int:
+    def matmul_N(self) -> Int:
         return self.f // self.num_groups
 
     @always_inline
-    fn matmul_K(self) -> Int:
+    def matmul_K(self) -> Int:
         return self.c * self.filter_dims.flattened_length() // self.num_groups
 
     @always_inline
-    fn padded(self) -> Bool:
+    def padded(self) -> Bool:
         return (
             self.pad_w != Index(0, 0)
             or self.pad_h != Index(0, 0)
@@ -219,44 +219,44 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
         )
 
     @always_inline
-    fn c_per_group(self) -> Int:
+    def c_per_group(self) -> Int:
         """Returns the number of channels per group. Channel count must be divisible by group size.
         """
         return self.c // self.num_groups
 
     @always_inline
-    fn f_per_group(self) -> Int:
+    def f_per_group(self) -> Int:
         """Returns the number of filters per group. Filter count must be divisible by group size.
         """
         return self.f // self.num_groups
 
     @always_inline
-    fn f_to_group(self, f_idx: Int) -> Int:
+    def f_to_group(self, f_idx: Int) -> Int:
         """Given a global filter idx, returns the group idx of the group the filter belongs to.
         """
         return f_idx // self.f_per_group()
 
     @always_inline
-    fn c_to_group(self, c_idx: Int) -> Int:
+    def c_to_group(self, c_idx: Int) -> Int:
         """Given a global channel idx, returns the group idx of the group the channel belongs to.
         """
         return c_idx // self.c_per_group()
 
     @always_inline
-    fn f_in_group(self, f_idx: Int) -> Int:
+    def f_in_group(self, f_idx: Int) -> Int:
         """Given a global filter idx, returns the offset of the filter in its group.
         """
         return f_idx % self.f_per_group()
 
     @always_inline
-    fn c_in_group(self, c_idx: Int) -> Int:
+    def c_in_group(self, c_idx: Int) -> Int:
         """Given a global channel idx, returns the offset of the channel in its group.
         """
         return c_idx % self.c_per_group()
 
 
 @always_inline
-fn get_conv_shape[
+def get_conv_shape[
     rank: Int,
     filter_packed: Bool,
 ](
@@ -300,7 +300,7 @@ fn get_conv_shape[
 
 
 @always_inline
-fn get_conv_shape[
+def get_conv_shape[
     rank: Int,
     filter_packed: Bool,
 ](
@@ -344,7 +344,7 @@ fn get_conv_shape[
 
 
 @always_inline
-fn get_conv_tile_size[dtype: DType]() -> Int:
+def get_conv_tile_size[dtype: DType]() -> Int:
     # The rule-of-thumb is 1/2 of L2 cache size. It's common to have 3x3
     # filter window in convolution. So the cache tile size (in terms of
     # elements) is rounded up to multiple of 9.
@@ -367,7 +367,7 @@ fn get_conv_tile_size[dtype: DType]() -> Int:
 
 
 @always_inline
-fn get_conv_tile_shape[
+def get_conv_tile_shape[
     dtype: DType,
 ](c: Int, filter_window_size: Int, micro_kernel_width: Int,) -> IndexList[2]:
     """Compute the (c, f) tile shape in L2.
@@ -398,7 +398,7 @@ fn get_conv_tile_shape[
 
 
 @always_inline
-fn extend_shape[
+def extend_shape[
     rank: Int
 ](in_shape: IndexList[rank], first: Int, last: Int) -> IndexList[rank + 2]:
     """Extend input shape by inserting `first` and `last` at both ends."""
@@ -413,7 +413,7 @@ fn extend_shape[
 
 
 @always_inline
-fn append_shape[
+def append_shape[
     rank: Int
 ](in_shape: IndexList[rank], last2nd: Int, last: Int) -> IndexList[rank + 2]:
     """Append input shape by inserting `last2nd` and `last` at the end."""
@@ -428,7 +428,7 @@ fn append_shape[
 
 
 @always_inline
-fn reorder_padding[rank: Int](pad: IntTuple) -> IntTuple:
+def reorder_padding[rank: Int](pad: IntTuple) -> IntTuple:
     comptime if rank == 1:
         return IntTuple(pad).flatten()
     elif rank == 2:
@@ -443,7 +443,7 @@ struct ConvInfoStatic[rank: Int](Defaultable):
     var dilation: IntTuple
     var num_groups: Int
 
-    fn __init__(
+    def __init__(
         out self,
         pad: IntTuple,
         stride: IntTuple,
@@ -456,7 +456,7 @@ struct ConvInfoStatic[rank: Int](Defaultable):
         self.num_groups = num_groups
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         self.pad = IntTuple(num_elems=Self.rank * 2)
         _ = self.pad._fill(UNKNOWN_VALUE)
         self.stride = IntTuple(num_elems=Self.rank)
@@ -466,7 +466,7 @@ struct ConvInfoStatic[rank: Int](Defaultable):
         self.num_groups = UNKNOWN_VALUE
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pad: IntTuple,
         stride: IntTuple,
@@ -488,7 +488,7 @@ struct ConvInfoStatic[rank: Int](Defaultable):
         self.num_groups = num_groups
 
     @always_inline
-    fn all_known(self) -> Bool:
+    def all_known(self) -> Bool:
         return (
             self.pad.all_known()
             and self.stride.all_known()
@@ -497,25 +497,25 @@ struct ConvInfoStatic[rank: Int](Defaultable):
         )
 
     @always_inline
-    fn pad_left(self) -> Int:
+    def pad_left(self) -> Int:
         # TODO: extend to 1d/3d.
         return Int(self.pad[1])
 
     @always_inline
-    fn pad_bottom(self) -> Int:
+    def pad_bottom(self) -> Int:
         # TODO: extend to 1d/3d.
         return Int(self.pad[0])
 
     @always_inline
-    fn strides(self) -> IndexList[2]:
+    def strides(self) -> IndexList[2]:
         return Index(self.stride[0], self.stride[1])
 
     @always_inline
-    fn dilations(self) -> IndexList[2]:
+    def dilations(self) -> IndexList[2]:
         return Index(self.dilation[0], self.dilation[1])
 
 
-fn get_direct_conv_micro_kernel_height() -> Int:
+def get_direct_conv_micro_kernel_height() -> Int:
     comptime if CompilationTarget.has_avx512f():
         return 6
     elif CompilationTarget.is_neoverse_n1():
@@ -525,7 +525,7 @@ fn get_direct_conv_micro_kernel_height() -> Int:
     return 4
 
 
-fn get_direct_conv_micro_kernel_width() -> Int:
+def get_direct_conv_micro_kernel_width() -> Int:
     comptime if CompilationTarget.has_avx512f():
         return 4
     elif CompilationTarget.is_neoverse_n1():
@@ -535,7 +535,7 @@ fn get_direct_conv_micro_kernel_width() -> Int:
     return 3
 
 
-fn get_micro_kernel_shape[
+def get_micro_kernel_shape[
     rank: Int, WO: Int, F: Int, conv_attr: ConvInfoStatic[rank], simd_size: Int
 ]() -> IndexList[2]:
     comptime optimize_static_shapes = WO != UNKNOWN_VALUE and F != UNKNOWN_VALUE and conv_attr.all_known()
@@ -648,7 +648,7 @@ struct ConvPartition(TrivialRegisterPassable):
     var c_size: Int
 
     @always_inline
-    fn empty(self) -> Bool:
+    def empty(self) -> Bool:
         # fmt: off
         return self.ng_size <= 0 or \
                self.f_size <= 0 or \
@@ -658,7 +658,7 @@ struct ConvPartition(TrivialRegisterPassable):
 
 
 @always_inline
-fn get_conv_num_tasks(num_threads: Int, conv_shape: ConvShape) -> Int:
+def get_conv_num_tasks(num_threads: Int, conv_shape: ConvShape) -> Int:
     # Currently use matmul's min task size but the optimal value
     # for direct conv may be different.
     comptime min_task_size = 64 * 1024
@@ -670,7 +670,7 @@ fn get_conv_num_tasks(num_threads: Int, conv_shape: ConvShape) -> Int:
     return min(ceildiv(complexity, min_task_size), num_threads)
 
 
-fn get_conv_num_partitions[
+def get_conv_num_partitions[
     micro_kernel_w: Int, micro_kernel_f: Int
 ](num_threads: Int, conv_shape: ConvShape) -> IndexList[4]:
     """Partition the workload in (batch, C, F, HOWO) dimensions.
@@ -763,7 +763,7 @@ fn get_conv_num_partitions[
 
 
 @always_inline
-fn get_partition(
+def get_partition(
     task_id: Int,
     num_partitions: IndexList[4],
     conv_shape: ConvShape,
@@ -829,11 +829,11 @@ struct ConvAlgorithm(TrivialRegisterPassable):
     )  # TF filter layout for channels last input.
 
     @always_inline("nodebug")
-    fn __eq__(self, rhs: ConvAlgorithm) -> Bool:
+    def __eq__(self, rhs: ConvAlgorithm) -> Bool:
         return self.value == rhs.value
 
     @always_inline("nodebug")
-    fn __ne__(self, rhs: ConvAlgorithm) -> Bool:
+    def __ne__(self, rhs: ConvAlgorithm) -> Bool:
         return self.value != rhs.value
 
 
@@ -843,7 +843,7 @@ struct ConvAlgorithm(TrivialRegisterPassable):
 
 
 @always_inline
-fn align_down_residual(value: Int, alignment: Int) -> Int:
+def align_down_residual(value: Int, alignment: Int) -> Int:
     """Returns the remainder after aligning down value to alignment.
 
     Args:

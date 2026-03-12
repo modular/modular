@@ -34,7 +34,7 @@ from std.utils import IndexList, StaticTuple
 # ===-----------------------------------------------------------------------===#
 
 
-fn split[
+def split[
     OutputLayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -71,7 +71,7 @@ fn split[
 
     @__copy_capture(output_sizes)
     @parameter
-    fn elementwise_fn_wrapper[
+    def elementwise_fn_wrapper[
         width: Int, rank: Int, alignment: Int = 1
     ](input_coords: IndexList[rank]) capturing:
         # The associated index in the output tensor

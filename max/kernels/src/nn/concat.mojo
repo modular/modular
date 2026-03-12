@@ -53,7 +53,7 @@ comptime elementwise_epilogue_type = fn[
 
 
 @always_inline
-fn memcpy_or_fuse[
+def memcpy_or_fuse[
     rank: Int,
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
@@ -87,7 +87,7 @@ fn memcpy_or_fuse[
 
         @parameter
         @always_inline
-        fn epilogue_wrapper[
+        def epilogue_wrapper[
             simd_width: Int, _rank: Int, alignment: Int = 1
         ](index: IndexList[_rank]):
             var coord = Coord(index)
@@ -119,11 +119,11 @@ struct _Span(TrivialRegisterPassable):
     var end: Int
 
     @always_inline("nodebug")
-    fn empty(self) -> Bool:
+    def empty(self) -> Bool:
         return not (self.start < self.end)
 
     @always_inline("nodebug")
-    fn intersect(self, other: Self) -> Self:
+    def intersect(self, other: Self) -> Self:
         return Self(max(self.start, other.start), min(self.end, other.end))
 
 
@@ -137,7 +137,7 @@ struct _CanonicallyReshapedBuffer[mut: Bool, //, origin: Origin[mut=mut]](
     var c: Int
 
 
-fn _canonical_reshape[
+def _canonical_reshape[
     dtype: DType
 ](
     buf: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
@@ -150,7 +150,7 @@ fn _canonical_reshape[
     return _CanonicallyReshapedBuffer(buf.ptr.bitcast[Int8](), h, w, c)
 
 
-fn _canonical_reshape_output[
+def _canonical_reshape_output[
     input_origin: ImmutOrigin,
     InputLayoutType: TensorLayout,
     //,
@@ -174,7 +174,7 @@ fn _canonical_reshape_output[
     )
 
 
-fn _concat_parallel[
+def _concat_parallel[
     input_origin: ImmutOrigin,
     InputLayoutType: TensorLayout,
     //,
@@ -205,7 +205,7 @@ fn _concat_parallel[
         total_output_bytes, output_h, output_c, output_data, output_wc
     )
     @parameter
-    fn do_chunk(chunk_index: Int) raises:
+    def do_chunk(chunk_index: Int) raises:
         # "Amount" refers to byte-offsets into logical copy order, not into
         # output buffer.
         var chunk_start_amount = chunk_index * parallel_chunk_size
@@ -320,7 +320,7 @@ fn _concat_parallel[
 
 
 @always_inline
-fn _concat[
+def _concat[
     input_origin: ImmutOrigin,
     InputLayoutType: TensorLayout,
     //,
@@ -382,7 +382,7 @@ fn _concat[
 
 
 @always_inline
-fn _concat_inner[
+def _concat_inner[
     input_origin: ImmutOrigin,
     InputLayoutType: TensorLayout,
     //,
@@ -410,7 +410,7 @@ fn _concat_inner[
 
 
 @always_inline
-fn _check_input_consistency[
+def _check_input_consistency[
     input_origin: ImmutOrigin,
     InputLayoutType: TensorLayout,
     //,
@@ -428,7 +428,7 @@ fn _check_input_consistency[
 
 
 @always_inline
-fn _concat_serial[
+def _concat_serial[
     input_origin: ImmutOrigin,
     InputLayoutType: TensorLayout,
     //,
@@ -459,7 +459,7 @@ fn _concat_serial[
 
 
 @always_inline
-fn _concat_small[
+def _concat_small[
     input_origin: ImmutOrigin,
     InputLayoutType: TensorLayout,
     //,
@@ -477,7 +477,7 @@ fn _concat_small[
 
     @parameter
     @always_inline
-    fn concat_lambda[
+    def concat_lambda[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](out_index: IndexList[rank]):
         # Concatenating [:, 10, :], [:, 20, :], [:, 30, :] results in shape
@@ -540,7 +540,7 @@ fn _concat_small[
 
 
 @always_inline
-fn _concat_cpu[
+def _concat_cpu[
     input_origin: ImmutOrigin,
     InputLayoutType: TensorLayout,
     //,
@@ -561,7 +561,7 @@ fn _concat_cpu[
 
     @always_inline
     @parameter
-    fn dispatch_serial(unused_thread_idx: Int) raises:
+    def dispatch_serial(unused_thread_idx: Int) raises:
         _concat_serial[dtype, epilogue_fn](output, axis, inputs)
 
     comptime KB = 1024
@@ -578,7 +578,7 @@ fn _concat_cpu[
 
 
 @always_inline
-fn concat_shape[
+def concat_shape[
     input_origin: ImmutOrigin,
     InputLayoutType: TensorLayout,
     //,
@@ -612,7 +612,7 @@ fn concat_shape[
 
     @parameter
     @always_inline
-    fn shape_equal_ignore_axis(
+    def shape_equal_ignore_axis(
         s1: IndexList[InputLayoutType.rank],
         s2: IndexList[InputLayoutType.rank],
     ) -> Bool:
@@ -646,7 +646,7 @@ fn concat_shape[
 
 
 @always_inline
-fn concat[
+def concat[
     input_origin: ImmutOrigin,
     InputLayoutType: TensorLayout,
     //,
@@ -696,7 +696,7 @@ fn concat[
             )
 
 
-fn _concat_inner_most_single_dim[
+def _concat_inner_most_single_dim[
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
     InputLayoutType: TensorLayout,
@@ -739,7 +739,7 @@ fn _concat_inner_most_single_dim[
 
 
 @always_inline
-fn _concat_gpu_elementwise[
+def _concat_gpu_elementwise[
     input_origin: ImmutOrigin,
     InputLayoutType: TensorLayout,
     //,
@@ -766,7 +766,7 @@ fn _concat_gpu_elementwise[
 
 
 @always_inline
-fn _concat_gpu_elementwise[
+def _concat_gpu_elementwise[
     input_origin: ImmutOrigin,
     InputLayoutType: TensorLayout,
     //,
@@ -786,7 +786,7 @@ fn _concat_gpu_elementwise[
 ) raises:
     @parameter
     @always_inline
-    fn per_output_elem[
+    def per_output_elem[
         simd_width: Int, _rank: Int, alignment: Int = 1
     ](out_index: IndexList[_rank]):
         var in_index = out_index
@@ -830,7 +830,7 @@ fn _concat_gpu_elementwise[
 
 
 @always_inline
-fn _concat_gpu[
+def _concat_gpu[
     input_origin: ImmutOrigin,
     InputLayoutType: TensorLayout,
     //,
@@ -856,7 +856,7 @@ fn _concat_gpu[
 
     @parameter
     @always_inline
-    fn _concat_buffers_contiguously() raises:
+    def _concat_buffers_contiguously() raises:
         var input_size = 0
 
         comptime for i in range(num_inputs):
@@ -919,7 +919,7 @@ fn _concat_gpu[
 
 
 @always_inline
-fn _fused_concat_cpu[
+def _fused_concat_cpu[
     rank: Int,
     dtype: DType,
     single_thread_blocking_override: Bool,
@@ -943,7 +943,7 @@ fn _fused_concat_cpu[
 
         @parameter
         @always_inline
-        fn elementwise_wrapper[
+        def elementwise_wrapper[
             _width: Int, rank: Int, alignment: Int = 1
         ](indices: IndexList[rank]):
             var c = indices
@@ -964,7 +964,7 @@ fn _fused_concat_cpu[
 
 
 @always_inline
-fn _fused_concat_inner_most_single_dim[
+def _fused_concat_inner_most_single_dim[
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
     //,
@@ -1001,7 +1001,7 @@ fn _fused_concat_inner_most_single_dim[
 
 
 @always_inline
-fn _fused_concat_gpu_elementwise[
+def _fused_concat_gpu_elementwise[
     axis: Int,
     rank: Int,
     dtype: DType,
@@ -1021,7 +1021,7 @@ fn _fused_concat_gpu_elementwise[
 
     @parameter
     @always_inline
-    fn per_output_elem[
+    def per_output_elem[
         simd_width: Int, _rank: Int, alignment: Int = 1
     ](out_index: IndexList[_rank]):
         var in_index = out_index
@@ -1051,7 +1051,7 @@ fn _fused_concat_gpu_elementwise[
 
 
 @always_inline
-fn _fused_concat_gpu[
+def _fused_concat_gpu[
     rank: Int,
     dtype: DType,
     input_fn: fn[input_index: Int, width: Int, _rank: Int](
@@ -1117,7 +1117,7 @@ fn _fused_concat_gpu[
 
 
 @always_inline
-fn fused_concat[
+def fused_concat[
     dtype: DType,
     rank: Int,
     single_thread_blocking_override: Bool,

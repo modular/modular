@@ -31,7 +31,7 @@ from linalg.arch.sm100.mma import smem_descriptor
 
 
 @always_inline
-fn fa4_mma[
+def fa4_mma[
     qkv_type: DType,
     MaskType: MHAMask,
     config: FA4Config,

@@ -464,7 +464,7 @@ struct Conv2dFpropKernel[
 
     @staticmethod
     @always_inline
-    fn mma[
+    def mma[
         tiles_origin: MutOrigin,
         //,
     ](
@@ -501,7 +501,7 @@ struct Conv2dFpropKernel[
 
     @staticmethod
     @always_inline
-    fn init_barriers(
+    def init_barriers(
         ctx: Self.Context,
         act_tma_op: Self.ActTmaOp,
         filter_tma_op: Self.FilterTmaOp,
@@ -571,7 +571,7 @@ struct Conv2dFpropKernel[
 
     @staticmethod
     @always_inline
-    fn load_input_tiles[
+    def load_input_tiles[
         act_tma_origin: ImmutOrigin,
         filter_tma_origin: ImmutOrigin,
         tiles_origin: MutOrigin,
@@ -670,7 +670,7 @@ struct Conv2dFpropKernel[
     @__llvm_arg_metadata(act_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(filter_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(out_tma_op, `nvvm.grid_constant`)
-    fn run(
+    def run(
         act_tma_op: Self.ActTmaOp,
         filter_tma_op: Self.FilterTmaOp,
         out_tma_op: Self.OutTmaOp,
@@ -708,7 +708,7 @@ struct Conv2dFpropKernel[
     @__llvm_arg_metadata(filter_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(out_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(src_tma_op, `nvvm.grid_constant`)
-    fn run_with_residual(
+    def run_with_residual(
         act_tma_op: Self.ActTmaOp,
         filter_tma_op: Self.FilterTmaOp,
         out_tma_op: Self.OutTmaOp,
@@ -747,7 +747,7 @@ struct Conv2dFpropKernel[
 
     @staticmethod
     @always_inline
-    fn _run_impl[
+    def _run_impl[
         has_residual: Bool,
         _src_rank: Int = Self.SrcTmaOp.rank,
         _src_tile_shape: IndexList[_src_rank] = Self.SrcTmaOp.tile_shape,

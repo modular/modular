@@ -37,21 +37,21 @@ from layout import TileTensor, coord_to_index_list
 # This should eventually be moved to ffi.mojo with a more general global cache method
 # cache key is a string and cache value is a pointer.
 @always_inline
-fn global_cache_lookup(key: String) -> OpaquePointer[MutExternalOrigin]:
+def global_cache_lookup(key: String) -> OpaquePointer[MutExternalOrigin]:
     return external_call[
         "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer[MutExternalOrigin]
     ](key.unsafe_ptr(), key.byte_length())
 
 
 @always_inline
-fn global_cache_insert(key: String, value: OpaquePointer):
+def global_cache_insert(key: String, value: OpaquePointer):
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(key),
         value,
     )
 
 
-fn _get_fft_workarea(
+def _get_fft_workarea(
     buffer_size: Int, ctx: DeviceContext
 ) raises -> OpaquePointer[MutExternalOrigin]:
     # Include device ID in cache key to ensure per-device workspace buffers.
@@ -78,7 +78,7 @@ fn _get_fft_workarea(
     ]()
 
 
-fn _get_fft_plan[
+def _get_fft_plan[
     create_if_not_found: Bool = True
 ](
     output_size: Int,
@@ -140,7 +140,7 @@ fn _get_fft_plan[
     return plan
 
 
-fn _irfft[
+def _irfft[
     input_type: DType,
     output_type: DType,
 ](
@@ -308,7 +308,7 @@ fn _irfft[
             )
 
 
-fn irfft[
+def irfft[
     input_type: DType,
     output_type: DType,
 ](

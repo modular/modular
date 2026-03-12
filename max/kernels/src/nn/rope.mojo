@@ -36,7 +36,7 @@ from std.utils import IndexList
 
 
 @always_inline
-fn _rope[
+def _rope[
     dtype: DType,
     freq_dtype: DType,
     width: Int,
@@ -51,12 +51,12 @@ fn _rope[
 # while in safetensors, the data is stored as real, …, real, imag, …, imag.
 # This function return the indices for the real and imaginary part.
 @always_inline
-fn get_safetensors_idx(head_dim_idx: Int, head_size: Int) -> Tuple[Int, Int]:
+def get_safetensors_idx(head_dim_idx: Int, head_size: Int) -> Tuple[Int, Int]:
     return (head_dim_idx // 2, head_dim_idx // 2 + head_size // 2)
 
 
 @always_inline
-fn get_identity_rope_coeff[width: Int, dtype: DType]() -> SIMD[dtype, width]:
+def get_identity_rope_coeff[width: Int, dtype: DType]() -> SIMD[dtype, width]:
     # Creates a SIMD vector with real parts set to 1 and imaginary parts to
     # 0, effectively making the RoPE transformation an identity operation.
     return rebind[SIMD[dtype, width]](
@@ -65,7 +65,7 @@ fn get_identity_rope_coeff[width: Int, dtype: DType]() -> SIMD[dtype, width]:
 
 
 @always_inline
-fn apply_rope[
+def apply_rope[
     dtype: DType,
     freq_dtype: DType,
     rank: Int,
@@ -118,7 +118,7 @@ fn apply_rope[
 
 
 @always_inline
-fn rope_ragged[
+def rope_ragged[
     dtype: DType,
     freq_dtype: DType,
     *,
@@ -159,7 +159,7 @@ fn rope_ragged[
     @always_inline
     @parameter
     @__copy_capture(x, input_row_offsets, start_pos, freqs_cis)
-    fn rope_fn[
+    def rope_fn[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
         comptime assert rank == 3, "Invalid rank passed to rope kernel"

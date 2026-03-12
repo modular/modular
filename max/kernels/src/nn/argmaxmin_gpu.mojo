@@ -17,7 +17,7 @@ from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 from nn.topk import topk_gpu
 
 
-fn argmaxmin_gpu[
+def argmaxmin_gpu[
     dtype: DType, output_type: DType, largest: Bool
 ](
     ctx: DeviceContext,
@@ -58,7 +58,7 @@ fn argmaxmin_gpu[
     _ = out_vals_buf^
 
 
-fn argmax_gpu[
+def argmax_gpu[
     dtype: DType, output_type: DType
 ](
     ctx: DeviceContext,
@@ -68,7 +68,7 @@ fn argmax_gpu[
     argmaxmin_gpu[largest=True](ctx, input, output)
 
 
-fn argmin_gpu[
+def argmin_gpu[
     dtype: DType, output_type: DType
 ](
     ctx: DeviceContext,

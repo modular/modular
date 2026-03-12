@@ -273,7 +273,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             Int32(Self.config.num_threads)
         )
     )
-    fn kernel(
+    def kernel(
         # Q_nope TMA: FP8, 64×512, SWIZZLE_64B
         q_nope_tma: QOTMATile[
             dtype=Self.fp8_type,
@@ -644,7 +644,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
-    fn load(
+    def load(
         q_nope_tma: QOTMATile[
             dtype=Self.fp8_type,
             BM=Self.config.BM,
@@ -872,7 +872,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
-    fn mmaQK(
+    def mmaQK(
         tmem_addr: UInt32,
         q_nope_smem: SharedMemPointer[Scalar[Self.fp8_type]],
         q_rope_smem: SharedMemPointer[Scalar[Self.bf16_type]],
@@ -973,7 +973,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
-    fn mmaPV(
+    def mmaPV(
         tmem_addr: UInt32,
         kv_content_smem: SharedMemPointer[Scalar[Self.fp8_type]],
         p_smem: SharedMemPointer[Scalar[Self.fp8_type]],

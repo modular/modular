@@ -21,7 +21,7 @@ from std.memory import memcpy
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_rightmost_broadcast_axis[
+def _get_rightmost_broadcast_axis[
     dtype: DType,
 ](
     input: TileTensor[dtype, ...],
@@ -50,7 +50,7 @@ fn _get_rightmost_broadcast_axis[
 # ===-----------------------------------------------------------------------===#
 
 
-fn broadcast[
+def broadcast[
     dtype: DType,
 ](
     output: TileTensor[
@@ -99,7 +99,7 @@ fn broadcast[
     )
 
 
-fn broadcast_impl[
+def broadcast_impl[
     dtype: DType,
 ](
     axis: Int,
@@ -175,7 +175,7 @@ fn broadcast_impl[
         )
 
 
-fn _tile_1d[
+def _tile_1d[
     dtype: DType,
 ](
     init_dst_ptr: UnsafePointer[

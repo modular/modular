@@ -63,10 +63,10 @@ struct FA4Config(TrivialRegisterPassable):
     comptime num_correction_cols = 1
 
     @always_inline
-    fn num_qo(self) -> Int:
+    def num_qo(self) -> Int:
         return 2
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         num_q_heads: Int,
@@ -235,7 +235,7 @@ struct FA4Config(TrivialRegisterPassable):
         )
         self.smem_used = smem_use
 
-    fn supported(self) -> Bool:
+    def supported(self) -> Bool:
         return (
             self.depth >= 64
             and self.BN >= 64
@@ -244,11 +244,11 @@ struct FA4Config(TrivialRegisterPassable):
             and self.smem_used <= Self.sm100_smem_carveout
         )
 
-    fn correction_smem_elements(self) -> Int:
+    def correction_smem_elements(self) -> Int:
         return self.BM * Self.num_correction_cols
 
-    fn num_active_warps_per_group(self) -> Int:
+    def num_active_warps_per_group(self) -> Int:
         return 4
 
-    fn num_active_threads_per_group(self) -> Int:
+    def num_active_threads_per_group(self) -> Int:
         return WARP_SIZE * self.num_active_warps_per_group()

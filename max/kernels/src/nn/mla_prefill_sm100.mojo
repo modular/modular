@@ -26,7 +26,7 @@ from .mla_prefill_sm100_blockscale import mla_sm100_prefill_blockscale
 
 
 @always_inline
-fn mla_sm100_prefill[
+def mla_sm100_prefill[
     output_type: DType,
     q_type: DType,
     KVType: MHAOperand,

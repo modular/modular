@@ -100,7 +100,7 @@ trait OptionalPointer(Copyable, TrivialRegisterPassable):
     comptime is_null: Bool
 
     @always_inline
-    fn value(self) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
+    def value(self) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         ...
 
 
@@ -111,17 +111,17 @@ struct NonNullPointer[dtype_: DType](OptionalPointer):
     var ptr: UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self, ptr: UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]
     ):
         self.ptr = ptr
 
     @always_inline
-    fn __init__(out self, ptr: DeviceBuffer[Self.dtype]):
+    def __init__(out self, ptr: DeviceBuffer[Self.dtype]):
         self.ptr = ptr.unsafe_ptr()
 
     @always_inline
-    fn value(self) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
+    def value(self) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         assert Bool(self.ptr), (
             "NonNullPointer is supposed to provide a compile-time guarantee"
             " of being non-null"
@@ -134,11 +134,11 @@ struct NullPointer[dtype_: DType](OptionalPointer):
     comptime is_null: Bool = True
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @always_inline
-    fn value(self) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
+    def value(self) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         return {}
 
 
@@ -161,15 +161,15 @@ struct Pack[
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         return "Pack"
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         mask: Self.MaskType,
         scheduler: Self.SchedulerType,
@@ -225,7 +225,7 @@ struct MHAPosition[
     ) if Self.decoding else 1
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         q_row: UInt32,
         q_col: UInt32,
@@ -245,21 +245,21 @@ struct MHAPosition[
         self.prompt_idx = seq_info.prompt_idx  # batch idx
 
     @always_inline
-    fn q_head_idx(self) -> UInt32:
+    def q_head_idx(self) -> UInt32:
         comptime if Self.decoding:
             return self.head_idx * UInt32(Self.group)
         else:
             return self.head_idx
 
     @always_inline
-    fn kv_head_idx(self) -> UInt32:
+    def kv_head_idx(self) -> UInt32:
         comptime if Self.decoding:
             return self.head_idx
         else:
             return self.head_idx // UInt32(Self.group)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "(",
             self.q_out_offset,
@@ -279,22 +279,22 @@ struct MHAPosition[
         )
 
     @always_inline
-    fn q_tile_num_rows(self) -> UInt32:
+    def q_tile_num_rows(self) -> UInt32:
         comptime if Self.decoding:
             return UInt32(Self.group)
         else:
             return min(self.seq_len - self.prompt_offset, UInt32(Self.BM))
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self.q_out_offset == other.q_out_offset
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self.q_out_offset != other.q_out_offset
 
     @always_inline
-    fn q_out_gmem_tensor[
+    def q_out_gmem_tensor[
         dtype: DType
     ](
         self,
@@ -319,7 +319,7 @@ struct MHAPosition[
         }
 
     @always_inline
-    fn mask_status[
+    def mask_status[
         MaskType: MHAMask
     ](self, mask: MaskType, kv_tile_start_row: UInt32) -> TileMaskStatus:
         comptime if Self.decoding:
@@ -346,14 +346,14 @@ struct MHAPosition[
             )
 
     @always_inline
-    fn get_score_row(self) -> UInt32:
+    def get_score_row(self) -> UInt32:
         comptime if Self.decoding:
             return self.num_keys - 1
         else:
             return self.prompt_offset + self.start_pos
 
     @always_inline
-    fn exp_sum_qk_max_ptr[
+    def exp_sum_qk_max_ptr[
         partition_t: MHAPartitionScheme
     ](
         self,
@@ -373,7 +373,7 @@ struct MHAPosition[
         return (exp_sum_ptr, qk_max_ptr)
 
     @always_inline
-    fn get_start_and_end_for_partitions[
+    def get_start_and_end_for_partitions[
         PartitionType: MHAPartitionScheme, MaskType: MHAMask, //, page_size: Int
     ](self, partition: PartitionType, mask: MaskType) -> Tuple[UInt32, UInt32]:
         var start_col: UInt32 = mask.start_column[Self.BM, Self.BN, page_size](
@@ -392,7 +392,7 @@ struct MHAPosition[
 
     @staticmethod
     @always_inline
-    fn get_q_gmem_row[
+    def get_q_gmem_row[
         MaxSeqLenType: OptionallyStaticInt, //, ragged: Bool
     ](seq_info: SeqInfo, max_seq_len: MaxSeqLenType) -> UInt32:
         var q_row: UInt32
@@ -417,7 +417,7 @@ struct MHAPosition[
 
     @staticmethod
     @always_inline
-    fn get_q_gmem_row[
+    def get_q_gmem_row[
         ragged: Bool
     ](seq_info: SeqInfo, max_seq_len: UInt32) -> UInt32:
         var q_row: UInt32
@@ -436,7 +436,7 @@ struct MHAPosition[
 
 
 @always_inline
-fn get_seq_info[
+def get_seq_info[
     MaxSeqLenType: OptionallyStaticInt,
     ValidLengthType: OptionalPointer,
     PartitionType: MHAPartitionScheme,
@@ -474,13 +474,13 @@ struct PositionSummary(TrivialRegisterPassable):
     var score_row: UInt32
 
     @always_inline
-    fn __init__(out self, num_keys: UInt32, score_row: UInt32):
+    def __init__(out self, num_keys: UInt32, score_row: UInt32):
         self.num_keys = num_keys
         self.score_row = score_row
 
     @staticmethod
     @always_inline
-    fn get_start_pos[
+    def get_start_pos[
         KVLUTType: MHAOperand,
         //,
         ragged: Bool,
@@ -497,7 +497,7 @@ struct PositionSummary(TrivialRegisterPassable):
 
     @staticmethod
     @always_inline
-    fn get_num_keys[
+    def get_num_keys[
         MaxSeqLenType: OptionallyStaticInt,
         KVInputRowOffsetsType: OptionalPointer,
         //,
@@ -530,7 +530,7 @@ struct PositionSummary(TrivialRegisterPassable):
 
     @staticmethod
     @always_inline
-    fn get_score_row[
+    def get_score_row[
         *, ragged: Bool, _is_cache_length_accurate: Bool, decoding: Bool
     ](seq_info: SeqInfo, num_keys: UInt32, start_pos: UInt32) -> UInt32:
         comptime if decoding:
@@ -542,7 +542,7 @@ struct PositionSummary(TrivialRegisterPassable):
 
     @staticmethod
     @always_inline
-    fn create[
+    def create[
         KVLUTType: MHAOperand,
         KVRowOffsetsType: OptionalPointer,
         MaxSeqLenType: OptionallyStaticInt,
@@ -579,7 +579,7 @@ struct PositionSummary(TrivialRegisterPassable):
 
 
 @always_inline
-fn _get_position[
+def _get_position[
     KVLUTType: MHAOperand,
     MaxSeqLenType: OptionallyStaticInt,
     KVInputRowOffsetsType: OptionalPointer,
@@ -661,7 +661,7 @@ fn _get_position[
     ret = {q_row, q_col, q_offset, num_keys, start_pos, seq_info}
 
 
-fn q_smem_shape[
+def q_smem_shape[
     dtype: DType,
     swizzle_mode: TensorMapSwizzle,
     *,
@@ -688,7 +688,7 @@ fn q_smem_shape[
         return {1, 1, max(group, 8), swizzle_granularity}
 
 
-fn q_gmem_shape[
+def q_gmem_shape[
     dtype: DType,
     swizzle_mode: TensorMapSwizzle,
     *,
@@ -743,7 +743,7 @@ comptime KVTMATile[
 
 
 @always_inline
-fn q_tma[
+def q_tma[
     dtype: DType,
     //,
     swizzle_mode: TensorMapSwizzle,
@@ -788,7 +788,7 @@ fn q_tma[
 
 
 @always_inline
-fn get_q_head_idx[
+def get_q_head_idx[
     BM: Int,
     BN: Int,
     depth: Int,
@@ -818,7 +818,7 @@ fn get_q_head_idx[
 
 
 @always_inline
-fn _apply_mask[
+def _apply_mask[
     BM: Int,
     BN: Int,
     depth: Int,
@@ -881,7 +881,7 @@ fn _apply_mask[
 
     @parameter
     @always_inline
-    fn _apply_mask_capture[masked: Bool]():
+    def _apply_mask_capture[masked: Bool]():
         comptime for m_mma in range(num_m_mmas):
             comptime for n_mma in range(num_n_mmas):
                 # Coordinates in mask for current mma tile.
@@ -974,7 +974,7 @@ fn _apply_mask[
 
 
 @always_inline
-fn q_coord[
+def q_coord[
     *,
     depth: Int,
     decoding: Bool,
@@ -1004,14 +1004,14 @@ fn q_coord[
 
 
 @always_inline
-fn kv_coord[
+def kv_coord[
     *, depth: Int
 ](row: UInt32, head_idx: UInt32) -> StaticTuple[UInt32, 3]:
     return {0, head_idx, row}
 
 
 @always_inline
-fn produce[
+def produce[
     qkv_type: DType,
     BM: Int,
     BN: Int,
@@ -1114,7 +1114,7 @@ fn produce[
 
     @parameter
     @always_inline("nodebug")
-    fn q_producer(
+    def q_producer(
         q_idx: UInt32, offset: UInt32 = 0
     ) -> LayoutTensor[
         qkv_type,
@@ -1131,7 +1131,7 @@ fn produce[
 
     @parameter
     @always_inline
-    fn kv_tile(
+    def kv_tile(
         idx: UInt32,
         out tile: LayoutTensor[
             qkv_type,
@@ -1148,7 +1148,7 @@ fn produce[
 
     @parameter
     @always_inline("nodebug")
-    fn produce_k[
+    def produce_k[
         wait: Bool
     ](
         mut state: PipelineState[pipeline_stages],
@@ -1174,7 +1174,7 @@ fn produce[
 
     @parameter
     @always_inline("nodebug")
-    fn produce_v(
+    def produce_v(
         mut state: PipelineState[pipeline_stages],
         row: UInt32,
         kv_head_idx: UInt32,
@@ -1198,7 +1198,7 @@ fn produce[
 
     @parameter
     @always_inline
-    fn get_position(seq_info: SeqInfo) -> PositionType:
+    def get_position(seq_info: SeqInfo) -> PositionType:
         return _get_position[
             BM,
             BN,
@@ -1383,7 +1383,7 @@ fn produce[
 
 
 @always_inline
-fn output_reg_to_smem_st_matrix[
+def output_reg_to_smem_st_matrix[
     output_type: DType,
     accum_type: DType,
     num_m_mmas: Int,
@@ -1427,7 +1427,7 @@ fn output_reg_to_smem_st_matrix[
 
 
 @always_inline
-fn output_reg_to_smem[
+def output_reg_to_smem[
     output_type: DType,
     accum_type: DType,
     num_m_mmas: Int,

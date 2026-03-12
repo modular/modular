@@ -39,11 +39,11 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
     var is_valid_tile: Bool
 
     @always_inline
-    fn is_valid(self) -> Bool:
+    def is_valid(self) -> Bool:
         return self.is_valid_tile
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "(",
             self.prompt_offset,
@@ -65,7 +65,7 @@ struct SeqInfo(TrivialRegisterPassable):
     var prompt_idx: UInt32
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self, seq_len: UInt32, start_of_seq: UInt32, work: WorkInfo
     ):
         self.seq_len = seq_len
@@ -75,12 +75,12 @@ struct SeqInfo(TrivialRegisterPassable):
         self.prompt_idx = work.prompt_idx
 
     @always_inline
-    fn is_valid(self) -> Bool:
+    def is_valid(self) -> Bool:
         return self.seq_len > self.prompt_offset
 
     @staticmethod
     @always_inline
-    fn create[
+    def create[
         ValidLengthType: OptionalPointer,
         //,
     ](
@@ -115,11 +115,11 @@ struct MHASchedulerSynchronization(TrivialRegisterPassable):
     comptime DEFAULT = Self.PRODUCER  # default is currently copy-async
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
 
@@ -134,7 +134,7 @@ struct MHATileState(TrivialRegisterPassable):
     var max_idx: UInt32
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         idx: UInt32,
         sidx_ptr: UnsafePointer[
@@ -147,11 +147,11 @@ struct MHATileState(TrivialRegisterPassable):
         self.max_idx = max_idx
 
     @always_inline
-    fn is_valid(self, idx: UInt32) -> Bool:
+    def is_valid(self, idx: UInt32) -> Bool:
         return idx < self.max_idx
 
     @always_inline
-    fn is_valid(self) -> Bool:
+    def is_valid(self) -> Bool:
         return self.is_valid(self.idx)
 
 
@@ -166,7 +166,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
     var max_seq_len: UInt32
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         batch_size: UInt32,
         max_num_prompt_tiles: UInt32,
@@ -179,7 +179,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         self.max_seq_len = max_seq_len
 
     @always_inline
-    fn _index_to_coords[
+    def _index_to_coords[
         num_heads: UInt32,
         schedule: MHASchedule,
     ](self, idx: UInt32) -> Tuple[UInt32, UInt32, UInt32]:
@@ -191,7 +191,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         return self._index_to_coords_default[num_heads](idx)
 
     @always_inline
-    fn _index_to_coords_default[
+    def _index_to_coords_default[
         num_heads: UInt32
     ](self, idx: UInt32) -> Tuple[UInt32, UInt32, UInt32]:
         # First dim, offset in prompt length
@@ -216,7 +216,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         return (prompt_tile_idx, head_idx, prompt_idx)
 
     @always_inline
-    fn _index_to_coords_prompt_rotate[
+    def _index_to_coords_prompt_rotate[
         num_heads: UInt32
     ](self, idx: UInt32) -> Tuple[UInt32, UInt32, UInt32]:
         # First dim, offset in prompt length
@@ -233,7 +233,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         return (prompt_tile_idx, head_idx, prompt_idx)
 
     @always_inline
-    fn get_current_work_info[
+    def get_current_work_info[
         tile_shape: UInt32,
         num_heads: UInt32,
         schedule: MHASchedule,
@@ -255,7 +255,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         )
 
     @always_inline
-    fn unsafe_get_current_work_info[
+    def unsafe_get_current_work_info[
         tile_shape: UInt32,
         num_heads: UInt32,
         schedule: MHASchedule,
@@ -276,11 +276,11 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         )
 
     @always_inline
-    fn max_idx(self, num_heads: UInt32) -> UInt32:
+    def max_idx(self, num_heads: UInt32) -> UInt32:
         return self.max_num_prompt_tiles * self.batch_size * num_heads
 
     @always_inline
-    fn get_current_work_info[
+    def get_current_work_info[
         tile_shape: UInt32,
         num_heads: UInt32,
         schedule: MHASchedule,
@@ -291,17 +291,17 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
 
     @staticmethod
     @always_inline
-    fn grid_dim[
+    def grid_dim[
         num_heads: UInt32
     ](max_num_prompt_tiles: UInt32, batch_size: UInt32) -> Tuple[Int, Int, Int]:
         return (Int(max_num_prompt_tiles), Int(num_heads), Int(batch_size))
 
     @always_inline
-    fn seq_info(self, work: WorkInfo) -> SeqInfo:
+    def seq_info(self, work: WorkInfo) -> SeqInfo:
         return SeqInfo.create(work, self.valid_length, self.max_seq_len)
 
     @always_inline
-    fn unsafe_seq_info[
+    def unsafe_seq_info[
         tile_shape: UInt32,
         num_heads: UInt32,
         schedule: MHASchedule,
@@ -312,7 +312,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         return SeqInfo.create(work, self.valid_length, self.max_seq_len)
 
     @always_inline
-    fn unsafe_seq_info[
+    def unsafe_seq_info[
         tile_shape: UInt32,
         num_heads: UInt32,
         schedule: MHASchedule,
@@ -327,7 +327,7 @@ trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterPassable):
     """The MHATileScheduler trait describes a schedule for the persistent kernel.
     """
 
-    fn get_current_work_info[
+    def get_current_work_info[
         ValidLengthType: OptionalPointer,
         //,
     ](
@@ -337,7 +337,7 @@ trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterPassable):
         ...
 
     @always_inline
-    fn advance[
+    def advance[
         ValidLengthType: OptionalPointer,
         //,
         producer: Bool,
@@ -355,14 +355,14 @@ trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterPassable):
 
     @staticmethod
     @always_inline
-    fn grid_dim(
+    def grid_dim(
         batch_size: UInt32, max_num_prompt_tiles: UInt32
     ) -> Tuple[Int, Int, Int]:
         """Return the grid_dim required for the kernel."""
         ...
 
     @always_inline
-    fn initial_state[
+    def initial_state[
         ValidLengthType: OptionalPointer,
         //,
     ](
@@ -376,7 +376,7 @@ trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterPassable):
         ...
 
     @always_inline
-    fn unsafe_seq_info[
+    def unsafe_seq_info[
         ValidLengthType: OptionalPointer,
         //,
     ](
@@ -393,11 +393,11 @@ struct MHASchedule(TrivialRegisterPassable):
     comptime PROMPT_ROTATE = Self(1)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
 
@@ -416,11 +416,11 @@ struct TransientScheduler[
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         return (
             "TransientScheduler[tile_shape = "
             + String(Self.tile_shape)
@@ -432,11 +432,11 @@ struct TransientScheduler[
         )
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @always_inline
-    fn get_current_work_info(self, num_prompt_tiles: UInt32) -> WorkInfo:
+    def get_current_work_info(self, num_prompt_tiles: UInt32) -> WorkInfo:
         var prompt_tile_idx: UInt32
         comptime if Self.flip_prompt_idx:
             prompt_tile_idx = num_prompt_tiles - 1 - UInt32(block_idx.x)
@@ -450,7 +450,7 @@ struct TransientScheduler[
         )
 
     @always_inline
-    fn get_current_work_info[
+    def get_current_work_info[
         ValidLengthType: OptionalPointer,
         //,
     ](
@@ -459,7 +459,7 @@ struct TransientScheduler[
         return self.get_current_work_info(ts.max_num_prompt_tiles)
 
     @always_inline
-    fn advance[
+    def advance[
         ValidLengthType: OptionalPointer,
         //,
         producer: Bool,
@@ -474,7 +474,7 @@ struct TransientScheduler[
 
     @staticmethod
     @always_inline
-    fn grid_dim(
+    def grid_dim(
         batch_size: UInt32, max_num_prompt_tiles: UInt32
     ) -> Tuple[Int, Int, Int]:
         return (
@@ -484,7 +484,7 @@ struct TransientScheduler[
         )
 
     @always_inline
-    fn initial_state[
+    def initial_state[
         ValidLengthType: OptionalPointer,
         //,
     ](
@@ -497,7 +497,7 @@ struct TransientScheduler[
         return MHATileState.__init__(0, ptr, 1)
 
     @always_inline
-    fn unsafe_seq_info[
+    def unsafe_seq_info[
         ValidLengthType: OptionalPointer,
         //,
     ](
@@ -522,11 +522,11 @@ struct TileScheduler[
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         return (
             "TileScheduler[tile_shape = "
             + String(Self.tile_shape)
@@ -540,11 +540,11 @@ struct TileScheduler[
         )
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @always_inline
-    fn get_current_work_info[
+    def get_current_work_info[
         ValidLengthType: OptionalPointer,
         //,
     ](
@@ -555,7 +555,7 @@ struct TileScheduler[
         ](state)
 
     @always_inline
-    fn fetch_next_work(
+    def fetch_next_work(
         self,
         ts: MHATileSummary,
         mut state: MHATileState,
@@ -566,7 +566,7 @@ struct TileScheduler[
         ](state.idx)
 
     @always_inline
-    fn advance[
+    def advance[
         ValidLengthType: OptionalPointer,
         //,
         producer: Bool,
@@ -586,7 +586,7 @@ struct TileScheduler[
 
     @staticmethod
     @always_inline
-    fn grid_dim(
+    def grid_dim(
         batch_size: UInt32, max_num_prompt_tiles: UInt32
     ) -> Tuple[Int, Int, Int]:
         # NOTE: mha_sm90 assumes `grid_dim` limits the grid
@@ -599,7 +599,7 @@ struct TileScheduler[
         return (size, 1, 1)
 
     @always_inline
-    fn initial_state[
+    def initial_state[
         ValidLengthType: OptionalPointer,
         //,
     ](
@@ -614,7 +614,7 @@ struct TileScheduler[
         )
 
     @always_inline
-    fn unsafe_seq_info[
+    def unsafe_seq_info[
         ValidLengthType: OptionalPointer,
         //,
     ](
@@ -647,14 +647,14 @@ struct QueuedTileScheduler[
     comptime mha_schedule: MHASchedule = Self.schedule
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         gidx_ptr: UnsafePointer[UInt32, MutAnyOrigin],
     ):
         self.gidx_ptr = gidx_ptr.address_space_cast[AddressSpace.GLOBAL]()
 
     @always_inline
-    fn get_current_work_info[
+    def get_current_work_info[
         ValidLengthType: OptionalPointer,
         //,
     ](
@@ -665,7 +665,7 @@ struct QueuedTileScheduler[
         ](state)
 
     @always_inline
-    fn advance[
+    def advance[
         ValidLengthType: OptionalPointer,
         //,
         producer: Bool,
@@ -729,7 +729,7 @@ struct QueuedTileScheduler[
 
     @staticmethod
     @always_inline
-    fn grid_dim(
+    def grid_dim(
         batch_size: UInt32, max_num_prompt_tiles: UInt32
     ) -> Tuple[Int, Int, Int]:
         # NOTE: mha_sm90 assumes `grid_dim` limits the grid
@@ -742,7 +742,7 @@ struct QueuedTileScheduler[
         return (size, 1, 1)
 
     @always_inline
-    fn initial_state[
+    def initial_state[
         ValidLengthType: OptionalPointer,
         //,
     ](
@@ -761,7 +761,7 @@ struct QueuedTileScheduler[
         return state
 
     @always_inline
-    fn unsafe_seq_info[
+    def unsafe_seq_info[
         ValidLengthType: OptionalPointer,
         //,
     ](
@@ -774,7 +774,7 @@ struct QueuedTileScheduler[
     # `trait DevicePassable` implementation
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         """Convert the host type object to a device_type and store it at the
         target address.
 
@@ -785,7 +785,7 @@ struct QueuedTileScheduler[
 
     @no_inline
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """Gets the name of the host type (the one implementing this trait).
 
         Returns:
