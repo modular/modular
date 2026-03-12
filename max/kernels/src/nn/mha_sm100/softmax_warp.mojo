@@ -783,11 +783,10 @@ def fa4_softmax[
                         kv_row
                     )
                     mask_iters[2] -= 1
-    var sink_weights_ptr = UnsafePointer[Scalar[qkv_type], ImmutAnyOrigin]()
     var sink_weight: Scalar[accum_type]
 
     comptime if not SinkType.is_null:
-        sink_weights_ptr = rebind[
+        var sink_weights_ptr = rebind[
             UnsafePointer[Scalar[qkv_type], ImmutAnyOrigin]
         ](sink_weights.value())
         var head_idx: UInt32 = seq_info.head_idx
@@ -798,7 +797,6 @@ def fa4_softmax[
             sink_weight = sink_weights_ptr[head_idx].cast[accum_type]() * log2e
         row_max = max(row_max, sink_weight)
     else:
-        sink_weights_ptr = {}
         sink_weight = 0.0
 
     var row_sum: f32x2 = store_exp(row_max)

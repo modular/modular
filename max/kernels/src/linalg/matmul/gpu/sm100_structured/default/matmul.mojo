@@ -271,9 +271,7 @@ def _blackwell_matmul_tma_umma_warp_specialized[
             max_profiled_tiles
         ].get_workspace(ctx)
     else:
-        workspace = Span[UInt64, MutAnyOrigin](
-            ptr=UnsafePointer[UInt64, origin=MutAnyOrigin](), length=0
-        )
+        workspace = {}
 
     ctx.enqueue_function[kernel, kernel](
         a_tma_op,
