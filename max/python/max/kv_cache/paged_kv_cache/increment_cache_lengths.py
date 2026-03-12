@@ -248,13 +248,19 @@ def _execute_ragged_increment_cache_lengths_graph(
         for i in range(len(replica_devices)):
             updated_cache_length = updated_cache_lengths[start_idx + i]
             assert isinstance(updated_cache_length, Buffer)
+            # Preserve the original device (GPU for MLA, CPU for MHA).
+            orig = attention_dispatch_metadata[start_idx + i]
+            if orig is not None and not orig.device.is_host:
+                dev_metadata = updated_metadata_cpu.to(orig.device)
+            else:
+                dev_metadata = updated_metadata_cpu
             kv_cache_inputs.inputs[start_idx + i] = KVCacheInputsPerDevice(
                 blocks=blocks[start_idx + i],
                 cache_lengths=updated_cache_length,
                 lookup_table=lookup_table[start_idx + i],
                 max_lengths=updated_max_lengths,
                 kv_scales=kv_scales[start_idx + i],
-                attention_dispatch_metadata=updated_metadata_cpu,
+                attention_dispatch_metadata=dev_metadata,
                 dispatch_scalars=updated_scalars,
             )
         start_idx += len(replica_devices)
