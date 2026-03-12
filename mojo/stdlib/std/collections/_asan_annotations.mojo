@@ -15,7 +15,7 @@ from std.ffi import external_call
 
 
 @always_inline
-fn __sanitizer_annotate_contiguous_container(
+def __sanitizer_annotate_contiguous_container(
     beg: UnsafePointer[NoneType, _],
     end: UnsafePointer[NoneType, _],
     old_mid: UnsafePointer[NoneType, _],
