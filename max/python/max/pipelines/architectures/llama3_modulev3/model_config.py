@@ -34,6 +34,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -219,7 +220,7 @@ class Llama3Config(ArchConfigWithKVCache):
             rope_embedding = LongRoPERotaryEmbedding(
                 dim=huggingface_config.hidden_size,
                 n_heads=huggingface_config.num_attention_heads,
-                theta=huggingface_config.rope_theta,
+                theta=get_rope_theta(huggingface_config),
                 max_seq_len=Llama3Config.calculate_max_seq_len(
                     pipeline_config, huggingface_config=huggingface_config
                 ),
@@ -234,7 +235,7 @@ class Llama3Config(ArchConfigWithKVCache):
             num_attention_heads=huggingface_config.num_attention_heads,
             num_key_value_heads=huggingface_config.num_key_value_heads,
             num_hidden_layers=huggingface_config.num_hidden_layers,
-            rope_theta=huggingface_config.rope_theta,
+            rope_theta=get_rope_theta(huggingface_config),
             rope_scaling_params=rope_scaling_params,
             longrope_scaling_params=longrope_scaling_params,
             intermediate_size=huggingface_config.intermediate_size,

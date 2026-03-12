@@ -27,6 +27,7 @@ from max.nn.kv_cache import (
 from max.pipelines.architectures.llama4.layers.attention import (
     _Llama4TextAttention,
 )
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from test_common.context_utils import create_text_context
 from transformers.masking_utils import (
     create_causal_mask,
@@ -152,7 +153,7 @@ def generate_max_outputs(
             rope=RotaryEmbedding(
                 text_config.hidden_size,
                 text_config.num_attention_heads,
-                text_config.rope_theta,
+                get_rope_theta(text_config),
                 MAX_SEQ_LEN,
                 interleaved=True,
             ),

@@ -24,6 +24,7 @@ from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -151,7 +152,7 @@ class MistralConfig(ArchConfigWithKVCache):
             num_hidden_layers=huggingface_config.num_hidden_layers,
             head_dim=huggingface_config.head_dim,
             vocab_size=huggingface_config.vocab_size,
-            rope_theta=huggingface_config.rope_theta,
+            rope_theta=get_rope_theta(huggingface_config),
             max_seq_len=cls.calculate_max_seq_len(
                 pipeline_config, huggingface_config
             ),

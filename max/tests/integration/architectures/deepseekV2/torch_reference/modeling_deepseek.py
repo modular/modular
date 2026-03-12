@@ -51,7 +51,13 @@ from transformers.utils import (
     logging,
     replace_return_docstrings,
 )
-from transformers.utils.import_utils import is_torch_fx_available
+
+
+# Modular patch: torch.fx is always available in our deps (torch >= 2.9);
+# this import was removed in transformers v5.
+def is_torch_fx_available() -> bool:
+    return True
+
 
 if is_flash_attn_2_available():
     from flash_attn import flash_attn_func, flash_attn_varlen_func
@@ -837,7 +843,9 @@ class DeepseekV2Attention(nn.Module):
                 base=self.rope_theta,
             )
         else:
-            scaling_type = self.config.rope_scaling["type"]
+            scaling_type = self.config.rope_scaling.get(
+                "rope_type", self.config.rope_scaling.get("type")
+            )
             scaling_factor = self.config.rope_scaling["factor"]
             if scaling_type == "linear":
                 self.rotary_emb = DeepseekV2LinearScalingRotaryEmbedding(

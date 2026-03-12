@@ -26,6 +26,7 @@ from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -195,7 +196,7 @@ class Olmo2Config(ArchConfigWithKVCache):
             head_dim=Olmo2Config.get_head_dim(huggingface_config),
             max_position_embeddings=huggingface_config.max_position_embeddings,
             rms_norm_eps=huggingface_config.rms_norm_eps,
-            rope_theta=huggingface_config.rope_theta,
+            rope_theta=get_rope_theta(huggingface_config),
             attention_bias=getattr(huggingface_config, "attention_bias", False),
             attention_multiplier=Olmo2Config.calculate_attention_multiplier(
                 huggingface_config

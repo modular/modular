@@ -24,6 +24,7 @@ from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -319,7 +320,7 @@ class GptOssConfig(ArchConfigWithKVCache):
             hidden_activation=hidden_activation,
             max_position_embeddings=huggingface_config.max_position_embeddings,
             rms_norm_eps=huggingface_config.rms_norm_eps,
-            rope_theta=huggingface_config.rope_theta,
+            rope_theta=get_rope_theta(huggingface_config),
             attention_bias=huggingface_config.attention_bias,
             sliding_window=huggingface_config.sliding_window,
             rope_scaling=rope_scaling_params,

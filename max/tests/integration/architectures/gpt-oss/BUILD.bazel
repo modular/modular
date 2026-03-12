@@ -37,6 +37,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
         requirement("torch"),
         requirement("transformers"),
     ],

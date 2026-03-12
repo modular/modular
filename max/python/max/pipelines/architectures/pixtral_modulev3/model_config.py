@@ -24,6 +24,7 @@ from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -154,7 +155,7 @@ class PixtralConfig(ArchConfigWithKVCache):
             hidden_size=text_config.hidden_size,
             num_attention_heads=text_config.num_attention_heads,
             rms_norm_eps=text_config.rms_norm_eps,
-            rope_theta=text_config.rope_theta,
+            rope_theta=get_rope_theta(text_config),
             max_seq_len=cls.calculate_max_seq_len(
                 pipeline_config, huggingface_config
             ),
@@ -170,7 +171,7 @@ class PixtralConfig(ArchConfigWithKVCache):
             num_channels=vision_config.num_channels,
             vision_hidden_size=vision_config.hidden_size,
             vision_num_attention_heads=vision_config.num_attention_heads,
-            vision_rope_theta=vision_config.rope_theta,
+            vision_rope_theta=get_rope_theta(vision_config),
             vision_num_hidden_layers=vision_config.num_hidden_layers,
             vision_intermediate_size=vision_config.intermediate_size,
             vision_head_dim=vision_config.head_dim,

@@ -243,22 +243,42 @@ class Gemma3Config(ArchConfigWithKVCache):
             for spec in pipeline_config.model.device_specs
         ]
 
-        rope_scaling_params = None
-        rope_scaling = huggingface_config.rope_scaling
-
-        if rope_scaling is not None:
-            # Since "rope_type" huggingface config is not standardized, we need
-            # to check for both "type" and "rope_type" keys.
-            rope_type = rope_scaling.get("type")
-            rope_type_alt = rope_scaling.get("rope_type")
-            if rope_type is None and rope_type_alt is None:
-                raise ValueError(
-                    "Neither 'type' nor 'rope_type' found in rope_scaling huggingface config"
-                )
-            if rope_type == "linear" or rope_type_alt == "linear":
+        # transformers >= 5.0 moves rope config into nested rope_parameters;
+        # transformers 4.x uses direct attributes.
+        rope_params = getattr(huggingface_config, "rope_parameters", None)
+        if isinstance(rope_params, dict) and "full_attention" in rope_params:
+            rope_theta = rope_params["full_attention"]["rope_theta"]
+            rope_local_base_freq = rope_params["sliding_attention"][
+                "rope_theta"
+            ]
+            full_attn_params = rope_params["full_attention"]
+            rope_type = full_attn_params.get(
+                "rope_type", full_attn_params.get("type")
+            )
+            rope_scaling_params = None
+            if rope_type == "linear":
                 rope_scaling_params = LinearScalingParams(
-                    factor=rope_scaling["factor"]
+                    factor=full_attn_params["factor"]
                 )
+        else:
+            rope_theta = huggingface_config.rope_theta
+            rope_local_base_freq = huggingface_config.rope_local_base_freq
+            rope_scaling_params = None
+            rope_scaling = huggingface_config.rope_scaling
+            if rope_scaling is not None:
+                # Since "rope_type" huggingface config is not standardized,
+                # we need to check for both "type" and "rope_type" keys.
+                rope_type = rope_scaling.get("type")
+                rope_type_alt = rope_scaling.get("rope_type")
+                if rope_type is None and rope_type_alt is None:
+                    raise ValueError(
+                        "Neither 'type' nor 'rope_type' found in"
+                        " rope_scaling huggingface config"
+                    )
+                if rope_type == "linear" or rope_type_alt == "linear":
+                    rope_scaling_params = LinearScalingParams(
+                        factor=rope_scaling["factor"]
+                    )
 
         hidden_activation = _HIDDEN_ACTIVATION_MAP.get(
             huggingface_config.hidden_activation,
@@ -278,14 +298,14 @@ class Gemma3Config(ArchConfigWithKVCache):
                 pipeline_config, huggingface_config=huggingface_config
             ),
             rms_norm_eps=huggingface_config.rms_norm_eps,
-            rope_theta=huggingface_config.rope_theta,
+            rope_theta=rope_theta,
             attention_bias=huggingface_config.attention_bias,
             query_pre_attn_scalar=huggingface_config.query_pre_attn_scalar,
             sliding_window=huggingface_config.sliding_window,
             final_logit_softcapping=huggingface_config.final_logit_softcapping,
             attn_logit_softcapping=huggingface_config.attn_logit_softcapping,
             rope_scaling=rope_scaling_params,
-            rope_local_base_freq=huggingface_config.rope_local_base_freq,
+            rope_local_base_freq=rope_local_base_freq,
             sliding_window_pattern=huggingface_config._sliding_window_pattern,
             dtype=dtype,
             devices=device_refs,
