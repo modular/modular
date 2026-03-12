@@ -948,6 +948,44 @@ kgen.generator @apply_result_slot() {
   kgen.return
 }
 
+// Helper for apply_result_slot_depth_adj test:
+//  1-param generatorwith argument types depend on the param T.
+kgen.generator @ptr_slot<T: type>(%arg: !kgen.pointer<T>, %out: !kgen.pointer<!kgen.pointer<T>> byref_result) -> !kgen.none {
+  %0 = kgen.param.constant: none = <#kgen.none>
+  kgen.return %0 : !kgen.none
+}
+
+// CHECK-LABEL: kgen.generator @apply_result_slot_depth_adj
+kgen.generator @apply_result_slot_depth_adj() {
+  // Tests that IndexDepthAdjuster(-1) is applied in the ApplyResultSlot parser.
+  //
+  // #kgen.gen provides a ParameterScopeAttrInterface (depth-0) scope with two
+  // params: *(0,0): type (T) and *(0,1): !kgen.pointer<*(0,0)> (a T-pointer).
+  //
+  // bind_params(@ptr_slot, :type *(0,0)) binds T to the gen's first param.
+  // Inside the resulting zero-param <> FuncTypeGeneratorType (one extra scope
+  // boundary), the bound value lifts from *(0,0) to *(1,0), so arg types
+  // become (!kgen.pointer<*(1,0)>, ...).
+  //
+  // Without the fix, the operand *(0,1) would be parsed with the un-adjusted
+  // type !kgen.pointer<*(1,0)> instead of the correct !kgen.pointer<*(0,0)>,
+  // and -verify-parameters would reject the round-trip.
+  // CHECK-NEXT: constant: <type, pointer<*(0,0)>>pointer<*(0,0)> = <#kgen.gen<apply_result_slot(
+  // CHECK-SAME: :(!kgen.pointer<*(1,0)>, !kgen.pointer<pointer<*(1,0)>> byref_result) -> !kgen.none
+  // CHECK-SAME: @ptr_slot<:type *(0,0)>, *(0,1))>>
+  kgen.param.constant: <type, pointer<*(0,0)>>pointer<*(0,0)> =
+    <#kgen.gen<apply_result_slot(
+      :(!kgen.pointer<*(1,0)>, !kgen.pointer<pointer<*(1,0)>> byref_result) -> !kgen.none
+        bind_params(
+          :<type>(!kgen.pointer<*(0,0)>, !kgen.pointer<pointer<*(0,0)>> byref_result) -> !kgen.none
+            @ptr_slot,
+          :type *(0,0)
+        ),
+      *(0,1)
+    )>>
+  kgen.return
+}
+
 // CHECK-LABEL: @int_literal_param
 kgen.generator @int_literal_param<abcd: !pop.int_literal>() {
   // CHECK-NEXT: constant: !pop.int_literal = <abcd>
