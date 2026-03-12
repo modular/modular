@@ -94,6 +94,63 @@ def _is_valid_grid_shape[
 
 def warp_specialize_gemm_with_multicasting[
     c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    //,
+    *,
+    transpose_b: Bool,
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    grid_shape: OptionalReg[IndexList[2]] = None,
+    use_tma_store: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    schedule: MatmulSchedule = MatmulSchedule.NONE,
+    hilbert_swizzle: Bool = False,
+    splits: Int = 0,
+    raster_order: RasterOrder = RasterOrder.AlongM,
+    swapAB: Bool = False,
+](
+    c_device: TileTensor[c_type, ...],
+    a_device: TileTensor[a_type, ...],
+    b_device: TileTensor[b_type, ...],
+    ctx: DeviceContext,
+) raises:
+    """Unified dispatcher for all matmul kernel variants."""
+
+    comptime if splits > 0:
+        # TODO: Remove if unnecessary otherwise add support
+        comptime assert (
+            swapAB == False
+        ), "swapAB is not supported for split-k kernel"
+        # Dispatch to split-k kernel
+        warp_specialize_gemm_with_multicasting_splitk[
+            transpose_b=transpose_b,
+            config=config,
+            splits=splits,
+            raster_order=raster_order,
+            use_tma_store=use_tma_store,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        ](c_device, a_device, b_device, ctx)
+    else:
+        # Dispatch to regular kernel
+        _warp_specialize_gemm_with_multicasting_impl[
+            transpose_b=transpose_b,
+            config=config,
+            grid_shape=grid_shape,
+            use_tma_store=use_tma_store,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            schedule=schedule,
+            hilbert_swizzle=hilbert_swizzle,
+            swapAB=swapAB,
+        ](c_device, a_device, b_device, ctx)
+
+
+def warp_specialize_gemm_with_multicasting[
+    c_type: DType,
     c_shape: DimList,
     a_type: DType,
     a_shape: DimList,
@@ -119,57 +176,27 @@ def warp_specialize_gemm_with_multicasting[
     b_device: NDBuffer[rank=2, b_type, _, b_shape],
     ctx: DeviceContext,
 ) raises:
-    """Unified dispatcher for all matmul kernel variants."""
-
-    comptime if splits > 0:
-        # TODO: Remove if unnecessary otherwise add support
-        comptime assert (
-            swapAB == False
-        ), "swapAB is not supported for split-k kernel"
-        # Dispatch to split-k kernel
-        warp_specialize_gemm_with_multicasting_splitk[
-            c_type,
-            c_shape,
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            transpose_b=transpose_b,
-            config=config,
-            splits=splits,
-            raster_order=raster_order,
-            use_tma_store=use_tma_store,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        ](c_device, a_device, b_device, ctx)
-    else:
-        # Dispatch to regular kernel
-        _warp_specialize_gemm_with_multicasting_impl[
-            c_type,
-            c_shape,
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            transpose_b=transpose_b,
-            config=config,
-            grid_shape=grid_shape,
-            use_tma_store=use_tma_store,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            schedule=schedule,
-            hilbert_swizzle=hilbert_swizzle,
-            swapAB=swapAB,
-        ](c_device, a_device, b_device, ctx)
+    """NDBuffer overload — converts to TileTensor and delegates."""
+    warp_specialize_gemm_with_multicasting[
+        transpose_b=transpose_b,
+        config=config,
+        grid_shape=grid_shape,
+        use_tma_store=use_tma_store,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        schedule=schedule,
+        hilbert_swizzle=hilbert_swizzle,
+        splits=splits,
+        raster_order=raster_order,
+        swapAB=swapAB,
+    ](TileTensor(c_device), TileTensor(a_device), TileTensor(b_device), ctx)
 
 
 def _warp_specialize_gemm_with_multicasting_impl[
     c_type: DType,
-    c_shape: DimList,
     a_type: DType,
-    a_shape: DimList,
     b_type: DType,
-    b_shape: DimList,
+    //,
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
@@ -183,17 +210,23 @@ def _warp_specialize_gemm_with_multicasting_impl[
     hilbert_swizzle: Bool = False,
     swapAB: Bool = False,
 ](
-    c_device: NDBuffer[rank=2, c_type, _, c_shape],
-    a_device: NDBuffer[rank=2, a_type, _, a_shape],
-    b_device: NDBuffer[rank=2, b_type, _, b_shape],
+    c_device: TileTensor[c_type, ...],
+    a_device: TileTensor[a_type, ...],
+    b_device: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises:
-    var a = TileTensor(a_device).to_layout_tensor()
-    var b = TileTensor(b_device).to_layout_tensor()
-    var c = TileTensor(c_device).to_layout_tensor()
+    comptime assert c_device.rank == 2, "c must be rank 2"
+    comptime assert a_device.rank == 2, "a must be rank 2"
+    comptime assert b_device.rank == 2, "b must be rank 2"
 
-    comptime N_static = c_shape.get[1]()
-    comptime K_static = a_shape.get[1]()
+    var a = a_device.to_layout_tensor()
+    var b = b_device.to_layout_tensor()
+    var c = c_device.to_layout_tensor()
+
+    # Static shape from the LayoutTensor's type-level layout, equivalent to
+    # the DimList.get[i]() used in the NDBuffer overload.
+    comptime N_static = c.layout.shape[1].value()
+    comptime K_static = a.layout.shape[1].value()
 
     comptime assert not swapAB or (
         schedule == MatmulSchedule.NONE
@@ -210,9 +243,9 @@ def _warp_specialize_gemm_with_multicasting_impl[
 
     # C is in reference to A and B not being swapped
     # so we derive M and N from A and B instead
-    var M = b_device.dim[0]() if swapAB else a_device.dim[0]()
-    var N = a_device.dim[0]() if swapAB else b_device.dim[0]()
-    var K = a_device.dim[1]()
+    var M = b.dim[0]() if swapAB else a.dim[0]()
+    var N = a.dim[0]() if swapAB else b.dim[0]()
+    var K = a.dim[1]()
 
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]
@@ -654,11 +687,9 @@ def _get_c_smem_layout[
 
 def warp_specialize_gemm_with_multicasting_splitk[
     c_type: DType,
-    c_shape: DimList,
     a_type: DType,
-    a_shape: DimList,
     b_type: DType,
-    b_shape: DimList,
+    //,
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
@@ -670,18 +701,24 @@ def warp_specialize_gemm_with_multicasting_splitk[
         elementwise_compute_lambda_type
     ] = None,
 ](
-    c_device: NDBuffer[rank=2, c_type, _, c_shape],
-    a_device: NDBuffer[rank=2, a_type, _, a_shape],
-    b_device: NDBuffer[rank=2, b_type, _, b_shape],
+    c_device: TileTensor[c_type, ...],
+    a_device: TileTensor[a_type, ...],
+    b_device: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises:
-    var a = TileTensor(a_device).to_layout_tensor()
-    var b = TileTensor(b_device).to_layout_tensor()
-    var c = TileTensor(c_device).to_layout_tensor()
+    comptime assert c_device.rank == 2, "c must be rank 2"
+    comptime assert a_device.rank == 2, "a must be rank 2"
+    comptime assert b_device.rank == 2, "b must be rank 2"
+
+    var a = a_device.to_layout_tensor()
+    var b = b_device.to_layout_tensor()
+    var c = c_device.to_layout_tensor()
 
     var M = c.dim[0]()
-    comptime N = c_shape.get[1]()
-    comptime K = a_shape.get[1]()
+    # Static shape from the LayoutTensor's type-level layout, equivalent to
+    # the DimList.get[i]() used in the NDBuffer overload.
+    comptime N = c.layout.shape[1].value()
+    comptime K = a.layout.shape[1].value()
 
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]

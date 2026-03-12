@@ -1664,9 +1664,9 @@ def _matmul_dispatch_sm100[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[rank=2, a_type, _, _],
-    b: NDBuffer[rank=2, b_type, _, _],
+    c_tensor: TileTensor[mut=True, c_type, ...],
+    a_tensor: TileTensor[a_type, ...],
+    b_tensor: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises:
     """Our sm100 matmul kernel still does not support fusion of elementwise
@@ -1675,16 +1675,12 @@ def _matmul_dispatch_sm100[
     operations if there is any.
     """
 
-    var c_tensor = TileTensor(c)
-    var a_tensor = TileTensor(a)
-    var b_tensor = TileTensor(b)
-
     comptime assert (
         elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
     ), "Either the epilogue lambda or the compute lambda can be used"
 
     comptime if not elementwise_lambda_fn:
-        if not c.data:
+        if not c_tensor.ptr:
             raise "c must be allocated!"
 
         blackwell_matmul_tma_umma_warp_specialized[
@@ -1696,6 +1692,9 @@ def _matmul_dispatch_sm100[
         return
 
     else:
+        # Epilogue path needs NDBuffer for c.load in the closure.
+        var c_buf = c_tensor._to_ndbuffer()
+
         comptime epilogue = elementwise_lambda_fn.value()
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
         # arch support 32B load/store to global memory, see KERN-2037.
@@ -1703,28 +1702,30 @@ def _matmul_dispatch_sm100[
             has_nvidia_gpu_accelerator()
             and ctx.default_device_info.compute >= B200.compute
         )
-        comptime simd_size = 32 // size_of[c.type]() if use_32b_simd else (
-            simd_width_of[c.type, target=get_gpu_target()]()
+        comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
+            simd_width_of[c_type, target=get_gpu_target()]()
         )
 
         @parameter
-        @__copy_capture(c)
+        @__copy_capture(c_buf)
         def epilogue_wrapper[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])
-            var c_val = c.load[
+            var c_val = c_buf.load[
                 width=simd_width,
                 # Load takes alignment in bytes, lambda takes number of elements
-                alignment=alignment * size_of[c.type](),
+                alignment=alignment * size_of[c_buf.type](),
             ](c_coord)
-            epilogue[c.type, simd_width, alignment=alignment](c_coord, c_val)
+            epilogue[c_buf.type, simd_width, alignment=alignment](
+                c_coord, c_val
+            )
 
         # If c is already allocated, we can just use the sm100 matmul and
         # apply the epilogue.
-        if c.data:
-            var m = c.dim[0]()
-            var n = c.dim[1]()
+        if c_tensor.ptr:
+            var m = c_buf.dim[0]()
+            var n = c_buf.dim[1]()
 
             blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b,
@@ -1739,16 +1740,16 @@ def _matmul_dispatch_sm100[
             return
 
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
-        var tmp_device_buffer = ctx.enqueue_create_buffer[c.type](
-            c.num_elements()
+        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](
+            c_buf.num_elements()
         )
 
         # Construct a new buffer with external origin pointing to the temporary storage.
-        var c_tmp = NDBuffer[rank=2, c.type, MutExternalOrigin](
-            rebind[UnsafePointer[Scalar[c.type], MutExternalOrigin]](
+        var c_tmp = NDBuffer[rank=2, c_type, MutExternalOrigin](
+            rebind[UnsafePointer[Scalar[c_type], MutExternalOrigin]](
                 tmp_device_buffer.unsafe_ptr()
             ),
-            IndexList[2](c.dim[0](), c.dim[1]()),
+            IndexList[2](c_buf.dim[0](), c_buf.dim[1]()),
         )
 
         _matmul_dispatch_sm100[
@@ -1757,9 +1758,37 @@ def _matmul_dispatch_sm100[
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
-        ](c_tmp, a, b, ctx)
+        ](TileTensor(c_tmp), a_tensor, b_tensor, ctx)
 
         _ = tmp_device_buffer^
+
+
+def _matmul_dispatch_sm100[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    //,
+    transpose_b: Bool,
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[rank=2, a_type, _, _],
+    b: NDBuffer[rank=2, b_type, _, _],
+    ctx: DeviceContext,
+) raises:
+    """NDBuffer overload — converts to TileTensor and delegates."""
+    _matmul_dispatch_sm100[
+        transpose_b=transpose_b,
+        config=config,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        pdl_level=pdl_level,
+    ](TileTensor(c), TileTensor(a), TileTensor(b), ctx)
 
 
 @always_inline
