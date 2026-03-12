@@ -371,8 +371,12 @@ class LTXVideoUpsampler3d(nn.Module[..., Tensor]):
                 residual,
                 [batch_size, num_channels // stride_prod, num_frames, depth, height * h_stride, width * w_stride],
             )
-            residual = F.flatten(residual, 2, 3)
+            # rebind (assertion) then reshape (drop 1s, trivially verifiable)
             residual = F.rebind(
+                residual,
+                [batch_size, num_channels // stride_prod, num_frames * depth, 1, height * h_stride, width * w_stride],
+            )
+            residual = F.reshape(
                 residual,
                 [batch_size, num_channels // stride_prod, num_frames * depth, height * h_stride, width * w_stride],
             )
