@@ -251,7 +251,7 @@ def KGEN_VariadicSizeAttr : KGEN_ExprAttr<"VariadicSize", "variadic.size",
     }], "TypedAttr">,
   ];
 
-  let assemblyFormat = "`<` $variadic `>`";
+  let assemblyFormat = "`<` custom<ColonTypeParamValue>($variadic) `>`";
   let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;
 }
@@ -268,15 +268,18 @@ def KGEN_VariadicGetAttr : KGEN_ExprAttr<"VariadicGet", "variadic.get",
 
   let builders = [
     AttrBuilderWithInferredContext<(ins
-       "Type":$type, "TypedAttr":$variadic, "TypedAttr":$index), "",
+       "TypedAttr":$variadic, "TypedAttr":$index), "",
        "TypedAttr">,
     AttrBuilder<(ins "Type":$type, "TypedAttr":$variadic, "TypedAttr":$index),
       [{
-      return get(type, variadic, index);
+      return get(variadic, index);
     }], "TypedAttr">,
   ];
 
-  let assemblyFormat = "`<` $variadic `,` $index `>`";
+  let assemblyFormat = [{
+     `<` custom<ColonTypeParamValue>($variadic) `,`
+         custom<ParamValue>($index, "IndexType::get($_ctxt)") `>`
+  }];
   let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;
 }

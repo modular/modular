@@ -163,10 +163,10 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   kgen.param.constant = <mul_no_wrap(add(p1, -1), 37919)>
 
   kgen.param.declare args: variadic<si32> = <[1, 2]>
-  // CHECK: constant: si32 = <variadic_get(:variadic<si32> args, 2)>
-  kgen.param.constant: si32 = <variadic_get(:variadic<si32> args, 2)>
+  // CHECK: constant: si32 = <#kgen.variadic.get<:variadic<si32> args, 2>>
+  kgen.param.constant: si32 = <#kgen.variadic.get<:!kgen.variadic<si32> args, 2>>
   // CHECK: constant = <2>
-  kgen.param.constant = <variadic_get(:variadic<index> [1, 2], 1)>
+  kgen.param.constant = <#kgen.variadic.get<:!kgen.variadic<index> [1, 2], 1>>
 
   // CHECK: kgen.param.constant = <cond(int1, p1, p2)>
   kgen.param.constant = <cond(int1, p1, p2)>
@@ -357,11 +357,11 @@ kgen.generator @eq_compare_anything() {
 
 // CHECK-LABEL: @eq_compare_sub_elements
 kgen.generator @eq_compare_sub_elements<a: !kgen.variadic<index>, b: !kgen.variadic<index>, x: index, y: index>() {
-  // CHECK-NEXT: <and(eq(#kgen.variadic.size<#kgen.param.decl.ref<"a"> : !kgen.variadic<index>>, 2), eq(#kgen.variadic.size<#kgen.param.decl.ref<"b"> : !kgen.variadic<index>>, 2))>
+  // CHECK-NEXT: <and(eq(#kgen.variadic.size<:variadic<index> a>, 2), eq(#kgen.variadic.size<:variadic<index> b>, 2))>
   kgen.param.constant: i1 = <and(
-    eq(:index #kgen.variadic.size<#kgen.param.decl.ref<"b"> :!kgen.variadic<index>>, 2),
-    eq(:index #kgen.variadic.size<#kgen.param.decl.ref<"a"> :!kgen.variadic<index>>, 2),
-    eq(:index #kgen.variadic.size<#kgen.param.decl.ref<"b"> :!kgen.variadic<index>>, 2)
+    eq(:index #kgen.variadic.size<:!kgen.variadic<index> b>, 2),
+    eq(:index #kgen.variadic.size<:!kgen.variadic<index> a>, 2),
+    eq(:index #kgen.variadic.size<:!kgen.variadic<index> b>, 2)
   )>
 
   kgen.return

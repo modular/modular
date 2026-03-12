@@ -904,12 +904,6 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
         return failure();
     return success();
   }
-  case (uint32_t)POC::VariadicGet: {
-    if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
-        parseIndexParamValue(p, operands.emplace_back()))
-      return failure();
-    return success();
-  }
   case (uint32_t)POC::Cond:
     if (parseParamValue(p, operands.emplace_back(),
                         IntegerType::get(p.getContext(), 1)) ||
@@ -1275,15 +1269,6 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
       p << ", ";
       printParamValue(p, operand);
     }
-    break;
-
-  case POC::VariadicGet:
-    p << ':';
-    printKGENType(p, operands.front().getType());
-    p << ' ';
-    printParamValue(p, operands.front());
-    p << ", ";
-    printParamValue(p, operands.back());
     break;
 
   case POC::Cond:
