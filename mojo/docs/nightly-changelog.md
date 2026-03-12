@@ -22,6 +22,13 @@ This version is still a work in progress.
   - `List`: `Hashable`
   - `Tuple`: `Equatable`, `Hashable`
 
+- `perf_counter_ns()` now returns correct nanoseconds on GPU instead of raw
+  cycle counts. Previously on NVIDIA GPUs it used `clock64` (a cycle counter
+  dependent on GPU core clock frequency); it now uses `globaltimer` which
+  provides actual nanosecond resolution. On AMD GPUs, it now uses
+  `s_memrealtime` (a constant-speed real-time clock) instead of `s_memtime`
+  (a cycle counter).
+
 - The `DimList` type has moved to representing its dimensions as parameters to
   the type instead of values inside the type, directly reflecting that the
   dimensions are known at compile time.  Please change `DimList(x, y)`

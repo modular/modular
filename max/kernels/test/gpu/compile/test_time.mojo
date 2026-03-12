@@ -30,14 +30,14 @@ def clock_functions():
 
 @always_inline
 def _verify_clock_functions_nvidia(asm: StringSlice) raises -> None:
-    assert_false("mov.u32" in asm)
-    assert_true("mov.u64" in asm)
+    # NVIDIA uses globaltimer for perf_counter_ns (nanosecond resolution).
+    assert_true("globaltimer" in asm)
 
 
 @always_inline
 def _verify_clock_functions_amd(asm: StringSlice) raises -> None:
-    # AMD uses s_memtime for perf_counter_ns cycle counter.
-    assert_true("s_memtime" in asm)
+    # AMD uses s_memrealtime for perf_counter_ns (constant-speed clock).
+    assert_true("s_memrealtime" in asm)
 
 
 def test_clock_functions_sm80() raises:
@@ -127,7 +127,8 @@ def time_functions(some_value: Int) -> Int:
 
 @always_inline
 def _verify_time_functions(asm: StringSlice) raises -> None:
-    assert_true("mov.u64" in asm)
+    # time_function uses perf_counter_ns which reads globaltimer on NVIDIA.
+    assert_true("globaltimer" in asm)
     assert_true("add.s64" in asm)
 
 
