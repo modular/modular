@@ -134,18 +134,18 @@ struct MyStruct(Sized, Writable):
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__(...)
-    fn __init__(out self, *, copy: Self)
-    fn __init__(out self, *, deinit take: Self)
+    def __init__(...)
+    def __init__(out self, *, copy: Self)
+    def __init__(out self, *, deinit take: Self)
 
-    fn __del__(...)
+    def __del__(...)
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    fn foo(...) -> Self[...]
+    def foo(...) -> Self[...]
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -153,35 +153,35 @@ struct MyStruct(Sized, Writable):
 
     # Anything that "backs" special syntax: [..], *, +, /, //, etc...
 
-    fn __getitem__
-    fn __setitem__
+    def __getitem__
+    def __setitem__
 
-    fn __getattr__
-    fn __setattr__
+    def __getattr__
+    def __setattr__
 
-    fn __iter__     # `for x in self`
-    fn __next__
-    fn __contains__ # `x in self`
-    fn __is__       # `x is self`
+    def __iter__     # `for x in self`
+    def __next__
+    def __contains__ # `x in self`
+    def __is__       # `x is self`
 
-    fn __add__
-    fn __iadd__
+    def __add__
+    def __iadd__
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __bool__
-    fn __len__
-    fn __str__
+    def __bool__
+    def __len__
+    def __str__
 
-    fn __abs__
+    def __abs__
 
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn unsafe_ptr(..)   # e.g.
+    def unsafe_ptr(..)   # e.g.
 ```
 
 ## Code conventions
@@ -213,7 +213,7 @@ The following table shows our preferred use of different case styles.
 
 | Code kind            | Example                        | Case style
 |----------------------|--------------------------------|---------------------------
-| `fn` / `def`         | `fn engage_hyperdrive()`       | `snake_case`
+| `def`                | `def engage_hyperdrive()`       | `snake_case`
 | `struct`               | `struct Point`               | `PascalCase`
 | `trait`                | `trait Copyable`             | `PascalCase`
 | `enum`                 | `enum StatusCode`            | `PascalCase`
@@ -226,8 +226,8 @@ The following table shows our preferred use of different case styles.
 | `alias` value global / local scope | `alias CHUNK_SIZE = 32` / `alias chunk_size = 32` | `SCREAMING_SNAKE_CASE` / `snake_case`
 | `struct` type parameter  | `struct List[ElementType: Movable]`                    | `PascalCase`
 | `struct` value parameter | `struct Array[ElementType: Movable, length: Int]`      | `snake_case`
-| `fn` type parameter      | `fn do_it[Action: Actionable](action: Action)`         | `PascalCase`
-| `fn` value parameter     | `fn repeat[count: Int]()`                              | `snake_case`
+| `def` type parameter      | `def do_it[Action: Actionable](action: Action)`         | `PascalCase`
+| `def` value parameter     | `def repeat[count: Int]()`                              | `snake_case`
 
 Although these are our style conventions, not all code currently adheres to it.
 When preparing a new change, it is important to adhere to the style and naming
@@ -258,16 +258,16 @@ Consider using the `Some[]` utility if a named (and inferred) type parameter
 is not reused in a function signature or body.
 
 ```mojo
-fn foo[Str: Writable, //](arg: Str): ... # 🔴 Avoid
-fn foo(arg: Some[Writable]): ...         # 🟢 Preferred
+def foo[Str: Writable, //](arg: Str): ... # 🔴 Avoid
+def foo(arg: Some[Writable]): ...         # 🟢 Preferred
 ```
 
 Avoid using the `Some[]` utility if a named type parameter is reused in a
 function signature or body.
 
 ```mojo
-fn foo(arg0: Some[Writable], arg1: type_of(arg0)): ... # 🔴 Avoid
-fn foo[Str: Writable, //](arg0: Str, arg1: Str): ...     # 🟢 Preferred
+def foo(arg0: Some[Writable], arg1: type_of(arg0)): ... # 🔴 Avoid
+def foo[Str: Writable, //](arg0: Str, arg1: Str): ...     # 🟢 Preferred
 ```
 
 ### Container lifecycle semantics
@@ -335,7 +335,7 @@ We follow Google's Python convention for
 which looks like this:
 
 ```mojo
-fn add_param_arg[foo: Int](bar: Int) -> Int:
+def add_param_arg[foo: Int](bar: Int) -> Int:
     """[summary].
 
     Parameters:
@@ -357,7 +357,7 @@ The additions to the Google style guide for docstrings are `Parameters:` and
 `comptime assert` statement:
 
 ```mojo
-fn add_param_arg[foo: Int](bar: Int) -> Int:
+def add_param_arg[foo: Int](bar: Int) -> Int:
     """Shortened doc string.
 
     Constraints:
@@ -391,7 +391,7 @@ a closure as a parameter that only runs when assertions are enabled:
 ```mojo
 tensor = Tensor[DType.uint8, 1](TensorShape(1), cpu_device())
 
-fn _test_cpu() capturing -> Bool:
+def _test_cpu() capturing -> Bool:
     return "cpu" in String(tensor._device)
 
 debug_assert[_test_cpu]("This code is only runnable on CPU")
@@ -434,7 +434,7 @@ is available, it is okay to use an unguarded `else` condition:
 
 ```mojo
 @always_inline("nodebug")
-fn prefetch[...](...):
+def prefetch[...](...):
     comptime if is_nvidia_gpu():
         inlined_assembly["prefetch.global.L2 [$0];", ...](...)
     else:

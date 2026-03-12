@@ -15,7 +15,7 @@ From: [Chris on Discord](https://discord.com/channels/1087530497313357884/133991
 
 `always_inline("builtin")` is the same as `always_inline("nodebug")` but affects
 how tagged methods are handled when they are called in parameter expressions.
-For example, consider: `fn thing[a: Int, b: Int](x: T[a], y: T[b]) -> T[a+b]:
+For example, consider: `def thing[a: Int, b: Int](x: T[a], y: T[b]) -> T[a+b]:
 ...` This is a dependent type, and the return type is represented internally to
 the compiler in a completely symbolic way as `T[Int.add(a, b)]`.  This is the
 core of how Mojo supports arbitrary comptime evaluation of things. That said,
