@@ -74,12 +74,10 @@ FoldValue foldSIMDCmp(CmpPredicate cc, FoldValues operands, SIMDType resultType,
                       TargetInfoAttr target = {});
 
 /// Fold a SIMD left-shift operation.
-OpFoldResult foldSIMDShl(Attribute val, Attribute shft,
-                         TargetInfoAttr targetInfo);
+FoldValue foldSIMDShl(FoldValues operands, TargetInfoAttr target = {});
 
 /// Fold a SIMD right-shift operation.
-OpFoldResult foldSIMDShr(Attribute val, Attribute shft,
-                         TargetInfoAttr targetInfo);
+FoldValue foldSIMDShr(FoldValues operands, TargetInfoAttr target = {});
 
 /// Fold a SIMD abs operation.
 OpFoldResult foldSIMDAbs(Attribute val, TargetInfoAttr targetInfo);

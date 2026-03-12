@@ -428,48 +428,41 @@ FoldValue POP::foldSIMDCmp(CmpPredicate cc, FoldValues operands,
   return {};
 }
 
-OpFoldResult POP::foldSIMDShl(Attribute val, Attribute shft,
-                              TargetInfoAttr targetInfo) {
-  auto valSIMD = dyn_cast_if_present<SIMDAttr>(val);
-  if (!valSIMD || !isa_and_present<SIMDAttr>(shft))
-    return {};
-  std::optional<KGENDType> dtype = valSIMD.getType().getResolvedDType();
-  if (!dtype)
-    return {};
-
+FoldValue POP::foldSIMDShl(FoldValues operands, TargetInfoAttr target) {
+  assert(operands.size() == 2 && "expected binary shift operands");
   std::optional<int64_t> indexBitWidth;
-  if (targetInfo)
-    indexBitWidth = targetInfo.resolveIndexBitWidth();
+  if (target)
+    indexBitWidth = target.resolveIndexBitWidth();
 
-  return foldSIMDOp({val, shft}, indexBitWidth,
-                    [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
-                      if (rhs.uge(lhs.getBitWidth()))
-                        return std::nullopt;
-                      return APSInt(lhs.shl(rhs), !lhs.isSigned());
-                    });
+  if (auto fold =
+          foldSIMDOp(operands.getAttrs(), indexBitWidth,
+                     [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+                       if (rhs.uge(lhs.getBitWidth()))
+                         return std::nullopt;
+                       return APSInt(lhs.shl(rhs), !lhs.isSigned());
+                     }))
+    return FoldValue(fold);
+
+  return {};
 }
 
-OpFoldResult POP::foldSIMDShr(Attribute val, Attribute shft,
-                              TargetInfoAttr targetInfo) {
-  auto valSIMD = dyn_cast_if_present<SIMDAttr>(val);
-  if (!valSIMD || !isa_and_present<SIMDAttr>(shft))
-    return {};
-  std::optional<KGENDType> dtype = valSIMD.getType().getResolvedDType();
-  if (!dtype)
-    return {};
-
+FoldValue POP::foldSIMDShr(FoldValues operands, TargetInfoAttr target) {
+  assert(operands.size() == 2 && "expected binary shift operands");
   std::optional<int64_t> indexBitWidth;
-  if (targetInfo)
-    indexBitWidth = targetInfo.resolveIndexBitWidth();
+  if (target)
+    indexBitWidth = target.resolveIndexBitWidth();
 
-  return foldSIMDOp({val, shft}, indexBitWidth,
-                    [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
-                      if (rhs.uge(lhs.getBitWidth()))
-                        return std::nullopt;
-                      return APSInt(lhs.isSigned() ? lhs.ashr(rhs)
-                                                   : lhs.lshr(rhs),
-                                    !lhs.isSigned());
-                    });
+  if (auto fold = foldSIMDOp(
+          operands.getAttrs(), indexBitWidth,
+          [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+            if (rhs.uge(lhs.getBitWidth()))
+              return std::nullopt;
+            return APSInt(lhs.isSigned() ? lhs.ashr(rhs) : lhs.lshr(rhs),
+                          !lhs.isSigned());
+          }))
+    return FoldValue(fold);
+
+  return {};
 }
 
 OpFoldResult POP::foldSIMDAbs(Attribute operand, TargetInfoAttr targetInfo) {

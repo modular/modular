@@ -523,19 +523,16 @@ OpFoldResult MinOp::fold(FoldAdaptor adaptor) {
 }
 
 OpFoldResult ShlOp::fold(FoldAdaptor adaptor) {
-  if (auto fold = foldSIMDShl(adaptor.getLhs(), adaptor.getRhs(),
-                              lookupTargetInfo(*this))) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-      return ret;
-  }
+  if (auto fold = foldSIMDShl(FoldValues(adaptor.getOperands(), getOperands()),
+                              lookupTargetInfo(*this)))
+    return fold.asOpFoldResult();
   return {};
 }
 
 ErrorTreeOrSuccess ShlOp::interpret(ArrayRef<Attribute> operands,
                                     InterpreterState &state) {
-  if (OpFoldResult result =
-          foldSIMDShl(operands[0], operands[1], state.getTarget())) {
-    if (auto attr = dyn_cast<Attribute>(result)) {
+  if (auto result = foldSIMDShl(FoldValues(operands), state.getTarget())) {
+    if (auto attr = result.getAttr()) {
       state.mapResults(attr);
       return success();
     }
@@ -546,9 +543,8 @@ ErrorTreeOrSuccess ShlOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 ShlOp::parametric_interpret(ArrayRef<Attribute> operands,
                             ParametricInterpreterState &state) {
-  if (OpFoldResult result =
-          foldSIMDShl(operands[0], operands[1], state.getTarget())) {
-    if (auto attr = dyn_cast<Attribute>(result)) {
+  if (auto result = foldSIMDShl(FoldValues(operands), state.getTarget())) {
+    if (auto attr = result.getAttr()) {
       state.mapResults(attr);
       return success();
     }
@@ -557,19 +553,16 @@ ShlOp::parametric_interpret(ArrayRef<Attribute> operands,
 }
 
 OpFoldResult ShrOp::fold(FoldAdaptor adaptor) {
-  if (auto fold = foldSIMDShr(adaptor.getLhs(), adaptor.getRhs(),
-                              lookupTargetInfo(*this))) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-      return ret;
-  }
+  if (auto fold = foldSIMDShr(FoldValues(adaptor.getOperands(), getOperands()),
+                              lookupTargetInfo(*this)))
+    return fold.asOpFoldResult();
   return {};
 }
 
 ErrorTreeOrSuccess ShrOp::interpret(ArrayRef<Attribute> operands,
                                     InterpreterState &state) {
-  if (OpFoldResult result =
-          foldSIMDShr(operands[0], operands[1], state.getTarget())) {
-    if (auto attr = dyn_cast<Attribute>(result)) {
+  if (auto result = foldSIMDShr(FoldValues(operands), state.getTarget())) {
+    if (auto attr = result.getAttr()) {
       state.mapResults(attr);
       return success();
     }
@@ -580,9 +573,8 @@ ErrorTreeOrSuccess ShrOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 ShrOp::parametric_interpret(ArrayRef<Attribute> operands,
                             ParametricInterpreterState &state) {
-  if (OpFoldResult result =
-          foldSIMDShr(operands[0], operands[1], state.getTarget())) {
-    if (auto attr = dyn_cast<Attribute>(result)) {
+  if (auto result = foldSIMDShr(FoldValues(operands), state.getTarget())) {
+    if (auto attr = result.getAttr()) {
       state.mapResults(attr);
       return success();
     }

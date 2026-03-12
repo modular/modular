@@ -887,7 +887,9 @@ def POP_SIMDFloorDivAttr : POP_SIMDBinaryAttr<"FloorDiv">;
 //===----------------------------------------------------------------------===//
 
 class POP_SIMDShiftAttr<string name>
-      : POP_ExprAttr<"SIMD" # name, "simd_" # !tolower(name)> {
+      : POP_ExprAttr<"SIMD" # name, "simd_" # !tolower(name),
+          [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                       ["evaluateWithContext"]>]> {
   let parameters = (ins "TypedAttr":$val, "TypedAttr":$shft);
 
   let assemblyFormat = " `<` $val `,` $shft `>` ";

@@ -2247,10 +2247,10 @@ OpFoldResult SIMDReduceAndAttr::fold(TypedAttr vector, SIMDType outType) {
 //===----------------------------------------------------------------------===//
 
 TypedAttr SIMDShlAttr::get(MLIRContext *ctx, TypedAttr value, TypedAttr shft) {
-  // Fold if possible
-  if (auto fold = foldSIMDShl(value, shft, /*targetInfo=*/{})) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-      return ret;
+  Attribute operands[] = {value, shft};
+  if (auto fold = foldSIMDShl(FoldValues(operands))) {
+    assert(fold.getAttr() && "attribute fold should produce an attribute");
+    return fold.getAttr();
   }
   return Base::get(ctx, value, shft);
 }
@@ -2260,10 +2260,10 @@ TypedAttr SIMDShlAttr::get(MLIRContext *ctx, TypedAttr value, TypedAttr shft) {
 //===----------------------------------------------------------------------===//
 
 TypedAttr SIMDShrAttr::get(MLIRContext *ctx, TypedAttr value, TypedAttr shft) {
-  // Fold if possible
-  if (auto fold = foldSIMDShr(value, shft, /*targetInfo=*/{})) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-      return ret;
+  Attribute operands[] = {value, shft};
+  if (auto fold = foldSIMDShr(FoldValues(operands))) {
+    assert(fold.getAttr() && "attribute fold should produce an attribute");
+    return fold.getAttr();
   }
   return Base::get(ctx, value, shft);
 }
