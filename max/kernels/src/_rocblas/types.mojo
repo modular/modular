@@ -18,7 +18,7 @@ from std.os import abort
 struct Handle(Defaultable, Equatable, TrivialRegisterPassable):
     var _value: OpaquePointer[MutAnyOrigin]
 
-    fn __init__(out self):
+    def __init__(out self):
         self._value = OpaquePointer[MutAnyOrigin]()
 
 
@@ -30,10 +30,10 @@ struct Operation(Equatable, TrivialRegisterPassable):
     comptime TRANSPOSE = Self(112)
     comptime CONJUGATE_TRANSPOSE = Self(113)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -45,10 +45,10 @@ struct Fill(Equatable, TrivialRegisterPassable):
     comptime LOWER = Self(122)
     comptime FULL = Self(123)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -59,10 +59,10 @@ struct Diagonal(Equatable, TrivialRegisterPassable):
     comptime NON_UNIT = Self(131)
     comptime DIAGONAL_UNIT = Self(132)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -74,10 +74,10 @@ struct Side(Equatable, TrivialRegisterPassable):
     comptime RIGHT = Self(142)
     comptime BOTH = Self(143)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -109,10 +109,10 @@ struct DataType(Equatable, TrivialRegisterPassable):
 
     comptime INVALID = Self(255)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __init__(out self, dtype: DType) raises:
+    def __init__(out self, dtype: DType) raises:
         if dtype == DType.float16:
             self = Self.F16_R
         elif dtype == DType.bfloat16:
@@ -126,7 +126,7 @@ struct DataType(Equatable, TrivialRegisterPassable):
                 "the dtype '", dtype, "' is not currently handled by rocBLAS"
             )
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -140,10 +140,10 @@ struct ComputeType(Equatable, TrivialRegisterPassable):
     comptime BF8_BF8_F32 = Self(304)
     comptime INVALID = Self(455)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -168,14 +168,14 @@ struct Status(Equatable, TrivialRegisterPassable, Writable):
     comptime EXCLUDED_FROM_BUILD = Self(14)
     comptime ARCH_MISMATCH = Self(15)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.SUCCESS:
             return writer.write_string("SUCCESS")
         if self == Self.INVALID_HANDLE:
@@ -219,10 +219,10 @@ struct PointerMode(Equatable, TrivialRegisterPassable):
     comptime HOST = Self(0)
     comptime DEVICE = Self(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -238,10 +238,10 @@ struct Algorithm(Equatable, TrivialRegisterPassable):
     comptime STANDARD = Self(0)
     comptime SOLUTION_INDEX = Self(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -252,8 +252,8 @@ struct GEAMExOp(Equatable, TrivialRegisterPassable):
     comptime MIN_PLUS = Self(0)
     comptime PLUS_MIN = Self(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
