@@ -14,7 +14,7 @@
 
 
 @always_inline("nodebug")
-fn breakpointhook():
+def breakpointhook():
     """Cause an execution trap with the intention of requesting the attention
     of a debugger."""
     __mlir_op.`llvm.intr.debugtrap`()

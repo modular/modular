@@ -24,7 +24,7 @@ trait ConvertibleToPython(ImplicitlyDestructible):
     """A trait that indicates a type can be converted to a PythonObject, and
     that specifies the behavior with a `to_python_object` method."""
 
-    fn to_python_object(var self) raises -> PythonObject:
+    def to_python_object(var self) raises -> PythonObject:
         """Convert a value to a PythonObject.
 
         Returns:
@@ -41,7 +41,7 @@ trait ConvertibleFromPython(Copyable, ImplicitlyDestructible):
     object.
     """
 
-    fn __init__(out self, *, py: PythonObject) raises:
+    def __init__(out self, *, py: PythonObject) raises:
         """Attempt to construct an instance of this object from a read-only
         Python value.
 

@@ -54,7 +54,7 @@ struct amd_signal_t(Copyable):
 
 
 @always_inline
-fn update_mbox(sig: UnsafePointer[mut=False, amd_signal_t, ...]):
+def update_mbox(sig: UnsafePointer[mut=False, amd_signal_t, ...]):
     var mb = UnsafePointer(to=sig[].event_mailbox_ptr).bitcast[
         UnsafePointer[
             UInt64, MutExternalOrigin, address_space=AddressSpace.GLOBAL
@@ -67,7 +67,7 @@ fn update_mbox(sig: UnsafePointer[mut=False, amd_signal_t, ...]):
 
 
 @always_inline
-fn hsa_signal_add(sig: UInt64, value: UInt64):
+def hsa_signal_add(sig: UInt64, value: UInt64):
     var s = UnsafePointer(to=sig).bitcast[
         UnsafePointer[
             amd_signal_t,
@@ -116,7 +116,7 @@ struct DescriptorWidth:
 
 
 @always_inline
-fn msg_set_len(pd: UInt64, len: UInt32) -> UInt64:
+def msg_set_len(pd: UInt64, len: UInt32) -> UInt64:
     var reset_mask = ~(
         ((UInt64(1) << DescriptorWidth.len) - 1) << DescriptorOffset.len
     )
@@ -126,31 +126,31 @@ fn msg_set_len(pd: UInt64, len: UInt32) -> UInt64:
 
 
 @always_inline
-fn msg_set_begin_flag(pd: UInt64) -> UInt64:
+def msg_set_begin_flag(pd: UInt64) -> UInt64:
     return pd | (UInt64(1) << DescriptorOffset.flag_begin)
 
 
 @always_inline
-fn msg_reset_begin_flag(pd: UInt64) -> UInt64:
+def msg_reset_begin_flag(pd: UInt64) -> UInt64:
     return pd & (~(UInt64(1) << DescriptorOffset.flag_begin))
 
 
 @always_inline
-fn msg_get_end_flag(pd: UInt64) -> UInt64:
+def msg_get_end_flag(pd: UInt64) -> UInt64:
     return pd & (UInt64(1) << DescriptorOffset.flag_end)
 
 
 @always_inline
-fn msg_reset_end_flag(pd: UInt64) -> UInt64:
+def msg_reset_end_flag(pd: UInt64) -> UInt64:
     return pd & (~(UInt64(1) << DescriptorOffset.flag_end))
 
 
 @always_inline
-fn msg_set_end_flag(pd: UInt64) -> UInt64:
+def msg_set_end_flag(pd: UInt64) -> UInt64:
     return pd | (UInt64(1) << DescriptorOffset.flag_end)
 
 
-fn append_bytes(
+def append_bytes(
     service_id: UInt32,
     msg_desc: UInt64,
     mut data: Span[UInt8, _],
@@ -159,7 +159,7 @@ fn append_bytes(
 
     @parameter
     @always_inline
-    fn pack_uint64() -> UInt64:
+    def pack_uint64() -> UInt64:
         var arg = UInt64(0)
         if len(data) >= 8:
             arg = data.unsafe_ptr().bitcast[UInt64]()[]
@@ -193,7 +193,7 @@ fn append_bytes(
 
 
 @no_inline
-fn message_append_bytes(
+def message_append_bytes(
     service_id: UInt32, msg_desc: UInt64, data: Span[UInt8, _]
 ) -> Tuple[UInt64, UInt64]:
     """
@@ -243,7 +243,7 @@ fn message_append_bytes(
 
 
 @always_inline
-fn message_append_args(
+def message_append_args(
     service_id: UInt32,
     msg_desc: UInt64,
     num_args: UInt32,
@@ -310,7 +310,7 @@ struct FprintfCtrl:
 
 
 @always_inline
-fn begin_fprintf(flags: UInt32) -> UInt64:
+def begin_fprintf(flags: UInt32) -> UInt64:
     # The two standard output streams stderr and stdout are indicated
     # using the lowest bits in the control qword. For now, all other
     # bits are required to be zero.
@@ -333,7 +333,7 @@ fn begin_fprintf(flags: UInt32) -> UInt64:
 
 
 @always_inline
-fn fprintf_stdout_begin() -> UInt64:
+def fprintf_stdout_begin() -> UInt64:
     """
     Begin a new fprintf message for stdout.
     Returns:
@@ -343,7 +343,7 @@ fn fprintf_stdout_begin() -> UInt64:
 
 
 @always_inline
-fn fprintf_stderr_begin() -> UInt64:
+def fprintf_stderr_begin() -> UInt64:
     """
     Begin a new fprintf message for stderr.
 
@@ -354,7 +354,7 @@ fn fprintf_stderr_begin() -> UInt64:
 
 
 @always_inline
-fn fprintf_append_args(
+def fprintf_append_args(
     msg_desc: UInt64,
     num_args: UInt32,
     value0: UInt64,
@@ -415,7 +415,7 @@ fn fprintf_append_args(
 
 
 @always_inline
-fn fprintf_append_string_n(
+def fprintf_append_string_n(
     msg_desc: UInt64, data: Span[UInt8, _], is_last: Bool
 ) -> UInt64:
     """
@@ -476,12 +476,12 @@ fn fprintf_append_string_n(
 
 
 @always_inline
-fn printf_begin() -> UInt64:
+def printf_begin() -> UInt64:
     return fprintf_stdout_begin()
 
 
 @always_inline
-fn printf_append_args(
+def printf_append_args(
     msg_desc: UInt64,
     num_args: UInt32,
     value0: UInt64 = 0,
@@ -508,7 +508,7 @@ fn printf_append_args(
 
 
 @always_inline
-fn printf_append_string_n(
+def printf_append_string_n(
     msg_desc: UInt64, data: Span[UInt8, _], is_last: Bool
 ) -> UInt64:
     return fprintf_append_string_n(msg_desc, data, is_last)
@@ -525,7 +525,7 @@ struct Header(TrivialRegisterPassable):
         header_t, MutExternalOrigin, address_space=AddressSpace.GLOBAL
     ]
 
-    fn fill_packet(
+    def fill_packet(
         mut self,
         mut payload: Payload,
         service_id: UInt32,
@@ -556,7 +556,7 @@ struct Header(TrivialRegisterPassable):
         payload[Int(me), 6] = arg6
         payload[Int(me), 7] = arg7
 
-    fn get_return_value(
+    def get_return_value(
         mut self, payload: Payload, me: UInt32, low: UInt32
     ) -> Tuple[UInt64, UInt64]:
         """
@@ -620,7 +620,7 @@ struct Payload(TrivialRegisterPassable):
     var _handle: UnsafePointer[payload_t, MutExternalOrigin]
 
     @always_inline
-    fn __setitem__(mut self, idx0: Int, idx1: Int, value: UInt64):
+    def __setitem__(mut self, idx0: Int, idx1: Int, value: UInt64):
         self._handle[].slots[idx0][idx1] = value
 
 
@@ -640,18 +640,18 @@ struct Buffer(TrivialRegisterPassable):
     ]
 
     @always_inline
-    fn get_header(self, ptr: UInt64) -> Header:
+    def get_header(self, ptr: UInt64) -> Header:
         return Header(
             self._handle[].headers + (ptr & self._handle[].index_mask)
         )
 
     @always_inline
-    fn get_payload(self, ptr: UInt64) -> Payload:
+    def get_payload(self, ptr: UInt64) -> Payload:
         return Payload(
             self._handle[].payloads + (ptr & self._handle[].index_mask)
         )
 
-    fn pop(mut self, top: UnsafePointer[mut=True, UInt64, ...]) -> UInt64:
+    def pop(mut self, top: UnsafePointer[mut=True, UInt64, ...]) -> UInt64:
         var f = Atomic.fetch_add(top, 0)
         # F is guaranteed to be non-zero, since there are at least as
         # many packets as there are waves, and each wave can hold at most
@@ -667,7 +667,7 @@ struct Buffer(TrivialRegisterPassable):
             llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
         return f
 
-    fn pop_free_stack(mut self, me: UInt32, low: UInt32) -> UInt64:
+    def pop_free_stack(mut self, me: UInt32, low: UInt32) -> UInt64:
         """
         Use the first active lane to get a free packet and
         broadcast to the whole wave.
@@ -689,7 +689,7 @@ struct Buffer(TrivialRegisterPassable):
             | ptr_lo_32.cast[DType.uint64]()
         )
 
-    fn push(mut self, top: UnsafePointer[mut=True, UInt64, ...], ptr: UInt64):
+    def push(mut self, top: UnsafePointer[mut=True, UInt64, ...], ptr: UInt64):
         var f = Atomic.fetch_add(top, 0)
         var p = self.get_header(ptr)
         while True:
@@ -698,7 +698,7 @@ struct Buffer(TrivialRegisterPassable):
                 break
             llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
 
-    fn push_ready_stack(mut self, ptr: UInt64, me: UInt32, low: UInt32):
+    def push_ready_stack(mut self, ptr: UInt64, me: UInt32, low: UInt32):
         """
         Use the first active lane in a wave to submit a ready
         packet and signal the host.
@@ -707,7 +707,7 @@ struct Buffer(TrivialRegisterPassable):
             self.push(UnsafePointer(to=self._handle[].ready_stack), ptr)
             send_signal(self._handle[].doorbell)
 
-    fn return_free_packet(mut self, ptr: UInt64, me: UInt32, low: UInt32):
+    def return_free_packet(mut self, ptr: UInt64, me: UInt32, low: UInt32):
         """
         Return the packet after incrementing the ABA tag.
         """
@@ -743,11 +743,11 @@ struct ControlOffset(TrivialRegisterPassable):
     comptime reserved0 = Self(1)
 
     @always_inline
-    fn __ne__(self, rhs: Self) -> Bool:
+    def __ne__(self, rhs: Self) -> Bool:
         return self.value != rhs.value
 
     @always_inline
-    fn __eq__(self, rhs: Self) -> Bool:
+    def __eq__(self, rhs: Self) -> Bool:
         return self.value == rhs.value
 
 
@@ -758,22 +758,22 @@ struct ControlWidth(TrivialRegisterPassable):
     comptime reserved0 = Self(31)
 
     @always_inline
-    fn __ne__(self, rhs: Self) -> Bool:
+    def __ne__(self, rhs: Self) -> Bool:
         return self.value != rhs.value
 
     @always_inline
-    fn __eq__(self, rhs: Self) -> Bool:
+    def __eq__(self, rhs: Self) -> Bool:
         return self.value == rhs.value
 
 
 @always_inline
-fn get_control_mask(control: UInt32, offset: UInt32, width: UInt32) -> UInt32:
+def get_control_mask(control: UInt32, offset: UInt32, width: UInt32) -> UInt32:
     var value: UInt32 = (control >> offset) & ((1 << width) - 1)
     return value
 
 
 @always_inline
-fn get_control_field(
+def get_control_field(
     control: UInt32, offset: ControlOffset, width: ControlWidth
 ) -> UInt32:
     var value: UInt32 = (control >> offset.value) & (
@@ -783,7 +783,7 @@ fn get_control_field(
 
 
 @always_inline
-fn set_control_field(
+def set_control_field(
     control: UInt32, offset: ControlOffset, width: ControlWidth, value: UInt32
 ) -> UInt32:
     var mask: UInt32 = ~(((UInt32(1) << width.value) - 1) << offset.value)
@@ -791,21 +791,21 @@ fn set_control_field(
 
 
 @always_inline
-fn get_ready_flag(control: UInt32) -> UInt32:
+def get_ready_flag(control: UInt32) -> UInt32:
     return get_control_field(
         control, ControlOffset.ready_flag, ControlWidth.ready_flag
     )
 
 
 @always_inline
-fn set_ready_flag(control: UInt32) -> UInt32:
+def set_ready_flag(control: UInt32) -> UInt32:
     return set_control_field(
         control, ControlOffset.ready_flag, ControlWidth.ready_flag, 1
     )
 
 
 @always_inline
-fn inc_ptr_tag(ptr: UInt64, index_mask: UInt64) -> UInt64:
+def inc_ptr_tag(ptr: UInt64, index_mask: UInt64) -> UInt64:
     var inc = index_mask + 1
     var ptr_ = ptr + inc
     # Unit step for the tag.
@@ -816,12 +816,12 @@ fn inc_ptr_tag(ptr: UInt64, index_mask: UInt64) -> UInt64:
 
 
 @always_inline
-fn send_signal(signal: UInt64):
+def send_signal(signal: UInt64):
     hsa_signal_add(signal, 1)
 
 
 @no_inline
-fn hostcall(
+def hostcall(
     service_id: UInt32,
     arg0: UInt64,
     arg1: UInt64,

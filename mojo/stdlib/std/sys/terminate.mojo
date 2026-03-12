@@ -17,14 +17,14 @@ from std.sys import _libc as libc
 from std.ffi import c_int
 
 
-fn exit():
+def exit():
     """Exits from Mojo. Unlike the Python implementation this does not raise an
     exception to exit.
     """
     exit(0)
 
 
-fn exit[intable: Intable](code: intable):
+def exit[intable: Intable](code: intable):
     """Exits from Mojo. Unlike the Python implementation this does not raise an
     exception to exit.
 

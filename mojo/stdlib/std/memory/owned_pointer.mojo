@@ -52,7 +52,7 @@ struct OwnedPointer[T: AnyType](
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__[_T: Movable](out self: OwnedPointer[_T], var value: _T):
+    def __init__[_T: Movable](out self: OwnedPointer[_T], var value: _T):
         """Construct a new `OwnedPointer` by moving the passed value into a new backing allocation.
 
         Parameters:
@@ -64,7 +64,7 @@ struct OwnedPointer[T: AnyType](
         self._inner = alloc[_T](1)
         self._inner.init_pointee_move(value^)
 
-    fn __init__[_T: Copyable](out self: OwnedPointer[_T], *, copy_value: _T):
+    def __init__[_T: Copyable](out self: OwnedPointer[_T], *, copy_value: _T):
         """Construct a new `OwnedPointer` by explicitly copying the passed value into a new backing allocation.
 
         Parameters:
@@ -77,7 +77,7 @@ struct OwnedPointer[T: AnyType](
         self._inner = alloc[_T](1)
         self._inner.init_pointee_copy(copy_value)
 
-    fn __init__[
+    def __init__[
         _T: Copyable, U: NoneType = None
     ](out self: OwnedPointer[_T], value: _T):
         """Construct a new `OwnedPointer` by copying the passed value into a new backing allocation.
@@ -92,7 +92,7 @@ struct OwnedPointer[T: AnyType](
         self._inner = alloc[_T](1)
         self._inner.init_pointee_copy(value)
 
-    fn __init__[
+    def __init__[
         _T: Copyable
     ](out self: OwnedPointer[_T], *, other: OwnedPointer[_T]):
         """Construct a new `OwnedPointer` by explicitly copying the value from another `OwnedPointer`.
@@ -105,7 +105,7 @@ struct OwnedPointer[T: AnyType](
         """
         self = OwnedPointer[_T](copy_value=other[])
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         unsafe_from_raw_pointer: UnsafePointer[Self.T, MutExternalOrigin],
@@ -127,7 +127,7 @@ struct OwnedPointer[T: AnyType](
         """
         self._inner = unsafe_from_raw_pointer
 
-    fn __init__(out self, *, unsafe_from_opaque_pointer: MutOpaquePointer[_]):
+    def __init__(out self, *, unsafe_from_opaque_pointer: MutOpaquePointer[_]):
         """Construct a new `OwnedPointer` by taking ownership of the provided `UnsafePointer`.
 
         Args:
@@ -148,7 +148,7 @@ struct OwnedPointer[T: AnyType](
             unsafe_from_raw_pointer=ptr.unsafe_origin_cast[MutExternalOrigin]()
         )
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Destroy the OwnedPointer[]."""
         _constrained_conforms_to[
             conforms_to(Self.T, ImplicitlyDestructible),
@@ -165,7 +165,7 @@ struct OwnedPointer[T: AnyType](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __getitem__(
+    def __getitem__(
         ref[AddressSpace.GENERIC] self,
     ) -> ref[self, AddressSpace.GENERIC] Self.T:
         """Returns a reference to the pointers's underlying data with parametric mutability.
@@ -184,7 +184,7 @@ struct OwnedPointer[T: AnyType](
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn unsafe_ptr[
+    def unsafe_ptr[
         mut: Bool,
         origin: Origin[mut=mut],
         //,
@@ -200,7 +200,7 @@ struct OwnedPointer[T: AnyType](
         """
         return self._inner.mut_cast[mut]().unsafe_origin_cast[origin]()
 
-    fn take[_T: Movable](deinit self: OwnedPointer[_T]) -> _T:
+    def take[_T: Movable](deinit self: OwnedPointer[_T]) -> _T:
         """Move the value within the `OwnedPointer` out of it, consuming the
         `OwnedPointer` in the process.
 
@@ -217,7 +217,7 @@ struct OwnedPointer[T: AnyType](
         self._inner.free()
         return r^
 
-    fn steal_data(deinit self) -> UnsafePointer[Self.T, MutExternalOrigin]:
+    def steal_data(deinit self) -> UnsafePointer[Self.T, MutExternalOrigin]:
         """Take ownership over the heap allocated pointer backing this
         `OwnedPointer`.
 
@@ -235,7 +235,7 @@ struct OwnedPointer[T: AnyType](
         """
         return self._inner
 
-    fn write_to(
+    def write_to(
         self, mut writer: Some[Writer]
     ) where conforms_to(Self.T, Writable):
         """Formats this pointer's value to the provided Writer.
@@ -248,7 +248,7 @@ struct OwnedPointer[T: AnyType](
         """
         trait_downcast[Writable](self[]).write_to(writer)
 
-    fn write_repr_to(
+    def write_repr_to(
         self, mut writer: Some[Writer]
     ) where conforms_to(Self.T, Writable):
         """Write the string representation of the `OwnedPointer`.

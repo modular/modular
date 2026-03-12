@@ -28,7 +28,7 @@ from .defines import (
 
 
 @deprecated("use `get_defined_bool` from `sys.defines` instead")
-fn env_get_bool[name: StaticString]() -> Bool:
+def env_get_bool[name: StaticString]() -> Bool:
     """Try to get a boolean-valued define. Compilation fails if the
     name is not defined or the value is not a recognized boolean
     (`True`, `False`, `1`, `0`, `on`, `off`).
@@ -43,7 +43,7 @@ fn env_get_bool[name: StaticString]() -> Bool:
 
 
 @deprecated("use `get_defined_bool` from `sys.defines` instead")
-fn env_get_bool[name: StaticString, default: Bool]() -> Bool:
+def env_get_bool[name: StaticString, default: Bool]() -> Bool:
     """Try to get a boolean-valued define. If the name is not defined,
     return a default value instead. The value must be a recognized boolean
     (`True`, `False`, `1`, `0`, `on`, `off`).
@@ -59,7 +59,7 @@ fn env_get_bool[name: StaticString, default: Bool]() -> Bool:
 
 
 @deprecated("use `get_defined_int` from `sys.defines` instead")
-fn env_get_int[name: StaticString]() -> Int:
+def env_get_int[name: StaticString]() -> Int:
     """Try to get an integer-valued define. Compilation fails if the
     name is not defined.
 
@@ -73,7 +73,7 @@ fn env_get_int[name: StaticString]() -> Int:
 
 
 @deprecated("use `get_defined_int` from `sys.defines` instead")
-fn env_get_int[name: StaticString, default: Int]() -> Int:
+def env_get_int[name: StaticString, default: Int]() -> Int:
     """Try to get an integer-valued define. If the name is not defined,
     return a default value instead.
 
@@ -88,7 +88,7 @@ fn env_get_int[name: StaticString, default: Int]() -> Int:
 
 
 @deprecated("use `get_defined_string` from `sys.defines` instead")
-fn env_get_string[name: StaticString]() -> StaticString:
+def env_get_string[name: StaticString]() -> StaticString:
     """Try to get a string-valued define. Compilation fails if the
     name is not defined.
 
@@ -102,7 +102,7 @@ fn env_get_string[name: StaticString]() -> StaticString:
 
 
 @deprecated("use `get_defined_string` from `sys.defines` instead")
-fn env_get_string[name: StaticString, default: StaticString]() -> StaticString:
+def env_get_string[name: StaticString, default: StaticString]() -> StaticString:
     """Try to get a string-valued define. If the name is not defined,
     return a default value instead.
 
@@ -117,7 +117,7 @@ fn env_get_string[name: StaticString, default: StaticString]() -> StaticString:
 
 
 @deprecated("use `get_defined_dtype` from `sys.defines` instead")
-fn env_get_dtype[name: StaticString, default: DType]() -> DType:
+def env_get_dtype[name: StaticString, default: DType]() -> DType:
     """Try to get a DType-valued define. If the name is not defined,
     return a default value instead.
 
