@@ -341,6 +341,8 @@ public:
   PValue emitErrorForDynamicValueInParameter(Location loc,
                                              const char *customMessage = {});
 
+  PValue bindNonStructTypeToTrait(ASTExprAnd<CValue> value, TraitType trait);
+
   //===--------------------------------------------------------------------===//
   // Value conversion helpers, handle post-elaborator type equality.
   //

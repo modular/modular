@@ -546,10 +546,10 @@ void SharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   // considering it erroneous and already declared as such.
   impl->typeCheckErrorType = TypeCheckErrorType::get(context);
 
-  // Add an empty struct with the specified name to the resolver.
-  auto anyRegTypeType = TypeType::get(getContext());
+  // MLIR types are parsed with a non_struct_type metadata.
+  auto anyNonStructTypeType = NonStructTypeType::get(getContext());
   auto addMagicMLIRDecl = [&](StringRef name, Type magicType) {
-    TypedAttr value = TypeParamAttr::get(magicType, anyRegTypeType);
+    TypedAttr value = TypeParamAttr::get(magicType, anyNonStructTypeType);
     resolver.addFullyResolvedDecl(PValue(value), name, builtinsDecl.getLoc(),
                                   &builtinsDecl);
   };

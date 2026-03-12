@@ -13,12 +13,12 @@ trait Trait:
     pass
 
 
-struct FuncRef[fn_type: __mlir_type.`!kgen.type`, f: fn_type]:
+struct FuncRef[fn_type: __mlir_type.`!kgen.non_struct_type`, f: fn_type]:
     pass
 
 
 struct FuncRefField:
-    var func_ref: FuncRef[fn () -> None, FuncRefField.foo]
+    var func_ref: FuncRef[fn() -> None, FuncRefField.foo]
 
     @staticmethod
     fn foo():

@@ -32,11 +32,11 @@ fn mlirMagicTest(
 
     # CHECK-NEXT: %idxConstant = lit.var.decl
     # CHECK: kgen.param.constant = <42>
-    var idxConstant = __mlir_op.`index.constant`[value = Int(42)._mlir_value]()
+    var idxConstant = __mlir_op.`index.constant`[value=Int(42)._mlir_value]()
 
     # CHECK: [[TMP:%.*]] = lit.ref.load %idxConstant
     # CHECK: [[TMP2:%.*]] = index.castu [[TMP:%.*]] : index to i1
-    var i1Cast = __mlir_op.`index.castu`[_type = __mlir_type.i1](idxConstant)
+    var i1Cast = __mlir_op.`index.castu`[_type=__mlir_type.i1](idxConstant)
 
     # CHECK: lit.alias.decl *"new_lower{{.*}} = <42>
     comptime new_lower = __mlir_attr[
@@ -101,10 +101,10 @@ fn testAttrConcatWithoutType[
 # Issue #6825: Expose a way to get the address of an lvalue
 
 
-# CHECK-LABEL: lit.struct.decl @MyPointer<elType: type>
-struct MyPointer[elType: __mlir_type.`!kgen.type`](RegisterPassable):
+# CHECK-LABEL: lit.struct.decl @MyPointer<elType: non_struct_type>
+struct MyPointer[elType: __mlir_type.`!kgen.non_struct_type`](RegisterPassable):
     comptime StorageTy = __mlir_type[`!kgen.pointer<`, Self.elType, `>`]
-    # CHECK: lit.struct.field value : !kgen.param<sugar_member_alias(!lit.struct<#MyPointer <:type elType>>, "StorageTy", pointer<elType>)>
+    # CHECK: lit.struct.field value : !kgen.param<:non_struct_type sugar_member_alias(!lit.struct<#MyPointer <:non_struct_type elType>>, "StorageTy", pointer<:non_struct_type elType>)>
     var value: Self.StorageTy
 
     @implicit
@@ -123,7 +123,7 @@ fn structured_for_loop() -> __mlir_type.index:
 
     # CHECK: lit.return %0 : index
     return __mlir_op.`hlcf.loop`[
-        _type = __mlir_type.index, _region = __mlir_attr.`"loop_body"`
+        _type=__mlir_type.index, _region=__mlir_attr.`"loop_body"`
     ](__mlir_attr.`0 : index`)
 
 
@@ -131,6 +131,6 @@ fn structured_for_loop() -> __mlir_type.index:
 fn mlir_properties(arg0: __mlir_type.i64, arg1: __mlir_type.i64):
     # CHECK: llvm.add %arg0, %arg1 overflow<nsw> : i64
     _ = __mlir_op.`llvm.add`[
-        _type = __mlir_type.i64,
-        _properties = __mlir_attr.`{overflowFlags = #llvm.overflow<nsw>}`,
+        _type=__mlir_type.i64,
+        _properties=__mlir_attr.`{overflowFlags = #llvm.overflow<nsw>}`,
     ](arg0, arg1)

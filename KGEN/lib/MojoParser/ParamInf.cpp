@@ -1249,10 +1249,9 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
           // Infer nonmaterializable types as their materialization target.
           if (ASTType nmTarget = toPush.getNonmaterializableTarget(getShared()))
             toPush = nmTarget;
-          Type metatype = toPush.getMetaType();
-          attrForElementType = TypeParamAttr::get(
-              toPush,
-              metatype ? metatype : TypeType::get(getShared().getContext()));
+
+          Type metatype = toPush.extractMetaType();
+          attrForElementType = TypeParamAttr::get(toPush, metatype);
           // Make sure the value is compatible with the expected trait, this
           // produces better error messages.  It would be great to sink this
           // into matchType at some point!

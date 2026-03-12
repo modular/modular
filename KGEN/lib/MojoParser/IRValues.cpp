@@ -194,11 +194,7 @@ ASTType LValue::getType() const { return getTypeFrom(storage); }
 
 /// Given a type value, attempt to extract a metatype.
 static Type extractMetaType(Type type) {
-  // Get the metatype if this is a declared type.
-  if (auto result = ASTType(type).getMetaType())
-    return result;
-  // Otherwise, this is a generic MLIR type.
-  return TypeType::get(type.getContext());
+  return ASTType(type).extractMetaType();
 }
 
 PValue::PValue(Type value)

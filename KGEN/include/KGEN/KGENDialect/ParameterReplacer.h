@@ -52,8 +52,9 @@ protected:
 
     // These are common leaf attributes that we know are never parameterized.
     if constexpr (std::is_base_of_v<Type, T>) {
-      if (isa<TypeType, DTypeType, StringType, KGEN::NoneType, TargetType,
-              BuildInfoType, IntegerType, FloatType>(value))
+      if (isa<NonStructTypeType, TypeType, DTypeType, StringType,
+              KGEN::NoneType, TargetType, BuildInfoType, IntegerType,
+              FloatType>(value))
         return value;
     } else {
       if (isa<NoneAttr, IntegerAttr, FloatAttr, DTypeConstantAttr,

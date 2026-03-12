@@ -438,11 +438,11 @@ fn variadics(*a: Int):
     pass
 
 
-fn parameterizedVariadic[T: __mlir_type.`!kgen.type`](*args: T):
+fn parameterizedVariadic[T: TrivialRegisterPassable](*args: T):
     pass
 
 
-struct ParameterizedStruct[T: __mlir_type.`!kgen.type`]:
+struct ParameterizedStruct[T: TrivialRegisterPassable]:
     @implicit
     fn __init__(out self, *args: Self.T):
         pass
@@ -475,9 +475,9 @@ fn callVariadic[p: Int](x: Int):
     # CHECK: {{.*}}@"variadics({{.*}}Int*)"){{.*}}[store_to_mem(p), store_to_mem({1})]
     comptime NonEmptyVariadic = variadics(p, 1)
 
-    # CHECK: lit.call {{.*}}parameterizedVariadic{{.*}}<:type !Int>
+    # CHECK: lit.call {{.*}}parameterizedVariadic{{.*}}<:!TrivialRegisterPassable !Int>
     parameterizedVariadic(1, 2)
-    # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__({{.*}}<:type !Int>
+    # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__({{.*}}<:!TrivialRegisterPassable !Int>
     _ = ParameterizedStruct(3)
     # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__({{.*}}<:variadic<!Int> [{4}, {5}]>
     _ = VarArgsParameterizedStruct[4, 5]()
@@ -1025,12 +1025,12 @@ fn coroutine_origins():
     # CHECK: [[CORO:%.*]] = lit.async.call[!lit.generator<[3]("x": !lit.ref<!Awaitable, mut *[0,0]> mut, "y": !lit.ref<!Awaitable, imm *[0,1]> read_mem, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async -> !kgen.none>
     # CHECK-SAME: [mut [[X_LT]], muttoimm [[Y_LT]], imm {}](%x, [[Y_IMM]])
     # CHECK: [[CORO2:%.*]] = kgen.rebind [[CORO]] : !co.routine to !alias_AnyCoroutine1
-    # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}@__MLIRType<:type none>, none], :origin.set {mut [[X_LT]], mut [[Y_LT]]}>([[CORO2]])
+    # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}@__MLIRType<:non_struct_type none>, none], :origin.set {mut [[X_LT]], mut [[Y_LT]]}>([[CORO2]])
     var coro = capture_byref(x, y)
 
     # CHECK: lit.async.call[!lit.generator<[2]("x": !lit.ref<!lit.struct<#LifetimeAccess <:origin<1> [[Y_LT]]>>,
     # CHECK-SAME: mut *[0,0]{{.*}}) async -> !kgen.none>: {{.*}}lifetime_access{{.*}}<:origin<1> [[Y_LT]]>]
-    # CHECK: #Coroutine <:!AnyType [{{.*}}@__MLIRType<:type none>, none], :origin.set {{{.*}}, mut [[Y_LT]]}>
+    # CHECK: #Coroutine <:!AnyType [{{.*}}@__MLIRType<:non_struct_type none>, none], :origin.set {{{.*}}, mut [[Y_LT]]}>
     var access = lifetime_access(LifetimeAccess[origin_of(y)._mlir_origin]())
 
 

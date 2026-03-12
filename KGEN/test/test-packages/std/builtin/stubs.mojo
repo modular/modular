@@ -10,7 +10,6 @@
 comptime string = __mlir_type.`!kgen.string`
 comptime float = __mlir_type.`!pop.scalar<f64>`
 
-comptime __TypeOfAllTypes = __mlir_type.`!kgen.type`
 comptime AnyOrigin[*, mut: Bool = False] = Origin[
     _mlir_origin=__mlir_attr[
         `#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`
@@ -88,8 +87,8 @@ trait Iterable:
 
 
 # Implement the 'Some' helper.
-comptime __SomeImpl[Trait: __TypeOfAllTypes, T: Trait] = T
-comptime Some[Trait: __TypeOfAllTypes] = __SomeImpl[Trait]
+comptime __SomeImpl[Trait: type_of(AnyType), T: Trait] = T
+comptime Some[Trait: type_of(AnyType)] = __SomeImpl[Trait]
 
 # ===----------------------------------------------------------------------=== #
 # Builtin Types
@@ -997,38 +996,6 @@ struct VariadicPack[
     ](self) -> ref[Self.origin] Self.element_types[index]:
         while True:
             pass
-
-
-struct __ParameterClosureCaptureList[
-    fn_type: __TypeOfAllTypes, fn_ref: fn_type
-](ImplicitlyCopyable, RegisterPassable):
-    comptime type = __mlir_type.`!kgen.pointer<none>`
-    var value: Self.type
-
-    @always_inline("nodebug")
-    @implicit
-    fn __init__(out self, value: Self.type):
-        self.value = value
-
-    # Parameter closure invariant requires this function be marked 'capturing'.
-    @parameter
-    @always_inline
-    fn __init__(out self):
-        self.value = __mlir_op.`kgen.capture_list.create`[callee=fn_ref]()
-
-    @always_inline
-    fn __init__(out self, *, copy: Self):
-        self.value = __mlir_op.`kgen.capture_list.copy`[callee=fn_ref](
-            copy.value
-        )
-
-    @always_inline
-    fn __del__(deinit self):
-        __mlir_op.`pop.aligned_free`(self.value)
-
-    @always_inline("nodebug")
-    fn expand(self):
-        __mlir_op.`kgen.capture_list.expand`(self.value)
 
 
 struct AddressSpace(TrivialRegisterPassable):

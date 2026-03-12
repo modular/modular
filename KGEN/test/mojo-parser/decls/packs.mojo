@@ -206,7 +206,7 @@ fn usePacks(x: FloatDyn, y: Int):
     var b: MyTuple[Int, FloatDyn, Int]
     # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:variadic<!AnyType> [!Int]>
     var c = MyTuple[Int](1)
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:variadic<!AnyType> [!FloatDyn, [{{.*}}@__MLIRType<:type index>, index]]>
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:variadic<!AnyType> [!FloatDyn, [{{.*}}@__MLIRType<:non_struct_type index>, index]]>
     var d = MyTuple(3.14, Int(6)._mlir_value)
     # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:variadic<!AnyType> []>
     var e = MyTuple()

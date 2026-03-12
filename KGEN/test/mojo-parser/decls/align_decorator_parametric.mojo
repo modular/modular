@@ -8,6 +8,7 @@
 
 # Test @align decorator with parametric alignment values.
 
+
 # Test basic parametric alignment using struct parameter
 # CHECK-LABEL: lit.struct.decl @AlignedBuffer
 # CHECK-SAME: minAlignment = #lit.struct.extract<:!Int alignment, "_mlir_value"> : index
@@ -30,7 +31,7 @@ struct AlignedTrivialParam[n: Int]:
 # CHECK-LABEL: lit.struct.decl @MultiParam
 # CHECK-SAME: minAlignment = #lit.struct.extract<:!Int align_val, "_mlir_value"> : index
 @align(align_val)
-struct MultiParam[T: __TypeOfAllTypes, align_val: Int]:
+struct MultiParam[T: __mlir_type.`!kgen.type`, align_val: Int]:
     var value: Self.T
 
 

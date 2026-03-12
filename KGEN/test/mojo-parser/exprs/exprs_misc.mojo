@@ -229,7 +229,7 @@ fn typeof_dynval_in_param(x: _index):
     # CHECK-NEXT: lit.call {{.*}}String::@"__init__
     var y = String()
 
-    # CHECK-NEXT: lit.alias.decl *"a`1": type = <index>
+    # CHECK-NEXT: lit.alias.decl *"a`1": non_struct_type = <index>
     comptime a = type_of(x)
     # CHECK-NEXT: lit.alias.decl *"b`2": !mt_Int = <!Int>
     comptime b = type_of(y.__len__())

@@ -154,7 +154,4 @@ std::string LIT::nameForPosOnly(size_t idx, const Twine &argOrParam) {
   return ("positional-only " + argOrParam + " #" + Twine(idx)).str();
 }
 
-bool LIT::isInternalName(StringRef name) {
-  // TODO: make exception for __TypeOfAllTypes for now.
-  return name.starts_with('_') && !name.starts_with("__TypeOfAllTypes");
-}
+bool LIT::isInternalName(StringRef name) { return name.starts_with('_'); }

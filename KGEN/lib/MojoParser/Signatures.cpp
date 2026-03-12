@@ -1402,7 +1402,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
     return {};
   }
   Type elementType = paramVariadicType.getElementType();
-  if (sugarIsa<TypeType>(elementType)) {
+  if (sugarIsa<NonStructTypeType, TypeType>(elementType)) {
     emitter.emitError(arg.loc)
         << "variadic pack elements declared as '__TypeOfAllTypes' are removed,"
         << " please declare elements as 'AnyType' instead of "

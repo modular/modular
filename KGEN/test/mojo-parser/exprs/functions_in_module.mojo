@@ -6,11 +6,11 @@
 
 # RUN: %parse-mojo-isolated %s -verify-diagnostics | FileCheck %s
 
-# CHECK-DAG: [[TYPE1:#.*]] = #kgen.type<{{.*}}#MLIRType <:type !lit.generator<() -> !kgen.none>>{{.*}} : !AnyType
-# CHECK-DAG: [[TYPE2:#.*]] = #kgen.type<{{.*}}#MLIRType <:type !lit.generator<("x": !Int) -> !kgen.none>>{{.*}} : !AnyType
-# CHECK-DAG: [[TYPE3:#.*]] = #kgen.type<{{.*}}#MLIRType <:type !lit.generator<("y": !Int, "z": !Int) -> !kgen.none>>{{.*}} : !AnyType
-# CHECK-DAG: [[TYPE4:#.*]] = #kgen.type<{{.*}}#MLIRType <:type !lit.generator<[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>>{{.*}} : !AnyType
-# CHECK-DAG: [[TYPE5:#.*]] = #kgen.type<{{.*}}#MLIRType <:type !lit.generator<<"func_type": !AnyType, +, "func": !kgen.param<:!AnyType *(0,0)>>() -> !kgen.none>>{{.*}} : !AnyType
+# CHECK-DAG: [[TYPE1:#.*]] = #kgen.type<{{.*}}#MLIRType <:non_struct_type !lit.generator<() -> !kgen.none>>{{.*}} : !AnyType
+# CHECK-DAG: [[TYPE2:#.*]] = #kgen.type<{{.*}}#MLIRType <:non_struct_type !lit.generator<("x": !Int) -> !kgen.none>>{{.*}} : !AnyType
+# CHECK-DAG: [[TYPE3:#.*]] = #kgen.type<{{.*}}#MLIRType <:non_struct_type !lit.generator<("y": !Int, "z": !Int) -> !kgen.none>>{{.*}} : !AnyType
+# CHECK-DAG: [[TYPE4:#.*]] = #kgen.type<{{.*}}#MLIRType <:non_struct_type !lit.generator<[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>>{{.*}} : !AnyType
+# CHECK-DAG: [[TYPE5:#.*]] = #kgen.type<{{.*}}#MLIRType <:non_struct_type !lit.generator<<"func_type": !AnyType, +, "func": !kgen.param<:!AnyType *(0,0)>>() -> !kgen.none>>{{.*}} : !AnyType
 
 fn foo(): pass
 

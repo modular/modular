@@ -1038,8 +1038,8 @@ fn function_types[
 ): pass
 
 # CHECK-LABEL: lit.struct.decl @Mem
-# CHECK:         lit.alias.decl *"x{{.*}}": type = <i8>
-# CHECK-NEXT:    lit.alias.decl *"B{{.*}}": type = <!lit.generator<("foo": !kgen.param<sugar_member_alias(!Mem, "x", i8)>) -> !kgen.none>>
+# CHECK:         lit.alias.decl *"x{{.*}}": non_struct_type = <i8>
+# CHECK-NEXT:    lit.alias.decl *"B{{.*}}": non_struct_type = <!lit.generator<("foo": !kgen.param<:non_struct_type sugar_member_alias(!Mem, "x", i8)>) -> !kgen.none>>
 struct Mem:
    comptime x = __mlir_type.i8
    comptime B = fn (foo: Self.x) -> None

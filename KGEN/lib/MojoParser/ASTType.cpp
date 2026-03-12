@@ -317,6 +317,25 @@ ASTType::ASTType(TypedAttr typeParamExpr) {
   mlirType = ParamType::get(typeParamExpr);
 }
 
+/// Similar to getMetaType, but return `kgen.type`/`kgen.non_struct_type` if
+/// there is no meaningful metatype, always return non-null.
+Type ASTType::extractMetaType() const {
+  // Get the metatype if this is a declared type.
+  if (auto result = getMetaType())
+    return result;
+
+  // If it is a non_struct_type, its has a kgen.type for metatype.
+  if (isa<NonStructTypeType>(mlirType))
+    return TypeType::get(mlirType.getContext());
+
+  // Otherwise, it is a generic MLIR type.
+  return NonStructTypeType::get(mlirType.getContext());
+}
+
+/// Get a "meaningful" metatype of the type, either a struct meta type or
+/// trait meta type, return null otherwise.
+//
+// TODO: we should rethink about how to provide better APIs.
 Type ASTType::getMetaType() const {
   if (!mlirType)
     return {};
@@ -331,7 +350,7 @@ Type ASTType::getMetaType() const {
   if (auto traitRef = dyn_cast<TraitType>(type))
     return traitRef.getMetaType();
   if (auto closureType = dyn_cast<ClosureType>(type))
-    return TypeType::get(closureType.getContext());
+    return NonStructTypeType::get(closureType.getContext());
   if (auto module = dyn_cast<ModuleType>(type))
     return module; // Module's are their own metatype.
 
