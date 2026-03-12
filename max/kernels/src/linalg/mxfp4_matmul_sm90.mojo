@@ -17,8 +17,6 @@ Activations (BF16) are cast to FP8 on-the-fly.
 """
 
 from std.algorithm.functional import elementwise
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
 from std.sys.info import _accelerator_arch, simd_width_of
 from layout import Coord, Idx, TileTensor, row_major
@@ -92,24 +90,7 @@ def mxfp4_matmul_sm90(
     _cast_bf16_to_fp8(ctx, a_fp8_tt, a, M, static_K)
 
     # Step 3: FP8 GEMM via _matmul_gpu (handles dispatch + fallback)
-    var c_ndbuf = NDBuffer[
-        rank=2, DType.bfloat16, MutAnyOrigin, DimList.create_unknown[2]()
-    ](
-        c.ptr.bitcast[Scalar[DType.bfloat16]]().as_any_origin(),
-        Index(M, static_N),
-    )
-    var a_fp8_ndbuf = NDBuffer[
-        rank=2, fp8_type, MutAnyOrigin, DimList.create_unknown[2]()
-    ](
-        a_fp8_tt.ptr.bitcast[Scalar[fp8_type]]().as_any_origin(),
-        Index(M, static_K),
-    )
-    var b_fp8_ndbuf = NDBuffer[
-        rank=2, fp8_type, MutAnyOrigin, DimList[static_N, static_K]()
-    ](
-        b_fp8_tt.ptr.bitcast[Scalar[fp8_type]]().as_any_origin(),
-    )
-    _matmul_gpu[transpose_b=True](c_ndbuf, a_fp8_ndbuf, b_fp8_ndbuf, ctx)
+    _matmul_gpu[transpose_b=True](c, a_fp8_tt, b_fp8_tt, ctx)
 
     # Keep temp buffers alive through async GEMM enqueue.
     _ = b_fp8_buf^

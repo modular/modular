@@ -26,13 +26,20 @@ from std.sys import (
 from std.sys.info import _accelerator_arch, _has_blackwell_tcgen05
 
 from std.algorithm.functional import elementwise, tile_and_unswitch
+from buffer import Dim
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu import barrier, block_dim, global_idx, thread_idx
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import A100, B200, H100, MI355X, GPUInfo
-from layout import LayoutTensor, RuntimeLayout, TensorLayout, TileTensor
+from layout import (
+    LayoutTensor,
+    RuntimeLayout,
+    TensorLayout,
+    TileTensor,
+    coord_to_index_list,
+)
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
 from std.logger import Logger
@@ -821,6 +828,72 @@ def _matmul_gpu[
         grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
+
+
+@always_inline
+def _matmul_gpu[
+    *,
+    use_tensor_core: Bool = False,
+    transpose_b: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+    register_based_epilogue: Bool = True,
+](c: TileTensor, a: TileTensor, b: TileTensor, ctx: DeviceContext,) raises:
+    """TileTensor overload of `_matmul_gpu`. Converts to NDBuffer and delegates
+    to the NDBuffer implementation. Preserves compile-time static shape info
+    so all dispatch logic sees the correct static dims.
+
+    Note: The `config` parameter from the NDBuffer overload is intentionally
+    omitted here. Its type `MatmulConfig[a_type, b_type, c_type, transpose_b]`
+    depends on dtype positional params that aren't available until after the
+    TileTensor args are bound. Callers needing explicit config should use the
+    NDBuffer overload directly.
+    """
+    comptime assert c.rank == 2, "c must be rank 2"
+    comptime assert a.rank == 2, "a must be rank 2"
+    comptime assert b.rank == 2, "b must be rank 2"
+    # NDBuffer construction below assumes row-major (no strides forwarded),
+    # so non-nested layout is required. flat_rank == rank guarantees this.
+    comptime assert c.flat_rank == 2, "c must have a non-nested layout"
+    comptime assert a.flat_rank == 2, "a must have a non-nested layout"
+    comptime assert b.flat_rank == 2, "b must have a non-nested layout"
+
+    comptime c_type = c.dtype
+    comptime a_type = a.dtype
+    comptime b_type = b.dtype
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+
+    # MutAnyOrigin is used for all three buffers (including read-only a and b)
+    # because TileTensor's generic origin can't convert to ImmutAnyOrigin.
+    # The NDBuffer overload accepts mut=False for a/b via separate overloads,
+    # but NDBuffer[..., MutAnyOrigin] is compatible with both read and write.
+    comptime c_shape = DimList[dim[c.static_shape[0]], dim[c.static_shape[1]]]()
+    var c_buf = NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape](
+        c.ptr.bitcast[Scalar[c_type]]().as_any_origin(),
+        rebind[IndexList[2]](coord_to_index_list(c.layout.shape_coord())),
+    )
+    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
+    var a_buf = NDBuffer[rank=2, a_type, MutAnyOrigin, a_shape](
+        a.ptr.bitcast[Scalar[a_type]]().as_any_origin(),
+        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
+    )
+    comptime b_shape = DimList[dim[b.static_shape[0]], dim[b.static_shape[1]]]()
+    var b_buf = NDBuffer[rank=2, b_type, MutAnyOrigin, b_shape](
+        b.ptr.bitcast[Scalar[b_type]]().as_any_origin(),
+        rebind[IndexList[2]](coord_to_index_list(b.layout.shape_coord())),
+    )
+
+    _matmul_gpu[
+        use_tensor_core=use_tensor_core,
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        pdl_level=pdl_level,
+        register_based_epilogue=register_based_epilogue,
+    ](c_buf, a_buf, b_buf, ctx)
 
 
 @always_inline
