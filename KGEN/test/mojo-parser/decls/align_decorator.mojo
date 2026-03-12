@@ -76,7 +76,6 @@ struct HexAligned:
     var x: Int
 
 
-# Test decorator order: @register_passable before @align
 # CHECK-LABEL: lit.struct.decl @ReversedDecoratorOrder
 # CHECK-SAME: register_passable_trivial
 # CHECK-SAME: minAlignment = 32 : index

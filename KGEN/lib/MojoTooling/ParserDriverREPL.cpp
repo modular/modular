@@ -199,7 +199,7 @@ static bool matchesAnyPrefix(StringRef line, const Prefixes &prefixes) {
 static bool isFunctionOrStructDeclaration(StringRef code) {
   static constexpr auto kPrefixes = {
       "fn ",      "def ",    "struct ", "trait ", "@always_inline",
-      "@closure", "@export", "@op",     "@value", "@register_passable",
+      "@closure", "@export", "@op",     "@value",
   };
   return matchesAnyPrefix(code, kPrefixes);
 }

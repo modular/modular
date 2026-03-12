@@ -500,7 +500,6 @@ struct RegTrivialSpecial(TrivialRegisterPassable, AnyType, ImplicitlyCopyable):
     # CHECK: lit.fn @"__init__{{.*}}(*, %copy:
 
 # COM: TrivialRegisterPassable should behave the same as
-# COM: @register_passable("trivial")
 struct RegTrivialSpecialWithTrait(TrivialRegisterPassable):
     pass
     # CHECK: lit.fn @"__del__
@@ -1041,4 +1040,3 @@ struct TestKWArgs(HasFooKw, HasBarKw):
 
     fn __init__(out self, *, bar: Self):
         pass
-
