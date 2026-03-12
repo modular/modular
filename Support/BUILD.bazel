@@ -429,11 +429,12 @@ modular_cc_library(
         # libcupti_tracy_stub and libcuda_tracy_stub (Tracy deps) provide all
         # CUPTI and CUDA driver symbols Tracy calls directly via on-demand
         # dlopen, so neither libcupti.so nor libcuda.so.1 needs a hard link
-        # here.  cuda_headers is still needed for compiling CUDA types used in
-        # the Profiling sources.  cudart is needed for cudaDeviceSynchronize.
+        # here.  cuda_cupti_headers provides <cupti.h> for TracyCUDA.hpp.
+        # cuda_runtime provides cuda_runtime_api.h (transitively included by
+        # cupti.h) and libcudart.so for cudaDeviceSynchronize.
         "//:tracy_cuda_enabled": [
-            "//bazel/third-party:cuda_headers",
-            "//bazel/third-party:cudart",
+            "//bazel/third-party:cuda_cupti_headers",
+            "//bazel/third-party:cuda_runtime",
         ],
         "//conditions:default": [],
     }),
