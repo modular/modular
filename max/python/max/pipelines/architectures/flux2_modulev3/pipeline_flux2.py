@@ -170,7 +170,9 @@ class Flux2Pipeline(DiffusionPipeline, CacheMixin):
             transformer=self.transformer,
             dtype=self.transformer.config.dtype,
             device=self.transformer.devices[0],
-            default_rdt=0.08,
+            rdt=0.06,
+            taylorseer_cache_interval=5,
+            taylorseer_warmup_steps=4,
         )
 
         self._cached_guidance: dict[str, Tensor] = {}

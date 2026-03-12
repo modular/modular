@@ -41,9 +41,12 @@ class CacheConfig:
     """Relative difference threshold for cache reuse.  ``None`` means the
     pipeline should use its own model-appropriate default."""
     taylorseer: bool = False
-    taylorseer_cache_interval: int = 5
-    taylorseer_warmup_steps: int = 3
-    taylorseer_max_order: int = 1
+    taylorseer_cache_interval: int | None = None
+    """Steps between full computations.  ``None`` uses the pipeline default."""
+    taylorseer_warmup_steps: int | None = None
+    """Warmup steps for factor gathering.  ``None`` uses the pipeline default."""
+    taylorseer_max_order: int | None = None
+    """Taylor expansion order (1 or 2).  ``None`` uses the pipeline default."""
 
 
 @dataclass
@@ -87,29 +90,45 @@ class CacheMixin:
         transformer: ComponentModel,
         dtype: DType,
         device: Device,
-        default_rdt: float = 0.05,
+        rdt: float = 0.05,
+        taylorseer_cache_interval: int = 5,
+        taylorseer_warmup_steps: int = 4,
+        taylorseer_max_order: int = 1,
     ) -> None:
         """Initialize caching subsystem. Call once during init_remaining_components().
 
         This method:
-        1. Stores the cache config.
+        1. Stores the cache config (with nullable fields resolved).
         2. Selects and compiles the correct transformer graph variant.
         3. Pre-allocates constant tensors.
         4. Stores dtype/device for per-request DenoisingCacheState creation.
         5. Builds TaylorSeer compiled graphs if enabled.
 
         Args:
-            default_rdt: Model-specific default for the relative difference
-                threshold.  Used when ``cache_config.rdt`` is ``None``.
+            rdt: Model-specific default for the relative difference threshold.
+                Used when ``cache_config.rdt`` is ``None``.
+            taylorseer_cache_interval: Model-specific default for cache
+                interval.  Used when the config value is ``None``.
+            taylorseer_warmup_steps: Model-specific default for warmup steps.
+                Used when the config value is ``None``.
+            taylorseer_max_order: Model-specific default for Taylor expansion
+                order.  Used when the config value is ``None``.
         """
+        # Resolve nullable fields to concrete values using per-model defaults.
+        if cache_config.rdt is None:
+            cache_config.rdt = rdt
+        if cache_config.taylorseer_cache_interval is None:
+            cache_config.taylorseer_cache_interval = taylorseer_cache_interval
+        if cache_config.taylorseer_warmup_steps is None:
+            cache_config.taylorseer_warmup_steps = taylorseer_warmup_steps
+        if cache_config.taylorseer_max_order is None:
+            cache_config.taylorseer_max_order = taylorseer_max_order
         self.cache_config = cache_config
-
-        rdt = cache_config.rdt if cache_config.rdt is not None else default_rdt
 
         # Graph selection (init-time, not per-request).
         # rdt is baked into the step-cache graph as a constant.
         if cache_config.step_cache:
-            transformer.use_step_cache_model(rdt=rdt)
+            transformer.use_step_cache_model(rdt=cache_config.rdt)
         else:
             transformer.use_standard_model()
 

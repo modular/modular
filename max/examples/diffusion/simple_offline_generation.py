@@ -186,21 +186,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--taylorseer-cache-interval",
         type=int,
-        default=5,
-        help="Steps between full computations for TaylorSeer (default: 5).",
+        default=None,
+        help="Steps between full computations for TaylorSeer (model default if unset).",
     )
     parser.add_argument(
         "--taylorseer-warmup-steps",
         type=int,
-        default=3,
-        help="Warmup steps for TaylorSeer factor gathering (default: 3).",
+        default=None,
+        help="Warmup steps for TaylorSeer factor gathering (model default if unset).",
     )
     parser.add_argument(
         "--taylorseer-max-order",
         type=int,
-        default=1,
+        default=None,
         choices=[1, 2],
-        help="Taylor expansion order: 1=linear, 2=quadratic (default: 1).",
+        help="Taylor expansion order: 1=linear, 2=quadratic (model default if unset).",
     )
 
     args = parser.parse_args(argv)
@@ -217,12 +217,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     assert args.guidance_scale > 0.0, "guidance-scale must be positive."
     if args.rdt is not None:
         assert args.rdt >= 0.0, "rdt must be non-negative."
-    assert args.taylorseer_cache_interval >= 1, (
-        "taylorseer-cache-interval must be >= 1."
-    )
-    assert args.taylorseer_warmup_steps >= 1, (
-        "taylorseer-warmup-steps must be >= 1."
-    )
+    if args.taylorseer_cache_interval is not None:
+        assert args.taylorseer_cache_interval >= 1, (
+            "taylorseer-cache-interval must be >= 1."
+        )
+    if args.taylorseer_warmup_steps is not None:
+        assert args.taylorseer_warmup_steps >= 1, (
+            "taylorseer-warmup-steps must be >= 1."
+        )
 
     return args
 
@@ -447,10 +449,13 @@ async def generate_image(args: argparse.Namespace) -> None:
         rdt_info = f", rdt={args.rdt}" if args.rdt is not None else ""
         print(f"Step cache enabled{rdt_info}.")
     if args.taylorseer:
+        order_info = f"order={args.taylorseer_max_order}" if args.taylorseer_max_order is not None else "order=model-default"
+        interval_info = f"interval={args.taylorseer_cache_interval}" if args.taylorseer_cache_interval is not None else "interval=model-default"
+        warmup_info = f"warmup={args.taylorseer_warmup_steps}" if args.taylorseer_warmup_steps is not None else "warmup=model-default"
         print(
-            f"TaylorSeer enabled: order={args.taylorseer_max_order}, "
-            f"interval={args.taylorseer_cache_interval}, "
-            f"warmup={args.taylorseer_warmup_steps}."
+            f"TaylorSeer enabled: {order_info}, "
+            f"{interval_info}, "
+            f"{warmup_info}."
         )
 
     # Step 6: Prepare inputs for the pipeline
