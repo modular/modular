@@ -32,20 +32,20 @@ struct ConditionalTriviality[
 ](Copyable):
     var events: Pointer[List[Int], Self.O]
 
-    fn add_event(mut self, event: Int):
+    def add_event(mut self, event: Int):
         self.events[].append(event)
 
-    fn __init__(out self, ref[Self.O] events: List[Int]):
+    def __init__(out self, ref[Self.O] events: List[Int]):
         self.events = Pointer(to=events)
         self.add_event(EVENT_INIT)
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         comptime if Self.T.__del__is_trivial:
             self.add_event(EVENT_DEL | EVENT_TRIVIAL)
         else:
             self.add_event(EVENT_DEL)
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.events = copy.events
 
         comptime if Self.T.__copy_ctor_is_trivial:
@@ -53,7 +53,7 @@ struct ConditionalTriviality[
         else:
             self.add_event(EVENT_COPY)
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         self.events = take.events
 
         comptime if Self.T.__move_ctor_is_trivial:

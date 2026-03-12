@@ -40,7 +40,7 @@ def test_bool_none() raises:
 
 @fieldwise_init
 struct MyTrue(Boolable):
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         return True
 
 
@@ -142,7 +142,7 @@ def test_all() raises:
     # empty
     assert_true(all(List[Int]()))
 
-    fn gt0(x: Int) -> Bool:
+    def gt0(x: Int) -> Bool:
         return x > 0
 
     var l = [1, 2, 3]
@@ -158,7 +158,7 @@ def test_any() raises:
     # empty
     assert_false(any(List[Int]()))
 
-    fn gt0(x: Int) -> Bool:
+    def gt0(x: Int) -> Bool:
         return x > 0
 
     var l = [1, 2, 3]

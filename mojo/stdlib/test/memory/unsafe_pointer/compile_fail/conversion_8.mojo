@@ -14,7 +14,9 @@
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
 
-fn test_cannot_cast_between_different_types[T: AnyType](p: UnsafePointer[T, _]):
+def test_cannot_cast_between_different_types[
+    T: AnyType
+](p: UnsafePointer[T, _]):
     pass
 
 

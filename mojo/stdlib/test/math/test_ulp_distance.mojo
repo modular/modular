@@ -15,7 +15,7 @@ from test_utils import ulp_distance
 from std.testing import assert_true, TestSuite
 
 
-fn test_ulp_distance() raises:
+def test_ulp_distance() raises:
     var a: Float64 = 1.0
     var b: Float64 = 1.0
     var ulp = ulp_distance(a, b)

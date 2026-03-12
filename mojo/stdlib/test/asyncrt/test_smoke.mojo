@@ -16,7 +16,7 @@ from std.gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
 from std.testing import TestSuite, assert_equal
 
 
-fn _ownership_helper(
+def _ownership_helper(
     var ctx: DeviceContext,
 ) raises -> DeviceContext:
     var ctx_copy = ctx
@@ -24,7 +24,7 @@ fn _ownership_helper(
     return ctx_copy
 
 
-fn _ownership_helper_buf[
+def _ownership_helper_buf[
     dtype: DType
 ](var buf: DeviceBuffer[dtype]) raises -> DeviceBuffer[dtype]:
     var buf_copy = buf
@@ -32,7 +32,7 @@ fn _ownership_helper_buf[
     return buf_copy
 
 
-fn _run_name(ctx: DeviceContext) raises:
+def _run_name(ctx: DeviceContext) raises:
     print("-")
     print("_run_name()")
 
@@ -53,7 +53,7 @@ fn _run_name(ctx: DeviceContext) raises:
     raise "ctx_name malformed"
 
 
-fn _run_ownership_transfer(ctx: DeviceContext) raises:
+def _run_ownership_transfer(ctx: DeviceContext) raises:
     print("-")
     print("_run_ownership_transfer()")
 
@@ -69,7 +69,7 @@ fn _run_ownership_transfer(ctx: DeviceContext) raises:
     _ = buf
 
 
-fn _run_device_info(ctx: DeviceContext) raises:
+def _run_device_info(ctx: DeviceContext) raises:
     print("-")
     print("_run_device_info()")
 
@@ -93,21 +93,21 @@ fn _run_device_info(ctx: DeviceContext) raises:
     _ = buf
 
 
-fn _run_compute_capability(ctx: DeviceContext) raises:
+def _run_compute_capability(ctx: DeviceContext) raises:
     print("-")
     print("_run_compute_capability()")
 
     print("Compute capability: ", ctx.compute_capability())
 
 
-fn _run_get_attribute(ctx: DeviceContext) raises:
+def _run_get_attribute(ctx: DeviceContext) raises:
     print("-")
     print("_run_get_attribute()")
     print("clock_rate: ", ctx.get_attribute(DeviceAttribute.CLOCK_RATE))
     print("warp_size: ", ctx.get_attribute(DeviceAttribute.WARP_SIZE))
 
 
-fn _run_get_stream(ctx: DeviceContext) raises:
+def _run_get_stream(ctx: DeviceContext) raises:
     print("-")
     print("_run_get_stream()")
 
@@ -117,7 +117,7 @@ fn _run_get_stream(ctx: DeviceContext) raises:
     stream.synchronize()
 
 
-fn _run_peer_access(ctx: DeviceContext) raises:
+def _run_peer_access(ctx: DeviceContext) raises:
     print("-")
     print("_run_peer_access()")
 

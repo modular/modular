@@ -75,7 +75,7 @@ def test_fused_reductions_inner() raises:
     @always_inline
     @__copy_capture(vector)
     @parameter
-    fn input_fn[
+    def input_fn[
         dtype: DType, width: Int, rank: Int
     ](indices: IndexList[rank]) -> SIMD[dtype, width]:
         var loaded_val = vector.unsafe_ptr().load[width=width](indices[0])
@@ -85,7 +85,7 @@ def test_fused_reductions_inner() raises:
 
     @always_inline
     @parameter
-    fn output_fn[
+    def output_fn[
         dtype: DType, width: Int, rank: Int
     ](
         indices: IndexList[rank],
@@ -99,7 +99,7 @@ def test_fused_reductions_inner() raises:
 
     @always_inline
     @parameter
-    fn reduce_fn[
+    def reduce_fn[
         ty: DType,
         width: Int,
         reduction_idx: Int,
@@ -158,7 +158,7 @@ def test_fused_reductions_outer() raises:
     @always_inline
     @__copy_capture(vector)
     @parameter
-    fn input_fn[
+    def input_fn[
         dtype: DType, width: Int, rank: Int
     ](indices: IndexList[rank]) -> SIMD[dtype, width]:
         var loaded_val = vector.unsafe_ptr().load[width=width](
@@ -168,7 +168,7 @@ def test_fused_reductions_outer() raises:
 
     @always_inline
     @parameter
-    fn reduce_fn[
+    def reduce_fn[
         ty: DType,
         width: Int,
         reduction_idx: Int,
@@ -191,7 +191,7 @@ def test_fused_reductions_outer() raises:
 
     @always_inline
     @parameter
-    fn output_fn[
+    def output_fn[
         dtype: DType, width: Int, rank: Int
     ](
         indices: IndexList[rank],

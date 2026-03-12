@@ -15,11 +15,11 @@ from std.reflection import get_linkage_name
 from std.testing import assert_equal
 
 
-fn foo():
+def foo():
     pass
 
 
-fn bar(x: Int) -> Int:
+def bar(x: Int) -> Int:
     return 1
 
 
@@ -44,7 +44,7 @@ def main() raises:
         assert_equal(name, expected_names[i])
 
 
-fn bar(y: Int, z: Int):
+def bar(y: Int, z: Int):
     pass
 
 

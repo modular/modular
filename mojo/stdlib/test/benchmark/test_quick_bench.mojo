@@ -19,7 +19,7 @@ from std.benchmark import BenchId, BenchMetric, QuickBench, ThroughputMeasure
 from std.testing import TestSuite
 
 
-fn vec_reduce[
+def vec_reduce[
     N: Int, dtype: DType
 ](x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin]) -> Scalar[dtype]:
     var total: Scalar[dtype] = 0
@@ -28,7 +28,7 @@ fn vec_reduce[
     return total
 
 
-fn vec_add[
+def vec_add[
     N: Int, dtype: DType
 ](
     x: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -39,47 +39,47 @@ fn vec_add[
     return x
 
 
-fn dummy() -> None:
+def dummy() -> None:
     sleep(0.5)
 
 
-fn dummy(x0: Int) -> Float32:
+def dummy(x0: Int) -> Float32:
     return Float32(x0)
 
 
-fn dummy(x0: Int, x1: Int) -> Float32:
+def dummy(x0: Int, x1: Int) -> Float32:
     return Float32(x0 + x1)
 
 
-fn dummy(x0: Int, x1: Int, x2: Int) -> Float32:
+def dummy(x0: Int, x1: Int, x2: Int) -> Float32:
     return Float32(x0 + x1 + x2)
 
 
-fn dummy(x0: Int, x1: Int, x2: Int, x3: Int) -> Float32:
+def dummy(x0: Int, x1: Int, x2: Int, x3: Int) -> Float32:
     return Float32(x0 + x1 + x2 + x3)
 
 
-fn dummy(x0: Int, x1: Int, x2: Int, x3: Int, x4: Int) -> Float32:
+def dummy(x0: Int, x1: Int, x2: Int, x3: Int, x4: Int) -> Float32:
     return Float32(x0 + x1 + x2 + x3 + x4)
 
 
-fn dummy(x0: Int, x1: Int, x2: Int, x3: Int, x4: Int, x5: Int) -> Float32:
+def dummy(x0: Int, x1: Int, x2: Int, x3: Int, x4: Int, x5: Int) -> Float32:
     return Float32(x0 + x1 + x2 + x3 + x4 + x5)
 
 
-fn dummy(
+def dummy(
     x0: Int, x1: Int, x2: Int, x3: Int, x4: Int, x5: Int, x6: Int
 ) -> Float32:
     return Float32(x0 + x1 + x2 + x3 + x4 + x5 + x6)
 
 
-fn dummy(
+def dummy(
     x0: Int, x1: Int, x2: Int, x3: Int, x4: Int, x5: Int, x6: Int, x7: Int
 ) -> Float32:
     return Float32(x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7)
 
 
-fn dummy(
+def dummy(
     x0: Int,
     x1: Int,
     x2: Int,
@@ -93,7 +93,7 @@ fn dummy(
     return Float32(x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8)
 
 
-fn dummy(
+def dummy(
     x0: Int,
     x1: Int,
     x2: Int,
@@ -257,12 +257,12 @@ def test_overloaded() raises:
 
 
 @always_inline
-fn exp(x: SIMD[DType.float32, 4]) -> type_of(x):
+def exp(x: SIMD[DType.float32, 4]) -> type_of(x):
     return std.math.exp(x)
 
 
 @always_inline
-fn tanh(x: SIMD[DType.float32, 4]) -> type_of(x):
+def tanh(x: SIMD[DType.float32, 4]) -> type_of(x):
     return std.math.tanh(x)
 
 

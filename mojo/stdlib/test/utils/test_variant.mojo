@@ -37,32 +37,32 @@ comptime TEST_VARIANT_POISON = _Global[
 ]
 
 
-fn _initialize_poison() -> Bool:
+def _initialize_poison() -> Bool:
     return False
 
 
-fn _poison_ptr() -> UnsafePointer[Bool, MutExternalOrigin]:
+def _poison_ptr() -> UnsafePointer[Bool, MutExternalOrigin]:
     try:
         return TEST_VARIANT_POISON.get_or_create_ptr()
     except:
         abort("Failed to get or create TEST_VARIANT_POISON")
 
 
-fn assert_no_poison() raises:
+def assert_no_poison() raises:
     assert_false(_poison_ptr().take_pointee())
 
 
 struct Poison(ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         _poison_ptr().init_pointee_move(True)
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         _poison_ptr().init_pointee_move(True)
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         _poison_ptr().init_pointee_move(True)
 
 

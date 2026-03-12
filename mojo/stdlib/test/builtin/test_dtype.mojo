@@ -53,14 +53,14 @@ comptime all_dtypes = (
 )
 
 
-fn test_equality() raises:
+def test_equality() raises:
     assert_true(DType.float32 == DType.float32)
     assert_true(DType.float32 != DType.int32)
     assert_true(DType.float32 == DType.float32)
     assert_true(DType.float32 != DType.int32)
 
 
-fn test_stringable() raises:
+def test_stringable() raises:
     assert_equal(String(DType.bool), "bool")
     assert_equal(String(DType.int), "int")
     assert_equal(String(DType.uint), "uint")
@@ -68,8 +68,8 @@ fn test_stringable() raises:
     assert_equal(String(DType.float32), "float32")
 
 
-fn test_is_xxx() raises:
-    fn _is_category[
+def test_is_xxx() raises:
+    def _is_category[
         test: fn(DType) -> Bool,
         true_dtypes: List[DType],
     ]() raises:
@@ -83,7 +83,7 @@ fn test_is_xxx() raises:
     # _is_category[DType.is_signed, [DType.int] + int_dtypes + float_dtypes]()
 
 
-fn test_key_element() raises:
+def test_key_element() raises:
     var s = {DType.bool, DType.int64}
     assert_true(DType.int64 in s)
     assert_false(DType.float32 in s)

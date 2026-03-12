@@ -23,20 +23,20 @@ from std.testing import TestSuite
 struct DummyHasher(Hasher):
     var _dummy_value: UInt64
 
-    fn __init__(out self):
+    def __init__(out self):
         self._dummy_value = 0
 
-    fn _update_with_bytes(mut self, data: Span[Byte, _]):
+    def _update_with_bytes(mut self, data: Span[Byte, _]):
         for i in range(len(data)):
             self._dummy_value += data[i].cast[DType.uint64]()
 
-    fn _update_with_simd(mut self, value: SIMD[_, _]):
+    def _update_with_simd(mut self, value: SIMD[_, _]):
         self._dummy_value += value.cast[DType.uint64]().reduce_add()
 
-    fn update[T: Hashable](mut self, value: T):
+    def update[T: Hashable](mut self, value: T):
         value.__hash__(self)
 
-    fn finish(var self) -> UInt64:
+    def finish(var self) -> UInt64:
         return self._dummy_value
 
 
@@ -62,7 +62,7 @@ struct ComplexHashableStruct(Hashable):
     var _value1: SomeHashableStruct
     var _value2: SomeHashableStruct
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
+    def __hash__[H: Hasher](self, mut hasher: H):
         hasher.update(self._value1)
         hasher.update(self._value2)
 
@@ -89,7 +89,7 @@ struct ComplexHashableStructWithList(Hashable):
     var _value2: SomeHashableStruct
     var _value3: List[UInt8]
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
+    def __hash__[H: Hasher](self, mut hasher: H):
         hasher.update(self._value1)
         hasher.update(self._value2)
         # This is okay because self is passed as read-only so the pointer will
@@ -106,7 +106,7 @@ struct ComplexHashableStructWithListAndWideSIMD(Hashable):
     var _value3: List[UInt8]
     var _value4: SIMD[DType.uint32, 4]
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
+    def __hash__[H: Hasher](self, mut hasher: H):
         hasher.update(self._value1)
         hasher.update(self._value2)
         # This is okay because self is passed as read-only so the pointer will

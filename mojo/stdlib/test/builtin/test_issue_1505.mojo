@@ -19,7 +19,7 @@ from std.testing import assert_equal, TestSuite
 from std.utils import IndexList
 
 
-fn gen_perm() -> IndexList[64]:
+def gen_perm() -> IndexList[64]:
     var result = IndexList[64]()
 
     for i in range(64):

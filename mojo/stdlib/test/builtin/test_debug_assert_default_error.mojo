@@ -17,7 +17,7 @@
 
 
 # CHECK-LABEL: test_fail
-fn main():
+def main():
     print("== test_fail")
     # CHECK: formatted failure message: 2, 4
     debug_assert[assert_mode="safe"](

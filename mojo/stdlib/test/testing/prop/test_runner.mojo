@@ -24,7 +24,7 @@ from std.testing.prop import PropTest, PropTestConfig, Rng, Strategy
 struct SimpleStrategy(Movable, Strategy):
     comptime Value = Int
 
-    fn value(mut self, mut rng: Rng) raises -> Self.Value:
+    def value(mut self, mut rng: Rng) raises -> Self.Value:
         return 42
 
 
@@ -43,7 +43,7 @@ struct RecordingStrategy[origin: MutOrigin](Movable, Strategy):
 
     var list: UnsafePointer[List[Int], origin=Self.origin]
 
-    fn value(self, mut rng: Rng) raises -> Self.Value:
+    def value(self, mut rng: Rng) raises -> Self.Value:
         var random = rng.rand_int()
         self.list[].append(random)
         return random

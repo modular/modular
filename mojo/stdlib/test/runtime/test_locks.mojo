@@ -28,7 +28,7 @@ def test_basic_lock() raises:
     comptime maxJ = 100
 
     @parameter
-    async fn inc():
+    async def inc():
         with BlockingScopedLock(lock):
             rawCounter += 1
             _ = counter.fetch_add(1)
@@ -42,7 +42,7 @@ def test_basic_lock() raises:
     )
 
     @parameter
-    fn test_atomic() -> None:
+    def test_atomic() -> None:
         var tg = TaskGroup()
         for _ in range(0, maxI):
             for _ in range(0, maxJ):

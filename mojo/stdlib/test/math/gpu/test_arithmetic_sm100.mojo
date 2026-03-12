@@ -19,7 +19,7 @@ from std.gpu.host import DeviceContext, HostBuffer
 from std.testing import assert_equal, TestSuite
 
 
-fn simd_add_kernel[
+def simd_add_kernel[
     width: Int
 ](
     a_span: UnsafePointer[Float32, MutAnyOrigin],
@@ -35,7 +35,7 @@ fn simd_add_kernel[
     c_span.store[width=width](idx, vector_c)
 
 
-fn simd_mult_kernel[
+def simd_mult_kernel[
     width: Int
 ](
     a_span: UnsafePointer[Float32, MutAnyOrigin],
@@ -51,7 +51,7 @@ fn simd_mult_kernel[
     c_span.store[width=width](idx, vector_c)
 
 
-fn simd_fma_kernel[
+def simd_fma_kernel[
     width: Int
 ](
     a_span: UnsafePointer[Float32, MutAnyOrigin],
@@ -69,7 +69,7 @@ fn simd_fma_kernel[
     c_span.store[width=width](idx, vector_c)
 
 
-fn host_elementwise_add(
+def host_elementwise_add(
     a: HostBuffer[DType.float32],
     b: HostBuffer[DType.float32],
     mut c: HostBuffer[DType.float32],
@@ -79,7 +79,7 @@ fn host_elementwise_add(
         c[i] = a[i] + b[i]
 
 
-fn host_elementwise_mult(
+def host_elementwise_mult(
     a: HostBuffer[DType.float32],
     b: HostBuffer[DType.float32],
     mut c: HostBuffer[DType.float32],
@@ -89,7 +89,7 @@ fn host_elementwise_mult(
         c[i] = a[i] * b[i]
 
 
-fn host_elementwise_fma(
+def host_elementwise_fma(
     a: HostBuffer[DType.float32],
     b: HostBuffer[DType.float32],
     mut c: HostBuffer[DType.float32],

@@ -20,7 +20,7 @@ struct Point(Writable):
     var x: Int
     var y: Int
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(t"({self.x}, {self.y})")
 
 
@@ -556,7 +556,7 @@ def test_raw_tstring_in_tstring() raises:
 # =============================================================================
 
 
-fn _encode(*strings: String) -> List[Byte]:
+def _encode(*strings: String) -> List[Byte]:
     var result = List[Byte]()
     for i in range(len(strings)):
         for byte in strings[i].as_bytes():

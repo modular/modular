@@ -17,8 +17,8 @@ from std.testing import assert_equal, assert_false, assert_true, TestSuite
 from test_utils import ExplicitDelOnly
 
 
-fn test_variadic_iterator() raises:
-    fn helper(*args: Int) raises:
+def test_variadic_iterator() raises:
+    def helper(*args: Int) raises:
         var n = 5
         for e in args:
             assert_equal(e, n)
@@ -362,27 +362,27 @@ def test_variadic_list_linear_type() raises:
     """Test owned variadics with a linear type (ExplicitDelOnly)."""
 
     @parameter
-    fn destroy_elem(_idx: Int, var arg: ExplicitDelOnly):
+    def destroy_elem(_idx: Int, var arg: ExplicitDelOnly):
         arg^.destroy()
 
-    fn take_owned_linear(var *args: ExplicitDelOnly):
+    def take_owned_linear(var *args: ExplicitDelOnly):
         args^.consume_elements[destroy_elem]()
 
     take_owned_linear(ExplicitDelOnly(5), ExplicitDelOnly(10))
 
 
 def test_variadic_list_write_to() raises:
-    fn check_three(*args: Int) raises:
+    def check_three(*args: Int) raises:
         var s = String()
         args.write_to(s)
         assert_equal(s, "(1, 2, 3)")
 
-    fn check_single(*args: Int) raises:
+    def check_single(*args: Int) raises:
         var s = String()
         args.write_to(s)
         assert_equal(s, "(42)")
 
-    fn check_empty(*args: Int) raises:
+    def check_empty(*args: Int) raises:
         var s = String()
         args.write_to(s)
         assert_equal(s, "()")
@@ -393,12 +393,12 @@ def test_variadic_list_write_to() raises:
 
 
 def test_variadic_list_write_repr_to() raises:
-    fn check_three(*args: Int) raises:
+    def check_three(*args: Int) raises:
         var s = String()
         args.write_repr_to(s)
         assert_equal(s, "VariadicList[Int]((Int(1), Int(2), Int(3)))")
 
-    fn check_single(*args: Int) raises:
+    def check_single(*args: Int) raises:
         var s = String()
         args.write_repr_to(s)
         assert_equal(s, "VariadicList[Int]((Int(42)))")
@@ -408,12 +408,12 @@ def test_variadic_list_write_repr_to() raises:
 
 
 def test_variadic_list_mem_write_to() raises:
-    fn check_two(*args: String) raises:
+    def check_two(*args: String) raises:
         var s = String()
         args.write_to(s)
         assert_equal(s, "(hello, world)")
 
-    fn check_single(*args: String) raises:
+    def check_single(*args: String) raises:
         var s = String()
         args.write_to(s)
         assert_equal(s, "(hi)")
@@ -423,7 +423,7 @@ def test_variadic_list_mem_write_to() raises:
 
 
 def test_variadic_list_mem_write_repr_to() raises:
-    fn check_two(*args: String) raises:
+    def check_two(*args: String) raises:
         var s = String()
         args.write_repr_to(s)
         assert_equal(s, "VariadicList[String](('hello', 'world'))")

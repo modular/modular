@@ -228,7 +228,7 @@ def test_tuple_concat_copy_count() raises:
 
 # This test doesn't need to run, it just needs to compile
 def test_tuple_size_parse_time() raises:
-    fn func_with_where_clause(t: Tuple) where type_of(t).__len__() < 4:
+    def func_with_where_clause(t: Tuple) where type_of(t).__len__() < 4:
         pass
 
     func_with_where_clause((1, 3, 2))

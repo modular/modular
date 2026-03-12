@@ -42,7 +42,7 @@ def run_exp_approx_test[simd_width: Int](ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
     @parameter
-    fn func[
+    def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[1]](idx0)

@@ -14,14 +14,14 @@
 from std.testing import assert_equal, assert_raises, assert_true
 
 
-fn test_assert_raises_catches_error() raises:
+def test_assert_raises_catches_error() raises:
     with assert_raises():
         raise Error("SomeError")
     # The assert_raises should catch the error and not propagate it.
     # Hence the test will succeed.
 
 
-fn test_assert_raises_catches_matched_error() raises:
+def test_assert_raises_catches_matched_error() raises:
     with assert_raises(contains="Some"):
         raise Error("SomeError")
 
@@ -32,7 +32,7 @@ fn test_assert_raises_catches_matched_error() raises:
         raise Error("SomeError")
 
 
-fn test_assert_raises_no_error() raises:
+def test_assert_raises_no_error() raises:
     try:
         with assert_raises():  # col 27
             pass
@@ -43,7 +43,7 @@ fn test_assert_raises_no_error() raises:
         assert_true(String(e) != "This should not be reachable.")
 
 
-fn test_assert_raises_no_match() raises:
+def test_assert_raises_no_match() raises:
     try:
         with assert_raises(contains="Some"):
             raise Error("OtherError")

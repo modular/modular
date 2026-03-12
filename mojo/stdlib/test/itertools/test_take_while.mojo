@@ -19,23 +19,23 @@ from std.testing import (
 )
 
 
-fn is_positive(x: Int) -> Bool:
+def is_positive(x: Int) -> Bool:
     return x > 0
 
 
-fn less_than_5(x: Int) -> Bool:
+def less_than_5(x: Int) -> Bool:
     return x < 5
 
 
-fn always_true(x: Int) -> Bool:
+def always_true(x: Int) -> Bool:
     return True
 
 
-fn always_false(x: Int) -> Bool:
+def always_false(x: Int) -> Bool:
     return False
 
 
-fn is_even(x: Int) -> Bool:
+def is_even(x: Int) -> Bool:
     return x % 2 == 0
 
 

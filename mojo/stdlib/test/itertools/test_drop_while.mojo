@@ -19,23 +19,23 @@ from std.testing import (
 )
 
 
-fn less_than_5(x: Int) -> Bool:
+def less_than_5(x: Int) -> Bool:
     return x < 5
 
 
-fn always_true(x: Int) -> Bool:
+def always_true(x: Int) -> Bool:
     return True
 
 
-fn always_false(x: Int) -> Bool:
+def always_false(x: Int) -> Bool:
     return False
 
 
-fn is_even(x: Int) -> Bool:
+def is_even(x: Int) -> Bool:
     return x % 2 == 0
 
 
-fn is_negative(x: Int) -> Bool:
+def is_negative(x: Int) -> Bool:
     return x < 0
 
 
@@ -190,7 +190,7 @@ def test_drop_while_only_yields_once_triggered() raises:
     """Tests that drop_while yields all elements after first failure."""
     var nums = [0, 0, 0, 1, 0, 0, 0]
 
-    fn is_zero(x: Int) -> Bool:
+    def is_zero(x: Int) -> Bool:
         return x == 0
 
     var it = drop_while[is_zero](nums)

@@ -19,7 +19,7 @@ from std.sys import argv
 
 
 # CHECK-LABEL: OK
-fn main():
+def main():
     if len(argv()) == 0:
         abort()
     print("== OK")

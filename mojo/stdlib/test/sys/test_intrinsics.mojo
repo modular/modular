@@ -97,7 +97,7 @@ def test_masked_store() raises:
     vector.free()
 
 
-fn test_strided_load() raises:
+def test_strided_load() raises:
     comptime size = 16
     var vector = alloc[Float32](size)
 
@@ -110,7 +110,7 @@ fn test_strided_load() raises:
     vector.free()
 
 
-fn test_strided_store() raises:
+def test_strided_store() raises:
     comptime size = 8
     var vector = alloc[Float32](size)
     memset_zero(vector, size)

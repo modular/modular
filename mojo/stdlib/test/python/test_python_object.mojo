@@ -148,7 +148,7 @@ def _test_inplace_dunder_methods(mut python: Python) raises:
     # Given:
     #
     # @always_inline
-    # fn __init__[
+    # def __init__[
     #    *Ts: ConvertibleToPython & Copyable
     # ](out self, var *values: *Ts, __list_literal__: ()) raises:
     #     pass
@@ -196,7 +196,7 @@ def test_boolean_operations() raises:
     assert_false(Python.none().__bool__())
 
 
-fn _test_string_conversions(mut python: Python) raises -> None:
+def _test_string_conversions(mut python: Python) raises -> None:
     # static string
     var static_str: StaticString = "mojo"
     var py_str = PythonObject(static_str)
@@ -264,7 +264,7 @@ def test_nested_object() raises:
     assert_equal(String(py=nested_tuple), "([1, 2, 3], [4, 5, 6])")
 
 
-fn test_iter() raises:
+def test_iter() raises:
     var list_obj: PythonObject = ["apple", "orange", "banana"]
     var i = 0
     for fruit in list_obj:
@@ -306,14 +306,14 @@ fn test_iter() raises:
         _ = it.__next__()  # raises StopIteration
 
 
-fn test_setitem() raises:
+def test_setitem() raises:
     var ll: PythonObject = [1, 2, 3, "food"]
     assert_equal(String(py=ll), "[1, 2, 3, 'food']")
     ll[1] = "nomnomnom"
     assert_equal(String(py=ll), "[1, 'nomnomnom', 3, 'food']")
 
 
-fn test_dict() raises:
+def test_dict() raises:
     # Test Python.dict from keyword arguments.
     # TODO(MOCO-2945): Heterogenous convertible kwargs should work
     var dd = Python.dict(food=PythonObject(123), fries=PythonObject("yes"))
@@ -360,7 +360,7 @@ fn test_dict() raises:
     _ = d
 
 
-fn test_set() raises:
+def test_set() raises:
     # Test Python set literals.
     var dd: PythonObject = {123, "yes"}
     var dd2 = Python.evaluate("{123, 'yes'}")
@@ -372,13 +372,13 @@ fn test_set() raises:
     assert_false(42 in dd)
 
 
-fn test_none() raises:
+def test_none() raises:
     var n = Python.none()
     assert_equal(String(py=n), "None")
     assert_true(n is PythonObject(None))
 
 
-fn test_none_implicit_conversion() raises:
+def test_none_implicit_conversion() raises:
     # Test implicit conversion from None literal to PythonObject.
 
     # Direct assignment.
@@ -393,13 +393,13 @@ fn test_none_implicit_conversion() raises:
     assert_equal(String(b), "None")
 
     # Function argument.
-    fn takes_python_object(obj: PythonObject) raises -> String:
+    def takes_python_object(obj: PythonObject) raises -> String:
         return String(obj)
 
     assert_equal(takes_python_object(None), "None")
 
     # Return value.
-    fn returns_none() -> PythonObject:
+    def returns_none() -> PythonObject:
         return None
 
     assert_true(returns_none() is Python.none())
@@ -411,7 +411,7 @@ fn test_none_implicit_conversion() raises:
     assert_equal(String(list), "[None]")
 
 
-fn test_getitem_raises() raises:
+def test_getitem_raises() raises:
     custom_indexable = Python.import_module("custom_indexable")
 
     var a = PythonObject(2)
@@ -498,7 +498,7 @@ def test_setitem_raises() raises:
         d[Python.list(1, 2, 3)] = 5
 
 
-fn test_py_slice() raises:
+def test_py_slice() raises:
     custom_indexable = Python.import_module("custom_indexable")
     var a: PythonObject = [1, 2, 3, 4, 5]
     assert_equal("[2, 3]", String(py=a[1:3]))
@@ -605,7 +605,7 @@ struct Person(Defaultable, Movable, Writable):
     var name: String
     var age: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.name = ""
         self.age = 0
 

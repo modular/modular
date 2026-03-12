@@ -30,11 +30,11 @@ struct FillStrategy(Equatable, ImplicitlyCopyable):
     comptime ZEROS = Self(3)
     comptime ONES = Self(4)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self.value == other.value
 
 
-fn reduce_add(
+def reduce_add(
     res_add: UnsafePointer[Float32, MutAnyOrigin],
     vec: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
@@ -48,7 +48,7 @@ fn reduce_add(
     _ = Atomic.fetch_add[ordering=ord](res_add, vec[tid])
 
 
-fn reduce_min_max(
+def reduce_min_max(
     res_min: UnsafePointer[Float32, MutAnyOrigin],
     res_max: UnsafePointer[Float32, MutAnyOrigin],
     vec: UnsafePointer[Float32, MutAnyOrigin],
@@ -64,7 +64,7 @@ fn reduce_min_max(
     Atomic.max[ordering=ord](res_max, vec[tid])
 
 
-fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
+def run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     comptime BLOCK_SIZE = 32
     comptime n = 1024
     comptime F32 = DType.float32

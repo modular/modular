@@ -134,14 +134,14 @@ def test_isnan() raises:
     assert_true(isnan(nan[DType.float64]()))
 
 
-fn overflow_int[dtype: DType]() -> Bool:
+def overflow_int[dtype: DType]() -> Bool:
     comptime assert (
         dtype.is_integral()
     ), "comparison only valid on integral types"
     return max_finite[dtype]() + 1 < max_finite[dtype]()
 
 
-fn overflow_fp[dtype: DType]() -> Bool:
+def overflow_fp[dtype: DType]() -> Bool:
     comptime assert (
         dtype.is_floating_point()
     ), "comparison only valid on floating point types"
@@ -200,14 +200,14 @@ def test_max_finite() raises:
         assert_equal(max_finite[DType.uint](), 4294967295)
 
 
-fn underflow_int[dtype: DType]() -> Bool:
+def underflow_int[dtype: DType]() -> Bool:
     comptime assert (
         dtype.is_integral()
     ), "comparison only valid on integral types"
     return min_finite[dtype]() - 1 > min_finite[dtype]()
 
 
-fn underflow_fp[dtype: DType]() -> Bool:
+def underflow_fp[dtype: DType]() -> Bool:
     comptime assert (
         dtype.is_floating_point()
     ), "comparison only valid on floating point types"

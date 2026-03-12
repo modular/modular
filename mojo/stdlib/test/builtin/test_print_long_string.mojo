@@ -14,6 +14,6 @@
 # RUN: wc -c %t | FileCheck %s
 
 
-fn main():
+def main():
     # CHECK: 536870913
     print("*" * 0x2000_0000)

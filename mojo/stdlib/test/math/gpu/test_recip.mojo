@@ -17,13 +17,13 @@ from std.gpu.host import DeviceContext
 from std.testing import assert_almost_equal, TestSuite
 
 
-fn run_func[
+def run_func[
     dtype: DType
 ](val: Scalar[dtype], ref_: Scalar[dtype], ctx: DeviceContext) raises:
     var out = ctx.enqueue_create_buffer[dtype](1)
 
     @parameter
-    fn kernel(
+    def kernel(
         out_dev: UnsafePointer[Scalar[dtype], MutAnyOrigin], lhs: Scalar[dtype]
     ):
         var result = recip(lhs)

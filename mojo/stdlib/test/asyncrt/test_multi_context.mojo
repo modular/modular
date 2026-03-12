@@ -17,7 +17,7 @@ from std.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 
 
-fn vec_func(
+def vec_func(
     in0: UnsafePointer[Float32, MutAnyOrigin],
     in1: UnsafePointer[Float32, MutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
@@ -35,7 +35,7 @@ def test_multi_function() raises:
     _run_test_multi_function(ctx1, ctx2)
 
 
-fn _run_test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
+def _run_test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     comptime length = 1024
 
     var in0_dev1 = ctx1.enqueue_create_buffer[DType.float32](length)

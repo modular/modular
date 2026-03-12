@@ -378,7 +378,7 @@ def test_inline_array_triviality() raises:
     assert_true(InlineArray[String, 1].__move_ctor_is_trivial)
 
 
-fn _return_array[copy: Bool = False]() -> InlineArray[Int32, 4]:
+def _return_array[copy: Bool = False]() -> InlineArray[Int32, 4]:
     var arr = InlineArray[Int32, 4](fill=0)
 
     comptime if copy:

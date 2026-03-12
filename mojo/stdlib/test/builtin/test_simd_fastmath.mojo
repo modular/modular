@@ -17,7 +17,7 @@ from std.testing import TestSuite, assert_false, assert_true
 
 
 def test_simd_fma_fastmath() raises:
-    fn my_fma(a: Float32, b: Float32, c: Float32) -> Float32:
+    def my_fma(a: Float32, b: Float32, c: Float32) -> Float32:
         return a.fma[FastMathFlag.FAST](c, b)
 
     var asm = compile_info[my_fma, emission_kind="llvm"]()

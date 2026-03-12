@@ -24,13 +24,13 @@ from std.testing import assert_true, TestSuite
 
 @always_inline
 @parameter
-fn time_me():
+def time_me():
     sleep(1.0)
 
 
 @always_inline
 @parameter
-fn time_me_templated[
+def time_me_templated[
     dtype: DType,
 ]():
     time_me()
@@ -38,15 +38,15 @@ fn time_me_templated[
 
 
 # Check that time_function works on templated function
-fn time_templated_function[
+def time_templated_function[
     dtype: DType,
 ]() -> Int:
     return Int(time_function[time_me_templated[dtype]]())
 
 
-fn time_capturing_function(iters: Int) -> Int:
+def time_capturing_function(iters: Int) -> Int:
     @parameter
-    fn time_fn():
+    def time_fn():
         sleep(1.0)
 
     return Int(time_function[time_fn]())

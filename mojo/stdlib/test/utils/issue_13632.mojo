@@ -14,14 +14,14 @@
 from std.testing import TestSuite, assert_equal
 
 
-fn sum_items(data: List[Int8]) -> Int:
+def sum_items(data: List[Int8]) -> Int:
     var sum: Int = 0
     for item in data:
         sum += Int(item)
     return sum
 
 
-fn make_abcd_vector() -> List[Int8]:
+def make_abcd_vector() -> List[Int8]:
     return [97, 98, 99, 100]
 
 

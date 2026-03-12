@@ -17,7 +17,7 @@ from std.memory import bitcast
 from std.sys import bit_width_of
 
 
-fn ulp_distance[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Int:
+def ulp_distance[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Int:
     """Computes the distance between two floating-point values in ULPs.
 
     ULP (Unit in the Last Place) distance measures how many representable

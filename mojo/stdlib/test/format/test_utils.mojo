@@ -31,10 +31,10 @@ struct TestWritable(ImplicitlyCopyable, Writable):
 
     var value: Int
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("TestWritable(", self.value, ")")
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         writer.write("TestWritable[repr](", self.value, ")")
 
 

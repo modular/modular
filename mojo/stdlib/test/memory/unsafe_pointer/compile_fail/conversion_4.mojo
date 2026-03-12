@@ -14,7 +14,7 @@
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
 
-fn test_cannot_cast_between_different_named_origins[
+def test_cannot_cast_between_different_named_origins[
     T: AnyType, mut: Bool, //, origin: Origin[mut=mut]
 ](p: UnsafePointer[T, origin]):
     pass

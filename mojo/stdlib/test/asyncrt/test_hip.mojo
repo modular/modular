@@ -17,7 +17,7 @@ from std.gpu.host._amdgpu_hip import HIP, hipDevice_t
 from std.testing import TestSuite
 
 
-fn _run_hip_context(ctx: DeviceContext) raises:
+def _run_hip_context(ctx: DeviceContext) raises:
     print("-")
     print("_run_hip_context()")
 
@@ -25,7 +25,7 @@ fn _run_hip_context(ctx: DeviceContext) raises:
     print("hipDevice_t: " + String(hip_ctx))
 
 
-fn _run_hip_stream(ctx: DeviceContext) raises:
+def _run_hip_stream(ctx: DeviceContext) raises:
     print("-")
     print("_run_hip_stream()")
 

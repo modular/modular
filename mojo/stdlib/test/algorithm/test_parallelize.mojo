@@ -41,14 +41,14 @@ def test_sync_parallelize() raises:
     @always_inline
     @__copy_capture(vector, chunk_size)
     @parameter
-    fn parallel_fn(thread_id: Int):
+    def parallel_fn(thread_id: Int):
         var start = thread_id * chunk_size
         var end = min(start + chunk_size, len(vector))
 
         @always_inline
         @__copy_capture(start)
         @parameter
-        fn add_two(idx: Int):
+        def add_two(idx: Int):
             vector[start + idx] = vector[start + idx] + 2
 
         map[add_two](end - start)
@@ -79,14 +79,14 @@ def test_parallelize() raises:
     @parameter
     @__copy_capture(vector, chunk_size)
     @always_inline
-    fn parallel_fn(thread_id: Int):
+    def parallel_fn(thread_id: Int):
         var start = thread_id * chunk_size
         var end = min(start + chunk_size, len(vector))
 
         @always_inline
         @__copy_capture(start)
         @parameter
-        fn add_two(idx: Int):
+        def add_two(idx: Int):
             vector[start + idx] = vector[start + idx] + 2
 
         map[add_two](end - start)
@@ -95,7 +95,7 @@ def test_parallelize() raises:
 
 
 @parameter
-fn printme(i: Int):
+def printme(i: Int):
     print(i, end="")
 
 
@@ -126,7 +126,7 @@ def test_parallelize_over_rows_zero_work() raises:
 
     # This should do nothing
     @parameter
-    fn noop(start: Int, end: Int):
+    def noop(start: Int, end: Int):
         pass
 
     parallelize_over_rows[noop](IndexList[1](0), 0, 1)

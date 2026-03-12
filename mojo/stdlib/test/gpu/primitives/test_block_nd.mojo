@@ -30,7 +30,7 @@ from std.testing import assert_equal, TestSuite
 # ===-----------------------------------------------------------------------===#
 
 
-fn block_sum_1d_kernel[
+def block_sum_1d_kernel[
     block_size: Int,
 ](output: UnsafePointer[Float32, MutAnyOrigin]):
     output[thread_idx.x] = block.sum[block_size=block_size](
@@ -60,7 +60,7 @@ def test_block_sum_1d() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-fn block_max_1d_kernel[
+def block_max_1d_kernel[
     block_size: Int,
 ](output: UnsafePointer[Float32, MutAnyOrigin]):
     output[thread_idx.x] = block.max[block_size=block_size](
@@ -90,7 +90,7 @@ def test_block_max_1d() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-fn block_min_1d_kernel[
+def block_min_1d_kernel[
     block_size: Int,
 ](output: UnsafePointer[Float32, MutAnyOrigin]):
     # Offset by 1 so the minimum is 1, avoiding confusion with the neutral 0.
@@ -120,7 +120,7 @@ def test_block_min_1d() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-fn block_broadcast_1d_kernel[
+def block_broadcast_1d_kernel[
     block_size: Int,
     src_thread: UInt,
 ](output: UnsafePointer[Float32, MutAnyOrigin]):
@@ -152,7 +152,7 @@ def test_block_broadcast_1d() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-fn block_prefix_sum_1d_kernel[
+def block_prefix_sum_1d_kernel[
     block_size: Int,
 ](output: UnsafePointer[Float32, MutAnyOrigin]):
     # All threads contribute 1, so the inclusive prefix sum at position k
@@ -181,7 +181,7 @@ def test_block_prefix_sum_1d() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-fn block_sum_2d_kernel[
+def block_sum_2d_kernel[
     block_dim_x: Int,
     block_dim_y: Int,
 ](output: UnsafePointer[Float32, MutAnyOrigin]):
@@ -216,7 +216,7 @@ def test_block_sum_2d() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-fn block_sum_3d_kernel[
+def block_sum_3d_kernel[
     block_dim_x: Int,
     block_dim_y: Int,
     block_dim_z: Int,
@@ -258,7 +258,7 @@ def test_block_sum_3d() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-fn block_max_2d_kernel[
+def block_max_2d_kernel[
     block_dim_x: Int,
     block_dim_y: Int,
 ](output: UnsafePointer[Float32, MutAnyOrigin]):
@@ -292,7 +292,7 @@ def test_block_max_2d() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-fn block_min_2d_kernel[
+def block_min_2d_kernel[
     block_dim_x: Int,
     block_dim_y: Int,
 ](output: UnsafePointer[Float32, MutAnyOrigin]):
@@ -326,7 +326,7 @@ def test_block_min_2d() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-fn block_broadcast_2d_kernel[
+def block_broadcast_2d_kernel[
     block_dim_x: Int,
     block_dim_y: Int,
     src_thread: UInt,
@@ -364,7 +364,7 @@ def test_block_broadcast_2d() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-fn block_prefix_sum_2d_kernel[
+def block_prefix_sum_2d_kernel[
     block_dim_x: Int,
     block_dim_y: Int,
 ](output: UnsafePointer[Float32, MutAnyOrigin]):

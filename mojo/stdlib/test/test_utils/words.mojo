@@ -572,7 +572,7 @@ you, утра, боль, хорошие, пришёл, открой, брось,
 """Most common Russian words."""
 
 
-fn gen_word_pairs[words: String = words_en]() -> List[String]:
+def gen_word_pairs[words: String = words_en]() -> List[String]:
     """Generates all pairwise combinations of words from a word list.
 
     Parameters:

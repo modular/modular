@@ -484,7 +484,7 @@ def test_merge() raises:
     var a = [1, 2, 3]
     var b = [4, 5, 6]
 
-    fn inner(cond: Bool, x: Int, mut a: List[Int], mut b: List[Int]):
+    def inner(cond: Bool, x: Int, mut a: List[Int], mut b: List[Int]):
         var either = UnsafePointer(to=a) if cond else UnsafePointer(to=b)
         either[].append(x)
 
@@ -571,7 +571,7 @@ def test_unsafe_mut_cast() raises:
     assert_true(_mutable.mut)
 
 
-fn _ref_to[origin: ImmutOrigin](ref[origin] to: String):
+def _ref_to[origin: ImmutOrigin](ref[origin] to: String):
     pass
 
 
@@ -584,7 +584,7 @@ def test_unsafe_origin_cast() raises:
     _ref_to[origin_of(y)](ptr.unsafe_origin_cast[origin_of(y)]()[])
 
 
-fn _ptr_to_int(ptr: UnsafePointer[Int, MutExternalOrigin]) -> Int:
+def _ptr_to_int(ptr: UnsafePointer[Int, MutExternalOrigin]) -> Int:
     return Int(ptr)
 
 
@@ -597,7 +597,7 @@ def test_ptr_to_int_llvm_lowering() raises:
     assert_false("ptrtoaddr" in info.asm)
 
 
-fn _from_address(x: Int, out result: UnsafePointer[Int, MutExternalOrigin]):
+def _from_address(x: Int, out result: UnsafePointer[Int, MutExternalOrigin]):
     result = type_of(result)(unsafe_from_address=x)
 
 

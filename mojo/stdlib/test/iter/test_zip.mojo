@@ -20,7 +20,7 @@ from std.testing import (
 )
 
 
-fn test_zip2() raises:
+def test_zip2() raises:
     var l = ["hey", "hi", "hello"]
     var l2 = [10, 20, 30]
     var it = zip(l, l2)
@@ -37,7 +37,7 @@ fn test_zip2() raises:
         _ = it.__next__()  # raises StopIteration
 
 
-fn test_zip_destructure() raises:
+def test_zip_destructure() raises:
     var l = ["hey", "hi", "hello"]
     var l2 = [10, 20, 30]
     var count = 0
@@ -47,7 +47,7 @@ fn test_zip_destructure() raises:
         count += 1
 
 
-fn test_zip3() raises:
+def test_zip3() raises:
     var l = ["hey", "hi", "hello"]
     var l2 = [10, 20, 30]
     var l3 = [100, 200, 300]
@@ -68,7 +68,7 @@ fn test_zip3() raises:
         _ = it.__next__()  # raises StopIteration
 
 
-fn test_zip4() raises:
+def test_zip4() raises:
     var l = ["hey", "hi", "hello"]
     var l2 = [10, 20, 30]
     var l3 = [100, 200, 300]
@@ -92,7 +92,7 @@ fn test_zip4() raises:
         _ = it.__next__()  # raises StopIteration
 
 
-fn test_zip_unequal_lengths() raises:
+def test_zip_unequal_lengths() raises:
     var l = ["hey", "hi", "hello"]
     var l2 = [10, 20]
     var it = zip(l, l2)
@@ -116,17 +116,17 @@ struct TestIter(ImplicitlyCopyable, Iterable, Iterator):
     var lower: Int
     var upper: Optional[Int]
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __next__(mut self) raises StopIteration -> Self.Element:
+    def __next__(mut self) raises StopIteration -> Self.Element:
         return 42
 
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         return (self.lower, self.upper)
 
 
-fn test_zip_bounds() raises:
+def test_zip_bounds() raises:
     # same size bounds
     var zipA = zip(TestIter(2, {2}), TestIter(2, {2}))
     assert_equal(zipA.bounds()[0], 2)

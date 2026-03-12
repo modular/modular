@@ -18,7 +18,7 @@ from test_utils import compare, libm_call
 from std.testing import assert_almost_equal, TestSuite
 
 
-fn tanh_libm[
+def tanh_libm[
     dtype: DType, simd_width: Int
 ](arg: SIMD[dtype, simd_width]) -> SIMD[
     dtype, simd_width

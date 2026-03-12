@@ -14,5 +14,5 @@
 import std.sys
 
 
-fn main():
+def main():
     std.sys.exit(0)

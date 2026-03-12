@@ -24,7 +24,7 @@ from std.testing import assert_equal, assert_true
 from std.testing import TestSuite
 
 
-fn test_size_of() raises:
+def test_size_of() raises:
     assert_equal(size_of[__mlir_type.i16](), 2)
 
     assert_equal(size_of[__mlir_type.ui16](), 2)
@@ -36,7 +36,7 @@ fn test_size_of() raises:
     assert_equal(size_of[SIMD[DType.int16, 2]](), 4)
 
 
-fn test_align_of() raises:
+def test_align_of() raises:
     assert_true(align_of[__mlir_type.i16]() > 0)
 
     assert_true(align_of[__mlir_type.ui16]() > 0)
@@ -48,13 +48,13 @@ fn test_align_of() raises:
     assert_true(align_of[SIMD[DType.int16, 2]]() > 0)
 
 
-fn test_cores() raises:
+def test_cores() raises:
     assert_true(num_logical_cores() > 0)
     assert_true(num_physical_cores() > 0)
     assert_true(num_performance_cores() > 0)
 
 
-fn test_target_has_feature() raises:
+def test_target_has_feature() raises:
     # Ensures target feature check functions exist and return a boolable value.
     var _has_feature: Bool = CompilationTarget.has_avx()
     _has_feature = CompilationTarget.has_avx2()

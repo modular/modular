@@ -14,7 +14,7 @@
 import std.sys
 
 
-fn main():
+def main():
     # CHECK: Running...
     print("Running...")
     std.sys.exit(1)

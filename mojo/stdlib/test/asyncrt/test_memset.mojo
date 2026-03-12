@@ -16,7 +16,7 @@ from std.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 
 
-fn _run_memset[
+def _run_memset[
     dtype: DType
 ](ctx: DeviceContext, length: Int, val: Scalar[dtype]) raises:
     print("-")
@@ -49,7 +49,7 @@ fn _run_memset[
         )
 
 
-fn _run_memset_cascade[
+def _run_memset_cascade[
     dtype: DType
 ](ctx: DeviceContext, length: Int, val: Scalar[dtype]) raises:
     print("-")

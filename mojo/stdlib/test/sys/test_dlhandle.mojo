@@ -110,7 +110,7 @@ def test_owned_dlhandle_automatic_cleanup() raises:
     # without crashes. The actual cleanup happens automatically.
 
     @always_inline
-    fn create_and_destroy_handle():
+    def create_and_destroy_handle():
         try:
             var lib = OwnedDLHandle("libc.so.6")
             _ = lib.check_symbol("printf")

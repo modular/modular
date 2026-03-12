@@ -42,7 +42,7 @@ def test_ldexp_vector() raises:
     )
 
 
-fn ldexp_libm[
+def ldexp_libm[
     dtype: DType, simd_width: Int
 ](arg: SIMD[dtype, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width

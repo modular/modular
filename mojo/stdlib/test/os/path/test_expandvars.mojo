@@ -21,14 +21,14 @@ from std.testing import TestSuite, assert_equal
 struct EnvVar(ImplicitlyCopyable):
     var name: String
 
-    fn __init__(out self, name: String, value: String):
+    def __init__(out self, name: String, value: String):
         self.name = name
         _ = std.os.setenv(name, value)
 
-    fn __enter__(self) -> Self:
+    def __enter__(self) -> Self:
         return self
 
-    fn __exit__(self) -> None:
+    def __exit__(self) -> None:
         _ = std.os.unsetenv(self.name)
 
 

@@ -14,7 +14,7 @@
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
 
-fn test_cannot_cast_immutable_to_mutable[
+def test_cannot_cast_immutable_to_mutable[
     T: AnyType
 ](p: UnsafePointer[mut=True, T, ...]):
     pass

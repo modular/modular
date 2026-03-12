@@ -14,7 +14,7 @@
 from std.testing import TestSuite, assert_equal, assert_true, assert_raises
 
 
-fn test_enumerate() raises:
+def test_enumerate() raises:
     var l = ["hey", "hi", "hello"]
     var it = enumerate(l)
     var elem = next(it)
@@ -30,7 +30,7 @@ fn test_enumerate() raises:
         _ = next(it)  # raises StopIteration
 
 
-fn test_enumerate_with_start() raises:
+def test_enumerate_with_start() raises:
     var l = ["hey", "hi", "hello"]
     var it = enumerate(l, start=1)
     var elem = next(it)
@@ -55,7 +55,7 @@ fn test_enumerate_with_start() raises:
     assert_equal(elem[1], "hi")
 
 
-fn test_enumerate_destructure() raises:
+def test_enumerate_destructure() raises:
     var l = ["hey", "hi", "hello"]
     var count = 0
     for i, elem in enumerate(l):

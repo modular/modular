@@ -159,7 +159,7 @@ def test_abs() raises:
 
 
 def test_int_write_repr_to() raises:
-    fn check(i: Int, expected: String) raises:
+    def check(i: Int, expected: String) raises:
         var string = String()
         i.write_repr_to(string)
         assert_equal(string, expected)
