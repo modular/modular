@@ -440,7 +440,7 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         hidden_states: Tensor,
         encoder_hidden_states: Tensor,
         temb: Tensor,
-        image_rotary_emb: Tensor,
+        image_rotary_emb: tuple[Tensor, Tensor],
     ) -> tuple[Tensor, Tensor]:
         """Run the first dual-stream transformer block.
 
@@ -459,7 +459,7 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         hidden_states: Tensor,
         encoder_hidden_states: Tensor,
         temb: Tensor,
-        image_rotary_emb: Tensor,
+        image_rotary_emb: tuple[Tensor, Tensor],
     ) -> Tensor:
         """Run remaining dual-stream blocks, single-stream blocks, norm, and proj.
 

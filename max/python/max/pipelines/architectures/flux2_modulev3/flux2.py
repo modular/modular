@@ -15,6 +15,7 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.experimental import functional as F
+from max.graph.dim import Dim
 from max.experimental.nn import Linear, Module
 from max.experimental.nn.norm import LayerNorm
 from max.experimental.nn.sequential import ModuleList
@@ -637,7 +638,7 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
         single_stream_mod: tuple[Tensor, Tensor, Tensor],
         image_rotary_emb: tuple[Tensor, Tensor],
         position_ids: Tensor,
-        num_txt_tokens: int,
+        num_txt_tokens: int | Dim,
     ) -> Tensor:
         """Run remaining dual-stream blocks, single-stream blocks, norm, and proj.
 

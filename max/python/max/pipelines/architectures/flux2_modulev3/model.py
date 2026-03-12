@@ -26,6 +26,8 @@ from .model_config import Flux2Config
 
 
 class Flux2TransformerModel(ComponentModel):
+    model: Callable[..., Any] | None
+
     def __init__(
         self,
         config: dict[str, Any],
@@ -46,7 +48,7 @@ class Flux2TransformerModel(ComponentModel):
         )
         self.load_model()
 
-    def load_model(self) -> Callable[..., Any]:
+    def load_model(self) -> None:
         state_dict = {key: value.data() for key, value in self.weights.items()}
         self._state_dict = state_dict
         # Klein/distilled checkpoints can omit guidance embedder weights.
@@ -68,8 +70,7 @@ class Flux2TransformerModel(ComponentModel):
         self._flux_model = flux
         self._standard_model: Callable[..., Any] | None = None
         self._step_cache_model: Callable[..., Any] | None = None
-        self.model = self._standard_model
-        return self.model
+        self.model = None
 
     def use_standard_model(self) -> None:
         if self._standard_model is None:
@@ -106,7 +107,7 @@ class Flux2TransformerModel(ComponentModel):
         prev_residual: Tensor | None = None,
         prev_output: Tensor | None = None,
     ) -> Any:
-        args = (
+        args: tuple[Any, ...] = (
             hidden_states,
             encoder_hidden_states,
             timestep,
@@ -115,5 +116,7 @@ class Flux2TransformerModel(ComponentModel):
             guidance,
         )
         if prev_residual is not None:
-            args += (prev_residual, prev_output)
+            args = (*args, prev_residual, prev_output)
+        if self.model is None:
+            raise RuntimeError("Model not compiled. Call use_standard_model() or use_step_cache_model() first.")
         return self.model(*args)
