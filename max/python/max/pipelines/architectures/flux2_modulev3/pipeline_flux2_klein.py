@@ -65,6 +65,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
     def init_remaining_components(self) -> None:
         """Initialize derived attributes, including the compiled CFG combine."""
         super().init_remaining_components()
+        self.transformer.use_standard_model()
         self.build_cfg_combine()
 
     @traced
@@ -133,6 +134,11 @@ class Flux2KleinPipeline(Flux2Pipeline):
             logger.warning(
                 "Guidance scale %s is ignored for distilled Klein models.",
                 context.guidance_scale,
+            )
+
+        if getattr(context, "step_cache", False):
+            logger.warning(
+                "For Flux2KleinPipeline, step_cache is not supported. It disabled automatically."
             )
 
         return Flux2KleinModelInputs(
