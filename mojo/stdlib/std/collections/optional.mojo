@@ -679,7 +679,7 @@ struct Optional[T: Movable](
 # ===-----------------------------------------------------------------------===#
 
 
-struct OptionalReg[T: __TypeOfAllTypes](
+struct OptionalReg[T: TrivialRegisterPassable](
     Boolable, Defaultable, DevicePassable, TrivialRegisterPassable
 ):
     """A register-passable optional type.

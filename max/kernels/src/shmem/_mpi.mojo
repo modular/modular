@@ -61,7 +61,7 @@ def _init_mpi_dylib() -> OwnedDLHandle:
 
 @always_inline
 def _get_mpi_function[
-    func_name: StaticString, result_type: __TypeOfAllTypes
+    func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
     return _get_dylib_function[
         MPI_LIBRARY(),

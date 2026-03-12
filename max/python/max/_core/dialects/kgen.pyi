@@ -4488,6 +4488,27 @@ class NeverType(max._core.Type):
 
     def __init__(self) -> None: ...
 
+class NonStructTypeType(max._core.Type):
+    """
+    This kgen type presents the type of all L1 non-lit-struct types (which
+    essentially means it is not a mojo struct nor a meta type expression).
+    In particular, this categorizes types that need to be wrapped
+    by `__MLIRType` in Mojo.
+
+    ```mojo
+    comptime mlir_i1 = __mlir_type.i1
+    # type_of(mlir_i1) == !kgen.non_struct_type
+
+    comptime fn_type = fn()->Int
+    # type_of(fn_type) == !kgen.non_struct_type
+
+    # Notably:
+    # type_of(type_of(mlir_i1)) == !kgen.type
+    ```
+    """
+
+    def __init__(self) -> None: ...
+
 class NoneType(max._core.Type):
     """
     The `!kgen.none` type represents a value with no contents. When used as a

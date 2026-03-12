@@ -110,7 +110,7 @@ def _init_dylib() -> OwnedDLHandle:
 
 @always_inline
 def _get_dylib_function[
-    func_name: StaticString, result_type: __TypeOfAllTypes
+    func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
         GPU_TRACING_LIBRARY,
@@ -250,14 +250,12 @@ struct EventAttributes(TrivialRegisterPassable):
         )
 
 
-struct _dylib_function[fn_name: StaticString, type: __TypeOfAllTypes](
+struct _dylib_function[fn_name: StaticString, fn_type: TrivialRegisterPassable](
     TrivialRegisterPassable
 ):
-    comptime fn_type = Self.type
-
     @staticmethod
-    def load() raises -> Self.type:
-        return _get_dylib_function[Self.fn_name, Self.type]()
+    def load() raises -> Self.fn_type:
+        return _get_dylib_function[Self.fn_name, Self.fn_type]()
 
 
 # ===-----------------------------------------------------------------------===#

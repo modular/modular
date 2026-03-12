@@ -207,7 +207,9 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
         dtype: DType, layout: Layout, num_tiles: Int
     ] = SMemTileArray[dtype, layout, num_tiles, Self.SMBP.alignment]
 
-    comptime Array[type: __TypeOfAllTypes, size: Int] = SMemArray[type, size]
+    comptime Array[type: TrivialRegisterPassable, size: Int] = SMemArray[
+        type, size
+    ]
 
     var base_ptr: UnsafePointer[
         Int8, MutAnyOrigin, address_space=AddressSpace.SHARED
@@ -259,7 +261,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
 
     @always_inline
     def build[
-        type: __TypeOfAllTypes,
+        type: TrivialRegisterPassable,
         size: Int,
         //,
         T: type_of(Self.Array[type, size]),

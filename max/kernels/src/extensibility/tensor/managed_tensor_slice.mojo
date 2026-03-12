@@ -309,7 +309,7 @@ def simd_load_from_managed_tensor_slice[
 
 @no_inline
 def rebuild_static_tensor_specs_with_input_lambda[
-    func_type: __TypeOfAllTypes,
+    func_type: TrivialRegisterPassable,
     //,
     dtype: DType,
     rank: Int,
@@ -329,7 +329,7 @@ def rebuild_static_tensor_specs_with_input_lambda[
 
 @no_inline
 def rebuild_static_tensor_specs_with_output_lambda[
-    func_type: __TypeOfAllTypes,
+    func_type: TrivialRegisterPassable,
     //,
     dtype: DType,
     rank: Int,
@@ -349,7 +349,7 @@ def rebuild_static_tensor_specs_with_output_lambda[
 
 @no_inline
 def rebuild_static_tensor_specs_with_compute_output_lambda[
-    func_type: __TypeOfAllTypes,
+    func_type: TrivialRegisterPassable,
     //,
     dtype: DType,
     rank: Int,

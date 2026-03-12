@@ -1340,7 +1340,9 @@ def mogg_async_del(
 
 @register_internal("mogg.async.unpack")
 @no_inline
-def mogg_async_unpack[T: __TypeOfAllTypes](async_ptr: AnyAsyncValueRefPtr) -> T:
+def mogg_async_unpack[
+    T: TrivialRegisterPassable
+](async_ptr: AnyAsyncValueRefPtr) -> T:
     """
     Returns the value stored in the AnyAsyncValueRef.
     """
@@ -1740,7 +1742,9 @@ def get_buffer_mem_storage_handle(
 
 @register_internal("pop.select")
 @always_inline
-def select[T: __TypeOfAllTypes](cond: Bool, true_case: T, false_case: T) -> T:
+def select[
+    T: TrivialRegisterPassable
+](cond: Bool, true_case: T, false_case: T) -> T:
     if cond:
         return true_case
 
@@ -1750,6 +1754,6 @@ def select[T: __TypeOfAllTypes](cond: Bool, true_case: T, false_case: T) -> T:
 @register_internal("pop.simd.select")
 @always_inline
 def simd_select[
-    T: __TypeOfAllTypes
+    T: TrivialRegisterPassable
 ](cond: Bool, true_case: T, false_case: T) -> T:
     return select(cond, true_case, false_case)

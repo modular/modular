@@ -73,7 +73,7 @@ def _init_rocshmem_dylib() -> OwnedDLHandle:
 
 @always_inline
 def _get_rocshmem_function[
-    func_name: StaticString, result_type: __TypeOfAllTypes
+    func_name: StaticString, result_type: TrivialRegisterPassable
 ]() -> result_type:
     try:
         return _get_dylib_function[

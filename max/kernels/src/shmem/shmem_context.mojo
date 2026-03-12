@@ -466,7 +466,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     @always_inline
     @parameter
     def enqueue_function_collective_checked[
-        func_type: __TypeOfAllTypes,
+        func_type: TrivialRegisterPassable,
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,

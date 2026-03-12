@@ -23,7 +23,7 @@ from std.testing import assert_equal, assert_true
 
 
 def test_codegen_memory[
-    func_type: __TypeOfAllTypes, //, func: func_type
+    func_type: TrivialRegisterPassable, //, func: func_type
 ]() raises:
     """Generic function to test codegen memory patterns for any kernel function.
 

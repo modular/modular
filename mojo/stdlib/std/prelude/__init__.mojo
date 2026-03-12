@@ -121,7 +121,6 @@ from std.builtin.string_literal import StringLiteral
 from std.builtin.swap import swap
 from std.builtin.tuple import Tuple
 from std.builtin.type_aliases import (
-    __TypeOfAllTypes,
     AnyOrigin,
     ImmutAnyOrigin,
     ImmutOrigin,

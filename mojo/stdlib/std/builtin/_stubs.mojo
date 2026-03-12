@@ -18,7 +18,9 @@ from std.os import abort
 # ===-----------------------------------------------------------------------===#
 
 
-struct __MLIRType[T: __TypeOfAllTypes](TrivialRegisterPassable):
+struct __MLIRType[T: __mlir_type.`!kgen.non_struct_type`](
+    TrivialRegisterPassable
+):
     var value: Self.T
     comptime __del__is_trivial = True
     comptime __move_ctor_is_trivial = True

@@ -68,7 +68,7 @@ def _init_nvshmem_dylib() -> OwnedDLHandle:
 
 @always_inline
 def _get_nvshmem_function[
-    func_name: StaticString, result_type: __TypeOfAllTypes
+    func_name: StaticString, result_type: TrivialRegisterPassable
 ]() -> result_type:
     try:
         return _get_dylib_function[

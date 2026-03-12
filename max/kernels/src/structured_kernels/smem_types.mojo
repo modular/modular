@@ -203,7 +203,9 @@ struct SMemTileArray[
         return Self(ptr)
 
 
-struct SMemArray[type: __TypeOfAllTypes, size: Int](TrivialRegisterPassable):
+struct SMemArray[type: TrivialRegisterPassable, size: Int](
+    TrivialRegisterPassable
+):
     """Shared memory array of fixed size.
 
     Parameters:

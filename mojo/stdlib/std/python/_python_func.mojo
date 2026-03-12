@@ -20,7 +20,7 @@ from std.python.bindings import check_arguments_arity
 
 
 struct PyObjectFunction[
-    func_type: __TypeOfAllTypes,
+    func_type: TrivialRegisterPassable,
     self_type: ImplicitlyDestructible = NoneType,
     has_kwargs: Bool = False,
 ](ImplicitlyCopyable):
@@ -1343,7 +1343,7 @@ struct PyObjectFunction[
 
     @staticmethod
     @always_inline("nodebug")
-    def _has_type[other_func_type: __TypeOfAllTypes]() -> Bool:
+    def _has_type[other_func_type: TrivialRegisterPassable]() -> Bool:
         return _type_is_eq[Self.func_type, other_func_type]()
 
     @staticmethod
