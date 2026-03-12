@@ -129,14 +129,14 @@ struct cudnnSoftmaxMode_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_SOFTMAX_MODE_INSTANCE:
-            return writer.write("CUDNN_SOFTMAX_MODE_INSTANCE")
+            return writer.write_string("CUDNN_SOFTMAX_MODE_INSTANCE")
         if self is Self.CUDNN_SOFTMAX_MODE_CHANNEL:
-            return writer.write("CUDNN_SOFTMAX_MODE_CHANNEL")
+            return writer.write_string("CUDNN_SOFTMAX_MODE_CHANNEL")
         abort("invalid cudnnSoftmaxMode_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnSoftmaxMode_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnSoftmaxMode_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -181,14 +181,14 @@ struct cudnnReduceTensorIndices_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_REDUCE_TENSOR_NO_INDICES:
-            return writer.write("CUDNN_REDUCE_TENSOR_NO_INDICES")
+            return writer.write_string("CUDNN_REDUCE_TENSOR_NO_INDICES")
         if self is Self.CUDNN_REDUCE_TENSOR_FLATTENED_INDICES:
-            return writer.write("CUDNN_REDUCE_TENSOR_FLATTENED_INDICES")
+            return writer.write_string("CUDNN_REDUCE_TENSOR_FLATTENED_INDICES")
         abort("invalid cudnnReduceTensorIndices_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnReduceTensorIndices_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnReduceTensorIndices_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -360,28 +360,28 @@ struct cudnnReduceTensorOp_t(Equatable, TrivialRegisterPassable, Writable):
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_REDUCE_TENSOR_ADD:
-            return writer.write("CUDNN_REDUCE_TENSOR_ADD")
+            return writer.write_string("CUDNN_REDUCE_TENSOR_ADD")
         if self is Self.CUDNN_REDUCE_TENSOR_MUL:
-            return writer.write("CUDNN_REDUCE_TENSOR_MUL")
+            return writer.write_string("CUDNN_REDUCE_TENSOR_MUL")
         if self is Self.CUDNN_REDUCE_TENSOR_MIN:
-            return writer.write("CUDNN_REDUCE_TENSOR_MIN")
+            return writer.write_string("CUDNN_REDUCE_TENSOR_MIN")
         if self is Self.CUDNN_REDUCE_TENSOR_MAX:
-            return writer.write("CUDNN_REDUCE_TENSOR_MAX")
+            return writer.write_string("CUDNN_REDUCE_TENSOR_MAX")
         if self is Self.CUDNN_REDUCE_TENSOR_AMAX:
-            return writer.write("CUDNN_REDUCE_TENSOR_AMAX")
+            return writer.write_string("CUDNN_REDUCE_TENSOR_AMAX")
         if self is Self.CUDNN_REDUCE_TENSOR_AVG:
-            return writer.write("CUDNN_REDUCE_TENSOR_AVG")
+            return writer.write_string("CUDNN_REDUCE_TENSOR_AVG")
         if self is Self.CUDNN_REDUCE_TENSOR_NORM1:
-            return writer.write("CUDNN_REDUCE_TENSOR_NORM1")
+            return writer.write_string("CUDNN_REDUCE_TENSOR_NORM1")
         if self is Self.CUDNN_REDUCE_TENSOR_NORM2:
-            return writer.write("CUDNN_REDUCE_TENSOR_NORM2")
+            return writer.write_string("CUDNN_REDUCE_TENSOR_NORM2")
         if self is Self.CUDNN_REDUCE_TENSOR_MUL_NO_ZEROS:
-            return writer.write("CUDNN_REDUCE_TENSOR_MUL_NO_ZEROS")
+            return writer.write_string("CUDNN_REDUCE_TENSOR_MUL_NO_ZEROS")
         abort("invalid cudnnReduceTensorOp_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnReduceTensorOp_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnReduceTensorOp_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -457,14 +457,14 @@ struct cudnnDeterminism_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_NON_DETERMINISTIC:
-            return writer.write("CUDNN_NON_DETERMINISTIC")
+            return writer.write_string("CUDNN_NON_DETERMINISTIC")
         if self is Self.CUDNN_DETERMINISTIC:
-            return writer.write("CUDNN_DETERMINISTIC")
+            return writer.write_string("CUDNN_DETERMINISTIC")
         abort("invalid cudnnDeterminism_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnDeterminism_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnDeterminism_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -506,40 +506,42 @@ struct cudnnStatus_t(Equatable, TrivialRegisterPassable, Writable):
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_STATUS_SUCCESS:
-            return writer.write("CUDNN_STATUS_SUCCESS")
+            return writer.write_string("CUDNN_STATUS_SUCCESS")
         if self is Self.CUDNN_STATUS_NOT_INITIALIZED:
-            return writer.write("CUDNN_STATUS_NOT_INITIALIZED")
+            return writer.write_string("CUDNN_STATUS_NOT_INITIALIZED")
         if self is Self.CUDNN_STATUS_ALLOC_FAILED:
-            return writer.write("CUDNN_STATUS_ALLOC_FAILED")
+            return writer.write_string("CUDNN_STATUS_ALLOC_FAILED")
         if self is Self.CUDNN_STATUS_BAD_PARAM:
-            return writer.write("CUDNN_STATUS_BAD_PARAM")
+            return writer.write_string("CUDNN_STATUS_BAD_PARAM")
         if self is Self.CUDNN_STATUS_INTERNAL_ERROR:
-            return writer.write("CUDNN_STATUS_INTERNAL_ERROR")
+            return writer.write_string("CUDNN_STATUS_INTERNAL_ERROR")
         if self is Self.CUDNN_STATUS_INVALID_VALUE:
-            return writer.write("CUDNN_STATUS_INVALID_VALUE")
+            return writer.write_string("CUDNN_STATUS_INVALID_VALUE")
         if self is Self.CUDNN_STATUS_ARCH_MISMATCH:
-            return writer.write("CUDNN_STATUS_ARCH_MISMATCH")
+            return writer.write_string("CUDNN_STATUS_ARCH_MISMATCH")
         if self is Self.CUDNN_STATUS_MAPPING_ERROR:
-            return writer.write("CUDNN_STATUS_MAPPING_ERROR")
+            return writer.write_string("CUDNN_STATUS_MAPPING_ERROR")
         if self is Self.CUDNN_STATUS_EXECUTION_FAILED:
-            return writer.write("CUDNN_STATUS_EXECUTION_FAILED")
+            return writer.write_string("CUDNN_STATUS_EXECUTION_FAILED")
         if self is Self.CUDNN_STATUS_NOT_SUPPORTED:
-            return writer.write("CUDNN_STATUS_NOT_SUPPORTED")
+            return writer.write_string("CUDNN_STATUS_NOT_SUPPORTED")
         if self is Self.CUDNN_STATUS_LICENSE_ERROR:
-            return writer.write("CUDNN_STATUS_LICENSE_ERROR")
+            return writer.write_string("CUDNN_STATUS_LICENSE_ERROR")
         if self is Self.CUDNN_STATUS_RUNTIME_PREREQUISITE_MISSING:
-            return writer.write("CUDNN_STATUS_RUNTIME_PREREQUISITE_MISSING")
+            return writer.write_string(
+                "CUDNN_STATUS_RUNTIME_PREREQUISITE_MISSING"
+            )
         if self is Self.CUDNN_STATUS_RUNTIME_IN_PROGRESS:
-            return writer.write("CUDNN_STATUS_RUNTIME_IN_PROGRESS")
+            return writer.write_string("CUDNN_STATUS_RUNTIME_IN_PROGRESS")
         if self is Self.CUDNN_STATUS_RUNTIME_FP_OVERFLOW:
-            return writer.write("CUDNN_STATUS_RUNTIME_FP_OVERFLOW")
+            return writer.write_string("CUDNN_STATUS_RUNTIME_FP_OVERFLOW")
         if self is Self.CUDNN_STATUS_VERSION_MISMATCH:
-            return writer.write("CUDNN_STATUS_VERSION_MISMATCH")
+            return writer.write_string("CUDNN_STATUS_VERSION_MISMATCH")
         abort("invalid cudnnStatus_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnStatus_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnStatus_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -565,14 +567,14 @@ struct cudnnCTCLossAlgo_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_CTC_LOSS_ALGO_DETERMINISTIC:
-            return writer.write("CUDNN_CTC_LOSS_ALGO_DETERMINISTIC")
+            return writer.write_string("CUDNN_CTC_LOSS_ALGO_DETERMINISTIC")
         if self is Self.CUDNN_CTC_LOSS_ALGO_NON_DETERMINISTIC:
-            return writer.write("CUDNN_CTC_LOSS_ALGO_NON_DETERMINISTIC")
+            return writer.write_string("CUDNN_CTC_LOSS_ALGO_NON_DETERMINISTIC")
         abort("invalid cudnnCTCLossAlgo_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnCTCLossAlgo_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnCTCLossAlgo_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -622,16 +624,16 @@ struct cudnnTensorFormat_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_TENSOR_NCHW:
-            return writer.write("CUDNN_TENSOR_NCHW")
+            return writer.write_string("CUDNN_TENSOR_NCHW")
         if self is Self.CUDNN_TENSOR_NHWC:
-            return writer.write("CUDNN_TENSOR_NHWC")
+            return writer.write_string("CUDNN_TENSOR_NHWC")
         if self is Self.CUDNN_TENSOR_NCHW_VECT_C:
-            return writer.write("CUDNN_TENSOR_NCHW_VECT_C")
+            return writer.write_string("CUDNN_TENSOR_NCHW_VECT_C")
         abort("invalid cudnnTensorFormat_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnTensorFormat_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnTensorFormat_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -778,14 +780,14 @@ struct cudnnNormAlgo_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_NORM_ALGO_STANDARD:
-            return writer.write("CUDNN_NORM_ALGO_STANDARD")
+            return writer.write_string("CUDNN_NORM_ALGO_STANDARD")
         if self is Self.CUDNN_NORM_ALGO_PERSIST:
-            return writer.write("CUDNN_NORM_ALGO_PERSIST")
+            return writer.write_string("CUDNN_NORM_ALGO_PERSIST")
         abort("invalid cudnnNormAlgo_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnNormAlgo_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnNormAlgo_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -815,22 +817,22 @@ struct cudnnOpTensorOp_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_OP_TENSOR_ADD:
-            return writer.write("CUDNN_OP_TENSOR_ADD")
+            return writer.write_string("CUDNN_OP_TENSOR_ADD")
         if self is Self.CUDNN_OP_TENSOR_MUL:
-            return writer.write("CUDNN_OP_TENSOR_MUL")
+            return writer.write_string("CUDNN_OP_TENSOR_MUL")
         if self is Self.CUDNN_OP_TENSOR_MIN:
-            return writer.write("CUDNN_OP_TENSOR_MIN")
+            return writer.write_string("CUDNN_OP_TENSOR_MIN")
         if self is Self.CUDNN_OP_TENSOR_MAX:
-            return writer.write("CUDNN_OP_TENSOR_MAX")
+            return writer.write_string("CUDNN_OP_TENSOR_MAX")
         if self is Self.CUDNN_OP_TENSOR_SQRT:
-            return writer.write("CUDNN_OP_TENSOR_SQRT")
+            return writer.write_string("CUDNN_OP_TENSOR_SQRT")
         if self is Self.CUDNN_OP_TENSOR_NOT:
-            return writer.write("CUDNN_OP_TENSOR_NOT")
+            return writer.write_string("CUDNN_OP_TENSOR_NOT")
         abort("invalid cudnnOpTensorOp_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnOpTensorOp_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnOpTensorOp_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1104,24 +1106,24 @@ struct cudnnActivationMode_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_ACTIVATION_SIGMOID:
-            return writer.write("CUDNN_ACTIVATION_SIGMOID")
+            return writer.write_string("CUDNN_ACTIVATION_SIGMOID")
         if self is Self.CUDNN_ACTIVATION_RELU:
-            return writer.write("CUDNN_ACTIVATION_RELU")
+            return writer.write_string("CUDNN_ACTIVATION_RELU")
         if self is Self.CUDNN_ACTIVATION_TANH:
-            return writer.write("CUDNN_ACTIVATION_TANH")
+            return writer.write_string("CUDNN_ACTIVATION_TANH")
         if self is Self.CUDNN_ACTIVATION_CLIPPED_RELU:
-            return writer.write("CUDNN_ACTIVATION_CLIPPED_RELU")
+            return writer.write_string("CUDNN_ACTIVATION_CLIPPED_RELU")
         if self is Self.CUDNN_ACTIVATION_ELU:
-            return writer.write("CUDNN_ACTIVATION_ELU")
+            return writer.write_string("CUDNN_ACTIVATION_ELU")
         if self is Self.CUDNN_ACTIVATION_IDENTITY:
-            return writer.write("CUDNN_ACTIVATION_IDENTITY")
+            return writer.write_string("CUDNN_ACTIVATION_IDENTITY")
         if self is Self.CUDNN_ACTIVATION_SWISH:
-            return writer.write("CUDNN_ACTIVATION_SWISH")
+            return writer.write_string("CUDNN_ACTIVATION_SWISH")
         abort("invalid cudnnActivationMode_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnActivationMode_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnActivationMode_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1179,26 +1181,30 @@ struct cudnnConvolutionBwdDataAlgo_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_CONVOLUTION_BWD_DATA_ALGO_0:
-            return writer.write("CUDNN_CONVOLUTION_BWD_DATA_ALGO_0")
+            return writer.write_string("CUDNN_CONVOLUTION_BWD_DATA_ALGO_0")
         if self is Self.CUDNN_CONVOLUTION_BWD_DATA_ALGO_1:
-            return writer.write("CUDNN_CONVOLUTION_BWD_DATA_ALGO_1")
+            return writer.write_string("CUDNN_CONVOLUTION_BWD_DATA_ALGO_1")
         if self is Self.CUDNN_CONVOLUTION_BWD_DATA_ALGO_FFT:
-            return writer.write("CUDNN_CONVOLUTION_BWD_DATA_ALGO_FFT")
+            return writer.write_string("CUDNN_CONVOLUTION_BWD_DATA_ALGO_FFT")
         if self is Self.CUDNN_CONVOLUTION_BWD_DATA_ALGO_FFT_TILING:
-            return writer.write("CUDNN_CONVOLUTION_BWD_DATA_ALGO_FFT_TILING")
+            return writer.write_string(
+                "CUDNN_CONVOLUTION_BWD_DATA_ALGO_FFT_TILING"
+            )
         if self is Self.CUDNN_CONVOLUTION_BWD_DATA_ALGO_WINOGRAD:
-            return writer.write("CUDNN_CONVOLUTION_BWD_DATA_ALGO_WINOGRAD")
+            return writer.write_string(
+                "CUDNN_CONVOLUTION_BWD_DATA_ALGO_WINOGRAD"
+            )
         if self is Self.CUDNN_CONVOLUTION_BWD_DATA_ALGO_WINOGRAD_NONFUSED:
             return writer.write(
                 "CUDNN_CONVOLUTION_BWD_DATA_ALGO_WINOGRAD_NONFUSED"
             )
         if self is Self.CUDNN_CONVOLUTION_BWD_DATA_ALGO_COUNT:
-            return writer.write("CUDNN_CONVOLUTION_BWD_DATA_ALGO_COUNT")
+            return writer.write_string("CUDNN_CONVOLUTION_BWD_DATA_ALGO_COUNT")
         abort("invalid cudnnConvolutionBwdDataAlgo_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnConvolutionBwdDataAlgo_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnConvolutionBwdDataAlgo_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1270,12 +1276,12 @@ struct cudnnSamplerType_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_SAMPLER_BILINEAR:
-            return writer.write("CUDNN_SAMPLER_BILINEAR")
+            return writer.write_string("CUDNN_SAMPLER_BILINEAR")
         abort("invalid cudnnSamplerType_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnSamplerType_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnSamplerType_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1328,14 +1334,14 @@ struct cudnnNormMode_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_NORM_PER_ACTIVATION:
-            return writer.write("CUDNN_NORM_PER_ACTIVATION")
+            return writer.write_string("CUDNN_NORM_PER_ACTIVATION")
         if self is Self.CUDNN_NORM_PER_CHANNEL:
-            return writer.write("CUDNN_NORM_PER_CHANNEL")
+            return writer.write_string("CUDNN_NORM_PER_CHANNEL")
         abort("invalid cudnnNormMode_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnNormMode_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnNormMode_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1436,16 +1442,16 @@ struct cudnnNormOps_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_NORM_OPS_NORM:
-            return writer.write("CUDNN_NORM_OPS_NORM")
+            return writer.write_string("CUDNN_NORM_OPS_NORM")
         if self is Self.CUDNN_NORM_OPS_NORM_ACTIVATION:
-            return writer.write("CUDNN_NORM_OPS_NORM_ACTIVATION")
+            return writer.write_string("CUDNN_NORM_OPS_NORM_ACTIVATION")
         if self is Self.CUDNN_NORM_OPS_NORM_ADD_ACTIVATION:
-            return writer.write("CUDNN_NORM_OPS_NORM_ADD_ACTIVATION")
+            return writer.write_string("CUDNN_NORM_OPS_NORM_ADD_ACTIVATION")
         abort("invalid cudnnNormOps_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnNormOps_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnNormOps_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1504,16 +1510,16 @@ struct cudnnSoftmaxAlgorithm_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_SOFTMAX_FAST:
-            return writer.write("CUDNN_SOFTMAX_FAST")
+            return writer.write_string("CUDNN_SOFTMAX_FAST")
         if self is Self.CUDNN_SOFTMAX_ACCURATE:
-            return writer.write("CUDNN_SOFTMAX_ACCURATE")
+            return writer.write_string("CUDNN_SOFTMAX_ACCURATE")
         if self is Self.CUDNN_SOFTMAX_LOG:
-            return writer.write("CUDNN_SOFTMAX_LOG")
+            return writer.write_string("CUDNN_SOFTMAX_LOG")
         abort("invalid cudnnSoftmaxAlgorithm_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnSoftmaxAlgorithm_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnSoftmaxAlgorithm_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1587,16 +1593,16 @@ struct cudnnBatchNormOps_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_BATCHNORM_OPS_BN:
-            return writer.write("CUDNN_BATCHNORM_OPS_BN")
+            return writer.write_string("CUDNN_BATCHNORM_OPS_BN")
         if self is Self.CUDNN_BATCHNORM_OPS_BN_ACTIVATION:
-            return writer.write("CUDNN_BATCHNORM_OPS_BN_ACTIVATION")
+            return writer.write_string("CUDNN_BATCHNORM_OPS_BN_ACTIVATION")
         if self is Self.CUDNN_BATCHNORM_OPS_BN_ADD_ACTIVATION:
-            return writer.write("CUDNN_BATCHNORM_OPS_BN_ADD_ACTIVATION")
+            return writer.write_string("CUDNN_BATCHNORM_OPS_BN_ADD_ACTIVATION")
         abort("invalid cudnnBatchNormOps_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnBatchNormOps_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnBatchNormOps_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1627,30 +1633,34 @@ struct cudnnConvolutionFwdAlgo_t(Equatable, TrivialRegisterPassable, Writable):
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM:
-            return writer.write("CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM")
+            return writer.write_string(
+                "CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM"
+            )
         if self is Self.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM:
             return writer.write(
                 "CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM"
             )
         if self is Self.CUDNN_CONVOLUTION_FWD_ALGO_GEMM:
-            return writer.write("CUDNN_CONVOLUTION_FWD_ALGO_GEMM")
+            return writer.write_string("CUDNN_CONVOLUTION_FWD_ALGO_GEMM")
         if self is Self.CUDNN_CONVOLUTION_FWD_ALGO_DIRECT:
-            return writer.write("CUDNN_CONVOLUTION_FWD_ALGO_DIRECT")
+            return writer.write_string("CUDNN_CONVOLUTION_FWD_ALGO_DIRECT")
         if self is Self.CUDNN_CONVOLUTION_FWD_ALGO_FFT:
-            return writer.write("CUDNN_CONVOLUTION_FWD_ALGO_FFT")
+            return writer.write_string("CUDNN_CONVOLUTION_FWD_ALGO_FFT")
         if self is Self.CUDNN_CONVOLUTION_FWD_ALGO_FFT_TILING:
-            return writer.write("CUDNN_CONVOLUTION_FWD_ALGO_FFT_TILING")
+            return writer.write_string("CUDNN_CONVOLUTION_FWD_ALGO_FFT_TILING")
         if self is Self.CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD:
-            return writer.write("CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD")
+            return writer.write_string("CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD")
         if self is Self.CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED:
-            return writer.write("CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED")
+            return writer.write_string(
+                "CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED"
+            )
         if self is Self.CUDNN_CONVOLUTION_FWD_ALGO_COUNT:
-            return writer.write("CUDNN_CONVOLUTION_FWD_ALGO_COUNT")
+            return writer.write_string("CUDNN_CONVOLUTION_FWD_ALGO_COUNT")
         abort("invalid cudnnConvolutionFwdAlgo_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnConvolutionFwdAlgo_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnConvolutionFwdAlgo_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1859,12 +1869,12 @@ struct cudnnLRNMode_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_LRN_CROSS_CHANNEL_DIM1:
-            return writer.write("CUDNN_LRN_CROSS_CHANNEL_DIM1")
+            return writer.write_string("CUDNN_LRN_CROSS_CHANNEL_DIM1")
         abort("invalid cudnnLRNMode_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnLRNMode_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnLRNMode_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1975,14 +1985,14 @@ struct cudnnFoldingDirection_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_TRANSFORM_FOLD:
-            return writer.write("CUDNN_TRANSFORM_FOLD")
+            return writer.write_string("CUDNN_TRANSFORM_FOLD")
         if self is Self.CUDNN_TRANSFORM_UNFOLD:
-            return writer.write("CUDNN_TRANSFORM_UNFOLD")
+            return writer.write_string("CUDNN_TRANSFORM_UNFOLD")
         abort("invalid cudnnFoldingDirection_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnFoldingDirection_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnFoldingDirection_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2030,16 +2040,16 @@ struct cudnnErrQueryMode_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_ERRQUERY_RAWCODE:
-            return writer.write("CUDNN_ERRQUERY_RAWCODE")
+            return writer.write_string("CUDNN_ERRQUERY_RAWCODE")
         if self is Self.CUDNN_ERRQUERY_NONBLOCKING:
-            return writer.write("CUDNN_ERRQUERY_NONBLOCKING")
+            return writer.write_string("CUDNN_ERRQUERY_NONBLOCKING")
         if self is Self.CUDNN_ERRQUERY_BLOCKING:
-            return writer.write("CUDNN_ERRQUERY_BLOCKING")
+            return writer.write_string("CUDNN_ERRQUERY_BLOCKING")
         abort("invalid cudnnErrQueryMode_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnErrQueryMode_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnErrQueryMode_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2180,16 +2190,16 @@ struct cudnnBatchNormMode_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_BATCHNORM_PER_ACTIVATION:
-            return writer.write("CUDNN_BATCHNORM_PER_ACTIVATION")
+            return writer.write_string("CUDNN_BATCHNORM_PER_ACTIVATION")
         if self is Self.CUDNN_BATCHNORM_SPATIAL:
-            return writer.write("CUDNN_BATCHNORM_SPATIAL")
+            return writer.write_string("CUDNN_BATCHNORM_SPATIAL")
         if self is Self.CUDNN_BATCHNORM_SPATIAL_PERSISTENT:
-            return writer.write("CUDNN_BATCHNORM_SPATIAL_PERSISTENT")
+            return writer.write_string("CUDNN_BATCHNORM_SPATIAL_PERSISTENT")
         abort("invalid cudnnBatchNormMode_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnBatchNormMode_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnBatchNormMode_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2261,18 +2271,18 @@ struct cudnnSeverity_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_SEV_FATAL:
-            return writer.write("CUDNN_SEV_FATAL")
+            return writer.write_string("CUDNN_SEV_FATAL")
         if self is Self.CUDNN_SEV_ERROR:
-            return writer.write("CUDNN_SEV_ERROR")
+            return writer.write_string("CUDNN_SEV_ERROR")
         if self is Self.CUDNN_SEV_WARNING:
-            return writer.write("CUDNN_SEV_WARNING")
+            return writer.write_string("CUDNN_SEV_WARNING")
         if self is Self.CUDNN_SEV_INFO:
-            return writer.write("CUDNN_SEV_INFO")
+            return writer.write_string("CUDNN_SEV_INFO")
         abort("invalid cudnnSeverity_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnSeverity_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnSeverity_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2303,18 +2313,18 @@ struct cudnnMathType_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_DEFAULT_MATH:
-            return writer.write("CUDNN_DEFAULT_MATH")
+            return writer.write_string("CUDNN_DEFAULT_MATH")
         if self is Self.CUDNN_TENSOR_OP_MATH:
-            return writer.write("CUDNN_TENSOR_OP_MATH")
+            return writer.write_string("CUDNN_TENSOR_OP_MATH")
         if self is Self.CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION:
-            return writer.write("CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION")
+            return writer.write_string("CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION")
         if self is Self.CUDNN_FMA_MATH:
-            return writer.write("CUDNN_FMA_MATH")
+            return writer.write_string("CUDNN_FMA_MATH")
         abort("invalid cudnnMathType_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnMathType_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnMathType_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2340,14 +2350,14 @@ struct cudnnNanPropagation_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_NOT_PROPAGATE_NAN:
-            return writer.write("CUDNN_NOT_PROPAGATE_NAN")
+            return writer.write_string("CUDNN_NOT_PROPAGATE_NAN")
         if self is Self.CUDNN_PROPAGATE_NAN:
-            return writer.write("CUDNN_PROPAGATE_NAN")
+            return writer.write_string("CUDNN_PROPAGATE_NAN")
         abort("invalid cudnnNanPropagation_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnNanPropagation_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnNanPropagation_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2379,20 +2389,20 @@ struct cudnnRNNAlgo_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_RNN_ALGO_STANDARD:
-            return writer.write("CUDNN_RNN_ALGO_STANDARD")
+            return writer.write_string("CUDNN_RNN_ALGO_STANDARD")
         if self is Self.CUDNN_RNN_ALGO_PERSIST_STATIC:
-            return writer.write("CUDNN_RNN_ALGO_PERSIST_STATIC")
+            return writer.write_string("CUDNN_RNN_ALGO_PERSIST_STATIC")
         if self is Self.CUDNN_RNN_ALGO_PERSIST_DYNAMIC:
-            return writer.write("CUDNN_RNN_ALGO_PERSIST_DYNAMIC")
+            return writer.write_string("CUDNN_RNN_ALGO_PERSIST_DYNAMIC")
         if self is Self.CUDNN_RNN_ALGO_PERSIST_STATIC_SMALL_H:
-            return writer.write("CUDNN_RNN_ALGO_PERSIST_STATIC_SMALL_H")
+            return writer.write_string("CUDNN_RNN_ALGO_PERSIST_STATIC_SMALL_H")
         if self is Self.CUDNN_RNN_ALGO_COUNT:
-            return writer.write("CUDNN_RNN_ALGO_COUNT")
+            return writer.write_string("CUDNN_RNN_ALGO_COUNT")
         abort("invalid cudnnRNNAlgo_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnRNNAlgo_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnRNNAlgo_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2506,40 +2516,40 @@ struct cudnnDataType_t(Equatable, TrivialRegisterPassable, Writable):
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_DATA_FLOAT:
-            return writer.write("CUDNN_DATA_FLOAT")
+            return writer.write_string("CUDNN_DATA_FLOAT")
         if self is Self.CUDNN_DATA_DOUBLE:
-            return writer.write("CUDNN_DATA_DOUBLE")
+            return writer.write_string("CUDNN_DATA_DOUBLE")
         if self is Self.CUDNN_DATA_HALF:
-            return writer.write("CUDNN_DATA_HALF")
+            return writer.write_string("CUDNN_DATA_HALF")
         if self is Self.CUDNN_DATA_INT8:
-            return writer.write("CUDNN_DATA_INT8")
+            return writer.write_string("CUDNN_DATA_INT8")
         if self is Self.CUDNN_DATA_INT32:
-            return writer.write("CUDNN_DATA_INT32")
+            return writer.write_string("CUDNN_DATA_INT32")
         if self is Self.CUDNN_DATA_INT8x4:
-            return writer.write("CUDNN_DATA_INT8x4")
+            return writer.write_string("CUDNN_DATA_INT8x4")
         if self is Self.CUDNN_DATA_UINT8:
-            return writer.write("CUDNN_DATA_UINT8")
+            return writer.write_string("CUDNN_DATA_UINT8")
         if self is Self.CUDNN_DATA_UINT8x4:
-            return writer.write("CUDNN_DATA_UINT8x4")
+            return writer.write_string("CUDNN_DATA_UINT8x4")
         if self is Self.CUDNN_DATA_INT8x32:
-            return writer.write("CUDNN_DATA_INT8x32")
+            return writer.write_string("CUDNN_DATA_INT8x32")
         if self is Self.CUDNN_DATA_BFLOAT16:
-            return writer.write("CUDNN_DATA_BFLOAT16")
+            return writer.write_string("CUDNN_DATA_BFLOAT16")
         if self is Self.CUDNN_DATA_INT64:
-            return writer.write("CUDNN_DATA_INT64")
+            return writer.write_string("CUDNN_DATA_INT64")
         if self is Self.CUDNN_DATA_BOOLEAN:
-            return writer.write("CUDNN_DATA_BOOLEAN")
+            return writer.write_string("CUDNN_DATA_BOOLEAN")
         if self is Self.CUDNN_DATA_FP8_E4M3:
-            return writer.write("CUDNN_DATA_FP8_E4M3")
+            return writer.write_string("CUDNN_DATA_FP8_E4M3")
         if self is Self.CUDNN_DATA_FP8_E5M2:
-            return writer.write("CUDNN_DATA_FP8_E5M2")
+            return writer.write_string("CUDNN_DATA_FP8_E5M2")
         if self is Self.CUDNN_DATA_FAST_FLOAT_FOR_FP8:
-            return writer.write("CUDNN_DATA_FAST_FLOAT_FOR_FP8")
+            return writer.write_string("CUDNN_DATA_FAST_FLOAT_FOR_FP8")
         abort("invalid cudnnDataType_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnDataType_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnDataType_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2690,18 +2700,18 @@ struct cudnnIndicesType_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_32BIT_INDICES:
-            return writer.write("CUDNN_32BIT_INDICES")
+            return writer.write_string("CUDNN_32BIT_INDICES")
         if self is Self.CUDNN_64BIT_INDICES:
-            return writer.write("CUDNN_64BIT_INDICES")
+            return writer.write_string("CUDNN_64BIT_INDICES")
         if self is Self.CUDNN_16BIT_INDICES:
-            return writer.write("CUDNN_16BIT_INDICES")
+            return writer.write_string("CUDNN_16BIT_INDICES")
         if self is Self.CUDNN_8BIT_INDICES:
-            return writer.write("CUDNN_8BIT_INDICES")
+            return writer.write_string("CUDNN_8BIT_INDICES")
         abort("invalid cudnnIndicesType_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnIndicesType_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnIndicesType_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2966,28 +2976,34 @@ struct cudnnConvolutionBwdFilterAlgo_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_CONVOLUTION_BWD_FILTER_ALGO_0:
-            return writer.write("CUDNN_CONVOLUTION_BWD_FILTER_ALGO_0")
+            return writer.write_string("CUDNN_CONVOLUTION_BWD_FILTER_ALGO_0")
         if self is Self.CUDNN_CONVOLUTION_BWD_FILTER_ALGO_1:
-            return writer.write("CUDNN_CONVOLUTION_BWD_FILTER_ALGO_1")
+            return writer.write_string("CUDNN_CONVOLUTION_BWD_FILTER_ALGO_1")
         if self is Self.CUDNN_CONVOLUTION_BWD_FILTER_ALGO_FFT:
-            return writer.write("CUDNN_CONVOLUTION_BWD_FILTER_ALGO_FFT")
+            return writer.write_string("CUDNN_CONVOLUTION_BWD_FILTER_ALGO_FFT")
         if self is Self.CUDNN_CONVOLUTION_BWD_FILTER_ALGO_3:
-            return writer.write("CUDNN_CONVOLUTION_BWD_FILTER_ALGO_3")
+            return writer.write_string("CUDNN_CONVOLUTION_BWD_FILTER_ALGO_3")
         if self is Self.CUDNN_CONVOLUTION_BWD_FILTER_ALGO_WINOGRAD:
-            return writer.write("CUDNN_CONVOLUTION_BWD_FILTER_ALGO_WINOGRAD")
+            return writer.write_string(
+                "CUDNN_CONVOLUTION_BWD_FILTER_ALGO_WINOGRAD"
+            )
         if self is Self.CUDNN_CONVOLUTION_BWD_FILTER_ALGO_WINOGRAD_NONFUSED:
             return writer.write(
                 "CUDNN_CONVOLUTION_BWD_FILTER_ALGO_WINOGRAD_NONFUSED"
             )
         if self is Self.CUDNN_CONVOLUTION_BWD_FILTER_ALGO_FFT_TILING:
-            return writer.write("CUDNN_CONVOLUTION_BWD_FILTER_ALGO_FFT_TILING")
+            return writer.write_string(
+                "CUDNN_CONVOLUTION_BWD_FILTER_ALGO_FFT_TILING"
+            )
         if self is Self.CUDNN_CONVOLUTION_BWD_FILTER_ALGO_COUNT:
-            return writer.write("CUDNN_CONVOLUTION_BWD_FILTER_ALGO_COUNT")
+            return writer.write_string(
+                "CUDNN_CONVOLUTION_BWD_FILTER_ALGO_COUNT"
+            )
         abort("invalid cudnnConvolutionBwdFilterAlgo_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnConvolutionBwdFilterAlgo_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnConvolutionBwdFilterAlgo_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -3111,18 +3127,22 @@ struct cudnnPoolingMode_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_POOLING_MAX:
-            return writer.write("CUDNN_POOLING_MAX")
+            return writer.write_string("CUDNN_POOLING_MAX")
         if self is Self.CUDNN_POOLING_AVERAGE_COUNT_INCLUDE_PADDING:
-            return writer.write("CUDNN_POOLING_AVERAGE_COUNT_INCLUDE_PADDING")
+            return writer.write_string(
+                "CUDNN_POOLING_AVERAGE_COUNT_INCLUDE_PADDING"
+            )
         if self is Self.CUDNN_POOLING_AVERAGE_COUNT_EXCLUDE_PADDING:
-            return writer.write("CUDNN_POOLING_AVERAGE_COUNT_EXCLUDE_PADDING")
+            return writer.write_string(
+                "CUDNN_POOLING_AVERAGE_COUNT_EXCLUDE_PADDING"
+            )
         if self is Self.CUDNN_POOLING_MAX_DETERMINISTIC:
-            return writer.write("CUDNN_POOLING_MAX_DETERMINISTIC")
+            return writer.write_string("CUDNN_POOLING_MAX_DETERMINISTIC")
         abort("invalid cudnnPoolingMode_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnPoolingMode_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnPoolingMode_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -3200,12 +3220,12 @@ struct cudnnDivNormMode_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_DIVNORM_PRECOMPUTED_MEANS:
-            return writer.write("CUDNN_DIVNORM_PRECOMPUTED_MEANS")
+            return writer.write_string("CUDNN_DIVNORM_PRECOMPUTED_MEANS")
         abort("invalid cudnnDivNormMode_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnDivNormMode_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnDivNormMode_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)

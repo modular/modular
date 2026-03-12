@@ -39,12 +39,12 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
+    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
     row_major,
 )
-from layout.tile_layout import TensorLayout
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from nn.conv import _get_cudnn_meta, check_cudnn_error

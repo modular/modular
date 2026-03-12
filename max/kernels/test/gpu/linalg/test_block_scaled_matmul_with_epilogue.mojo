@@ -15,7 +15,7 @@
 from std.math import ceildiv
 
 from std.gpu.host import DeviceContext
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from linalg.fp4_quantization import block_scaled_matmul_with_epilogue
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,

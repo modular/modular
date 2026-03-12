@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import (
+    Coord,
     Layout,
     LayoutTensor,
+    RuntimeInt,
     TileTensor,
     row_major,
-    Coord,
-    RuntimeInt,
 )
 from layout.int_tuple import to_index_list
 from buffer.dimlist import DimList

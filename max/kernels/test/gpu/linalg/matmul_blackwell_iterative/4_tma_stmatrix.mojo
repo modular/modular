@@ -30,15 +30,15 @@ from std.gpu.compute.arch.tcgen05 import *
 # Additional imports for testing
 from internal_utils import assert_almost_equal
 from layout import (
-    UNKNOWN_VALUE,
+    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
+    UNKNOWN_VALUE,
 )
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import IntTuple
 from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
     st_matrix_n_layout,

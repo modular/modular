@@ -18,13 +18,9 @@ from std.sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
 from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import async_copy_wait_all
-from layout import TileTensor
-from layout.int_tuple import IntTuple
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx
+from layout import Coord, Idx, IntTuple, LayoutTensor, TileTensor, row_major
 from layout.layout import *
 from layout.layout_tensor import (
-    LayoutTensor,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_sram_to_local,

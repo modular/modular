@@ -18,8 +18,8 @@ from std.sys.intrinsics import readfirstlane
 from std.gpu import barrier, block_idx, lane_id
 from std.gpu import warp_id as get_warp_id
 from layout import Layout, LayoutTensor
-from layout._utils import idx2crd
 from layout.layout import blocked_product
+from layout._utils import idx2crd
 from layout.layout_tensor import (
     ThreadScope,
     copy_dram_to_local,

@@ -24,7 +24,6 @@ from std.sys import (
     bit_width_of,
     is_amd_gpu,
     is_apple_gpu,
-    is_run_in_comptime_interpreter,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
@@ -936,7 +935,7 @@ fn log[
     comptime if size_of[dtype]() < size_of[DType.float32]():
         return log(x.cast[DType.float32]()).cast[dtype]()
 
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         return _log_base[27](x)
 
     comptime if is_nvidia_gpu() and dtype == DType.float32:
@@ -973,7 +972,7 @@ fn log2[
         Vector containing result of performing log base 2 on x.
     """
 
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         comptime if size_of[dtype]() < size_of[DType.float32]():
             return log2(x.cast[DType.float32]()).cast[dtype]()
 
@@ -1278,7 +1277,7 @@ fn iota[
 
     comptime step_dtype = dtype if dtype.is_integral() else DType.int
     var step: SIMD[step_dtype, width]
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         step = 0
 
         comptime for i in range(width):
@@ -1721,7 +1720,7 @@ fn cos[
     comptime if size_of[dtype]() < size_of[DType.float32]():
         return cos(x.cast[DType.float32]()).cast[dtype]()
 
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         return _llvm_unary_fn["llvm.cos"](x)
 
     comptime if is_nvidia_gpu() and dtype == DType.float32:
@@ -1764,7 +1763,7 @@ fn sin[
     comptime if size_of[dtype]() < size_of[DType.float32]():
         return sin(x.cast[DType.float32]()).cast[dtype]()
 
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         return _llvm_unary_fn["llvm.sin"](x)
 
     comptime if is_nvidia_gpu() and dtype == DType.float32:

@@ -27,12 +27,6 @@ from .model_config import Flux2Config
 
 
 class Flux2TransformerModel(ComponentModel):
-    def _model_not_loaded(*_args: Any, **_kwargs: Any) -> Any:
-        raise RuntimeError(
-            "Flux2 transformer model is not ready yet. "
-            "Call use_standard_model or use_step_cache_model first."
-        )
-
     def __init__(
         self,
         config: dict[str, Any],
@@ -51,6 +45,7 @@ class Flux2TransformerModel(ComponentModel):
             encoding,
             devices,
         )
+        self._enable_fbc = False
         self.load_model()
 
     @traced
@@ -74,42 +69,28 @@ class Flux2TransformerModel(ComponentModel):
             flux = Flux2Transformer2DModel(self.config)
             flux.to(self.devices[0])
         self._flux_model = flux
-        self._standard_model: Callable[..., Any] | None = None
-        self._step_cache_model: Callable[..., Any] | None = None
-        self.model = self._model_not_loaded
+        # Model is not yet compiled; compile_model() must be called before use.
+        self.model = self._not_compiled
         return self.model
 
-    @traced
-    def _ensure_standard_model(self) -> Callable[..., Any]:
-        if self._standard_model is None:
-            self._standard_model = self._flux_model.compile(
-                *self._flux_model.input_types(step_cache_enabled=False),
-                weights=self._state_dict,
-            )
-        return self._standard_model
+    @staticmethod
+    def _not_compiled(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError(
+            "Flux2 transformer not compiled. Call compile_model() first."
+        )
 
     @traced
-    def _ensure_step_cache_model(self) -> Callable[..., Any]:
-        if self._step_cache_model is None:
-            assert self._flux_model is not None
-            self._step_cache_model = self._flux_model.compile(
-                *self._flux_model.input_types(step_cache_enabled=True),
-                weights=self._state_dict,
-            )
-        return self._step_cache_model
+    def compile_model(self, enable_fbc: bool) -> None:
+        self._enable_fbc = enable_fbc
+        self.model = self._flux_model.compile(
+            *self._flux_model.input_types(step_cache_enabled=enable_fbc),
+            weights=self._state_dict,
+        )
+        # Free weight dict and graph — no second compilation will happen.
+        del self._state_dict
+        del self._flux_model
 
-    def use_standard_model(self) -> None:
-        standard_model = self._ensure_standard_model()
-        if self.model is self._step_cache_model:
-            self._step_cache_model = None
-        self.model = standard_model
-
-    def use_step_cache_model(self) -> None:
-        step_cache_model = self._ensure_step_cache_model()
-        if self.model is self._standard_model:
-            self._standard_model = None
-        self.model = step_cache_model
-
+    @traced
     def __call__(
         self,
         hidden_states: Tensor,
@@ -120,17 +101,10 @@ class Flux2TransformerModel(ComponentModel):
         guidance: Tensor,
         prev_residual: Tensor | None = None,
         prev_output: Tensor | None = None,
-        step_cache_flag: Tensor | None = None,
         rdt: Tensor | None = None,
     ) -> Any:
-        if (
-            prev_residual is not None
-            and prev_output is not None
-            and step_cache_flag is not None
-            and rdt is not None
-        ):
-            model = self._ensure_step_cache_model()
-            return model(
+        if self._enable_fbc:
+            return self.model(
                 hidden_states,
                 encoder_hidden_states,
                 timestep,
@@ -139,16 +113,10 @@ class Flux2TransformerModel(ComponentModel):
                 guidance,
                 prev_residual,
                 prev_output,
-                step_cache_flag,
                 rdt,
             )
 
-        model = (
-            self._ensure_standard_model()
-            if self.model is self._model_not_loaded
-            else self.model
-        )
-        return model(
+        return self.model(
             hidden_states,
             encoder_hidden_states,
             timestep,
@@ -156,6 +124,3 @@ class Flux2TransformerModel(ComponentModel):
             txt_ids,
             guidance,
         )
-
-    def call_with_step_cache(self, *args: Any, **kwargs: Any) -> Any:
-        return self(*args, **kwargs)

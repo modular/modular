@@ -14,17 +14,20 @@
 from buffer import NDBuffer, Dim, DimList
 from std.gpu.memory import AddressSpace
 from std.utils.index import IndexList
-from layout.tile_layout import Layout, RowMajorLayout
 from layout import (
     ComptimeInt,
     Coord,
     Idx,
+    IntTuple,
+    RowMajorLayout,
     RuntimeInt,
     TileTensor,
     row_major,
     stack_allocation,
+    Layout,
+    UNKNOWN_VALUE,
 )
-from layout.int_tuple import IntTuple
+from layout.tile_layout import Layout as TileLayout
 from layout.swizzle import Swizzle
 from std.math import ceildiv
 from std.testing import (
@@ -50,7 +53,7 @@ fn test_distribute() raises:
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
     var layout_tensor = TileTensor(
         ptr=ptr,
-        layout=Layout(
+        layout=TileLayout(
             shape=data_layout_shape(Idx[4](), Idx[4]()),
             stride=data_layout_stride(Idx[4](), Idx[1]()),
         ),
@@ -96,7 +99,7 @@ fn test_distribute_with_swizzle() raises:
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
     var layout_tensor = TileTensor[dtype=DType.uint32](
         ptr=ptr,
-        layout=Layout(
+        layout=TileLayout(
             shape=data_layout_shape(Idx[4](), Idx[4]()),
             stride=data_layout_stride(Idx[4](), Idx[1]()),
         ),
@@ -154,7 +157,7 @@ fn test_distribute_swizzle_vs_no_swizzle() raises:
 
     var tensor_no_swizzle = TileTensor[dtype=DType.uint32](
         ptr=ptr_no_swizzle,
-        layout=Layout(
+        layout=TileLayout(
             shape=data_layout_shape(Idx[4](), Idx[4]()),
             stride=data_layout_stride(Idx[4](), Idx[1]()),
         ),
@@ -162,7 +165,7 @@ fn test_distribute_swizzle_vs_no_swizzle() raises:
 
     var tensor_with_swizzle = TileTensor[dtype=DType.uint32](
         ptr=ptr_with_swizzle,
-        layout=Layout(
+        layout=TileLayout(
             shape=data_layout_shape(Idx[4](), Idx[4]()),
             stride=data_layout_stride(Idx[4](), Idx[1]()),
         ),
@@ -513,13 +516,11 @@ def test_indexing() raises:
 def test_to_layout_tensor_square() raises:
     var stack: InlineArray[UInt8, 4] = [1, 2, 3, 4]
     var tensor = TileTensor(stack, row_major[2, 2]()).to_layout_tensor()
-    assert_equal(materialize[tensor.layout](), layout.Layout.row_major(2, 2))
+    assert_equal(materialize[tensor.layout](), Layout.row_major(2, 2))
     assert_equal(tensor.rank, 2)
     assert_equal(
-        rebind[std.utils.IndexList[2]](
-            tensor.runtime_layout.shape.value.canonicalize()
-        ),
-        std.utils.IndexList[2](2, 2),
+        rebind[IndexList[2]](tensor.runtime_layout.shape.value.canonicalize()),
+        IndexList[2](2, 2),
     )
 
 
@@ -527,13 +528,11 @@ def test_to_layout_tensor_3d() raises:
     var stack = InlineArray[UInt8, 64 * 8 * 4](fill=0)
     var tensor = TileTensor(stack, row_major[64, 8, 4]())
     var lt = tensor.to_layout_tensor()
-    assert_equal(materialize[lt.layout](), layout.Layout.row_major(64, 8, 4))
+    assert_equal(materialize[lt.layout](), Layout.row_major(64, 8, 4))
     assert_equal(lt.rank, 3)
     assert_equal(
-        rebind[std.utils.IndexList[3]](
-            lt.runtime_layout.shape.value.canonicalize()
-        ),
-        std.utils.IndexList[3](64, 8, 4),
+        rebind[IndexList[3]](lt.runtime_layout.shape.value.canonicalize()),
+        IndexList[3](64, 8, 4),
     )
 
 
@@ -545,14 +544,12 @@ def test_to_layout_tensor_3d_dynamic() raises:
     var lt = tensor.to_layout_tensor()
     assert_equal(
         materialize[lt.layout](),
-        layout.Layout.row_major(64, 8, layout.UNKNOWN_VALUE),
+        Layout.row_major(64, 8, UNKNOWN_VALUE),
     )
     assert_equal(lt.rank, 3)
     assert_equal(
-        rebind[std.utils.IndexList[3]](
-            lt.runtime_layout.shape.value.canonicalize()
-        ),
-        std.utils.IndexList[3](64, 8, 4),
+        rebind[IndexList[3]](lt.runtime_layout.shape.value.canonicalize()),
+        IndexList[3](64, 8, 4),
     )
 
 
@@ -756,7 +753,7 @@ def test_load_store_linear_non_trivial_stride() raises:
     comptime col_major_stride = Coord[ComptimeInt[1], ComptimeInt[2]]
     var tensor = TileTensor(
         ptr=data.unsafe_ptr(),
-        layout=Layout(
+        layout=TileLayout(
             shape=col_major_shape(Idx[2](), Idx[3]()),
             stride=col_major_stride(Idx[1](), Idx[2]()),
         ),

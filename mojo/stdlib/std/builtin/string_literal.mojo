@@ -426,7 +426,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         writer.write(StringSlice(self))
 
     fn write_repr_to(self, mut writer: Some[Writer]):
-        """Write the string representation of the string literal".
+        """Write the string representation of the string literal.
 
         Args:
             writer: The value to write to.

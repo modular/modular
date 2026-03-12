@@ -138,7 +138,6 @@ Sampling
    MinPSampler
    RejectionSampler
    RejectionSamplerWithResiduals
-   TypicalAcceptanceSampler
 
 Float8
 ------

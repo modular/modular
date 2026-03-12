@@ -54,7 +54,6 @@ from std.sys import (
     is_amd_gpu,
     is_apple_gpu,
     is_big_endian,
-    is_run_in_comptime_interpreter,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
@@ -2164,7 +2163,7 @@ struct SIMD[dtype: DType, size: Int](
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
-        """Write the string representation of the SIMD value".
+        """Write the string representation of the SIMD value.
 
         Args:
             writer: The value to write to.
@@ -2587,7 +2586,7 @@ struct SIMD[dtype: DType, size: Int](
         elif offset % simd_width_of[Self.dtype]():
             return slice_body()
 
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             return slice_body()
 
         comptime if is_apple_gpu():

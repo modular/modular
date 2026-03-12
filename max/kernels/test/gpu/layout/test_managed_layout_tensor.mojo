@@ -12,9 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from layout import UNKNOWN_VALUE, Layout, RuntimeLayout
+from layout import IntTuple, Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import IntTuple
 from std.testing import assert_equal
 
 from std.utils import IndexList

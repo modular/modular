@@ -35,13 +35,7 @@ from std.gpu.sync import (
     mbarrier_arrive,
 )
 from std.gpu.compute.arch.tcgen05 import *
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeTuple,
-)
-from layout.int_tuple import IntTuple
+from layout import IntTuple, Layout, LayoutTensor, RuntimeTuple, UNKNOWN_VALUE
 from layout.layout import coalesce
 from layout.layout_tensor import LayoutTensorIter
 from layout.runtime_tuple import idx2crd
@@ -272,7 +266,6 @@ comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
 @always_inline
 fn f32_frag_to_smem[
     swizzle_mode: TensorMapSwizzle,
-    stageN: UInt,
     vec_dtype: DType,
     vec_size: Int,
 ](
@@ -302,7 +295,7 @@ fn f32_frag_to_smem[
 @always_inline
 fn stsm_helper[
     swizzle: Swizzle,
-    stageN: UInt,
+    stageN: Int,
     vec_dtype: DType,
     vec_size: Int,
     transpose_c: Bool = False,
@@ -314,7 +307,7 @@ fn stsm_helper[
 ):
     comptime if size_of[dst.dtype]() == 4:
         comptime assert not transpose_c, "transpose_c must be False"
-        return f32_frag_to_smem[swizzle_mode, stageN](vec, dst)
+        return f32_frag_to_smem[swizzle_mode](vec, dst)
     # Number of elements in one row is 32B and 16B per stsmx4 and stmtx2 tile, respectively.
     comptime stsmx_row_size = 32 // size_of[
         dst.dtype

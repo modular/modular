@@ -43,12 +43,14 @@ from std.gpu.compute.arch.tcgen05 import (
 )
 from std.gpu.primitives.warp import _vote_nvidia_helper
 from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
-from layout.int_tuple import IntTuple, UNKNOWN_VALUE
-from layout.layout import (
+from layout import (
+    IntTuple,
     Layout,
-)
-from layout.layout_tensor import (
     LayoutTensor,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
+    row_major,
+    stack_allocation as tt_stack_allocation,
 )
 from layout.swizzle import make_ldmatrix_swizzle
 from layout.tensor_core_async import (
@@ -62,7 +64,6 @@ from layout.tma_async import (
     _default_desc_shape,
     TMATensorTile,
 )
-from layout.runtime_layout import RuntimeLayout
 from std.memory import bitcast
 from nn.mha_fa3_utils import (
     OptionalPointer,
@@ -83,7 +84,6 @@ from nn.sm100_attention_utils import (
     MBarPipeline,
     sub_ftz,
 )
-from layout import row_major, stack_allocation as tt_stack_allocation
 from nn.mha_fa3_utils import KVTMATile
 from std.builtin.device_passable import DevicePassable
 from std.sys._assembly import inlined_assembly
@@ -3000,10 +3000,21 @@ struct MLA_SM100_Decode_Common[
                 # Load all 32 sigma_KV values for this thread's columns into
                 # registers ONCE.  This is the ONLY SMEM read for scales in the
                 # entire tile processing.
+                # The last k-tile TMA may load OOB scale slots that
+                # contain uninitialized NaN.  After softmax, P=0 for those
+                # columns, but 0*NaN=NaN poisons the PV MMA output.  Clamping
+                # via max(sigma, 0) maps NaN→0 per PTX semantics (max(NaN,0)=0)
+                # and is a no-op for valid positive scales.
                 comptime for _j in range(half_load):
-                    _sigma_kv_regs.ptr[_j] = _scale_stage_ptr[col0 + _j].cast[
-                        Self.AccumType
-                    ]()
+                    _sigma_kv_regs.ptr.store(
+                        _j,
+                        max(
+                            rebind[Scalar[Self.AccumType]](
+                                _scale_stage_ptr[col0 + _j]
+                            ),
+                            Scalar[Self.AccumType](0),
+                        ),
+                    )
 
                 # Place 1: QK dequant — multiply each score column by its
                 # token's sigma_KV[t] BEFORE the scale_log2e multiplication.

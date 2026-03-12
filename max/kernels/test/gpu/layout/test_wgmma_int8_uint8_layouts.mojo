@@ -22,10 +22,9 @@ from std.gpu.compute.mma import (
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
-from layout import IntTuple, Layout, LayoutTensor
+from layout import IntTuple, Layout, LayoutTensor, print_layout
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
-from layout.layout import print_layout
 from std.memory import bitcast
 
 

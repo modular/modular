@@ -94,9 +94,7 @@ from std.gpu.primitives.warp import _vote_nvidia_helper
 from layout.tma_async import (
     SharedMemBarrier,
 )
-from layout import row_major
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
+from layout import Layout, LayoutTensor, row_major
 from layout.swizzle import make_ldmatrix_swizzle
 from std.memory import bitcast
 from nn.mha_fa3_utils import (
@@ -804,9 +802,6 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         kv_prod.commit_step()
         kv_row += UInt32(Self.config.BN)
 
-        # Wait for Q TMA to complete. Q arrives split: nope as FP8, rope as BF16.
-        mbar_q[].wait(0)
-
         # Load remaining KV tiles
         var tile_idx: Int = 1
         while tile_idx < num_k_tiles:
@@ -937,9 +932,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         comptime content_stage_stride_bytes = Self.ContentStageBytes
         comptime rope_stage_stride_bytes = Self.RopeStageBytes
 
-        # Q FP8 + BF16 are ready (load warp waited on mbar_q).
-        # The barrier() at the end of init ensures visibility.
-
+        mbar_q[].wait(0)
         var tile_idx: Int = 0
         while tile_idx < num_k_tiles:
             s_prod.acquire()

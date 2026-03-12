@@ -17,10 +17,16 @@ from std.sys import has_amd_gpu_accelerator
 
 from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
-from layout.int_tuple import UNKNOWN_VALUE
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor, RuntimeLayout
-from layout import Coord, Idx, TileTensor, row_major
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from nn.softmax import (
     _online_softmax_kernel,
     _softmax_cpu,

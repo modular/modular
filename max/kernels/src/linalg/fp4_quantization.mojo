@@ -22,7 +22,14 @@ from std.gpu import (
     lane_id,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from layout import Layout, LayoutTensor, TileTensor
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    TileTensor,
+)
 from std.logger import Logger
 from std.gpu.primitives.warp import shuffle_xor
 from std.math import recip
@@ -64,7 +71,6 @@ from layout.layout_tensor import LayoutTensorIter
 from std.gpu.memory import external_memory, fence_async_view_proxy
 from std.gpu import barrier
 from std.sys import size_of, align_of, simd_width_of
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
 from std.algorithm import elementwise
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind

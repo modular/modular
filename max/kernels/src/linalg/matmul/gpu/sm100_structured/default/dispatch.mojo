@@ -26,7 +26,7 @@ from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from std.logger import Logger
 
 from std.utils.index import Index, IndexList
@@ -131,6 +131,19 @@ fn matmul_dispatch_sm100[
             register_based_epilogue=register_based_epilogue,
         ](c_tensor, a_tensor, b_tensor, ctx)
 
+    # M=1 (or N=1): use GEMV split-K for both BF16 and FP8.
+    # static_N=1 is not supported on SM100 due to TMA requirements
+    # (N * size_of(c_type) % 16 == 0).
+    comptime if a_type in (DType.bfloat16, DType.float8_e4m3fn):
+        if static_N == 1 or m == 1:
+            logger.info("------ Executing GEMV Matmul------")
+            gemv_gpu[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_wrapper,
+                pdl_level=pdl_level,
+            ](c, a, b, ctx)
+            return
+
     comptime if _vendor_blas_fallback_disabled():
         comptime if (
             c_type == DType.bfloat16
@@ -179,19 +192,6 @@ fn matmul_dispatch_sm100[
     # default matmul config for sm100
     comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
-
-    # 1. for m==1 our gemv matmul is faster than cublas for skinny bfloat16 matmuls
-    # 2. Our GEMV matmul dosen't support float8 yet.
-    # 3. static_N=1 is not supported on SM100 due to the output buffer TMA requirements. (`N * size_of(c_type) % 16 == 0`).
-    comptime if a_type == DType.bfloat16:
-        if static_N == 1 or m == 1:
-            logger.info("------ Executing GEMV Matmul------")
-            gemv_gpu[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return
 
     # SM100 kernel requirements:
     # 1. `N * size_of(c_type) % 16B == 0` for output buffer (TMA requirement)

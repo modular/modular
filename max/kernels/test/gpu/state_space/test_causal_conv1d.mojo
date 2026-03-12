@@ -17,11 +17,11 @@ from std.sys.info import simd_width_of
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 from std.gpu.host import DeviceContext
 from layout import (
-    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
-    RuntimeTuple,
     RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
 )
 from std.random import rand
 from layout.int_tuple import fill_like

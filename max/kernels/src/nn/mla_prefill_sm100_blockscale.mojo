@@ -48,9 +48,7 @@ from layout.tma_async import (
     SharedMemBarrier,
     RaggedTMA3DTile,
 )
-from layout.layout import Layout
-from layout import TileTensor
-from layout.layout_tensor import LayoutTensor
+from layout import Layout, LayoutTensor, TileTensor
 from layout.swizzle import make_swizzle
 
 import std.gpu.primitives.warp as warp

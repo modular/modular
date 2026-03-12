@@ -82,7 +82,7 @@ support, the less practical this approach is.
 You might notice that the Mojo versions of `make_it_quack()` don't include the
 `try/except` statement. We don't need it because Mojo's static type checking
 ensures that you can only pass instances of `Duck` or `StealthCow` into the
-`make_it_quack()`function.
+`make_it_quack()` function.
 
 ## Using traits
 
@@ -115,7 +115,7 @@ A trait can supply a default implementation, so conforming structs
 don't need to implement the method themselves. You can provide a full
 implementation or use the `pass` keyword. Using `pass` creates a
 no-op method that does nothing. In your conforming struct, you
-can chose to override this default implementation:
+can choose to override this default implementation:
 
 ```mojo
 trait Quackable:
@@ -429,8 +429,7 @@ decorator. These decorators add requirements for conforming structs:
   `@register_passable("trivial")`.
 
 - If the trait is declared as `@register_passable("trivial")`, every struct that
-  conforms to the trait must be
-  struct must be `@register_passable("trivial")`, too.
+  conforms to the trait must be `@register_passable("trivial")`, too.
 
 For the purpose of trait conformance, a trait or struct that's defined with
 `@register_passable` should automatically conform to the `Movable` trait, and a
@@ -734,10 +733,18 @@ struct MyStack[type: Copyable & ImplicitlyDestructible](Stacklike):
         print("]")
 ```
 
+{/*  TODO:
+   - Maybe move this discussion to the generics chapter, the trait docs only
+     need to mention that you can define a `comptime` member.
+   - If we retain the example, update it  to use real conditional conformance.
+   - Update the text below to point to the real conditional conformance doc,
+     if appropriate.
+*/}
+
 The `MyStack` type adds a `dump()` method that prints the contents of the stack.
 Because a struct that conforms to `Copyable` is not necessarily
 printable, `MyStack` uses
-[conditional conformance](/mojo/manual/parameters/#conditional-conformance) to
+conditional conformance to
 define a `dump()` method that works as long as the element type is
 [writable](/mojo/std/format/Writable/).
 

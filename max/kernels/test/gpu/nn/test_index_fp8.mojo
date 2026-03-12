@@ -14,8 +14,7 @@
 from std.gpu.host import DeviceContext
 from nn.index_fp8 import fp8_index, fp8_index_naive
 from std.random import rand
-from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
-from layout.layout_tensor import LayoutTensor
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from std.utils.index import Index
 from std.testing import assert_almost_equal
 

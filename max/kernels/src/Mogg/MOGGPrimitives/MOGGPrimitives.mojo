@@ -322,18 +322,6 @@ fn create_python_mojo_value_async(
     )
 
 
-@register_internal("builtin.transfer_async")
-@no_inline
-fn transfer_async(
-    async_src: OpaquePointer[MutAnyOrigin],
-    async_dst: OpaquePointer[MutAnyOrigin],
-):
-    external_call[
-        "MGP_RT_TransferAsyncRef",
-        NoneType,
-    ](async_src, async_dst)
-
-
 @register_internal("builtin.unpack_async")
 @no_inline
 fn unpack_async(

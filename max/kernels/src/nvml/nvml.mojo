@@ -578,11 +578,11 @@ struct Device(Writable):
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
-        writer.write("Device(", self.idx, ")")
+        t"Device({self.idx})".write_to(writer)
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String.write(self)
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        self.write_to(writer)
 
 
 @fieldwise_init

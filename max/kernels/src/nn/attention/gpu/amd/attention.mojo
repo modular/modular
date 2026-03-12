@@ -22,10 +22,9 @@ from std.sys._assembly import inlined_assembly
 from std.algorithm.functional import unswitch
 from std.gpu import barrier, block_idx_int as block_idx, lane_id, thread_idx
 from std.gpu import warp_id as get_warp_id
-from layout import Layout, LayoutTensor
-from layout._utils import idx2crd, make_amd_buffer_resource
-from layout.int_tuple import UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.layout import blocked_product
+from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.layout_tensor import (
     ThreadScope,
     copy_dram_to_local,

@@ -3243,7 +3243,7 @@ struct LayoutTensor[
             based on the tensor's layout properties.
         """
 
-        comptime num_tiles = std.builtin.Variadic.size(tile_sizes)
+        comptime num_tiles = Variadic.size(tile_sizes)
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
         comptime _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
@@ -3358,7 +3358,7 @@ struct LayoutTensor[
                 - The corner coordinates of the tile.
                 - The offset of the tile.
         """
-        comptime num_tiles = std.builtin.Variadic.size(tile_sizes)
+        comptime num_tiles = Variadic.size(tile_sizes)
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
         comptime _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
@@ -3511,7 +3511,7 @@ struct LayoutTensor[
         ```
         """
 
-        comptime tiles_rank = std.builtin.Variadic.size(tile_sizes)
+        comptime tiles_rank = Variadic.size(tile_sizes)
         comptime __tiled_layout = Self._compute_tile_layout[*tile_sizes]()
         comptime assert (
             __tiled_layout[1].rank() == tiles_rank
@@ -5933,7 +5933,7 @@ fn stack_allocation_like[
     ].stack_allocation()
 
 
-struct ThreadScope(TrivialRegisterPassable):
+struct ThreadScope(TrivialRegisterPassable, Writable):
     """Represents the scope of thread operations in GPU programming.
 
     This struct defines the scope at which thread operations are performed,
@@ -6014,19 +6014,19 @@ struct ThreadScope(TrivialRegisterPassable):
         """
         return not (self == other)
 
-    fn __str__(self) -> String:
-        """Convert the `ThreadScope` to a human-readable string representation.
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write the `ThreadScope` as a human-readable string representation.
 
-        Returns:
-            A string representation of the thread scope ("BLOCK" or "WARP").
+        Args:
+            writer: The writer to write the string representation to.
 
         Aborts:
             If the thread scope has an invalid value.
         """
         if self == Self.BLOCK:
-            return "BLOCK"
+            return writer.write("BLOCK")
         if self == Self.WARP:
-            return "WARP"
+            return writer.write("WARP")
         abort("invalid ThreadScope entry")
 
     fn __int__(self) -> Int:

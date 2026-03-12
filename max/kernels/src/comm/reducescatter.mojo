@@ -17,8 +17,8 @@ from std.collections import InlineArray
 from std.collections.optional import Optional
 from std.builtin.variadics import Variadic
 
-from layout import Coord, Idx, TileTensor, row_major
-from layout.tile_layout import TensorLayout, Layout
+from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout.tile_layout import Layout
 from layout.coord import _CoordToDynamic
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -47,6 +47,7 @@ from .sync import (
     MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
+    circular_add,
     is_p2p_enabled,
 )
 
@@ -366,7 +367,7 @@ fn _reducescatter_kernel[
         ](uninitialized=True)
 
         comptime for i in range(ngpus):
-            reordered[i] = in_bufs[(my_rank + i) % ngpus]
+            reordered[i] = in_bufs[circular_add[ngpus](my_rank, i)]
 
         var u_start = config.rank_unit_start(my_rank)
         var n_units = config.rank_units(my_rank)

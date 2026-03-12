@@ -22,9 +22,9 @@ struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):
 
     var mma_shape: IndexList[3]
     var block_tile_shape: IndexList[3]
-    var num_pipeline_stages: UInt
+    var num_pipeline_stages: Int
     var cluster_shape: IndexList[3]
-    var num_consumer: UInt
+    var num_consumer: Int
     var partitioned_multicast: Bool
     var grid_shape: OptionalReg[IndexList[2]]  # = None
     var schedule: MatmulSchedule  # =  MatmulSchedule.NONE
@@ -38,9 +38,9 @@ struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):
         K: Int,
         mma_shape: IndexList[3],
         block_tile_shape: IndexList[3],
-        num_pipeline_stages: UInt,
+        num_pipeline_stages: Int,
         cluster_shape: IndexList[3],
-        num_consumer: UInt,
+        num_consumer: Int,
         partitioned_multicast: Bool,
         grid_shape: OptionalReg[IndexList[2]] = None,
         schedule: MatmulSchedule = MatmulSchedule.NONE,

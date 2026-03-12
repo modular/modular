@@ -13,8 +13,7 @@
 
 from std.compile import compile_info
 from std.gpu.host import get_gpu_target
-from layout import Layout, LayoutTensor
-from layout.int_tuple import UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 
 
 # CHECK-LABEL: test_no_alloca_fill

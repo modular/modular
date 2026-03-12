@@ -142,7 +142,9 @@ fn barrier():
 
 
 @fieldwise_init
-struct AMDScheduleBarrierMask(Equatable, Intable, TrivialRegisterPassable):
+struct AMDScheduleBarrierMask(
+    Equatable, Intable, TrivialRegisterPassable, Writable
+):
     """Represents different instruction scheduling masks for AMDGPU scheduling instructions.
 
     These masks control which types of instructions can be reordered across a barrier for
@@ -211,38 +213,38 @@ struct AMDScheduleBarrierMask(Equatable, Intable, TrivialRegisterPassable):
         """
         return self._value == other._value
 
-    fn __str__(self) -> String:
-        """Returns a string representation of the `AMDScheduleBarrierMask`.
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the `AMDScheduleBarrierMask`.
 
         Converts the mask to a human-readable string based on its value.
 
-        Returns:
-            A string representation of the mask, or aborts if the value is invalid.
+        Args:
+            writer: The object to write to.
         """
         if self == Self.NONE:
-            return "NONE"
+            return writer.write_string("NONE")
         elif self == Self.ALL_ALU:
-            return "ALL_ALU"
+            return writer.write_string("ALL_ALU")
         elif self == Self.VALU:
-            return "VALU"
+            return writer.write_string("VALU")
         elif self == Self.SALU:
-            return "SALU"
+            return writer.write_string("SALU")
         elif self == Self.MFMA:
-            return "MFMA"
+            return writer.write_string("MFMA")
         elif self == Self.ALL_VMEM:
-            return "ALL_VMEM"
+            return writer.write_string("ALL_VMEM")
         elif self == Self.VMEM_READ:
-            return "VMEM_READ"
+            return writer.write_string("VMEM_READ")
         elif self == Self.VMEM_WRITE:
-            return "VMEM_WRITE"
+            return writer.write_string("VMEM_WRITE")
         elif self == Self.ALL_DS:
-            return "ALL_DS"
+            return writer.write_string("ALL_DS")
         elif self == Self.DS_READ:
-            return "DS_READ"
+            return writer.write_string("DS_READ")
         elif self == Self.DS_WRITE:
-            return "DS_WRITE"
+            return writer.write_string("DS_WRITE")
         elif self == Self.TRANS:
-            return "TRANS"
+            return writer.write_string("TRANS")
         else:
             abort("invalid AMDScheduleBarrierMask value")
 

@@ -29,11 +29,11 @@ from std.gpu.host.info import is_cpu, is_valid_target
 from layout import (
     Coord,
     Idx,
+    TensorLayout,
     TileTensor,
     coord_to_index_list,
     row_major,
 )
-from layout.tile_layout import TensorLayout
 from std.memory import memcpy
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id

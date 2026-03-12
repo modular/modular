@@ -35,11 +35,9 @@ from std.gpu.memory import (
     async_copy_wait_group,
     external_memory,
 )
-from layout import RuntimeLayout
-from layout.int_tuple import IntTuple
+from layout import IntTuple, LayoutTensor, RuntimeLayout
 from layout.layout import *
 from layout.layout_tensor import (
-    LayoutTensor,
     LayoutTensorIter,
     copy_dram_to_sram,
     copy_dram_to_sram_async,

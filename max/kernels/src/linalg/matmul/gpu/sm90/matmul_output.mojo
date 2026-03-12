@@ -20,8 +20,14 @@ from std.gpu import lane_id
 from std.gpu.memory import fence_async_view_proxy
 from std.gpu.compute.mma import st_matrix
 from std.gpu.sync import named_barrier
-from layout import IntTuple, Layout, LayoutTensor
-from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout, RuntimeTuple
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle
 from layout.tensor_core_async import st_matrix_n_layout
 from layout.tma_async import TMATensorTile

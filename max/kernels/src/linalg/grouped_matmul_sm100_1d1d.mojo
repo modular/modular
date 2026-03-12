@@ -51,15 +51,15 @@ from std.gpu.sync import (
 )
 from std.gpu.compute.arch.tcgen05 import *
 from layout import (
-    UNKNOWN_VALUE,
+    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
+    UNKNOWN_VALUE,
 )
-from layout.int_tuple import IntTuple
-from layout.layout import flatten, coalesce
-from layout.layout_tensor import zipped_divide, upcast
+from layout.layout import flatten, coalesce, zipped_divide
+from layout.layout_tensor import upcast
 from layout.runtime_tuple import idx2crd
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
@@ -294,10 +294,10 @@ fn copy_accum_to_gmem[
                     Layout.row_major(stageN, swizzle_width)
                 ]()
 
-                stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
+                stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     upper_frag_casted, c_smem_warp_tile_upper
                 )
-                stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
+                stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     lower_frag_casted, c_smem_warp_tile_lower
                 )
             else:
@@ -307,7 +307,7 @@ fn copy_accum_to_gmem[
                     Layout.row_major(stageN, swizzle_width)
                 ]()
 
-                stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
+                stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     upper_frag_casted, c_smem_warp_tile_upper
                 )
 
@@ -328,7 +328,7 @@ fn copy_accum_to_gmem[
             var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
                 data_paths, stageN
             ](0, 0)
-            stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
+            stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                 upper_frag_casted, c_smem_warp_tile_upper
             )
 
@@ -337,7 +337,7 @@ fn copy_accum_to_gmem[
             ](1, 0)
 
             comptime if is_lower_frag_required:
-                stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
+                stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     lower_frag_casted, c_smem_warp_tile_lower
                 )
 

@@ -42,13 +42,19 @@ from std.gpu.sync import (
 )
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
-from layout import Layout, LayoutTensor
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
+from layout.layout import zipped_divide
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.int_tuple import IntTuple
-from layout.layout_tensor import LayoutTensorIter, zipped_divide, upcast
+from layout.layout_tensor import LayoutTensorIter, upcast
 from layout.swizzle import make_swizzle
 from layout.runtime_tuple import idx2crd, crd2idx
-from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout, RuntimeTuple
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import (
     PipelineState,
@@ -958,7 +964,7 @@ fn multi_stage_reg_epilogue[
             var casted = src.cast[c_type]()
             comptime for _j in range(cast_width):
                 upper_st[offset + _j] = casted[_j]
-        stsm_helper[swizzle, UInt(stageN), swizzle_mode=c_swizzle](
+        stsm_helper[swizzle, stageN, swizzle_mode=c_swizzle](
             upper_st, c_smem_warp_tile_upper
         )
 
@@ -979,7 +985,7 @@ fn multi_stage_reg_epilogue[
                 var casted = src.cast[c_type]()
                 comptime for _j in range(cast_width):
                     lower_st[offset + _j] = casted[_j]
-            stsm_helper[swizzle, UInt(stageN), swizzle_mode=c_swizzle](
+            stsm_helper[swizzle, stageN, swizzle_mode=c_swizzle](
                 lower_st, c_smem_warp_tile_lower
             )
 

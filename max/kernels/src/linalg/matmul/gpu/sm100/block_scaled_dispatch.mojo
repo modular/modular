@@ -14,7 +14,7 @@
 from std.math import align_up, ceildiv
 
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from layout import Layout, LayoutTensor
+from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
 from std.logger import Logger
 from std.gpu.primitives.warp import shuffle_xor
 from std.math import recip
@@ -41,9 +41,6 @@ from linalg.utils import (
 )
 from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
-from layout import TileTensor
-from layout.coord import Coord, Idx
-from layout.tile_layout import row_major
 from std.memory import UnsafePointer, bitcast
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import barrier

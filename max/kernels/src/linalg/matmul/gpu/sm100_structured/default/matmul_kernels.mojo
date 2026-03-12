@@ -39,7 +39,11 @@ from std.gpu.primitives.cluster import (
     elect_one_sync,
 )
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_idx, lane_id, thread_idx
+from std.gpu import (
+    block_idx_int as block_idx,
+    lane_id_int as lane_id,
+    thread_idx_int as thread_idx,
+)
 from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
@@ -54,21 +58,27 @@ from std.gpu.primitives.grid_controls import (
 )
 from std.gpu.sync import syncwarp
 from std.gpu.compute.arch.tcgen05 import *
-from layout import Layout as LegacyLayout, LayoutTensor, TileTensor, row_major
-from layout.tile_layout import (
-    Layout as _NewLayout,
-    TensorLayout,
+from layout import (
     ComptimeInt,
+    Coord,
     CoordLike,
+    Idx,
+    LayoutTensor,
+    Layout as LegacyLayout,
+    RowMajorLayout,
+    TensorLayout,
+    TileTensor,
+    coord,
+    row_major,
 )
+from layout.tile_layout import Layout as _NewLayout
 from std.builtin.variadics import Variadic
-from layout.coord import Coord, Idx, coord
 from structured_kernels.tile_types import (
     TmaOpType,
     static_row_major,
     tma_desc_layout_3d,
 )
-from layout.tile_layout import RowMajorLayout, _IntToComptimeInt
+from layout.tile_layout import _IntToComptimeInt
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import (
     tile_layout_k_major,
@@ -660,7 +670,10 @@ struct BlackwellMatmulSM100Kernel[
     @always_inline
     fn validate_constraints():
         """Validate parameter constraints at compile time."""
-        comptime assert Self.c_type != DType.float32, "c_type cannot be float32"
+        comptime assert Self.c_type in (
+            DType.bfloat16,
+            DType.float8_e4m3fn,
+        ), "c_type cannot be float32 or float8_e4m3fn"
         comptime assert Self.transpose_b, "Only support transposed B (K-major)"
         comptime assert Self.cta_group in (
             1,
@@ -902,8 +915,8 @@ struct BlackwellMatmulSM100Kernel[
             Self.config.k_group_size,
         ],
         iter_idx: UInt32,
-        work_m_coord: UInt,
-        work_n_coord: UInt,
+        work_m_coord: Int,
+        work_n_coord: Int,
         peer_cta_coord: Tuple[UInt, UInt, UInt],
         elect_one_cta: Bool,
     ):
@@ -924,18 +937,18 @@ struct BlackwellMatmulSM100Kernel[
             peer_cta_coord: Peer CTA coordinates (rank_n, rank_m, peer_m_rank).
             elect_one_cta: True if this CTA should call expect_bytes.
         """
-        var peer_rank_n = peer_cta_coord[0]
-        var peer_rank_m = peer_cta_coord[1]
-        var peer_m_rank = peer_cta_coord[2]
+        var peer_rank_n = Int(peer_cta_coord[0])
+        var peer_rank_m = Int(peer_cta_coord[1])
+        var peer_m_rank = Int(peer_cta_coord[2])
 
         # Global memory coordinates for A (M) and B (N)
-        var a_gmem_m_coord = peer_m_rank * UInt(
-            Self.a_tma_rows
-        ) + work_m_coord * UInt(Self.BM)
+        var a_gmem_m_coord = (
+            peer_m_rank * Self.a_tma_rows + work_m_coord * Self.BM
+        )
         var b_gmem_n_coord = (
-            peer_rank_m * UInt(Self.b_tma_rows)
-            + peer_rank_n * UInt(Self.BN)
-            + work_n_coord * UInt(Self.MMA_N)
+            peer_rank_m * Self.b_tma_rows
+            + peer_rank_n * Self.BN
+            + work_n_coord * Self.MMA_N
         )
 
         if elect_one_sync():
@@ -957,15 +970,15 @@ struct BlackwellMatmulSM100Kernel[
                 # TMA descriptor layout. Pointer arithmetic with a_tma_load_size
                 # preserves the original working behavior.
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size),
+                    a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
                     a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size),
+                    b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
                     b_tile.layout,
                 )
 
-                var k_coord = UInt(iter_idx + UInt32(j)) * UInt(Self.BK)
+                var k_coord = Int(iter_idx + UInt32(j)) * Self.BK
 
                 # TileTensor directly to loader (uses TileTensor TMA overload)
                 a_loader.load(
@@ -1332,8 +1345,8 @@ struct BlackwellMatmulSM100Kernel[
                                         b_loader,
                                         tiles,
                                         UInt32(i),
-                                        UInt(current.m),
-                                        UInt(current.n),
+                                        Int(current.m),
+                                        Int(current.n),
                                         ctx.peer_cta_coord,
                                         ctx.elect_one_cta,
                                     )
@@ -1543,7 +1556,7 @@ struct BlackwellMatmulSM100FallbackKernel[
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
         c: TileTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
-        num_iters: UInt,
+        num_iters: Int,
     ):
         """Run the fallback matmul kernel.
 
@@ -1625,17 +1638,17 @@ struct BlackwellMatmulSM100FallbackKernel[
                 a_tma_op.async_copy(
                     a_smem_tile,
                     tma_mbar[0],
-                    (Int(i) * Self.BK, Int(block_idx.y) * Self.BM),
+                    (i * Self.BK, block_idx.y * Self.BM),
                 )
                 b_tma_op.async_copy(
                     b_smem_tile,
                     tma_mbar[0],
                     (
-                        Int(i) * Self.BK,
-                        Int(block_idx.x) * Self.BN,
+                        i * Self.BK,
+                        block_idx.x * Self.BN,
                     ) if Self.transpose_b else (
-                        Int(block_idx.x) * Self.BN,
-                        Int(i) * Self.BK,
+                        block_idx.x * Self.BN,
+                        i * Self.BK,
                     ),
                 )
 
@@ -1678,7 +1691,7 @@ struct BlackwellMatmulSM100FallbackKernel[
 
         var ctile, ctile_coords, _ = c.tile_with_offset[
             Self.BM, Self.BN, stride_layout=Self.CGmemStrideLayout
-        ](Coord(Idx(Int(block_idx.y)), Idx(Int(block_idx.x))))
+        ](Coord(Idx(block_idx.y), Idx(block_idx.x)))
 
         var M = c.dim[0]()
 
@@ -1700,7 +1713,7 @@ struct BlackwellMatmulSM100FallbackKernel[
                 var vectorized = warp_tile.vectorize[1, 2]()
                 var dist_result = vectorized.distribute_with_offset[
                     row_major[8, 4]()
-                ](Int(lane_id()))
+                ](lane_id())
                 var frag = dist_result[0]
                 var frag_coords = dist_result[1]
                 var frag_m = warp_m + frag_coords[0]

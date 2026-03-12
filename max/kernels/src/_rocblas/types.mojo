@@ -175,43 +175,39 @@ struct Status(Equatable, TrivialRegisterPassable, Writable):
         return Int(self._value)
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self == Self.SUCCESS:
-            return writer.write("SUCCESS")
+            return writer.write_string("SUCCESS")
         if self == Self.INVALID_HANDLE:
-            return writer.write("INVALID_HANDLE")
+            return writer.write_string("INVALID_HANDLE")
         if self == Self.NOT_IMPLEMENTED:
-            return writer.write("NOT_IMPLEMENTED")
+            return writer.write_string("NOT_IMPLEMENTED")
         if self == Self.INVALID_POINTER:
-            return writer.write("INVALID_POINTER")
+            return writer.write_string("INVALID_POINTER")
         if self == Self.INVALID_SIZE:
-            return writer.write("INVALID_SIZE")
+            return writer.write_string("INVALID_SIZE")
         if self == Self.MEMORY_ERROR:
-            return writer.write("MEMORY_ERROR")
+            return writer.write_string("MEMORY_ERROR")
         if self == Self.INTERNAL_ERROR:
-            return writer.write("INTERNAL_ERROR")
+            return writer.write_string("INTERNAL_ERROR")
         if self == Self.PERF_DEGRADED:
-            return writer.write("PERF_DEGRADED")
+            return writer.write_string("PERF_DEGRADED")
         if self == Self.SIZE_QUERY_MISMATCH:
-            return writer.write("SIZE_QUERY_MISMATCH")
+            return writer.write_string("SIZE_QUERY_MISMATCH")
         if self == Self.SIZE_INCREASED:
-            return writer.write("SIZE_INCREASED")
+            return writer.write_string("SIZE_INCREASED")
         if self == Self.SIZE_UNCHANGED:
-            return writer.write("SIZE_UNCHANGED")
+            return writer.write_string("SIZE_UNCHANGED")
         if self == Self.INVALID_VALUE:
-            return writer.write("INVALID_VALUE")
+            return writer.write_string("INVALID_VALUE")
         if self == Self.CONTINUE:
-            return writer.write("CONTINUE")
+            return writer.write_string("CONTINUE")
         if self == Self.CHECK_NUMERICS_FAIL:
-            return writer.write("CHECK_NUMERICS_FAIL")
+            return writer.write_string("CHECK_NUMERICS_FAIL")
         if self == Self.EXCLUDED_FROM_BUILD:
-            return writer.write("EXCLUDED_FROM_BUILD")
+            return writer.write_string("EXCLUDED_FROM_BUILD")
         if self == Self.ARCH_MISMATCH:
-            return writer.write("ARCH_MISMATCH")
+            return writer.write_string("ARCH_MISMATCH")
 
         abort("unreachable: invalid Status entry")
 

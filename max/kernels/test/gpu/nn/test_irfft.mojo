@@ -13,13 +13,7 @@
 from std.complex import ComplexFloat32
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import Vendor
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    coord,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, coord, row_major
 from std.math import sqrt
 from nn.irfft import irfft
 from std.testing import assert_almost_equal

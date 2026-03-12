@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import *
-from layout.layout import Layout, composition
 from layout.swizzle import ComposedLayout, Swizzle
 from std.testing import assert_equal
 

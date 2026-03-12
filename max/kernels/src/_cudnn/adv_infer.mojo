@@ -235,14 +235,14 @@ struct cudnnForwardMode_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_FWD_MODE_INFERENCE:
-            return writer.write("CUDNN_FWD_MODE_INFERENCE")
+            return writer.write_string("CUDNN_FWD_MODE_INFERENCE")
         if self is Self.CUDNN_FWD_MODE_TRAINING:
-            return writer.write("CUDNN_FWD_MODE_TRAINING")
+            return writer.write_string("CUDNN_FWD_MODE_TRAINING")
         abort("invalid cudnnForwardMode_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnForwardMode_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnForwardMode_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -784,18 +784,18 @@ struct cudnnSeqDataAxis_t(
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_SEQDATA_TIME_DIM:
-            return writer.write("CUDNN_SEQDATA_TIME_DIM")
+            return writer.write_string("CUDNN_SEQDATA_TIME_DIM")
         if self is Self.CUDNN_SEQDATA_BATCH_DIM:
-            return writer.write("CUDNN_SEQDATA_BATCH_DIM")
+            return writer.write_string("CUDNN_SEQDATA_BATCH_DIM")
         if self is Self.CUDNN_SEQDATA_BEAM_DIM:
-            return writer.write("CUDNN_SEQDATA_BEAM_DIM")
+            return writer.write_string("CUDNN_SEQDATA_BEAM_DIM")
         if self is Self.CUDNN_SEQDATA_VECT_DIM:
-            return writer.write("CUDNN_SEQDATA_VECT_DIM")
+            return writer.write_string("CUDNN_SEQDATA_VECT_DIM")
         abort("invalid cudnnSeqDataAxis_t entry")
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String(t"cudnnSeqDataAxis_t({self})")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnSeqDataAxis_t({self})".write_to(writer)
 
     fn __int__(self) -> Int:
         return Int(self._value)

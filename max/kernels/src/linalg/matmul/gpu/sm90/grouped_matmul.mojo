@@ -25,9 +25,15 @@ from std.gpu.primitives.cluster import (
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import IntTuple, Layout, LayoutTensor, TileTensor
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout.layout_tensor import LayoutTensorIter
-from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
 from layout.tensor_core_async import TensorCoreAsync, tile_layout_k_major
 from layout.tma_async import (
     PipelineState,
@@ -103,9 +109,6 @@ fn grouped_matmul_sm90[
         Int32(config.cluster_shape[1]),
         Int32(config.cluster_shape[2]),
     )
-
-    comptime CLUSTER_N = UInt(cluster_shape[0])
-    comptime CLUSTER_M = UInt(cluster_shape[1])
 
     comptime k_group_size = config.k_group_size
 

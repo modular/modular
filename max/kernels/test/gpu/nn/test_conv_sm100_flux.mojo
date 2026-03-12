@@ -27,7 +27,7 @@ FLUX VAE decoder uses block_out_channels=[128, 256, 512, 512] with:
 from std.random import rand
 from std.testing import assert_false
 
-from layout import LayoutTensor, Layout, RuntimeLayout
+from layout import Layout, LayoutTensor, RuntimeLayout
 from std.gpu.host import DeviceContext
 from nn.conv import conv_gpu, conv_cudnn
 

@@ -94,28 +94,37 @@ fn _compute_block_tile_shape[
 
 
 fn _compute_output_tile_shape(
-    mma_shape: IndexList[3], cta_group: Int, AB_swapped: Bool
+    c_type: DType, mma_shape: IndexList[3], cta_group: Int, AB_swapped: Bool
 ) -> IndexList[2]:
     """Compute output tile shape based on MMA config."""
     # If MMA_M is 256, each of the pair ctas has the entire MMA_N.
     # If MMA_M is 128, each of the pair ctas has 1/2 of MMA_N.
     # If cta_group=1, the cta has the entire MMA_N.
-    var c_tile_n = mma_shape[1] if (
-        mma_shape[0] == 256 or cta_group == 1
-    ) else (mma_shape[1] // 2)
-    var output_tile_n = 8
-    if c_tile_n % 32 == 0:
-        output_tile_n = 32
-    elif c_tile_n % 16 == 0:
-        output_tile_n = 16
+
     # MMA_M=128/256 cta_group=2 all use 128 rows in output tile.
     var output_tile_m = 128 if cta_group == 2 else mma_shape[0]
-    return Index(output_tile_n, output_tile_m) if AB_swapped else Index(
-        output_tile_m, output_tile_n
-    )
+
+    if c_type == DType.bfloat16:
+        var c_tile_n = mma_shape[1] if (
+            mma_shape[0] == 256 or cta_group == 1
+        ) else (mma_shape[1] // 2)
+        var output_tile_n = 8
+        if c_tile_n % 32 == 0:
+            output_tile_n = 32
+        elif c_tile_n % 16 == 0:
+            output_tile_n = 16
+        return Index(output_tile_n, output_tile_m) if AB_swapped else Index(
+            output_tile_m, output_tile_n
+        )
+    else:  # FP8 output tile shape
+        var output_tile_n = 16  # no swizzle for fp8 output dtype
+        return Index(output_tile_n, output_tile_m) if AB_swapped else Index(
+            output_tile_m, output_tile_n
+        )
 
 
 fn _compute_swizzle_modes(
+    c_type: DType,
     output_tile_shape: IndexList[2],
     AB_swapped: Bool,
     is_gmm: Bool = False,
@@ -124,17 +133,22 @@ fn _compute_swizzle_modes(
     var a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     var b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     var c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
-    if AB_swapped:
-        c_swizzle = (
-            TensorMapSwizzle.SWIZZLE_32B if is_gmm else TensorMapSwizzle.SWIZZLE_128B
-        )
+
+    if c_type == DType.bfloat16:
+        if AB_swapped:
+            c_swizzle = (
+                TensorMapSwizzle.SWIZZLE_32B if is_gmm else TensorMapSwizzle.SWIZZLE_128B
+            )
+        else:
+            # When not swapped, output_tile_shape[1] is the N dimension
+            var tile_n = output_tile_shape[1]
+            if tile_n == 32:
+                c_swizzle = TensorMapSwizzle.SWIZZLE_64B
+            elif tile_n == 16:
+                c_swizzle = TensorMapSwizzle.SWIZZLE_32B
     else:
-        # When not swapped, output_tile_shape[1] is the N dimension
-        var tile_n = output_tile_shape[1]
-        if tile_n == 32:
-            c_swizzle = TensorMapSwizzle.SWIZZLE_64B
-        elif tile_n == 16:
-            c_swizzle = TensorMapSwizzle.SWIZZLE_32B
+        c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
+
     return (a_swizzle, b_swizzle, c_swizzle)
 
 
@@ -299,7 +313,7 @@ struct MatmulConfig[
             mma_shape, cta_group
         )
         self.output_tile_shape = _compute_output_tile_shape(
-            mma_shape, cta_group, AB_swapped
+            Self.c_type, mma_shape, cta_group, AB_swapped
         )
 
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
@@ -308,7 +322,7 @@ struct MatmulConfig[
         self.num_split_k = num_split_k
 
         var swizzles = _compute_swizzle_modes(
-            self.output_tile_shape, AB_swapped
+            self.c_type, self.output_tile_shape, AB_swapped
         )
         self.a_swizzle = swizzles[0]
         self.b_swizzle = swizzles[1]
@@ -603,7 +617,7 @@ struct BlockScaledMatmulConfig[
             mma_shape, cta_group
         )
         self.output_tile_shape = _compute_output_tile_shape(
-            mma_shape, cta_group, AB_swapped
+            Self.c_type, mma_shape, cta_group, AB_swapped
         )
 
         # Scaling factors configuration (SFA, SFB)
@@ -626,7 +640,7 @@ struct BlockScaledMatmulConfig[
         self.num_split_k = num_split_k
 
         var swizzles = _compute_swizzle_modes(
-            self.output_tile_shape, AB_swapped, is_gmm
+            self.c_type, self.output_tile_shape, AB_swapped, is_gmm
         )
         self.a_swizzle = swizzles[0]
         self.b_swizzle = swizzles[1]

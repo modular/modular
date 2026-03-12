@@ -13,24 +13,19 @@
 
 from buffer import Dim, DimList
 from std.collections import InlineArray
-from layout.layout import Layout
 from layout.layout_tensor import LayoutTensorIter
 from layout import *
 from layout._fillers import arange
 from layout.layout import (
-    UNKNOWN_VALUE,
-    Layout,
     MakeLayoutList,
     blocked_product,
     coalesce,
     complement,
-    composition,
     expand_modes_alike,
     format_layout,
     is_row_major,
     logical_divide,
     logical_product,
-    print_layout,
     right_inverse,
     size,
     sublayout,

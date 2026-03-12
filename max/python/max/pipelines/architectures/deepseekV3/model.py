@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import numpy as np
@@ -88,6 +88,34 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
 
 class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     """A DeepseekV3 model."""
+
+    @staticmethod
+    def _get_mtp_draft_ep_dispatch_dtype(
+        pipeline_config: PipelineConfig,
+    ) -> DType | None:
+        """Returns the draft model's EP dispatch dtype for MTP with FP4 target.
+
+        When MTP speculative decoding is used with an FP4 target model, EP
+        buffers must be sized for the draft model's (larger) dispatch dtype.
+        Returns None if this override is not needed.
+        """
+        spec_config = pipeline_config.speculative
+        if spec_config is None or not spec_config.is_mtp():
+            return None
+
+        encoding = pipeline_config.model.quantization_encoding
+        if encoding is None or not is_float4_encoding(encoding):
+            return None
+
+        draft_encoding = (
+            pipeline_config.draft_model.quantization_encoding
+            if pipeline_config.draft_model is not None
+            else None
+        )
+        if draft_encoding is None:
+            return None
+
+        return supported_encoding_dtype(draft_encoding)
 
     @classmethod
     def get_kv_params(
@@ -386,9 +414,16 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             n_gpus_per_node = len(pipeline_config.model.device_specs)
             n_nodes = pipeline_config.runtime.ep_size // n_gpus_per_node
 
+            ep_dispatch_dtype = supported_encoding_dtype(encoding)
+            draft_ep_dtype = cls._get_mtp_draft_ep_dispatch_dtype(
+                pipeline_config
+            )
+            if draft_ep_dtype is not None:
+                ep_dispatch_dtype = draft_ep_dtype
+
             per_device_ep_memory = estimate_ep_memory_usage(
                 hidden_size=huggingface_config.hidden_size,
-                dispatch_dtype=supported_encoding_dtype(encoding),
+                dispatch_dtype=ep_dispatch_dtype,
                 combine_dtype=DType.bfloat16,
                 max_tokens_per_rank=pipeline_config.runtime.max_batch_input_tokens,
                 n_experts=huggingface_config.n_routed_experts,
@@ -460,8 +495,28 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # since NVSHMEM functions cannot be linked without real GPU devices.
         # We still keep ep_config to generate the correct graph structure.
         if config.ep_config is not None and not is_virtual_device_mode():
-            self.ep_comm_initializer = EPCommInitializer(config.ep_config)
+            ep_alloc_config = config.ep_config
+            # When EAGLE/MTP speculative decoding shares EP buffers between
+            # target (FP4) and draft (BF16) models, allocate buffers
+            # large enough for the draft model's dispatch dtype.
+            draft_ep_dtype = self._get_mtp_draft_ep_dispatch_dtype(
+                self.pipeline_config
+            )
+            if draft_ep_dtype is not None:
+                ep_alloc_config = replace(
+                    config.ep_config,
+                    dispatch_dtype=draft_ep_dtype,
+                    dispatch_fp8_config=None,
+                )
+                logger.info(
+                    f"Upsizing EP buffers for draft model dispatch dtype: {draft_ep_dtype}"
+                )
+            self.ep_comm_initializer = EPCommInitializer(ep_alloc_config)
             self.ep_comm_initializer.ep_init(session)
+            # ep_init() sets node_id on the initializer's config; propagate
+            # it back to the model's ep_config (which may be a different
+            # object when we created a copy above).
+            config.ep_config.node_id = ep_alloc_config.node_id
             if config.ep_config.node_id == -1:
                 raise ValueError(
                     "EP node ID is not set. Please check if the EP initialization is successful."
@@ -535,42 +590,24 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         assert isinstance(model_inputs, DeepseekV3Inputs)
 
         model_outputs = self.model.execute(*model_inputs.buffers)
-
-        num_hidden_state_outputs = len(self.devices)
         num_outputs = len(model_outputs)
 
         # Possible output configurations:
-        # - 1 output: next_token_logits only
+        # - 4 outputs: next_token_logits, logits, logit_offsets + hidden_states
         # - 3 outputs: next_token_logits, logits, logit_offsets (variable logits)
-        # - 1 + N: next_token_logits + hidden_states (one per device)
-        # - 3 + N: next_token_logits, logits, logit_offsets + hidden_states (one per device)
+        # - 2 outputs: next_token_logits + hidden_states
+        # - 1 output: next_token_logits only
 
-        if num_outputs == 3 + num_hidden_state_outputs:
+        if num_outputs == 4:
             assert isinstance(model_outputs[0], Buffer)
             assert isinstance(model_outputs[1], Buffer)
             assert isinstance(model_outputs[2], Buffer)
-            hidden_states_list: list[Buffer] = []
-            for i in range(num_hidden_state_outputs):
-                hs = model_outputs[3 + i]
-                assert isinstance(hs, Buffer)
-                hidden_states_list.append(hs)
+            assert isinstance(model_outputs[3], Buffer)
             return ModelOutputs(
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[1],
                 logit_offsets=model_outputs[2],
-                hidden_states=hidden_states_list,
-            )
-        elif num_outputs == 1 + num_hidden_state_outputs:
-            assert isinstance(model_outputs[0], Buffer)
-            hidden_states_list = []
-            for i in range(num_hidden_state_outputs):
-                hs = model_outputs[1 + i]
-                assert isinstance(hs, Buffer)
-                hidden_states_list.append(hs)
-            return ModelOutputs(
-                next_token_logits=model_outputs[0],
-                logits=model_outputs[0],
-                hidden_states=hidden_states_list,
+                hidden_states=model_outputs[3],
             )
         elif num_outputs == 3:
             assert isinstance(model_outputs[0], Buffer)
@@ -580,6 +617,14 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[1],
                 logit_offsets=model_outputs[2],
+            )
+        elif num_outputs == 2:
+            assert isinstance(model_outputs[0], Buffer)
+            assert isinstance(model_outputs[1], Buffer)
+            return ModelOutputs(
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[0],
+                hidden_states=model_outputs[1],
             )
         else:
             assert isinstance(model_outputs[0], Buffer)

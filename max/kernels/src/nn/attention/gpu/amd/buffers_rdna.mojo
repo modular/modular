@@ -30,8 +30,8 @@ from std.sys import simd_width_of
 from std.gpu import barrier, lane_id
 from std.gpu import warp_id as get_warp_id
 from layout import Layout, LayoutTensor
-from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.layout import blocked_product
+from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.layout_tensor import (
     ThreadScope,
     copy_dram_to_local,

@@ -16,26 +16,6 @@ from .defines import get_defined_int, get_defined_string, is_defined
 from std.collections.string.string_slice import _get_kgen_string
 
 # ===----------------------------------------------------------------------=== #
-# is_run_in_comptime_interpreter
-# ===----------------------------------------------------------------------=== #
-
-
-@always_inline("nodebug")
-fn is_run_in_comptime_interpreter() -> Bool:
-    """Returns true if the current code is being interpreted during compilation
-    time. This is often used to provide a different code execution path for the
-    comptime evaluation in the interpreter from generated runtime code, e.g.:
-    runtime code path uses GPU intrinsics while comptime interpreter code path
-    uses simplified CPU host logic for GPU kernels. Returns false otherwise.
-
-    Returns:
-        A boolean value indicating whether it is currently running in the
-        comptime interpreter or not.
-    """
-    return __mlir_op.`kgen.is_run_in_comptime_interpreter`()
-
-
-# ===----------------------------------------------------------------------=== #
 # codegen_reachable
 # ===----------------------------------------------------------------------=== #
 

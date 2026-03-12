@@ -37,7 +37,7 @@ from std.testing import assert_false
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from layout import Coord, Idx, LayoutTensor, Layout, TileTensor, row_major
+from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
 from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from nn.conv import conv_gpu
@@ -1290,6 +1290,7 @@ fn test_conv_gpu_scale_epilogue[
 
     @parameter
     @always_inline
+    @__copy_capture(out_epilogue_tt)
     fn scale_epilogue[
         _dtype: DType, _rank: Int, _width: Int
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
@@ -1431,6 +1432,7 @@ fn test_conv_gpu_additive_epilogue[
 
     @parameter
     @always_inline
+    @__copy_capture(out_epilogue_tt)
     fn add_bias_epilogue[
         _dtype: DType, _rank: Int, _width: Int
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):

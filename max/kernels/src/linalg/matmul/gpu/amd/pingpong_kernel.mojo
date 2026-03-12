@@ -44,7 +44,7 @@ from std.collections import OptionalReg
 
 from ....structuring import SMemTile, RegTile, eval
 from ....utils import elementwise_epilogue_type
-from layout import Layout, LayoutTensor, IntTuple, RuntimeLayout
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from layout.swizzle import Swizzle
 from layout._utils import make_amd_buffer_resource, idx2crd
 from .matmul import write_output_fragments

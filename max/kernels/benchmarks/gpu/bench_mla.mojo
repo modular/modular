@@ -407,7 +407,7 @@ fn bench_prefill[
 
 
 @fieldwise_init
-struct MLA_cfg(ImplicitlyCopyable):
+struct MLA_cfg(ImplicitlyCopyable, Writable):
     # params
     var mask_rank: Int
     var qkv_type: DType
@@ -423,25 +423,6 @@ struct MLA_cfg(ImplicitlyCopyable):
     var kv_depth: Int
     var cache_depth: Int
     var cache_num_heads: Int
-
-    @no_inline
-    fn __str__(self) -> String:
-        # fmt: off
-        return String(
-            "mask_rank", self.mask_rank,
-            "qkv_type=", self.qkv_type,
-            "/output_type=", self.output_type,
-            "/mask_type=", self.mask_type,
-            "/depth=", self.depth,
-            "/prefill_depth=", self.prefill_depth,
-            "/num_heads=", self.num_heads,
-            "/group=", self.group,
-            "/kv_depth=", self.kv_depth,
-            "/cache_depth=", self.cache_depth,
-            "/cache_num_heads=", self.cache_num_heads,
-            "/cache_busting=", self.cache_busting,
-        )
-        # fmt: on
 
 
 def main() raises:

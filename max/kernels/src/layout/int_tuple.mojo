@@ -61,7 +61,6 @@ from std.os import abort
 from buffer import DimList
 from std.builtin.range import _StridedRange
 from std.memory import memcpy
-from std.sys.compile import is_run_in_comptime_interpreter
 from std.sys.intrinsics import _type_is_eq_parse_time
 
 from std.utils.numerics import max_finite
@@ -531,7 +530,7 @@ struct IntTuple(
         """
         # Skip validation during compile-time interpretation since the comparison
         # may involve complex type witness expressions that can't be evaluated.
-        if not is_run_in_comptime_interpreter():
+        if not __is_run_in_comptime_interpreter:
             debug_assert(
                 value >= Self.MinimumValue,
                 "IntTuple value must be >= MinimumValue: ",

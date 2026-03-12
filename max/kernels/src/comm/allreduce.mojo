@@ -128,6 +128,7 @@ from .sync import (
     MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
+    circular_add,
     is_p2p_enabled,
 )
 from .device_query import get_sm_version, _dispatch_max_num_blocks
@@ -396,7 +397,7 @@ fn _allreduce_2stage_kernel[
 
     comptime for i in range(ngpus):
         # Round-robin access pattern to balance NVLink traffic across GPUs.
-        var target = (my_rank + i) % ngpus
+        var target = circular_add[ngpus](my_rank, i)
         # Skip Signal header.
         tmps[i] = (
             rank_sigs[target].address_space_cast[AddressSpace.GENERIC]() + 1
@@ -412,7 +413,9 @@ fn _allreduce_2stage_kernel[
     ](uninitialized=True)
 
     comptime for i in range(num_buffers):
-        var target = 0 if num_buffers == 1 else (my_rank + i) % num_buffers
+        var target = 0 if num_buffers == 1 else circular_add[num_buffers](
+            my_rank, i
+        )
         ptrs[i] = src_ptrs[target]
 
     # --- Stage 1: Reduce-Scatter Phase ---
@@ -473,7 +476,7 @@ fn _allreduce_2stage_kernel[
         rs_config.stride,
     ):
         comptime for gpu_idx in range(ngpus):
-            var peer_rank = (my_rank + gpu_idx) % ngpus
+            var peer_rank = circular_add[ngpus](my_rank, gpu_idx)
 
             var dst_idx = rs_config.rank_start(peer_rank) + idx
             output_lambda[width=simd_width, alignment=alignment](
@@ -485,7 +488,7 @@ fn _allreduce_2stage_kernel[
 
     # Ragged tail - max 1 simd vector per gpu, spread work between threads
     if global_tid < ngpus:
-        var peer_rank = (my_rank + global_tid) % ngpus
+        var peer_rank = circular_add[ngpus](my_rank, Int(global_tid))
         if peer_rank < rs_config.axis_remainder:
             var idx = (
                 rs_config.rank_part(0) - simd_width
@@ -558,7 +561,9 @@ fn _allreduce_1stage_kernel[
     ](uninitialized=True)
 
     comptime for i in range(num_buffers):
-        var target = 0 if num_buffers == 1 else (my_rank + i) % num_buffers
+        var target = 0 if num_buffers == 1 else circular_add[num_buffers](
+            my_rank, i
+        )
         ptrs[i] = src_ptrs[target]
 
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)

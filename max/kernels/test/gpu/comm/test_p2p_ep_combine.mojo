@@ -36,8 +36,7 @@ from std.benchmark import (
 )
 from comm.sync import enable_p2p
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor
-from layout.runtime_layout import RuntimeLayout
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from shmem.ep_comm import (
     BF16TokenFormat,
     EP_DATA_READY_FLAG,

@@ -17,20 +17,13 @@ from std.sys import size_of
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
-from layout.layout import (
-    Layout,
-    UNKNOWN_VALUE,
-)
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
 from layout.tma_async import (
     create_split_tma,
     SplitLastDimTMATensorTile,
 )
 from std.logger import Logger
 
-from layout.layout_tensor import (
-    LayoutTensor,
-)
-from layout.tile_tensor import lt_to_tt
 from nn.mha_fa3_utils import (
     NonNullPointer,
     NullPointer,
@@ -42,7 +35,6 @@ from nn.mha_utils import (
     MHAConfig,
 )
 from nn.mha_fa3_utils import KVTMATile
-from layout.runtime_layout import RuntimeLayout
 from std.utils.numerics import get_accum_type
 from std.utils.index import Index
 from std.utils import IndexList

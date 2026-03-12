@@ -33,12 +33,12 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
 from layout import (
-    UNKNOWN_VALUE,
     IntTuple,
     Layout,
     LayoutTensor,
-    RuntimeTuple,
     RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
 )
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle

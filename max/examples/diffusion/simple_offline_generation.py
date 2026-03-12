@@ -263,6 +263,7 @@ async def generate_image(args: argparse.Namespace) -> None:
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
+            enable_fbc=args.step_cache,
         ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
@@ -407,7 +408,6 @@ async def generate_image(args: argparse.Namespace) -> None:
     # latent initialization, and all other preprocessing
     # Image is now extracted from the message content automatically
     context = await tokenizer.new_context(request)
-    context.step_cache = args.step_cache
 
     print(
         f"Context created: {context.height}x{context.width}, {context.num_inference_steps} steps"
@@ -452,7 +452,6 @@ async def generate_image(args: argparse.Namespace) -> None:
         context_warmup = await tokenizer.new_context(
             request_warmup, input_image=input_image
         )
-        context_warmup.step_cache = args.step_cache
         inputs_warmup = PixelGenerationInputs[PixelContext](
             batch={context_warmup.request_id: context_warmup}
         )

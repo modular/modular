@@ -33,6 +33,8 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    RowMajorLayout,
+    RuntimeInt,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -40,8 +42,6 @@ from layout import (
     lt_to_tt,
     row_major,
 )
-from layout.tile_layout import RowMajorLayout
-from layout.coord import RuntimeInt
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue

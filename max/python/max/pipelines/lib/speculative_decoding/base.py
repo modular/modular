@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, load_devices
+from max.driver import load_devices
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import (
@@ -29,13 +29,7 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.interfaces import (
-    GenerationStatus,
-    PipelineTokenizer,
-    RequestID,
-    TextGenerationOutput,
-    TextGenerationRequest,
-)
+from max.interfaces import PipelineTokenizer, RequestID, TextGenerationRequest
 from max.kv_cache import PagedKVCacheManager
 from max.kv_cache.registry import load_multi_kv_managers
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
@@ -45,100 +39,24 @@ from max.pipelines.lib.sampling import (
     RejectionRunner,
     rejection_runner_registry,
 )
+from max.pipelines.lib.sampling.sampling import TokenSampler
 from max.profiler import traced
 from transformers import AutoConfig
 
-from ..interfaces import ModelOutputs, PipelineModel, PipelineModelWithKVCache
+from ..interfaces import PipelineModel, PipelineModelWithKVCache
 from ..pipeline_variants.text_generation import (
     TextGenerationPipelineInterface,
-    calculate_num_steps,
     get_eos_tokens,
     get_weight_paths,
 )
-from ..sampling import (
-    PenaltyInputs,
-    SamplerInputs,
-    SamplingConfig,
-    token_sampler,
-)
-from ..utils import upper_bounded_default
-from .ragged_token_merger import ragged_token_merger
+from ..sampling import SamplingConfig
+from .ragged_token_merger import RaggedTokenMergerRunner
+from .utils import SpeculativeDecodingMetrics
 
 if TYPE_CHECKING:
     from ..config import MAXModelConfig, PipelineConfig, SpeculativeConfig
 
 logger = logging.getLogger("max.pipelines")
-
-
-class SpeculativeDecodingMetrics:
-    """Metrics tracker for speculative decoding performance."""
-
-    def __init__(self) -> None:
-        """Initialize metrics counters."""
-        self.bonus_tokens_used = 0
-        self.draft_tokens_accepted = 0
-        self.draft_tokens_generated = 0
-        self.total_acceptance_lengths = 0
-        self.num_generations = 0
-
-    def update(
-        self,
-        draft_tokens_generated: int,
-        draft_tokens_accepted: int,
-        bonus_tokens_used: int,
-        acceptance_lengths: list[int],
-    ) -> None:
-        """Update metrics with results from a batch.
-
-        Args:
-            draft_tokens_generated: Total draft tokens generated in this batch
-            draft_tokens_accepted: Total draft tokens accepted in this batch
-            bonus_tokens_used: Number of bonus tokens used in this batch
-            acceptance_lengths: List of acceptance lengths for each sequence in batch
-        """
-        self.draft_tokens_generated += draft_tokens_generated
-        self.draft_tokens_accepted += draft_tokens_accepted
-        self.bonus_tokens_used += bonus_tokens_used
-        self.total_acceptance_lengths += sum(acceptance_lengths)
-        self.num_generations += len(acceptance_lengths)
-
-    def get_stats(self) -> dict[str, float]:
-        """Get current statistics.
-
-        Returns:
-            Dictionary with acceptance rate and total counts
-        """
-        if self.draft_tokens_generated == 0:
-            return {
-                "acceptance_rate": 0.0,
-                "bonus_tokens_used": 0,
-                "draft_tokens_accepted": 0,
-                "draft_tokens_generated": 0,
-                "avg_acceptance_length": 0.0,
-            }
-
-        return {
-            "acceptance_rate": self.draft_tokens_accepted
-            / self.draft_tokens_generated,
-            "bonus_tokens_used": self.bonus_tokens_used,
-            "draft_tokens_accepted": self.draft_tokens_accepted,
-            "draft_tokens_generated": self.draft_tokens_generated,
-            "avg_acceptance_length": self.total_acceptance_lengths
-            / self.num_generations
-            if self.num_generations > 0
-            else 0.0,
-        }
-
-    def __str__(self) -> str:
-        """String representation of current metrics."""
-        stats = self.get_stats()
-        return (
-            f"SpeculativeDecodingMetrics("
-            f"acceptance_rate={stats['acceptance_rate']:.2%}, "
-            f"avg_acceptance_length={stats['avg_acceptance_length']:.2f}, "
-            f"bonus_tokens_used={stats['bonus_tokens_used']}, "
-            f"draft_tokens_accepted={stats['draft_tokens_accepted']}/{stats['draft_tokens_generated']})"
-        )
 
 
 def hidden_states_return_config(
@@ -176,23 +94,6 @@ def get_vocab_size(huggingface_config: AutoConfig) -> int:
         raise ValueError(
             "MAXModelConfig's HuggingFace config must have a 'vocab_size' or 'text_config.vocab_size' param for Speculative Decoding"
         )
-
-
-def compute_max_num_draft_steps(
-    replica_batches: list[list[TextContext]],
-    desired_num_draft_steps: int,
-    max_seq_len: int,
-    is_draft: bool,
-) -> int:
-    """Compute the maximum number of draft steps that can be run for a batch."""
-    max_seq_len = max_seq_len - 1 if is_draft else max_seq_len
-    num_draft_steps = desired_num_draft_steps
-    for replica_batch in replica_batches:
-        for context in replica_batch:
-            num_draft_steps = calculate_num_steps(
-                context, num_draft_steps, max_seq_len
-            )
-    return num_draft_steps
 
 
 class SpeculativeDecodingPipelineBase(
@@ -316,15 +217,14 @@ class SpeculativeDecodingPipelineBase(
             **draft_kwargs,
         )
 
-        # Load draft sampler
-        draft_sampling_config: SamplingConfig = self.pipeline_config.sampling
-        draft_sampling_config.enable_variable_logits = False
-        self._draft_sampler = self._session.load(
-            token_sampler(
-                draft_sampling_config,
-                return_logits=True,
-                device=device_refs[0],
-            )
+        # Load sampler
+        sampling_config: SamplingConfig = self.pipeline_config.sampling
+        sampling_config.enable_variable_logits = False
+        self._sampler = TokenSampler(
+            session=self._session,
+            sampling_config=sampling_config,
+            device=device_refs[0],
+            return_logits=True,
         )
 
         strategy = self._speculative_config.rejection_sampling_strategy
@@ -351,7 +251,7 @@ class SpeculativeDecodingPipelineBase(
         self._needs_all_draft_logits = strategy == "residual"
 
         # Initialize metrics tracker
-        self._metrics = SpeculativeDecodingMetrics()
+        self.metrics = SpeculativeDecodingMetrics.empty(log_on_destruction=True)
 
         # Track draft model replica assignments per request
         self._draft_replica_idx: dict[RequestID, int] = {}
@@ -369,8 +269,8 @@ class SpeculativeDecodingPipelineBase(
             )
         self._max_seq_len = target_seq_len
 
-        self._ragged_token_merger = self._session.load(
-            ragged_token_merger(device=device_refs[0])
+        self._ragged_token_merger = RaggedTokenMergerRunner(
+            session=self._session, device_ref=device_refs[0]
         )
 
         self._num_draft_steps = self._speculative_config.num_speculative_tokens
@@ -438,143 +338,6 @@ class SpeculativeDecodingPipelineBase(
     ]:
         """Returns the tokenizer for this speculative pipeline."""
         return self._tokenizer
-
-    @traced
-    def sample_draft_logits(
-        self,
-        model_outputs: ModelOutputs,
-        prev_tokens: Buffer,
-        prev_logits: Buffer,
-        sampler_inputs: SamplerInputs,
-        penalty_inputs: PenaltyInputs | None = None,
-    ) -> tuple[Buffer, Buffer, Buffer]:
-        """Samples draft tokens from the draft model logits."""
-        graph_inputs: list[Buffer] = [
-            model_outputs.logits,
-            prev_tokens,
-            *sampler_inputs.as_list(),
-            prev_logits,
-        ]
-        if penalty_inputs is not None:
-            graph_inputs.extend(penalty_inputs.as_list())
-        a, b, c = self._draft_sampler(*graph_inputs)[:3]
-        assert isinstance(a, Buffer)
-        assert isinstance(b, Buffer)
-        assert isinstance(c, Buffer)
-        return (a, b, c)
-
-    @property
-    def metrics(self) -> SpeculativeDecodingMetrics:
-        """Get the current speculative decoding metrics.
-
-        Returns:
-            The SpeculativeDecodingMetrics instance with current statistics
-        """
-        return self._metrics
-
-    def __del__(self) -> None:
-        """Log metrics when the pipeline is destroyed."""
-        if (
-            hasattr(self, "_metrics")
-            and self._metrics.draft_tokens_generated > 0
-        ):
-            logger.info(f"Speculative decoding metrics: {self._metrics}")
-
-    def update_contexts(
-        self,
-        context_batch: list[TextContext],
-        first_rejected_tokens: npt.NDArray[np.integer[Any]],
-        recovered_tokens: npt.NDArray[np.integer[Any]],
-        bonus_tokens: npt.NDArray[np.integer[Any]] | None,
-        draft_tokens: npt.NDArray[np.integer[Any]],
-        num_draft_tokens_generated: int,
-    ) -> None:
-        """Update contexts with the results of token generation.
-
-        Args:
-            context_batch: The list of context objects
-            first_rejected_tokens: Array indicating the indices of first rejected tokens
-            recovered_tokens: Array of recovered tokens from target model
-            bonus_tokens: Array of bonus tokens from target model
-            draft_tokens: Array of draft tokens
-            num_draft_tokens_generated: Number of tokens generated by the draft model
-        """
-        total_draft_generated = num_draft_tokens_generated * len(context_batch)
-        total_draft_accepted = 0
-        total_bonus_used = 0
-        acceptance_lengths = []
-
-        for idx, rejected_token_idx in enumerate(first_rejected_tokens):
-            context = context_batch[idx]
-            rejected_token_idx = rejected_token_idx.item()
-
-            for token_idx in range(rejected_token_idx):
-                token = int(draft_tokens[idx, token_idx])
-                context.update(token)
-
-            if (
-                rejected_token_idx == num_draft_tokens_generated
-                and bonus_tokens is not None
-            ):
-                context.update(bonus_tokens[idx, 0].item())
-                total_bonus_used += 1
-            else:
-                # For residual sampler, index by rejected position;
-                # for greedy sampler (or no bonus), always index 0.
-                recover_idx = (
-                    rejected_token_idx if bonus_tokens is not None else 0
-                )
-                context.update(recovered_tokens[idx, recover_idx].item())
-
-            total_draft_accepted += rejected_token_idx
-            acceptance_lengths.append(rejected_token_idx)
-
-            # When some or all draft tokens are rejected, we apply a token from
-            # the residual distribution. The draft and target models have not
-            # processed this token so the context goes back one step for both
-            # of the models to process that token.
-            # If all draft tokens are accepted, then the draft model has not
-            # processed the bonus token. In this case only the draft needs to
-            # go one step back. At the moment we do this for all cases.
-            context.tokens.rewind_processing(1)
-
-        # Update metrics
-        self._metrics.update(
-            total_draft_generated,
-            total_draft_accepted,
-            total_bonus_used,
-            acceptance_lengths,
-        )
-
-    def build_response(
-        self, context_batch: list[TextContext]
-    ) -> dict[RequestID, TextGenerationOutput]:
-        """Build response from updated contexts.
-
-        Args:
-            context_batch: The list of context objects
-
-        Returns:
-            Dictionary mapping request IDs to TextGenerationOutput objects
-        """
-        res: dict[RequestID, TextGenerationOutput] = {}
-
-        for context in context_batch:
-            # Identify the Max Length
-            context_max_length = upper_bounded_default(
-                upper_bound=self._max_seq_len, default=context.max_length
-            )
-
-            # Break early if beyond max length
-            current_length = context.tokens.processed_length + 1
-            if current_length >= context_max_length:
-                context.status = GenerationStatus.MAXIMUM_LENGTH
-
-            output = context.to_generation_output()
-            if output.tokens:
-                res[context.request_id] = output
-
-        return res
 
     @traced
     def release(self, request_id: RequestID) -> None:

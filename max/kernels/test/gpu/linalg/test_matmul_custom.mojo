@@ -18,9 +18,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import A100
-from layout import TileTensor
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.bmm import _batched_matmul_gpu
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive, multistage_gemm
 from linalg.utils_gpu import MatmulConfig, MatmulKernels, select_config

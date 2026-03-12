@@ -48,8 +48,7 @@ from layout.tma_async import (
     SharedMemBarrier,
     RaggedTMA3DTile,
 )
-from layout.layout import Layout
-from layout import TileTensor
+from layout import Layout, TileTensor
 import std.gpu.primitives.warp as warp
 
 from std.gpu.memory import AddressSpace, external_memory

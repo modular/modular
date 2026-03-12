@@ -16,9 +16,7 @@ from std.math import ceildiv
 import std.gpu.primitives.warp as warp
 from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
-from layout import TileTensor
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.gemv import gemv_kernel
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.testing import assert_false

@@ -39,16 +39,18 @@ from std.gpu.host.info import is_cpu, is_gpu
 from std.gpu.memory import external_memory
 from std.gpu.primitives import block
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from layout.coord import (
+from layout import (
     Coord,
     CoordLike,
-    DynamicCoord,
     Idx,
     RuntimeInt,
+    TensorLayout,
+    TileTensor,
     coord_to_index_list,
+    row_major,
 )
-from layout.tile_layout import Layout, TensorLayout
-from layout import TileTensor, row_major
+from layout.coord import DynamicCoord
+from layout.tile_layout import Layout
 from std.memory import stack_allocation
 from register import register_internal
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level

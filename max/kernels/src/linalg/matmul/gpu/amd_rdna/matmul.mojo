@@ -32,8 +32,7 @@ from std.gpu import (
     warp_id,
 )
 from std.gpu.compute.mma import mma as _mma_intrinsic
-from layout.tile_layout import TensorLayout
-from layout.tile_tensor import TileTensor
+from layout import TensorLayout, TileTensor
 from std.memory import stack_allocation
 from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type

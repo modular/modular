@@ -16,8 +16,8 @@ from std.gpu import WARP_SIZE
 from std.gpu.compute.mma import mma
 from std.itertools import product
 from layout import Layout, LayoutTensor
-from layout.int_tuple import product as prod
 from layout.layout import blocked_product
+from layout.int_tuple import product as prod
 from layout.swizzle import Swizzle
 from layout.tensor_core import num_matrix_reg, TensorCore
 from linalg.structuring import SMemTile, RegTile

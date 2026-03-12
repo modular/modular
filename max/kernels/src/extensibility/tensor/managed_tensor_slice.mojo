@@ -32,15 +32,15 @@ from compiler_internal.directives import (
 from std.gpu.host import get_gpu_target
 from std.gpu.host.info import is_cpu
 from std.gpu.host.info import is_gpu as _is_gpu
-from layout import LayoutTensor, TileTensor
-from layout.coord import Coord, _DimsToCoordLike
+from layout import Coord, LayoutTensor, TileTensor
+from layout.coord import _DimsToCoordLike
 from layout.tile_layout import Layout as TileLayout
 from register import register_internal
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import trace_arg
 from tensor import RuntimeTensorSpec
 
-from std.utils import Index, IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 from std.utils._serialize import _serialize
 
 from ._indexing import _dot_prod, _slice_to_tuple
@@ -531,79 +531,6 @@ struct ManagedTensorSlice[
         )
 
     @always_inline
-    fn like(
-        self,
-        other: ManagedTensorSlice[...],
-        out result: ManagedTensorSlice[
-            io_spec=Self.io_spec,
-            static_spec=other.static_spec.get_unknown(),
-        ],
-    ):
-        """Returns a view of this tensor reinterpreted with another tensor's shape and dtype.
-
-        The returned slice shares the same underlying memory as `self`, but is
-        reinterpreted as having the shape and element type of `other`. No data
-        is copied.
-
-        Args:
-          other: A tensor slice whose shape and dtype are used for the result.
-
-        Returns:
-          A new `ManagedTensorSlice` pointing to the same memory as `self`,
-          with the shape and dtype of `other`.
-        """
-        assert (
-            self.num_bytes() >= other.num_bytes()
-        ), "like: source buffer is smaller than the target shape requires"
-        result = {self._ptr.bitcast[Scalar[other.dtype]](), other.shape()}
-
-    comptime SplitType = ManagedTensorSlice[
-        io_spec=Self.io_spec,
-        static_spec=StaticTensorSpec[Self.dtype, Self.rank].get_unknown(),
-    ]
-
-    @always_inline
-    fn split(
-        self: ManagedTensorSlice[rank=1, ...],
-        offset: Int,
-        out result: Tuple[
-            Self.SplitType,
-            Self.SplitType,
-        ],
-    ):
-        """Splits a 1-D tensor slice into two contiguous halves at the given offset.
-
-        No data is copied; both returned slices share the same underlying
-        memory as `self`. The first slice covers elements `[0, offset)` and
-        the second covers elements `[offset, size)`.
-
-        Args:
-          offset: The index at which to split the tensor. Must satisfy
-            `0 <= offset <= self.size()`.
-
-        Returns:
-          A tuple `(lhs, rhs)` where `lhs` has `offset` elements starting at
-          the beginning of `self` and `rhs` has the remaining elements.
-        """
-        assert 0 <= offset <= self.size(), "split: offset out of bounds"
-        comptime PtrType = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
-
-        var lhs_shape = Index(offset)
-        var rhs_shape = Index(self.size() - offset)
-
-        var lhs_ptr = self._ptr
-        var rhs_ptr = self._ptr + offset
-
-        var lhs = Self.SplitType(
-            rebind[PtrType](lhs_ptr), rebind[IndexList[Self.rank]](lhs_shape)
-        )
-        var rhs = Self.SplitType(
-            rebind[PtrType](rhs_ptr), rebind[IndexList[Self.rank]](rhs_shape)
-        )
-
-        return lhs, rhs
-
-    @always_inline
     fn __getitem__(self, indices: IndexList[Self.rank]) -> Scalar[Self.dtype]:
         """Gets the value at the specified indices.
 
@@ -775,16 +702,6 @@ struct ManagedTensorSlice[
             product *= self.dim_size[i]()
 
         return product
-
-    @always_inline
-    fn num_bytes(self) -> Int:
-        """Returns the total size of the tensor slice in bytes.
-
-        Returns:
-          The number of bytes occupied by all elements, equal to
-          `self.size() * sizeof(dtype)`.
-        """
-        return self.size() * size_of[Scalar[Self.dtype]]()
 
     @always_inline
     fn unsafe_ptr[
@@ -1191,7 +1108,7 @@ struct ManagedTensorSlice[
 
         return {
             self.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
-            layout.tile_layout.Layout(shape_tuple, stride_tuple),
+            TileLayout(shape_tuple, stride_tuple),
         }
 
     fn write_to(self, mut writer: Some[Writer]):
@@ -1602,52 +1519,6 @@ fn view_copy_impl[
         _trace_name=_trace_name,
         use_blocking_impl=use_blocking_impl,
     ](z, ctx)
-
-
-fn copy_tensor[
-    dtype: DType,
-    rank: Int,
-    //,
-    *,
-    target: StaticString = "cpu",
-    _trace_name: StaticString = "mogg.copy_tensor",
-](
-    dst: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
-    src: ManagedTensorSlice[dtype=dtype, rank=rank, ...],
-    ctx: DeviceContextPtr,
-) capturing raises:
-    """Copy elements from `src` to `dst` using fused load and store.
-
-    Reads each element of `src` via `_fused_load` (dispatches through the
-    fused input lambda when present, falls back to a direct load otherwise)
-    and writes to `dst` through its fused output store, dispatching via
-    `foreach`.
-
-    Parameters:
-        dtype: The element type of both tensor slices.
-        rank: The rank of both tensor slices.
-        target: The target device (e.g. "cpu", "gpu").
-        _trace_name: Name shown in the execution trace.
-
-    Args:
-        dst: The destination tensor slice.
-        src: The source tensor slice.
-        ctx: The device context.
-    """
-    assert src.shape() == dst.shape(), "runtime shapes not compatible"
-
-    @parameter
-    @always_inline
-    fn func[
-        width: Int, element_alignment: Int
-    ](idx: IndexList[rank]) capturing -> SIMD[dtype, width]:
-        return src._fused_load[width, element_alignment=element_alignment](idx)
-
-    foreach[
-        func,
-        target=target,
-        _trace_name=_trace_name,
-    ](dst, ctx)
 
 
 fn _compatible_with[x: DimList, y: DimList]() -> Bool:

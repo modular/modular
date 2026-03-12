@@ -23,11 +23,10 @@ from std.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
 )
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import cp_async_k_major
-from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core_async import (
     TensorCoreAsync,
     tile_layout_mn_major,

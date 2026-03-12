@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections.optional import Optional
-from layout import LayoutTensor, Layout
+from layout import Layout, LayoutTensor
 from std.math import fma
 from std.sys import align_of, prefetch
 from std.sys.info import CompilationTarget

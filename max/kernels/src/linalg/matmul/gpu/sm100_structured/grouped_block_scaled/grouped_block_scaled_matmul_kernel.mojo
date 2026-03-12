@@ -44,9 +44,8 @@ from std.gpu.primitives.cluster import cluster_sync, elect_one_sync
 from std.gpu.sync import syncwarp
 from std.gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
 from std.sys import inlined_assembly
-from layout import ComptimeInt, TileTensor
-from layout.tile_layout import TensorLayout
-from layout.tile_layout import RowMajorLayout, _IntToComptimeInt
+from layout import ComptimeInt, RowMajorLayout, TensorLayout, TileTensor
+from layout.tile_layout import _IntToComptimeInt
 from structured_kernels.tile_types import (
     TmaOpType,
     tma_desc_layout_3d,

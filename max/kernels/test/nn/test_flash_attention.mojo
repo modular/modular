@@ -17,11 +17,11 @@ from std.random import rand, seed
 
 from std.collections import Optional
 from layout import (
+    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    IntTuple,
     UNKNOWN_VALUE,
 )
 from nn.flash_attention import flash_attention, flash_attention_split_kv

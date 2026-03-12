@@ -30,13 +30,11 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
+    RowMajorLayout,
     RuntimeInt,
+    TensorLayout,
     TileTensor,
     row_major,
-)
-from layout.tile_layout import (
-    RowMajorLayout,
-    TensorLayout,
     row_major as tt_row_major,
 )
 from structured_kernels.tile_types import create_tma_tile
@@ -134,6 +132,25 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
             MMA_M == 128 or MMA_M == 64
         ), "Only support MMA_M == 128 or 64 when cta_group == 1"
 
+    # requirements for float8_e4m3fn output dtype
+    comptime if c_type == DType.float8_e4m3fn:
+        comptime assert a_type == b_type == DType.bfloat16, (
+            "Only support bfloat16 input types is tested for float8_e4m3fn"
+            " output dtype"
+        )
+        comptime assert (
+            config.c_swizzle == TensorMapSwizzle.SWIZZLE_NONE
+        ), "c_swizzle must be for float8_e4m3fn output dtype"
+        comptime assert (
+            (config.cta_group == 1 or MMA_M == 256) and MMA_N % 16 == 0
+        ) or (
+            (config.cta_group == 2 or MMA_M == 128) and MMA_N % 32 == 0
+        ), "MMA_N must be a multiple of 16/32 for float8_e4m3fn output dtype"
+        comptime assert register_based_epilogue, (
+            "only register-based epilogue is supported for float8_e4m3fn output"
+            " dtype"
+        )
+
     comptime cluster_shape = config.cluster_shape
 
     var B = Int(c_device.dim[0]())
@@ -210,11 +227,12 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         1, config.output_tile_shape[0], config.output_tile_shape[1]
     ) if (MMA_M == 256 or config.cta_group == 1) else c_tma_tile_shape_mma128
 
-    comptime assert (not config.AB_swapped) or config.c_swizzle.bytes() == 128, "Only support 128B swizzle mode when AB_swapped is True"
+    comptime assert (not config.AB_swapped) or config.c_swizzle.bytes() in (128, 16), "Only support 128B or None swizzle mode when AB_swapped is True"
     comptime c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
     comptime c_tma_tile_shape_final = c_tma_tile_shape if not config.AB_swapped else Index(
         1, c_tma_tile_shape[1], c_tma_tile_shape_1
     )
+
     var c_tma_op = create_tma_tile[
         KernelType.CTileLayout,
         KernelType.CDescLayout,
@@ -740,7 +758,7 @@ fn matmul_sm100_fallback[
         a_tma_op,
         b_tma_op,
         c,
-        UInt(ceildiv(K, BK)),
+        ceildiv(K, BK),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,

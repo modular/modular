@@ -26,8 +26,7 @@ from std.gpu.host.info import B200
 from std.utils import IndexList
 from std.utils.index import Index
 import std.itertools
-from layout import IntTuple, Layout, TileTensor
-from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
+from layout import IntTuple, Layout, RuntimeLayout, TileTensor, UNKNOWN_VALUE
 
 
 fn shrink_qkv_permute_3mn_sm100[

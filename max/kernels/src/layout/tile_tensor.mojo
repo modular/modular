@@ -23,6 +23,8 @@ from std.builtin.variadics import (
     _MapVariadicAndIdxToType,
 )
 from std.builtin.dtype import _unsigned_integral_type_of
+from std.builtin.int import index as _index
+from std.memory import stack_allocation as _std_stack_allocation
 from std.gpu import thread_idx, block_dim, lane_id
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from std.utils.numerics import max_finite
@@ -1200,7 +1202,7 @@ struct TileTensor[
         Returns:
             The size of the specified dimension as a scalar.
         """
-        var idx = std.builtin.int.index(index)
+        var idx = _index(index)
 
         comptime for i in range(Self.rank):
             if idx == i:
@@ -1208,7 +1210,7 @@ struct TileTensor[
                     self.layout.shape[i]().value()
                 )
         # Should this raise instead?
-        std.os.abort("attempt to dynamically index out of bounds")
+        abort("attempt to dynamically index out of bounds")
 
     @always_inline("nodebug")
     fn dynamic_stride[
@@ -1225,7 +1227,7 @@ struct TileTensor[
         Returns:
             The stride of the specified dimension as a scalar.
         """
-        var idx = std.builtin.int.index(index)
+        var idx = _index(index)
 
         comptime for i in range(Self.rank):
             if idx == i:
@@ -1233,7 +1235,7 @@ struct TileTensor[
                     self.layout.stride[i]().value()
                 )
         # Should this raise instead?
-        std.os.abort("attempt to dynamically index out of bounds")
+        abort("attempt to dynamically index out of bounds")
 
     @always_inline
     fn slice[
@@ -1953,7 +1955,7 @@ fn stack_allocation[
         MutExternalOrigin,
         address_space=address_space,
     ](
-        std.memory.stack_allocation[
+        _std_stack_allocation[
             Coord[*LayoutType._shape_types].static_product,
             Scalar[dtype],
             address_space=address_space,

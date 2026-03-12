@@ -13,11 +13,17 @@
 
 from std.sys import align_of
 
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.element import Element
-from layout.int_tuple import UNKNOWN_VALUE
 
 from std.utils import IndexList
 

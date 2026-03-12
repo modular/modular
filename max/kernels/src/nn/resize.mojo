@@ -16,8 +16,13 @@ from std.math import ceil, floor
 
 from std.algorithm.functional import elementwise
 from std.algorithm.reduction import _get_nd_indices_from_flat_index
-from layout import Coord, TileTensor, coord_to_index_list, row_major
-from layout.tile_layout import TensorLayout
+from layout import (
+    Coord,
+    TensorLayout,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from layout.int_tuple import fill_like
 from std.memory import memcpy
 

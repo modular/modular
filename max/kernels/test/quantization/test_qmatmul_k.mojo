@@ -18,11 +18,11 @@ from std.sys import size_of
 
 from std.algorithm import sync_parallelize
 from layout import (
-    LayoutTensor,
+    IntTuple,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    IntTuple,
     UNKNOWN_VALUE,
 )
 from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b

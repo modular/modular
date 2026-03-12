@@ -25,20 +25,21 @@ from std.testing import assert_almost_equal
 from std.utils import Index
 from std.utils.numerics import get_accum_type
 
-from layout.layout_tensor import (
+from layout import (
+    ComptimeInt,
+    Coord,
+    Idx,
     Layout,
+    TensorLayout,
+    TileTensor,
+    coord,
+    row_major,
+    stack_allocation,
+)
+from layout.layout_tensor import (
     copy_sram_to_local,
     copy_dram_to_sram_async,
     copy_local_to_dram,
-)
-
-from layout import TileTensor, row_major, stack_allocation
-from layout.tile_layout import TensorLayout
-from layout.coord import (
-    Coord,
-    coord,
-    Idx,
-    ComptimeInt,
 )
 
 

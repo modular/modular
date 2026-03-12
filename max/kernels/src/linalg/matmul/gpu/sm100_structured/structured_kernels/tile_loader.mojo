@@ -30,7 +30,12 @@ Usage:
 """
 
 from std.gpu.memory import AddressSpace
-from layout import Layout as LegacyLayout, LayoutTensor, TileTensor
+from layout import (
+    LayoutTensor,
+    Layout as LegacyLayout,
+    TensorLayout,
+    TileTensor,
+)
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 
 from linalg.structuring import SMemTile as LTSMemTile
@@ -40,7 +45,6 @@ from structured_kernels.tile_types import SMemTile2D, TmaOpType
 
 # Import variadic types for TileTensor load overload
 from std.builtin.variadics import Variadic
-from layout.tile_layout import TensorLayout
 from std.utils.index import IndexList
 
 
@@ -98,8 +102,8 @@ struct TileLoaderTMA[
         self,
         dest: LTSMemTile[Self.dtype, tile_layout, alignment=alignment],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
-        k_coord: UInt,
-        row_coord: UInt,
+        k_coord: Int,
+        row_coord: Int,
     ):
         """Load a tile using TMA hardware acceleration.
 
@@ -113,7 +117,7 @@ struct TileLoaderTMA[
             row_coord: Row coordinate (M for A, N for B) in global memory (elements).
         """
         self.tma_op[].async_multicast_load[Self.cta_group](
-            dest, barrier, (Int(k_coord), Int(row_coord)), self.multicast_mask
+            dest, barrier, (k_coord, row_coord), self.multicast_mask
         )
 
     @always_inline
@@ -126,8 +130,8 @@ struct TileLoaderTMA[
         self,
         dest: SMemTile2D[Self.dtype, dim0, dim1, alignment=alignment],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
-        k_coord: UInt,
-        row_coord: UInt,
+        k_coord: Int,
+        row_coord: Int,
     ):
         """Load a TileTensor tile using TMA hardware acceleration.
 
@@ -142,7 +146,7 @@ struct TileLoaderTMA[
         """
         # TileTensor overload of async_multicast_load - no conversion needed
         self.tma_op[].async_multicast_load[Self.cta_group](
-            dest, barrier, (Int(k_coord), Int(row_coord)), self.multicast_mask
+            dest, barrier, (k_coord, row_coord), self.multicast_mask
         )
 
     @always_inline
@@ -157,8 +161,8 @@ struct TileLoaderTMA[
             address_space=AddressSpace.SHARED,
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
-        k_coord: UInt,
-        row_coord: UInt,
+        k_coord: Int,
+        row_coord: Int,
     ):
         """Load a TileTensor tile with variadic shape/stride types using TMA.
 
@@ -172,7 +176,7 @@ struct TileLoaderTMA[
             row_coord: Row coordinate (M for A, N for B) in global memory (elements).
         """
         self.tma_op[].async_multicast_load[Self.cta_group](
-            dest, barrier, (Int(k_coord), Int(row_coord)), self.multicast_mask
+            dest, barrier, (k_coord, row_coord), self.multicast_mask
         )
 
 
@@ -226,12 +230,12 @@ struct TileLoader[
             address_space=AddressSpace.SHARED,
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
-        k_coord: UInt,
-        row_coord: UInt,
+        k_coord: Int,
+        row_coord: Int,
     ):
         """Load a tile using TMA async multicast load."""
         self.tma_op[].async_multicast_load[Self.cta_group](
-            dest, barrier, (Int(k_coord), Int(row_coord)), self.multicast_mask
+            dest, barrier, (k_coord, row_coord), self.multicast_mask
         )
 
 

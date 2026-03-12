@@ -20,7 +20,7 @@ from std.algorithm import vectorize
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from buffer.dimlist import DimList
 from layout.layout import *
-from layout.layout_tensor import LayoutTensor
+from layout import LayoutTensor
 
 comptime elementwise_epilogue_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1

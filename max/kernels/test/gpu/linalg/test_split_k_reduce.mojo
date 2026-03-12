@@ -16,8 +16,7 @@ from std.random import rand
 
 from buffer import DimList, NDBuffer
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout
-from layout.layout import UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from linalg.matmul.gpu import split_k_reduce
 from std.testing import assert_almost_equal
 

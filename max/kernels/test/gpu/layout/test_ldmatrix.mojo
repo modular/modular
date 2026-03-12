@@ -18,9 +18,7 @@ from std.gpu import WARP_SIZE, barrier, lane_id, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.compute.mma import ld_matrix, mma
 from std.gpu.compute.mma_util import store_matrix_d
-from layout import TileTensor
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx
+from layout import Coord, Idx, TileTensor, row_major
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.memory import stack_allocation

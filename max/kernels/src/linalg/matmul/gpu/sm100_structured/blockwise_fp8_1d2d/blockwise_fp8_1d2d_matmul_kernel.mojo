@@ -27,6 +27,7 @@ Architecture:
 """
 
 from std.math import ceildiv
+from std.math.uutils import ufloordiv
 from std.sys import size_of
 
 from std.gpu import WARP_SIZE, thread_idx
@@ -38,8 +39,7 @@ from std.gpu.primitives.cluster import (
     elect_one_sync_with_mask,
 )
 from std.gpu.sync import named_barrier, syncwarp
-from layout.tile_layout import TensorLayout
-from layout import TileTensor
+from layout import TensorLayout, TileTensor
 from structured_kernels.tile_types import (
     TmaOpType,
     static_row_major,
@@ -631,7 +631,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
                     )
 
                     # Convert absolute N to tile index for b_scales lookup
-                    var n_tile = UInt(ctx.n()) // UInt(Self.MMA_N)
+                    var n_tile = ufloordiv(Int(ctx.n()), Self.MMA_N)
 
                     for k_iter in range(num_k_iters):
                         with epi_ctx.per_k_stage(input_pipeline) as epi_stage:
@@ -640,10 +640,10 @@ struct BlockwiseFP8_1D2DMatmulKernel[
                                 a_scales_tiles,
                                 epi_stage,
                                 work_tile_coord=(
-                                    UInt(ctx.m()),
+                                    Int(ctx.m()),
                                     n_tile,
                                 ),
-                                k_iter=UInt(k_iter),
+                                k_iter=k_iter,
                                 problem_shape=StaticTuple[Int32, 3](
                                     Int32(0),
                                     Int32(Self.static_N),

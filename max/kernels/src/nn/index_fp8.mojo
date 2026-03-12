@@ -12,12 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 from std.sys import size_of, simd_width_of
 from std.math import ceildiv
-from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
-from layout.layout_tensor import (
-    LayoutTensor,
-    ThreadScope,
-    copy_dram_to_sram,
-)
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout.layout_tensor import ThreadScope, copy_dram_to_sram
 from layout.tma_async import TMATensorTile, create_tensor_tile, SharedMemBarrier
 from std.gpu import block_idx, thread_idx, MAX_THREADS_PER_BLOCK_METADATA
 from std.gpu.host import DeviceContext, FuncAttribute

@@ -30,12 +30,16 @@ from std.gpu.sync import (
     s_waitcnt,
 )
 from std.memory.pointer import AddressSpace as BaseAddressSpace
-from layout import IntTuple, Layout, LayoutTensor
-from layout.int_tuple import UNKNOWN_VALUE
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
+)
 from layout.layout import blocked_product
 from layout._utils import make_amd_buffer_resource, idx2crd
 from layout.element import Element
-from layout.runtime_layout import RuntimeLayout
 from layout.swizzle import Swizzle
 from layout.tensor_core import (
     TensorCore,

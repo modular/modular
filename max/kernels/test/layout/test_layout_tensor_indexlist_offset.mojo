@@ -25,8 +25,7 @@ The key scenarios tested:
 3. View tensors - stride[0] is UNKNOWN because actual stride depends on parent tensor
 """
 
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout.int_tuple import IntTuple
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from std.testing import TestSuite, assert_equal
 from std.utils import Index, IndexList
 

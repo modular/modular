@@ -33,6 +33,7 @@ Key Components:
 """
 
 from std.math import ceildiv, log2
+from std.math.uutils import udivmod
 from std.sys import align_of, llvm_intrinsic, simd_width_of, size_of
 from std.sys._assembly import inlined_assembly
 
@@ -3733,8 +3734,8 @@ struct RaggedTMA3DTile[
 
         """
 
-        var offset_ragged_idx: UInt = UInt(ragged_idx + dynamic_dim)
-        var box_idx: UInt = UInt(UInt32(Self.BM) - dynamic_dim)
+        var offset_ragged_idx = Int(ragged_idx + dynamic_dim)
+        var box_idx = Int(UInt32(Self.BM) - dynamic_dim)
 
         comptime for col in range(ceildiv(Self.BN, Self.swizzle_granularity)):
             comptime copy_offset = col * Self.BM * Self.swizzle_granularity
@@ -3744,9 +3745,9 @@ struct RaggedTMA3DTile[
                 UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                 mem_barrier.unsafe_ptr(),
                 Index(
-                    UInt(col * Self.swizzle_granularity),
+                    col * Self.swizzle_granularity,
                     box_idx,
-                    UInt(middle_idx),
+                    Int(middle_idx),
                     offset_ragged_idx,
                 ),
             )
@@ -3781,17 +3782,17 @@ struct RaggedTMA3DTile[
             dynamic_dim: Number of rows to copy.
             middle_idx: Index into the middle (generally head) dimension.
         """
-        var offset_ragged_idx: UInt = UInt(ragged_idx + dynamic_dim)
-        var box_idx: UInt = UInt(UInt32(Self.BM) - dynamic_dim)
+        var offset_ragged_idx = Int(ragged_idx + dynamic_dim)
+        var box_idx = Int(UInt32(Self.BM) - dynamic_dim)
         comptime copy_offset = col * Self.BM * Self.swizzle_granularity
 
         cp_async_bulk_tensor_global_shared_cta[eviction_policy=eviction_policy](
             src + copy_offset,
             UnsafePointer(to=self.descriptor).bitcast[NoneType](),
             Index(
-                UInt(col * Self.swizzle_granularity),
+                col * Self.swizzle_granularity,
                 box_idx,
-                UInt(middle_idx),
+                Int(middle_idx),
                 offset_ragged_idx,
             ),
         )
@@ -4385,7 +4386,7 @@ struct TMATensorTileIm2col[
             Self.dtype, _, address_space=AddressSpace.SHARED, ...
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
     ):
         """Schedules an asynchronous im2col TMA load.
 
@@ -4424,31 +4425,30 @@ struct TMATensorTileIm2col[
         comptime num_copies_dim1 = Self.tile_shape[1] // copy_dim1
 
         # Precompute spatial size for M decomposition
-        var hw = UInt(self.out_height) * UInt(self.out_width)
-        var out_w = UInt(self.out_width)
+        var hw = Int(self.out_height) * Int(self.out_width)
+        var out_w = Int(self.out_width)
 
         # Precompute filter window size for K decomposition
         # K = r * S * C + s * C + c (filter-first, channel-last ordering for NHWC)
-        var num_channels = UInt(self.in_channels)
-        var filter_w = UInt(self.filter_w)
+        var num_channels = Int(self.in_channels)
+        var filter_w = Int(self.filter_w)
 
         # OPTIMIZATION: Hoist K decomposition outside loop (constant when j=0).
         # For typical configs (num_copies_dim1=1), K coords don't change within tile.
         var k_coord = coords[0]
-        var filter_idx, c = divmod(k_coord, num_channels)
-        var r, s = divmod(filter_idx, filter_w)
+        var filter_idx, c = udivmod(k_coord, num_channels)
+        var r, s = udivmod(filter_idx, filter_w)
 
         # Initial M decomposition (done once, then use iterator)
         var m_coord_init = coords[1]
-        var n, m_remainder = divmod(m_coord_init, hw)
-        var h_out, w_out = divmod(m_remainder, out_w)
+        var n, m_remainder = udivmod(m_coord_init, hw)
+        var h_out, w_out = udivmod(m_remainder, out_w)
 
         # Pre-add lower_corner offset
-        var h = Int(h_out) + Int(self.lower_corner_h)
-        var w = Int(w_out) + Int(self.lower_corner_w)
+        var h = h_out + Int(self.lower_corner_h)
+        var w = w_out + Int(self.lower_corner_w)
 
         # Cache bounds for iterator wraparound
-        var out_w_int = Int(out_w)
         var out_h_int = Int(self.out_height)
         var lower_h = Int(self.lower_corner_h)
         var lower_w = Int(self.lower_corner_w)
@@ -4461,9 +4461,9 @@ struct TMATensorTileIm2col[
 
                 # K recomputation only needed when j > 0 (rare in practice)
                 comptime if j > 0:
-                    k_coord = coords[0] + UInt(j * copy_dim1)
-                    filter_idx, c = divmod(k_coord, num_channels)
-                    r, s = divmod(filter_idx, filter_w)
+                    k_coord = coords[0] + j * copy_dim1
+                    filter_idx, c = udivmod(k_coord, num_channels)
+                    r, s = udivmod(filter_idx, filter_w)
 
                 # Pass 4D coords (c, w, h, n) and filter offsets (s, r) to im2col PTX
                 cp_async_bulk_tensor_shared_cluster_global_im2col[
@@ -4472,15 +4472,15 @@ struct TMATensorTileIm2col[
                     dst.ptr.mut_cast[True]() + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
-                    Index(Int(c), w, h, Int(n)),
-                    Index(Int(s), Int(r)),
+                    Index(c, w, h, n),
+                    Index(s, r),
                 )
 
             # Iterator pattern: advance M by copy_dim0 using addition (not division)
             # This avoids 4 divisions per sub-tile, reducing from O(n*8) to O(8+n*3)
             w += copy_dim0
-            if w >= out_w_int + lower_w:
-                w -= out_w_int
+            if w >= out_w + lower_w:
+                w -= out_w
                 h += 1
                 if h >= out_h_int + lower_h:
                     h -= out_h_int
@@ -4496,7 +4496,7 @@ struct TMATensorTileIm2col[
             Self.dtype, _, address_space=AddressSpace.SHARED, ...
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
         multicast_mask: UInt16,
     ):
         """Schedules an asynchronous im2col TMA load with multicast.
@@ -4537,30 +4537,29 @@ struct TMATensorTileIm2col[
         comptime num_copies_dim1 = Self.tile_shape[1] // copy_dim1
 
         # Precompute spatial size for M decomposition
-        var hw = UInt(self.out_height) * UInt(self.out_width)
-        var out_w = UInt(self.out_width)
+        var hw = Int(self.out_height) * Int(self.out_width)
+        var out_w = Int(self.out_width)
 
         # Precompute filter window size for K decomposition
         # K = r * S * C + s * C + c (filter-first, channel-last ordering for NHWC)
-        var num_channels = UInt(self.in_channels)
-        var filter_w = UInt(self.filter_w)
+        var num_channels = Int(self.in_channels)
+        var filter_w = Int(self.filter_w)
 
         # OPTIMIZATION: Hoist K decomposition outside loop (constant when j=0).
         var k_coord = coords[0]
-        var filter_idx, c = divmod(k_coord, num_channels)
-        var r, s = divmod(filter_idx, filter_w)
+        var filter_idx, c = udivmod(k_coord, num_channels)
+        var r, s = udivmod(filter_idx, filter_w)
 
         # Initial M decomposition (done once, then use iterator)
         var m_coord_init = coords[1]
-        var n, m_remainder = divmod(m_coord_init, hw)
-        var h_out, w_out = divmod(m_remainder, out_w)
+        var n, m_remainder = udivmod(m_coord_init, hw)
+        var h_out, w_out = udivmod(m_remainder, out_w)
 
         # Pre-add lower_corner offset
-        var h = Int(h_out) + Int(self.lower_corner_h)
-        var w = Int(w_out) + Int(self.lower_corner_w)
+        var h = h_out + Int(self.lower_corner_h)
+        var w = w_out + Int(self.lower_corner_w)
 
         # Cache bounds for iterator wraparound
-        var out_w_int = Int(out_w)
         var out_h_int = Int(self.out_height)
         var lower_h = Int(self.lower_corner_h)
         var lower_w = Int(self.lower_corner_w)
@@ -4573,9 +4572,9 @@ struct TMATensorTileIm2col[
 
                 # K recomputation only needed when j > 0
                 comptime if j > 0:
-                    k_coord = coords[0] + UInt(j * copy_dim1)
-                    filter_idx, c = divmod(k_coord, num_channels)
-                    r, s = divmod(filter_idx, filter_w)
+                    k_coord = coords[0] + j * copy_dim1
+                    filter_idx, c = udivmod(k_coord, num_channels)
+                    r, s = udivmod(filter_idx, filter_w)
 
                 # Pass 4D coords (c, w, h, n) and filter offsets (s, r) to im2col PTX
                 cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
@@ -4584,15 +4583,15 @@ struct TMATensorTileIm2col[
                     dst.ptr.mut_cast[True]() + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
-                    Index(Int(c), w, h, Int(n)),
-                    Index(Int(s), Int(r)),
+                    Index(c, w, h, n),
+                    Index(s, r),
                     multicast_mask,
                 )
 
             # Iterator pattern: advance M by copy_dim0 using addition
             w += copy_dim0
-            if w >= out_w_int + lower_w:
-                w -= out_w_int
+            if w >= out_w + lower_w:
+                w -= out_w
                 h += 1
                 if h >= out_h_int + lower_h:
                     h -= out_h_int
@@ -4611,7 +4610,7 @@ struct TMATensorTileIm2col[
             ...,
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
     ):
         """Schedules an asynchronous im2col TMA load.
 
@@ -4646,30 +4645,29 @@ struct TMATensorTileIm2col[
         comptime num_copies_dim1 = Self.tile_shape[1] // copy_dim1
 
         # Precompute spatial size for M decomposition
-        var hw = UInt(self.out_height) * UInt(self.out_width)
-        var out_w = UInt(self.out_width)
+        var hw = Int(self.out_height) * Int(self.out_width)
+        var out_w = Int(self.out_width)
 
         # Precompute filter window size for K decomposition
         # K = r * S * C + s * C + c (filter-first, channel-last ordering for NHWC)
-        var num_channels = UInt(self.in_channels)
-        var filter_w = UInt(self.filter_w)
+        var num_channels = Int(self.in_channels)
+        var filter_w = Int(self.filter_w)
 
         # OPTIMIZATION: Hoist K decomposition outside loop (constant when j=0).
         var k_coord = coords[0]
-        var filter_idx, c = divmod(k_coord, num_channels)
-        var r, s = divmod(filter_idx, filter_w)
+        var filter_idx, c = udivmod(k_coord, num_channels)
+        var r, s = udivmod(filter_idx, filter_w)
 
         # Initial M decomposition (done once, then use iterator)
         var m_coord_init = coords[1]
-        var n, m_remainder = divmod(m_coord_init, hw)
-        var h_out, w_out = divmod(m_remainder, out_w)
+        var n, m_remainder = udivmod(m_coord_init, hw)
+        var h_out, w_out = udivmod(m_remainder, out_w)
 
         # Pre-add lower_corner offset
-        var h = Int(h_out) + Int(self.lower_corner_h)
-        var w = Int(w_out) + Int(self.lower_corner_w)
+        var h = h_out + Int(self.lower_corner_h)
+        var w = w_out + Int(self.lower_corner_w)
 
         # Cache bounds for iterator wraparound
-        var out_w_int = Int(out_w)
         var out_h_int = Int(self.out_height)
         var lower_h = Int(self.lower_corner_h)
         var lower_w = Int(self.lower_corner_w)
@@ -4682,9 +4680,9 @@ struct TMATensorTileIm2col[
 
                 # K recomputation only needed when j > 0
                 comptime if j > 0:
-                    k_coord = coords[0] + UInt(j * copy_dim1)
-                    filter_idx, c = divmod(k_coord, num_channels)
-                    r, s = divmod(filter_idx, filter_w)
+                    k_coord = coords[0] + j * copy_dim1
+                    filter_idx, c = udivmod(k_coord, num_channels)
+                    r, s = udivmod(filter_idx, filter_w)
 
                 # Pass 4D coords (c, w, h, n) and filter offsets (s, r) to im2col PTX
                 cp_async_bulk_tensor_shared_cluster_global_im2col[
@@ -4693,14 +4691,14 @@ struct TMATensorTileIm2col[
                     dst.ptr.mut_cast[True]() + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
-                    Index(Int(c), w, h, Int(n)),
-                    Index(Int(s), Int(r)),
+                    Index(c, w, h, n),
+                    Index(s, r),
                 )
 
             # Iterator pattern: advance M by copy_dim0 using addition
             w += copy_dim0
-            if w >= out_w_int + lower_w:
-                w -= out_w_int
+            if w >= out_w + lower_w:
+                w -= out_w
                 h += 1
                 if h >= out_h_int + lower_h:
                     h -= out_h_int
@@ -4719,7 +4717,7 @@ struct TMATensorTileIm2col[
             ...,
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
         multicast_mask: UInt16,
     ):
         """Schedules an asynchronous im2col TMA load with multicast.
@@ -4756,30 +4754,29 @@ struct TMATensorTileIm2col[
         comptime num_copies_dim1 = Self.tile_shape[1] // copy_dim1
 
         # Precompute spatial size for M decomposition
-        var hw = UInt(self.out_height) * UInt(self.out_width)
-        var out_w = UInt(self.out_width)
+        var hw = Int(self.out_height) * Int(self.out_width)
+        var out_w = Int(self.out_width)
 
         # Precompute filter window size for K decomposition
         # K = r * S * C + s * C + c (filter-first, channel-last ordering for NHWC)
-        var num_channels = UInt(self.in_channels)
-        var filter_w = UInt(self.filter_w)
+        var num_channels = Int(self.in_channels)
+        var filter_w = Int(self.filter_w)
 
         # OPTIMIZATION: Hoist K decomposition outside loop (constant when j=0).
         var k_coord = coords[0]
-        var filter_idx, c = divmod(k_coord, num_channels)
-        var r, s = divmod(filter_idx, filter_w)
+        var filter_idx, c = udivmod(k_coord, num_channels)
+        var r, s = udivmod(filter_idx, filter_w)
 
         # Initial M decomposition (done once, then use iterator)
         var m_coord_init = coords[1]
-        var n, m_remainder = divmod(m_coord_init, hw)
-        var h_out, w_out = divmod(m_remainder, out_w)
+        var n, m_remainder = udivmod(m_coord_init, hw)
+        var h_out, w_out = udivmod(m_remainder, out_w)
 
         # Pre-add lower_corner offset
-        var h = Int(h_out) + Int(self.lower_corner_h)
-        var w = Int(w_out) + Int(self.lower_corner_w)
+        var h = h_out + Int(self.lower_corner_h)
+        var w = w_out + Int(self.lower_corner_w)
 
         # Cache bounds for iterator wraparound
-        var out_w_int = Int(out_w)
         var out_h_int = Int(self.out_height)
         var lower_h = Int(self.lower_corner_h)
         var lower_w = Int(self.lower_corner_w)
@@ -4792,9 +4789,9 @@ struct TMATensorTileIm2col[
 
                 # K recomputation only needed when j > 0
                 comptime if j > 0:
-                    k_coord = coords[0] + UInt(j * copy_dim1)
-                    filter_idx, c = divmod(k_coord, num_channels)
-                    r, s = divmod(filter_idx, filter_w)
+                    k_coord = coords[0] + j * copy_dim1
+                    filter_idx, c = udivmod(k_coord, num_channels)
+                    r, s = udivmod(filter_idx, filter_w)
 
                 # Pass 4D coords (c, w, h, n) and filter offsets (s, r) to im2col PTX
                 cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
@@ -4803,15 +4800,15 @@ struct TMATensorTileIm2col[
                     dst.ptr.mut_cast[True]() + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
-                    Index(Int(c), w, h, Int(n)),
-                    Index(Int(s), Int(r)),
+                    Index(c, w, h, n),
+                    Index(s, r),
                     multicast_mask,
                 )
 
             # Iterator pattern: advance M by copy_dim0 using addition
             w += copy_dim0
-            if w >= out_w_int + lower_w:
-                w -= out_w_int
+            if w >= out_w + lower_w:
+                w -= out_w
                 h += 1
                 if h >= out_h_int + lower_h:
                     h -= out_h_int

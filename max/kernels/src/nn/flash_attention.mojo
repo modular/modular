@@ -27,10 +27,15 @@ from std.algorithm.reduction import (
     map_reduce,
 )
 from kv_cache.types import KVCacheT
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout.int_tuple import to_index_list
-from layout.tile_layout import row_major
-from layout.tile_tensor import TileTensor
 from linalg.accumulate import _Accumulator
 from linalg.matmul.cpu.apple_accelerate import (
     _cblas_f32,

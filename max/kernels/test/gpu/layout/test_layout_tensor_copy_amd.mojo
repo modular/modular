@@ -20,11 +20,7 @@ from std.gpu.memory import CacheOperation
 from layout import *
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor, load_to_simd
-from layout.layout_tensor import (
-    LayoutTensor,
-    copy_dram_to_local,
-    copy_dram_to_sram,
-)
+from layout.layout_tensor import copy_dram_to_local, copy_dram_to_sram
 from std.sys import simd_width_of
 from std.utils import IndexList
 from std.benchmark import keep

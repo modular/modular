@@ -1009,39 +1009,6 @@ fn lane_group_sum[
 
 
 @always_inline
-@deprecated(
-    "use `lane_group_sum` instead, which now always broadcasts the result to"
-    " all lanes"
-)
-fn lane_group_sum_and_broadcast[
-    val_type: DType,
-    simd_width: Int,
-    //,
-    num_lanes: Int,
-    stride: Int = 1,
-](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    """Computes the sum across a lane group and broadcasts the result to all lanes.
-
-    Deprecated: Use `lane_group_sum` instead, which now always broadcasts
-    the result to all lanes.
-
-    Parameters:
-        val_type: The data type of the SIMD elements (e.g. float32, int32).
-        simd_width: The number of elements in the SIMD vector.
-        num_lanes: The number of threads participating in the reduction.
-        stride: The stride between lanes participating in the reduction.
-
-    Args:
-        val: The SIMD value to reduce. Each lane contributes its value to the sum.
-
-    Returns:
-        A SIMD value where all participating lanes contain the sum found across the lane group.
-        Non-participating lanes (lane_id >= num_lanes) retain their original values.
-    """
-    return lane_group_sum[num_lanes=num_lanes, stride=stride](val)
-
-
-@always_inline
 fn sum(val: SIMD) -> Scalar[val.dtype]:
     """Computes the sum of values across all lanes in a warp.
 
@@ -1189,39 +1156,6 @@ fn lane_group_max[
     return _lane_group_broadcast_reduce[
         _reduce_max, num_lanes=num_lanes, stride=stride
     ](val)
-
-
-@always_inline
-@deprecated(
-    "use `lane_group_max` instead, which now always broadcasts the result to"
-    " all lanes"
-)
-fn lane_group_max_and_broadcast[
-    val_type: DType,
-    simd_width: Int,
-    //,
-    num_lanes: Int,
-    stride: Int = 1,
-](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    """Reduces and broadcasts the maximum value within a lane group using warp-level operations.
-
-    Deprecated: Use `lane_group_max` instead, which now always broadcasts
-    the result to all lanes.
-
-    Parameters:
-        val_type: The data type of the SIMD elements (e.g. float32, int32).
-        simd_width: The number of elements in the SIMD vector.
-        num_lanes: The number of threads participating in the reduction.
-        stride: The stride between lanes participating in the reduction.
-
-    Args:
-        val: The SIMD value to reduce and broadcast. Each lane contributes its value.
-
-    Returns:
-        A SIMD value where all participating lanes contain the maximum value found across the lane group.
-        Non-participating lanes (lane_id >= num_lanes) retain their original values.
-    """
-    return lane_group_max[num_lanes=num_lanes, stride=stride](val)
 
 
 @always_inline

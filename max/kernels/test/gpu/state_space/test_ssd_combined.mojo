@@ -12,12 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-)
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from std.math import exp, exp2, log
 from std.random import rand
 from state_space.selective_scan import (

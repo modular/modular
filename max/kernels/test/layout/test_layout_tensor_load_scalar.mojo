@@ -17,9 +17,14 @@ from tensors, addressing the issue where __getitem__ returns SIMD[dtype, element
 which can be surprising in generic contexts when element_size > 1.
 """
 
-from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
 from layout._fillers import arange
-from layout.int_tuple import UNKNOWN_VALUE
 from std.testing import TestSuite, assert_equal
 
 

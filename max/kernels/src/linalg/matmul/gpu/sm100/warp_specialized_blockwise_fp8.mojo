@@ -46,14 +46,14 @@ from std.gpu.sync import (
 )
 from std.gpu.compute.arch.tcgen05 import *
 from layout import (
-    UNKNOWN_VALUE,
+    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
     TileTensor,
+    UNKNOWN_VALUE,
 )
-from layout.int_tuple import IntTuple
 from layout.layout_tensor import LayoutTensorIter
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
@@ -352,7 +352,7 @@ fn multi_stage_reg_epilogue[
             var casted = src.cast[c_type]()
             comptime for _j in range(cast_width):
                 upper_st[offset + _j] = casted[_j]
-        stsm_helper[swizzle, UInt(stageN)](upper_st, c_smem_warp_tile_upper)
+        stsm_helper[swizzle, stageN](upper_st, c_smem_warp_tile_upper)
 
         var c_smem_warp_tile_lower = c_smem_warp_tile.tile[data_paths, stageN](
             1, 0
@@ -371,7 +371,7 @@ fn multi_stage_reg_epilogue[
                 var casted = src.cast[c_type]()
                 comptime for _j in range(cast_width):
                     lower_st[offset + _j] = casted[_j]
-            stsm_helper[swizzle, UInt(stageN)](lower_st, c_smem_warp_tile_lower)
+            stsm_helper[swizzle, stageN](lower_st, c_smem_warp_tile_lower)
 
         # Guard the write to shared memory is done.
         named_barrier[Int32(num_output_warps * WARP_SIZE)]()

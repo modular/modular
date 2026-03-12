@@ -20,9 +20,7 @@ from std.gpu.host import DeviceContext
 from std.gpu import block_idx, thread_idx, warp_id
 from std.gpu.memory import async_copy_wait_all
 from std.gpu.sync import barrier
-from layout import Layout, LayoutTensor, TileTensor
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx
+from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
 from layout._ndbuffer_stub import (
     copy_from_nd_buffer,
     copy_to_nd_buffer,

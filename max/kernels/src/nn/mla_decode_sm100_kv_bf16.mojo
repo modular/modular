@@ -36,7 +36,7 @@ from layout.tma_async import (
     SharedMemBarrier,
 )
 from std.memory import bitcast
-from layout import TileTensor, RowMajorLayout, ComptimeInt
+from layout import ComptimeInt, RowMajorLayout, TileTensor
 from nn.mha_fa3_utils import (
     OptionalPointer,
 )

@@ -49,8 +49,7 @@ from std.gpu.primitives.cluster import (
 )
 from std.gpu.sync import syncwarp
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import TileTensor
-from layout.tile_layout import TensorLayout
+from layout import RowMajorLayout, TensorLayout, TileTensor
 from structured_kernels.tile_types import (
     GMEMLayout1D,
     TmaOpType,
@@ -58,7 +57,7 @@ from structured_kernels.tile_types import (
     tma_desc_layout_3d,
     tma_desc_layout_4d,
 )
-from layout.tile_layout import RowMajorLayout, _IntToComptimeInt
+from layout.tile_layout import _IntToComptimeInt
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
@@ -985,12 +984,12 @@ struct Grouped1D1DMatmulKernel[
         internally.
         """
         comptime if Self.MMA_N % SF_MN_GROUP_SIZE != 0:
-            var effective_n: UInt
+            var effective_n: Int
             comptime if Self.config.AB_swapped:
-                effective_n = UInt(m_coord) - UInt(m_start)
+                effective_n = Int(m_coord) - Int(m_start)
             else:
-                effective_n = UInt(n_coord)
-            return UInt32(Int(effective_n) // Self.MMA_N % 2) * 2
+                effective_n = Int(n_coord)
+            return UInt32(effective_n // Self.MMA_N % 2) * 2
         else:
             return UInt32(0)
 

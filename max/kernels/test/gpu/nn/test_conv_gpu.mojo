@@ -14,7 +14,7 @@
 from std.math import ceildiv
 from std.random import rand
 
-from layout import LayoutTensor, Layout
+from layout import Layout, LayoutTensor
 from std.gpu.host import DeviceContext
 from nn.conv import Naive2dConvolution, conv3d_gpu_naive_ndhwc_qrscf
 from std.testing import assert_almost_equal

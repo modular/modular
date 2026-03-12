@@ -152,9 +152,6 @@ struct MyType(
     fn write_to(self, mut writer: Some[Writer]):
         writer.write(self.value)
 
-    fn __str__(self) -> String:
-        return String.write(self)
-
 
 def test_interval_floating() raises:
     # Create an interval with floating point values using MyType wrapper.

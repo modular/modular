@@ -21,16 +21,19 @@ from std.complex import ComplexSIMD
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
 from kv_cache.types import KVCacheT, KVCollectionT
-from layout.coord import (
+from layout import (
+    ComptimeInt,
     Coord,
     CoordLike,
     Idx,
+    RowMajorLayout,
     RuntimeInt,
-    ComptimeInt,
+    TensorLayout,
+    TileTensor,
     coord_to_index_list,
+    row_major,
 )
-from layout.tile_layout import TensorLayout, RowMajorLayout, Layout
-from layout import TileTensor, row_major
+from layout.tile_layout import Layout
 from nn._ragged_utils import get_batch_from_row_offsets
 
 from std.utils import IndexList

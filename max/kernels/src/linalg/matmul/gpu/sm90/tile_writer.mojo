@@ -31,7 +31,15 @@ Two main traits abstract these writing mechanisms:
 """
 
 from layout.tma_async import TMATensorTile
-from layout.layout_tensor import LayoutTensor, copy_sram_to_dram
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
+from layout.layout_tensor import copy_sram_to_dram
 from std.gpu.memory import fence_async_view_proxy
 from std.collections import OptionalReg
 from ....structuring import (
@@ -41,18 +49,15 @@ from ....structuring import (
     RegTile,
 )
 from layout.swizzle import Swizzle
-from std.gpu import lane_id
+from std.gpu import lane_id_int as lane_id
 from std.sys import simd_width_of
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.layout import coalesce
-from layout import Layout
 from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 
 from std.gpu.compute.mma import st_matrix
 from std.memory import bitcast
-from layout import RuntimeLayout, RuntimeTuple, IntTuple
 from layout.tensor_core_async import st_matrix_n_layout, st_matrix_m_layout
-from layout.runtime_layout import UNKNOWN_VALUE
 from ....utils import elementwise_epilogue_type, elementwise_compute_lambda_type
 from std.utils.index import IndexList
 from std.sys import align_of, size_of
@@ -68,15 +73,15 @@ from std.math.uutils import ufloordiv
 struct ThreadInfo(TrivialRegisterPassable):
     """Thread identification within the warp group."""
 
-    var warp_id: UInt
-    var lane_id: UInt
+    var warp_id: Int
+    var lane_id: Int
     var lane_row: UInt32
     var lane_col: UInt32
 
     fn __init__(
         out self,
-        warp_id: UInt,
-        lane_id: UInt,
+        warp_id: Int,
+        lane_id: Int,
         lane_row: UInt32,
         lane_col: UInt32,
     ):
@@ -96,7 +101,7 @@ struct ThreadInfo(TrivialRegisterPassable):
         Returns:
             ThreadInfo struct with computed warp_id, lane_id, lane_row, and lane_col.
         """
-        var warp_id = UInt(ufloordiv(warp_group_thread_idx, WARP_SIZE))
+        var warp_id = ufloordiv(warp_group_thread_idx, WARP_SIZE)
         var lid = lane_id()
         var lane_row, lane_col = divmod(UInt32(lid), 4)
         return ThreadInfo(warp_id, lid, lane_row, lane_col)
@@ -773,7 +778,7 @@ struct RegisterToGMemWriter[
         # Get the warp's portion of the tile
         var warp_tile = self.dst.tile[
             Self.wgmma_shape[0] // 4, Self.wgmma_shape[1]
-        ](m_mma * 4 + Int(self.thread_info.warp_id), n_mma)
+        ](m_mma * 4 + self.thread_info.warp_id, n_mma)
 
         # Get the corresponding register fragment
         var c_frag = c_reg_tile.tile[1, Self.c_frag_size](mma_id, 0)
@@ -797,7 +802,7 @@ struct RegisterToGMemWriter[
         var warp_tile, warp_tile_coords, warp_tile_offset = (
             self.dst.tile_with_offset[
                 Self.wgmma_shape[0] // 4, Self.wgmma_shape[1]
-            ](m_mma * 4 + Int(self.thread_info.warp_id), n_mma)
+            ](m_mma * 4 + self.thread_info.warp_id, n_mma)
         )
 
         # Calculate global coordinates
@@ -811,7 +816,7 @@ struct RegisterToGMemWriter[
         var gmem_frag, gmem_offset_coords_raw, gmem_offset = (
             warp_tile.vectorize[1, 2]().distribute_with_offset[
                 Layout.row_major(8, 4)
-            ](Int(self.thread_info.lane_id))
+            ](self.thread_info.lane_id)
         )
 
         var gmem_offset_coords = IndexList[2](
@@ -890,10 +895,10 @@ struct RegisterToGMemWriter[
         ] if not Self.swapAB else Self.wgmma_shape[0] // 4
 
         var coord_0 = (
-            m_mma * 4 + Int(self.thread_info.warp_id)
+            m_mma * 4 + self.thread_info.warp_id
         ) if not Self.swapAB else n_mma
         var coord_1 = n_mma if not Self.swapAB else (
-            m_mma * 4 + Int(self.thread_info.warp_id)
+            m_mma * 4 + self.thread_info.warp_id
         )
 
         # Get warp tile with bounds checking

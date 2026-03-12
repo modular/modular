@@ -69,9 +69,15 @@ from buffer.dimlist import Dim, DimList
 from std.gpu.host import DeviceContext
 from std.gpu.host._nvidia_cuda import CUDA
 from std.gpu import block_dim, block_idx, thread_idx
-from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple, UNKNOWN_VALUE
-from layout.tile_layout import row_major
-from layout.tile_tensor import stack_allocation as tt_stack_allocation
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
+    row_major,
+    stack_allocation as tt_stack_allocation,
+)
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from std.runtime.asyncrt import parallelism_level
@@ -3840,6 +3846,7 @@ fn conv_gpu[
 
                     @parameter
                     @always_inline
+                    @__copy_capture(hw, out_w)
                     fn sm100_void_epilogue[
                         _dtype: DType,
                         _width: Int,

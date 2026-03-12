@@ -14,12 +14,7 @@
 from std.math import exp, exp2, log
 from std.sys.info import simd_width_of
 
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-)
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from std.memory import alloc
 from state_space.varlen_selective_scan import (

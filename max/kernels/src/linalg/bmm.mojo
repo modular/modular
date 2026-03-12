@@ -34,24 +34,23 @@ from std.gpu.memory import AddressSpace
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import A100, is_cpu, is_valid_target
 from layout import (
+    ComptimeInt,
+    Coord,
+    CoordLike,
+    Idx,
     IntTuple,
     Layout,
     LayoutTensor,
+    RuntimeInt,
     RuntimeLayout,
+    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    coord_to_index_list,
     row_major,
 )
 from layout.tma_async import TMATensorTile, create_tensor_tile, create_tma_tile
-from layout.tile_layout import Layout as TileLayout, TensorLayout
-from layout.coord import (
-    Coord,
-    CoordLike,
-    ComptimeInt,
-    RuntimeInt,
-    Idx,
-    coord_to_index_list,
-)
+from layout.tile_layout import Layout as TileLayout
 from std.logger import Logger
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg

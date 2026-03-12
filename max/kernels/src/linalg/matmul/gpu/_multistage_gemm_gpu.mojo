@@ -40,8 +40,8 @@ from std.gpu.memory import (
 )
 from std.gpu.compute.mma import mma
 from layout.layout import *
+from layout import LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.layout_tensor import (
-    LayoutTensor,
     LayoutTensorIter,
     copy_dram_to_sram,
     copy_dram_to_sram_async,
@@ -50,8 +50,6 @@ from layout.layout_tensor import (
     copy_local_to_shared,
     copy_sram_to_dram,
 )
-from layout.runtime_layout import RuntimeLayout
-from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 

@@ -391,9 +391,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
             tokens = next(graph_inputs_iter)
 
-            hidden_states = [
-                next(graph_inputs_iter).tensor for _ in range(num_devices)
-            ]
+            hidden_states = next(graph_inputs_iter)
 
             device_input_row_offsets = next(graph_inputs_iter)
             host_input_row_offsets = next(graph_inputs_iter)
@@ -418,7 +416,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
             outputs = nn_model(
                 tokens.tensor,
-                hidden_states,
+                hidden_states.tensor,
                 signal_buffers,
                 kv_caches_per_dev,
                 return_n_logits.tensor,
@@ -462,22 +460,6 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 "EAGLE pipeline should set this field after calling prepare_initial_token_inputs()."
             )
 
-        num_devices = len(self.devices)
-
-        hidden_states_list: list[Buffer]
-        if isinstance(model_inputs.hidden_states, list):
-            if len(model_inputs.hidden_states) != num_devices:
-                raise ValueError(
-                    f"hidden_states list length ({len(model_inputs.hidden_states)}) "
-                    f"must match number of devices ({num_devices})"
-                )
-            hidden_states_list = model_inputs.hidden_states
-        else:
-            raise ValueError(
-                "hidden_states must be a list of Buffers (one per device) "
-                "for data parallel execution"
-            )
-
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
         ep_inputs = (
             ()
@@ -487,7 +469,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         model_outputs = self.model.execute(
             model_inputs.tokens,
-            *hidden_states_list,
+            model_inputs.hidden_states,
             model_inputs.input_row_offsets,
             model_inputs.host_input_row_offsets,
             model_inputs.return_n_logits,
@@ -498,18 +480,12 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             *ep_inputs,
         )
 
-        num_hidden_state_outputs = len(self.devices)
-        if len(model_outputs) == 1 + num_hidden_state_outputs:
+        if len(model_outputs) == 2:
             assert isinstance(model_outputs[0], Buffer)
-            output_hidden_states: list[Buffer] = []
-            for i in range(num_hidden_state_outputs):
-                hs = model_outputs[1 + i]
-                assert isinstance(hs, Buffer)
-                output_hidden_states.append(hs)
             return ModelOutputs(
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[0],
-                hidden_states=output_hidden_states,
+                hidden_states=model_outputs[1],
             )
         else:
             assert isinstance(model_outputs[0], Buffer)

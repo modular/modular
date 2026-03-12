@@ -20,11 +20,8 @@ from std.sys import align_of, argv, simd_width_of
 import std.benchmark
 from std.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from layout import Layout
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import UNKNOWN_VALUE, IntTuple
-from layout.layout_tensor import LayoutTensor
-from layout.runtime_layout import RuntimeLayout
 from linalg.dual_gemm import binary_fn_type, multistage_dual_gemm
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils import elementwise_epilogue_type
@@ -377,17 +374,13 @@ fn test_dual_matmul[
     _ = mat_b01^
 
     comptime cbrt_eps = exp2(Float64(FPUtils[dst_type].mantissa_width()) / -3)
-    comptime dst_simd_width = simd_width_of[dst_type]()
-    # elementwise
+    # Compare element-by-element to avoid vectorize on split tensor
+    # (split preserves original stride, which confuses vectorized bounds checks)
     for m in range(M):
-        for n in range(N // dst_simd_width):
+        for n in range(N):
             assert_almost_equal(
-                rebind[SIMD[dst_type, dst_simd_width]](
-                    mat_c_tensor.vectorize[1, dst_simd_width]()[m, n]
-                ),
-                rebind[SIMD[dst_type, dst_simd_width]](
-                    mat_c_ref.vectorize[1, dst_simd_width]()[m, n]
-                ),
+                mat_c_tensor[m, n],
+                mat_c_ref[m, n],
                 atol=cbrt_eps,
                 rtol=cbrt_eps,
             )

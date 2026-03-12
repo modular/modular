@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout.int_tuple import IntTuple, size
+from layout import IntTuple, Layout
+from layout.int_tuple import size
 from layout.layout import (
-    Layout,
     MakeTileLayoutList,
     coalesce,
     right_inverse,
@@ -118,7 +118,9 @@ fn vectorize_distribute_layout[
     return append_layout(materialize[vlayout[0]](), materialize[dlayout]())
 
 
-struct WaveFrontSummary(Defaultable, ImplicitlyCopyable, RegisterPassable):
+struct WaveFrontSummary(
+    Defaultable, ImplicitlyCopyable, RegisterPassable, Writable
+):
     var total_wavefronts: Int
     var expected_wavefronts: Int
 
@@ -129,8 +131,8 @@ struct WaveFrontSummary(Defaultable, ImplicitlyCopyable, RegisterPassable):
     fn excess_wavefronts(self) -> Int:
         return self.total_wavefronts - self.expected_wavefronts
 
-    fn __str__(self) -> String:
-        return String(
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write(
             "WaveFrontSummary(total_wavefronts=",
             self.total_wavefronts,
             ", expected_wavefronts=",

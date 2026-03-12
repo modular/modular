@@ -220,7 +220,7 @@ fn blockwise_fp8_matmul[
         c_tma_op,
         a_scales_tma_op,
         cluster_dim,
-        UInt(ceildiv(K, BK)),
+        ceildiv(K, BK),
         b_scales,
         problem_shape,
         grid_dim=grid_dim,

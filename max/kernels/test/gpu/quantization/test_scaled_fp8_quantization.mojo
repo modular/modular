@@ -14,14 +14,16 @@
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import (
+    Coord,
+    Idx,
     Layout,
     LayoutTensor,
+    RuntimeInt,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx, RuntimeInt
 from layout._fillers import random
 from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,

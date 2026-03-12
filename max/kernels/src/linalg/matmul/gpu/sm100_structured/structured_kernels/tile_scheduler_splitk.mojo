@@ -14,8 +14,7 @@ from std.gpu.memory import AddressSpace
 from .tile_scheduler import TileScheduler as B200TileScheduler
 from .tile_scheduler import WorkInfo as B200WorkInfo
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
-from layout.tile_layout import TensorLayout
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from layout.tma_async import SharedMemBarrier, PipelineState
 from std.utils.static_tuple import StaticTuple
 from structured_kernels.tile_types import (
@@ -26,7 +25,7 @@ from structured_kernels.tile_types import (
 from std.gpu import (
     grid_dim,
     thread_idx,
-    lane_id,
+    lane_id_int as lane_id,
     NamedBarrierSemaphore,
     WARP_SIZE,
 )
@@ -35,6 +34,7 @@ from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.compute.arch.tcgen05 import *
 from std.gpu.sync import named_barrier
 from std.bit import prev_power_of_two
+from std.math.uutils import ufloordiv, umod
 
 from linalg.structuring import SMemPtr
 from .tmem import TmemAddress, TmemTensor
@@ -679,7 +679,7 @@ struct TileScheduler[
         reduction_workspace: TileTensor[
             accum_type, workspace_layout, MutAnyOrigin
         ],
-        epilogue_thread_idx: UInt,
+        epilogue_thread_idx: Int,
         reduction_tile_idx: UInt32,
     ):
         # 128 is a magic number that is provided by the NVCC backend.
@@ -694,7 +694,7 @@ struct TileScheduler[
         comptime accum_layout = Layout.row_major(Self.BM, Self.ROW_SIZE)
         comptime AccumTmem = TmemTensor[accum_type, accum_layout, cta_group=2]
 
-        var local_warp_id = epilogue_thread_idx // UInt(WARP_SIZE)
+        var local_warp_id = ufloordiv(epilogue_thread_idx, WARP_SIZE)
 
         # workspace has layout (X, BM, MMA_N)
         var workspace_tile = self._get_workspace_tile(
@@ -703,8 +703,10 @@ struct TileScheduler[
 
         comptime REDUCTION_BM = Self.BM // 4 if Self.BM == 128 else Self.BM // 2
         comptime REDUCTION_BN = Self.MMA_N if Self.BM == 128 else Self.MMA_N // 2
-        var warp_id_x = local_warp_id if Self.BM == 128 else local_warp_id % 2
-        var warp_id_y = 0 if Self.BM == 128 else local_warp_id // 2
+        var warp_id_x = local_warp_id if Self.BM == 128 else umod(
+            local_warp_id, 2
+        )
+        var warp_id_y = 0 if Self.BM == 128 else ufloordiv(local_warp_id, 2)
 
         var reduction_frag = workspace_tile.tile[REDUCTION_BM, REDUCTION_BN](
             Coord(Idx(warp_id_x), Idx(warp_id_y))
@@ -731,14 +733,14 @@ struct TileScheduler[
                     reduction_upper
                 )
                 .vectorize[1, 2]()
-                .distribute[row_major[8, 4]()](Int(lane_id()))
+                .distribute[row_major[8, 4]()](lane_id())
             )
             var ws_lower = (
                 Self._to_next_subtile[widths=widths, curr_stage=stage](
                     reduction_lower
                 )
                 .vectorize[1, 2]()
-                .distribute[row_major[8, 4]()](Int(lane_id()))
+                .distribute[row_major[8, 4]()](lane_id())
             )
 
             comptime num_m = type_of(ws_upper).static_shape[0]
@@ -789,7 +791,7 @@ struct TileScheduler[
             accum_type, workspace_layout, MutAnyOrigin
         ],
         tmem: TmemAddress,
-        epilogue_thread_idx: UInt,
+        epilogue_thread_idx: Int,
         work_info: WorkInfo,
     ) -> Bool:
         var reduction_tile_idx = self.output_tile_index(work_info)
@@ -809,7 +811,7 @@ struct TileScheduler[
                 Self.wait_eq(
                     self.locks_ptr,
                     0,
-                    Int(epilogue_thread_idx),
+                    epilogue_thread_idx,
                     lock_idx,
                     work_info.k_start,
                 )
@@ -826,7 +828,7 @@ struct TileScheduler[
             Self.arrive_set(
                 self.locks_ptr,
                 0,
-                Int(epilogue_thread_idx),
+                epilogue_thread_idx,
                 lock_idx,
                 increment,
             )
@@ -836,7 +838,7 @@ struct TileScheduler[
             Self.wait_eq(
                 self.locks_ptr,
                 0,
-                Int(epilogue_thread_idx),
+                epilogue_thread_idx,
                 lock_idx,
                 work_info.k_start,
             )

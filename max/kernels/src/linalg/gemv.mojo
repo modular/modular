@@ -15,6 +15,7 @@ from std.math import align_down, align_up, ceildiv
 from std.sys import (
     has_amd_gpu_accelerator,
     is_amd_gpu,
+    is_nvidia_gpu,
     llvm_intrinsic,
     simd_width_of,
 )
@@ -50,15 +51,15 @@ from std.gpu.primitives.grid_controls import (
 
 # layout imports
 from layout import (
-    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
     TileTensor,
+    UNKNOWN_VALUE,
 )
 from std.logger import Logger
-from std.memory import stack_allocation
+from std.memory import bitcast, stack_allocation
 from std.utils import IndexList
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
@@ -276,6 +277,18 @@ fn _dot_accum[
     elif is_amd_gpu():
         # AMD non-BF16 (e.g. FP8): vector multiply + horizontal reduce.
         result += (a.cast[accum_type]() * b.cast[accum_type]()).reduce_add()
+    elif is_nvidia_gpu() and in_type.is_float8() and width >= 2:
+        # NVIDIA FP8: paired bitcast emits cvt.rn.f16x2.e4m3x2, eliminating
+        # PRMT byte-shuffle instructions. Multiply in f32 to avoid overflow
+        # (FP8 max=480, 480²=230400 > f16 max 65504).
+        comptime half_width = width // 2
+        var a_u16 = bitcast[DType.uint16, half_width](a)
+        var b_u16 = bitcast[DType.uint16, half_width](b)
+        comptime for l in range(half_width):
+            var a_f16 = bitcast[in_type, 2](a_u16[l]).cast[DType.float16]()
+            var b_f16 = bitcast[in_type, 2](b_u16[l]).cast[DType.float16]()
+            result += a_f16[0].cast[accum_type]() * b_f16[0].cast[accum_type]()
+            result += a_f16[1].cast[accum_type]() * b_f16[1].cast[accum_type]()
     else:
         # NVIDIA/generic: scalar element-wise loop. reduce_add() generates
         # wider intermediates that increase NVIDIA register pressure vs
@@ -600,6 +613,79 @@ fn _amd_gemv_config[
     return IndexList[3](num_threads, tile_n, unroll)
 
 
+fn _nvidia_gemv_config[
+    simd_width: Int,
+    static_K: Int,
+    has_N: Bool,
+    static_N: Int,
+]() -> IndexList[3]:
+    """Compute GEMV split-K dispatch config for NVIDIA B200 GPUs.
+
+    Returns (num_threads, tile_n, unroll_factor).
+    B200 has 160 SMs, warp size 32.
+    """
+    comptime tile_k_256 = 256 * simd_width
+    comptime tile_k_128 = 128 * simd_width
+
+    var num_threads: Int
+    comptime if simd_width <= 8:
+        # BF16: 128T default. 256T only for large N with ~4 k_iters
+        # at 128T, where halving iterations improves BW utilization.
+        if (
+            has_N
+            and static_N >= 16384
+            and static_K >= 4 * tile_k_128
+            and static_K < 5 * tile_k_128
+        ):
+            num_threads = 256
+        else:
+            num_threads = 128
+    else:
+        # FP8: scale threads with K.
+        if static_K < 3 * tile_k_128:
+            num_threads = 64
+        elif static_K >= 4 * tile_k_256:
+            num_threads = 256
+        else:
+            num_threads = 128
+
+    # tile_n=4 halves grid but doubles weight loads per block.
+    var tile_n = 2
+    # k_iters is per-thread K work (tile_n affects N, not K).
+    var k_iters = static_K // (num_threads * simd_width)
+    # Only use tile_n=4 at 128T; 256T + tile_n=4 regresses BF16.
+    if num_threads <= 128 and k_iters >= 3 and has_N:
+        var blocks_tn4 = static_N // 4
+        if k_iters <= 3:
+            tile_n = 4
+        elif k_iters <= 6 and blocks_tn4 >= 960:
+            tile_n = 4
+        elif blocks_tn4 >= 960 and blocks_tn4 < 1600:
+            tile_n = 4
+        else:
+            tile_n = 2
+    elif has_N:
+        var blocks_tn2 = static_N // 2
+        if blocks_tn2 < 160:
+            tile_n = 1
+        else:
+            tile_n = 2
+
+    # BF16: always unroll=1 (I-cache sensitive due to scalar FMA chain).
+    # FP8: unroll benefits from fewer instructions per iteration.
+    var unroll: Int
+    comptime if simd_width <= 8:
+        unroll = 1
+    else:
+        if k_iters == 4:
+            unroll = 4
+        elif k_iters >= 3:
+            unroll = 2
+        else:
+            unroll = 1
+    return IndexList[3](num_threads, tile_n, unroll)
+
+
 @always_inline
 fn gemv_gpu_dispatch[
     transpose_b: Bool = False,
@@ -681,12 +767,18 @@ fn gemv_gpu_dispatch[
                 config[2],
             ]()
         else:
-            # NVIDIA/generic: uniform 128T/tile_n=2/unroll=1.
-            # unroll_factor=1 uses the simple loop path (no ceildiv,
-            # no remainder loop) — produces cleaner NVIDIA PTX with
-            # fewer registers. Thread count sweep on B200 showed all
-            # configs within ±2% noise for both FP8 and BF16.
-            _gemv_split_k_dispatch[128, tile_n=2, unroll_factor=1]()
+            # NVIDIA B200: shape-dependent dispatch for FP8 and BF16.
+            comptime config = _nvidia_gemv_config[
+                simd_width,
+                static_K,
+                has_N,
+                static_N,
+            ]()
+            _gemv_split_k_dispatch[
+                config[0],
+                config[1],
+                config[2],
+            ]()
 
     elif kernel_func is GEMVAlgorithm.GEMV_KERNEL_VECTOR:
         logger.info("Executing: GEMV_KERNEL_VECTOR kernel")

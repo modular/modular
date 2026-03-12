@@ -44,6 +44,7 @@ VARIED_CONFIGS: list[tuple[int, int, int]] = [
     (512, 1024, 30),
     (1024, 512, 28),
     (768, 1024, 50),
+    (256, 256, 15),
 ]
 
 
@@ -123,6 +124,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Vary (height, width, num_inference_steps) across iterations to "
             "stress test eager-mode recompilation."
+        ),
+    )
+    parser.add_argument(
+        "--enable-fbc",
+        action="store_true",
+        help="Enable first-block caching (FBC) for the MAX diffusion pipeline.",
+    )
+    parser.add_argument(
+        "--residual-threshold",
+        type=float,
+        default=0.08,
+        help=(
+            "Residual threshold for step-cache early stopping in the "
+            "denoising loop (default: 0.08)."
         ),
     )
     return parser.parse_args(argv)
@@ -262,7 +277,10 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
             model_path=model_id,
             device_specs=[DeviceSpec.accelerator()],
         ),
-        runtime=PipelineRuntimeConfig(prefer_module_v3=True),
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=True,
+            enable_fbc=args.enable_fbc,
+        ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
         config.model.huggingface_weight_repo,
@@ -322,6 +340,7 @@ async def _build_max_inputs(
                 width=width,
                 steps=steps,
                 guidance_scale=args.guidance_scale,
+                residual_threshold=args.residual_threshold,
             )
         ),
     )
@@ -449,6 +468,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  resolution       : {args.width}x{args.height}")
         print(f"  inference steps  : {args.num_inference_steps}")
     print(f"  guidance scale   : {args.guidance_scale}")
+    print(f"  enable FBC       : {args.enable_fbc}")
+    print(f"  residual thresh  : {args.residual_threshold}")
     print(f"  warmup runs      : {args.num_warmups}")
     print()
 
@@ -471,8 +492,21 @@ def main(argv: list[str] | None = None) -> int:
         d_mean = statistics.mean(diffusers_result.total_durations)
         m_mean = statistics.mean(max_result.total_durations)
         speedup = d_mean / m_mean if m_mean > 0 else float("inf")
+        per_iter_speedups = [
+            d / m if m > 0 else float("inf")
+            for d, m in zip(
+                diffusers_result.total_durations,
+                max_result.total_durations,
+                strict=True,
+            )
+        ]
+        min_speedup = min(per_iter_speedups)
+        max_speedup = max(per_iter_speedups)
         print()
-        print(f"  Speedup (MAX vs Diffusers): {speedup:.2f}x")
+        print("  Speedup (MAX vs Diffusers):")
+        print(f"    avg: {speedup:.2f}x")
+        print(f"    min: {min_speedup:.2f}x")
+        print(f"    max: {max_speedup:.2f}x")
 
     print()
     return 0

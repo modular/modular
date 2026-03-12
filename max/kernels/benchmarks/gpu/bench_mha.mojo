@@ -314,7 +314,7 @@ fn run_mha[
 
 
 @fieldwise_init
-struct MHA_cfg(ImplicitlyCopyable):
+struct MHA_cfg(ImplicitlyCopyable, Writable):
     # params
     var qkv_type: DType
     var mask_type: DType
@@ -322,19 +322,6 @@ struct MHA_cfg(ImplicitlyCopyable):
     var num_heads: Int
     var group: Int
     var cache_busting: Bool
-
-    @no_inline
-    fn __str__(self) -> String:
-        # fmt: off
-        return String(
-            "qkv_type=", self.qkv_type,
-            "/mask_type=", self.mask_type,
-            "/depth=", self.depth,
-            "/num_heads=", self.num_heads,
-            "/group=", self.group,
-            "/cache_busting=", self.cache_busting,
-        )
-        # fmt: on
 
 
 def main() raises:

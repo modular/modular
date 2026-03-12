@@ -15,11 +15,11 @@ from std.math import exp
 from std.sys.info import simd_width_of
 
 from layout import (
-    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
-    RuntimeTuple,
     RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
 )
 from layout._fillers import random
 from std.memory import alloc

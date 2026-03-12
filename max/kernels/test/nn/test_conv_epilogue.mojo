@@ -16,7 +16,7 @@ from std.random import rand
 from std.sys.info import simd_width_of
 
 from std.algorithm.functional import vectorize
-from layout import LayoutTensor, Layout, RuntimeLayout
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
