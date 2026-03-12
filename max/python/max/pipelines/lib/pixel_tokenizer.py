@@ -197,9 +197,9 @@ class PixelGenerationTokenizer(
             self.diffusers_config
         )
 
-        # FLUX.2-Klein assumes tokenizer outputs use right padding so that
-        # attention_mask -> valid_length preserves the intended token prefix.
-        
+        # Preserve tokenizer attention masks so downstream text encoders can
+        # derive additive attention bias directly from tokenizer semantics.
+
         # Extract static config values once during initialization
         components = self.diffusers_config.get("components", {})
         vae_config = components.get("vae", {}).get("config_dict", {})
