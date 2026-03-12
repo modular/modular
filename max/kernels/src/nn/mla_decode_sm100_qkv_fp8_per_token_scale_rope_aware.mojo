@@ -322,7 +322,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # Null pointer means no Q scale (sigma_Q = 1.0).
         q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         scalar_args: LayoutTensor[
-            DType.int64, Layout.row_major(4), MutAnyOrigin
+            DType.int64, Layout.row_major(3), MutAnyOrigin
         ],
     ):
         # Extract scalar launch args from the stable device buffer.

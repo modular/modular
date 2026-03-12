@@ -24,7 +24,6 @@ from max.dtype import DType
 from max.engine import Model
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheInputs, KVCacheInputsPerDevice
-from max.nn.kv_cache.utils import AttentionDispatchMetadataScalars
 from max.pipelines.lib import ModelInputs, ModelOutputs
 from max.pipelines.lib.graph_capture import (
     ServeGraphCaptureRunner,
@@ -218,13 +217,18 @@ def _make_kv_per_device(
     max_cache_len: int,
     num_partitions: int,
     q_max_seq_len: int = 1,
+    *,
+    is_mla: bool = False,
 ) -> KVCacheInputsPerDevice:
     """Creates a ``KVCacheInputsPerDevice`` with configurable metadata."""
     max_lengths = np.array([[0, max_cache_len]], dtype=np.uint32)
     # attention_dispatch_metadata layout:
-    # [batch_size, q_max_seq_len, num_partitions, max_cache_valid_length]
+    # MLA: [batch_size, q_max_seq_len, num_partitions]
+    # MHA: [batch_size, q_max_seq_len, num_partitions, max_cache_valid_length]
     dispatch = np.array(
-        [1, q_max_seq_len, num_partitions, max_cache_len], dtype=np.int64
+        [1, q_max_seq_len, num_partitions]
+        + ([] if is_mla else [max_cache_len]),
+        dtype=np.int64,
     )
     return KVCacheInputsPerDevice(
         blocks=Buffer.zeros((1,), dtype=DType.float32),
@@ -232,12 +236,6 @@ def _make_kv_per_device(
         lookup_table=Buffer.from_numpy(np.array([0], dtype=np.uint32)),
         max_lengths=Buffer.from_numpy(max_lengths),
         attention_dispatch_metadata=Buffer.from_numpy(dispatch),
-        dispatch_scalars=AttentionDispatchMetadataScalars(
-            batch_size=1,
-            q_max_seq_len=q_max_seq_len,
-            num_partitions=num_partitions,
-            max_cache_valid_length=max_cache_len,
-        ),
     )
 
 
@@ -320,7 +318,7 @@ def test_resolve_replay_key_mla_buckets_up() -> None:
     runner.graph_entries[(1, 10, 1)] = ((), ModelOutputs(logits=output_buf))
 
     # Runtime np=7 should bucket up to 10.
-    kv = _make_kv_per_device(max_cache_len=100, num_partitions=7)
+    kv = _make_kv_per_device(max_cache_len=100, num_partitions=7, is_mla=True)
     inputs = _make_mock_inputs_with_kv(1, [kv])
     assert runner._resolve_replay_key(inputs) == (1, 10, 1)
 
@@ -331,7 +329,9 @@ def test_replay_mla_buckets_to_captured_graph() -> None:
     model = cast(DummyModel, runner._model)
 
     # Capture a graph for np=10.
-    kv_capture = _make_kv_per_device(max_cache_len=100, num_partitions=10)
+    kv_capture = _make_kv_per_device(
+        max_cache_len=100, num_partitions=10, is_mla=True
+    )
     capture_inputs = _make_mock_inputs_with_kv(1, [kv_capture])
     runner.graph_entries[(1, 10, 1)] = (
         capture_inputs.buffers,
@@ -339,7 +339,9 @@ def test_replay_mla_buckets_to_captured_graph() -> None:
     )
 
     # Replay with np=7 → buckets to 10 → replays captured graph.
-    kv_replay = _make_kv_per_device(max_cache_len=100, num_partitions=7)
+    kv_replay = _make_kv_per_device(
+        max_cache_len=100, num_partitions=7, is_mla=True
+    )
     replay_inputs = _make_mock_inputs_with_kv(1, [kv_replay])
     output = runner.replay(model_inputs=replay_inputs)
     assert model.replay_calls
@@ -352,7 +354,7 @@ def test_resolve_replay_key_mla_miss_raises() -> None:
     # Only np=5 captured — runtime np=99 has no bucket >= 99.
     runner.graph_entries[(1, 5, 1)] = ((), ModelOutputs(logits=output_buf))
 
-    kv = _make_kv_per_device(max_cache_len=200, num_partitions=99)
+    kv = _make_kv_per_device(max_cache_len=200, num_partitions=99, is_mla=True)
     inputs = _make_mock_inputs_with_kv(1, [kv])
     with pytest.raises(RuntimeError, match=r"No captured device graph for"):
         runner._resolve_replay_key(inputs)

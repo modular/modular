@@ -28,7 +28,6 @@ from typing import (
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, BufferValue, TensorType, TensorValue, Value
-from max.nn.kv_cache.utils import AttentionDispatchMetadataScalars
 from typing_extensions import TypeVar
 
 logger = logging.getLogger("max.pipelines")
@@ -350,7 +349,6 @@ class KVCacheInputsPerDevice:
     max_lengths: Buffer
     kv_scales: Buffer | None = None  # Scale tensor for FP8 quantization
     attention_dispatch_metadata: Buffer | None = None
-    dispatch_scalars: AttentionDispatchMetadataScalars | None = None
 
     def __iter__(self) -> Iterator[Buffer]:
         yield from self.as_list()

@@ -3011,7 +3011,7 @@ def _flare_mla_decode_kv_cache_ragged[
     var k = kv_collection.get_key_cache(layer_idx_cast)
 
     var scalar_args_buf_lt = rebind[
-        LayoutTensor[DType.int64, Layout.row_major(4), MutAnyOrigin]
+        LayoutTensor[DType.int64, Layout.row_major(3), MutAnyOrigin]
     ](scalar_args_buf)
 
     @parameter

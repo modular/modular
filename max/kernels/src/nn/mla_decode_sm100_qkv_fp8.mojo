@@ -227,7 +227,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         ],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         scalar_args: TileTensor[
-            DType.int64, RowMajorLayout[ComptimeInt[4]], MutAnyOrigin
+            DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
         ],
     ):
         # Extract scalar launch args from the stable device buffer.

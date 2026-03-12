@@ -7523,7 +7523,7 @@ struct Struct_mla_decode_ragged_paged:
             max_lengths,
         )
         var null_scalar_args = LayoutTensor[
-            DType.int64, Layout.row_major(4), MutAnyOrigin
+            DType.int64, Layout.row_major(3), MutAnyOrigin
         ](UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]())
         generic_flare_mla_decode_kv_cache_ragged[
             target=target,
@@ -7924,7 +7924,6 @@ struct Struct_mla_compute_dispatch_args_scalar:
         output[0] = Int64(scalars[0])
         output[1] = Int64(scalars[1])
         output[2] = Int64(scalars[2])
-        output[3] = Int64(scalars[3])
 
 
 @compiler.register("mo.mla.graph.decode.paged.fp8.capturable")
@@ -8050,7 +8049,7 @@ struct Struct_mla_decode_graph_paged_fp8:
         ](), "mo.mla.graph.decode.paged.fp8 is only supported on GPU"
 
         var null_ptr = UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]()
-        var null_scalar_args = TileTensor(null_ptr, row_major[4]())
+        var null_scalar_args = TileTensor(null_ptr, row_major[3]())
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.decode.paged.fp8",
@@ -8258,7 +8257,7 @@ struct Struct_mla_decode_graph_bf16_paged:
         ](), "mo.mla.graph.decode.paged is only supported on GPU"
 
         var null_ptr = UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]()
-        var null_scalar_args = TileTensor(null_ptr, row_major[4]())
+        var null_scalar_args = TileTensor(null_ptr, row_major[3]())
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.decode.paged",
@@ -8427,7 +8426,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
         ](), "mo.mla.graph.prefill.decode.paged.fp8 is only supported on GPU"
 
         var null_ptr = UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]()
-        var null_scalar_args = TileTensor(null_ptr, row_major[4]())
+        var null_scalar_args = TileTensor(null_ptr, row_major[3]())
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.prefill.decode.paged.fp8",
@@ -8585,7 +8584,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
         ](), "mo.mla.graph.prefill.decode.paged is only supported on GPU"
 
         var null_ptr = UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]()
-        var null_scalar_args = TileTensor(null_ptr, row_major[4]())
+        var null_scalar_args = TileTensor(null_ptr, row_major[3]())
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.prefill.decode.paged",
@@ -8664,7 +8663,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
         ](), "mo.mla.graph.prefill.decode.paged is only supported on GPU"
 
         var null_ptr = UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]()
-        var null_scalar_args = TileTensor(null_ptr, row_major[4]())
+        var null_scalar_args = TileTensor(null_ptr, row_major[3]())
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.prefill.decode.paged.quantized.capturable",

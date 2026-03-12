@@ -34,7 +34,8 @@ def _resolve_np(
     cache_length: int,
 ) -> int:
     """Returns num_partitions from the real Mojo dispatch kernel."""
-    return resolver(batch_size, 1, cache_length).num_partitions
+    metadata = resolver(batch_size, 1, cache_length).to_numpy()
+    return int(metadata[2])
 
 
 @pytest.fixture(scope="module")

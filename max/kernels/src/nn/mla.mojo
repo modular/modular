@@ -150,7 +150,7 @@ def flare_mla_decoding[
     scale: Float32,
     ctx: DeviceContext,
     scalar_args_buf: LayoutTensor[
-        DType.int64, Layout.row_major(4), MutAnyOrigin
+        DType.int64, Layout.row_major(3), MutAnyOrigin
     ],
     q_max_seq_len: OptionalReg[Int] = None,
     kv_input_row_offsets: OptionalReg[
@@ -302,7 +302,7 @@ def flare_mla_decoding[
     scale: Float32,
     ctx: DeviceContext,
     scalar_args_buf: LayoutTensor[
-        DType.int64, Layout.row_major(4), MutAnyOrigin
+        DType.int64, Layout.row_major(3), MutAnyOrigin
     ],
     # if not set, we select num_partitions based on heuristics
     num_partitions: Optional[Int] = None,
@@ -389,7 +389,7 @@ def flare_mla_decoding_dispatch[
     scale: Float32,
     ctx: DeviceContext,
     scalar_args_buf: LayoutTensor[
-        DType.int64, Layout.row_major(4), MutAnyOrigin
+        DType.int64, Layout.row_major(3), MutAnyOrigin
     ],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
