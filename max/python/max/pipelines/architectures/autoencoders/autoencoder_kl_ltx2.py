@@ -35,12 +35,6 @@ from .model_config import (
 )
 
 
-def pixel_shuffle_3d_merge(x: Tensor, stride: tuple[int, int, int]) -> Tensor:
-    x = F.flatten(x, 6, 7)
-    x = F.flatten(x, 4, 5)
-    x = F.flatten(x, 2, 3)
-    return x
-
 
 class PerChannelRMSNorm(nn.Module[[Tensor], Tensor]):
     """Per-channel RMS normalization layer."""
@@ -362,12 +356,10 @@ class LTXVideoUpsampler3d(nn.Module[..., Tensor]):
             )
             residual = residual.permute([0, 1, 5, 2, 6, 3, 7, 4])
             depth, h_stride, w_stride = self.stride
-            # Use concat-based merge to avoid symbolic product issues in reshape
-            residual = pixel_shuffle_3d_merge(
-                residual, (depth, h_stride, w_stride)
-            )
-            # Rebind to clean symbolic shape for downstream ops
-            residual = F.rebind(
+            # Direct reshape on the permuted 8D tensor: all dims are still
+            # primitive symbols here, so the verifier can prove element-count
+            # equality without hitting opaque mul_no_wrap products.
+            residual = F.reshape(
                 residual,
                 (
                     batch_size,
@@ -402,12 +394,10 @@ class LTXVideoUpsampler3d(nn.Module[..., Tensor]):
         )
         hidden_states = hidden_states.permute([0, 1, 5, 2, 6, 3, 7, 4])
         depth, h_stride, w_stride = self.stride
-        # Use concat-based merge to avoid symbolic product issues in reshape
-        hidden_states = pixel_shuffle_3d_merge(
-            hidden_states, (depth, h_stride, w_stride)
-        )
-        # Rebind to clean symbolic shape for downstream ops
-        hidden_states = F.rebind(
+        # Direct reshape on the permuted 8D tensor: all dims are still
+        # primitive symbols here, so the verifier can prove element-count
+        # equality without hitting opaque mul_no_wrap products.
+        hidden_states = F.reshape(
             hidden_states,
             (
                 batch_size,
@@ -784,10 +774,10 @@ class LTX2VideoDecoder3d(nn.Module[..., Tensor]):
             ),
         )
         hidden_states = hidden_states.permute([0, 1, 5, 2, 6, 4, 7, 3])
-        # Use concat-based merge to avoid symbolic product issues in reshape
-        hidden_states = pixel_shuffle_3d_merge(hidden_states, (p_t, p, p))
-        # Rebind to clean symbolic shape for downstream ops
-        hidden_states = F.rebind(
+        # Direct reshape on the permuted 8D tensor: all dims are still
+        # primitive symbols here, so the verifier can prove element-count
+        # equality without hitting opaque mul_no_wrap products.
+        hidden_states = F.reshape(
             hidden_states,
             (
                 batch_size,
