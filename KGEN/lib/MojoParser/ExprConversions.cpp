@@ -430,6 +430,18 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   // Generate a mangled name.
   std::string name = generateThunkName(thunkSignature, actualSignature);
 
+  // Extract the callee's where-clause constraints from the rebound callee
+  // type. The evaluator has already remapped index-based parameter references
+  // to named references using the thunk's parameter declarations, so these
+  // constraints can be used as known assumptions in the thunk's scope.
+  // This is needed for TrivialRegisterPassable types with conditional
+  // conformance: the witness entry uses a conversion thunk to bridge calling
+  // conventions, and the callee (struct method) may carry a where clause.
+  auto reboundCalleeType =
+      sugarCast<FnTypeGeneratorType>(evaluator.getReboundType(actualSignature));
+  ArrayRef<ConstraintAttr> remappedConstraints =
+      reboundCalleeType.getBody().getMetadata().getConstraints();
+
   // Declare the function at the bottom of the decl.
   b = ImplicitLocOpBuilder(mlirLoc, moduleDecl.getDeclEndBuilder());
   FunctionEmitter structEmitter(shared);
@@ -439,7 +451,9 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
       functionType.getInputs(), thunkSignature.getArgConventions(),
       PogListAttr::get(ctx, thunkSignature.getNumArguments()),
       functionType.getResults().front(), SpecialFunctionKind::kNormal,
-      moduleDecl.getLoc(), b, thunkSignature.getFnEffects());
+      moduleDecl.getLoc(), b, thunkSignature.getFnEffects(),
+      /*suffix=*/"", /*synthetic=*/true, InlineLevel::Automatic,
+      remappedConstraints);
 
   // Annotate the function as a thunk by adding the conversion types.
   NamedAttrList attrs = thunk->getAttrDictionary();
@@ -452,6 +466,12 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
 
   // Set the attributes.
   thunk->setAttrs(attrs.getDictionary(ctx));
+
+  // Synthesized functions don't go through the normal DeclResolution signature
+  // resolution path that calls insertKnownAssumptions, so we must explicitly
+  // inject the constraints as known assumptions on the thunk's ASTDecl.
+  if (!remappedConstraints.empty())
+    thunkDecl->insertKnownAssumptions(remappedConstraints);
 
   // Now prepare to emit the call.
   b = ImplicitLocOpBuilder::atBlockBegin(mlirLoc, thunk.getBody());

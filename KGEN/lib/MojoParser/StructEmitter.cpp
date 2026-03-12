@@ -206,11 +206,12 @@ std::pair<FnOp, ASTDecl *> FunctionEmitter::synthesizeFunction(
     ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
     Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
     ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix,
-    bool synthetic, InlineLevel inlineLevel) {
-  FnOp funcOp =
-      createFunction(parent, name, params, paramListAttrs, argTypes,
-                     argConventions, argListAttrs, resultType, specialFnID, loc,
-                     builder, fnEffects, suffix, synthetic, inlineLevel);
+    bool synthetic, InlineLevel inlineLevel,
+    ArrayRef<ConstraintAttr> constraints) {
+  FnOp funcOp = createFunction(parent, name, params, paramListAttrs, argTypes,
+                               argConventions, argListAttrs, resultType,
+                               specialFnID, loc, builder, fnEffects, suffix,
+                               synthetic, inlineLevel, constraints);
 
   // Return null if the function already exists with the same signature.
   if (!funcOp)
