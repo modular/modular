@@ -16,10 +16,46 @@ from typing import Any
 from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+)
 from max.pipelines.lib import MAXModelConfigBase, SupportedEncoding
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from pydantic import Field
 from typing_extensions import Self
+
+
+def _make_nvfp4_config(num_layers: int, num_single_layers: int) -> QuantConfig:
+    """Build a QuantConfig for NVFP4 block-scaled quantization.
+
+    This matches the modelopt NVFP4 format: block size 16 on the K axis,
+    static per-tensor input scales, FP8 weight scales.
+    """
+    input_spec = InputScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        origin=ScaleOrigin.STATIC,
+        dtype=DType.float32,
+        block_size=(1, 16),
+    )
+    weight_spec = WeightScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        dtype=DType.float8_e4m3fn,
+        block_size=(1, 16 // 2),
+    )
+    all_layers = set(range(num_layers + num_single_layers))
+    return QuantConfig(
+        input_scale=input_spec,
+        weight_scale=weight_spec,
+        mlp_quantized_layers=all_layers,
+        attn_quantized_layers=all_layers,
+        embedding_output_dtype=DType.bfloat16,
+        quant_method="modelopt",
+        quant_algo="NVFP4",
+    )
 
 
 class Flux2Config(MAXModelConfigBase):
@@ -40,6 +76,8 @@ class Flux2Config(MAXModelConfigBase):
     """If False (Klein/distilled), no guidance embedder weights are expected."""
     dtype: DType = DType.bfloat16
     device: DeviceRef = Field(default_factory=DeviceRef.GPU)
+    quant_config: QuantConfig | None = None
+    """NVFP4 quantization config, populated when encoding is float4_e2m1fnx2."""
 
     @classmethod
     def initialize_from_config(
@@ -53,10 +91,21 @@ class Flux2Config(MAXModelConfigBase):
             for key, value in config_dict.items()
             if key in cls.model_fields
         }
+        raw_dtype = supported_encoding_dtype(encoding)
+        # For NVFP4, the computation dtype is bfloat16 (FP4 is only for
+        # weights); build the QuantConfig so layers know to use NVFP4Linear.
+        quant_config: QuantConfig | None = None
+        if raw_dtype == DType.uint8:
+            quant_config = _make_nvfp4_config(
+                init_dict.get("num_layers", 8),
+                init_dict.get("num_single_layers", 48),
+            )
+            raw_dtype = DType.bfloat16  # activations stay bf16
         init_dict.update(
             {
-                "dtype": supported_encoding_dtype(encoding),
+                "dtype": raw_dtype,
                 "device": DeviceRef.from_device(devices[0]),
+                "quant_config": quant_config,
             }
         )
         return cls(**init_dict)

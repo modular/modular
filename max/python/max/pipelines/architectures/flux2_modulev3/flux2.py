@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 
 from max.dtype import DType
@@ -20,6 +22,7 @@ from max.experimental.nn.norm import LayerNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorType, TensorValue
+from max.nn.quant_config import QuantConfig
 
 from .layers.embeddings import TimestepEmbedding, Timesteps
 from .layers.flux2_attention import (
@@ -29,6 +32,7 @@ from .layers.flux2_attention import (
     Flux2PosEmbed,
 )
 from .layers.normalizations import AdaLayerNormContinuous
+from .layers.nvfp4_linear import NVFP4Linear
 from .model_config import Flux2Config
 
 
@@ -63,6 +67,21 @@ def get_can_use_cache(
     relative_diff = mean_diff / (mean_prev + eps)
     pred = relative_diff < F.cast(rdt, relative_diff.dtype)
     return F.squeeze(pred, 0)
+
+
+def _make_linear(
+    in_dim: int,
+    out_dim: int,
+    *,
+    bias: bool = False,
+    quant_config: QuantConfig | None = None,
+) -> Linear | NVFP4Linear:
+    """Create a Linear or NVFP4Linear depending on quantization config."""
+    if quant_config is not None and quant_config.is_nvfp4:
+        return NVFP4Linear(
+            in_dim, out_dim, quant_config=quant_config, bias=bias
+        )
+    return Linear(in_dim, out_dim, bias=bias)
 
 
 class Flux2TimestepGuidanceEmbeddings(Module[[Tensor, Tensor], Tensor]):
@@ -136,6 +155,7 @@ class Flux2Modulation(
         dim: int,
         mod_param_sets: int = 2,
         bias: bool = False,
+        quant_config: QuantConfig | None = None,
     ):
         """Initialize Flux2Modulation.
 
@@ -143,8 +163,10 @@ class Flux2Modulation(
             dim: Input/output dimension.
             mod_param_sets: Number of parameter sets (2 for dual-stream, 1 for single-stream).
             bias: Whether to use bias in linear layer.
+            quant_config: Optional NVFP4 quantization config.
         """
         self.mod_param_sets = mod_param_sets
+        # Modulation layers are always BF16 in NVFP4 checkpoints.
         self.linear = Linear(dim, dim * 3 * mod_param_sets, bias=bias)
 
     def forward(
@@ -190,6 +212,7 @@ class Flux2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
         mlp_ratio: float = 3.0,
         eps: float = 1e-6,
         bias: bool = False,
+        quant_config: QuantConfig | None = None,
     ):
         """Initialize Flux2TransformerBlock.
 
@@ -200,6 +223,7 @@ class Flux2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
             mlp_ratio: Multiplier for feedforward hidden dimension.
             eps: Epsilon for layer normalization.
             bias: Whether to use bias in linear layers.
+            quant_config: Optional NVFP4 quantization config.
         """
         self.mlp_hidden_dim = int(dim * mlp_ratio)
 
@@ -222,6 +246,7 @@ class Flux2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
             added_proj_bias=bias,
             out_bias=bias,
             eps=eps,
+            quant_config=quant_config,
         )
 
         # Feedforward layers
@@ -229,14 +254,22 @@ class Flux2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
             dim, eps=eps, elementwise_affine=False, use_bias=False
         )
         self.ff = Flux2FeedForward(
-            dim=dim, dim_out=dim, mult=mlp_ratio, bias=bias
+            dim=dim,
+            dim_out=dim,
+            mult=mlp_ratio,
+            bias=bias,
+            quant_config=quant_config,
         )
 
         self.norm2_context = LayerNorm(
             dim, eps=eps, elementwise_affine=False, use_bias=False
         )
         self.ff_context = Flux2FeedForward(
-            dim=dim, dim_out=dim, mult=mlp_ratio, bias=bias
+            dim=dim,
+            dim_out=dim,
+            mult=mlp_ratio,
+            bias=bias,
+            quant_config=quant_config,
         )
 
     def forward(
@@ -339,6 +372,7 @@ class Flux2SingleTransformerBlock(Module[..., Tensor | tuple[Tensor, Tensor]]):
         mlp_ratio: float = 3.0,
         eps: float = 1e-6,
         bias: bool = False,
+        quant_config: QuantConfig | None = None,
     ):
         """Initialize Flux2SingleTransformerBlock.
 
@@ -349,6 +383,7 @@ class Flux2SingleTransformerBlock(Module[..., Tensor | tuple[Tensor, Tensor]]):
             mlp_ratio: Multiplier for feedforward hidden dimension.
             eps: Epsilon for layer normalization.
             bias: Whether to use bias in linear layers.
+            quant_config: Optional NVFP4 quantization config.
         """
         # Single normalization (elementwise_affine=False)
         self.norm = LayerNorm(
@@ -366,6 +401,7 @@ class Flux2SingleTransformerBlock(Module[..., Tensor | tuple[Tensor, Tensor]]):
             eps=eps,
             mlp_ratio=mlp_ratio,
             mlp_mult_factor=2,
+            quant_config=quant_config,
         )
 
     def forward(
@@ -469,6 +505,7 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
         self.patch_size = patch_size
         self.out_channels = out_channels or in_channels
         self.inner_dim = num_attention_heads * attention_head_dim
+        quant_config = getattr(config, "quant_config", None)
 
         # 1. Positional embeddings (RoPE)
         self.pos_embed = Flux2PosEmbed(
@@ -483,20 +520,18 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
             guidance_embeds=getattr(config, "guidance_embeds", True),
         )
 
-        # 3. Modulation layers
-        # Two sets of modulation parameters for dual-stream blocks (attn + mlp per stream)
+        # 3. Modulation layers (always BF16)
         self.double_stream_modulation_img = Flux2Modulation(
             self.inner_dim, mod_param_sets=2, bias=False
         )
         self.double_stream_modulation_txt = Flux2Modulation(
             self.inner_dim, mod_param_sets=2, bias=False
         )
-        # One set for single-stream blocks (parallel attn+mlp)
         self.single_stream_modulation = Flux2Modulation(
             self.inner_dim, mod_param_sets=1, bias=False
         )
 
-        # 4. Input embeddings
+        # 4. Input embeddings (always BF16)
         self.x_embedder = Linear(in_channels, self.inner_dim, bias=False)
         self.context_embedder = Linear(
             joint_attention_dim, self.inner_dim, bias=False
@@ -512,6 +547,7 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
                     mlp_ratio=mlp_ratio,
                     eps=eps,
                     bias=False,
+                    quant_config=quant_config,
                 )
                 for _ in range(num_layers)
             ]
@@ -529,12 +565,13 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
                     mlp_ratio=mlp_ratio,
                     eps=eps,
                     bias=False,
+                    quant_config=quant_config,
                 )
                 for _ in range(num_single_layers)
             ]
         )
 
-        # 7. Output layers
+        # 7. Output layers (always BF16)
         self.norm_out = AdaLayerNormContinuous(
             embedding_dim=self.inner_dim,
             conditioning_embedding_dim=self.inner_dim,
