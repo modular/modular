@@ -418,10 +418,14 @@ DIAG(err_accelerator_arch_return_string_type, Error, MLIR,
      "'accelerator_arch' must return a string type")
 DIAG(err_apply_function_return_one_result, Error, MLIR,
      "'apply' function must return one result")
+DIAG(err_argument_parameter_name_cannot_null, Error, MLIR,
+     "argument/parameter name cannot be null")
 DIAG(err_array_attribute_expected_concrete_size, Error, MLIR,
      "array attribute expected a concrete size")
 DIAG(err_bind_params_more_parameters_than_generator, Error, MLIR,
      "bind_params has more parameters than the generator expects")
+DIAG(err_cannot_arg_index_unless_arg, Error, MLIR,
+     "cannot have arg index unless is arg kind")
 DIAG(err_cannot_convert_2, Error, MLIR,
      "cannot convert {0} to trait {1}")
 DIAG(err_cannot_convert_float_string, Error, MLIR,
@@ -462,6 +466,12 @@ DIAG(err_expected_concat_variadic_variadic_values, Error, MLIR,
      "expected to concat a variadic of variadic values")
 DIAG(err_expected_generatorattr_takes_3_argument, Error, MLIR,
      "expected a GeneratorAttr that takes 3 argument")
+DIAG(err_expected_lit_ref_pack_type, Error, MLIR,
+     "expected a !lit.ref.pack type")
+DIAG(err_expected_mut_imm_indicate_mutability, Error, MLIR,
+     "expected 'mut' or 'imm' to indicate mutability")
+DIAG(err_expected_no_result_parameters, Error, MLIR,
+     "expected no result parameters")
 DIAG(err_expected_pack_type, Error, MLIR,
      "expected a pack type")
 DIAG(err_expected_symbols_match_number_capture, Error, MLIR,
@@ -480,6 +490,8 @@ DIAG(err_get_env_return_index_i1_string, Error, MLIR,
      "'get_env' must return index, i1, or string")
 DIAG(err_index_reference_no_contextual_signature, Error, MLIR,
      "index reference has no contextual signature")
+DIAG(err_inferred_parameter_follows_non_inferred, Error, MLIR,
+     "'inferred' parameter follows non-inferred parameter")
 DIAG(err_invalid_cast_operands_input_output, Error, MLIR,
      "Invalid cast operands: input and output must be SIMD types")
 DIAG(err_invalid_operand_type_simdtype, Error, MLIR,
@@ -492,6 +504,8 @@ DIAG(err_mismatched_size_between_operands_result, Error, MLIR,
      "mismatched size between operands and result")
 DIAG(err_neg_operator_expects_single_operand, Error, MLIR,
      "neg operator expects a single operand")
+DIAG(err_number_pog_names_doesnt_match, Error, MLIR,
+     "number of pog names doesn't match number of pog types")
 DIAG(err_operand_type_mismatch, Error, MLIR,
      "operand type mismatch")
 DIAG(err_operation_parameter_expression_concrete_signature, Error, MLIR,
@@ -504,6 +518,12 @@ DIAG(err_operator_requires_least_one_operand, Error, MLIR,
      "operator requires at least one operand")
 DIAG(err_operator_returns_single_i1_operand, Error, MLIR,
      "not operator returns a single i1 operand")
+DIAG(err_pack_convention_specified, Error, MLIR,
+     "pack convention not specified")
+DIAG(err_pack_convention_specified_without_pack, Error, MLIR,
+     "pack convention specified without pack")
+DIAG(err_pack_supported_parameter_list, Error, MLIR,
+     "pack not supported in parameter list")
 DIAG(err_ptr_bitcast_expects_one_operand, Error, MLIR,
      "'ptr_bitcast' expects one operand")
 DIAG(err_rebind_expects_one_operand, Error, MLIR,
@@ -557,6 +577,10 @@ DIAG(err_variadic_ptrremove_map_requires_1_operand, Error, MLIR,
 // Dialect Ops — dialect-level op and attribute verification
 //===----------------------------------------------------------------------===//
 
+DIAG(err_address_space_mismatch_pointer_address, Error, Dialect,
+     "address space mismatch: pointer has address space {0} but result has {1}")
+DIAG(err_address_space_mismatch_ref_address, Error, Dialect,
+     "address space mismatch: ref has address space {0} but result has {1}")
 DIAG(err_alignment_index_type_got_2, Error, Dialect,
      "alignment must have index type, but got {0}")
 DIAG(err_all_elements_dtype_2, Error, Dialect,
@@ -571,6 +595,10 @@ DIAG(err_apply_result_function_result_type_2, Error, Dialect,
      "'apply_result' function result type must be {0} but got {1}")
 DIAG(err_argument_func_type_pointer, Error, Dialect,
      "argument #{0} with convention '{1}' in func type should be a `!kgen.pointer` but got: {2}")
+DIAG(err_argument_signature_lit_ref, Error, Dialect,
+     "argument #{0} with convention '{1}' in signature type should be a `!lit.ref` but got: '{2}'")
+DIAG(err_argument_signature_varargs_variadic, Error, Dialect,
+     "argument #{0} in signature with varargs should be a `!kgen.variadic` but got: {1}")
 DIAG(err_array_attribute_type_requires_2, Error, Dialect,
      "array attribute type requires {0} elements but value has {1}")
 DIAG(err_array_element_2, Error, Dialect,
@@ -583,20 +611,32 @@ DIAG(err_byref_error_argument_last_argument_before, Error, Dialect,
      "'byref_error' argument must be the last argument before any `byref_result` argument")
 DIAG(err_c_exported_lacks_export_symbol, Error, Dialect,
      "is C exported but lacks an export symbol alias")
+DIAG(err_callable_async, Error, Dialect,
+     "callable must be 'async'")
 DIAG(err_callee_argument, Error, Dialect,
      "callee argument #{0} expected type {1} but operation argument has type {2}")
+DIAG(err_callee_expected, Error, Dialect,
+     "callee expected {0} {1}s but got {2}")
 DIAG(err_callee_expected_arguments, Error, Dialect,
      "callee expected {0} arguments but operation only has {1}")
 DIAG(err_callee_expected_results, Error, Dialect,
      "callee expected {0} results but operation only has {1}")
+DIAG(err_callee_expected_call, Error, Dialect,
+     "callee expected call {0} #{1} to be {2} but got {3}")
 DIAG(err_callee_parameter_type_func_type_2, Error, Dialect,
      "callee parameter type must be a func type generator type. Got {0}")
 DIAG(err_callee_result, Error, Dialect,
      "callee result #{0} expected type {1} but operation result has type {2}")
 DIAG(err_callee_signature_concrete, Error, Dialect,
      "callee signature must be concrete")
+DIAG(err_callee_type_fntypegeneratortype, Error, Dialect,
+     "callee type must be a FnTypeGeneratorType")
 DIAG(err_can_given_only_acquire_release, Error, Dialect,
      "can be given only acquire, release, acq_rel, and seq_cst orderings")
+DIAG(err_cannot_extract_value_type, Error, Dialect,
+     "cannot extract value of type '{0}' from struct field {1} which has type '{2}'")
+DIAG(err_cannot_insert_value_type, Error, Dialect,
+     "cannot insert value of type '{0}' into struct field \"{1}\" which expected '{2}'")
 DIAG(err_cannot_reference_generator_input_parameters, Error, Dialect,
      "cannot reference generator with input parameters from within a concrete 'kgen.func' ")
 DIAG(err_cannot_specify_syncscope_without_atomic, Error, Dialect,
@@ -609,18 +649,24 @@ DIAG(err_constant_index_requires_pointer_concrete, Error, Dialect,
      "constant index requires pointer to concrete struct type, got {0}")
 DIAG(err_constraint_proposition_i1_type_got_2, Error, Dialect,
      "constraint proposition must have i1 type, but got '{0}'")
+DIAG(err_constraints_array_size_2, Error, Dialect,
+     "constraints array size ({0}) must match symbols array size ({1})")
 DIAG(err_data_to_str_expects_two_operands_one, Error, Dialect,
      "'data_to_str' expects two operands, one string slice and a variadic of string slices")
 DIAG(err_data_to_str_expects_two_operands_one_2, Error, Dialect,
      "'data_to_str' expects two operands, one string slice and a variadic of string slices{0}\n{1}")
 DIAG(err_declares_parameter_type, Error, Dialect,
      "declares a parameter with type '{0}' but parameter expression has type '{1}'")
+DIAG(err_default_value_variadic_2, Error, Dialect,
+     "default value of variadic {0}must be UnknownAttr")
 DIAG(err_determine_alignment_field_type, Error, Dialect,
      "could not determine alignment for field type")
 DIAG(err_determine_size_alignment_field_type, Error, Dialect,
      "could not determine size or alignment for field type")
 DIAG(err_dtype_type, Error, Dialect,
      "DType type {0} is invalid")
+DIAG(err_duplicate_struct_field, Error, Dialect,
+     "duplicate struct field \"{0}\"")
 DIAG(err_element_index, Error, Dialect,
      "element index {0} out of bounds (>={1})")
 DIAG(err_emissionkind_operand_evaluate_either_asm, Error, Dialect,
@@ -631,6 +677,8 @@ DIAG(err_environment_value_not_index_string_unit, Error, Dialect,
      "environment value \"{0}\" is neither an index, string, or unit attribute")
 DIAG(err_environment_value_string_not_kgen_string, Error, Dialect,
      "environment value \"{0}\" is a string not of `!kgen.string` type")
+DIAG(err_exactly_one_field_index_attribute, Error, Dialect,
+     "must have exactly one of 'field' or 'index' attribute")
 DIAG(err_expected_1_operand, Error, Dialect,
      "expected 1 operand")
 DIAG(err_expected_n_operands_but_got, Error, Dialect,
@@ -639,10 +687,18 @@ DIAG(err_expected_n_operands_to_create_array, Error, Dialect,
      "expected {0} operands to create array but got {1}")
 DIAG(err_expected_closure_type, Error, Dialect,
      "expected closure type")
+DIAG(err_expected_convention_variadicness_got_2, Error, Dialect,
+     "expected convention|variadicness, got: {0}")
 DIAG(err_expected_count_0_got_2, Error, Dialect,
      "expected count > 0, but got {0}")
+DIAG(err_expected_declaration_body_no_arguments, Error, Dialect,
+     "expected declaration body to have no arguments")
 DIAG(err_expected_escaping_nonescaping_closure_type, Error, Dialect,
      "expected escaping/nonescaping closure type if type is a pointer")
+DIAG(err_expected_even_number_elements_llvmmetadataarray, Error, Dialect,
+     "expected an even number elements in LLVMMetadataArray")
+DIAG(err_expected_find_struct_decl, Error, Dialect,
+     "expected to find a struct decl for {0}")
 DIAG(err_expected_generatorattr_output_type_2, Error, Dialect,
      "expected a GeneratorAttr with an output type of {0}, but got {1}")
 DIAG(err_expected_generatorattr_takes_2, Error, Dialect,
@@ -657,8 +713,16 @@ DIAG(err_expected_local_address_space, Error, Dialect,
      "expected local address space ({0}), but got address space ({1})")
 DIAG(err_expected_mask_list_indices, Error, Dialect,
      "expected mask to be a list of indices")
+DIAG(err_expected_move_copy_capture_symbols, Error, Dialect,
+     "expected move or copy capture symbols to match number of captures")
 DIAG(err_expected_nested_inside_function, Error, Dialect,
      "expected to be nested inside a function")
+DIAG(err_expected_nested_inside_lit_fn, Error, Dialect,
+     "expected to be nested inside a `lit.fn` or `lit.closure.init` operation")
+DIAG(err_expected_nested_inside_lit_fn_2, Error, Dialect,
+     "expected to be nested inside a `lit.fn` operation")
+DIAG(err_expected_only_lit_file_module_lit, Error, Dialect,
+     "expected only `lit.file_module`, `lit.package`, `lit.unresolved_import`, or `lit.unresolved_wildcard_import` in its body")
 DIAG(err_expected_operand_variadic_type_got_2, Error, Dialect,
      "expected an operand of variadic type, but got {0}")
 DIAG(err_expected_operand_variadic_type_type_2, Error, Dialect,
@@ -685,12 +749,22 @@ DIAG(err_expected_struct_operand, Error, Dialect,
      "expected struct operand")
 DIAG(err_expected_symbol_constant_attribute_unit, Error, Dialect,
      "expected symbol constant attribute or unit attribute")
+DIAG(err_expected_variadic_kind_got_2, Error, Dialect,
+     "expected variadic kind, got: {0}")
 DIAG(err_expected_variadic_strings_trait_names_2, Error, Dialect,
      "expected a variadic of strings for trait names, but got {0}")
 DIAG(err_expected_variadic_type_count_got_2, Error, Dialect,
      "expected a 'variadic' type for the count, got: {0}")
 DIAG(err_expected_vector, Error, Dialect,
      "expected vector<{0}xT>")
+DIAG(err_field_access_requires_container_reference, Error, Dialect,
+     "field access requires container to be a reference to a struct type")
+DIAG(err_field_index, Error, Dialect,
+     "field index {0} is out of bounds")
+DIAG(err_file_scope_location_got, Error, Dialect,
+     "must have file scope in location, but got {0}")
+DIAG(err_find_struct_declaration, Error, Dialect,
+     "could not find struct declaration for {0}")
 DIAG(err_func_type_cannot_more_than_2, Error, Dialect,
      "func type cannot have more than one argument with 'byref_result'")
 DIAG(err_func_type_cannot_more_than_3, Error, Dialect,
@@ -710,6 +784,16 @@ DIAG(err_function_get_arg_types_operand_paramindexrefs_type_2, Error, Dialect,
 
 DIAG(err_has, Error, Dialect,
      "has {0} operands but {1} results; it should be the same")
+DIAG(err_implicit_origin_reference_depth_2, Error, Dialect,
+     "implicit origin reference at depth {0} has an out-of-range index: {1} >= {2}")
+DIAG(err_incorrect_number_input_params, Error, Dialect,
+     "incorrect number of input params: have {0}, but expected {1} implicit origins and {2} input params")
+DIAG(err_incorrect_number_value_parameter_labels, Error, Dialect,
+     "incorrect number of value parameter labels")
+DIAG(err_inferred_attribute_explicit_dict, Error, Dialect,
+     "'{0}' is an inferred attribute and should not be specified in the explicit attribute dictionary")
+DIAG(err_index_access_requires_container_reference, Error, Dialect,
+     "index access requires container to be a reference to a struct or parametric type")
 DIAG(err_index_reference_2, Error, Dialect,
      "index reference {0} is out of bounds: referenced signature has {1} input parameters")
 DIAG(err_index_reference_depth_2, Error, Dialect,
@@ -726,6 +810,8 @@ DIAG(err_invalid_atomic_ordering_store, Error, Dialect,
      "invalid atomic ordering '{0}' for store operation. Valid orderings are: unordered, monotonic, release, seq_cst")
 DIAG(err_invalid_combination_volatile_invariant_atomic, Error, Dialect,
      "invalid combination of volatile or invariant with atomic load")
+DIAG(err_invalid_origin_address_space, Error, Dialect,
+     "invalid origin or address space")
 DIAG(err_invalid_symbol_use_within_operator, Error, Dialect,
      "invalid symbol use within this operator")
 DIAG(err_invalid_use_parameter_no_declaration, Error, Dialect,
@@ -754,8 +840,20 @@ DIAG(err_mismatch_between_value_type_2, Error, Dialect,
      "mismatch between value type '{0}' and splat element type '{1}'")
 DIAG(err_mismatch_between_variadics_concatenate_output, Error, Dialect,
      "mismatch between variadics to concatenate and output type, expected output type: {0}, got:{1}")
+DIAG(err_nested_inside_try_region_lit, Error, Dialect,
+     "must be nested inside the 'try' region of a `lit.try` operation or a throwing function")
+DIAG(err_never_valid_erased_parser, Error, Dialect,
+     "is never valid. Was it not erased by the parser?")
+DIAG(err_number_arguments_does_match_number_3, Error, Dialect,
+     "number of arguments does not match number of input conventions: {0} != {1}")
+DIAG(err_number_arguments_does_match_number_4, Error, Dialect,
+     "number of arguments does not match number of argument names: {0} != {1}")
+DIAG(err_number_parameters_doesnt_match_number_2, Error, Dialect,
+     "number of parameters doesn't match number of input parameter types")
 DIAG(err_only_allowed_generators_pre_elaboration, Error, Dialect,
      "is only allowed in generators pre-elaboration")
+DIAG(err_only_one_2, Error, Dialect,
+     "only one '{0}' allowed in signature")
 DIAG(err_only_single_kgen_variadic_splat_type, Error, Dialect,
      "only single `!kgen.variadic_splat` type allowed")
 DIAG(err_operand_2, Error, Dialect,
@@ -770,10 +868,14 @@ DIAG(err_operand_not_stack_alloc_marked, Error, Dialect,
      "operand #{0} is not defined by a stack allocation with marked lifetimes")
 DIAG(err_operand_should_have_type, Error, Dialect,
      "operand #{0} should have type '{1}' but got '{2}'")
+DIAG(err_operation, Error, Dialect,
+     "operation has {0} bindings for implicit origin parameters, but callee expected {1}")
 DIAG(err_pack_attribute_element, Error, Dialect,
      "pack attribute element #{0} has type {1} but expected {2}")
 DIAG(err_pack_attribute_expected_variadic_constant_3, Error, Dialect,
      "pack attribute expected a variadic constant type, but got {0}")
+DIAG(err_pack_attribute_expected_variadic_constant_4, Error, Dialect,
+     "pack attribute expected a variadic constant, but got {0}")
 DIAG(err_pack_attribute_type_requires_2, Error, Dialect,
      "pack attribute type requires {0} elements, but got {1}")
 DIAG(err_parameter_name_parameter_value_length_2, Error, Dialect,
@@ -808,6 +910,12 @@ DIAG(err_result_signature_output_types_supported, Error, Dialect,
      "result signature with output types not supported")
 DIAG(err_source_destination_same_element_type, Error, Dialect,
      "source and destination must have same element type, got '{0}' and '{1}'")
+DIAG(err_specified_declnameloc_without_declname, Error, Dialect,
+     "specified `declNameLoc` without `declName`")
+DIAG(err_struct_cannot_be_found, Error, Dialect,
+     "struct {0} cannot be found")
+DIAG(err_struct_no_field, Error, Dialect,
+     "struct {0} has no field named \"{1}\"")
 DIAG(err_struct_attribute_type_requires_2, Error, Dialect,
      "struct attribute type requires {0} elements but value has {1}")
 DIAG(err_struct_element_2, Error, Dialect,
@@ -818,10 +926,14 @@ DIAG(err_throwing_function_supported, Error, Dialect,
      "throwing function not supported")
 DIAG(err_type_index_reference_2, Error, Dialect,
      "type of index reference {0} does not match parameter type '{1}'")
+DIAG(err_unknown, Error, Dialect,
+     "'{0}' cannot precede '{1}' in signature")
 DIAG(err_unknown_expression_2, Error, Dialect,
      "unknown expression {0}")
 DIAG(err_value_type, Error, Dialect,
      "value type '{0}' is not a union element type of '{1}'")
+DIAG(err_variadic, Error, Dialect,
+     "variadic {0}index must be less than the number of elements: {1} vs. {2}")
 DIAG(err_variadic_get_result_type_variadic_element, Error, Dialect,
      "'variadic_get' result type should be variadic element type: expected '{0}' but got '{1}'")
 DIAG(err_variadic_ptr_map_operand_kgen_variadic_kgen, Error, Dialect,
@@ -853,6 +965,8 @@ DIAG(err_wrong_number_elements_got_2, Error, Dialect,
 
 // Notes
 DIAG(note_within_kgen_func, Note, Dialect, "within 'kgen.func' @{0}")
+DIAG(note_see_previous_declaration, Note, Dialect, "see previous declaration here")
+DIAG(note_see_operation_definition, Note, Dialect, "see operation defined here")
 
 //===----------------------------------------------------------------------===//
 // Trait/Conformance — trait declaration and conformance checks
