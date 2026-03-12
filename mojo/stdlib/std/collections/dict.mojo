@@ -627,8 +627,8 @@ struct Dict[
       # var dict2 = dict1  # Error: Dict is not implicitly copyable
       var dict2 = dict1.copy()  # Deep copy
       dict2["c"] = 3
-      print(dict1.__str__())   # => {"a": 1, "b": 2}
-      print(dict2.__str__())   # => {"a": 1, "b": 2, "c": 3}
+      print(dict1)   # => {"a": 1, "b": 2}
+      print(dict2)   # => {"a": 1, "b": 2, "c": 3}
       ```
 
       This is different from Python, where assignment creates a reference to
@@ -648,12 +648,12 @@ struct Dict[
       # Using `ref` gets mutable (read-write) references
       for ref value in inventory.values():
           value += 1  # Modify inventory values in-place
-      print(inventory.__str__())  # => {"apples": 11, "bananas": 6}
+      print(inventory)  # => {"apples": 11, "bananas": 6}
 
       # Using `var` gets an owned copy of the value
       for var key in inventory.keys():
           inventory[key] += 1  # Modify inventory values in-place
-      print(inventory.__str__())  # => {"apples": 12, "bananas": 7}
+      print(inventory)  # => {"apples": 12, "bananas": 7}
       ```
 
       Note that indexing into a `Dict` with a key that's a reference to the
@@ -675,7 +675,7 @@ struct Dict[
       ```mojo
       var phonebook = {"Alice": "555-0101", "Bob": "555-0102"}
       var phone = phonebook.get("Charlie")
-      print(phone.__str__()) if phone else print('phone not found')
+      print(phone) if phone else print('phone not found')
       ```
 
 
@@ -697,7 +697,7 @@ struct Dict[
 
     # Access safely with default value
     phone = phonebook.get("David", "555-0000")
-    print(phone.__str__())               # => '555-0000'
+    print(phone)               # => '555-0000'
 
     # Check for keys
     if "Bob" in phonebook:
@@ -731,7 +731,7 @@ struct Dict[
     var more_numbers = {"David": "555-0104", "Eve": "555-0105"}
     backup.update(more_numbers)          # Merge in-place
     var combined = backup | more_numbers # Create new merged dict
-    print(combined.__str__())
+    print(combined)
     ```
 
     Parameters:
@@ -890,7 +890,7 @@ struct Dict[
         ```mojo
         var keys = ["a", "b", "c"]
         var dict = Dict.fromkeys(keys, 0)
-        print(dict.__str__())  # => {"a": 0, "b": 0, "c": 0}
+        print(dict)  # => {"a": 0, "b": 0, "c": 0}
         ```
         """
         var my_dict = Dict[Self.K, Self.V, Self.H]()
@@ -1109,50 +1109,6 @@ struct Dict[
             combined ^= h
         hasher._update_with_simd(combined)
 
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __repr__(
-        self,
-    ) -> String where conforms_to(Self.K, Writable) and conforms_to(
-        Self.V, Writable
-    ):
-        """Returns a string representation of a `Dict`.
-
-        Returns:
-            A string representation of the Dict.
-        """
-        var output = String()
-        self.write_repr_to(output)
-        return output^
-
-    @no_inline
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(
-        self,
-    ) -> String where conforms_to(Self.K, Writable) and conforms_to(
-        Self.V, Writable
-    ):
-        """Returns a string representation of a `Dict`.
-
-        Returns:
-            A string representation of the Dict.
-
-        Examples:
-
-        ```mojo
-        var my_dict = Dict[Int, Float64]()
-        my_dict[1] = 1.1
-        my_dict[2] = 2.2
-        dict_as_string = String(my_dict)
-        print(dict_as_string)
-        # prints {1: 1.1, 2: 2.2}
-        ```
-        """
-        var minimum_capacity = self._minimum_size_of_string_representation()
-        var output = String(capacity=minimum_capacity)
-        self.write_to(output)
-        return output^
-
     fn _write_dict_body[
         f_key: fn(Self.K, mut Some[Writer]), f_val: fn(Self.V, mut Some[Writer])
     ](self, mut writer: Some[Writer]) where conforms_to(
@@ -1238,9 +1194,9 @@ struct Dict[
         my_dict["a"] = 1
         my_dict["b"] = 2
         var value = my_dict.find("a")
-        print(value.__str__())  # => 1
+        print(value)  # => 1
         var missing_value = my_dict.find("c")
-        print(missing_value.__str__())  # => None
+        print(missing_value)  # => None
         ```
         """
 
@@ -1289,10 +1245,10 @@ struct Dict[
         my_dict["a"] = 1
         my_dict["b"] = 2
         var value = my_dict.get("a")
-        print(value.__str__())  # => 1
+        print(value)  # => 1
 
         var missing_value = my_dict.get("c")
-        print(missing_value.__str__())  # => -1
+        print(missing_value)  # => -1
 
         from std.testing import assert_true
         assert_true(my_dict["a"] == my_dict.get("a").or_else(Int.MAX))
@@ -1317,10 +1273,10 @@ struct Dict[
         my_dict["a"] = 1
         my_dict["b"] = 2
         var value = my_dict.get("a", Int.MAX)
-        print(value.__str__())  # => 1
+        print(value)  # => 1
 
         var missing_value = my_dict.get("c", -1)
-        print(missing_value.__str__())  # => -1
+        print(missing_value)  # => -1
 
         from std.testing import assert_true
         assert_true(my_dict["a"] == my_dict.get("a", Int.MAX))
@@ -1347,9 +1303,9 @@ struct Dict[
         my_dict["a"] = 1
         my_dict["b"] = 2
         var value = my_dict.pop("a", 99)
-        print(value.__str__())  # => 1
+        print(value)  # => 1
         var missing_value = my_dict.pop("c", 99)
-        print(missing_value.__str__())  # => 99
+        print(missing_value)  # => 99
         ```
         """
         try:
@@ -1377,9 +1333,9 @@ struct Dict[
         my_dict["a"] = 1
         my_dict["b"] = 2
         var value = my_dict.pop("a", 99)
-        print(value.__str__())  # => 1
+        print(value)  # => 1
         var missing_value = my_dict.pop("c", 99)
-        print(missing_value.__str__())  # => 99
+        print(missing_value)  # => 99
         ```
         """
         var hash = hash[HasherType=Self.H](key)
@@ -1550,7 +1506,7 @@ struct Dict[
         dict2["b"] = 3
         dict2["c"] = 4
         dict1.update(dict2)
-        print(dict1.__str__())  # => {"a": 1, "b": 3, "c": 4}
+        print(dict1)  # => {"a": 1, "b": 3, "c": 4}
         ```
         """
         for entry in other.items():
@@ -1604,11 +1560,11 @@ struct Dict[
         var my_dict = Dict[String, Int]()
         my_dict["a"] = 1
         var value1 = my_dict.setdefault("a", 99)
-        print(value1.__str__())  # => 1
+        print(value1)  # => 1
 
         var value2 = my_dict.setdefault("b", 99)
-        print(value2.__str__())  # => 99
-        print(my_dict.__str__())  # => {"a": 1, "b": 99}
+        print(value2)  # => 99
+        print(my_dict)  # => {"a": 1, "b": 99}
         ```
         """
         self._maybe_resize()

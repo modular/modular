@@ -155,7 +155,7 @@ struct test_matmul[
                         c_host[i],
                         atol=0.0001,
                         rtol=0.01,
-                        msg=t"not equal at index: {i}",
+                        msg=String(t"not equal at index: {i}"),
                     )
 
 

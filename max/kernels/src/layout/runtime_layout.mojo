@@ -230,16 +230,6 @@ struct RuntimeLayout[
             self.stride.cast[target_linear_idx_type](),
         }
 
-    @no_inline
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Convert the layout to a string representation.
-
-        Returns:
-            A string representation of the layout.
-        """
-        return String.write(self)
-
     @staticmethod
     fn row_major[
         rank: Int, //

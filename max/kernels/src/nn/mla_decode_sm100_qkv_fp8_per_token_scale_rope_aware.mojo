@@ -119,6 +119,7 @@ from nn.mla_decode_sm100_utils import (
     MLA_SM100_Decode_Config,
     MLA_SM100_Decode_Common,
     QOTMATile,
+    ScalesTMATile,
     tma_tile_qo,
     MLA_Decode_Pack,
     num_matrix_view_rows_decode,
@@ -164,11 +165,9 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     comptime AccumType = get_accum_type[Self.q_type]()
 
     # Number of producer arrivals for KV pipeline mbarrier:
-    # - Without per-token scales: 1 (just TMA via expect_bytes)
-    # - With per-token scales:   33 (expect_bytes + 32 warp-8 threads
-    #   arriving after scale stores, with release semantics covering each
-    #   thread's SMEM writes)
-    comptime num_kv_producer = 1 + (32 if Self.has_per_token_scales else 0)
+    # Always 1 (TMA via expect_bytes only).  Per-token scales are also
+    # loaded via TMA on the same mbarrier, so no extra thread arrivals.
+    comptime num_kv_producer = 1
 
     # Content dimensions: 512 (kv_lora_rank = depth)
     # Rope dimensions: 64 (qk_rope_head_dim = rope_depth)
@@ -269,6 +268,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     @__llvm_arg_metadata(q_rope_tma, `nvvm.grid_constant`)
     @__llvm_arg_metadata(k_content_tma, `nvvm.grid_constant`)
     @__llvm_arg_metadata(k_rope_tma, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(scale_tma, `nvvm.grid_constant`)
     @__llvm_arg_metadata(o_tma, `nvvm.grid_constant`)
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -304,6 +304,8 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             BN=Self.config.BK1,  # 64
             BK=Self.config.rope_depth,  # 64
         ],
+        # Per-token scales TMA: float32, [1, BN], SWIZZLE_NONE
+        scale_tma: ScalesTMATile[BN=Self.config.BN],
         o_tma: QOTMATile[
             dtype=Self.output_type,
             BM=Self.config.out_rows,
@@ -317,7 +319,6 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             MaskType=Self.MaskType,
             SplitAccumType=Self.SplitAccumType,
         ],
-        scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         # Per-token Q scale pointer: float32 array with one scale per Q token.
         # sigma_Q[q_token_idx] is folded into scale_log2e inside Softmax.
         # Null pointer means no Q scale (sigma_Q = 1.0).
@@ -537,6 +538,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 q_rope_tma.prefetch_descriptor()
                 k_content_tma.prefetch_descriptor()
                 k_rope_tma.prefetch_descriptor()
+                scale_tma.prefetch_descriptor()
                 o_tma.prefetch_descriptor()
         elif warp_idx == 9:
             tcgen05_alloc[Self.config.cta_group](
@@ -590,6 +592,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                     q_rope_tma,
                     k_content_tma,
                     k_rope_tma,
+                    scale_tma,
                     kv_lut,
                     q_nope_smem,
                     q_rope_smem,
@@ -599,7 +602,6 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                     kv_pipeline,
                     offset_position,
                     scale_smem_base,
-                    scales_ptr,
                 )
             elif warp_idx == 9:
                 Self.mmaQK(
@@ -669,6 +671,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             BN=Self.config.BK1,  # 64
             BK=Self.config.rope_depth,  # 64
         ],
+        scale_tma: ScalesTMATile[BN=Self.config.BN],
         kv_lut: Self.KVLUTType,
         q_nope_smem: SharedMemPointer[Scalar[Self.fp8_type]],
         q_rope_smem: SharedMemPointer[Scalar[Self.bf16_type]],
@@ -690,7 +693,6 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             Self.config.decoding_warp_split_k,
         ],
         scale_smem_base: SharedMemPointer[Scalar[DType.float32]],
-        scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     ):
         if offset_position.num_keys_this_split == 0:
             return
@@ -720,6 +722,10 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # KV bytes per tile: content FP8 (BN*512*1) + rope BF16 (BN*64*2)
         comptime kv_content_bytes = Self.config.BN * Self.config.depth * Self.fp8_bytes_per_element
         comptime kv_rope_bytes = Self.config.BN * Self.config.rope_depth * Self.bf16_bytes_per_element
+        # Scale bytes per tile: BN * 1 * sizeof(float32) = 256 bytes
+        comptime scale_bytes = Self.config.BN * 4
+        # Each scale stage holds BN float32 values = 64 elements
+        comptime scale_elems_per_stage = Self.config.BN
 
         # Load Q: Q_nope (FP8) and Q_rope (BF16) on the same barrier
         if is_leader:
@@ -739,12 +745,19 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 q_rope_tensor, mbar_q[], (Int(UInt(0)), Int(row))
             )
 
-        # Load first KV tile: content + rope on the same barrier
+        # Load first KV tile: content + rope + scales on the same barrier.
+        # All three TMA copies share one expect_bytes call, so the mbar
+        # fires only after all data (content, rope, and scales) has landed.
         var k0_bar: MBarType = kv_prod.producer_mbar[qk_stage=0]()
         var stage0_idx = kv_prod.stage_index[qk_stage=0]()
 
         if is_leader:
-            k0_bar[].expect_bytes(Int32(kv_content_bytes + kv_rope_bytes))
+            comptime if Self.has_per_token_scales:
+                k0_bar[].expect_bytes(
+                    Int32(kv_content_bytes + kv_rope_bytes + scale_bytes)
+                )
+            else:
+                k0_bar[].expect_bytes(Int32(kv_content_bytes + kv_rope_bytes))
             # K_content TMA: load FP8 content into kv_content_smem
             var content_stage_ptr = kv_content_smem + stage0_idx * UInt32(
                 Self.ContentStageElems
@@ -770,29 +783,23 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 k0_bar[],
                 (Int(UInt(0)), Int(0), Int(UInt(kv_gmem_row))),
             )
-
-        # Load per-token scales AFTER expect_bytes + TMA, then signal
-        # arrival on the KV mbarrier.  Each thread's arrive() has release
-        # semantics, making its prior SMEM writes visible to the consumer
-        # warps' mbar.wait() (acquire).  The mbar is initialized with
-        # num_producer=33 (1 from expect_bytes + 32 from warp 8 threads),
-        # so it won't fire until all scale stores are complete.
-        comptime if Self.has_per_token_scales:
-            Self._load_per_token_scales_for_tile(
-                scale_smem_base,
-                scales_ptr,
-                kv_lut,
-                stage0_idx,
-                UInt32(offset_position.kv_start_row),
-                UInt32(offset_position.batch_idx),
-                num_keys_u32,
-            )
-            # Signal scale stores via the KV pipeline mbar.
-            # Each thread's arrive() performs a release, covering its
-            # prior SMEM writes.  The consumer's mbar.wait() (acquire)
-            # will see all scale data once all 33 arrivals complete
-            # (1 from expect_bytes + 32 from warp 8 threads).
-            _ = k0_bar[].arrive()
+            # Scale TMA: load BN float32 per-token scales into scale SMEM.
+            # The scale TMA treats scales as a flat [1, total_elements] 2D
+            # tensor; the column coordinate is the physical row index
+            # (kv_gmem_row) which directly indexes the flat scales array.
+            comptime if Self.has_per_token_scales:
+                var scale_stage_ptr = scale_smem_base + stage0_idx * UInt32(
+                    scale_elems_per_stage
+                )
+                var scale_tensor = SharedMemTensor[
+                    DType.float32,
+                    Layout.row_major(type_of(scale_tma).tile_shape),
+                ](scale_stage_ptr)
+                scale_tma.async_copy(
+                    scale_tensor,
+                    k0_bar[],
+                    (Int(UInt(kv_gmem_row)), Int(0)),
+                )
 
         kv_prod.commit_step()
         kv_row += UInt32(Self.config.BN)
@@ -812,7 +819,14 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             )
 
             if is_leader:
-                k_mbar[].expect_bytes(Int32(kv_content_bytes + kv_rope_bytes))
+                comptime if Self.has_per_token_scales:
+                    k_mbar[].expect_bytes(
+                        Int32(kv_content_bytes + kv_rope_bytes + scale_bytes)
+                    )
+                else:
+                    k_mbar[].expect_bytes(
+                        Int32(kv_content_bytes + kv_rope_bytes)
+                    )
                 # K_content TMA
                 var content_stage_ptr = kv_content_smem + stage_idx * UInt32(
                     Self.ContentStageElems
@@ -839,19 +853,20 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                     k_mbar[],
                     (Int(UInt(0)), Int(0), Int(UInt(kv_gmem_row))),
                 )
-
-            # Load per-token scales and signal arrival (see tile 0 comment).
-            comptime if Self.has_per_token_scales:
-                Self._load_per_token_scales_for_tile(
-                    scale_smem_base,
-                    scales_ptr,
-                    kv_lut,
-                    stage_idx,
-                    kv_row,
-                    UInt32(offset_position.batch_idx),
-                    num_keys_u32,
-                )
-                _ = k_mbar[].arrive()
+                # Scale TMA
+                comptime if Self.has_per_token_scales:
+                    var scale_stage_ptr = scale_smem_base + stage_idx * UInt32(
+                        scale_elems_per_stage
+                    )
+                    var scale_tensor = SharedMemTensor[
+                        DType.float32,
+                        Layout.row_major(type_of(scale_tma).tile_shape),
+                    ](scale_stage_ptr)
+                    scale_tma.async_copy(
+                        scale_tensor,
+                        k_mbar[],
+                        (Int(UInt(kv_gmem_row)), Int(0)),
+                    )
 
             kv_row += UInt32(Self.config.BN)
             kv_prod.commit_step()
@@ -1050,66 +1065,3 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             if tile_idx == 0:
                 c_scale = 1
             tile_idx += 1
-
-    # --------------------------------------------------------------------------
-    # Load per-token KV scales from HBM into SMEM (SnapMLA).
-    #
-    # Called by all 32 threads of warp 8 (the load warp). Each thread handles
-    # 2 tokens (32 threads × 2 = 64 = BN tokens per tile).
-    # For each token: one page-table lookup via row_idx, then load 1 float32
-    # value (sigma_KV) and store it directly as float32 in SMEM.
-    #
-    # In MLA's absorbed mode, K and V derive from the same latent c_KV,
-    # so they share a single per-token quantization scale (sigma_KV).
-    # --------------------------------------------------------------------------
-    @staticmethod
-    @always_inline
-    fn _load_per_token_scales_for_tile(
-        scale_smem_base: SharedMemPointer[Scalar[DType.float32]],
-        scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
-        kv_lut: Self.KVLUTType,
-        stage_idx: UInt32,
-        tile_kv_row_start: UInt32,
-        batch_idx: UInt32,
-        num_keys: UInt32,
-    ):
-        """Load per-token float32 KV scales from HBM into scale SMEM.
-
-        Each KV token has 1 float32 scale: sigma_KV (shared by K and V
-        because both derive from the same latent representation c_KV).
-        Per stage: BN(64) tokens × 1 scale = 64 float32 values = 256 bytes.
-
-        When scales_ptr is null, fills scale SMEM with 1.0 (identity scale).
-        This allows the kernel to run correctly without per-token scales,
-        which is useful for testing and backward compatibility.
-        """
-        comptime scales_per_token = 1  # sigma_KV (K and V share one scale)
-        # Each stage holds BN * 1 float32 values = 64 elements
-        comptime elems_per_stage = Self.config.BN * scales_per_token
-        var scale_smem_stage = scale_smem_base + stage_idx * UInt32(
-            elems_per_stage
-        )
-        var lane = Int(thread_idx.x) & 31
-
-        # If scales_ptr is null, fill with 1.0 (identity scale).
-        if not scales_ptr:
-            comptime for row_pass in range(2):
-                var row_in_tile = lane + row_pass * 32
-                var smem_off = row_in_tile * scales_per_token
-                scale_smem_stage[smem_off] = Scalar[DType.float32](1.0)
-            return
-
-        var max_key = max(num_keys, UInt32(1)) - 1
-
-        # Each of 32 threads handles 2 rows (rows lane and lane+32).
-        comptime for row_pass in range(2):
-            var row_in_tile = lane + row_pass * 32
-            var tok_idx = tile_kv_row_start + UInt32(row_in_tile)
-            var clamped_tok = min(tok_idx, max_key)
-            # ONE page table lookup per row.
-            var gmem_row = kv_lut.row_idx(batch_idx, clamped_tok)
-            var row_base = scales_ptr + Int(gmem_row) * scales_per_token
-            var smem_off = row_in_tile * scales_per_token
-
-            # Store float32 scale directly (no conversion needed).
-            scale_smem_stage[smem_off] = row_base[0]

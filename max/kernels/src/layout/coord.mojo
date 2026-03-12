@@ -132,17 +132,6 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
         """
         return 1
 
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        """Get the string representation of this compile-time integer.
-
-        Returns:
-            A string in the format "ComptimeInt[value]()".
-        """
-        var s = String()
-        self.write_repr_to(s)
-        return s^
-
     fn write_to(self, mut writer: Some[Writer]):
         """Write this compile-time integer to a writer.
 
@@ -238,18 +227,6 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
             Always returns 1.
         """
         return 1
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    @always_inline("nodebug")
-    fn __repr__(self) -> String:
-        """Get the string representation of this runtime integer.
-
-        Returns:
-            A string in the format "RuntimeInt(value)".
-        """
-        var s = String()
-        self.write_repr_to(s)
-        return s^
 
     fn write_to(self, mut writer: Some[Writer]):
         """Write this runtime integer to a writer.
@@ -463,18 +440,6 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
         comptime result = Variadic.size(Self.element_types)
         return result
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    @always_inline("nodebug")
-    fn __repr__(self) -> String:
-        """Get the string representation of this Coord.
-
-        Returns:
-            A string in the format "Coord(elem1, elem2, ...)".
-        """
-        var string = String()
-        self.write_repr_to(string)
-        return string^
 
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this Coord to a writer.
@@ -1589,7 +1554,7 @@ comptime _DimsToCoordLike[
     dtype: DType, dims: DimList
 ] = _ReduceValueAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=dims.value.value,
+    VariadicType=dims.values,
     Reducer=_DimToCoordLikeMapper[dtype, ...],
 ]
 """Converts a variadic of Dim values to a variadic of CoordLike types.
@@ -1608,7 +1573,7 @@ Example:
     from layout.coord import _DimsToCoordLike, Coord
 
     # Static dims become ComptimeInt, dynamic dims become RuntimeInt
-    comptime dims = DimList(Dim(3), Dim(), Dim(5))
+    comptime dims = DimList[Dim(3), Dim(), Dim(5)]()
     comptime coord_types = _DimsToCoordLike[DType.int32, dims]
     # dims is equivalent to Variadic.types[ComptimeInt[3], RuntimeInt, ComptimeInt[5]]
 
@@ -1662,7 +1627,7 @@ Example:
     from layout.coord import _DimsToCoordLike, Coord
 
     # Static dims become ComptimeInt, dynamic dims become RuntimeInt
-    comptime dims = DimList(Dim(3), Dim(), Dim(5))
+    comptime dims = DimList[Dim(3), Dim(), Dim(5)]()
     comptime coord_types = _DimsToCoordLike[DType.int32, dims]
     # dims is equivalent to Variadic.types[ComptimeInt[3], RuntimeInt, ComptimeInt[5]]
 
@@ -1688,15 +1653,13 @@ Uses direct field access rather than methods for compile-time evaluation.
 """
 
 
-comptime _CoordToDimList[*dims: CoordLike] = DimList(
-    VariadicParamList(
-        _ReduceVariadicAndIdxToValue[
-            BaseVal=Variadic.empty_of_type[Dim],
-            VariadicType=dims,
-            Reducer=_CoordToDimMapper,
-        ]
-    )
-)
+comptime _CoordToDimList[*dims: CoordLike] = DimList[
+    *_ReduceVariadicAndIdxToValue[
+        BaseVal=Variadic.empty_of_type[Dim],
+        VariadicType=dims,
+        Reducer=_CoordToDimMapper,
+    ]
+]()
 """Converts a variadic of Dim values to a variadic of CoordLike types.
 
 Note:
@@ -1715,7 +1678,7 @@ Example:
     # Static dims become ComptimeInt, dynamic dims become RuntimeInt
     var coords = Coord(Idx(3), Idx[5]())
     comptime dimlist = _CoordToDimList[*coords.element_types]
-    # dims is equivalent to DimList(Dim(), 5)
+    # dims is equivalent to DimList[Dim(), 5]()
     ```
 """
 

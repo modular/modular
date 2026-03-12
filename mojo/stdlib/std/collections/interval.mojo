@@ -282,25 +282,6 @@ struct Interval[T: IntervalElement](
         """
         writer.write("(", self.start, ", ", self.end, ")")
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Returns a string representation of this interval.
-
-        Returns:
-            A string in the format '(start, end)' representing this interval.
-        """
-        return String.write(self)
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        """Returns a string representation of this interval suitable for
-        debugging.
-
-        Returns:
-            A string in the format '(start, end)' representing this interval.
-        """
-        return t"Interval{self}"
-
 
 struct _IntervalNode[
     T: IntervalElement,
@@ -419,27 +400,6 @@ struct _IntervalNode[
             writer: The writer to write the interval node to.
         """
         writer.write(self.interval, "=", self.data)
-
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Returns a string representation of this interval node.
-
-        Returns:
-            A string in the format '(start, end): data' representing this
-            interval node.
-        """
-        return String.write(self)
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        """Returns a string representation of this interval node suitable for
-        debugging.
-
-        Returns:
-            A string in the format '(start, end): data' representing this
-            interval node.
-        """
-        return t"IntervalNode({self})"
 
     fn depth(self) -> Int:
         """Returns the depth of this interval node.
@@ -752,23 +712,6 @@ struct IntervalTree[
 
         # Ensure root is black to maintain red-black tree properties
         self._root[]._is_red = False
-
-    fn __str__(self) -> String:
-        """Returns a string representation of the interval tree.
-
-        Returns:
-            A string representation of the interval tree.
-        """
-        return String.write(self)
-
-    fn __repr__(self) -> String:
-        """Returns a string representation of the interval tree suitable for
-        debugging.
-
-        Returns:
-            A string representation of the interval tree.
-        """
-        return String.write(self)
 
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the interval tree to a writer.

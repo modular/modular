@@ -146,9 +146,9 @@ class MoE(Module, Shardable):
         num_experts_per_token: The number of experts per token.
         moe_dim: The intermediate dimension of each expert.
         gate_cls: The model-specific gate implementation. Defaults to
-            :class:`MoEGate`.
+            :class:`~max.nn.moe.moe.MoEGate`.
         mlp_cls: The MLP class to use for experts. Defaults to
-            :class:`MLP`.
+            :class:`~max.nn.linear.MLP`.
         has_shared_experts: Whether to use shared experts. Defaults to
             ``False``.
         shared_experts_dim: The dimension of the shared experts.

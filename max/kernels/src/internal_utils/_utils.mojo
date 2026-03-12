@@ -14,7 +14,8 @@
 import std.time
 from std.collections import Optional
 from std.math import ceildiv, floor
-from std.sys import argv, get_defined_string
+from std.os import abort, getenv
+from std.sys import argv, get_defined_bool, get_defined_string
 from std.builtin.device_passable import DevicePassable
 
 from std.benchmark import (
@@ -210,45 +211,56 @@ fn dynamic(d: Int) -> ValOrDim[]:
     return ValOrDim(d)
 
 
+fn _get_arg(handle: String) -> Optional[String]:
+    """Return the value for the given arg handle, or None if not found.
+
+    When KBENCH_USE_ENV_ARGS is set, reads from the KBENCH_ARG_<handle>
+    environment variable; otherwise searches argv() for --handle=value.
+    """
+    comptime if get_defined_bool["KBENCH_USE_ENV_ARGS", False]():
+        var env_val = getenv("KBENCH_ARG_" + handle, "")
+        if env_val:
+            return env_val
+        return None
+    else:
+        var args = argv()
+        var prefix = "--" + handle + "="
+        for i in range(len(args)):
+            if args[i].startswith(prefix):
+                var name_val = String(args[i]).split("=", 1)
+                if len(name_val) >= 2:
+                    return String(name_val[1])
+        return None
+
+
 fn arg_parse(handle: String, default: Int) raises -> Int:
-    # TODO: add constraints on dtype of return value
-    var args = argv()
-    for i in range(len(args)):
-        if args[i].startswith("--" + handle):
-            var name_val = args[i].split("=")
-            return Int(name_val[1])
+    var val = _get_arg(handle)
+    if val:
+        return Int(val.value())
     return default
 
 
 fn arg_parse(handle: String, default: Bool) raises -> Bool:
-    var args = argv()
-    for i in range(len(args)):
-        if args[i].startswith("--" + handle):
-            var name_val = args[i].split("=")
-            if name_val[1] == "True":
-                return True
-            elif name_val[1] == "False":
-                return False
+    var val = _get_arg(handle)
+    if val:
+        if val.value() == "True":
+            return True
+        elif val.value() == "False":
+            return False
     return default
 
 
 fn arg_parse(handle: String, default: String) raises -> String:
-    # TODO: add constraints on dtype of return value
-    var args = argv()
-    for i in range(len(args)):
-        if args[i].startswith("--" + handle):
-            var name_val = args[i].split("=")
-            return String(name_val[1])
+    var val = _get_arg(handle)
+    if val:
+        return val.value()
     return default
 
 
 fn arg_parse(handle: String, default: Float64) raises -> Float64:
-    # TODO: add constraints on dtype of return value
-    var args = argv()
-    for i in range(len(args)):
-        if args[i].startswith("--" + handle):
-            var name_val = args[i].split("=")
-            return atof(name_val[1])
+    var val = _get_arg(handle)
+    if val:
+        return atof(val.value())
     return default
 
 
@@ -275,10 +287,6 @@ struct Mode(TrivialRegisterPassable, Writable):
 
     fn append(mut self, other: Self):
         self._value |= other._value
-
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return String.write(self)
 
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the mode as a string.

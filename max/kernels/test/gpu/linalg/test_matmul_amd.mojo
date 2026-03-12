@@ -48,11 +48,12 @@ fn test[
 
     print(m, "x", n, "x", k)
 
-    comptime static_a_shape = DimList(to_dim[M], to_dim[K])
-    comptime static_b_shape = DimList(
-        to_dim[N], to_dim[K]
-    ) if transpose_b else DimList(to_dim[K], to_dim[N])
-    comptime static_c_shape = DimList(to_dim[M], to_dim[N])
+    comptime static_a_shape = DimList[to_dim[M], to_dim[K]]()
+    comptime static_b_shape = DimList[
+        to_dim[N] if transpose_b else to_dim[K],
+        to_dim[K] if transpose_b else to_dim[N],
+    ]()
+    comptime static_c_shape = DimList[to_dim[M], to_dim[N]]()
 
     var dynamic_a_shape = IndexList[2](M.or_else(m), K.or_else(k))
     var dynamic_b_shape = IndexList[2](

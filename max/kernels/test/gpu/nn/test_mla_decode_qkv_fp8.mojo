@@ -31,7 +31,6 @@ from std.math import ceildiv, isclose
 from std.random import randn
 from std.sys import argv, has_nvidia_gpu_accelerator
 
-from buffer import Dim, DimList, NDBuffer
 from std.gpu import *
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE

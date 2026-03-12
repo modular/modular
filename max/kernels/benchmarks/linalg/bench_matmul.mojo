@@ -145,11 +145,6 @@ struct MatmulSpec[static_info: MatmulSpecStatic](ImplicitlyCopyable, Writable):
     var n: Int
     var k: Int
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
     fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the matmul spec.
 

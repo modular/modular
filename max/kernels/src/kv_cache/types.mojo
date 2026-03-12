@@ -281,6 +281,15 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         ...
 
     @always_inline
+    fn num_kv_rows(self) -> Int:
+        """Returns the total number of virtual rows in this KV cache view.
+
+        For paged caches this accounts for the paging stride:
+        ``(total_blocks - 1) * stride + page_size``.
+        """
+        ...
+
+    @always_inline
     fn row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
         """Returns the row idx when viewing the memory as a matrix."""
         ...
@@ -597,6 +606,15 @@ struct ContinuousBatchingKVCache[
         )
 
     @always_inline
+    fn num_kv_rows(self) -> Int:
+        """Returns the total number of virtual rows in this KV cache view."""
+        var total_blocks = self.blocks.dim[0]()
+        return Int(
+            UInt32(total_blocks - 1) * self._stride()
+            + UInt32(self.blocks.dim[1]())
+        )
+
+    @always_inline
     fn row_idx(self, batch_idx: UInt32, tok_idx: UInt32) -> UInt32:
         """Returns the row idx when viewing the memory as a matrix."""
         block_idx = self.lookup_table[Int(batch_idx)]
@@ -844,21 +862,21 @@ struct PagedKVCache[
     comptime scales_tt_layout = InternalLayout[
         shape_types=_DimsToCoordLike[
             DType.int64,
-            DimList(
+            DimList[
                 Dim(),
                 Dim(Self.page_size),
                 Dim(Int(Self.kv_params.num_heads)),
                 Dim(Self.head_dim_granularity),
-            ),
+            ](),
         ],
         stride_types=_DimsToCoordLike[
             DType.int64,
-            DimList(
+            DimList[
                 Dim(),
                 Dim(Int(Self.kv_params.num_heads) * Self.head_dim_granularity),
                 Dim(Self.head_dim_granularity),
                 Dim(1),
-            ),
+            ](),
         ],
     ]
     comptime scales_tt_type = TileTensor[
@@ -933,6 +951,14 @@ struct PagedKVCache[
     fn _stride(self) -> UInt32:
         return UInt32(self.blocks.layout.stride[0]().value()) // UInt32(
             self.kv_params.num_heads * self.kv_params.head_size
+        )
+
+    @always_inline
+    fn num_kv_rows(self) -> Int:
+        """Returns the total number of virtual rows in this KV cache view."""
+        var total_blocks = self.blocks.dim[0]()
+        return Int(
+            UInt32(total_blocks - 1) * self._stride() + UInt32(Self.page_size)
         )
 
     @always_inline

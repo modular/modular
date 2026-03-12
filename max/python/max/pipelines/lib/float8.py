@@ -579,6 +579,67 @@ def _parse_modelopt_float4_config(
     )
 
 
+def _parse_mxfp4_config(
+    huggingface_config: AutoConfig,
+    state_dict: Mapping[str, WeightData],
+    dtype: DType,
+    *,
+    quant_method_override: str | None = None,
+    quant_algo_override: str | None = None,
+) -> Float8Config | None:
+    """Parses a Float8Config for MXFP4 quantization.
+
+    MXFP4 uses float8_e8m0fnu scales (one per 32 elements) with packed uint8 weights.
+    No input scale is needed; activations stay in bfloat16 and are cast to FP8 on-the-fly.
+    """
+    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
+    quant_method = quant_method_override
+    quant_algo = quant_algo_override
+    if hf_quant_config:
+        quant_method = hf_quant_config.get("quant_method", quant_method)
+        quant_algo = hf_quant_config.get("quant_algo", quant_algo)
+    if not quant_method or not quant_algo:
+        return None
+
+    # MXFP4: block-scaled with 32-element blocks, E8M0 scales
+    input_spec = Float8InputScaleSpec(
+        granularity=Float8ScaleGranularity.BLOCK,
+        origin=Float8ScaleOrigin.DYNAMIC,
+        dtype=DType.float32,
+        block_size=(1, 32),
+    )
+    weight_spec = Float8WeightScaleSpec(
+        granularity=Float8ScaleGranularity.BLOCK,
+        dtype=DType.float8_e8m0fnu,
+        block_size=(1, 32),
+    )
+
+    bias_dtype = _bias_dtype(state_dict)
+
+    # Handle multimodal configs
+    if hasattr(huggingface_config, "text_config"):
+        num_hidden_layers = huggingface_config.text_config.num_hidden_layers
+    else:
+        num_hidden_layers = huggingface_config.num_hidden_layers
+    all_layers = set(range(num_hidden_layers))
+
+    # MXFP4 only quantizes MoE expert weights; attention stays BF16.
+    # `mlp_in_float8` is a legacy name that really just controls which
+    # layers carry a Float8Config (StackedMoE checks it for the MXFP4 path).
+    # Fused MLP is disabled since only MoE experts are quantized.
+    return Float8Config(
+        input_scale=input_spec,
+        weight_scale=weight_spec,
+        mlp_in_float8=all_layers,
+        attn_qkv_in_float8=set(),
+        embedding_output_dtype=DType.bfloat16,
+        bias_dtype=bias_dtype,
+        quant_method=quant_method,
+        quant_algo=quant_algo,
+        can_use_fused_mlp=False,
+    )
+
+
 def _parse_float4_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
@@ -630,6 +691,23 @@ def parse_float8_config(  # TODO: rename to generic
     Returns:
         Float8Config or Float4 config if supported, otherwise None.
     """
+    # Check for MXFP4 quantization (can appear with bfloat16 model dtype
+    # since only MoE weights are quantized; attention/embedding stay bf16).
+    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
+    if hf_quant_config:
+        quant_method = hf_quant_config.get("quant_method", "")
+        quant_algo = hf_quant_config.get("quant_algo", "")
+        if quant_method.lower() == "mxfp4" or (
+            quant_method == "modelopt" and quant_algo == "MXFP4"
+        ):
+            return _parse_mxfp4_config(
+                huggingface_config,
+                state_dict,
+                dtype,
+                quant_method_override=quant_method,
+                quant_algo_override=quant_algo or "MXFP4",
+            )
+
     # uint8 is packed fp4 (float4_e2m1fnx2) in NVFP4 checkpoints.
     if dtype in _FP4_DTYPES:
         config = _parse_float4_config(

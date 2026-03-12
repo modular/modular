@@ -148,7 +148,7 @@ fn _read_write_to_tensors[
         uninitialized=True
     )
     var data_matrix = NDBuffer[
-        rank=rank, DType.float32, _, DimList(num_elements)
+        rank=rank, DType.float32, _, DimList[num_elements]()
     ](data_matrix_backing.unsafe_ptr())
     for i in range(num_elements):
         data_matrix[i] = i
@@ -161,7 +161,7 @@ fn _read_write_to_tensors[
         uninitialized=True
     )
     var packed_blob = NDBuffer[
-        rank=rank, DType.uint8, _, DimList(num_blocks * block_size)
+        rank=rank, DType.uint8, _, DimList[num_blocks * block_size]()
     ](packed_blob_backing.unsafe_ptr())
 
     # Tensor to store the dequantized data
@@ -169,7 +169,7 @@ fn _read_write_to_tensors[
         uninitialized=True
     )
     var out_data_matrix = NDBuffer[
-        rank=1, DType.float32, _, DimList(num_elements)
+        rank=1, DType.float32, _, DimList[num_elements]()
     ](out_data_matrix_backing.unsafe_ptr())
     for i in range(num_elements):
         out_data_matrix[i] = 0

@@ -114,7 +114,10 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.epilogue_components i
 from linalg.matmul.gpu.sm100_structured.structured_kernels.output_writer import (
     TileWriter,
 )
-from linalg.utils import elementwise_compute_lambda_type
+from linalg.utils import (
+    elementwise_compute_lambda_type,
+    elementwise_epilogue_type,
+)
 
 from .conv_config import Conv2dConfig, Conv2dProblemShape
 from .conv_smem import Conv2dSmem
@@ -137,6 +140,7 @@ struct Conv2dFpropKernel[
     # Cluster shape
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
     # Optional epilogue lambda for fusion (bias, activation, residual add)
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
@@ -160,6 +164,8 @@ struct Conv2dFpropKernel[
         out_type: Output data type.
         config: Kernel configuration.
         cluster_shape: CUDA cluster dimensions.
+        elementwise_lambda_fn: Optional void epilogue lambda applied after
+            output write. Signature: `fn(IndexList[2], SIMD) -> None`.
         elementwise_compute_lambda_fn: Optional epilogue lambda for fusion
             (bias add, activation functions, residual connections).
         register_based_epilogue: Whether to apply the lambda in registers.
@@ -430,6 +436,7 @@ struct Conv2dFpropKernel[
         num_output_stages=Self.SmemType.num_output_stages,
         num_output_warps=Self.num_output_warps,
         # Epilogue lambda for fusion (bias, activation, residual add)
+        elementwise_lambda_fn=Self.elementwise_lambda_fn,
         elementwise_compute_lambda_fn=Self.elementwise_compute_lambda_fn,
         register_based_epilogue=Self.register_based_epilogue,
     ]

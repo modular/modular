@@ -295,7 +295,12 @@ struct TileWriter[
         c_shape: Tuple[UInt32, UInt32],
     ):
         """TMEM → Registers → SMEM → GMEM pipeline (2D coords)."""
-        self._copy_to_gmem_impl(c_tiles, output_stage, c_coord, c_shape)
+        comptime if Self.elementwise_lambda_fn:
+            self._copy_to_gmem_with_elementwise_epilogue_impl(
+                c_tiles, output_stage, c_coord, c_shape
+            )
+        else:
+            self._copy_to_gmem_impl(c_tiles, output_stage, c_coord, c_shape)
 
     @always_inline
     fn _copy_to_gmem_batched(

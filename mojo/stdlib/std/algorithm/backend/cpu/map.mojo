@@ -40,7 +40,7 @@ fn map[
 
     def main() raises:
         # Create list with initial values to act on
-        var list = List[Float32](1.0, 2.0, 3.0, 4.0, 5.0)
+        var list: List[Float32] = [1.0, 2.0, 3.0, 4.0, 5.0]
 
         # Function applied to the value at each index
         @parameter

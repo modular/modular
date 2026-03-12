@@ -96,32 +96,34 @@ fn launch_grouped_gemm_with_templates[
 ) raises:
     """Create template TileTensors and launch grouped block-scaled GEMM."""
     # 3D template tensors with batch=1
-    comptime static_a_3d_shape = DimList(1, m.dim, k_array_dim)
+    comptime static_a_3d_shape = DimList[1, m.dim, k_array_dim]()
     var a_nd = NDBuffer[rank=3, a_type, _, static_a_3d_shape](
         a_ptr, IndexList[3](1, m.value, k_array_val)
     )
-    comptime static_b_3d_shape = DimList(
-        1, n.dim, k_array_dim
-    ) if transpose_b else DimList(1, k_array_dim, n.dim)
+    comptime static_b_3d_shape = DimList[
+        1,
+        n.dim if transpose_b else k_array_dim,
+        k_array_dim if transpose_b else n.dim,
+    ]()
     var b_nd = NDBuffer[rank=3, b_type, _, static_b_3d_shape](
         b_ptr,
         IndexList[3](1, n.value, k_array_val) if transpose_b else IndexList[3](
             1, k_array_val, n.value
         ),
     )
-    comptime static_c_3d_shape = DimList(1, m.dim, n.dim)
+    comptime static_c_3d_shape = DimList[1, m.dim, n.dim]()
     var c_nd = NDBuffer[rank=3, c_type, _, static_c_3d_shape](
         c_ptr, IndexList[3](1, m.value, n.value)
     )
 
     # 5D scale factor templates with batch=1 and merged last dims
-    comptime static_sfa_shape = DimList(
+    comptime static_sfa_shape = DimList[
         1,
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k_sf_dim, sf_vector_size * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
-    )
+    ]()
     var sfa_nd = NDBuffer[rank=5, scales_dtype, _, static_sfa_shape](
         sfa_ptr,
         IndexList[5](
@@ -132,13 +134,13 @@ fn launch_grouped_gemm_with_templates[
             SF_ATOM_M[1] * SF_ATOM_K,
         ),
     )
-    comptime static_sfb_shape = DimList(
+    comptime static_sfb_shape = DimList[
         1,
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k_sf_dim, sf_vector_size * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
-    )
+    ]()
     var sfb_nd = NDBuffer[rank=5, scales_dtype, _, static_sfb_shape](
         sfb_ptr,
         IndexList[5](
@@ -210,11 +212,12 @@ fn test_grouped_kernel_nvfp4_single_group[
     var k_packed = k.value // 2
 
     # Create NDBuffer shapes - K dimension is halved for packed data
-    comptime static_a_shape = DimList(m.dim, k.dim // 2)
-    comptime static_b_shape = DimList(
-        n.dim, k.dim // 2
-    ) if transpose_b else DimList(k.dim // 2, n.dim)
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList[m.dim, k.dim // 2]()
+    comptime static_b_shape = DimList[
+        n.dim if transpose_b else k.dim // 2,
+        k.dim // 2 if transpose_b else n.dim,
+    ]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
 
     var dynamic_a_shape = IndexList[2](m.value, k_packed)
     var dynamic_b_shape = IndexList[2](
@@ -259,20 +262,20 @@ fn test_grouped_kernel_nvfp4_single_group[
     )
 
     # Scale factor shapes (5D) - using logical K for scale factor calculations
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList[
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
+    ]()
 
     var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
@@ -598,25 +601,26 @@ fn test_grouped_kernel_nvfp4_multi_group[
     )
 
     # Static shapes for NDBuffer
-    comptime static_a_shape = DimList(m.dim, k.dim // 2)
-    comptime static_b_shape = DimList(
-        n.dim, k.dim // 2
-    ) if transpose_b else DimList(k.dim // 2, n.dim)
-    comptime static_c_shape = DimList(m.dim, n.dim)
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_shape = DimList[m.dim, k.dim // 2]()
+    comptime static_b_shape = DimList[
+        n.dim if transpose_b else k.dim // 2,
+        k.dim // 2 if transpose_b else n.dim,
+    ]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
+    comptime static_a_scales_shape = DimList[
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
+    ]()
 
     var dynamic_a_shape = IndexList[2](m.value, k_packed)
     var dynamic_b_shape = IndexList[2](

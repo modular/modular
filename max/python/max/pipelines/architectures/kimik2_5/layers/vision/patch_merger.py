@@ -89,7 +89,11 @@ class PatchMergerMLP(Module, Shardable):
     def __call__(self, x: TensorValue) -> TensorValue:
         # x: (total_patches, N_k, mm_hidden_size)
         x = self.pre_norm(x)
-        x = x.reshape((x.shape[0], -1))  # (total_patches, input_dim)
+        # Use self.input_dim explicitly instead of -1: the symbolic shape engine
+        # cannot infer the collapsed dim when x.shape[0] is a dynamic dimension.
+        x = x.reshape(
+            (x.shape[0], self.input_dim)
+        )  # (total_patches, input_dim)
         x = self.linear1(x)
         x = ops.gelu(x)
         x = self.linear2(x)

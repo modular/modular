@@ -788,7 +788,7 @@ def gelu(x: TensorValue, approximate: str = "none"):  # noqa: ANN201
 
     Args:
         x: The symbolic tensor to use as the input to the gelu computation.
-        approximate: One of ``"none"``, ``"tanh"``, or ``"quick"``.
+        approximate: One of ``none``, ``tanh``, or ``quick``.
 
     Returns:
         A new symbolic tensor value representing the output of the gelu computation.

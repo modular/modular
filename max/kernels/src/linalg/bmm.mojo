@@ -126,11 +126,11 @@ fn _reshape_nd_buffer_with_batch_to_3d(
     rank=3,
     buffer.type,
     buffer.origin,
-    DimList(
+    DimList[
         Dim(),
         buffer.shape.get[buffer.rank - 2](),
         buffer.shape.get[buffer.rank - 1](),
-    ),
+    ](),
     address_space=buffer.address_space,
 ]:
     comptime rank = buffer.rank
@@ -145,11 +145,11 @@ fn _reshape_nd_buffer_with_batch_to_3d(
         batch_size, buffer.dim[rank - 2](), buffer.dim[rank - 1]()
     )
 
-    comptime static_shape = DimList(
+    comptime static_shape = DimList[
         Dim(),
         buffer.shape.get[buffer.rank - 2](),
         buffer.shape.get[buffer.rank - 1](),
-    )
+    ]()
 
     return NDBuffer[
         rank=3,

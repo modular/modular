@@ -456,9 +456,9 @@ fn run_matmul_stream_k[
         c_host[i] = val.cast[dtype]()
         c_host_n[i] = c_host[i]
 
-    comptime a_shape = DimList(M, K)
-    comptime b_shape = DimList(K, N)
-    comptime c_shape = DimList(M, N)
+    comptime a_shape = DimList[M, K]()
+    comptime b_shape = DimList[K, N]()
+    comptime c_shape = DimList[M, N]()
 
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](K * N)

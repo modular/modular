@@ -19,7 +19,12 @@ from std.sys.info import CompilationTarget
 from std.sys.intrinsics import PrefetchOptions
 
 from std.algorithm.functional import tile
-from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
+from buffer.buffer import (
+    NDBuffer,
+    partial_simd_load,
+    partial_simd_store,
+    DimList,
+)
 
 from std.utils.index import IndexList
 
@@ -51,7 +56,7 @@ struct _Accumulator[
         rank=1,
         Self.dtype,
         MutAnyOrigin,
-        Self.num_rows * Self.num_cols * Self.simd_width,
+        DimList[Self.num_rows * Self.num_cols * Self.simd_width](),
     ]
 
     @always_inline
@@ -66,7 +71,7 @@ struct _Accumulator[
             rank=1,
             Self.dtype,
             MutAnyOrigin,
-            Self.num_rows * Self.num_cols * Self.simd_width,
+            DimList[Self.num_rows * Self.num_cols * Self.simd_width](),
         ].stack_allocation[alignment=alignment]()
 
     @always_inline
@@ -76,7 +81,7 @@ struct _Accumulator[
             rank=1,
             Self.dtype,
             MutAnyOrigin,
-            Self.num_rows * Self.num_cols * Self.simd_width,
+            DimList[Self.num_rows * Self.num_cols * Self.simd_width](),
         ],
     ):
         comptime assert (
@@ -569,7 +574,7 @@ struct _Accumulator[
         mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: NDBuffer[rank=1, DType.int32, _, Self.num_rows],
+        a_base_offsets: NDBuffer[rank=1, DType.int32, _, _],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
@@ -823,7 +828,7 @@ struct _Accumulator[
         mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: NDBuffer[rank=1, DType.int32, _, Self.num_rows],
+        a_base_offsets: NDBuffer[rank=1, DType.int32, _, _],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
@@ -1039,7 +1044,7 @@ struct _Accumulator[
         mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: NDBuffer[rank=1, DType.int32, _, Self.num_rows],
+        a_base_offsets: NDBuffer[rank=1, DType.int32, _, _],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,

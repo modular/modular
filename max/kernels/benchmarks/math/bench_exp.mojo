@@ -18,6 +18,7 @@ from std.ffi import external_call
 from std.sys import llvm_intrinsic, simd_width_of, size_of
 from std.sys.arg import argv
 from std.utils import IndexList
+from buffer import DimList
 
 from std.algorithm.functional import vectorize
 from std.benchmark import (
@@ -392,7 +393,7 @@ def accuracy_test() raises:
     comptime delta_range = delta_max - delta_min + 1
 
     var deltas = NDBuffer[
-        rank=1, DType.int32, MutAnyOrigin, delta_range
+        rank=1, DType.int32, MutAnyOrigin, DimList[delta_range]()
     ].stack_allocation()
     deltas.zero()
 

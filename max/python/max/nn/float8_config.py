@@ -60,10 +60,10 @@ class Float8WeightScaleSpec:
     """Specifies how weights are scaled for float8 quantization."""
 
     granularity: Float8ScaleGranularity
-    """The :obj:`Float8ScaleGranularity` of the weight scale factor application."""
+    """The :class:`~max.nn.float8_config.Float8ScaleGranularity` of the weight scale factor application."""
 
     dtype: DType
-    """The :obj:`DType` of the weight scale factor(s)."""
+    """The :class:`~max.dtype.DType` of the weight scale factor(s)."""
 
     block_size: tuple[int, int] | None = None
     """The :obj:`tuple[int, int]` of the block size for block-wise scaling."""
@@ -103,13 +103,13 @@ class Float8InputScaleSpec:
     """Specifies how input activations are scaled for float8 quantization."""
 
     granularity: Float8ScaleGranularity
-    """The :obj:`Float8ScaleGranularity` of the input scale factor application."""
+    """The :class:`~max.nn.float8_config.Float8ScaleGranularity` of the input scale factor application."""
 
     origin: Float8ScaleOrigin
-    """The :obj:`Float8ScaleOrigin` (static or dynamic) of the input scale factor."""
+    """The :class:`~max.nn.float8_config.Float8ScaleOrigin` (static or dynamic) of the input scale factor."""
 
     dtype: DType
-    """The :obj:`DType` of the input scale factor(s)."""
+    """The :class:`~max.dtype.DType` of the input scale factor(s)."""
 
     activation_scale_ub: float | None = None
     """An optional upper bound for dynamic activation scaling."""
@@ -152,10 +152,10 @@ class Float8Config:
     """Configures float8 quantization settings for a layer or model section."""
 
     input_scale: Float8InputScaleSpec
-    """:obj:`Float8InputScaleSpec` for input activation scaling."""
+    """:class:`~max.nn.float8_config.Float8InputScaleSpec` for input activation scaling."""
 
     weight_scale: Float8WeightScaleSpec
-    """:obj:`Float8WeightScaleSpec` for weight scaling."""
+    """:class:`~max.nn.float8_config.Float8WeightScaleSpec` for weight scaling."""
 
     mlp_in_float8: set[int]
     """Set of layer indices with MLPs in float8.
@@ -174,13 +174,13 @@ class Float8Config:
     """
 
     embedding_output_dtype: DType | None = None
-    """The :obj:`DType` of the output from the embedding layer."""
+    """The :class:`~max.dtype.DType` of the output from the embedding layer."""
 
     bias_dtype: DType | None = None
-    """The :obj:`DType` of bias weights."""
+    """The :class:`~max.dtype.DType` of bias weights."""
 
     quant_method: str | None = None
-    """The quantization method used (for example, ``"fbgemm_fp8"``)."""
+    """The quantization method used (for example, ``fbgemm_fp8``)."""
 
     quant_algo: str | None = None
     """Additional differentiator within same quant_method (for example, modelopt NVFP4 vs FP8)."""
@@ -244,10 +244,18 @@ class Float8Config:
         """``True`` if this config represents modelopt NVFP4."""
         return self.quant_method == "modelopt" and self.quant_algo == "NVFP4"
 
+    @property
+    def is_mxfp4(self) -> bool:
+        """Returns ``True`` if this config represents MXFP4 quantization."""
+        return self.quant_algo == "MXFP4" and self.quant_method in (
+            "mxfp4",
+            "modelopt",
+        )
+
     def quantized_scales_type(
         self, quantized_shape: Shape, device_ref: DeviceRef
     ) -> TensorType:
-        """The :class:`TensorType` of the scales tensor after dynamic quantization."""
+        """The :class:`~max.graph.TensorType` of the scales tensor after dynamic quantization."""
         if self.is_nvfp4:
             return _nvfp4_scales_type(quantized_shape, device_ref)
         elif (
@@ -269,6 +277,15 @@ def nvfp4_packed_k(in_dim: int, float8_config: Float8Config | None) -> int:
 
 
 def ceildiv(n: DimLike, d: DimLike) -> Dim:
+    """Returns the ceiling division of ``n`` by ``d``.
+
+    Args:
+        n: The numerator as a ``DimLike`` value.
+        d: The denominator as a ``DimLike`` value.
+
+    Returns:
+        A :class:`~max.graph.Dim` equal to ceil(n / d).
+    """
     return (Dim(n) + Dim(d) - Dim(1)) // Dim(d)
 
 

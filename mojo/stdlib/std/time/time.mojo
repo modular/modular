@@ -67,11 +67,6 @@ struct _CTimeSpec(Defaultable, TrivialRegisterPassable, Writable):
                 self.tv_sec * _NSEC_PER_SEC + self.tv_subsec * _NSEC_PER_USEC
             )
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         writer.write(self.as_nanoseconds(), "ns")

@@ -211,20 +211,20 @@ fn bench_matmul[
     ]() * 2 if micro_scaling_mode == "nvfp4" else shape_a.at[1]()
 
     # Calculate scale buffer shapes - 5D tensors for MXFP8 format
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList[
         ceildiv(shape_a.at[0](), SF_MN_GROUP_SIZE),
         ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         ceildiv(shape_b.at[0](), SF_MN_GROUP_SIZE),
         ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
+    ]()
 
     var dynamic_a_scales_shape = IndexList[5](
         ceildiv(M, SF_MN_GROUP_SIZE),
@@ -549,9 +549,9 @@ fn create_matmul_bench[
     init_type: InitializationType,
     verify: Bool,
 ) raises:
-    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
+    comptime static_b_shape = DimList[
+        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
+    ]()
     var dynamic_b_shape = (n.value, k.value) if transpose_b else (
         k.value,
         n.value,
@@ -559,8 +559,8 @@ fn create_matmul_bench[
 
     bench_matmul[
         dtype,
-        DimList(m.dim, n.dim),
-        DimList(m.dim, k.dim),
+        DimList[m.dim, n.dim](),
+        DimList[m.dim, k.dim](),
         static_b_shape,
         transpose_b=transpose_b,
         cache_busting=cache_busting,

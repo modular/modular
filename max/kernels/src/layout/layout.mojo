@@ -430,7 +430,7 @@ struct Layout(
             from layout.layout import DimList
 
             # Create a col-major layout with compile-time rank
-            comptime dims = DimList(3, 4)
+            comptime dims = DimList[3, 4]()
             comptime layout = Layout.col_major[dims]()
             # Result: Layout with shape (3,4) and stride (1,3)
             ```
@@ -553,7 +553,7 @@ struct Layout(
             from layout.layout import DimList
 
             # Create a row-major layout with compile-time rank
-            comptime dims = DimList(3, 4)
+            comptime dims = DimList[3, 4]()
             comptime layout = Layout.row_major[2](dims)
             # Result: Layout with shape (3,4) and stride (4,1)
             ```
@@ -732,16 +732,6 @@ struct Layout(
     # ===------------------------------------------------------------------===#
     # Methods
     # ===------------------------------------------------------------------===#
-
-    @no_inline
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Converts the layout to a string representation.
-
-        Returns:
-            A string representation of the layout in the format "(shape:stride)".
-        """
-        return String.write(self)
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):

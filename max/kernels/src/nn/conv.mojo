@@ -3082,6 +3082,7 @@ fn conv2d_gpu_naive_nhwc_rscf[
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
+    num_groups: Int,
 ):
     var N = input.dim[0]()
     var H = input.dim[1]()
@@ -3089,9 +3090,11 @@ fn conv2d_gpu_naive_nhwc_rscf[
     var C_in = input.dim[3]()  # channel_in
     var R = filter.dim[0]()
     var S = filter.dim[1]()
+    var C_per_group = filter.dim[2]()  # C_in / num_groups
     var H_out = output.dim[1]()
     var W_out = output.dim[2]()
     var C_out = output.dim[3]()  # channel_out or #F
+    var F_per_group = C_out // num_groups
     var pad_h = padding[0]
     var pad_w = padding[1]
     var stride_h = stride[0]
@@ -3109,15 +3112,19 @@ fn conv2d_gpu_naive_nhwc_rscf[
     for co in range(C_out):
         comptime accum_type = get_accum_type[output_type]()
         var value = Scalar[accum_type](0)
+        var g = co // F_per_group
+        var ci_base = g * C_per_group
         for r in range(R):
             for s in range(S):
                 var h_in = h * UInt(stride_h) - UInt(pad_h) + UInt(r * dil_h)
                 var w_in = w * UInt(stride_w) - UInt(pad_w) + UInt(s * dil_w)
                 if 0 <= Int(h_in) < H and 0 <= Int(w_in) < W:
-                    for ci in range(C_in):
+                    for ci in range(C_per_group):
                         value += (
                             input.load[width=1](
-                                IndexList[4](Int(n), Int(h_in), Int(w_in), ci)
+                                IndexList[4](
+                                    Int(n), Int(h_in), Int(w_in), ci_base + ci
+                                )
                             ).cast[accum_type]()
                             * filter.load[width=1](
                                 IndexList[4](r, s, ci, co)
@@ -3626,6 +3633,7 @@ fn conv_gpu[
     output_type: DType,
     maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
     filter_is_fcrs: Bool = False,
+    has_residual: Bool = False,
 ](
     input: LayoutTensor[input_type, input_layout, MutAnyOrigin],
     filter: LayoutTensor[filter_type, filter_layout, MutAnyOrigin],
@@ -3635,6 +3643,10 @@ fn conv_gpu[
     padding: IndexList[2 * conv_rank],
     num_groups: Int,
     ctx: DeviceContext,
+    source_ptr: UnsafePointer[
+        Scalar[output_type], MutAnyOrigin
+    ] = UnsafePointer[Scalar[output_type], MutAnyOrigin](),
+    beta: Float32 = 0.0,
 ) raises:
     comptime assert conv_rank == input.rank - 2
 
@@ -3716,6 +3728,7 @@ fn conv_gpu[
             output_type,
             maybe_epilogue_func,
             filter_is_fcrs,
+            has_residual,
         ](
             padded_input,
             filter,
@@ -3725,6 +3738,8 @@ fn conv_gpu[
             zero_padding,
             num_groups,
             ctx,
+            source_ptr,
+            beta,
         )
 
         return
@@ -3766,10 +3781,11 @@ fn conv_gpu[
         comptime _is_sm100 = ctx.default_device_info == B200
         comptime _is_supported_dtype = input_type == DType.bfloat16
 
-        comptime if _is_sm100 and _is_supported_dtype and not maybe_epilogue_func:
+        comptime if _is_sm100 and _is_supported_dtype:
             from nn.conv_sm100.dispatch import (
                 dispatch_sm100_conv2d,
             )
+            from linalg.utils import elementwise_epilogue_type
 
             # SM100 dispatch: stride=1, dilation=1, groups=1,
             # and channels aligned to 64 (TMA tile K alignment)
@@ -3786,21 +3802,68 @@ fn conv_gpu[
                 and in_c % 64 == 0
                 and out_c % 128 == 0
             ):
-                dispatch_sm100_conv2d[
-                    input_layout,
-                    filter_layout,
-                    output_layout,
-                    input_type,
-                    filter_type,
-                    output_type,
-                    filter_is_fcrs,
-                ](
-                    input,
-                    filter,
-                    output,
-                    rebind[IndexList[2]](symmetric_padding),
-                    ctx,
-                )
+
+                @parameter
+                @always_inline
+                fn _sm100_dispatch[
+                    _epilogue: Optional[elementwise_epilogue_type] = None,
+                ]() raises:
+                    dispatch_sm100_conv2d[
+                        input_layout,
+                        filter_layout,
+                        output_layout,
+                        input_type,
+                        filter_type,
+                        output_type,
+                        filter_is_fcrs,
+                        elementwise_lambda_fn=_epilogue,
+                        has_residual=has_residual,
+                    ](
+                        input,
+                        filter,
+                        output,
+                        rebind[IndexList[2]](symmetric_padding),
+                        ctx,
+                        source_ptr,
+                        beta,
+                    )
+
+                comptime if maybe_epilogue_func:
+                    # Wrap the 4D NHWC epilogue into a 2D GEMM-space
+                    # void epilogue for the SM100 kernel. The kernel
+                    # calls this with (m, n) coords where
+                    # m = batch*H_out*W_out + h*W_out + w, n = channel.
+                    comptime epilogue = maybe_epilogue_func.value()
+                    var out_h = output.dim[1]()
+                    var out_w = output.dim[2]()
+                    var hw = out_h * out_w
+
+                    @parameter
+                    @always_inline
+                    fn sm100_void_epilogue[
+                        _dtype: DType,
+                        _width: Int,
+                        *,
+                        alignment: Int = 1,
+                    ](coords_2d: IndexList[2], val: SIMD[_dtype, _width],):
+                        var m = coords_2d[0]
+                        var n = coords_2d[1]
+                        var batch_idx: Int
+                        var rem: Int
+                        var h_idx: Int
+                        var w_idx: Int
+                        batch_idx, rem = divmod(m, hw)
+                        h_idx, w_idx = divmod(rem, out_w)
+                        epilogue(
+                            IndexList[4](batch_idx, h_idx, w_idx, n),
+                            rebind[SIMD[output_type, _width]](val),
+                        )
+
+                    _sm100_dispatch[
+                        Optional[elementwise_epilogue_type](sm100_void_epilogue)
+                    ]()
+                else:
+                    _sm100_dispatch[]()
                 return
 
         # Fallback paths for non-SM100, unsupported dtypes, or constraints
@@ -3908,6 +3971,7 @@ fn conv_gpu[
                 stride,
                 dilation,
                 symmetric_padding,
+                num_groups,
                 grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
                 block_dim=(block_size, block_size),
             )
@@ -3923,6 +3987,7 @@ fn conv_gpu[
             stride,
             dilation,
             symmetric_padding,
+            num_groups,
             grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
             block_dim=(block_size, block_size),
         )
@@ -3944,6 +4009,7 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
     stride: IndexList[3],
     dilation: IndexList[3],
     padding: IndexList[3],
+    num_groups: Int,
 ):
     var N = input.dim[0]()
     var D = input.dim[1]()  # depth
@@ -3954,11 +4020,13 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
     var Q = filter.dim[0]()
     var R = filter.dim[1]()
     var S = filter.dim[2]()
+    var C_per_group = filter.dim[3]()  # C_in / num_groups
 
     var D_out = output.dim[1]()  # depth
     var H_out = output.dim[2]()
     var W_out = output.dim[3]()
     var C_out = output.dim[4]()  # channel_output
+    var F_per_group = C_out // num_groups
 
     var pad_d = padding[0]
     var pad_h = padding[1]
@@ -3996,6 +4064,8 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
     for co in range(C_out):
         comptime accum_type = get_accum_type[output_type]()
         var value = Scalar[accum_type](0)
+        var g = co // F_per_group
+        var ci_base = g * C_per_group
 
         for q in range(Q):
             for r in range(R):
@@ -4016,12 +4086,13 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
                         - UInt(pad_w)
                     )
 
-                    # check all input bounds bro
                     if 0 <= d_in < D and 0 <= h_in < H and 0 <= w_in < W:
-                        for ci in range(C_in):
+                        for ci in range(C_per_group):
                             value += (
                                 input.load[width=1](
-                                    IndexList[5](Int(n), d_in, h_in, w_in, ci)
+                                    IndexList[5](
+                                        Int(n), d_in, h_in, w_in, ci_base + ci
+                                    )
                                 ).cast[accum_type]()
                                 * filter.load[width=1](
                                     IndexList[5](q, r, s, ci, co)

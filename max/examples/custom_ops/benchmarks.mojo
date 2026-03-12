@@ -114,7 +114,7 @@ def top_k() raises:
     comptime val_dtype = DType.float32
     comptime idx_dtype = DType.int32
 
-    comptime shape = DimList(batch_size, K)
+    comptime shape = DimList[batch_size, K]()
     comptime val_spec = get_row_major_tensor_spec[val_dtype, rank, shape]()
     comptime idx_spec = get_row_major_tensor_spec[idx_dtype, rank, shape]()
 
@@ -169,9 +169,9 @@ def matmul() raises:
 
     comptime FLOPS = M * N * (2 * K - 1)
 
-    comptime a_spec = get_row_major_tensor_spec[dtype, rank, DimList(M, K)]()
-    comptime b_spec = get_row_major_tensor_spec[dtype, rank, DimList(K, N)]()
-    comptime c_spec = get_row_major_tensor_spec[dtype, rank, DimList(M, N)]()
+    comptime a_spec = get_row_major_tensor_spec[dtype, rank, DimList[M, K]()]()
+    comptime b_spec = get_row_major_tensor_spec[dtype, rank, DimList[K, N]()]()
+    comptime c_spec = get_row_major_tensor_spec[dtype, rank, DimList[M, N]()]()
 
     var cpu_ctx = DeviceContext(api="cpu")
 
@@ -239,10 +239,10 @@ def tensor_core_mma() raises:
 
     comptime FLOPS = M * N * (2 * K - 1)
 
-    comptime a_spec = get_row_major_tensor_spec[dtype, rank, DimList(M, K)]()
-    comptime b_spec = get_row_major_tensor_spec[dtype, rank, DimList(K, N)]()
+    comptime a_spec = get_row_major_tensor_spec[dtype, rank, DimList[M, K]()]()
+    comptime b_spec = get_row_major_tensor_spec[dtype, rank, DimList[K, N]()]()
     comptime c_spec = get_row_major_tensor_spec[
-        DType.float32, rank, DimList(M, N)
+        DType.float32, rank, DimList[M, N]()
     ]()
 
     var cpu_ctx = DeviceContext(api="cpu")

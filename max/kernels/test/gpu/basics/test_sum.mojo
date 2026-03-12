@@ -73,7 +73,7 @@ def test_warp_sum(ctx: DeviceContext) raises:
         assert_equal(
             out_host[i],
             expected,
-            msg=t"out_host[{i}] = {out_host[i]} expected = {expected}",
+            msg=String(t"out_host[{i}] = {out_host[i]} expected = {expected}"),
         )
 
     # Cleanup
@@ -135,7 +135,7 @@ def test_block_sum(ctx: DeviceContext) raises:
         assert_equal(
             out_host[i],
             expected,
-            msg=t"out_host[{i}] = {out_host[i]} expected = {expected}",
+            msg=String(t"out_host[{i}] = {out_host[i]} expected = {expected}"),
         )
 
     # Cleanup

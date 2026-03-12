@@ -104,10 +104,10 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     c_host_ptr = alloc[Scalar[c_type]](M * N)
     c_host_ref_ptr = alloc[Scalar[c_type]](M * N)
 
-    a_host = NDBuffer[rank=2, a_type](a_host_ptr, DimList(M, K))
-    b_host = NDBuffer[rank=2, b_type](b_host_ptr, DimList(N, K))
-    c_host = NDBuffer[rank=2, c_type](c_host_ptr, DimList(M, N))
-    c_host_ref = NDBuffer[rank=2, c_type](c_host_ref_ptr, DimList(M, N))
+    a_host = NDBuffer[a_type, 2](a_host_ptr, DimList[M, K]())
+    b_host = NDBuffer[b_type, 2](b_host_ptr, DimList[N, K]())
+    c_host = NDBuffer[c_type, 2](c_host_ptr, DimList[M, N]())
+    c_host_ref = NDBuffer[c_type, 2](c_host_ref_ptr, DimList[M, N]())
 
     # Calculate scales dimensions
     var a_scales_shape_k = ceildiv(K, BLOCK_SCALE_K)
@@ -119,11 +119,11 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         b_scales_shape_n * b_scales_shape_k
     )
 
-    a_scales_host = NDBuffer[rank=2, scales_type](
-        a_scales_host_ptr, DimList(a_scales_shape_k, M)
+    a_scales_host = NDBuffer[scales_type, 2](
+        a_scales_host_ptr, DimList[a_scales_shape_k, M]()
     )
-    b_scales_host = NDBuffer[rank=2, scales_type](
-        b_scales_host_ptr, DimList(b_scales_shape_n, b_scales_shape_k)
+    b_scales_host = NDBuffer[scales_type, 2](
+        b_scales_host_ptr, DimList[b_scales_shape_n, b_scales_shape_k]()
     )
 
     # Allocate device memory
@@ -138,11 +138,11 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         b_scales_shape_n * b_scales_shape_k
     )
 
-    dynamic_a_shape = DimList(M, K)
-    dynamic_b_shape = DimList(N, K)
-    dynamic_c_shape = DimList(M, N)
-    dynamic_a_scales_shape = DimList(a_scales_shape_k, M)
-    dynamic_b_scales_shape = DimList(b_scales_shape_n, b_scales_shape_k)
+    dynamic_a_shape = DimList[M, K]()
+    dynamic_b_shape = DimList[N, K]()
+    dynamic_c_shape = DimList[M, N]()
+    dynamic_a_scales_shape = DimList[a_scales_shape_k, M]()
+    dynamic_b_scales_shape = DimList[b_scales_shape_n, b_scales_shape_k]()
 
     a_device_nd = NDBuffer[rank=2, a_type](
         a_device.unsafe_ptr(), dynamic_a_shape

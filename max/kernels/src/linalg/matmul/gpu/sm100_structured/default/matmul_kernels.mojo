@@ -857,7 +857,7 @@ struct BlackwellMatmulSM100Kernel[
                     b_tile.layout,
                 )
 
-                var k_coord = Int(iter_idx + UInt32(j)) * Int(Self.BK)
+                var k_coord = Int(iter_idx + UInt32(j)) * Self.BK
 
                 # 3D TMA loads with batch coordinate
                 a_tma_op.async_multicast_load_3d[Self.cta_group](

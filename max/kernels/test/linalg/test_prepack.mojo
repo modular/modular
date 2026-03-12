@@ -41,11 +41,11 @@ fn test_prepack():
     comptime dst_shape_static = IndexList[2](k_padded, n_padded)
 
     var src_storage = NDBuffer[
-        rank=1, type, MutAnyOrigin, Dim(n * k)
+        rank=1, type, MutAnyOrigin, DimList[n * k]()
     ].stack_allocation[alignment=64]()
     src_storage.fill(0)
     var dst_storage = NDBuffer[
-        rank=1, type, MutAnyOrigin, Dim(n_padded * k_padded)
+        rank=1, type, MutAnyOrigin, DimList[n_padded * k_padded]()
     ].stack_allocation[alignment=64]()
     dst_storage.fill(0)
 

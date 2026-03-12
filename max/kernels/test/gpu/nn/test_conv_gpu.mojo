@@ -130,6 +130,7 @@ fn test_conv3d_gpu[
         stride,
         dilation,
         pad,
+        Int(1),  # num_groups
         grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
         block_dim=(block_size, block_size, 1),
     )

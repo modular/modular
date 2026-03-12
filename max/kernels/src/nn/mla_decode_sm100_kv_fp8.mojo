@@ -278,7 +278,6 @@ struct MLA_SM100_Decode_KV_FP8[
         var batch_size = Int(scalar_args.ptr[0])
         var q_max_seq_len = Int(scalar_args.ptr[1])
         var num_partitions = Int(scalar_args.ptr[2])
-        var max_cache_valid_length = Int(scalar_args.ptr[3])
         mask = mla_decode_pack.mask
         valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr

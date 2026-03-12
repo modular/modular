@@ -23,7 +23,7 @@ from .dim import Dim, DimLike, StaticDim, SymbolicDim
 
 
 class Shape(list[Dim]):
-    """A sequence of :class:`Dim` values representing a tensor shape."""
+    """A sequence of :class:`~max.graph.Dim` values representing a tensor shape."""
 
     def __init__(self, dims: ShapeLike = ()) -> None:
         super().__init__(Dim(dim) for dim in dims)

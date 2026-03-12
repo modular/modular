@@ -173,14 +173,16 @@ fn _distribute_mask[
 
 # Returns the shape of distribute `thread_layout` into `shape`.
 #
-@always_inline("nodebug")
-fn _distribute_shape[thread_layout: Layout, shape: DimList]() -> DimList:
-    comptime transform[idx: Int]: Dim = shape.value.value[idx] // Int(
-        thread_layout.shape[idx]
-    )
-    return DimList(
-        Variadic.tabulate[Variadic.size(shape.value.value), transform]
-    )
+comptime _distribute_shape_transform[
+    thread_layout: Layout, shape: DimList, idx: Int
+]: Dim = shape.values[idx] // Int(thread_layout.shape[idx])
+
+comptime _distribute_shape[thread_layout: Layout, shape: DimList]: DimList[
+    *Variadic.tabulate[
+        Variadic.size(shape.values),
+        _distribute_shape_transform[thread_layout, shape, ...],
+    ]
+] = {}
 
 
 # Distribute thread_layout and returns the fragments of `thread_id`.
@@ -194,7 +196,7 @@ fn distribute[
     swizzle: Optional[_swizzle_signature] = None,
     element_size: Int = 1,
 ](buff: NDBuffer[rank=rank, dtype, _, shape], thread_id: Int) -> NDBuffer[
-    rank=rank, dtype, buff.origin, _distribute_shape[thread_layout, shape]()
+    rank=rank, dtype, buff.origin, _distribute_shape[thread_layout, shape]
 ]:
     comptime assert (
         depth(thread_layout.shape) == 1
@@ -229,12 +231,16 @@ fn distribute[
     }
 
 
-@always_inline("nodebug")
-fn _vectorize_shape[*sizes: Int, shape: DimList]() -> DimList:
-    comptime transform[idx: Int]: Dim = shape.value.value[idx] // sizes[idx]
-    return DimList(
-        Variadic.tabulate[Variadic.size(shape.value.value), transform]
-    )
+comptime _vectorize_shape_transform[
+    idx: Int, shape: DimList, *sizes: Int
+]: Dim = shape.values[idx] // sizes[idx]
+
+comptime _vectorize_shape[*sizes: Int, shape: DimList]: DimList[
+    *Variadic.tabulate[
+        Variadic.size(shape.values),
+        _vectorize_shape_transform[_, shape, *sizes],
+    ]
+] = {}
 
 
 @always_inline("nodebug")
@@ -258,11 +264,6 @@ struct ElementLayout[rank: Int, shape: IndexList[rank]](
         self.stride = IndexList[Self.rank]()
 
     @no_inline
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         writer.write(Self.shape, ":", self.stride)
 
@@ -275,6 +276,7 @@ fn _get_element_idx[
     dtype: DType,
     shape: DimList,
     element_shape: IndexList[rank],
+    //,
 ](
     linear_coord: Int,
     buff: NDBuffer[rank=rank, dtype, _, shape],
@@ -303,6 +305,7 @@ fn _get_element_idx[
     rank: Int,
     dtype: DType,
     shape: DimList,
+    //,
 ](linear_coord: Int, buff: NDBuffer[rank=rank, dtype, _, shape]) -> Int:
     var result = 0
     var curr_linear_crd = linear_coord
@@ -317,6 +320,7 @@ fn _get_element_idx[
 fn _get_element_idx[
     rank: Int,
     element_shape: IndexList[rank],
+    //,
 ](
     linear_coord: Int,
     element_layout: ElementLayout[rank, element_shape],
@@ -339,17 +343,18 @@ fn _get_element_idx[
 #
 @always_inline("nodebug")
 fn vectorize[
-    *sizes: Int,
     dtype: DType,
     rank: Int,
     shape: DimList,
     origin: MutOrigin,
-](buff: NDBuffer[rank=rank, dtype, origin, shape, _]) -> Tuple[
+    //,
+    *sizes: Int,
+](buff: NDBuffer[rank=rank, dtype, origin, shape]) -> Tuple[
     NDBuffer[
         rank=rank,
         dtype,
         origin,
-        shape=_vectorize_shape[*sizes, shape=shape](),
+        shape=_vectorize_shape[*sizes, shape=shape],
         strides=DimList.create_unknown[rank](),
         address_space=buff.address_space,
     ],

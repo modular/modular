@@ -23,6 +23,7 @@ from std.collections import Dict, Optional
 import std.format._utils as fmt
 from std.os import abort, getenv
 from std.pathlib import Path
+from std.sys import get_defined_bool
 from std.sys.arg import argv
 
 from std.gpu.host import DeviceContext
@@ -64,14 +65,6 @@ struct BenchMetric(ImplicitlyCopyable, Writable):
         Self.flops,
     ]
     """Default set of benchmark metrics."""
-
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Gets a string representation of this metric.
-
-        Returns:
-            The string representation."""
-        return String.write(self)
 
     fn write_to(self, mut writer: Some[Writer]):
         """Formats this BenchMetric to the provided Writer.
@@ -282,15 +275,6 @@ struct Format(ImplicitlyCopyable, Writable):
             )
             abort(t"Invalid format option: {value}{valid_formats}")
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Returns the string representation of the format.
-
-        Returns:
-            The string representation of the format.
-        """
-        return String(self.value)
-
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the format to a writer.
 
@@ -450,6 +434,12 @@ struct BenchConfig(Copyable):
                 # TODO: add an arg for bench batchsize
                 else:
                     i += 1
+
+            # KBENCH_OUTFILE overrides -o (used by kbench driver mode).
+            comptime if get_defined_bool["KBENCH_USE_ENV_ARGS", False]():
+                var env_outfile = getenv("KBENCH_OUTFILE", "")
+                if env_outfile:
+                    self.out_file = Path(env_outfile)
 
         argparse()
 
@@ -688,7 +678,7 @@ struct Bench(Writable):
             # In case of running this binary with mpirun, all the outputs
             # will be written to -o output_file unless a distinct suffix is
             # added to each output.
-            self.append_output_suffix(suffix=t"_{pe_rank}")
+            self.append_output_suffix(suffix=String(t"_{pe_rank}"))
         return pe_rank
 
     fn append_output_suffix(mut self, suffix: String):
@@ -1097,15 +1087,6 @@ struct Bench(Writable):
         if self.config.format == Format.csv:
             return ""
         return pad_str * (width - len(string))
-
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Returns a string representation of the benchmark results.
-
-        Returns:
-            A string representing the benchmark results.
-        """
-        return String.write(self)
 
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the benchmark results to a writer.

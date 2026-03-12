@@ -304,26 +304,26 @@ fn create_matmul_bench[
         bench_matmul[
             in_dtype,
             out_dtype,
-            DimList(m.dim, n.dim),
-            DimList(m.dim, k.dim),
-            DimList(k.dim, n.dim),
+            DimList[m.dim, n.dim](),
+            DimList[m.dim, k.dim](),
+            DimList[k.dim, n.dim](),
         ](ctx, h, (m.value, n.value), (m.value, k.value), (k.value, n.value))
 
     elif mode == "transpose":
         bench_matmul_transpose[
             in_dtype,
             out_dtype,
-            DimList(m.dim, n.dim),
-            DimList(m.dim, k.dim),
-            DimList(n.dim, k.dim),
+            DimList[m.dim, n.dim](),
+            DimList[m.dim, k.dim](),
+            DimList[n.dim, k.dim](),
         ](ctx, h, (m.value, n.value), (m.value, k.value), (n.value, k.value))
     elif mode == "naive":
         bench_matmul_naive[
             in_dtype,
             out_dtype,
-            DimList(m.dim, n.dim),
-            DimList(m.dim, k.dim),
-            DimList(k.dim, n.dim),
+            DimList[m.dim, n.dim](),
+            DimList[m.dim, k.dim](),
+            DimList[k.dim, n.dim](),
         ](ctx, h, (m.value, n.value), (m.value, k.value), (k.value, n.value))
 
 

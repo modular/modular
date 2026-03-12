@@ -26,10 +26,6 @@ struct TuningConfigAMD(TrivialRegisterPassable, TuningConfig):
     var bm: Int
     var bn: Int
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return String.write(self)
-
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the tuning config as a string.
 

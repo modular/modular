@@ -10,6 +10,16 @@ package(default_visibility = [
 ])
 
 modular_py_library(
+    name = "tag_filters",
+    testonly = True,
+    srcs = ["tag_filters.py"],
+    imports = ["."],
+    deps = [
+        requirement("click"),
+    ],
+)
+
+modular_py_library(
     name = "hf_config_overrides",
     testonly = True,
     srcs = [
@@ -246,10 +256,10 @@ modular_py_binary(
     tags = ["no-pydeps"],
     deps = [
         ":create_pipelines",
+        ":tag_filters",
         "//max/python/max/driver",
         "//max/python/max/pipelines/lib",
         "//max/python/max/serve:config",
-        "//max/tests/integration/accuracy:verify_pipelines",
         "//max/tests/integration/accuracy/logit_verification:logit_verification_config",
         requirement("click"),
     ],
@@ -271,8 +281,8 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//max/tests/integration/accuracy:verify_pipelines",
         "//max/tests/integration/tools:precompile_all_pipelines",
+        "//max/tests/integration/tools:tag_filters",
     ],
 )
 

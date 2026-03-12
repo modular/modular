@@ -121,21 +121,22 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         self = Self(values=elems)
 
     @always_inline
-    fn __init__(out self, values: VariadicParamList[Self.element_type]):
+    fn __init__[*values: Self.element_type](out self):
         """Creates a tuple constant using the specified values.
 
-        Args:
+        Parameters:
             values: The list of values.
         """
         _static_tuple_construction_checks[Self.size]()
 
-        if len(values) == 1:
+        comptime num_values = VariadicParamList[*values].size
+        if num_values == 1:
             return Self(fill=values[0])
 
-        assert Self.size == len(values), "mismatch in the number of elements"
-
+        comptime assert (
+            Self.size == num_values
+        ), "mismatch in the number of elements"
         self = Self()
-
         comptime for idx in range(Self.size):
             self.__setitem__[idx](values[idx])
 
@@ -154,9 +155,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
             return Self(fill=values[0])
 
         assert Self.size == len(values), "mismatch in the number of elements"
-
         self = Self()
-
         comptime for idx in range(Self.size):
             self.__setitem__[idx](values[idx])
 

@@ -16,7 +16,6 @@ bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
 bazel_dep(name = "rules_cc", version = "0.2.17")
 bazel_dep(name = "rules_go", version = "0.58.3", repo_name = "io_bazel_rules_go")
-bazel_dep(name = "rules_java", version = "9.1.0")
 bazel_dep(name = "rules_mojo", version = "0.6.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
@@ -39,6 +38,10 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True
 archive_override(
     module_name = "rules_mojo",
     integrity = "sha256-2+60wTuPhuG49EhTlIFkZU9wzORgywIKs5VPPkgspWA=",
+    patch_strip = 1,
+    patches = [
+        "//bazel/public-patches:rules_mojo_split_wheel.patch",
+    ],
     strip_prefix = "rules_mojo-b2a294714d3afadf4826fbade6e95733a19654ed",
     urls = [
         "https://github.com/modular/rules_mojo/archive/b2a294714d3afadf4826fbade6e95733a19654ed.tar.gz",

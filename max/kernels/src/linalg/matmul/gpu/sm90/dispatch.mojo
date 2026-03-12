@@ -71,7 +71,7 @@ fn matmul_dispatch_sm90[
     comptime input_type_supported = is_AB_fp8 or is_AB_bf16 or is_AB_fp32
 
     # fmt: off
-    comptime has_static_NK = b.shape.all_known[2]() \
+    comptime has_static_NK = b.shape.all_known() \
                       and a.shape.has_value[1]() \
                       and c.shape.has_value[1]()
     # fmt: on

@@ -119,8 +119,8 @@ fn test_dynamic_fp8_quant[
     ) if group_size_or_per_token == -1 else group_size_or_per_token
     comptime accum_dtype = get_accum_type[in_dtype]()
 
-    comptime static_shape = DimList(to_dim[M], to_dim[N])
-    comptime static_scales_shape = DimList(to_dim[N] // group_size, to_dim[M])
+    comptime static_shape = DimList[to_dim[M], to_dim[N]]()
+    comptime static_scales_shape = DimList[to_dim[N] // group_size, to_dim[M]]()
     var dynamic_shape = Index(M.or_else(m), N.or_else(n))
     var dynamic_scales_shape = Index(n // group_size, m)
     var total_size = m * n
@@ -261,12 +261,12 @@ fn test_batched_dynamic_fp8_quant[
     ) if group_size_or_per_token == -1 else group_size_or_per_token
     comptime accum_dtype = get_accum_type[in_dtype]()
 
-    comptime static_shape = DimList(to_dim[BS], to_dim[M], to_dim[K])
-    comptime static_scales_shape = DimList(
+    comptime static_shape = DimList[to_dim[BS], to_dim[M], to_dim[K]]()
+    comptime static_scales_shape = DimList[
         to_dim[BS],
         to_dim[K] // group_size,
         to_dim[M],
-    )
+    ]()
     var dynamic_shape = Index(BS.or_else(bs), M.or_else(m), K.or_else(k))
     var dynamic_scales_shape = Index(bs, k // group_size, m)
     var total_size = bs * m * k

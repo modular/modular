@@ -39,10 +39,6 @@ struct MaskName(Writable):
     fn __init__(out self, name: String):
         self.name = name
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return self.name
-
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the mask name.
 
@@ -99,10 +95,6 @@ struct TileMaskStatus(
 
     fn __is__(self, rhs: Self) -> Bool:
         return self.status == rhs.status
-
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return String.write(self)
 
     fn __and__(self, rhs: Self) -> Self:
         return Self(self.status & rhs.status)

@@ -540,6 +540,7 @@ def bench_max(
             q_max_seq_len,
             num_heads=num_q_heads,
             device=DeviceRef.GPU(),
+            is_fp8_kv=is_fp8_kv,
         ).to(DeviceRef.GPU())
 
         # Use MLA decode kernel

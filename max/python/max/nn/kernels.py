@@ -1187,6 +1187,17 @@ def store_k_cache_ragged(
     input_row_offsets: TensorValue,
     layer_idx: TensorValue,
 ) -> None:
+    """Stores the key tensor into the paged KV cache for ragged inputs.
+
+    Args:
+        kv_collection: The paged KV cache collection to write into.
+        x_k: The key tensor of rank 3 containing the new key projections.
+        input_row_offsets: Ragged tensor row offsets of shape ``[batch + 1]``
+            indicating where each sequence starts and ends. Must have dtype
+            ``uint32``.
+        layer_idx: The scalar layer index (dtype ``uint32``) identifying which
+            transformer layer's cache to update.
+    """
     kv_cache_store_paged_ragged(
         kv_collection,
         x_k,
@@ -1202,6 +1213,17 @@ def store_v_cache_ragged(
     input_row_offsets: TensorValue,
     layer_idx: TensorValue,
 ) -> None:
+    """Stores the value tensor into the paged KV cache for ragged inputs.
+
+    Args:
+        kv_collection: The paged KV cache collection to write into.
+        x_v: The value tensor of rank 3 containing the new value projections.
+        input_row_offsets: Ragged tensor row offsets of shape ``[batch + 1]``
+            indicating where each sequence starts and ends. Must have dtype
+            ``uint32``.
+        layer_idx: The scalar layer index (dtype ``uint32``) identifying which
+            transformer layer's cache to update.
+    """
     kv_cache_store_paged_ragged(
         kv_collection,
         x_v,
@@ -1258,6 +1280,17 @@ def store_k_cache_padded(
     valid_lengths: TensorValue,
     layer_idx: TensorValue,
 ) -> None:
+    """Stores the key tensor into the paged KV cache for padded inputs.
+
+    Args:
+        kv_collection: The paged KV cache collection to write into.
+        x_k: The key tensor of rank 4 containing the new key projections.
+        valid_lengths: Buffer of shape ``[batch]`` (dtype ``uint32``)
+            indicating the actual (non-padded) sequence length for each
+            batch element.
+        layer_idx: The scalar layer index (dtype ``uint32``) identifying which
+            transformer layer's cache to update.
+    """
     kv_cache_store_paged_padded(
         kv_collection,
         x_k,
@@ -1273,6 +1306,17 @@ def store_v_cache_padded(
     valid_lengths: TensorValue,
     layer_idx: TensorValue,
 ) -> None:
+    """Stores the value tensor into the paged KV cache for padded inputs.
+
+    Args:
+        kv_collection: The paged KV cache collection to write into.
+        x_v: The value tensor of rank 4 containing the new value projections.
+        valid_lengths: Buffer of shape ``[batch]`` (dtype ``uint32``)
+            indicating the actual (non-padded) sequence length for each
+            batch element.
+        layer_idx: The scalar layer index (dtype ``uint32``) identifying which
+            transformer layer's cache to update.
+    """
     kv_cache_store_paged_padded(
         kv_collection,
         x_v,
@@ -1485,23 +1529,17 @@ def rope_ragged_with_position_ids(
 
     # Fast path: invoke kernel directly when mrope_section is not used.
     if mrope_section is None:
-        total_tokens = input.shape[0]
-        row_offsets = ops.range(
-            0,
-            total_tokens + 1,
-            total_tokens,
-            out_dim=2,
-            dtype=DType.uint32,
-            device=input.device,
+        total_tokens = ops.cast(
+            ops.shape_to_tensor(input.shape)[0], DType.uint32
+        ).to(input.device)
+        row_offsets = ops.stack(
+            [
+                ops.constant(0, dtype=DType.uint32, device=input.device),
+                total_tokens,
+            ],
+            axis=0,
         )
-        start_pos = ops.range(
-            0,
-            1,
-            1,
-            out_dim=1,
-            dtype=DType.uint32,
-            device=input.device,
-        )
+        start_pos = ops.constant([0], dtype=DType.uint32, device=input.device)
         return ops.custom(
             "mo.rope.ragged.with_position_id",
             device=input.device,
@@ -2362,7 +2400,7 @@ def mla_prefill_graph(
         kv_params: KVCacheParams
         kv_collection: Paged KV Cache object.
         layer_idx: Layer index.
-        mask_variant: Mask variant.
+        mask_variant: The attention mask variant controlling masking behavior.
         scale: Scale for the attention calculation.
         epsilon: Small constant for numerical stability in RMSNorm.
         v_head_dim: Dimension of the V heads.
@@ -2440,7 +2478,27 @@ def compute_mla_dispatch_args_scalar(
     q_max_seq_len: TensorValue,
     num_heads: int,
     device: DeviceRef,
+    is_fp8_kv: bool = False,
 ) -> TensorValue:
+    """Computes scalar dispatch arguments for the MLA decode kernel.
+
+    Produces a CPU tensor of shape ``[4]`` containing pre-computed integer
+    arguments used by the capturable MLA decode kernel variant to enable CUDA
+    graph capture.
+
+    Args:
+        batch_size: Scalar tensor indicating the current batch size.
+        max_cache_valid_length: Scalar tensor with the maximum valid cache
+            sequence length across all requests in the batch.
+        q_max_seq_len: Scalar tensor with the maximum query sequence length
+            in the current batch.
+        num_heads: Number of query attention heads.
+        device: The :class:`~max.graph.DeviceRef` on which to run the op.
+
+    Returns:
+        A CPU :class:`~max.graph.TensorValue` of shape ``[4]`` and dtype
+        ``int64`` containing the dispatch scalar arguments.
+    """
     results = ops.custom(
         "mo.mla.compute_dispatch_args.scalar",
         device=device,
@@ -2448,7 +2506,7 @@ def compute_mla_dispatch_args_scalar(
         out_types=[
             TensorType(shape=[4], dtype=DType.int64, device=DeviceRef.CPU()),
         ],
-        parameters={"num_heads": num_heads},
+        parameters={"num_heads": num_heads, "is_fp8_kv": is_fp8_kv},
     )
     return results[0].tensor
 
@@ -2502,7 +2560,7 @@ def mla_decode_graph(
         kv_params: KVCacheParams
         kv_collection: Paged KV Cache object.
         layer_idx: Layer index.
-        mask_variant: Mask variant.
+        mask_variant: The attention mask variant controlling masking behavior.
         scale: Scale for the attention calculation.
         epsilon: Small constant for numerical stability in RMSNorm.
         v_head_dim: Dimension of the V heads.
@@ -3682,6 +3740,25 @@ def quantize_static_scaled_float8(
     scale_is_inverted: bool = True,
     out_type: DType = DType.float8_e4m3fn,
 ) -> TensorValue:
+    """Quantizes a rank-2 tensor to float8 using a static per-tensor scale.
+
+    Args:
+        x: Input tensor to quantize. Must be rank 2 with dtype ``float16``,
+            ``bfloat16``, or ``float32``.
+        scale: Scalar scale factor (shape ``[]`` or ``[1]``) residing on CPU.
+        scale_is_inverted: When ``True`` (default), ``scale`` is interpreted
+            as ``1 / max_val`` (inverted). When ``False``, it is the raw
+            absolute-max scale.
+        out_type: Output dtype. Defaults to ``DType.float8_e4m3fn``.
+
+    Returns:
+        A quantized :class:`~max.graph.TensorValue` with shape equal to ``x``
+        and dtype ``out_type``.
+
+    Raises:
+        ValueError: If ``scale`` is not a scalar, ``x`` is not rank 2, ``x``
+            dtype is unsupported, or ``scale`` is not on CPU.
+    """
     if scale.shape not in [[], [1]]:
         raise ValueError(
             f"expected scale to be a scalar, but got shape of {scale.shape}"
@@ -4102,6 +4179,72 @@ def dynamic_block_scaled_matmul_fp4(
     return result
 
 
+def mxfp4_dequant(
+    packed_weights: TensorValue,
+    scales: TensorValue,
+    out_type: DType = DType.bfloat16,
+) -> TensorValue:
+    """Dequantizes MXFP4 packed weights to BF16 or FP8 on GPU.
+
+    Supports rank 2 ``[N, K//2]`` and rank 3 ``[E, N, K//2]`` inputs.
+    For rank 3, leading dims are flattened to 2D, dequantized, and reshaped back.
+
+    Args:
+        packed_weights: Packed weights in uint8 (2 FP4 values per byte).
+            Shape ``[N, K//2]`` or ``[E, N, K//2]``.
+        scales: Block scales in float8_e8m0fnu.
+            Shape ``[N, K//32]`` or ``[E, N, K//32]``.
+        out_type: Output dtype (bfloat16 or float8_e4m3fn).
+
+    Returns:
+        Dequantized tensor ``[N, K]`` or ``[E, N, K]`` in out_type.
+    """
+    if packed_weights.rank not in (2, 3):
+        raise ValueError(
+            f"packed_weights must be rank 2 or 3, got {packed_weights.rank}"
+        )
+    if scales.rank != packed_weights.rank:
+        raise ValueError(
+            f"scales rank ({scales.rank}) must match packed_weights rank"
+            f" ({packed_weights.rank})"
+        )
+    if packed_weights.dtype != DType.uint8:
+        raise ValueError(
+            f"packed_weights must be uint8, got {packed_weights.dtype}"
+        )
+
+    # Flatten leading dims if rank 3
+    is_batched_weights = packed_weights.rank == 3
+    if is_batched_weights:
+        e = packed_weights.shape[0]
+        n = packed_weights.shape[1]
+        k_packed = packed_weights.shape[2]
+        packed_weights = ops.reshape(packed_weights, [e * n, k_packed])
+        scales = ops.reshape(scales, [e * n, scales.shape[2]])
+
+    rows = packed_weights.shape[0]
+    k = packed_weights.shape[1] * 2  # Unpacked column count
+
+    result = ops.custom(
+        "mo.dequant.mxfp4",
+        device=packed_weights.device,
+        values=[packed_weights, scales],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[rows, k],
+                device=packed_weights.device,
+            )
+        ],
+    )[0].tensor
+
+    # Reshape back if originally rank 3
+    if is_batched_weights:
+        result = ops.reshape(result, [e, n, k])
+
+    return result
+
+
 def quantize_dynamic_block_scaled_fp4(
     input: TensorValue,
     tensor_sf: TensorValue | float,
@@ -4259,6 +4402,30 @@ def matmul_static_scaled_float8(
     input_scale: TensorValue,
     weight_scale: TensorValue,
 ) -> TensorValue:
+    """Performs a static-scaled float8 matrix multiplication.
+
+    Computes ``input @ weight.T`` where both tensors are float8, dequantized
+    using the provided per-tensor CPU scalar scales before accumulation.
+    The output is always ``bfloat16``.
+
+    Args:
+        input: Input tensor of rank 2 and dtype ``float8_e4m3fn`` or
+            ``float8_e4m3fnuz``.
+        weight: Weight tensor of rank 2 and matching float8 dtype, laid out
+            so that the K dimension matches ``input.shape[1]``.
+        input_scale: Scalar scale factor for ``input`` (shape ``[]`` or
+            ``[1]``), must reside on CPU.
+        weight_scale: Scalar scale factor for ``weight`` (shape ``[]`` or
+            ``[1]``), must reside on CPU.
+
+    Returns:
+        A :class:`~max.graph.TensorValue` of shape
+        ``[input.shape[0], weight.shape[0]]`` and dtype ``bfloat16``.
+
+    Raises:
+        ValueError: If scale shapes are not scalar, input or weight are not
+            rank 2, K dimensions do not match, or scales are not on CPU.
+    """
     if input_scale.shape not in [[], [1]]:
         raise ValueError(
             f"expected input_scale to be a scalar, but got shape of {input_scale.shape}"
@@ -4824,10 +4991,10 @@ def sgmv_kernel(  # noqa: ANN201
     we can perform LoRA A or B from this kernel call.
 
     Args:
-        input: The input tensor
-        lora: The LoRA tensor
+        input: The input tensor.
+        lora: The LoRA tensor.
         lora_ids: Ids of the LoRAs used for each sequence
-        lora_ranks: The ranks of the LoRAs ihn the batch
+        lora_ranks: The ranks of the LoRAs in the batch.
         input_row_offsets: The sequence offsets that use LoRA
         max_lora_seq_len: The maximum sequence length of any given LoRA in the batch
         bias: The LoRA bias
@@ -4912,7 +5079,7 @@ def sgmv_lora_kernel(
         lora_a: The LoRA tensor for A
         lora_b: The LoRA tensor for B
         lora_ids: Ids of the LoRAs used for each sequence
-        lora_ranks: The ranks of the LoRAs ihn the batch
+        lora_ranks: The ranks of the LoRAs in the batch.
         grouped_row_offsets: The grouped sequence offsets that use LoRA
         max_lora_seq_len: The maximum sequence length of any given LoRA in the batch
         bias: The LoRA bias
@@ -5084,7 +5251,7 @@ def sgmv_qkv_lora_kernel(
         lora_ids_kv: LoRA IDs for KV projections (with offset for V portion).
         lora_grouped_offsets_kv: Grouped offsets for KV LoRA sequences.
         kv_collection: The KV cache.
-        kv_params: The KV params.
+        kv_params: The key-value cache configuration parameters.
         layer_idx: The layer index to retrieve the KV cache.
         max_lora_seq_len: The maximum sequence length of any given LoRA in the batch.
         max_rank: The maximum rank for the LoRAs.
@@ -5587,9 +5754,9 @@ def tpool_patch_merger(
     grid_thws: TensorValue,
     kH: int,
     kW: int,
-    max_h: int,
-    max_w: int,
-    total_output_patches: int,
+    max_h: int | TensorValue,
+    max_w: int | TensorValue,
+    total_output_patches: int | str = "total_output_patches",
 ) -> TensorValue:
     """Performs temporal pooling patch merger on ragged video tokens.
 
@@ -5606,9 +5773,14 @@ def tpool_patch_merger(
         kH: Merge kernel height.
         kW: Merge kernel width.
         max_h: Maximum ``H`` across all videos in the batch (for grid sizing).
+            May be a Python int (baked as a graph constant) or a
+            ``TensorValue`` computed at runtime (e.g. via ``ops.max``).
         max_w: Maximum ``W`` across all videos in the batch (for grid sizing).
-        total_output_patches: Total number of output patches, that is,
-            ``sum(H_i * W_i)`` over all videos.
+            May be a Python int or a ``TensorValue``.
+        total_output_patches: Total number of output patches, i.e.
+            ``sum(H_i * W_i)`` over all videos.  Pass an ``int`` for a
+            statically-shaped output or a ``str`` dimension name (default
+            ``"total_output_patches"``) for a dynamically-shaped output.
 
     Returns:
         Output tensor of shape ``[total_output_patches, D]``.
@@ -5636,6 +5808,17 @@ def tpool_patch_merger(
 
     D = input.shape[-1]
 
+    max_h_val = (
+        ops.constant(max_h, dtype=DType.int32, device=DeviceRef.CPU())
+        if isinstance(max_h, int)
+        else max_h
+    )
+    max_w_val = (
+        ops.constant(max_w, dtype=DType.int32, device=DeviceRef.CPU())
+        if isinstance(max_w, int)
+        else max_w
+    )
+
     return ops.custom(
         "tpool_patch_merger",
         device=input.device,
@@ -5644,8 +5827,8 @@ def tpool_patch_merger(
             grid_thws,
             ops.constant(kH, dtype=DType.int32, device=DeviceRef.CPU()),
             ops.constant(kW, dtype=DType.int32, device=DeviceRef.CPU()),
-            ops.constant(max_h, dtype=DType.int32, device=DeviceRef.CPU()),
-            ops.constant(max_w, dtype=DType.int32, device=DeviceRef.CPU()),
+            max_h_val,
+            max_w_val,
         ],
         out_types=[
             TensorType(

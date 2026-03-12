@@ -646,6 +646,88 @@ def test_layout_reverse() raises:
     assert_equal(rev1d.stride[0]().value(), 1)
 
 
+def test_layout_transpose() raises:
+    """Test Layout.transpose() reverses dimensions (same as reverse)."""
+    # row_major[3,4] has shape (3,4), strides (4,1).
+    # Transposed: shape (4,3), strides (1,4).
+    var layout = row_major[3, 4]()
+    var trans = layout.transpose()
+    assert_equal(trans.shape[0]().value(), 4)
+    assert_equal(trans.shape[1]().value(), 3)
+    assert_equal(trans.stride[0]().value(), 1)
+    assert_equal(trans.stride[1]().value(), 4)
+
+    # Products should be identical.
+    assert_equal(trans.product(), layout.product())
+
+    # col_major[2,5] transposed should look row-major.
+    var layout2 = col_major[2, 5]()
+    var trans2 = layout2.transpose()
+    assert_equal(trans2.shape[0]().value(), 5)
+    assert_equal(trans2.shape[1]().value(), 2)
+    assert_equal(trans2.stride[0]().value(), 2)
+    assert_equal(trans2.stride[1]().value(), 1)
+
+    # 3D transpose reverses all dimensions.
+    var layout3 = row_major[2, 3, 4]()
+    var trans3 = layout3.transpose()
+    assert_equal(trans3.shape[0]().value(), 4)
+    assert_equal(trans3.shape[1]().value(), 3)
+    assert_equal(trans3.shape[2]().value(), 2)
+    assert_equal(trans3.stride[0]().value(), 1)
+    assert_equal(trans3.stride[1]().value(), 4)
+    assert_equal(trans3.stride[2]().value(), 12)
+
+    # 1D transpose is identity.
+    var layout1d = row_major[7]()
+    var trans1d = layout1d.transpose()
+    assert_equal(trans1d.shape[0]().value(), 7)
+    assert_equal(trans1d.stride[0]().value(), 1)
+
+
+def test_tile_tensor_transpose() raises:
+    """Test TileTensor.transpose() creates a transposed view."""
+    var storage = InlineArray[Float32, 6](uninitialized=True)
+    var tensor = TileTensor(storage, row_major[2, 3]())
+
+    # Fill with distinct values
+    tensor[0, 0] = 0.0
+    tensor[0, 1] = 1.0
+    tensor[0, 2] = 2.0
+    tensor[1, 0] = 3.0
+    tensor[1, 1] = 4.0
+    tensor[1, 2] = 5.0
+
+    var trans = tensor.transpose()
+
+    # Transposed shape should be (3, 2)
+    assert_equal(trans.dim[0](), 3)
+    assert_equal(trans.dim[1](), 2)
+
+    # Transposed access: trans[col, row] == tensor[row, col]
+    assert_equal(trans[0, 0], 0.0)
+    assert_equal(trans[1, 0], 1.0)
+    assert_equal(trans[2, 0], 2.0)
+    assert_equal(trans[0, 1], 3.0)
+    assert_equal(trans[1, 1], 4.0)
+    assert_equal(trans[2, 1], 5.0)
+
+
+def test_tile_tensor_transpose_is_view() raises:
+    """Test that transpose creates a view, not a copy."""
+    var storage = InlineArray[Float32, 6](uninitialized=True)
+    var tensor = TileTensor(storage, row_major[2, 3]()).fill(0.0)
+
+    var trans = tensor.transpose()
+
+    # Modify through transposed view
+    trans[1, 0] = 42.0
+
+    # Verify change is visible in original tensor
+    # trans[1, 0] maps to tensor[0, 1]
+    assert_equal(tensor[0, 1], 42.0)
+
+
 def test_tile_tensor_flat_indexing_with_coord() raises:
     """Test flat indexing using Coord on nested layout."""
     var block = row_major[2, 2]()

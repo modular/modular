@@ -241,12 +241,8 @@ struct cudnnForwardMode_t(
         abort("invalid cudnnForwardMode_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnForwardMode_t({self})"
+        return String(t"cudnnForwardMode_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -798,12 +794,8 @@ struct cudnnSeqDataAxis_t(
         abort("invalid cudnnSeqDataAxis_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnSeqDataAxis_t({self})"
+        return String(t"cudnnSeqDataAxis_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)

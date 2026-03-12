@@ -93,28 +93,6 @@ struct GEMVAlgorithm(ImplicitlyCopyable, Writable):
     fn __isnot__(self, other: Self) -> Bool:
         return self != other
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Returns the string representation of this algorithm.
-
-        Returns:
-            String: A human-readable string representation of the algorithm.
-        """
-        if self is Self.GEMV_KERNEL:
-            return "GEMV_KERNEL"
-        elif self is Self.GEMV_KERNEL_VECTOR:
-            return "GEMV_KERNEL_VECTOR"
-        elif self is Self.GEMV_SPLIT_K:
-            return "GEMV_SPLIT_K"
-        elif self is Self.GEVM_KERNEL_VECTOR:
-            return "GEVM_KERNEL_VECTOR"
-        elif self is Self.GEVM_KERNEL:
-            return "GEVM_KERNEL"
-        elif self is Self.MATMUL_NAIVE:
-            return "MATMUL_NAIVE"
-        else:
-            return t"UNKNOWN_GEMV_ALGORITHM({self._value})"
-
     fn write_to(self, mut writer: Some[Writer]):
         writer.write(String(self))
 
@@ -1067,14 +1045,11 @@ fn gemv[
 
 
 fn naive_gemv[
-    c_size: Dim,
-    a_shape: DimList,
-    b_size: Dim,
-    dtype: DType,
+    dtype: DType
 ](
-    c_buf: NDBuffer[mut=True, rank=1, dtype, _, c_size],
-    a_buf: NDBuffer[rank=2, dtype, _, a_shape],
-    b_buf: NDBuffer[rank=1, dtype, _, b_size],
+    c_buf: NDBuffer[mut=True, rank=1, dtype, _, _],
+    a_buf: NDBuffer[rank=2, dtype, _, _],
+    b_buf: NDBuffer[rank=1, dtype, _, _],
 ):
     var M = a_buf.dim[0]()
     var K = a_buf.dim[1]()

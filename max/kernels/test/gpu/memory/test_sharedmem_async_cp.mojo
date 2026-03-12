@@ -43,7 +43,7 @@ fn copy_via_shared(
     var state = sync.mbarrier_arrive(m_barrier)
     var not_wait = False
     while not not_wait:
-        time.sleep(100 * 1e-6)
+        std.time.sleep(100 * 1e-6)
         not_wait = sync.mbarrier_test_wait(m_barrier, state)
 
     dst[thread_id] = mem_buff[thread_id]

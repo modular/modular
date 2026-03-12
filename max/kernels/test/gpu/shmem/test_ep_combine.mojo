@@ -429,7 +429,7 @@ fn test_combine[
         )
 
         # sleep 10 ms to make sure transfer is finished
-        time.sleep(1e-2)
+        std.time.sleep(1e-2)
 
         new_value = ctx.execution_time[run_combine_async_wait](1) * 1e-3
         welford_update(

@@ -219,6 +219,22 @@ comptime internal_sf_k_major[
 
 
 # ============================================================================
+# sf_tile_dim0/dim1 -- Compute SF tile dimensions from matmul tile parameters
+# ============================================================================
+
+# dim0 for internal_sf_k_major: (BM // SF_MN_GROUP_SIZE) * SF_ATOM_M[0]
+# BM is the M-dimension (or align_up(MMA_N, SF_MN_GROUP_SIZE) for SFB).
+comptime sf_tile_dim0[BM: Int] = (BM // _SF_MN_GROUP_SIZE) * _SF_ATOM_M_0
+
+# dim1 for internal_sf_k_major:
+#   (sf_bk // (SF_ATOM_K * vec_sf_size)) * (SF_ATOM_M[1] * SF_ATOM_K)
+# sf_bk = SF_K_GROUP_SIZE * num_sf_k_tiles (NOT raw BK).
+comptime sf_tile_dim1[sf_bk: Int, vec_sf_size: Int] = (
+    sf_bk // (_SF_ATOM_K * vec_sf_size)
+) * (_SF_ATOM_M_1 * _SF_ATOM_K)
+
+
+# ============================================================================
 # Core TileTensor type for shared memory
 # ============================================================================
 

@@ -182,9 +182,9 @@ fn create_matmul_test_case[
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
     matmul_test_case[
         DType.float32,
-        DimList(m.dim, n.dim),
-        DimList(m.dim, k.dim),
-        DimList(k.dim, n.dim),
+        DimList[m.dim, n.dim](),
+        DimList[m.dim, k.dim](),
+        DimList[k.dim, n.dim](),
     ]((m.value, n.value), (m.value, k.value), (k.value, n.value), ctx)
 
 

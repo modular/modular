@@ -819,12 +819,14 @@ struct MmaOpSM100_BlockScaled_SS[
             self._copy_sf_to_tmem_tt[
                 Self.sfa_dtype, sfa_layout, Self.block_tile_shape[0], 0
             ](sfa_smem, sfa_tmem)
-            self._copy_sf_to_tmem_tt[
-                Self.sfb_dtype,
-                sfb_layout,
-                align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
-                0,
-            ](sfb_smem, sfb_tmem)
+            # only use tcgen_cp for MMA_N shapes that already meet the SFB TMEM alignment requirement. For the rest shapes, we will load them manually using tcgen_st
+            comptime if Self.mma_shape[1] % 64 == 0:
+                self._copy_sf_to_tmem_tt[
+                    Self.sfb_dtype,
+                    sfb_layout,
+                    align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
+                    0,
+                ](sfb_smem, sfb_tmem)
 
         comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
             comptime a_offset = a_layout(IntTuple(0, k)) * size_of[
@@ -863,12 +865,14 @@ struct MmaOpSM100_BlockScaled_SS[
                     Self.block_tile_shape[0],
                     sf_idx,
                 ](sfa_smem, sfa_tmem)
-                self._copy_sf_to_tmem_tt[
-                    Self.sfb_dtype,
-                    sfb_layout,
-                    align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
-                    sf_idx,
-                ](sfb_smem, sfb_tmem)
+                # only use tcgen_cp for MMA_N shapes that already meet the SFB TMEM alignment requirement. For the rest shapes, we will load them manually using tcgen_st
+                comptime if Self.mma_shape[1] % 64 == 0:
+                    self._copy_sf_to_tmem_tt[
+                        Self.sfb_dtype,
+                        sfb_layout,
+                        align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
+                        sf_idx,
+                    ](sfb_smem, sfb_tmem)
 
                 mma[Self.cta_group](
                     a_desc + a_offset,

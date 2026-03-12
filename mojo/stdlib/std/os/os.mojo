@@ -22,6 +22,7 @@ from std.os import listdir
 
 from std.collections import InlineArray, List
 from std.collections.string.string_slice import _unsafe_strlen
+from std.format.tstring import TString
 from std.io import FileDescriptor
 from std.ffi import c_char, c_int, external_call, get_errno
 from std.sys import CompilationTarget, is_gpu
@@ -249,6 +250,23 @@ fn abort[*, prefix: StaticString = "ABORT:"](message: String) -> Never:
 
     Args:
         message: The message to include when aborting.
+    """
+
+    comptime if not is_gpu():
+        print(prefix, message, flush=True)
+
+    abort()
+
+
+@always_inline
+fn abort[*, prefix: StaticString = "ABORT:"](message: TString) -> Never:
+    """Calls a target dependent trap instruction if available.
+
+    Parameters:
+        prefix: A static string prefix to include before the message.
+
+    Args:
+        message: The t-string message to include when aborting.
     """
 
     comptime if not is_gpu():

@@ -609,7 +609,7 @@ struct HopperMatmulSM90Kernel[
             c_tile_lt,
             warp_group_thread_idx,
             local_warp_group_idx,
-            Int(local_thread_idx),
+            local_thread_idx,
             block_y,
             block_x,
         )

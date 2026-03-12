@@ -180,7 +180,7 @@ def execute_kv_cache_ragged_flash_attention[
     )
 
     # Q tensor allocation
-    comptime static_q_shape = DimList(Dim(), num_q_heads, head_dim)
+    comptime static_q_shape = DimList[Dim(), num_q_heads, head_dim]()
     var q_size = Int(total_seq_len) * num_q_heads * head_dim
     var q_host_ptr = alloc[Scalar[dtype]](q_size)
     var q_host = NDBuffer[rank=3, dtype, _, static_q_shape](

@@ -4640,7 +4640,7 @@ fn mha_splitk_reduce[
     # ensure exp_sums is written to before reading
     barrier()
 
-    var exp_sum = warp.shuffle_idx(warp.sum(rescaled_exp_sum), 0)
+    var exp_sum = warp.sum(rescaled_exp_sum)
 
     var inv_global_exp_sum = 1.0 / exp_sum
 

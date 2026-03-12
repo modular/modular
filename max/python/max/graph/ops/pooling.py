@@ -33,18 +33,30 @@ def avg_pool2d(
 ) -> TensorValue:
     """Perform a 2D average pooling operation on the input tensor.
 
-    This function applies a 2D average pooling operation to the input tensor [N, H, W, C].
-    The pooling operation slides a window of size `kernel_size` over the input
-    tensor, and computes the average value within each window.
+    Applies a 2D average pooling operation to the input tensor with layout
+    ``[N, H, W, C]``. The pooling operation slides a window of size
+    ``kernel_size`` over the spatial dimensions and computes the average
+    value within each window.
 
     Args:
-        input: The input tensor to perform the pooling operation on.
-        kernel_size: The size of the sliding blocks.
-        stride: The stride of the sliding blocks in the input dimension.
-        dilation: The spacing between the kernel elements.
-        padding: 0-paddings to be added on both sides of the inputs.
-        ceil_mode: If true, use ceil instead of floor to compute the output shape.
-        count_boundary: If true, count the padding elements when computing the average.
+        input: The input tensor with shape ``[N, H, W, C]``.
+        kernel_size: The height and width of the sliding window.
+        stride: The stride of the sliding window. Can be a single integer
+            applied to both spatial dimensions or a tuple ``(stride_h,
+            stride_w)``. Defaults to 1.
+        dilation: The spacing between kernel elements. Can be a single
+            integer or a tuple ``(dilation_h, dilation_w)``. Defaults to 1.
+        padding: Zero-padding added to both sides of each spatial dimension.
+            Can be a single integer or a tuple ``(pad_h, pad_w)``.
+            Defaults to 0.
+        ceil_mode: If ``True``, uses ceil instead of floor when computing
+            the output spatial shape. Defaults to ``False``.
+        count_boundary: If ``True``, includes padding elements in the
+            divisor when computing the average. Defaults to ``True``.
+
+    Returns:
+        A symbolic tensor with the average pooling applied, with shape
+        ``[N, H_out, W_out, C]``.
     """
     input = TensorValue(input)
 
@@ -79,17 +91,28 @@ def max_pool2d(
 ) -> TensorValue:
     """Perform a 2D max pooling operation on the input tensor.
 
-    This function applies a 2D max pooling operation to the input tensor [N, H, W, C].
-    The pooling operation slides a window of size `kernel_size` over the input
-    tensor, and selects the maximum value within each window.
+    Applies a 2D max pooling operation to the input tensor with layout
+    ``[N, H, W, C]``. The pooling operation slides a window of size
+    ``kernel_size`` over the spatial dimensions and selects the maximum
+    value within each window.
 
     Args:
-        input: The input tensor to perform the pooling operation on.
-        kernel_size: The size of the sliding blocks.
-        stride: The stride of the sliding blocks in the input dimension.
-        dilation: The spacing between the kernel elements.
-        padding: 0-paddings to be added on both sides of the inputs.
-        ceil_mode: If true, use ceil instead of floor to compute the output shape.
+        input: The input tensor with shape ``[N, H, W, C]``.
+        kernel_size: The height and width of the sliding window.
+        stride: The stride of the sliding window. Can be a single integer
+            applied to both spatial dimensions or a tuple ``(stride_h,
+            stride_w)``. Defaults to 1.
+        dilation: The spacing between kernel elements. Can be a single
+            integer or a tuple ``(dilation_h, dilation_w)``. Defaults to 1.
+        padding: Zero-padding added to both sides of each spatial dimension.
+            Can be a single integer or a tuple ``(pad_h, pad_w)``.
+            Defaults to 0.
+        ceil_mode: If ``True``, uses ceil instead of floor when computing
+            the output spatial shape. Defaults to ``False``.
+
+    Returns:
+        A symbolic tensor with the max pooling applied, with shape
+        ``[N, H_out, W_out, C]``.
     """
     input = TensorValue(input)
 

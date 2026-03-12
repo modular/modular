@@ -626,7 +626,7 @@ struct Grouped1D1DMatmulKernel[
         var mma_complete_mask = UInt16((1 << Self.cta_group) - 1)
 
         # K iteration count
-        var num_k_iters = Int(ceildiv(Int(K), Self.BK))
+        var num_k_iters = ceildiv(Int(K), Self.BK)
 
         # ===== Barrier Initialization =====
         Self.init_barriers(

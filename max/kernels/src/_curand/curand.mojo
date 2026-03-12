@@ -258,7 +258,7 @@ struct curandRngType(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"curandRngType({self})"
+        return String(t"curandRngType({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -609,7 +609,7 @@ struct curandMethod(Equatable, Identifiable, TrivialRegisterPassable, Writable):
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"curandMethod({self})"
+        return String(t"curandMethod({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -765,7 +765,7 @@ struct curandStatus(Equatable, Identifiable, TrivialRegisterPassable, Writable):
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"curandStatus({self})"
+        return String(t"curandStatus({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -812,7 +812,7 @@ struct curandDirectionVectorSet(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"curandDirectionVectorSet({self})"
+        return String(t"curandDirectionVectorSet({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1284,7 +1284,7 @@ struct curandOrdering(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"curandOrdering({self})"
+        return String(t"curandOrdering({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)

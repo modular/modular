@@ -479,7 +479,7 @@ fn _matmul_gpu[
     )
     # fmt: off
     # Require Static K, N in A, B, C
-    comptime has_static_NK = b_shape.all_known[2]() \
+    comptime has_static_NK = b_shape.all_known() \
                       and a_shape.has_value[1]() \
                       and c_shape.has_value[1]()
 

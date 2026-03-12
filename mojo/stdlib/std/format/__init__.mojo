@@ -83,6 +83,7 @@ from std.reflection import (
 )
 from std.reflection.type_info import _unqualified_type_name
 
+from .repr import repr
 
 # ===-----------------------------------------------------------------------===#
 # Writer

@@ -47,11 +47,6 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
     fn is_valid(self) -> Bool:
         return self.is_valid_tile
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         writer.write(

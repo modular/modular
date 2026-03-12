@@ -1822,12 +1822,14 @@ struct StaticBroadcastTo:
         in_rank: Int,
         input_shape: DimList,
         input_strides: DimList,
-    ]() -> DimList:
-        return DimList.from_index_list[
+    ]() -> DimList[
+        *DimList.from_index_list[
             Self.get_view_strides_list[
                 out_rank, in_rank, input_shape, input_strides
             ]()
-        ]()
+        ]().values
+    ]:
+        return {}
 
     @staticmethod
     fn update_input_view[
@@ -1882,8 +1884,10 @@ struct StaticBroadcastTo:
 @compiler.view_kernel
 struct StaticReshape:
     @staticmethod
-    fn get_view_strides[out_shape: DimList]() -> DimList:
-        return DimList.get_row_major_strides[out_shape]()
+    fn get_view_strides[
+        out_shape: DimList
+    ]() -> DimList[*out_shape.get_row_major_strides().values]:
+        return {}
 
     @staticmethod
     fn update_input_view[
@@ -1993,12 +1997,12 @@ struct Transpose:
     @staticmethod
     fn get_view_strides[
         permutations: DimList, rank: Int, input_strides: DimList
-    ]() -> DimList:
-        return DimList(
-            Variadic.tabulate[
-                rank, _transpose_tabulate[permutations, input_strides, _]
-            ]
-        )
+    ]() -> DimList[
+        *Variadic.tabulate[
+            rank, _transpose_tabulate[permutations, input_strides, _]
+        ]
+    ]:
+        return {}
 
     @staticmethod
     fn update_input_view[
@@ -2090,10 +2094,10 @@ struct Slice:
     @staticmethod
     fn get_view_strides[
         rank: Int, input_strides: DimList, steps: DimList
-    ]() -> DimList:
-        return DimList(
-            Variadic.tabulate[rank, _slice_stride_at[input_strides, steps, _]]
-        )
+    ]() -> DimList[
+        *Variadic.tabulate[rank, _slice_stride_at[input_strides, steps, _]]
+    ]:
+        return {}
 
     @staticmethod
     fn update_input_view[
@@ -2245,12 +2249,12 @@ struct SliceDim:
         axis: Int,
         input_strides: DimList,
         step: Dim,
-    ]() -> DimList:
-        return DimList(
-            Variadic.tabulate[
-                rank, _slice_dim_stride_at[input_strides, axis, step, _]
-            ]
-        )
+    ]() -> DimList[
+        *Variadic.tabulate[
+            rank, _slice_dim_stride_at[input_strides, axis, step, _]
+        ]
+    ]:
+        return {}
 
     @staticmethod
     fn get_view_alignment[
@@ -4897,6 +4901,103 @@ struct Conv:
                 num_groups,
             )
         )
+
+
+@compiler.register("conv2d_residual_add")
+struct Conv2dResidualAdd:
+    """Fused conv2d + TMA residual add + bias for SM100 (Blackwell).
+
+    Computes: D = Conv(input, filter) + bias + source
+    The residual (source) is loaded via TMA pre-fetch overlapped with MMA,
+    and the bias is applied in the epilogue.
+
+    This op is intended for ResNet-style skip connections where a residual
+    tensor is added to the convolution output.
+    """
+
+    @staticmethod
+    fn execute[
+        stride_h: Int,
+        stride_w: Int,
+        pad_top: Int,
+        pad_bottom: Int,
+        pad_left: Int,
+        pad_right: Int,
+        has_bias: Bool,
+        target: StaticString,
+    ](
+        output: FusedOutputTensor[...],
+        input: InputTensor[dtype=output.dtype, rank=4, ...],
+        filter: InputTensor[rank=4, ...],
+        source: InputTensor[dtype=output.dtype, rank=4, ...],
+        bias: InputTensor[dtype=output.dtype, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        fn output_fn[
+            _dtype: DType, _rank: Int, _width: Int
+        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+            var result = val
+
+            comptime if has_bias:
+                var c_idx = coords[_rank - 1]
+                var bias_vec = (bias.unsafe_ptr() + c_idx).load[width=_width]()
+                result = val + bias_vec.cast[_dtype]()
+
+            output._lambda_store[width=_width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, _width]](result),
+            )
+
+        comptime assert not is_cpu[
+            target
+        ](), "conv2d_residual_add is only supported on GPU"
+
+        var cuda_ctx = ctx.get_device_context()
+        var input_buf = input.to_layout_tensor()
+        var filter_buf = filter.to_layout_tensor()
+        var output_buf = output.to_layout_tensor()
+
+        var pad_tuple = IndexList[4](pad_top, pad_bottom, pad_left, pad_right)
+        var stride_tuple = IndexList[2](stride_h, stride_w)
+        var dilation_tuple = IndexList[2](1, 1)
+
+        with Trace[TraceLevel.OP, target=target](
+            "conv2d_residual_add", task_id=get_safe_task_id(ctx)
+        ):
+            conv_gpu[
+                input_buf.layout,
+                filter_buf.layout,
+                output_buf.layout,
+                input.dtype,
+                filter.dtype,
+                output.dtype,
+                output_fn,
+                True,  # filter_is_fcrs
+                has_residual=True,
+            ](
+                input_buf,
+                filter_buf,
+                output_buf,
+                stride_tuple,
+                dilation_tuple,
+                pad_tuple,
+                1,  # num_groups
+                cuda_ctx,
+                source.unsafe_ptr().as_any_origin(),
+                Float32(1.0),  # beta
+            )
+
+    @staticmethod
+    fn shape(
+        input: InputTensor[rank=4, ...],
+        filter: InputTensor[rank=4, ...],
+        source: InputTensor[rank=4, ...],
+        bias: InputTensor[rank=1, ...],
+    ) raises -> IndexList[4]:
+        # Output shape is the same as source shape (residual tensor).
+        return source.shape()
 
 
 @compiler.register("mo.conv_transpose")
@@ -7679,6 +7780,7 @@ struct Struct_mla_compute_dispatch_args_scalar:
     @staticmethod
     fn execute[
         num_heads: Int,
+        is_fp8_kv: Bool,
         target: StaticString,
     ](
         output: OutputTensor[dtype=DType.int64, rank=1, ...],
@@ -7701,7 +7803,10 @@ struct Struct_mla_compute_dispatch_args_scalar:
         var q_max_seq_len = Int(q_max_seq_len_tensor.unsafe_ptr()[0])
 
         comptime sm_count = ctx.default_device_info.sm_count
-        var scalars = compute_mla_dispatch_scalars[num_heads=num_heads](
+        var scalars = compute_mla_dispatch_scalars[
+            num_heads=num_heads,
+            is_fp8_kv=is_fp8_kv,
+        ](
             batch_size,
             max_cache_valid_length,
             q_max_seq_len,
@@ -11253,7 +11358,7 @@ struct MatmulStaticScaledFloat8:
         comptime N = weight.shape.get[0]()
         var M = input.dim[0]()
         var output_dummy = NDBuffer[
-            rank=2, DType.float32, MutAnyOrigin, DimList(Dim(), N)
+            rank=2, DType.float32, MutAnyOrigin, DimList[Dim(), N]()
         ](
             {},
             IndexList[2](M, N),

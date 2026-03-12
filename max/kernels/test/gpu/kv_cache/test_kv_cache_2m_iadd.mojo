@@ -335,7 +335,7 @@ fn test_kv_cache_2m_iadd_gpu[
         ctx,
     )
     var a_host = NDBuffer[
-        rank=2, dtype, _, DimList(Dim(), num_heads * head_dim)
+        rank=2, dtype, _, DimList[Dim(), num_heads * head_dim]()
     ](a.tensor[update=False]().ptr, a_shape)
     for i in range(a_host.num_elements()):
         a_host.data[i] = Scalar[dtype](i)
@@ -531,7 +531,7 @@ fn test_kv_cache_2m_iadd_cpu[
     var a_size = 2 * total_slice_length * num_heads * head_dim
     var a_host_ptr = alloc[Scalar[dtype]](a_size)
     var a_host = NDBuffer[
-        rank=2, dtype, _, DimList(Dim(), num_heads * head_dim)
+        rank=2, dtype, _, DimList[Dim(), num_heads * head_dim]()
     ](a_host_ptr, a_shape)
     for i in range(a_host.num_elements()):
         a_host.data[i] = Scalar[dtype](i)

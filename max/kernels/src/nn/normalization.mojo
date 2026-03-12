@@ -162,25 +162,6 @@ fn welford_warp_reduce[
         welford_combine(mean, m2, count, res_mean, res_m2, res_count)
 
 
-fn welford_warp_all_reduce[
-    dtype: DType, //
-](
-    thread_mean: Scalar[dtype],
-    thread_m2: Scalar[dtype],
-    thread_count: Scalar[dtype],
-    mut res_mean: Scalar[dtype],
-    mut res_m2: Scalar[dtype],
-    mut res_count: Scalar[dtype],
-):
-    welford_warp_reduce(
-        thread_mean, thread_m2, thread_count, res_mean, res_m2, res_count
-    )
-    # broadcasting res from warp lane_id 0 to all in a warp
-    res_mean = warp.broadcast(res_mean)
-    res_m2 = warp.broadcast(res_m2)
-    res_count = warp.broadcast(res_count)
-
-
 fn welford_block_all_reduce[
     dtype: DType, //
 ](
@@ -368,14 +349,13 @@ fn layer_norm_gpu_block[
     var row_mean = Scalar[accum_type]()
     var row_m2 = Scalar[accum_type]()
     var row_count = Scalar[accum_type]()
+    var thread_mean = Scalar[accum_type]()
+    var thread_m2 = Scalar[accum_type]()
+    var thread_count = Scalar[accum_type]()
 
     with PDL():
         # Every block has a single row to process
         for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
-            var thread_mean = Scalar[accum_type]()
-            var thread_m2 = Scalar[accum_type]()
-            var thread_count = Scalar[accum_type]()
-
             var offset = x * block_dim.x * simd_width + tid * simd_width
 
             if offset < num_cols:
@@ -388,16 +368,16 @@ fn layer_norm_gpu_block[
                         vec_data[Int(i)], thread_mean, thread_m2, thread_count
                     )
 
-            # a whole block computes part of the row main and variance and broadcasts to
-            # thread_idx 0 to update the final row mean and variance
-            welford_block_all_reduce(
-                thread_mean,
-                thread_m2,
-                thread_count,
-                row_mean,
-                row_m2,
-                row_count,
-            )
+        # a whole block computes part of the row main and variance and broadcasts to
+        # thread_idx 0 to update the final row mean and variance
+        welford_block_all_reduce(
+            thread_mean,
+            thread_m2,
+            thread_count,
+            row_mean,
+            row_m2,
+            row_count,
+        )
 
         var row_var = max(row_m2 / row_count, 0)
         var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())

@@ -362,11 +362,8 @@ fn print[
 
     This function accepts any number of values, but their types must implement
     the [`Writable`](/mojo/std/format/Writable) trait. Most built-in types
-    (like `Int`, `Float64`, `Bool`, `String`) implement both
-    [`Stringable`](/mojo/std/builtin/str/Stringable/) and
-    [`Writable`](/mojo/std/format/Writable) traits. If a type only
-    implements `Stringable`, it can still be printed by first converting it to
-    `String`.
+    (like `Int`, `Float64`, `Bool`, `String`) implement the
+    [`Writable`](/mojo/std/format/Writable) trait.
 
     For string formatting, use the
     [`format()`](/mojo/std/collections/string/string/String#format) function.

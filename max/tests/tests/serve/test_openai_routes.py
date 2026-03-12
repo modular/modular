@@ -12,10 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import asyncio
+import contextlib
+import json
 import logging
 from collections.abc import Generator
 from contextlib import contextmanager
 from threading import Thread
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
@@ -33,10 +37,13 @@ from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
 )
-from max.serve.pipelines.llm import TokenGeneratorOutput
+from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
 from max.serve.router.openai_routes import (
     OpenAIChatResponseGenerator,
+    _await_or_cancel_on_disconnect,
+    _ClientDisconnectedError,
     _process_chat_log_probabilities,
+    openai_create_chat_completion,
 )
 from max.serve.schemas.openai import (
     ChatCompletionStreamOptions,
@@ -470,13 +477,129 @@ def _make_mock_request() -> Mock:
 
 @contextmanager
 def _patch_openai_metrics() -> Generator[None, None, None]:
-    """Patch metrics for reasoning tests."""
+    """Patch metrics so unit tests can exercise route helpers in isolation."""
     with (
         patch("max.serve.router.openai_routes.METRICS", MagicMock()),
         patch("max.serve.router.openai_routes.record_request_start"),
         patch("max.serve.router.openai_routes.record_request_end"),
     ):
         yield
+
+
+def _make_disconnect_request(
+    *,
+    pipeline: TokenGeneratorPipeline,
+    pipeline_config: PipelineConfig,
+    request_started: asyncio.Event,
+    body: bytes,
+) -> Mock:
+    """Creates a request that disconnects once generation begins."""
+
+    async def mock_receive() -> dict[str, str]:
+        await request_started.wait()
+        return {"type": "http.disconnect"}
+
+    request = Mock()
+    request._is_disconnected = False
+    request.app = SimpleNamespace(
+        state=SimpleNamespace(
+            pipeline=pipeline,
+            pipeline_config=pipeline_config,
+            settings=Settings(api_types=[APIType.OPENAI], use_heartbeat=False),
+        )
+    )
+    request.body = AsyncMock(return_value=body)
+    request.headers = {}
+    request.receive = mock_receive
+    request.state = SimpleNamespace(
+        request_id="disconnect-test",
+        request_timer=Mock(start_ns=1, elapsed_ms=0.0),
+    )
+    request.url = SimpleNamespace(path="/v1/chat/completions")
+    return request
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_cancels_disconnected_request(
+    mock_pipeline_config: PipelineConfig,
+) -> None:
+    """Regression test for the zombie-request bug in chat completions."""
+
+    request_started = asyncio.Event()
+
+    model_worker = Mock()
+    model_worker.cancel = Mock()
+
+    pipeline = TokenGeneratorPipeline(
+        model_name="echo",
+        tokenizer=EchoPipelineTokenizer(),
+        model_worker=model_worker,
+    )
+
+    async def mock_all_tokens(_: Any) -> list[TokenGeneratorOutput]:
+        request_started.set()
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    request_body = json.dumps(
+        simple_openai_request(model_name="echo", content="test data")
+    ).encode("utf-8")
+    mock_request = _make_disconnect_request(
+        pipeline=pipeline,
+        pipeline_config=mock_pipeline_config,
+        request_started=request_started,
+        body=request_body,
+    )
+
+    with (
+        _patch_openai_metrics(),
+        patch.object(pipeline, "all_tokens", side_effect=mock_all_tokens),
+    ):
+        task = asyncio.create_task(openai_create_chat_completion(mock_request))
+        try:
+            await asyncio.wait_for(request_started.wait(), timeout=1.0)
+            await asyncio.sleep(0.2)
+
+            model_worker.cancel.assert_called_once_with(
+                RequestID("disconnect-test")
+            )
+        finally:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+
+@pytest.mark.asyncio
+async def test_disconnect_wins_if_generation_finishes_cancelled() -> None:
+    """Disconnect wins if the request wrapper already observed the disconnect."""
+
+    request = Mock()
+    request._is_disconnected = True
+
+    async def mock_receive() -> dict[str, str]:
+        return {"type": "http.disconnect"}
+
+    request.receive = mock_receive
+
+    async def operation() -> list[TokenGeneratorOutput]:
+        return [
+            TokenGeneratorOutput(
+                status=GenerationStatus.CANCELLED,
+                token_count=0,
+            )
+        ]
+
+    cancel_request = Mock()
+
+    with pytest.raises(_ClientDisconnectedError):
+        await _await_or_cancel_on_disconnect(
+            request,
+            [RequestID("disconnect-test")],
+            operation(),
+            cancel_request,
+        )
+
+    cancel_request.assert_called_once_with(RequestID("disconnect-test"))
 
 
 @pytest.mark.asyncio

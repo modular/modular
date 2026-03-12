@@ -331,13 +331,13 @@ fn ld_matrix[
         d = rebind[SIMD[dtype, simd_width]](r0.join(r1).join(r2.join(r3)))
 
         # The following creates additional copies uint32 <-> 2xbf16 in matmul.
-        # @parameter
+        # comptime
         # for i in range(num_registers):
         #     var vec_per_register = bitcast[dtype, register_width](
         #         rebind[UInt32](r[i])
         #     )
 
-        #     @parameter
+        #     comptime
         #     for j in range(register_width):
         #         d[i * register_width + j] = vec_per_register[j]
 

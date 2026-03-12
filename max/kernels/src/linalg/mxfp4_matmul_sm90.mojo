@@ -81,15 +81,15 @@ fn mxfp4_matmul_sm90(
         b_fp8_tt,
         b_packed,
         b_scales,
-        num_rows=Int(static_N),
-        num_cols=Int(static_K),
+        num_rows=static_N,
+        num_cols=static_K,
     )
 
     # Step 2: Cast BF16 activations to FP8
     var a_fp8_buf = ctx.enqueue_create_buffer[fp8_type](M * static_K)
     var a_fp8_tt = TileTensor(a_fp8_buf, row_major((Idx(M), Idx[static_K]())))
 
-    _cast_bf16_to_fp8(ctx, a_fp8_tt, a, M, Int(static_K))
+    _cast_bf16_to_fp8(ctx, a_fp8_tt, a, M, static_K)
 
     # Step 3: FP8 GEMM via _matmul_gpu (handles dispatch + fallback)
     var c_ndbuf = NDBuffer[
@@ -105,7 +105,7 @@ fn mxfp4_matmul_sm90(
         Index(M, static_K),
     )
     var b_fp8_ndbuf = NDBuffer[
-        rank=2, fp8_type, MutAnyOrigin, DimList(static_N, static_K)
+        rank=2, fp8_type, MutAnyOrigin, DimList[static_N, static_K]()
     ](
         b_fp8_tt.ptr.bitcast[Scalar[fp8_type]]().as_any_origin(),
     )

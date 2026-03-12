@@ -14,7 +14,7 @@
 from std.math import isclose
 from std.random import rand
 
-from buffer import DimList, NDBuffer
+from layout import TileTensor, row_major
 from nn.conv import Naive2dConvolution
 
 from std.utils.index import Index
@@ -24,10 +24,14 @@ from std.utils.index import Index
 fn matmul[
     dtype: DType, //, N: Int, K: Int, M: Int, transpose_b: Bool
 ](
-    C: NDBuffer[mut=True, rank=2, dtype, _, _],
-    A: NDBuffer[rank=2, dtype, _, _],
-    B: NDBuffer[rank=2, dtype, _, _],
+    C: TileTensor[mut=True, dtype, element_size=1, ...],
+    A: TileTensor[dtype, element_size=1, ...],
+    B: TileTensor[dtype, element_size=1, ...],
 ):
+    comptime assert C.flat_rank == 2
+    comptime assert A.flat_rank == 2
+    comptime assert B.flat_rank == 2
+
     # TODO: Add comptime assert?
     comptime if transpose_b:
         for i in range(N):
@@ -53,61 +57,61 @@ fn matmul[
 fn winograd_2d_convolution_3x3[
     dtype: DType
 ](
-    signal: NDBuffer[rank=2, dtype, _, _],
-    kernel: NDBuffer[
-        rank=2, dtype, _, _
+    signal: TileTensor[dtype, element_size=1, ...],
+    kernel: TileTensor[
+        dtype, element_size=1, ...
     ],  # must be 3x3, let's comptime assert  somehow. Or parameter
-    output: NDBuffer[mut=True, rank=2, dtype, _, _],
+    output: TileTensor[mut=True, dtype, element_size=1, ...],
 ):
-    # Winograd transformation matrices as stack-allocated NDBuffers
+    comptime assert signal.flat_rank == 2
+    comptime assert kernel.flat_rank == 2
+    comptime assert output.flat_rank == 2
+
+    # Winograd transformation matrices as stack-allocated TileTensors
     # fmt: off
     var b_stack = InlineArray[Scalar[dtype], 16](uninitialized=True)
-    var B = NDBuffer[rank=2, dtype,_, DimList(4, 4)](b_stack.unsafe_ptr())
+    var B = TileTensor(b_stack, row_major[4, 4]())
     B[0,0] = 1.0; B[0,1] =  0.0; B[0,2] = -1.0; B[0,3] =  0.0
     B[1,0] = 0.0; B[1,1] =  1.0; B[1,2] =  1.0; B[1,3] =  0.0
     B[2,0] = 0.0; B[2,1] = -1.0; B[2,2] =  1.0; B[2,3] =  0.0
     B[3,0] = 0.0; B[3,1] =  1.0; B[3,2] =  0.0; B[3,3] = -1.0
 
     var g_stack = InlineArray[Scalar[dtype], 12](uninitialized=True)
-    var G = NDBuffer[rank=2, dtype, _,DimList(4, 3)](g_stack.unsafe_ptr())
+    var G = TileTensor(g_stack, row_major[4, 3]())
     G[0,0] = 1.0; G[0,1] =  0.0; G[0,2] = 0.0
     G[1,0] = 0.5; G[1,1] =  0.5; G[1,2] = 0.5
     G[2,0] = 0.5; G[2,1] = -0.5; G[2,2] = 0.5
     G[3,0] = 0.0; G[3,1] =  0.0; G[3,2] = 1.0
 
     var a_stack = InlineArray[Scalar[dtype], 8](uninitialized=True)
-    var A = NDBuffer[rank=2, dtype,_, DimList(2, 4)](a_stack.unsafe_ptr())
+    var A = TileTensor(a_stack, row_major[2, 4]())
     A[0,0] = 1.0; A[0,1] = 1.0; A[0,2] =  1.0; A[0,3] =  0.0
     A[1,0] = 0.0; A[1,1] = 1.0; A[1,2] = -1.0; A[1,3] = -1.0
     # fmt: on
 
     # Temporary buffers for intermediate results
     var scratch_stack = InlineArray[Scalar[dtype], 16](uninitialized=True)
-    var scratch = NDBuffer[rank=2, dtype, _, DimList(4, 4)](
-        scratch_stack.unsafe_ptr()
-    )
+    var scratch = TileTensor(scratch_stack, row_major[4, 4]())
     var g_t_stack = InlineArray[Scalar[dtype], 16](uninitialized=True)
-    var g_transformed = NDBuffer[rank=2, dtype, _, DimList(4, 4)](
-        g_t_stack.unsafe_ptr()
-    )
+    var g_transformed = TileTensor(g_t_stack, row_major[4, 4]())
 
     # Transform kernel: G @ kernel @ G^T
     matmul[4, 3, 3, False](scratch, G, kernel)
     matmul[4, 4, 3, True](g_transformed, scratch, G)
 
     # Process each 2x2 output tile
-    var H = signal.dim(0)
-    var W = signal.dim(1)
+    var H = Int(signal.dim[0]())
+    var W = Int(signal.dim[1]())
     var Oh = H - 2
     var Ow = W - 2
 
     # Additional temporary buffers
     var d_stack = InlineArray[Scalar[dtype], 16](uninitialized=True)
-    var d = NDBuffer[rank=2, dtype, _, DimList(4, 4)](d_stack.unsafe_ptr())
+    var d = TileTensor(d_stack, row_major[4, 4]())
     var m_stack = InlineArray[Scalar[dtype], 16](uninitialized=True)
-    var m = NDBuffer[rank=2, dtype, _, DimList(4, 4)](m_stack.unsafe_ptr())
+    var m = TileTensor(m_stack, row_major[4, 4]())
     var y_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var y = NDBuffer[rank=2, dtype, _, DimList(2, 2)](y_stack.unsafe_ptr())
+    var y = TileTensor(y_stack, row_major[2, 2]())
 
     for i in range(0, Oh, 2):
         for j in range(0, Ow, 2):
@@ -142,11 +146,13 @@ fn winograd_2d_convolution_3x3[
 fn outputs_are_close[
     dtype: DType
 ](
-    output_naive: NDBuffer[rank=2, dtype, _, _],
-    output_winograd: NDBuffer[rank=2, dtype, _, _],
+    output_naive: TileTensor[dtype, element_size=1, ...],
+    output_winograd: TileTensor[dtype, element_size=1, ...],
     Oh: Int,
     Ow: Int,
 ) -> Bool:
+    comptime assert output_naive.flat_rank == 2
+    comptime assert output_winograd.flat_rank == 2
     # Compare results
     for i in range(Oh):
         for j in range(Ow):
@@ -179,15 +185,11 @@ fn test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
     var output_ptr_winograd = alloc[Scalar[dtype]](Oh * Ow)
     var output_ptr_naive = alloc[Scalar[dtype]](Oh * Ow)
 
-    # Create NDBuffers
-    var input = NDBuffer[rank=2, dtype, _, DimList(H, W)](input_ptr)
-    var filter = NDBuffer[rank=2, dtype, _, DimList(Kh, Kw)](filter_ptr)
-    var output_winograd = NDBuffer[rank=2, dtype, _, DimList(Oh, Ow)](
-        output_ptr_winograd
-    )
-    var output_naive = NDBuffer[rank=2, dtype, _, DimList(Oh, Ow)](
-        output_ptr_naive
-    )
+    # Create TileTensors
+    var input = TileTensor(input_ptr, row_major[H, W]())
+    var filter = TileTensor(filter_ptr, row_major[Kh, Kw]())
+    var output_winograd = TileTensor(output_ptr_winograd, row_major[Oh, Ow]())
+    var output_naive = TileTensor(output_ptr_naive, row_major[Oh, Ow]())
 
     # Initialize with random values
     rand[dtype](input_ptr, H * W)

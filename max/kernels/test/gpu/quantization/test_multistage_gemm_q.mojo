@@ -436,13 +436,13 @@ fn test_repack_Q4_0_for_sm8x(
     comptime BK = 1024
     comptime group_bytes = 2 + (group_size // 2)
 
-    comptime static_gguf_b_shape = DimList(
+    comptime static_gguf_b_shape = DimList[
         n.dim, (k.dim // group_size) * group_bytes
-    )
-    comptime static_repacked_b_shape = DimList(
+    ]()
+    comptime static_repacked_b_shape = DimList[
         n.dim, (k.dim // group_size) * group_bytes
-    )
-    comptime static_dequan_shape = DimList(k.dim, n.dim)
+    ]()
+    comptime static_dequan_shape = DimList[k.dim, n.dim]()
 
     var dynamic_gguf_b_shape = IndexList[2](
         n.value, (k.value // group_size) * group_bytes
@@ -641,12 +641,12 @@ fn test_quantized[
     var N = n.value
     var K = k.value
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(
+    comptime static_a_shape = DimList[m.dim, k.dim]()
+    comptime static_b_shape = DimList[
         n.dim, (k.dim // group_size) * group_bytes
-    )
-    comptime static_b_ref_shape = DimList(n.dim, k.dim)
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    ]()
+    comptime static_b_ref_shape = DimList[n.dim, k.dim]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
 
     var dynamic_a_shape = IndexList[2](m.value, k.value)
     var dynamic_b_shape = IndexList[2](
@@ -683,7 +683,7 @@ fn test_quantized[
 
     var b_scales_ptr = (b_host_ptr + N * K // 2).bitcast[Scalar[a_type]]()
     var b_scales_view = NDBuffer[
-        rank=2, a_type, _, DimList(k.dim // group_size, n.dim)
+        rank=2, a_type, _, DimList[k.dim // group_size, n.dim]()
     ](b_scales_ptr)
     # elements of b matrix is between [-1, 1]
     rand(b_scales_view.data, b_scales_view.num_elements(), min=0, max=0.125)

@@ -1052,9 +1052,9 @@ fn grouped_matmul[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    comptime is_expert_shape_static = b_shape.all_known[
-        3
-    ]() and a_shape.has_value[1]() and c_shape.has_value[1]()
+    comptime is_expert_shape_static = b_shape.all_known() and a_shape.has_value[
+        1
+    ]() and c_shape.has_value[1]()
     comptime is_sm90_kernel_applicable = ctx.default_device_info == H100 and is_expert_shape_static
     comptime is_sm100_kernel_applicable = ctx.default_device_info == B200 and is_expert_shape_static
     comptime is_amd_kernel_applicable = has_amd_gpu_accelerator() and not has_amd_rdna_gpu_accelerator() and is_expert_shape_static
@@ -1199,7 +1199,7 @@ fn grouped_matmul_vendor[
             # Create output slice and zero it out
             var c_slice = NDBuffer[rank=2, c_type, MutAnyOrigin](
                 c.data + token_start * UInt32(c.dim[1]()),
-                IndexList[2](num_tokens, Int(c.dim[1]())),
+                IndexList[2](num_tokens, c.dim[1]()),
             )
             var buff = DeviceBuffer(
                 ctx, c_slice.data, c_slice.num_elements(), owning=False
@@ -1210,15 +1210,15 @@ fn grouped_matmul_vendor[
         # Create views into the tensors for this expert
         var a_slice = NDBuffer[rank=2, a_type, ImmutAnyOrigin](
             a.data + token_start * UInt32(a.dim[1]()),
-            IndexList[2](num_tokens, Int(a.dim[1]())),
+            IndexList[2](num_tokens, a.dim[1]()),
         )
         var b_slice = NDBuffer[rank=2, b_type, ImmutAnyOrigin](
             b.data + expert_id * Int32(b.dim[1]()) * Int32(b.dim[2]()),
-            IndexList[2](Int(b.dim[1]()), Int(b.dim[2]())),
+            IndexList[2](b.dim[1](), b.dim[2]()),
         )
         var c_slice = NDBuffer[rank=2, c_type, MutAnyOrigin](
             c.data + token_start * UInt32(c.dim[1]()),
-            IndexList[2](num_tokens, Int(c.dim[1]())),
+            IndexList[2](num_tokens, c.dim[1]()),
         )
 
         vendor_matmul[use_tf32](

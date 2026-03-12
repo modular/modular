@@ -131,7 +131,7 @@ class Module(Generic[_P, _R]):
         model.to(Accelerator())                       # sets device, moves weights
         compiled = model.compile(*model.input_types())  # computation runs on GPU
 
-    For CPU (the default), calling ``to()`` is optional — the :attr:`device`
+    For CPU (the default), calling ``to()`` is optional. The :attr:`device`
     property defaults to :obj:`~max.driver.CPU`:
 
     .. code-block:: python
@@ -150,7 +150,7 @@ class Module(Generic[_P, _R]):
     For graph-level tensor routing *inside* ``forward()`` (e.g., pulling an
     activation back to CPU at the end of the graph), use
     :func:`~max.graph.ops.transfer_to` or :meth:`~max.graph.TensorValue.to`
-    instead — those insert transfer nodes into the compiled graph and are
+    instead; those insert transfer nodes into the compiled graph and are
     unrelated to pre-compilation weight placement.
 
     .. list-table::
@@ -226,7 +226,7 @@ class Module(Generic[_P, _R]):
         This property performs a depth-first traversal of the module hierarchy,
         yielding each parameter tensor with its qualified name. The qualified name
         uses dot-notation to represent the module tree structure (e.g.,
-        ``"encoder.layer1.weight"``).
+        ``encoder.layer1.weight``).
 
         Parameters are yielded in depth-first order: first the current module's
         direct parameters, then recursively each sub-module's parameters.
@@ -262,7 +262,7 @@ class Module(Generic[_P, _R]):
         Yields:
             ``(name, parameter)`` tuples where ``name`` is the
             dot-separated qualified path of the parameter and ``parameter``
-            is the :obj:`Tensor`.
+            is the :class:`~max.experimental.tensor.Tensor`.
         """
         yield from self.local_parameters
         for prefix, descendant in self.descendants:
@@ -362,8 +362,8 @@ class Module(Generic[_P, _R]):
                 the transformed tensor. Parameters:
 
                 - ``name`` (:obj:`str`): Qualified dot-separated path of the parameter
-                  (e.g., ``"fc1.weight"``, ``"encoder.layer2.bias"``)
-                - ``tensor`` (:obj:`Tensor`): Current value of the parameter
+                  (e.g., ``fc1.weight``, ``encoder.layer2.bias``)
+                - ``tensor`` (:class:`~max.experimental.tensor.Tensor`): Current value of the parameter
 
                 Returns the new tensor value to replace the parameter.
         """
@@ -434,7 +434,7 @@ class Module(Generic[_P, _R]):
 
         This method updates all module parameters in-place by loading values from
         the provided state dictionary. The dictionary maps qualified parameter names
-        (dot-separated paths like ``"fc1.weight"``) to tensor values.
+        (dot-separated paths like ``fc1.weight``) to tensor values.
 
         The ``strict`` mode (default) ensures all weights in the dictionary are
         actually used, catching errors from mismatched architectures or incorrect
@@ -470,7 +470,7 @@ class Module(Generic[_P, _R]):
         Args:
             state: Dictionary mapping qualified parameter names to tensor values.
                 Keys should match the names from :attr:`Module.parameters` property.
-                Values should be DLPack-compatible arrays or :obj:`Tensor` objects.
+                Values should be DLPack-compatible arrays or :class:`~max.experimental.tensor.Tensor` objects.
                 Their shapes and dtypes must match the existing parameters with the
                 corresponding name, but they may be on a different device. In the
                 case that the new value has a different device, it will be copied to
@@ -560,7 +560,7 @@ class Module(Generic[_P, _R]):
             from max.experimental.nn import Linear
 
             model = Linear(2, 3)
-            print(model.device)     # CPU()  — CPU default
+            print(model.device)     # CPU()  - CPU default
             model.to(Accelerator())
             print(model.device)     # Accelerator(id=0)
 
@@ -574,6 +574,13 @@ class Module(Generic[_P, _R]):
 
     @device.setter
     def device(self, value: Device | DeviceRef | None) -> None:
+        """Sets the device for this module.
+
+        Args:
+            value: The device to assign to this module. Accepts a
+                :class:`~max.driver.Device`, a :class:`~max.graph.DeviceRef`,
+                or ``None`` to clear the explicit device assignment.
+        """
         if isinstance(value, DeviceRef):
             value = value.to_device()
         object.__setattr__(self, "_module_target_device", value)
@@ -607,7 +614,7 @@ class Module(Generic[_P, _R]):
 
         For graph-level tensor routing at execution time (inside
         :meth:`forward`), use :func:`~max.graph.ops.transfer_to` or
-        :meth:`~max.graph.TensorValue.to` instead — those insert transfer ops
+        :meth:`~max.graph.TensorValue.to` instead; those insert transfer ops
         into the compiled graph and are unrelated to pre-compilation device
         placement.
 
@@ -642,14 +649,14 @@ class Module(Generic[_P, _R]):
         """Compiles the module to an optimized executable through graph tracing.
 
         This method performs symbolic tracing of the module's ``forward`` method
-        to construct a MAX :obj:`Graph`, which is then compiled and optimized for
+        to construct a MAX :class:`~max.graph.Graph`, which is then compiled and optimized for
         efficient execution on CPU, GPU, or other accelerators.
 
         The compilation process:
 
-        1. Creates symbolic :obj:`Tensor` instances based on provided type specifications
+        1. Creates symbolic :class:`~max.experimental.tensor.Tensor` instances based on provided type specifications
         2. Executes ``forward`` with symbolic tensors to record operations
-        3. Constructs a :obj:`Graph` representing the computation
+        3. Constructs a :class:`~max.graph.Graph` representing the computation
         4. Includes all module parameters as weights in the graph
         5. Compiles and optimizes the graph for target hardware
         6. Returns an executable function with the same signature as ``forward``
@@ -709,8 +716,8 @@ class Module(Generic[_P, _R]):
         Args:
             *input_types: Type specifications for each positional argument to
                 ``forward``. Must match the number and order of arguments.
-                Each should be a :obj:`max.graph.Type` (typically
-                :obj:`TensorType`) describing the shape and dtype. The
+                Each should be a :class:`~max.graph.Type` (typically
+                :class:`~max.graph.TensorType`) describing the shape and dtype. The
                 ``device`` field on each :obj:`~max.graph.TensorType`
                 determines where activations are computed; use :meth:`to` to
                 set this consistently across weights and inputs.
@@ -724,7 +731,7 @@ class Module(Generic[_P, _R]):
                 A compiled executable function with the same signature as
                 ``forward``. This function runs the optimized graph and
                 returns results with the same structure as ``forward``
-                (single :obj:`Tensor` or tuple of tensors).
+                (single :class:`~max.experimental.tensor.Tensor` or tuple of tensors).
 
         Raises:
             TypeError: If input types don't match ``forward`` signature or if
@@ -866,14 +873,14 @@ def module_dataclass(  # noqa: ANN201
 ):
     """Converts a class into a MAX module with automatic parameter tracking.
 
-    This decorator enables a regular Python class to function as a :obj:`Module`,
+    This decorator enables a regular Python class to function as a :class:`Module`,
     providing automatic discovery and registration of parameters (Tensor fields)
-    and nested modules. The decorated class gains all capabilities of :obj:`Module`,
+    and nested modules. The decorated class gains all capabilities of :class:`Module`,
     including parameter iteration, graph compilation via :meth:`Module.compile`,
     and hierarchical module composition.
 
     The decorator applies Python's ``@dataclass`` decorator internally while
-    preserving :obj:`Module`'s specialized ``__repr__`` method for better
+    preserving :class:`Module`'s specialized ``__repr__`` method for better
     debugging experience when printing module structures.
 
     .. code-block:: python
@@ -913,12 +920,12 @@ def module_dataclass(  # noqa: ANN201
             When :obj:`None`, returns a decorator function (supports
             using ``@module_dataclass`` with or without parentheses).
         repr: If :obj:`True`, use dataclass's default ``__repr__`` instead of
-            :obj:`Module`'s rich representation. Defaults to :obj:`False`.
+            :class:`Module`'s rich representation. Defaults to :obj:`False`.
         **kwargs: Additional keyword arguments forwarded to Python's
             ``@dataclass`` decorator (e.g., ``frozen``, ``eq``).
 
     Returns:
-        The decorated class as a :obj:`Module` subclass with automatic parameter
+        The decorated class as a :class:`Module` subclass with automatic parameter
         tracking and graph compilation capabilities. When ``cls`` is :obj:`None`,
         returns a decorator function.
     """

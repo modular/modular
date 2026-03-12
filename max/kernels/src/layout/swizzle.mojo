@@ -462,15 +462,6 @@ struct Swizzle(
         """
         writer.write("(", self.bits, ",", self.base, ",", self.shift, ")")
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Convert the swizzle to a string representation.
-
-        Returns:
-            String representation of the swizzle parameters.
-        """
-        return String.write(self)
-
 
 @always_inline
 fn make_ldmatrix_swizzle[

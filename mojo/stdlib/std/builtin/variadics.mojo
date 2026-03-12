@@ -469,13 +469,14 @@ struct Variadic:
 
 
 @fieldwise_init
-struct _VariadicParamListIter[type: TrivialRegisterPassable](
+struct _VariadicParamListIter[type: TrivialRegisterPassable, //, *values: type](
     ImplicitlyCopyable, Iterable, Iterator
 ):
     """Const Iterator for VariadicParamList.
 
     Parameters:
         type: The type of the elements in the list.
+        values: The values in the list.
     """
 
     comptime Element = Self.type
@@ -484,26 +485,27 @@ struct _VariadicParamListIter[type: TrivialRegisterPassable](
     ]: Iterator = Self
 
     var index: Int
-    var src: VariadicParamList[Self.type]
 
     @always_inline
     fn __next__(mut self) raises StopIteration -> Self.type:
         var index = self.index
-        if index >= len(self.src):
+
+        comptime params = VariadicParamList[*Self.values]()
+        if index >= params.size:
             raise StopIteration()
         self.index = index + 1
-        return self.src[index]
+        return params[index]
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
-        var len = len(self.src) - self.index
+        var len = VariadicParamList[*Self.values].size - self.index
         return (len, {len})
 
 
-struct VariadicParamList[type: TrivialRegisterPassable](
+struct VariadicParamList[type: TrivialRegisterPassable, //, *values: type](
     Iterable, Sized, TrivialRegisterPassable, Writable
 ):
     """A utility class to access homogeneous variadic parameters.
@@ -537,16 +539,21 @@ struct VariadicParamList[type: TrivialRegisterPassable](
 
     Parameters:
         type: The type of the elements in the list.
+        values: The values in the list.
     """
 
-    comptime _mlir_type = Variadic.ValuesOfType[Self.type]
-
-    var value: Self._mlir_type
-    """The underlying storage for the variadic list."""
+    comptime size = Int(
+        mlir_value=__mlir_attr[
+            `#kgen.variadic.size<`,
+            Self.values,
+            `> : index`,
+        ]
+    )
+    """The number of elements in the list."""
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _VariadicParamListIter[Self.type]
+    ]: Iterator = _VariadicParamListIter[*Self.values]
     """The iterator type for this variadic list.
 
     Parameters:
@@ -555,45 +562,9 @@ struct VariadicParamList[type: TrivialRegisterPassable](
     """
 
     @always_inline
-    fn __init__(out self, *values: Self.type, comptime_only: ()):
-        """Constructs a VariadicParamList from a variadic list of values at comptime.
-        NOTE: this initializer only works at comptime.
-
-        Args:
-            values: The variadic argument list to construct the variadic list
-              with.
-            comptime_only: Tell callers that this only works at comptime.
-        """
-        self = Self(values=values, comptime_only=())
-
-    @always_inline
-    fn __init__(
-        out self,
-        values: VariadicList[Self.type, is_owned=False],
-        comptime_only: (),
-    ):
-        """Constructs a VariadicParamList from a variadic list of values at comptime.
-        NOTE: this initializer only works at comptime.
-
-        Args:
-            values: The variadic argument list to construct the variadic list
-              with.
-            comptime_only: Tell callers that this only works at comptime.
-        """
-        self.value = __mlir_op.`pop.variadic.load.values`[
-            _type=type_of(self.value)
-        ](values.value)
-
-    @doc_private
-    @always_inline
-    @implicit
-    fn __init__(out self, value: Self._mlir_type):
-        """Constructs a VariadicParamList from a variadic argument type.
-
-        Args:
-            value: The variadic argument to construct the list with.
-        """
-        self.value = value
+    fn __init__(out self):
+        """Constructs a VariadicParamList."""
+        pass
 
     @always_inline
     fn __len__(self) -> Int:
@@ -603,7 +574,7 @@ struct VariadicParamList[type: TrivialRegisterPassable](
             The number of elements on the variadic list.
         """
 
-        return Int(mlir_value=__mlir_op.`pop.variadic.size`(self.value))
+        return Self.size
 
     @always_inline
     fn __getitem__(self, idx: Int) -> Self.type:
@@ -615,7 +586,8 @@ struct VariadicParamList[type: TrivialRegisterPassable](
         Returns:
             The element on the list corresponding to the given index.
         """
-        return __mlir_op.`pop.variadic.get`(self.value, index(idx)._mlir_value)
+        # FIXME: Replace with an attribute.
+        return __mlir_op.`pop.variadic.get`(self.values, index(idx)._mlir_value)
 
     fn _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
         _constrained_conforms_to[
@@ -674,7 +646,7 @@ struct VariadicParamList[type: TrivialRegisterPassable](
         Returns:
             An iterator to the start of the list.
         """
-        return {0, self}
+        return {0}
 
 
 # ===-----------------------------------------------------------------------===#
@@ -961,7 +933,7 @@ struct VariadicPack[
     time to generate the correct memory layout and access code.
 
     Therefore, indexing into `VariadicPack` requires compile-time indices using
-    `@parameter for` loops, whereas indexing into `VariadicParamList` uses runtime
+    `comptime for` loops, whereas indexing into `VariadicParamList` uses runtime
     indices.
 
     For example, in the following function signature, `*args: *ArgTypes` creates a
@@ -976,7 +948,7 @@ struct VariadicPack[
     fn count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
         var total = 0
 
-        # Must use @parameter for loop because args is a VariadicPack
+        # Must use comptime for loop because args is a VariadicPack
         comptime for i in range(args.__len__()):
             # Each args[i] has a different concrete type from *ArgTypes
             # The compiler generates specific code for each iteration

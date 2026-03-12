@@ -290,19 +290,6 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         """
         return Int(self._scalar_value)
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Formats this `Codepoint` as a single-character string.
-
-        Returns:
-            A string containing this single character.
-        """
-        var char_len = self.utf8_byte_length()
-        var result = String(unsafe_uninit_length=char_len)
-        _ = self.unsafe_write_utf8(result.unsafe_ptr_mut())
-        return result
-
     fn write_to(self, mut w: Some[Writer]):
         """
         Write a string representation of this `Codepoint` to the given writer.

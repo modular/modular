@@ -276,7 +276,7 @@ fn run_im2col_test[
     # Create NDBuffer view with compile-time static shape
     # Note: For runtime dynamic shapes, we would need to use RuntimeLayout
     # to properly compute strides. For now, we use comptime known shapes.
-    comptime static_shape = DimList(batch, in_height, in_width, in_channels)
+    comptime static_shape = DimList[batch, in_height, in_width, in_channels]()
     var input_nd = NDBuffer[rank=4, dtype, _, static_shape](
         input_device.unsafe_ptr(), static_shape
     )

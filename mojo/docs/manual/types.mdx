@@ -483,14 +483,12 @@ print(s) # Testing Mojo strings
 ### Construction
 
 Many standard library types conform to the
-[`Stringable`](/mojo/std/builtin/str/Stringable) trait, which indicates
+[`Writable`](/mojo/std/format/Writable) trait, which indicates
 that a value can be converted into a `String` using the `String(...)`
 constructor.
 
 The built-in [`print()`](/mojo/std/io/io/print) function accepts values
-that conform to the `Writable` trait. For values that are only
-`Stringable`, use `String(value)` first and then pass the resulting
-`String` to `print()`.
+that conform to the `Writable` trait.
 
 Use `String(value)` to explicitly convert a value to a `String`:
 
@@ -499,7 +497,7 @@ var s = "Items in list: " + String(5)
 print(s) # Items in list: 5
 ```
 
-Or, use the string constructor with variadic `Stringable` types,
+Or, use the string constructor with variadic `Writable` types,
 so you don't have to call `String()` on each value:
 
 ```mojo
@@ -545,7 +543,6 @@ var template = t"Hello, {name}!" # template creation
 
 print(template)          # Hello, Nate! (no allocation)
 var s = String(template) # explicitly construct a string
-var r: String = template # implicitly construct a string
 ```
 
 `TStrings` can add arbitrary expressions within the replacement fields:
@@ -752,7 +749,7 @@ the list. Because the list is being created with a set of `Int` values, Mojo can
   ```
 
   As shown above, you can print the individual elements in a list as long as
-  they're a [`Stringable`](/mojo/std/builtin/str/Stringable) type.
+  they're a [`Writable`](/mojo/std/format/Writable) type.
 
 - Iterating a `List` returns an immutable
   [reference](/mojo/manual/values/lifetimes#working-with-references) to each

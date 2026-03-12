@@ -224,7 +224,7 @@ fn _tp_repr_wrapper[
         ), "_tp_repr_wrapper requires conformance to Writable."
         trait_downcast[Writable](self.mojo_value).write_repr_to(repr_str)
     else:
-        repr_str = t"<uninitialized {get_type_name[T]()}>"
+        repr_str = String(t"<uninitialized {get_type_name[T]()}>")
 
     return cpython.PyUnicode_DecodeUTF8(repr_str)
 

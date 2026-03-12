@@ -80,9 +80,9 @@ fn test_matmul_sm90_swapAB_comparison[
     comptime CLUSTER_N_SWAPAB = config_swapAB.cluster_shape[0]
 
     # Static shapes - C shape is the same for both kernels
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(n.dim, k.dim)
-    comptime static_c_shape = DimList(m.dim, n.dim)  # [M, N] for both
+    comptime static_a_shape = DimList[m.dim, k.dim]()
+    comptime static_b_shape = DimList[n.dim, k.dim]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()  # [M, N] for both
 
     var dynamic_a_shape = IndexList[2](m.value, k.value)
     var dynamic_b_shape = IndexList[2](n.value, k.value)
@@ -497,9 +497,9 @@ fn test_matmul_sm90_swapAB_comparison_v2[
     comptime CLUSTER_N_SWAPAB = 1
 
     # Static shapes - C shape is the same for both kernels
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(n.dim, k.dim)
-    comptime static_c_shape = DimList(m.dim, n.dim)  # [M, N] for both
+    comptime static_a_shape = DimList[m.dim, k.dim]()
+    comptime static_b_shape = DimList[n.dim, k.dim]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()  # [M, N] for both
 
     var dynamic_a_shape = IndexList[2](m.value, k.value)
     var dynamic_b_shape = IndexList[2](n.value, k.value)

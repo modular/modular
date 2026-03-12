@@ -210,6 +210,22 @@ trait TensorLayout(TrivialRegisterPassable):
         """
         ...
 
+    fn transpose(
+        self,
+    ) -> Layout[
+        Variadic.reverse[*Self._shape_types],
+        Variadic.reverse[*Self._stride_types],
+    ]:
+        """Transposes the layout by reversing the order of dimensions.
+
+        For an n-dimensional layout, this reverses the order of both shapes
+        and strides. For 2D layouts, this swaps rows and columns.
+
+        Returns:
+            A new Layout with transposed dimensions.
+        """
+        ...
+
     fn make_dynamic[
         dtype: DType
     ](self) -> Layout[
@@ -449,6 +465,33 @@ struct Layout[
             A new Layout with shape and stride Coords reversed.
         """
         return Layout(self._shape.reverse(), self._stride.reverse())
+
+    @always_inline("nodebug")
+    fn transpose(
+        self,
+    ) -> Layout[
+        Variadic.reverse[*Self.shape_types],
+        Variadic.reverse[*Self.stride_types],
+    ]:
+        """Transposes the layout by reversing the order of dimensions.
+
+        For an n-dimensional layout, this reverses the order of both shapes
+        and strides. For 2D layouts, this swaps rows and columns, converting
+        row-major to column-major and vice versa.
+
+        Returns:
+            A new Layout with transposed dimensions.
+
+        Example:
+
+        ```mojo
+        from layout.tile_layout import row_major
+
+        var layout = row_major[3, 4]()  # shape (3,4), stride (4,1)
+        var transposed = layout.transpose()  # shape (4,3), stride (1,4)
+        ```
+        """
+        return self.reverse()
 
     @always_inline("nodebug")
     fn make_dynamic[

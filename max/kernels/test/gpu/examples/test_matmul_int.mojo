@@ -116,9 +116,9 @@ fn run_matmul(ctx: DeviceContext) raises:
     var b_host_ptr = alloc[Scalar[DType.int]](k * n)
     var c_host_ptr = alloc[Scalar[DType.int]](m * n)
 
-    var a_host = NDBuffer[rank=2, DType.int, _, DimList(m, k)](a_host_ptr)
-    var b_host = NDBuffer[rank=2, DType.int, _, DimList(k, n)](b_host_ptr)
-    var c_host = NDBuffer[rank=2, DType.int, _, DimList(m, n)](c_host_ptr)
+    var a_host = NDBuffer[rank=2, DType.int, _, DimList[m, k]()](a_host_ptr)
+    var b_host = NDBuffer[rank=2, DType.int, _, DimList[k, n]()](b_host_ptr)
+    var c_host = NDBuffer[rank=2, DType.int, _, DimList[m, n]()](c_host_ptr)
 
     for i in range(m):
         for j in range(k):

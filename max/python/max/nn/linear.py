@@ -109,15 +109,15 @@ class Linear(Module, Shardable):
         Args:
             in_dim: The dimensionality of the input space.
             out_dim: The dimensionality of the output space.
-            dtype: The :obj:`DType` for both weights and bias.
-            device: The target :obj:`DeviceRef` for computation.
+            dtype: The :class:`~max.dtype.DType` for both weights and bias.
+            device: The target :class:`~max.graph.DeviceRef` for computation.
                 Weights remain on CPU until moved during computation.
             name: Base name for weights (appended with ``.weight`` and
                 ``.bias`` if applicable).
             has_bias: When ``True``, adds a bias vector to the layer.
                 Defaults to ``False``.
-            quantization_encoding: :obj:`QuantizationEncoding` for the weights.
-            float8_config: :obj:`Float8Config` for float8 quantization.
+            quantization_encoding: :class:`~max.graph.quantization.QuantizationEncoding` for the weights.
+            float8_config: :class:`~max.nn.float8_config.Float8Config` for float8 quantization.
             clip_weight: Optional weight clipping threshold.
             is_sharding: Disable child layer creation during sharding.
         """
@@ -234,7 +234,7 @@ class Linear(Module, Shardable):
         """Set the weight sharding strategy.
 
         Args:
-            strategy: The :obj:`ShardingStrategy` describing the weight sharding.
+            strategy: The :class:`~max.graph.ShardingStrategy` describing the weight sharding.
         """
         self.weight.sharding_strategy = strategy
 
@@ -350,10 +350,10 @@ class Linear(Module, Shardable):
         """Creates sharded views of this Linear layer across multiple devices.
 
         Args:
-            devices: Iterable of :obj:`DeviceRef` devices to place the shards on.
+            devices: Iterable of :class:`~max.graph.DeviceRef` devices to place the shards on.
 
         Returns:
-            List of sharded :obj:`Linear` instances, one for each device.
+            List of sharded :class:`~max.nn.Linear` instances, one for each device.
         """
         if not self.weight.sharding_strategy:
             raise ValueError(
@@ -446,12 +446,12 @@ class Linear(Module, Shardable):
         """Applies a linear transformation to the input data.
 
         Args:
-            x: Input :obj:`TensorValue` of shape ``(..., in_dim)``.
+            x: Input :class:`~max.graph.TensorValue` of shape ``(..., in_dim)``.
                 The last dimension must match the layer's ``in_dim``.
                 The input tensor must reside on the target device.
 
         Returns:
-            Output :obj:`TensorValue` of shape ``(..., out_dim)``.
+            Output :class:`~max.graph.TensorValue` of shape ``(..., out_dim)``.
             The result resides on the target device.
 
         Raises:
@@ -514,7 +514,7 @@ def linear(
 
 
 class ColumnParallelLinear(Linear):
-    """A :obj:`Linear` layer where the weight and bias are sharded onto multiple devices.
+    """A :class:`~max.nn.Linear` layer where the weight and bias are sharded onto multiple devices.
 
     This layer first computes :math:`y = xW_i^T + b_i` for each device `i` in
     `[0,..., num_devices]`:
@@ -578,11 +578,11 @@ class ColumnParallelLinear(Linear):
         Args:
             in_dim: The dimensionality of the input space.
             out_dim: The dimensionality of the output space.
-            dtype: The :obj:`DType` for both weights and bias.
-            devices: The target :obj:`DeviceRef` devices for computation.
+            dtype: The :class:`~max.dtype.DType` for both weights and bias.
+            devices: The target :class:`~max.graph.DeviceRef` devices for computation.
                 Weights remain on CPU until sharded and moved to device during
                 computation.
-            tied_weight: Optional :obj:`Weight` to tie with this layer.
+            tied_weight: Optional :class:`~max.graph.Weight` to tie with this layer.
             **kwargs: Additional keyword arguments passed to the Linear initializer.
         """
         if len(devices) == 0:
@@ -621,13 +621,13 @@ class ColumnParallelLinear(Linear):
         """Applies a linear transformation to the input data.
 
         Args:
-            x: Input sequence of :obj:`TensorValue` tensors of shape ``(..., in_dim)``.
+            x: Input sequence of :class:`~max.graph.TensorValue` tensors of shape ``(..., in_dim)``.
                 The last dimension must match the layer's ``in_dim``.
                 The input tensors must reside on their respective devices.
-            signal_buffers: :obj:`BufferValue` buffers for peer-to-peer communication in allgather.
+            signal_buffers: :class:`~max.graph.BufferValue` buffers for peer-to-peer communication in allgather.
 
         Returns:
-            List of output :obj:`TensorValue` tensors of shape ``(..., out_dim)``.
+            List of output :class:`~max.graph.TensorValue` tensors of shape ``(..., out_dim)``.
             The results reside on their respective devices.
 
         Raises:
@@ -642,7 +642,7 @@ class ColumnParallelLinear(Linear):
 
 @dataclass
 class GPTQLinear(Linear):
-    """A :obj:`Linear` layer for GPTQ encoding."""
+    """A :class:`~max.nn.Linear` layer for GPTQ encoding."""
 
     def __init__(
         self,
@@ -662,14 +662,14 @@ class GPTQLinear(Linear):
         Args:
             in_dim: The dimensionality of the input space.
             out_dim: The dimensionality of the output space.
-            dtype: The :obj:`DType` for both weights and bias.
-            device: The target :obj:`DeviceRef` for computation.
+            dtype: The :class:`~max.dtype.DType` for both weights and bias.
+            device: The target :class:`~max.graph.DeviceRef` for computation.
                 Weights remain on CPU until moved during computation.
             has_bias: When ``True``, adds a bias vector to the layer.
                 Defaults to ``False``.
-            quantization_encoding: The :obj:`QuantizationEncoding` of the weights.
-            quantization_config: Extra :obj:`QuantizationConfig` for the weight quantization.
-            float8_config: :obj:`Float8Config` for float8 quantization (not supported).
+            quantization_encoding: The :class:`~max.graph.quantization.QuantizationEncoding` of the weights.
+            quantization_config: Extra :class:`~max.graph.quantization.QuantizationConfig` for the weight quantization.
+            float8_config: :class:`~max.nn.float8_config.Float8Config` for float8 quantization (not supported).
         """
         del out_dim, dtype  # Unused.
         if has_bias:
@@ -757,7 +757,7 @@ class GPTQLinear(Linear):
 
 
 class MLP(Module, Shardable):
-    """Simple multi-layer perceptron composed of three :obj:`Linear` layers.
+    """Simple multi-layer perceptron composed of three :class:`~max.nn.Linear` layers.
 
     Defaults to SiLU activation function.
     """
@@ -778,13 +778,13 @@ class MLP(Module, Shardable):
         """Initializes the MLP layer.
 
         Args:
-            dtype: :obj:`DType` to use for the layer weights, which should match the
+            dtype: :class:`~max.dtype.DType` to use for the layer weights, which should match the
                 input dtype.
-            quantization_encoding: :obj:`QuantizationEncoding` of the layer weights.
+            quantization_encoding: :class:`~max.graph.quantization.QuantizationEncoding` of the layer weights.
             hidden_dim: The last dimension of the layer input.
             feed_forward_length: Size of dimension used to project the inputs.
-            linear_cls: :obj:`Linear` class to use to create the projection layers.
-            devices: :obj:`DeviceRef` devices to run the ``MLP`` layer.
+            linear_cls: :class:`~max.nn.Linear` class to use to create the projection layers.
+            devices: :class:`~max.graph.DeviceRef` devices to run the ``MLP`` layer.
             has_bias: Whether to include bias terms in the linear layers.
             activation_function: Activation function to use. Options are:
 
@@ -795,7 +795,7 @@ class MLP(Module, Shardable):
                 - ``tanh``
                 - ``sigmoid``
 
-            float8_config: :obj:`Float8Config` for float8 quantization.
+            float8_config: :class:`~max.nn.float8_config.Float8Config` for float8 quantization.
             is_sharding: Disable child layer creation during sharding.
         """
         super().__init__()

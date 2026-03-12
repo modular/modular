@@ -20,25 +20,6 @@ In general, you should prefer safe pointer types when possible, reserving
 For a comparison of standard library pointer types, see [Intro to
 pointers](/mojo/manual/pointers/).
 
-:::note LegacyUnsafePointer
-
-The implementation of `UnsafePointer` documented here replaces an earlier
-version with a slightly different API. The old version has been renamed to
-[`LegacyUnsafePointer`](/mojo/std/memory/legacy_unsafe_pointer/LegacyUnsafePointer/)
-and will be deprecated.
-
-The [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer)
-reference page briefly describes the differences between the new and old
-versions.
-
-To ease this transition, the library currently supports implicit conversion
-between `LegacyUnsafePointer` and `UnsafePointer`, so you can pass a legacy
-pointer to an `UnsafePointer` function, and vice versa.
-
-For more details on migrating to the new `UnsafePointer`, see the migration
-guide provided in the
-[UnsafePointer v2 proposal](https://github.com/modular/modular/blob/main/mojo/proposals/unsafe-pointer-v2.md#migration-guide-from-legacyunsafepointer-to-the-new-unsafepointer).
-
 :::
 
 ## Unsafe pointer basics

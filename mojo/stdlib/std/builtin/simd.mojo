@@ -558,7 +558,7 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             This type's name.
         """
-        return t"SIMD[{repr(Self.dtype)}, {repr(Self.size)}]"
+        return String(t"SIMD[{repr(Self.dtype)}, {repr(Self.size)}]")
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -1873,29 +1873,6 @@ struct SIMD[dtype: DType, size: Int](
         comptime assert Self.size == 1, "expected a scalar type"
         return self._refine[new_size=1]().cast[DType.float64]()
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Get the SIMD as a string.
-
-        Returns:
-            A string representation.
-        """
-
-        return String.write(self)
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __repr__(self) -> String:
-        """Get the representation of the SIMD value e.g. "SIMD[DType.int8, 2](1, 2)".
-
-        Returns:
-            The representation of the SIMD value.
-        """
-        var output = String()
-        self.write_repr_to(output)
-        return output^
-
     @always_inline("builtin")
     fn __floor__(self) -> Self:
         """Performs elementwise floor on the elements of a SIMD vector.
@@ -2398,8 +2375,8 @@ struct SIMD[dtype: DType, size: Int](
             mask
         ), "size of the mask must match the output SIMD size"
 
-        comptime tup = StaticTuple[Int, output_size](values=mask)
-
+        # FIXME: Support parameters on initializers better, removing __init__.
+        comptime tup = StaticTuple[Int, output_size].__init__[*mask]()
         return self._shuffle_list[output_size, tup](other)
 
     @always_inline("nodebug")

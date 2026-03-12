@@ -60,23 +60,6 @@ struct ThreadRole(Enum, Writable):
     comptime CONSUMER = Self(1)
     comptime PRODUCER_CONSUMER = Self(2)
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @always_inline
-    fn __str__(self) -> String:
-        """Returns the string representation of this algorithm.
-
-        Returns:
-            String: A human-readable string representation of the algorithm.
-        """
-        if self is Self.PRODUCER:
-            return "PRODUCER"
-        elif self is Self.CONSUMER:
-            return "CONSUMER"
-        elif self is Self.PRODUCER_CONSUMER:
-            return "PRODUCER_CONSUMER"
-        else:
-            return t"UNKNOWN_ROLE: {self._value}"
-
     @always_inline
     fn write_to[W: Writer](self, mut writer: W) -> None:
         writer.write(String(self))

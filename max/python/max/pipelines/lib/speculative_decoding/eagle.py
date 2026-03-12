@@ -30,7 +30,6 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.core import TextContext, reserve_token_space_for_batch
 from max.pipelines.lib.interfaces import (
     ModelInputs,
@@ -201,7 +200,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
     def _prepare_draft_batch(
         self,
-        model: PipelineModel[TextContext],
         batch: list[TextContext],
         replica_batches: list[list[TextContext]],
         return_n_logits: int,
@@ -214,7 +212,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         for the draft model when using EAGLE speculative decoding.
 
         Args:
-            model: The draft pipeline model
             batch: List of text contexts to process
             replica_batches: List of per-replica batches for data parallelism
             return_n_logits: Number of logits to return
@@ -259,7 +256,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             else:
                 self._seek_processing_position(context, saved_positions[i])
 
-        base_inputs = model.prepare_initial_token_inputs(
+        base_inputs = self._draft_model.prepare_initial_token_inputs(
             replica_batches=replica_batches,
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=return_n_logits,
@@ -278,7 +275,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             hasattr(base_inputs, "batch_context_lengths")
             and base_inputs.batch_context_lengths
         ):
-            page_size = model.kv_cache_config.kv_cache_page_size
+            page_size = self._draft_model.kv_cache_config.kv_cache_page_size
 
             def align_length(length: int) -> int:
                 return (length + page_size - 1) // page_size * page_size
@@ -309,137 +306,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             self._seek_processing_position(context, saved_positions[i])
             context.apply_processing_offset(0)
 
-        return (base_inputs, num_steps)
-
-    def _prepare_initial_target_step(
-        self,
-        model: PipelineModel[TextContext],
-        replica_batches: list[list[TextContext]],
-        return_n_logits: int,
-    ) -> tuple[ModelInputs, int]:
-        """Prepare batch for initial target model step.
-
-        This is used for the first target model execution to generate
-        the initial token and hidden states for EAGLE.
-
-        Args:
-            model: The target pipeline model
-            replica_batches: List of per-replica batches for data parallelism
-            return_n_logits: Number of logits to return
-
-        Returns:
-            Tuple of (ModelInputs for target model, 1)
-        """
-        kv_cache_inputs = self._target_kv_manager.runtime_inputs(
-            replica_batches, num_steps=1
-        )
-
-        inputs = model.prepare_initial_token_inputs(
-            replica_batches=replica_batches,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=return_n_logits,
-        )
-
-        return (inputs, 1)
-
-    def _prepare_verification_step(
-        self,
-        model: PipelineModel[TextContext],
-        replica_batches: list[list[TextContext]],
-        return_n_logits: int,
-        merged_tokens: Buffer | None,
-        merged_offsets: Buffer | None,
-        host_merged_offsets: Buffer | None = None,
-        kv_cache_inputs: KVCacheInputs | None = None,
-    ) -> tuple[ModelInputs, int]:
-        """Prepare batch for target model verification of draft tokens.
-
-        Uses the target model's prepare_initial_token_inputs to construct
-        proper inputs, then overrides tokens and offsets with merged values
-        for verification.
-
-        Args:
-            model: The target pipeline model
-            batch: List of text contexts to process
-            replica_batches: List of per-replica batches for data parallelism
-            return_n_logits: Number of logits to return
-            draft_inputs: Draft model inputs (used for data_parallel_splits)
-            merged_tokens: Merged draft and input tokens
-            merged_offsets: Offsets for merged tokens
-            host_merged_offsets: Host-side merged offsets for MTP
-            kv_cache_inputs: Pre-computed KV cache inputs. When provided,
-                skips KV alloc/runtime_inputs (used when those must run
-                inside a different context than prepare_initial_token_inputs).
-
-        Returns:
-            Tuple of (ModelInputs for target model, num_steps)
-        """
-        if kv_cache_inputs is None:
-            kv_cache_inputs = self._target_kv_manager.runtime_inputs(
-                replica_batches, 1
-            )
-
-        inputs = model.prepare_initial_token_inputs(
-            replica_batches=replica_batches,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=return_n_logits,
-        )
-
-        inputs.tokens = merged_tokens  # type: ignore[attr-defined]
-        inputs.input_row_offsets = merged_offsets  # type: ignore[attr-defined]
-        inputs.host_input_row_offsets = host_merged_offsets  # type: ignore[attr-defined]
-
-        return (inputs, 1)
-
-    @traced
-    def prepare_batch(
-        self,
-        model: PipelineModel[TextContext],
-        batch: list[TextContext],
-        replica_batches: list[list[TextContext]],
-        return_n_logits: int,
-        is_draft: bool = False,
-        draft_inputs: ModelInputs | None = None,
-        merged_tokens: Buffer | None = None,
-        merged_offsets: Buffer | None = None,
-        hidden_states: list[Buffer] | None = None,
-        host_merged_offsets: Buffer | None = None,
-        kv_cache_inputs: KVCacheInputs | None = None,
-        shift_next_tokens: npt.NDArray[np.int64] | None = None,
-    ) -> tuple[ModelInputs, int]:
-        """Prepare batch for model execution.
-
-        Routes to appropriate preparation method based on execution mode:
-        - Draft model: prepares with hidden states from target
-        - Initial target step: generates first token and hidden states
-        - Verification step: merges and verifies draft tokens
-        """
-        if is_draft:
-            assert hidden_states is not None
-            return self._prepare_draft_batch(
-                model,
-                batch,
-                replica_batches,
-                return_n_logits,
-                hidden_states,
-                shift_next_tokens,
-            )
-        elif draft_inputs is None:
-            return self._prepare_initial_target_step(
-                model,
-                replica_batches,
-                return_n_logits,
-            )
-        else:
-            return self._prepare_verification_step(
-                model,
-                replica_batches,
-                return_n_logits,
-                merged_tokens,
-                merged_offsets,
-                host_merged_offsets,
-                kv_cache_inputs=kv_cache_inputs,
-            )
+        return base_inputs, num_steps
 
     @traced
     def generate_draft_tokens(
@@ -510,8 +377,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         replica_batches: list[list[TextContext]],
         num_draft_tokens_generated: int,
         draft_tokens: Buffer,
-        draft_logits: Buffer | None,
-        all_draft_logits: Buffer | None,
         merged_tokens: Buffer | None = None,
         merged_offsets: Buffer | None = None,
         host_merged_offsets: Buffer | None = None,
@@ -540,15 +405,15 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 replica_batches, num_steps=1
             )
 
-        target_inputs, _ = self._prepare_verification_step(
-            self._target_model,
-            replica_batches,
-            return_n_logits=num_draft_tokens_generated + 1,
-            merged_tokens=merged_tokens,
-            merged_offsets=merged_offsets,
-            host_merged_offsets=host_merged_offsets,
+        target_inputs = self._target_model.prepare_initial_token_inputs(
+            replica_batches=replica_batches,
             kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=num_draft_tokens_generated + 1,
         )
+
+        target_inputs.tokens = merged_tokens  # type: ignore[attr-defined]
+        target_inputs.input_row_offsets = merged_offsets  # type: ignore[attr-defined]
+        target_inputs.host_input_row_offsets = host_merged_offsets  # type: ignore[attr-defined]
 
         # Fix batch_context_lengths: prepare_initial_token_inputs computed
         # current_position outside the context manager (un-bumped).
@@ -575,10 +440,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         first_rejected_tokens, recovered_tokens, bonus_tokens = (
             self._rejection_runner.run(
                 draft_tokens=draft_tokens,
-                draft_logits=draft_logits,
+                draft_logits=None,
                 target_logits=target_outputs.logits,
                 target_logit_offsets=target_outputs.logit_offsets,
-                all_draft_logits=all_draft_logits,
+                all_draft_logits=None,
                 context_batch=context_batch,
             )
         )
@@ -679,29 +544,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             total_bonus_used,
             acceptance_lengths,
         )
-
-    def _target_forward(
-        self,
-        context_batch: list[TextContext],
-        replica_batches: list[list[TextContext]],
-    ) -> tuple[ModelOutputs, Buffer, npt.NDArray[np.integer]]:
-        target_inputs, _ = self.prepare_batch(
-            self._target_model,
-            context_batch,
-            return_n_logits=1,
-            is_draft=False,
-            draft_inputs=None,
-            replica_batches=replica_batches,
-        )
-
-        target_outputs = self._target_model.execute(model_inputs=target_inputs)
-
-        target_sampled_tokens = self.sample_target_token(
-            target_outputs, context_batch
-        )
-        target_sampled_tokens_np = target_sampled_tokens.to_numpy()
-
-        return target_outputs, target_sampled_tokens, target_sampled_tokens_np
 
     def _save_draft_tokens(
         self,
@@ -835,9 +677,22 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         context_batch: list[TextContext],
         replica_batches: list[list[TextContext]],
     ) -> dict[RequestID, TextGenerationOutput]:
-        target_outputs, _target_sampled_tokens, target_sampled_tokens_np = (
-            self._target_forward(context_batch, replica_batches)
+        kv_cache_inputs = self._target_kv_manager.runtime_inputs(
+            replica_batches, num_steps=1
         )
+
+        inputs = self._target_model.prepare_initial_token_inputs(
+            replica_batches=replica_batches,
+            kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=1,
+        )
+
+        target_outputs = self._target_model.execute(model_inputs=inputs)
+
+        target_sampled_tokens = self.sample_target_token(
+            target_outputs, context_batch
+        )
+        target_sampled_tokens_np = target_sampled_tokens.to_numpy()
 
         assert target_outputs.hidden_states is not None
         hs = target_outputs.hidden_states
@@ -846,12 +701,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             target_sampled_tokens_np.flatten().astype(np.int64)
         )
 
-        draft_ce_inputs, _ = self.prepare_batch(
-            self._draft_model,
+        draft_ce_inputs, _ = self._prepare_draft_batch(
             context_batch,
             replica_batches,
             return_n_logits=1,
-            is_draft=True,
             hidden_states=ce_hs,
             shift_next_tokens=next_tokens_for_shift,
         )
@@ -918,8 +771,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             replica_batches,
             num_draft_tokens_generated,
             draft_tokens,
-            draft_logits=None,
-            all_draft_logits=None,
             merged_tokens=merged_tokens,
             merged_offsets=merged_offsets,
             host_merged_offsets=host_merged_offsets,
@@ -942,12 +793,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             data_parallel_splits_np,
         )
 
-        draft_inputs, draft_num_steps = self.prepare_batch(
-            self._draft_model,
+        draft_inputs, draft_num_steps = self._prepare_draft_batch(
             context_batch,
             replica_batches,
             return_n_logits=1,
-            is_draft=True,
             hidden_states=draft_hidden_states,
         )
 

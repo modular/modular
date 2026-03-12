@@ -94,7 +94,7 @@ fn shrink_qkv_permute_3mn_sm100[
         rank=2,
         c_type,
         MutAnyOrigin,
-        shape=DimList(Dim(), Dim(N_Total)),
+        shape=DimList[Dim(), Dim(N_Total)](),
         strides=DimList.create_unknown[2](),
     ]()  # data=null, shape/stride zeroed
 

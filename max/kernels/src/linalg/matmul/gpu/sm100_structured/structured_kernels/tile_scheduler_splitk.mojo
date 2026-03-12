@@ -61,11 +61,6 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
     fn is_final_split(self, k_tiles_per_output_tile: UInt32) -> Bool:
         return (self.k_start + self.num_k_tiles) == k_tiles_per_output_tile
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         writer.write(
@@ -712,7 +707,7 @@ struct TileScheduler[
         var warp_id_y = 0 if Self.BM == 128 else local_warp_id // 2
 
         var reduction_frag = workspace_tile.tile[REDUCTION_BM, REDUCTION_BN](
-            Coord(Idx(Int(warp_id_x)), Idx(Int(warp_id_y)))
+            Coord(Idx(warp_id_x), Idx(warp_id_y))
         )
         var reduction_upper = reduction_frag.tile[16, REDUCTION_BN](
             Coord(Idx(0), Idx(0))

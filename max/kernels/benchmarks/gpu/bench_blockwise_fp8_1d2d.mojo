@@ -161,13 +161,13 @@ fn bench_blockwise_fp8_1d2d[
     ctx.enqueue_copy(expert_scales_dev_buf, expert_scales_host_ptr)
 
     # Create NDBuffer views for legacy kernel
-    comptime static_a_shape = DimList(Dim(), K)
-    comptime static_b_shape = DimList(num_experts, N, K)
-    comptime static_c_shape = DimList(Dim(), N)
-    comptime static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())
-    comptime static_b_scales_shape = DimList(
+    comptime static_a_shape = DimList[Dim(), K]()
+    comptime static_b_shape = DimList[num_experts, N, K]()
+    comptime static_c_shape = DimList[Dim(), N]()
+    comptime static_a_scales_shape = DimList[K // BLOCK_SCALE_K, Dim()]()
+    comptime static_b_scales_shape = DimList[
         num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-    )
+    ]()
 
     var a_ndb = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_dev_buf.unsafe_ptr(), IndexList[2](total_num_tokens, K)

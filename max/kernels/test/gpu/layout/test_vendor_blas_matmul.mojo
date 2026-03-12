@@ -31,9 +31,9 @@ fn test_matmul[
 ](ctx: DeviceContext) raises:
     print("== test_vendor_blas", input_type, "x", M, "x", N, "x", K)
 
-    comptime static_a_shape = DimList(M, K)
-    comptime static_b_shape = DimList(N, K)
-    comptime static_c_shape = DimList(M, N)
+    comptime static_a_shape = DimList[M, K]()
+    comptime static_b_shape = DimList[N, K]()
+    comptime static_c_shape = DimList[M, N]()
 
     var a_host_ptr = alloc[Scalar[input_type]](M * K)
     var a_host = NDBuffer[rank=2, input_type, _, static_a_shape](a_host_ptr)

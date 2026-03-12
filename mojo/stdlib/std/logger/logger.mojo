@@ -187,28 +187,6 @@ struct Level(
         elif self == Self.CRITICAL:
             writer.write("CRITICAL")
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns the string representation of this level.
-
-        Returns:
-            String: A human-readable string representation of the level
-                (e.g., "DEBUG", "INFO").
-        """
-        return String.write(self)
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns the detailed string representation of this level.
-
-        Returns:
-            String: A string representation including the type name and level
-                value (e.g., "Level.DEBUG").
-        """
-        return t"Level.{self}"
-
 
 # ===-----------------------------------------------------------------------===#
 # Logger

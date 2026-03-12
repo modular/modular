@@ -1159,8 +1159,7 @@ fn mla_decode_branch_fp8[
             each head's original space. Shape: [num_heads, v_head_dim, kv_latent_dim].
         w_uv_scale: The scale for the w_uv weight matrix. Shape varies
             depending on the float8_config.
-        scalar_args_buf: Buffer containing scalar arguments for device graph
-            capture.
+        scalar_args_buf: Packed MLA dispatch metadata buffer.
         ctx: Device context.
     """
 

@@ -42,6 +42,28 @@ from rich.progress import (
     Progress,
 )
 
+ScalarValue = str | int | float | bool
+
+_WRAPPER_SOURCE = """\
+from {module_name} import main as _bench_main
+from std.builtin._startup import _ensure_current_or_global_runtime_init
+
+
+@export
+fn benchmark_entry() -> Int32:
+    # Shared libraries don't get the __wrap_and_execute_main
+    # startup that executables do, so the Mojo async runtime is
+    # never registered.  Benchmarks that use CPU parallelism
+    # (e.g. elementwise) will abort on a null Runtime* without
+    # this.  The call is idempotent — a no-op after the first.
+    _ensure_current_or_global_runtime_init()
+    try:
+        _bench_main()
+        return 0
+    except:
+        return 1
+"""
+
 
 @dataclass
 class ProcessOutput:
@@ -167,7 +189,7 @@ class SupportedLangs:
 @dataclass
 class Param:
     name: str
-    value: Any
+    value: ScalarValue
 
     def define(self, lang: Lang) -> list[str]:
         """Generate command line arguments for this parameter."""
@@ -186,21 +208,24 @@ class Param:
 @dataclass
 class ParamSpace:
     name: str
-    value: Any
-    value_set: list[Any] = field(default_factory=list)
+    value: ScalarValue | list[ScalarValue] | None
+    value_set: list[ScalarValue] = field(default_factory=list)
     length: int = 0
 
     def __post_init__(self) -> None:
         """Initialize value set from flattened values."""
-        # Try evaluating value as an arithmetic expression:
+        values: list[ScalarValue]
+        if not isinstance(self.value, list):
+            values = [self.value] if self.value is not None else []
+        else:
+            values = self.value
+        # Try evaluating values as arithmetic expressions:
         try:
-            if not isinstance(self.value, list):
-                self.value = [self.value]
-            self.value = [eval(x) for x in self.value]
-        except:
+            values = [eval(str(x)) for x in values]
+        except Exception:
             pass
         # Note: as of python3.7+ the built-in dict is guaranteed to maintain insertion order.
-        self.value_set = list(dict.fromkeys(utils.flatten(self.value)))
+        self.value_set = list(dict.fromkeys(utils.flatten(values)))
         self.value = None
         self.length = len(self.value_set)
 
@@ -306,7 +331,7 @@ class SpecInstance:
         self,
         *,
         output_dir: Path,
-        build_opts: list[str] = [],  # noqa: B006
+        build_opts: list[str],
         dryrun: bool = False,
         idx: int = -1,
         enable_logging: bool = True,
@@ -335,8 +360,7 @@ class SpecInstance:
         if executor == SupportedLangs.MOJO:
             cmd = [executor.path]
             cmd.extend(["build"])
-            if build_opts:
-                cmd.extend(build_opts)
+            cmd.extend(build_opts)
             cmd.extend(
                 [
                     *self._get_defines,
@@ -348,6 +372,65 @@ class SpecInstance:
             out = _run_cmdline(cmd, dryrun)
             if out.return_code == os.EX_OK:
                 out.path = bin_path
+            else:
+                out.path = None
+            return out
+
+        return ProcessOutput()
+
+    def build_shared_lib(
+        self,
+        *,
+        output_dir: Path,
+        build_opts: list[str],
+        dryrun: bool = False,
+        idx: int = -1,
+        enable_logging: bool = True,
+    ) -> ProcessOutput:
+        """Build the spec instance as a shared library (.so).
+
+        Generates a wrapper .mojo file that imports main() from the benchmark
+        and exports benchmark_entry() as a C-ABI symbol, then compiles to .so.
+        """
+        bin_name = self.hash(with_variables=False)
+        so_path = output_dir / Path(bin_name + ".so")
+
+        if enable_logging:
+            logging.info(f"building .so [{idx}][{bin_name}]")
+            logging.debug(
+                f"defines: {self._get_defines}"
+                + "\n"
+                + f"vars   : {self._get_vars}"
+            )
+
+        executor = self.executor
+
+        if not executor.needs_compilation:
+            return ProcessOutput(return_code=os.EX_OK, path=self.file)
+
+        if executor == SupportedLangs.MOJO:
+            # Generate wrapper file that imports and calls the benchmark's main().
+            module_name = Path(self.file).with_suffix("").name
+            wrapper_source = _WRAPPER_SOURCE.format(module_name=module_name)
+            wrapper_path = output_dir / f"{module_name}_wrapper.mojo"
+            wrapper_path.write_text(wrapper_source)
+
+            cmd = [executor.path, "build", "--emit", "shared-lib"]
+            cmd.extend(["-I", str(Path(self.file).parent)])
+            cmd.extend(build_opts)
+            cmd.extend(
+                [
+                    "-D",
+                    "KBENCH_USE_ENV_ARGS=True",
+                    *self._get_defines,
+                    str(wrapper_path),
+                    "-o",
+                    str(so_path),
+                ]
+            )
+            out = _run_cmdline(cmd, dryrun)
+            if out.return_code == os.EX_OK:
+                out.path = so_path
             else:
                 out.path = None
             return out
@@ -493,7 +576,7 @@ class Spec:
             raise ValueError(f"Could not load spec from {file}\nException: {e}")  # noqa: B904
 
     @staticmethod
-    def load_yaml_list(yaml_path_list: list[str]) -> Spec:
+    def load_yaml_list(yaml_path_list: list[Path]) -> Spec:
         spec: Spec = None  # type: ignore
         for i, yaml_path in enumerate(yaml_path_list):
             spec_ld = Spec.load_yaml(Path(yaml_path))
@@ -780,6 +863,7 @@ class BuildItem:
         spec_instance: the parameter set used as the basis of build
         output_dir: output directory specific for this build item
         dryrun: set to True to enable dryrun
+        use_shared_lib: set to True to build as shared library
         output_path: path to output file
         bin_path: path to executable binary
         build_output: output message for build
@@ -793,6 +877,7 @@ class BuildItem:
     output_dir: Path
     build_opts: list  # type: ignore[type-arg]
     dryrun: bool = False
+    use_shared_lib: bool = False
     output_path: Path = Path()
     bin_path: Path | None = None
 
@@ -875,6 +960,7 @@ class Scheduler:
         output_dir_list = [
             Path(f"{output_dir}/out_{i}") for i in range(self.num_specs)
         ]
+
         self.output_suffix = output_suffix
         self.output_dir = output_dir
         self.run_only = run_only
@@ -986,7 +1072,12 @@ class Scheduler:
     @staticmethod
     def _pool_build_wrapper(bi: BuildItem) -> BuildItem:
         t_start_item = time()
-        bi.build_output = bi.spec_instance.build(
+        build_fn = (
+            bi.spec_instance.build_shared_lib
+            if bi.use_shared_lib
+            else bi.spec_instance.build
+        )
+        bi.build_output = build_fn(
             output_dir=bi.output_dir,
             build_opts=bi.build_opts,
             dryrun=bi.dryrun,

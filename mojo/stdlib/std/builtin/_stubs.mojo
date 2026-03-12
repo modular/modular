@@ -26,7 +26,7 @@ struct __MLIRType[T: __TypeOfAllTypes](TrivialRegisterPassable):
 
 
 # ===-----------------------------------------------------------------------===#
-# @parameter for implementation details
+# comptime for (was @parameter for) implementation details
 # ===-----------------------------------------------------------------------===#
 
 

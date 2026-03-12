@@ -245,9 +245,9 @@ fn create_matmul_bench[
     k: ValOrDim,
     init_type: InitializationType,
 ) raises:
-    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
+    comptime static_b_shape = DimList[
+        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
+    ]()
     var dynamic_b_shape = (n.value, k.value) if transpose_b else (
         k.value,
         n.value,
@@ -255,8 +255,8 @@ fn create_matmul_bench[
 
     bench_matmul[
         dtype,
-        DimList(m.dim, n.dim),
-        DimList(m.dim, k.dim),
+        DimList[m.dim, n.dim](),
+        DimList[m.dim, k.dim](),
         static_b_shape,
         transpose_b=transpose_b,
         cache_busting=cache_busting,

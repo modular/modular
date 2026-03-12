@@ -243,10 +243,6 @@ struct MatmulConfig[
         else:
             return False
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return String.write(self)
-
     fn write_to(self, mut writer: Some[Writer]):
         writer.write("kernel_")
         writer.write(Self.a_type, "_")
@@ -265,9 +261,8 @@ struct MatmulConfig[
         # transpose B
         writer.write("T" if Self.transpose_b else "N")
 
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        return String.write(self)
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        self.write_to(writer)
 
     fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
@@ -507,7 +502,7 @@ fn _vendor_blas_fallback_disabled() -> Bool:
     comptime globally_disabled = get_defined_bool[
         "MODULAR_DISABLE_VENDOR_FALLBACK", False
     ]()
-    comptime bench_disabled = not get_defined_bool["use_vendor_blas", False]()
+    comptime bench_disabled = not get_defined_bool["use_vendor_blas", True]()
     return globally_disabled or bench_disabled
 
 

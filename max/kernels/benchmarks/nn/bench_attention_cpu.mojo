@@ -28,11 +28,6 @@ struct AttentionSpec(ImplicitlyCopyable, Writable):
     var kv_seq_len: Int
     var depth_dim: Int
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
     # fmt: off
     fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the attention spec.

@@ -25,7 +25,7 @@ from std.utils.index import IndexList
 def test_runtime_and_compile_time_dim_and_stride(
     m: ValOrDim, k: ValOrDim
 ) raises:
-    comptime static_shape = DimList(k.dim, m.dim)
+    comptime static_shape = DimList[k.dim, m.dim]()
     var dynamic_shape = IndexList[2](k.value, m.value)
     comptime layout = Layout.row_major[dims=static_shape]()
 

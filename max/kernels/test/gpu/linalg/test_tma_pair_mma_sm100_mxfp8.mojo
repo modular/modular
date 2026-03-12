@@ -788,13 +788,13 @@ def test_blockscaled_pair_cta_mxfp8[
 
     # Initialize reference scales
     comptime REF_BLOCK_SCALE = 128
-    comptime static_ref_a_scales_shape = DimList(
+    comptime static_ref_a_scales_shape = DimList[
         ceildiv(k, REF_BLOCK_SCALE), m.dim
-    )
-    comptime static_ref_b_scales_shape = DimList(
+    ]()
+    comptime static_ref_b_scales_shape = DimList[
         ceildiv(Int(n.dim), REF_BLOCK_SCALE),
         ceildiv(k, REF_BLOCK_SCALE),
-    )
+    ]()
 
     var dynamic_ref_a_scales_shape = IndexList[2](
         ceildiv(k, REF_BLOCK_SCALE), m.value
@@ -875,9 +875,9 @@ def test_blockscaled_pair_cta_mxfp8[
         + String(cta_group)
     )
 
-    comptime static_a_shape = DimList(m.dim, k)
-    comptime static_b_shape = DimList(n.dim, k)
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList[m.dim, k]()
+    comptime static_b_shape = DimList[n.dim, k]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
     var dynamic_a_shape = IndexList[2](m.value, k)
     var dynamic_b_shape = IndexList[2](n.value, k)
     var dynamic_c_shape = IndexList[2](m.value, n.value)
@@ -886,20 +886,20 @@ def test_blockscaled_pair_cta_mxfp8[
     comptime atom_m = (32, 4)
     comptime SF_ATOM_K = 4
     comptime sf_k = ceildiv(k, SF_VECTOR_SIZE)
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList[
         ceildiv(m.dim, SF_ATOM_M[0] * SF_ATOM_M[1]),
         ceildiv(sf_k, SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         ceildiv(n.dim, SF_ATOM_M[0] * SF_ATOM_M[1]),
         ceildiv(sf_k, SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
+    ]()
 
     var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_ATOM_M[0] * SF_ATOM_M[1]),

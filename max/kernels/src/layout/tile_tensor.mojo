@@ -74,7 +74,7 @@ struct TileTensor[
     origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    linear_idx_type: DType = _get_index_type(address_space),
+    linear_idx_type: DType = _get_index_type[LayoutType](address_space),
     element_size: Int = 1,
 ](DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable, Writable):
     """A tensor type with trait-based layouts supporting nested and hierarchical
@@ -928,6 +928,30 @@ struct TileTensor[
             A TileTensor with the new layout viewing the same memory.
         """
         return {self.ptr, layout_val}
+
+    @always_inline("nodebug")
+    fn transpose(
+        self,
+    ) -> TileTensor[
+        dtype=Self.dtype,
+        origin=Self.origin,
+        LayoutType=Layout[
+            Variadic.reverse[*Self.LayoutType._shape_types],
+            Variadic.reverse[*Self.LayoutType._stride_types],
+        ],
+        address_space=Self.address_space,
+        element_size=Self.element_size,
+    ]:
+        """Create a transposed view of the tensor.
+
+        Returns a new TileTensor sharing the same pointer but with the
+        layout dimensions reversed. For 2D tensors, this swaps rows and
+        columns. This is a zero-cost operation -- no data is moved.
+
+        Returns:
+            A TileTensor with transposed layout viewing the same memory.
+        """
+        return {self.ptr, self.layout.transpose()}
 
     # flatten_leading is defined as a standalone function below the
     # struct. As a method, Self.LayoutType._shape_types[i] in the return
@@ -2096,7 +2120,7 @@ fn _distribute_with_offset[
         comptime stride_i = thread_layout.stride_types[i].static_value
         comptime shape_i = thread_layout.shape_types[i].static_value
         var thread_coord_i = (thread_id // stride_i) % shape_i
-        thread_coords[i] = Int(thread_coord_i)
+        thread_coords[i] = thread_coord_i
         offset += UInt(
             thread_coord_i * data_layout_tensor.layout.stride[i]().value()
         )
@@ -2278,7 +2302,7 @@ fn _tile_with_offset[
     var corner_coords = IndexList[Variadic.size(coord_types)]()
 
     comptime for i in range(Variadic.size(coord_types)):
-        corner_coords[i] = Int(tile_coords[i].value() * tile_shape[i].value())
+        corner_coords[i] = tile_coords[i].value() * tile_shape[i].value()
         offset += UInt(
             tile_coords[i].value()
             * tile_shape[i].value()
@@ -2406,7 +2430,7 @@ fn _tile_with_offset[
     var corner_coords = IndexList[Variadic.size(coord_types)]()
 
     comptime for i in range(Variadic.size(coord_types)):
-        corner_coords[i] = Int(tile_coords[i].value() * tile_shape[i].value())
+        corner_coords[i] = tile_coords[i].value() * tile_shape[i].value()
         offset += UInt(
             tile_coords[i].value()
             * tile_shape[i].value()
@@ -2514,8 +2538,16 @@ fn _vectorize[
     ](data_layout_tensor.ptr, new_layout)
 
 
-fn _get_index_type(address_space: AddressSpace) -> DType:
-    """Returns int32 for shared/constant GPU memory, int64 otherwise."""
+fn _get_index_type[
+    LayoutType: TensorLayout
+](address_space: AddressSpace) -> DType:
+    """Returns int32 for shared/constant GPU memory or small known layouts,
+    int64 otherwise."""
+    comptime if LayoutType.all_dims_known and Int64(
+        LayoutType.static_cosize
+    ) >> 31 == 0:
+        return DType.int32
+
     if address_space in (
         AddressSpace.SHARED,
         AddressSpace.CONSTANT,
@@ -2697,9 +2729,9 @@ fn _int_to_dim(value: Int) -> Dim:
 comptime _int_to_dim_tabulator[it: _IntTuple, idx: Int]: Dim = _int_to_dim(
     it[idx].value()
 )
-comptime _LTDims[it: _IntTuple] = DimList(
-    Variadic.tabulate[len(it), _int_to_dim_tabulator[it, _]]
-)
+comptime _LTDims[it: _IntTuple] = DimList[
+    *Variadic.tabulate[len(it), _int_to_dim_tabulator[it, _]]
+]()
 """Convert a flat IntTuple to a DimList.
 
 UNKNOWN_VALUE entries become dynamic Dims; known values become static Dims.
@@ -2733,12 +2765,14 @@ fn lt_to_tt[
         stride_types=ResultLayout._stride_types,
     ],
     lt.origin,
+    address_space=lt.address_space,
 ]:
     """Convert a LayoutTensor to a TileTensor.
 
     Static dimensions (known at compile time) are preserved as ComptimeInt.
     Dynamic dimensions (UNKNOWN_VALUE) become RuntimeInt, filled from the
-    LayoutTensor's runtime layout.  Works for any flat rank.
+    LayoutTensor's runtime layout.  The address space is preserved from the
+    source LayoutTensor.  Works for any flat rank.
 
     By default the TileTensor layout is derived automatically from the
     LayoutTensor's legacy layout.  Pass an explicit ``ResultLayout`` to
@@ -2754,7 +2788,8 @@ fn lt_to_tt[
         lt: The LayoutTensor to convert.
 
     Returns:
-        A TileTensor with the same data and equivalent layout.
+        A TileTensor with the same data, equivalent layout, and matching
+        address space.
     """
     comptime ConcLayout = Layout[
         shape_types=ResultLayout._shape_types,
@@ -2775,10 +2810,12 @@ fn lt_to_tt[
                 Scalar[DType.int64](lt.runtime_layout.stride.value[i])
             )
 
-    var ptr = UnsafePointer[Scalar[dtype], lt.origin](
-        unsafe_from_address=Int(lt.ptr)
-    )
-    return TileTensor[dtype, ConcLayout, lt.origin](
+    var ptr = UnsafePointer[
+        Scalar[dtype], lt.origin, address_space=lt.address_space
+    ](unsafe_from_address=Int(lt.ptr))
+    return TileTensor[
+        dtype, ConcLayout, lt.origin, address_space=lt.address_space
+    ](
         ptr=ptr,
         layout=ConcLayout(shape_c, stride_c),
     )

@@ -471,7 +471,6 @@ struct IntTuple(
             elements: List of integer values to store in the tuple.
 
         Notes:
-
             - Pre-allocates exact memory needed for efficiency.
             - Validates that all values are above `MinimumValue`. If any value is
               less than `MinimumValue`, assertion fails with an error message.
@@ -492,26 +491,25 @@ struct IntTuple(
         self.validate_structure()
 
     @always_inline
-    fn __init__(out self, elements: VariadicParamList[Int]):
+    fn __init__[*elements: Int](out self):
         """Initialize an `IntTuple` with a list of integers.
 
         Creates an `IntTuple` containing the provided integer values.
 
-        Args:
+        Parameters:
             elements: List of integer values to store in the tuple.
 
         Notes:
-
             - Pre-allocates exact memory needed for efficiency.
             - Validates that all values are above `MinimumValue`. If any value is
               less than `MinimumValue`, assertion fails with an error message.
             - Structure validation performed when assertions are enabled.
         """
-        var size = len(elements)
+        comptime size = VariadicParamList[*elements].size
         self._store = IntArray(size + 1)
         self._store[0] = size
         for i in range(size):
-            var value = elements[i]
+            var value = VariadicParamList[*elements]()[i]
             debug_assert(
                 value >= Self.MinimumValue,
                 "IntTuple value must be >= MinimumValue: ",
@@ -630,7 +628,7 @@ struct IntTuple(
         self._store[0] = len(dimlist)
 
         var i = 0
-        for dim in dimlist.value:
+        for dim in VariadicParamList[*dimlist.values]():
             var value = dim.get() if dim else UNKNOWN_VALUE
             debug_assert(
                 value >= Self.MinimumValue,
@@ -1304,7 +1302,6 @@ struct IntTuple(
         # Avoid making gratuitous copies
         return self
 
-    @always_inline
     fn write_to(self, mut writer: Some[Writer]):
         """
         Writes a string representation of this `IntTuple` to the provided writer.
@@ -1330,15 +1327,18 @@ struct IntTuple(
                     writer.write(", ")
             writer.write(")")
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
+    fn write_repr_to(self, mut writer: Some[Writer]):
         """
-        Returns a string representation of this `IntTuple`.
+        Writes a string representation of this `IntTuple` to the provided writer.
 
-        Returns:
-            A string representation of the `IntTuple`, using the `write_to` method.
+        Args:
+            writer: The writer to output the string representation to.
+
+        Notes:
+            For single values, writes just the value.
+            For tuples, writes a comma-separated list of elements enclosed in parentheses.
         """
-        return String.write(self)
+        self.write_to(writer)
 
     @staticmethod
     fn is_equal(a: IntTuple, b: IntTuple) -> Bool:
@@ -1403,17 +1403,6 @@ struct IntTuple(
             True if the `IntTuple`s are not equal, False otherwise.
         """
         return not Self.is_equal(self, other)
-
-    @always_inline("nodebug")
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        """
-        Returns a string representation of this `IntTuple` for debugging.
-
-        Returns:
-            A string representation of the `IntTuple`, same as `__str__`.
-        """
-        return String.write(self)
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:

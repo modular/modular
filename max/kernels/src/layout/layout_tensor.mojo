@@ -4509,7 +4509,7 @@ struct LayoutTensor[
             processor optimizations.
         """
 
-        comptime shape = IntTuple(vector_shape)
+        comptime shape = IntTuple.__init__[*vector_shape]()
         comptime _origin = origin_of()  # FIXME: MOCO-1912
         var ret = self._vectorize_2[
             _origin,
@@ -5754,21 +5754,6 @@ struct LayoutTensor[
                         var element_offset = self.runtime_element_layout(j)
                         self.ptr[idx + element_offset] = val
         return self
-
-    @no_inline
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Convert the tensor to a string representation.
-
-        This method converts the tensor to a human-readable string
-        representation by writing its contents to a string. It delegates to the
-        `write_to` method which formats the tensor appropriately based on its
-        rank and shape.
-
-        Returns:
-            A string representation of the tensor.
-        """
-        return String.write(self)
 
     fn write_to(self, mut writer: Some[Writer]):
         """Format and write the tensor's contents to a writer.

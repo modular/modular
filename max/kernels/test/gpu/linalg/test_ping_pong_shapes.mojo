@@ -90,7 +90,7 @@ fn test_shape[
                         host_c_ref[i],
                     )
 
-        assert_true(errors == 0, msg=t"Test failed:{errors} errors")
+        assert_true(errors == 0, msg=String(t"Test failed:{errors} errors"))
 
 
 def main() raises:

@@ -65,16 +65,16 @@ fn bench_dual_gemm_gpu[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             var a_buf = NDBuffer[
-                rank=2, dtype, MutAnyOrigin, DimList(Dim(), K)
+                rank=2, dtype, MutAnyOrigin, DimList[Dim(), K]()
             ](a_ptr, Index(M, K))
-            var b0_buf = NDBuffer[rank=2, dtype, MutAnyOrigin, DimList(N, K)](
+            var b0_buf = NDBuffer[rank=2, dtype, MutAnyOrigin, DimList[N, K]()](
                 b0_ptr, Index(N, K)
             )
-            var b1_buf = NDBuffer[rank=2, dtype, MutAnyOrigin, DimList(N, K)](
+            var b1_buf = NDBuffer[rank=2, dtype, MutAnyOrigin, DimList[N, K]()](
                 b1_ptr, Index(N, K)
             )
             var c_buf = NDBuffer[
-                rank=2, dtype, MutAnyOrigin, DimList(Dim(), N)
+                rank=2, dtype, MutAnyOrigin, DimList[Dim(), N]()
             ](c_ptr, Index(M, N))
             multistage_dual_gemm[transpose_b=transpose_b, config=config](
                 c_buf, a_buf, b0_buf, b1_buf, ctx

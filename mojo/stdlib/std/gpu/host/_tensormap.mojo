@@ -157,16 +157,6 @@ struct SwizzleMode(
         """
         return Int((2**self._value) * 16)
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Convert SwizzleMode to string representation.
-
-        Returns:
-            A human-readable string describing the swizzle mode.
-        """
-        return String.write(self)
-
     @always_inline
     fn write_to(self, mut writer: Some[Writer]):
         """Write a human-readable representation of the SwizzleMode to a writer.

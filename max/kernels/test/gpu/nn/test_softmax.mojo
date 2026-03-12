@@ -15,8 +15,6 @@ from std.math import isclose
 from std.random import rand, random_float64, seed
 from std.sys import has_amd_gpu_accelerator
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
 from layout.int_tuple import UNKNOWN_VALUE
@@ -92,7 +90,7 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
 
     _softmax_cpu[type, 1, rank, origin_of()._mlir_origin, input_fn_host](
         shape,
-        TileTensor(NDBuffer[rank=rank, type](out_ref.ptr, shape)),
+        TileTensor(out_ref.ptr, row_major(Coord(shape))),
         rank - 1,
     )
 
@@ -287,7 +285,7 @@ fn test_gpu_online_softmax[
 
     _softmax_cpu[type, 1, rank, origin_of()._mlir_origin, input_fn_host](
         shape,
-        TileTensor(NDBuffer[rank=rank, type](out_ref.ptr, shape)),
+        TileTensor(out_ref.ptr, row_major(Coord(shape))),
         rank - 1,
     )
 
@@ -373,7 +371,7 @@ fn test_gpu_logsoftmax(ctx: DeviceContext) raises:
             logsoftmax=True,
         ](
             shape,
-            TileTensor(NDBuffer[rank=rank, type](out_ref.ptr, shape)),
+            TileTensor(out_ref.ptr, row_major(Coord(shape))),
             rank - 1,
         )
 
@@ -498,7 +496,7 @@ fn test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
 
     _softmax_cpu[type, 1, rank, origin_of()._mlir_origin, input_fn_cpu](
         shape,
-        TileTensor(NDBuffer[rank=rank, type](out_ref.ptr, shape)),
+        TileTensor(out_ref.ptr, row_major(Coord(shape))),
         rank - 1,
     )
 

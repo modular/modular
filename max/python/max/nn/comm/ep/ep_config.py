@@ -136,13 +136,13 @@ def estimate_ep_memory_usage(
     """Estimate the EP communication memory usage per device per buffer group.
 
     This is a standalone function so it can be called both from
-    :class:`EPCommInitializer` (which has a fully-validated ``EPConfig``)
+    :class:`~max.nn.comm.ep.ep_manager.EPCommInitializer` (which has a fully-validated ``EPConfig``)
     and from memory estimators that only need the numeric fields.
 
     Args:
         hidden_size: Model hidden dimension.
-        dispatch_dtype_size: Size in bytes of the dispatch data type.
-        combine_dtype_size: Size in bytes of the combine data type.
+        dispatch_dtype: Data type used for dispatching tokens to experts.
+        combine_dtype: Data type used for combining expert outputs.
         max_tokens_per_rank: Maximum tokens per GPU rank.
         n_experts: Total number of routed experts.
         n_nodes: Total number of nodes in the distributed setup.

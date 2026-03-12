@@ -199,14 +199,6 @@ struct UnsafePointer[
     for accessing the values once they are initialized. You should instead use
     safer pointers when possible.
 
-    Differences from `LegacyUnsafePointer`:
-
-    - `UnsafePointer` fixes the unsafe implicit mutability and origin casting
-      issues of `LegacyUnsafePointer`.
-    - `UnsafePointer` has an inferred mutability parameter.
-    - `UnsafePointer` does _not_ have a defaulted origin parameter, this must
-      be explicitly specified or unbound.
-
     Important things to know:
 
     - This pointer is unsafe and nullable. No bounds checks; reading before
@@ -785,16 +777,6 @@ struct UnsafePointer[
         """
         return Int(mlir_value=__mlir_op.`pop.pointer_to_index`(self.address))
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Gets a string representation of the pointer.
-
-        Returns:
-            The string representation of the pointer.
-        """
-        return String.write(self)
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         """Formats this pointer address to the provided Writer.
@@ -978,7 +960,7 @@ struct UnsafePointer[
         Example:
 
         ```mojo
-        var p = UnsafePointer[Int32].alloc(8)
+        var p = alloc[Int32](8)
         p.store(0, SIMD[DType.int32, 4](1, 2, 3, 4))
         var v = p.load[width=4]()
         print(v)  # => [1, 2, 3, 4]
@@ -1469,7 +1451,7 @@ struct UnsafePointer[
     fn bitcast[
         T: AnyType
     ](self) -> UnsafePointer[T, Self.origin, address_space=Self.address_space,]:
-        """Bitcasts a UnsafePointer to a different type.
+        """Bitcasts an UnsafePointer to a different type.
 
         Parameters:
             T: The target type.
@@ -1609,7 +1591,6 @@ struct UnsafePointer[
         `AnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the pointer.
         """
-        # TODO: compiler error if using self.unsafe_origin_cast
         return __mlir_op.`pop.pointer.bitcast`[
             _type=UnsafePointer[
                 Self.type,

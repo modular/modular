@@ -226,3 +226,26 @@ fn get_defined_dtype[name: StaticString, default: DType]() -> DType:
         return DType._from_str(get_defined_string[name]())
     else:
         return default
+
+
+struct MojoVersion(ImplicitlyCopyable, TrivialRegisterPassable):
+    """Represents the Mojo version as major, minor, and patch numbers."""
+
+    var major: Int
+    """The major version number."""
+    var minor: Int
+    """The minor version number."""
+    var patch: Int
+    """The patch version number."""
+
+    @always_inline("nodebug")
+    fn __init__(out self):
+        """Initializes the version by reading it from the compiler at compile time.
+        """
+        self.major = Int(value=__mlir_op.`lit.mojo.version.major`())
+        self.minor = Int(value=__mlir_op.`lit.mojo.version.minor`())
+        self.patch = Int(value=__mlir_op.`lit.mojo.version.patch`())
+
+
+comptime MOJO_VERSION = MojoVersion()
+"""The version of the Mojo language used for the current compilation, available at compile time."""

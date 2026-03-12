@@ -967,9 +967,11 @@ fn dual_gemm[
     var N = 2 * shape.N
     var K = shape.K
     var multi_gemm_cond = M > 1 and N % 128 == 0 and K % 32 == 0 and K >= 128
-    comptime multistage_gemm_supported_shape = b_shape.all_known[
-        2
-    ]() and a_shape.has_value[1]() and c_shape.has_value[1]()
+    comptime multistage_gemm_supported_shape = b_shape.all_known() and a_shape.has_value[
+        1
+    ]() and c_shape.has_value[
+        1
+    ]()
     comptime matmul_supported_format = (
         a_type in (DType.float32, DType.bfloat16, DType.float16)
         and b_type in (DType.float32, DType.bfloat16, DType.float16)

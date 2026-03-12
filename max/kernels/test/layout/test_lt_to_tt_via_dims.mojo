@@ -43,7 +43,7 @@ from std.testing import assert_equal
 
 fn test_dims_to_coord_like_static() raises:
     print("--- test_dims_to_coord_like_static ---")
-    comptime dims = DimList(4, 8)
+    comptime dims = DimList[4, 8]()
     comptime CoordTypes = _DimsToCoordLike[DType.int64, dims]
     # Both dims are static, so both should be ComptimeInt
     comptime assert CoordTypes[0].is_static_value, "dim 0 should be static"
@@ -55,7 +55,7 @@ fn test_dims_to_coord_like_static() raises:
 
 fn test_dims_to_coord_like_dynamic() raises:
     print("--- test_dims_to_coord_like_dynamic ---")
-    comptime dims = DimList(Dim(), Dim(8))
+    comptime dims = DimList[Dim(), Dim(8)]()
     comptime CoordTypes = _DimsToCoordLike[DType.int64, dims]
     # dim 0 is dynamic -> RuntimeInt, dim 1 is static -> ComptimeInt
     comptime assert not CoordTypes[0].is_static_value, "dim 0 should be dynamic"
@@ -71,10 +71,10 @@ fn test_dims_to_coord_like_dynamic() raises:
 
 fn test_tiletensor_type_from_dims() raises:
     print("--- test_tiletensor_type_from_dims ---")
-    comptime dims = DimList(4, 8)
+    comptime dims = DimList[4, 8]()
     comptime shape_types = _DimsToCoordLike[DType.int64, dims]
     # For row-major stride (8, 1):
-    comptime stride_dims = DimList(8, 1)
+    comptime stride_dims = DimList[8, 1]()
     comptime stride_types = _DimsToCoordLike[DType.int64, stride_dims]
     comptime TTLayout = InternalLayout[shape_types, stride_types]
     comptime TTType = TileTensor[DType.float32, TTLayout, MutAnyOrigin]
@@ -102,7 +102,7 @@ fn test_dimlist_from_layout_shape() raises:
     # Convert to Dim: UNKNOWN_VALUE (-1) becomes Dim(), others become Dim(N)
     comptime d0 = Dim(shape_dim0) if shape_dim0 != UNKNOWN_VALUE else Dim()
     comptime d1 = Dim(shape_dim1) if shape_dim1 != UNKNOWN_VALUE else Dim()
-    comptime shape_dims = DimList(d0, d1)
+    comptime shape_dims = DimList[d0, d1]()
 
     comptime CoordTypes = _DimsToCoordLike[DType.int64, shape_dims]
     comptime assert CoordTypes[0].is_static_value, "dim 0 should be static"
@@ -121,14 +121,14 @@ fn test_dimlist_from_dynamic_layout_shape() raises:
     print("--- test_dimlist_from_dynamic_layout_shape ---")
 
     # Public layout with one dynamic dim
-    comptime lt_layout = Layout.row_major[dims=DimList(Dim(), Dim(8))]()
+    comptime lt_layout = Layout.row_major[dims=DimList[Dim(), Dim(8)]()]()
 
     comptime shape_dim0 = lt_layout.shape[0].value()
     comptime shape_dim1 = lt_layout.shape[1].value()
 
     comptime d0 = Dim(shape_dim0) if shape_dim0 != UNKNOWN_VALUE else Dim()
     comptime d1 = Dim(shape_dim1) if shape_dim1 != UNKNOWN_VALUE else Dim()
-    comptime shape_dims = DimList(d0, d1)
+    comptime shape_dims = DimList[d0, d1]()
 
     comptime CoordTypes = _DimsToCoordLike[DType.int64, shape_dims]
     comptime assert not CoordTypes[0].is_static_value, "dim 0 should be dynamic"
@@ -145,7 +145,7 @@ fn test_dimlist_from_dynamic_layout_shape() raises:
 fn test_tiletensor_type_from_public_layout() raises:
     print("--- test_tiletensor_type_from_public_layout ---")
 
-    comptime lt_layout = Layout.row_major[dims=DimList(Dim(), Dim(8))]()
+    comptime lt_layout = Layout.row_major[dims=DimList[Dim(), Dim(8)]()]()
 
     # Helper: convert IntTuple element to Dim
     @parameter
@@ -154,14 +154,14 @@ fn test_tiletensor_type_from_public_layout() raises:
             return Dim(value)
         return Dim()
 
-    comptime shape_dims = DimList(
+    comptime shape_dims = DimList[
         _int_to_dim(lt_layout.shape[0].value()),
         _int_to_dim(lt_layout.shape[1].value()),
-    )
-    comptime stride_dims = DimList(
+    ]()
+    comptime stride_dims = DimList[
         _int_to_dim(lt_layout.stride[0].value()),
         _int_to_dim(lt_layout.stride[1].value()),
-    )
+    ]()
 
     comptime shape_types = _DimsToCoordLike[DType.int64, shape_dims]
     comptime stride_types = _DimsToCoordLike[DType.int64, stride_dims]
@@ -200,34 +200,34 @@ fn test_lt_to_tt_function() raises:
         InternalLayout[
             _DimsToCoordLike[
                 DType.int64,
-                DimList(
+                DimList[
                     _int_to_dim(lt_layout.shape[0].value()),
                     _int_to_dim(lt_layout.shape[1].value()),
-                ),
+                ](),
             ],
             _DimsToCoordLike[
                 DType.int64,
-                DimList(
+                DimList[
                     _int_to_dim(lt_layout.stride[0].value()),
                     _int_to_dim(lt_layout.stride[1].value()),
-                ),
+                ](),
             ],
         ],
         lt.origin,
     ]:
         comptime ShapeTypes = _DimsToCoordLike[
             DType.int64,
-            DimList(
+            DimList[
                 _int_to_dim(lt_layout.shape[0].value()),
                 _int_to_dim(lt_layout.shape[1].value()),
-            ),
+            ](),
         ]
         comptime StrideTypes = _DimsToCoordLike[
             DType.int64,
-            DimList(
+            DimList[
                 _int_to_dim(lt_layout.stride[0].value()),
                 _int_to_dim(lt_layout.stride[1].value()),
-            ),
+            ](),
         ]
         var shape = Coord[*ShapeTypes]()
         var stride = Coord[*StrideTypes]()
@@ -261,7 +261,7 @@ fn test_lt_to_tt_function() raises:
     print("  static: rank =", tt1.rank)
 
     # Test with dynamic layout
-    comptime dynamic_layout = Layout.row_major[dims=DimList(Dim(), Dim(8))]()
+    comptime dynamic_layout = Layout.row_major[dims=DimList[Dim(), Dim(8)]()]()
     var array2 = InlineArray[Float32, 32](fill=2.0)
     var lt2 = LayoutTensor[DType.float32, dynamic_layout](
         array2.unsafe_ptr(),
@@ -292,7 +292,7 @@ fn test_generalized_lt_to_tt() raises:
     print("  2D static: PASSED")
 
     # --- 2D dynamic layout ---
-    comptime dynamic_2d = Layout.row_major[dims=DimList(Dim(), Dim(8))]()
+    comptime dynamic_2d = Layout.row_major[dims=DimList[Dim(), Dim(8)]()]()
     var arr_2d_dyn = InlineArray[Float32, 24](fill=2.0)
     var lt_2d_dyn = LayoutTensor[DType.float32, dynamic_2d](
         arr_2d_dyn.unsafe_ptr(),

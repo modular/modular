@@ -176,11 +176,11 @@ fn bench_grouped_matmul[
     # Define shapes and sizes
     # For fp4, data is stored as uint8 (2 fp4 values per byte), so K dimension is halved
     comptime packed_K = K // 2 if is_fp4e2m1 else K
-    comptime static_a_shape = DimList(Dim(), packed_K)
+    comptime static_a_shape = DimList[Dim(), packed_K]()
     var a_size = total_num_tokens * packed_K
-    comptime static_c_shape = DimList(Dim(), N)
+    comptime static_c_shape = DimList[Dim(), N]()
     var c_size = total_num_tokens * N
-    comptime static_b_shape = DimList(num_experts, N, packed_K)
+    comptime static_b_shape = DimList[num_experts, N, packed_K]()
     var dynamic_b_shape = IndexList[3](num_experts, N, packed_K)
     var b_size = num_experts * N * packed_K
 
@@ -471,11 +471,11 @@ fn bench_grouped_matmul[
             scaling_kind_str == "1d2d"
         ), "Only support 1d2d scaling kind for float8_e4m3fn"
         comptime BLOCK_SCALE_K = 128
-        comptime static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())
+        comptime static_a_scales_shape = DimList[K // BLOCK_SCALE_K, Dim()]()
         var a_scales_size = (K // BLOCK_SCALE_K) * total_num_tokens
-        comptime static_b_scales_shape = DimList(
+        comptime static_b_scales_shape = DimList[
             num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-        )
+        ]()
         var dynamic_b_scales_shape = IndexList[3](
             num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
         )

@@ -121,13 +121,13 @@ fn test_default_init_nested() raises:
 
 
 def test_from_dimlist_empty() raises:
-    comptime dims = DimList()
+    comptime dims = DimList[]()
     comptime coord = _DimsToCoordLike[DType.int32, dims]
     assert_equal(Variadic.size(coord), 0)
 
 
 def test_from_dimlist() raises:
-    comptime dims = DimList(Dim(5), Dim(), Dim(3))
+    comptime dims = DimList[Dim(5), Dim(), Dim(3)]()
     comptime coord = _DimsToCoordLike[DType.int32, dims]
     assert_equal(Variadic.size(coord), 3)
     assert_true(_type_is_eq[coord[0], ComptimeInt[5]]())

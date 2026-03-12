@@ -621,8 +621,8 @@ fn reducescatter[
         unit_numel = simd_width
     elif axis == 0:
         # 2D axis-0: partition rows, unit = one row
-        var dim_0 = Int(input_buffers[0].layout.shape[0]().value())
-        var dim_1 = Int(input_buffers[0].layout.shape[1]().value())
+        var dim_0 = input_buffers[0].layout.shape[0]().value()
+        var dim_1 = input_buffers[0].layout.shape[1]().value()
         if dim_1 % simd_width != 0:
             raise Error(
                 "inner dimension (axis 1) must be a multiple of SIMD width"
@@ -632,8 +632,8 @@ fn reducescatter[
         unit_numel = dim_1
     else:
         # axis == 1: partition column groups, unit = simd_width columns
-        var dim_0 = Int(input_buffers[0].layout.shape[0]().value())
-        var dim_1 = Int(input_buffers[0].layout.shape[1]().value())
+        var dim_0 = input_buffers[0].layout.shape[0]().value()
+        var dim_1 = input_buffers[0].layout.shape[1]().value()
         if dim_1 % simd_width != 0:
             raise Error(
                 "scatter dimension (axis 1) must be a multiple of SIMD width"
@@ -661,11 +661,11 @@ fn reducescatter[
             output_buffer.rank == 2
         ), "axis >= 0 requires 2D output buffer"
         var n_units = config_check.rank_units(my_rank)
-        var expected_rows = n_units if axis == 0 else Int(
-            input_buffers[0].layout.shape[0]().value()
+        var expected_rows = (
+            n_units if axis == 0 else input_buffers[0].layout.shape[0]().value()
         )
         var expected_cols = (
-            Int(input_buffers[0].layout.shape[1]().value()) if axis
+            input_buffers[0].layout.shape[1]().value() if axis
             == 0 else n_units * simd_width
         )
         var out_rows = Int(output_buffer.dim[0]())

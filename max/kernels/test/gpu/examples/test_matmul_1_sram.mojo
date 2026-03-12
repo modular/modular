@@ -136,11 +136,11 @@ fn run_matmul(ctx: DeviceContext) raises:
     comptime K = 511
 
     var a_host_ptr = alloc[Float32](M * K)
-    var a_host = NDBuffer[rank=2, DType.float32, _, DimList(M, K)](a_host_ptr)
+    var a_host = NDBuffer[rank=2, DType.float32, _, DimList[M, K]()](a_host_ptr)
     var b_host_ptr = alloc[Float32](K * N)
-    var b_host = NDBuffer[rank=2, DType.float32, _, DimList(K, N)](b_host_ptr)
+    var b_host = NDBuffer[rank=2, DType.float32, _, DimList[K, N]()](b_host_ptr)
     var c_host_ptr = alloc[Float32](M * N)
-    var c_host = NDBuffer[rank=2, DType.float32, _, DimList(M, N)](c_host_ptr)
+    var c_host = NDBuffer[rank=2, DType.float32, _, DimList[M, N]()](c_host_ptr)
 
     for i in range(M):
         for j in range(K):

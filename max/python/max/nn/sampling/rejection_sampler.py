@@ -82,7 +82,7 @@ class RejectionSampler(Module):
 
     Accepts a draft token when the draft logit for that token does not
     exceed the target logit by more than ``eps``.  Returns
-    ``(first_rejected_idx, sampled_target_token)`` — a single recovered
+    ``(first_rejected_idx, sampled_target_token)`` - a single recovered
     token at the first rejected position.
     """
 

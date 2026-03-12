@@ -231,42 +231,6 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return Bool(len(self))
 
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __repr__(self) -> String where conforms_to(Self.V, Writable):
-        """Returns a string representation of a `Counter`.
-
-        Returns:
-            A string representation of the Counter.
-        """
-        var output = String()
-        self.write_repr_to(output)
-        return output^
-
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String where conforms_to(Self.V, Writable):
-        """Returns a string representation of a `Counter`.
-
-        Returns:
-            A string representation of the Counter.
-
-        Example:
-
-        ```mojo
-        from std.collections import Counter
-
-
-        var c = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
-        var counter_as_string = String(c)
-        print(counter_as_string)
-        # prints "{a: 3, c: 3, b: 2, d: 1}"
-        ```
-        """
-        var output = String()
-        self.write_to(output)
-        return output^
-
     fn _write_counter_body[
         f_key: fn(Self.V, mut Some[Writer]),
         f_val: fn(Int, mut Some[Writer]),
