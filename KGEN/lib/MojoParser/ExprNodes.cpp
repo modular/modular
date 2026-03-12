@@ -704,8 +704,8 @@ AnyValue TStringExprNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   for (const Part &part : parts) {
     std::visit(Overloaded{
                    [&](const LiteralPart &literal) {
-                     formatTemplate +=
-                         Lexer::getTStringLiteralValue(literal.text);
+                     formatTemplate += Lexer::getTStringLiteralValue(
+                         literal.text, literal.isRaw);
                    },
                    [&](const InterpolationPart &interpolation) {
                      formatTemplate += "{}";

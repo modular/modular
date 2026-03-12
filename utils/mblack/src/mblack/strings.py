@@ -158,12 +158,13 @@ def normalize_string_prefix(s: str) -> str:
     new_prefix = (
         orig_prefix.replace("F", "f")
         .replace("T", "t")
+        .replace("R", "r")
         .replace("B", "b")
         .replace("U", "")
         .replace("u", "")
     )
 
-    # Python syntax guarantees max 2 prefixes and that one of them is "r"
+    # When there are 2 prefix chars, ensure "r" comes first (e.g. tr -> rt)
     if len(new_prefix) == 2 and "r" != new_prefix[0].lower():
         new_prefix = new_prefix[::-1]
     return f"{new_prefix}{match.group(2)}"

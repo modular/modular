@@ -719,8 +719,8 @@ ParseResult ExprParser::parseTStringFromSpelling(
   const char *ptr = spelling.data();
   const char *end = ptr + spelling.size();
 
-  // Skip 't'/'T' prefix.
-  ptr++;
+  // Detect and skip (raw) t-string prefix.
+  bool isRaw = Lexer::skipTStringPrefix(ptr);
 
   auto peekNextIs = [&](char c) -> bool {
     return ptr + 1 < end && ptr[1] == c;
@@ -749,6 +749,7 @@ ParseResult ExprParser::parseTStringFromSpelling(
       if (ptr > literalStart) {
         parts.push_back(TStringExprNode::LiteralPart{
             .text = StringRef(literalStart, ptr - literalStart),
+            .isRaw = isRaw,
         });
       }
 
@@ -814,6 +815,7 @@ ParseResult ExprParser::parseTStringFromSpelling(
   if (ptr > literalStart && literalStart < contentEnd) {
     parts.push_back(TStringExprNode::LiteralPart{
         .text = StringRef(literalStart, contentEnd - literalStart),
+        .isRaw = isRaw,
     });
   }
 

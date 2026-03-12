@@ -256,7 +256,8 @@ void TStringExprNode::print(raw_indented_ostream &os) const {
   for (const Part &part : parts) {
     std::visit(Overloaded{
                    [&](const LiteralPart &literal) {
-                     os << "Literal: \"" << literal.text << "\"\n";
+                     os << "Literal" << (literal.isRaw ? " (raw)" : "")
+                        << ": \"" << literal.text << "\"\n";
                    },
                    [&](const InterpolationPart &interpolation) {
                      os << "Interpolation:\n";

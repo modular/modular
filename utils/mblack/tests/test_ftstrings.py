@@ -113,3 +113,28 @@ def test_mixed_fstring_and_tstring():
     source = 'x = f"hello {name}" + t"world {value}"'
     result = format_str(source, mode=Mode(target_versions={TargetVersion.MOJO}))
     assert "f" in result and "t" in result
+
+
+MOJO_MODE = Mode(target_versions={TargetVersion.MOJO})
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    ["rt", "rT", "Rt", "RT", "tr", "tR", "Tr", "TR"],
+)
+def test_raw_tstring_prefix_normalized_to_rt(prefix):
+    """All raw t-string prefix variants are normalized to 'rt'."""
+    source = f'{prefix}"hello {{name}}"'
+    result = format_str(source, mode=MOJO_MODE)
+    assert result == 'rt"hello {name}"\n'
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    ["rf", "rF", "Rf", "RF", "fr", "fR", "Fr", "FR"],
+)
+def test_raw_fstring_prefix_normalized_to_rf(prefix):
+    """All raw f-string prefix variants are normalized to 'rf'."""
+    source = f'{prefix}"hello {{name}}"'
+    result = format_str(source, mode=MOJO_MODE)
+    assert result == 'rf"hello {name}"\n'

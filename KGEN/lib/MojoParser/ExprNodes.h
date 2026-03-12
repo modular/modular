@@ -170,6 +170,7 @@ struct StringLiteralNode final : public ExprNode {
 struct TStringExprNode final : public ExprNode {
   struct LiteralPart {
     StringRef text;
+    bool isRaw = false;
   };
 
   struct InterpolationPart {

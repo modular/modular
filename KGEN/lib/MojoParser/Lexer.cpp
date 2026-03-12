@@ -178,6 +178,10 @@ void Lexer::formToken(Token::Kind kind, StringRef spelling, ssize_t indentation,
 // Lexer Implementation Methods
 //===----------------------------------------------------------------------===//
 
+static bool isQuoteChar(char c) { return c == '\'' || c == '"'; }
+static bool isTChar(char c) { return c == 't' || c == 'T'; }
+static bool isRChar(char c) { return c == 'r' || c == 'R'; }
+
 void Lexer::lexToken() {
   // This keeps track of the indentation of the current token from the start of
   // the line.  The first byte of the file starts with an indentation of zero,
@@ -243,13 +247,21 @@ void Lexer::lexToken() {
     default:
       // Handle identifiers.
       if (llvm::isAlpha(curPtr[-1])) {
-        // T-string literal
-        if ((curPtr[-1] == 't' || curPtr[-1] == 'T') &&
-            (*curPtr == '\'' || *curPtr == '"'))
+        // Raw t-string: rt"..."
+        if (isRChar(curPtr[-1]) && isTChar(*curPtr) &&
+            curPtr + 1 < curBuffer.end() && isQuoteChar(curPtr[1]))
           return lexTString(tokStart, indentation);
-        // Raw string literal
-        if ((curPtr[-1] == 'r' || curPtr[-1] == 'R') &&
-            (*curPtr == '\'' || *curPtr == '"'))
+        // T-string: t"..." — or raw t-string: tr"..."
+        if (isTChar(curPtr[-1])) {
+          bool nextIsQuote = isQuoteChar(*curPtr);
+          bool nextIsRawPrefix = isRChar(*curPtr) &&
+                                 curPtr + 1 < curBuffer.end() &&
+                                 isQuoteChar(curPtr[1]);
+          if (nextIsQuote || nextIsRawPrefix)
+            return lexTString(tokStart, indentation);
+        }
+        // Raw string: r"..."
+        if (isRChar(curPtr[-1]) && isQuoteChar(*curPtr))
           return lexString(tokStart, indentation);
         return lexIdentifierOrKeyword(tokStart, indentation);
       }
@@ -484,6 +496,19 @@ static bool isOctalDigit(char C) { return C >= '0' && C <= '7'; }
 
 // === Static helpers for string/t-string skipping (shared by lexer & parser)
 
+bool Lexer::skipTStringPrefix(const char *&ptr) {
+  if (isRChar(ptr[0]) && isTChar(ptr[1])) {
+    ptr += 2;
+    return true;
+  }
+  if (isTChar(ptr[0]) && isRChar(ptr[1])) {
+    ptr += 2;
+    return true;
+  }
+  ptr++; // plain t/T
+  return false;
+}
+
 bool Lexer::isTripleQuote(const char *ptr, const char *end, char quoteChar) {
   return ptr + 2 < end && ptr[0] == quoteChar && ptr[1] == quoteChar &&
          ptr[2] == quoteChar;
@@ -676,6 +701,28 @@ bool Lexer::findTStringInterpolationEnd(const char *&ptr, const char *end,
                                         size_t depth) {
   assert(depth <= 20 && "t-string nesting depth (20) exceeded");
   assert((ptr && *ptr == '{') && "expected '{' at beginning of interpolation");
+
+  struct QuotedString {
+    char quote;
+    bool triple;
+  };
+
+  auto tryConsumeStringOpening =
+      [&](auto... charPrefix) -> std::optional<QuotedString> {
+    constexpr auto prefixLen = sizeof...(charPrefix);
+    if (ptr + prefixLen < end) {
+      size_t index = 1;
+      if ((true && ... && charPrefix(ptr[index++]))) {
+        ptr += prefixLen;
+        char quote = *ptr;
+        bool triple = isTripleQuote(ptr, end, quote);
+        ptr += triple ? 3 : 1;
+        return {{.quote = quote, .triple = triple}};
+      }
+    }
+    return {};
+  };
+
   ptr++; // skip '{'
   int braceDepth = 1;
   while (ptr < end && braceDepth > 0) {
@@ -695,21 +742,34 @@ bool Lexer::findTStringInterpolationEnd(const char *&ptr, const char *end,
         ptr++;
       break;
     case '\'':
-    case '"': {
-      char quote = *ptr;
-      bool triple = isTripleQuote(ptr, end, quote);
-      ptr += triple ? 3 : 1;
-      skipStringBody(ptr, end, quote, triple);
+    case '"':
+      if (auto result = tryConsumeStringOpening(); result)
+        skipStringBody(ptr, end, result->quote, result->triple);
       break;
-    }
+    case 'r':
+    case 'R':
+      // rt"..." / rT"..." — raw t-string.
+      if (auto result = tryConsumeStringOpening(isTChar, isQuoteChar); result) {
+        skipTStringBody(ptr, end, result->quote, result->triple, depth + 1);
+        break;
+      }
+      // r"..." — raw string.
+      if (auto result = tryConsumeStringOpening(isQuoteChar); result) {
+        skipStringBody(ptr, end, result->quote, result->triple);
+        break;
+      }
+      ptr++;
+      break;
     case 't':
     case 'T':
-      if (ptr + 1 < end && (ptr[1] == '\'' || ptr[1] == '"')) {
-        ptr++; // skip 't'/'T'
-        char quote = *ptr;
-        bool triple = isTripleQuote(ptr, end, quote);
-        ptr += triple ? 3 : 1;
-        skipTStringBody(ptr, end, quote, triple, depth + 1);
+      // tr"..." / tR"..." — raw t-string.
+      if (auto result = tryConsumeStringOpening(isRChar, isQuoteChar); result) {
+        skipTStringBody(ptr, end, result->quote, result->triple, depth + 1);
+        break;
+      }
+      // t"..." — plain t-string.
+      if (auto result = tryConsumeStringOpening(isQuoteChar); result) {
+        skipTStringBody(ptr, end, result->quote, result->triple, depth + 1);
         break;
       }
       ptr++;
@@ -781,12 +841,13 @@ bool Lexer::skipTStringBody(const char *&ptr, const char *end, char quoteChar,
 }
 
 /// Lex a t-string literal as a single token, consuming the entire body from the
-/// opening t" to the closing ". The parser will later walk the spelling to
-/// extract literal parts and expression regions.
+/// opening t" to the closing ". Also handles raw t-string prefixes (rt, tr).
+/// The parser will later walk the spelling to extract literal parts and
+/// expression regions.
 void Lexer::lexTString(const char *tokStart, ssize_t indentation) {
-  curPtr = tokStart + 1; // past 't'/'T'
-  assert((*curPtr == '\'' || *curPtr == '"') &&
-         "lexTString expected a quote character");
+  curPtr = tokStart;
+  skipTStringPrefix(curPtr);
+  assert(isQuoteChar(*curPtr) && "lexTString expected a quote character");
 
   char quoteChar = *curPtr;
   bool isTriple = consumeQuoteOpening(quoteChar);
@@ -1112,8 +1173,8 @@ std::string Lexer::getStringLiteralValue(StringRef bytes) {
   return processEscapeSequences(bytes, isRaw);
 }
 
-std::string Lexer::getTStringLiteralValue(StringRef bytes) {
-  return processEscapeSequences(bytes, /*isRaw=*/false);
+std::string Lexer::getTStringLiteralValue(StringRef bytes, bool isRaw) {
+  return processEscapeSequences(bytes, isRaw);
 }
 
 SMLoc Lexer::getStringLiteralStartLoc(StringRef spelling) {

@@ -129,6 +129,63 @@ fn test_runtime_value_in_comptime_tstring():
     comptime tstring = t"Value: {x}"
 
 # =============================================================================
+# Raw t-string errors
+# =============================================================================
+
+fn test_raw_empty_braces():
+    # Empty expression in raw t-string (rt prefix)
+    # expected-error @below {{t-string expression cannot be empty}}
+    _ = rt"Hello {}"
+
+
+fn test_raw_empty_braces_tr():
+    # Empty expression in raw t-string (tr prefix)
+    # expected-error @below {{t-string expression cannot be empty}}
+    _ = tr"Hello {}"
+
+
+fn test_raw_newline_in_single_quote():
+    # Raw t-string cannot contain a literal (source-level) newline either.
+    # expected-error @below {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+    _ = rt"Hello
+    # expected-error @below {{unterminated string}}
+    World"
+
+
+fn test_raw_format_spec():
+    var x = 42
+    # expected-error @below {{format specs are not yet supported in t-strings}}
+    _ = rt"{x:.2}"
+
+
+fn test_raw_format_spec_empty():
+    var x = 42
+    # expected-error @below {{format specs are not yet supported in t-strings}}
+    _ = rt"{x:}"
+
+
+fn test_raw_undefined_variable():
+    # expected-error @below {{use of unknown declaration 'undefined_var'}}
+    _ = rt"Hello, {undefined_var}!"
+
+
+fn test_raw_invalid_expression():
+    # expected-error @below {{unexpected token in expression}}
+    _ = rt"Result: {+}"
+
+
+fn test_raw_incomplete_expression():
+    # expected-error @below {{unexpected token in expression}}
+    _ = rt"Value: {1 +}"
+
+
+fn test_raw_runtime_value_in_comptime_tstring():
+    var x = 42
+    # expected-error @below {{cannot use dynamic value in comptime initializer}}
+    comptime tstring = rt"Value: {x}"
+
+
+# =============================================================================
 # Catastrophic errors (these must be last - they break parser recovery)
 # =============================================================================
 

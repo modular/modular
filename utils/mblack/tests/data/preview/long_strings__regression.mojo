@@ -1308,7 +1308,7 @@ fstring = (
     f"We have to remember to escape {braces}. Like {{these}}. But not {this}."
 )
 
-welcome_to_programming = R"hello," R" world!"
+welcome_to_programming = r"hello," r" world!"
 
 fstring = (
     f"f-strings definitely make things more {difficult} than they need to be"
