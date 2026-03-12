@@ -14,7 +14,7 @@
 # ===----------------------------------------------------------------------=== #
 
 """
-nanobind NIXL plugin: Implements NIXL descriptors and lists, as well as bindings of NIXL CPP APIs
+nanobind NIXL plugin: Implements NIXL descriptors and lists, as well as bindings of NIXL CPP APIs.
 """
 
 import enum
@@ -102,8 +102,8 @@ class TransferDescriptorList:
         Constructs an empty descriptor list.
 
         Args:
-          type: The type of memory each element describes
-          init_size: Initial capacity of the list
+          type: The type of memory each element describes.
+          init_size: Initial capacity of the list.
         """
 
     @overload
@@ -114,7 +114,7 @@ class TransferDescriptorList:
         Constructs a descriptor list with given values.
 
         Args:
-          type: The type of memory each element describes
+          type: The type of memory each element describes.
           descs: A list of descriptors, each describing a section of memory.
                  Each element is either a tuple or a dlpack object.
         """
@@ -148,8 +148,8 @@ class RegistrationDescriptorList:
         Constructs an empty descriptor list.
 
         Args:
-          type: The type of memory each element describes
-          init_size: Initial capacity of the list
+          type: The type of memory each element describes.
+          init_size: Initial capacity of the list.
         """
 
     @overload
@@ -162,7 +162,7 @@ class RegistrationDescriptorList:
         Constructs a descriptor list with given values.
 
         Args:
-          type: The type of memory each element describes
+          type: The type of memory each element describes.
           descs: A list of descriptors, each describing a section of memory.
                  Each element is either a tuple or a dlpack object.
         """
@@ -260,6 +260,7 @@ class Agent:
     ) -> dict[str, list[bytes]]:
         """
         Returns a map from agent name to a list of notifications received from that agent.
+
         Optionally, a list of backends can be mentioned to only get those backends' notifications.
         """
 

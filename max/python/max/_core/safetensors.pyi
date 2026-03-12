@@ -24,7 +24,7 @@ class SafeTensor:
         """Returns the list of tensor keys present."""
 
     def get_buffer(self, name: str) -> max._core.driver.Buffer:
-        """Returns a buffer with a given key"""
+        """Returns a buffer with a given key."""
 
     def __enter__(self) -> SafeTensor: ...
     def __exit__(
@@ -38,8 +38,9 @@ def safe_open(
     filepath: str | os.PathLike, device: max._core.driver.Device | None = None
 ) -> SafeTensor:
     """
-    Loads and parses a SafeTensor file from the given path onto the given
-    device. Defaults to loading on the CPU.
+    Loads and parses a SafeTensor file from the given path onto the given device.
+
+    Defaults to loading on the CPU.
 
     NOTE: Currently only implemented for CPUs.
     """
