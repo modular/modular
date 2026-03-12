@@ -54,7 +54,7 @@ comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else Addres
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-fn broadcast_multimem_kernel[
+def broadcast_multimem_kernel[
     dtype: DType,
     rank: Int,
     BLOCK_SIZE: Int,
@@ -163,7 +163,7 @@ fn broadcast_multimem_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-fn broadcast_pull_1stage_kernel[
+def broadcast_pull_1stage_kernel[
     dtype: DType,
     rank: Int,
     BLOCK_SIZE: Int,
@@ -223,7 +223,7 @@ fn broadcast_pull_1stage_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-fn broadcast_pull_2stage_kernel[
+def broadcast_pull_2stage_kernel[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -426,7 +426,7 @@ fn broadcast_pull_2stage_kernel[
     _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
 
-fn _should_use_2stage[ngpus: Int](num_bytes: Int) -> Bool:
+def _should_use_2stage[ngpus: Int](num_bytes: Int) -> Bool:
     """Determine if 2-stage broadcast should be used based on GPU count and size.
 
     Crossover points determined empirically:
@@ -447,7 +447,7 @@ fn _should_use_2stage[ngpus: Int](num_bytes: Int) -> Bool:
 
 
 @parameter
-fn broadcast[
+def broadcast[
     dtype: DType,
     rank: Int,
     //,
@@ -548,7 +548,7 @@ fn broadcast[
 
 
 @parameter
-fn broadcast_2stage[
+def broadcast_2stage[
     dtype: DType,
     rank: Int,
     //,

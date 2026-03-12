@@ -43,7 +43,7 @@ comptime CUDA_CUBLASLT_LIBRARY_PATHS: List[Path] = [
 ]
 
 
-fn _on_error_msg() -> Error:
+def _on_error_msg() -> Error:
     return Error(
         (
             "Cannot find the cuBLASLT libraries. Please make sure that "
@@ -63,14 +63,14 @@ comptime CUDA_CUBLASLT_LIBRARY = _Global[
 ]
 
 
-fn _init_dylib() -> OwnedDLHandle:
+def _init_dylib() -> OwnedDLHandle:
     return _find_dylib[abort_on_failure=False](
         materialize[CUDA_CUBLASLT_LIBRARY_PATHS]()
     )
 
 
 @always_inline
-fn _get_dylib_function[
+def _get_dylib_function[
     func_name: StaticString, result_type: __TypeOfAllTypes
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
@@ -85,7 +85,7 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-fn cublasLtMatmulAlgoConfigSetAttribute(
+def cublasLtMatmulAlgoConfigSetAttribute(
     algo: UnsafePointer[MatmulAlgorithm, MutAnyOrigin],
     attr: AlgorithmConfig,
     buf: OpaquePointer[ImmutAnyOrigin],
@@ -113,7 +113,7 @@ fn cublasLtMatmulAlgoConfigSetAttribute(
     ]()(algo, attr, buf, size_in_bytes)
 
 
-fn cublasLtCreate(
+def cublasLtCreate(
     light_handle: UnsafePointer[OpaquePointer[AnyOrigin[mut=True]], _],
 ) raises -> Result:
     return _get_dylib_function[
@@ -122,7 +122,7 @@ fn cublasLtCreate(
     ]()(light_handle)
 
 
-fn cublasLtMatrixTransformDescCreate(
+def cublasLtMatrixTransformDescCreate(
     transform_desc: UnsafePointer[
         UnsafePointer[Transform, MutAnyOrigin], MutAnyOrigin
     ],
@@ -178,17 +178,17 @@ struct Order(TrivialRegisterPassable, Writable):
     32-wide group of columns. E.g. if matrix has 33 columns and 1 row, ld must be at least (32*32)*1 = 1024.
     """
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.COL:
             writer.write_string("COL")
             return
@@ -206,11 +206,11 @@ struct Order(TrivialRegisterPassable, Writable):
             return
         abort("invalid Order entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cublasLtMatrixLayoutSetAttribute(
+def cublasLtMatrixLayoutSetAttribute(
     mat_layout: cublasLtMatrixLayout_t,
     attr: LayoutAttribute,
     buf: OpaquePointer[ImmutAnyOrigin],
@@ -403,17 +403,17 @@ struct ClusterShape(TrivialRegisterPassable, Writable):
     """Let library pick cluster shape automatically.
     """
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.SHAPE_AUTO:
             writer.write_string("SHAPE_AUTO")
         elif self == Self.SHAPE_1x1x1:
@@ -521,11 +521,11 @@ struct ClusterShape(TrivialRegisterPassable, Writable):
         else:
             abort("invalid ClusterShape entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cublasLtHeuristicsCacheSetCapacity(capacity: Int) raises -> Result:
+def cublasLtHeuristicsCacheSetCapacity(capacity: Int) raises -> Result:
     return _get_dylib_function[
         "cublasLtHeuristicsCacheSetCapacity", fn(Int) -> Result
     ]()(capacity)
@@ -658,17 +658,17 @@ struct MatmulAlgorithmCapability(TrivialRegisterPassable, Writable):
     int32_t.
     """
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.SPLITK_SUPPORT:
             writer.write_string("SPLITK_SUPPORT")
         elif self == Self.REDUCTION_SCHEME_MASK:
@@ -714,11 +714,11 @@ struct MatmulAlgorithmCapability(TrivialRegisterPassable, Writable):
         else:
             abort("invalid MatmulAlgorithmCapability entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cublasLtGetStatusString(
+def cublasLtGetStatusString(
     status: Result,
 ) raises -> UnsafePointer[Int8, ImmutAnyOrigin]:
     return _get_dylib_function[
@@ -750,17 +750,17 @@ struct PointerMode(TrivialRegisterPassable, Writable):
     """Alpha pointer targets an array in device memory, beta is a single value in host memory.
     """
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.HOST:
             writer.write_string("HOST")
         elif self == Self.DEVICE:
@@ -774,11 +774,11 @@ struct PointerMode(TrivialRegisterPassable, Writable):
         else:
             abort("invalid PointerMode entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cublasLtMatmulDescGetAttribute(
+def cublasLtMatmulDescGetAttribute(
     matmul_desc: cublasLtMatmulDesc_t,
     attr: cublasLtMatmulDescAttributes_t,
     buf: OpaquePointer[MutAnyOrigin],
@@ -820,7 +820,7 @@ comptime cublasLtMatrixLayout_t = UnsafePointer[MatrixLayout, MutAnyOrigin]
 comptime cublasLtMatrixTransformDesc_t = UnsafePointer[Transform, MutAnyOrigin]
 
 
-fn cublasLtMatmulAlgoCheck(
+def cublasLtMatmulAlgoCheck(
     light_handle: cublasLtHandle_t,
     operation_desc: cublasLtMatmulDesc_t,
     _adesc: cublasLtMatrixLayout_t,
@@ -908,17 +908,17 @@ struct Search(TrivialRegisterPassable, Writable):
     """Reserved for future use.
     """
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.BEST_FIT:
             writer.write_string("BEST_FIT")
         elif self == Self.LIMITED_BY_ALGO_ID:
@@ -942,7 +942,7 @@ struct Search(TrivialRegisterPassable, Writable):
         else:
             abort("invalid Search entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -969,17 +969,17 @@ struct ReductionScheme(TrivialRegisterPassable, Writable):
     """Intermediate results are stored in output type in the workspace and reduced in a separate step.
     """
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.NONE:
             writer.write_string("NONE")
         elif self == Self.INPLACE:
@@ -993,11 +993,11 @@ struct ReductionScheme(TrivialRegisterPassable, Writable):
         else:
             abort("invalid ReductionScheme entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cublasLtLoggerSetCallback(
+def cublasLtLoggerSetCallback(
     callback: fn(
         Int16, UnsafePointer[Int8, ImmutAnyOrigin], OpaquePointer[MutAnyOrigin]
     ) raises -> None
@@ -1020,7 +1020,7 @@ fn cublasLtLoggerSetCallback(
     ]()(callback)
 
 
-fn cublasLtGetProperty(
+def cublasLtGetProperty(
     type: Property, value: UnsafePointer[Int16, MutAnyOrigin]
 ) raises -> Result:
     return _get_dylib_function[
@@ -1029,11 +1029,11 @@ fn cublasLtGetProperty(
     ]()(type, value)
 
 
-fn cublasLtGetVersion() raises -> Int:
+def cublasLtGetVersion() raises -> Int:
     return _get_dylib_function["cublasLtGetVersion", fn() -> Int]()()
 
 
-fn cublasLtMatrixLayoutGetAttribute(
+def cublasLtMatrixLayoutGetAttribute(
     mat_layout: cublasLtMatrixLayout_t,
     attr: LayoutAttribute,
     buf: OpaquePointer[MutAnyOrigin],
@@ -1400,17 +1400,17 @@ struct cublasLtMatmulDescAttributes_t(TrivialRegisterPassable, Writable):
     int32_t, default: 0.
     """
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLASLT_MATMUL_DESC_COMPUTE_TYPE:
             writer.write_string("CUBLASLT_MATMUL_DESC_COMPUTE_TYPE")
         elif self == Self.CUBLASLT_MATMUL_DESC_SCALE_TYPE:
@@ -1502,11 +1502,11 @@ struct cublasLtMatmulDescAttributes_t(TrivialRegisterPassable, Writable):
         else:
             abort("invalid cublasLtMatmulDescAttributes_t entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cublasLtMatrixTransformDescInit_internal(
+def cublasLtMatrixTransformDescInit_internal(
     transform_desc: cublasLtMatrixTransformDesc_t,
     size: Int,
     scale_type: DataType,
@@ -1519,7 +1519,7 @@ fn cublasLtMatrixTransformDescInit_internal(
     ]()(transform_desc, size, scale_type)
 
 
-fn cublasLtMatrixLayoutDestroy(
+def cublasLtMatrixLayoutDestroy(
     mat_layout: cublasLtMatrixLayout_t,
 ) raises -> Result:
     """Destroy matrix layout descriptor.
@@ -1543,7 +1543,7 @@ comptime cublasLtMatmulPreference_t = UnsafePointer[
 ]
 
 
-fn cublasLtMatmul(
+def cublasLtMatmul(
     light_handle: cublasLtHandle_t,
     compute_desc: cublasLtMatmulDesc_t,
     alpha: OpaquePointer[ImmutAnyOrigin],
@@ -1613,7 +1613,7 @@ fn cublasLtMatmul(
     )
 
 
-fn cublasLtMatrixTransformDescDestroy(
+def cublasLtMatrixTransformDescDestroy(
     transform_desc: cublasLtMatrixTransformDesc_t,
 ) raises -> Result:
     """Destroy matrix transform operation descriptor.
@@ -1626,7 +1626,7 @@ fn cublasLtMatrixTransformDescDestroy(
     ]()(transform_desc)
 
 
-fn cublasLtMatmulAlgoCapGetAttribute(
+def cublasLtMatmulAlgoCapGetAttribute(
     algo: UnsafePointer[MatmulAlgorithm, ImmutAnyOrigin],
     attr: MatmulAlgorithmCapability,
     buf: OpaquePointer[MutAnyOrigin],
@@ -1666,7 +1666,7 @@ fn cublasLtMatmulAlgoCapGetAttribute(
     ]()(algo, attr, buf, size_in_bytes, size_written)
 
 
-fn cublasLtMatmulDescSetAttribute(
+def cublasLtMatmulDescSetAttribute(
     matmul_desc: cublasLtMatmulDesc_t,
     attr: cublasLtMatmulDescAttributes_t,
     buf: OpaquePointer[ImmutAnyOrigin],
@@ -1694,7 +1694,7 @@ fn cublasLtMatmulDescSetAttribute(
     ]()(matmul_desc, attr, buf, size_in_bytes)
 
 
-fn cublasLtMatmulPreferenceSetAttribute(
+def cublasLtMatmulPreferenceSetAttribute(
     pref: cublasLtMatmulPreference_t,
     attr: Preference,
     buf: OpaquePointer[ImmutAnyOrigin],
@@ -1731,7 +1731,7 @@ comptime cublasLtLoggerCallback_t = fn(
 ) -> None
 
 
-fn cublasLtMatrixLayoutInit_internal(
+def cublasLtMatrixLayoutInit_internal(
     mat_layout: cublasLtMatrixLayout_t,
     size: Int,
     type: DataType,
@@ -1825,17 +1825,17 @@ struct Preference(TrivialRegisterPassable, Writable):
     uint64_t, default: uint64_t(-1) (allow everything).
     """
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.SEARCH_MODE:
             writer.write_string("SEARCH_MODE")
         elif self == Self.MAX_WORKSPACE_BYTES:
@@ -1857,7 +1857,7 @@ struct Preference(TrivialRegisterPassable, Writable):
         else:
             abort("invalid Preference entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -1870,7 +1870,7 @@ struct MatmulAlgorithm(Defaultable, TrivialRegisterPassable):
 
     var data: StaticTuple[UInt64, 8]  # uint64_t data[8]
 
-    fn __init__(out self):
+    def __init__(out self):
         self.data = StaticTuple[UInt64, 8](0)
 
 
@@ -1939,17 +1939,17 @@ struct AlgorithmConfig(TrivialRegisterPassable, Writable):
     uint16_t, default: 0 (SHAPE_AUTO).
     """
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.ID:
             writer.write_string("ID")
         elif self == Self.TILE_ID:
@@ -1971,11 +1971,11 @@ struct AlgorithmConfig(TrivialRegisterPassable, Writable):
         else:
             abort("invalid AlgorithmConfig entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cublasLtMatmulPreferenceDestroy(
+def cublasLtMatmulPreferenceDestroy(
     pref: cublasLtMatmulPreference_t,
 ) raises -> Result:
     """Destroy matmul heuristic search preference descriptor.
@@ -1988,7 +1988,7 @@ fn cublasLtMatmulPreferenceDestroy(
     ]()(pref)
 
 
-fn cublasLtMatmulAlgoGetHeuristic(
+def cublasLtMatmulAlgoGetHeuristic(
     light_handle: cublasLtHandle_t,
     operation_desc: cublasLtMatmulDesc_t,
     _adesc: cublasLtMatrixLayout_t,
@@ -2067,17 +2067,17 @@ struct InnerShape(TrivialRegisterPassable, Writable):
     comptime MMA16816 = Self(4)
     comptime END = Self(5)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.UNDEFINED:
             writer.write_string("UNDEFINED")
         elif self == Self.MMA884:
@@ -2093,7 +2093,7 @@ struct InnerShape(TrivialRegisterPassable, Writable):
         else:
             abort("invalid InnerShape entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -2132,17 +2132,17 @@ struct cublasLtMatmulMatrixScale_t(TrivialRegisterPassable, Writable):
     """
     comptime MATRIX_SCALE_END = Self(6)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.MATRIX_SCALE_SCALAR_32F:
             writer.write_string("MATRIX_SCALE_SCALAR_32F")
         elif self == Self.MATRIX_SCALE_VEC16_UE4M3:
@@ -2160,7 +2160,7 @@ struct cublasLtMatmulMatrixScale_t(TrivialRegisterPassable, Writable):
         else:
             abort("invalid MatmulMatrixScale entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -2179,17 +2179,17 @@ struct cublasLtBatchMode_t(TrivialRegisterPassable, Writable):
     The address of the matrix of each instance of the batch are read from arrays of pointers.
     """
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.STRIDED:
             writer.write_string("BATCH_MODE_STRIDED")
         elif self == Self.POINTER_ARRAY:
@@ -2197,7 +2197,7 @@ struct cublasLtBatchMode_t(TrivialRegisterPassable, Writable):
         else:
             abort("invalid cublasLtBatchMode_t entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -2275,17 +2275,17 @@ struct LayoutAttribute(TrivialRegisterPassable, Writable):
     uint32_t, default: 0 - 0 means that batch mode is CUBLASLT_BATCH_MODE_STRIDED.
     """
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.TYPE:
             writer.write_string("TYPE")
         elif self == Self.ORDER:
@@ -2307,21 +2307,21 @@ struct LayoutAttribute(TrivialRegisterPassable, Writable):
         else:
             abort("invalid LayoutAttribute entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cublasLtDestroy(light_handle: cublasLtHandle_t) raises -> Result:
+def cublasLtDestroy(light_handle: cublasLtHandle_t) raises -> Result:
     return _get_dylib_function[
         "cublasLtDestroy", fn(type_of(light_handle)) -> Result
     ]()(light_handle)
 
 
-fn cublasLtGetCudartVersion() raises -> Int:
+def cublasLtGetCudartVersion() raises -> Int:
     return _get_dylib_function["cublasLtGetCudartVersion", fn() -> Int]()()
 
 
-fn cublasLtMatmulAlgoConfigGetAttribute(
+def cublasLtMatmulAlgoConfigGetAttribute(
     algo: UnsafePointer[MatmulAlgorithm, ImmutAnyOrigin],
     attr: AlgorithmConfig,
     buf: OpaquePointer[MutAnyOrigin],
@@ -2354,7 +2354,7 @@ fn cublasLtMatmulAlgoConfigGetAttribute(
     ]()(algo, attr, buf, size_in_bytes, size_written)
 
 
-fn cublasLtLoggerForceDisable() raises -> Result:
+def cublasLtLoggerForceDisable() raises -> Result:
     """Experimental: Disable logging for the entire session.
 
     \retval     CUBLAS_STATUS_SUCCESS        if disabled logging
@@ -2362,7 +2362,7 @@ fn cublasLtLoggerForceDisable() raises -> Result:
     return _get_dylib_function["cublasLtLoggerForceDisable", fn() -> Result]()()
 
 
-fn cublasLtHeuristicsCacheGetCapacity(
+def cublasLtHeuristicsCacheGetCapacity(
     capacity: UnsafePointer[Int, MutAnyOrigin],
 ) raises -> Result:
     return _get_dylib_function[
@@ -2371,7 +2371,7 @@ fn cublasLtHeuristicsCacheGetCapacity(
     ]()(capacity)
 
 
-fn cublasLtDisableCpuInstructionsSetMask(mask: Int16) raises -> Int16:
+def cublasLtDisableCpuInstructionsSetMask(mask: Int16) raises -> Int16:
     """Restricts usage of CPU instructions (ISA) specified by the flags in the mask.
 
     Flags can be combined with bitwise OR(|) operator. Supported flags:
@@ -2387,7 +2387,7 @@ fn cublasLtDisableCpuInstructionsSetMask(mask: Int16) raises -> Int16:
     ]()(mask)
 
 
-fn cublasLtLoggerSetLevel(level: Int16) raises -> Result:
+def cublasLtLoggerSetLevel(level: Int16) raises -> Result:
     """Experimental: Log level setter.
 
     level                        log level, should be one of the following:
@@ -2453,17 +2453,17 @@ struct Stages(TrivialRegisterPassable, Writable):
     comptime STAGES_256xAUTO = Self(37)
     comptime STAGES_END = Self(38)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.STAGES_UNDEFINED:
             writer.write_string("STAGES_UNDEFINED")
         elif self == Self.STAGES_16x1:
@@ -2541,11 +2541,11 @@ struct Stages(TrivialRegisterPassable, Writable):
         else:
             abort("invalid Stages entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cublasLtMatmulDescDestroy(
+def cublasLtMatmulDescDestroy(
     matmul_desc: cublasLtMatmulDesc_t,
 ) raises -> Result:
     """Destroy matmul operation descriptor.
@@ -2558,7 +2558,7 @@ fn cublasLtMatmulDescDestroy(
     ]()(matmul_desc)
 
 
-fn cublasLtMatrixTransformDescSetAttribute(
+def cublasLtMatrixTransformDescSetAttribute(
     transform_desc: cublasLtMatrixTransformDesc_t,
     attr: TransformDescriptor,
     buf: OpaquePointer[ImmutAnyOrigin],
@@ -2586,7 +2586,7 @@ fn cublasLtMatrixTransformDescSetAttribute(
     ]()(transform_desc, attr, buf, size_in_bytes)
 
 
-fn cublasLtMatmulPreferenceGetAttribute(
+def cublasLtMatmulPreferenceGetAttribute(
     pref: cublasLtMatmulPreference_t,
     attr: Preference,
     buf: OpaquePointer[MutAnyOrigin],
@@ -2619,7 +2619,7 @@ fn cublasLtMatmulPreferenceGetAttribute(
     ]()(pref, attr, buf, size_in_bytes, size_written)
 
 
-fn cublasLtMatmulAlgoInit(
+def cublasLtMatmulAlgoInit(
     light_handle: cublasLtHandle_t,
     compute_type: ComputeType,
     scale_type: DataType,
@@ -2755,17 +2755,17 @@ struct Epilogue(TrivialRegisterPassable, Writable):
     (see CUBLASLT_MATMUL_DESC_BIAS_POINTER).
     """
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.DEFAULT:
             writer.write_string("DEFAULT")
         elif self == Self.RELU:
@@ -2801,7 +2801,7 @@ struct Epilogue(TrivialRegisterPassable, Writable):
         else:
             abort("invalid Epilogue entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -2812,7 +2812,7 @@ struct Descriptor(TrivialRegisterPassable):
     var data: StaticTuple[UInt64, 32]
 
 
-fn cublasLtMatrixLayoutCreate(
+def cublasLtMatrixLayoutCreate(
     mat_layout: UnsafePointer[cublasLtMatrixLayout_t, MutAnyOrigin],
     type: DataType,
     rows: UInt64,
@@ -2852,16 +2852,16 @@ struct PointerModeMask(TrivialRegisterPassable, Writable):
     comptime ALPHA_DEVICE_VECTOR_BETA_HOST = Self(16)
     """See ALPHA_DEVICE_VECTOR_BETA_HOST."""
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.HOST:
             writer.write_string("HOST")
         elif self == Self.DEVICE:
@@ -2875,7 +2875,7 @@ struct PointerModeMask(TrivialRegisterPassable, Writable):
         else:
             abort("invalid PointerModeMask entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -2886,7 +2886,7 @@ struct MatrixLayout(TrivialRegisterPassable):
     var data: StaticTuple[UInt64, 8]
 
 
-fn cublasLtMatmulDescCreate(
+def cublasLtMatmulDescCreate(
     matmul_desc: UnsafePointer[cublasLtMatmulDesc_t, MutAnyOrigin],
     compute_type: ComputeType,
     scale_type: DataType,
@@ -3552,17 +3552,17 @@ struct Tile(TrivialRegisterPassable, Writable):
 
     comptime TILE_END = Self(635)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.TILE_UNDEFINED:
             writer.write_string("TILE_UNDEFINED")
         elif self == Self.TILE_8x8:
@@ -3640,11 +3640,11 @@ struct Tile(TrivialRegisterPassable, Writable):
         else:
             abort("invalid Tile entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cublasLtGetStatusName(
+def cublasLtGetStatusName(
     status: Result,
 ) raises -> UnsafePointer[Int8, ImmutAnyOrigin]:
     return _get_dylib_function[
@@ -3653,7 +3653,7 @@ fn cublasLtGetStatusName(
     ]()(status)
 
 
-fn cublasLtMatmulPreferenceCreate(
+def cublasLtMatmulPreferenceCreate(
     pref: UnsafePointer[cublasLtMatmulPreference_t, MutAnyOrigin],
 ) raises -> Result:
     """Create new matmul heuristic search preference descriptor.
@@ -3693,7 +3693,7 @@ struct cublasLtMatmulHeuristicResult_t(Defaultable, TrivialRegisterPassable):
     var wavesCount: Float32
     var reserved: StaticTuple[Int32, 4]
 
-    fn __init__(out self):
+    def __init__(out self):
         self.algo = MatmulAlgorithm()
         self.workspaceSize = 0
         self.state = Result.NOT_INITIALIZED
@@ -3701,7 +3701,7 @@ struct cublasLtMatmulHeuristicResult_t(Defaultable, TrivialRegisterPassable):
         self.reserved = StaticTuple[Int32, 4](0)
 
 
-fn cublasLtLoggerSetFile(file: OpaquePointer[MutAnyOrigin]) raises -> Result:
+def cublasLtLoggerSetFile(file: OpaquePointer[MutAnyOrigin]) raises -> Result:
     """Experimental: Log file setter.
 
     file                         an open file with write permissions
@@ -3713,7 +3713,7 @@ fn cublasLtLoggerSetFile(file: OpaquePointer[MutAnyOrigin]) raises -> Result:
     ]()(file)
 
 
-fn cublasLtLoggerOpenFile(
+def cublasLtLoggerOpenFile(
     log_file: UnsafePointer[Int8, ImmutAnyOrigin]
 ) raises -> Result:
     """Experimental: Open log file.
@@ -3728,7 +3728,7 @@ fn cublasLtLoggerOpenFile(
     ]()(log_file)
 
 
-fn cublasLtMatrixTransform(
+def cublasLtMatrixTransform(
     light_handle: cublasLtHandle_t,
     transform_desc: cublasLtMatrixTransformDesc_t,
     alpha: OpaquePointer[ImmutAnyOrigin],
@@ -3784,7 +3784,7 @@ fn cublasLtMatrixTransform(
     )
 
 
-fn cublasLtLoggerSetMask(mask: Int16) raises -> Result:
+def cublasLtLoggerSetMask(mask: Int16) raises -> Result:
     """Experimental: Log mask setter.
 
     mask                         log mask, should be a combination of the following masks:
@@ -3805,7 +3805,7 @@ fn cublasLtLoggerSetMask(mask: Int16) raises -> Result:
 # Opaque structure holding CUBLASLT context (typedef defined at top of file)
 
 
-fn cublasLtMatrixTransformDescGetAttribute(
+def cublasLtMatrixTransformDescGetAttribute(
     transform_desc: cublasLtMatrixTransformDesc_t,
     attr: TransformDescriptor,
     buf: OpaquePointer[MutAnyOrigin],
@@ -3838,7 +3838,7 @@ fn cublasLtMatrixTransformDescGetAttribute(
     ]()(transform_desc, attr, buf, size_in_bytes, size_written)
 
 
-fn cublasLtMatmulDescInit_internal(
+def cublasLtMatmulDescInit_internal(
     matmul_desc: cublasLtMatmulDesc_t,
     size: Int,
     compute_type: ComputeType,
@@ -3857,7 +3857,7 @@ fn cublasLtMatmulDescInit_internal(
     ]()(matmul_desc, size, compute_type, scale_type)
 
 
-fn cublasLtMatmulPreferenceInit_internal(
+def cublasLtMatmulPreferenceInit_internal(
     pref: cublasLtMatmulPreference_t, size: Int
 ) raises -> Result:
     """Internal. Do not use directly.
@@ -3903,17 +3903,17 @@ struct TransformDescriptor(TrivialRegisterPassable, Writable):
     int32_t, default: CUBLAS_OP_N.
     """
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.SCALE_TYPE:
             writer.write_string("SCALE_TYPE")
         elif self == Self.POINTER_MODE:
@@ -3925,11 +3925,11 @@ struct TransformDescriptor(TrivialRegisterPassable, Writable):
         else:
             abort("invalid TransformDescriptor entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-# fn cublasLtMatmulAlgoGetIds(
+# def cublasLtMatmulAlgoGetIds(
 #     light_handle: cublasLtHandle_t,
 #     compute_type: ComputeType,
 #     scale_type: DataType,
@@ -3953,7 +3953,7 @@ struct TransformDescriptor(TrivialRegisterPassable, Writable):
 #     ."""
 #     return _get_dylib_function[
 #         "cublasLtMatmulAlgoGetIds",
-#         fn (
+#         def (
 #             cublasLtHandle_t,
 #             ComputeType,
 #             DataType,

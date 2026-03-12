@@ -20,11 +20,11 @@ struct Property(Equatable, TrivialRegisterPassable, Writable):
     comptime MINOR_VERSION = Self(1)
     comptime PATCH_LEVEL = Self(2)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.MAJOR_VERSION:
             return writer.write_string("MAJOR_VERSION")
         if self == Self.MINOR_VERSION:
@@ -33,7 +33,7 @@ struct Property(Equatable, TrivialRegisterPassable, Writable):
             return writer.write_string("PATCH_LEVEL")
         abort("invalid Property entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -75,11 +75,11 @@ struct DataType(Equatable, TrivialRegisterPassable, Writable):
     comptime R_6F_E3M2 = Self(32)
     comptime R_4F_E2M1 = Self(33)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.R_16F:
             return writer.write_string("R_16F")
         if self == Self.C_16F:
@@ -153,5 +153,5 @@ struct DataType(Equatable, TrivialRegisterPassable, Writable):
 
         abort("invalid DataType entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)

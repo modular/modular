@@ -35,7 +35,7 @@ from .int_tuple import UNKNOWN_VALUE, _get_index_type
 
 
 @always_inline
-fn _get_offset[
+def _get_offset[
     i: Int
 ](runtime_layout: RuntimeLayout) -> Scalar[runtime_layout.linear_idx_type]:
     """Returns the offset for a single index into the runtime layout.
@@ -58,7 +58,7 @@ fn _get_offset[
 
 
 @always_inline
-fn _get_offset[
+def _get_offset[
     i: Int, j: Int
 ](runtime_layout: RuntimeLayout) -> Scalar[runtime_layout.linear_idx_type]:
     """Returns the offset for a 2D index into the runtime layout.
@@ -128,7 +128,7 @@ struct Element[
     runtime-determined access patterns.
     """
 
-    fn __init__(out self, element_data: Self.element_data_type):
+    def __init__(out self, element_data: Self.element_data_type):
         """Initializes an Element with the given SIMD data.
 
         Args:
@@ -137,7 +137,7 @@ struct Element[
         self.element_data = element_data
         self.runtime_layout = {}
 
-    fn __init__(
+    def __init__(
         out self,
         element_data: Self.element_data_type,
         runtime_layout: RuntimeLayout[
@@ -157,7 +157,7 @@ struct Element[
 
     @always_inline("nodebug")
     @staticmethod
-    fn load(
+    def load(
         ptr: UnsafePointer[Scalar[Self.dtype], ...],
         runtime_layout: RuntimeLayout[
             Self.layout,
@@ -241,7 +241,7 @@ struct Element[
 
     @always_inline("nodebug")
     @staticmethod
-    fn masked_load(
+    def masked_load(
         ptr: UnsafePointer[Scalar[Self.dtype], ...],
         runtime_layout: RuntimeLayout[
             Self.layout,
@@ -374,7 +374,7 @@ struct Element[
         return Element(element_data, runtime_layout)
 
     @always_inline("nodebug")
-    fn store(self, ptr: MutUnsafePointer[Scalar[Self.dtype], ...]):
+    def store(self, ptr: MutUnsafePointer[Scalar[Self.dtype], ...]):
         """Stores element data to memory according to the specified layout.
 
         This method performs a layout-aware store operation, writing data to memory
@@ -446,7 +446,7 @@ struct Element[
                 )
 
     @always_inline("nodebug")
-    fn masked_store(self, ptr: MutUnsafePointer[Scalar[Self.dtype], ...]):
+    def masked_store(self, ptr: MutUnsafePointer[Scalar[Self.dtype], ...]):
         """Stores element data to memory with masking for partial stores.
 
         This method performs a layout-aware store operation with boundary checking.
@@ -568,7 +568,7 @@ struct Element[
                 )
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the element to the specified writer.
 
         Args:
@@ -643,7 +643,7 @@ struct MemoryElement[
     It handles both compile-time known dimensions and runtime-determined dimensions.
     """
 
-    fn __init__(
+    def __init__(
         out self,
         ptr: UnsafePointer[
             Scalar[Self.dtype],
@@ -666,7 +666,7 @@ struct MemoryElement[
         self.runtime_layout = runtime_layout
 
     @always_inline("nodebug")
-    fn load(
+    def load(
         self,
         out result: Element[
             Self.dtype, Self.layout, index_type=Self.index_type
@@ -687,7 +687,7 @@ struct MemoryElement[
         return type_of(result).load(self.ptr, self.runtime_layout)
 
     @always_inline("nodebug")
-    fn store(
+    def store(
         self: Self._AsMut,
         src: Element[Self.dtype, Self.layout, ...],
     ):
@@ -707,7 +707,7 @@ struct MemoryElement[
         return src.store(self.ptr)
 
     @always_inline("nodebug")
-    fn transfer(self: Self._AsMut, src: MemoryElement):
+    def transfer(self: Self._AsMut, src: MemoryElement):
         """Transfers data from another `MemoryElement` to this one.
 
         This method efficiently transfers data between memory locations with potentially

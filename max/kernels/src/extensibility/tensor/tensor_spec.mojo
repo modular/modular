@@ -27,10 +27,10 @@ from std.utils import IndexList, product
 struct RuntimeTensorSpec[dtype: DType, rank: Int](TrivialRegisterPassable):
     var shape: IndexList[Self.rank]
 
-    fn __getitem__(self, idx: Int) -> Int:
+    def __getitem__(self, idx: Int) -> Int:
         return self.shape[idx]
 
-    fn bytecount(self) -> Int:
+    def bytecount(self) -> Int:
         """
         Gets the total byte count.
 

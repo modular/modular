@@ -17,7 +17,7 @@ from layout import Layout, LayoutTensor
 from layout.swizzle import Swizzle
 
 
-fn print_svg[
+def print_svg[
     tensor_list_origin: ImmutOrigin,
     dtype: DType,
     layout: Layout,
@@ -52,7 +52,7 @@ fn print_svg[
         print(s)
 
 
-fn _print_svg_impl[
+def _print_svg_impl[
     tensor_list_origin: ImmutOrigin,
     dtype: DType,
     layout: Layout,
@@ -215,7 +215,7 @@ fn _print_svg_impl[
                     "</text>\n",
                 )
 
-    fn draw_element(
+    def draw_element(
         x: Int,
         y: Int,
         color: String,

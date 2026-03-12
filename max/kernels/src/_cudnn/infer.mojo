@@ -34,7 +34,7 @@ comptime CUDA_CUDNN_LIBRARY_PATHS: List[Path] = [
 ]
 
 
-fn _on_error_msg() -> Error:
+def _on_error_msg() -> Error:
     return Error(
         (
             "Cannot find the CUDNN libraries. Please make sure that "
@@ -54,14 +54,14 @@ comptime CUDA_CUDNN_INFER_LIBRARY = _Global[
 ]
 
 
-fn _init_dylib() -> OwnedDLHandle:
+def _init_dylib() -> OwnedDLHandle:
     return _find_dylib[abort_on_failure=False](
         materialize[CUDA_CUDNN_LIBRARY_PATHS]()
     )
 
 
 @always_inline
-fn _get_dylib_function[
+def _get_dylib_function[
     func_name: StaticString, result_type: __TypeOfAllTypes
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
@@ -117,17 +117,17 @@ struct cudnnSoftmaxMode_t(
     comptime CUDNN_SOFTMAX_MODE_INSTANCE = Self(0)
     comptime CUDNN_SOFTMAX_MODE_CHANNEL = Self(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_SOFTMAX_MODE_INSTANCE:
             return writer.write_string("CUDNN_SOFTMAX_MODE_INSTANCE")
         if self is Self.CUDNN_SOFTMAX_MODE_CHANNEL:
@@ -135,14 +135,14 @@ struct cudnnSoftmaxMode_t(
         abort("invalid cudnnSoftmaxMode_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnSoftmaxMode_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnDestroyAlgorithmPerformance(
+def cudnnDestroyAlgorithmPerformance(
     algo_perf: DoubleNestedPointer[cudnnAlgorithmPerformanceStruct],
     number_to_destroy: Int16,
 ) raises -> cudnnStatus_t:
@@ -152,7 +152,7 @@ fn cudnnDestroyAlgorithmPerformance(
     ]()(algo_perf, number_to_destroy)
 
 
-fn cudnnCreate(
+def cudnnCreate(
     handle: DoubleNestedPointer[cudnnContext],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -169,17 +169,17 @@ struct cudnnReduceTensorIndices_t(
     comptime CUDNN_REDUCE_TENSOR_NO_INDICES = Self(0)
     comptime CUDNN_REDUCE_TENSOR_FLATTENED_INDICES = Self(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_REDUCE_TENSOR_NO_INDICES:
             return writer.write_string("CUDNN_REDUCE_TENSOR_NO_INDICES")
         if self is Self.CUDNN_REDUCE_TENSOR_FLATTENED_INDICES:
@@ -187,14 +187,14 @@ struct cudnnReduceTensorIndices_t(
         abort("invalid cudnnReduceTensorIndices_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnReduceTensorIndices_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnReduceTensor(
+def cudnnReduceTensor(
     handle: UnsafePointer[cudnnContext, _],
     reduce_tensor_desc: UnsafePointer[cudnnReduceTensorStruct, _],
     indices: OpaquePointer,
@@ -240,7 +240,7 @@ fn cudnnReduceTensor(
     )
 
 
-fn cudnnGetActivationDescriptorSwishBeta(
+def cudnnGetActivationDescriptorSwishBeta(
     activation_desc: UnsafePointer[cudnnActivationStruct, _],
     swish_beta: UnsafePointer[Float64, _],
 ) raises -> cudnnStatus_t:
@@ -250,7 +250,7 @@ fn cudnnGetActivationDescriptorSwishBeta(
     ]()(activation_desc, swish_beta)
 
 
-fn cudnnDestroyAlgorithmDescriptor(
+def cudnnDestroyAlgorithmDescriptor(
     algo_desc: UnsafePointer[cudnnAlgorithmStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -266,7 +266,7 @@ comptime cudnnTensorTransformDescriptor_t = UnsafePointer[
 comptime cudnnTensorDescriptor_t = UnsafePointer[cudnnTensorStruct, _]
 
 
-fn cudnnDropoutGetReserveSpaceSize(
+def cudnnDropoutGetReserveSpaceSize(
     xdesc: UnsafePointer[cudnnTensorStruct, _],
     size_in_bytes: UnsafePointer[Int, _],
 ) raises -> cudnnStatus_t:
@@ -276,7 +276,7 @@ fn cudnnDropoutGetReserveSpaceSize(
     ]()(xdesc, size_in_bytes)
 
 
-fn cudnnGetReduceTensorDescriptor(
+def cudnnGetReduceTensorDescriptor(
     reduce_tensor_desc: UnsafePointer[cudnnReduceTensorStruct, _],
     reduce_tensor_op: UnsafePointer[cudnnReduceTensorOp_t, _],
     reduce_tensor_comp_type: UnsafePointer[cudnnDataType_t, _],
@@ -304,7 +304,7 @@ fn cudnnGetReduceTensorDescriptor(
     )
 
 
-fn cudnnSetPoolingNdDescriptor(
+def cudnnSetPoolingNdDescriptor(
     pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
     mode: cudnnPoolingMode_t,
     maxpooling_nan_opt: cudnnNanPropagation_t,
@@ -348,17 +348,17 @@ struct cudnnReduceTensorOp_t(Equatable, TrivialRegisterPassable, Writable):
     comptime CUDNN_REDUCE_TENSOR_NORM2 = Self(7)
     comptime CUDNN_REDUCE_TENSOR_MUL_NO_ZEROS = Self(8)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_REDUCE_TENSOR_ADD:
             return writer.write_string("CUDNN_REDUCE_TENSOR_ADD")
         if self is Self.CUDNN_REDUCE_TENSOR_MUL:
@@ -380,14 +380,14 @@ struct cudnnReduceTensorOp_t(Equatable, TrivialRegisterPassable, Writable):
         abort("invalid cudnnReduceTensorOp_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnReduceTensorOp_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnSetTensor4dDescriptor(
+def cudnnSetTensor4dDescriptor(
     tensor_desc: UnsafePointer[cudnnTensorStruct, _],
     format: cudnnTensorFormat_t,
     data_type: cudnnDataType_t,
@@ -410,7 +410,7 @@ fn cudnnSetTensor4dDescriptor(
     ]()(tensor_desc, format, data_type, n, c, h, w)
 
 
-fn cudnnLRNCrossChannelForward(
+def cudnnLRNCrossChannelForward(
     handle: UnsafePointer[cudnnContext, _],
     norm_desc: UnsafePointer[cudnnLRNStruct, _],
     lrn_mode: cudnnLRNMode_t,
@@ -445,17 +445,17 @@ struct cudnnDeterminism_t(
     comptime CUDNN_NON_DETERMINISTIC = Self(0)
     comptime CUDNN_DETERMINISTIC = Self(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_NON_DETERMINISTIC:
             return writer.write_string("CUDNN_NON_DETERMINISTIC")
         if self is Self.CUDNN_DETERMINISTIC:
@@ -463,10 +463,10 @@ struct cudnnDeterminism_t(
         abort("invalid cudnnDeterminism_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnDeterminism_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -494,17 +494,17 @@ struct cudnnStatus_t(Equatable, TrivialRegisterPassable, Writable):
     comptime CUDNN_STATUS_RUNTIME_FP_OVERFLOW = Self(13)
     comptime CUDNN_STATUS_VERSION_MISMATCH = Self(14)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_STATUS_SUCCESS:
             return writer.write_string("CUDNN_STATUS_SUCCESS")
         if self is Self.CUDNN_STATUS_NOT_INITIALIZED:
@@ -540,10 +540,10 @@ struct cudnnStatus_t(Equatable, TrivialRegisterPassable, Writable):
         abort("invalid cudnnStatus_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnStatus_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -555,17 +555,17 @@ struct cudnnCTCLossAlgo_t(
     comptime CUDNN_CTC_LOSS_ALGO_DETERMINISTIC = Self(0)
     comptime CUDNN_CTC_LOSS_ALGO_NON_DETERMINISTIC = Self(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_CTC_LOSS_ALGO_DETERMINISTIC:
             return writer.write_string("CUDNN_CTC_LOSS_ALGO_DETERMINISTIC")
         if self is Self.CUDNN_CTC_LOSS_ALGO_NON_DETERMINISTIC:
@@ -573,14 +573,14 @@ struct cudnnCTCLossAlgo_t(
         abort("invalid cudnnCTCLossAlgo_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnCTCLossAlgo_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnGetFilter4dDescriptor(
+def cudnnGetFilter4dDescriptor(
     filter_desc: UnsafePointer[cudnnFilterStruct, _],
     data_type: UnsafePointer[cudnnDataType_t, _],
     format: UnsafePointer[cudnnTensorFormat_t, _],
@@ -612,17 +612,17 @@ struct cudnnTensorFormat_t(
     comptime CUDNN_TENSOR_NHWC = Self(1)
     comptime CUDNN_TENSOR_NCHW_VECT_C = Self(2)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_TENSOR_NCHW:
             return writer.write_string("CUDNN_TENSOR_NCHW")
         if self is Self.CUDNN_TENSOR_NHWC:
@@ -632,14 +632,14 @@ struct cudnnTensorFormat_t(
         abort("invalid cudnnTensorFormat_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnTensorFormat_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnAddTensor(
+def cudnnAddTensor(
     handle: UnsafePointer[cudnnContext, _],
     alpha: OpaquePointer,
     a_desc: UnsafePointer[cudnnTensorStruct, _],
@@ -662,7 +662,7 @@ fn cudnnAddTensor(
     ]()(handle, alpha, a_desc, _a, beta, c_desc, _c)
 
 
-fn cudnnDestroyFilterDescriptor(
+def cudnnDestroyFilterDescriptor(
     filter_desc: UnsafePointer[cudnnFilterStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -671,7 +671,7 @@ fn cudnnDestroyFilterDescriptor(
     ]()(filter_desc)
 
 
-fn cudnnGetTensorTransformDescriptor(
+def cudnnGetTensorTransformDescriptor(
     transform_desc: UnsafePointer[cudnnTensorTransformStruct, _],
     nb_dims_requested: UInt32,
     dest_format: UnsafePointer[cudnnTensorFormat_t, _],
@@ -702,15 +702,15 @@ fn cudnnGetTensorTransformDescriptor(
     )
 
 
-fn cudnnGetVersion() raises -> Int:
+def cudnnGetVersion() raises -> Int:
     return _get_dylib_function["cudnnGetVersion", fn() -> Int]()()
 
 
-fn cudnnGetCudartVersion() raises -> Int:
+def cudnnGetCudartVersion() raises -> Int:
     return _get_dylib_function["cudnnGetCudartVersion", fn() -> Int]()()
 
 
-fn cudnnGetCallback(
+def cudnnGetCallback(
     mask: UnsafePointer[Int16, _],
     udata: UnsafePointer[OpaquePointer[ExternalOrigin[mut=True]], _],
     fptr: OpaquePointer,
@@ -725,7 +725,7 @@ fn cudnnGetCallback(
     ]()(mask, udata, fptr)
 
 
-fn cudnnCreateTensorTransformDescriptor(
+def cudnnCreateTensorTransformDescriptor(
     transform_desc: DoubleNestedPointer[cudnnTensorTransformStruct],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -734,7 +734,7 @@ fn cudnnCreateTensorTransformDescriptor(
     ]()(transform_desc)
 
 
-fn cudnnCreateLRNDescriptor(
+def cudnnCreateLRNDescriptor(
     norm_desc: DoubleNestedPointer[cudnnLRNStruct],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -743,7 +743,7 @@ fn cudnnCreateLRNDescriptor(
     ]()(norm_desc)
 
 
-fn cudnnSetActivationDescriptor(
+def cudnnSetActivationDescriptor(
     activation_desc: UnsafePointer[cudnnActivationStruct, _],
     mode: cudnnActivationMode_t,
     relu_nan_opt: cudnnNanPropagation_t,
@@ -768,17 +768,17 @@ struct cudnnNormAlgo_t(
     comptime CUDNN_NORM_ALGO_STANDARD = Self(0)
     comptime CUDNN_NORM_ALGO_PERSIST = Self(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_NORM_ALGO_STANDARD:
             return writer.write_string("CUDNN_NORM_ALGO_STANDARD")
         if self is Self.CUDNN_NORM_ALGO_PERSIST:
@@ -786,10 +786,10 @@ struct cudnnNormAlgo_t(
         abort("invalid cudnnNormAlgo_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnNormAlgo_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -805,17 +805,17 @@ struct cudnnOpTensorOp_t(
     comptime CUDNN_OP_TENSOR_SQRT = Self(4)
     comptime CUDNN_OP_TENSOR_NOT = Self(5)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_OP_TENSOR_ADD:
             return writer.write_string("CUDNN_OP_TENSOR_ADD")
         if self is Self.CUDNN_OP_TENSOR_MUL:
@@ -831,14 +831,14 @@ struct cudnnOpTensorOp_t(
         abort("invalid cudnnOpTensorOp_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnOpTensorOp_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnCreateReduceTensorDescriptor(
+def cudnnCreateReduceTensorDescriptor(
     reduce_tensor_desc: DoubleNestedPointer[cudnnReduceTensorStruct],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -847,7 +847,7 @@ fn cudnnCreateReduceTensorDescriptor(
     ]()(reduce_tensor_desc)
 
 
-fn cudnnGetPoolingNdForwardOutputDim(
+def cudnnGetPoolingNdForwardOutputDim(
     pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
     input_tensor_desc: UnsafePointer[cudnnTensorStruct, _],
     nb_dims: Int16,
@@ -864,7 +864,7 @@ fn cudnnGetPoolingNdForwardOutputDim(
     ]()(pooling_desc, input_tensor_desc, nb_dims, output_tensor_dim_a)
 
 
-fn cudnnDestroySpatialTransformerDescriptor(
+def cudnnDestroySpatialTransformerDescriptor(
     st_desc: UnsafePointer[cudnnSpatialTransformerStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -878,7 +878,7 @@ comptime cudnnReduceTensorDescriptor_t = UnsafePointer[
 ]
 
 
-fn cudnnCreateTensorDescriptor(
+def cudnnCreateTensorDescriptor(
     tensor_desc: DoubleNestedPointer[cudnnTensorStruct],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -887,7 +887,7 @@ fn cudnnCreateTensorDescriptor(
     ]()(tensor_desc)
 
 
-fn cudnnSetOpTensorDescriptor(
+def cudnnSetOpTensorDescriptor(
     op_tensor_desc: UnsafePointer[cudnnOpTensorStruct, _],
     op_tensor_op: cudnnOpTensorOp_t,
     op_tensor_comp_type: cudnnDataType_t,
@@ -904,7 +904,7 @@ fn cudnnSetOpTensorDescriptor(
     ]()(op_tensor_desc, op_tensor_op, op_tensor_comp_type, op_tensor_nan_opt)
 
 
-fn cudnnBatchNormalizationForwardInference(
+def cudnnBatchNormalizationForwardInference(
     handle: UnsafePointer[cudnnContext, _],
     mode: cudnnBatchNormMode_t,
     alpha: OpaquePointer,
@@ -956,7 +956,7 @@ fn cudnnBatchNormalizationForwardInference(
     )
 
 
-fn cudnnCreateAlgorithmPerformance(
+def cudnnCreateAlgorithmPerformance(
     algo_perf: DoubleNestedPointer[cudnnAlgorithmPerformanceStruct],
     number_to_create: Int16,
 ) raises -> cudnnStatus_t:
@@ -966,7 +966,7 @@ fn cudnnCreateAlgorithmPerformance(
     ]()(algo_perf, number_to_create)
 
 
-fn cudnnDropoutForward(
+def cudnnDropoutForward(
     handle: UnsafePointer[cudnnContext, _],
     dropout_desc: UnsafePointer[cudnnDropoutStruct, _],
     xdesc: UnsafePointer[cudnnTensorStruct, _],
@@ -1000,13 +1000,15 @@ fn cudnnDropoutForward(
     )
 
 
-fn cudnnDestroy(handle: UnsafePointer[cudnnContext, _]) raises -> cudnnStatus_t:
+def cudnnDestroy(
+    handle: UnsafePointer[cudnnContext, _]
+) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroy", fn(type_of(handle)) -> cudnnStatus_t
     ]()(handle)
 
 
-fn cudnnGetActivationDescriptor(
+def cudnnGetActivationDescriptor(
     activation_desc: UnsafePointer[cudnnActivationStruct, _],
     mode: UnsafePointer[cudnnActivationMode_t, _],
     relu_nan_opt: UnsafePointer[cudnnNanPropagation_t, _],
@@ -1023,7 +1025,7 @@ fn cudnnGetActivationDescriptor(
     ]()(activation_desc, mode, relu_nan_opt, coef)
 
 
-fn cudnnOpTensor(
+def cudnnOpTensor(
     handle: UnsafePointer[cudnnContext, _],
     op_tensor_desc: UnsafePointer[cudnnOpTensorStruct, _],
     alpha1: OpaquePointer,
@@ -1066,7 +1068,7 @@ fn cudnnOpTensor(
     )
 
 
-fn cudnnDeriveBNTensorDescriptor(
+def cudnnDeriveBNTensorDescriptor(
     derived_bn_desc: UnsafePointer[cudnnTensorStruct, _],
     x_desc: UnsafePointer[cudnnTensorStruct, _],
     mode: cudnnBatchNormMode_t,
@@ -1094,17 +1096,17 @@ struct cudnnActivationMode_t(
     comptime CUDNN_ACTIVATION_IDENTITY = Self(5)
     comptime CUDNN_ACTIVATION_SWISH = Self(6)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_ACTIVATION_SIGMOID:
             return writer.write_string("CUDNN_ACTIVATION_SIGMOID")
         if self is Self.CUDNN_ACTIVATION_RELU:
@@ -1122,14 +1124,14 @@ struct cudnnActivationMode_t(
         abort("invalid cudnnActivationMode_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnActivationMode_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnSpatialTfGridGeneratorForward(
+def cudnnSpatialTfGridGeneratorForward(
     handle: UnsafePointer[cudnnContext, _],
     st_desc: UnsafePointer[cudnnSpatialTransformerStruct, _],
     theta: OpaquePointer,
@@ -1146,7 +1148,7 @@ fn cudnnSpatialTfGridGeneratorForward(
     ]()(handle, st_desc, theta, grid)
 
 
-fn cudnnGetTensorSizeInBytes(
+def cudnnGetTensorSizeInBytes(
     tensor_desc: UnsafePointer[cudnnTensorStruct, _],
     size: UnsafePointer[Int, _],
 ) raises -> cudnnStatus_t:
@@ -1169,17 +1171,17 @@ struct cudnnConvolutionBwdDataAlgo_t(
     comptime CUDNN_CONVOLUTION_BWD_DATA_ALGO_WINOGRAD_NONFUSED = Self(5)
     comptime CUDNN_CONVOLUTION_BWD_DATA_ALGO_COUNT = Self(6)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_CONVOLUTION_BWD_DATA_ALGO_0:
             return writer.write_string("CUDNN_CONVOLUTION_BWD_DATA_ALGO_0")
         if self is Self.CUDNN_CONVOLUTION_BWD_DATA_ALGO_1:
@@ -1203,14 +1205,14 @@ struct cudnnConvolutionBwdDataAlgo_t(
         abort("invalid cudnnConvolutionBwdDataAlgo_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnConvolutionBwdDataAlgo_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnGetFilterNdDescriptor(
+def cudnnGetFilterNdDescriptor(
     filter_desc: UnsafePointer[cudnnFilterStruct, _],
     nb_dims_requested: Int16,
     data_type: UnsafePointer[cudnnDataType_t, _],
@@ -1233,7 +1235,7 @@ fn cudnnGetFilterNdDescriptor(
     )
 
 
-fn cudnnGetPooling2dForwardOutputDim(
+def cudnnGetPooling2dForwardOutputDim(
     pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
     input_tensor_desc: UnsafePointer[cudnnTensorStruct, _],
     n: UnsafePointer[Int16, _],
@@ -1264,30 +1266,30 @@ struct cudnnSamplerType_t(
     var _value: Int8
     comptime CUDNN_SAMPLER_BILINEAR = Self(0)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_SAMPLER_BILINEAR:
             return writer.write_string("CUDNN_SAMPLER_BILINEAR")
         abort("invalid cudnnSamplerType_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnSamplerType_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnSpatialTfSamplerForward(
+def cudnnSpatialTfSamplerForward(
     handle: UnsafePointer[cudnnContext, _],
     st_desc: UnsafePointer[cudnnSpatialTransformerStruct, _],
     alpha: OpaquePointer,
@@ -1322,17 +1324,17 @@ struct cudnnNormMode_t(
     comptime CUDNN_NORM_PER_ACTIVATION = Self(0)
     comptime CUDNN_NORM_PER_CHANNEL = Self(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_NORM_PER_ACTIVATION:
             return writer.write_string("CUDNN_NORM_PER_ACTIVATION")
         if self is Self.CUDNN_NORM_PER_CHANNEL:
@@ -1340,14 +1342,14 @@ struct cudnnNormMode_t(
         abort("invalid cudnnNormMode_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnNormMode_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnSetPooling2dDescriptor(
+def cudnnSetPooling2dDescriptor(
     pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
     mode: cudnnPoolingMode_t,
     maxpooling_nan_opt: cudnnNanPropagation_t,
@@ -1384,7 +1386,7 @@ fn cudnnSetPooling2dDescriptor(
     )
 
 
-fn cudnnGetPooling2dDescriptor(
+def cudnnGetPooling2dDescriptor(
     pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
     mode: UnsafePointer[cudnnPoolingMode_t, _],
     maxpooling_nan_opt: UnsafePointer[cudnnNanPropagation_t, _],
@@ -1430,17 +1432,17 @@ struct cudnnNormOps_t(
     comptime CUDNN_NORM_OPS_NORM_ACTIVATION = Self(1)
     comptime CUDNN_NORM_OPS_NORM_ADD_ACTIVATION = Self(2)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_NORM_OPS_NORM:
             return writer.write_string("CUDNN_NORM_OPS_NORM")
         if self is Self.CUDNN_NORM_OPS_NORM_ACTIVATION:
@@ -1450,14 +1452,14 @@ struct cudnnNormOps_t(
         abort("invalid cudnnNormOps_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnNormOps_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnSoftmaxForward(
+def cudnnSoftmaxForward(
     handle: UnsafePointer[cudnnContext, _],
     algo: cudnnSoftmaxAlgorithm_t,
     mode: cudnnSoftmaxMode_t,
@@ -1498,17 +1500,17 @@ struct cudnnSoftmaxAlgorithm_t(
     comptime CUDNN_SOFTMAX_ACCURATE = Self(1)
     comptime CUDNN_SOFTMAX_LOG = Self(2)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_SOFTMAX_FAST:
             return writer.write_string("CUDNN_SOFTMAX_FAST")
         if self is Self.CUDNN_SOFTMAX_ACCURATE:
@@ -1518,14 +1520,14 @@ struct cudnnSoftmaxAlgorithm_t(
         abort("invalid cudnnSoftmaxAlgorithm_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnSoftmaxAlgorithm_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnGetErrorString(
+def cudnnGetErrorString(
     status: cudnnStatus_t,
 ) raises -> UnsafePointer[Int8, ExternalOrigin[mut=False]]:
     return _get_dylib_function[
@@ -1534,7 +1536,7 @@ fn cudnnGetErrorString(
     ]()(status)
 
 
-fn cudnnPoolingForward(
+def cudnnPoolingForward(
     handle: UnsafePointer[cudnnContext, _],
     pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
     alpha: OpaquePointer,
@@ -1559,7 +1561,7 @@ fn cudnnPoolingForward(
     ]()(handle, pooling_desc, alpha, x_desc, x, beta, y_desc, y)
 
 
-fn cudnnGetStream(
+def cudnnGetStream(
     handle: UnsafePointer[cudnnContext, _],
     stream_id: UnsafePointer[CUstream, _],
 ) raises -> cudnnStatus_t:
@@ -1581,17 +1583,17 @@ struct cudnnBatchNormOps_t(
     comptime CUDNN_BATCHNORM_OPS_BN_ACTIVATION = Self(1)
     comptime CUDNN_BATCHNORM_OPS_BN_ADD_ACTIVATION = Self(2)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_BATCHNORM_OPS_BN:
             return writer.write_string("CUDNN_BATCHNORM_OPS_BN")
         if self is Self.CUDNN_BATCHNORM_OPS_BN_ACTIVATION:
@@ -1601,10 +1603,10 @@ struct cudnnBatchNormOps_t(
         abort("invalid cudnnBatchNormOps_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnBatchNormOps_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -1621,17 +1623,17 @@ struct cudnnConvolutionFwdAlgo_t(Equatable, TrivialRegisterPassable, Writable):
     comptime CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED = Self(7)
     comptime CUDNN_CONVOLUTION_FWD_ALGO_COUNT = Self(8)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM:
             return writer.write_string(
                 "CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM"
@@ -1659,14 +1661,14 @@ struct cudnnConvolutionFwdAlgo_t(Equatable, TrivialRegisterPassable, Writable):
         abort("invalid cudnnConvolutionFwdAlgo_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnConvolutionFwdAlgo_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnSaveAlgorithm(
+def cudnnSaveAlgorithm(
     handle: UnsafePointer[cudnnContext, _],
     algo_desc: UnsafePointer[cudnnAlgorithmStruct, _],
     algo_space: OpaquePointer,
@@ -1683,7 +1685,7 @@ fn cudnnSaveAlgorithm(
     ]()(handle, algo_desc, algo_space, algo_space_size_in_bytes)
 
 
-fn cudnnCopyAlgorithmDescriptor(
+def cudnnCopyAlgorithmDescriptor(
     src: UnsafePointer[cudnnAlgorithmStruct, _],
     dest: UnsafePointer[cudnnAlgorithmStruct, _],
 ) raises -> cudnnStatus_t:
@@ -1696,7 +1698,7 @@ fn cudnnCopyAlgorithmDescriptor(
     ]()(src, dest)
 
 
-fn cudnnDeriveNormTensorDescriptor(
+def cudnnDeriveNormTensorDescriptor(
     derived_norm_scale_bias_desc: UnsafePointer[cudnnTensorStruct, _],
     derived_norm_mean_var_desc: UnsafePointer[cudnnTensorStruct, _],
     x_desc: UnsafePointer[cudnnTensorStruct, _],
@@ -1721,7 +1723,7 @@ fn cudnnDeriveNormTensorDescriptor(
     )
 
 
-fn cudnnTransformFilter(
+def cudnnTransformFilter(
     handle: UnsafePointer[cudnnContext, _],
     trans_desc: UnsafePointer[cudnnTensorTransformStruct, _],
     alpha: OpaquePointer,
@@ -1755,13 +1757,13 @@ fn cudnnTransformFilter(
     )
 
 
-fn cudnnOpsInferVersionCheck() raises -> cudnnStatus_t:
+def cudnnOpsInferVersionCheck() raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnOpsInferVersionCheck", fn() -> cudnnStatus_t
     ]()()
 
 
-fn cudnnActivationForward(
+def cudnnActivationForward(
     handle: UnsafePointer[cudnnContext, _],
     activation_desc: UnsafePointer[cudnnActivationStruct, _],
     alpha: OpaquePointer,
@@ -1786,7 +1788,7 @@ fn cudnnActivationForward(
     ]()(handle, activation_desc, alpha, x_desc, x, beta, y_desc, y)
 
 
-fn cudnnSetAlgorithmPerformance(
+def cudnnSetAlgorithmPerformance(
     algo_perf: UnsafePointer[cudnnAlgorithmPerformanceStruct, _],
     algo_desc: UnsafePointer[cudnnAlgorithmStruct, _],
     status: cudnnStatus_t,
@@ -1805,7 +1807,7 @@ fn cudnnSetAlgorithmPerformance(
     ]()(algo_perf, algo_desc, status, time, memory)
 
 
-fn cudnnCreateActivationDescriptor(
+def cudnnCreateActivationDescriptor(
     activation_desc: DoubleNestedPointer[cudnnActivationStruct],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -1822,7 +1824,7 @@ struct libraryPropertyType_t(TrivialRegisterPassable):
     comptime PATCH_LEVEL = Self(2)
 
 
-fn cudnnGetProperty(
+def cudnnGetProperty(
     type: libraryPropertyType_t, value: UnsafePointer[Int16, _]
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -1831,7 +1833,7 @@ fn cudnnGetProperty(
     ]()(type, value)
 
 
-fn cudnnDestroyPoolingDescriptor(
+def cudnnDestroyPoolingDescriptor(
     pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -1840,7 +1842,7 @@ fn cudnnDestroyPoolingDescriptor(
     ]()(pooling_desc)
 
 
-fn cudnnGetFilterSizeInBytes(
+def cudnnGetFilterSizeInBytes(
     filter_desc: UnsafePointer[cudnnFilterStruct, _],
     size: UnsafePointer[Int, _],
 ) raises -> cudnnStatus_t:
@@ -1857,30 +1859,30 @@ struct cudnnLRNMode_t(
     var _value: Int8
     comptime CUDNN_LRN_CROSS_CHANNEL_DIM1 = Self(0)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_LRN_CROSS_CHANNEL_DIM1:
             return writer.write_string("CUDNN_LRN_CROSS_CHANNEL_DIM1")
         abort("invalid cudnnLRNMode_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnLRNMode_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnSetTensorNdDescriptorEx(
+def cudnnSetTensorNdDescriptorEx(
     tensor_desc: UnsafePointer[cudnnTensorStruct, _],
     format: cudnnTensorFormat_t,
     data_type: cudnnDataType_t,
@@ -1899,7 +1901,7 @@ fn cudnnSetTensorNdDescriptorEx(
     ]()(tensor_desc, format, data_type, nb_dims, dim_a)
 
 
-fn cudnnSetTensorNdDescriptor(
+def cudnnSetTensorNdDescriptor(
     tensor_desc: UnsafePointer[cudnnTensorStruct, _],
     data_type: cudnnDataType_t,
     nb_dims: Int16,
@@ -1918,7 +1920,7 @@ fn cudnnSetTensorNdDescriptor(
     ]()(tensor_desc, data_type, nb_dims, dim_a, stride_a)
 
 
-fn cudnnTransformTensorEx(
+def cudnnTransformTensorEx(
     handle: UnsafePointer[cudnnContext, _],
     trans_desc: UnsafePointer[cudnnTensorTransformStruct, _],
     alpha: OpaquePointer,
@@ -1952,7 +1954,7 @@ fn cudnnTransformTensorEx(
     )
 
 
-fn cudnnGetAlgorithmDescriptor(
+def cudnnGetAlgorithmDescriptor(
     algo_desc: UnsafePointer[cudnnAlgorithmStruct, _],
     algorithm: UnsafePointer[cudnnAlgorithmUnionStruct, _],
 ) raises -> cudnnStatus_t:
@@ -1973,17 +1975,17 @@ struct cudnnFoldingDirection_t(
     comptime CUDNN_TRANSFORM_FOLD = Self(0)
     comptime CUDNN_TRANSFORM_UNFOLD = Self(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_TRANSFORM_FOLD:
             return writer.write_string("CUDNN_TRANSFORM_FOLD")
         if self is Self.CUDNN_TRANSFORM_UNFOLD:
@@ -1991,14 +1993,14 @@ struct cudnnFoldingDirection_t(
         abort("invalid cudnnFoldingDirection_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnFoldingDirection_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnGetTensorNdDescriptor(
+def cudnnGetTensorNdDescriptor(
     tensor_desc: UnsafePointer[cudnnTensorStruct, _],
     nb_dims_requested: Int16,
     data_type: UnsafePointer[cudnnDataType_t, _],
@@ -2028,17 +2030,17 @@ struct cudnnErrQueryMode_t(
     comptime CUDNN_ERRQUERY_NONBLOCKING = Self(1)
     comptime CUDNN_ERRQUERY_BLOCKING = Self(2)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_ERRQUERY_RAWCODE:
             return writer.write_string("CUDNN_ERRQUERY_RAWCODE")
         if self is Self.CUDNN_ERRQUERY_NONBLOCKING:
@@ -2048,14 +2050,14 @@ struct cudnnErrQueryMode_t(
         abort("invalid cudnnErrQueryMode_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnErrQueryMode_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnGetOpTensorDescriptor(
+def cudnnGetOpTensorDescriptor(
     op_tensor_desc: UnsafePointer[cudnnOpTensorStruct, _],
     op_tensor_op: UnsafePointer[cudnnOpTensorOp_t, _],
     op_tensor_comp_type: UnsafePointer[cudnnDataType_t, _],
@@ -2072,7 +2074,7 @@ fn cudnnGetOpTensorDescriptor(
     ]()(op_tensor_desc, op_tensor_op, op_tensor_comp_type, op_tensor_nan_opt)
 
 
-fn cudnnGetReductionIndicesSize(
+def cudnnGetReductionIndicesSize(
     handle: UnsafePointer[cudnnContext, _],
     reduce_tensor_desc: UnsafePointer[cudnnReduceTensorStruct, _],
     a_desc: UnsafePointer[cudnnTensorStruct, _],
@@ -2091,7 +2093,7 @@ fn cudnnGetReductionIndicesSize(
     ]()(handle, reduce_tensor_desc, a_desc, c_desc, size_in_bytes)
 
 
-fn cudnnTransformTensor(
+def cudnnTransformTensor(
     handle: UnsafePointer[cudnnContext, _],
     alpha: OpaquePointer,
     x_desc: UnsafePointer[cudnnTensorStruct, _],
@@ -2129,7 +2131,7 @@ struct cudnnAlgorithmUnionStruct(TrivialRegisterPassable):
 comptime cudnnDropoutDescriptor_t = UnsafePointer[cudnnDropoutStruct, _]
 
 
-fn cudnnSetTensor4dDescriptorEx(
+def cudnnSetTensor4dDescriptorEx(
     tensor_desc: UnsafePointer[cudnnTensorStruct, _],
     data_type: cudnnDataType_t,
     n: Int16,
@@ -2178,17 +2180,17 @@ struct cudnnBatchNormMode_t(
     comptime CUDNN_BATCHNORM_SPATIAL = Self(1)
     comptime CUDNN_BATCHNORM_SPATIAL_PERSISTENT = Self(2)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_BATCHNORM_PER_ACTIVATION:
             return writer.write_string("CUDNN_BATCHNORM_PER_ACTIVATION")
         if self is Self.CUDNN_BATCHNORM_SPATIAL:
@@ -2198,17 +2200,17 @@ struct cudnnBatchNormMode_t(
         abort("invalid cudnnBatchNormMode_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnBatchNormMode_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
 comptime cudnnCTCLossDescriptor_t = UnsafePointer[cudnnCTCLossStruct, _]
 
 
-fn cudnnGetLRNDescriptor(
+def cudnnGetLRNDescriptor(
     norm_desc: UnsafePointer[cudnnLRNStruct, _],
     lrn_n: UnsafePointer[Int16, _],
     lrn_alpha: UnsafePointer[Float64, _],
@@ -2232,7 +2234,7 @@ comptime cudnnAlgorithmPerformance_t = UnsafePointer[
 ]
 
 
-fn cudnnScaleTensor(
+def cudnnScaleTensor(
     handle: UnsafePointer[cudnnContext, _],
     y_desc: UnsafePointer[cudnnTensorStruct, _],
     y: OpaquePointer,
@@ -2259,17 +2261,17 @@ struct cudnnSeverity_t(
     comptime CUDNN_SEV_WARNING = Self(2)
     comptime CUDNN_SEV_INFO = Self(3)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_SEV_FATAL:
             return writer.write_string("CUDNN_SEV_FATAL")
         if self is Self.CUDNN_SEV_ERROR:
@@ -2281,10 +2283,10 @@ struct cudnnSeverity_t(
         abort("invalid cudnnSeverity_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnSeverity_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -2301,17 +2303,17 @@ struct cudnnMathType_t(
     comptime CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION = Self(2)
     comptime CUDNN_FMA_MATH = Self(3)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_DEFAULT_MATH:
             return writer.write_string("CUDNN_DEFAULT_MATH")
         if self is Self.CUDNN_TENSOR_OP_MATH:
@@ -2323,10 +2325,10 @@ struct cudnnMathType_t(
         abort("invalid cudnnMathType_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnMathType_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -2338,17 +2340,17 @@ struct cudnnNanPropagation_t(
     comptime CUDNN_NOT_PROPAGATE_NAN = Self(0)
     comptime CUDNN_PROPAGATE_NAN = Self(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_NOT_PROPAGATE_NAN:
             return writer.write_string("CUDNN_NOT_PROPAGATE_NAN")
         if self is Self.CUDNN_PROPAGATE_NAN:
@@ -2356,10 +2358,10 @@ struct cudnnNanPropagation_t(
         abort("invalid cudnnNanPropagation_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnNanPropagation_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -2377,17 +2379,17 @@ struct cudnnRNNAlgo_t(
     comptime CUDNN_RNN_ALGO_PERSIST_STATIC_SMALL_H = Self(3)
     comptime CUDNN_RNN_ALGO_COUNT = Self(4)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_RNN_ALGO_STANDARD:
             return writer.write_string("CUDNN_RNN_ALGO_STANDARD")
         if self is Self.CUDNN_RNN_ALGO_PERSIST_STATIC:
@@ -2401,10 +2403,10 @@ struct cudnnRNNAlgo_t(
         abort("invalid cudnnRNNAlgo_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnRNNAlgo_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -2419,7 +2421,7 @@ struct Algorithm(TrivialRegisterPassable):
     var CTCLossAlgo: cudnnCTCLossAlgo_t
 
 
-fn cudnnGetReductionWorkspaceSize(
+def cudnnGetReductionWorkspaceSize(
     handle: UnsafePointer[cudnnContext, _],
     reduce_tensor_desc: UnsafePointer[cudnnReduceTensorStruct, _],
     a_desc: UnsafePointer[cudnnTensorStruct, _],
@@ -2438,7 +2440,7 @@ fn cudnnGetReductionWorkspaceSize(
     ]()(handle, reduce_tensor_desc, a_desc, c_desc, size_in_bytes)
 
 
-fn cudnnSetFilter4dDescriptor(
+def cudnnSetFilter4dDescriptor(
     filter_desc: UnsafePointer[cudnnFilterStruct, _],
     data_type: cudnnDataType_t,
     format: cudnnTensorFormat_t,
@@ -2461,7 +2463,7 @@ fn cudnnSetFilter4dDescriptor(
     ]()(filter_desc, data_type, format, k, c, h, w)
 
 
-fn cudnnDestroyActivationDescriptor(
+def cudnnDestroyActivationDescriptor(
     activation_desc: UnsafePointer[cudnnActivationStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -2470,7 +2472,7 @@ fn cudnnDestroyActivationDescriptor(
     ]()(activation_desc)
 
 
-fn cudnnGetAlgorithmSpaceSize(
+def cudnnGetAlgorithmSpaceSize(
     handle: UnsafePointer[cudnnContext, _],
     algo_desc: UnsafePointer[cudnnAlgorithmStruct, _],
     algo_space_size_in_bytes: UnsafePointer[Int, _],
@@ -2504,17 +2506,17 @@ struct cudnnDataType_t(Equatable, TrivialRegisterPassable, Writable):
     comptime CUDNN_DATA_FP8_E5M2 = Self(13)
     comptime CUDNN_DATA_FAST_FLOAT_FOR_FP8 = Self(14)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_DATA_FLOAT:
             return writer.write_string("CUDNN_DATA_FLOAT")
         if self is Self.CUDNN_DATA_DOUBLE:
@@ -2548,14 +2550,14 @@ struct cudnnDataType_t(Equatable, TrivialRegisterPassable, Writable):
         abort("invalid cudnnDataType_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnDataType_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnSetLRNDescriptor(
+def cudnnSetLRNDescriptor(
     norm_desc: UnsafePointer[cudnnLRNStruct, _],
     lrn_n: Int16,
     lrn_alpha: Float64,
@@ -2574,7 +2576,7 @@ fn cudnnSetLRNDescriptor(
     ]()(norm_desc, lrn_n, lrn_alpha, lrn_beta, lrn_k)
 
 
-fn cudnnDestroyDropoutDescriptor(
+def cudnnDestroyDropoutDescriptor(
     dropout_desc: UnsafePointer[cudnnDropoutStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -2583,7 +2585,7 @@ fn cudnnDestroyDropoutDescriptor(
     ]()(dropout_desc)
 
 
-fn cudnnGetTensor4dDescriptor(
+def cudnnGetTensor4dDescriptor(
     tensor_desc: UnsafePointer[cudnnTensorStruct, _],
     data_type: UnsafePointer[cudnnDataType_t, _],
     n: UnsafePointer[Int16, _],
@@ -2623,7 +2625,7 @@ fn cudnnGetTensor4dDescriptor(
     )
 
 
-fn cudnnGetAlgorithmPerformance(
+def cudnnGetAlgorithmPerformance(
     algo_perf: UnsafePointer[cudnnAlgorithmPerformanceStruct, _],
     algo_desc: DoubleNestedPointer[cudnnAlgorithmStruct],
     status: UnsafePointer[cudnnStatus_t, _],
@@ -2656,7 +2658,7 @@ struct cudnnDebugStruct(TrivialRegisterPassable):
     var reserved: StaticTuple[Int32, 15]
 
 
-fn cudnnSetSpatialTransformerNdDescriptor(
+def cudnnSetSpatialTransformerNdDescriptor(
     st_desc: UnsafePointer[cudnnSpatialTransformerStruct, _],
     sampler_type: cudnnSamplerType_t,
     data_type: cudnnDataType_t,
@@ -2688,17 +2690,17 @@ struct cudnnIndicesType_t(
     comptime CUDNN_16BIT_INDICES = Self(2)
     comptime CUDNN_8BIT_INDICES = Self(3)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_32BIT_INDICES:
             return writer.write_string("CUDNN_32BIT_INDICES")
         if self is Self.CUDNN_64BIT_INDICES:
@@ -2710,14 +2712,14 @@ struct cudnnIndicesType_t(
         abort("invalid cudnnIndicesType_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnIndicesType_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnSetTensorTransformDescriptor(
+def cudnnSetTensorTransformDescriptor(
     transform_desc: UnsafePointer[cudnnTensorTransformStruct, _],
     nb_dims: UInt32,
     dest_format: cudnnTensorFormat_t,
@@ -2748,7 +2750,7 @@ fn cudnnSetTensorTransformDescriptor(
     )
 
 
-fn cudnnSetStream(
+def cudnnSetStream(
     handle: UnsafePointer[cudnnContext, _], stream_id: CUstream
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -2757,7 +2759,7 @@ fn cudnnSetStream(
     ]()(handle, stream_id)
 
 
-fn cudnnDestroyReduceTensorDescriptor(
+def cudnnDestroyReduceTensorDescriptor(
     reduce_tensor_desc: UnsafePointer[cudnnReduceTensorStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -2766,7 +2768,7 @@ fn cudnnDestroyReduceTensorDescriptor(
     ]()(reduce_tensor_desc)
 
 
-fn cudnnSetTensor(
+def cudnnSetTensor(
     handle: UnsafePointer[cudnnContext, _],
     y_desc: UnsafePointer[cudnnTensorStruct, _],
     y: OpaquePointer,
@@ -2783,7 +2785,7 @@ fn cudnnSetTensor(
     ]()(handle, y_desc, y, value_ptr)
 
 
-fn cudnnDivisiveNormalizationForward(
+def cudnnDivisiveNormalizationForward(
     handle: UnsafePointer[cudnnContext, _],
     norm_desc: UnsafePointer[cudnnLRNStruct, _],
     mode: cudnnDivNormMode_t,
@@ -2829,7 +2831,7 @@ fn cudnnDivisiveNormalizationForward(
     )
 
 
-fn cudnnSetActivationDescriptorSwishBeta(
+def cudnnSetActivationDescriptorSwishBeta(
     activation_desc: UnsafePointer[cudnnActivationStruct, _],
     swish_beta: Float64,
 ) raises -> cudnnStatus_t:
@@ -2839,7 +2841,7 @@ fn cudnnSetActivationDescriptorSwishBeta(
     ]()(activation_desc, swish_beta)
 
 
-fn cudnnSetCallback(
+def cudnnSetCallback(
     mask: Int16,
     udata: OpaquePointer,
     fptr: fn(
@@ -2859,7 +2861,7 @@ fn cudnnSetCallback(
     ]()(mask, udata, fptr)
 
 
-fn cudnnDropoutGetStatesSize(
+def cudnnDropoutGetStatesSize(
     handle: UnsafePointer[cudnnContext, _], size_in_bytes: UnsafePointer[Int, _]
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -2868,7 +2870,7 @@ fn cudnnDropoutGetStatesSize(
     ]()(handle, size_in_bytes)
 
 
-fn cudnnCreateDropoutDescriptor(
+def cudnnCreateDropoutDescriptor(
     dropout_desc: DoubleNestedPointer[cudnnDropoutStruct],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -2877,7 +2879,7 @@ fn cudnnCreateDropoutDescriptor(
     ]()(dropout_desc)
 
 
-fn cudnnNormalizationForwardInference(
+def cudnnNormalizationForwardInference(
     handle: UnsafePointer[cudnnContext, _],
     mode: cudnnNormMode_t,
     norm_ops: cudnnNormOps_t,
@@ -2964,17 +2966,17 @@ struct cudnnConvolutionBwdFilterAlgo_t(
     comptime CUDNN_CONVOLUTION_BWD_FILTER_ALGO_FFT_TILING = Self(6)
     comptime CUDNN_CONVOLUTION_BWD_FILTER_ALGO_COUNT = Self(7)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_CONVOLUTION_BWD_FILTER_ALGO_0:
             return writer.write_string("CUDNN_CONVOLUTION_BWD_FILTER_ALGO_0")
         if self is Self.CUDNN_CONVOLUTION_BWD_FILTER_ALGO_1:
@@ -3002,14 +3004,14 @@ struct cudnnConvolutionBwdFilterAlgo_t(
         abort("invalid cudnnConvolutionBwdFilterAlgo_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnConvolutionBwdFilterAlgo_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnQueryRuntimeError(
+def cudnnQueryRuntimeError(
     handle: UnsafePointer[cudnnContext, _],
     rstatus: UnsafePointer[cudnnStatus_t, _],
     mode: cudnnErrQueryMode_t,
@@ -3026,7 +3028,7 @@ fn cudnnQueryRuntimeError(
     ]()(handle, rstatus, mode, tag)
 
 
-fn cudnnDestroyLRNDescriptor(
+def cudnnDestroyLRNDescriptor(
     lrn_desc: UnsafePointer[cudnnLRNStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -3035,7 +3037,7 @@ fn cudnnDestroyLRNDescriptor(
     ]()(lrn_desc)
 
 
-fn cudnnDestroyTensorTransformDescriptor(
+def cudnnDestroyTensorTransformDescriptor(
     transform_desc: UnsafePointer[cudnnTensorTransformStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -3044,7 +3046,7 @@ fn cudnnDestroyTensorTransformDescriptor(
     ]()(transform_desc)
 
 
-fn cudnnSetReduceTensorDescriptor(
+def cudnnSetReduceTensorDescriptor(
     reduce_tensor_desc: UnsafePointer[cudnnReduceTensorStruct, _],
     reduce_tensor_op: cudnnReduceTensorOp_t,
     reduce_tensor_comp_type: cudnnDataType_t,
@@ -3072,7 +3074,7 @@ fn cudnnSetReduceTensorDescriptor(
     )
 
 
-fn cudnnSetAlgorithmDescriptor(
+def cudnnSetAlgorithmDescriptor(
     algo_desc: UnsafePointer[cudnnAlgorithmStruct, _],
     algorithm: cudnnAlgorithmUnionStruct,
 ) raises -> cudnnStatus_t:
@@ -3082,7 +3084,7 @@ fn cudnnSetAlgorithmDescriptor(
     ]()(algo_desc, algorithm)
 
 
-fn cudnnCreateFilterDescriptor(
+def cudnnCreateFilterDescriptor(
     filter_desc: DoubleNestedPointer[cudnnFilterStruct],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -3096,7 +3098,7 @@ comptime cudnnHandle_t = UnsafePointer[cudnnContext, _]
 comptime cudnnPoolingDescriptor_t = UnsafePointer[cudnnPoolingStruct, _]
 
 
-fn cudnnDestroyOpTensorDescriptor(
+def cudnnDestroyOpTensorDescriptor(
     op_tensor_desc: UnsafePointer[cudnnOpTensorStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -3115,17 +3117,17 @@ struct cudnnPoolingMode_t(
     comptime CUDNN_POOLING_AVERAGE_COUNT_EXCLUDE_PADDING = Self(2)
     comptime CUDNN_POOLING_MAX_DETERMINISTIC = Self(3)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_POOLING_MAX:
             return writer.write_string("CUDNN_POOLING_MAX")
         if self is Self.CUDNN_POOLING_AVERAGE_COUNT_INCLUDE_PADDING:
@@ -3141,18 +3143,18 @@ struct cudnnPoolingMode_t(
         abort("invalid cudnnPoolingMode_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnPoolingMode_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnGetMaxDeviceVersion() raises -> Int:
+def cudnnGetMaxDeviceVersion() raises -> Int:
     return _get_dylib_function["cudnnGetMaxDeviceVersion", fn() -> Int]()()
 
 
-fn cudnnCreatePoolingDescriptor(
+def cudnnCreatePoolingDescriptor(
     pooling_desc: DoubleNestedPointer[cudnnPoolingStruct],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -3161,7 +3163,7 @@ fn cudnnCreatePoolingDescriptor(
     ]()(pooling_desc)
 
 
-fn cudnnRestoreDropoutDescriptor(
+def cudnnRestoreDropoutDescriptor(
     dropout_desc: UnsafePointer[cudnnDropoutStruct, _],
     handle: UnsafePointer[cudnnContext, _],
     dropout: Float32,
@@ -3182,7 +3184,7 @@ fn cudnnRestoreDropoutDescriptor(
     ]()(dropout_desc, handle, dropout, states, state_size_in_bytes, seed)
 
 
-fn cudnnGetDropoutDescriptor(
+def cudnnGetDropoutDescriptor(
     dropout_desc: UnsafePointer[cudnnDropoutStruct, _],
     handle: UnsafePointer[cudnnContext, _],
     dropout: UnsafePointer[Float32, _],
@@ -3208,30 +3210,30 @@ struct cudnnDivNormMode_t(
     var _value: Int8
     comptime CUDNN_DIVNORM_PRECOMPUTED_MEANS = Self(0)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_DIVNORM_PRECOMPUTED_MEANS:
             return writer.write_string("CUDNN_DIVNORM_PRECOMPUTED_MEANS")
         abort("invalid cudnnDivNormMode_t entry")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cudnnDivNormMode_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnCreateOpTensorDescriptor(
+def cudnnCreateOpTensorDescriptor(
     op_tensor_desc: DoubleNestedPointer[cudnnOpTensorStruct],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -3240,7 +3242,7 @@ fn cudnnCreateOpTensorDescriptor(
     ]()(op_tensor_desc)
 
 
-fn cudnnSetFilterNdDescriptor(
+def cudnnSetFilterNdDescriptor(
     filter_desc: UnsafePointer[cudnnFilterStruct, _],
     data_type: cudnnDataType_t,
     format: cudnnTensorFormat_t,
@@ -3259,7 +3261,7 @@ fn cudnnSetFilterNdDescriptor(
     ]()(filter_desc, data_type, format, nb_dims, filter_dim_a)
 
 
-fn cudnnRestoreAlgorithm(
+def cudnnRestoreAlgorithm(
     handle: UnsafePointer[cudnnContext, _],
     algo_space: OpaquePointer,
     algo_space_size_in_bytes: Int,
@@ -3276,7 +3278,7 @@ fn cudnnRestoreAlgorithm(
     ]()(handle, algo_space, algo_space_size_in_bytes, algo_desc)
 
 
-fn cudnnGetPoolingNdDescriptor(
+def cudnnGetPoolingNdDescriptor(
     pooling_desc: UnsafePointer[cudnnPoolingStruct, _],
     nb_dims_requested: Int16,
     mode: UnsafePointer[cudnnPoolingMode_t, _],
@@ -3310,7 +3312,7 @@ fn cudnnGetPoolingNdDescriptor(
     )
 
 
-fn cudnnSetDropoutDescriptor(
+def cudnnSetDropoutDescriptor(
     dropout_desc: UnsafePointer[cudnnDropoutStruct, _],
     handle: UnsafePointer[cudnnContext, _],
     dropout: Float32,
@@ -3331,7 +3333,7 @@ fn cudnnSetDropoutDescriptor(
     ]()(dropout_desc, handle, dropout, states, state_size_in_bytes, seed)
 
 
-fn cudnnCreateSpatialTransformerDescriptor(
+def cudnnCreateSpatialTransformerDescriptor(
     st_desc: DoubleNestedPointer[cudnnSpatialTransformerStruct],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -3340,7 +3342,7 @@ fn cudnnCreateSpatialTransformerDescriptor(
     ]()(st_desc)
 
 
-fn cudnnInitTransformDest(
+def cudnnInitTransformDest(
     transform_desc: UnsafePointer[cudnnTensorTransformStruct, _],
     src_desc: UnsafePointer[cudnnTensorStruct, _],
     dest_desc: UnsafePointer[cudnnTensorStruct, _],
@@ -3357,7 +3359,7 @@ fn cudnnInitTransformDest(
     ]()(transform_desc, src_desc, dest_desc, dest_size_in_bytes)
 
 
-fn cudnnCreateAlgorithmDescriptor(
+def cudnnCreateAlgorithmDescriptor(
     algo_desc: DoubleNestedPointer[cudnnAlgorithmStruct],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -3366,7 +3368,7 @@ fn cudnnCreateAlgorithmDescriptor(
     ]()(algo_desc)
 
 
-fn cudnnDestroyTensorDescriptor(
+def cudnnDestroyTensorDescriptor(
     tensor_desc: UnsafePointer[cudnnTensorStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[

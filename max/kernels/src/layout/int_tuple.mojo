@@ -67,7 +67,7 @@ from std.utils.numerics import max_finite
 from std.utils import IndexList
 
 
-fn _get_index_type(address_space: AddressSpace) -> DType:
+def _get_index_type(address_space: AddressSpace) -> DType:
     """Returns int32 for shared/constant GPU memory, index otherwise."""
     if address_space in (
         AddressSpace.SHARED,
@@ -78,7 +78,7 @@ fn _get_index_type(address_space: AddressSpace) -> DType:
         return DType.int64
 
 
-fn _get_index_type(layout: Layout) -> DType:
+def _get_index_type(layout: Layout) -> DType:
     """Returns int32 if layout size fits in int32 range, int64 otherwise."""
     if layout.cosize() <= Int(max_finite[DType.int32]()):
         return DType.int32
@@ -86,7 +86,7 @@ fn _get_index_type(layout: Layout) -> DType:
     return DType.int64
 
 
-fn _get_index_type(layout: Layout, address_space: AddressSpace) -> DType:
+def _get_index_type(layout: Layout, address_space: AddressSpace) -> DType:
     """Selects index type based on layout and address space."""
     if layout.all_dims_known():
         return _get_index_type(layout)
@@ -94,7 +94,7 @@ fn _get_index_type(layout: Layout, address_space: AddressSpace) -> DType:
         return _get_index_type(address_space)
 
 
-fn _get_unsigned_type(layout: Layout, address_space: AddressSpace) -> DType:
+def _get_unsigned_type(layout: Layout, address_space: AddressSpace) -> DType:
     """Returns int32 if layout fits in int32 range or index type is int32, otherwise index.
     """
     if layout.all_dims_known() and layout.cosize() < Int(
@@ -106,7 +106,7 @@ fn _get_unsigned_type(layout: Layout, address_space: AddressSpace) -> DType:
         return DType.int32 if dtype == DType.int32 else DType.int64
 
 
-fn _get_layout_type(layout: Layout, address_space: AddressSpace) -> DType:
+def _get_layout_type(layout: Layout, address_space: AddressSpace) -> DType:
     """Returns int32 if shape fits in uint32 range or address space is shared/constant, otherwise index.
     """
 
@@ -136,7 +136,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
     var _size: Int
 
     @always_inline("nodebug")
-    fn __init__(out self, size: Int = 0):
+    def __init__(out self, size: Int = 0):
         """Initialize a new owned `IntArray` with the specified size.
 
         Args:
@@ -146,7 +146,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         self._size = size
 
     @always_inline("nodebug")
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Initialize by copying an existing `IntArray`.
 
         For owned arrays, this performs a deep copy of the data.
@@ -163,7 +163,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             self._data = copy._data
 
     @always_inline("nodebug")
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Destroy the `IntArray` and free its memory if owned.
 
         Only frees memory for owned arrays (positive _size) to prevent
@@ -173,7 +173,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             self._data.free()
 
     @always_inline("nodebug")
-    fn __getitem__(self, idx: Int) -> Int:
+    def __getitem__(self, idx: Int) -> Int:
         """Access an element at the specified index.
 
         Args:
@@ -190,7 +190,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         return self._data[idx]
 
     @always_inline("nodebug")
-    fn __setitem__(mut self, idx: Int, value: Int):
+    def __setitem__(mut self, idx: Int, value: Int):
         """Set the value at the specified index.
 
         Args:
@@ -212,7 +212,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         self._data[idx] = value
 
     @always_inline("nodebug")
-    fn owning(self) -> Bool:
+    def owning(self) -> Bool:
         """Check if this `IntArray` owns its memory.
 
         Returns:
@@ -222,7 +222,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         return self._size > 0
 
     @always_inline("nodebug")
-    fn size(self) -> Int:
+    def size(self) -> Int:
         """Get the number of elements in the array.
 
         Returns:
@@ -231,7 +231,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         return math.abs(self._size)
 
     @always_inline("nodebug")
-    fn copy_from(mut self, offset: Int, source: Self, size: Int):
+    def copy_from(mut self, offset: Int, source: Self, size: Int):
         """Copy elements from another `IntArray`.
 
         Args:
@@ -242,7 +242,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         memcpy(dest=self._data + offset, src=source._data, count=size)
 
     @always_inline("nodebug")
-    fn copy_from(
+    def copy_from(
         mut self, dst_offset: Int, source: Self, src_offset: Int, size: Int
     ):
         """Copy elements from another IntArray with source offset.
@@ -292,13 +292,13 @@ struct _IntTupleIter[origin: ImmutOrigin](
     """Current position in the iteration."""
 
     @always_inline("nodebug")
-    fn __init__(out self, src: Pointer[IntTuple, Self.origin], idx: Int):
+    def __init__(out self, src: Pointer[IntTuple, Self.origin], idx: Int):
         """Initialize the iterator with a source IntTuple and starting index."""
         self.src = src
         self.idx = idx
 
     @always_inline("nodebug")
-    fn __next__(mut self) raises StopIteration -> IntTuple:
+    def __next__(mut self) raises StopIteration -> IntTuple:
         """Get the next element and advance the iterator."""
         var idx = self.idx
         if idx >= len(self.src[]):
@@ -309,21 +309,21 @@ struct _IntTupleIter[origin: ImmutOrigin](
     # FIXME(GENAI-359): Remove __next_old__ and __has_next__ once we figure out
     # why doing so regresses code generation.
     @always_inline
-    fn __next_old__(mut self) -> Self.Element:
+    def __next_old__(mut self) -> Self.Element:
         var idx = self.idx
         self.idx += 1
         return self.src[][idx]
 
     @always_inline
-    fn __has_next__(self) -> Bool:
+    def __has_next__(self) -> Bool:
         return self.idx < len(self.src[])
 
     @always_inline("nodebug")
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline("nodebug")
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         var len = len(self.src[]) - self.idx
         return (len, {len})
 
@@ -372,7 +372,7 @@ struct IntTuple(
 
     @staticmethod
     @always_inline("nodebug")
-    fn elements_size(elements: VariadicList[IntTuple, ...]) -> Int:
+    def elements_size(elements: VariadicList[IntTuple, ...]) -> Int:
         """Calculate the total storage size needed for a list of IntTuples.
 
         Computes the sum of sizes for all elements, accounting for both direct
@@ -392,7 +392,7 @@ struct IntTuple(
 
     @staticmethod
     @always_inline("nodebug")
-    fn elements_size[
+    def elements_size[
         _origin: ImmutOrigin, n: Int
     ](elements: InlineArray[Pointer[IntTuple, _origin], n], idx: Int) -> Int:
         """Calculate the total storage size needed for IntTuples at a specific index.
@@ -418,7 +418,7 @@ struct IntTuple(
         return size
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize an empty IntTuple.
 
         Creates an `IntTuple` with zero elements, which can be used as a starting
@@ -433,7 +433,7 @@ struct IntTuple(
         self.validate_structure()
 
     @always_inline("nodebug")
-    fn __init__(out self, *, num_elems: Int):
+    def __init__(out self, *, num_elems: Int):
         """Initialize an `IntTuple` with a specified number of uninitialized elements.
 
         Creates an `IntTuple` with space for the specified number of elements,
@@ -450,7 +450,7 @@ struct IntTuple(
         self.validate_structure()
 
     @always_inline("nodebug")
-    fn __init__(out self, *elements: Int):
+    def __init__(out self, *elements: Int):
         """Initialize an `IntTuple` with a variadic list of integers.
 
         Creates an `IntTuple` containing the provided integer values.
@@ -461,7 +461,7 @@ struct IntTuple(
         self = Self(elements)
 
     @always_inline
-    fn __init__(out self, elements: VariadicList[Int, is_owned=False]):
+    def __init__(out self, elements: VariadicList[Int, is_owned=False]):
         """Initialize an `IntTuple` with a list of integers.
 
         Creates an `IntTuple` containing the provided integer values.
@@ -490,7 +490,7 @@ struct IntTuple(
         self.validate_structure()
 
     @always_inline
-    fn __init__[*elements: Int](out self):
+    def __init__[*elements: Int](out self):
         """Initialize an `IntTuple` with a list of integers.
 
         Creates an `IntTuple` containing the provided integer values.
@@ -520,7 +520,7 @@ struct IntTuple(
 
     @implicit
     @always_inline
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         """Initialize an `IntTuple` with a single integer value.
 
         Creates an `IntTuple` containing a single integer element.
@@ -542,7 +542,7 @@ struct IntTuple(
         self.validate_structure()
 
     @always_inline("nodebug")
-    fn __init__(out self, *elements: IntTuple, __list_literal__: () = ()):
+    def __init__(out self, *elements: IntTuple, __list_literal__: () = ()):
         """Initialize an `IntTuple` with nested IntTuples.
 
         Creates a hierarchical `IntTuple` containing the provided `IntTuple` elements,
@@ -564,7 +564,7 @@ struct IntTuple(
         self.validate_structure()
 
     @always_inline("nodebug")
-    fn __init__(out self, *, var _owned: IntArray):
+    def __init__(out self, *, var _owned: IntArray):
         """Initialize an `IntTuple` taking the values of an `IntArray`.
 
         Args:
@@ -573,7 +573,7 @@ struct IntTuple(
         self._store = _owned^
 
     @always_inline
-    fn __init__(out self, existing: Self, rng: _StridedRange):
+    def __init__(out self, existing: Self, rng: _StridedRange):
         """Initialize an `IntTuple` as a slice of an existing `IntTuple`.
 
         Creates a new `IntTuple` containing only the elements from the existing
@@ -607,7 +607,7 @@ struct IntTuple(
         self.validate_structure()
 
     @always_inline
-    fn __init__(out self, dimlist: DimList):
+    def __init__(out self, dimlist: DimList):
         """Initialize an `IntTuple` from a DimList.
 
         Creates an `IntTuple` containing the dimensions from a DimList, handling
@@ -641,7 +641,7 @@ struct IntTuple(
         self.validate_structure()
 
     @always_inline("nodebug")
-    fn __init__[
+    def __init__[
         IterableType: Iterable
     ](out self, iterable: IterableType) where _type_is_eq_parse_time[
         IterableType.IteratorType[origin_of(iterable)].Element,
@@ -670,7 +670,7 @@ struct IntTuple(
             self.append(tup)
 
     @always_inline("nodebug")
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Initialize by copying an existing `IntTuple`.
 
         Creates a deep copy of the provided `IntTuple`, copying all its data
@@ -688,7 +688,7 @@ struct IntTuple(
         self._store.copy_from(0, copy._store, size)
 
     @always_inline("nodebug")
-    fn __lt__(self, rhs: IntTuple) -> Bool:
+    def __lt__(self, rhs: IntTuple) -> Bool:
         """Compare two `IntTuple`s lexicographically.
 
         This function performs element-wise comparison of two `IntTuple`s and determines
@@ -724,7 +724,7 @@ struct IntTuple(
         return False
 
     @always_inline("nodebug")
-    fn owned_copy(self) -> IntTuple:
+    def owned_copy(self) -> IntTuple:
         """Create a deep copy of this `IntTuple` with its own memory ownership.
 
         This method creates a completely independent copy of the `IntTuple` with
@@ -753,7 +753,7 @@ struct IntTuple(
 
     # FIXME: this needs a better name and optimization
     @always_inline
-    fn replace_entry(self, idx: Int, value: IntTuple) -> IntTuple:
+    def replace_entry(self, idx: Int, value: IntTuple) -> IntTuple:
         """Replace an entry in the tuple with another `IntTuple`.
 
         Creates a new `IntTuple` with the element at the specified index replaced
@@ -787,7 +787,7 @@ struct IntTuple(
         return result
 
     @always_inline("nodebug")
-    fn replace_entry(mut self, idx: Int, *, int_value: Int):
+    def replace_entry(mut self, idx: Int, *, int_value: Int):
         """Replace an integer value at the specified index in-place.
 
         Directly modifies the tuple by replacing the integer value at the given index.
@@ -812,7 +812,7 @@ struct IntTuple(
 
         self._store[idx + 1] = int_value
 
-    fn count_values(self) -> Int:
+    def count_values(self) -> Int:
         """Count the total number of integer values in this tuple hierarchy.
 
         Recursively traverses the nested tuple structure and counts all integer values.
@@ -833,7 +833,7 @@ struct IntTuple(
                 count += self[i].count_values()
         return count
 
-    fn _fill(mut self, src: IntTuple, var i: Int = 1) -> Int:
+    def _fill(mut self, src: IntTuple, var i: Int = 1) -> Int:
         for j in range(len(src)):
             if src.is_value(j):
                 self._store[i] = src.value(j)
@@ -843,7 +843,7 @@ struct IntTuple(
         return i
 
     @always_inline("nodebug")
-    fn flatten(self) -> IntTuple:
+    def flatten(self) -> IntTuple:
         """Flatten a nested `IntTuple` into a single-level `IntTuple`.
 
         This function converts a hierarchical `IntTuple` structure into a flat
@@ -859,7 +859,7 @@ struct IntTuple(
         _ = result._fill(self)
         return result
 
-    fn product_flatten(self) -> IntTuple:
+    def product_flatten(self) -> IntTuple:
         """Coalesces a nested `IntTuple` into a single-level `IntTuple`, by multiplying all the
         values together.
 
@@ -877,7 +877,7 @@ struct IntTuple(
 
         return tup
 
-    fn all_known(self) -> Bool:
+    def all_known(self) -> Bool:
         """Check if all values in this tuple hierarchy are known (not `UNKNOWN_VALUE`).
 
         Recursively traverses the nested tuple structure and checks if any value
@@ -895,7 +895,7 @@ struct IntTuple(
                 return False
         return True
 
-    fn all_known[start: Int, end: Int](self) -> Bool:
+    def all_known[start: Int, end: Int](self) -> Bool:
         """Check if all values in this tuple hierarchy are known (not `UNKNOWN_VALUE`).
 
         Recursively traverses the nested tuple structure and checks if any value
@@ -918,7 +918,7 @@ struct IntTuple(
         return True
 
     @always_inline
-    fn append(mut self, *elements: IntTuple):
+    def append(mut self, *elements: IntTuple):
         """Append one or more `IntTuple` elements to this tuple.
 
         This method modifies the tuple in-place by adding the provided elements
@@ -969,7 +969,7 @@ struct IntTuple(
         self.validate_structure()
 
     @always_inline
-    fn extend(mut self, tuple: IntTuple):
+    def extend(mut self, tuple: IntTuple):
         """
         Extends this tuple by appending all elements from another tuple.
 
@@ -1021,7 +1021,7 @@ struct IntTuple(
 
     @always_inline
     @staticmethod
-    fn _insert(
+    def _insert(
         mut store: IntArray, idx: Int, storage: Int, element: IntTuple
     ) -> Int:
         # Negative offset from current position.
@@ -1031,11 +1031,11 @@ struct IntTuple(
         return storage + size
 
     @always_inline("nodebug")
-    fn _insert(mut self, idx: Int, storage: Int, element: IntTuple) -> Int:
+    def _insert(mut self, idx: Int, storage: Int, element: IntTuple) -> Int:
         return Self._insert(self._store, idx, storage, element)
 
     @always_inline("nodebug")
-    fn size(self) -> Int:
+    def size(self) -> Int:
         """
         Returns the total size of the `IntTuple` in memory.
 
@@ -1049,7 +1049,7 @@ struct IntTuple(
         return Self.tuple_size(self._store)
 
     @staticmethod
-    fn tuple_size(data: IntArray) -> Int:
+    def tuple_size(data: IntArray) -> Int:
         """
         Recursively calculates the size of a tuple represented by an `IntArray`.
 
@@ -1065,7 +1065,7 @@ struct IntTuple(
         return Self._calculate_tuple_size(data, 0)
 
     @staticmethod
-    fn _calculate_tuple_size(data: IntArray, offset: Int) -> Int:
+    def _calculate_tuple_size(data: IntArray, offset: Int) -> Int:
         """
         Helper method to calculate the size of a tuple at a given offset without copying.
 
@@ -1093,7 +1093,7 @@ struct IntTuple(
                 size += nested_size
         return size
 
-    fn validate_structure(self):
+    def validate_structure(self):
         """
         Validates the internal structure of the `IntTuple`.
 
@@ -1114,7 +1114,7 @@ struct IntTuple(
         )
 
     @always_inline("nodebug")
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """
         Returns the number of elements in the `IntTuple`.
 
@@ -1126,7 +1126,7 @@ struct IntTuple(
         return self._store[0]
 
     @always_inline("nodebug")
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """
         Returns an iterator over the elements of the `IntTuple`.
 
@@ -1138,7 +1138,7 @@ struct IntTuple(
         return _IntTupleIter(Pointer(to=self), 0)
 
     @always_inline
-    fn __getitem__(self, _idx: Int) -> IntTuple:
+    def __getitem__(self, _idx: Int) -> IntTuple:
         """
         Retrieves an element at the specified index from the `IntTuple`.
 
@@ -1170,7 +1170,7 @@ struct IntTuple(
             return IntTuple(_owned=sub_data)
 
     @always_inline("nodebug")
-    fn __getitem__(self, span: Slice) -> Self:
+    def __getitem__(self, span: Slice) -> Self:
         """
         Retrieves a slice of elements from the `IntTuple`.
 
@@ -1186,7 +1186,7 @@ struct IntTuple(
         return Self(self, range(start, end, step))
 
     @always_inline("nodebug")
-    fn is_value(self) -> Bool:
+    def is_value(self) -> Bool:
         """
         Determines if this `IntTuple` represents a single value rather than a tuple.
 
@@ -1197,7 +1197,7 @@ struct IntTuple(
         return len(self) == 1 and self._store[1] >= Self.MinimumValue
 
     @always_inline("nodebug")
-    fn is_tuple(self) -> Bool:
+    def is_tuple(self) -> Bool:
         """
         Determines if this `IntTuple` represents a tuple rather than a single value.
 
@@ -1207,7 +1207,7 @@ struct IntTuple(
         return not self.is_value()
 
     @always_inline("nodebug")
-    fn value(self) -> Int:
+    def value(self) -> Int:
         """
         Retrieves the value of this `IntTuple` if it represents a single value.
 
@@ -1219,7 +1219,7 @@ struct IntTuple(
         return self._store[1]
 
     @always_inline("nodebug")
-    fn is_value(self, i: Int) -> Bool:
+    def is_value(self, i: Int) -> Bool:
         """
         Determines if the element at the specified index is a value rather than a tuple.
 
@@ -1244,7 +1244,7 @@ struct IntTuple(
         return self._store[i + 1] >= Self.MinimumValue
 
     @always_inline("nodebug")
-    fn is_tuple(self, i: Int) -> Bool:
+    def is_tuple(self, i: Int) -> Bool:
         """
         Determines if the element at the specified index is a tuple rather than a value.
 
@@ -1260,7 +1260,7 @@ struct IntTuple(
         return not self.is_value(i)
 
     @always_inline("nodebug")
-    fn value(self, i: Int) -> Int:
+    def value(self, i: Int) -> Int:
         """
         Retrieves the value of the element at the specified index.
 
@@ -1287,7 +1287,7 @@ struct IntTuple(
             return self._store[offset + 1]
 
     @always_inline("nodebug")
-    fn tuple(ref self) -> ref[self] Self:
+    def tuple(ref self) -> ref[self] Self:
         """
         Returns a reference to this `IntTuple` as a tuple.
 
@@ -1301,7 +1301,7 @@ struct IntTuple(
         # Avoid making gratuitous copies
         return self
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """
         Writes a string representation of this `IntTuple` to the provided writer.
 
@@ -1326,7 +1326,7 @@ struct IntTuple(
                     writer.write(", ")
             writer.write(")")
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """
         Writes a string representation of this `IntTuple` to the provided writer.
 
@@ -1340,7 +1340,7 @@ struct IntTuple(
         self.write_to(writer)
 
     @staticmethod
-    fn is_equal(a: IntTuple, b: IntTuple) -> Bool:
+    def is_equal(a: IntTuple, b: IntTuple) -> Bool:
         """
         Compares two `IntTuple`s for equality.
 
@@ -1378,7 +1378,7 @@ struct IntTuple(
         return True
 
     @always_inline("nodebug")
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """
         Equality operator for `IntTuple`.
 
@@ -1391,7 +1391,7 @@ struct IntTuple(
         return Self.is_equal(self, other)
 
     @always_inline("nodebug")
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """
         Inequality operator for `IntTuple`.
 
@@ -1404,7 +1404,7 @@ struct IntTuple(
         return not Self.is_equal(self, other)
 
     @always_inline("nodebug")
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         """
         Converts this `IntTuple` to an integer.
 
@@ -1423,7 +1423,7 @@ struct IntTuple(
 
 
 @always_inline("nodebug")
-fn signum(a: Int) -> Int:
+def signum(a: Int) -> Int:
     """Calculate the sign of an integer.
 
     This function determines the sign of the input integer and returns a corresponding
@@ -1449,7 +1449,7 @@ fn signum(a: Int) -> Int:
 
 
 @always_inline("nodebug")
-fn is_int(t: IntTuple) -> Bool:
+def is_int(t: IntTuple) -> Bool:
     """Check if an `IntTuple` represents a single integer value.
 
     This function determines whether the given `IntTuple` contains a single integer value
@@ -1478,7 +1478,7 @@ fn is_int(t: IntTuple) -> Bool:
 
 
 @always_inline("nodebug")
-fn is_tuple(t: IntTuple) -> Bool:
+def is_tuple(t: IntTuple) -> Bool:
     """Check if an `IntTuple` represents a nested tuple.
 
     This function determines whether the given `IntTuple` contains nested elements
@@ -1509,7 +1509,7 @@ fn is_tuple(t: IntTuple) -> Bool:
 # Python-style reduce
 
 
-fn reduce[
+def reduce[
     reducer: fn(a: Int, b: IntTuple) capturing[_] -> Int
 ](t: IntTuple, initializer: Int) -> Int:
     """Apply a reduction function to an `IntTuple` with an initial value.
@@ -1541,7 +1541,7 @@ fn reduce[
 
 
 @always_inline("nodebug")
-fn is_flat(t: IntTuple) -> Bool:
+def is_flat(t: IntTuple) -> Bool:
     """Check if an `IntTuple` is flat.
 
     This function checks if the `IntTuple` is flat, meaning it has no nested
@@ -1560,7 +1560,7 @@ fn is_flat(t: IntTuple) -> Bool:
 
 
 @always_inline("nodebug")
-fn flatten(t: IntTuple) -> IntTuple:
+def flatten(t: IntTuple) -> IntTuple:
     """Flatten a nested `IntTuple` into a single-level `IntTuple`.
 
     This function converts a hierarchical `IntTuple` structure into a flat
@@ -1575,7 +1575,7 @@ fn flatten(t: IntTuple) -> IntTuple:
     return t.flatten()
 
 
-fn to_nest(nested: IntTuple, flat: IntTuple) -> IntTuple:
+def to_nest(nested: IntTuple, flat: IntTuple) -> IntTuple:
     """Nests a flat `IntTuple` according to the structure of a nested `IntTuple`.
 
     This function reshapes a flat sequence of values into a hierarchical structure
@@ -1615,7 +1615,7 @@ fn to_nest(nested: IntTuple, flat: IntTuple) -> IntTuple:
     return result
 
 
-fn _to_unknown(mut t: IntTuple):
+def _to_unknown(mut t: IntTuple):
     """Recursively replace all values in a tuple with UNKNOWN_VALUE in place.
 
     This function modifies the tuple's internal storage directly to avoid
@@ -1627,7 +1627,7 @@ fn _to_unknown(mut t: IntTuple):
     _to_unknown_impl(t._store, 0)
 
 
-fn _to_unknown_impl(mut data: IntArray, offset: Int):
+def _to_unknown_impl(mut data: IntArray, offset: Int):
     """Helper function to recursively replace values with UNKNOWN_VALUE.
 
     Args:
@@ -1647,7 +1647,7 @@ fn _to_unknown_impl(mut data: IntArray, offset: Int):
 
 # Create a IntTuple with same structure but filled by UNKNOWN_VALUE.
 @always_inline("nodebug")
-fn to_unknown(t: IntTuple) -> IntTuple:
+def to_unknown(t: IntTuple) -> IntTuple:
     """Create an `IntTuple` with the same structure but filled with `UNKNOWN_VALUE`.
 
     This function preserves the hierarchical structure of the input `IntTuple`
@@ -1666,7 +1666,7 @@ fn to_unknown(t: IntTuple) -> IntTuple:
 
 
 @always_inline
-fn _merge[
+def _merge[
     cmp: fn(IntTuple, IntTuple) -> Bool,
 ](left: IntTuple, right: IntTuple) -> IntTuple:
     var result = IntTuple()
@@ -1687,7 +1687,7 @@ fn _merge[
     return result
 
 
-fn sorted[
+def sorted[
     cmp: fn(IntTuple, IntTuple) -> Bool = IntTuple.__lt__,
 ](tuple: IntTuple) -> IntTuple:
     """Sort an IntTuple using the provided comparison function.
@@ -1715,7 +1715,7 @@ fn sorted[
 
 
 @always_inline("nodebug")
-fn sum(t: IntTuple) -> Int:
+def sum(t: IntTuple) -> Int:
     """Calculate the sum of all values in an `IntTuple`.
 
     This function recursively computes the sum of all integer values
@@ -1731,7 +1731,7 @@ fn sum(t: IntTuple) -> Int:
 
     @always_inline
     @parameter
-    fn reducer(a: Int, b: IntTuple) -> Int:
+    def reducer(a: Int, b: IntTuple) -> Int:
         return UNKNOWN_VALUE if a == UNKNOWN_VALUE else a + (
             Int(b) if is_int(b) else sum(b)
         )
@@ -1740,7 +1740,7 @@ fn sum(t: IntTuple) -> Int:
 
 
 @always_inline("nodebug")
-fn product(t: IntTuple) -> Int:
+def product(t: IntTuple) -> Int:
     """Calculate the product of all values in an `IntTuple`.
 
     This function recursively computes the product of all integer values
@@ -1756,7 +1756,7 @@ fn product(t: IntTuple) -> Int:
 
     @always_inline
     @parameter
-    fn reducer(a: Int, b: IntTuple) -> Int:
+    def reducer(a: Int, b: IntTuple) -> Int:
         return UNKNOWN_VALUE if a == UNKNOWN_VALUE else a * (
             Int(b) if is_int(b) else product(b)
         )
@@ -1767,7 +1767,7 @@ fn product(t: IntTuple) -> Int:
 # TODO: Can't call this `max` otherwise the compiler incorrectly
 # fails to recurse when calling this local function.
 @always_inline("nodebug")
-fn tuple_max(t: IntTuple) -> Int:
+def tuple_max(t: IntTuple) -> Int:
     """Calculate the maximum value in an `IntTuple`.
 
     This function recursively finds the maximum integer value
@@ -1782,14 +1782,14 @@ fn tuple_max(t: IntTuple) -> Int:
 
     @always_inline
     @parameter
-    fn reducer(a: Int, b: IntTuple) -> Int:
+    def reducer(a: Int, b: IntTuple) -> Int:
         return max(a, Int(b) if is_int(b) else tuple_max(b))
 
     comptime int_min_val = 0
     return reduce[reducer](t, int_min_val)
 
 
-fn apply[func: fn(Int) capturing[_] -> Int](t: IntTuple) -> IntTuple:
+def apply[func: fn(Int) capturing[_] -> Int](t: IntTuple) -> IntTuple:
     """Apply a function to each integer value in an `IntTuple`.
 
     This function recursively applies the given function to each integer value
@@ -1813,7 +1813,7 @@ fn apply[func: fn(Int) capturing[_] -> Int](t: IntTuple) -> IntTuple:
     return res
 
 
-fn shallow_apply[func: fn(IntTuple) -> Int](t: IntTuple) -> IntTuple:
+def shallow_apply[func: fn(IntTuple) -> Int](t: IntTuple) -> IntTuple:
     """Apply a function to each top-level element of an `IntTuple`.
 
     Unlike `apply()`, this function only operates on the immediate children
@@ -1835,7 +1835,7 @@ fn shallow_apply[func: fn(IntTuple) -> Int](t: IntTuple) -> IntTuple:
 
 
 @always_inline("nodebug")
-fn apply_zip[
+def apply_zip[
     func: fn(IntTuple, IntTuple) -> IntTuple
 ](t1: IntTuple, t2: IntTuple) -> IntTuple:
     """Apply a function to pairs of elements from two `IntTuple`s.
@@ -1860,7 +1860,7 @@ fn apply_zip[
 
 
 @always_inline("nodebug")
-fn apply_zip[
+def apply_zip[
     func: fn(IntTuple, IntTuple) capturing[_] -> IntTuple
 ](t1: IntTuple, t2: IntTuple) -> IntTuple:
     """Apply a capturing function to pairs of elements from two `IntTuple`s.
@@ -1884,7 +1884,7 @@ fn apply_zip[
 
 
 @always_inline("nodebug")
-fn apply_zip[
+def apply_zip[
     func: fn(IntTuple, IntTuple, IntTuple) -> IntTuple
 ](t1: IntTuple, t2: IntTuple, t3: IntTuple) -> IntTuple:
     """Apply a function to triplets of elements from three `IntTuple`s.
@@ -1910,7 +1910,7 @@ fn apply_zip[
 
 
 @always_inline("nodebug")
-fn apply_zip[
+def apply_zip[
     func: fn(IntTuple, IntTuple, IntTuple) capturing[_] -> IntTuple
 ](t1: IntTuple, t2: IntTuple, t3: IntTuple) -> IntTuple:
     """Apply a capturing function to triplets of elements from three `IntTuple`s.
@@ -1934,7 +1934,7 @@ fn apply_zip[
     return r
 
 
-fn tuple_min(a: IntTuple, b: IntTuple) -> IntTuple:
+def tuple_min(a: IntTuple, b: IntTuple) -> IntTuple:
     """Compute the element-wise minimum of two `IntTuple`s.
 
     This function compares corresponding elements of two `IntTuple`s and
@@ -1968,7 +1968,7 @@ fn tuple_min(a: IntTuple, b: IntTuple) -> IntTuple:
     return apply_zip[tuple_min](a, b)
 
 
-fn inner_product(a: IntTuple, b: IntTuple) -> Int:
+def inner_product(a: IntTuple, b: IntTuple) -> Int:
     """Compute the inner product of two `IntTuple`s.
 
     For flat tuples, this is the sum of element-wise products.
@@ -2000,7 +2000,7 @@ fn inner_product(a: IntTuple, b: IntTuple) -> Int:
 
 
 @always_inline("nodebug")
-fn abs(t: IntTuple) -> IntTuple:
+def abs(t: IntTuple) -> IntTuple:
     """Compute the absolute value of each element in an `IntTuple`.
 
     This function applies the absolute value operation to each integer
@@ -2014,14 +2014,14 @@ fn abs(t: IntTuple) -> IntTuple:
     """
 
     @parameter
-    fn int_abs(x: Int) -> Int:
+    def int_abs(x: Int) -> Int:
         return x.__abs__()
 
     return apply[int_abs](t)
 
 
 @always_inline("nodebug")
-fn product_each(t: IntTuple) -> IntTuple:
+def product_each(t: IntTuple) -> IntTuple:
     """Compute the product of elements in each sub-tuple of an `IntTuple`.
 
     For each immediate child of the input tuple, this function computes
@@ -2038,7 +2038,7 @@ fn product_each(t: IntTuple) -> IntTuple:
 
 
 # Multiply lhs tuple elements by rhs
-fn _mul(mut lhs: IntTuple, rhs: Int, offset: Int = 0):
+def _mul(mut lhs: IntTuple, rhs: Int, offset: Int = 0):
     var num_elems = lhs._store[offset]
     for i in range(num_elems):
         var idx = offset + i + 1
@@ -2054,7 +2054,7 @@ fn _mul(mut lhs: IntTuple, rhs: Int, offset: Int = 0):
 
 
 @always_inline("nodebug")
-fn mul(lhs: IntTuple, rhs: Int) -> IntTuple:
+def mul(lhs: IntTuple, rhs: Int) -> IntTuple:
     """Multiply each element in an `IntTuple` by a scalar value.
 
     This function creates a new `IntTuple` where each element (at any nesting level)
@@ -2074,7 +2074,7 @@ fn mul(lhs: IntTuple, rhs: Int) -> IntTuple:
 
 
 @always_inline("nodebug")
-fn size(a: IntTuple) -> Int:
+def size(a: IntTuple) -> Int:
     """Calculate the total size (product of all elements) of an `IntTuple`.
 
     This function computes the product of all integer values in the `IntTuple`,
@@ -2089,7 +2089,7 @@ fn size(a: IntTuple) -> Int:
     return product(a)
 
 
-fn congruent(a: IntTuple, b: IntTuple) -> Bool:
+def congruent(a: IntTuple, b: IntTuple) -> Bool:
     """Test if two `IntTuple`s have the same hierarchical structure.
 
     This function checks if two `IntTuple`s have identical nesting patterns,
@@ -2115,7 +2115,7 @@ fn congruent(a: IntTuple, b: IntTuple) -> Bool:
     return False
 
 
-fn apply_predicate[
+def apply_predicate[
     predicate: fn(IntTuple, IntTuple) -> Bool
 ](a: IntTuple, b: IntTuple) -> Bool:
     """Apply a predicate function recursively to two `IntTuple`s.
@@ -2153,7 +2153,7 @@ fn apply_predicate[
 
 
 @always_inline("nodebug")
-fn weakly_congruent(a: IntTuple, b: IntTuple) -> Bool:
+def weakly_congruent(a: IntTuple, b: IntTuple) -> Bool:
     """Test if two IntTuples have similar hierarchical structures.
 
     This function establishes a partial order relation between IntTuples
@@ -2168,14 +2168,14 @@ fn weakly_congruent(a: IntTuple, b: IntTuple) -> Bool:
         False otherwise.
     """
 
-    fn predicate(a: IntTuple, b: IntTuple) -> Bool:
+    def predicate(a: IntTuple, b: IntTuple) -> Bool:
         return True
 
     return apply_predicate[predicate](a, b)
 
 
 @always_inline("nodebug")
-fn compatible(a: IntTuple, b: IntTuple) -> Bool:
+def compatible(a: IntTuple, b: IntTuple) -> Bool:
     """Test if two shapes are compatible for tensor operations.
 
     This function checks if shape A is compatible with shape B, meaning:
@@ -2192,14 +2192,14 @@ fn compatible(a: IntTuple, b: IntTuple) -> Bool:
         True if shape A is compatible with shape B, False otherwise.
     """
 
-    fn predicate(a: IntTuple, b: IntTuple) -> Bool:
+    def predicate(a: IntTuple, b: IntTuple) -> Bool:
         return Int(a) == size(b)
 
     return apply_predicate[predicate](a, b)
 
 
 @always_inline("nodebug")
-fn weakly_compatible(a: IntTuple, b: IntTuple) -> Bool:
+def weakly_compatible(a: IntTuple, b: IntTuple) -> Bool:
     """Test if shape A is weakly compatible with shape B.
 
     A shape A is weakly compatible with shape B if there exists a shape C
@@ -2217,14 +2217,14 @@ fn weakly_compatible(a: IntTuple, b: IntTuple) -> Bool:
         True if shape A is weakly compatible with shape B, False otherwise.
     """
 
-    fn predicate(a: IntTuple, b: IntTuple) -> Bool:
+    def predicate(a: IntTuple, b: IntTuple) -> Bool:
         return size(b) % Int(a) == 0
 
     return apply_predicate[predicate](a, b)
 
 
 @always_inline("nodebug")
-fn prefix_product(a: IntTuple) -> IntTuple:
+def prefix_product(a: IntTuple) -> IntTuple:
     """Compute the exclusive prefix product of an `IntTuple`.
 
     This is a convenience wrapper that initializes the prefix product with 1.
@@ -2239,7 +2239,7 @@ fn prefix_product(a: IntTuple) -> IntTuple:
 
 
 @always_inline("nodebug")
-fn prefix_product(a: IntTuple, init: Int) -> IntTuple:
+def prefix_product(a: IntTuple, init: Int) -> IntTuple:
     """Compute the exclusive prefix product of an `IntTuple` with an initial value.
 
     This function delegates to the implementation in prefix_product2.
@@ -2262,7 +2262,7 @@ fn prefix_product(a: IntTuple, init: Int) -> IntTuple:
     return _prefix_product2(a, init_tuple)
 
 
-fn _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
+def _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
     """Internal implementation of exclusive prefix product computation.
 
     Handles four cases:
@@ -2308,7 +2308,7 @@ fn _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
             return init.owned_copy()
 
 
-fn shape_div[check: Bool = False](a: IntTuple, b: IntTuple) -> IntTuple:
+def shape_div[check: Bool = False](a: IntTuple, b: IntTuple) -> IntTuple:
     """Performs division operation between shape tuples.
 
     Handles four cases:
@@ -2386,7 +2386,7 @@ fn shape_div[check: Bool = False](a: IntTuple, b: IntTuple) -> IntTuple:
 
 
 @always_inline("nodebug")
-fn idx2crd(idx: IntTuple, shape: IntTuple) -> IntTuple:
+def idx2crd(idx: IntTuple, shape: IntTuple) -> IntTuple:
     """
     Converts a linear index to a coordinate tuple within a given shape.
 
@@ -2404,7 +2404,7 @@ fn idx2crd(idx: IntTuple, shape: IntTuple) -> IntTuple:
 
 
 @always_inline("nodebug")
-fn idx2crd(idx: IntTuple, shape: IntTuple, _stride: IntTuple) -> IntTuple:
+def idx2crd(idx: IntTuple, shape: IntTuple, _stride: IntTuple) -> IntTuple:
     """
     Converts a linear index to a coordinate tuple within a given shape using custom strides.
 
@@ -2419,7 +2419,7 @@ fn idx2crd(idx: IntTuple, shape: IntTuple, _stride: IntTuple) -> IntTuple:
     return idx2crd2(idx, shape, _stride)
 
 
-fn idx2crd2(
+def idx2crd2(
     idx: IntTuple,
     shape: IntTuple,
     _stride: IntTuple,  # = IntTuple()
@@ -2475,7 +2475,7 @@ fn idx2crd2(
             )
 
             @parameter
-            fn idx2crd2(shape: IntTuple, stride: IntTuple) -> IntTuple:
+            def idx2crd2(shape: IntTuple, stride: IntTuple) -> IntTuple:
                 return idx2crd(idx, shape, stride)
 
             return apply_zip[idx2crd2](shape, stride)
@@ -2488,7 +2488,7 @@ fn idx2crd2(
 
 
 @always_inline("nodebug")
-fn crd2idx(crd: IntTuple, shape: IntTuple) -> Int:
+def crd2idx(crd: IntTuple, shape: IntTuple) -> Int:
     """
     Map a logical coordinate to a linear index.
 
@@ -2505,7 +2505,7 @@ fn crd2idx(crd: IntTuple, shape: IntTuple) -> Int:
     return crd2idx(crd, shape, IntTuple())
 
 
-fn crd2idx(
+def crd2idx(
     crd: IntTuple,
     shape: IntTuple,
     _stride: IntTuple,  # = IntTuple()
@@ -2669,7 +2669,7 @@ fn crd2idx(
             return int_crd * Int(stride)
 
 
-fn fill_like(src: IntTuple, val: Int) -> IntTuple:
+def fill_like(src: IntTuple, val: Int) -> IntTuple:
     """
     Creates an `IntTuple` with the same structure as the source but filled with a specified value.
 
@@ -2691,7 +2691,7 @@ fn fill_like(src: IntTuple, val: Int) -> IntTuple:
     return val
 
 
-fn propagate_unknown(src: IntTuple, target: IntTuple) -> IntTuple:
+def propagate_unknown(src: IntTuple, target: IntTuple) -> IntTuple:
     """
     Propagates unknown dimensions from the target `IntTuple` to the source `IntTuple`.
 
@@ -2717,7 +2717,7 @@ fn propagate_unknown(src: IntTuple, target: IntTuple) -> IntTuple:
     return src.owned_copy()
 
 
-fn reverse(src: IntTuple) -> IntTuple:
+def reverse(src: IntTuple) -> IntTuple:
     """
     Reverses the order of elements in an `IntTuple`, recursively.
 
@@ -2750,7 +2750,7 @@ fn reverse(src: IntTuple) -> IntTuple:
     return res
 
 
-fn depth(src: IntTuple) -> Int:
+def depth(src: IntTuple) -> Int:
     """
     Calculates the maximum nesting depth of an `IntTuple`.
 
@@ -2792,7 +2792,7 @@ particularly for operations like permutations and indices.
 """
 
 
-fn _sorted_perm(tuple: IntTuple) -> IntList:
+def _sorted_perm(tuple: IntTuple) -> IntList:
     """Returns permutation indices that would sort the tuple."""
     var n = len(tuple)
     var indices = IntList(capacity=n)
@@ -2818,7 +2818,7 @@ fn _sorted_perm(tuple: IntTuple) -> IntList:
     return indices^
 
 
-fn _flat_apply_perm(tuple: IntTuple, perm: IntList) -> IntTuple:
+def _flat_apply_perm(tuple: IntTuple, perm: IntList) -> IntTuple:
     """Applies a permutation to an IntTuple."""
     var n = len(tuple)
     var result = IntTuple()
@@ -2827,7 +2827,7 @@ fn _flat_apply_perm(tuple: IntTuple, perm: IntList) -> IntTuple:
     return result
 
 
-fn _flat_apply_invperm(tuple: IntTuple, perm: IntList) -> IntTuple:
+def _flat_apply_invperm(tuple: IntTuple, perm: IntList) -> IntTuple:
     """Applies the inverse permutation to an IntTuple."""
     var n = len(tuple)
     var result = IntTuple(num_elems=n)
@@ -2836,7 +2836,7 @@ fn _flat_apply_invperm(tuple: IntTuple, perm: IntList) -> IntTuple:
     return result
 
 
-fn _flat_compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
+def _flat_compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
     """Helper function that computes compact order for flattened inputs."""
     debug_assert(
         len(shape) == len(order),
@@ -2853,7 +2853,7 @@ fn _flat_compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
 
 
 @always_inline("nodebug")
-fn compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
+def compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
     """Create a compact stride based on shape and order.
 
     This function generates a stride tuple where lower order numbers imply
@@ -2895,7 +2895,7 @@ fn compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
     return to_nest(shape, flat_result)
 
 
-fn to_index_list[
+def to_index_list[
     rank: Int, element_type: DType = DType.int64
 ](t: IntTuple) -> IndexList[rank, element_type=element_type]:
     """

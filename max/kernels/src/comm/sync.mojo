@@ -28,15 +28,15 @@ from std.gpu.intrinsics import (
 
 
 # No-op (currently) group operation functions (enables vendor_ccl drop in replacement)
-fn group_start():
+def group_start():
     return
 
 
-fn group_end():
+def group_end():
     return
 
 
-fn enable_p2p() -> Bool:
+def enable_p2p() -> Bool:
     """Enable peer-to-peer memory access between all GPU pairs if supported.
 
     Attempts to enable P2P access between all device pairs. Returns False
@@ -52,7 +52,7 @@ fn enable_p2p() -> Bool:
         return False
 
 
-fn is_p2p_enabled() raises -> Bool:
+def is_p2p_enabled() raises -> Bool:
     """Checks whether P2P access is available between GPUs.
 
     This is a read-only status check. Callers must ensure `enable_p2p()`
@@ -79,7 +79,7 @@ saturate NVLink bandwidth.
 
 
 @always_inline
-fn circular_add[n: Int](x: Int, y: Int) -> Int:
+def circular_add[n: Int](x: Int, y: Int) -> Int:
     """Addition modulo n, assuming 0 <= x < n and 0 <= y < n.
 
     Equivalent to (x + y) % n. When n is a power of 2, uses unsigned
@@ -146,7 +146,7 @@ struct Signal:
 
 
 @always_inline
-fn _multi_gpu_barrier[
+def _multi_gpu_barrier[
     ngpus: Int,
     is_start: Bool,
     need_fence: Bool = False,

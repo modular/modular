@@ -22,7 +22,7 @@ trait CopyPolicy(DevicePassable, ImplicitlyCopyable):
     """
 
     @staticmethod
-    fn verify_source_tensor(src: LayoutTensor):
+    def verify_source_tensor(src: LayoutTensor):
         """
         A static function that verifies the source tensor
         is compatible with the copy operation. If the tensor is not valid
@@ -34,7 +34,7 @@ trait CopyPolicy(DevicePassable, ImplicitlyCopyable):
         ...
 
     @staticmethod
-    fn verify_destination_tensor(dst: LayoutTensor):
+    def verify_destination_tensor(dst: LayoutTensor):
         """
         A static function that verifies the destination tensor
         is compatible with the copy operation. If the tensor is not valid

@@ -38,7 +38,7 @@ struct TileMask[
     var max_dim: IndexList[Self.rank]
     var offset: IndexList[Self.rank]
 
-    fn __init__(
+    def __init__(
         out self,
         max_dim: IndexList[Self.rank],
         offset: IndexList[Self.rank] = IndexList[Self.rank](0),
@@ -50,7 +50,7 @@ struct TileMask[
     # accessed at the given `point` at this axis.
     #
     @always_inline
-    fn access_mask(
+    def access_mask(
         self, point: IndexList[Self.rank]
     ) -> StaticTuple[Bool, Self.rank]:
         var mask = StaticTuple[Bool, Self.rank]()
@@ -74,7 +74,7 @@ struct TileMask[
     # Returns the element size can be accessed.
     #
     @always_inline
-    fn access_size(
+    def access_size(
         self,
         point: IndexList[Self.rank],
         dim_mask: StaticTuple[Bool, Self.rank],
@@ -97,7 +97,7 @@ struct TileMask[
 # Computes the mask resulting tiling buffer with the `tile sizes`.
 #
 @always_inline("nodebug")
-fn _tile_mask[
+def _tile_mask[
     *tile_sizes: Dim,
     rank: Int,
     __sizes: IndexList[rank] = IndexList[rank](1),
@@ -118,7 +118,7 @@ fn _tile_mask[
 # Computes the mask resulting vectorizing buffer with the `sizes`.
 #
 @always_inline("nodebug")
-fn _vectorize_mask[
+def _vectorize_mask[
     rank: Int,
     sizes: IndexList[rank],
     element_stride: IndexList[rank],
@@ -132,7 +132,7 @@ fn _vectorize_mask[
 # Returns the shaep of the `thread_layout` as tuple.
 #
 @always_inline("nodebug")
-fn _get_shape_as_tuple[
+def _get_shape_as_tuple[
     rank: Int,
 ](thread_layout: Layout) -> IndexList[rank]:
     var res = IndexList[rank]()
@@ -146,7 +146,7 @@ fn _get_shape_as_tuple[
 # Computes the mask resulting distributing to `thread_layout`.
 #
 @always_inline("nodebug")
-fn _distribute_mask[
+def _distribute_mask[
     thread_layout: Layout,
     rank: Int,
     element_size: IndexList[rank],
@@ -188,7 +188,7 @@ comptime _distribute_shape[thread_layout: Layout, shape: DimList]: DimList[
 # Distribute thread_layout and returns the fragments of `thread_id`.
 #
 @always_inline("nodebug")
-fn distribute[
+def distribute[
     dtype: DType,
     rank: Int,
     shape: DimList,
@@ -244,7 +244,7 @@ comptime _vectorize_shape[*sizes: Int, shape: DimList]: DimList[
 
 
 @always_inline("nodebug")
-fn _to_static_tuple[*sizes: Int, rank: Int]() -> IndexList[rank]:
+def _to_static_tuple[*sizes: Int, rank: Int]() -> IndexList[rank]:
     var vals = IndexList[rank]()
 
     comptime for i in range(rank):
@@ -260,18 +260,18 @@ struct ElementLayout[rank: Int, shape: IndexList[rank]](
 ):
     var stride: IndexList[Self.rank]
 
-    fn __init__(out self):
+    def __init__(out self):
         self.stride = IndexList[Self.rank]()
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(Self.shape, ":", self.stride)
 
 
 # Returns the linear index of an element, this is equivalent to concat
 # the element layout and the buffer layout
 @always_inline("nodebug")
-fn _get_element_idx[
+def _get_element_idx[
     rank: Int,
     dtype: DType,
     shape: DimList,
@@ -301,7 +301,7 @@ fn _get_element_idx[
 
 
 @always_inline("nodebug")
-fn _get_element_idx[
+def _get_element_idx[
     rank: Int,
     dtype: DType,
     shape: DimList,
@@ -317,7 +317,7 @@ fn _get_element_idx[
 
 
 @always_inline("nodebug")
-fn _get_element_idx[
+def _get_element_idx[
     rank: Int,
     element_shape: IndexList[rank],
     //,
@@ -342,7 +342,7 @@ fn _get_element_idx[
 # Vectorizes buffer and returns the vecrtorized buffer and its dynamic layout.
 #
 @always_inline("nodebug")
-fn vectorize[
+def vectorize[
     dtype: DType,
     rank: Int,
     shape: DimList,
@@ -379,7 +379,7 @@ fn vectorize[
 
 
 @always_inline("nodebug")
-fn _copy_nd_buffer_to_layout_tensor[
+def _copy_nd_buffer_to_layout_tensor[
     src_rank: Int,
     dtype: DType,
     layout: Layout,
@@ -501,7 +501,7 @@ fn _copy_nd_buffer_to_layout_tensor[
 
 
 @always_inline("nodebug")
-fn _copy_nd_buffer_to_layout_tensor_masked[
+def _copy_nd_buffer_to_layout_tensor_masked[
     src_rank: Int,
     dtype: DType,
     layout: Layout,
@@ -646,7 +646,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
 
 
 @always_inline("nodebug")
-fn _copy_layout_tensor_to_nd_buffer[
+def _copy_layout_tensor_to_nd_buffer[
     dst_rank: Int,
     dtype: DType,
     layout: Layout,
@@ -733,7 +733,7 @@ fn _copy_layout_tensor_to_nd_buffer[
 
 
 @always_inline
-fn _copy_layout_tensor_to_nd_buffer_masked[
+def _copy_layout_tensor_to_nd_buffer_masked[
     dst_rank: Int,
     mask_rank: Int,
     dtype: DType,
@@ -847,7 +847,7 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
 # where each element of the fragment is originally distributed by `thread_layout`.
 #
 @always_inline("nodebug")
-fn copy_from_nd_buffer[
+def copy_from_nd_buffer[
     dtype: DType,
     dst_data_layout: Layout,
     //,
@@ -915,7 +915,7 @@ fn copy_from_nd_buffer[
 # where each element of the fragment is originally distributed by `thread_layout`.
 #
 @always_inline("nodebug")
-fn copy_from_nd_buffer_masked[
+def copy_from_nd_buffer_masked[
     src_rank: Int,
     dtype: DType,
     dst_data_layout: Layout,
@@ -1011,7 +1011,7 @@ fn copy_from_nd_buffer_masked[
 # of the fragment is distributed by `thread_layout`.
 #
 @always_inline("nodebug")
-fn copy_to_nd_buffer[
+def copy_to_nd_buffer[
     dst_rank: Int,
     dtype: DType,
     dst_buff_shape: DimList,
@@ -1069,7 +1069,7 @@ fn copy_to_nd_buffer[
 
 
 @always_inline("nodebug")
-fn copy_to_nd_buffer_masked[
+def copy_to_nd_buffer_masked[
     dst_rank: Int,
     dtype: DType,
     dst_buff_shape: DimList,
@@ -1154,7 +1154,7 @@ fn copy_to_nd_buffer_masked[
 # Copies `src_buffer` to `dst_tensor` asynchronously, the work is distributed
 # to `thread_layout` of threads.
 #
-fn copy_from_nd_buffer_async[
+def copy_from_nd_buffer_async[
     src_rank: Int,
     dtype: DType,
     dst_data_layout: Layout,
@@ -1178,7 +1178,7 @@ fn copy_from_nd_buffer_async[
     )
 
 
-fn from_ndbuffer_row_major(
+def from_ndbuffer_row_major(
     buffer: NDBuffer,
     out result: LayoutTensor[
         buffer.type,

@@ -20,7 +20,7 @@ from tensor.managed_tensor_slice import ManagedTensorSlice
 
 
 @always_inline
-fn managed_tensor_slice_to_ndbuffer[
+def managed_tensor_slice_to_ndbuffer[
     spec: StaticTensorSpec,
     //,
 ](

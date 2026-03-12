@@ -32,7 +32,7 @@ struct TuningConfigAllreduce(TrivialRegisterPassable, TuningConfig):
     var sm_version: StaticString
     var num_blocks: Int
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the tuning config as a string.
 
         Args:
@@ -93,7 +93,7 @@ comptime allreduce_table = Table(
 
 
 @always_inline
-fn _dispatch_max_num_blocks[
+def _dispatch_max_num_blocks[
     ngpus: Int, sm_version: StaticString
 ](num_bytes: Int) -> Int:
     """
@@ -111,7 +111,7 @@ fn _dispatch_max_num_blocks[
     # to MAX_NUM_BLOCKS_UPPER_BOUND, so an entry exceeding 512 would silently
     # corrupt barrier state.
     @parameter
-    fn _entry_exceeds_block_bound(x: TuningConfigAllreduce) -> Bool:
+    def _entry_exceeds_block_bound(x: TuningConfigAllreduce) -> Bool:
         return x.num_blocks > 512
 
     comptime _over_limit = allreduce_table.query_index[
@@ -125,7 +125,7 @@ fn _dispatch_max_num_blocks[
     # TODO(KERN-2503): first search for default for that sm
     # if not found look for a generic config
     @parameter
-    fn rule_eq_arch_default(x: TuningConfigAllreduce) -> Bool:
+    def rule_eq_arch_default(x: TuningConfigAllreduce) -> Bool:
         return x.ngpus == -1 and x.num_bytes == -1
 
     comptime default_idx = allreduce_table.query_index[rule_eq_arch_default]()
@@ -143,7 +143,7 @@ fn _dispatch_max_num_blocks[
 
     # narrowing the search space to matching sm_version and ngpus
     @parameter
-    fn rule_eq_arch_ngpus(x: TuningConfigAllreduce) -> Bool:
+    def rule_eq_arch_ngpus(x: TuningConfigAllreduce) -> Bool:
         return x.sm_version == sm_version and x.ngpus == ngpus
 
     comptime search_domain = allreduce_table.query_index[rule_eq_arch_ngpus]()
@@ -153,7 +153,7 @@ fn _dispatch_max_num_blocks[
 
     # get all static num_bytes values in table within the search space
     @parameter
-    fn rule_get_num_bytes(x: TuningConfigAllreduce) -> Int:
+    def rule_get_num_bytes(x: TuningConfigAllreduce) -> Int:
         return x.num_bytes
 
     comptime all_num_bytes_values = allreduce_table.query_values[
@@ -163,7 +163,7 @@ fn _dispatch_max_num_blocks[
     comptime for nb in all_num_bytes_values:
 
         @parameter
-        fn rule_eq_nb(x: TuningConfigAllreduce) -> Bool:
+        def rule_eq_nb(x: TuningConfigAllreduce) -> Bool:
             return x.num_bytes == nb
 
         # Find the fist config x with input 'num_bytes <= x.num_bytes'
@@ -181,6 +181,6 @@ fn _dispatch_max_num_blocks[
     return default_num_blocks
 
 
-fn get_sm_version() -> StaticString:
+def get_sm_version() -> StaticString:
     comptime default_device_info = GPUInfo.from_name[_accelerator_arch()]()
     return default_device_info.version

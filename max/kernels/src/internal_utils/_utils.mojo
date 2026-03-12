@@ -39,14 +39,14 @@ from std.utils import IndexList
 struct ValOrDim[dim: Dim = Dim()](Defaultable):
     var value: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         comptime assert (
             not Self.dim.is_dynamic()
         ), "Can't construct a dynamic dim with no runtime value"
         self.value = Self.dim.get()
 
     @implicit
-    fn __init__(out self, v: Int):
+    def __init__(out self, v: Int):
         self.value = v
 
 
@@ -60,27 +60,27 @@ struct InitializationType(DevicePassable, Equatable, TrivialRegisterPassable):
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         return "InitializationType"
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = value
 
-    fn __init__(out self, value: Float64):
+    def __init__(out self, value: Float64):
         self._value = Int(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
     @staticmethod
-    fn from_str(str: String) raises -> Self:
+    def from_str(str: String) raises -> Self:
         if str == "zero":
             return InitializationType.zero
         elif str == "one":
@@ -96,7 +96,7 @@ struct InitializationType(DevicePassable, Equatable, TrivialRegisterPassable):
 
 
 # TODO: refactor the following to run exactly once.
-fn bench_compile_time[
+def bench_compile_time[
     func_type: __TypeOfAllTypes,
     //,
     func: func_type,
@@ -107,10 +107,10 @@ fn bench_compile_time[
     # TODO: add docstring, this function should be used on its own or at the end of measured benchmarks.
     @always_inline
     @parameter
-    fn bench_call(mut b: Bencher) raises:
+    def bench_call(mut b: Bencher) raises:
         @always_inline
         @parameter
-        fn bench_iter() raises:
+        def bench_iter() raises:
             comptime if emission_kind == "asm" or emission_kind == "llvm":
                 var s = compile_info[func, emission_kind=emission_kind]().asm
                 keep(s.unsafe_ptr())
@@ -137,7 +137,7 @@ fn bench_compile_time[
     )
 
 
-fn parse_shape[name: StaticString]() -> List[Int]:
+def parse_shape[name: StaticString]() -> List[Int]:
     """Parse string to get an integer-valued shape (2+ dims) define.
 
     For example, the following shapes:
@@ -172,7 +172,7 @@ fn parse_shape[name: StaticString]() -> List[Int]:
     return vals^
 
 
-fn get_defined_shape[name: StaticString, default: StaticString]() -> List[Int]:
+def get_defined_shape[name: StaticString, default: StaticString]() -> List[Int]:
     """Try to get an integer-valued shape (2+ dims) define.
     Compilation fails if the name is not defined.
 
@@ -194,7 +194,7 @@ fn get_defined_shape[name: StaticString, default: StaticString]() -> List[Int]:
     return materialize[shape]()
 
 
-fn int_list_to_tuple[x: List[Int]]() -> IndexList[len(x)]:
+def int_list_to_tuple[x: List[Int]]() -> IndexList[len(x)]:
     var t = IndexList[len(x)]()
 
     comptime for i in range(len(x)):
@@ -203,15 +203,15 @@ fn int_list_to_tuple[x: List[Int]]() -> IndexList[len(x)]:
     return t
 
 
-fn static[d: Int]() -> ValOrDim[d]:
+def static[d: Int]() -> ValOrDim[d]:
     return ValOrDim[d]()
 
 
-fn dynamic(d: Int) -> ValOrDim[]:
+def dynamic(d: Int) -> ValOrDim[]:
     return ValOrDim(d)
 
 
-fn _get_arg(handle: String) -> Optional[String]:
+def _get_arg(handle: String) -> Optional[String]:
     """Return the value for the given arg handle, or None if not found.
 
     When KBENCH_USE_ENV_ARGS is set, reads from the KBENCH_ARG_<handle>
@@ -233,14 +233,14 @@ fn _get_arg(handle: String) -> Optional[String]:
         return None
 
 
-fn arg_parse(handle: String, default: Int) raises -> Int:
+def arg_parse(handle: String, default: Int) raises -> Int:
     var val = _get_arg(handle)
     if val:
         return Int(val.value())
     return default
 
 
-fn arg_parse(handle: String, default: Bool) raises -> Bool:
+def arg_parse(handle: String, default: Bool) raises -> Bool:
     var val = _get_arg(handle)
     if val:
         if val.value() == "True":
@@ -250,14 +250,14 @@ fn arg_parse(handle: String, default: Bool) raises -> Bool:
     return default
 
 
-fn arg_parse(handle: String, default: String) raises -> String:
+def arg_parse(handle: String, default: String) raises -> String:
     var val = _get_arg(handle)
     if val:
         return val.value()
     return default
 
 
-fn arg_parse(handle: String, default: Float64) raises -> Float64:
+def arg_parse(handle: String, default: Float64) raises -> Float64:
     var val = _get_arg(handle)
     if val:
         return atof(val.value())
@@ -274,7 +274,7 @@ struct Mode(TrivialRegisterPassable, Writable):
     comptime VERIFY = Self(0x4, "verify")
     comptime SEP = "+"
 
-    fn __init__(out self, handle: String = "run+benchmark+verify") raises:
+    def __init__(out self, handle: String = "run+benchmark+verify") raises:
         var handle_lower = handle.lower().split(Self.SEP)
         self = Self.NONE
         for h in handle_lower:
@@ -285,10 +285,10 @@ struct Mode(TrivialRegisterPassable, Writable):
             elif String(Self.VERIFY.handle) == h:
                 self.append(Self.VERIFY)
 
-    fn append(mut self, other: Self):
+    def append(mut self, other: Self):
         self._value |= other._value
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the mode as a string.
 
         Args:
@@ -305,13 +305,13 @@ struct Mode(TrivialRegisterPassable, Writable):
             s.append(Self.NONE.handle)
         writer.write(StaticString(Self.SEP).join(s))
 
-    fn __eq__(self, mode: Self) -> Bool:
+    def __eq__(self, mode: Self) -> Bool:
         if mode._value == self._value == Self.NONE._value:
             return True
         return True if self._value & mode._value else False
 
 
-fn update_bench_config_args(mut b: Bench) raises:
+def update_bench_config_args(mut b: Bench) raises:
     # TODO: refactor and move to bencher.mojo when internal_utils is available in oss.
 
     # b.config.out_file = Path(arg_parse("bench-out-file", String(b.config.out_file)))
@@ -344,18 +344,18 @@ struct Timer:
 
     var report: List[String]
 
-    fn __init__(out self):
+    def __init__(out self):
         self.start = Float64(std.time.perf_counter_ns())
         self.current = self.start
         self.report = List[String]()
 
-    fn measure(mut self, msg: String):
+    def measure(mut self, msg: String):
         var current = Float64(std.time.perf_counter_ns())
         var elapsed = current - self.current
         self.current = current
         self.report.append("[" + msg + "] " + String(elapsed / 1e6) + " (ms)")
 
-    fn print(self) raises:
+    def print(self) raises:
         for i in range(len(self.report)):
             print(self.report[i])
         print(
@@ -369,7 +369,7 @@ struct Timer:
 
 
 # TODO: limited support for 1D, generalize to n-D
-fn init_vector_gpu[
+def init_vector_gpu[
     dtype: DType
 ](
     x: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -381,7 +381,7 @@ fn init_vector_gpu[
     var stride = grid_dim.x * block_dim.x
 
     @parameter
-    fn apply(values: SIMD[dtype, 4]):
+    def apply(values: SIMD[dtype, 4]):
         comptime for i in range(4):
             comptime if i == 3:
                 if tid >= UInt(len):
@@ -409,7 +409,7 @@ fn init_vector_gpu[
     apply(values)
 
 
-fn init_vector_launch[
+def init_vector_launch[
     dtype: DType, block_dim: Int = 256
 ](
     out_device: DeviceBuffer[dtype],
@@ -432,7 +432,7 @@ fn init_vector_launch[
     )
 
 
-fn _pretty_print_float(val: Float64) -> String:
+def _pretty_print_float(val: Float64) -> String:
     """Converts float to string, omitting fractional part if not needed.
 
     Examples:
@@ -444,7 +444,7 @@ fn _pretty_print_float(val: Float64) -> String:
     return String(val)
 
 
-fn human_readable_size(size: Int) -> String:
+def human_readable_size(size: Int) -> String:
     """Formats a byte size into human-readable form (KB, MB, GB).
 
     Args:

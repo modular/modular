@@ -44,7 +44,7 @@ from std.runtime.tracing import Trace, TraceLevel
 # ===----------------------------------------------------------------------=== #
 
 
-fn _lmcache_offload_kernel[
+def _lmcache_offload_kernel[
     dtype: DType,
     page_size: Int,
     num_kv_heads: Int,
@@ -105,7 +105,7 @@ fn _lmcache_offload_kernel[
 # ===----------------------------------------------------------------------=== #
 
 
-fn _lmcache_onload_kernel[
+def _lmcache_onload_kernel[
     dtype: DType,
     page_size: Int,
     num_kv_heads: Int,
@@ -164,7 +164,7 @@ fn _lmcache_onload_kernel[
         ] = src_val
 
 
-fn lmcache_offload[
+def lmcache_offload[
     dtype: DType,
     page_size: Int,
     num_kv_heads: Int,
@@ -232,7 +232,7 @@ fn lmcache_offload[
         )
 
 
-fn lmcache_onload[
+def lmcache_onload[
     dtype: DType,
     page_size: Int,
     num_kv_heads: Int,

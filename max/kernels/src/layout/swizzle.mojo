@@ -232,7 +232,7 @@ from .layout import Layout
 
 
 @always_inline
-fn shiftr(a: Int, s: Int) -> Int:
+def shiftr(a: Int, s: Int) -> Int:
     """Shift right or left based on sign of shift amount.
 
     Performs a right shift if `s` is positive, or a left shift if
@@ -249,7 +249,7 @@ fn shiftr(a: Int, s: Int) -> Int:
 
 
 @always_inline
-fn shiftl(a: Int, s: Int) -> Int:
+def shiftl(a: Int, s: Int) -> Int:
     """Shift left or right based on sign of shift amount.
 
     Performs a left shift if `s` is positive, or a right shift if
@@ -266,7 +266,7 @@ fn shiftl(a: Int, s: Int) -> Int:
 
 
 @always_inline
-fn shiftr(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
+def shiftr(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
     """Shift right/left based on sign of shift for scalars.
 
     Scalar version of `shiftr`.  Right shift if `s` is positive,
@@ -283,7 +283,7 @@ fn shiftr(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
 
 
 @always_inline
-fn shiftl(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
+def shiftl(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
     """Shift left/right based on sign of shift for scalars.
 
     Scalar version of `shiftl`.  Left shift if `s` is positive,
@@ -351,7 +351,7 @@ struct Swizzle(
     """Mask for the target bits."""
 
     @always_inline
-    fn __init__(out self, bits: Int, base: Int, shift: Int):
+    def __init__(out self, bits: Int, base: Int, shift: Int):
         """Initialize a Swizzle object.
 
         Configures the swizzle operation based on bits, base, and
@@ -380,7 +380,7 @@ struct Swizzle(
         )
 
     @always_inline
-    fn __call__(self, index: IntTuple) -> Int:
+    def __call__(self, index: IntTuple) -> Int:
         """Apply swizzle to an IntTuple index.
 
         Unwraps the IntTuple and applies the swizzle to the integer
@@ -395,7 +395,7 @@ struct Swizzle(
         return self.__call__(index.value())
 
     @always_inline
-    fn __call__(self, offset: Int) -> Int:
+    def __call__(self, offset: Int) -> Int:
         """Apply swizzle to an integer offset.
 
         Performs the swizzle operation on an integer offset to
@@ -410,7 +410,7 @@ struct Swizzle(
         return offset ^ shiftr(offset & self.yyy_mask, self.shift)
 
     @always_inline
-    fn __call__(self, offset: Scalar) -> Scalar[offset.dtype]:
+    def __call__(self, offset: Scalar) -> Scalar[offset.dtype]:
         """Apply swizzle to a scalar offset.
 
         Scalar version of the swizzle operation.  Applies swizzle to
@@ -428,7 +428,7 @@ struct Swizzle(
         )
 
     @always_inline
-    fn size(self) -> Int:
+    def size(self) -> Int:
         """Get the size of the swizzle pattern.
 
         Calculates the size of the memory region affected by the
@@ -440,7 +440,7 @@ struct Swizzle(
         return 1 << (self.bits + self.base + abs(self.shift))
 
     @always_inline
-    fn cosize(self) -> Int:
+    def cosize(self) -> Int:
         """Get the cosize of the swizzle pattern.
 
         Cosize is the same as size for swizzle layouts, representing
@@ -451,7 +451,7 @@ struct Swizzle(
         """
         return self.size()
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write the swizzle parameters to a writer.
 
         Outputs the swizzle parameters (bits, base, shift) in a
@@ -464,7 +464,7 @@ struct Swizzle(
 
 
 @always_inline
-fn make_ldmatrix_swizzle[
+def make_ldmatrix_swizzle[
     dtype: DType, row_size: Int, log2_vector_width: Int = 0
 ]() -> Swizzle:
     """Make swizzle to avoid bank conflict for ldmatrix ops.
@@ -509,7 +509,7 @@ fn make_ldmatrix_swizzle[
 
 
 @always_inline
-fn make_swizzle[num_rows: Int, row_size: Int, access_size: Int]() -> Swizzle:
+def make_swizzle[num_rows: Int, row_size: Int, access_size: Int]() -> Swizzle:
     """Create a 2D swizzle to avoid bank conflicts.
 
     Generates a swizzle pattern for 2D memory layout to minimize
@@ -533,7 +533,7 @@ fn make_swizzle[num_rows: Int, row_size: Int, access_size: Int]() -> Swizzle:
 
 
 @always_inline
-fn make_swizzle[dtype: DType, mode: TensorMapSwizzle]() -> Swizzle:
+def make_swizzle[dtype: DType, mode: TensorMapSwizzle]() -> Swizzle:
     """Create swizzle based on predefined swizzle modes.
 
     Returns a swizzle pattern based on standard modes (32B, 64B,
@@ -581,7 +581,7 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
     """The swizzle to apply."""
 
     @always_inline
-    fn __init__(out self, var layout_a: Layout, layout_b: Swizzle):
+    def __init__(out self, var layout_a: Layout, layout_b: Swizzle):
         """Initialize ComposedLayout with a layout and swizzle.
 
         Args:
@@ -595,7 +595,7 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
         self.layout_b = layout_b
 
     @always_inline
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Copy constructor for ComposedLayout.
 
         Args:
@@ -605,7 +605,7 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
         self.layout_b = copy.layout_b
 
     @always_inline
-    fn __call__(self, idx: IntTuple) -> Int:
+    def __call__(self, idx: IntTuple) -> Int:
         """Apply composed layout to an index.
 
         Applies the layout, then adds offset, then applies the swizzle.
@@ -620,7 +620,7 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
         return self.layout_b(offset_val + self.layout_a(idx))
 
     @always_inline
-    fn __call__(self, idx: IntTuple, offset_val: Int) -> Int:
+    def __call__(self, idx: IntTuple, offset_val: Int) -> Int:
         """Apply composed layout with runtime offset.
 
         Applies the layout, then adds runtime `offset_val`, then the swizzle.
@@ -639,7 +639,7 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
         return self.layout_b(offset_val + self.layout_a(idx))
 
     @always_inline
-    fn size(self) -> Int:
+    def size(self) -> Int:
         """Get the size of the composed layout.
 
         Returns the size of the base layout.
@@ -650,7 +650,7 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
         return self.layout_a.size()
 
     @always_inline
-    fn cosize(self) -> Int:
+    def cosize(self) -> Int:
         """Get the cosize of the composed layout.
 
         Returns the cosize of the swizzle.
@@ -662,7 +662,7 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
 
 
 @always_inline
-fn eval_composed[
+def eval_composed[
     composed_layout: ComposedLayout
 ](idx: UInt, offset: UInt = 0) -> UInt:
     """Evaluate a composed layout with swizzle.

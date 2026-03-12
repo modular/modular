@@ -84,7 +84,7 @@ from std.os import abort
 from layout.layout_tensor import LayoutTensorIter
 
 
-fn _default_desc_shape[
+def _default_desc_shape[
     rank: Int,
     dtype: DType,
     tile_shape: IndexList[rank],
@@ -107,7 +107,7 @@ fn _default_desc_shape[
 
 
 @parameter
-fn _idx_product[rank: Int, shape: IndexList[rank]]() -> Int:
+def _idx_product[rank: Int, shape: IndexList[rank]]() -> Int:
     """Compute the total number of elements from an IndexList shape."""
     var result = 1
     comptime for i in range(rank):
@@ -116,13 +116,13 @@ fn _idx_product[rank: Int, shape: IndexList[rank]]() -> Int:
 
 
 @parameter
-fn _idx_str[rank: Int, shape: IndexList[rank]]() -> String:
+def _idx_str[rank: Int, shape: IndexList[rank]]() -> String:
     """Build a debug string from an IndexList shape."""
     return String(shape)
 
 
 @parameter
-fn _desc_offset[
+def _desc_offset[
     rank: Int, dims: IndexList[rank], is_k_major: Bool
 ](coords: IndexList[rank]) -> Int:
     """Compute linear offset for descriptor layout.
@@ -151,7 +151,7 @@ fn _desc_offset[
     return offset
 
 
-fn _tma_desc_tile_shape[
+def _tma_desc_tile_shape[
     dtype: DType,
     rank: Int,
     tile_shape: IndexList[rank],
@@ -204,7 +204,7 @@ struct SharedMemBarrier(TrivialRegisterPassable):
     """
 
     @always_inline("nodebug")
-    fn init[
+    def init[
         o: MutOrigin
     ](ref[o, AddressSpace.SHARED] self, num_threads: Int32 = 1):
         """Initialize the barrier state with the expected number of threads.
@@ -223,7 +223,7 @@ struct SharedMemBarrier(TrivialRegisterPassable):
         mbarrier_init(self.unsafe_ptr(), num_threads)
 
     @always_inline("nodebug")
-    fn expect_bytes[
+    def expect_bytes[
         o: MutOrigin
     ](ref[o, AddressSpace.SHARED] self, bytes: Int32):
         """Configure the barrier to expect a specific number of bytes to be transferred.
@@ -241,7 +241,7 @@ struct SharedMemBarrier(TrivialRegisterPassable):
         mbarrier_arrive_expect_tx_shared(self.unsafe_ptr(), bytes)
 
     @always_inline
-    fn expect_bytes_relaxed[
+    def expect_bytes_relaxed[
         o: MutOrigin
     ](ref[o, AddressSpace.SHARED] self, bytes: Int32) -> UInt64:
         """Configure the barrier to expect a specific number of bytes to be transferred.
@@ -262,7 +262,7 @@ struct SharedMemBarrier(TrivialRegisterPassable):
         return mbarrier_arrive_expect_tx_relaxed(self.unsafe_ptr(), bytes)
 
     @always_inline
-    fn arrive_and_expect_bytes[
+    def arrive_and_expect_bytes[
         o: MutOrigin
     ](
         ref[o, AddressSpace.SHARED] self,
@@ -299,7 +299,7 @@ struct SharedMemBarrier(TrivialRegisterPassable):
         )
 
     @always_inline("nodebug")
-    fn wait[
+    def wait[
         ticks: Optional[UInt32] = None
     ](ref[AddressSpace.SHARED] self, phase: UInt32 = 0):
         """Wait until the barrier is satisfied.
@@ -349,7 +349,7 @@ struct SharedMemBarrier(TrivialRegisterPassable):
             )
 
     @always_inline("nodebug")
-    fn wait_acquire[
+    def wait_acquire[
         scope: Scope
     ](ref[AddressSpace.SHARED] self, phase: UInt32 = 0):
         """Acquire and wait until the barrier is satisfied.
@@ -393,7 +393,7 @@ struct SharedMemBarrier(TrivialRegisterPassable):
         )
 
     @always_inline("nodebug")
-    fn wait_relaxed[
+    def wait_relaxed[
         scope: Scope
     ](ref[AddressSpace.SHARED] self, phase: UInt32 = 0):
         """Wait until the barrier is satisfied with relaxed ordering.
@@ -437,7 +437,7 @@ struct SharedMemBarrier(TrivialRegisterPassable):
         )
 
     @always_inline("nodebug")
-    fn try_wait(ref[AddressSpace.SHARED] self, phase: UInt32 = 0) -> Bool:
+    def try_wait(ref[AddressSpace.SHARED] self, phase: UInt32 = 0) -> Bool:
         """Non-blocking check if barrier phase is complete.
 
         Performs a single non-blocking check to see if the barrier has completed
@@ -471,7 +471,7 @@ struct SharedMemBarrier(TrivialRegisterPassable):
         ](Int32(Int(self.unsafe_ptr())), phase)
 
     @always_inline
-    fn unsafe_ptr[
+    def unsafe_ptr[
         origin: Origin
     ](
         ref[origin, AddressSpace.SHARED] self,
@@ -496,7 +496,7 @@ struct SharedMemBarrier(TrivialRegisterPassable):
         return UnsafePointer(to=self.mbar).unsafe_origin_cast[origin]()
 
     @always_inline
-    fn arrive_cluster(
+    def arrive_cluster(
         ref[AddressSpace.SHARED] self, cta_id: UInt32, count: UInt32 = 1
     ):
         """Signal arrival at the barrier from a specific CTA (Cooperative Thread Array) in a cluster.
@@ -519,7 +519,7 @@ struct SharedMemBarrier(TrivialRegisterPassable):
         )
 
     @always_inline("nodebug")
-    fn arrive[o: MutOrigin](ref[o, AddressSpace.SHARED] self) -> Int:
+    def arrive[o: MutOrigin](ref[o, AddressSpace.SHARED] self) -> Int:
         """Signal arrival at the barrier and return the arrival count.
 
         This method increments the arrival count at the barrier and returns
@@ -578,7 +578,7 @@ struct PipelineState[num_stages: Int](Defaultable, TrivialRegisterPassable):
     """
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize a PipelineState with default values.
 
         Creates a new PipelineState with index 0, phase 0, and count 0.
@@ -588,7 +588,7 @@ struct PipelineState[num_stages: Int](Defaultable, TrivialRegisterPassable):
         self._count = 0
 
     @always_inline
-    fn __init__(out self, index: Int, phase: Int, count: Int):
+    def __init__(out self, index: Int, phase: Int, count: Int):
         """Initialize a PipelineState with specific values.
 
         Creates a new PipelineState with the specified index, phase, and count.
@@ -603,7 +603,7 @@ struct PipelineState[num_stages: Int](Defaultable, TrivialRegisterPassable):
         self._count = UInt32(count)
 
     @always_inline
-    fn index(self) -> UInt32:
+    def index(self) -> UInt32:
         """Get the current stage index.
 
         Returns:
@@ -612,7 +612,7 @@ struct PipelineState[num_stages: Int](Defaultable, TrivialRegisterPassable):
         return self._index
 
     @always_inline
-    fn phase(self) -> UInt32:
+    def phase(self) -> UInt32:
         """Get the current phase bit.
 
         Returns:
@@ -621,7 +621,7 @@ struct PipelineState[num_stages: Int](Defaultable, TrivialRegisterPassable):
         return self._phase
 
     @always_inline
-    fn step(mut self):
+    def step(mut self):
         """Advance the pipeline state to the next stage.
 
         Increments the index and count. When the index reaches num_stages,
@@ -643,7 +643,7 @@ struct PipelineState[num_stages: Int](Defaultable, TrivialRegisterPassable):
             self._phase ^= 1
 
     @always_inline
-    fn next(mut self) -> Self:
+    def next(mut self) -> Self:
         """Advance the pipeline state to the next stage and return the new state.
 
         This function is used to move to the next buffer in a multi-buffer
@@ -656,7 +656,7 @@ struct PipelineState[num_stages: Int](Defaultable, TrivialRegisterPassable):
         return self
 
     @always_inline
-    fn __enter__(var self) -> Self:
+    def __enter__(var self) -> Self:
         """Enter the context manager.
 
         Returns:
@@ -717,12 +717,12 @@ struct TMATensorTile[
     comptime device_type: AnyType = Self
     """The device-side type representation."""
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """
         Gets this type's name, for use in error messages when handing arguments
         to kernels.
@@ -746,7 +746,7 @@ struct TMATensorTile[
 
     @always_inline
     @implicit
-    fn __init__(out self, descriptor: TMADescriptor):
+    def __init__(out self, descriptor: TMADescriptor):
         """
         Initializes a new TMATensorTile with the provided TMA descriptor.
 
@@ -756,7 +756,7 @@ struct TMATensorTile[
         self.descriptor = descriptor
 
     @always_inline
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """
         Copy initializes this `TMATensorTile` from another instance.
 
@@ -766,7 +766,7 @@ struct TMATensorTile[
         self.descriptor = copy.descriptor
 
     @always_inline
-    fn prefetch_descriptor(self):
+    def prefetch_descriptor(self):
         """
         Prefetches the TMA descriptor into cache to reduce latency.
 
@@ -777,7 +777,7 @@ struct TMATensorTile[
         prefetch_tma_descriptor(desc_ptr)
 
     @always_inline
-    fn async_copy[
+    def async_copy[
         cta_group: Int = 1,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
@@ -866,7 +866,7 @@ struct TMATensorTile[
                 )
 
     @always_inline
-    fn async_copy[
+    def async_copy[
         cta_group: Int = 1,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
@@ -921,7 +921,7 @@ struct TMATensorTile[
                 )
 
     @always_inline("nodebug")
-    fn async_copy_3d[
+    def async_copy_3d[
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
@@ -1005,7 +1005,7 @@ struct TMATensorTile[
                     )
 
     @always_inline
-    fn async_copy_4d[
+    def async_copy_4d[
         cta_group: Int = 1,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
@@ -1092,7 +1092,7 @@ struct TMATensorTile[
                         )
 
     @always_inline
-    fn async_copy_4d[
+    def async_copy_4d[
         cta_group: Int = 1,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
@@ -1168,7 +1168,7 @@ struct TMATensorTile[
                         )
 
     @always_inline
-    fn async_copy_5d[
+    def async_copy_5d[
         cta_group: Int = 1,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
@@ -1260,7 +1260,7 @@ struct TMATensorTile[
                             )
 
     @always_inline
-    fn async_copy_5d[
+    def async_copy_5d[
         cta_group: Int = 1,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
@@ -1341,7 +1341,7 @@ struct TMATensorTile[
                             )
 
     @always_inline("nodebug")
-    fn async_copy[
+    def async_copy[
         coord_rank: Int,
         //,
         cta_group: Int = 1,
@@ -1415,7 +1415,7 @@ struct TMATensorTile[
             )
 
     @always_inline
-    fn async_store[
+    def async_store[
         coord_rank: Int, //, cta_group: Int = 1
     ](
         self,
@@ -1476,7 +1476,7 @@ struct TMATensorTile[
             )
 
     @always_inline
-    fn async_store[
+    def async_store[
         coord_rank: Int, //, cta_group: Int = 1
     ](
         self,
@@ -1509,7 +1509,7 @@ struct TMATensorTile[
             )
 
     @always_inline
-    fn async_multicast_load[
+    def async_multicast_load[
         cta_group: Int = 1
     ](
         self,
@@ -1577,7 +1577,7 @@ struct TMATensorTile[
                 )
 
     @always_inline
-    fn async_multicast_load[
+    def async_multicast_load[
         cta_group: Int = 1,
     ](
         self,
@@ -1633,7 +1633,7 @@ struct TMATensorTile[
                 )
 
     @always_inline
-    fn async_multicast_load_3d[
+    def async_multicast_load_3d[
         cta_group: Int = 1
     ](
         self,
@@ -1721,7 +1721,7 @@ struct TMATensorTile[
                     )
 
     @always_inline
-    fn async_multicast_load_3d[
+    def async_multicast_load_3d[
         cta_group: Int = 1,
     ](
         self,
@@ -1790,7 +1790,7 @@ struct TMATensorTile[
                     )
 
     @always_inline
-    fn async_multicast_load_partitioned[
+    def async_multicast_load_partitioned[
         tma_rows: Int,
         tma_load_size: Int,
     ](
@@ -1847,7 +1847,7 @@ struct TMATensorTile[
         )
 
     @always_inline
-    fn async_store(
+    def async_store(
         self,
         src: LayoutTensor[
             Self.dtype, _, address_space=AddressSpace.SHARED, ...
@@ -1900,7 +1900,7 @@ struct TMATensorTile[
                 )
 
     @always_inline
-    fn async_store(
+    def async_store(
         self,
         src: TileTensor[
             dtype=Self.dtype, address_space=AddressSpace.SHARED, ...
@@ -1943,7 +1943,7 @@ struct TMATensorTile[
                 )
 
     @always_inline
-    fn async_store_3d(
+    def async_store_3d(
         self,
         src: LayoutTensor[
             Self.dtype, _, address_space=AddressSpace.SHARED, ...
@@ -2015,7 +2015,7 @@ struct TMATensorTile[
                     )
 
     @always_inline
-    fn async_store_3d(
+    def async_store_3d(
         self,
         src: TileTensor[
             dtype=Self.dtype, address_space=AddressSpace.SHARED, ...
@@ -2067,7 +2067,7 @@ struct TMATensorTile[
                     )
 
     @always_inline
-    fn async_store_4d(
+    def async_store_4d(
         self,
         src: LayoutTensor[
             Self.dtype, _, address_space=AddressSpace.SHARED, ...
@@ -2137,7 +2137,7 @@ struct TMATensorTile[
                         )
 
     @always_inline
-    fn async_store_5d(
+    def async_store_5d(
         self,
         src: LayoutTensor[
             Self.dtype, _, address_space=AddressSpace.SHARED, ...
@@ -2212,7 +2212,7 @@ struct TMATensorTile[
                             )
 
     @always_inline
-    fn async_reduce[
+    def async_reduce[
         reduction_kind: ReduceOp
     ](
         self,
@@ -2251,7 +2251,7 @@ struct TMATensorTile[
         )
 
     @always_inline
-    fn commit_group(self):
+    def commit_group(self):
         """
         Commits all prior initiated but uncommitted TMA instructions into a group.
 
@@ -2261,7 +2261,7 @@ struct TMATensorTile[
         cp_async_bulk_commit_group()
 
     @always_inline
-    fn wait_group[n: Int = 0](self):
+    def wait_group[n: Int = 0](self):
         """
         Wait for the completion of asynchronous copy until a specified number of groups are waiting.
 
@@ -2274,7 +2274,7 @@ struct TMATensorTile[
         cp_async_bulk_wait_group[Int32(n)]()
 
     @always_inline
-    fn smem_tensormap_init(
+    def smem_tensormap_init(
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
             TMADescriptor, _, address_space=AddressSpace.SHARED
@@ -2320,7 +2320,7 @@ struct TMATensorTile[
             dst_desc.store[alignment=dst_align](src_idx * simd_width, src_vec)
 
     @always_inline
-    fn replace_tensormap_global_address_in_gmem[
+    def replace_tensormap_global_address_in_gmem[
         _dtype: DType,
     ](self, src_ptr: UnsafePointer[Scalar[_dtype], _],):
         """
@@ -2358,7 +2358,7 @@ struct TMATensorTile[
         ](desc_ptr, src_ptr.bitcast[NoneType]())
 
     @always_inline
-    fn tensormap_fence_acquire(self):
+    def tensormap_fence_acquire(self):
         """
         Establishes a memory fence for TMA operations with acquire semantics.
 
@@ -2384,7 +2384,7 @@ struct TMATensorTile[
         )
 
     @always_inline
-    fn tensormap_fence_release(self):
+    def tensormap_fence_release(self):
         """
         Establishes a memory fence for TMA operations with release semantics.
 
@@ -2407,7 +2407,7 @@ struct TMATensorTile[
         ]()
 
     @always_inline
-    fn replace_tensormap_global_address_in_shared_mem[
+    def replace_tensormap_global_address_in_shared_mem[
         _dtype: DType,
     ](
         self,
@@ -2462,7 +2462,7 @@ struct TMATensorTile[
         )
 
     @always_inline
-    fn tensormap_cp_fence_release(
+    def tensormap_cp_fence_release(
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
             TMADescriptor, _, address_space=AddressSpace.SHARED
@@ -2506,7 +2506,7 @@ struct TMATensorTile[
         ](gmem_tma_descriptor_ptr, smem_tma_descriptor_ptr.bitcast[NoneType]())
 
     @always_inline
-    fn replace_tensormap_global_dim_strides_in_shared_mem[
+    def replace_tensormap_global_dim_strides_in_shared_mem[
         _dtype: DType,
         only_update_dim_0: Bool,
         /,
@@ -2586,7 +2586,7 @@ struct TMATensorTile[
                 )
 
     @always_inline
-    fn replace_tensormap_global_dim_strides_in_shared_mem[
+    def replace_tensormap_global_dim_strides_in_shared_mem[
         _dtype: DType,
         tensor_rank: Int,
         dim_idx: Int,
@@ -3198,7 +3198,7 @@ def create_tensor_tile[
         )
 
 
-fn _padded_shape[
+def _padded_shape[
     rank: Int,
     dtype: DType,
     tile_shape: IndexList[rank],
@@ -3217,7 +3217,7 @@ fn _padded_shape[
     return result
 
 
-fn _ragged_shape[
+def _ragged_shape[
     rank: Int,
     dtype: DType,
     tile_shape: IndexList[rank],
@@ -3262,7 +3262,7 @@ Parameters:
 
 
 @always_inline
-fn _split_tma_gmem_tensor[
+def _split_tma_gmem_tensor[
     dtype: DType,
     rank: Int,
     //,
@@ -3288,7 +3288,7 @@ fn _split_tma_gmem_tensor[
 
 
 @always_inline
-fn _split_tma_gmem_tensor[
+def _split_tma_gmem_tensor[
     dtype: DType,
     rank: Int,
     //,
@@ -3318,7 +3318,7 @@ fn _split_tma_gmem_tensor[
     ret = {ptr, RuntimeLayout[ret.layout].row_major(runtime_shape)}
 
 
-fn create_split_tma[
+def create_split_tma[
     rank: Int,
     dtype: DType,
     //,
@@ -3370,7 +3370,7 @@ fn create_split_tma[
     ](ctx, tensor)
 
 
-fn create_split_tma[
+def create_split_tma[
     rank: Int,
     dtype: DType,
     //,
@@ -3520,12 +3520,12 @@ struct TMATensorTileArray[
     comptime device_type: AnyType = Self
     """The device-side type representation."""
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """
         Gets this type's name, for use in error messages when handing arguments
         to kernels.
@@ -3546,7 +3546,7 @@ struct TMATensorTileArray[
         )
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         tensormaps_device: DeviceBuffer[DType.uint8],
     ):
@@ -3560,7 +3560,7 @@ struct TMATensorTileArray[
         self.tensormaps_ptr = tensormaps_device.unsafe_ptr()
 
     @always_inline
-    fn __getitem__(
+    def __getitem__(
         self, index: Int
     ) -> UnsafePointer[
         TMATensorTile[
@@ -3617,12 +3617,12 @@ struct RaggedTMA3DTile[
     ]()
     """The unswizzled-smem layout copied to/from by this tma op."""
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """
         Returns a string representation of the RaggedTMA3DTile type.
 
@@ -3642,7 +3642,7 @@ struct RaggedTMA3DTile[
 
     @always_inline
     @implicit
-    fn __init__(out self, descriptor: TMADescriptor):
+    def __init__(out self, descriptor: TMADescriptor):
         """
         Initializes a new TMATensorTile with the provided TMA descriptor.
 
@@ -3653,7 +3653,7 @@ struct RaggedTMA3DTile[
 
     @staticmethod
     @always_inline
-    fn create[
+    def create[
         *,
         depth: Int = Self.BN,
     ](
@@ -3695,7 +3695,7 @@ struct RaggedTMA3DTile[
         )
 
     @always_inline
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """
         Copy initializes this `RaggedTMA3DTile` from another instance.
 
@@ -3705,7 +3705,7 @@ struct RaggedTMA3DTile[
         self.descriptor = copy.descriptor
 
     @always_inline("nodebug")
-    fn async_copy_to[
+    def async_copy_to[
         cta_group: Int = 1
     ](
         self,
@@ -3753,7 +3753,7 @@ struct RaggedTMA3DTile[
             )
 
     @always_inline
-    fn async_copy_from_col[
+    def async_copy_from_col[
         col: Int,
         eviction_policy: CacheEviction = CacheEviction.EVICT_FIRST,
     ](
@@ -3798,7 +3798,7 @@ struct RaggedTMA3DTile[
         )
 
     @always_inline
-    fn async_copy_from[
+    def async_copy_from[
         eviction_policy: CacheEviction = CacheEviction.EVICT_FIRST,
     ](
         self,
@@ -3833,7 +3833,7 @@ struct RaggedTMA3DTile[
             )
 
     @always_inline
-    fn prefetch_descriptor(self):
+    def prefetch_descriptor(self):
         """
         Prefetches the TMA descriptor into cache.
         """
@@ -3886,7 +3886,7 @@ struct RaggedTensorMap[
     """The rank of the global tensor."""
 
     @staticmethod
-    fn _descriptor_shape() -> IndexList[Self.descriptor_rank + 1]:
+    def _descriptor_shape() -> IndexList[Self.descriptor_rank + 1]:
         """
         Constructs a descriptor shape that can handle one ragged dimension for loads.
 
@@ -3904,7 +3904,7 @@ struct RaggedTensorMap[
 
     @staticmethod
     @always_inline
-    fn _get_layout() -> Layout:
+    def _get_layout() -> Layout:
         var layout = Layout(
             IntTuple(num_elems=Self.global_rank),
             IntTuple(num_elems=Self.global_rank),
@@ -3922,7 +3922,7 @@ struct RaggedTensorMap[
     comptime ragged_descriptor_shape = Self._descriptor_shape()
     """The shape of the descriptor that will tile and load from shared -> global memory."""
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         """
         Copies this descriptor array to device memory.
 
@@ -3932,7 +3932,7 @@ struct RaggedTensorMap[
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """
         Returns a string representation of the TensorMapDescriptorArray type.
 
@@ -3954,7 +3954,7 @@ struct RaggedTensorMap[
 
     @staticmethod
     @always_inline
-    fn _create_global_stride(
+    def _create_global_stride(
         ragged_stride: Int,
         remaining_global_stride: IndexList[Self.remaining_global_dim_rank],
     ) -> IndexList[Self.global_rank]:
@@ -3970,7 +3970,7 @@ struct RaggedTensorMap[
 
     @staticmethod
     @always_inline
-    fn _create_global_shape(
+    def _create_global_shape(
         cumulative_length: Int,
         max_length: Int,
         global_last_dim: Int,
@@ -3987,7 +3987,7 @@ struct RaggedTensorMap[
 
         return global_shape
 
-    fn __init__(
+    def __init__(
         out self,
         ctx: DeviceContext,
         global_ptr: UnsafePointer[Scalar[Self.dtype], _],
@@ -4080,7 +4080,7 @@ struct RaggedTensorMap[
         self.global_stride = global_stride
 
     @always_inline
-    fn _get_descriptor_ptr(self) -> UnsafePointer[NoneType, MutAnyOrigin]:
+    def _get_descriptor_ptr(self) -> UnsafePointer[NoneType, MutAnyOrigin]:
         return (
             UnsafePointer(to=self.descriptor)
             .bitcast[NoneType]()
@@ -4089,7 +4089,7 @@ struct RaggedTensorMap[
         )
 
     @always_inline
-    fn store_ragged_tile[
+    def store_ragged_tile[
         rank: Int,
         //,
         using_max_descriptor_size: Bool = False,
@@ -4235,7 +4235,7 @@ struct RaggedTensorMap[
                 tile_iterator._incr()
 
     @always_inline
-    fn prefetch_descriptor(self):
+    def prefetch_descriptor(self):
         """
         Prefetches the TMA descriptor into cache.
         """
@@ -4300,12 +4300,12 @@ struct TMATensorTileIm2col[
     comptime device_type: AnyType = Self
     """The device-side type representation."""
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """Gets this type's name for error messages.
 
         Returns:
@@ -4322,7 +4322,7 @@ struct TMATensorTileIm2col[
         )
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         descriptor: TMADescriptor,
         out_height: UInt32,
@@ -4355,7 +4355,7 @@ struct TMATensorTileIm2col[
         self.lower_corner_w = lower_corner_w
 
     @always_inline
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Copy initializes from another instance.
 
         Args:
@@ -4371,13 +4371,13 @@ struct TMATensorTileIm2col[
         self.lower_corner_w = copy.lower_corner_w
 
     @always_inline
-    fn prefetch_descriptor(self):
+    def prefetch_descriptor(self):
         """Prefetches the TMA descriptor into cache."""
         var desc_ptr = UnsafePointer(to=self.descriptor).bitcast[NoneType]()
         prefetch_tma_descriptor(desc_ptr)
 
     @always_inline
-    fn async_copy[
+    def async_copy[
         cta_group: Int = 1,  # Use SM90-style TMA for cluster 1x1x1
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
@@ -4487,7 +4487,7 @@ struct TMATensorTileIm2col[
                     n += 1
 
     @always_inline
-    fn async_multicast_load[
+    def async_multicast_load[
         cta_group: Int = 1,  # Use SM90-style TMA for cluster 1x1x1
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
@@ -4598,7 +4598,7 @@ struct TMATensorTileIm2col[
                     n += 1
 
     @always_inline
-    fn async_copy[
+    def async_copy[
         cta_group: Int = 1,  # Use SM90-style TMA for cluster 1x1x1
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
@@ -4705,7 +4705,7 @@ struct TMATensorTileIm2col[
                     n += 1
 
     @always_inline
-    fn async_multicast_load[
+    def async_multicast_load[
         cta_group: Int = 1,  # Use SM90-style TMA for cluster 1x1x1
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
@@ -4815,7 +4815,7 @@ struct TMATensorTileIm2col[
                     n += 1
 
 
-fn _im2col_desc_shape[
+def _im2col_desc_shape[
     dtype: DType,
     tile_shape: IndexList[2],
     swizzle_mode: TensorMapSwizzle,
@@ -4844,7 +4844,7 @@ fn _im2col_desc_shape[
 
 
 @always_inline
-fn create_tensor_tile_im2col[
+def create_tensor_tile_im2col[
     dtype: DType,
     tile_shape: IndexList[2],  # [M_tile, K_tile] = [pixels, channels]
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
