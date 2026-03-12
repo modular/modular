@@ -49,9 +49,10 @@ defm debug_level : CommandOption<["--", "-"], "debug-level",
   CompilationOptionGroup, Index<5>, MetaVarName<"LEVEL">,
   HelpText<
     "Sets the level of debug info to use at compilation. The value must be one "
-    "of: `none` (the default value), `line-tables`, or `full`. Please note "
-    "that there are issues when generating debug info for some Mojo programs "
-    "that have yet to be addressed."
+    "of: `none`, `line-tables`, or `full`. Default is `none`, except when "
+    "using `mojo debug foo.mojo`, which defaults to `full`. Please note that "
+    "there are issues when generating debug info for some Mojo programs that "
+    "have yet to be addressed."
   >>;
 
 def : Flag<["-"], "g">, Group<CompilationOptionGroup>, Index<6>,
