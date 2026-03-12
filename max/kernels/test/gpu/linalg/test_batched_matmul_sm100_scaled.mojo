@@ -223,7 +223,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     @parameter
     @always_inline
     @__copy_capture(c_tensor, M, N)
-    fn epilogue_fn[
+    def epilogue_fn[
         dtype: DType,
         width: Int,
         rank: Int,

@@ -18,7 +18,7 @@ from std.gpu.host.compile import _compile_code
 from std.testing import assert_true
 
 
-fn do_prefetch[
+def do_prefetch[
     dtype: DType, *, offset: Int = 0
 ](addr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin]):
     prefetch(addr + offset)

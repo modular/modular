@@ -17,14 +17,14 @@ from std.itertools import product
 from std.testing import assert_almost_equal
 
 
-fn test_assert_with_custom_measure() raises:
+def test_assert_with_custom_measure() raises:
     var t0 = alloc[Float32](100)
     var t1 = alloc[Float32](100)
     for i in range(100):
         t0[i] = 1.0
         t1[i] = 1.0
 
-    fn always_zero[
+    def always_zero[
         dtype: DType
     ](
         lhs: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
@@ -39,7 +39,7 @@ fn test_assert_with_custom_measure() raises:
     t1.free()
 
 
-fn test_correlation() raises:
+def test_correlation() raises:
     var a = 10
     var b = 10
     var len = a * b
@@ -69,7 +69,7 @@ fn test_correlation() raises:
     x.free()
 
 
-fn test_kl_div() raises:
+def test_kl_div() raises:
     comptime dtype = DType.float32
     comptime out_dtype = DType.float64
     comptime len = 10

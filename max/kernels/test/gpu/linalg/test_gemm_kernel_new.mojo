@@ -43,14 +43,14 @@ from layout.layout_tensor import (
 )
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
     return False
 
 
-fn gemm_kernel[
+def gemm_kernel[
     c_dtype: DType,
     CLayoutType: TensorLayout,
     a_dtype: DType,
@@ -159,7 +159,7 @@ fn gemm_kernel[
     )
 
 
-fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
+def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     comptime NUM_THREADS = 256
     comptime BM = 64
     comptime BN = 64
@@ -265,7 +265,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
         @always_inline
         @parameter
-        fn run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises:
             ctx.enqueue_function_experimental[kernel](
                 mat_c,
                 mat_a.as_immut(),
@@ -300,7 +300,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     b_host.free()
 
 
-fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
+def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
     """Minimal debug test with small dimensions to isolate bugs.
 
     Uses single block (64x64) and single K-tile (16) for easier debugging.
@@ -496,7 +496,7 @@ def main() raises:
             test_gemm_kernel_dynamic(ctx)
 
 
-fn matmul_kernel_naive[
+def matmul_kernel_naive[
     c_dtype: DType,
     CLayoutType: TensorLayout,
     a_dtype: DType,
@@ -538,7 +538,7 @@ fn matmul_kernel_naive[
 
 
 @always_inline
-fn outer_product_acc(
+def outer_product_acc(
     res: TileTensor[mut=True, ...],
     lhs: TileTensor,
     rhs: TileTensor,

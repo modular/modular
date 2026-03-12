@@ -42,7 +42,7 @@ from layout import TileTensor, Coord, Idx, row_major
 
 
 @always_inline
-fn block_reduce[
+def block_reduce[
     dtype: DType, max_warps_per_block: Int = 32
 ](val: Scalar[dtype]) -> Scalar[dtype]:
     var m2_shared = stack_allocation[
@@ -80,7 +80,7 @@ fn block_reduce[
     return m2_broadcast[0]
 
 
-fn global_reduction_kernel[
+def global_reduction_kernel[
     dtype: DType,
     accum_type: DType,
     simd_width: Int,
@@ -110,7 +110,7 @@ fn global_reduction_kernel[
 
 
 @__llvm_arg_metadata(descriptor, `nvvm.grid_constant`)
-fn tma_reduction_kernel[
+def tma_reduction_kernel[
     dtype: DType,
     accum_type: DType,
     simd_width: Int,
@@ -192,7 +192,7 @@ def test_tma_block_reduce[
     # Define the kernel launch function for benchmarking
     @parameter
     @always_inline
-    fn kernel_launch(ctx: DeviceContext) raises -> None:
+    def kernel_launch(ctx: DeviceContext) raises -> None:
         comptime if use_tma:
             var tma_desc = create_tma_descriptor[dtype, 2](
                 d_data,
@@ -222,7 +222,7 @@ def test_tma_block_reduce[
             @__copy_capture(data_buf)
             @always_inline
             @parameter
-            fn input_fn_2d[
+            def input_fn_2d[
                 width: Int, _rank: Int
             ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
                 var coord = Coord(idx)

@@ -39,7 +39,7 @@ comptime simd_size: Int = simd_width_of[output_type]()
 
 
 # CHECK-LABEL: test_direct_conv
-fn test[
+def test[
     input_type: DType,
     filter_type: DType,
     output_type: DType,

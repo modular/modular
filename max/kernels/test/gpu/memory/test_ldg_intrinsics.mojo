@@ -19,7 +19,7 @@ from std.gpu.intrinsics import ldg
 from std.testing import *
 
 
-fn register_intrinsics(
+def register_intrinsics(
     i8: UnsafePointer[Int8, MutAnyOrigin],
     ui8: UnsafePointer[UInt8, MutAnyOrigin],
     i16: UnsafePointer[Int16, MutAnyOrigin],
@@ -47,7 +47,7 @@ fn register_intrinsics(
 
 
 @always_inline
-fn _verify_register_intrinsics(asm: StringSlice) raises -> None:
+def _verify_register_intrinsics(asm: StringSlice) raises -> None:
     assert_true("ld.global.nc.b8" in asm)
     assert_true("ld.global.nc.b16" in asm)
     assert_true("ld.global.nc.b32" in asm)

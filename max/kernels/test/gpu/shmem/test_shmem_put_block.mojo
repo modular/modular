@@ -18,7 +18,7 @@ from shmem import *
 from std.testing import assert_equal
 
 
-fn set_and_shift_kernel(
+def set_and_shift_kernel(
     send_data: UnsafePointer[Float32, MutAnyOrigin],
     recv_data: UnsafePointer[Float32, MutAnyOrigin],
     num_elems: UInt,
@@ -55,7 +55,7 @@ fn set_and_shift_kernel(
         )
 
 
-fn test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
+def test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
     comptime num_elems: UInt = 8192
     comptime threads_per_block: UInt = 256
     assert (

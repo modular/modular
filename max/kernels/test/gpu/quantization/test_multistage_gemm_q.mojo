@@ -49,7 +49,7 @@ from std.utils import StaticTuple
 from std.utils.index import Index, IndexList
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
@@ -57,14 +57,14 @@ fn is_benchmark() -> Bool:
 
 
 @always_inline
-fn args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
+def args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
     comptime if swap:
         return Tuple(arg_1, arg_0)
     else:
         return Tuple(arg_0, arg_1)
 
 
-fn repack_Q4_0_for_sm8x[
+def repack_Q4_0_for_sm8x[
     q_layout: Layout,
     repack_layout: Layout,
     scales_type: DType,
@@ -98,7 +98,7 @@ fn repack_Q4_0_for_sm8x[
 
     @always_inline
     @parameter
-    fn convert_bytes_to_bf16[
+    def convert_bytes_to_bf16[
         scales_type: DType
     ](input_bytes: SIMD[DType.uint8, _]) -> Scalar[scales_type]:
         var f32_values = bitcast[DType.float16, 1](input_bytes).cast[
@@ -247,7 +247,7 @@ fn repack_Q4_0_for_sm8x[
 # The memory address for tile [i, j] is (i * (N//64) + j) * tile_size,
 # where tile_size is 64 * 16 * 4 / pack_factor = 512 Bytes.
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
-fn create_ref_b[
+def create_ref_b[
     type_q: DType,
     type_b: DType,
     b_q_layout: Layout,
@@ -330,7 +330,7 @@ fn create_ref_b[
     var vec = bitcast[DType.int32, 4](warp_q_tile.vectorize[1, 4]()[0, lane_id])
 
     @always_inline
-    fn int4tobf16(i4: Int32, scale: BFloat16) -> SIMD[DType.bfloat16, 2]:
+    def int4tobf16(i4: Int32, scale: BFloat16) -> SIMD[DType.bfloat16, 2]:
         comptime MASK: Int32 = 0x000F000F
         comptime I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
         comptime lut: Int32 = (0xF0 & 0xCC) | 0xAA
@@ -392,7 +392,7 @@ fn create_ref_b[
         mma_tile_iter_2._incr()
 
 
-fn random_float16(min: Float64 = 0, max: Float64 = 1) -> Float16:
+def random_float16(min: Float64 = 0, max: Float64 = 1) -> Float16:
     # Avoid pulling in a __truncdfhf2 dependency for a float64->float16
     # conversion by casting through float32 first.
     return (
@@ -409,15 +409,17 @@ struct _block_Q4_0:
     var q_bits: InlineArray[UInt8, Self.group_size // 2]
 
 
-fn test_repack_Q4_0_for_sm8x(
+def test_repack_Q4_0_for_sm8x(
     ctx: DeviceContext, n: ValOrDim, k: ValOrDim
 ) raises:
     print("test repack_Q4_0_for_sm8x")
 
-    fn fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype], ...]):
+    def fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype], ...]):
         rand(array.unsafe_ptr(), len(array), min=0, max=255)
 
-    fn build_b_buffer(N: Int, K: Int, b_ptr: UnsafePointer[mut=True, UInt8, _]):
+    def build_b_buffer(
+        N: Int, K: Int, b_ptr: UnsafePointer[mut=True, UInt8, _]
+    ):
         var k_groups = ceildiv(K, 32)
         var block_ptr = b_ptr.bitcast[_block_Q4_0]()
 
@@ -619,7 +621,7 @@ fn test_repack_Q4_0_for_sm8x(
     _ = repacked_dequan_device^
 
 
-fn test_quantized[
+def test_quantized[
     dtype: DType
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
     # quantization configs
@@ -762,7 +764,7 @@ fn test_quantized[
 
         @always_inline
         @parameter
-        fn run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises:
             multistage_gemm_q[
                 group_size=group_size, pack_factor=pack_factor, config=config
             ](

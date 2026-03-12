@@ -17,7 +17,7 @@ from std.testing import assert_equal
 
 
 # CHECK-LABEL: test_pad_1d
-fn test_pad_1d() raises:
+def test_pad_1d() raises:
     print("== test_pad_1d")
 
     # Create an input matrix of the form
@@ -56,7 +56,7 @@ fn test_pad_1d() raises:
 
 
 # CHECK-LABEL: test_pad_reflect_1d
-fn test_pad_reflect_1d() raises:
+def test_pad_reflect_1d() raises:
     print("== test_pad_reflect_1d")
 
     # Create an input matrix of the form
@@ -95,7 +95,7 @@ fn test_pad_reflect_1d() raises:
 
 
 # CHECK-LABEL: test_pad_repeat_1d
-fn test_pad_repeat_1d() raises:
+def test_pad_repeat_1d() raises:
     print("== test_pad_repeat_1d")
 
     # Create an input matrix of the form
@@ -134,7 +134,7 @@ fn test_pad_repeat_1d() raises:
 
 
 # CHECK-LABEL: test_pad_2d
-fn test_pad_2d() raises:
+def test_pad_2d() raises:
     print("== test_pad_2d")
 
     # Create an input matrix of the form
@@ -184,7 +184,7 @@ fn test_pad_2d() raises:
 
 
 # CHECK-LABEL: test_pad_reflect_2d
-fn test_pad_reflect_2d() raises:
+def test_pad_reflect_2d() raises:
     print("== test_pad_reflect_2d")
 
     # Create an input matrix of the form
@@ -244,7 +244,7 @@ fn test_pad_reflect_2d() raises:
 
 
 # CHECK-LABEL: test_pad_repeat_2d
-fn test_pad_repeat_2d() raises:
+def test_pad_repeat_2d() raises:
     print("== test_pad_repeat_2d")
 
     # Create an input matrix of the form
@@ -304,7 +304,7 @@ fn test_pad_repeat_2d() raises:
 
 
 # CHECK-LABEL: test_pad_3d
-fn test_pad_3d() raises:
+def test_pad_3d() raises:
     print("== test_pad_3d")
 
     # Create an input matrix of the form
@@ -366,7 +366,7 @@ fn test_pad_3d() raises:
 
 
 # CHECK-LABEL: test_pad_reflect_3d
-fn test_pad_reflect_3d() raises:
+def test_pad_reflect_3d() raises:
     print("== test_pad_reflect_3d")
 
     # Create an input matrix of the form
@@ -462,7 +462,7 @@ fn test_pad_reflect_3d() raises:
 
 
 # CHECK-LABEL: test_pad_reflect_3d_singleton
-fn test_pad_reflect_3d_singleton() raises:
+def test_pad_reflect_3d_singleton() raises:
     print("== test_pad_reflect_3d_singleton")
 
     # Create an input matrix of the form
@@ -523,7 +523,7 @@ fn test_pad_reflect_3d_singleton() raises:
 
 
 # CHECK-LABEL: test_pad_reflect_4d_big_input
-fn test_pad_reflect_4d_big_input() raises:
+def test_pad_reflect_4d_big_input() raises:
     print("== test_pad_reflect_4d_big_input")
 
     comptime in_size = 1 * 1 * 512 * 512
@@ -561,7 +561,7 @@ fn test_pad_reflect_4d_big_input() raises:
 
 
 # CHECK-LABEL: test_pad_repeat_3d
-fn test_pad_repeat_3d() raises:
+def test_pad_repeat_3d() raises:
     print("== test_pad_repeat_3d")
 
     # Create an input matrix of the form

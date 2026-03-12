@@ -47,7 +47,7 @@ from std.sys import get_defined_int, size_of
 from std.utils import IndexList
 
 
-fn consumer_kernel[
+def consumer_kernel[
     dtype: DType,
 ](
     input: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -71,7 +71,7 @@ fn consumer_kernel[
         output[i] = input[i]
 
 
-fn run_pdl_race_test[
+def run_pdl_race_test[
     dtype: DType,
     M: Int,
     N: Int,

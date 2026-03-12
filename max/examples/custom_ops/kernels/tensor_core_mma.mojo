@@ -77,7 +77,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         # The kind of device this will be run on: "cpu" or "gpu"
         target: StaticString,
         M: Int,
@@ -427,7 +427,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn naive_tensor[
+def naive_tensor[
     input_type: DType,
     output_type: DType,
     layout_a: Layout,
@@ -541,7 +541,7 @@ fn naive_tensor[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn basic_shared_mem[
+def basic_shared_mem[
     input_type: DType,
     output_type: DType,
     layout_a: Layout,
@@ -681,7 +681,7 @@ fn basic_shared_mem[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn multi_block_tiled[
+def multi_block_tiled[
     input_type: DType,
     output_type: DType,
     layout_a: Layout,
@@ -847,7 +847,7 @@ fn multi_block_tiled[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn scheduler_hints[
+def scheduler_hints[
     input_type: DType,
     output_type: DType,
     layout_a: Layout,
@@ -1034,7 +1034,7 @@ fn scheduler_hints[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn double_buffer[
+def double_buffer[
     input_type: DType,
     output_type: DType,
     layout_a: Layout,
@@ -1268,7 +1268,7 @@ fn double_buffer[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn mma_tile_buffers[
+def mma_tile_buffers[
     input_type: DType,
     output_type: DType,
     layout_a: Layout,
@@ -1356,7 +1356,7 @@ fn mma_tile_buffers[
 
     # Helper function for thread layout
     @parameter
-    fn get_thread_layout() -> Layout:
+    def get_thread_layout() -> Layout:
         # TODO: Document the logic behind this layout
         # Define a layout that corresponds to the below pattern:
         #
@@ -1390,7 +1390,7 @@ fn mma_tile_buffers[
 
     # Helper function for shared memory layout
     @parameter
-    fn get_smem_layout[block_rows: Int]() -> Layout:
+    def get_smem_layout[block_rows: Int]() -> Layout:
         # Shared memory layout
         #
         # - base_layout: Layout.row_major(block_rows, k_tile_size) -> block_rowsxk_tile_size tiles
@@ -1478,19 +1478,19 @@ fn mma_tile_buffers[
     # Helper functions for matrix operations
     @always_inline
     @parameter
-    fn load_tiles_from_dram():
+    def load_tiles_from_dram():
         a_tiles.load_from_dram()
         b_tiles.load_from_dram()
 
     @always_inline
     @parameter
-    fn copy_tiles_to_shared():
+    def copy_tiles_to_shared():
         a_tiles.copy_to_shared()
         b_tiles.copy_to_shared()
 
     @always_inline
     @parameter
-    fn load_tiles_from_shared[k_tile_idx: Int]():
+    def load_tiles_from_shared[k_tile_idx: Int]():
         a_tiles.load_tile_from_shared[k_tile_idx, is_a=True]()
         b_tiles.load_tile_from_shared[k_tile_idx, is_a=True]()
 

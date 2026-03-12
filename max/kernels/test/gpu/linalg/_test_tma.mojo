@@ -51,7 +51,7 @@ from linalg.arch.sm100.mma import max_contiguous_tile_shape, Major
 # functionally equivalent to idx2crd
 # but avoids runtime_*
 # converts linear index to column-major coordinates
-fn calculate_coordinate[
+def calculate_coordinate[
     global_layout: Layout, tile_shape: IntTuple
 ](linear_index: Int) -> UInt32Indices[global_layout.rank()]:
     comptime coalesced_tile = tile_shape.product_flatten()
@@ -88,7 +88,7 @@ fn calculate_coordinate[
 
 
 @always_inline
-fn shared_to_global_2D[
+def shared_to_global_2D[
     OOB_access: Bool
 ](
     smem_tile: LayoutTensor,
@@ -130,7 +130,7 @@ fn shared_to_global_2D[
 
 
 @always_inline
-fn shared_to_global_3D[
+def shared_to_global_3D[
     OOB_access: Bool
 ](
     smem_tile: LayoutTensor,
@@ -180,7 +180,7 @@ fn shared_to_global_3D[
 
 # Test loading a single 2d tile.
 @__llvm_arg_metadata(load_policy, `nvvm.grid_constant`)
-fn test_tma_load_kernel[
+def test_tma_load_kernel[
     dtype: DType,
     global_layout: Layout,
     smem_layout: Layout,

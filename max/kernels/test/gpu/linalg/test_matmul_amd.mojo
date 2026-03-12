@@ -32,7 +32,7 @@ from std.utils import Index, IndexList
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
 
-fn test[
+def test[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -149,7 +149,7 @@ fn test[
     _ = c_device_ref_buffer^
 
 
-fn test[
+def test[
     in_type: DType,
     out_type: DType,
     transpose_b: Bool,
@@ -162,7 +162,7 @@ fn test[
     )
 
 
-fn test[
+def test[
     a_type: DType,
     b_type: DType,
     c_type: DType,

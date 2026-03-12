@@ -132,7 +132,7 @@ def test_matmul_sm100_fallback[
     @parameter
     @always_inline
     @__copy_capture(c_tensor)
-    fn epilogue_fn[
+    def epilogue_fn[
         _dtype: DType,
         width: Int,
         *,

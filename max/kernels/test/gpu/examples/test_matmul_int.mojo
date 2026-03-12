@@ -35,7 +35,7 @@ comptime TILE_SZ_B = 16
 comptime TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
 
 
-fn matmul(
+def matmul(
     a_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
     b_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
     c_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
@@ -105,7 +105,7 @@ fn matmul(
             c[Index(row, col + out_idx)] = c_reg.load(out_idx)
 
 
-fn run_matmul(ctx: DeviceContext) raises:
+def run_matmul(ctx: DeviceContext) raises:
     print("== run_matmul")
 
     comptime m = 512

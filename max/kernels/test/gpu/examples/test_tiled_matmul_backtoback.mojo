@@ -71,16 +71,16 @@ struct BackToBackMatmulConfig[
 
     var num_pipeline_stages: UInt
 
-    fn num_warps_m(self) -> Int:
+    def num_warps_m(self) -> Int:
         return self.block_tile_shape[0] // self.warp_tile_shape[0]
 
-    fn num_warps_n(self) -> Int:
+    def num_warps_n(self) -> Int:
         return self.block_tile_shape[1] // self.warp_tile_shape[1]
 
-    fn num_threads(self) -> Int:
+    def num_threads(self) -> Int:
         return self.num_warps_m() * self.num_warps_n() * WARP_SIZE
 
-    fn shared_mem_usage(self, K: Int) -> Int:
+    def shared_mem_usage(self, K: Int) -> Int:
         return (
             self.block_tile_shape[0] * K
             + Int(
@@ -90,13 +90,13 @@ struct BackToBackMatmulConfig[
             )
         ) * size_of[Self.src_type]()
 
-    fn grid_dim(self, M: UInt) -> IndexList[3]:
+    def grid_dim(self, M: UInt) -> IndexList[3]:
         return Index(1, Int(ceildiv(M, UInt(self.block_tile_shape[0]))), 1)
 
-    fn block_dim(self) -> IndexList[3]:
+    def block_dim(self) -> IndexList[3]:
         return Index(self.num_threads(), 1, 1)
 
-    fn __init__(
+    def __init__(
         out self,
         block_tile_shape: IndexList[3, element_type=DType.uint64],
         warp_tile_shape: IndexList[3, element_type=DType.uint64],
@@ -139,7 +139,7 @@ struct BackToBackMatmulConfig[
         Int32(config.num_threads())
     )
 )
-fn b2b_gemm[
+def b2b_gemm[
     d_type: DType,
     in_type: DType,
     d_layout: Layout,
@@ -389,7 +389,7 @@ fn b2b_gemm[
         # Thus, if `ab_reg_tile.dtype != in_type` (e.g., if accumulate
         # `Float16` to `Float32), the downcasting should happen in
         # `multistage_mma`.
-        # FIXME: need an elementwise fn to apply to A*B!
+        # FIXME: need an elementwise def to apply to A*B!
         #
         # Also, we have
         # var a_reg_tiles = tb[a_type]().row_major[
@@ -583,7 +583,7 @@ fn b2b_gemm[
             )
 
 
-fn multistage_b2b_gemm[
+def multistage_b2b_gemm[
     dst_type: DType,
     src_type: DType,
     transpose_b: Bool,
@@ -637,7 +637,7 @@ fn multistage_b2b_gemm[
         abort(String(e))
 
 
-fn matmul_naive(
+def matmul_naive(
     C: LayoutTensor[mut=True, ...],
     A: LayoutTensor,
     B: LayoutTensor,
@@ -664,7 +664,7 @@ fn matmul_naive(
                 # C[m, n] += rebind[Scalar[C.dtype]](A[m, k].cast[C.dtype]()) * B[k, n].cast[C.dtype]()
 
 
-fn test_b2b_matmul(ctx: DeviceContext) raises:
+def test_b2b_matmul(ctx: DeviceContext) raises:
     # alias M = 32
     comptime M = 640
     comptime N = 64

@@ -25,7 +25,7 @@ struct Grayscale:
     """Convert RGB image tensor to grayscale using weighted formula."""
 
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,  # "cpu" or "gpu"
     ](
         img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
@@ -42,7 +42,7 @@ struct Grayscale:
 
         @parameter
         @always_inline
-        fn color_to_grayscale[
+        def color_to_grayscale[
             simd_width: Int
         ](idx: IndexList[img_out.rank]) -> SIMD[DType.uint8, simd_width]:
             """Convert RGB pixel to grayscale using perceptual weighting.
@@ -55,7 +55,7 @@ struct Grayscale:
             """
 
             @parameter
-            fn load(
+            def load(
                 idx: IndexList[img_in.rank],
             ) -> SIMD[DType.float32, simd_width]:
                 return img_in.load[simd_width](idx).cast[DType.float32]()

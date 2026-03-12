@@ -58,7 +58,7 @@ comptime BLOCK_DIM = 8
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(NUM_THREADS))
 )
-fn sgemm_warp_tiling_kernel[
+def sgemm_warp_tiling_kernel[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -283,7 +283,7 @@ fn sgemm_warp_tiling_kernel[
                         C_interim.store[alignment=16](Int(c_idx), vec)
 
 
-fn matmul_naive(
+def matmul_naive(
     a_ptr: UnsafePointer[Float32, MutAnyOrigin],
     b_ptr: UnsafePointer[Float32, MutAnyOrigin],
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
@@ -307,7 +307,7 @@ fn matmul_naive(
     c[Index(x, y)] = accum
 
 
-fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
+def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     print("== run_matmul_kernel_10")
 
     comptime M = 4096
@@ -439,10 +439,10 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
 
     @parameter
     @always_inline
-    fn bench_matmul_10(mut b: Bencher):
+    def bench_matmul_10(mut b: Bencher):
         @parameter
         @always_inline
-        fn run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises:
             ctx.enqueue_function[sgemm_type, sgemm_type](
                 c_buffer,
                 a_buffer,
@@ -473,10 +473,10 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
 
     @parameter
     @always_inline
-    fn bench_naive(mut b: Bencher):
+    def bench_naive(mut b: Bencher):
         @parameter
         @always_inline
-        fn run_func_naive(ctx: DeviceContext) raises:
+        def run_func_naive(ctx: DeviceContext) raises:
             ctx.enqueue_function[matmul_naive, matmul_naive](
                 a_device,
                 b_device,

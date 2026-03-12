@@ -41,7 +41,7 @@ from std.utils.index import Index
 # =============================================================================
 
 
-fn test_scheduler_kernel[
+def test_scheduler_kernel[
     tile_m: Int,
     tile_n: Int,
     tile_k: Int,

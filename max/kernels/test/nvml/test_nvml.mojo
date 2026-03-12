@@ -15,7 +15,7 @@ from nvml import Device
 from nvml.nvml import _get_nvml_library_paths
 
 
-fn has_nvml_library() -> Bool:
+def has_nvml_library() -> Bool:
     try:
         return len(_get_nvml_library_paths()) > 0
     except:

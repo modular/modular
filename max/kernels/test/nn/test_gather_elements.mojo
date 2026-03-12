@@ -17,7 +17,7 @@ from std.testing import assert_equal
 
 
 def main() raises:
-    fn test_gather_ax1() raises:
+    def test_gather_ax1() raises:
         print("== test_gather_ax1")
 
         var data_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
@@ -40,7 +40,7 @@ def main() raises:
     # CHECK-NOT: FAIL
     test_gather_ax1()
 
-    fn test_gather_ax0() raises:
+    def test_gather_ax0() raises:
         print("== test_gather_ax0")
 
         var data_stack: InlineArray[Float32, 9] = [
@@ -75,7 +75,7 @@ def main() raises:
     # CHECK-NOT: FAIL
     test_gather_ax0()
 
-    fn test_gather_neg_indices() raises:
+    def test_gather_neg_indices() raises:
         print("== test_gather_neg_indices")
 
         var data_stack: InlineArray[Float32, 9] = [

@@ -25,7 +25,7 @@ def print_elements(tensor: TileTensor[...]) raises:
 
     @always_inline
     @parameter
-    fn print_elements_lambda[
+    def print_elements_lambda[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         var coord = Coord(idx)
@@ -64,7 +64,7 @@ def test_arange[
     @always_inline
     @__copy_capture(out_tensor, step, start, stop)
     @parameter
-    fn arange_lambda[
+    def arange_lambda[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         var index = rebind[IndexList[1]](idx)

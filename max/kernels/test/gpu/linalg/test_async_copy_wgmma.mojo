@@ -39,7 +39,7 @@ from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
 
-fn cpasync_wgmma_kernel[
+def cpasync_wgmma_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,

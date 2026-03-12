@@ -16,7 +16,7 @@ from layout.swizzle import ComposedLayout, Swizzle
 from std.testing import assert_equal
 
 
-fn test_composed_layout() raises:
+def test_composed_layout() raises:
     print("== test_composed_layout")
 
     comptime layout_a = Layout(IntTuple(6, 2), IntTuple(8, 2))
@@ -38,7 +38,7 @@ fn test_composed_layout() raises:
     assert_equal(comptime (comp_layout(11)), 42)
 
 
-fn test_composed_layout_swizzle() raises:
+def test_composed_layout_swizzle() raises:
     print("== test_composed_layout_swizzle")
 
     var swizzle = Swizzle(1, 0, 2)
@@ -54,7 +54,7 @@ fn test_composed_layout_swizzle() raises:
     assert_equal(comp_layout(5), 40)
 
 
-fn test_composed_layout_swizzle_rt() raises:
+def test_composed_layout_swizzle_rt() raises:
     print("== test_composed_layout_swizzle_rt")
 
     var swizzle = Swizzle(1, 0, 2)

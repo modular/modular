@@ -22,7 +22,7 @@ from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 
 
-fn compute_rms[
+def compute_rms[
     dtype: DType
 ](data: TileTensor[dtype, ...], size: Int, eps: Scalar[dtype]) -> Scalar[
     DType.float32
@@ -38,7 +38,7 @@ fn compute_rms[
     )
 
 
-fn run_rms_norm_cpu[
+def run_rms_norm_cpu[
     dtype: DType, rank: Int
 ](shape: IndexList[rank], rtol: Float64 = 0.001) raises:
     var cols = shape[rank - 1]
@@ -68,7 +68,7 @@ fn run_rms_norm_cpu[
     @__copy_capture(input_buf)
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = input_buf.layout(Coord(coords))
@@ -77,7 +77,7 @@ fn run_rms_norm_cpu[
     @always_inline
     @__copy_capture(output_buf)
     @parameter
-    fn identity_output_fn[
+    def identity_output_fn[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var idx = output_buf.layout(Coord(coords))
@@ -109,7 +109,7 @@ fn run_rms_norm_cpu[
     gamma_ptr.free()
 
 
-fn run_rms_norm_tests[dtype: DType](rtol: Float64 = 0.001) raises:
+def run_rms_norm_tests[dtype: DType](rtol: Float64 = 0.001) raises:
     run_rms_norm_cpu[dtype](Index(15, 11), rtol)
     # run_rms_norm_cpu[dtype](Index(2, 5), rtol)
     # run_rms_norm_cpu[dtype](Index(2, 55), rtol)

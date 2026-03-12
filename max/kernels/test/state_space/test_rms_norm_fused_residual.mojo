@@ -24,7 +24,7 @@ from std.testing import TestSuite, assert_almost_equal
 from std.utils.index import Index, IndexList
 
 
-fn compute_rms_ref[
+def compute_rms_ref[
     dtype: DType
 ](
     data_ptr: UnsafePointer[Scalar[dtype], _], size: Int, eps: Scalar[dtype]
@@ -37,7 +37,7 @@ fn compute_rms_ref[
     return sqrt((sum_of_squares / Float32(size)) + eps.cast[DType.float32]())
 
 
-fn run_rms_norm_fused_residual_cpu[
+def run_rms_norm_fused_residual_cpu[
     dtype: DType, rank: Int
 ](
     shape: IndexList[rank],
@@ -97,7 +97,7 @@ fn run_rms_norm_fused_residual_cpu[
     @__copy_capture(input_tensor)
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         return input_tensor.load[width=width](rebind[IndexList[rank]](coords))
@@ -105,7 +105,7 @@ fn run_rms_norm_fused_residual_cpu[
     @__copy_capture(residual_tensor)
     @always_inline
     @parameter
-    fn residual_input_fn[
+    def residual_input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         return residual_tensor.load[width=width](
@@ -116,7 +116,7 @@ fn run_rms_norm_fused_residual_cpu[
     @__copy_capture(output_tensor)
     @always_inline
     @parameter
-    fn output_fn[
+    def output_fn[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         output_tensor.store[width=width](coords, val)
@@ -124,7 +124,7 @@ fn run_rms_norm_fused_residual_cpu[
     @__copy_capture(residual_output_tensor)
     @always_inline
     @parameter
-    fn residual_output_fn[
+    def residual_output_fn[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         residual_output_tensor.store[width=width](coords, val)
@@ -136,7 +136,7 @@ fn run_rms_norm_fused_residual_cpu[
     @__copy_capture(residual_output_tensor)
     @always_inline
     @parameter
-    fn residual_read_fn[
+    def residual_read_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         return residual_output_tensor.load[width=width](
@@ -217,27 +217,27 @@ fn run_rms_norm_fused_residual_cpu[
     gamma_ptr.free()
 
 
-fn test_rms_norm_fused_residual_float32_2d() raises:
+def test_rms_norm_fused_residual_float32_2d() raises:
     """Test rms_norm_fused_residual with float32 and 2D shape."""
     run_rms_norm_fused_residual_cpu[DType.float32](Index(4, 16), rtol=1e-3)
 
 
-fn test_rms_norm_fused_residual_float32_small() raises:
+def test_rms_norm_fused_residual_float32_small() raises:
     """Test rms_norm_fused_residual with small dimensions."""
     run_rms_norm_fused_residual_cpu[DType.float32](Index(2, 8), rtol=1e-3)
 
 
-fn test_rms_norm_fused_residual_float32_large_cols() raises:
+def test_rms_norm_fused_residual_float32_large_cols() raises:
     """Test rms_norm_fused_residual with larger column count."""
     run_rms_norm_fused_residual_cpu[DType.float32](Index(2, 128), rtol=1e-3)
 
 
-fn test_rms_norm_fused_residual_float32_3d() raises:
+def test_rms_norm_fused_residual_float32_3d() raises:
     """Test rms_norm_fused_residual with 3D shape."""
     run_rms_norm_fused_residual_cpu[DType.float32](Index(2, 3, 16), rtol=1e-3)
 
 
-fn test_rms_norm_fused_residual_bfloat16() raises:
+def test_rms_norm_fused_residual_bfloat16() raises:
     """Test rms_norm_fused_residual with bfloat16."""
 
     comptime if not CompilationTarget.has_neon():
@@ -249,28 +249,28 @@ fn test_rms_norm_fused_residual_bfloat16() raises:
 # =============================================================================
 
 
-fn test_rms_norm_fused_residual_dropout_float32_2d() raises:
+def test_rms_norm_fused_residual_dropout_float32_2d() raises:
     """Test rms_norm_fused_residual CPU with dropout enabled (float32, 2D)."""
     run_rms_norm_fused_residual_cpu[DType.float32](
         Index(4, 16), rtol=1e-3, dropout_p=0.3, seed=42
     )
 
 
-fn test_rms_norm_fused_residual_dropout_float32_3d() raises:
+def test_rms_norm_fused_residual_dropout_float32_3d() raises:
     """Test rms_norm_fused_residual CPU with dropout enabled (float32, 3D)."""
     run_rms_norm_fused_residual_cpu[DType.float32](
         Index(2, 3, 16), rtol=1e-3, dropout_p=0.5, seed=123
     )
 
 
-fn test_rms_norm_fused_residual_dropout_float32_large_cols() raises:
+def test_rms_norm_fused_residual_dropout_float32_large_cols() raises:
     """Test CPU dropout path with larger column count."""
     run_rms_norm_fused_residual_cpu[DType.float32](
         Index(2, 128), rtol=1e-3, dropout_p=0.1, seed=7
     )
 
 
-fn test_rms_norm_fused_residual_dropout_bfloat16() raises:
+def test_rms_norm_fused_residual_dropout_bfloat16() raises:
     """Test rms_norm_fused_residual CPU with dropout enabled (bfloat16)."""
 
     comptime if not CompilationTarget.has_neon():

@@ -23,12 +23,12 @@ from nn.gather_scatter import gather
 
 
 # CHECK-LABEL: test_gather
-fn test_gather() raises:
+def test_gather() raises:
     print("== test_gather")
 
     @always_inline
     @parameter
-    fn _test_gather[indices_type: DType]() raises:
+    def _test_gather[indices_type: DType]() raises:
         comptime num_rows = 16
         comptime row_size = 4
 
@@ -90,12 +90,12 @@ fn test_gather() raises:
     _test_gather[DType.int64]()
 
 
-fn test_gather_3d() raises:
+def test_gather_3d() raises:
     print("== test_gather_3d\n")
 
     @always_inline
     @parameter
-    fn _test_gather[indices_type: DType]() raises:
+    def _test_gather[indices_type: DType]() raises:
         comptime num_rows = 16
         comptime row_size = 4
 
@@ -154,12 +154,12 @@ fn test_gather_3d() raises:
 
 
 # CHECK-LABEL: test_gather_empty_indices
-fn test_gather_empty_indices() raises:
+def test_gather_empty_indices() raises:
     print("== test_gather_empty_indices")
 
     @always_inline
     @parameter
-    fn _test_gather[indices_type: DType]() raises:
+    def _test_gather[indices_type: DType]() raises:
         comptime num_rows = 16
         comptime row_size = 4
         comptime num_indices = 0

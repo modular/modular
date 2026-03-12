@@ -23,7 +23,7 @@ from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from std.utils.index import Index, IndexList
 
 
-fn test_naive_blockwise_fp8_matmul[
+def test_naive_blockwise_fp8_matmul[
     input_type: DType,
     block_scales_sizes: IndexList[3],
     transpose_b: Bool = True,

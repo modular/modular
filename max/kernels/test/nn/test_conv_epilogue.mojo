@@ -38,7 +38,7 @@ comptime dtype = DType.float32
 
 
 # CHECK-LABEL: test_conv_epilogue
-fn test[
+def test[
     rank: Int, dtype: DType, filter_packed: Bool
 ](
     N: Int,
@@ -156,7 +156,7 @@ fn test[
 
     @always_inline
     @parameter
-    fn null_epilogue[rank: Int](coords: IndexList[rank], f_size: Int):
+    def null_epilogue[rank: Int](coords: IndexList[rank], f_size: Int):
         pass
 
     comptime if filter_packed:
@@ -204,7 +204,7 @@ fn test[
 
             @always_inline
             @parameter
-            fn body0[width: Int](offset: Int) unified {var}:
+            def body0[width: Int](offset: Int) unified {var}:
                 output_ref_ptr.store(
                     offset,
                     10.0
@@ -219,9 +219,9 @@ fn test[
     # Test epilogue
     @always_inline
     @parameter
-    fn epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
+    def epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
         @always_inline
-        fn body1[width: Int](idx: Int) unified {mut}:
+        def body1[width: Int](idx: Int) unified {mut}:
             var curr_coords = rebind[IndexList[rank + 2]](coords)
             curr_coords[rank + 1] += idx
 

@@ -339,12 +339,12 @@ def test_ndbuffer_tile() raises:
         buf_stack.unsafe_ptr()
     )
 
-    fn linspace(buffer: NDBuffer[mut=True, ...]):
+    def linspace(buffer: NDBuffer[mut=True, ...]):
         for i in range(buffer.dim[0]()):
             for j in range(buffer.dim[1]()):
                 buffer[i, j] = Scalar[buffer.dtype](i * buffer.dim[1]() + j)
 
-    fn print_buffer(buffer: NDBuffer):
+    def print_buffer(buffer: NDBuffer):
         for i in range(buffer.dim[0]()):
             for j in range(buffer.dim[1]()):
                 print(buffer[i, j], " ", end="")

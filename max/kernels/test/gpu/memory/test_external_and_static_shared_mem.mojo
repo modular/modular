@@ -22,7 +22,7 @@ from std.testing import assert_equal
 
 
 def test_external_shared_mem(ctx: DeviceContext) raises:
-    fn dynamic_smem_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
+    def dynamic_smem_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
         var sram = stack_allocation[
             16,
             Float32,

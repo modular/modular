@@ -42,13 +42,13 @@ comptime do_benchmarking = False
 
 
 @parameter
-fn bench_run[
+def bench_run[
     func: fn() raises capturing[_] -> None
 ]() raises -> std.benchmark.Report:
     return std.benchmark.run[func3=func](2, 1_000_000, 1, 3)
 
 
-fn gemm_naive[
+def gemm_naive[
     transpose_b: Bool
 ](a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, ...], m: Int, n: Int, k: Int):
     for i in range(m):
@@ -63,7 +63,7 @@ fn gemm_naive[
                 c[i, j] += a_val * b_val
 
 
-fn gemm_naive_elementwise[
+def gemm_naive_elementwise[
     transpose_b: Bool
 ](
     a: NDBuffer,
@@ -155,7 +155,7 @@ def test_matmul[
     @always_inline
     @__copy_capture(c, a, bp)
     @parameter
-    fn bench_fn_matmul() raises:
+    def bench_fn_matmul() raises:
         if kernel_type_m != 0:
             _matmul_cpu[
                 transpose_b=transpose_b,
@@ -304,7 +304,7 @@ def test_matmul[
     @parameter
     @always_inline
     @__copy_capture(c)
-    fn epilogue_fn[
+    def epilogue_fn[
         _type: DType, width: Int, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[_type, width]) -> None:
         c.store(coords, rebind[SIMD[c_type, width]](val + some_constant))
@@ -440,7 +440,7 @@ def test_types[b_packed: Bool, mixed_kernels: Bool]() raises:
     ]()
 
 
-fn bmm_naive(
+def bmm_naive(
     c: NDBuffer[mut=True, ...],
     a: NDBuffer,
     b: NDBuffer,
@@ -502,7 +502,7 @@ def test_batched_matmul[
     @parameter
     @always_inline
     @__copy_capture(c)
-    fn epilogue_fn[
+    def epilogue_fn[
         _type: DType,
         width: Int,
         rank: Int,
@@ -517,7 +517,7 @@ def test_batched_matmul[
     @always_inline
     @__copy_capture(c, a, b)
     @parameter
-    fn bench_fn_batched_matmul() raises:
+    def bench_fn_batched_matmul() raises:
         comptime if has_lambda:
             batched_matmul[
                 transpose_a=False,

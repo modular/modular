@@ -32,7 +32,7 @@ from std.utils import IndexList
 from std.math import isnan
 
 
-fn test_dynamic_mxfp8_quant[
+def test_dynamic_mxfp8_quant[
     in_dtype: DType,
     scales_dtype: DType,
     SF_VECTOR_SIZE: Int,

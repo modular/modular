@@ -59,7 +59,7 @@ from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark":
             return True
@@ -70,7 +70,7 @@ fn is_benchmark() -> Bool:
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-fn kernel_4[
+def kernel_4[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -412,7 +412,7 @@ fn kernel_4[
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
 
-fn blackwell_kernel_4[
+def blackwell_kernel_4[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -498,7 +498,7 @@ comptime WARP_GROUP_SIZE = 128
 comptime NumWarpPerWarpGroup = 4
 
 
-fn get_dict_of_shapes(
+def get_dict_of_shapes(
     index: Int, dict: Dict[Int, Tuple[Int, Int, Int]]
 ) -> Tuple[Int, Int, Int]:
     try:
@@ -508,13 +508,13 @@ fn get_dict_of_shapes(
         return (128, 128, 128)
 
 
-fn make_dict_of_shapes() -> Dict[Int, Tuple[Int, Int, Int]]:
+def make_dict_of_shapes() -> Dict[Int, Tuple[Int, Int, Int]]:
     var dic = Dict[Int, Tuple[Int, Int, Int]]()
     dic[0] = (4096, 4096, 4096)
     return dic^
 
 
-fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
+def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
     comptime a_type = DType.bfloat16
     comptime b_type = DType.bfloat16
     comptime c_type = DType.bfloat16
@@ -646,7 +646,7 @@ def test_blackwell_kernel_4[
 
         @always_inline
         @parameter
-        fn run_kernel(ctx: DeviceContext) raises:
+        def run_kernel(ctx: DeviceContext) raises:
             blackwell_kernel_4[
                 transpose_b=transpose_b,
                 umma_shape=umma_shape,  # 64, 128, 16

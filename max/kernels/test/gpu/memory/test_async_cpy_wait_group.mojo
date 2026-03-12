@@ -26,7 +26,7 @@ from std.memory import stack_allocation
 from std.testing import assert_equal
 
 
-fn copy_via_shared(
+def copy_via_shared(
     src: UnsafePointer[Float32, ImmutAnyOrigin],
     dst: UnsafePointer[Float32, MutAnyOrigin],
 ):
@@ -49,7 +49,7 @@ fn copy_via_shared(
     dst[thread_id] = mem_buff[thread_id]
 
 
-fn run_copy_via_shared(ctx: DeviceContext) raises:
+def run_copy_via_shared(ctx: DeviceContext) raises:
     print("== run_copy_via_shared")
     var in_data = alloc[Float32](16)
     var out_data = alloc[Float32](16)
@@ -83,7 +83,7 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     out_data.free()
 
 
-fn copy_with_src_size(
+def copy_with_src_size(
     src: UnsafePointer[Float32, ImmutAnyOrigin],
     dst: UnsafePointer[Float32, MutAnyOrigin],
     src_size: Int,
@@ -112,7 +112,7 @@ fn copy_with_src_size(
         dst[i] = smem[i]
 
 
-fn copy_with_non_zero_fill[
+def copy_with_non_zero_fill[
     smem_size: Int
 ](
     src: UnsafePointer[BFloat16, ImmutAnyOrigin],
@@ -142,7 +142,7 @@ fn copy_with_non_zero_fill[
         dst[i] = smem[i]
 
 
-fn test_copy_with_src_size(ctx: DeviceContext) raises:
+def test_copy_with_src_size(ctx: DeviceContext) raises:
     comptime size = 4
 
     # Allocate arrays of different sizes to trigger an OOB address in test.
@@ -190,7 +190,7 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
     b_host.free()
 
 
-fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
+def test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
     comptime size = 8
 
     # Allocate arrays of different sizes to trigger an OOB address in test.

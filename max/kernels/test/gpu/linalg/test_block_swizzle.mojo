@@ -17,7 +17,7 @@ from std.utils.index import Index
 
 
 # CHECK-LABEL: test_block_swizzle
-fn test_block_swizzle():
+def test_block_swizzle():
     print("=== test_block_swizzle")
 
     var grid_dim0 = Index(3, 4)
@@ -56,5 +56,5 @@ fn test_block_swizzle():
         print()
 
 
-fn main():
+def main():
     test_block_swizzle()

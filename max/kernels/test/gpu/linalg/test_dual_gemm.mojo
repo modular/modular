@@ -33,13 +33,13 @@ from std.utils.index import Index, IndexList
 from std.utils.numerics import FPUtils
 
 
-fn binary_sub[
+def binary_sub[
     dtype: DType, width: Int
 ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return x - y
 
 
-fn multistage_gemm_simple[
+def multistage_gemm_simple[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -92,7 +92,7 @@ fn multistage_gemm_simple[
     )
 
 
-fn naive_dual_gemm[
+def naive_dual_gemm[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -128,7 +128,7 @@ fn naive_dual_gemm[
         @always_inline
         @__copy_capture(c01, N)
         @parameter
-        fn binary[
+        def binary[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx0: IndexList[rank]):
             var m: Int = idx0[0]
@@ -147,7 +147,7 @@ fn naive_dual_gemm[
         abort(String(e))
 
 
-fn runtime_row_major[
+def runtime_row_major[
     cols: Int
 ](
     rows: Int,
@@ -160,7 +160,7 @@ fn runtime_row_major[
     )
 
 
-fn test_dual_matmul[
+def test_dual_matmul[
     transpose_b: Bool, N: Int = 512, K: Int = 512
 ](ctx: DeviceContext, M: Int = 512, do_benchmark: Bool = False) raises:
     comptime dst_type = DType.float32
@@ -215,7 +215,7 @@ fn test_dual_matmul[
 
     @always_inline
     @parameter
-    fn run_dual_gemm() raises:
+    def run_dual_gemm() raises:
         if M <= 128:
             multistage_dual_gemm[
                 transpose_b=transpose_b,
@@ -313,7 +313,7 @@ fn test_dual_matmul[
 
     @always_inline
     @parameter
-    fn run_naive_dual_gemm() raises:
+    def run_naive_dual_gemm() raises:
         if M <= 128:
             naive_dual_gemm[
                 transpose_b=transpose_b,

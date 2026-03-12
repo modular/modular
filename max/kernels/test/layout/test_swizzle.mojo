@@ -27,7 +27,7 @@ from std.testing import assert_equal
 from std.utils import StaticTuple
 
 
-fn print_swizzle(thread_layout: Layout, swizzle: Swizzle):
+def print_swizzle(thread_layout: Layout, swizzle: Swizzle):
     for tid in range(thread_layout.size()):
         print(swizzle(tid), end=" ")
         if (tid + 1) % (2**swizzle.shift) == 0:
@@ -35,7 +35,7 @@ fn print_swizzle(thread_layout: Layout, swizzle: Swizzle):
 
 
 # CHECK-LABEL: test_swizzle_basic
-fn test_swizzle_basic():
+def test_swizzle_basic():
     print("== test_swizzle_basic")
 
     comptime thread_layout = Layout.row_major(8, 8)
@@ -81,7 +81,7 @@ fn test_swizzle_basic():
             print()
 
 
-fn cat_layout(layout_a: Layout, layout_b: Layout) -> Layout:
+def cat_layout(layout_a: Layout, layout_b: Layout) -> Layout:
     var shape = IntTuple()
     var stride = IntTuple()
     for i in range(len(layout_a.shape)):
@@ -93,7 +93,7 @@ fn cat_layout(layout_a: Layout, layout_b: Layout) -> Layout:
     return Layout(shape, stride)
 
 
-fn append_layout(layout_a: Layout, layout_b: Layout) -> Layout:
+def append_layout(layout_a: Layout, layout_b: Layout) -> Layout:
     var shape = IntTuple()
     var stride = IntTuple()
     shape.append(layout_a.shape)
@@ -104,13 +104,13 @@ fn append_layout(layout_a: Layout, layout_b: Layout) -> Layout:
     return Layout(shape, stride)
 
 
-fn vectorize_layout[layout: Layout, *tile_sizes: Int]() -> Layout:
+def vectorize_layout[layout: Layout, *tile_sizes: Int]() -> Layout:
     return zipped_divide(
         materialize[layout](), MakeTileLayoutList[*tile_sizes]()
     )
 
 
-fn vectorize_distribute_layout[
+def vectorize_distribute_layout[
     *element_tile_sizes: Int, data_layout: Layout, thread_layout: Layout
 ]() -> Layout:
     comptime vlayout = vectorize_layout[data_layout, *element_tile_sizes]()
@@ -124,14 +124,14 @@ struct WaveFrontSummary(
     var total_wavefronts: Int
     var expected_wavefronts: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.total_wavefronts = 0
         self.expected_wavefronts = 0
 
-    fn excess_wavefronts(self) -> Int:
+    def excess_wavefronts(self) -> Int:
         return self.total_wavefronts - self.expected_wavefronts
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "WaveFrontSummary(total_wavefronts=",
             self.total_wavefronts,
@@ -143,7 +143,7 @@ struct WaveFrontSummary(
         )
 
 
-fn count_wavefronts[
+def count_wavefronts[
     *element_tile_sizes: Int,
     thread_layout: Layout,
     data_layout: Layout,
@@ -223,7 +223,7 @@ fn count_wavefronts[
     return wavefronts
 
 
-fn test_swizzle_gemm_store() raises:
+def test_swizzle_gemm_store() raises:
     comptime WM = 64
     comptime WN = 64
     comptime MMA_M = 16

@@ -24,7 +24,7 @@ from std.utils.index import Index, IndexList
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
 
-fn test_matmul_dynamic_scaled_fp8[
+def test_matmul_dynamic_scaled_fp8[
     in_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,

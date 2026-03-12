@@ -32,7 +32,7 @@ comptime kc = 128
 
 
 @export(ABI="C")
-fn pack_b(
+def pack_b(
     packed_b: NDBuffer[
         rank=3,
         type,
@@ -60,7 +60,7 @@ fn pack_b(
     )
 
 
-fn test_pack_b() raises:
+def test_pack_b() raises:
     var packed_b = NDBuffer[
         rank=3,
         type,

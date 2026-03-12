@@ -19,7 +19,7 @@ from std.utils import IndexList
 
 
 # CHECK-LABEL: test_gather_nd
-fn main():
+def main():
     """Note: Examples 1-5 are from.
 
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#GatherND
@@ -27,7 +27,7 @@ fn main():
 
     print("test_gather_nd")
 
-    fn test_gather_nd_eg1() raises:
+    def test_gather_nd_eg1() raises:
         # Example 1
         comptime batch_dims = 0
         comptime data_type = DType.int32
@@ -71,7 +71,7 @@ fn main():
             "Output buffer:", output_data_buffer[0], ",", output_data_buffer[1]
         )
 
-    fn test_gather_nd_eg2() raises:
+    def test_gather_nd_eg2() raises:
         # Example 2
         comptime batch_dims = 0
         comptime data_type = DType.int8
@@ -123,7 +123,7 @@ fn main():
             output_data_buffer[1, 1],
         )
 
-    fn test_gather_nd_eg3() raises:
+    def test_gather_nd_eg3() raises:
         # Example 3
         comptime batch_dims = 0
         comptime data_type = DType.float32
@@ -178,7 +178,7 @@ fn main():
             output_data_buffer[1, 1],
         )
 
-    fn test_gather_nd_eg4() raises:
+    def test_gather_nd_eg4() raises:
         # Example 4
         comptime batch_dims = 0
         comptime data_type = DType.int8
@@ -233,7 +233,7 @@ fn main():
             output_data_buffer[1, 0, 1],
         )
 
-    fn test_gather_nd_eg5() raises:
+    def test_gather_nd_eg5() raises:
         # Example 5
         comptime batch_dims = 1
         comptime data_type = DType.int32
@@ -286,7 +286,7 @@ fn main():
             output_data_buffer[1, 1],
         )
 
-    fn test_gather_nd_eg6() raises:
+    def test_gather_nd_eg6() raises:
         # Example 6
         comptime batch_dims = 2
         comptime data_type = DType.int8
@@ -370,7 +370,7 @@ fn main():
             output_data_buffer[1, 2, 0],
         )
 
-    fn test_gather_nd_eg7() raises:
+    def test_gather_nd_eg7() raises:
         # Example 4
         comptime batch_dims = 0
         comptime data_type = DType.int8
@@ -432,7 +432,7 @@ fn main():
             output_data_buffer[1, 0, 1, 1],
         )
 
-    fn test_gather_nd_eg8() raises:
+    def test_gather_nd_eg8() raises:
         # Example 2
         comptime batch_dims = 0
         comptime data_type = DType.int8

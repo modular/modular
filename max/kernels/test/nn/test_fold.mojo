@@ -59,7 +59,7 @@ from std.utils.index import Index, IndexList
 
 
 # CHECK-LABEL: test_fold
-fn test[
+def test[
     dtype: DType,
     //,
     input_shape: IndexList[3],
@@ -141,7 +141,7 @@ fn test[
     print("Succeed")
 
 
-fn _copy_values_to_tile_tensor[
+def _copy_values_to_tile_tensor[
     dtype: DType,
 ](
     tensor: TileTensor[mut=True, dtype, ...],

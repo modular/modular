@@ -47,7 +47,7 @@ from layout import Layout, LayoutTensor, RuntimeLayout, TileTensor
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-fn simple_init() -> Bool:
+def simple_init() -> Bool:
     for arg in argv():
         if arg == "--simple-init":
             return True
@@ -370,14 +370,14 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
 
     @parameter
-    fn _reshape_to_2d[layout: Layout]() -> Layout:
+    def _reshape_to_2d[layout: Layout]() -> Layout:
         return Layout.row_major(
             layout.shape[1].value(),
             layout.shape[2].value(),
         )
 
     @parameter
-    fn _reshape_to_5d[layout: Layout]() -> Layout:
+    def _reshape_to_5d[layout: Layout]() -> Layout:
         return Layout.row_major(
             layout.shape[1].value(),
             layout.shape[2].value(),
@@ -386,7 +386,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             SF_ATOM_K,
         )
 
-    fn _convert_to_none_batched_tensor[
+    def _convert_to_none_batched_tensor[
         dtype: DType,
         layout: Layout,
         //,

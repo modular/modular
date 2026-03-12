@@ -32,7 +32,7 @@ from std.utils import IndexList
 from std.memory import bitcast
 
 
-fn test_dynamic_fp4_quant[
+def test_dynamic_fp4_quant[
     in_dtype: DType,
     scales_dtype: DType,
     SF_VECTOR_SIZE: Int,

@@ -19,7 +19,7 @@ from std.utils.index import Index
 
 
 # CHECK-LABEL: test_conv_partition
-fn test_partition():
+def test_partition():
     print("== test_conv_partition")
     comptime micro_kernel_height = 6
     comptime micro_kernel_width = 4
@@ -84,5 +84,5 @@ fn test_partition():
         print(ho_range)
 
 
-fn main():
+def main():
     test_partition()

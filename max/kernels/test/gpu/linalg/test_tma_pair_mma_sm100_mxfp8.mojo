@@ -75,7 +75,7 @@ from linalg.fp4_utils import (
 from linalg.matmul.vendor.blas import matmul
 
 
-fn simple_init() -> Bool:
+def simple_init() -> Bool:
     for arg in argv():
         if arg == "--simple-init":
             return True
@@ -87,7 +87,7 @@ fn simple_init() -> Bool:
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_scales_tma_op, `nvvm.grid_constant`)
-fn blockscaled_pair_cta_mxfp8[
+def blockscaled_pair_cta_mxfp8[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -556,7 +556,7 @@ fn blockscaled_pair_cta_mxfp8[
             )
 
 
-fn sm100_blockscaled_mxfp8_cta_pair[
+def sm100_blockscaled_mxfp8_cta_pair[
     a_type: DType,
     b_type: DType,
     c_type: DType,

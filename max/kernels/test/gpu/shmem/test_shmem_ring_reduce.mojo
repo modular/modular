@@ -31,7 +31,7 @@ comptime step_factor = 2
 comptime chunk_size = 1024 * 256
 
 
-fn ring_reduce(
+def ring_reduce(
     dst_ptr: UnsafePointer[c_int, MutAnyOrigin],
     src_ptr: UnsafePointer[c_int, ImmutAnyOrigin],
     nreduce: Int,

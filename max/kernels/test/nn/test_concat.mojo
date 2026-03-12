@@ -18,7 +18,7 @@ from nn.concat import _concat_parallel, _concat_serial, concat
 from std.utils import Index, IndexList, StaticTuple
 
 
-fn _tuple_to_list[
+def _tuple_to_list[
     LayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -71,7 +71,7 @@ def test_concat() raises:
 
     @parameter
     @always_inline
-    fn epilogue_plus_one[
+    def epilogue_plus_one[
         c_type: DType, _rank: Int, width: Int, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
@@ -141,7 +141,7 @@ def test_concat_parallel() raises:
 
     @parameter
     @always_inline
-    fn epilogue_plus_one[
+    def epilogue_plus_one[
         c_type: DType, _rank: Int, width: Int, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
@@ -215,7 +215,7 @@ def test_concat_inner() raises:
 
     @parameter
     @always_inline
-    fn epilogue_plus_one[
+    def epilogue_plus_one[
         c_type: DType, _rank: Int, width: Int, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)

@@ -47,7 +47,7 @@ from std.utils.index import Index, IndexList
 
 
 @__llvm_arg_metadata(act_tma_op, `nvvm.grid_constant`)
-fn im2col_load_kernel[
+def im2col_load_kernel[
     dtype: DType,
     tile_rank: Int,
     tile_shape: IndexList[tile_rank],
@@ -126,7 +126,7 @@ fn im2col_load_kernel[
 # ============================================================================
 
 
-fn im2col_reference[
+def im2col_reference[
     dtype: DType,
 ](
     output: UnsafePointer[mut=True, Scalar[dtype], _],
@@ -207,7 +207,7 @@ fn im2col_reference[
 # ============================================================================
 
 
-fn run_im2col_test[
+def run_im2col_test[
     dtype: DType,
     batch: Int,
     in_height: Int,

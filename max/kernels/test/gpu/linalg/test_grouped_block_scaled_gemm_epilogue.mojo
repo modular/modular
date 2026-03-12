@@ -62,7 +62,7 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scale
 )
 
 
-fn test_grouped_gemm_epilogue[
+def test_grouped_gemm_epilogue[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -228,7 +228,7 @@ fn test_grouped_gemm_epilogue[
     @parameter
     @always_inline
     @__copy_capture(c_tensor)
-    fn epilogue_add_c[
+    def epilogue_add_c[
         _dtype: DType,
         width: Int,
         *,
@@ -446,7 +446,7 @@ fn test_grouped_gemm_epilogue[
     @parameter
     @always_inline
     @__copy_capture(c_tensor_host)
-    fn epilogue_add_c_host[
+    def epilogue_add_c_host[
         _dtype: DType,
         width: Int,
         *,

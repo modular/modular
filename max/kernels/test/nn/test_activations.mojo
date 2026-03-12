@@ -21,7 +21,7 @@ from std.testing import assert_almost_equal
 
 
 # CHECK-LABEL: test_elu
-fn test_elu():
+def test_elu():
     print("== test_elu")
 
     var simd_val = iota[DType.float32, 4]()
@@ -37,7 +37,7 @@ fn test_elu():
 
 
 # CHECK-LABEL: test_relu
-fn test_relu():
+def test_relu():
     print("== test_relu")
 
     var simd_val = iota[DType.float32, 4]()
@@ -53,7 +53,7 @@ fn test_relu():
 
 
 # CHECK-LABEL: test_relu_n1
-fn test_relu_n1():
+def test_relu_n1():
     print("== test_relu_n1")
 
     var simd_val = iota[DType.float32, 4]()
@@ -69,7 +69,7 @@ fn test_relu_n1():
 
 
 # CHECK-LABEL: test_leaky_relu
-fn test_leaky_relu():
+def test_leaky_relu():
     print("== test_leaky_relu")
 
     var simd_val = iota[DType.float32, 4]()
@@ -95,7 +95,7 @@ fn test_leaky_relu():
 
 
 @always_inline
-fn erf_libm[
+def erf_libm[
     dtype: DType, simd_width: Int
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     return libm_call["erff", "err"](arg)

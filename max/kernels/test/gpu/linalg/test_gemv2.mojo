@@ -31,7 +31,7 @@ comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
 @parameter
 @always_inline
-fn epilogue_test_fn[
+def epilogue_test_fn[
     dtype: DType, width: Int, *, alignment: Int = 1
 ](
     idx: IndexList[2],
@@ -52,7 +52,7 @@ fn epilogue_test_fn[
     return val + bias
 
 
-fn test[
+def test[
     in_type: DType,
     out_type: DType,
     transpose_b: Bool,
@@ -176,7 +176,7 @@ fn test[
         raise "GEMV failed: exact mismatch"
 
 
-fn test_gemv_split_k[in_type: DType](ctx: DeviceContext) raises:
+def test_gemv_split_k[in_type: DType](ctx: DeviceContext) raises:
     """Test GEMV_SPLIT_K path: M=1, transpose_b=True, K % simd_width == 0."""
     print("=== Testing GEMV_SPLIT_K with", in_type, "===")
 

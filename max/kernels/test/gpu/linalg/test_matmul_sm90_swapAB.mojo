@@ -358,7 +358,7 @@ def main() raises:
         # If indexing is wrong, the reference and swapAB results will mismatch
         @parameter
         @always_inline
-        fn coord_lambda[
+        def coord_lambda[
             _dtype: DType,
             width: Int,
             *,

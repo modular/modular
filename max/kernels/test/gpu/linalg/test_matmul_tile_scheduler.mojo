@@ -18,7 +18,7 @@ from linalg.matmul.gpu.tile_scheduler import TileScheduler
 from std.utils.index import Index
 
 
-fn test_kernel():
+def test_kernel():
     problem_shape = Index(12, 12, 20)
 
     scheduler = TileScheduler[

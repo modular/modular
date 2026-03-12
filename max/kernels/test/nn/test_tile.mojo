@@ -23,7 +23,7 @@ from std.utils import IndexList
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,
 # CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,
-fn test_tile_eg1() raises:
+def test_tile_eg1() raises:
     print("== test_tile_eg1")
     comptime type = DType.float32
 
@@ -70,7 +70,7 @@ fn test_tile_eg1() raises:
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,
 # CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,
-fn test_tile_eg2() raises:
+def test_tile_eg2() raises:
     print("== test_tile_eg2")
     comptime type = DType.float32
 
@@ -115,7 +115,7 @@ fn test_tile_eg2() raises:
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
 # CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,0.0 ,1.0 ,
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
-fn test_tile_eg3() raises:
+def test_tile_eg3() raises:
     print("== test_tile_eg3")
     comptime type = DType.float32
 
@@ -164,7 +164,7 @@ fn test_tile_eg3() raises:
 # CHECK: 2.0 ,3.0 ,
 # CHECK: 4.0 ,5.0 ,
 # CHECK: 6.0 ,7.0 ,
-fn test_tile_eg4() raises:
+def test_tile_eg4() raises:
     print("== test_tile_eg4")
     comptime type = DType.float32
 
@@ -221,7 +221,7 @@ fn test_tile_eg4() raises:
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,
 # CHECK: 4.0 ,5.0 ,4.0 ,5.0 ,
 # CHECK: 6.0 ,7.0 ,6.0 ,7.0 ,
-fn test_tile_eg5() raises:
+def test_tile_eg5() raises:
     print("== test_tile_eg5")
     comptime type = DType.float32
 
@@ -272,7 +272,7 @@ fn test_tile_eg5() raises:
 # CHECK-LABEL: test_tile_eg6
 # CHECK: 1.0 ,2.0 ,1.0 ,2.0 ,
 # CHECK: 3.0 ,4.0 ,3.0 ,4.0 ,
-fn test_tile_eg6() raises:
+def test_tile_eg6() raises:
     print("== test_tile_eg6")
     comptime type = DType.float32
 
@@ -317,7 +317,7 @@ fn test_tile_eg6() raises:
 # CHECK: 3.0 ,4.0 ,
 # CHECK: 1.0 ,2.0 ,
 # CHECK: 3.0 ,4.0 ,
-fn test_tile_eg7() raises:
+def test_tile_eg7() raises:
     print("== test_tile_eg7")
     comptime type = DType.float32
 
@@ -362,7 +362,7 @@ fn test_tile_eg7() raises:
 # CHECK: 1.0 ,2.0 ,3.0 ,4.0 ,
 # CHECK: 1.0 ,2.0 ,3.0 ,4.0 ,
 # CHECK: 1.0 ,2.0 ,3.0 ,4.0 ,
-fn test_tile_eg8() raises:
+def test_tile_eg8() raises:
     print("== test_tile_eg8")
     comptime type = DType.float32
 
@@ -419,7 +419,7 @@ fn test_tile_eg8() raises:
 # CHECK: 6.0 ,7.0 ,
 # CHECK: 4.0 ,5.0 ,
 # CHECK: 6.0 ,7.0 ,
-fn test_tile_eg9() raises:
+def test_tile_eg9() raises:
     print("== test_tile_eg9")
     comptime type = DType.float32
 
@@ -492,7 +492,7 @@ fn test_tile_eg9() raises:
 # CHECK: 6.0 ,7.0 ,6.0 ,7.0 ,6.0 ,7.0 ,
 # CHECK: 4.0 ,5.0 ,4.0 ,5.0 ,4.0 ,5.0 ,
 # CHECK: 6.0 ,7.0 ,6.0 ,7.0 ,6.0 ,7.0 ,
-fn test_tile_eg10() raises:
+def test_tile_eg10() raises:
     print("== test_tile_eg10")
     comptime type = DType.float32
 
@@ -577,7 +577,7 @@ fn test_tile_eg10() raises:
 # CHECK: 10.0 ,11.0 ,
 # CHECK: 8.0 ,9.0 ,
 # CHECK: 10.0 ,11.0 ,
-fn test_tile_eg11() raises:
+def test_tile_eg11() raises:
     print("== test_tile_eg11")
     comptime type = DType.float32
 
@@ -635,7 +635,7 @@ fn test_tile_eg11() raises:
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
 # CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,0.0 ,1.0 ,
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
-fn test_tile_eg12() raises:
+def test_tile_eg12() raises:
     print("== test_tile_eg12")
     comptime type = DType.float32
 
@@ -698,7 +698,7 @@ fn test_tile_eg12() raises:
 # CHECK: 14.0 ,15.0 ,14.0 ,15.0 ,14.0 ,15.0 ,
 # CHECK: 12.0 ,13.0 ,12.0 ,13.0 ,12.0 ,13.0 ,
 # CHECK: 14.0 ,15.0 ,14.0 ,15.0 ,14.0 ,15.0 ,
-fn test_tile_eg13() raises:
+def test_tile_eg13() raises:
     print("== test_tile_eg13")
     comptime type = DType.float32
 
@@ -796,7 +796,7 @@ fn test_tile_eg13() raises:
 # CHECK: 14.0 ,15.0 ,14.0 ,15.0 ,14.0 ,15.0 ,
 # CHECK: 12.0 ,13.0 ,12.0 ,13.0 ,12.0 ,13.0 ,
 # CHECK: 14.0 ,15.0 ,14.0 ,15.0 ,14.0 ,15.0 ,
-fn test_tile_eg14() raises:
+def test_tile_eg14() raises:
     print("== test_tile_eg14")
     comptime type = DType.float32
 
@@ -861,7 +861,7 @@ fn test_tile_eg14() raises:
     print()
 
 
-fn test_tile_1d() raises:
+def test_tile_1d() raises:
     """Test tiling a 1D tensor.
 
     This tests the edge case where input.rank == 1, which previously would

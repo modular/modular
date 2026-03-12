@@ -17,7 +17,7 @@ from std.gpu.memory import CacheEviction, CacheOperation, load
 from std.testing import assert_equal, assert_true
 
 
-fn load_value[
+def load_value[
     *,
     dtype: DType = DType.uint32,
     width: Int = 1,

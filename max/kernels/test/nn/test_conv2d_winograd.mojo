@@ -21,7 +21,7 @@ from std.utils.index import Index
 
 
 @always_inline
-fn matmul[
+def matmul[
     dtype: DType, //, N: Int, K: Int, M: Int, transpose_b: Bool
 ](
     C: TileTensor[mut=True, dtype, element_size=1, ...],
@@ -54,7 +54,7 @@ fn matmul[
 # TODO: Decide if B, G, and A matrices should be transposed
 # TODO: B,G,A can be static
 # 12-12-2024: Initial naive version
-fn winograd_2d_convolution_3x3[
+def winograd_2d_convolution_3x3[
     dtype: DType
 ](
     signal: TileTensor[dtype, element_size=1, ...],
@@ -143,7 +143,7 @@ fn winograd_2d_convolution_3x3[
                         output[i + di, j + dj] = y[di, dj]
 
 
-fn outputs_are_close[
+def outputs_are_close[
     dtype: DType
 ](
     output_naive: TileTensor[dtype, element_size=1, ...],
@@ -172,7 +172,7 @@ fn outputs_are_close[
 
 
 # CHECK-LABEL: test_conv2d_winograd
-fn test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
+def test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
     print("test_conv2d_winograd")
     comptime Kh: Int = 3  # Filter height
     comptime Kw: Int = 3  # Filter width

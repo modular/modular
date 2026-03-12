@@ -17,12 +17,12 @@ from std.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: test_memset_async
-fn test_memset_async(ctx: DeviceContext) raises:
+def test_memset_async(ctx: DeviceContext) raises:
     print("== test_memset_async")
 
     @parameter
     @always_inline
-    fn test_memset[dtype: DType](val: Scalar[dtype]) raises:
+    def test_memset[dtype: DType](val: Scalar[dtype]) raises:
         comptime length = 4
         var data = alloc[Scalar[dtype]](length)
         var data_device = ctx.enqueue_create_buffer[dtype](length)

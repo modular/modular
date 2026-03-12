@@ -26,7 +26,7 @@ comptime float_dtype = DType.float32
 @compiler.register("mandelbrot")
 struct Mandelbrot:
     @staticmethod
-    fn execute[
+    def execute[
         # The kind of device this will be run on: "cpu" or "gpu"
         target: StaticString,
     ](
@@ -42,7 +42,7 @@ struct Mandelbrot:
     ) raises:
         @parameter
         @always_inline
-        fn elementwise_mandelbrot[
+        def elementwise_mandelbrot[
             width: Int
         ](idx: IndexList[output.rank]) -> SIMD[output.dtype, width]:
             # Obtain the position in the grid from the X, Y thread locations.

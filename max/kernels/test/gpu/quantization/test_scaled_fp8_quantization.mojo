@@ -40,7 +40,7 @@ from std.utils.numerics import get_accum_type, max_finite, min_finite
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
 
-fn test_static_scaled_fp8_quant[
+def test_static_scaled_fp8_quant[
     out_dtype: DType,
     in_dtype: DType,
 ](ctx: DeviceContext, scale: Float32, m: Int, n: Int) raises:
@@ -108,7 +108,7 @@ fn test_static_scaled_fp8_quant[
     _ = out_device^
 
 
-fn test_dynamic_fp8_quant[
+def test_dynamic_fp8_quant[
     out_dtype: DType,
     in_dtype: DType,
     scales_dtype: DType,
@@ -178,7 +178,7 @@ fn test_dynamic_fp8_quant[
     @__copy_capture(in_ndbuffer)
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int) -> SIMD[in_dtype, width]:
         return in_ndbuffer.load[width=width, alignment=alignment](row, col)
@@ -249,7 +249,7 @@ fn test_dynamic_fp8_quant[
     _ = scales_device^
 
 
-fn test_batched_dynamic_fp8_quant[
+def test_batched_dynamic_fp8_quant[
     out_dtype: DType,
     in_dtype: DType,
     scales_dtype: DType,
@@ -328,7 +328,7 @@ fn test_batched_dynamic_fp8_quant[
     @parameter
     @__copy_capture(in_ndbuffer)
     @always_inline
-    fn input_fn[
+    def input_fn[
         width: Int, alignment: Int
     ](batch: Int, row: Int, col: Int) capturing -> SIMD[in_dtype, width]:
         return in_ndbuffer.load[width=width, alignment=alignment](

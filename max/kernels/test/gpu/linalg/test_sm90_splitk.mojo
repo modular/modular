@@ -30,7 +30,7 @@ from linalg.utils_gpu import MatmulConfig
 from std.utils.index import Index, IndexList
 
 
-fn test_warp_specialize_gemm_with_multicasting[
+def test_warp_specialize_gemm_with_multicasting[
     block_tile_shape: IndexList[3],
     a_type: DType,
     b_type: DType,

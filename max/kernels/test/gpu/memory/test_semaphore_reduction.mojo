@@ -20,7 +20,7 @@ from std.memory import memset_zero
 from std.testing import assert_equal
 
 
-fn semaphore_vector_reduce[
+def semaphore_vector_reduce[
     dtype: DType,
     N: Int,
     num_parts: Int,
@@ -47,7 +47,7 @@ fn semaphore_vector_reduce[
     sema.release(Int32(lx))
 
 
-fn run_vector_reduction[
+def run_vector_reduction[
     dtype: DType,
     N: Int,
     num_parts: Int,
@@ -104,7 +104,7 @@ fn run_vector_reduction[
     c_host_ref.free()
 
 
-fn semaphore_matrix_reduce[
+def semaphore_matrix_reduce[
     dtype: DType, M: Int, N: Int, num_parts: Int
 ](
     c_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -133,7 +133,7 @@ fn semaphore_matrix_reduce[
     sema.release(Int32(lx))
 
 
-fn run_matrix_reduction[
+def run_matrix_reduction[
     dtype: DType,
     M: Int,
     N: Int,

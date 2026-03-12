@@ -44,7 +44,7 @@ comptime MAX_DSTATE = 16
 
 
 @always_inline
-fn softplus_ref(val: Float32) -> Float32:
+def softplus_ref(val: Float32) -> Float32:
     """Reference softplus implementation: log(1 + exp(x))."""
     if val > 20.0:
         return val
@@ -54,7 +54,7 @@ fn softplus_ref(val: Float32) -> Float32:
 
 
 @always_inline
-fn sigmoid_ref(val: Float32) -> Float32:
+def sigmoid_ref(val: Float32) -> Float32:
     """Reference sigmoid implementation."""
     if val < -20.0:
         return 0.0
@@ -63,7 +63,7 @@ fn sigmoid_ref(val: Float32) -> Float32:
 
 
 @always_inline
-fn silu_ref(val: Float32) -> Float32:
+def silu_ref(val: Float32) -> Float32:
     """Reference SiLU implementation."""
     if val < -20.0:
         return 0.0
@@ -71,7 +71,7 @@ fn silu_ref(val: Float32) -> Float32:
     return val / (1.0 + exp_neg)
 
 
-fn run_selective_scan_fwd[
+def run_selective_scan_fwd[
     dtype: DType,
     DSTATE: Int,
     has_D: Bool = True,
@@ -327,7 +327,7 @@ fn run_selective_scan_fwd[
     output_ref_heap.free()
 
 
-fn run_selective_scan_update[
+def run_selective_scan_update[
     dtype: DType,
     DSTATE: Int,
     has_D: Bool = True,
@@ -638,7 +638,7 @@ fn run_selective_scan_update[
 # =============================================================================
 
 
-fn test_selective_scan_fwd_basic() raises:
+def test_selective_scan_fwd_basic() raises:
     """Test basic selective scan forward."""
     run_selective_scan_fwd[
         DType.float32,
@@ -650,7 +650,7 @@ fn test_selective_scan_fwd_basic() raises:
     ](batch=1, dim=2, seqlen=4, n_groups=1)
 
 
-fn test_selective_scan_fwd_without_D() raises:
+def test_selective_scan_fwd_without_D() raises:
     """Test selective scan forward without D tensor."""
     run_selective_scan_fwd[
         DType.float32,
@@ -662,7 +662,7 @@ fn test_selective_scan_fwd_without_D() raises:
     ](batch=1, dim=2, seqlen=4, n_groups=1)
 
 
-fn test_selective_scan_fwd_without_z() raises:
+def test_selective_scan_fwd_without_z() raises:
     """Test selective scan forward without z tensor."""
     run_selective_scan_fwd[
         DType.float32,
@@ -674,7 +674,7 @@ fn test_selective_scan_fwd_without_z() raises:
     ](batch=1, dim=2, seqlen=4, n_groups=1)
 
 
-fn test_selective_scan_fwd_with_delta_softplus() raises:
+def test_selective_scan_fwd_with_delta_softplus() raises:
     """Test selective scan forward with delta softplus activation."""
     run_selective_scan_fwd[
         DType.float32,
@@ -686,7 +686,7 @@ fn test_selective_scan_fwd_with_delta_softplus() raises:
     ](batch=1, dim=2, seqlen=4, n_groups=1)
 
 
-fn test_selective_scan_fwd_longer_sequence() raises:
+def test_selective_scan_fwd_longer_sequence() raises:
     """Test selective scan forward with longer sequence."""
     run_selective_scan_fwd[
         DType.float32,
@@ -703,7 +703,7 @@ fn test_selective_scan_fwd_longer_sequence() raises:
 # =============================================================================
 
 
-fn test_selective_scan_update_basic() raises:
+def test_selective_scan_update_basic() raises:
     """Test basic selective scan update."""
     run_selective_scan_update[
         DType.float32,
@@ -715,7 +715,7 @@ fn test_selective_scan_update_basic() raises:
     ](batch=1, dim=2, n_groups=1)
 
 
-fn test_selective_scan_update_without_D() raises:
+def test_selective_scan_update_without_D() raises:
     """Test selective scan update without D tensor."""
     run_selective_scan_update[
         DType.float32,
@@ -727,7 +727,7 @@ fn test_selective_scan_update_without_D() raises:
     ](batch=1, dim=2, n_groups=1)
 
 
-fn test_selective_scan_update_without_z() raises:
+def test_selective_scan_update_without_z() raises:
     """Test selective scan update without z tensor."""
     run_selective_scan_update[
         DType.float32,
@@ -739,7 +739,7 @@ fn test_selective_scan_update_without_z() raises:
     ](batch=1, dim=2, n_groups=1)
 
 
-fn test_selective_scan_update_with_delta_softplus() raises:
+def test_selective_scan_update_with_delta_softplus() raises:
     """Test selective scan update with delta softplus activation."""
     run_selective_scan_update[
         DType.float32,
@@ -751,7 +751,7 @@ fn test_selective_scan_update_with_delta_softplus() raises:
     ](batch=1, dim=2, n_groups=1)
 
 
-fn test_selective_scan_update_larger_dimensions() raises:
+def test_selective_scan_update_larger_dimensions() raises:
     """Test selective scan update with larger dimensions."""
     run_selective_scan_update[
         DType.float32,

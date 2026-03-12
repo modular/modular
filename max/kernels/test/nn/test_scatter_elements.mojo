@@ -19,7 +19,7 @@ from std.utils import IndexList
 
 
 def main() raises:
-    fn test_scatter_ax0() raises:
+    def test_scatter_ax0() raises:
         print("== test_scatter_ax0")
 
         var data_ptr = alloc[Float32](9)
@@ -68,7 +68,7 @@ def main() raises:
 
         @always_inline
         @parameter
-        fn use_update[
+        def use_update[
             dtype: DType, width: Int
         ](
             input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]
@@ -89,7 +89,7 @@ def main() raises:
     # CHECK-NOT: FAIL
     test_scatter_ax0()
 
-    fn test_scatter_ax1() raises:
+    def test_scatter_ax1() raises:
         print("== test_scatter_ax1")
 
         var data_ptr = alloc[Float32](5)
@@ -126,7 +126,7 @@ def main() raises:
 
         @always_inline
         @parameter
-        fn use_update[
+        def use_update[
             dtype: DType, width: Int
         ](
             input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]
@@ -147,7 +147,7 @@ def main() raises:
     # CHECK-NOT: FAIL
     test_scatter_ax1()
 
-    fn test_scatter_neg_indices() raises:
+    def test_scatter_neg_indices() raises:
         print("== test_scatter_neg_indices")
 
         var data_ptr = alloc[Float32](5)
@@ -184,7 +184,7 @@ def main() raises:
 
         @always_inline
         @parameter
-        fn use_update[
+        def use_update[
             dtype: DType, width: Int
         ](
             input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]
@@ -205,7 +205,7 @@ def main() raises:
     # CHECK-NOT: FAIL
     test_scatter_neg_indices()
 
-    fn test_scatter_reduce_max() raises:
+    def test_scatter_reduce_max() raises:
         print("== test_scatter_reduce_max")
 
         var data_ptr = alloc[Float32](5)
@@ -242,7 +242,7 @@ def main() raises:
 
         @always_inline
         @parameter
-        fn _max[
+        def _max[
             ty: DType, width: Int
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return max(v1, v2)

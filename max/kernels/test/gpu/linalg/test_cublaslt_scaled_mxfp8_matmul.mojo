@@ -38,7 +38,7 @@ from linalg.fp4_quantization import naive_block_scaled_matmul
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-fn test_scaled_mxfp8_cublaslt[
+def test_scaled_mxfp8_cublaslt[
     input_type: DType,
     output_type: DType,
     transpose_b: Bool,
@@ -295,7 +295,7 @@ fn test_scaled_mxfp8_cublaslt[
     _ = b_scales
 
 
-fn main() raises:
+def main() raises:
     with DeviceContext() as ctx:
         test_scaled_mxfp8_cublaslt[
             DType.float8_e4m3fn,

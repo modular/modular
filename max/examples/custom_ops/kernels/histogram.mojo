@@ -27,7 +27,7 @@ from std.utils import StaticTuple
 comptime bin_width = Int(UInt8.MAX)
 
 
-fn _histogram_cpu(output: ManagedTensorSlice, input: ManagedTensorSlice):
+def _histogram_cpu(output: ManagedTensorSlice, input: ManagedTensorSlice):
     for i in range(output.dim_size(0)):
         output[i] = 0
 
@@ -35,7 +35,7 @@ fn _histogram_cpu(output: ManagedTensorSlice, input: ManagedTensorSlice):
         output[Int(input[i])] += 1
 
 
-fn _histogram_gpu(
+def _histogram_gpu(
     output: ManagedTensorSlice,
     input: ManagedTensorSlice,
     ctx_ptr: DeviceContextPtr,
@@ -48,7 +48,7 @@ fn _histogram_gpu(
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_dim))
     )
-    fn kernel(
+    def kernel(
         output: UnsafePointer[Int64, MutAnyOrigin],
         input: UnsafePointer[UInt8, MutAnyOrigin],
         n: Int,
@@ -106,7 +106,7 @@ fn _histogram_gpu(
 @compiler.register("histogram")
 struct Histogram:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString
     ](
         output: OutputTensor[dtype=DType.int64, rank=1, ...],

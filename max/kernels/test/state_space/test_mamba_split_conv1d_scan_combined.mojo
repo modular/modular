@@ -28,7 +28,7 @@ comptime LOG2E = 1.4426950408889634
 
 
 @always_inline
-fn softplus_ref(val: Float32) -> Float32:
+def softplus_ref(val: Float32) -> Float32:
     """Reference softplus: log(1 + exp(x)) with numerical stability."""
     if val > 20.0:
         return val
@@ -36,14 +36,14 @@ fn softplus_ref(val: Float32) -> Float32:
 
 
 @always_inline
-fn silu_ref(val: Float32) -> Float32:
+def silu_ref(val: Float32) -> Float32:
     """Reference SiLU: x * sigmoid(x) = x / (1 + exp(-x))."""
     if val < -20.0:
         return 0.0
     return val / (Float32(1.0) + exp(-val))
 
 
-fn run_mamba_split_conv1d_scan_combined[
+def run_mamba_split_conv1d_scan_combined[
     dtype: DType,
     DSTATE: Int,
     has_D: Bool,
@@ -466,7 +466,7 @@ fn run_mamba_split_conv1d_scan_combined[
     output_heap.free()
 
 
-fn test_mamba_combined_basic() raises:
+def test_mamba_combined_basic() raises:
     """Test basic mamba_split_conv1d_scan_combined."""
     run_mamba_split_conv1d_scan_combined[
         DType.float32,
@@ -488,7 +488,7 @@ fn test_mamba_combined_basic() raises:
     )
 
 
-fn test_mamba_combined_without_D() raises:
+def test_mamba_combined_without_D() raises:
     """Test mamba_split_conv1d_scan_combined without D."""
     run_mamba_split_conv1d_scan_combined[
         DType.float32,
@@ -510,7 +510,7 @@ fn test_mamba_combined_without_D() raises:
     )
 
 
-fn test_mamba_combined_with_rmsnorm() raises:
+def test_mamba_combined_with_rmsnorm() raises:
     """Test mamba_split_conv1d_scan_combined with RMSNorm."""
     run_mamba_split_conv1d_scan_combined[
         DType.float32,
@@ -532,7 +532,7 @@ fn test_mamba_combined_with_rmsnorm() raises:
     )
 
 
-fn test_mamba_combined_norm_after_gate() raises:
+def test_mamba_combined_norm_after_gate() raises:
     """Test mamba_split_conv1d_scan_combined with norm_after_gate."""
     run_mamba_split_conv1d_scan_combined[
         DType.float32,
@@ -554,7 +554,7 @@ fn test_mamba_combined_norm_after_gate() raises:
     )
 
 
-fn test_mamba_combined_without_delta_softplus() raises:
+def test_mamba_combined_without_delta_softplus() raises:
     """Test mamba_split_conv1d_scan_combined without delta_softplus."""
     run_mamba_split_conv1d_scan_combined[
         DType.float32,
@@ -576,7 +576,7 @@ fn test_mamba_combined_without_delta_softplus() raises:
     )
 
 
-fn test_mamba_combined_larger_shapes() raises:
+def test_mamba_combined_larger_shapes() raises:
     """Test mamba_split_conv1d_scan_combined with larger shapes."""
     run_mamba_split_conv1d_scan_combined[
         DType.float32,

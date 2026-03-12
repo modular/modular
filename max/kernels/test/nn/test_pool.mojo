@@ -21,7 +21,7 @@ from std.testing import assert_almost_equal, assert_equal
 from std.utils.index import IndexList
 
 
-fn pool[
+def pool[
     count_boundary: Bool = False
 ](
     pool_method: PoolMethod,
@@ -78,7 +78,7 @@ fn pool[
 
 
 # CHECK-LABEL: test_max_pool_2d
-fn test_max_pool_2d() raises:
+def test_max_pool_2d() raises:
     print("== test_max_pool_2d")
 
     # output should have form
@@ -116,7 +116,7 @@ fn test_max_pool_2d() raises:
 
 
 # CHECK-LABEL: test_avg_pool_2d
-fn test_avg_pool_2d() raises:
+def test_avg_pool_2d() raises:
     print("== test_avg_pool_2d")
 
     # output should have form
@@ -153,7 +153,7 @@ fn test_avg_pool_2d() raises:
     assert_equal(output_tensor[1, 1, 1, 1], 120)
 
 
-fn test_avg_pool_2d_with_padding[
+def test_avg_pool_2d_with_padding[
     count_boundary: Bool = False
 ](output_tensor: TileTensor[mut=True, DType.float32, ...]) raises:
     var in_stack = InlineArray[Scalar[DType.float32], 1 * 7 * 7 * 1](
@@ -197,7 +197,7 @@ fn test_avg_pool_2d_with_padding[
 
 
 # CHECK-LABEL: test_avg_pool_2d_count_boundary: True
-fn test_avg_pool_2d_with_padding_true() raises:
+def test_avg_pool_2d_with_padding_true() raises:
     print("== test_avg_pool_2d_count_boundary: True")
     var out_stack = InlineArray[Scalar[DType.float32], 1 * 7 * 7 * 1](
         uninitialized=True
@@ -257,7 +257,7 @@ fn test_avg_pool_2d_with_padding_true() raises:
 
 
 # CHECK-LABEL: test_avg_pool_2d_count_boundary: False
-fn test_avg_pool_2d_with_padding_false() raises:
+def test_avg_pool_2d_with_padding_false() raises:
     print("== test_avg_pool_2d_count_boundary: False")
     var out_stack = InlineArray[Scalar[DType.float32], 1 * 7 * 7 * 1](
         uninitialized=True
@@ -317,7 +317,7 @@ fn test_avg_pool_2d_with_padding_false() raises:
     assert_almost_equal(output_tensor[0, 6, 6, 0], 44.0000, atol=1e-4)
 
 
-fn pool_ceil_test[
+def pool_ceil_test[
     count_boundary: Bool = False, ceil_mode: Bool = True
 ](
     pool_method: PoolMethod,
@@ -392,7 +392,7 @@ fn pool_ceil_test[
 
 
 # CHECK-LABEL: test_max_pool_2d_ceil
-fn test_maxpool_2d_ceil() raises:
+def test_maxpool_2d_ceil() raises:
     print("== test_max_pool_2d_ceil")
     var out_stack = InlineArray[Scalar[DType.float32], 1 * 2 * 2 * 1](
         uninitialized=True
@@ -406,7 +406,7 @@ fn test_maxpool_2d_ceil() raises:
 
 
 # CHECK-LABEL: test_average_pool_2d_ceil_exclude_bound
-fn test_average_pool_2d_ceil_exclude_bound() raises:
+def test_average_pool_2d_ceil_exclude_bound() raises:
     print("== test_average_pool_2d_ceil_exclude_bound")
     var out_stack = InlineArray[Scalar[DType.float32], 1 * 2 * 2 * 1](
         uninitialized=True
@@ -420,7 +420,7 @@ fn test_average_pool_2d_ceil_exclude_bound() raises:
 
 
 # CHECK-LABEL: test_average_pool_2d_ceil_include_bound
-fn test_average_pool_2d_ceil_include_bound() raises:
+def test_average_pool_2d_ceil_include_bound() raises:
     print("== test_average_pool_2d_ceil_include_bound")
     var out_stack = InlineArray[Scalar[DType.float32], 1 * 2 * 2 * 1](
         uninitialized=True
@@ -434,7 +434,7 @@ fn test_average_pool_2d_ceil_include_bound() raises:
 
 
 # CHECK-LABEL: test_max_pool_pad_dilation_2d
-fn test_max_pool_pad_dilation_2d() raises:
+def test_max_pool_pad_dilation_2d() raises:
     print("== test_max_pool_pad_dilation_2d")
 
     var in_stack = InlineArray[Scalar[DType.float32], 1 * 4 * 4 * 1](
