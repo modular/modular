@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/LITDialect/LITAttrs.h"
+#include "KGEN/Diagnostics/DiagnosticEmitter.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -87,7 +88,8 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   size_t numEl = pogs.size();
   for (PogMetadataAttr pogAttr : pogs)
     if (!pogAttr.getName())
-      return emitError() << "argument/parameter name cannot be null";
+      return emitError() << diagMsg(
+                 Diag::DiagID::err_argument_parameter_name_cannot_null);
 
   SmallVector<PassingKind> passingKinds = llvm::map_to_vector(
       pogs, [](PogMetadataAttr pogAttr) { return pogAttr.getPassingKind(); });
@@ -101,19 +103,19 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
     if (isPack) {
       sawPack = true;
       if (origPackConvention == ArgConvention::ByRefError)
-        return emitError() << "pack convention not specified";
+        return emitError() << diagMsg(
+                   Diag::DiagID::err_pack_convention_specified);
     }
 
     if (idx >= numEl) {
-      return emitError() << "variadic " << (isPack ? "pack " : "")
-                         << "index must be less than the number of elements: "
-                         << idx << " vs. " << numEl;
+      return emitError() << diagMsg(Diag::DiagID::err_variadic,
+                                    (isPack ? "pack " : ""), idx, numEl);
     }
     if (TypedAttr varDefault = pogs[idx].getDefaultValue()) {
       if (::isa<UnknownAttr>(varDefault))
         return success();
-      return emitError() << "default value of variadic "
-                         << (isPack ? "pack " : "") << "must be UnknownAttr";
+      return emitError() << diagMsg(Diag::DiagID::err_default_value_variadic_2,
+                                    (isPack ? "pack " : ""));
     }
     return success();
   };
@@ -121,8 +123,8 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   for (auto [idx, pogAttr] : llvm::enumerate(pogs)) {
     if (pogAttr.getPassingKind() == PassingKind::Inferred && idx != 0 &&
         pogs[idx - 1].getPassingKind() != PassingKind::Inferred) {
-      return emitError()
-             << "'inferred' parameter follows non-inferred parameter";
+      return emitError() << diagMsg(
+                 Diag::DiagID::err_inferred_parameter_follows_non_inferred);
     }
     if (pogAttr.isAnyVarArg() &&
         failed(verifyVariadicIdx(idx, pogAttr.getVariadic())))
@@ -130,7 +132,8 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   }
 
   if (origPackConvention != ArgConvention::ByRefError && !sawPack)
-    return emitError() << "pack convention specified without pack";
+    return emitError() << diagMsg(
+               Diag::DiagID::err_pack_convention_specified_without_pack);
 
   return success();
 }
@@ -223,8 +226,8 @@ LogicalResult
 PogListAttr::verifyGenerator(function_ref<InFlightDiagnostic()> emitError,
                              ArrayRef<Type> inputParamTypes, Type body) const {
   if (size() != inputParamTypes.size()) {
-    return emitError()
-           << "number of pog names doesn't match number of pog types";
+    return emitError() << diagMsg(
+               Diag::DiagID::err_number_pog_names_doesnt_match);
   }
 
   return success();
@@ -399,20 +402,21 @@ LogicalResult FnMetadataAttr::verifyFuncType(
   // Verify input conventions.
   size_t numInputs = values.getNumInputs();
   if (size_t numArgConv = argConventions.size(); numInputs != numArgConv) {
-    return emitError()
-           << "number of arguments does not match number of input conventions: "
-           << numInputs << " != " << numArgConv;
+    return emitError() << diagMsg(
+               Diag::DiagID::err_number_arguments_does_match_number_3,
+               numInputs, numArgConv);
   }
   if (size_t numArgs = getNumArgs(); numArgs != numInputs) {
-    return emitError()
-           << "number of arguments does not match number of argument names: "
-           << numInputs << " != " << numArgs;
+    return emitError() << diagMsg(
+               Diag::DiagID::err_number_arguments_does_match_number_4,
+               numInputs, numArgs);
   }
 
   for (auto [i, argType, conv] :
        llvm::enumerate(values.getInputs(), argConventions)) {
     if (conv == ArgConvention::ByRefResult && i != values.getNumInputs() - 1)
-      return emitError() << "'byref_result' argument must be the last argument";
+      return emitError() << diagMsg(
+                 Diag::DiagID::err_byref_result_argument_last_argument);
 
     Type type = argType;
 
@@ -420,19 +424,18 @@ LogicalResult FnMetadataAttr::verifyFuncType(
     if (isPosVarArg(i)) {
       auto variadic = ::dyn_cast<VariadicType>(type);
       if (!variadic) {
-        return emitError() << "argument #" << i
-                           << " in signature with varargs should be a "
-                              "`!kgen.variadic` but got: "
-                           << type;
+        return emitError() << diagMsg(
+                   Diag::DiagID::err_argument_signature_varargs_variadic, i,
+                   type);
       }
       type = variadic.getElementType();
     }
 
     // Verify argument conventions.
     if (hasAddress(conv) && !::isa<RefType>(type)) {
-      return emitError()
-             << "argument #" << i << " with convention '" << stringifyEnum(conv)
-             << "' in signature type should be a `!lit.ref` but got: " << type;
+      return emitError() << diagMsg(
+                 Diag::DiagID::err_argument_signature_lit_ref, i,
+                 stringifyEnum(conv), type);
     }
   }
 
@@ -1163,21 +1166,22 @@ LogicalResult RefPackAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                   RefPackType packType) {
   auto variadic = packType.getVariadicIfResolved();
   if (!variadic)
-    return emitError()
-           << "pack attribute expected a variadic constant, but got "
-           << packType.getVariadic();
+    return emitError() << diagMsg(
+               Diag::DiagID::err_pack_attribute_expected_variadic_constant_4,
+               packType.getVariadic());
 
   ArrayRef<TypedAttr> expected = variadic.getValues();
   if (values.size() != expected.size())
-    return emitError() << "pack attribute type requires " << expected.size()
-                       << " elements, but got " << values.size();
+    return emitError() << diagMsg(
+               Diag::DiagID::err_pack_attribute_type_requires_2,
+               expected.size(), values.size());
 
   // Check that the element constants have the right types.
   for (auto [i, value, type] : llvm::enumerate(values, expected)) {
     auto eltType = packType.getElementRefTypeFor(ParamType::get(type));
     if (value.getType() != eltType)
-      return emitError() << "pack attribute element #" << i << " has type "
-                         << value.getType() << " but expected " << type;
+      return emitError() << diagMsg(Diag::DiagID::err_pack_attribute_element, i,
+                                    value.getType(), type);
   }
   return success();
 }
