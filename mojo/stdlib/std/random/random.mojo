@@ -36,7 +36,7 @@ from std.time import perf_counter_ns
 from ._rng import _get_global_random_state
 
 
-fn seed():
+def seed():
     """Seeds the random number generator using a time-based value.
 
     Example:
@@ -50,7 +50,7 @@ fn seed():
     seed(Int(perf_counter_ns()))
 
 
-fn seed(a: Int):
+def seed(a: Int):
     """Seeds the random number generator using the value provided.
 
     Args:
@@ -67,7 +67,7 @@ fn seed(a: Int):
     _get_global_random_state()[].seed(UInt64(a))
 
 
-fn random_float64(min: Float64 = 0, max: Float64 = 1) -> Float64:
+def random_float64(min: Float64 = 0, max: Float64 = 1) -> Float64:
     """Returns a random `Float64` number from the given range [min, max).
 
     Args:
@@ -89,7 +89,7 @@ fn random_float64(min: Float64 = 0, max: Float64 = 1) -> Float64:
     return _get_global_random_state()[].random_float64(min, max)
 
 
-fn random_si64(min: Int64, max: Int64) -> Int64:
+def random_si64(min: Int64, max: Int64) -> Int64:
     """Returns a random `Int64` number from the given range [min, max].
 
     Args:
@@ -112,7 +112,7 @@ fn random_si64(min: Int64, max: Int64) -> Int64:
     return _get_global_random_state()[].random_int64(min, max)
 
 
-fn random_ui64(min: UInt64, max: UInt64) -> UInt64:
+def random_ui64(min: UInt64, max: UInt64) -> UInt64:
     """Returns a random `UInt64` number from the given range [min, max].
 
     Args:
@@ -135,7 +135,7 @@ fn random_ui64(min: UInt64, max: UInt64) -> UInt64:
     return _get_global_random_state()[].random_uint64(min, max)
 
 
-fn randint[
+def randint[
     dtype: DType
 ](
     ptr: UnsafePointer[mut=True, Scalar[dtype], _],
@@ -180,7 +180,7 @@ fn randint[
             ptr[ui] = random_ui64(UInt64(low), UInt64(high)).cast[dtype]()
 
 
-fn rand[
+def rand[
     dtype: DType
 ](
     ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
@@ -262,7 +262,7 @@ fn rand[
         return
 
 
-fn randn_float64(
+def randn_float64(
     mean: Float64 = 0.0, standard_deviation: Float64 = 1.0
 ) -> Float64:
     """Returns a random `Float64` sampled from a normal distribution.
@@ -286,7 +286,7 @@ fn randn_float64(
     return _get_global_random_state()[].normal_float64(mean, standard_deviation)
 
 
-fn randn[
+def randn[
     dtype: DType
 ](
     ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
@@ -329,7 +329,7 @@ fn randn[
     return
 
 
-fn shuffle[T: Copyable, //](mut list: List[T]):
+def shuffle[T: Copyable, //](mut list: List[T]):
     """Shuffles the elements of the list randomly.
 
     Performs an in-place Fisher-Yates shuffle on the provided list.

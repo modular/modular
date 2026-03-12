@@ -28,10 +28,10 @@ struct Point:
     var x: Int
     var y: Float64
 
-fn my_function():
+def my_function():
     pass
 
-fn main():
+def main():
     print(get_type_name[Point]())        # "Point"
     print(get_function_name[my_function]())  # "my_function"
 ```
@@ -41,7 +41,7 @@ from std.sys.info import _current_target, _TargetType
 from std.collections.string.string_slice import get_static_string
 
 
-fn get_linkage_name[
+def get_linkage_name[
     func_type: AnyType,
     //,
     func: func_type,
@@ -68,7 +68,9 @@ fn get_linkage_name[
     return StaticString(res)
 
 
-fn get_function_name[func_type: AnyType, //, func: func_type]() -> StaticString:
+def get_function_name[
+    func_type: AnyType, //, func: func_type
+]() -> StaticString:
     """Returns `func`'s name as declared in the source code.
 
     The returned name does not include any information about the function's
@@ -86,7 +88,7 @@ fn get_function_name[func_type: AnyType, //, func: func_type]() -> StaticString:
     return StaticString(res)
 
 
-fn get_type_name[
+def get_type_name[
     type_type: __TypeOfAllTypes,
     //,
     type: type_type,
@@ -117,7 +119,7 @@ fn get_type_name[
 # TODO: This currently does not strip the module name from the inner type name.
 # For example, Generic[Foo] should return "Generic[Foo]" but currently returns
 # "Generic[module_name.Foo]".
-fn _unqualified_type_name[type: AnyType]() -> StaticString:
+def _unqualified_type_name[type: AnyType]() -> StaticString:
     comptime name = get_type_name[type]()
     comptime parameter_list_start = name.find("[")
     if parameter_list_start == -1:
@@ -138,7 +140,7 @@ fn _unqualified_type_name[type: AnyType]() -> StaticString:
 # ===----------------------------------------------------------------------=== #
 
 
-fn get_base_type_name[T: AnyType]() -> StaticString:
+def get_base_type_name[T: AnyType]() -> StaticString:
     """Returns the name of the base type of a parameterized type.
 
     For parameterized types like `List[Int]`, this returns `"List"`.
@@ -157,7 +159,7 @@ fn get_base_type_name[T: AnyType]() -> StaticString:
         ```mojo
         from std.collections import List, Dict
 
-        fn main():
+        def main():
             print(get_base_type_name[List[Int]]())  # "List"
             print(get_base_type_name[Dict[String, Int]]())  # "Dict"
             print(get_base_type_name[Int]())  # "Int"

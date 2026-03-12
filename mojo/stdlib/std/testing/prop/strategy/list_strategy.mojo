@@ -18,7 +18,7 @@ from std.collections import List
 
 __extension List:
     @staticmethod
-    fn strategy[
+    def strategy[
         StrategyType: Strategy
     ](
         var strategy: StrategyType,
@@ -52,7 +52,7 @@ struct _ListStrategy[T: Strategy](Movable, Strategy):
     var _min_len: Int
     var _max_len: Int
 
-    fn __init__(
+    def __init__(
         out self,
         var strategy: Self.T,
         *,
@@ -72,7 +72,7 @@ struct _ListStrategy[T: Strategy](Movable, Strategy):
 
     # TODO: Provide more consistent "corner case" values.
     # Empty list, single element list, max size list, etc...
-    fn value(mut self, mut rng: Rng) raises -> Self.Value:
+    def value(mut self, mut rng: Rng) raises -> Self.Value:
         var result = List[Self.T.Value](capacity=self._min_len)
 
         while len(result) < self._min_len:

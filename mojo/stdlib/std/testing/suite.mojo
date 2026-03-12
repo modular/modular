@@ -38,17 +38,17 @@ struct _Indent[W: Writable, origin: ImmutOrigin](Writable):
     var writable: Pointer[Self.W, Self.origin]
     var level: Int
 
-    fn __init__(out self, ref[Self.origin] w: Self.W, *, level: Int):
+    def __init__(out self, ref[Self.origin] w: Self.W, *, level: Int):
         self.writable = Pointer(to=w)
         self.level = level
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         for _ in range(self.level):
             writer.write(Self.IndentStr)
         writer.write(self.writable[])
 
 
-fn _format_nsec(nanoseconds: UInt) -> String:
+def _format_nsec(nanoseconds: UInt) -> String:
     """Formats the given number of nanoseconds as milliseconds.
 
     The returned string is in the format of "NNN.NNN"
@@ -72,7 +72,7 @@ fn _format_nsec(nanoseconds: UInt) -> String:
 
 
 # TODO: (MOCO-2450) - Add defaulted `writeln` to `Writer` trait.
-fn _writeln[
+def _writeln[
     *Ts: Writable
 ](mut writer: Some[Writer], *args: *Ts, sep: StaticString = StaticString("")):
     comptime for i in range(args.__len__()):
@@ -96,7 +96,7 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
     comptime SKIP = Self(2)
     """The test was skipped."""
 
-    fn __eq__(self, rhs: Self) -> Bool:
+    def __eq__(self, rhs: Self) -> Bool:
         """Compare two test result codes for equality.
 
         Args:
@@ -107,7 +107,7 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
         """
         return self._value == rhs._value
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write the result code to the writer.
 
         Args:
@@ -121,7 +121,7 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
             writer.write(Text[Color.YELLOW]("SKIP"))
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this test result to a writer.
 
         Args:
@@ -154,7 +154,7 @@ struct TestReport(Copyable, Writable):
     """The error associated with a failing test."""
 
     @staticmethod
-    fn passed(*, var name: String, duration_ns: UInt) -> Self:
+    def passed(*, var name: String, duration_ns: UInt) -> Self:
         """Create a passing test report.
 
         Args:
@@ -171,7 +171,9 @@ struct TestReport(Copyable, Writable):
         }
 
     @staticmethod
-    fn failed(*, var name: String, duration_ns: UInt, var error: Error) -> Self:
+    def failed(
+        *, var name: String, duration_ns: UInt, var error: Error
+    ) -> Self:
         """Create a failing test report.
 
         Args:
@@ -190,7 +192,7 @@ struct TestReport(Copyable, Writable):
         }
 
     @staticmethod
-    fn skipped(*, var name: String) -> Self:
+    def skipped(*, var name: String) -> Self:
         """Create a skipped test report.
 
         Args:
@@ -202,7 +204,7 @@ struct TestReport(Copyable, Writable):
         return {name = name^, duration_ns = 0, result = TestResult.SKIP}
 
     @doc_private
-    fn __init__(
+    def __init__(
         out self,
         *,
         var name: String,
@@ -217,11 +219,11 @@ struct TestReport(Copyable, Writable):
 
     @doc_private
     @staticmethod
-    fn _format_error(e: Error) -> String:
+    def _format_error(e: Error) -> String:
         var replacement = String("\n", _Indent("", level=Self._ErrorIndent))
         return String(e).replace("\n", replacement)
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write the formatted test report to the writer.
 
         Args:
@@ -242,7 +244,7 @@ struct TestReport(Copyable, Writable):
             )
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this test report to a writer.
 
         Args:
@@ -276,7 +278,7 @@ struct TestSuiteReport(Copyable, Writable):
     var location: SourceLocation
     """The source location of the test suite."""
 
-    fn __init__(
+    def __init__(
         out self, *, var reports: List[TestReport], location: SourceLocation
     ):
         """Initialize a test suite report.
@@ -300,7 +302,7 @@ struct TestSuiteReport(Copyable, Writable):
                 self.skipped += 1
         self.passed = len(self.reports) - self.failures - self.skipped
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write the formatted test suite report to the writer.
 
         Args:
@@ -349,7 +351,7 @@ struct TestSuiteReport(Copyable, Writable):
             )
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this test suite report to a writer.
 
         Args:
@@ -426,7 +428,7 @@ struct TestSuite(Movable):
     """The raw command line arguments passed to the test suite."""
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         *,
         location: Optional[SourceLocation] = None,
@@ -446,7 +448,7 @@ struct TestSuite(Movable):
         self.allow_list = None  # None means no allow list specified.
         self.cli_args = cli_args^.or_else(List[StaticString](argv()))
 
-    fn _register_tests[test_funcs: Tuple, /](mut self) raises:
+    def _register_tests[test_funcs: Tuple, /](mut self) raises:
         """Internal function to prevent all registrations from being inlined."""
 
         comptime for idx in range(len(test_funcs)):
@@ -464,7 +466,7 @@ struct TestSuite(Movable):
 
     @always_inline
     @staticmethod
-    fn discover_tests[
+    def discover_tests[
         test_funcs: Tuple, /
     ](
         *,
@@ -501,7 +503,7 @@ struct TestSuite(Movable):
             raise e^
         return suite^
 
-    fn test[f: _Test.fn_type](mut self):
+    def test[f: _Test.fn_type](mut self):
         """Registers a test to be run.
 
         Parameters:
@@ -509,7 +511,7 @@ struct TestSuite(Movable):
         """
         self.tests.append(_Test(f, get_function_name[f]()))
 
-    fn skip[f: _Test.fn_type](mut self):
+    def skip[f: _Test.fn_type](mut self):
         """Registers a test to be skipped.
 
         If attempting to skip a test that is not registered in the suite (either
@@ -522,7 +524,7 @@ struct TestSuite(Movable):
         comptime skipped_name = get_function_name[f]()
         self.skip_list.add(skipped_name)
 
-    fn _parse_filter_lists(mut self) raises:
+    def _parse_filter_lists(mut self) raises:
         # TODO: We need a proper argument parsing library to do this right.
         ref args = self.cli_args
         var num_args = len(args)
@@ -565,7 +567,7 @@ struct TestSuite(Movable):
             else:
                 self.skip_list.add(arg)
 
-    fn _should_skip(self, test: _Test) -> Bool:
+    def _should_skip(self, test: _Test) -> Bool:
         if test.name in self.skip_list:
             return True
         if not self.allow_list:
@@ -573,7 +575,7 @@ struct TestSuite(Movable):
         # SAFETY: We know that `self.allow_list` is not `None` here.
         return test.name not in self.allow_list.unsafe_value()
 
-    fn _validate_skip_list(self) raises:
+    def _validate_skip_list(self) raises:
         # TODO: _Test doesn't conform to Equatable, so we can't use
         # `in` here. Also, we might wanna do this in O(1) time.
         for test_name in self.skip_list:
@@ -591,7 +593,7 @@ struct TestSuite(Movable):
                     test_name,
                 )
 
-    fn generate_report(
+    def generate_report(
         mut self, skip_all: Bool = False
     ) raises -> TestSuiteReport:
         """Runs the test suite and generates a report.
@@ -642,7 +644,7 @@ struct TestSuite(Movable):
 
         return TestSuiteReport(reports=reports^, location=self.location)
 
-    fn run(deinit self, *, quiet: Bool = False, skip_all: Bool = False) raises:
+    def run(deinit self, *, quiet: Bool = False, skip_all: Bool = False) raises:
         """Runs the test suite and prints the results to the console.
 
         Args:
@@ -662,6 +664,6 @@ struct TestSuite(Movable):
         if not quiet:
             print(report)
 
-    fn abandon(deinit self):
+    def abandon(deinit self):
         """Destroy a test suite without running any tests."""
         pass

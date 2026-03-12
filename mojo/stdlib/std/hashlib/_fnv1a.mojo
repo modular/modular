@@ -30,11 +30,11 @@ struct Fnv1a(Defaultable, Hasher):
 
     var _value: UInt64
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize the hasher."""
         self._value = 0xCBF29CE484222325
 
-    fn _update_with_bytes(mut self, data: Span[Byte, _]):
+    def _update_with_bytes(mut self, data: Span[Byte, _]):
         """Consume provided data to update the internal buffer.
 
         Args:
@@ -44,7 +44,7 @@ struct Fnv1a(Defaultable, Hasher):
             self._value ^= data[i].cast[DType.uint64]()
             self._value *= 0x100000001B3
 
-    fn _update_with_simd(mut self, value: SIMD[_, _]):
+    def _update_with_simd(mut self, value: SIMD[_, _]):
         """Update the buffer value with new data.
 
         Args:
@@ -65,7 +65,7 @@ struct Fnv1a(Defaultable, Hasher):
                 self._value ^= (v >> type_of(v)(r * 64)).cast[DType.uint64]()
                 self._value *= 0x100000001B3
 
-    fn update[T: Hashable](mut self, value: T):
+    def update[T: Hashable](mut self, value: T):
         """Update the buffer value with new hashable value.
 
         Parameters:
@@ -76,7 +76,7 @@ struct Fnv1a(Defaultable, Hasher):
         """
         value.__hash__(self)
 
-    fn finish(var self) -> UInt64:
+    def finish(var self) -> UInt64:
         """Computes the hash value based on all the previously provided data.
 
         Returns:

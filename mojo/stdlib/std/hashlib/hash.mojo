@@ -70,7 +70,7 @@ trait Hashable:
     fields implement both traits correctly.
     """
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
+    def __hash__[H: Hasher](self, mut hasher: H):
         """Accepts a hasher and contributes to the hash value
         by calling the update function of the hasher.
 
@@ -94,7 +94,7 @@ trait Hashable:
             hasher.update(trait_downcast[Hashable](__struct_field_ref(i, self)))
 
 
-fn hash[
+def hash[
     T: Hashable, HasherType: Hasher = default_hasher
 ](hashable: T) -> UInt64:
     """Hash a Hashable type using its underlying hash implementation.
@@ -115,7 +115,7 @@ fn hash[
     return value
 
 
-fn hash[
+def hash[
     HasherType: Hasher = default_hasher
 ](bytes: UnsafePointer[mut=False, UInt8, _], n: Int) -> UInt64:
     """Hash a sequence of bytes using the specified hasher.

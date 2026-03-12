@@ -31,7 +31,7 @@ from std.utils._select import _select_register_value as select
 
 
 @always_inline("nodebug")
-fn count_leading_zeros(val: Int) -> Int:
+def count_leading_zeros(val: Int) -> Int:
     """Counts the number of leading zeros of an integer.
 
     Args:
@@ -44,7 +44,7 @@ fn count_leading_zeros(val: Int) -> Int:
 
 
 @always_inline("nodebug")
-fn count_leading_zeros[
+def count_leading_zeros[
     dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Counts the per-element number of leading zeros in a SIMD vector.
@@ -75,7 +75,7 @@ fn count_leading_zeros[
 
 
 @always_inline("nodebug")
-fn count_trailing_zeros(val: Int) -> Int:
+def count_trailing_zeros(val: Int) -> Int:
     """Counts the number of trailing zeros for an integer.
 
     Args:
@@ -88,7 +88,7 @@ fn count_trailing_zeros(val: Int) -> Int:
 
 
 @always_inline("nodebug")
-fn count_trailing_zeros[
+def count_trailing_zeros[
     dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Counts the per-element number of trailing zeros in a SIMD vector.
@@ -119,7 +119,7 @@ fn count_trailing_zeros[
 
 
 @always_inline("nodebug")
-fn bit_reverse(val: Int) -> Int:
+def bit_reverse(val: Int) -> Int:
     """Reverses the bitpattern of an integer value.
 
     Args:
@@ -132,7 +132,7 @@ fn bit_reverse(val: Int) -> Int:
 
 
 @always_inline("nodebug")
-fn bit_reverse[
+def bit_reverse[
     dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Element-wise reverses the bitpattern of a SIMD vector of integer values.
@@ -163,7 +163,7 @@ fn bit_reverse[
 
 
 @always_inline("nodebug")
-fn byte_swap(val: Int) -> Int:
+def byte_swap(val: Int) -> Int:
     """Byte-swaps an integer value with an even number of bytes.
 
     Byte swap an integer value (8 bytes) with an even number of bytes (positive multiple
@@ -181,7 +181,7 @@ fn byte_swap(val: Int) -> Int:
 
 
 @always_inline("nodebug")
-fn byte_swap[
+def byte_swap[
     dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Byte-swaps a SIMD vector of integer values with an even number of bytes.
@@ -223,7 +223,7 @@ fn byte_swap[
 
 
 @always_inline("nodebug")
-fn pop_count(val: Int) -> Int:
+def pop_count(val: Int) -> Int:
     """Counts the number of bits set in an integer value.
 
     Args:
@@ -236,7 +236,7 @@ fn pop_count(val: Int) -> Int:
 
 
 @always_inline("nodebug")
-fn pop_count[
+def pop_count[
     dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Counts the number of bits set in a SIMD vector of integer values.
@@ -267,7 +267,7 @@ fn pop_count[
 
 
 @always_inline("nodebug")
-fn bit_not[
+def bit_not[
     dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Performs a bitwise NOT operation on an SIMD vector of integer values.
@@ -296,7 +296,7 @@ fn bit_not[
 
 
 @always_inline("nodebug")
-fn bit_width(val: Int) -> Int:
+def bit_width(val: Int) -> Int:
     """Computes the minimum number of bits required to represent the integer.
 
     Args:
@@ -310,7 +310,7 @@ fn bit_width(val: Int) -> Int:
 
 
 @always_inline("nodebug")
-fn bit_width[
+def bit_width[
     dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the minimum number of bits required to represent each element of a SIMD vector of integer values.
@@ -345,7 +345,7 @@ fn bit_width[
 
 
 @always_inline
-fn log2_floor(val: Int) -> Int:
+def log2_floor(val: Int) -> Int:
     """Returns the floor of the base-2 logarithm of an integer value.
 
     Args:
@@ -359,7 +359,7 @@ fn log2_floor(val: Int) -> Int:
 
 
 @always_inline
-fn log2_floor[
+def log2_floor[
     dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Returns the floor of the base-2 logarithm of an integer value.
@@ -392,7 +392,7 @@ fn log2_floor[
 
 
 @always_inline
-fn log2_ceil(val: Int) -> Int:
+def log2_ceil(val: Int) -> Int:
     """Returns the ceiling of the base-2 logarithm of an integer value.
 
     Args:
@@ -407,7 +407,7 @@ fn log2_ceil(val: Int) -> Int:
 
 
 @always_inline
-fn log2_ceil(val: Scalar) -> type_of(val):
+def log2_ceil(val: Scalar) -> type_of(val):
     """Returns the ceiling of the base-2 logarithm of an integer value.
 
     Args:
@@ -429,7 +429,7 @@ fn log2_ceil(val: Scalar) -> type_of(val):
 
 
 @always_inline
-fn next_power_of_two(val: Int) -> Int:
+def next_power_of_two(val: Int) -> Int:
     """Computes the smallest power of 2 that is greater than or equal to the
     input value. Any integral value less than or equal to 1 will be ceiled to 1.
 
@@ -449,7 +449,7 @@ fn next_power_of_two(val: Int) -> Int:
 
 
 @always_inline
-fn next_power_of_two[
+def next_power_of_two[
     dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the smallest power of 2 that is greater than or equal to the
@@ -484,7 +484,7 @@ fn next_power_of_two[
 
 
 @always_inline
-fn prev_power_of_two(val: Int) -> Int:
+def prev_power_of_two(val: Int) -> Int:
     """Computes the largest power of 2 that is less than or equal to the input
     value. Any integral value less than or equal to 0 will be floored to 0.
 
@@ -500,7 +500,7 @@ fn prev_power_of_two(val: Int) -> Int:
 
 
 @always_inline
-fn prev_power_of_two[
+def prev_power_of_two[
     dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the largest power of 2 that is less than or equal to the input
@@ -534,7 +534,7 @@ fn prev_power_of_two[
 
 
 @always_inline
-fn rotate_bits_left[shift: Int](x: Int) -> Int:
+def rotate_bits_left[shift: Int](x: Int) -> Int:
     """Shifts the bits of an input to the left by `shift` bits (with
     wrap-around).
 
@@ -566,7 +566,7 @@ fn rotate_bits_left[shift: Int](x: Int) -> Int:
 
 
 @always_inline("nodebug")
-fn rotate_bits_left[
+def rotate_bits_left[
     dtype: DType,
     width: Int,
     //,
@@ -605,7 +605,7 @@ fn rotate_bits_left[
 
 
 @always_inline
-fn rotate_bits_right[shift: Int](x: Int) -> Int:
+def rotate_bits_right[shift: Int](x: Int) -> Int:
     """Shifts the bits of an input to the right by `shift` bits (with
     wrap-around).
 
@@ -637,7 +637,7 @@ fn rotate_bits_right[shift: Int](x: Int) -> Int:
 
 
 @always_inline("nodebug")
-fn rotate_bits_right[
+def rotate_bits_right[
     dtype: DType,
     width: Int,
     //,

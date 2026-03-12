@@ -21,7 +21,7 @@ These are Mojo built-ins, so you don't need to import them.
 # ===-------------------------------------------------------------------===#
 
 
-fn doc_private():
+def doc_private():
     """Indicate that the decorated declaration is private from the viewpoint
     of documentation generation.
 
@@ -34,12 +34,12 @@ fn doc_private():
     ```mojo
     struct Foo:
         @doc_private
-        fn __init__(out self):
+        def __init__(out self):
             "This should not be called directly, use `Foo.create` instead."
             return
 
         @staticmethod
-        fn create() -> Self:
+        def create() -> Self:
             return Self()
     ```
     """

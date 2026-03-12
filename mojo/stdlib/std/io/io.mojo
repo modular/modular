@@ -48,7 +48,7 @@ from .file_descriptor import FileDescriptor
 struct _fdopen[mode: StaticString = "a"](TrivialRegisterPassable):
     var handle: FILE_ptr
 
-    fn __init__(out self, stream_id: FileDescriptor):
+    def __init__(out self, stream_id: FileDescriptor):
         """Creates a file handle to the stdout/stderr stream.
 
         Args:
@@ -61,15 +61,15 @@ struct _fdopen[mode: StaticString = "a"](TrivialRegisterPassable):
             get_static_string[Self.mode]().unsafe_ptr().bitcast[c_char](),
         )
 
-    fn __enter__(self) -> Self:
+    def __enter__(self) -> Self:
         """Open the file handle for use within a context manager"""
         return self
 
-    fn __exit__(self):
+    def __exit__(self):
         """Closes the file handle."""
         _ = fclose(self.handle)
 
-    fn readline(self) raises -> String:
+    def readline(self) raises -> String:
         """Reads an entire line from stdin or until EOF. Lines are delimited by a newline character.
 
         Returns:
@@ -96,7 +96,7 @@ struct _fdopen[mode: StaticString = "a"](TrivialRegisterPassable):
         """
         return self.read_until_delimiter("\n")
 
-    fn read_until_delimiter(self, delimiter: StringSlice) raises -> String:
+    def read_until_delimiter(self, delimiter: StringSlice) raises -> String:
         """Reads an entire line from a stream, up to the `delimiter`.
         Does not include the delimiter in the result.
 
@@ -160,7 +160,7 @@ struct _fdopen[mode: StaticString = "a"](TrivialRegisterPassable):
 
 
 @no_inline
-fn _flush(file: FileDescriptor = stdout):
+def _flush(file: FileDescriptor = stdout):
     with _fdopen(file) as fd:
         _ = fflush(fd.handle)
 
@@ -170,7 +170,7 @@ fn _flush(file: FileDescriptor = stdout):
 # ===----------------------------------------------------------------------=== #
 
 
-fn _printf_cpu[
+def _printf_cpu[
     fmt: StaticString, *types: AnyType
 ](args: VariadicPack[_, AnyType, *types], file: FileDescriptor = stdout):
     # The argument pack will contain references for each value in the pack,
@@ -197,7 +197,7 @@ fn _printf_cpu[
 
 
 @no_inline
-fn _printf[
+def _printf[
     fmt: StaticString, *types: AnyType
 ](*args: *types, file: FileDescriptor = stdout):
     if __is_run_in_comptime_interpreter:
@@ -218,7 +218,7 @@ fn _printf[
             # This is adapted from Triton's third party method for lowering
             # AMD printf calls:
             # https://github.com/triton-lang/triton/blob/1c28e08971a0d70c4331432994338ee05d31e633/third_party/amd/lib/TritonAMDGPUToLLVM/TargetInfo.cpp#L321
-            fn _to_uint64[T: AnyType, //](value: T) -> UInt64:
+            def _to_uint64[T: AnyType, //](value: T) -> UInt64:
                 comptime if _type_is_eq[T, UInt64]():
                     return rebind[UInt64](value)
                 elif _type_is_eq[T, UInt32]():
@@ -296,7 +296,7 @@ fn _printf[
 
 
 @no_inline
-fn _snprintf[
+def _snprintf[
     fmt: StaticString, *types: AnyType
 ](str: UnsafePointer[mut=True, UInt8, _], size: Int, *args: *types) -> Int:
     """Writes a format string into an output pointer.
@@ -347,7 +347,7 @@ fn _snprintf[
 
 
 @no_inline
-fn print[
+def print[
     *Ts: Writable
 ](
     *values: *Ts,
@@ -446,7 +446,7 @@ fn print[
 # ===----------------------------------------------------------------------=== #
 
 
-fn input(prompt: String = "") raises -> String:
+def input(prompt: String = "") raises -> String:
     """Reads a line of input from the user.
 
     Reads a line from standard input, converts it to a string, and returns that string.

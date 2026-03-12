@@ -23,7 +23,7 @@ from std.sys.info import bit_width_of
 
 
 @always_inline
-fn is_negative(value: Int) -> Int:
+def is_negative(value: Int) -> Int:
     """Get a bitmask of whether the value is negative.
 
     Args:
@@ -37,7 +37,7 @@ fn is_negative(value: Int) -> Int:
 
 
 @always_inline
-fn is_negative[dtype: DType, //](value: SIMD[dtype, _]) -> type_of(value):
+def is_negative[dtype: DType, //](value: SIMD[dtype, _]) -> type_of(value):
     """Get a bitmask of whether the value is negative.
 
     Parameters:
@@ -57,7 +57,7 @@ fn is_negative[dtype: DType, //](value: SIMD[dtype, _]) -> type_of(value):
 
 
 @always_inline
-fn splat[
+def splat[
     size: Int, //, dtype: DType
 ](value: SIMD[DType.bool, size]) -> SIMD[dtype, size]:
     """Elementwise splat the boolean value of each element in the SIMD vector
@@ -79,7 +79,7 @@ fn splat[
 
 
 @always_inline
-fn splat(value: Bool) -> Int:
+def splat(value: Bool) -> Int:
     """Get a bitmask of whether the value is `True`.
 
     Args:

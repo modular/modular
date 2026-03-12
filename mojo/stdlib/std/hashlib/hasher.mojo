@@ -40,17 +40,17 @@ trait Hasher:
     data, and finalize the hash computation.
     """
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize a new hasher instance."""
         ...
 
-    fn _update_with_bytes(mut self, data: Span[Byte, _]):
+    def _update_with_bytes(mut self, data: Span[Byte, _]):
         ...
 
-    fn _update_with_simd(mut self, value: SIMD[_, _]):
+    def _update_with_simd(mut self, value: SIMD[_, _]):
         ...
 
-    fn update[T: Hashable](mut self, value: T):
+    def update[T: Hashable](mut self, value: T):
         """Update the hash with a value.
 
         Parameters:
@@ -61,7 +61,7 @@ trait Hasher:
         """
         ...
 
-    fn finish(var self) -> UInt64:
+    def finish(var self) -> UInt64:
         """Finalize the hash computation and return the hash value.
 
         Returns:

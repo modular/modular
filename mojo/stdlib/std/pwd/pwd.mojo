@@ -50,7 +50,7 @@ struct Passwd(Copyable, Writable):
     var pw_shell: String
     """Shell program."""
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Formats this string to the provided Writer.
 
         Args:
@@ -66,7 +66,7 @@ struct Passwd(Copyable, Writable):
         writer.write("')")
 
 
-fn getpwuid(uid: Int) raises -> Passwd:
+def getpwuid(uid: Int) raises -> Passwd:
     """Retrieve the password database entry for a given user ID.
 
     Args:
@@ -92,7 +92,7 @@ fn getpwuid(uid: Int) raises -> Passwd:
         return _getpw_linux(UInt32(uid))
 
 
-fn getpwnam(var name: String) raises -> Passwd:
+def getpwnam(var name: String) raises -> Passwd:
     """
     Retrieves the user ID in the password database for the given user name.
 

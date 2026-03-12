@@ -31,7 +31,7 @@ struct _POpenHandle:
 
     var _handle: FILE_ptr
 
-    fn __init__(out self, var cmd: String, var mode: String = "r") raises:
+    def __init__(out self, var cmd: String, var mode: String = "r") raises:
         """Construct the _POpenHandle using the command and mode provided.
 
         Args:
@@ -49,11 +49,11 @@ struct _POpenHandle:
         if not self._handle:
             raise Error("unable to execute the command `", cmd, "`")
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Closes the handle opened via popen."""
         _ = pclose(self._handle)
 
-    fn read(self) raises -> String:
+    def read(self) raises -> String:
         """Reads all the data from the handle.
 
         Returns:
@@ -86,7 +86,7 @@ struct _POpenHandle:
         return String(res.rstrip())
 
 
-fn run(cmd: String) raises -> String:
+def run(cmd: String) raises -> String:
     """Runs the specified command and returns the output as a string.
 
     This function executes the given command in a subprocess, captures its

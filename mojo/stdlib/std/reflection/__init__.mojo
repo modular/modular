@@ -31,12 +31,12 @@ struct Point:
     var x: Int
     var y: Float64
 
-fn print_fields[T: AnyType]():
+def print_fields[T: AnyType]():
     comptime names = struct_field_names[T]()
     comptime for i in range(struct_field_count[T]()):
         print(names[i])
 
-fn main():
+def main():
     print_fields[Point]()  # Prints: x, y
 ```
 """
