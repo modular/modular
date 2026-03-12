@@ -32,7 +32,7 @@ from nn.concat import _concat_gpu_elementwise
 from std.utils import IndexList, StaticTuple
 
 
-fn bench_concat[
+def bench_concat[
     num_inputs: Int, rank: Int
 ](
     mut b: Bench,
@@ -127,10 +127,10 @@ fn bench_concat[
 
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher, shape: IndexList[rank]) raises:
+    def bench_func(mut b: Bencher, shape: IndexList[rank]) raises:
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             _concat_gpu_elementwise[epilogue_fn=None](
                 output_device.as_any_origin(), axis, inputs, ctx
             )
@@ -158,7 +158,7 @@ fn bench_concat[
         var input_shape = shapes[i]
 
         @parameter
-        fn check[
+        def check[
             width: Int, _rank: Int, alignment: Int = 1
         ](coords: IndexList[_rank]):
             var out_coords = coords

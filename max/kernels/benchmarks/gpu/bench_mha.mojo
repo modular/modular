@@ -34,7 +34,7 @@ from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf
 
 
-fn run_mha[
+def run_mha[
     qkv_type: DType,
     mask_type: DType,
     depth: Int,
@@ -92,10 +92,10 @@ fn run_mha[
         @parameter
         @always_inline
         @__copy_capture(cb_q, cb_k, cb_v, cb_o)
-        fn bench_func(mut b: Bencher):
+        def bench_func(mut b: Bencher):
             @parameter
             @always_inline
-            fn _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
                 # Construct device buffers with offsets.
                 comptime q_layout = Layout.row_major(
                     UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
@@ -147,7 +147,7 @@ fn run_mha[
 
             b.iter_custom[_kernel_launch](ctx)
 
-        fn compute_flops() -> Int:
+        def compute_flops() -> Int:
             # Using causal mask, skip half of tiles.
             return 2 * batch_size * num_heads * seq_len * num_keys * depth
 

@@ -29,15 +29,15 @@ from std.os import getenv
 # mpirun -n 8 ./sample -o output.csv
 
 
-fn bench_func[
+def bench_func[
     dtype: DType, M: Int, N: Int, K: Int, stages: Int
 ](mut m: Bench, mode: Mode, pe_rank: Int) raises:
     @parameter
     @always_inline
-    fn bench_iter(mut b: Bencher):
+    def bench_iter(mut b: Bencher):
         @parameter
         @always_inline
-        fn call_fn():
+        def call_fn():
             sleep(0.01)
 
         b.iter[call_fn]()

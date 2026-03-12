@@ -20,7 +20,7 @@ from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.gpu.host import DeviceContext
 
 
-fn copy1(
+def copy1(
     a: UnsafePointer[Float32, ImmutAnyOrigin],
     b: UnsafePointer[Float32, MutAnyOrigin],
     n: Int,
@@ -39,7 +39,7 @@ fn copy1(
         b[i] = a[i] + tmp
 
 
-fn copy2(
+def copy2(
     b: UnsafePointer[Float32, ImmutAnyOrigin],
     c: UnsafePointer[Float32, MutAnyOrigin],
     d: UnsafePointer[Float32, ImmutAnyOrigin],
@@ -59,7 +59,7 @@ fn copy2(
         c[i] = b[i] + result + 2.0
 
 
-fn copy1_n(
+def copy1_n(
     a: UnsafePointer[Float32, ImmutAnyOrigin],
     b: UnsafePointer[Float32, MutAnyOrigin],
     n: Int,
@@ -76,7 +76,7 @@ fn copy1_n(
         b[i] = a[i] + tmp
 
 
-fn copy2_n(
+def copy2_n(
     b: UnsafePointer[Float32, ImmutAnyOrigin],
     c: UnsafePointer[Float32, MutAnyOrigin],
     d: UnsafePointer[Float32, ImmutAnyOrigin],
@@ -95,7 +95,7 @@ fn copy2_n(
 
 
 @no_inline
-fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
+def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     comptime dtype = DType.float32
     var a_host = alloc[Scalar[dtype]](length)
     var b_host = alloc[Scalar[dtype]](length)
@@ -125,7 +125,7 @@ fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
 
     @always_inline
     @parameter
-    fn run_func() raises:
+    def run_func() raises:
         for _ in range(10):
             context.enqueue_function_experimental[copy1](
                 a_device,
@@ -147,10 +147,10 @@ fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
 
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             run_func()
 
         b.iter_custom[kernel_launch](context)
@@ -170,7 +170,7 @@ fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
 
 
 @no_inline
-fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
+def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     comptime dtype = DType.float32
     var a_host = alloc[Scalar[dtype]](length)
     var b_host = alloc[Scalar[dtype]](length)
@@ -200,7 +200,7 @@ fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
 
     @always_inline
     @parameter
-    fn run_func() raises:
+    def run_func() raises:
         for _ in range(10):
             context.enqueue_function_experimental[copy1_n](
                 a_device,
@@ -220,10 +220,10 @@ fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
 
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             run_func()
 
         b.iter_custom[kernel_launch](context)

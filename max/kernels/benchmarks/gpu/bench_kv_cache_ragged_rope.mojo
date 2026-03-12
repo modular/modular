@@ -44,7 +44,7 @@ from nn.fused_qk_rope import fused_qk_rope_ragged
 from std.utils.index import IndexList
 
 
-fn _get_run_name[
+def _get_run_name[
     dtype: DType,
     num_q_heads: Int,
     num_kv_heads: Int,
@@ -208,10 +208,10 @@ def execute_kv_cache_ragged_rope[
         output_device_tensor,
     )
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             fused_qk_rope_ragged[
                 CollectionType.CacheType,
                 interleaved=False,

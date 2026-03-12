@@ -45,14 +45,14 @@ from std.testing import assert_almost_equal, assert_true
 
 @always_inline
 @parameter
-fn _per_gpu_value[
+def _per_gpu_value[
     dtype: DType,
 ](gpu_rank: Int, j: Int) -> Scalar[dtype]:
     # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
     return Scalar[dtype](Scalar[dtype](gpu_rank + 1) + Scalar[dtype](j % 251))
 
 
-fn _get_test_str[
+def _get_test_str[
     dtype: DType,
     use_multimem: Bool,
     cache_busting: Bool,
@@ -73,7 +73,7 @@ fn _get_test_str[
     )
 
 
-fn bench_reducescatter_2d[
+def bench_reducescatter_2d[
     dtype: DType,
     axis: Int,
     ngpus: Int,
@@ -218,10 +218,10 @@ fn bench_reducescatter_2d[
 
     @parameter
     @always_inline
-    fn bench_iter_2d(mut b: Bencher, ctx: DeviceContext, ctx_idx: Int) raises:
+    def bench_iter_2d(mut b: Bencher, ctx: DeviceContext, ctx_idx: Int) raises:
         @parameter
         @always_inline
-        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             comptime for i in range(num_buffers):
                 in_bufs[i] = InputTileType(
                     cb_inputs[i].offset_ptr(cache_iter),
@@ -331,7 +331,7 @@ fn bench_reducescatter_2d[
         host_buffers[i].free()
 
 
-fn bench_reducescatter[
+def bench_reducescatter[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -453,10 +453,10 @@ fn bench_reducescatter[
 
     @parameter
     @always_inline
-    fn bench_iter(mut b: Bencher, ctx: DeviceContext, ctx_idx: Int) raises:
+    def bench_iter(mut b: Bencher, ctx: DeviceContext, ctx_idx: Int) raises:
         @parameter
         @always_inline
-        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             comptime for i in range(num_buffers):
                 in_bufs[i] = InputTileType(
                     cb_inputs[i].offset_ptr(cache_iter),

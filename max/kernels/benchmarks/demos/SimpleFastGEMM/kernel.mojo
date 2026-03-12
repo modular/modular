@@ -25,7 +25,7 @@ comptime nr = 64
 comptime simd_size = 16
 
 
-fn kernel6x4(
+def kernel6x4(
     a_ptr: UnsafePointer[Float32, _],
     b_ptr: UnsafePointer[Float32, _],
     c_ptr: UnsafePointer[mut=True, Float32, _],
@@ -142,7 +142,7 @@ fn kernel6x4(
     c.store[width=simd_size](n * 5 + simd_size * 3, cv23)
 
 
-fn kernel6x4_naive(
+def kernel6x4_naive(
     a_ptr: UnsafePointer[Float32, _],
     b_ptr: UnsafePointer[Float32, _],
     c_ptr: UnsafePointer[mut=True, Float32, _],

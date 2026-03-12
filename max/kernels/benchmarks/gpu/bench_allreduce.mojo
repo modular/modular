@@ -56,7 +56,7 @@ from std.utils.index import IndexList, StaticTuple
 
 @always_inline
 @parameter
-fn _per_gpu_value[
+def _per_gpu_value[
     dtype: DType,
 ](gpu_rank: Int, j: Int) -> Scalar[dtype]:
     # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
@@ -64,7 +64,7 @@ fn _per_gpu_value[
 
 
 # TODO: convert 'ngpus' to runtime variable
-fn bench_reduce[
+def bench_reduce[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -224,10 +224,10 @@ fn bench_reduce[
 
     @parameter
     @always_inline
-    fn bench_iter(mut b: Bencher, ctx: DeviceContext, ctx_idx: Int) raises:
+    def bench_iter(mut b: Bencher, ctx: DeviceContext, ctx_idx: Int) raises:
         @parameter
         @always_inline
-        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             comptime if not use_multimem:
                 comptime for i in range(ngpus):
                     in_bufs[i] = NDBuffer[rank=rank, dtype](
@@ -327,7 +327,7 @@ fn bench_reduce[
     _ = signal_buffers^
 
 
-fn _get_test_str[
+def _get_test_str[
     dtype: DType,
     use_multimem: Bool,
     use_vendorccl: Bool,

@@ -61,7 +61,7 @@ from std.utils.numerics import max_finite
 
 
 @always_inline
-fn _repoint_input_bufs[
+def _repoint_input_bufs[
     in_dtype: DType,
     ngpus: Int,
     num_cols: Int,
@@ -77,7 +77,7 @@ fn _repoint_input_bufs[
         )
 
 
-fn _verify_results[
+def _verify_results[
     in_dtype: DType,
     out_dtype: DType,
     ngpus: Int,
@@ -138,7 +138,7 @@ fn _verify_results[
     @__copy_capture(ar_ptr_v)
     @always_inline
     @parameter
-    fn v_fused_in[
+    def v_fused_in[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
         var li = idx[0] * num_cols + idx[1]
@@ -295,7 +295,7 @@ fn _verify_results[
     print("Verification PASSED")
 
 
-fn _verify_add_results[
+def _verify_add_results[
     in_dtype: DType,
     out_dtype: DType,
     ngpus: Int,
@@ -350,7 +350,7 @@ fn _verify_add_results[
         @__copy_capture(ar_ptr_i, residual_ptr)
         @always_inline
         @parameter
-        fn add_epilogue_v[
+        def add_epilogue_v[
             _dtype: DType,
             _rank: Int,
             _width: Int,
@@ -382,7 +382,7 @@ fn _verify_add_results[
     @__copy_capture(ar_ptr_v)
     @always_inline
     @parameter
-    fn v_ep_fused_in[
+    def v_ep_fused_in[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
         var li = idx[0] * num_cols + idx[1]
@@ -541,7 +541,7 @@ fn _verify_add_results[
     print("Add-path verification PASSED")
 
 
-fn bench_allreduce_rmsnorm_fp8[
+def bench_allreduce_rmsnorm_fp8[
     in_dtype: DType,
     out_dtype: DType,
     ngpus: Int,
@@ -724,12 +724,12 @@ fn bench_allreduce_rmsnorm_fp8[
 
     @parameter
     @always_inline
-    fn bench_allreduce_iter(
+    def bench_allreduce_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
         @parameter
         @always_inline
-        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             _repoint_input_bufs[num_cols=num_cols](
                 in_bufs, cb_inputs, cache_iter, num_rows
             )
@@ -749,12 +749,12 @@ fn bench_allreduce_rmsnorm_fp8[
 
     @parameter
     @always_inline
-    fn bench_ar_fused_iter(
+    def bench_ar_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
         @parameter
         @always_inline
-        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             _repoint_input_bufs[num_cols=num_cols](
                 in_bufs, cb_inputs, cache_iter, num_rows
             )
@@ -770,7 +770,7 @@ fn bench_allreduce_rmsnorm_fp8[
             @__copy_capture(ar_ptr)
             @always_inline
             @parameter
-            fn fused_in[
+            def fused_in[
                 width: Int, _rank: Int
             ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
                 var li = idx[0] * num_cols + idx[1]
@@ -817,12 +817,12 @@ fn bench_allreduce_rmsnorm_fp8[
 
     @parameter
     @always_inline
-    fn bench_fully_fused_iter(
+    def bench_fully_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
         @parameter
         @always_inline
-        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             _repoint_input_bufs[num_cols=num_cols](
                 in_bufs, cb_inputs, cache_iter, num_rows
             )
@@ -861,12 +861,12 @@ fn bench_allreduce_rmsnorm_fp8[
 
     @parameter
     @always_inline
-    fn bench_ar_add_fused_iter(
+    def bench_ar_add_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
         @parameter
         @always_inline
-        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             _repoint_input_bufs[num_cols=num_cols](
                 in_bufs, cb_inputs, cache_iter, num_rows
             )
@@ -877,7 +877,7 @@ fn bench_allreduce_rmsnorm_fp8[
             @__copy_capture(ar_ptr, residual_ptr_base)
             @always_inline
             @parameter
-            fn add_epilogue[
+            def add_epilogue[
                 _dtype: DType,
                 _rank: Int,
                 _width: Int,
@@ -908,7 +908,7 @@ fn bench_allreduce_rmsnorm_fp8[
             @__copy_capture(ar_ptr)
             @always_inline
             @parameter
-            fn add_fused_in[
+            def add_fused_in[
                 width: Int, _rank: Int
             ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
                 var li = idx[0] * num_cols + idx[1]
@@ -955,12 +955,12 @@ fn bench_allreduce_rmsnorm_fp8[
 
     @parameter
     @always_inline
-    fn bench_fused_add_iter(
+    def bench_fused_add_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
         @parameter
         @always_inline
-        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             _repoint_input_bufs[num_cols=num_cols](
                 in_bufs, cb_inputs, cache_iter, num_rows
             )

@@ -27,7 +27,7 @@ from internal_utils import update_bench_config_args
 from std.testing import assert_equal
 
 
-fn vec_func(
+def vec_func(
     in0: UnsafePointer[Float32, ImmutAnyOrigin],
     in1: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
@@ -40,7 +40,7 @@ fn vec_func(
 
 
 @no_inline
-fn bench_vec_add(
+def bench_vec_add(
     mut b: Bench, *, block_dim: Int, length: Int, context: DeviceContext
 ) raises:
     comptime dtype = DType.float32
@@ -61,7 +61,7 @@ fn bench_vec_add(
 
     @always_inline
     @parameter
-    fn run_func() raises:
+    def run_func() raises:
         context.enqueue_function_experimental[vec_func](
             in0_device,
             in1_device,
@@ -73,10 +73,10 @@ fn bench_vec_add(
 
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             run_func()
 
         b.iter_custom[kernel_launch](context)

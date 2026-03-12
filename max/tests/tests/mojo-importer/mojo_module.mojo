@@ -21,7 +21,7 @@ from std.sys.info import num_physical_cores
 
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     try:
         var m = PythonModuleBuilder("mojo_module")
         m.def_function[plus_one]("plus_one")
@@ -33,18 +33,18 @@ fn PyInit_mojo_module() -> PythonObject:
         abort(t"failed to create Python module: {e}")
 
 
-fn plus_one(arg: PythonObject) raises -> PythonObject:
+def plus_one(arg: PythonObject) raises -> PythonObject:
     return arg + 1
 
 
-fn parallel_wrapper(array: PythonObject) raises -> PythonObject:
+def parallel_wrapper(array: PythonObject) raises -> PythonObject:
     comptime do_parallelize = True
     var array_len = len(array)
     var num_cores = num_physical_cores()
     var chunk_size, remainder = divmod(array_len, num_cores)
 
     @parameter
-    fn calc_max(i: Int) -> None:
+    def calc_max(i: Int) -> None:
         ref cpython = Python().cpython()
         # Each worker needs to hold the GIL to access python objects.
         # It is more efficient to only use Mojo native data structures in worker threads.

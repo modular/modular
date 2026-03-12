@@ -29,7 +29,7 @@ from std.utils import IndexList
 from layout import TileTensor, Coord, row_major
 
 
-fn bench_add[
+def bench_add[
     unroll_by: Int, rank: Int
 ](mut b: Bench, shape: IndexList[rank], ctx: DeviceContext) raises:
     comptime type = DType.float32
@@ -54,7 +54,7 @@ fn bench_add[
     @parameter
     @always_inline
     @__copy_capture(input0, input1, output)
-    fn add[
+    def add[
         simd_width: Int, _rank: Int, alignment: Int = 1
     ](out_index: IndexList[_rank]):
         var idx = Coord(out_index)
@@ -66,10 +66,10 @@ fn bench_add[
 
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher, shape: IndexList[rank]) raises:
+    def bench_func(mut b: Bencher, shape: IndexList[rank]) raises:
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             elementwise[add, simd_width=unroll_by, target="gpu"](shape, ctx)
 
         b.iter_custom[kernel_launch](ctx)

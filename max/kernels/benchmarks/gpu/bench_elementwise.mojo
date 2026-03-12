@@ -40,20 +40,20 @@ from std.utils.index import product
 from layout import TileTensor, Coord, row_major
 
 
-fn add_const_fn(x: SIMD) -> type_of(x):
+def add_const_fn(x: SIMD) -> type_of(x):
     return x + 42
 
 
-fn copy_fn(x: SIMD) -> type_of(x):
+def copy_fn(x: SIMD) -> type_of(x):
     return x
 
 
-fn simd_sqrt(x: SIMD) -> type_of(x):
+def simd_sqrt(x: SIMD) -> type_of(x):
     return sqrt(x)
 
 
 @always_inline
-fn _simd_load_internal[
+def _simd_load_internal[
     simd_width: Int
 ](buffer: TileTensor, index: Int) -> SIMD[buffer.dtype, simd_width]:
     comptime if buffer.dtype == DType.bool:
@@ -63,7 +63,7 @@ fn _simd_load_internal[
 
 
 @always_inline
-fn simd_load[
+def simd_load[
     simd_width: Int
 ](buffer: TileTensor, index: IndexList,) -> SIMD[buffer.dtype, simd_width]:
     var coord = Coord(index)
@@ -87,7 +87,7 @@ fn simd_load[
 
 
 @always_inline
-fn simd_store[
+def simd_store[
     simd_width: Int
 ](
     buffer: TileTensor[mut=True, ...],
@@ -106,7 +106,7 @@ fn simd_store[
 
 
 @no_inline
-fn run_elementwise[
+def run_elementwise[
     rank: Int,
     //,
     dtype: DType,
@@ -155,11 +155,11 @@ fn run_elementwise[
     @parameter
     @__copy_capture(cb_in, cb_out)
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @__copy_capture(N)
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             var in_tensor = TileTensor(
                 cb_in.offset_ptr(iteration), row_major(Coord(dims))
             )
@@ -170,7 +170,7 @@ fn run_elementwise[
             @always_inline
             @__copy_capture(in_tensor, out_tensor)
             @parameter
-            fn func[
+            def func[
                 simd_width: Int, rank_: Int, alignment: Int = 1
             ](idx0: IndexList[rank_]):
                 var idx = rebind[IndexList[rank]](idx0)
@@ -232,7 +232,7 @@ fn run_elementwise[
     out_host_ptr.free()
 
 
-fn list_to_static_tuple[x: List[Int]]() -> IndexList[len(x)]:
+def list_to_static_tuple[x: List[Int]]() -> IndexList[len(x)]:
     var t = IndexList[len(x)]()
 
     comptime for i in range(len(x)):

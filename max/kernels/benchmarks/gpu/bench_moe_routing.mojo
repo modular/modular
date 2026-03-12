@@ -23,7 +23,7 @@ from nn.moe import moe_create_indices, router_group_limited
 from std.utils.index import Index, IndexList
 
 
-fn bench_moe_create_indices[
+def bench_moe_create_indices[
     num_tokens: Int, num_experts: Int
 ](ctx: DeviceContext, mut b: Bench) raises:
     var topk_h = ctx.enqueue_create_host_buffer[DType.uint32](num_tokens)
@@ -71,10 +71,10 @@ fn bench_moe_create_indices[
         context,
     )
     @parameter
-    fn bench_fn(mut b: Bencher) raises:
+    def bench_fn(mut b: Bencher) raises:
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             moe_create_indices[input_type=DType.uint32, target="gpu"](
                 token_expert_order,
                 expert_start_indices,
@@ -105,7 +105,7 @@ fn bench_moe_create_indices[
     _ = expert_usage_stats_d
 
 
-fn bench_router_group_limited[
+def bench_router_group_limited[
     num_tokens: Int,
     n_routed_experts: Int,
     n_experts_per_tok: Int,
@@ -160,10 +160,10 @@ fn bench_router_group_limited[
         context,
     )
     @parameter
-    fn bench_fn(mut b: Bencher) raises:
+    def bench_fn(mut b: Bencher) raises:
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             router_group_limited[
                 scores_type=dtype,
                 bias_type=dtype,
