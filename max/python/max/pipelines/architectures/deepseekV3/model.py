@@ -590,42 +590,24 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         assert isinstance(model_inputs, DeepseekV3Inputs)
 
         model_outputs = self.model.execute(*model_inputs.buffers)
-
-        num_hidden_state_outputs = len(self.devices)
         num_outputs = len(model_outputs)
 
         # Possible output configurations:
-        # - 1 output: next_token_logits only
+        # - 4 outputs: next_token_logits, logits, logit_offsets + hidden_states
         # - 3 outputs: next_token_logits, logits, logit_offsets (variable logits)
-        # - 1 + N: next_token_logits + hidden_states (one per device)
-        # - 3 + N: next_token_logits, logits, logit_offsets + hidden_states (one per device)
+        # - 2 outputs: next_token_logits + hidden_states
+        # - 1 output: next_token_logits only
 
-        if num_outputs == 3 + num_hidden_state_outputs:
+        if num_outputs == 4:
             assert isinstance(model_outputs[0], Buffer)
             assert isinstance(model_outputs[1], Buffer)
             assert isinstance(model_outputs[2], Buffer)
-            hidden_states_list: list[Buffer] = []
-            for i in range(num_hidden_state_outputs):
-                hs = model_outputs[3 + i]
-                assert isinstance(hs, Buffer)
-                hidden_states_list.append(hs)
+            assert isinstance(model_outputs[3], Buffer)
             return ModelOutputs(
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[1],
                 logit_offsets=model_outputs[2],
-                hidden_states=hidden_states_list,
-            )
-        elif num_outputs == 1 + num_hidden_state_outputs:
-            assert isinstance(model_outputs[0], Buffer)
-            hidden_states_list = []
-            for i in range(num_hidden_state_outputs):
-                hs = model_outputs[1 + i]
-                assert isinstance(hs, Buffer)
-                hidden_states_list.append(hs)
-            return ModelOutputs(
-                next_token_logits=model_outputs[0],
-                logits=model_outputs[0],
-                hidden_states=hidden_states_list,
+                hidden_states=model_outputs[3],
             )
         elif num_outputs == 3:
             assert isinstance(model_outputs[0], Buffer)
@@ -635,6 +617,14 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[1],
                 logit_offsets=model_outputs[2],
+            )
+        elif num_outputs == 2:
+            assert isinstance(model_outputs[0], Buffer)
+            assert isinstance(model_outputs[1], Buffer)
+            return ModelOutputs(
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[0],
+                hidden_states=model_outputs[1],
             )
         else:
             assert isinstance(model_outputs[0], Buffer)

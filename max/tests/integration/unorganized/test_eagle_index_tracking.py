@@ -25,7 +25,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import numpy.typing as npt
 import pytest
-from max.interfaces import RequestID
+from max.interfaces import RequestID, TextGenerationInputs
 from max.interfaces.context import SamplingParams
 from max.interfaces.tokens import TokenBuffer
 from max.pipelines.core import reserve_token_space_for_batch
@@ -83,10 +83,9 @@ class EAGLEIndexTracker:
     ) -> None:
         EAGLESpeculativeDecodingPipeline._prepare_draft_batch(
             self,  # type: ignore[arg-type]
-            batch=batch,
-            replica_batches=[batch],
+            inputs=TextGenerationInputs(batches=[batch], num_steps=1),
             return_n_logits=return_n_logits,
-            hidden_states=None,  # type: ignore[arg-type]
+            hidden_states=MagicMock(),
         )
 
 

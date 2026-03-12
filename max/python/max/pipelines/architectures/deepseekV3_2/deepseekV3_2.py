@@ -52,8 +52,11 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.nn.transformer.distributed_transformer import forward_sharded_layers
+from max.nn.transformer import ReturnLogits
+from max.nn.transformer.distributed_transformer import (
+    extract_hs,
+    forward_sharded_layers,
+)
 
 from .layers import DeepseekV3_2MLP, DeepseekV3_2MoE, DeepseekV3_2TopKRouter
 from .model_config import DeepseekV3_2Config
@@ -744,11 +747,13 @@ class DeepseekV3_2(Module):
         if logits is not None and offsets is not None:
             ret_val += (logits, offsets)
 
-        if self.return_hidden_states == ReturnHiddenStates.LAST:
-            ret_val += (last_token_distributed[0],)
-        elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
-            norm_h = forward_sharded_layers(self.norm_shards, h)[0]
-            ret_val += (norm_h,)
+        ret_val += extract_hs(
+            return_hidden_states=self.return_hidden_states,
+            last_token_hs_distributed=last_token_distributed,
+            all_hs_distributed=h,
+            normalizer=self.norm_shards,
+            signal_buffers=signal_buffers,
+        )
 
         return ret_val
 
