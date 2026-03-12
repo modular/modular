@@ -544,8 +544,10 @@ struct VariadicParamList[type: TrivialRegisterPassable, //, *values: type](
 
     comptime size = Int(
         mlir_value=__mlir_attr[
-            `#kgen.variadic.size<`,
-            Self.values,
+            `#kgen.variadic.size<:`,
+            type_of(Self.values),
+            ` `,
+            +Self.values,
             `> : index`,
         ]
     )

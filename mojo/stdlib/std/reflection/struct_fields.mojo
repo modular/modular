@@ -257,9 +257,10 @@ def struct_field_count[T: AnyType]() -> Int:
     # This avoids needing a dedicated struct_field_count attribute.
     return Int(
         mlir_value=__mlir_attr[
-            `#kgen.variadic.size<#kgen.struct_field_types<`,
+            `#kgen.variadic.size<:!kgen.variadic<!kgen.type> `,
+            `#kgen.struct_field_types<`,
             T,
-            `> : !kgen.variadic<!kgen.type>> : index`,
+            `>> : index`,
         ]
     )
 

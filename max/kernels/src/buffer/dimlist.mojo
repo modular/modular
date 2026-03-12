@@ -294,13 +294,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         values: The list of dimensions.
     """
 
-    comptime rank = Int(
-        mlir_value=__mlir_attr[
-            `#kgen.variadic.size<`,
-            Self.values,
-            `> : index`,
-        ]
-    )
+    comptime rank = VariadicParamList[*Self.values].size
     """The number of dimensions in the DimList."""
 
     @always_inline("nodebug")

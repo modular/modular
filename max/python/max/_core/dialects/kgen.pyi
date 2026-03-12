@@ -1783,7 +1783,6 @@ class VariadicGetAttr(max._core.Attribute):
     @overload
     def __init__(
         self,
-        type: max._core.Type,
         variadic: max._core.dialects.builtin.TypedAttr,
         index: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
@@ -2118,8 +2117,6 @@ class POC(enum.Enum):
     apply_result_slot = 26
 
     rebind = 27
-
-    variadic_get = 28
 
     ptr_bitcast = 34
 
