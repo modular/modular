@@ -555,7 +555,10 @@ kgen.generator @simd_cmp_folding<dt: dtype>() {
   // CHECK: e = #pop<simd 64> : !pop.scalar<index>
   e = #pop.simd_shl< #pop<simd 1> : !pop.scalar<index>, #pop<simd 6> : !pop.scalar<index>> : !pop.scalar<index>,
   // CHECK: f = #pop<simd 64> : !pop.scalar<uindex>
-  f = #pop.simd_shl< #pop<simd 1> : !pop.scalar<uindex>, #pop<simd 6> : !pop.scalar<uindex>> : !pop.scalar<uindex>
+  f = #pop.simd_shl< #pop<simd 1> : !pop.scalar<uindex>, #pop<simd 6> : !pop.scalar<uindex>> : !pop.scalar<uindex>,
+  // Index shl that does NOT fold without target: shift >= 32 is poison in 32-bit.
+  // CHECK: g = #pop.simd_shl<#pop<simd 1>{{.*}}, #pop<simd 33>
+  g = #pop.simd_shl< #pop<simd 1> : !pop.scalar<index>, #pop<simd 33> : !pop.scalar<index>> : !pop.scalar<index>
 } : () -> ()
 
 "some.op"() {
@@ -570,7 +573,10 @@ kgen.generator @simd_cmp_folding<dt: dtype>() {
   // CHECK: e = #pop.simd<1, 4095> : !pop.simd<2, ui16>
   e = #pop.simd_shr< #pop.simd<65535, 65533> : !pop.simd<2, ui16>, #pop.simd<15, 4> : !pop.simd<2, index>> : !pop.simd<2, ui16>,
   // CHECK: f = #pop.simd<1, 4095> : !pop.simd<2, uindex>
-  f = #pop.simd_shr< #pop.simd<65535, 65533> : !pop.simd<2, uindex>, #pop.simd<15, 4> : !pop.simd<2, uindex>> : !pop.simd<2, uindex>
+  f = #pop.simd_shr< #pop.simd<65535, 65533> : !pop.simd<2, uindex>, #pop.simd<15, 4> : !pop.simd<2, uindex>> : !pop.simd<2, uindex>,
+  // Index shr that does NOT fold without target: 32-bit and 64-bit results differ.
+  // CHECK: g = #pop.simd_shr<#pop<simd 3000000000>{{.*}}, #pop<simd 1>
+  g = #pop.simd_shr< #pop<simd 3000000000> : !pop.scalar<index>, #pop<simd 1> : !pop.scalar<index>> : !pop.scalar<index>
 } : () -> ()
 
 

@@ -41,3 +41,41 @@ SIMDCmpAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
 
   return failure();
 }
+
+//===----------------------------------------------------------------------===//
+// SIMDShlAttr
+//===----------------------------------------------------------------------===//
+
+FailureOr<TypedAttr>
+SIMDShlAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
+  auto target = context.getTargetInfo();
+  if (!target)
+    return failure();
+
+  Attribute operands[] = {getVal(), getShft()};
+  if (auto fold = foldSIMDShl(FoldValues(operands), target)) {
+    assert(fold.getAttr() && "attribute fold should produce an attribute");
+    return fold.getAttr();
+  }
+
+  return failure();
+}
+
+//===----------------------------------------------------------------------===//
+// SIMDShrAttr
+//===----------------------------------------------------------------------===//
+
+FailureOr<TypedAttr>
+SIMDShrAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
+  auto target = context.getTargetInfo();
+  if (!target)
+    return failure();
+
+  Attribute operands[] = {getVal(), getShft()};
+  if (auto fold = foldSIMDShr(FoldValues(operands), target)) {
+    assert(fold.getAttr() && "attribute fold should produce an attribute");
+    return fold.getAttr();
+  }
+
+  return failure();
+}
