@@ -158,9 +158,16 @@ def grouped_matmul_1d1d_nvfp4[
             config.AB_swapped
         ), "cta_group == 2 requires AB_swapped for scheduler alignment"
     else:
-        comptime assert MMA_M == 128 and MMA_N in (64, 128, 256), (
-            "Only support MMA_M == 128 and MMA_N in (64, 128, 256)"
-            " when cta_group == 1"
+        comptime assert MMA_M == 128 and MMA_N in (
+            8,
+            16,
+            32,
+            64,
+            128,
+            256,
+        ), (
+            "Only support MMA_M == 128 and MMA_N in (8, 16, 32, 64, 128,"
+            " 256) when cta_group == 1"
         )
 
     comptime cluster_shape = config.cluster_shape
@@ -204,7 +211,12 @@ def grouped_matmul_1d1d_nvfp4[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    comptime c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
+    # When c_swizzle is SWIZZLE_NONE (MMA_N=8), c_swizzle.bytes() is 0.
+    # The TMA descriptor dim1 must equal the tile dim1 in that case.
+    comptime _c_swizzle_elems = config.c_swizzle.bytes() // size_of[c_type]()
+    comptime c_tma_tile_shape_1 = c_tma_tile_shape[
+        1
+    ] if _c_swizzle_elems == 0 else _c_swizzle_elems
 
     comptime sfa_tma_tile_shape = Index(
         BM // SF_MN_GROUP_SIZE,
@@ -261,10 +273,13 @@ def grouped_matmul_1d1d_nvfp4[
         1,
     )
 
-    # Thread configuration: 3 warps for Load/MMA + 4 warps for Epilogue = 192 threads
+    # Thread configuration:
+    # Base: 4 epilogue + 1 load + 1 MMA = 6 warps = 192 threads
+    # MMA_N < 64: + 4 SFB load warps = 10 warps = 320 threads
     comptime load_warps = 1
     comptime mma_warps = 1
     comptime epilogue_warps = 4
+    comptime sfb_load_warps = 4 if MMA_N < 64 else 0
 
     # Re-wrap 1D TileTensors with GMEMLayout1D to match the kernel's
     # expected types. The caller's TileTensors may have a different symbolic
@@ -341,7 +356,9 @@ def grouped_matmul_1d1d_nvfp4[
             num_active_experts,
             UInt32(K),
             grid_dim=grid_dim,
-            block_dim=(32 * (load_warps + mma_warps + epilogue_warps)),
+            block_dim=(
+                32 * (load_warps + mma_warps + epilogue_warps + sfb_load_warps)
+            ),
             cluster_dim=Dim(
                 cluster_shape[0], cluster_shape[1], cluster_shape[2]
             ),
@@ -399,7 +416,9 @@ def grouped_matmul_1d1d_nvfp4[
             num_active_experts,
             UInt32(K),
             grid_dim=grid_dim,
-            block_dim=(32 * (load_warps + mma_warps + epilogue_warps)),
+            block_dim=(
+                32 * (load_warps + mma_warps + epilogue_warps + sfb_load_warps)
+            ),
             cluster_dim=Dim(
                 cluster_shape[0], cluster_shape[1], cluster_shape[2]
             ),

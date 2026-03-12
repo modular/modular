@@ -124,12 +124,18 @@ struct WarpRole(TrivialRegisterPassable):
 
 
 struct WarpRole1D1D(TrivialRegisterPassable):
-    """Warp role for 1D-1D kernels with 3-warp specialization.
+    """Warp role for 1D-1D kernels with warp specialization.
 
-    Thread layout (192 threads total):
+    Base thread layout (192 threads, MMA_N >= 64):
     - Warps 0-3 (threads 0-127): Epilogue (4 warps)
     - Warp 4 (threads 128-159): TMA Load
     - Warp 5 (threads 160-191): MMA
+
+    Extended layout (320 threads, MMA_N < 64):
+    - Warps 0-3 (threads 0-127): Epilogue (4 warps)
+    - Warp 4 (threads 128-159): TMA Load
+    - Warp 5 (threads 160-191): MMA
+    - Warps 6-9 (threads 192-319): SFB Load (4 warps, 128 threads)
 
     The epilogue warps being at 0-3 is important because TMAStoreCoords
     uses `warp_id == 0` for election.
@@ -140,12 +146,15 @@ struct WarpRole1D1D(TrivialRegisterPassable):
     comptime EPILOGUE_WARP_START = 0
     comptime LOAD_WARP_START = 128
     comptime MMA_WARP_START = 160
+    comptime SFB_LOAD_WARP_START = 192
 
     comptime NUM_EPILOGUE_THREADS = 128  # 4 warps
     comptime NUM_LOAD_THREADS = 32
     comptime NUM_MMA_THREADS = 32
+    comptime NUM_SFB_LOAD_THREADS = 128  # 4 warps
 
     comptime TOTAL_THREADS = 192
+    comptime TOTAL_THREADS_WITH_SFB = 320
 
     @staticmethod
     @always_inline
@@ -166,7 +175,19 @@ struct WarpRole1D1D(TrivialRegisterPassable):
     @always_inline
     def is_mma() -> Bool:
         """Returns True if current thread is in the MMA warp (warp 5)."""
-        return thread_idx.x >= Self.MMA_WARP_START
+        return (
+            thread_idx.x >= Self.MMA_WARP_START
+            and thread_idx.x < Self.SFB_LOAD_WARP_START
+        )
+
+    @staticmethod
+    @always_inline
+    fn is_sfb_load() -> Bool:
+        """Returns True if current thread is in an SFB load warp (warps 6-9).
+
+        Only active when MMA_N < 64 (kernel launched with 320 threads).
+        """
+        return thread_idx.x >= Self.SFB_LOAD_WARP_START
 
 
 # =============================================================================

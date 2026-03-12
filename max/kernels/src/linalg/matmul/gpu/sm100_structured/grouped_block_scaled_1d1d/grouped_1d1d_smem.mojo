@@ -25,6 +25,7 @@ Tile storage is shared via BlockScaledTileCore from block_scaled_smem.mojo.
 
 from std.gpu.memory import AddressSpace
 
+from layout.tma_async import SharedMemBarrier
 from ..block_scaled.block_scaled_smem import BlockScaledTileCore
 from ..structured_kernels.config import BlockScaledMatmulConfig
 from structured_kernels.pipeline_storage import SmemPipelineBundleNoClc
@@ -69,6 +70,30 @@ struct Grouped1D1DSmem[
         Self.Core.Payload,
     ]
     var pipelines: Self.Pipelines
+
+    # ========== SFB Load Barriers (MMA_N < 64) ==========
+    # SFB load warps arrive after writing SFB to TMEM via tcgen05_st.
+    # MMA warp waits before issuing UMMA.
+    # Matches load_sfb_mbars in block_scaled_matmul_small_bn.mojo.
+    var sfb_load_mbars: InlineArray[
+        SharedMemBarrier, Int(Self.Core.num_group_pipeline_stages)
+    ]
+
+    # ========== SFB Load Barrier Accessor ==========
+    @always_inline
+    fn sfb_load_mbars_ptr(
+        ref[AddressSpace.SHARED] self,
+    ) -> UnsafePointer[
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+    ]:
+        """Get pointer to SFB-load mbarrier array (SFB Load→MMA)."""
+        return rebind[
+            UnsafePointer[
+                SharedMemBarrier,
+                MutAnyOrigin,
+                address_space=AddressSpace.SHARED,
+            ]
+        ](self.sfb_load_mbars.unsafe_ptr())
 
     # ========== Tile Accessors (forwarding) ==========
     @always_inline

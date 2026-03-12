@@ -983,7 +983,12 @@ struct TileWriter[
         comptime output_threads = Self.num_output_warps * WARP_SIZE
         comptime c_smem_M = Self.c_smem_dim0
         comptime TMA_BM = 64 if Self.cta_group == 1 else 128
-        comptime simd_size = simd_width_of[Self.c_type]()
+        # Ensure enough work for all threads: need thread_rows <= TMA_BM,
+        # i.e., output_threads / thread_n <= TMA_BM,
+        # i.e., simd_size <= stageN * TMA_BM / output_threads.
+        comptime max_simd = simd_width_of[Self.c_type]()
+        comptime max_allowed_simd = Self.stageN * TMA_BM // output_threads
+        comptime simd_size = min(max_simd, max(1, max_allowed_simd))
         comptime alignment = align_of[SIMD[Self.c_type, simd_size]]()
         comptime thread_n = Self.stageN // simd_size
         comptime thread_layout = Layout.row_major(
