@@ -36,7 +36,7 @@ struct ImplCopyableType(
 
 
 # ===========================================================================
-# Test 1: Simple Conditional Conformance
+# Simple Conditional Conformance
 # ===========================================================================
 
 
@@ -69,7 +69,7 @@ fn test_simple_conditional():
 
 
 # ===========================================================================
-# Test 2: Nested Wrappers
+# Nested Wrappers
 # ===========================================================================
 
 
@@ -83,7 +83,7 @@ fn test_nested_wrappers():
 
 
 # ===========================================================================
-# Test 3: Function Type Conversion with Conditional Conformance
+# Function Type Conversion with Conditional Conformance
 # ===========================================================================
 
 # This tests that function type conversion correctly handles types with
@@ -107,7 +107,7 @@ fn test_function_type_conversion():
 
 
 # ===========================================================================
-# Test 4: Unified Closures with Conditionally-Conforming Return Types
+# Unified Closures with Conditionally-Conforming Return Types
 # ===========================================================================
 # TODO(#77058): Re-enable after lazy conformance is added.
 # Eager Conformance broke concrete-return-type closure patterns with
@@ -181,7 +181,7 @@ fn test_function_type_conversion():
 
 
 # ===========================================================================
-# Test 5: Diamond Pattern with Both Branches Conditional
+# Diamond Pattern with Both Branches Conditional
 # ===========================================================================
 
 # Diamond hierarchy:
@@ -261,7 +261,7 @@ fn test_diamond_both_conditional():
 
 
 # ===========================================================================
-# Test 6: Diamond Pattern with One Unconditional Branch
+# Diamond Pattern with One Unconditional Branch
 # ===========================================================================
 
 # When one path is unconditional, the ancestor is also unconditional
@@ -299,7 +299,7 @@ fn test_diamond_one_unconditional():
 
 
 # ===========================================================================
-# Test 7: Explicit Ancestor in Inheritance List
+# Explicit Ancestor in Inheritance List
 # ===========================================================================
 
 
@@ -326,7 +326,7 @@ fn test_explicit_ancestor():
 
 
 # ===========================================================================
-# Test 8: Multiple Conditional Conformances
+# Multiple Conditional Conformances
 # ===========================================================================
 
 
@@ -363,7 +363,7 @@ fn test_multiple_conditional():
 
 
 # ===========================================================================
-# Test 9: Stronger conformance constraint implies weaker method constraint
+# Stronger conformance constraint implies weaker method constraint
 # ===========================================================================
 
 
@@ -394,7 +394,7 @@ fn test_stronger_implies_weaker():
 
 
 # ===========================================================================
-# Test 10: Diamond with Same Constraint on Both Paths (auto-propagated)
+# Diamond with Same Constraint on Both Paths (auto-propagated)
 # ===========================================================================
 
 # Uses the Base/DerivedA/DerivedB trait diamond from Test 5 above.
@@ -428,7 +428,7 @@ fn test_diamond_same_constraint():
 
 
 # ===========================================================================
-# Test 11: Diamond with Reordered Compound Constraints (logical equivalence)
+# Diamond with Reordered Compound Constraints (logical equivalence)
 # ===========================================================================
 
 # Uses the same Base/DerivedA/DerivedB diamond. Both paths carry a compound
@@ -511,7 +511,7 @@ fn test_violated_precedence():
 
 
 # ===========================================================================
-# Test 12: Conditional Movable transfer via conforms_to(T, Copyable)
+# Conditional Movable transfer via conforms_to(T, Copyable)
 # ===========================================================================
 # The struct is conditionally Movable gated by conforms_to(T, Copyable).
 # The transfer operator (^) should work when T satisfies the condition.
@@ -535,7 +535,7 @@ fn test_move_via_copyable():
 
 
 # ===========================================================================
-# Test 13: Conditional Movable transfer via conforms_to(T, ImplicitlyCopyable)
+# Conditional Movable transfer via conforms_to(T, ImplicitlyCopyable)
 # ===========================================================================
 # Same as Test 12, but gated by conforms_to(T, ImplicitlyCopyable).
 # ImplicitlyCopyable also subsumes Movable, so the transfer should work.
@@ -559,7 +559,7 @@ fn test_move_via_impl_copyable():
 
 
 # ===========================================================================
-# Test 14: Both Movable and Copyable as conditional conformances
+# Both Movable and Copyable as conditional conformances
 # ===========================================================================
 # Both Movable and Copyable are conditional.  The Copyable constraint must
 # explicitly imply the Movable constraint (ancestor requirement).  Both
@@ -597,7 +597,7 @@ fn test_both_conditional_move_copy():
 
 
 # ===========================================================================
-# Test 15: Synthesized copy ctor with conditional Copyable conformance
+# Synthesized copy ctor with conditional Copyable conformance
 # ===========================================================================
 # The compiler should synthesize a copy constructor that uses trait-downcast
 # refinement for the T-typed field when the where-clause provides
@@ -623,7 +623,7 @@ fn test_synthesized_copy():
 
 
 # ===========================================================================
-# Test 16: Synthesized move ctor with T-typed field
+# Synthesized move ctor with T-typed field
 # ===========================================================================
 # The move init is synthesized for a struct with a T-typed field.  Because
 # T: ImplicitlyDestructible & Movable, the field IS unconditionally movable,
@@ -639,7 +639,7 @@ fn test_synthesized_move():
 
 
 # ===========================================================================
-# Test 17: Mixed fields — conditional + unconditional for copy
+# Mixed fields — conditional + unconditional for copy
 # ===========================================================================
 # A struct with both an unconditionally copyable field (Int) and a
 # conditionally copyable field (T).  The synthesized copy ctor handles
@@ -667,7 +667,7 @@ fn test_mixed_field_copy():
 
 
 # ===========================================================================
-# Test 18: Copy synthesis via conforms_to(T, ImplicitlyCopyable) subsumption
+# Copy synthesis via conforms_to(T, ImplicitlyCopyable) subsumption
 # ===========================================================================
 # The struct is conditionally Copyable gated by conforms_to(T,
 # ImplicitlyCopyable).  Because ImplicitlyCopyable subsumes Copyable, the
@@ -697,7 +697,7 @@ fn test_copy_via_impl_copyable():
 
 
 # ===========================================================================
-# Test 19: Copy + move with ImplicitlyCopyable type on Copyable constraint
+# Copy + move with ImplicitlyCopyable type on Copyable constraint
 # ===========================================================================
 # SynthCopyWrapper requires conforms_to(T, Copyable).  ImplCopyableType
 # conforms to ImplicitlyCopyable ⊃ Copyable, so the condition is met.
@@ -720,7 +720,7 @@ fn test_synth_copy_with_impl_copyable_type():
 
 
 # ===========================================================================
-# Test 20: conforms_to builtin evaluates where-clause constraints
+# conforms_to builtin evaluates where-clause constraints
 # ===========================================================================
 # The conforms_to builtin should return False when the conditional conformance's
 # where-clause is not satisfied, even though the ConformanceOp exists in the
@@ -779,7 +779,7 @@ fn test_conforms_to_evaluates_where_clause():
 
 
 # ===========================================================================
-# Test 21: conforms_to with symbolic type parameter (elaborator path)
+# conforms_to with symbolic type parameter (elaborator path)
 # ===========================================================================
 # When conforms_to(Wrapper[T], Trait) is called with a symbolic T, the
 # expression remains unevaluated at parse time and is evaluated by the
@@ -803,7 +803,7 @@ fn test_symbolic_conforms_to():
 
 
 # ===========================================================================
-# Test 22: Trait bound on T proves conditional conformance at call site
+# Trait bound on T proves conditional conformance at call site
 # ===========================================================================
 # When T has a Copyable bound, SimpleWrapper[T] is provably Copyable,
 # and can be passed to functions requiring Copyable.
@@ -823,7 +823,7 @@ fn test_guarded_conditional_call():
 
 
 # ===========================================================================
-# Test 23: comptime if guard enables conditional conformance call
+# comptime if guard enables conditional conformance call
 # ===========================================================================
 # A comptime if conforms_to(T, Trait) guard proves the constraint within its
 # body, allowing calls that require the conditional conformance.
@@ -844,7 +844,7 @@ fn test_comptime_if_guard():
 
 
 # ===========================================================================
-# Test 24: where clause proves variadic conditional conformance
+# where clause proves variadic conditional conformance
 # ===========================================================================
 # A where clause asserting AllWritable[*types] enables calling repr() on
 # Tuple[*types], because the assumption is wired into doesNominalTypeConformTo
@@ -866,7 +866,7 @@ fn test_where_clause_proves_variadic():
 
 
 # ===========================================================================
-# Test 25: conforms_to with concrete types (VerifyParameters/LIT path)
+# conforms_to with concrete types (VerifyParameters/LIT path)
 # ===========================================================================
 # conforms_to used as a value expression with fully concrete types is
 # evaluated by the VerifyParameters pass through LITSymTabEvaluationContext.
@@ -898,7 +898,7 @@ fn test_conforms_to_value_expression():
 
 
 # ===========================================================================
-# Test 26: Scope-dependent metatype upcast with conditional conformance
+# Scope-dependent metatype upcast with conditional conformance
 # ===========================================================================
 # canMetaTypeUpCastTo (used by canImplicitlyConvertToType and ParamMatcher)
 # needs the caller scope to prove that a conditionally-conforming type can
@@ -922,7 +922,7 @@ fn test_metatype_upcast_with_scope():
 
 
 # ===========================================================================
-# Test 27: Function type conversion with where-clause scope
+# Function type conversion with where-clause scope
 # ===========================================================================
 # canConvertFunctionTypes checks argument conformance via checkConformance
 # with the caller's declScope. This tests that a higher-order function
@@ -949,7 +949,7 @@ fn test_fn_conversion_with_scope():
 
 
 # ===========================================================================
-# Test 28: Trait-to-trait upcast with scope proving conditional conformance
+# Trait-to-trait upcast with scope proving conditional conformance
 # ===========================================================================
 # emitImplicitConversionToType uses getDeclScope() to prove that a
 # conditionally-conforming type value can upcast to a base trait type.
@@ -977,7 +977,7 @@ fn test_upcast_conditional_to_base():
 
 
 # ===========================================================================
-# Test 29: TRP + conditional conformance with custom __eq__ and default __ne__
+# TRP + conditional conformance with custom __eq__ and default __ne__
 # ===========================================================================
 # TrivialRegisterPassable types use a calling-convention thunk for witness
 # table entries (self by-value vs by-reference). The thunk must propagate
@@ -1011,7 +1011,7 @@ fn test_trp_conditional_equatable():
 
 
 # ===========================================================================
-# Test 30: TRP + multiple conditional conformances with default __eq__
+# TRP + multiple conditional conformances with default __eq__
 # ===========================================================================
 # Tests multiple conditional conformances on one TRP struct. Equatable uses
 # the default reflection-based __eq__ (no override). Also tests a custom
@@ -1062,6 +1062,78 @@ fn test_trp_multiple_conditional():
     print("trp_multi_custom:", needs_custom_trp(d))
 
 
+# ===========================================================================
+# Implicit copy of conditionally ImplicitlyCopyable type in generic
+# ===========================================================================
+
+
+@fieldwise_init
+struct CondWrapper[T: ImplicitlyDestructible & Movable](
+    Copyable where conforms_to(T, Copyable),
+    ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable),
+    ImplicitlyDestructible,
+    Movable,
+):
+    var value: Self.T
+
+
+fn implicit_copy_in_generic[
+    T: ImplicitlyCopyable & ImplicitlyDestructible
+](x: CondWrapper[T]) -> CondWrapper[T]:
+    return x
+
+
+fn test_implicit_copy_in_generic():
+    var w = CondWrapper(42)
+    var copy = implicit_copy_in_generic(w)
+    # CHECK: implicit_copy_generic: 42
+    print("implicit_copy_generic:", copy.value)
+
+
+# ===========================================================================
+# Move of conditionally Movable type in generic
+# ===========================================================================
+
+
+@fieldwise_init
+struct CondMovable[T: ImplicitlyDestructible & Movable](
+    ImplicitlyDestructible,
+    Movable where conforms_to(T, Copyable),
+):
+    var value: Self.T
+
+
+fn move_in_generic[
+    T: Copyable & ImplicitlyDestructible
+](var x: CondMovable[T]) -> CondMovable[T]:
+    return x^
+
+
+fn test_move_in_generic():
+    var w = CondMovable(42)
+    var moved = move_in_generic(w^)
+    # CHECK: move_in_generic: 42
+    print("move_in_generic:", moved.value)
+
+
+# ===========================================================================
+# Explicit copy of conditionally Copyable type in generic
+# ===========================================================================
+
+
+fn explicit_copy_in_generic[
+    T: Copyable & ImplicitlyDestructible
+](x: CondWrapper[T]) -> CondWrapper[T]:
+    return x.copy()
+
+
+fn test_explicit_copy_in_generic():
+    var w = CondWrapper(42)
+    var copy = explicit_copy_in_generic(w)
+    # CHECK: explicit_copy_generic: 42
+    print("explicit_copy_generic:", copy.value)
+
+
 fn main():
     test_simple_conditional()
     test_nested_wrappers()
@@ -1096,3 +1168,6 @@ fn main():
     test_upcast_conditional_to_base()
     test_trp_conditional_equatable()
     test_trp_multiple_conditional()
+    test_implicit_copy_in_generic()
+    test_move_in_generic()
+    test_explicit_copy_in_generic()
