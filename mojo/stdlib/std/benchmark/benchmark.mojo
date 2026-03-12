@@ -23,7 +23,7 @@ You can pass any `fn` as a parameter into `benchmark.run[...]()`, it will return
 a `Report` where you can get the mean, duration, max, and more:
 
 ```mojo
-fn sleeper():
+def sleeper():
     sleep(.01)
 
 var report = benchmark.run[sleeper]()
@@ -162,7 +162,7 @@ struct Batch(TrivialRegisterPassable):
     var _is_significant: Bool
     """This batch contributes to the reporting of this benchmark."""
 
-    fn mean(self, unit: String = Unit.s) -> Float64:
+    def mean(self, unit: String = Unit.s) -> Float64:
         """
         Returns the average duration of the batch.
 
@@ -195,7 +195,7 @@ struct Unit:
     """Seconds."""
 
     @staticmethod
-    fn _divisor(unit: String) -> Int:
+    def _divisor(unit: String) -> Int:
         if unit == Unit.ns:
             return 1
         elif unit == Unit.us:
@@ -220,7 +220,7 @@ struct Report(Copyable, Defaultable):
     var runs: List[Batch]
     """A `List` of benchmark runs."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """
         Default initializer for the Report.
 
@@ -229,7 +229,7 @@ struct Report(Copyable, Defaultable):
         self.warmup_duration = 0
         self.runs = List[Batch]()
 
-    fn iters(self) -> Int:
+    def iters(self) -> Int:
         """
         The total benchmark iterations.
 
@@ -242,7 +242,7 @@ struct Report(Copyable, Defaultable):
                 iters += self.runs[i].iterations
         return iters
 
-    fn duration(self, unit: String = Unit.s) -> Float64:
+    def duration(self, unit: String = Unit.s) -> Float64:
         """
         The total duration it took to run all benchmarks.
 
@@ -258,7 +258,7 @@ struct Report(Copyable, Defaultable):
                 duration += self.runs[i].duration
         return Float64(duration) / Float64(Unit._divisor(unit))
 
-    fn mean(self, unit: String = Unit.s) -> Float64:
+    def mean(self, unit: String = Unit.s) -> Float64:
         """
         The average duration of all benchmark runs.
 
@@ -270,7 +270,7 @@ struct Report(Copyable, Defaultable):
         """
         return self.duration(unit) / Float64(self.iters())
 
-    fn min(self, unit: String = Unit.s) -> Float64:
+    def min(self, unit: String = Unit.s) -> Float64:
         """
         The batch of benchmarks that was the fastest to run.
 
@@ -288,7 +288,7 @@ struct Report(Copyable, Defaultable):
                 min = self.runs[i].mean(unit)
         return min
 
-    fn max(self, unit: String = Unit.s) -> Float64:
+    def max(self, unit: String = Unit.s) -> Float64:
         """
         The batch of benchmarks that was the slowest to run.
 
@@ -309,7 +309,7 @@ struct Report(Copyable, Defaultable):
                 result = self.runs[i].mean(unit)
         return result
 
-    fn as_string(self, unit: String = Unit.s) -> String:
+    def as_string(self, unit: String = Unit.s) -> String:
         """Converts the Report to a String.
 
         Args:
@@ -335,7 +335,7 @@ struct Report(Copyable, Defaultable):
         ]
         return "\n".join(lines)
 
-    fn print(self, unit: String = Unit.s):
+    def print(self, unit: String = Unit.s):
         """
         Prints out the shortened version of the report.
 
@@ -344,7 +344,7 @@ struct Report(Copyable, Defaultable):
         """
         print(self.as_string(unit))
 
-    fn print_full(self, unit: String = Unit.s):
+    def print_full(self, unit: String = Unit.s):
         """
         Prints out the full version of the report with each batch of benchmark
         runs.
@@ -383,7 +383,7 @@ struct _RunOptions[timing_fn: fn(num_iters: Int) raises capturing[_] -> Int](
     var max_runtime_secs: Float64
     var max_batch_size: Int
 
-    fn __init__(
+    def __init__(
         out self,
         num_warmup_iters: Int = 1,
         max_iters: Int = 1_000_000,
@@ -404,7 +404,7 @@ struct _RunOptions[timing_fn: fn(num_iters: Int) raises capturing[_] -> Int](
 
 
 @always_inline
-fn run[
+def run[
     *, func1: fn() raises -> None
 ](
     num_warmup_iters: Int = 1,
@@ -438,10 +438,10 @@ fn run[
 
     @parameter
     @always_inline
-    fn benchmark_fn(num_iters: Int) raises -> Int:
+    def benchmark_fn(num_iters: Int) raises -> Int:
         @parameter
         @always_inline
-        fn iter_fn() raises:
+        def iter_fn() raises:
             for _ in range(num_iters):
                 func1()
 
@@ -459,7 +459,7 @@ fn run[
 
 
 @always_inline
-fn run[
+def run[
     *, func2: fn() -> None
 ](
     num_warmup_iters: Int = 1,
@@ -492,7 +492,7 @@ fn run[
     """
 
     @parameter
-    fn raising_func() raises:
+    def raising_func() raises:
         func2()
 
     return run[func3=raising_func](
@@ -505,7 +505,7 @@ fn run[
 
 
 @always_inline
-fn run[
+def run[
     func3: fn() raises capturing[_] -> None
 ](
     num_warmup_iters: Int = 1,
@@ -539,10 +539,10 @@ fn run[
 
     @parameter
     @always_inline
-    fn benchmark_fn(num_iters: Int) raises -> Int:
+    def benchmark_fn(num_iters: Int) raises -> Int:
         @parameter
         @always_inline
-        fn iter_fn() raises:
+        def iter_fn() raises:
             for _ in range(num_iters):
                 func3()
 
@@ -560,7 +560,7 @@ fn run[
 
 
 @always_inline
-fn run[
+def run[
     *, func4: fn() capturing[_] -> None
 ](
     num_warmup_iters: Int = 1,
@@ -593,7 +593,7 @@ fn run[
     """
 
     @parameter
-    fn raising_func() raises:
+    def raising_func() raises:
         func4()
 
     return run[raising_func](
@@ -606,7 +606,7 @@ fn run[
 
 
 @always_inline
-fn _run_impl(opts: _RunOptions) raises -> Report:
+def _run_impl(opts: _RunOptions) raises -> Report:
     var report = Report()
 
     var prev_dur: Int = 0
@@ -681,7 +681,7 @@ fn _run_impl(opts: _RunOptions) raises -> Report:
     return report^
 
 
-fn _is_significant_measurement(
+def _is_significant_measurement(
     idx: Int, batch: Batch, num_batches: Int, opts: _RunOptions
 ) -> Bool:
     # When a fixed batch size is requested (opts.max_batch_size != 0),
@@ -699,7 +699,7 @@ fn _is_significant_measurement(
 
 
 @always_inline
-fn _run_impl_fixed[
+def _run_impl_fixed[
     timing_fn: fn(num_iters: Int) raises capturing[_] -> Int
 ](fixed_iterations: Int) raises -> Report:
     # Only run 'timing_fn' for the fixed number of iterations and return the report.

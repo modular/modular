@@ -17,7 +17,7 @@ from std.os import getenv
 from std.builtin.range import _StridedRange
 
 
-fn _get_terminal_size(fallback: Tuple[Int, Int] = (80, 24)) -> Tuple[Int, Int]:
+def _get_terminal_size(fallback: Tuple[Int, Int] = (80, 24)) -> Tuple[Int, Int]:
     """Gets the size of the terminal.
 
     Args:
@@ -35,23 +35,23 @@ fn _get_terminal_size(fallback: Tuple[Int, Int] = (80, 24)) -> Tuple[Int, Int]:
         return (80, 24)
 
 
-fn _hide_cursor():
+def _hide_cursor():
     print("\x1b[?25l", end="")
 
 
-fn _show_cursor():
+def _show_cursor():
     print("\x1b[?25h", end="")
 
 
-fn _clear_line():
+def _clear_line():
     print("\033[A\33[2K")
 
 
-fn _del():
+def _del():
     print("\r\33[2K", end="")
 
 
-fn _end():
+def _end():
     print("\033[0m\r", end="")
 
 
@@ -63,7 +63,7 @@ struct Progress(ImplicitlyCopyable):
     import std.time
 
 
-    fn main():
+    def main():
         with Progress(10) as p:
             for i in range(10):
                 p.advance()
@@ -77,17 +77,17 @@ struct Progress(ImplicitlyCopyable):
     var _term_dims: Tuple[Int, Int]
 
     @always_inline("nodebug")
-    fn __init__(out self, end: Int):
+    def __init__(out self, end: Int):
         self = Self(0, end)
 
     @always_inline("nodebug")
-    fn __init__(out self, start: Int, end: Int, step: Int = 1):
+    def __init__(out self, start: Int, end: Int, step: Int = 1):
         self._range = _StridedRange(start, end, step)
         self._percentage = Float64(1) / Float64(len(self._range))
         self._term_dims = _get_terminal_size()
         print("")
 
-    fn advance(mut self, steps: Int = 1) raises StopIteration:
+    def advance(mut self, steps: Int = 1) raises StopIteration:
         comptime BLOCK = "▇"
         comptime PLACE_HOLDER = " "
 
@@ -107,13 +107,13 @@ struct Progress(ImplicitlyCopyable):
         print(PLACE_HOLDER * placeholders_to_print, end="")
         _end()
 
-    fn __enter__(self) -> Self:
+    def __enter__(self) -> Self:
         return self
 
-    fn __exit__(self):
+    def __exit__(self):
         print("")
         _hide_cursor()
         _show_cursor()
 
-    fn __exit__(self, err: Error):
+    def __exit__(self, err: Error):
         self.__exit__()

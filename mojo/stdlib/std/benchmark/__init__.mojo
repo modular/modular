@@ -28,7 +28,7 @@ You can pass any `fn` as a parameter into `benchmark.run[...]()`, it will return
 a `Report` where you can get the mean, duration, max, and more:
 
 ```mojo
-fn sleeper():
+def sleeper():
     sleep(.01)
 
 var report = benchmark.run[sleeper]()
