@@ -39,13 +39,13 @@ def _make_cli() -> click.Command:
     return cli
 
 
-def _make_pipeline_sources_cli() -> click.Command:
+def _make_pipeline_parallelism_cli() -> click.Command:
     @click.command()
     @pipeline_config_options
     def cli(**config_kwargs: Any) -> None:
-        sources = config_kwargs.get("__cli_param_sources__", {})
         click.echo(
-            f"{sources.get('ep_size')}|{sources.get('data_parallel_degree')}"
+            f"{config_kwargs.get('ep_size')}|"
+            f"{config_kwargs.get('data_parallel_degree')}"
         )
 
     return cli
@@ -94,17 +94,18 @@ def test_cli_args_override_config_file(tmp_path: Path) -> None:
     assert result.output.strip() == "from-cli|True"
 
 
-def test_pipeline_config_options_injects_default_sources() -> None:
-    """Click defaults are preserved in source metadata."""
-    result = CliRunner().invoke(_make_pipeline_sources_cli(), [])
+def test_pipeline_config_options_preserves_none_defaults() -> None:
+    """Absent EP/DP flags remain unset until config resolution."""
+    result = CliRunner().invoke(_make_pipeline_parallelism_cli(), [])
     assert result.exit_code == 0, result.output
-    assert result.output.strip() == "DEFAULT|DEFAULT"
+    assert result.output.strip() == "None|None"
 
 
-def test_pipeline_config_options_marks_commandline_sources() -> None:
-    """Explicit flags are marked as COMMANDLINE in source metadata."""
+def test_pipeline_config_options_preserves_explicit_parallelism_flags() -> None:
+    """Explicit EP/DP flags are passed through as concrete values."""
     result = CliRunner().invoke(
-        _make_pipeline_sources_cli(), ["--ep-size", "1"]
+        _make_pipeline_parallelism_cli(),
+        ["--ep-size", "1", "--data-parallel-degree", "1"],
     )
     assert result.exit_code == 0, result.output
-    assert result.output.strip() == "COMMANDLINE|DEFAULT"
+    assert result.output.strip() == "1|1"

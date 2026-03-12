@@ -489,6 +489,15 @@ class TestPipelineConfigUtilityMethods:
         assert config.runtime.ep_size == num_devices
         assert config.model.data_parallel_degree == num_devices
 
+    @mock_pipeline_config_resolve
+    def test_parallelism_defaults_start_unresolved_as_none(self) -> None:
+        config = PipelineConfig(
+            model=MAXModelConfig(model_path="test/model"),
+        )
+
+        assert config.runtime.ep_size is None
+        assert config.model.data_parallel_degree is None
+
     @pytest.mark.parametrize("num_devices", _MULTI_GPU_DEVICE_COUNTS)
     @mock_pipeline_config_resolve
     def test_apply_multi_gpu_defaults_for_enabled_arch_ep_only(
@@ -640,22 +649,19 @@ class TestPipelineConfigUtilityMethods:
 
     @pytest.mark.parametrize("num_devices", _MULTI_GPU_DEVICE_COUNTS)
     @mock_pipeline_config_resolve
-    def test_apply_multi_gpu_defaults_click_default_sources(
+    def test_apply_draft_data_parallel_default_inherits_primary_dp(
         self, num_devices: int
     ) -> None:
-        # Simulate Click passing default-valued flags in kwargs.
         config = PipelineConfig(
             model=MAXModelConfig(
                 model_path="test/model",
                 device_specs=[DeviceSpec.accelerator()] * num_devices,
-                data_parallel_degree=1,
             ),
-            runtime=PipelineRuntimeConfig(ep_size=1),
+            draft_model=MAXModelConfig(
+                model_path="test/draft",
+                device_specs=[DeviceSpec.accelerator()] * num_devices,
+            ),
         )
-        config._cli_param_sources = {
-            "ep_size": "DEFAULT",
-            "data_parallel_degree": "DEFAULT",
-        }
 
         config._apply_multi_gpu_parallelism_defaults(
             self._arch_with_parallel_defaults(
@@ -666,53 +672,32 @@ class TestPipelineConfigUtilityMethods:
             config.model,
             num_devices,
         )
+        config._apply_draft_data_parallel_default()
 
         assert config.runtime.ep_size == num_devices
         assert config.model.data_parallel_degree == num_devices
+        assert config.draft_model is not None
+        assert config.draft_model.data_parallel_degree == num_devices
 
-    @pytest.mark.parametrize("num_devices", _MULTI_GPU_DEVICE_COUNTS)
     @mock_pipeline_config_resolve
-    def test_apply_multi_gpu_defaults_click_commandline_source_wins(
-        self, num_devices: int
+    def test_apply_draft_data_parallel_default_respects_explicit_draft_dp(
+        self,
     ) -> None:
-        # Simulate user explicitly setting --ep-size=1 on CLI.
-        # EP should stay fixed, while DP can still auto-default from DEFAULT.
         config = PipelineConfig(
             model=MAXModelConfig(
                 model_path="test/model",
-                device_specs=[DeviceSpec.accelerator()] * num_devices,
+                data_parallel_degree=8,
+            ),
+            draft_model=MAXModelConfig(
+                model_path="test/draft",
                 data_parallel_degree=1,
             ),
-            runtime=PipelineRuntimeConfig(ep_size=1),
-        )
-        config._cli_param_sources = {
-            "ep_size": "COMMANDLINE",
-            "data_parallel_degree": "DEFAULT",
-        }
-
-        config._apply_multi_gpu_parallelism_defaults(
-            self._arch_with_parallel_defaults(
-                name="DeepseekV3ForCausalLM",
-                default_ep_size_to_num_devices=True,
-                default_data_parallel_degree_to_num_devices=True,
-            ),
-            config.model,
-            num_devices,
         )
 
-        assert config.runtime.ep_size == 1
-        assert config.model.data_parallel_degree == num_devices
+        config._apply_draft_data_parallel_default()
 
-    @mock_pipeline_config_resolve
-    def test_pipeline_config_accepts_cli_param_sources_hidden_kwarg(
-        self,
-    ) -> None:
-        config_kwargs: dict[str, Any] = {
-            "model": MAXModelConfig(model_path="test/model"),
-            "__cli_param_sources__": {"ep_size": "DEFAULT"},
-        }
-        config = PipelineConfig(**config_kwargs)
-        assert config._cli_param_sources == {"ep_size": "DEFAULT"}
+        assert config.draft_model is not None
+        assert config.draft_model.data_parallel_degree == 1
 
 
 class TestDraftModelEncodingDefault:

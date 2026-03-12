@@ -153,13 +153,6 @@ class PipelineConfig(ConfigFileModel):
     """Temporary storage for unmatched kwargs during initialization.
     This is used to pass unmatched kwargs from the before validator to the after validator."""
 
-    _cli_param_sources: dict[str, str] | None = PrivateAttr(default=None)
-    """Click parameter source metadata passed from CLI entrypoints.
-
-    Keys are parameter names and values are ``click.ParameterSource.name``
-    strings (for example, ``"DEFAULT"`` or ``"COMMANDLINE"``).
-    """
-
     def configure_session(self, session: InferenceSession) -> None:
         """Configures a :class:`~max.engine.InferenceSession` with standard pipeline settings."""
         session.gpu_profiling(self.profiling.gpu_profiling)
@@ -401,7 +394,6 @@ class PipelineConfig(ConfigFileModel):
             return handler(data)
 
         kwargs = data.copy()
-        cli_param_sources = kwargs.pop("__cli_param_sources__", None)
         # Merge config file values before separating pydantic vs unmatched
         # kwargs, so sub-config fields (e.g. model_path) from the YAML are
         # visible to _postprocess_configs.
@@ -424,10 +416,6 @@ class PipelineConfig(ConfigFileModel):
         model = handler(pydantic_kwargs)
         # `_unmatched_kwargs` is a PrivateAttr, so set it on the instance.
         model._unmatched_kwargs = unmatched_kwargs
-        if isinstance(cli_param_sources, dict):
-            model._cli_param_sources = {
-                str(k): str(v) for k, v in cli_param_sources.items()
-            }
         return model
 
     @model_validator(mode="after")
@@ -561,70 +549,69 @@ class PipelineConfig(ConfigFileModel):
 
     def _apply_multi_gpu_parallelism_defaults(
         self,
-        architecture: SupportedArchitecture,
+        architecture: SupportedArchitecture | None,
         model_config: MAXModelConfig,
         num_devices: int,
     ) -> None:
-        """Auto-resolve architecture-defined EP/DP defaults for multi-GPU."""
-        if num_devices <= 1:
-            return
-
-        ep_was_provided = self._is_param_explicitly_provided(
-            "ep_size", "ep_size" in self.runtime.model_fields_set
-        )
-        dp_was_provided = self._is_param_explicitly_provided(
-            "data_parallel_degree",
-            "data_parallel_degree" in model_config.model_fields_set,
-        )
-
+        """Resolve primary-model EP/DP defaults to concrete integers."""
         old_ep = self.runtime.ep_size
         old_dp = model_config.data_parallel_degree
 
-        if (
-            architecture.default_ep_size_to_num_devices
-            and not ep_was_provided
-            and self.runtime.ep_size == 1
-            and model_config.data_parallel_degree in (1, num_devices)
-        ):
-            self.runtime.ep_size = num_devices
+        if self.runtime.ep_size is None:
+            if (
+                architecture is not None
+                and num_devices > 1
+                and architecture.default_ep_size_to_num_devices
+            ):
+                self.runtime.ep_size = num_devices
+            else:
+                self.runtime.ep_size = 1
 
-        # If user provide an invalid ep_size > 1, we will not fix it here
-        # but let downstream codes to handle it.
-        if (
-            architecture.default_data_parallel_degree_to_num_devices
-            and not dp_was_provided
-            and model_config.data_parallel_degree == 1
-        ):
-            model_config.data_parallel_degree = num_devices
+        if model_config.data_parallel_degree is None:
+            if (
+                architecture is not None
+                and num_devices > 1
+                and architecture.default_data_parallel_degree_to_num_devices
+            ):
+                model_config.data_parallel_degree = num_devices
+            else:
+                model_config.data_parallel_degree = 1
 
         if (
             self.runtime.ep_size != old_ep
             or model_config.data_parallel_degree != old_dp
         ):
             logger.info(
-                "Auto-configured %s multi-GPU parallelism defaults: "
+                "Resolved %s parallelism defaults: "
                 "ep_size %s -> %s, data_parallel_degree %s -> %s",
-                architecture.name,
+                architecture.name if architecture is not None else "default",
                 old_ep,
                 self.runtime.ep_size,
                 old_dp,
                 model_config.data_parallel_degree,
             )
 
-    def _is_param_explicitly_provided(
-        self, param_name: str, fallback: bool
-    ) -> bool:
-        """Returns whether a parameter was explicitly set by the user.
+    def _apply_draft_data_parallel_default(self) -> None:
+        """Inherit the resolved primary-model DP when draft DP is unset."""
+        if self.draft_model is None:
+            return
 
-        ``fallback`` is the non-CLI explicitness signal (typically from
-        ``model_fields_set``) used when Click source metadata is unavailable.
-        """
-        if (
-            self._cli_param_sources is None
-            or param_name not in self._cli_param_sources
-        ):
-            return fallback
-        return self._cli_param_sources[param_name] != "DEFAULT"
+        primary_dp = self.model.data_parallel_degree
+        if primary_dp is None:
+            raise AssertionError(
+                "Primary model data_parallel_degree must be resolved before "
+                "draft model defaults are applied."
+            )
+
+        old_draft_dp = self.draft_model.data_parallel_degree
+        if old_draft_dp is None:
+            self.draft_model.data_parallel_degree = primary_dp
+            logger.info(
+                "Resolved draft model data_parallel_degree %s -> %s "
+                "(inherited from primary model)",
+                old_draft_dp,
+                self.draft_model.data_parallel_degree,
+            )
 
     def resolve(self) -> None:
         """Validates and resolves the config.
@@ -636,6 +623,17 @@ class PipelineConfig(ConfigFileModel):
         self._import_custom_architectures()
 
         self.model.resolve()
+        primary_arch = PIPELINE_REGISTRY.retrieve_architecture(
+            huggingface_repo=self.model.huggingface_model_repo,
+            prefer_module_v3=self.runtime.prefer_module_v3,
+        )
+        self._apply_multi_gpu_parallelism_defaults(
+            primary_arch,
+            self.model,
+            len(load_devices(self.model.device_specs)),
+        )
+        if self.draft_model is not None:
+            self._apply_draft_data_parallel_default()
 
         # Validation for max_length is handled in MAXModelConfig
 
@@ -995,12 +993,6 @@ class PipelineConfig(ConfigFileModel):
             )
 
         devices = load_devices(model_config.device_specs)
-        # This resolver runs for both primary and draft models. Apply
-        # architecture default parallelism only to the primary model pass.
-        if model_config is self.model:
-            self._apply_multi_gpu_parallelism_defaults(
-                arch, model_config, len(devices)
-            )
 
         # Validate LoRA support - currently only Llama3 models support LoRA
         if self.lora and self.lora.enable_lora:
