@@ -72,11 +72,11 @@ void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
   }
 
   auto failure = cast<TypeConflict>(info);
-  if (sugarIsa<TypeType>(failure.paramType)) {
+  if (sugarIsa<NonStructTypeType>(failure.paramType)) {
     if (auto anyStruct = sugarDynCast<StructMetaType>(failure.argParamType)) {
       diag << ", argument type " << ASTType(anyStruct.getType())
-           << " is not a 'TrivialRegisterPassable' type, so "
-              "does not satisfy __TypeOfAllTypes";
+           << " is a user-defined struct type, so it is not "
+              "a 'non_struct_type'";
       return;
     }
   }

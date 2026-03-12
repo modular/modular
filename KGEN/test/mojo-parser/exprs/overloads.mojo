@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-# CHECK: [[SCALARF64:.*]] = #kgen.type<!lit.struct<#MLIRType <:type scalar<f64>>>, scalar<f64>> : !TrivialRegisterPassable
+# CHECK: [[SCALARF64:.*]] = #kgen.type<!lit.struct<#MLIRType <:non_struct_type scalar<f64>>>, scalar<f64>> : !TrivialRegisterPassable
 
 struct MyInt(TrivialRegisterPassable):
     var value: Int

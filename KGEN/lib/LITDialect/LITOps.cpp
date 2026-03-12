@@ -1061,10 +1061,13 @@ std::optional<size_t> StructDeclOp::findFieldIndex(StringRef name) {
 }
 
 TypedAttr StructDeclOp::getFieldType(StringRef name) {
-  for (StructFieldOp field : getFieldDecls())
-    if (field.getName() == name)
+  for (StructFieldOp field : getFieldDecls()) {
+    if (field.getName() == name) {
+      // FIXME: bound by AnyType
       return TypeParamAttr::get(field.getType(),
                                 TypeType::get(field.getContext()));
+    }
+  }
   return nullptr;
 }
 

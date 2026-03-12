@@ -282,6 +282,8 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
       [=](AnyTraitType) { return typeType; });
   replacer.addInferredDomainNonRecursiveReplacement(
       [=](TraitType) { return typeType; });
+  replacer.addInferredDomainNonRecursiveReplacement(
+      [=](NonStructTypeType) { return typeType; });
 
   // #lit.ref.pack => #kgen.pack
   replacer.addInferredDomainNonRecursiveReplacement(

@@ -1773,7 +1773,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
         ParameterExprArrayAttr::get(
             getContext(), cast<StructType>(structSelfType).getParamValues()));
     clType = cast<LIT::StructType>(clType).bindAll(
-        {TypeParamAttr::get(bound.getType(), TypeType::get(getContext())),
+        {TypeParamAttr::get(bound.getType(),
+                            NonStructTypeType::get(getContext())),
          bound});
     auto b = OpBuilder::atBlockBegin(declOp.getBody());
     paramField =

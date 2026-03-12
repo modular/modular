@@ -50,17 +50,17 @@ fn fancy_signature[dt: DType, size: Int](
   return size+42
 
 
-fn generic_fn[a: DType, b: Int, c: __mlir_type.`!kgen.type`](d : Int):
+fn generic_fn[a: DType, b: Int, c: TrivialRegisterPassable](d : Int):
   pass
 
 # CHECK: lit.fn @"call_generic{{.*}}"<dt: !DType>()
 fn call_generic[dt: DType]():
   # CHECK: %[[C57:.*]] = {{.*}}constant{{.*}}57
-  # CHECK: lit.call {{.*}}@"generic_fn{{.*}}"<:!DType dt, :!Int {{.*}}42{{.*}}, :type !DType>(%[[C57]])
+  # CHECK: lit.call {{.*}}@"generic_fn{{.*}}"<:!DType dt, :!Int {{.*}}42{{.*}}, :!TrivialRegisterPassable !DType>(%[[C57]])
   generic_fn[dt, 42, DType](57)
 
   # CHECK: %[[C57_2:.*]] = {{.*}}constant{{.*}}57
-  # CHECK: lit.call {{.*}}@"generic_fn{{.*}}"<:!DType dt, :!Int {13}, :type {{.*}}#SIMD <:!DType dt, :!Int {4}>{{.*}}>(%[[C57_2]])
+  # CHECK: lit.call {{.*}}@"generic_fn{{.*}}"<:!DType dt, :!Int {13}, :!TrivialRegisterPassable {{.*}}SIMD<:!DType dt, :!Int {4}>>(%[[C57_2]])
   generic_fn[dt, 13, SIMD[dt, 4]](57)
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
@@ -165,9 +165,9 @@ fn useParameterizedField[x: Pair[DType.float32]]():
 
 
 # CHECK-LABEL: lit.struct.decl @TypeParameter
-# CHECK-SAME: <[[TYPE:.*]]: type>
-struct TypeParameter[T: __mlir_type.`!kgen.type`]:
-  # CHECK: @"bar(parameters::TypeParameter{{.*}}(%self: {{.*}} read_mem, %val: !kgen.param<[[TYPE]]>)
+# CHECK-SAME: <[[TYPE:.*]]: non_struct_type>
+struct TypeParameter[T: __mlir_type.`!kgen.non_struct_type`]:
+  # CHECK: @"bar(parameters::TypeParameter{{.*}}(%self: {{.*}} read_mem, %val: !kgen.param<:non_struct_type [[TYPE]]>)
   fn bar(self, val: Self.T):
     pass
 
@@ -181,7 +181,7 @@ struct ParamSubst[
 
 # CHECK-LABEL: lit.fn @"testParamSubst
 fn testParamSubst():
-  # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<!lit.struct<#ParamSubst <:!TrivialRegisterPassable {{..*}}<:type index>, {{.*}}:variadic<index> [1, 2]>>,
+  # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<!lit.struct<#ParamSubst <:!TrivialRegisterPassable {{..*}}<:non_struct_type index>, {{.*}}:variadic<index> [1, 2]>>,
   var xx : ParamSubst[__mlir_type.index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
 
 
@@ -759,14 +759,14 @@ fn variadic_parameter[elems: __mlir_type.`!kgen.variadic<index>`]() -> Int:
     return 3
 
 fn dependent_variadic_parameter[
-    type: __mlir_type.`!kgen.type`, *values: type
+    type: TrivialRegisterPassable, *values: type
 ](): pass
 
 # CHECK-LABEL: lit.fn @"pass_variadic{{.*}}"<elems: variadic<index>>
 fn pass_variadic[elems: __mlir_type.`!kgen.variadic<index>`]():
     # CHECK-NEXT: lit.call {{.*}}@"variadic_parameter{{.*}}"<:variadic<index> elems>
     _ = variadic_parameter[elems]()
-    # CHECK: lit.call {{.*}}@"dependent_variadic_parameter{{.*}}"<:type !Int, :variadic<!Int>
+    # CHECK: lit.call {{.*}}@"dependent_variadic_parameter{{.*}}"<:!TrivialRegisterPassable !Int, :variadic<!Int>
     _ = dependent_variadic_parameter[Int, 1, 2]()
 
 
@@ -835,10 +835,10 @@ struct StaticVec[size: Int](TrivialRegisterPassable):
       return
 
 fn callee1[size: Int](v: StaticVec[size]): pass
-fn callee2[T: __mlir_type.`!kgen.type`](v: T): pass
+fn callee2[T: TrivialRegisterPassable](v: T): pass
 fn callee3[size: Int, type: __mlir_type.`!kgen.dtype`]
    (v:  __mlir_type[`!pop.simd<`, size._mlir_value, `, `, type, `>`]): pass
-fn callee4[T: __mlir_type.`!kgen.type`]
+fn callee4[T: __mlir_type.`!kgen.non_struct_type`]
    (v:  __mlir_type[`!kgen.pointer<`, T, `>`]): pass
 
 # CHECK-LABEL: lit.fn @"testParamInference{{.*}}"<size: !Int>(
@@ -852,11 +852,11 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
   callee1(b)
   # CHECK-NEXT: lit.call {{.*}}callee1{{.*}}<:!Int {{.*}}{_mlir_value = add(#lit.struct.extract<:!Int size, "_mlir_value">, 2)}{{.*}}(%b2)
   callee1(b2)
-  # CHECK-NEXT: lit.call {{.*}}callee2{{.*}}<:type {{.*}}StaticVec <:!Int size>{{.*}}>(%b)
+  # CHECK-NEXT: lit.call {{.*}}callee2{{.*}}<:!TrivialRegisterPassable {{.*}}StaticVec<:!Int size>>(%b)
   callee2(b)
   # CHECK-NEXT: lit.call {{.*}}callee3{{.*}}<:!Int {17}, :dtype f32>(%c)
   callee3[17](c)
-  # CHECK-NEXT: lit.call {{.*}}callee4{{.*}}<:type f32>(%d)
+  # CHECK-NEXT: lit.call {{.*}}callee4{{.*}}<:non_struct_type f32>(%d)
   callee4(d)
 
 # CHECK-LABEL: lit.struct.decl @Abstraction
@@ -952,7 +952,7 @@ fn infer_with_default_arg[T: TrivialRegisterPassable](a: T, b: Int = 7):
 
 # CHECK-LABEL: lit.fn @"test_infer_with_default_arg()"
 fn test_infer_with_default_arg():
-    # lit.call {{.*}}::@"infer_with_default_arg[TrivialRegisterPassable]($0,::Int)"<:type !Int>
+    # lit.call {{.*}}::@"infer_with_default_arg[TrivialRegisterPassable]($0,::Int)"<:non_struct_type !Int>
     infer_with_default_arg(128)
 
 # CHECK-LABEL: lit.fn @"indirect_call_infer_params
@@ -1766,7 +1766,7 @@ struct FindOriginFromKGENOrigin[X: AnyType, origin: Origin[]]:
 
 # Test non-materializable target of a meta type.
 fn infer_non_materializable_target_of_meta_type[
-    type_type: __TypeOfAllTypes,
+    type_type: __mlir_type.`!kgen.type`,
     //,
     type: type_type,
 ]():
@@ -1774,7 +1774,7 @@ fn infer_non_materializable_target_of_meta_type[
 
 fn test_non_materializable_target_of_meta_type():
     # CHECK:      lit.call tail {{.*}}"infer_non_materializable_target_of_meta_type{{.*}}"
-    # CHECK-SAME: <:!alias___TypeOfAllTypes1 #kgen.type<meta<!lit.struct<#IntLiteral <:!pop.int_literal 0>>>>
+    # CHECK-SAME: <:type meta<!lit.struct<#IntLiteral <:!pop.int_literal 0>
     infer_non_materializable_target_of_meta_type[type_of(0)]()
 
 

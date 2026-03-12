@@ -764,7 +764,7 @@ ParseResult KGEN::parseBindParams(AsmParser &p, TypedAttr &generator,
   if (parseParamValue(p, generator, preParsedGeneratorType))
     return failure();
 
-  auto genType = cast<GeneratorType>(preParsedGeneratorType);
+  auto genType = sugarCast<GeneratorType>(preParsedGeneratorType);
   // Parse each operand, inferring its type from the signature type. Bound
   // parameters are allowed to refine the types of subsequent parameters, so
   // specialize the types as we go.
@@ -1504,7 +1504,9 @@ void KGEN::printParamValue(AsmPrinter &p, Operation *op, TypedAttr value,
   printParamValue(p, value, type);
 }
 
-bool KGEN::isTypeExprType(Type type) { return isa<TypeType>(type); }
+bool KGEN::isTypeExprType(Type type) {
+  return isa<NonStructTypeType, TypeType>(type);
+}
 
 bool KGEN::isTypeExpr(TypedAttr attr) { return isTypeExprType(attr.getType()); }
 

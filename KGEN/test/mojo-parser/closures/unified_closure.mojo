@@ -537,17 +537,17 @@ fn giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
 
 # COM: The captured parameter becomes an alias on the trait
 # CHECK: lit.trait.decl @"fn() -> T"
-# CHECK-NEXT: lit.alias.decl T: type
+# CHECK-NEXT: lit.alias.decl T: !TrivialRegisterPassable
 
 # COM: The captured parameter becomes a parameter of the struct generator
-# CHECK: kgen.struct.generator @"makeIt{{.*}}::parametric"<{{.*}}, T: type>
-# CHECK: kgen.witness "T" : type = T
+# CHECK: kgen.struct.generator @"makeIt{{.*}}::parametric"<{{.*}}, T: !TrivialRegisterPassable>
+# CHECK: kgen.witness "T" : !TrivialRegisterPassable = T
 
 
 # COM: The alias is set to the alias of the impl in the struct wrapper
 # CHECK: lit.struct.decl @"fn() -> T_Mova_Impl_Copy_Impl"
-# CHECK: kgen.witness "T" : type = #kgen.get_witness<:!{{.*}} impl, "fn() -> T", "T">
-fn makeIt[T: __TypeOfAllTypes](a: T):
+# CHECK: kgen.witness "T" : !TrivialRegisterPassable = #kgen.get_witness<:!{{.*}} impl, "fn() -> T", "T">
+fn makeIt[T: TrivialRegisterPassable](a: T):
     fn parametric() unified {var a} -> T:
         return a
 

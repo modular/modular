@@ -926,25 +926,9 @@ static FailureOr<bool>
 isValidUpCastToTypeType(SharedState &shared, ASTType fromType, ASTType toType) {
   // Trait metatypes/struct MetaMetaType are allowed to upcast to trivial types.
   if (sugarIsa<TypeType>(toType)) {
-    if (sugarIsa<AnyTraitType, StructMetaMetaType>(fromType))
-      return true;
-    if (auto structType = sugarDynCast<StructMetaType>(fromType)) {
-      return ASTType(structType.getType())
-                 .getRegisterPassability(SMLoc(), shared) ==
-             TypeConvention::RegisterPassableTrivial;
-    }
-
-    if (auto traitType = sugarDynCast<TraitType>(fromType)) {
-      auto traitDeclOp = shared.declResolver->getTraitDecl(traitType);
-      if (!traitDeclOp)
-        return false;
-      if (!traitDeclOp->getIfOperation())
-        return false;
-      auto traitOp = dyn_cast<TraitDeclOp>(traitDeclOp->getIfOperation());
-      if (!traitOp)
-        return false;
-      return traitOp.getConvention() == TypeConvention::RegisterPassableTrivial;
-    }
+    // Allowing casting from any metatype to type of all types.
+    return sugarIsa<AnyTraitType, StructMetaMetaType, StructMetaType, TraitType,
+                    NonStructTypeType>(fromType);
   }
 
   // Not applicable.
@@ -1436,10 +1420,8 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
 
 /// Emit a conversion from an MLIR type to a trait type by materializing stubs
 /// for the type's witness table.
-static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
-                                  IREmitter &emitter) {
-  SharedState &shared = emitter.shared;
-
+PValue IREmitter::bindNonStructTypeToTrait(ASTExprAnd<CValue> value,
+                                           TraitType trait) {
   // Only parameter-domain type-values are supported right now.
   PValue typeValue = value.ir.getIfPValue();
   if (!typeValue) {
@@ -1488,6 +1470,14 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
   return TypeParamAttr::get(boundWrapper, mlirType, trait);
 }
 
+static bool isAnyTypeTraitType(TraitType trait, SharedState &shared,
+                               ASTDecl *scope) {
+  return cast<TraitDeclOp>(
+             shared.lookupBuiltinTrait("AnyType", scope, scope->getLoc())
+                 ->getIfOperation())
+             .bindReference() == trait;
+}
+
 // Returns true/false to indicate that whether a type value can be upcast to a
 // trait.
 // Returns failure when it is an non-applicable cases (i.e., `fromType` is not a
@@ -1512,11 +1502,28 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
     TraitType trait = anyTrait.getTraitType();
     bool result = false;
 
-    if (sugarIsa<TypeType>(fromType)) {
+    if (sugarIsa<NonStructTypeType>(fromType)) {
       // MLIR types can conform to traits that have limited requirements.
       // AnyTraitType (the type of all traits) conforms to traits with only a
       // destructor (e.g. AnyType) since all traits have that.
       result = checkMLIRTypeConformance(shared, loc, trait);
+    } else if (sugarIsa<TypeType>(fromType)) {
+      // Allowing TypeType to imply AnyType conformance.
+      //
+      // FIXME: this is WRONG, but a lot of places in the compiler (e.g.,
+      // reflection APIs) are abusing kgen.type for AnyType. It allows the
+      // following code to be compiled:
+      //
+      // fn test[T: AnyType]():
+      //     pass
+      //
+      // fn foo[T: __TypeOfAllTypes]():
+      //     test[T]()
+      //
+      // fn main():
+      //     foo[type_of(AnyType)]()
+      //
+      result = isAnyTypeTraitType(trait, shared, scope);
     } else if (sugarIsaAndNonNull<StructMetaMetaType>(fromType.getMetaType()) ||
                sugarIsaAndNonNull<AnyTraitType>(fromType.getMetaType())) {
       if (ASTType(fromType).getDecl(shared)) {
@@ -1800,9 +1807,15 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
     if (auto anyTrait =
             sugarDynCastIfPresent<AnyTraitType>(toType.getMetaType())) {
       TraitType trait = anyTrait.getTraitType();
-      if (sugarIsa<TypeType>(fromType)) {
+      if (sugarIsa<NonStructTypeType>(fromType)) {
         // Conversions from MLIR types.
-        return bindMLIRTypeToTrait(valueExpr, trait, *this);
+        return bindNonStructTypeToTrait(valueExpr, trait);
+      }
+
+      if (sugarIsa<TypeType>(fromType) &&
+          isAnyTypeTraitType(trait, shared, &getDeclScope())) {
+        PValue typeValue = valueExpr.ir.getIfPValue();
+        return PValue(TypeParamAttr::get(typeValue.getIfTypeValue(), trait));
       }
 
       if (sugarIsaAndNonNull<StructMetaMetaType>(fromType.getMetaType()) ||

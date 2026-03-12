@@ -213,8 +213,8 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
       if (!elideType)
         os << ":" << ASTType(indexVal.getType()).mlirType << " ";
       os << ASTType(indexVal).mlirType;
-    } else if (sugarIsa<TypeType, StructMetaType, AnyTraitType>(
-                   indexVal.getType()))
+    } else if (sugarIsa<NonStructTypeType, TypeType, StructMetaType,
+                        AnyTraitType>(indexVal.getType()))
       os << ASTType(indexVal).mlirType;
     else // Otherwise print it as an attribute.
       indexVal.get().print(os, elideType);
@@ -295,8 +295,8 @@ static std::string getStringRepresentation(AttrCtorDeferredAttr attr) {
         if (!elideType)
           os << ":" << ASTType(val.getType()).mlirType << " ";
         os << ASTType(val).mlirType;
-      } else if (sugarIsa<TypeType, StructMetaType, AnyTraitType>(
-                     val.getType()))
+      } else if (sugarIsa<NonStructTypeType, TypeType, StructMetaType,
+                          AnyTraitType>(val.getType()))
         os << ASTType(val).mlirType;
       else // Otherwise print it as an attribute.
         val.print(os, elideType);
@@ -4250,6 +4250,7 @@ AnyValue MagicFunctionNode::emitConformsTo(ValueDest &dest,
   }
 
   // Check if this is a !kgen.type value (from reflection APIs).
+  // FIXME: make reflection API use AnyType.
   bool isTypeTypeValue =
       sugarIsaAndNonNull<KGEN::TypeType>(typeToCheck.getType());
 
@@ -4260,6 +4261,7 @@ AnyValue MagicFunctionNode::emitConformsTo(ValueDest &dest,
     emitter.emitError(subExprs[0]->getLoc())
         << typeToCheck << " is not a type expression"
         << subExprs[0]->getRange();
+
     return {};
   }
 
@@ -4442,6 +4444,7 @@ AnyValue MagicFunctionNode::emitStructFieldTypes(ValueDest &dest,
   // Create the struct_field_types attribute. It will be evaluated during
   // elaboration to return the actual field types.
   MLIRContext *ctx = emitter.getContext();
+  // FIXME: use AnyType as the bound.
   auto variadicType = VariadicType::get(TypeType::get(ctx));
   auto attr =
       emitter.shared.getEvaluationContext().getAndFold<StructFieldTypesAttr>(

@@ -102,13 +102,41 @@ def KGEN_TypeType : KGENType<"Type", "type", [
     DeclareTypeInterfaceMethods<ParameterTypeInterface>,
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
     DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
-  let summary = "Arbitrary type";
+  let summary = "Type of all types";
   let description = [{
     This kgen type represents an arbitrary type, used for parameterizing
     type-generic functions and structs.
 
     It cannot be materialized into an SSA value, because it has no runtime
     representation.
+  }];
+
+  let assemblyFormat = "";
+}
+
+//===----------------------------------------------------------------------===//
+// NonStructTypeType
+//===----------------------------------------------------------------------===//
+
+def KGEN_NonStructTypeType : KGENType<"NonStructType", "non_struct_type", [
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+  let summary = "Type of non-lit-struct types";
+  let description = [{
+    This kgen type presents the type of all L1 non-lit-struct types (which
+    essentially means it is not a mojo struct nor a meta type expression).
+    In particular, this categorizes types that need to be wrapped
+    by `__MLIRType` in Mojo.
+
+    ```mojo
+    comptime mlir_i1 = __mlir_type.i1
+    # type_of(mlir_i1) == !kgen.non_struct_type
+
+    comptime fn_type = fn()->Int
+    # type_of(fn_type) == !kgen.non_struct_type
+
+    # Notably:
+    # type_of(type_of(mlir_i1)) == !kgen.type
+    ```
   }];
 
   let assemblyFormat = "";

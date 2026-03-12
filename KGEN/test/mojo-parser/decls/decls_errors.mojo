@@ -179,7 +179,7 @@ fn exampleVariadicAndKeyword(*a: Int, b: Int): pass
 # expected-note @+1 {{function declared here}}
 fn exampleByRefVariadic(a: FloatLiteral, mut *b: Int): pass
 # expected-note @+1 {{function declared here}}
-fn parameterizedVariadic[T: __mlir_type.`!kgen.type`](*args: T): pass
+fn parameterizedVariadic[T: TrivialRegisterPassable](*args: T): pass
 
 fn ownedPack[*Ts: AnyType](var *args: *Ts): pass
 fn ownedVariadic(var *args: Inner): pass
@@ -187,7 +187,7 @@ fn ownedVariadicReg(var *args: WrongType): pass
 
 
 # expected-note @+1 {{struct declared here}}
-struct ParameterizedStruct[T: __mlir_type.`!kgen.type`]:
+struct ParameterizedStruct[T: TrivialRegisterPassable]:
     # expected-note @+1 {{function declared here}}
     def __init__(out self, *args: Self.T) raises:
         pass
@@ -209,7 +209,7 @@ fn useBadResultParams():
   _ = BadResultParams[1]()
 
 @fieldwise_init
-struct TestTuple[*Ts: __TypeOfAllTypes]:
+struct TestTuple[*Ts: __mlir_type.`!kgen.type`]:
     # expected-note @+1 {{function declared here}}
     fn test[i: Int, j: Int](self):
         pass
@@ -316,7 +316,7 @@ struct TestPackErrorMessage[*Ts: AnyType]:
          pass
 
 # expected-error @+1 {{variadic pack elements declared as '__TypeOfAllTypes' are removed, please declare elements as 'AnyType' instead of '__TypeOfAllTypes'}}
-fn badAnyRegPack[*Ts: __TypeOfAllTypes](*args: *Ts):
+fn badAnyRegPack[*Ts: __mlir_type.`!kgen.type`](*args: *Ts):
   pass
 
 # always_inline("builtin")

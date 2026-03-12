@@ -1008,13 +1008,13 @@ comptime Composition = ImplicitlyCopyable
 
 # CHECK-LABEL: lit.fn @"mlir_type_trait_conformance
 fn mlir_type_trait_conformance():
-    # CHECK: !AnyType = <[{{.*}}::@__MLIRType<:type index>, index]>
+    # CHECK: !AnyType = <[{{.*}}::@__MLIRType<:non_struct_type index>, index]>
     comptime Any: AnyType = __mlir_type.index
-    # CHECK: !ImplicitlyCopyable = <[{{.*}}::@__MLIRType<:type index>, index]>
+    # CHECK: !ImplicitlyCopyable = <[{{.*}}::@__MLIRType<:non_struct_type index>, index]>
     comptime Copy: ImplicitlyCopyable = __mlir_type.index
-    # CHECK: !Movable = <[{{.*}}::@__MLIRType<:type index>, index]>
+    # CHECK: !Movable = <[{{.*}}::@__MLIRType<:non_struct_type index>, index]>
     comptime Move: Movable = __mlir_type.index
-    # CHECK: !alias_Composition1 = <#kgen.type<!lit.struct<#MLIRType <:type index>>, index>>
+    # CHECK: !alias_Composition1 = <#kgen.type<!lit.struct<#MLIRType <:non_struct_type index>>, index>>
     comptime Comp: Composition = __mlir_type.index
 
 # Check to ensure default params don't bind too early.

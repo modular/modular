@@ -77,6 +77,10 @@ void KGENDialect::registerTypes() {
 
   // Register custom type parser and printers for KGEN types.
   registerPrettyType(
+      "non_struct_type", &NonStructTypeType::parse,
+      mlir::TypeID::get<NonStructTypeType>(),
+      +[](AsmPrinter &p, Type) { p << "non_struct_type"; });
+  registerPrettyType(
       "type", &TypeType::parse, mlir::TypeID::get<TypeType>(),
       +[](AsmPrinter &p, Type) { p << "type"; });
   registerMnemonicType<DTypeType>();
@@ -164,8 +168,19 @@ TypeValueType TypeValueType::getFromBytecode(TypedAttr typeValue) {
 }
 
 //===----------------------------------------------------------------------===//
-// TypeType
+// NonStructTypeType
 //===----------------------------------------------------------------------===//
+
+OptionalParseResult NonStructTypeType::parseValue(AsmParser &p,
+                                                  TypedAttr &value) const {
+  return parseSugaredTypeValue(p, value, *this, parseOptionalKGENType);
+}
+
+LogicalResult NonStructTypeType::printValue(AsmPrinter &p,
+                                            TypedAttr value) const {
+  void (*typePrinter)(AsmPrinter &, Type) = &printKGENType; // Select overload.
+  return printSugaredTypeValue(p, value, typePrinter);
+}
 
 OptionalParseResult TypeType::parseValue(AsmParser &p, TypedAttr &value) const {
   return parseSugaredTypeValue(p, value, *this, parseOptionalKGENType);

@@ -436,7 +436,7 @@ struct InitFieldsDestroyedInThrowingConstructor:
         if cond:
             raise Error()
 
-# CHECK-LABEL: lit.fn @"doesnt_actually_raise{{.*}}%__error__: !lit.ref<#alias_Never
+# CHECK-LABEL: lit.fn @"doesnt_actually_raise{{.*}}%__error__: !lit.ref<:non_struct_type #alias_Never
 fn doesnt_actually_raise() raises Never:
     pass
 

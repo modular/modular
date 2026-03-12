@@ -13,14 +13,14 @@ comptime struct_field_index_by_name[
     T: AnyType,
     name: StringLiteral,
 ]: Int = Int(
-        mlir_value=__mlir_attr[
-            `#kgen.struct_field_index_by_name<`,
-            T,
-            `, `,
-            name.value,
-            `> : index`,
-        ]
-    )
+    mlir_value=__mlir_attr[
+        `#kgen.struct_field_index_by_name<`,
+        T,
+        `, `,
+        name.value,
+        `> : index`,
+    ]
+)
 
 comptime struct_field_type_by_name[
     StructT: AnyType,
@@ -36,6 +36,7 @@ comptime struct_field_type_by_name[
 # ===----------------------------------------------------------------------=== #
 # Parse-Time Folding
 # ===----------------------------------------------------------------------=== #
+
 
 trait HasInt:
     fn __init__(out self):
@@ -86,24 +87,36 @@ fn main():
     # CHECK: lit.alias.decl *"fieldIdx0`{{[0-9]*}}": !Int = <{0}>
     comptime fieldIdx0 = struct_field_index_by_name[MyWrapper[37], "nested"]
     # CHECK: lit.alias.decl *"fieldIdx1`{{[0-9]*}}": !Int = <{1}>
-    comptime fieldIdx1 = struct_field_index_by_name[MyWrapper[37], "nested_param"]
+    comptime fieldIdx1 = struct_field_index_by_name[
+        MyWrapper[37], "nested_param"
+    ]
 
     # Test struct_field_type_by_name folding
     # CHECK: lit.alias.decl *"fieldTypeByName0`{{[0-9]*}}": type = <!MyStruct>
-    comptime fieldTypeByName0 = struct_field_type_by_name[MyWrapper[37], "nested"]
+    comptime fieldTypeByName0 = struct_field_type_by_name[
+        MyWrapper[37], "nested"
+    ]
     # CHECK: lit.alias.decl *"fieldTypeByName1`{{[0-9]*}}": type = <!lit.struct<#MyParam <:!Int {37}>>>
-    comptime fieldTypeByName1 = struct_field_type_by_name[MyWrapper[37], "nested_param"]
+    comptime fieldTypeByName1 = struct_field_type_by_name[
+        MyWrapper[37], "nested_param"
+    ]
 
     # Test is_struct_type parsing (positive cases - Mojo struct types)
     # At parse time, the attribute is not yet evaluated, so we check the unevaluated form.
     # CHECK: lit.alias.decl *"isStructMyStruct`{{[0-9]*}}": i1 = <#kgen.is_struct_type<!MyStruct>>
-    comptime isStructMyStruct = __mlir_attr[`#kgen.is_struct_type<`, MyStruct, `> : i1`]
+    comptime isStructMyStruct = __mlir_attr[
+        `#kgen.is_struct_type<`, MyStruct, `> : i1`
+    ]
     # CHECK: lit.alias.decl *"isStructMyWrapper`{{[0-9]*}}": i1 = <#kgen.is_struct_type<!lit.struct<#MyWrapper <:!Int {42}>>>>
-    comptime isStructMyWrapper = __mlir_attr[`#kgen.is_struct_type<`, MyWrapper[42], `> : i1`]
+    comptime isStructMyWrapper = __mlir_attr[
+        `#kgen.is_struct_type<`, MyWrapper[42], `> : i1`
+    ]
     # CHECK: lit.alias.decl *"isStructInt`{{[0-9]*}}": i1 = <#kgen.is_struct_type<!Int>>
     comptime isStructInt = __mlir_attr[`#kgen.is_struct_type<`, Int, `> : i1`]
 
     # Test is_struct_type parsing (negative cases - MLIR primitive types)
     comptime intFieldTypes = __struct_field_types(Int)
     # CHECK: lit.alias.decl *"isStructMLIR`{{[0-9]*}}": i1 = <#kgen.is_struct_type<index>>
-    comptime isStructMLIR = __mlir_attr[`#kgen.is_struct_type<`, intFieldTypes[0], `> : i1`]
+    comptime isStructMLIR = __mlir_attr[
+        `#kgen.is_struct_type<`, intFieldTypes[0], `> : i1`
+    ]

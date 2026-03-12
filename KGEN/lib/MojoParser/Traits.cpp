@@ -1262,7 +1262,7 @@ LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared, ASTType type,
   ASTDecl *typeDecl = type.getDecl(shared);
   if (!typeDecl) {
     [[maybe_unused]] Type metaType = type.getMetaType();
-    assert(!metaType || sugarIsa<TypeType>(metaType));
+    assert(!metaType || sugarIsa<NonStructTypeType>(metaType));
     // This is a MLIR type, so we need to bind it to the builtin stub.
     // Use a special wrapper decl in the builtins as stubs.
     typeDecl = shared.getBuiltinStubsMLIRType(errorLoc).getDecl(shared);
@@ -1364,6 +1364,12 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   ASTType type = emitType({typePValue, value.expr});
   if (!type)
     return {};
+
+  if (sugarIsa<NonStructTypeType>(type.extractMetaType())) {
+    // Create the new type value with the trait metatype.
+    return this->bindNonStructTypeToTrait({type, value.expr}, trait);
+  }
+
   value.ir = PValue(type); // update value.ir if the type was rebound.
 
   // Check that the struct or super trait implements the trait.
