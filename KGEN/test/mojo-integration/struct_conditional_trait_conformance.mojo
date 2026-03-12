@@ -976,6 +976,92 @@ fn test_upcast_conditional_to_base():
     print("upcast_conditional_base: ok")
 
 
+# ===========================================================================
+# Test 29: TRP + conditional conformance with custom __eq__ and default __ne__
+# ===========================================================================
+# TrivialRegisterPassable types use a calling-convention thunk for witness
+# table entries (self by-value vs by-reference). The thunk must propagate
+# the callee's where-clause constraints so the indirect call can be verified.
+# Tests custom __eq__ (where clause + thunk) and default __ne__ (calls __eq__).
+
+
+@fieldwise_init
+struct TRPEquatable[T: AnyType](
+    Equatable where conforms_to(T, Equatable),
+    TrivialRegisterPassable,
+):
+    var value: Int
+
+    fn __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
+        return self.value == other.value
+
+
+fn needs_equatable[T: Equatable](a: T, b: T) -> Bool:
+    return (a == b) and not (a != b)
+
+
+fn test_trp_conditional_equatable():
+    var a = TRPEquatable[Int](42)
+    var b = TRPEquatable[Int](42)
+    var c = TRPEquatable[Int](99)
+    # CHECK: trp_eq_same: True
+    print("trp_eq_same:", needs_equatable(a, b))
+    # CHECK: trp_eq_diff: False
+    print("trp_eq_diff:", needs_equatable(a, c))
+
+
+# ===========================================================================
+# Test 30: TRP + multiple conditional conformances with default __eq__
+# ===========================================================================
+# Tests multiple conditional conformances on one TRP struct. Equatable uses
+# the default reflection-based __eq__ (no override). Also tests a custom
+# trait with a where-clause method.
+
+
+trait CustomTRPTrait:
+    fn get_value(self) -> Int:
+        ...
+
+
+@fieldwise_init
+struct CustomTRPImpl(CustomTRPTrait, TrivialRegisterPassable):
+    var x: Int
+
+    fn get_value(self) -> Int:
+        return self.x
+
+
+@fieldwise_init
+struct TRPMulti[T: AnyType](
+    CustomTRPTrait where conforms_to(T, CustomTRPTrait),
+    Equatable where conforms_to(T, Equatable),
+    TrivialRegisterPassable,
+):
+    var value: Int
+
+    fn get_value(self) -> Int where conforms_to(Self.T, CustomTRPTrait):
+        return self.value
+
+
+fn needs_custom_trp[T: CustomTRPTrait](x: T) -> Int:
+    return x.get_value()
+
+
+fn test_trp_multiple_conditional():
+    # Equatable path (Int conforms to Equatable) — uses default __eq__
+    var a = TRPMulti[Int](77)
+    var b = TRPMulti[Int](77)
+    var c = TRPMulti[Int](99)
+    # CHECK: trp_multi_eq: True
+    print("trp_multi_eq:", needs_equatable(a, b))
+    # CHECK: trp_multi_ne: False
+    print("trp_multi_ne:", needs_equatable(a, c))
+    # CustomTRPTrait path (CustomTRPImpl conforms to CustomTRPTrait)
+    var d = TRPMulti[CustomTRPImpl](88)
+    # CHECK: trp_multi_custom: 88
+    print("trp_multi_custom:", needs_custom_trp(d))
+
+
 fn main():
     test_simple_conditional()
     test_nested_wrappers()
@@ -1008,3 +1094,5 @@ fn main():
     test_metatype_upcast_with_scope()
     test_fn_conversion_with_scope()
     test_upcast_conditional_to_base()
+    test_trp_conditional_equatable()
+    test_trp_multiple_conditional()
