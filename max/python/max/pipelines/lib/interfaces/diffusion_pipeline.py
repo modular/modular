@@ -39,7 +39,7 @@ from typing_extensions import Self
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
-    from .cache_mixin import CacheConfig, DenoisingCacheState
+    from .cache_mixin import CacheConfig, CacheMixin, DenoisingCacheState
 
 CompileTarget: TypeAlias = Callable[..., Any] | Module[..., Any]
 CompileDecorator: TypeAlias = Callable[[CompileTarget], "CompileWrapper"]
@@ -193,7 +193,7 @@ class DiffusionPipeline(ABC):
         Subclasses must override this to call their transformer with the
         appropriate model-specific arguments.  The method should return
         ``(noise_pred,)`` when step_cache is disabled, or
-        ``(noise_pred, new_residual)`` when step_cache is enabled.
+        ``(new_residual, noise_pred)`` when step_cache is enabled.
 
         Args:
             cache_state: Per-request mutable cache state for this stream.
@@ -224,19 +224,27 @@ class DiffusionPipeline(ABC):
         Returns:
             noise_pred tensor for this step.
         """
-        cache_config = self.cache_config
+        # Cast self to CacheMixin to access cache attributes.
+        # Concrete pipelines inherit from both DiffusionPipeline and CacheMixin.
+        mixin: CacheMixin = self  # type: ignore[assignment]
+        cache_config = mixin.cache_config
 
         # 1. TaylorSeer scheduling decision
         skip_transformer = False
+        warmup_steps = cache_config.taylorseer_warmup_steps
+        cache_interval = cache_config.taylorseer_cache_interval
+        max_order_tensor = mixin._cache_taylor_max_order_tensor
         if cache_config.taylorseer:
-            skip_transformer = self.taylorseer_skip_transformer(
-                step, cache_config.taylorseer_warmup_steps, cache_config.taylorseer_cache_interval,
+            assert warmup_steps is not None
+            assert cache_interval is not None
+            skip_transformer = mixin.taylorseer_skip_transformer(
+                step, warmup_steps, cache_interval,
             )
 
         # 2. Compute TaylorSeer step delta
         taylor_delta_tensor: Tensor | None = None
         if cache_config.taylorseer:
-            assert self._cache_taylor_max_order_tensor is not None
+            assert max_order_tensor is not None
             assert cache_state.taylor_factor_0 is not None
             assert cache_state.taylor_factor_1 is not None
             delta = (
@@ -252,14 +260,17 @@ class DiffusionPipeline(ABC):
 
         # 3. Predict path (skip transformer)
         if cache_config.taylorseer and skip_transformer:
+            assert cache_state.taylor_factor_0 is not None
+            assert cache_state.taylor_factor_1 is not None
             assert cache_state.taylor_factor_2 is not None
             assert taylor_delta_tensor is not None
-            return self.taylor_predict(
+            assert max_order_tensor is not None
+            return mixin.taylor_predict(
                 cache_state.taylor_factor_0,
                 cache_state.taylor_factor_1,
                 cache_state.taylor_factor_2,
                 taylor_delta_tensor,
-                self._cache_taylor_max_order_tensor,
+                max_order_tensor,
             )
 
         # 4. Full compute path
@@ -273,15 +284,20 @@ class DiffusionPipeline(ABC):
 
         # 5. TaylorSeer factor update
         if cache_config.taylorseer:
+            assert cache_state.taylor_factor_0 is not None
+            assert cache_state.taylor_factor_1 is not None
             assert taylor_delta_tensor is not None
-            cache_state.taylor_factor_0, cache_state.taylor_factor_1, cache_state.taylor_factor_2 = (
-                self.taylor_update(
-                    noise_pred,
-                    cache_state.taylor_factor_0,
-                    cache_state.taylor_factor_1,
-                    taylor_delta_tensor,
-                    self._cache_taylor_max_order_tensor,
-                )
+            assert max_order_tensor is not None
+            (
+                cache_state.taylor_factor_0,
+                cache_state.taylor_factor_1,
+                cache_state.taylor_factor_2,
+            ) = mixin.taylor_update(
+                noise_pred,
+                cache_state.taylor_factor_0,
+                cache_state.taylor_factor_1,
+                taylor_delta_tensor,
+                max_order_tensor,
             )
             cache_state.taylor_last_compute_step = step
 

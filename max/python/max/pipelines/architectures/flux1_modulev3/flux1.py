@@ -37,7 +37,9 @@ from .model_config import FluxConfig
 logger = logging.getLogger(__name__)
 
 
-from max.pipelines.lib.interfaces.cache_mixin import fbcache_conditional_execution
+from max.pipelines.lib.interfaces.cache_mixin import (
+    fbcache_conditional_execution,
+)
 
 
 class FluxSingleTransformerBlock(Module[..., tuple[Tensor, Tensor]]):
@@ -429,7 +431,9 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         if not step_cache_enabled:
             return base_types
 
-        return base_types + tuple(self._fbcache_conditional_execution_output_types())
+        return base_types + tuple(
+            self._fbcache_conditional_execution_output_types()
+        )
 
     def _run_first_block(
         self,
@@ -534,15 +538,22 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         image_rotary_emb = self.pos_embed(ids)
 
         # Run first block (shared between standard and step-cache paths).
-        first_encoder_hidden_states, first_hidden_states = self._run_first_block(
-            hidden_states, encoder_hidden_states, temb, image_rotary_emb,
+        first_encoder_hidden_states, first_hidden_states = (
+            self._run_first_block(
+                hidden_states,
+                encoder_hidden_states,
+                temb,
+                image_rotary_emb,
+            )
         )
 
         if not self._step_cache_enabled:
             # Standard path: run remaining blocks sequentially.
             output = self._run_remaining_blocks(
-                first_hidden_states, first_encoder_hidden_states,
-                temb, image_rotary_emb,
+                first_hidden_states,
+                first_encoder_hidden_states,
+                temb,
+                image_rotary_emb,
             )
             return (output,)
 

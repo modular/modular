@@ -16,11 +16,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-
 from max._core.driver import Device
 from max.driver import Buffer
 from max.dtype import DType
@@ -28,7 +27,6 @@ from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph import TensorType, TensorValue
 
-from .component_model import ComponentModel
 from .diffusion_pipeline import max_compile
 
 
@@ -87,7 +85,7 @@ class CacheMixin:
     def init_cache(
         self,
         cache_config: CacheConfig,
-        transformer: ComponentModel,
+        transformer: Any,
         dtype: DType,
         device: Device,
         rdt: float = 0.05,
@@ -136,7 +134,9 @@ class CacheMixin:
         if cache_config.taylorseer:
             self._cache_taylor_max_order_tensor = Tensor(
                 storage=Buffer.from_dlpack(
-                    np.array([cache_config.taylorseer_max_order], dtype=np.int32)
+                    np.array(
+                        [cache_config.taylorseer_max_order], dtype=np.int32
+                    )
                 ).to(device)
             )
 
@@ -180,7 +180,10 @@ class CacheMixin:
         output_dim = (
             transformer_config.patch_size
             * transformer_config.patch_size
-            * (transformer_config.out_channels or transformer_config.in_channels)
+            * (
+                transformer_config.out_channels
+                or transformer_config.in_channels
+            )
         )
 
         state = DenoisingCacheState()
@@ -196,15 +199,19 @@ class CacheMixin:
             state.prev_residual = _device_zeros(
                 (batch_size, seq_len, residual_dim)
             )
-            state.prev_output = _device_zeros(
-                (batch_size, seq_len, output_dim)
-            )
+            state.prev_output = _device_zeros((batch_size, seq_len, output_dim))
 
         if self.cache_config.taylorseer:
-            for attr in ("taylor_factor_0", "taylor_factor_1", "taylor_factor_2"):
-                setattr(state, attr, _device_zeros(
-                    (batch_size, seq_len, output_dim)
-                ))
+            for attr in (
+                "taylor_factor_0",
+                "taylor_factor_1",
+                "taylor_factor_2",
+            ):
+                setattr(
+                    state,
+                    attr,
+                    _device_zeros((batch_size, seq_len, output_dim)),
+                )
 
         return state
 
@@ -248,8 +255,10 @@ class CacheMixin:
         """Taylor series prediction: f(t+dt) ~ f(t) + f'(t)*dt + f''(t)*dt^2/2."""
         offset = F.cast(step_offset, factor_0.dtype)
         result = factor_0 + factor_1 * offset
-        offset_sq_half = offset * offset * F.constant(
-            0.5, factor_0.dtype, device=factor_0.device
+        offset_sq_half = (
+            offset
+            * offset
+            * F.constant(0.5, factor_0.dtype, device=factor_0.device)
         )
         order2_term = factor_2 * offset_sq_half
         use_order2 = max_order >= F.constant(
@@ -295,6 +304,7 @@ class CacheMixin:
         if step < warmup_steps:
             return False
         return (step - warmup_steps - 1) % cache_interval != 0
+
 
 
 def fbcache_conditional_execution(

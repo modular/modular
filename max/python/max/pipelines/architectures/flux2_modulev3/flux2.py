@@ -20,6 +20,9 @@ from max.experimental.nn.norm import LayerNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
+from max.pipelines.lib.interfaces.cache_mixin import (
+    fbcache_conditional_execution,
+)
 
 from .layers.embeddings import TimestepEmbedding, Timesteps
 from .layers.flux2_attention import (
@@ -30,9 +33,6 @@ from .layers.flux2_attention import (
 )
 from .layers.normalizations import AdaLayerNormContinuous
 from .model_config import Flux2Config
-
-
-from max.pipelines.lib.interfaces.cache_mixin import fbcache_conditional_execution
 
 
 class Flux2TimestepGuidanceEmbeddings(Module[[Tensor, Tensor], Tensor]):
@@ -592,7 +592,9 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
         if not step_cache_enabled:
             return base_types
 
-        return base_types + tuple(self._fbcache_conditional_execution_output_types())
+        return base_types + tuple(
+            self._fbcache_conditional_execution_output_types()
+        )
 
     def _run_first_block(
         self,
@@ -651,9 +653,7 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
                 image_rotary_emb=image_rotary_emb,
                 position_ids=position_ids,
             )
-        hidden_states = F.concat(
-            [encoder_hidden_states, hidden_states], axis=1
-        )
+        hidden_states = F.concat([encoder_hidden_states, hidden_states], axis=1)
         for i in range(len(self.single_transformer_blocks)):
             single_block: Flux2SingleTransformerBlock = (
                 self.single_transformer_blocks[i]
@@ -742,18 +742,28 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
         )
 
         # Run first block (shared between standard and step-cache paths).
-        first_encoder_hidden_states, first_hidden_states = self._run_first_block(
-            hidden_states, encoder_hidden_states,
-            double_stream_mod_img, double_stream_mod_txt,
-            image_rotary_emb, position_ids,
+        first_encoder_hidden_states, first_hidden_states = (
+            self._run_first_block(
+                hidden_states,
+                encoder_hidden_states,
+                double_stream_mod_img,
+                double_stream_mod_txt,
+                image_rotary_emb,
+                position_ids,
+            )
         )
 
         if not self._step_cache_enabled:
             # Standard path: run remaining blocks sequentially.
             output = self._run_remaining_blocks(
-                first_hidden_states, first_encoder_hidden_states,
-                temb, double_stream_mod_img, double_stream_mod_txt,
-                single_stream_mod, image_rotary_emb, position_ids,
+                first_hidden_states,
+                first_encoder_hidden_states,
+                temb,
+                double_stream_mod_img,
+                double_stream_mod_txt,
+                single_stream_mod,
+                image_rotary_emb,
+                position_ids,
                 num_txt_tokens,
             )
             return (output,)

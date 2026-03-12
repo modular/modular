@@ -449,13 +449,23 @@ async def generate_image(args: argparse.Namespace) -> None:
         rdt_info = f", rdt={args.rdt}" if args.rdt is not None else ""
         print(f"Step cache enabled{rdt_info}.")
     if args.taylorseer:
-        order_info = f"order={args.taylorseer_max_order}" if args.taylorseer_max_order is not None else "order=model-default"
-        interval_info = f"interval={args.taylorseer_cache_interval}" if args.taylorseer_cache_interval is not None else "interval=model-default"
-        warmup_info = f"warmup={args.taylorseer_warmup_steps}" if args.taylorseer_warmup_steps is not None else "warmup=model-default"
+        order_info = (
+            f"order={args.taylorseer_max_order}"
+            if args.taylorseer_max_order is not None
+            else "order=model-default"
+        )
+        interval_info = (
+            f"interval={args.taylorseer_cache_interval}"
+            if args.taylorseer_cache_interval is not None
+            else "interval=model-default"
+        )
+        warmup_info = (
+            f"warmup={args.taylorseer_warmup_steps}"
+            if args.taylorseer_warmup_steps is not None
+            else "warmup=model-default"
+        )
         print(
-            f"TaylorSeer enabled: {order_info}, "
-            f"{interval_info}, "
-            f"{warmup_info}."
+            f"TaylorSeer enabled: {order_info}, {interval_info}, {warmup_info}."
         )
 
     # Step 6: Prepare inputs for the pipeline
