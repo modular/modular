@@ -244,16 +244,16 @@ def _truncate_prompt(prompt: str, max_len: int = 40) -> str:
     return prompt[: max_len - 1] + "…"
 
 
-def _images_to_png_base64(images: list[Any]) -> list[str]:
-    """Convert PIL images to PNG-encoded base64 strings.
+def _images_to_jpeg_base64(images: list[Any]) -> list[str]:
+    """Convert PIL images to JPEG-encoded base64 strings.
 
     This mirrors the post-processing that MAX performs internally
-    (numpy → PIL → PNG → base64) so that timing comparisons are fair.
+    (numpy → PIL → JPEG → base64) so that timing comparisons are fair.
     """
     result = []
     for img in images:
         buf = io.BytesIO()
-        img.save(buf, format="PNG")
+        img.save(buf, format="jpeg")
         result.append(base64.b64encode(buf.getvalue()).decode("ascii"))
     return result
 
@@ -289,7 +289,7 @@ def run_diffusers(args: argparse.Namespace) -> TimingResult:
 
     Preprocessing is measured as text encoding (encode_prompt). Execution
     is the remainder: latent prep, denoising loop, VAE decode, and
-    PNG + base64 encoding (to match MAX's post-processing).
+    JPEG + base64 encoding (to match MAX's post-processing).
     """
     import torch
 
@@ -322,7 +322,7 @@ def run_diffusers(args: argparse.Namespace) -> TimingResult:
             width=w,
             generator=generator,
         )
-        _images_to_png_base64(output.images)
+        _images_to_jpeg_base64(output.images)
         torch.cuda.synchronize()
 
     result = TimingResult()
@@ -347,7 +347,7 @@ def run_diffusers(args: argparse.Namespace) -> TimingResult:
         torch.cuda.synchronize()
         t_preprocess = time.perf_counter() - t0
 
-        # Execution: latent prep + denoising loop + VAE decode + PNG encode
+        # Execution: latent prep + denoising loop + VAE decode + JPEG encode
         torch.cuda.synchronize()
         t1 = time.perf_counter()
         output = pipe(
@@ -358,7 +358,7 @@ def run_diffusers(args: argparse.Namespace) -> TimingResult:
             width=w,
             generator=generator,
         )
-        _images_to_png_base64(output.images)
+        _images_to_jpeg_base64(output.images)
         torch.cuda.synchronize()
         t_execute = time.perf_counter() - t1
 
