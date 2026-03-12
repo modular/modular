@@ -20,6 +20,7 @@ This version is still a work in progress.
 - Standard library types now use conditional conformances, replacing previous
   `_constrained_conforms_to` checks:
   - `List`: `Hashable`
+  - `Optional`: `Hashable`
   - `Tuple`: `Equatable`, `Hashable`
 
 - `perf_counter_ns()` now returns correct nanoseconds on GPU instead of raw

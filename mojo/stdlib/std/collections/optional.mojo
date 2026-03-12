@@ -39,6 +39,7 @@ from std.utils import Variant
 from std.builtin.device_passable import DevicePassable
 from std.compile import get_type_name
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
+from std.hashlib import Hasher
 
 
 @fieldwise_init
@@ -84,6 +85,7 @@ struct Optional[T: Movable](
     Boolable,
     Copyable where conforms_to(T, Copyable),
     Defaultable,
+    Hashable where conforms_to(T, Hashable),
     ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable) and conforms_to(
         T, Copyable
     ),
@@ -464,6 +466,26 @@ struct Optional[T: Movable](
         FormatStruct(writer, "Optional").params(TypeNames[Self.T]()).fields[
             FieldsFn=fields
         ]()
+
+    fn __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.T, Hashable):
+        """Updates hasher with the hash of the contained value, if present.
+
+        A `None` optional hashes differently from any present value.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        if self:
+            # Tag the hash so that hash(T) != hash(Optional[T](..)).
+            hasher.update(UInt8(1))
+            trait_downcast[Hashable](self.value()).__hash__(hasher)
+        else:
+            hasher.update(UInt8(0))
 
     # ===-------------------------------------------------------------------===#
     # Methods
