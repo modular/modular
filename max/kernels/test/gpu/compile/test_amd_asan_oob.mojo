@@ -33,12 +33,12 @@ from std.sys import argv
 from std.gpu.host import DeviceContext
 
 
-fn bad_func(ptr: UnsafePointer[Int32, MutAnyOrigin], i: Int):
+def bad_func(ptr: UnsafePointer[Int32, MutAnyOrigin], i: Int):
     # Potential out of bounds access
     ptr[i] = 42
 
 
-fn test(ctx: DeviceContext, i: Int) raises:
+def test(ctx: DeviceContext, i: Int) raises:
     comptime n = 4
     var buf = ctx.enqueue_create_buffer[DType.int32](n)
 

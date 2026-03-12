@@ -36,7 +36,7 @@ from layout.tensor_core_async import (
 from std.utils import StaticTuple
 
 
-fn wgmma_kernel_ss[
+def wgmma_kernel_ss[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -120,7 +120,7 @@ fn wgmma_kernel_ss[
         ]()
 
 
-fn wgmma_e4m3_e4m3_f32[
+def wgmma_e4m3_e4m3_f32[
     M: Int,
     N: Int,
     K: Int,

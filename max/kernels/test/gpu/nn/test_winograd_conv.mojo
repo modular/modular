@@ -36,7 +36,7 @@ from std.utils.numerics import get_accum_type
 
 
 @always_inline
-fn _get_b[
+def _get_b[
     dtype: DType, element_layout: Layout
 ](
     out B: LayoutTensor[
@@ -56,7 +56,7 @@ fn _get_b[
 
 
 @always_inline
-fn _get_g[
+def _get_g[
     dtype: DType, element_layout: Layout
 ](
     out G: LayoutTensor[
@@ -76,7 +76,7 @@ fn _get_g[
 
 
 @always_inline
-fn _get_a[
+def _get_a[
     dtype: DType, element_layout: Layout
 ](
     out A: LayoutTensor[
@@ -94,7 +94,7 @@ fn _get_a[
 
 
 @always_inline
-fn matmul[
+def matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -135,7 +135,7 @@ fn matmul[
 # TODO: Workaround because I have not found a way to slice/tile a rank 4 LayoutTensor
 # to a rank 2 LayoutTensor
 @always_inline
-fn get_tile[
+def get_tile[
     dtype: DType, //, tile_size: Int
 ](
     input_tensor: LayoutTensor[dtype, ...],
@@ -167,7 +167,7 @@ fn get_tile[
 
 # Each thread processes a 4x4 input tile to produce a 2x2 output tile.
 # The thread accumulates contributions from all input channels for each output channel.
-fn winograd_conv2d_gpu_nhwc[
+def winograd_conv2d_gpu_nhwc[
     element_layout: Layout,
     //,
     input_layout: Layout,
@@ -322,7 +322,7 @@ fn winograd_conv2d_gpu_nhwc[
                     ] = output_tile[di, dj][0]
 
 
-fn winograd_conv2d_gpu_launcher[
+def winograd_conv2d_gpu_launcher[
     element_layout: Layout,
     //,
     input_type: DType,
@@ -403,7 +403,7 @@ fn winograd_conv2d_gpu_launcher[
 
 
 @always_inline
-fn get_output_dim[
+def get_output_dim[
     input_dim: IntTuple,
     filter_dim: IntTuple,
     stride: IndexList[2],
@@ -435,7 +435,7 @@ fn get_output_dim[
     return output_dim
 
 
-fn test_winograd_conv_gpu[
+def test_winograd_conv_gpu[
     dtype: DType,
     input_dim: IntTuple,
     filter_dim: IntTuple,

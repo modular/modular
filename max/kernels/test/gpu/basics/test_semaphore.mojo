@@ -23,7 +23,7 @@ comptime NUM_BLOCKS = 32
 comptime NUM_THREADS = 64
 
 
-fn test_named_barrier_semaphore_equal_kernel(
+def test_named_barrier_semaphore_equal_kernel(
     locks_ptr: UnsafePointer[Int32, MutAnyOrigin],
     shared_ptr: UnsafePointer[Int32, MutAnyOrigin],
 ):
@@ -39,7 +39,7 @@ fn test_named_barrier_semaphore_equal_kernel(
     sema.arrive_set(0, Int32(block_idx.x + 1))
 
 
-fn test_named_barrier_semaphore_equal(ctx: DeviceContext) raises:
+def test_named_barrier_semaphore_equal(ctx: DeviceContext) raises:
     print("== test_named_barrier_semaphore_equal")
 
     var locks_data = ManagedLayoutTensor[DType.int32, Layout(UNKNOWN_VALUE)](
@@ -70,7 +70,7 @@ fn test_named_barrier_semaphore_equal(ctx: DeviceContext) raises:
         assert_equal(shared_host[i], Int32(i))
 
 
-fn test_named_barrier_semaphore_less_than_kernel(
+def test_named_barrier_semaphore_less_than_kernel(
     locks_ptr: UnsafePointer[Int32, MutAnyOrigin],
     shared_ptr: UnsafePointer[Int32, MutAnyOrigin],
 ):
@@ -86,7 +86,7 @@ fn test_named_barrier_semaphore_less_than_kernel(
     sema.arrive_set(0, Int32(block_idx.x + 1))
 
 
-fn test_named_barrier_semaphore_less_than(ctx: DeviceContext) raises:
+def test_named_barrier_semaphore_less_than(ctx: DeviceContext) raises:
     print("== test_named_barrier_semaphore_less_than")
 
     var locks_data = ManagedLayoutTensor[DType.int32, Layout(UNKNOWN_VALUE)](

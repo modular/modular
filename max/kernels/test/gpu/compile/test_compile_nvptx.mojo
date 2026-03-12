@@ -20,11 +20,11 @@ from std.gpu.host.compile import _compile_code
 from std.memory import stack_allocation
 
 
-fn kernel(x: Int) -> Int:
+def kernel(x: Int) -> Int:
     return Int(thread_idx.x)
 
 
-fn parametric[f: fn(Int) -> Int]() -> Int:
+def parametric[f: fn(Int) -> Int]() -> Int:
     return f(42)
 
 
@@ -47,7 +47,7 @@ def test_compile_code() raises:
 def test_compile_function() raises:
     print("== test_compile_function")
 
-    fn kernel(x: UnsafePointer[Int, MutAnyOrigin]):
+    def kernel(x: UnsafePointer[Int, MutAnyOrigin]):
         x[0] = Int(thread_idx.x)
 
     # CHECK: tid.x
@@ -56,7 +56,7 @@ def test_compile_function() raises:
         _ = ctx.compile_function_unchecked[kernel, dump_asm=True]()
 
 
-fn kernel_inlined_assembly():
+def kernel_inlined_assembly():
     inlined_assembly["nanosleep.u32 $0;", NoneType, constraints="r"](
         UInt32(100)
     )
@@ -102,7 +102,7 @@ def test_compile_function_with_path_func() raises:
         comptime out_dir = Path("/tmp")
 
         @parameter
-        fn dummy_fn() capturing -> Path:
+        def dummy_fn() capturing -> Path:
             return out_dir / out_file_name
 
         _ = ctx.compile_function_unchecked[
@@ -117,7 +117,7 @@ def test_compile_function_with_path_func() raises:
 def test_short_nvptx_ptr() raises:
     print("== test_short_nvptx_ptr")
 
-    fn do_some_shared_mem_op(src: UnsafePointer[Int32, ImmutAnyOrigin]):
+    def do_some_shared_mem_op(src: UnsafePointer[Int32, ImmutAnyOrigin]):
         var a = stack_allocation[20, Int32, address_space=AddressSpace.SHARED]()
         a[thread_idx.x] = src[0]
         barrier()

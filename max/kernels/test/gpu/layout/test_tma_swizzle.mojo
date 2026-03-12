@@ -35,7 +35,7 @@ from std.utils.index import Index, IndexList
 
 # Test loading a single 2d tile.
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
-fn tma_swizzle_load_kernel[
+def tma_swizzle_load_kernel[
     dtype: DType,
     layout: Layout,
     tile_rank: Int,

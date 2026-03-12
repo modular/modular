@@ -18,7 +18,7 @@ from std.testing import assert_equal, assert_true
 from std.utils.numerics import inf, isnan, nan, neg_inf
 
 
-fn id(
+def id(
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
@@ -30,7 +30,7 @@ fn id(
 
 
 @no_inline
-fn run_vec_add(ctx: DeviceContext) raises:
+def run_vec_add(ctx: DeviceContext) raises:
     print("== run_vec_add")
 
     comptime length = 1024

@@ -50,7 +50,7 @@ from std.memory import bitcast
 # CHECK: -2048.0, -2560.0, -3072.0, -3584.0, -4096.0, -5120.0, -6144.0, -7168.0,
 # CHECK: -8192.0, -10240.0, -12288.0, -14336.0, -16384.0, -20480.0, -24576.0, -28672.0,
 # CHECK: -32768.0, -40960.0, -49152.0, -57344.0, -inf, nan, nan, nan,
-fn test_e5m2_initialization():
+def test_e5m2_initialization():
     print("== test_e5m2_initialization")
 
     var simd_e5m2 = SIMD[DType.float8_e5m2, 256](
@@ -351,7 +351,7 @@ fn test_e5m2_initialization():
 # CHECK: -2048.0, -2560.0, -3072.0, -3584.0, -4096.0, -5120.0, -6144.0, -7168.0,
 # CHECK: -8192.0, -10240.0, -12288.0, -14336.0, -16384.0, -20480.0, -24576.0, -28672.0,
 # CHECK: -32768.0, -40960.0, -49152.0, -57344.0, -inf, nan, nan, nan,
-fn test_simd_e5m2_to_f32():
+def test_simd_e5m2_to_f32():
     print("== test_simd_e5m2_to_f32")
 
     var e5m2_simd = SIMD[DType.float8_e5m2, 256](0.0)
@@ -401,7 +401,7 @@ fn test_simd_e5m2_to_f32():
 # CHECK: -2048.0, -2560.0, -3072.0, -3584.0, -4096.0, -5120.0, -6144.0, -7168.0,
 # CHECK: -8192.0, -10240.0, -12288.0, -14336.0, -16384.0, -20480.0, -24576.0, -28672.0,
 # CHECK: -32768.0, -40960.0, -49152.0, -57344.0, -inf, nan, nan, nan,
-fn test_simd_e5m2_to_f16():
+def test_simd_e5m2_to_f16():
     print("== test_simd_e5m2_to_f16")
 
     var e5m2_simd = SIMD[DType.float8_e5m2, 256](0.0)
@@ -451,7 +451,7 @@ fn test_simd_e5m2_to_f16():
 # CHECK: -2048.0, -2560.0, -3072.0, -3584.0, -4096.0, -5120.0, -6144.0, -7168.0,
 # CHECK: -8192.0, -10240.0, -12288.0, -14336.0, -16384.0, -20480.0, -24576.0, -28672.0,
 # CHECK: -32768.0, -40960.0, -49152.0, -57344.0, -inf, nan, nan, nan,
-fn test_simd_e5m2_to_bf16():
+def test_simd_e5m2_to_bf16():
     print("== test_simd_e5m2_to_bf16")
 
     var e5m2_simd = SIMD[DType.float8_e5m2, 256](0.0)
@@ -533,7 +533,7 @@ fn test_simd_e5m2_to_bf16():
 # CHECK: 224.0, 224.0, 224.0, 224.0, 224.0, 224.0, 224.0, 224.0,
 # CHECK: 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0,
 # CHECK: 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0,
-fn test_simd_f32_to_e5m2():
+def test_simd_f32_to_e5m2():
     print("== test_simd_f32_to_e5m2")
 
     comptime M = 512
@@ -550,7 +550,7 @@ fn test_simd_f32_to_e5m2():
         print("")
 
 
-fn test_simd_float8[
+def test_simd_float8[
     dtype: DType,
     size: Int,
     target: DType,
@@ -598,7 +598,7 @@ fn test_simd_float8[
 # CHECK: -2048.0, -2560.0, -3072.0, -3584.0, -4096.0, -5120.0, -6144.0, -7168.0,
 # CHECK: -8192.0, -10240.0, -12288.0, -14336.0, -16384.0, -20480.0, -24576.0, -28672.0,
 # CHECK: -32768.0, -40960.0, -49152.0, -57344.0, -inf, nan, nan, nan,
-fn test_simd_e5m2_to_f16_ptx_path(ctx: DeviceContext) raises:
+def test_simd_e5m2_to_f16_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_e5m2_to_f16_ptx_path")
 
     comptime M = 256
@@ -646,7 +646,7 @@ fn test_simd_e5m2_to_f16_ptx_path(ctx: DeviceContext) raises:
 # CHECK: -2048.0, -2560.0, -3072.0, -3584.0, -4096.0, -5120.0, -6144.0, -7168.0,
 # CHECK: -8192.0, -10240.0, -12288.0, -14336.0, -16384.0, -20480.0, -24576.0, -28672.0,
 # CHECK: -32768.0, -40960.0, -49152.0, -57344.0, -inf, nan, nan, nan,
-fn test_simd_e5m2_to_f32_ptx_path(ctx: DeviceContext) raises:
+def test_simd_e5m2_to_f32_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_e5m2_to_f32_ptx_path")
 
     comptime M = 256
@@ -661,7 +661,7 @@ fn test_simd_e5m2_to_f32_ptx_path(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-fn test_simd_float32[
+def test_simd_float32[
     size: Int,
     target: DType,
 ](x: SIMD[DType.float32, size]):
@@ -740,7 +740,7 @@ fn test_simd_float32[
 # CHECK: 224.0, 224.0, 224.0, 224.0, 224.0, 224.0, 224.0, 224.0,
 # CHECK: 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0,
 # CHECK: 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0,
-fn test_simd_f32_to_e5m2_ptx_path(ctx: DeviceContext) raises:
+def test_simd_f32_to_e5m2_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_f32_to_e5m2_ptx_path")
 
     comptime M = 512

@@ -18,10 +18,10 @@ from std.gpu.memory import external_memory
 
 
 # CHECK-LABEL: test_array_offset
-fn test_array_offset():
+def test_array_offset():
     print("== test_array_offset")
 
-    fn kernel(
+    def kernel(
         output: UnsafePointer[Float32, MutAnyOrigin],
         p: UnsafePointer[
             Float32, ImmutAnyOrigin, address_space=AddressSpace.SHARED
@@ -35,10 +35,10 @@ fn test_array_offset():
 
 
 # CHECK-LABEL: test_case_thread_id_nvidia
-fn test_case_thread_id_nvidia():
+def test_case_thread_id_nvidia():
     print("== test_case_thread_id_nvidia")
 
-    fn kernel(output: UnsafePointer[Int32, MutAnyOrigin]):
+    def kernel(output: UnsafePointer[Int32, MutAnyOrigin]):
         output[] = Int32(thread_idx.x + thread_idx.x + thread_idx.x)
 
     # CHECK-COUNT-1: call i32 @llvm.nvvm.read.ptx.sreg.tid.x()
@@ -50,10 +50,10 @@ fn test_case_thread_id_nvidia():
 
 
 # CHECK-LABEL: test_case_thread_id_mi300x
-fn test_case_thread_id_mi300x():
+def test_case_thread_id_mi300x():
     print("== test_case_thread_id_mi300x")
 
-    fn kernel(output: UnsafePointer[Int32, MutAnyOrigin]):
+    def kernel(output: UnsafePointer[Int32, MutAnyOrigin]):
         output[] = Int32(thread_idx.x + thread_idx.x + thread_idx.x)
 
     # CHECK-COUNT-1: call i32 @llvm.amdgcn.workitem.id.x()
@@ -65,12 +65,12 @@ fn test_case_thread_id_mi300x():
 
 
 # CHECK-LABEL: test_dynamic_shared_mem
-fn test_dynamic_shared_mem():
+def test_dynamic_shared_mem():
     print("== test_dynamic_shared_mem")
 
     # CHECK: @extern_ptr_syml = external dso_local addrspace(3) global [0 x float], align 4
     # CHECK: @extern_ptr_syml_0 = external dso_local addrspace(3) global [0 x float], align 4
-    fn kernel(output: UnsafePointer[Float32, MutAnyOrigin]):
+    def kernel(output: UnsafePointer[Float32, MutAnyOrigin]):
         # CHECK: %2 = load float, ptr addrspace(3) @extern_ptr_syml, align 4
         # CHECK: %3 = load float, ptr addrspace(3) getelementptr inbounds nuw (i8, ptr addrspace(3) @extern_ptr_syml_0, i{{[0-9]+}}  4), align 4
         # CHECK: fadd contract float %2, %3
@@ -85,7 +85,7 @@ fn test_dynamic_shared_mem():
     print(_compile_code[kernel, emission_kind="llvm"]())
 
 
-fn main():
+def main():
     test_array_offset()
     test_case_thread_id_nvidia()
     test_case_thread_id_mi300x()

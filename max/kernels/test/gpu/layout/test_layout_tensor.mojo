@@ -85,7 +85,7 @@ def test_nested_layout_shape() raises:
     assert_equal(simple_shape1, 32, "Non-nested shape[1] should still work")
 
 
-fn _create_tensor_2x2[
+def _create_tensor_2x2[
     dtype: DType
 ]() -> LayoutTensor[dtype, Layout.row_major(2, 2), MutAnyOrigin]:
     """Helper to create a 2x2 row-major tensor on the stack."""
@@ -97,7 +97,7 @@ fn _create_tensor_2x2[
     ].stack_allocation()
 
 
-fn _copy_transpose[
+def _copy_transpose[
     dtype: DType
 ](
     src: LayoutTensor[dtype, Layout.row_major(2, 2), MutAnyOrigin],

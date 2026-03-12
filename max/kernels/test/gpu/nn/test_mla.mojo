@@ -33,14 +33,14 @@ from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
     return False
 
 
-fn test[
+def test[
     mask_rank: Int,
     qkv_type: DType,
     mask_type: DType,
@@ -250,7 +250,7 @@ fn test[
         output_device,
         scalar_args_buf_lt,
     )
-    fn kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(ctx: DeviceContext) raises:
         comptime if use_causal_mask:
             flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
                 output_device.as_any_origin(),
@@ -421,7 +421,7 @@ fn test[
     flash_output_ptr.free()
 
 
-fn test_prefill[
+def test_prefill[
     qkv_type: DType,
     k_rope_type: DType,
     depth: Int,
@@ -604,7 +604,7 @@ fn test_prefill[
         cache_row_offsets_device,
         output_device,
     )
-    fn kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(ctx: DeviceContext) raises:
         flare_mla_prefill[rank=q.rank](
             output_device,
             q_device,
@@ -828,7 +828,7 @@ fn test_prefill[
     output_ref_ptr.free()
 
 
-fn test_decoding[
+def test_decoding[
     batch_size: Int,
     num_partitions: Optional[Int],
     split_k: Bool,
@@ -1038,7 +1038,7 @@ fn test_decoding[
         ](1, 2048, ctx, use_index_input=use_index_input)
 
 
-fn test_mla_prefill[
+def test_mla_prefill[
     batch_size: Int,
     qkv_type: DType,
     k_rope_type: DType,

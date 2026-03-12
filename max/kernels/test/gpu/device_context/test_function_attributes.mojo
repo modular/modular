@@ -18,7 +18,7 @@ from std.testing import assert_equal
 
 
 def test_function_attributes() raises:
-    fn kernel(x: UnsafePointer[Int, MutAnyOrigin]):
+    def kernel(x: UnsafePointer[Int, MutAnyOrigin]):
         x[0] = Int(thread_idx.x)
 
     with DeviceContext() as ctx:

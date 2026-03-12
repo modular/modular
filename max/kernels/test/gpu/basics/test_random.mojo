@@ -41,7 +41,7 @@ def run_elementwise[
     @always_inline
     @__copy_capture(out_buffer)
     @parameter
-    fn func_uniform[
+    def func_uniform[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var rng_state = Random(seed=UInt64(idx0[0]))
@@ -57,7 +57,7 @@ def run_elementwise[
     @always_inline
     @__copy_capture(out_buffer)
     @parameter
-    fn func_normal[
+    def func_normal[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var rng_state = NormalRandom(seed=UInt64(idx0[0]))

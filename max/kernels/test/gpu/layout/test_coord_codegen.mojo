@@ -19,7 +19,7 @@ from layout import ComptimeInt, Coord, Idx, RuntimeInt
 from std.testing import assert_true
 
 
-fn kernel(v: Int, ptr: UnsafePointer[Int32, MutAnyOrigin]):
+def kernel(v: Int, ptr: UnsafePointer[Int32, MutAnyOrigin]):
     """Kernel that uses MixedTuple with both compile-time and runtime indices.
 
     Args:
@@ -31,7 +31,7 @@ fn kernel(v: Int, ptr: UnsafePointer[Int32, MutAnyOrigin]):
     ptr[1] = Int32(l[1][0].value())
 
 
-fn test_coord_codegen_memory() raises:
+def test_coord_codegen_memory() raises:
     var amd_asm = _compile_code[
         kernel, target=get_gpu_target["amdgpu:gfx942"]()
     ]().asm

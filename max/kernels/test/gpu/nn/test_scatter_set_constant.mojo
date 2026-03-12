@@ -17,7 +17,7 @@ from nn.gather_scatter import scatter_set_constant
 from std.runtime.asyncrt import DeviceContextPtr
 
 
-fn test_scatter_set_constant(ctx: DeviceContext) raises:
+def test_scatter_set_constant(ctx: DeviceContext) raises:
     # TODO not sure why this doesn't work with InlineArray?
     var data_stack = InlineArray[Float32, 9](uninitialized=True)
     var data = TileTensor(data_stack, row_major[3, 3]()).fill(0.0)

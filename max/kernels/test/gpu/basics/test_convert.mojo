@@ -18,7 +18,7 @@ from std.testing import *
 
 def test_convert_asm() raises:
     @parameter
-    fn my_cast[
+    def my_cast[
         frm: DType, to: DType
     ](output: UnsafePointer[Scalar[to], MutAnyOrigin], x: Scalar[frm]):
         output[] = x.cast[to]()
@@ -60,7 +60,7 @@ def test_convert_asm() raises:
     )
 
 
-fn convert_kernel[
+def convert_kernel[
     src_type: DType, dst_type: DType, size: Int
 ](dst_ptr: UnsafePointer[Scalar[dst_type], MutAnyOrigin]):
     comptime for i in range(0, size, 2):
@@ -71,7 +71,7 @@ fn convert_kernel[
         dst_ptr.store(i, dst_vec)
 
 
-fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
+def test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
     """Test the conversion ptx instruction.
 
     We can't verify this just by compilation. The instruction converts two values

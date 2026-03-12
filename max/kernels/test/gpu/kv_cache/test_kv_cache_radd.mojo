@@ -25,7 +25,7 @@ from std.utils import Index, IndexList
 from kv_cache_test_utils import PagedLookupTable
 
 
-fn test_kv_cache_radd[
+def test_kv_cache_radd[
     dtype: DType,
     num_heads: Int,
     head_dim: Int,

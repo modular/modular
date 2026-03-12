@@ -22,7 +22,7 @@ from std.utils.index import IndexList
 
 # input: NHWC
 # filer: RSCF
-fn test_conv_cudnn[
+def test_conv_cudnn[
     input_dim: IndexList[4],
     filter_dim: IndexList[4],
     output_dim: IndexList[4],

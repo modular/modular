@@ -22,7 +22,7 @@ from std.utils.index import IndexList
 
 
 @no_inline
-fn test_pad_constant_gpu[
+def test_pad_constant_gpu[
     dtype: DType, rank: Int
 ](
     input_shape: IndexList[rank],

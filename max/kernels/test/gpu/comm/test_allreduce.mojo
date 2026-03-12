@@ -56,7 +56,7 @@ comptime test_dtypes = (DType.bfloat16, DType.float32)
 comptime test_gpu_counts = (2, 4, 8)
 
 
-fn allreduce_test[
+def allreduce_test[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -172,7 +172,7 @@ fn allreduce_test[
     @always_inline
     @parameter
     @__copy_capture(out_bufs_capture)
-    fn outputs_lambda[
+    def outputs_lambda[
         input_index: Int,
         _dtype: DType,
         _rank: Int,
@@ -271,7 +271,7 @@ fn allreduce_test[
         host_buffers[i].free()
 
 
-fn _get_test_str[
+def _get_test_str[
     dtype: DType,
     use_multimem: Bool,
     use_custom_epilogue: Bool = False,
@@ -345,7 +345,7 @@ def allreduce_naive_test() raises -> None:
     @always_inline
     @parameter
     @__copy_capture(out_bufs_capture)
-    fn outputs_lambda[
+    def outputs_lambda[
         input_index: Int,
         _dtype: DType,
         _rank: Int,
@@ -385,7 +385,7 @@ def allreduce_naive_test() raises -> None:
 
 
 @parameter
-fn run_allreduce_sweep[use_multimem: Bool]() raises:
+def run_allreduce_sweep[use_multimem: Bool]() raises:
     # Run tests for each configuration.
     comptime for gpu_idx, dtype_idx, length_idx, epilogue_idx in product(
         range(len(test_gpu_counts)),

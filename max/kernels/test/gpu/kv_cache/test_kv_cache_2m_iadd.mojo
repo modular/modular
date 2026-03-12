@@ -25,7 +25,7 @@ from nn.kv_cache_ragged import kv_cache_2m_iadd_dispatch
 from std.utils import IndexList
 
 
-fn _create_kv_collection_from_host[
+def _create_kv_collection_from_host[
     dtype: DType,
     num_heads: Int,
     head_dim: Int,
@@ -62,7 +62,7 @@ fn _create_kv_collection_from_host[
     )
 
 
-fn _verify_kv_cache[
+def _verify_kv_cache[
     dtype: DType,
     num_heads: Int,
     head_dim: Int,
@@ -186,7 +186,7 @@ fn _verify_kv_cache[
             slice_row_offset += 1
 
 
-fn test_kv_cache_2m_iadd_gpu[
+def test_kv_cache_2m_iadd_gpu[
     dtype: DType,
     num_heads: Int,
     head_dim: Int,
@@ -399,7 +399,7 @@ fn test_kv_cache_2m_iadd_gpu[
     batch_seq_len_host_ptr.free()
 
 
-fn test_kv_cache_2m_iadd_cpu[
+def test_kv_cache_2m_iadd_cpu[
     dtype: DType,
     num_heads: Int,
     head_dim: Int,

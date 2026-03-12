@@ -16,7 +16,7 @@ from std.gpu.host import DeviceContext
 from std.memory import bitcast
 
 
-fn print_bits[dtype: DType](val: Scalar[dtype]):
+def print_bits[dtype: DType](val: Scalar[dtype]):
     var u8 = bitcast[DType.uint8](val)
     var bits = String(capacity=32)
 
@@ -26,7 +26,7 @@ fn print_bits[dtype: DType](val: Scalar[dtype]):
     print(dtype, "nan:", u8, bits)
 
 
-fn test():
+def test():
     # CHECK: float8_e5m2 nan: 127 01111111
     print_bits(Float8_e5m2(FloatLiteral.nan))
     # CHECK: float8_e4m3fn nan: 127 01111111

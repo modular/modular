@@ -20,7 +20,7 @@ from std.testing import assert_equal
 
 
 # A Simple Kernel performing the sum of two arrays
-fn vec_func(
+def vec_func(
     in0: UnsafePointer[Float32, ImmutAnyOrigin],
     in1: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
@@ -37,7 +37,7 @@ def test_is_compatible(ctx: DeviceContext) raises:
     assert_equal(ctx.is_compatible(), True)
 
 
-fn test_basic(ctx: DeviceContext) raises:
+def test_basic(ctx: DeviceContext) raises:
     comptime length = 1024
 
     # Host memory buffers for input and output data

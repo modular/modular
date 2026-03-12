@@ -22,7 +22,7 @@ from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 
 
-fn test_conv3d_gpu[
+def test_conv3d_gpu[
     input_layout: Layout,
     filter_layout: Layout,
     dtype: DType,

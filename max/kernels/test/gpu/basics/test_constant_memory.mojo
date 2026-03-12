@@ -20,7 +20,7 @@ from std.testing import assert_equal, assert_true
 
 
 def test_constant_memory_compile(ctx: DeviceContext) raises:
-    fn alloc[
+    def alloc[
         n: Int
     ]() -> UnsafePointer[
         Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
@@ -39,7 +39,7 @@ def test_constant_memory_compile(ctx: DeviceContext) raises:
 def test_constant_mem(ctx: DeviceContext) raises:
     print("== test_constant_mem")
 
-    fn _fill_impl[
+    def _fill_impl[
         n: Int
     ]() -> UnsafePointer[
         Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
@@ -52,7 +52,7 @@ def test_constant_mem(ctx: DeviceContext) raises:
             ptr[i] = Float32(i)
         return ptr
 
-    fn static_constant_kernel[
+    def static_constant_kernel[
         n: Int
     ](data: UnsafePointer[Float32, MutAnyOrigin]):
         comptime val = _fill_impl[n]()
@@ -74,7 +74,7 @@ def test_constant_mem(ctx: DeviceContext) raises:
 def test_constant_mem_via_func(ctx: DeviceContext) raises:
     print("== test_constant_mem_via_func")
 
-    fn _fill_impl[
+    def _fill_impl[
         n: Int
     ]() -> UnsafePointer[
         Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
@@ -87,7 +87,7 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
             ptr[i] = Float32(i)
         return ptr
 
-    fn static_constant_kernel[
+    def static_constant_kernel[
         get_constant_memory: fn() -> UnsafePointer[
             Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
         ]
@@ -111,7 +111,7 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
 def test_external_constant_mem(ctx: DeviceContext) raises:
     print("== test_external_constant_mem")
 
-    fn static_constant_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
+    def static_constant_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
         var static_constant = stack_allocation[
             16,
             Float32,

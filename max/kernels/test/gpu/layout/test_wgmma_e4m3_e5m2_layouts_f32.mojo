@@ -27,7 +27,7 @@ from layout import IntTuple, Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 
 
-fn wgmma_f32_kernel[
+def wgmma_f32_kernel[
     M: Int,
     N: Int,
     K: Int,

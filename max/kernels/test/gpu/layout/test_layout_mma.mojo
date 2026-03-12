@@ -24,7 +24,7 @@ from layout.tensor_core import *
 from std.testing import *
 
 
-fn mma_layout_tc[
+def mma_layout_tc[
     out_type: DType,
     in_type: DType,
     shape: IndexList[3],
@@ -45,7 +45,7 @@ fn mma_layout_tc[
     tc.store_d(mat_c, d)
 
 
-fn matmul_naive[
+def matmul_naive[
     out_type: DType,
     in_type: DType,
     layout_c: Layout,
@@ -71,7 +71,7 @@ fn matmul_naive[
     mat_c[Int(x), Int(y)] = accum
 
 
-fn test_layout_mma[
+def test_layout_mma[
     out_type: DType,
     in_type: DType,
     shape: IndexList[3],

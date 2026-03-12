@@ -22,7 +22,7 @@ from std.testing import assert_equal
 from std.utils import IndexList
 
 
-fn get_expert_dictionary(
+def get_expert_dictionary(
     topk_ids: HostBuffer[DType.uint32], num_tokens: Int
 ) -> Dict[UInt32, UInt32]:
     var expert_dictionary = Dict[UInt32, UInt32]()
@@ -36,7 +36,7 @@ fn get_expert_dictionary(
     return expert_dictionary^
 
 
-fn check_token_expert_order(
+def check_token_expert_order(
     token_expert_order: HostBuffer[DType.uint32],
     topk_ids: HostBuffer[DType.uint32],
     num_tokens: Int,
@@ -68,7 +68,7 @@ fn check_token_expert_order(
         assert_equal(k_v.value, 0, "tokens are grouped incorrectly")
 
 
-fn check_expert_stats(
+def check_expert_stats(
     expert_usage_stats: HostBuffer[DType.uint32],
     topk_ids: HostBuffer[DType.uint32],
     num_tokens: Int,
@@ -96,7 +96,7 @@ fn check_expert_stats(
     )
 
 
-fn check_expert_indices(
+def check_expert_indices(
     expert_start_indices: HostBuffer[DType.uint32],
     expert_ids: HostBuffer[DType.int32],
     token_expert_order: HostBuffer[DType.uint32],
@@ -122,7 +122,7 @@ fn check_expert_indices(
             )
 
 
-fn check_restore_token_order(
+def check_restore_token_order(
     restore_token_order: HostBuffer[DType.uint32],
     token_expert_order: HostBuffer[DType.uint32],
     num_tokens: Int,
@@ -139,7 +139,7 @@ fn check_restore_token_order(
         )
 
 
-fn test_moe_create_indices[
+def test_moe_create_indices[
     expected_count: Int = 8192, num_experts: Int = 256
 ](token_expert_order_length: Int, ctx: DeviceContext,) raises:
     var token_expert_order_buffer_host = ctx.enqueue_create_host_buffer[

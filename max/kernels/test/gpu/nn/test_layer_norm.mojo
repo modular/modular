@@ -24,7 +24,7 @@ from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 
 
-fn run_layer_norm_block[
+def run_layer_norm_block[
     dtype: DType,
     *,
     simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
@@ -63,14 +63,14 @@ fn run_layer_norm_block[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
+    def input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
         return data_buf.ptr.load[width=width](idx)
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
-    fn gamma_fn[
+    def gamma_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Idx(coords[0]))
@@ -79,7 +79,7 @@ fn run_layer_norm_block[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn output_fn[
+    def output_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, width]):
         var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
@@ -94,7 +94,7 @@ fn run_layer_norm_block[
     @always_inline
     @parameter
     @__copy_capture(data_buf, gamma, beta, epsilon)
-    fn run_func_ln() raises:
+    def run_func_ln() raises:
         comptime kernel = layer_norm_gpu_block[
             LayoutType=beta.LayoutType,
             origin=beta.origin,
@@ -143,7 +143,7 @@ fn run_layer_norm_block[
     beta_h.free()
 
 
-fn run_layer_norm_gpu[
+def run_layer_norm_gpu[
     dtype: DType, rank: Int
 ](ctx: DeviceContext, shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu")
@@ -182,7 +182,7 @@ fn run_layer_norm_gpu[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
@@ -192,7 +192,7 @@ fn run_layer_norm_gpu[
     @__copy_capture(gamma)
     @always_inline
     @parameter
-    fn gamma_fn[
+    def gamma_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Idx(coords[0]))
@@ -201,7 +201,7 @@ fn run_layer_norm_gpu[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn output_fn[
+    def output_fn[
         width: Int, rank_: Int, alignment: Int
     ](coords: IndexList[rank_], val: SIMD[dtype, width]):
         var idx = data_buf.layout(Coord(coords))
@@ -238,7 +238,7 @@ fn run_layer_norm_gpu[
     beta_h.free()
 
 
-fn run_layer_norm_warp_tiling[
+def run_layer_norm_warp_tiling[
     dtype: DType,
     *,
     simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
@@ -277,7 +277,7 @@ fn run_layer_norm_warp_tiling[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
+    def input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
 
         return data_buf.ptr.load[width=width](idx)
@@ -285,7 +285,7 @@ fn run_layer_norm_warp_tiling[
     @__copy_capture(gamma)
     @always_inline
     @parameter
-    fn gamma_fn[
+    def gamma_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Idx(coords[0]))
@@ -294,7 +294,7 @@ fn run_layer_norm_warp_tiling[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn output_fn[
+    def output_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, width]):
         var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
@@ -309,7 +309,7 @@ fn run_layer_norm_warp_tiling[
     @always_inline
     @parameter
     @__copy_capture(data_buf, gamma, beta, epsilon)
-    fn run_func_ln() raises:
+    def run_func_ln() raises:
         comptime kernel = layer_norm_gpu_warp_tiling[
             LayoutType=beta.LayoutType,
             origin=beta.origin,

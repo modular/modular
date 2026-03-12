@@ -192,7 +192,7 @@ def all_gather_test[
         host_buffers[i].free()
 
 
-fn _verify_results[
+def _verify_results[
     dtype: DType
 ](
     out_bufs_list: List[List[DeviceBuffer[dtype]]],

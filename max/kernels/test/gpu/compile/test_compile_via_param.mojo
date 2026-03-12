@@ -25,7 +25,7 @@ from std.gpu.host import DeviceContext
 def test_compile_function() raises:
     print("== test_compile_function")
 
-    fn kernel(x: UnsafePointer[Int, MutAnyOrigin]):
+    def kernel(x: UnsafePointer[Int, MutAnyOrigin]):
         x[0] = Int(thread_idx.x)
 
     # CHECK: tid.x

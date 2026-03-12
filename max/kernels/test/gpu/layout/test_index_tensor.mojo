@@ -71,7 +71,7 @@ def execute_index_tensor_test[
                 assert_equal(actual_output_host[i], expected_output_host[i])
 
 
-fn test_index_tensor_DLRM(ctx: DeviceContext) raises:
+def test_index_tensor_DLRM(ctx: DeviceContext) raises:
     print("== test_index_tensor_DLRM")
 
     comptime input_type = DType.int32
@@ -139,7 +139,7 @@ fn test_index_tensor_DLRM(ctx: DeviceContext) raises:
     )
 
 
-fn test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
+def test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
     print("== test_index_tensor_DLRM_batch")
 
     comptime input_type = DType.int32

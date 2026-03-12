@@ -35,7 +35,7 @@ from std.utils.index import Index, IndexList
 
 # Test loading a single 2d tile.
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
-fn test_tma_mcast_load_kernel[
+def test_tma_mcast_load_kernel[
     dtype: DType,
     layout: Layout,
     tile_rank: Int,
@@ -176,7 +176,7 @@ def test_tma_multicast_load_row_major[
 
 # Test loading a single 2d tile.
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
-fn test_tma_sliced_multicast_load_kernel[
+def test_tma_sliced_multicast_load_kernel[
     dtype: DType,
     layout: Layout,
     tile_layout: Layout,

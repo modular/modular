@@ -29,14 +29,14 @@ from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
     return False
 
 
-fn test[
+def test[
     MaskType: MHAMask,
     //,
     qkv_type: DType,
@@ -181,7 +181,7 @@ fn test[
     @parameter
     @always_inline
     @__copy_capture(q_device, k_device, v_device, output_device)
-    fn kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(ctx: DeviceContext) raises:
         flash_attention[config=config](
             output_device,
             q_device,
@@ -327,7 +327,7 @@ fn test[
     flash_output_ptr.free()
 
 
-fn construct_depths(is_sm90orsm100: Bool) -> List[Int]:
+def construct_depths(is_sm90orsm100: Bool) -> List[Int]:
     var depths = [64, 128]
     if is_sm90orsm100:
         depths.append(72)

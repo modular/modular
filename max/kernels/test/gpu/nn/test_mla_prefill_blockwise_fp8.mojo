@@ -26,7 +26,7 @@ from std.gpu.host.info import B200, GPUInfo
 from std.utils.index import Index
 
 
-fn test_prefill[
+def test_prefill[
     qkv_type: DType,
     k_rope_type: DType,
     sf_dtype: DType,
@@ -470,7 +470,7 @@ fn test_prefill[
     output_ref_ptr.free()
 
 
-fn test_mla_prefill[
+def test_mla_prefill[
     batch_size: Int,
     qkv_type: DType,
     k_rope_type: DType,

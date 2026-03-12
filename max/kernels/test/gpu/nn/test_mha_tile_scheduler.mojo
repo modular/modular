@@ -25,7 +25,7 @@ from nn.mha_tile_scheduler import (
 )
 
 
-fn test_kernel[schedule: MHASchedule]():
+def test_kernel[schedule: MHASchedule]():
     comptime scheduler_t = TileScheduler[32, 3, num_ctas=8, schedule=schedule]
     scheduler = scheduler_t()
     valid_length = NullPointer[DType.uint32]()

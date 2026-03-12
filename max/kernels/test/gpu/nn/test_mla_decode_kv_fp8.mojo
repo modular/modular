@@ -48,15 +48,15 @@ struct MLAMaskType(TrivialRegisterPassable):
     comptime MASK_3D = Self(2)
     comptime MASK_4D = Self(3)
 
-    fn __eq__(self, rhs: Self) -> Bool:
+    def __eq__(self, rhs: Self) -> Bool:
         return self.value == rhs.value
 
-    fn __ne__(self, rhs: Self) -> Bool:
+    def __ne__(self, rhs: Self) -> Bool:
         return self.value != rhs.value
 
 
 @always_inline
-fn host_cast_k_fp8_to_bf16[
+def host_cast_k_fp8_to_bf16[
     kv_fp8_t: DType,
     k_bf16_t: DType,
 ](
@@ -78,14 +78,14 @@ fn host_cast_k_fp8_to_bf16[
                     k_bf16[base + j] = k_fp8[base + j].cast[k_bf16_t]()
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
     return False
 
 
-fn test[
+def test[
     mla_mask_type: MLAMaskType,
     q_type: DType,
     kv_type: DType,
@@ -286,7 +286,7 @@ fn test[
         output_device,
         scalar_args_buf_lt,
     )
-    fn kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(ctx: DeviceContext) raises:
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
                 output_device.as_any_origin(),
@@ -495,7 +495,7 @@ fn test[
     flash_output_ptr.free()
 
 
-fn test_decoding[
+def test_decoding[
     batch_size: Int,
     mla_mask_type: MLAMaskType,
     split_k: Bool = False,

@@ -15,7 +15,7 @@ from std.gpu.host import DeviceContext
 
 
 def test_fp8_constructor(ctx: DeviceContext) raises:
-    fn kernel(ptr: UnsafePointer[Float8_e5m2fnuz, MutAnyOrigin]):
+    def kernel(ptr: UnsafePointer[Float8_e5m2fnuz, MutAnyOrigin]):
         ptr[] = Float8_e5m2fnuz(42.0)
 
     # CHECK: v_mov_b32_e32 {{.*}}, 0x55

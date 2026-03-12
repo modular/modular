@@ -20,7 +20,7 @@ from std.testing import assert_equal, assert_true
 comptime _TargetType = __mlir_type.`!kgen.target`
 
 
-fn kernel(
+def kernel(
     src: UnsafePointer[Float32, ImmutAnyOrigin],
     dst: UnsafePointer[Float32, MutAnyOrigin],
 ):
@@ -28,12 +28,12 @@ fn kernel(
     dst.store[width=8, alignment=32](v)
 
 
-fn test_kernel_load_32B_width[target: _TargetType]() raises:
+def test_kernel_load_32B_width[target: _TargetType]() raises:
     var asm = _compile_code[kernel, target=target]().asm
     assert_true(("v4.b64" in asm) or ("v8.b32" in asm))
 
 
-fn test_kernel_load_16B_width[target: _TargetType]() raises:
+def test_kernel_load_16B_width[target: _TargetType]() raises:
     var asm = _compile_code[kernel, target=target]().asm
     assert_true(("v2.b64" in asm) or ("v4.b32" in asm))
 

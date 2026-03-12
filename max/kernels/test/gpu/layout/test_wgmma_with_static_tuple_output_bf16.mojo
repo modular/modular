@@ -35,7 +35,7 @@ from std.testing import assert_almost_equal
 from std.utils import StaticTuple
 
 
-fn wgmma_kernel_ss[
+def wgmma_kernel_ss[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -119,7 +119,7 @@ fn wgmma_kernel_ss[
         ]()
 
 
-fn wgmma_bf16_bf16_f32[
+def wgmma_bf16_bf16_f32[
     M: Int, N: Int, K: Int, transpose_b: Bool = False, a_reg: Bool = False
 ](ctx: DeviceContext) raises:
     print(

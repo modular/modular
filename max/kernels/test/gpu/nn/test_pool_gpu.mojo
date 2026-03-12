@@ -38,7 +38,7 @@ def main() raises:
         test_max_pool_pad_dilation_2d_gpu(ctx)
 
 
-fn test_max_pool_2d(ctx: DeviceContext) raises:
+def test_max_pool_2d(ctx: DeviceContext) raises:
     print("== test_max_pool_2d")
 
     # output should have form
@@ -54,7 +54,7 @@ fn test_max_pool_2d(ctx: DeviceContext) raises:
     pool(PoolMethod.MAX, ctx)
 
 
-fn test_avg_pool_2d(ctx: DeviceContext) raises:
+def test_avg_pool_2d(ctx: DeviceContext) raises:
     print("== test_avg_pool_2d")
 
     # output should have form
@@ -70,22 +70,22 @@ fn test_avg_pool_2d(ctx: DeviceContext) raises:
     pool(PoolMethod.AVG, ctx)
 
 
-fn test_maxpool_2d_ceil_gpu(ctx: DeviceContext) raises:
+def test_maxpool_2d_ceil_gpu(ctx: DeviceContext) raises:
     print("== test_max_pool_2d_ceil_gpu")
     pool_ceil_test(PoolMethod.MAX, ctx)
 
 
-fn test_average_pool_2d_ceil_excludeBound_gpu(ctx: DeviceContext) raises:
+def test_average_pool_2d_ceil_excludeBound_gpu(ctx: DeviceContext) raises:
     print("== test_average_pool_2d_ceil_excludeBound_gpu")
     pool_ceil_test(PoolMethod.AVG, ctx)
 
 
-fn test_average_pool_2d_ceil_includeBound_gpu(ctx: DeviceContext) raises:
+def test_average_pool_2d_ceil_includeBound_gpu(ctx: DeviceContext) raises:
     print("== test_average_pool_2d_ceil_includeBound_gpu")
     pool_ceil_test[True, True](PoolMethod.AVG, ctx)
 
 
-fn pool[
+def pool[
     count_boundary: Bool = False
 ](pool_method: PoolMethod, ctx: DeviceContext) raises:
     comptime in_layout = row_major[2, 5, 7, 2]()
@@ -193,7 +193,7 @@ fn pool[
     assert_allclose(h_output_ref, output_tensor)
 
 
-fn pool_ceil_test[
+def pool_ceil_test[
     count_boundary: Bool = False, ceil_mode: Bool = True
 ](pool_method: PoolMethod, ctx: DeviceContext) raises:
     comptime in_layout = row_major[1, 4, 4, 1]()
@@ -305,7 +305,7 @@ fn pool_ceil_test[
     assert_allclose(h_output_ref, output_tensor)
 
 
-fn test_avg_pool_2d_with_padding_gpu[
+def test_avg_pool_2d_with_padding_gpu[
     count_boundary: Bool = False
 ](ctx: DeviceContext) raises:
     print("== test_avg_pool_2d_with_padding_gpu:", count_boundary)
@@ -396,7 +396,7 @@ fn test_avg_pool_2d_with_padding_gpu[
     assert_allclose(h_output_ref, output_tensor)
 
 
-fn test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
+def test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
     print("== test_max_pool_pad_dilation_2d_gpu")
 
     comptime in_layout = row_major[1, 4, 4, 1]()
@@ -485,7 +485,7 @@ fn test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
     assert_allclose(h_output_ref, output_tensor)
 
 
-fn assert_allclose[
+def assert_allclose[
     dtype: DType,
 ](
     h_output_ref: TileTensor[dtype, ...],

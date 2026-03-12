@@ -41,7 +41,7 @@ from layout.int_tuple import product
 
 
 @__llvm_arg_metadata(ragged_tensor_map, `nvvm.grid_constant`)
-fn tma_ragged_store_kernel[
+def tma_ragged_store_kernel[
     dtype: DType,
     rank: Int,
     descriptor_rank: Int,
@@ -106,7 +106,7 @@ fn tma_ragged_store_kernel[
 
 # Test loading a single 2d tile.
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
-fn test_tma_load_kernel[
+def test_tma_load_kernel[
     dtype: DType,
     layout: Layout,
     tile_rank: Int,
@@ -156,7 +156,7 @@ fn test_tma_load_kernel[
 
 # Test loading tiles along the last axis.
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
-fn test_tma_multiple_loads_kernel[
+def test_tma_multiple_loads_kernel[
     dtype: DType,
     layout: Layout,
     tile_rank: Int,
@@ -213,7 +213,7 @@ fn test_tma_multiple_loads_kernel[
         copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 
-fn sum_index_list[
+def sum_index_list[
     rank: Int,
     //,
     index_list: IndexList[rank],
@@ -225,7 +225,7 @@ fn sum_index_list[
     return sum
 
 
-fn max_length[rank: Int, //](index_list: IndexList[rank]) -> Int:
+def max_length[rank: Int, //](index_list: IndexList[rank]) -> Int:
     var mx = 0
     for i in range(len(index_list)):
         mx = max(mx, index_list[i])
@@ -394,7 +394,7 @@ def test_tma_load_row_major[
 
 
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
-fn test_tma_async_store_kernel[
+def test_tma_async_store_kernel[
     dtype: DType,
     tile_rank: Int,
     tile_shape_param: IndexList[tile_rank],
@@ -434,7 +434,7 @@ fn test_tma_async_store_kernel[
 
 
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
-fn test_tma_async_multiple_store_kernel[
+def test_tma_async_multiple_store_kernel[
     dtype: DType,
     tile_rank: Int,
     tile_shape_param: IndexList[tile_rank],
@@ -547,7 +547,7 @@ def test_tma_async_store[
 
 
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
-fn test_tma_async_reduce_kernel[
+def test_tma_async_reduce_kernel[
     dtype: DType,
     tile_rank: Int,
     tile_shape_param: IndexList[tile_rank],
@@ -584,7 +584,7 @@ fn test_tma_async_reduce_kernel[
 
 
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
-fn test_tma_async_multiple_reduce_kernel[
+def test_tma_async_multiple_reduce_kernel[
     dtype: DType,
     tile_rank: Int,
     tile_shape_param: IndexList[tile_rank],
@@ -702,7 +702,7 @@ def test_tma_async_reduce[
 # Test loading tiles along the last axis.
 @__llvm_arg_metadata(a_tma_tile, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_tile, `nvvm.grid_constant`)
-fn test_tma_loads_two_buffers_kernel[
+def test_tma_loads_two_buffers_kernel[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -873,7 +873,7 @@ def test_tma_load_two_buffers_row_major[
 @__llvm_arg_metadata(b_tma_dst_tile, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_tma_src_tile, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_src_tile, `nvvm.grid_constant`)
-fn test_tma_loads_and_store_two_buffers_kernel[
+def test_tma_loads_and_store_two_buffers_kernel[
     dtype: DType,
     a_tile_rank: Int,
     b_tile_rank: Int,

@@ -29,7 +29,7 @@ from std.memory import stack_allocation
 from std.testing import assert_true
 
 
-fn alloc_test_fn[cta_group: Int32]():
+def alloc_test_fn[cta_group: Int32]():
     var ptr_tmem_addr = UnsafePointer[
         UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]()
@@ -37,7 +37,7 @@ fn alloc_test_fn[cta_group: Int32]():
     tcgen05_alloc[cta_group](ptr_tmem_addr, num_cols)
 
 
-fn test_tcgen05_alloc() raises:
+def test_tcgen05_alloc() raises:
     var asm1 = _compile_code[
         alloc_test_fn[1],
         target=get_gpu_target["sm_100a"](),
@@ -54,7 +54,7 @@ fn test_tcgen05_alloc() raises:
     )
 
 
-fn alloc_dealloc_test_fn():
+def alloc_dealloc_test_fn():
     var ptr_tmem_addr = UnsafePointer[
         UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]()
@@ -65,7 +65,7 @@ fn alloc_dealloc_test_fn():
     tcgen05_dealloc[1](tmem_addr, num_cols)
 
 
-fn test_tcgen05_dealloc() raises:
+def test_tcgen05_dealloc() raises:
     var asm = _compile_code[
         alloc_dealloc_test_fn,
         target=get_gpu_target["sm_100a"](),
@@ -76,7 +76,7 @@ fn test_tcgen05_dealloc() raises:
     assert_true("tcgen05.dealloc.cta_group::1.sync.aligned.b32" in asm)
 
 
-fn ld_test_fn[repeat: Int]():
+def ld_test_fn[repeat: Int]():
     var ptr_tmem_addr = UnsafePointer[
         UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]()
@@ -95,7 +95,7 @@ fn ld_test_fn[repeat: Int]():
     tcgen05_dealloc[1](tmem_addr, num_cols)
 
 
-fn test_tcgen05_ld() raises:
+def test_tcgen05_ld() raises:
     var asm_64 = _compile_code[
         ld_test_fn[64],
         target=get_gpu_target["sm_100a"](),
@@ -111,7 +111,7 @@ fn test_tcgen05_ld() raises:
     assert_true("tcgen05.wait::ld.sync.aligned;" in asm_1)
 
 
-fn st_test_fn():
+def st_test_fn():
     var ptr_tmem_addr = UnsafePointer[
         UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]()
@@ -129,7 +129,7 @@ fn st_test_fn():
     tcgen05_dealloc[1](tmem_addr, num_cols)
 
 
-fn test_tcgen05_st() raises:
+def test_tcgen05_st() raises:
     var asm = _compile_code[
         st_test_fn,
         target=get_gpu_target["sm_100a"](),
@@ -138,7 +138,7 @@ fn test_tcgen05_st() raises:
     assert_true("tcgen05.wait::st.sync.aligned;" in asm)
 
 
-fn cp_test_fn():
+def cp_test_fn():
     var ptr_tmem_addr = UnsafePointer[
         UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]()
@@ -166,7 +166,7 @@ fn cp_test_fn():
     ](tmem_addr, s_desc)
 
 
-fn test_tcgen05_cp() raises:
+def test_tcgen05_cp() raises:
     var asm = _compile_code[
         cp_test_fn,
         target=get_gpu_target["sm_100a"](),

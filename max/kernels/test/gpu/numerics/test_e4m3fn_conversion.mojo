@@ -50,7 +50,7 @@ from std.memory import bitcast
 # CHECK: -64.0, -72.0, -80.0, -88.0, -96.0, -104.0, -112.0, -120.0,
 # CHECK: -128.0, -144.0, -160.0, -176.0, -192.0, -208.0, -224.0, -240.0,
 # CHECK: -256.0, -288.0, -320.0, -352.0, -384.0, -416.0, -448.0, nan,
-fn test_e4m3fn_initialization():
+def test_e4m3fn_initialization():
     print("== test_e4m3fn_initialization")
 
     var simd_e4m3fn = SIMD[DType.float8_e4m3fn, 256](
@@ -351,7 +351,7 @@ fn test_e4m3fn_initialization():
 # CHECK: -64.0, -72.0, -80.0, -88.0, -96.0, -104.0, -112.0, -120.0,
 # CHECK: -128.0, -144.0, -160.0, -176.0, -192.0, -208.0, -224.0, -240.0,
 # CHECK: -256.0, -288.0, -320.0, -352.0, -384.0, -416.0, -448.0, nan,
-fn test_simd_e4m3_to_f32():
+def test_simd_e4m3_to_f32():
     print("== test_simd_e4m3_to_f32")
 
     var e4m3_simd = SIMD[DType.float8_e4m3fn, 256](0.0)
@@ -402,7 +402,7 @@ fn test_simd_e4m3_to_f32():
 # CHECK: -64.0, -72.0, -80.0, -88.0, -96.0, -104.0, -112.0, -120.0,
 # CHECK: -128.0, -144.0, -160.0, -176.0, -192.0, -208.0, -224.0, -240.0,
 # CHECK: -256.0, -288.0, -320.0, -352.0, -384.0, -416.0, -448.0, nan,
-fn test_simd_e4m3_to_f16():
+def test_simd_e4m3_to_f16():
     print("== test_simd_e4m3_to_f16")
 
     var e4m3_simd = SIMD[DType.float8_e4m3fn, 256](0.0)
@@ -453,7 +453,7 @@ fn test_simd_e4m3_to_f16():
 # CHECK: -64.0, -72.0, -80.0, -88.0, -96.0, -104.0, -112.0, -120.0,
 # CHECK: -128.0, -144.0, -160.0, -176.0, -192.0, -208.0, -224.0, -240.0,
 # CHECK: -256.0, -288.0, -320.0, -352.0, -384.0, -416.0, -448.0, nan,
-fn test_simd_e4m3_to_bf16():
+def test_simd_e4m3_to_bf16():
     print("== test_simd_e4m3_to_bf16")
 
     var e4m3_simd = SIMD[DType.float8_e4m3fn, 256](0.0)
@@ -536,7 +536,7 @@ fn test_simd_e4m3_to_bf16():
 # CHECK: 224.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0,
 # CHECK: 240.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0,
 # CHECK: 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0,
-fn test_simd_f32_to_e4m3():
+def test_simd_f32_to_e4m3():
     print("== test_simd_f32_to_e4m3")
 
     comptime M = 512
@@ -553,7 +553,7 @@ fn test_simd_f32_to_e4m3():
         print("")
 
 
-fn test_simd_float8[
+def test_simd_float8[
     dtype: DType,
     size: Int,
     target: DType,
@@ -601,7 +601,7 @@ fn test_simd_float8[
 # CHECK: -64.0, -72.0, -80.0, -88.0, -96.0, -104.0, -112.0, -120.0,
 # CHECK: -128.0, -144.0, -160.0, -176.0, -192.0, -208.0, -224.0, -240.0,
 # CHECK: -256.0, -288.0, -320.0, -352.0, -384.0, -416.0, -448.0, nan,
-fn test_simd_e4m3_to_f16_ptx_path(ctx: DeviceContext) raises:
+def test_simd_e4m3_to_f16_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_e4m3_to_f16_ptx_path")
 
     comptime M = 256
@@ -649,7 +649,7 @@ fn test_simd_e4m3_to_f16_ptx_path(ctx: DeviceContext) raises:
 # CHECK: -64.0, -72.0, -80.0, -88.0, -96.0, -104.0, -112.0, -120.0,
 # CHECK: -128.0, -144.0, -160.0, -176.0, -192.0, -208.0, -224.0, -240.0,
 # CHECK: -256.0, -288.0, -320.0, -352.0, -384.0, -416.0, -448.0, nan,
-fn test_simd_e4m3_to_f32_ptx_path(ctx: DeviceContext) raises:
+def test_simd_e4m3_to_f32_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_e4m3_to_f32_ptx_path")
 
     comptime M = 256
@@ -664,7 +664,7 @@ fn test_simd_e4m3_to_f32_ptx_path(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-fn test_simd_float32[
+def test_simd_float32[
     size: Int,
     target: DType,
 ](x: SIMD[DType.float32, size]):
@@ -743,7 +743,7 @@ fn test_simd_float32[
 # CHECK: 224.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0,
 # CHECK: 240.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0,
 # CHECK: 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0,
-fn test_simd_f32_to_e4m3_ptx_path(ctx: DeviceContext) raises:
+def test_simd_f32_to_e4m3_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_f32_to_e4m3_ptx_path")
 
     comptime M = 512

@@ -20,13 +20,13 @@ from layout.tensor_core import TensorCore
 from std.utils.index import IndexList
 
 
-fn arange(tensor: LayoutTensor[mut=True, ...]):
+def arange(tensor: LayoutTensor[mut=True, ...]):
     comptime for i in range(tensor.shape[0]()):
         comptime for j in range(tensor.shape[1]()):
             tensor[i, j] = Scalar[tensor.dtype](i + j)
 
 
-fn load_and_mma_16x8x32[
+def load_and_mma_16x8x32[
     out_type: DType,
     in_type: DType,
     layout_c: Layout,

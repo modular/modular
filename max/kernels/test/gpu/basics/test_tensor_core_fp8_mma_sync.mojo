@@ -18,7 +18,7 @@ from std.gpu import thread_idx
 from std.gpu.compute.mma import mma
 
 
-fn mma_sync_16x8x32_E4M3():
+def mma_sync_16x8x32_E4M3():
     a = SIMD[DType.float8_e4m3fn, 16](1.0)
     b = SIMD[DType.float8_e4m3fn, 8](2.0)
     c = SIMD[DType.float32, 4](0.0)
@@ -44,7 +44,7 @@ def test_mma_sync_16x8x32_E4M3(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-fn mma_sync_16x8x32_E4M2():
+def mma_sync_16x8x32_E4M2():
     a = SIMD[DType.float8_e5m2, 16](2.0)
     b = SIMD[DType.float8_e5m2, 8](3.0)
     c = SIMD[DType.float32, 4](0.0)

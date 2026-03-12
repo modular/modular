@@ -20,10 +20,10 @@ from std.gpu.sync import barrier
 from std.testing import assert_almost_equal, assert_equal
 
 
-fn test_external_shared_mem(ctx: DeviceContext) raises:
+def test_external_shared_mem(ctx: DeviceContext) raises:
     print("== test_external_shared_mem")
 
-    fn dynamic_smem_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
+    def dynamic_smem_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
         var dynamic_sram = external_memory[
             Float32, address_space=AddressSpace.SHARED, alignment=4
         ]()
@@ -79,7 +79,7 @@ fn test_external_shared_mem(ctx: DeviceContext) raises:
 
 
 # Kernel that uses shared memory for testing occupancy with dynamic shared memory
-fn shared_memory_kernel(
+def shared_memory_kernel(
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
@@ -118,7 +118,7 @@ fn shared_memory_kernel(
 
 
 # Simple kernel for testing occupancy calculations
-fn occupancy_test_kernel(
+def occupancy_test_kernel(
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
@@ -130,7 +130,7 @@ fn occupancy_test_kernel(
     output[tid] = input[tid] * 2.0
 
 
-fn test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
+def test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     print(
         "Testing occupancy_max_active_blocks_per_multiprocessor"
         " functionality..."

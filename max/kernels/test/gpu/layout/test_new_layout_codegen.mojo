@@ -22,7 +22,7 @@ from layout import Coord, Idx, IntTuple
 from std.testing import assert_equal, assert_true
 
 
-fn test_codegen_memory[
+def test_codegen_memory[
     func_type: __TypeOfAllTypes, //, func: func_type
 ]() raises:
     """Generic function to test codegen memory patterns for any kernel function.
@@ -50,13 +50,13 @@ fn test_codegen_memory[
     assert_true("ld.local" not in nvidia_asm and "st.local" not in nvidia_asm)
 
 
-fn kernel_mixed_dimensions(x: Int, ptr: UnsafePointer[Int32, MutAnyOrigin]):
+def kernel_mixed_dimensions(x: Int, ptr: UnsafePointer[Int32, MutAnyOrigin]):
     # Create layout with mixed compile-time and runtime dimensions
     var layout = Layout(shape=(Idx[8](), Idx(x)), stride=(Idx(x), Idx[1]()))
     ptr[0] = Int32(layout(Coord(Idx[0](), Idx(x - 1))))
 
 
-fn kernel_thread_idx(ptr: UnsafePointer[Int32, MutAnyOrigin]):
+def kernel_thread_idx(ptr: UnsafePointer[Int32, MutAnyOrigin]):
     comptime layout = Layout(
         shape=(Idx[8](), Idx[2]()), stride=(Idx[1](), Idx[1]())
     )

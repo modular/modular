@@ -33,15 +33,15 @@ from std.utils import Index
 comptime layout_2d = Layout.row_major(10, 20)
 
 
-fn test_store_codegen_equivalence() raises:
+def test_store_codegen_equivalence() raises:
     """Test that store(IndexList) produces equivalent code to store(m, n)."""
 
-    fn variadic_kernel(
+    def variadic_kernel(
         output: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
     ):
         output.store[1](2, 3, 1234)
 
-    fn indexlist_kernel(
+    def indexlist_kernel(
         output: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
     ):
         output.store[1](Index(2, 3), 1234)
@@ -75,17 +75,17 @@ fn test_store_codegen_equivalence() raises:
         )
 
 
-fn test_load_codegen_equivalence() raises:
+def test_load_codegen_equivalence() raises:
     """Test that load(IndexList) produces equivalent code to load(m, n)."""
 
-    fn variadic_kernel(
+    def variadic_kernel(
         input: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
         output: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
     ):
         var val = input.load[1](2, 3)
         output.store[1](0, 0, val)
 
-    fn indexlist_kernel(
+    def indexlist_kernel(
         input: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
         output: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
     ):
@@ -119,18 +119,18 @@ fn test_load_codegen_equivalence() raises:
         )
 
 
-fn test_aligned_load_codegen_equivalence() raises:
+def test_aligned_load_codegen_equivalence() raises:
     """Test that aligned_load(IndexList) produces equivalent code to aligned_load(m, n).
     """
 
-    fn variadic_kernel(
+    def variadic_kernel(
         input: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
         output: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
     ):
         var val = input.aligned_load[1](2, 3)
         output.store[1](0, 0, val)
 
-    fn indexlist_kernel(
+    def indexlist_kernel(
         input: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
         output: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
     ):
