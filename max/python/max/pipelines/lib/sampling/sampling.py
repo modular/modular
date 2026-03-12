@@ -367,7 +367,7 @@ class TokenSampler:
         logits: Buffer,
         sampler_inputs: SamplerInputs,
         penalty_inputs: PenaltyInputs | None = None,
-    ) -> tuple[Buffer, Buffer, Buffer]:
+    ) -> Buffer:
         """Samples tokens from the logits."""
         batch_size = sampler_inputs.top_k.shape[0]
         prev_tokens = Buffer.zeros(
@@ -380,13 +380,16 @@ class TokenSampler:
             dtype=DType.float32,
             device=self._device,
         )
-        return self.sample_logits_with_prev(
+        # Notice that `_all_tokens` is same as `tokens` since the `prev_tokens`
+        # is empty. `_all_logits` only contains the logits for the single step.
+        tokens, _all_tokens, _all_logits = self.sample_logits_with_prev(
             logits=logits,
             prev_tokens=prev_tokens,
             prev_logits=prev_logits,
             sampler_inputs=sampler_inputs,
             penalty_inputs=penalty_inputs,
         )
+        return tokens
 
 
 def rejection_sampler(

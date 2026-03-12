@@ -248,18 +248,18 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         curr_step_inputs = model_inputs
 
+        generated_tokens: list[Buffer] = []
         for _ in range(num_steps):
             model_outputs = self._draft_model.execute(
                 model_inputs=curr_step_inputs
             )
 
-            new_tokens, new_generated_tokens, _ = self._sampler.sample_logits(
+            new_tokens = self._sampler.sample_logits(
                 logits=model_outputs.logits,
                 sampler_inputs=sampler_inputs,
                 penalty_inputs=penalty_inputs,
             )
-
-            generated_tokens = new_generated_tokens
+            generated_tokens.append(new_tokens)
 
             assert curr_step_inputs.kv_cache_inputs is not None
             curr_step_inputs.kv_cache_inputs = (
@@ -274,8 +274,14 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             )
             curr_step_inputs.hidden_states = model_outputs.hidden_states
 
+        # Column stack the list of generated tokens per step
+        # [(batch_size,), (batch_size,), ...] -> (batch_size, num_steps)
+        generated_tokens_np = [token.to_numpy() for token in generated_tokens]
+        generated_tokens_concat_np = np.column_stack(generated_tokens_np)
+        generated_tokens_concat = Buffer.from_numpy(generated_tokens_concat_np)
+
         assert model_outputs.hidden_states is not None
-        return num_steps, generated_tokens
+        return num_steps, generated_tokens_concat
 
     @traced
     def _verify_draft_tokens_with_target_model(
@@ -517,7 +523,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             inputs.flat_batch, self.devices[0]
         )
 
-        target_sampled_tokens, _, _ = self._sampler.sample_logits(
+        target_sampled_tokens = self._sampler.sample_logits(
             logits=target_outputs.logits,
             sampler_inputs=sampler_inputs,
             penalty_inputs=penalty_inputs,
