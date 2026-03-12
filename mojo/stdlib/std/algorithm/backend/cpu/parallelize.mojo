@@ -29,7 +29,7 @@ from std.utils.numerics import FlushDenormals
 
 
 @always_inline
-fn sync_parallelize[
+def sync_parallelize[
     origins: OriginSet,
     //,
     func: fn(Int) raises capturing[origins] -> None,
@@ -59,7 +59,7 @@ fn sync_parallelize[
 
     @parameter
     @always_inline
-    fn func_wrapped(i: Int):
+    def func_wrapped(i: Int):
         with FlushDenormals():
             try:
                 with Trace[TraceLevel.THREAD, target=StaticString("cpu")](
@@ -76,7 +76,7 @@ fn sync_parallelize[
 
     @always_inline
     @parameter
-    async fn task_fn(i: Int):
+    async def task_fn(i: Int):
         func_wrapped(i)
 
     # Run sub-tasks using the 'default' runtime. If the caller is part of
@@ -105,7 +105,7 @@ fn sync_parallelize[
 
 
 @always_inline
-fn parallelize[
+def parallelize[
     origins: OriginSet, //, func: fn(Int) capturing[origins] -> None
 ](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
@@ -123,7 +123,7 @@ fn parallelize[
 
 
 @always_inline
-fn parallelize[
+def parallelize[
     origins: OriginSet, //, func: fn(Int) capturing[origins] -> None
 ](num_work_items: Int, num_workers: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
@@ -142,7 +142,7 @@ fn parallelize[
 
 
 @always_inline
-fn _parallelize_impl[
+def _parallelize_impl[
     origins: OriginSet, //, func: fn(Int) capturing[origins] -> None
 ](num_work_items: Int, num_workers: Int):
     """Distributes work items across workers by coalescing consecutive items
@@ -164,7 +164,7 @@ fn _parallelize_impl[
     # using the coarse_grained_func below.
     @always_inline
     @parameter
-    fn coarse_grained_func(thread_idx: Int):
+    def coarse_grained_func(thread_idx: Int):
         # Calculate the consecutive range of work items this invocation is
         # responsible for.
         var start_idx = thread_idx * chunk_size + min(thread_idx, extra_items)
@@ -180,7 +180,7 @@ fn _parallelize_impl[
 
 
 @always_inline
-fn _get_num_workers(problem_size: Int, grain_size: Int = 32768) -> Int:
+def _get_num_workers(problem_size: Int, grain_size: Int = 32768) -> Int:
     """Returns a number of workers to run in parallel for given problem_size,
     accounting for the available worker threads of the current runtime.
 
@@ -201,7 +201,7 @@ fn _get_num_workers(problem_size: Int, grain_size: Int = 32768) -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-fn parallelize_over_rows[
+def parallelize_over_rows[
     func: fn(Int, Int) capturing[_] -> None
 ](shape: IndexList, axis: Int, grain_size: Int):
     """Parallelize func over non-axis dims of shape.
@@ -229,7 +229,7 @@ fn parallelize_over_rows[
 
     @always_inline
     @parameter
-    fn task_func(task_id: Int):
+    def task_func(task_id: Int):
         var start_row = task_id * chunk_size
         var end_row = min((task_id + 1) * chunk_size, num_rows)
 

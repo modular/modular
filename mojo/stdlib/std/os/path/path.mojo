@@ -45,7 +45,7 @@ from ..os import sep
 
 
 @always_inline
-fn _get_stat_st_mode(var path: String) raises -> Int:
+def _get_stat_st_mode(var path: String) raises -> Int:
     comptime if CompilationTarget.is_macos():
         return Int(_stat_macos(path^).st_mode)
     elif CompilationTarget.has_neon():
@@ -55,7 +55,7 @@ fn _get_stat_st_mode(var path: String) raises -> Int:
 
 
 @always_inline
-fn _get_lstat_st_mode(var path: String) raises -> Int:
+def _get_lstat_st_mode(var path: String) raises -> Int:
     comptime if CompilationTarget.is_macos():
         return Int(_lstat_macos(path^).st_mode)
     elif CompilationTarget.has_neon():
@@ -69,7 +69,7 @@ fn _get_lstat_st_mode(var path: String) raises -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn _user_home_path(path: String) -> String:
+def _user_home_path(path: String) -> String:
     var user_end = path.find(sep, 1)
     if user_end < 0:
         user_end = len(path)
@@ -90,7 +90,7 @@ fn _user_home_path(path: String) -> String:
         return user_home
 
 
-fn expanduser[PathLike: os.PathLike, //](path: PathLike) raises -> String:
+def expanduser[PathLike: os.PathLike, //](path: PathLike) raises -> String:
     """Expands a tilde "~" prefix in `path` to the user's home directory.
 
     For example, `~/folder` becomes `/home/current_user/folder`. On macOS and
@@ -129,7 +129,7 @@ fn expanduser[PathLike: os.PathLike, //](path: PathLike) raises -> String:
 # ===----------------------------------------------------------------------=== #
 # isdir
 # ===----------------------------------------------------------------------=== #
-fn isdir[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+def isdir[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     """Return True if path is an existing directory. This follows
     symbolic links, so both islink() and isdir() can be true for the same path.
 
@@ -158,7 +158,7 @@ fn isdir[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-fn isfile[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+def isfile[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     """Test whether a path is a regular file.
 
     Parameters:
@@ -183,7 +183,7 @@ fn isfile[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # ===----------------------------------------------------------------------=== #
 # islink
 # ===----------------------------------------------------------------------=== #
-fn islink[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+def islink[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     """Return True if path refers to an existing directory entry that is a
     symbolic link.
 
@@ -207,7 +207,7 @@ fn islink[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-fn dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
+def dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
     """Returns the directory component of a pathname.
 
     Parameters:
@@ -232,7 +232,7 @@ fn dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
 # ===----------------------------------------------------------------------=== #
 
 
-fn realpath[
+def realpath[
     PathLike: os.PathLike & ImplicitlyDestructible, //
 ](path: PathLike) raises -> String:
     """Expands all symbolic links and resolves references to /./, /../ and extra
@@ -293,7 +293,7 @@ fn realpath[
 # ===----------------------------------------------------------------------=== #
 
 
-fn exists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+def exists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     """Return True if path exists.
 
     Parameters:
@@ -317,7 +317,7 @@ fn exists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-fn lexists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+def lexists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     """Return True if path exists or is a broken symlink.
 
     Parameters:
@@ -341,7 +341,7 @@ fn lexists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-fn getsize[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
+def getsize[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
     """Return the size, in bytes, of the specified path.
 
     Parameters:
@@ -364,7 +364,7 @@ fn getsize[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn is_absolute[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+def is_absolute[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     """Return True if `path` is an absolute path name.
     On Unix, that means it begins with a slash.
 
@@ -388,7 +388,7 @@ fn is_absolute[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # TODO(MOCO-1532):
 #   Use StringSlice here once param inference bug for empty variadic
 #   list of parameterized types is fixed.
-fn join(var path: String, *paths: String) -> String:
+def join(var path: String, *paths: String) -> String:
     """Join two or more pathname components, inserting '/' as needed.
     If any component is an absolute path, all previous path components
     will be discarded.  An empty last part will result in a path that
@@ -419,7 +419,7 @@ fn join(var path: String, *paths: String) -> String:
 # ===----------------------------------------------------------------------=== #
 
 
-fn split[PathLike: os.PathLike, //](path: PathLike) -> Tuple[String, String]:
+def split[PathLike: os.PathLike, //](path: PathLike) -> Tuple[String, String]:
     """
     Split a given pathname into two components: head and tail. This is useful
     for separating the directory path from the filename. If the input path ends
@@ -445,7 +445,7 @@ fn split[PathLike: os.PathLike, //](path: PathLike) -> Tuple[String, String]:
     return String(head), String(tail)
 
 
-fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
+def basename[PathLike: os.PathLike, //](path: PathLike) -> String:
     """Returns the tail section of a path.
 
     ```mojo
@@ -472,7 +472,7 @@ fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
 
 
 # TODO uncomment this when unpacking is supported
-# fn join[PathLike: os.PathLike](path: PathLike, *paths: PathLike) -> String:
+# def join[PathLike: os.PathLike](path: PathLike, *paths: PathLike) -> String:
 #     """Join two or more pathname components, inserting '/' as needed.
 #     If any component is an absolute path, all previous path components
 #     will be discarded.  An empty last part will result in a path that
@@ -502,7 +502,7 @@ fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
 
 # TODO: Move this to a generic path module when Windows is supported.
 # As it can be used for both Windows and Unix-like systems.
-fn _split_extension(
+def _split_extension(
     path: StringSlice,
     sep: StringSlice,
     alt_sep: StringSlice,
@@ -536,7 +536,7 @@ fn _split_extension(
     return String(path), ""
 
 
-fn split_extension[
+def split_extension[
     PathLike: os.PathLike, //
 ](path: PathLike) raises -> Tuple[String, String]:
     """Splits `path` into the root and extension.
@@ -561,7 +561,7 @@ fn split_extension[
 # ===----------------------------------------------------------------------=== #
 
 
-fn splitroot[
+def splitroot[
     PathLike: os.PathLike, //
 ](path: PathLike) -> Tuple[String, String, String]:
     """Splits `path` into drive, root and tail. The tail contains anything after the root.
@@ -597,7 +597,7 @@ fn splitroot[
 # ===----------------------------------------------------------------------=== #
 
 
-fn _is_shell_special_variable(byte: Byte) -> Bool:
+def _is_shell_special_variable(byte: Byte) -> Bool:
     """Checks if `$` + `byte` identifies a special shell variable, such as `$@`.
 
     Args:
@@ -628,7 +628,7 @@ fn _is_shell_special_variable(byte: Byte) -> Bool:
     return Int(byte) in materialize[shell_variables]()
 
 
-fn _is_alphanumeric(byte: Byte) -> Bool:
+def _is_alphanumeric(byte: Byte) -> Bool:
     """Checks if `byte` is an ASCII letter, number, or underscore.
 
     Args:
@@ -649,7 +649,7 @@ fn _is_alphanumeric(byte: Byte) -> Bool:
     )
 
 
-fn _parse_variable_name[
+def _parse_variable_name[
     immutable: ImmutOrigin
 ](bytes: Span[Byte, immutable]) -> Tuple[StringSlice[immutable], Int]:
     """Returns the environment variable name and the byte count required to extract it.
@@ -687,7 +687,7 @@ fn _parse_variable_name[
     return StringSlice(unsafe_from_utf8=bytes[:i]), i
 
 
-fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
+def expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
     """Replaces `${var}` or `$var` in the path with values from the current environment variables.
     Malformed variable names and references to non-existing variables are left unchanged.
 

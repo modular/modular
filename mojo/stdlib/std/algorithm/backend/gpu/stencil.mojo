@@ -23,7 +23,7 @@ from std.utils.index import IndexList
 # ===-----------------------------------------------------------------------===#
 
 
-fn _stencil_impl_gpu[
+def _stencil_impl_gpu[
     shape_element_type: DType,
     input_shape_element_type: DType,
     //,
@@ -89,7 +89,7 @@ fn _stencil_impl_gpu[
     # GPU kernel implementation
     @always_inline
     @parameter
-    fn stencil_kernel():
+    def stencil_kernel():
         # Get thread indices
         var tid_x = thread_idx.x
         var tid_y = thread_idx.y

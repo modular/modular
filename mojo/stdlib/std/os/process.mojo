@@ -56,7 +56,7 @@ struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable):
     var term_signal: Optional[Int]
     """The signal number that terminated the process."""
 
-    fn __init__(
+    def __init__(
         out self,
         exit_code: Optional[Int] = None,
         term_signal: Optional[Int] = None,
@@ -71,7 +71,7 @@ struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable):
         self.term_signal = term_signal
 
     @staticmethod
-    fn running() -> Self:
+    def running() -> Self:
         """Creates a status for a running process.
 
         Returns:
@@ -79,7 +79,7 @@ struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable):
         """
         return Self()
 
-    fn has_exited(self) -> Bool:
+    def has_exited(self) -> Bool:
         """Checks if the process has terminated.
 
         Returns:
@@ -102,7 +102,7 @@ struct Pipe:
     var fd_out: Optional[FileDescriptor]
     """File descriptor for pipe output."""
 
-    fn __init__(
+    def __init__(
         out self,
         in_close_on_exec: Bool = True,
         out_close_on_exec: Bool = True,
@@ -137,14 +137,14 @@ struct Pipe:
         self.fd_in = FileDescriptor(Int(pipe_fds[0]))
         self.fd_out = FileDescriptor(Int(pipe_fds[1]))
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Ensures pipes input and output file descriptors are closed, when the object is destroyed.
         """
         self.set_input_only()
         self.set_output_only()
 
     @staticmethod
-    fn _set_close_on_exec(fd: c_int) -> Bool:
+    def _set_close_on_exec(fd: c_int) -> Bool:
         return (
             fcntl(
                 fd,
@@ -155,21 +155,21 @@ struct Pipe:
         )
 
     @always_inline
-    fn set_input_only(mut self):
+    def set_input_only(mut self):
         """Close the output descriptor/ channel for this side of the pipe."""
         if self.fd_out:
             _ = close(Int32(rebind[Int](self.fd_out.value())))
             self.fd_out = None
 
     @always_inline
-    fn set_output_only(mut self):
+    def set_output_only(mut self):
         """Close the input descriptor/ channel for this side of the pipe."""
         if self.fd_in:
             _ = close(Int32(rebind[Int](self.fd_in.value())))
             self.fd_in = None
 
     @always_inline
-    fn write_bytes(mut self, bytes: Span[Byte, _]) raises:
+    def write_bytes(mut self, bytes: Span[Byte, _]) raises:
         """Writes a span of bytes to the pipe.
 
         Args:
@@ -184,7 +184,7 @@ struct Pipe:
             raise Error("Can not write from read only side of pipe")
 
     @always_inline
-    fn read_bytes(mut self, buffer: Span[mut=True, Byte, _]) raises -> UInt:
+    def read_bytes(mut self, buffer: Span[mut=True, Byte, _]) raises -> UInt:
         """Read a number of bytes from this pipe.
 
         Args:
@@ -222,7 +222,7 @@ struct Process:
     var status: Optional[ProcessStatus]
     """Cached status of the process. `None` if the process has not been waited on yet."""
 
-    fn __init__(out self, child_pid: c_pid_t):
+    def __init__(out self, child_pid: c_pid_t):
         """Struct to manage metadata about child process.
         Use the `run` static method to create new process.
 
@@ -233,7 +233,7 @@ struct Process:
         self.child_pid = child_pid
         self.status = None
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Waits for the process to exit when the `Process` object is destroyed.
         """
         try:
@@ -242,7 +242,7 @@ struct Process:
             # Errors in __del__ should be suppressed.
             pass
 
-    fn _kill(mut self, signal: Int) -> Bool:
+    def _kill(mut self, signal: Int) -> Bool:
         # We need to check the "cached" status to avoid trying to
         # kill a process after already having waited upon its exit.
         # Such a process no longer exists and its pid could be reused
@@ -252,7 +252,9 @@ struct Process:
         # `kill` returns 0 on success and -1 on failure
         return kill(Int32(self.child_pid), Int32(signal)) > -1
 
-    fn _check_status(self, pid: c_pid_t, status: c_int) raises -> ProcessStatus:
+    def _check_status(
+        self, pid: c_pid_t, status: c_int
+    ) raises -> ProcessStatus:
         """Helper to decode the result of a waitpid call.
 
         The decoding logic is a direct implementation of the standard C macros
@@ -291,7 +293,7 @@ struct Process:
             var err = get_errno()
             raise Error("waitpid failed with errno " + String(err))
 
-    fn hangup(mut self) -> Bool:
+    def hangup(mut self) -> Bool:
         """Send the Hang up signal to the managed child process.
 
         Returns:
@@ -299,7 +301,7 @@ struct Process:
         """
         return self._kill(SignalCodes.HUP)
 
-    fn interrupt(mut self) -> Bool:
+    def interrupt(mut self) -> Bool:
         """Send the Interrupt signal to the managed child process.
 
         Returns:
@@ -307,7 +309,7 @@ struct Process:
         """
         return self._kill(SignalCodes.INT)
 
-    fn kill(mut self) -> Bool:
+    def kill(mut self) -> Bool:
         """Send the Kill signal to the managed child process.
 
         Returns:
@@ -315,7 +317,7 @@ struct Process:
         """
         return self._kill(SignalCodes.KILL)
 
-    fn poll(mut self) raises -> ProcessStatus:
+    def poll(mut self) raises -> ProcessStatus:
         """Check if the child process has terminated in a non-blocking way.
 
         This method updates the internal state of the `Process` object.
@@ -339,7 +341,7 @@ struct Process:
             self.status = result
         return result
 
-    fn wait(mut self) raises -> ProcessStatus:
+    def wait(mut self) raises -> ProcessStatus:
         """Wait for the child process to terminate (blocking).
 
         This method updates the internal state of the `Process` object.
@@ -365,7 +367,7 @@ struct Process:
         return result
 
     @staticmethod
-    fn run(var path: String, argv: List[String]) raises -> Process:
+    def run(var path: String, argv: List[String]) raises -> Process:
         """Spawn new process from file executable.
 
         Args:

@@ -68,7 +68,7 @@ from .backend.gpu import _elementwise_impl_gpu, _stencil_impl_gpu
 
 
 @always_inline
-fn _get_start_indices_of_nth_subvolume[
+def _get_start_indices_of_nth_subvolume[
     rank: Int, //, subvolume_rank: Int = 1
 ](n: Int, shape: IndexList[rank, ...], out res: type_of(shape)):
     """Converts a flat index into the starting ND indices of the nth subvolume
@@ -130,7 +130,7 @@ fn _get_start_indices_of_nth_subvolume[
 # TODO(KERN-637) - optimize this algorithm for UInt rather than delegating
 # to the Int overload.
 @always_inline
-fn _get_start_indices_of_nth_subvolume_uint[
+def _get_start_indices_of_nth_subvolume_uint[
     rank: Int,
     //,
     subvolume_rank: UInt = 1,
@@ -176,7 +176,7 @@ fn _get_start_indices_of_nth_subvolume_uint[
 
 
 @always_inline
-fn elementwise[
+def elementwise[
     func: fn[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
@@ -214,7 +214,7 @@ fn elementwise[
 
 
 @always_inline
-fn elementwise[
+def elementwise[
     rank: Int,
     //,
     func: fn[width: Int, rank: Int, alignment: Int = 1](
@@ -256,7 +256,7 @@ fn elementwise[
 
 
 @always_inline
-fn elementwise[
+def elementwise[
     func: fn[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
@@ -294,7 +294,7 @@ fn elementwise[
 
 
 @always_inline
-fn elementwise[
+def elementwise[
     rank: Int,
     //,
     func: fn[width: Int, rank: Int, alignment: Int = 1](
@@ -332,7 +332,7 @@ fn elementwise[
 
 
 @always_inline
-fn elementwise[
+def elementwise[
     rank: Int,
     //,
     func: fn[width: Int, rank: Int, alignment: Int = 1](
@@ -366,7 +366,7 @@ fn elementwise[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         var shape_str = trace_arg("shape", shape)
         var vector_width_str = String(t"vector_width={simd_width}")
 
@@ -393,7 +393,7 @@ fn elementwise[
 
 
 @always_inline
-fn _elementwise_impl[
+def _elementwise_impl[
     rank: Int,
     //,
     func: fn[width: Int, rank: Int, alignment: Int = 1](

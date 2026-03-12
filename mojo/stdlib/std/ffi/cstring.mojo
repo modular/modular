@@ -15,7 +15,7 @@ from std.collections.string.string_slice import _unsafe_strlen
 
 
 @always_inline
-fn _validate_bytes(slice: Span[Byte, _]) raises:
+def _validate_bytes(slice: Span[Byte, _]) raises:
     var length = Int(_unsafe_strlen(slice.unsafe_ptr(), UInt(len(slice))))
     if length == len(slice) - 1:
         return
@@ -45,12 +45,12 @@ struct CStringSlice[origin: ImmutOrigin](
     var _data: UnsafePointer[Int8, Self.origin]
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Constructs a null `CStringSlice`."""
         self._data = {}
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         *,
         unsafe_from_ptr: UnsafePointer[Int8, Self.origin],
@@ -68,7 +68,7 @@ struct CStringSlice[origin: ImmutOrigin](
         ```mojo
         from std.ffi import c_char, CStringSlice, external_call
 
-        fn getenv_wrapper(
+        def getenv_wrapper(
             name: CStringSlice,
         ) raises -> CStringSlice[StaticConstantOrigin]:
             # External call to 'getenv'.
@@ -87,7 +87,7 @@ struct CStringSlice[origin: ImmutOrigin](
         self._data = unsafe_from_ptr
 
     @always_inline
-    fn __init__(out self, slice: StringSlice[Self.origin]) raises:
+    def __init__(out self, slice: StringSlice[Self.origin]) raises:
         """Construct a `CStringSlice` from a `StringSlice`.
 
         Args:
@@ -114,7 +114,7 @@ struct CStringSlice[origin: ImmutOrigin](
         self._data = slice.unsafe_ptr().bitcast[Int8]()
 
     @always_inline
-    fn __init__(out self, span: Span[Byte, Self.origin]) raises:
+    def __init__(out self, span: Span[Byte, Self.origin]) raises:
         """Construct a `CStringSlice` from a `Span[Byte]`.
 
         Args:
@@ -128,7 +128,7 @@ struct CStringSlice[origin: ImmutOrigin](
         self._data = span.unsafe_ptr().bitcast[Int8]()
 
     @always_inline
-    fn __eq__(self, rhs_same: Self) -> Bool:
+    def __eq__(self, rhs_same: Self) -> Bool:
         """Compare two `CStringSlice`s for equality.
 
         Args:
@@ -140,7 +140,7 @@ struct CStringSlice[origin: ImmutOrigin](
         return Self.__eq__(self, rhs=rhs_same)
 
     @always_inline
-    fn __eq__(self, rhs: CStringSlice) -> Bool:
+    def __eq__(self, rhs: CStringSlice) -> Bool:
         """Compare two `CStringSlice`s for equality.
 
         Args:
@@ -164,7 +164,7 @@ struct CStringSlice[origin: ImmutOrigin](
         return False
 
     @always_inline
-    fn __ne__(self, rhs: CStringSlice) -> Bool:
+    def __ne__(self, rhs: CStringSlice) -> Bool:
         """Compare two `CStringSlice`s for inequality.
 
         Args:
@@ -176,7 +176,7 @@ struct CStringSlice[origin: ImmutOrigin](
         return not (self == rhs)
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Get the length of the C string. Like C's strlen this does not include
         the nul terminator.
 
@@ -188,7 +188,7 @@ struct CStringSlice[origin: ImmutOrigin](
         else:
             return 0
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write the `CStringSlice` to a `Writer`, the nul terminator is
         omitted.
 
@@ -199,7 +199,7 @@ struct CStringSlice[origin: ImmutOrigin](
         writer.write_string(StringSlice(unsafe_from_utf8=self.as_bytes()))
 
     @always_inline
-    fn unsafe_ptr(self) -> UnsafePointer[Int8, Self.origin]:
+    def unsafe_ptr(self) -> UnsafePointer[Int8, Self.origin]:
         """Get a pointer to the underlying `CStringSlice`.
 
         Returns:
@@ -208,7 +208,7 @@ struct CStringSlice[origin: ImmutOrigin](
         return self._data
 
     @always_inline
-    fn as_bytes(self) -> Span[Byte, Self.origin]:
+    def as_bytes(self) -> Span[Byte, Self.origin]:
         """Get a span of the underlying `CStringSlice` as bytes.
 
         The returned span does not include the nul terminator.
@@ -224,7 +224,7 @@ struct CStringSlice[origin: ImmutOrigin](
         )
 
     @always_inline
-    fn as_bytes_with_nul(self) -> Span[Byte, Self.origin]:
+    def as_bytes_with_nul(self) -> Span[Byte, Self.origin]:
         """Get a span of the underlying `CStringSlice` as bytes including the
         nul terminator.
 

@@ -26,7 +26,7 @@ from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 # ===-----------------------------------------------------------------------===#
 
 
-fn _stencil_impl_cpu[
+def _stencil_impl_cpu[
     shape_element_type: DType,
     input_shape_element_type: DType,
     //,
@@ -104,7 +104,7 @@ fn _stencil_impl_cpu[
 
     @always_inline
     @parameter
-    fn task_func(i: Int):
+    def task_func(i: Int):
         var start_parallel_offset = i * chunk_size
         var end_parallel_offset = min((i + 1) * chunk_size, parallelism_size)
 
@@ -120,7 +120,7 @@ fn _stencil_impl_cpu[
             )
 
             @always_inline
-            fn func_wrapper[
+            def func_wrapper[
                 simd_width: Int
             ](idx: Int) unified {mut indices, read input_shape}:
                 indices[rank - 1] = idx

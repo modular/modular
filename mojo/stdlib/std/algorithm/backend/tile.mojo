@@ -42,7 +42,7 @@ and a secondary static tile size.
 
 
 @always_inline
-fn tile[
+def tile[
     workgroup_function: Static1DTileUnitFunc, tile_size_list: List[Int]
 ](offset: Int, upperbound: Int):
     """A generator that launches work groups in specified list of tile sizes.
@@ -83,7 +83,7 @@ fn tile[
 
 
 @always_inline
-fn tile[
+def tile[
     workgroup_function: Dynamic1DTileUnitFunc,
 ](offset: Int, upperbound: Int, *tile_size_list: Int):
     """A generator that launches work groups in specified list of tile sizes.
@@ -118,7 +118,7 @@ fn tile[
 
 
 @always_inline
-fn tile[
+def tile[
     secondary_tile_size_list: List[Int],
     secondary_cleanup_tile: Int,
     workgroup_function: BinaryTile1DTileUnitFunc,
@@ -180,7 +180,7 @@ The function takes static tile size parameters and offset arguments, i.e.
 
 
 @always_inline
-fn tile[
+def tile[
     workgroup_function: Static2DTileUnitFunc,
     tile_sizes_x: List[Int],
     tile_sizes_y: List[Int],

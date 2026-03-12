@@ -23,7 +23,7 @@ from std.ffi import c_int, external_call
 from std.sys import CompilationTarget
 
 
-fn setenv(var name: String, var value: String, overwrite: Bool = True) -> Bool:
+def setenv(var name: String, var value: String, overwrite: Bool = True) -> Bool:
     """Changes or adds an environment variable.
 
     Constraints:
@@ -47,7 +47,7 @@ fn setenv(var name: String, var value: String, overwrite: Bool = True) -> Bool:
     return status == 0
 
 
-fn unsetenv(var name: String) -> Bool:
+def unsetenv(var name: String) -> Bool:
     """Unsets an environment variable.
 
     Args:
@@ -62,7 +62,7 @@ fn unsetenv(var name: String) -> Bool:
     )
 
 
-fn getenv(var name: String, default: String = "") -> String:
+def getenv(var name: String, default: String = "") -> String:
     """Returns the value of the given environment variable.
 
     Constraints:

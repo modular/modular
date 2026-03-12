@@ -28,7 +28,7 @@ from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 
 
 @always_inline
-fn _elementwise_impl_cpu[
+def _elementwise_impl_cpu[
     rank: Int,
     //,
     func: fn[width: Int, rank: Int, alignment: Int = 1](
@@ -56,7 +56,7 @@ fn _elementwise_impl_cpu[
 
 
 @always_inline
-fn _elementwise_impl_cpu_1d[
+def _elementwise_impl_cpu_1d[
     rank: Int,
     //,
     func: fn[width: Int, rank: Int, alignment: Int = 1](
@@ -88,7 +88,7 @@ fn _elementwise_impl_cpu_1d[
     comptime if use_blocking_impl:
 
         @always_inline
-        fn blocking_task_fun[simd_width: Int](idx: Int) unified {read}:
+        def blocking_task_fun[simd_width: Int](idx: Int) unified {read}:
             func[simd_width, rank](IndexList[rank](idx))
 
         vectorize[simd_width, unroll_factor=unroll_factor](
@@ -101,13 +101,13 @@ fn _elementwise_impl_cpu_1d[
 
     @always_inline
     @parameter
-    fn task_func(i: Int):
+    def task_func(i: Int):
         var start_offset = i * chunk_size
         var end_offset = min((i + 1) * chunk_size, problem_size)
         var len = end_offset - start_offset
 
         @always_inline
-        fn func_wrapper[simd_width: Int](idx: Int) unified {read start_offset}:
+        def func_wrapper[simd_width: Int](idx: Int) unified {read start_offset}:
             var offset = start_offset + idx
             func[simd_width, rank](IndexList[rank](offset))
 
@@ -117,7 +117,7 @@ fn _elementwise_impl_cpu_1d[
 
 
 @always_inline
-fn _elementwise_impl_cpu_nd[
+def _elementwise_impl_cpu_nd[
     rank: Int,
     //,
     func: fn[width: Int, rank: Int, alignment: Int = 1](
@@ -160,11 +160,11 @@ fn _elementwise_impl_cpu_nd[
 
         @always_inline
         @parameter
-        fn blocking_task_fn(i: Int):
+        def blocking_task_fn(i: Int):
             var indices = _get_start_indices_of_nth_subvolume(i, shape)
 
             @always_inline
-            fn func_wrapper[simd_width: Int](idx: Int) unified {mut indices}:
+            def func_wrapper[simd_width: Int](idx: Int) unified {mut indices}:
                 # The inner most dimension is vectorized, so we set it
                 # to the index offset.
                 indices[rank - 1] = idx
@@ -185,7 +185,7 @@ fn _elementwise_impl_cpu_nd[
 
     @always_inline
     @parameter
-    fn task_func(i: Int):
+    def task_func(i: Int):
         var start_parallel_offset = i * chunk_size
         var end_parallel_offset = min((i + 1) * chunk_size, parallelism_size)
 
@@ -201,7 +201,7 @@ fn _elementwise_impl_cpu_nd[
             )
 
             @always_inline
-            fn func_wrapper[simd_width: Int](idx: Int) unified {mut indices}:
+            def func_wrapper[simd_width: Int](idx: Int) unified {mut indices}:
                 # The inner most dimension is vectorized, so we set it
                 # to the index offset.
                 indices[rank - 1] = idx

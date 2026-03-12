@@ -28,7 +28,7 @@ Example:
 ```mojo
 from std.ffi import c_int, external_call
 
-fn get_random() -> c_int:
+def get_random() -> c_int:
     return external_call["rand", c_int]()
 ```
 
@@ -37,7 +37,7 @@ For loading dynamic libraries:
 ```mojo
 from std.ffi import OwnedDLHandle
 
-fn main() raises:
+def main() raises:
     var lib = OwnedDLHandle("libm.so")
     var sqrt = lib.get_function[fn(Float64) -> Float64]("sqrt")
     print(sqrt(4.0))  # 2.0
@@ -130,7 +130,7 @@ comptime MAX_PATH = _get_max_path()
 """Maximum path length for the current platform."""
 
 
-fn _get_max_path() -> Int:
+def _get_max_path() -> Int:
     comptime if CompilationTarget.is_linux():
         return 4096
     elif CompilationTarget.is_macos():
@@ -140,7 +140,7 @@ fn _get_max_path() -> Int:
         return 256
 
 
-fn _c_long_dtype[unsigned: Bool = False]() -> DType:
+def _c_long_dtype[unsigned: Bool = False]() -> DType:
     # https://en.wikipedia.org/wiki/64-bit_computing#64-bit_data_models
 
     comptime if is_64bit() and (
@@ -155,7 +155,7 @@ fn _c_long_dtype[unsigned: Bool = False]() -> DType:
         comptime assert False, "size of C `long` is unknown on this target"
 
 
-fn _c_long_long_dtype[unsigned: Bool = False]() -> DType:
+def _c_long_long_dtype[unsigned: Bool = False]() -> DType:
     # https://en.wikipedia.org/wiki/64-bit_computing#64-bit_data_models
     # `long long` is 64 bits on all common platforms (LP64, LLP64, ILP32).
 
@@ -204,7 +204,7 @@ struct OwnedDLHandle(Movable):
     ```mojo
     from std.ffi import OwnedDLHandle
 
-    fn main() raises:
+    def main() raises:
         var lib = OwnedDLHandle("libm.so")
         var sqrt = lib.get_function[fn(Float64) -> Float64]("sqrt")
         print(sqrt(4.0))  # Prints: 2.0
@@ -219,7 +219,7 @@ struct OwnedDLHandle(Movable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __init__(out self, flags: Int = DEFAULT_RTLD) raises:
+    def __init__(out self, flags: Int = DEFAULT_RTLD) raises:
         """Initialize an owned handle to all global symbols in the current
         process.
 
@@ -231,7 +231,7 @@ struct OwnedDLHandle(Movable):
         """
         self._handle = _DLHandle(flags)
 
-    fn __init__[
+    def __init__[
         PathLike: os.PathLike, //
     ](out self, path: PathLike, flags: Int = DEFAULT_RTLD) raises:
         """Initialize an OwnedDLHandle by loading the dynamic library at the
@@ -251,10 +251,10 @@ struct OwnedDLHandle(Movable):
 
     @doc_private
     @always_inline
-    fn __init__(out self, *, unsafe_uninitialized: Bool):
+    def __init__(out self, *, unsafe_uninitialized: Bool):
         self._handle = _DLHandle({})
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Unload the associated dynamic library.
 
         This automatically calls `dlclose()` on the underlying library handle.
@@ -265,7 +265,7 @@ struct OwnedDLHandle(Movable):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn borrow(self) -> _DLHandle:
+    def borrow(self) -> _DLHandle:
         """Returns a non-owning reference to this handle.
 
         The returned `_DLHandle` does not own the library and should not be
@@ -276,7 +276,7 @@ struct OwnedDLHandle(Movable):
         """
         return self._handle
 
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Checks if the handle is valid.
 
         Returns:
@@ -284,7 +284,7 @@ struct OwnedDLHandle(Movable):
         """
         return self._handle.__bool__()
 
-    fn check_symbol(self, var name: String) -> Bool:
+    def check_symbol(self, var name: String) -> Bool:
         """Check that the symbol exists in the dynamic library.
 
         Args:
@@ -295,7 +295,7 @@ struct OwnedDLHandle(Movable):
         """
         return self._handle.check_symbol(name)
 
-    fn get_function[
+    def get_function[
         result_type: __TypeOfAllTypes
     ](self, var name: String) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
@@ -313,7 +313,7 @@ struct OwnedDLHandle(Movable):
         return self._handle.get_function[result_type](name)
 
     @always_inline
-    fn _get_function[
+    def _get_function[
         func_name: StaticString, result_type: __TypeOfAllTypes
     ](self) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
@@ -329,7 +329,7 @@ struct OwnedDLHandle(Movable):
         return self._handle._get_function[func_name, result_type]()
 
     @always_inline
-    fn _get_function[
+    def _get_function[
         result_type: __TypeOfAllTypes
     ](self, *, cstr_name: UnsafePointer[mut=False, c_char, _]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
@@ -346,7 +346,7 @@ struct OwnedDLHandle(Movable):
         """
         return self._handle._get_function[result_type](cstr_name=cstr_name)
 
-    fn get_symbol[
+    def get_symbol[
         result_type: AnyType,
     ](self, name: StringSlice) -> UnsafePointer[result_type, MutAnyOrigin]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -363,7 +363,7 @@ struct OwnedDLHandle(Movable):
         """
         return self._handle.get_symbol[result_type](name)
 
-    fn get_symbol[
+    def get_symbol[
         result_type: AnyType
     ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> UnsafePointer[
         result_type, MutAnyOrigin
@@ -383,7 +383,7 @@ struct OwnedDLHandle(Movable):
         return self._handle.get_symbol[result_type](cstr_name=cstr_name)
 
     @always_inline
-    fn call[
+    def call[
         name: StaticString,
         return_type: __TypeOfAllTypes = NoneType,
         *T: AnyType,
@@ -403,7 +403,7 @@ struct OwnedDLHandle(Movable):
         """
         return self._handle.call[name, return_type](args)
 
-    fn call[
+    def call[
         name: StaticString, return_type: __TypeOfAllTypes = NoneType
     ](self, args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
         """Call a function with any amount of arguments.
@@ -442,7 +442,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
     """The handle to the dynamic library."""
 
     @always_inline
-    fn __init__(out self, flags: Int = DEFAULT_RTLD) raises:
+    def __init__(out self, flags: Int = DEFAULT_RTLD) raises:
         """Initialize a dynamic library handle to all global symbols in the
         current process.
 
@@ -458,7 +458,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
         """
         self = Self._dlopen(UnsafePointer[c_char, MutExternalOrigin](), flags)
 
-    fn __init__[
+    def __init__[
         PathLike: os.PathLike, //
     ](out self, path: PathLike, flags: Int = DEFAULT_RTLD) raises:
         """Initialize a DLHandle object by loading the dynamic library at the
@@ -479,7 +479,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
         self = Self._dlopen(fspath.as_c_string_slice().unsafe_ptr(), flags)
 
     @staticmethod
-    fn _dlopen(
+    def _dlopen(
         file: UnsafePointer[mut=False, c_char, _], flags: Int
     ) raises -> _DLHandle:
         var handle = dlopen(file, Int32(flags))
@@ -491,7 +491,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
             )
         return _DLHandle(handle)
 
-    fn check_symbol(self, var name: String) -> Bool:
+    def check_symbol(self, var name: String) -> Bool:
         """Check that the symbol exists in the dynamic library.
 
         Args:
@@ -507,7 +507,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
 
         return Bool(opaque_function_ptr)
 
-    fn close(mut self):
+    def close(mut self):
         """Unload the associated dynamic library.
 
         Warning:
@@ -520,7 +520,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
         _ = dlclose(self.handle)
         self.handle = {}
 
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Checks if the handle is valid.
 
         Returns:
@@ -528,7 +528,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
         """
         return self.handle.__bool__()
 
-    fn get_function[
+    def get_function[
         result_type: __TypeOfAllTypes
     ](self, var name: String) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
@@ -549,7 +549,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
         )
 
     @always_inline
-    fn _get_function[
+    def _get_function[
         func_name: StaticString, result_type: __TypeOfAllTypes
     ](self) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
@@ -569,7 +569,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
         )
 
     @always_inline
-    fn _get_function[
+    def _get_function[
         result_type: __TypeOfAllTypes
     ](self, *, cstr_name: UnsafePointer[mut=False, c_char, _]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
@@ -588,7 +588,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
 
         return UnsafePointer(to=opaque_function_ptr).bitcast[result_type]()[]
 
-    fn get_symbol[
+    def get_symbol[
         result_type: AnyType,
     ](self, name: StringSlice) -> UnsafePointer[result_type, MutAnyOrigin]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -608,7 +608,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
             cstr_name=name_copy.as_c_string_slice().unsafe_ptr()
         )
 
-    fn get_symbol[
+    def get_symbol[
         result_type: AnyType
     ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> UnsafePointer[
         result_type, MutAnyOrigin
@@ -669,7 +669,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
         return res
 
     @always_inline
-    fn call[
+    def call[
         name: StaticString,
         return_type: __TypeOfAllTypes = NoneType,
         *T: AnyType,
@@ -689,7 +689,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
         """
         return self.call[name, return_type](args)
 
-    fn call[
+    def call[
         name: StaticString, return_type: __TypeOfAllTypes = NoneType
     ](self, args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
         """Call a function with any amount of arguments.
@@ -706,7 +706,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
         """
 
         @parameter
-        fn _check_symbol() -> Bool:
+        def _check_symbol() -> Bool:
             return self.check_symbol(String(name))
 
         debug_assert[_check_symbol]("symbol not found: ", name)
@@ -715,7 +715,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
 
 
 @always_inline
-fn _get_dylib_function[
+def _get_dylib_function[
     dylib_global: _Global[StorageType=OwnedDLHandle, ...],
     func_name: StaticString,
     result_type: __TypeOfAllTypes,
@@ -740,7 +740,7 @@ fn _get_dylib_function[
     return new_func
 
 
-fn _try_find_dylib[
+def _try_find_dylib[
     name: StaticString = ""
 ](paths: List[Path]) raises -> OwnedDLHandle:
     """Try to load a dynamically linked library given a list of possible paths.
@@ -775,7 +775,7 @@ fn _try_find_dylib[
     raise Error("Failed to load ", dylib_name, " from ", " or ".join(paths))
 
 
-fn _try_find_dylib[
+def _try_find_dylib[
     name: StaticString = ""
 ](*paths: Path) raises -> OwnedDLHandle:
     """Load a dynamically linked library given a variadic list of possible names.
@@ -787,7 +787,7 @@ fn _try_find_dylib[
     return _try_find_dylib[name](paths_list)
 
 
-fn _find_dylib[
+def _find_dylib[
     name: StaticString = "", abort_on_failure: Bool = True
 ](paths: List[Path]) -> OwnedDLHandle:
     """Load a dynamically linked library given a list of possible paths or names.
@@ -816,7 +816,7 @@ fn _find_dylib[
             return OwnedDLHandle(unsafe_uninitialized=True)
 
 
-fn _find_dylib[
+def _find_dylib[
     msg: fn() -> String, abort_on_failure: Bool = True
 ](paths: List[Path]) -> OwnedDLHandle:
     """Load a dynamically linked library given a list of possible paths or names.
@@ -846,7 +846,7 @@ fn _find_dylib[
             return OwnedDLHandle(unsafe_uninitialized=True)
 
 
-fn _find_dylib[name: StaticString = ""](*paths: Path) -> OwnedDLHandle:
+def _find_dylib[name: StaticString = ""](*paths: Path) -> OwnedDLHandle:
     """Load a dynamically linked library given a variadic list of possible names.
     """
     # Convert the variadic pack to a list.
@@ -872,11 +872,11 @@ struct _Global[
 ](Defaultable):
     comptime ResultType = UnsafePointer[Self.StorageType, MutExternalOrigin]
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @staticmethod
-    fn _init_wrapper() -> OpaquePointer[MutExternalOrigin]:
+    def _init_wrapper() -> OpaquePointer[MutExternalOrigin]:
         # Heap allocate space to store this "global"
         # TODO:
         #   Any way to avoid the move, e.g. by calling this function
@@ -886,14 +886,14 @@ struct _Global[
         return ptr^.steal_data().bitcast[NoneType]()
 
     @staticmethod
-    fn _deinit_wrapper(opaque_ptr: OpaquePointer[MutExternalOrigin]):
+    def _deinit_wrapper(opaque_ptr: OpaquePointer[MutExternalOrigin]):
         # Deinitialize and deallocate the storage.
         _ = OwnedPointer(
             unsafe_from_raw_pointer=opaque_ptr.bitcast[Self.StorageType]()
         )
 
     @staticmethod
-    fn get_or_create_ptr() raises -> Self.ResultType:
+    def get_or_create_ptr() raises -> Self.ResultType:
         var ptr = _get_global[
             Self.name, Self._init_wrapper, Self._deinit_wrapper
         ]()
@@ -916,7 +916,7 @@ struct _Global[
     # This accesses a well-known global with a fixed index rather than using a
     # name to unique the value.  The index table is above.
     @staticmethod
-    fn get_or_create_indexed_ptr(idx: Int) raises -> Self.ResultType:
+    def get_or_create_indexed_ptr(idx: Int) raises -> Self.ResultType:
         var ptr = external_call[
             "KGEN_CompilerRT_GetOrCreateGlobalIndexed",
             OpaquePointer[MutExternalOrigin],
@@ -934,7 +934,7 @@ struct _Global[
 
 
 @always_inline
-fn _get_global[
+def _get_global[
     name: StaticString,
     init_fn: fn() -> OpaquePointer[MutExternalOrigin],
     destroy_fn: fn(OpaquePointer[MutExternalOrigin]) -> None,
@@ -949,7 +949,7 @@ fn _get_global[
 
 
 @always_inline
-fn _get_global_or_null(name: StringSlice) -> OpaquePointer[MutExternalOrigin]:
+def _get_global_or_null(name: StringSlice) -> OpaquePointer[MutExternalOrigin]:
     return external_call[
         "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer[MutExternalOrigin]
     ](name.unsafe_ptr(), name.byte_length())
@@ -961,7 +961,7 @@ fn _get_global_or_null(name: StringSlice) -> OpaquePointer[MutExternalOrigin]:
 
 
 @always_inline("nodebug")
-fn external_call[
+def external_call[
     callee: StaticString,
     return_type: __TypeOfAllTypes,
     *types: AnyType,
@@ -983,7 +983,7 @@ fn external_call[
 
 
 @always_inline("nodebug")
-fn external_call[
+def external_call[
     callee: StaticString,
     return_type: __TypeOfAllTypes,
 ](args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
@@ -1024,7 +1024,7 @@ fn external_call[
 
 
 @always_inline("nodebug")
-fn _external_call_const[
+def _external_call_const[
     callee: StaticString,
     return_type: __TypeOfAllTypes,
     *types: AnyType,

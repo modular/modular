@@ -30,7 +30,7 @@ from std.algorithm.reduction import _get_nd_indices_from_flat_index
 
 
 @always_inline
-fn _reduce_generator_cpu[
+def _reduce_generator_cpu[
     num_reductions: Int,
     init_type: DType,
     input_0_fn: fn[dtype: DType, width: Int, rank: Int](
@@ -105,7 +105,7 @@ fn _reduce_generator_cpu[
             ](shape, init, reduce_dim_normalized)
 
 
-fn _reduce_along_inner_dimension[
+def _reduce_along_inner_dimension[
     num_reductions: Int,
     init_type: DType,
     input_0_fn: fn[dtype: DType, width: Int, rank: Int](
@@ -169,7 +169,7 @@ fn _reduce_along_inner_dimension[
 
     @always_inline
     @parameter
-    fn simd_reduce_helper_fn[
+    def simd_reduce_helper_fn[
         in_width: Int,
         out_width: Int,
     ](
@@ -188,7 +188,7 @@ fn _reduce_along_inner_dimension[
 
     @always_inline
     @parameter
-    fn reduce_rows_unrolled(start_row: Int, end_row: Int):
+    def reduce_rows_unrolled(start_row: Int, end_row: Int):
         # Iterate over the non reduced dimensions.
         for flat_index in range(start_row, end_row):
             # In normal elementwise get_nd_indices skips the last dimension as
@@ -200,7 +200,7 @@ fn _reduce_along_inner_dimension[
 
             @always_inline
             @parameter
-            fn unrolled_reduce_helper_fn[
+            def unrolled_reduce_helper_fn[
                 width: Int,
             ](
                 start: Int,
@@ -269,7 +269,7 @@ fn _reduce_along_inner_dimension[
 
     @always_inline
     @parameter
-    fn reduce_rows(i: Int):
+    def reduce_rows(i: Int):
         var start_parallel_offset = i * chunk_size
         var end_parallel_offset = _min((i + 1) * chunk_size, parallelism_size)
 
@@ -290,7 +290,7 @@ fn _reduce_along_inner_dimension[
     _ = simd_compatible_size
 
 
-fn _reduce_along_outer_dimension[
+def _reduce_along_outer_dimension[
     num_reductions: Int,
     init_type: DType,
     input_0_fn: fn[dtype: DType, width: Int, rank: Int](
@@ -358,7 +358,7 @@ fn _reduce_along_outer_dimension[
     var chunk_size = ceildiv(parallelism_size, num_workers)
 
     @parameter
-    fn reduce_slices(i: Int):
+    def reduce_slices(i: Int):
         var start_parallel_offset = i * chunk_size
         var end_parallel_offset = _min((i + 1) * chunk_size, parallelism_size)
 
@@ -370,7 +370,9 @@ fn _reduce_along_outer_dimension[
         for var slice_idx in range(start_parallel_offset, end_parallel_offset):
 
             @always_inline
-            fn reduce_chunk[simd_width: Int](inner_dim_idx: Int) unified {read}:
+            def reduce_chunk[
+                simd_width: Int
+            ](inner_dim_idx: Int) unified {read}:
                 var acc_simd_tup = StaticTuple[
                     SIMD[init_type, simd_width], num_reductions
                 ]()
