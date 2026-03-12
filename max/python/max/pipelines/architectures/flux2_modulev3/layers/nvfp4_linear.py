@@ -17,16 +17,15 @@ import operator
 from functools import reduce
 from typing import Literal
 
-from max.driver import Device
 from max.dtype import DType
 from max.experimental import random
 from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue
-from max.graph.ops import reshape
+from max.graph.ops import reshape, transfer_to
+from max.graph.type import DeviceRef
 from max.nn.quant_config import QuantConfig
 from max.nn.quant_ops import matmul_float4 as _matmul_float4
-from typing_extensions import Self
 
 
 class NVFP4Linear(Module[[Tensor], Tensor]):
@@ -58,16 +57,6 @@ class NVFP4Linear(Module[[Tensor], Tensor]):
         self.bias = random.normal([out_dim]) if bias else 0
         self._quant_config = quant_config
 
-    _CPU_PARAMS = frozenset({"input_scale", "weight_scale_2"})
-
-    def to(self, device: Device) -> Self:
-        """Move parameters to device, keeping scalar scales on CPU."""
-        object.__setattr__(self, "_module_target_device", device)
-        self.apply_to_parameters(
-            lambda name, t: t if name in self._CPU_PARAMS else t.to(device)
-        )
-        return self
-
     def forward(self, x: Tensor) -> Tensor:
         xv = TensorValue(x)
 
@@ -79,12 +68,20 @@ class NVFP4Linear(Module[[Tensor], Tensor]):
             m_dim = reduce(operator.mul, leading_dims)
             xv = reshape(xv, [m_dim, k_dim])
 
+        # The FP4 quantization kernel requires scalar scales on the host CPU.
+        input_scale = transfer_to(
+            TensorValue(self.input_scale), DeviceRef.CPU()
+        )
+        weight_scale_2 = transfer_to(
+            TensorValue(self.weight_scale_2), DeviceRef.CPU()
+        )
+
         result_val = _matmul_float4(
             xv,
             TensorValue(self.weight),
             TensorValue(self.weight_scale),
-            TensorValue(self.input_scale),
-            TensorValue(self.weight_scale_2),
+            input_scale,
+            weight_scale_2,
             self._quant_config,
         )
 
