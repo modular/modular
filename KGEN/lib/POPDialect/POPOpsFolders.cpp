@@ -729,124 +729,21 @@ LoadOp::parametric_interpret(ArrayRef<Attribute> operands,
 // CmpOp
 //===----------------------------------------------------------------------===//
 
-static OpFoldResult cmpOpfoldHelper(SIMDType lhsType, SIMDType resultType,
-                                    Value lhs, Value rhs,
-                                    POP::CmpPredicate pred,
-                                    ArrayRef<Attribute> operands,
-                                    TargetInfoAttr target) {
-  std::optional<KGENDType> operandTy = lhsType.getResolvedDType();
-  std::optional<int64_t> size = resultType.getResolvedSize();
-
-  // Handle the case of inputs being the same but non-constant. Avoid floats as
-  // they could be NAN.
-  if (operandTy && size && operandTy->isIntLike() && lhs == rhs) {
-    // Create a SIMD constant of all trues or all false.
-    SmallVector<DTypeValue> allTrues(*size, {true, KGENDType::kBool});
-    SmallVector<DTypeValue> allFalse(*size, {false, KGENDType::kBool});
-
-    switch (pred) {
-    case CmpPredicate::EQ:
-      return SIMDAttr::get(allTrues, resultType);
-    case CmpPredicate::NE:
-      return SIMDAttr::get(allFalse, resultType);
-    case CmpPredicate::LT:
-      return SIMDAttr::get(allFalse, resultType);
-    case CmpPredicate::GT:
-      return SIMDAttr::get(allFalse, resultType);
-    case CmpPredicate::LE:
-      return SIMDAttr::get(allTrues, resultType);
-    case CmpPredicate::GE:
-      return SIMDAttr::get(allTrues, resultType);
-    }
-  }
-
-  // Handle the case of applying the operation at compile time on the constant
-  // values.
-  std::optional<int64_t> indexBitWidth;
-  if (target)
-    indexBitWidth = target.resolveIndexBitWidth();
-
-  if (auto fold = foldSIMDCmp(pred, operands, KGENDType::kBool, indexBitWidth))
-    return fold;
-
-  // Fold `eq(true, x) -> x` and `ne(false, x) -> x`.
-  if (operandTy && operandTy == DType::kBool &&
-      llvm::is_contained({CmpPredicate::EQ, CmpPredicate::NE}, pred)) {
-    // Only one input will be constant.
-    auto lhsAttr = dyn_cast_or_null<SIMDAttr>(operands[0]);
-    auto rhsAttr = dyn_cast_or_null<SIMDAttr>(operands[1]);
-    assert(!(lhsAttr && rhsAttr) && "constant case should be handled");
-    // If `rhsAttr` contains the constant, move it to `lhsAttr`.
-    if (rhsAttr)
-      lhsAttr = rhsAttr;
-    // Check that the constant is either all true or all false elements, then
-    // match `eq` with `true` or `ne` with `false`.
-    if (lhsAttr && llvm::all_equal(lhsAttr.getValues()) &&
-        (pred == CmpPredicate::EQ) == lhsAttr.getValues().front().getBoolVal())
-      return rhsAttr ? lhs : rhs;
-  }
-
-  // Fold
-  // * `gt(0, unsigned_val)` into false
-  // * `le(0, unsigned_val)` into true
-  // * `ge(unsigned_val, 0)` into true
-  // * `lt(unsigned_val, 0)` into false
-  if (operandTy && operandTy->isUInt()) {
-    auto foldUnsignedCmp = [&](CmpPredicate foldIntoTrue,
-                               CmpPredicate foldIntoFalse, CmpPredicate pred,
-                               Attribute op1, Attribute op2) -> OpFoldResult {
-      if (!llvm::is_contained({foldIntoTrue, foldIntoFalse}, pred))
-        return {};
-
-      // For index-like types (e.g., uindex), the earlier foldSIMDOpResult might
-      // not have handled the constant case if the 32-bit and 64-bit results
-      // differ. In that case, we should not apply this optimization either.
-      auto op1SimdAttr = dyn_cast_or_null<SIMDAttr>(op1);
-      auto op2SimdAttr = dyn_cast_or_null<SIMDAttr>(op2);
-      if (op1SimdAttr && op2SimdAttr)
-        return {};
-
-      // Always expect constant value in op2
-      if (!op2SimdAttr)
-        return {};
-
-      // If the `op2SimdAttr` is constant and zero, then we can simplify the
-      // comparison.
-      if (llvm::all_equal(op2SimdAttr.getValues()) &&
-          op2SimdAttr.getValues()[0].getData().isZero()) {
-
-        SmallVector<DTypeValue> values(
-            *size, DTypeValue(pred == foldIntoTrue, KGENDType::kBool));
-        return SIMDAttr::get(values, resultType);
-      }
-      return {};
-    };
-
-    if (OpFoldResult res = foldUnsignedCmp(CmpPredicate::LE, CmpPredicate::GT,
-                                           pred, operands[1], operands[0]))
-      return res;
-    if (OpFoldResult res = foldUnsignedCmp(CmpPredicate::GE, CmpPredicate::LT,
-                                           pred, operands[0], operands[1]))
-      return res;
-  }
-
-  return {};
-}
-
 OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
-  auto target = lookupTargetInfo(*this);
-  return cmpOpfoldHelper(getLhs().getType(), getType(), getLhs(), getRhs(),
-                         getPred(), adaptor.getOperands(), target);
+  if (auto fold = foldSIMDCmp(getPred(),
+                              FoldValues(adaptor.getOperands(), getOperands()),
+                              getType(), lookupTargetInfo(*this)))
+    return fold.asOpFoldResult();
+  return {};
 }
 
 ErrorTreeOrSuccess CmpOp::interpret(ArrayRef<Attribute> operands,
                                     InterpreterState &state) {
-  auto lhsType = cast<SIMDType>(cast<TypedAttr>(operands[0]).getType());
   auto resultType = cast<SIMDType>(getType());
-  if (OpFoldResult result =
-          cmpOpfoldHelper(lhsType, resultType, getLhs(), getRhs(), getPred(),
-                          operands, state.getTarget())) {
-    if (auto attr = dyn_cast<Attribute>(result)) {
+  if (FoldValue result =
+          foldSIMDCmp(getPred(), FoldValues(operands, getOperands()),
+                      resultType, state.getTarget())) {
+    if (auto attr = result.getAttr()) {
       state.mapResults(attr);
       return success();
     }
@@ -858,12 +755,11 @@ ErrorTreeOrSuccess CmpOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 CmpOp::parametric_interpret(ArrayRef<Attribute> operands,
                             ParametricInterpreterState &state) {
-  auto lhsType = cast<SIMDType>(cast<TypedAttr>(operands[0]).getType());
   auto resultType = cast<SIMDType>(state.getReboundType(getType()));
-  if (OpFoldResult result =
-          cmpOpfoldHelper(lhsType, resultType, getLhs(), getRhs(), getPred(),
-                          operands, state.getTarget())) {
-    if (auto attr = dyn_cast<Attribute>(result)) {
+  if (FoldValue result =
+          foldSIMDCmp(getPred(), FoldValues(operands, getOperands()),
+                      resultType, state.getTarget())) {
+    if (auto attr = result.getAttr()) {
       state.mapResults(attr);
       return success();
     }

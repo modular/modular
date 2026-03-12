@@ -32,13 +32,12 @@ SIMDCmpAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
     return failure();
 
   auto outType = cast<SIMDType>(getType());
-  auto outDType = outType.getResolvedDType();
-  if (!outDType || !outDType->isBool())
-    return failure();
-
-  if (auto fold = foldSIMDCmp(toCmpPredicate(getCc()), {getLhs(), getRhs()},
-                              *outDType, target.resolveIndexBitWidth()))
-    return TypedAttr(fold);
+  Attribute operands[] = {getLhs(), getRhs()};
+  if (auto fold = foldSIMDCmp(toCmpPredicate(getCc()), FoldValues(operands),
+                              outType, target)) {
+    assert(fold.getAttr() && "attribute fold should produce an attribute");
+    return fold.getAttr();
+  }
 
   return failure();
 }

@@ -342,14 +342,90 @@ static bool compareConstants(CmpPredicate pred, T lhs, T rhs) {
   llvm_unreachable("invalid CmpPredicate");
 }
 
-SIMDAttr POP::foldSIMDCmp(CmpPredicate cc, ArrayRef<Attribute> operands,
-                          KGENDType outDType,
-                          std::optional<int64_t> indexBitWidth) {
-  return foldSIMDOpResult<kOtherResult>(
-      operands, outDType, indexBitWidth,
-      [&](APSInt lhs, APSInt rhs) { return compareConstants(cc, lhs, rhs); },
-      [&](APFloat lhs, APFloat rhs) { return compareConstants(cc, lhs, rhs); },
-      [&](bool lhs, bool rhs) { return compareConstants(cc, lhs, rhs); });
+FoldValue POP::foldSIMDCmp(CmpPredicate cc, FoldValues operands,
+                           SIMDType resultType, TargetInfoAttr target) {
+  std::optional<int64_t> indexBitWidth;
+  if (target)
+    indexBitWidth = target.resolveIndexBitWidth();
+  assert(operands.size() == 2 && "expected binary compare operands");
+  auto outDType = resultType.getResolvedDType();
+  if (!outDType || !outDType->isBool())
+    return {};
+
+  auto size = resultType.getResolvedSize();
+
+  auto getInputDType =
+      [&](const FoldValue &operand) -> std::optional<KGENDType> {
+    auto simdType = dyn_cast<SIMDType>(operand.getType());
+    if (!simdType)
+      return std::nullopt;
+    return simdType.getResolvedDType();
+  };
+
+  // Fold cmp(x, x) for int-like types (NaN prevents this for floats).
+  if (operands[0] == operands[1] && size) {
+    if (auto inDT = getInputDType(operands[0]); inDT && inDT->isIntLike()) {
+      bool isTrue = llvm::is_contained(
+          {CmpPredicate::EQ, CmpPredicate::LE, CmpPredicate::GE}, cc);
+      SmallVector<DTypeValue> vals(*size, {isTrue, KGENDType::kBool});
+      return FoldValue(SIMDAttr::get(vals, resultType));
+    }
+  }
+
+  // Constant fold when both operands are SIMDAttr constants.
+  if (auto fold = foldSIMDOpResult<kOtherResult>(
+          operands.getAttrs(), *outDType, indexBitWidth,
+          [&](APSInt l, APSInt r) { return compareConstants(cc, l, r); },
+          [&](APFloat l, APFloat r) { return compareConstants(cc, l, r); },
+          [&](bool l, bool r) { return compareConstants(cc, l, r); }))
+    return FoldValue(fold);
+
+  auto lhsAttr = operands.getAttr<SIMDAttr>(0);
+  auto rhsAttr = operands.getAttr<SIMDAttr>(1);
+  std::optional<KGENDType> inDType = getInputDType(operands[0]);
+  if (!inDType)
+    inDType = getInputDType(operands[1]);
+
+  // Fold `eq(true, x) -> x` and `ne(false, x) -> x`.
+  if (inDType && *inDType == DType::kBool &&
+      llvm::is_contained({CmpPredicate::EQ, CmpPredicate::NE}, cc)) {
+    SIMDAttr constAttr = lhsAttr ? lhsAttr : rhsAttr;
+    FoldValue otherValue = lhsAttr ? operands[1] : operands[0];
+    if (constAttr && otherValue && llvm::all_equal(constAttr.getValues()) &&
+        (cc == CmpPredicate::EQ) == constAttr.getValues().front().getBoolVal())
+      return otherValue;
+  }
+
+  // Fold unsigned comparisons with zero:
+  //   gt(0, x) -> false, le(0, x) -> true
+  //   ge(x, 0) -> true,  lt(x, 0) -> false
+  if (inDType && size && inDType->isUInt()) {
+    auto tryFoldWithZero = [&](SIMDAttr zeroCandidate, SIMDAttr otherCandidate,
+                               CmpPredicate foldTrue,
+                               CmpPredicate foldFalse) -> TypedAttr {
+      if (!llvm::is_contained({foldTrue, foldFalse}, cc))
+        return {};
+      if (zeroCandidate && otherCandidate)
+        return {};
+      if (!zeroCandidate)
+        return {};
+      if (llvm::all_equal(zeroCandidate.getValues()) &&
+          zeroCandidate.getValues()[0].getData().isZero()) {
+        SmallVector<DTypeValue> values(
+            *size, DTypeValue(cc == foldTrue, KGENDType::kBool));
+        return SIMDAttr::get(values, resultType);
+      }
+      return {};
+    };
+    if (auto res = tryFoldWithZero(lhsAttr, rhsAttr, CmpPredicate::LE,
+                                   CmpPredicate::GT))
+      return res;
+    if (auto res = tryFoldWithZero(rhsAttr, lhsAttr, CmpPredicate::GE,
+                                   CmpPredicate::LT))
+      return res;
+  }
+
+  return {};
 }
 
 OpFoldResult POP::foldSIMDShl(Attribute val, Attribute shft,
