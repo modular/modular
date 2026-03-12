@@ -19,7 +19,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
+
 from max._core.driver import Device
+from max.driver import Buffer
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
@@ -71,7 +74,6 @@ class CacheMixin:
     """
 
     cache_config: CacheConfig
-    _gpu_scalar_cache: dict[tuple[Any, float], Tensor]
 
     # Pre-allocated tensors (created once at init, reused across requests)
     _cache_taylor_max_order_tensor: Tensor | None
@@ -101,7 +103,6 @@ class CacheMixin:
                 threshold.  Used when ``cache_config.rdt`` is ``None``.
         """
         self.cache_config = cache_config
-        self._gpu_scalar_cache = {}
 
         rdt = cache_config.rdt if cache_config.rdt is not None else default_rdt
 
@@ -114,11 +115,10 @@ class CacheMixin:
 
         self._cache_taylor_max_order_tensor = None
         if cache_config.taylorseer:
-            self._cache_taylor_max_order_tensor = Tensor.full(
-                [1],
-                cache_config.taylorseer_max_order,
-                dtype=DType.int32,
-                device=device,
+            self._cache_taylor_max_order_tensor = Tensor(
+                storage=Buffer.from_dlpack(
+                    np.array([cache_config.taylorseer_max_order], dtype=np.int32)
+                ).to(device)
             )
 
         self._cache_dtype = dtype
@@ -166,40 +166,28 @@ class CacheMixin:
 
         state = DenoisingCacheState()
 
-        if self.cache_config.step_cache:
-            state.prev_residual = Tensor.zeros(
-                (batch_size, seq_len, residual_dim),
-                dtype=self._cache_dtype,
-                device=self._cache_device,
+        def _device_zeros(shape: tuple[int, ...]) -> Tensor:
+            return Tensor(
+                storage=Buffer.zeros(
+                    shape, self._cache_dtype, device=self._cache_device
+                )
             )
-            state.prev_output = Tensor.zeros(
-                (batch_size, seq_len, output_dim),
-                dtype=self._cache_dtype,
-                device=self._cache_device,
+
+        if self.cache_config.step_cache:
+            state.prev_residual = _device_zeros(
+                (batch_size, seq_len, residual_dim)
+            )
+            state.prev_output = _device_zeros(
+                (batch_size, seq_len, output_dim)
             )
 
         if self.cache_config.taylorseer:
             for attr in ("taylor_factor_0", "taylor_factor_1", "taylor_factor_2"):
-                setattr(
-                    state,
-                    attr,
-                    Tensor.zeros(
-                        (batch_size, seq_len, output_dim),
-                        dtype=self._cache_dtype,
-                        device=self._cache_device,
-                    ),
-                )
+                setattr(state, attr, _device_zeros(
+                    (batch_size, seq_len, output_dim)
+                ))
 
         return state
-
-    def _make_gpu_scalar(self, value: float, device: Device) -> Tensor:
-        """Return a cached [1]-element float32 GPU tensor."""
-        key = (device, value)
-        t = self._gpu_scalar_cache.get(key)
-        if t is None:
-            t = Tensor.full([1], value, dtype=DType.float32, device=device)
-            self._gpu_scalar_cache[key] = t
-        return t
 
     def build_taylorseer(self, dtype: DType, device: Device) -> None:
         """Build compiled graphs for TaylorSeer predict and update."""
@@ -321,11 +309,9 @@ def fbcache_conditional_execution(
     Returns:
         (first_block_residual, output) tensors.
     """
-    rdt = F.broadcast_to(
-        F.constant(rdt_value, DType.float32, device=first_block_residual.device),
-        [1],
+    use_step_cache = can_use_step_cache(
+        first_block_residual, prev_residual, rdt_value
     )
-    use_step_cache = can_use_step_cache(first_block_residual, prev_residual, rdt)
 
     def then_fn(
         _prev_output: Tensor = prev_output,
@@ -354,7 +340,7 @@ def fbcache_conditional_execution(
 def can_use_step_cache(
     intermediate_residual: Tensor,
     prev_intermediate_residual: Tensor | None,
-    rdt: Tensor,
+    rdt_value: float,
 ) -> Tensor:
     """Return whether previous residual cache is reusable (RDT check)."""
     dev = intermediate_residual.device
@@ -372,5 +358,6 @@ def can_use_step_cache(
     mean_prev = F.mean(mean_prev_rows, axis=None)
     eps = 1e-9
     relative_diff = mean_diff / (mean_prev + eps)
-    pred = relative_diff < F.cast(rdt, relative_diff.dtype)
+    rdt = F.constant(rdt_value, relative_diff.dtype, device=dev)
+    pred = relative_diff < rdt
     return F.squeeze(pred, 0)

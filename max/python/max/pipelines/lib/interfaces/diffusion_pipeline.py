@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any, TypeAlias, overload
 import numpy as np
 import numpy.typing as npt
 from max._core.driver import Device
-from max.driver import CPU, Accelerator
+from max.driver import CPU, Accelerator, Buffer
 from max.engine import InferenceSession, Model
 from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
@@ -233,25 +233,36 @@ class DiffusionPipeline(ABC):
                 step, cache_config.taylorseer_warmup_steps, cache_config.taylorseer_cache_interval,
             )
 
-        # 2. Predict path (skip transformer)
-        if cache_config.taylorseer and skip_transformer:
+        # 2. Compute TaylorSeer step delta
+        taylor_delta_tensor: Tensor | None = None
+        if cache_config.taylorseer:
+            assert self._cache_taylor_max_order_tensor is not None
             assert cache_state.taylor_factor_0 is not None
             assert cache_state.taylor_factor_1 is not None
-            assert cache_state.taylor_factor_2 is not None
-            assert cache_state.taylor_last_compute_step is not None
-            assert self._cache_taylor_max_order_tensor is not None
-            step_offset = self._make_gpu_scalar(
-                float(step - cache_state.taylor_last_compute_step), device
+            delta = (
+                float(step - cache_state.taylor_last_compute_step)
+                if cache_state.taylor_last_compute_step is not None
+                else 1.0
             )
+            taylor_delta_tensor = Tensor(
+                storage=Buffer.from_dlpack(
+                    np.array([delta], dtype=np.float32)
+                ).to(device)
+            )
+
+        # 3. Predict path (skip transformer)
+        if cache_config.taylorseer and skip_transformer:
+            assert cache_state.taylor_factor_2 is not None
+            assert taylor_delta_tensor is not None
             return self.taylor_predict(
                 cache_state.taylor_factor_0,
                 cache_state.taylor_factor_1,
                 cache_state.taylor_factor_2,
-                step_offset,
+                taylor_delta_tensor,
                 self._cache_taylor_max_order_tensor,
             )
 
-        # 3. Full compute path
+        # 4. Full compute path
         result = self.run_transformer(cache_state, **kwargs)
         if cache_config.step_cache:
             new_residual, noise_pred = result
@@ -260,23 +271,15 @@ class DiffusionPipeline(ABC):
         else:
             noise_pred = result[0]
 
-        # 4. TaylorSeer factor update
+        # 5. TaylorSeer factor update
         if cache_config.taylorseer:
-            assert cache_state.taylor_factor_0 is not None
-            assert cache_state.taylor_factor_1 is not None
-            assert self._cache_taylor_max_order_tensor is not None
-            delta = (
-                float(step - cache_state.taylor_last_compute_step)
-                if cache_state.taylor_last_compute_step is not None
-                else 1.0
-            )
-            delta_tensor = self._make_gpu_scalar(delta, device)
+            assert taylor_delta_tensor is not None
             cache_state.taylor_factor_0, cache_state.taylor_factor_1, cache_state.taylor_factor_2 = (
                 self.taylor_update(
                     noise_pred,
                     cache_state.taylor_factor_0,
                     cache_state.taylor_factor_1,
-                    delta_tensor,
+                    taylor_delta_tensor,
                     self._cache_taylor_max_order_tensor,
                 )
             )
