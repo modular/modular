@@ -2321,129 +2321,143 @@ def shared_memory_epilogue[
     var lower_row = Int(warp_base_row + 16)
 
     # Distribute layout: maps stageN elements across warp threads
-    # e.g., stageN=32 → 8x4 (4 threads × 8 elements), stageN=16 → 16x2
+    # e.g., stageN=32 → 8x4 (8 rows × 4 cols), stageN=16 → 16x2, stageN=8 → 16x1
+    # Cap distribute_rows at data_paths to avoid exceeding the tile's row count
+    # when stageN is small (e.g., stageN=8 gives only 1 SIMD vector per row,
+    # so 16 threads suffice to cover all 16 data_path rows).
     comptime distribute_cols = stageN // simd_size
-    comptime distribute_rows = WARP_SIZE // distribute_cols
+    comptime distribute_rows = min(data_paths, WARP_SIZE // distribute_cols)
+    comptime active_lanes = distribute_rows * distribute_cols
 
     comptime distribute_layout = Layout.row_major(
         distribute_rows, distribute_cols
     )
-    var c_smem_upper_frag = c_smem_warp_tile_upper.vectorize[
-        1, simd_size
-    ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
 
-    var c_smem_lower_frag = c_smem_warp_tile_lower.vectorize[
-        1, simd_size
-    ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
+    if lane_id() < active_lanes:
+        var c_smem_upper_frag = c_smem_warp_tile_upper.vectorize[
+            1, simd_size
+        ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
 
-    comptime fragment_size = c_smem_upper_frag.layout.size()
+        var c_smem_lower_frag = c_smem_warp_tile_lower.vectorize[
+            1, simd_size
+        ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
 
-    var lane_row, lane_col = udivmod(lane_id(), distribute_cols)
-    var col = lane_col * simd_size
-    upper_row += lane_row
-    lower_row += lane_row
+        comptime fragment_size = c_smem_upper_frag.layout.size()
 
-    comptime for i in range(fragment_size):
-        comptime alignment = align_of[SIMD[c_type, simd_size]]()
+        var lane_row, lane_col = udivmod(lane_id(), distribute_cols)
+        var col = lane_col * simd_size
+        upper_row += lane_row
+        lower_row += lane_row
 
-        # Compute swizzled SMEM offsets, then un-swizzle to get logical coords
-        var swz_offset_upper = upper_row * shared_n + col
-        var swz_offset_lower = lower_row * shared_n + col
+        comptime for i in range(fragment_size):
+            comptime alignment = align_of[SIMD[c_type, simd_size]]()
 
-        var offset_upper = swizzle(swz_offset_upper)
-        var offset_lower = swizzle(swz_offset_lower)
+            # Compute swizzled SMEM offsets, then un-swizzle to get logical coords
+            var swz_offset_upper = upper_row * shared_n + col
+            var swz_offset_lower = lower_row * shared_n + col
 
-        var local_upper_row: Int64
-        var local_upper_col: Int64
-        var local_lower_row: Int64
-        var local_lower_col: Int64
+            var offset_upper = swizzle(swz_offset_upper)
+            var offset_lower = swizzle(swz_offset_lower)
 
-        # Convert SMEM offset to logical (row, col) - layout differs by MMA_M size
-        comptime if MMA_M != 256:
-            comptime blocked_m_128_layout = blocked_product(
-                Layout.row_major(data_paths * 2, stageN),
-                Layout.col_major(2, 2),
-                coalesce_output=True,
-            )
+            var local_upper_row: Int64
+            var local_upper_col: Int64
+            var local_lower_row: Int64
+            var local_lower_col: Int64
 
-            var upper_coord = idx2crd(
-                RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset_upper),
-                RuntimeTuple[
-                    blocked_m_128_layout.shape,
-                    element_type=DType.int64,
-                ](),
-                RuntimeTuple[
-                    blocked_m_128_layout.stride,
-                    element_type=DType.int64,
-                ](),
-            )
+            # Convert SMEM offset to logical (row, col) - layout differs by MMA_M size
+            comptime if MMA_M != 256:
+                comptime blocked_m_128_layout = blocked_product(
+                    Layout.row_major(data_paths * 2, stageN),
+                    Layout.col_major(2, 2),
+                    coalesce_output=True,
+                )
 
-            var lower_coord = idx2crd(
-                RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset_lower),
-                RuntimeTuple[
-                    blocked_m_128_layout.shape,
-                    element_type=DType.int64,
-                ](),
-                RuntimeTuple[
-                    blocked_m_128_layout.stride,
-                    element_type=DType.int64,
-                ](),
-            )
+                var upper_coord = idx2crd(
+                    RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset_upper),
+                    RuntimeTuple[
+                        blocked_m_128_layout.shape,
+                        element_type=DType.int64,
+                    ](),
+                    RuntimeTuple[
+                        blocked_m_128_layout.stride,
+                        element_type=DType.int64,
+                    ](),
+                )
 
-            local_upper_row = upper_coord[0].get_int()
-            local_lower_row = lower_coord[0].get_int()
+                var lower_coord = idx2crd(
+                    RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset_lower),
+                    RuntimeTuple[
+                        blocked_m_128_layout.shape,
+                        element_type=DType.int64,
+                    ](),
+                    RuntimeTuple[
+                        blocked_m_128_layout.stride,
+                        element_type=DType.int64,
+                    ](),
+                )
 
-            var section_offset_upper = upper_coord[1][1].get_int()
-            var col_offset_upper = upper_coord[1][0].get_int()
-            var section_offset_lower = lower_coord[1][1].get_int()
-            var col_offset_lower = lower_coord[1][0].get_int()
+                local_upper_row = upper_coord[0].get_int()
+                local_lower_row = lower_coord[0].get_int()
 
-            local_upper_col = (
-                section_offset_upper * Int64(num_stages * stageN)
-                + col_offset_upper
-            )
-            local_lower_col = (
-                section_offset_lower * Int64(num_stages * stageN)
-                + col_offset_lower
-            )
+                var section_offset_upper = upper_coord[1][1].get_int()
+                var col_offset_upper = upper_coord[1][0].get_int()
+                var section_offset_lower = lower_coord[1][1].get_int()
+                var col_offset_lower = lower_coord[1][0].get_int()
 
-        else:
-            # MMA_M=256: simple row-major indexing
-            comptime fast_div = FastDiv[DType.uint32](shared_n)
+                local_upper_col = (
+                    section_offset_upper * Int64(num_stages * stageN)
+                    + col_offset_upper
+                )
+                local_lower_col = (
+                    section_offset_lower * Int64(num_stages * stageN)
+                    + col_offset_lower
+                )
 
-            local_upper_row = (
-                Scalar[DType.int](offset_upper).cast[fast_div.uint_type]()
-                / fast_div
-            ).cast[DType.int64]()
-            local_upper_col = Int64(offset_upper % shared_n)
+            else:
+                # MMA_M=256: simple row-major indexing
+                comptime fast_div = FastDiv[DType.uint32](shared_n)
 
-            local_lower_row = (
-                Scalar[DType.int](offset_lower).cast[fast_div.uint_type]()
-                / fast_div
-            ).cast[DType.int64]()
-            local_lower_col = Int64(offset_lower % shared_n)
+                local_upper_row = (
+                    Scalar[DType.int](offset_upper).cast[fast_div.uint_type]()
+                    / fast_div
+                ).cast[DType.int64]()
+                local_upper_col = Int64(offset_upper % shared_n)
 
-        # Convert local SMEM coords to global memory coords
-        var gmem_upper_row = local_upper_row + Int64(c_row)
-        var gmem_upper_col = local_upper_col + gmem_col
-        var gmem_lower_row = local_lower_row + Int64(c_row)
-        var gmem_lower_col = local_lower_col + gmem_col
+                local_lower_row = (
+                    Scalar[DType.int](offset_lower).cast[fast_div.uint_type]()
+                    / fast_div
+                ).cast[DType.int64]()
+                local_lower_col = Int64(offset_lower % shared_n)
 
-        # Apply epilogue if within bounds
-        if gmem_upper_row < Int64(Int(M)) and gmem_upper_col < Int64(Int(N)):
-            c_smem_upper_frag[i, 0] = compute_lambda_fn[alignment=alignment](
-                (Int(gmem_upper_row), Int(gmem_upper_col)),
-                c_smem_upper_frag[i, 0],
-            )
+            # Convert local SMEM coords to global memory coords
+            var gmem_upper_row = local_upper_row + Int64(c_row)
+            var gmem_upper_col = local_upper_col + gmem_col
+            var gmem_lower_row = local_lower_row + Int64(c_row)
+            var gmem_lower_col = local_lower_col + gmem_col
 
-        if gmem_lower_row < Int64(Int(M)) and gmem_lower_col < Int64(Int(N)):
-            c_smem_lower_frag[i, 0] = compute_lambda_fn[alignment=alignment](
-                (Int(gmem_lower_row), Int(gmem_lower_col)),
-                c_smem_lower_frag[i, 0],
-            )
+            # Apply epilogue if within bounds
+            if gmem_upper_row < Int64(Int(M)) and gmem_upper_col < Int64(
+                Int(N)
+            ):
+                c_smem_upper_frag[i, 0] = compute_lambda_fn[
+                    alignment=alignment
+                ](
+                    (Int(gmem_upper_row), Int(gmem_upper_col)),
+                    c_smem_upper_frag[i, 0],
+                )
 
-        # Advance to next chunk (spaced distribute_rows apart)
-        upper_row += distribute_rows
-        lower_row += distribute_rows
+            if gmem_lower_row < Int64(Int(M)) and gmem_lower_col < Int64(
+                Int(N)
+            ):
+                c_smem_lower_frag[i, 0] = compute_lambda_fn[
+                    alignment=alignment
+                ](
+                    (Int(gmem_lower_row), Int(gmem_lower_col)),
+                    c_smem_lower_frag[i, 0],
+                )
+
+            # Advance to next chunk (spaced distribute_rows apart)
+            upper_row += distribute_rows
+            lower_row += distribute_rows
 
     WarpGroupBarrier[num_output_warps * WARP_SIZE].sync()
