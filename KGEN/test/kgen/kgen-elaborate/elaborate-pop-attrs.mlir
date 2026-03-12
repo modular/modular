@@ -1,0 +1,32 @@
+// RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=false" -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=true" -allow-unregistered-dialect | FileCheck %s
+
+// #pop.simd_cmp with index: target-dependent folding on 32-bit.
+// 3000000000 wraps to negative in 32-bit signed, so lt(3000000000, 0) is true.
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
+// CHECK-LABEL: kgen.func export @test_simd_cmp_index_32
+kgen.generator export @test_simd_cmp_index_32() -> !pop.scalar<bool> {
+  kgen.param.declare value : !pop.scalar<bool> = <#pop.simd_cmp<lt, #pop<simd 3000000000> : !pop.scalar<index>, #pop<simd 0> : !pop.scalar<index>> : !pop.scalar<bool>>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<bool> = <true>
+  %0 = kgen.param.constant: !pop.scalar<bool> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<bool>
+  kgen.return %0 : !pop.scalar<bool>
+}
+}
+
+// -----
+
+// #pop.simd_cmp with index: target-dependent folding on 64-bit.
+// 3000000000 fits in 64-bit as positive, so lt(3000000000, 0) is false.
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
+// CHECK-LABEL: kgen.func export @test_simd_cmp_index_64
+kgen.generator export @test_simd_cmp_index_64() -> !pop.scalar<bool> {
+  kgen.param.declare value : !pop.scalar<bool> = <#pop.simd_cmp<lt, #pop<simd 3000000000> : !pop.scalar<index>, #pop<simd 0> : !pop.scalar<index>> : !pop.scalar<bool>>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<bool> = <false>
+  %0 = kgen.param.constant: !pop.scalar<bool> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<bool>
+  kgen.return %0 : !pop.scalar<bool>
+}
+}
