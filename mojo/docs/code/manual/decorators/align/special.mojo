@@ -21,6 +21,6 @@ struct MinimalAlign:
     var x: Int
 
 
-fn main() raises:
+def main() raises:
     # print(align_of[MinimalAlign]())  # Prints 8
     assert_equal(8, align_of[MinimalAlign](), "align should be 8")

@@ -18,10 +18,10 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_stringify_small_integers(mut b: Bencher) raises:
+def bench_stringify_small_integers(mut b: Bencher) raises:
     @always_inline
     @parameter
-    fn call_fn():
+    def call_fn():
         for i in range(1_000):
             var a = String(i)
             keep(Bool(a))

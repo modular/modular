@@ -17,7 +17,7 @@ struct MyPair(ImplicitlyCopyable):
     var first: Int
     var second: Int
 
-    fn get_sum(self) -> Int:
+    def get_sum(self) -> Int:
         return self.first + self.second
 
 

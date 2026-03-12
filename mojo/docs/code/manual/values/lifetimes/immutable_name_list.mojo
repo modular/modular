@@ -27,7 +27,7 @@ struct NameList:
             raise Error("index out of bounds")
 
 
-fn pass_immutable_list(list: NameList) raises:
+def pass_immutable_list(list: NameList) raises:
     print(list[2])
     # list[2] += "?" # Error, this list is immutable
 

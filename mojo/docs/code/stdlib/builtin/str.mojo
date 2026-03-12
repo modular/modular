@@ -18,7 +18,7 @@ from std.testing import assert_true
 struct Foo(Writable):
     var s: String
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write_string(self.s)
 
 

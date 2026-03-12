@@ -26,21 +26,21 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
 
     # Uses an `Optional` value to allow 'empty' Node construction
     # that can be moved into newly allocated memory
-    fn __init__(out self, value: Optional[Self.ElementType] = None):
+    def __init__(out self, value: Optional[Self.ElementType] = None):
         self.value = value
         self.next = Self.NodePointer()
 
     # Constructs a `Node` with a `value` with heap allocation and
     # returns a pointer to the new `Node`.
     @staticmethod
-    fn make_node(value: Self.ElementType) -> Self.NodePointer:
+    def make_node(value: Self.ElementType) -> Self.NodePointer:
         node_ptr = alloc[Self](1)
         node_ptr.init_pointee_move(Self(value))
         return node_ptr
 
     # Constructs a `Node` with allocated memory, assigns a value, appends
     # the pointer to `self.next`. Replaces any existing `next`.
-    fn append(mut self, value: Self.ElementType):
+    def append(mut self, value: Self.ElementType):
         # Free chain if replacing `next`
         if self.next:
             self.next[].free_chain()
@@ -51,7 +51,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
 
     # Prints the list starting at this pointer's pointee
     @staticmethod
-    fn print_list(node_ptr: Self.NodePointer):
+    def print_list(node_ptr: Self.NodePointer):
         if not node_ptr:
             print("Empty list")
             return
@@ -66,7 +66,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
             print()
 
     # Releases all successively allocated `Node` pointees. Does not release self.
-    fn free_chain(self):
+    def free_chain(self):
         current = self.next
         while current:
             next_node = current[].next
@@ -75,7 +75,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
             current = next_node
 
 
-fn main():
+def main():
     values: List[Element] = ["one", "one", "two", "three", "five", "eight"]
     list_head = ListNode.make_node(values[0])
 

@@ -25,17 +25,17 @@ struct FlooringInt:
     # that can be floored (the decimal portion omitted)
     # and converted to an Integer
     @implicit
-    fn __init__[T: Floorable & Intable](out self, value: T):
+    def __init__[T: Floorable & Intable](out self, value: T):
         self.floored = Int(floor(value))
 
 
 # This function returns the stored `floored` value within
 # a `FlooringInt` instance.
-fn floored(value: FlooringInt) -> Int:
+def floored(value: FlooringInt) -> Int:
     return value.floored
 
 
-fn main():
+def main():
     print(floored(FlooringInt(42)))  # pass `FlooringInt` instance, output: 42
     print(floored(2))  # pass Int, without `FlooringInt` constructor, output: 2
     print(floored(52.6))  # pass Float64, output: 52

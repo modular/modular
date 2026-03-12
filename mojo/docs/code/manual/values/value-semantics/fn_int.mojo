@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn add_two(y: Int):
+def add_two(y: Int):
     # y += 2  # This would cause a compiler error because `y` is immutable
     # We can instead make an explicit copy:
     var z = y

@@ -19,7 +19,7 @@ from std.python.bindings import PythonModuleBuilder
 
 
 @export
-fn PyInit_mojo_module_b() -> PythonObject:
+def PyInit_mojo_module_b() -> PythonObject:
     try:
         var m = PythonModuleBuilder("mojo_module_b")
         m.def_function[print_test_struct]("print_test_struct")
@@ -29,11 +29,11 @@ fn PyInit_mojo_module_b() -> PythonObject:
         abort(String("failed to create Python module: ", e))
 
 
-fn print_test_struct(s: PythonObject) -> None:
+def print_test_struct(s: PythonObject) -> None:
     var self_ptr = TestStruct._get_self_ptr(s)
     self_ptr[].print()
 
 
-fn add(s: PythonObject) -> PythonObject:
+def add(s: PythonObject) -> PythonObject:
     var self_ptr = TestStruct._get_self_ptr(s)
     return self_ptr[].a + self_ptr[].b

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
+def count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
     var total = 0
 
     comptime for i in range(args.__len__()):

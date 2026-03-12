@@ -23,15 +23,15 @@ from std.utils.index import Index, IndexList
 # Benchmark elementwise
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_elementwise[n: Int](mut b: Bencher) raises:
+def bench_elementwise[n: Int](mut b: Bencher) raises:
     var vector = InlineArray[Scalar[DType.int], n](fill=-1)
 
     @always_inline
     @parameter
-    fn call_fn() raises:
+    def call_fn() raises:
         @always_inline
         @parameter
-        fn func[
+        def func[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             vector[idx[0]] = 42

@@ -15,7 +15,7 @@
 from gridv1_step5 import Grid
 
 
-fn grid_str(rows: Int, cols: Int, grid: List[List[Int]]) -> String:
+def grid_str(rows: Int, cols: Int, grid: List[List[Int]]) -> String:
     # Create an empty String
     str = String()
 

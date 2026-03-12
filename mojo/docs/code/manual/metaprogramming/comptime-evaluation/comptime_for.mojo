@@ -13,7 +13,7 @@
 from std.testing import assert_equal
 
 
-fn elementwise_max(lhs: SIMD, rhs: type_of(lhs), out result: type_of(lhs)):
+def elementwise_max(lhs: SIMD, rhs: type_of(lhs), out result: type_of(lhs)):
     result = {}
     comptime for i in range(lhs.size):
         result[i] = lhs[i] if lhs[i] >= rhs[i] else rhs[i]

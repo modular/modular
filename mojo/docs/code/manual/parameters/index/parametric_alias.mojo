@@ -21,7 +21,7 @@ def main() raises:
     # end-basic-example
 
     # start-function-example
-    fn add_one(a: Int) -> Int:
+    def add_one(a: Int) -> Int:
         return a + 1
 
     comptime ten = add_one(9)
@@ -29,7 +29,7 @@ def main() raises:
     assert_true(ten == 10)
 
     # this example includes a an error case, and must be edited in manually.
-    # fn return_type() -> AnyType:
+    # def return_type() -> AnyType:
     #     return Int  # dynamic type values not permitted yet
 
     comptime IntType = Int

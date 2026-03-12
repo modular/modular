@@ -79,7 +79,7 @@ def main() raises:
         print_image(host_tensor)
 
 
-fn color_to_grayscale(
+def color_to_grayscale(
     rgb_tensor: LayoutTensor[int_dtype, rgb_layout, MutAnyOrigin],
     gray_tensor: LayoutTensor[int_dtype, gray_layout, MutAnyOrigin],
 ):

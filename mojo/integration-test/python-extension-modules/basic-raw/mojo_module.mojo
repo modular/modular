@@ -19,7 +19,7 @@ from std.python.bindings import PythonModuleBuilder
 
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     """Create a Python module with a function binding for `mojo_count_args`."""
 
     try:
@@ -69,7 +69,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
 
 @export
-fn mojo_count_args(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
+def mojo_count_args(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
     """Count the provided arguments.
 
     Return value: New reference.
@@ -78,7 +78,7 @@ fn mojo_count_args(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
 
 
 @export
-fn mojo_count_args_with_kwargs(
+def mojo_count_args_with_kwargs(
     py_self: PyObjectPtr, args: PyObjectPtr, kwargs: PyObjectPtr
 ) -> PyObjectPtr:
     """Count the provided arguments and keyword arguments.
@@ -95,32 +95,32 @@ fn mojo_count_args_with_kwargs(
 struct TestCounter(Defaultable, ImplicitlyCopyable, Writable):
     var value: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.value = 0
 
 
 @export
-fn counter_count_args(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
+def counter_count_args(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
     """PyCFunction method to count arguments."""
     return mojo_count_args(py_self, args)
 
 
 @export
-fn counter_count_args_with_kwargs(
+def counter_count_args_with_kwargs(
     py_self: PyObjectPtr, args: PyObjectPtr, kwargs: PyObjectPtr
 ) -> PyObjectPtr:
     return mojo_count_args_with_kwargs(py_self, args, kwargs)
 
 
 @export
-fn counter_static_count_args(
+def counter_static_count_args(
     py_self: PyObjectPtr, args: PyObjectPtr
 ) -> PyObjectPtr:
     return mojo_count_args(py_self, args)
 
 
 @export
-fn counter_static_count_args_with_kwargs(
+def counter_static_count_args_with_kwargs(
     py_self: PyObjectPtr, args: PyObjectPtr, kwargs: PyObjectPtr
 ) -> PyObjectPtr:
     return mojo_count_args_with_kwargs(py_self, args, kwargs)

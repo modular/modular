@@ -73,7 +73,7 @@ comptime tile_a_layout = Layout.row_major(TILE_M, TILE_K)
 comptime tile_b_layout = Layout.row_major(TILE_K, TILE_N)
 
 
-fn tiled_matmul_kernel(
+def tiled_matmul_kernel(
     matrix_a: LayoutTensor[float_dtype, matrix_a_layout, MutAnyOrigin],
     matrix_b: LayoutTensor[float_dtype, matrix_b_layout, MutAnyOrigin],
     matrix_c: LayoutTensor[float_dtype, matrix_c_layout, MutAnyOrigin],

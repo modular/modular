@@ -17,7 +17,7 @@ struct ValidationError(Copyable, Writable):
     var field: String
     var reason: String
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("ValidationError(", self.field, "): ", self.reason)
 
 
@@ -29,14 +29,14 @@ def validate_def(value: Int) raises -> Int:
 
 
 # fn: can specify a typed error
-fn validate_fn(value: Int) raises ValidationError -> Int:
+def validate_fn(value: Int) raises ValidationError -> Int:
     if value < 0:
         raise ValidationError(field="value", reason="cannot be negative")
     return value
 
 
-# Wrapping pattern: fn wrapper converts Error to typed error
-fn validated_operation(value: Int) raises ValidationError -> Int:
+# Wrapping pattern: def wrapper converts Error to typed error
+def validated_operation(value: Int) raises ValidationError -> Int:
     try:
         return validate_def(value)
     except e:
@@ -52,7 +52,7 @@ def main() raises:
         print("Caught:", e)
 
     # fn: error has typed fields
-    print("--- fn (typed error) ---")
+    print("--- def (typed error) ---")
     try:
         _ = validate_fn(-1)
     except e:
@@ -60,7 +60,7 @@ def main() raises:
         print("  field:", e.field)
         print("  reason:", e.reason)
 
-    # Wrapping def in fn for typed errors
+    # Wrapping def in def for typed errors
     print("--- wrapper (def -> typed) ---")
     try:
         _ = validated_operation(-1)

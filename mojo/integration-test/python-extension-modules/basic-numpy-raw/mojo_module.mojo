@@ -19,7 +19,7 @@ from std.python.bindings import PythonModuleBuilder
 
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     """Create a Python module with a function binding for `mojo_incr_np_array`.
     """
 
@@ -56,7 +56,7 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
 
 
 @export
-fn mojo_incr_np_array(py_array_object: PythonObject) raises -> PythonObject:
+def mojo_incr_np_array(py_array_object: PythonObject) raises -> PythonObject:
     comptime dtype = DType.int32
 
     print("Hello from mojo_incr_np_array")

@@ -16,10 +16,10 @@ struct MyList(Sized):
     var size: Int
     # ...
 
-    fn __init__(out self):
+    def __init__(out self):
         self.size = 0
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         return self.size
 
 
@@ -27,7 +27,7 @@ struct MyList(Sized):
 struct IntLike(Intable):
     var i: Int
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return self.i
 
 
@@ -37,11 +37,11 @@ struct Dog(Copyable, Writable):
     var age: Int
 
     # Allows the type to be written into any `Writer`
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         t"Dog({self.name}, {self.age})".write_to(writer)
 
     # Alternative full representation when calling `repr`
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"Dog(name={repr(self.name)}, age={repr(self.age)})".write_to(writer)
 
 

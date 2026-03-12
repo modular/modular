@@ -23,7 +23,7 @@ from layout.layout import (
 )
 
 
-fn use_layout_constructor():
+def use_layout_constructor():
     print("layout constructor")
     var tiled_layout = Layout(
         [[3, 2], [2, 5]],  # shape
@@ -33,14 +33,14 @@ fn use_layout_constructor():
     print()
 
 
-fn use_tile_to_shape():
+def use_tile_to_shape():
     print("tile to shape")
     var tts = tile_to_shape(Layout.col_major(3, 2), [6, 10])
     print_layout(tts)
     print()
 
 
-fn use_blocked_product():
+def use_blocked_product():
     print("blocked product")
     # Define 2x3 tile
     var tile = Layout.col_major(3, 2)
@@ -57,7 +57,7 @@ fn use_blocked_product():
     print()
 
 
-fn use_make_ordered_layout():
+def use_make_ordered_layout():
     print("make ordered layout")
     var ordered = make_ordered_layout(
         [[3, 2], [2, 5]],  # shape
@@ -66,7 +66,7 @@ fn use_make_ordered_layout():
     print(ordered)
 
 
-fn use_make_layout():
+def use_make_layout():
     print("make layout")
     var layout1 = Layout([2, 3], [3, 1])
     var layout2 = Layout([4, 5], [5, 1])
@@ -74,7 +74,7 @@ fn use_make_layout():
     print_layout(combined)
 
 
-fn use_zipped_divide():
+def use_zipped_divide():
     # from layout import Layout, IntTuple
     # from layout.layout import zipped_divide
     print("zipped divide")

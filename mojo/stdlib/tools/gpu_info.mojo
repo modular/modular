@@ -17,7 +17,7 @@ import std.gpu.host
 import std.gpu.host._nvidia_cuda as cuda
 
 
-fn compute_capability_to_arch_name(major: Int, minor: Int) -> StaticString:
+def compute_capability_to_arch_name(major: Int, minor: Int) -> StaticString:
     if major == 1:
         return "tesla"
     if major == 2:

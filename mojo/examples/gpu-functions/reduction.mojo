@@ -43,7 +43,7 @@ comptime NUM_BLOCKS = UInt(ceildiv(SIZE, Int(TPB * BATCH_SIZE)))
 comptime dtype = DType.int32
 
 
-fn sum_kernel[
+def sum_kernel[
     size: Int, batch_size: Int
 ](
     output: UnsafePointer[Int32, MutAnyOrigin],
@@ -96,7 +96,7 @@ struct SumKernelBenchmarkParams:
     var out_ptr: UnsafePointer[Int32, MutAnyOrigin]
     var a_ptr: UnsafePointer[Int32, MutAnyOrigin]
 
-    fn __init__(
+    def __init__(
         out self,
         out_ptr: UnsafePointer[mut=True, Int32, _],
         a_ptr: UnsafePointer[mut=True, Int32, _],
@@ -108,12 +108,12 @@ struct SumKernelBenchmarkParams:
 # Benchmark function for sum_kernel
 @parameter
 @always_inline
-fn sum_kernel_benchmark(
+def sum_kernel_benchmark(
     mut b: Bencher, input_data: SumKernelBenchmarkParams
 ) capturing raises:
     @parameter
     @always_inline
-    fn kernel_launch_sum(ctx: DeviceContext) raises:
+    def kernel_launch_sum(ctx: DeviceContext) raises:
         comptime kernel = sum_kernel[SIZE, BATCH_SIZE]
         var out_ptr = input_data.out_ptr
         var a_ptr = input_data.a_ptr

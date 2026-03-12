@@ -51,7 +51,7 @@ def initialize_tensor_from_cpu_example() raises:
     comptime input_layout = Layout.row_major(rows, cols)
     comptime size: Int = rows * cols
 
-    fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
+    def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
         if global_idx.y < UInt(tensor.shape[0]()) and global_idx.x < UInt(
             tensor.shape[1]()
         ):
@@ -102,7 +102,7 @@ def shared_memory_alloc_example() raises:
     comptime num_blocks = in_size // block_size  # number of block in one dimension
     comptime input_layout = Layout.row_major(in_size, in_size)
 
-    fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
+    def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
         # extract a tile from the input tensor.
         var global_tile = tensor.tile[block_size, block_size](
             Int(block_idx.y), Int(block_idx.x)
@@ -159,7 +159,7 @@ def shared_memory_alloc_example() raises:
         print(error)
 
 
-fn simd_width_example():
+def simd_width_example():
     # start-simd-width-example
     from std.sys.info import simd_width_of
     from std.gpu.host.compile import get_gpu_target
@@ -190,13 +190,13 @@ def layout_tensor_vectorized_example() raises:
     )
 
 
-fn layout_tensor_distribute_example():
+def layout_tensor_distribute_example():
     comptime rows = 4
     comptime columns = 8
     comptime layout = Layout.row_major(rows, columns)
     comptime dtype = DType.int32
 
-    fn kernel(tensor: LayoutTensor[dtype, layout, MutAnyOrigin]):
+    def kernel(tensor: LayoutTensor[dtype, layout, MutAnyOrigin]):
         var fragment = tensor.vectorize[1, 4]().distribute[
             Layout.row_major(2, 2)
         ](lane_id())
@@ -222,7 +222,7 @@ fn layout_tensor_distribute_example():
 
 
 # TODO: Add simple copy example to doc
-fn simple_copy_example():
+def simple_copy_example():
     comptime dtype = DType.float32
     comptime rows = 128
     comptime cols = 128
@@ -231,7 +231,7 @@ fn simple_copy_example():
     comptime num_col_blocks = cols // block_size
     comptime input_layout = Layout.row_major(rows, cols)
 
-    fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
+    def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
         # extract a tile from the input tensor.
         var global_tile = tensor.tile[block_size, block_size](
             Int(block_idx.y), Int(block_idx.x)
@@ -290,7 +290,7 @@ fn simple_copy_example():
 
 # TODO: improve thread layout example and explanations
 # start-copy-from-async-example
-fn copy_from_async_example():
+def copy_from_async_example():
     comptime if not has_apple_gpu_accelerator():
         comptime dtype = DType.float32
         comptime rows = 128
@@ -301,7 +301,7 @@ fn copy_from_async_example():
         comptime input_layout = Layout.row_major(rows, cols)
         comptime simd_width = 4
 
-        fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
+        def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
             # extract a tile from the input tensor.
             var global_tile = tensor.tile[block_size, block_size](
                 Int(block_idx.y), Int(block_idx.x)

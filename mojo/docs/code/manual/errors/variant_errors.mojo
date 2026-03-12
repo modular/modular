@@ -18,7 +18,7 @@ from std.utils import Variant
 struct NotFoundError(Copyable, Writable):
     var path: String
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("file not found: ", self.path)
 
 
@@ -27,7 +27,7 @@ struct PermissionError(Copyable, Writable):
     var path: String
     var required_role: String
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "permission denied on ",
             self.path,
@@ -40,7 +40,7 @@ struct PermissionError(Copyable, Writable):
 comptime FileError = Variant[NotFoundError, PermissionError]
 
 
-fn open_file(path: String) raises FileError -> String:
+def open_file(path: String) raises FileError -> String:
     if not path:
         raise FileError(NotFoundError(""))
     if path == "/secret":
@@ -48,7 +48,7 @@ fn open_file(path: String) raises FileError -> String:
     return "Contents of " + path
 
 
-fn handle_file_error(e: FileError):
+def handle_file_error(e: FileError):
     if e.isa[NotFoundError]():
         print("Not found:", e[NotFoundError])
     elif e.isa[PermissionError]():

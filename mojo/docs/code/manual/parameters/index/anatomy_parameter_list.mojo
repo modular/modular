@@ -14,7 +14,7 @@
 
 # Docs example *only* includes the signature, to show the elements of a
 # parameter list.
-fn my_sort[
+def my_sort[
     # infer-only parameters
     dtype: DType,
     width: Int,
@@ -46,7 +46,7 @@ def main() raises:
     comptime dtype = DType.int32
     comptime input2 = SIMD[dtype, 8](9, 3, 3, 1, 11, 10, 5, 2)
 
-    fn compare(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Int:
+    def compare(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Int:
         if lhs == rhs:
             return 0
         else:

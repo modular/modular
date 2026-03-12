@@ -25,6 +25,6 @@ struct Container:
     var other: Int
 
 
-fn main() raises:
+def main() raises:
     # print(align_of[Container]())  # Prints 64
     assert_equal(align_of[Container](), 64, "align should be 64")

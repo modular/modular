@@ -21,7 +21,7 @@ struct Wrapper[T: BaseTraits](
 ):
     var value: Self.T
 
-    fn __bool__(self) -> Bool where conforms_to(Self.T, Boolable):
+    def __bool__(self) -> Bool where conforms_to(Self.T, Boolable):
         return trait_downcast[Boolable](self.value).__bool__()
 
 

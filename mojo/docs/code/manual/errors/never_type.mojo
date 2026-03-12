@@ -13,16 +13,16 @@
 
 
 # Always raises, never returns — return type is Never
-fn panic(msg: String) raises -> Never:
+def panic(msg: String) raises -> Never:
     raise Error(msg)
 
 
-# Never raises, always returns — equivalent to: fn safe_add(a: Int, b: Int) -> Int
-fn safe_add(a: Int, b: Int) raises Never -> Int:
+# Never raises, always returns — equivalent to: def safe_add(a: Int, b: Int) -> Int
+def safe_add(a: Int, b: Int) raises Never -> Int:
     return a + b
 
 
-fn get_value_or_panic(maybe: Optional[Int]) raises -> Int:
+def get_value_or_panic(maybe: Optional[Int]) raises -> Int:
     if maybe:
         return maybe.value()
     # Never substitutes for Int in this branch

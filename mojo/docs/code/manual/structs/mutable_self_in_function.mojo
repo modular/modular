@@ -15,16 +15,16 @@
 struct MyStruct:
     var value: Int
 
-    fn increment(mut self):
+    def increment(mut self):
         self.value += 1  # Works. Mutable `self` allows assignment
         # But without `mut`:
         # ERROR: expression must be mutable in assignment
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.value = value
 
 
-fn main():
+def main():
     my_struct = MyStruct(1)
     my_struct.increment()
     print(my_struct.value)

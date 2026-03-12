@@ -31,7 +31,7 @@ comptime block_size = 256
 comptime num_blocks = ceildiv(vector_size, block_size)
 
 
-fn vector_addition(
+def vector_addition(
     lhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
     rhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
     out_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],

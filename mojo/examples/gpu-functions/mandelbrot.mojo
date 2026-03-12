@@ -67,7 +67,7 @@ def main() raises:
         draw_mandelbrot(host_tensor)
 
 
-fn mandelbrot(
+def mandelbrot(
     tensor: LayoutTensor[int_dtype, layout, MutAnyOrigin],
 ):
     """The per-element calculation of iterations to escape in the Mandelbrot set.

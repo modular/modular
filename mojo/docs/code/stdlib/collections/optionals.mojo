@@ -12,22 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn empty_optional():
+def empty_optional():
     instance = Optional[String]()
     print(instance)  # Output: None
 
 
-fn emptier_optional():
+def emptier_optional():
     instance = Optional[String](None)
     print(instance)  # Output: None
 
 
-fn optional():
+def optional():
     instance = Optional[String]("Hello")
     print(instance)  # Output: 'Hello'
 
 
-fn bounds():
+def bounds():
     empty_instance = Optional[Int]()
     populated_instance = Optional[Int](50)
 
@@ -39,7 +39,7 @@ fn bounds():
     print(populated_instance.bounds()[1])  # 1
 
 
-fn value():
+def value():
     instance = Optional("Hello")
     x = instance.value()
     print(x)  # Hello
@@ -47,7 +47,7 @@ fn value():
     # print(instance.value())
 
 
-fn unsafe_value():
+def unsafe_value():
     instance = Optional("Hello")
     x = instance.unsafe_value()
     print(x)  # Hello
@@ -63,7 +63,7 @@ fn unsafe_value():
     # print(y)
 
 
-fn take():
+def take():
     instance = Optional("Hello")
     print(instance.bounds()[0])  # Output: 1
     x = instance.take()  # Moves value from `instance` to `x`
@@ -83,7 +83,7 @@ fn take():
     # print(y)                    # Does not reach this line
 
 
-fn unsafe_take():
+def unsafe_take():
     instance = Optional("Hello")
     print(instance.bounds()[0])  # Output: 1
     x = instance.unsafe_take()  # Moves value from `instance` to `x`
@@ -105,7 +105,7 @@ fn unsafe_take():
     # print(y)  # Does not reach this line
 
 
-fn or_else():
+def or_else():
     instance = Optional("Hello")
     print(instance)  # Output: 'Hello'
     print(instance.or_else("Bye"))  # Output: Hello
@@ -114,7 +114,7 @@ fn or_else():
     print(instance.or_else("Bye"))  # Output: Bye
 
 
-fn iter():
+def iter():
     instance = Optional("Hello")
     for value in instance:
         print(value)  # Output: Hello
@@ -123,7 +123,7 @@ fn iter():
         print(value)  # Does not reach line
 
 
-fn main():
+def main():
     empty_optional()
     optional()
     emptier_optional()

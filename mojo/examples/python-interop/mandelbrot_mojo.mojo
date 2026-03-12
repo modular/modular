@@ -38,7 +38,7 @@ comptime layout = Layout.row_major(GRID_HEIGHT, GRID_WIDTH)
 
 # An interface for this Mojo module must be exported to Python.
 @export
-fn PyInit_mandelbrot_mojo() -> PythonObject:
+def PyInit_mandelbrot_mojo() -> PythonObject:
     try:
         # A Python module is constructed, matching the name of this Mojo module.
         var module = PythonModuleBuilder("mandelbrot_mojo")
@@ -49,7 +49,7 @@ fn PyInit_mandelbrot_mojo() -> PythonObject:
         abort(String("failed to create Python module: ", e))
 
 
-fn run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
+def run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
     """The main GPU dispatch function for the Mandelbrot calculation called from Python.
     """
     comptime assert has_accelerator(), "This example requires a supported GPU"
@@ -83,7 +83,7 @@ fn run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
         return draw_mandelbrot(host_tensor, Int(py=iterations))
 
 
-fn mandelbrot(
+def mandelbrot(
     tensor: LayoutTensor[int_dtype, layout, MutAnyOrigin], iterations: Int32
 ):
     """The per-element calculation of iterations to escape in the Mandelbrot set.

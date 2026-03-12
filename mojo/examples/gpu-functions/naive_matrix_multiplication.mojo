@@ -92,7 +92,7 @@ def main() raises:
         print("Resulting matrix:", host_tensor)
 
 
-fn naive_matrix_multiplication(
+def naive_matrix_multiplication(
     m: LayoutTensor[float_dtype, m_layout, MutAnyOrigin],
     n: LayoutTensor[float_dtype, n_layout, MutAnyOrigin],
     p: LayoutTensor[float_dtype, p_layout, MutAnyOrigin],

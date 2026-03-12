@@ -27,12 +27,12 @@ from std.benchmark import (
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_parsing_all_floats_in_file[
+def bench_parsing_all_floats_in_file[
     origin: Origin
 ](mut b: Bencher, items_to_parse: List[StringSlice[origin]]) raises:
     @always_inline
     @parameter
-    fn call_fn() raises:
+    def call_fn() raises:
         for item in items_to_parse:
             var res = atof(item)
             keep(res)

@@ -48,7 +48,7 @@ def main() raises:
 
     # You must define the following function using `fn` because a comptime
     # initializer cannot call a function that can potentially raise an error.
-    fn generate_divider(char: String, repeat: Int) -> String:
+    def generate_divider(char: String, repeat: Int) -> String:
         return char * repeat
 
     comptime divider3 = generate_divider("~", 40)  # Evaluated at compile-time

@@ -19,7 +19,7 @@ from std.reflection import (
 )
 
 
-fn show_type[T: AnyType]():
+def show_type[T: AnyType]():
     """Displays a compile-time representation of a struct's fields and types.
 
     Prints the struct name followed by a tree view of its fields with their
@@ -81,11 +81,11 @@ struct ParameterizedStruct[T: Copyable, item_count: Int = DefaultItemCount](
 ):
     var list: List[Self.T]
 
-    fn __init__(out self):
+    def __init__(out self):
         self.list = List[Self.T](capacity=Self.item_count)
 
 
-fn main():
+def main():
     show_type[MyStruct]()
     show_type[Optional[Float64]]()
     show_type[Dict[Int, String]]()

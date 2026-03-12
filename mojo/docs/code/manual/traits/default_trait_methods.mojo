@@ -13,7 +13,7 @@
 
 
 trait DefaultQuackable:
-    fn quack(self):
+    def quack(self):
         print("Quack")
 
 
@@ -22,7 +22,7 @@ struct DefaultDuck(Copyable, DefaultQuackable):
     pass
 
 
-fn make_it_quack(duck: DefaultDuck):
+def make_it_quack(duck: DefaultDuck):
     duck.quack()
 
 

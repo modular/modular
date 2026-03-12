@@ -15,10 +15,10 @@
 trait Stacklike:
     comptime EltType: Copyable
 
-    fn push(mut self, var item: Self.EltType):
+    def push(mut self, var item: Self.EltType):
         ...
 
-    fn pop(mut self) -> Self.EltType:
+    def pop(mut self) -> Self.EltType:
         ...
 
 
@@ -30,16 +30,16 @@ struct MyStack[type: Copyable & ImplicitlyDestructible](Stacklike):
 
     var list: Self.list_type
 
-    fn __init__(out self):
+    def __init__(out self):
         self.list = Self.list_type()
 
-    fn push(mut self, var item: Self.EltType):
+    def push(mut self, var item: Self.EltType):
         self.list.append(item^)
 
-    fn pop(mut self) -> Self.EltType:
+    def pop(mut self) -> Self.EltType:
         return self.list.pop()
 
-    fn dump[
+    def dump[
         WritableEltType: Writable & Copyable
     ](self: MyStack[WritableEltType]):
         print("[", end="")

@@ -19,7 +19,7 @@ from std.python.bindings import PythonModuleBuilder
 
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     try:
         var b = PythonModuleBuilder("mojo_module")
 
@@ -30,5 +30,5 @@ fn PyInit_mojo_module() -> PythonObject:
         abort(String("failed to create Python module: ", e))
 
 
-fn noop():
+def noop():
     pass

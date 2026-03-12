@@ -17,7 +17,7 @@ struct ValidationError(Copyable, Writable):
     var field: String
     var reason: String
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("ValidationError(", self.field, "): ", self.reason)
 
 
@@ -27,14 +27,14 @@ def validate_with_error(value: Int) raises -> Int:
     return value
 
 
-fn validate_typed(value: Int) raises ValidationError -> Int:
+def validate_typed(value: Int) raises ValidationError -> Int:
     if value < 0:
         raise ValidationError(field="value", reason="cannot be negative")
     return value
 
 
 # Pattern 1: Wrap an Error into a typed error at the boundary
-fn wrapped_validate(value: Int) raises ValidationError -> Int:
+def wrapped_validate(value: Int) raises ValidationError -> Int:
     try:
         return validate_with_error(value)
     except e:
@@ -42,7 +42,7 @@ fn wrapped_validate(value: Int) raises ValidationError -> Int:
 
 
 # Anti-pattern: bare raises erases type info at compile time
-fn validate_bare_raises(value: Int) raises -> Int:
+def validate_bare_raises(value: Int) raises -> Int:
     return validate_typed(value)
 
 

@@ -21,7 +21,7 @@ struct CacheAligned:
     var data: Int
 
 
-fn use_aligned():
+def use_aligned():
     # Stack allocation
     var _ = CacheAligned(42)  # `stack_value`
 
@@ -30,5 +30,5 @@ fn use_aligned():
     heap_ptr.free()
 
 
-fn main():
+def main():
     use_aligned()

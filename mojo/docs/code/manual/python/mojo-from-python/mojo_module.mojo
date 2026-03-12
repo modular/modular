@@ -19,7 +19,7 @@ from std.python.bindings import PythonModuleBuilder
 
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     try:
         var m = PythonModuleBuilder("mojo_module")
         m.def_function[factorial]("factorial", docstring="Compute n!")
@@ -28,7 +28,7 @@ fn PyInit_mojo_module() -> PythonObject:
         abort(String("error creating Python Mojo module:", e))
 
 
-fn factorial(py_obj: PythonObject) raises -> PythonObject:
+def factorial(py_obj: PythonObject) raises -> PythonObject:
     # Raises an exception if `py_obj` is not convertible to a Mojo `Int`.
     var n = Int(py=py_obj)
 

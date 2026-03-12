@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn sum_params[*values: Int]() -> Int:
+def sum_params[*values: Int]() -> Int:
     comptime list = VariadicParamList[*values]()
     var sum = 0
     for v in list:

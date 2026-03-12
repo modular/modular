@@ -26,7 +26,7 @@ comptime Tensor = LayoutTensor[active_dtype, layout, MutAnyOrigin]
 
 
 # Elementwise vector addition on GPU threads
-fn vector_addition(left: Tensor, right: Tensor, output: Tensor):
+def vector_addition(left: Tensor, right: Tensor, output: Tensor):
     var idx = thread_idx.x
     output[idx] = left[idx] + right[idx]
 

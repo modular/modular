@@ -17,7 +17,7 @@ from std.gpu.host import DeviceContext
 from std.gpu import block_idx, thread_idx
 
 
-fn print_threads():
+def print_threads():
     """Print thread IDs."""
 
     print(

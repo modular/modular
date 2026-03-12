@@ -15,7 +15,7 @@ from std.reflection import struct_field_count, struct_field_types
 
 
 trait MakeCopyable:
-    fn copy_to(self, mut other: Self):
+    def copy_to(self, mut other: Self):
         comptime field_count = struct_field_count[Self]()
         comptime field_types = struct_field_types[Self]()
 
@@ -38,11 +38,11 @@ struct MultiType(MakeCopyable, Writable):
     var y: Bool
     var z: Float64
 
-    fn write_to[W: Writer](self, mut writer: W):
+    def write_to[W: Writer](self, mut writer: W):
         writer.write("[{}, {}, {}, {}]".format(self.w, self.x, self.y, self.z))
 
 
-fn test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
+def test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
     comptime field_count = struct_field_count[T]()
     comptime field_types = struct_field_types[T]()
 
@@ -66,7 +66,7 @@ fn test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
     return True
 
 
-fn main():
+def main():
     var original_instance = MultiType("Hello", 1, True, 2.5)
     var target_instance = MultiType("", 0, False, 0.0)
     original_instance.copy_to(target_instance)

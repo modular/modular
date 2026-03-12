@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn concat[
+def concat[
     dtype: DType, ls_size: Int, rh_size: Int, //
 ](lhs: SIMD[dtype, ls_size], rhs: SIMD[dtype, rh_size]) -> SIMD[
     dtype, ls_size + rh_size
