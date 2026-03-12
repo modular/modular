@@ -1114,6 +1114,12 @@ def _is_pixel_generation(config: PipelineConfig) -> bool:
         " against the torch baseline."
     ),
 )
+@click.option(
+    "--override-pipeline-golden-location",
+    "override_pipeline_golden_location",
+    default=None,
+    help="Override pregenerated_golden_path for a pipeline. Format: PIPELINE_NAME:/path/to/golden.tar.gz",
+)
 def main(
     report: TextIO | None,
     store_verdicts_json: Path | None,
@@ -1126,6 +1132,7 @@ def main(
     name_filter: str | None,
     no_aws: bool,
     compare_v2_v3: bool,
+    override_pipeline_golden_location: str,
 ) -> None:
     """Run logit-level comparisons of a Modular pipeline against a reference."""
 
@@ -1137,6 +1144,18 @@ def main(
         else DeviceKind.GPU
     )
     devices_str = "cpu" if devices_str is None else devices_str
+
+    golden_path_override: tuple[str, str] | None = None
+    if override_pipeline_golden_location is not None:
+        if ":" not in override_pipeline_golden_location:
+            raise click.BadParameter(
+                f"Expected format PIPELINE_NAME:/path, got: {override_pipeline_golden_location!r}",
+                param_hint="'try --override-pipeline-golden-location allenai/OLMo-1B-hf-float32:/path/to/golden.tar.gz'",
+            )
+        override_pipeline_name, golden_path_replacement = (
+            override_pipeline_golden_location.split(":", 1)
+        )
+        golden_path_override = (override_pipeline_name, golden_path_replacement)
 
     if compare_v2_v3:
         # V2 vs V3 comparison mode: run both V2 and V3 and compare their outputs.
@@ -1192,6 +1211,22 @@ def main(
             if f.strip()
         ):
             continue
+
+        if golden_path_override is not None:
+            (override_pipeline_name, golden_path_replacement) = (
+                golden_path_override
+            )
+            if pipeline_name == override_pipeline_name:
+                # then replace the golden_path for this pipeline with the user specified tar path
+                if pipeline_config.pregenerated_torch_goldens is not None:
+                    pipeline_config = pipeline_config.model_copy(
+                        update={
+                            "pregenerated_torch_goldens": pipeline_config.pregenerated_torch_goldens.model_copy(
+                                update={"tar_file": golden_path_replacement}
+                            )
+                        }
+                    )
+
         if no_aws and pipeline_config.encoding in TORCH_INCOMPATIBLE_ENCODINGS:
             raise click.ClickException(
                 f"Pipeline {pipeline_name!r} uses encoding"
