@@ -43,7 +43,6 @@ pixtral_modulev3_arch = SupportedArchitecture(
     required_arguments={
         "enable_prefix_caching": False,
         "enable_chunked_prefill": False,
-        "max_batch_size": 1,
     },
     context_validators=[
         validate_requires_vision_context,
