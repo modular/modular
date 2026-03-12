@@ -108,5 +108,7 @@ class Flux1TransformerModel(ComponentModel):
         if prev_residual is not None:
             args = (*args, prev_residual, prev_output)
         if self.model is None:
-            raise RuntimeError("Model not compiled. Call use_standard_model() or use_step_cache_model() first.")
+            raise RuntimeError(
+                "Model not compiled. Call use_standard_model() or use_step_cache_model() first."
+            )
         return self.model(*args)

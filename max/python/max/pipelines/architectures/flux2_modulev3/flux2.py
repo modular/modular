@@ -15,12 +15,12 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.graph.dim import Dim
 from max.experimental.nn import Linear, Module
 from max.experimental.nn.norm import LayerNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
+from max.graph.dim import Dim
 from max.pipelines.lib.interfaces.cache_mixin import (
     fbcache_conditional_execution,
 )

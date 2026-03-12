@@ -306,7 +306,6 @@ class CacheMixin:
         return (step - warmup_steps - 1) % cache_interval != 0
 
 
-
 def fbcache_conditional_execution(
     first_block_residual: Tensor,
     prev_residual: Tensor,

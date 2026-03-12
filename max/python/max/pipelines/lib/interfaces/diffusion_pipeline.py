@@ -238,7 +238,9 @@ class DiffusionPipeline(ABC):
             assert warmup_steps is not None
             assert cache_interval is not None
             skip_transformer = mixin.taylorseer_skip_transformer(
-                step, warmup_steps, cache_interval,
+                step,
+                warmup_steps,
+                cache_interval,
             )
 
         # 2. Compute TaylorSeer step delta
