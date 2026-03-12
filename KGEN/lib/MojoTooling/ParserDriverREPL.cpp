@@ -164,7 +164,11 @@ llvm::SMDiagnostic MojoParserContext::REPLLocMapper::mapDiagnostic(
   // Update the locations of the fixits.
   SmallVector<llvm::SMFixIt> fixits;
   for (auto &fixit : diag.getFixIts()) {
-    fixits.emplace_back(mapRange(fixit.getRange()), fixit.getText());
+    // Only include the fix-it if its range can be mapped back; an unmapped
+    // fix-it cannot be presented to the user and would crash SMFixIt.
+    auto mappedRange = mapRange(fixit.getRange());
+    if (mappedRange.isValid())
+      fixits.emplace_back(mappedRange, fixit.getText());
   }
 
   // Remap the file name and record the diagnostic.
@@ -390,7 +394,13 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
   // expression, enabling seamless location mapping between the two.
   auto emitAndMapCode = [&](StringRef code) {
     if (!code.empty())
-      locMapper.addMapping(code, exprOS.str().size());
+      // Map the code and the '\n' appended below (+1) so that positions just
+      // past the last token on a line (e.g. insertAfterToken fix-its) can be
+      // mapped back to the input.  addMapping only uses the size for interval
+      // arithmetic and never dereferences the bytes, so size+1 is safe even
+      // when there is no '\n' in the input at code.end().
+      locMapper.addMapping(StringRef(code.data(), code.size() + 1),
+                           exprOS.str().size());
     exprOS << code << "\n";
   };
 
