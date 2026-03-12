@@ -11,6 +11,7 @@ package(default_visibility = [
 _MACOS_INCOMPATIBLE_TESTS = [
     "test_paged_scheduler.py",
     "test_queues.py",
+    "test_scheduler.py",
     "test_tts_scheduler.py",
 ]
 

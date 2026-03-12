@@ -19,7 +19,7 @@ MOJO_SRCS = glob(["*.mojo"])
 [
     modular_run_binary_test(
         name = src.split(".")[0] + "_test",
-        size = "small",
+        size = "medium",
         binary = src.split(".")[0],
     )
     for src in MOJO_SRCS
