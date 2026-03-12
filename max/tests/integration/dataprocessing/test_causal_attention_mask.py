@@ -127,7 +127,9 @@ def test_causal_attention_mask_with_token_mask__masks_invalid_tokens() -> None:
     np.testing.assert_array_equal(mask[0], expected)
 
 
-def test_causal_attention_mask_with_token_mask__preserves_prefix_context() -> None:
+def test_causal_attention_mask_with_token_mask__preserves_prefix_context() -> (
+    None
+):
     mask = causal_attention_mask_with_token_mask(
         [2],
         np.array([True, False, True], dtype=np.bool_),

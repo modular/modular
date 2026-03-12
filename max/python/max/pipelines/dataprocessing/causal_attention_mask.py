@@ -133,9 +133,9 @@ def causal_attention_mask_with_token_mask(
     full_token_mask = np.ones((batch_size, post_seq_len), dtype=np.bool_)
 
     for batch_idx, start_pos in enumerate(original_start_pos):
-        full_token_mask[
-            batch_idx, start_pos : start_pos + padded_length
-        ] = token_mask_np[batch_idx]
+        full_token_mask[batch_idx, start_pos : start_pos + padded_length] = (
+            token_mask_np[batch_idx]
+        )
 
     return np.where(
         full_token_mask[:, np.newaxis, :],

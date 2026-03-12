@@ -75,9 +75,7 @@ class Qwen3TextEncoderModel(ComponentModel):
             if self.default_hidden_state_layers is not None:
                 raw_layers = list(self.default_hidden_state_layers)
             else:
-                raw_layers = list(
-                    range(1, self.config.num_hidden_layers + 1)
-                )
+                raw_layers = list(range(1, self.config.num_hidden_layers + 1))
         return self._normalize_hidden_state_layers(
             raw_layers,
             self.config.num_hidden_layers,
@@ -163,7 +161,10 @@ class Qwen3TextEncoderModel(ComponentModel):
                 "Qwen3TextEncoderModel expects batch_size=1 for "
                 f"{mask_name} input, got batch size {additive_mask.shape[0]}."
             )
-        if expected_seq_len is not None and additive_mask.shape[1] != expected_seq_len:
+        if (
+            expected_seq_len is not None
+            and additive_mask.shape[1] != expected_seq_len
+        ):
             raise ValueError(
                 f"{mask_name} must have the same sequence length as tokens "
                 f"({additive_mask.shape[1]} != {expected_seq_len})."

@@ -124,13 +124,9 @@ class EncoderAttention(Module[..., Tensor]):
         k = F.transpose(k, 1, 2)
         v = F.transpose(v, 1, 2)
 
-        attn_weights = (
-            F.matmul(q, F.transpose(k, -1, -2)) * self.scale
-        )
+        attn_weights = F.matmul(q, F.transpose(k, -1, -2)) * self.scale
         attn_weights = attn_weights + F.cast(attention_bias, x.dtype)
-        attn_weights = F.softmax(
-            F.cast(attn_weights, DType.float32), axis=-1
-        )
+        attn_weights = F.softmax(F.cast(attn_weights, DType.float32), axis=-1)
         attn_weights = F.cast(attn_weights, x.dtype)
         attn_out = F.matmul(attn_weights, v)
         attn_out = F.transpose(attn_out, 1, 2)  # [1, S, H, D]
