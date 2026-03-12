@@ -1057,11 +1057,11 @@ struct TwoParamsStruct[a: Int, b: Int](ImplicitlyCopyable):
 fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK: %b_0 = lit.var.decl "b"
     # CHECK: lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b, %b_0)
-    # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <variadic_get(:variadic<!Int> a, 2)>
+    # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <#kgen.variadic.get<:variadic<!Int> a, 2>>
     comptime v0 = a[2]
 
     # CHECK: %v1 = lit.var.decl "v1"
-    # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <variadic_get(:variadic<!Int> a, 3)>
+    # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <#kgen.variadic.get<:variadic<!Int> a, 3>>
     # CHECK: lit.ref.store [[TMP]], %v1
     var v1 = a[3]
     # CHECK: lit.ref.immut %b_0
@@ -1071,8 +1071,8 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
 
 # CHECK-LABEL: lit.fn @"variadic_memory_subscript
 # CHECK-SAME: variadic<!lit.ref<{{.*}}TwoParamsStruct <
-# CHECK-SAME:   :!Int variadic_get({{.*}}a, 0)
-# CHECK-SAME:   :!Int variadic_get({{.*}}a, 1)
+# CHECK-SAME:   #kgen.variadic.get<:variadic<!Int> a, 0>
+# CHECK-SAME:   #kgen.variadic.get<:variadic<!Int> a, 1>
 fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
     # CHECK: %b_0 = lit.var.decl
     # CHECK: [[IMMREF:%.*]] = lit.ref.immut %b_0 :

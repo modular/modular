@@ -1365,8 +1365,7 @@ LogicalResult PackCreateOp::verify() {
 static Type getPackFieldAtIndex(PackType packType, TypedAttr index) {
   // The result type is the type extracted from the type list.  Extract the
   // element from the type list.  This automatically folds if constant.
-  auto typeAttr =
-      ParamOperatorAttr::get(POC::VariadicGet, packType.getVariadic(), index);
+  auto typeAttr = VariadicGetAttr::get(packType.getVariadic(), index);
   return ParamType::get(typeAttr);
 }
 
@@ -1448,7 +1447,7 @@ LogicalResult PackLoadOp::inferReturnTypes(MLIRContext *ctx,
 /// Given a struct type, return the type of the field at the specified index,
 /// which may be parametric.
 ///
-/// This uses POC::VariadicGet to extract from the struct's type list, which
+/// This uses VariadicGetAttr to extract from the struct's type list, which
 /// automatically folds when both the struct and index are constant. For
 /// parametric cases (including structs with VariadicSplatType elements or
 /// parametric indices), it returns a ParamType that will be resolved during
@@ -1456,8 +1455,8 @@ LogicalResult PackLoadOp::inferReturnTypes(MLIRContext *ctx,
 static Type getStructFieldTypeAtIndex(StructType structType, TypedAttr index) {
   // The result type is the type extracted from the type list.  Extract the
   // element from the type list.  This automatically folds if constant.
-  auto typeAttr = ParamOperatorAttr::get(
-      POC::VariadicGet, structType.getElementTypesVariadic(), index);
+  auto typeAttr =
+      VariadicGetAttr::get(structType.getElementTypesVariadic(), index);
   return ParamType::get(typeAttr);
 }
 

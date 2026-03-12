@@ -2783,7 +2783,7 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // Inside a parameter context, emit a parameter operator.
     if (auto indexPV = index.getIfPValue())
       if (auto basePV = baseValue.getIfPValue()) {
-        auto res = ParamOperatorAttr::get(POC::VariadicGet, {basePV, indexPV});
+        auto res = VariadicGetAttr::get(basePV, indexPV);
         return emitter.emitResult(PValue(res), this, dest);
       }
     emitter.emitError(getLoc())
@@ -4510,8 +4510,8 @@ MagicFunctionNode::emitStructFieldTypeAtIndex(ValueDest &dest,
           ctx, structTypeAttr, variadicType);
 
   // Compute element type as VariadicGet(fieldTypes, index)
-  auto elementTypeAttr = ParamOperatorAttr::get(
-      POC::VariadicGet, fieldTypesAttr, indexPValue.get());
+  auto elementTypeAttr =
+      VariadicGetAttr::get(fieldTypesAttr, indexPValue.get());
 
   // Return the type as a PValue (can be used in type position)
   return emitter.emitResult(PValue(elementTypeAttr), this, dest);
@@ -4620,7 +4620,6 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ValueDest &dest,
     // We need to compute the result type. The result element type is computed
     // as VariadicGet(StructFieldTypes(T), index). The origin is the container's
     // origin (not field-sensitive until canonicalization to field name access).
-
     RefType containerRefType = cast<RefType>(structRef.getType().mlirType);
 
     // Create a TypedAttr representing the struct type for StructFieldTypesAttr
@@ -4638,8 +4637,7 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ValueDest &dest,
             ctx, structTypeAttr, variadicType);
 
     // Compute element type as VariadicGet(fieldTypes, index)
-    auto elementTypeAttr =
-        ParamOperatorAttr::get(POC::VariadicGet, fieldTypesAttr, indexAttr);
+    auto elementTypeAttr = VariadicGetAttr::get(fieldTypesAttr, indexAttr);
     Type resultElementType = ParamType::get(elementTypeAttr);
 
     // The result ref type uses the container's origin (not field-sensitive)

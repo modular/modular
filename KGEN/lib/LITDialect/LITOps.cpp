@@ -2288,8 +2288,7 @@ RefPackExtractOp::inferReturnTypes(MLIRContext *context,
 
   // The result type is a !lit.ref wrapping the type extracted from the
   // type list.  Extract the element from the type list.
-  auto typeAttr = ParamOperatorAttr::get(POC::VariadicGet,
-                                         refPackTy.getVariadic(), indexAttr);
+  auto typeAttr = VariadicGetAttr::get(refPackTy.getVariadic(), indexAttr);
   Type type = ParamType::get(typeAttr);
   inferredReturnTypes.push_back(refPackTy.getElementRefTypeFor(type));
   return success();

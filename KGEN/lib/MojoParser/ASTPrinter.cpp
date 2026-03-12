@@ -781,12 +781,6 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       // Just omit the types.
       printParam(os, operands.front(), diagShared);
       return;
-    case POC::VariadicGet:
-      printParam(os, operands.front(), diagShared);
-      os << '[';
-      printParam(os, operands.back(), diagShared);
-      os << ']';
-      return;
     default:
       // Otherwise, fall back to printing as a parenthesized form like the KGEN
       // printer does.  We don't fall back to the kgen printer because it will

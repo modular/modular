@@ -390,7 +390,7 @@ VariadicGetAttr::verify(function_ref<InFlightDiagnostic()> emitError, Type type,
            << "expected a 'variadic' type for the variadic operand, "
               "got: "
            << variadic.getType();
-  if (type != variadicType.getElementType())
+  if (type && type != variadicType.getElementType())
     return emitError() << "type must match variadic element type, expected: "
                        << variadicType.getElementType() << ", got: " << type;
   if (!isa<IndexType>(index.getType()))
@@ -399,21 +399,44 @@ VariadicGetAttr::verify(function_ref<InFlightDiagnostic()> emitError, Type type,
   return success();
 }
 
-TypedAttr VariadicGetAttr::get(Type type, TypedAttr variadic, TypedAttr index) {
-  auto vaAttr = sugarDynCast<VariadicAttr>(variadic);
-  auto idxAttr = sugarDynCast<IntegerAttr>(index);
-  if (vaAttr && idxAttr && size_t(idxAttr.getInt()) < vaAttr.getValues().size())
-    return vaAttr.getValues()[size_t(idxAttr.getInt())];
+TypedAttr VariadicGetAttr::get(TypedAttr variadic, TypedAttr index) {
+  if (auto vaAttr = sugarDynCast<VariadicAttr>(variadic)) {
+    auto idxAttr = sugarDynCast<IntegerAttr>(index);
+    // If the index is known-constant and in-range, we can simplify it.
+    if (idxAttr && size_t(idxAttr.getInt()) < vaAttr.getValues().size())
+      return vaAttr.getValues()[size_t(idxAttr.getInt())];
 
-  return Base::get(type.getContext(), type, variadic, index);
+    // Fold if all elements are the same (e.g. if there is only one element!).
+    if (!vaAttr.getValues().empty()) {
+      auto first = vaAttr.getValues()[0];
+      if (llvm::all_of(vaAttr.getValues().drop_front(),
+                       [&](auto elt) { return elt == first; }))
+        return first;
+    }
+  }
+
+  auto resultType = cast<VariadicType>(variadic.getType()).getElementType();
+
+  // Cannonicalize upcast out of the variadic list:
+  //   From: variadic_get<upcast<!Copyable> : !AnyType> : !AnyType
+  // To: upcast<variadic_get<Copyable> : !Copyable> : !AnyType
+  if (auto upcast = sugarDynCast<UpcastAttr>(variadic)) {
+    TypedAttr originalVA = upcast.getInputTypeValue();
+    assert(isa<VariadicType>(originalVA.getType()) &&
+           "must casted from a variadic type to a variadic type");
+    auto beforeCast = VariadicGetAttr::get(originalVA, index);
+    return UpcastAttr::get(resultType, beforeCast);
+  }
+
+  return Base::get(variadic.getContext(), resultType, variadic, index);
 }
 
 TypedAttr VariadicGetAttr::getChecked(
-    function_ref<::mlir::InFlightDiagnostic()> emitError, Type type,
-    TypedAttr variadic, TypedAttr index) {
-  if (failed(verify(emitError, type, variadic, index)))
+    function_ref<::mlir::InFlightDiagnostic()> emitError, TypedAttr variadic,
+    TypedAttr index) {
+  if (failed(verify(emitError, /*type*/ {}, variadic, index)))
     return {};
-  return get(type, variadic, index);
+  return get(variadic, index);
 }
 
 LogicalResult
@@ -1972,7 +1995,6 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::Apply:
   case POC::ApplyResultSlot:
   case POC::Rebind:
-  case POC::VariadicGet:
   case POC::PtrBitcast:
   case POC::AttrToStr:
   case POC::DataToStr:
@@ -2123,25 +2145,6 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << diagMsg(
                  Diag::DiagID::err_rebind_expects_one_operand);
     break;
-  case POC::VariadicGet: {
-    if (operands.size() != 2)
-      return emitError() << diagMsg(
-                 Diag::DiagID::err_variadic_get_expected_two_operands);
-    auto variadicType = ::dyn_cast<VariadicType>(operands.front().getType());
-    if (!variadicType)
-      return emitError() << diagMsg(
-                 Diag::DiagID::
-                     err_variadic_get_expected_first_operand_variadic);
-    if (!::isa<IndexType>(operands.back().getType()))
-      return emitError() << diagMsg(
-                 Diag::DiagID::err_variadic_get_expected_second_operand_index);
-    Type elType = variadicType.getElementType();
-    if (type != elType)
-      return emitError() << diagMsg(
-                 Diag::DiagID::err_variadic_get_result_type_variadic_element,
-                 elType, type);
-    break;
-  }
   case POC::Cond:
     if (operands.size() != 3)
       return emitError() << diagMsg(
@@ -3332,48 +3335,6 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
   return {};
 }
 
-static TypedAttr simplifyVariadicGet(ArrayRef<TypedAttr> operands,
-                                     Type &resultType) {
-  resultType = cast<VariadicType>(operands.front().getType()).getElementType();
-
-  // Attempt to simplify variadic get when the first operand is a known array.
-  auto variadic = sugarDynCast<VariadicAttr>(operands.front());
-  if (!variadic) {
-    if (auto upcast = sugarDynCast<UpcastAttr>(operands.front())) {
-      // This is something like:
-      // variadic_get<upcast<!Copyable> : !AnyType> : !AnyType
-      // Turn it into
-      // upcast<variadic_get<Copyable> : !Copyable> : !AnyType
-      TypedAttr originalVA = upcast.getInputTypeValue();
-      assert(isa<VariadicType>(originalVA.getType()) &&
-             "must casted from a variadic type to a variadic type");
-
-      auto beforeCastTps = cast<VariadicType>(originalVA.getType());
-      auto beforeCast =
-          ParamOperatorAttr::get(upcast.getContext(), POC::VariadicGet,
-                                 ArrayRef{originalVA, operands.back()},
-                                 beforeCastTps.getElementType());
-      return UpcastAttr::get(resultType, beforeCast);
-    }
-    return {};
-  }
-
-  // If the index is known-constant and in-range, we can simplify it.
-  if (auto index = sugarDynCast<IntegerAttr>(operands.back());
-      index && size_t(index.getInt()) < variadic.getValues().size())
-    return variadic.getValues()[index.getInt()];
-
-  // Otherwise, if all the elements are the same, we can also fold it.
-  if (!variadic.getValues().empty()) {
-    auto first = variadic.getValues()[0];
-    if (llvm::all_of(variadic.getValues().drop_front(),
-                     [&](auto elt) { return elt == first; }))
-      return first;
-  }
-
-  return {};
-}
-
 // Returns the op with operands replaced with substitutions with actual values.
 // substitutions are automatically added in conditionals with equals.
 //
@@ -3716,9 +3677,6 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
   case POC::Rebind:
     result = simplifyRebind(operands, resultType);
     break;
-  case POC::VariadicGet:
-    result = simplifyVariadicGet(operands, resultType);
-    break;
   case POC::Cond:
     result = simplifyCond(operands);
     break;
@@ -3774,12 +3732,12 @@ ErrorOr<Type> inferParamOperatorResultType(POC opcode,
   else if (opcode != POC::GetSizeOf && opcode != POC::GetAlignOf)
     resultType = operandsIn.front().getType();
   return resultType;
-  if (!llvm::is_contained(
-          {POC::Apply, POC::ApplyResultSlot, POC::TargetHasFeature,
-           POC::TargetGetField, POC::AcceleratorArch, POC::GetSizeOf,
-           POC::GetAlignOf, POC::VariadicGet, POC::GetEnv, POC::VariadicPtrMap,
-           POC::VariadicPtrRemoveMap, POC::StringAddress},
-          opcode) &&
+  if (!llvm::is_contained({POC::Apply, POC::ApplyResultSlot,
+                           POC::TargetHasFeature, POC::TargetGetField,
+                           POC::AcceleratorArch, POC::GetSizeOf,
+                           POC::GetAlignOf, POC::GetEnv, POC::VariadicPtrMap,
+                           POC::VariadicPtrRemoveMap, POC::StringAddress},
+                          opcode) &&
       !llvm::all_of(operandsIn.drop_front(),
                     [&](auto op) { return op.getType() == resultType; }))
     return Error(llvm::formatv(

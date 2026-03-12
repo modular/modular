@@ -2763,8 +2763,7 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
   if (auto vaGetOp = dyn_cast<POP::VariadicGetOp>(op))
     if (auto va = findValue(vaGetOp.getVariadic()))
       if (auto idx = findValue(vaGetOp.getIndex()))
-        return KGEN::VariadicGetAttr::get(vaGetOp.getResult().getType(), va,
-                                          idx);
+        return KGEN::VariadicGetAttr::get(va, idx);
 
   // Sub doesn't have a POC opcode: "x-y" is "x+(y*-1)".
   if (auto sub = dyn_cast<mlir::index::SubOp>(op)) {
