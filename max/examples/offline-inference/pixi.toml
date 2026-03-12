@@ -1,6 +1,6 @@
 [workspace]
 authors = ["Modular <hello@modular.com>"]
-channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
+channels = ["conda-forge", "https://conda.modular.com/max/"]
 description = "Examples exercising the max stack offline and in python"
 name = "Python Offline Inference Examples"
 platforms = ["osx-arm64", "linux-aarch64", "linux-64"]

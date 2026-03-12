@@ -1,6 +1,6 @@
 [workspace]
 authors = ["Modular <hello@modular.com>"]
-channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
+channels = ["https://conda.modular.com/max", "conda-forge"]
 name = "max-graph"
 description = "A simple example of building a MAX graph in Python"
 platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
