@@ -246,6 +246,13 @@ def test_bf16(ctx: DeviceContext) raises:
         N=Int(284),
         K=Int(256),
     ](ctx, 256, 284, 256)
+    test[
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
+        transpose_b=True,
+        N=Int(260),
+        K=Int(1024),
+    ](ctx, 259, 260, 1024)
 
 
 def test_float8[in_type: DType](ctx: DeviceContext) raises:

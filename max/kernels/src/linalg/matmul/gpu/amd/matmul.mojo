@@ -467,13 +467,13 @@ fn gemm_kernel_amd[
         swizzle=swizzle,
     ](a, warp_m, warp_k, Int(block_idx.y))
 
+    # A tensor block
+    var a_gmem_block = a.tile[BM, stride](Int(block_idx.y), 0)
     # A tensor tile iterator
-    var a_gmem_iter = a.tile[BM, stride](Int(block_idx.y), 0).tiled_iterator[
-        BM, BK, axis=1
-    ](0, 0)
+    var a_gmem_iter = a_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
     # A tensor data movement delegate
     var a_scatter_gather = IteratorScatterGatherAmd[thread_layout](
-        a, a_gmem_iter
+        a_gmem_block, a_gmem_iter
     )
 
     # B tensor tiles manager
@@ -488,13 +488,13 @@ fn gemm_kernel_amd[
         swizzle=swizzle,
     ](b, warp_n, warp_k, Int(block_idx.x))
 
+    # B tensor block
+    var b_gmem_block = b.tile[BN, stride](Int(block_idx.x), 0)
     # B tensor tile iterator
-    var b_gmem_iter = b.tile[BN, stride](Int(block_idx.x), 0).tiled_iterator[
-        BN, BK, axis=1
-    ](0, 0)
+    var b_gmem_iter = b_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
     # B tensor data movement delegate
     var b_scatter_gather = IteratorScatterGatherAmd[thread_layout](
-        b, b_gmem_iter
+        b_gmem_block, b_gmem_iter
     )
 
     # SMem storage for Split-K Reduction
