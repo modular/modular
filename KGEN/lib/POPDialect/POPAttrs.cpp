@@ -2155,8 +2155,12 @@ TypedAttr SIMDCmpAttr::get(MLIRContext *ctx, NormalizedCmpPredicate cc,
   if (auto outDType = outType.getResolvedDType(),
       inDType = cast<SIMDType>(lhs.getType()).getResolvedDType();
       outDType && inDType && outDType->isBool()) {
-    if (auto fold = foldSIMDCmp(toCmpPredicate(cc), {lhs, rhs}, *outDType))
-      return fold;
+    Attribute operands[] = {lhs, rhs};
+    if (auto fold =
+            foldSIMDCmp(toCmpPredicate(cc), FoldValues(operands), outType)) {
+      assert(fold.getAttr() && "attribute fold should produce an attribute");
+      return fold.getAttr();
+    }
 
     // If either input is a cast_from_builtin, then the width is 1 and we can
     // perform this as a ParameterOperatorAttr comparison to crush the

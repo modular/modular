@@ -12,6 +12,7 @@
 #ifndef KGEN_POPDIALECT_POPUTILS_H
 #define KGEN_POPDIALECT_POPUTILS_H
 
+#include "KGEN/KGENDialect/FoldUtils.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -66,10 +67,11 @@ inline CmpPredicate toCmpPredicate(NormalizedCmpPredicate cc) {
   llvm_unreachable("invalid NormalizedCmpPredicate");
 }
 
-/// Fold a SIMD comparison operation on constant operands.
-SIMDAttr foldSIMDCmp(CmpPredicate cc, ArrayRef<Attribute> operands,
-                     KGENDType outDType,
-                     std::optional<int64_t> indexBitWidth = std::nullopt);
+/// Fold a SIMD comparison operation. Handles constant folding, bool identity
+/// folds (eq(true, x) -> x), and unsigned comparisons with zero. Returns null
+/// if no fold applies.
+FoldValue foldSIMDCmp(CmpPredicate cc, FoldValues operands, SIMDType resultType,
+                      TargetInfoAttr target = {});
 
 /// Fold a SIMD left-shift operation.
 OpFoldResult foldSIMDShl(Attribute val, Attribute shft,
