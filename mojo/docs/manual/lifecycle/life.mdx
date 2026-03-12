@@ -31,8 +31,8 @@ struct NoInstances:
         print("Hello world!")
 ```
 
-Without a constructor, this cannot be instantiated, so it has no lifecycle. The
-`state` field is also useless because it cannot be initialized (Mojo structs do
+Without a constructor, this can't be instantiated, so it has no lifecycle. The
+`state` field is also useless because it can't be initialized (Mojo structs do
 not support default field values—you must initialize them in a constructor).
 
 So the only thing you can do is call the static method:
@@ -512,7 +512,7 @@ Although copying values provides predictable behavior that matches Mojo's
 types can be a significant hit on performance.
 
 Mojo uses the move constructor to transfer ownership of a value from one
-variable to another, **without** copying its fields. A value that's copyable
+variable to another, _without_ copying its fields. A value that's copyable
 but doesn't have a move constructor can still be transferred by making a copy
 and then discarding the original. So in this case, the move constructor serves
 as an optimization.
@@ -521,10 +521,6 @@ To make a type *movable*:
 
 - Add the `Movable` trait *or* conform to `Copyable`.
 - (Optionally) implement a custom move constructor.
-
-Note that [register-passable values](/mojo/manual/decorators/register-passable)
-types are automatically movable, and **cannot** define a custom move
-constructor.
 
 Here's a movable (also copyable) version of the `MyPet` struct:
 
@@ -568,23 +564,22 @@ grants exclusive ownership of the value and marks it as destroyed at the end of
 the function. (For more information on the `deinit` convention, see
 [Field lifetimes during destruct and move](/mojo/manual/lifecycle/death#field-lifetimes-during-destruct-and-move)).
 
-The move constructor uses the transfer sigil (`^`) to indicate that ownership of
-the `name` value is being transferred from `take` to `self`. For
-register-passable types like `Int`, the transfer sigil is omitted:
-register-passable types are always treated as movable, but they can't define
-custom move constructors or destructors, so there's no special logic to run for
-a move.
+The move constructor uses the transfer sigil (`^`) to indicate that
+ownership of the `name` value transfers from `take` to `self`. For
+trivial register-passable types like `Int`, omit the transfer sigil.
+Trivial types are always movable. Since they can't define custom move
+constructors or destructors, there's no special logic required to move.
 
 At the end of the move constructor method, Mojo immediately invalidates the
 original variable, preventing any access to it. Because the argument is declared
-as `deinit`, it does **not** call the destructor, since that would destroy
+as `deinit`, it does _not_ call the destructor, since that would destroy
 resources that have been transferred to the
 new instance. Invalidating the original variable is important to avoid memory
 errors on heap-allocated data, such as use-after-free and double-free errors.
 
 :::note
 
-A move constructor is **not required** to transfer ownership of a
+A move constructor is _not required_ to transfer ownership of a
 value. Mojo can copy the value and
 invalidate the original instance. You can learn more in the section about
 [ownership
@@ -641,40 +636,12 @@ In some (rare) cases, you may not want a type to be copyable *or* movable. The
 [`Atomic`](/mojo/std/os/atomic/Atomic/) type is an example of a type that's
 neither copyable nor movable.
 
-## Trivial types
-
-So far, we've talked about values that live in memory, which means they have an
-identity (an address) that can be passed around among functions (passed "by
-reference"). This is great for most types, and it's a safe default for large
-objects with expensive copy operations. However, it's inefficient for tiny
-things like a single integer or floating point number. We call these types
-"trivial" because they are just "bags of bits" that should be copied, moved,
-and destroyed without invoking any custom lifecycle methods.
-
-Trivial types are the most common types that surround us, and from a language
-perspective, Mojo doesn't need special support for these written in a struct.
-Usually, these values are so tiny that they should be passed around in CPU
-registers, not indirectly through memory.
-
-As such, Mojo provides a trait `TrivialRegisterPassable` to declare these types of
-values. Conforming to this trait tells Mojo that the
-type should be copyable and movable, but that it has no user-defined logic for
-this (no custom copy constructor or move constructor). It also tells Mojo to
-pass the value in CPU registers whenever possible, which has clear performance
-benefits.
-
-You'll see this decorator on types like `Int` in the standard library:
-
-```mojo
-struct Int(TrivialRegisterPassable):
-    ...
-```
-
-We expect to use this decorator pervasively on Mojo standard library types, but
-it is safe to ignore for general application-level code.
-
-For more information, see the [`@register_passable`
-documentation](/mojo/manual/decorators/register-passable).
+:::note Trivial types
+Trivial types like `Int`, `Bool`, or `Float64` are the most common
+types in systems programming. Mojo doesn't need special support for
+these. They have no ownership semantics, no destructors, and are always
+passed in CPU registers.
+:::
 
 ### Trivial lifecycle methods
 

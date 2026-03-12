@@ -11,27 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# Note: this code doesn't appear in the doc; it tests the assertions
-# in the doc.
-
-from std.testing import assert_equal
+from std.testing import assert_almost_equal
 
 
 @fieldwise_init
-struct RegPassableType(RegisterPassable):
-    var a: Int
-    var b: Int
+struct Complex(Copyable, RegisterPassable):
+    var re: Float64
+    var im: Float64
 
-    def say_hello(self) -> String:
-        return "Hello from a register passable type!"
-
-
-def test_register_passable_type() raises:
-    var first: RegPassableType = RegPassableType(42, 24)
-    # Ensure that the value is movable
-    var second: RegPassableType = first^
-    assert_equal(second.say_hello(), "Hello from a register passable type!")
+    fn __init__(out self, re: Float64):
+        self.re = re
+        self.im = 0.0
 
 
 def main() raises:
-    test_register_passable_type()
+    var c1 = Complex(-1.2, 6.5)
+    assert_almost_equal(c1.re, -1.2)
+    assert_almost_equal(c1.im, 6.5)
+    var c_copy = c1.copy()
+    assert_almost_equal(c_copy.re, -1.2)
+    assert_almost_equal(c_copy.im, 6.5)
+    var c2 = Complex(-1.2)
+    assert_almost_equal(c2.re, -1.2)
+    assert_almost_equal(c2.im, 0.0)
