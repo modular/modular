@@ -33,7 +33,13 @@ from ..kernels import (
 
 @dataclass
 class Nvfp4Scales:
-    """Bundled scales for NVFP4 quantization."""
+    """Bundled scales for NVFP4 quantization.
+
+    Note: ``gate_up_input`` is broadcast-uniform (all experts share the
+    global max), whereas ``down_input`` contains genuinely per-expert
+    scales.  The non-EP path must account for this asymmetry when
+    converting per-expert scales to a single global activation scale.
+    """
 
     gate_up_input: TensorValue
     down_input: TensorValue

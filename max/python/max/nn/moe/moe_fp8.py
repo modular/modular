@@ -32,6 +32,11 @@ from .quant_strategy import (
 _T = TypeVar("_T")
 
 
+def _scalar_max(t: TensorValue) -> TensorValue:
+    """Reduces a tensor to a rank-0 scalar max value."""
+    return ops.max(t).reshape([])
+
+
 class MoEQuantized(MoE):
     """Mixture of Experts with FP8 or NVFP4 quantization."""
 
@@ -264,7 +269,7 @@ class MoEQuantized(MoE):
         permuted_quant, permuted_scales = strategy.quantize(
             permuted,
             self._token_group_size,
-            nvfp4.gate_up_input if nvfp4 else None,
+            _scalar_max(nvfp4.gate_up_input) if nvfp4 else None,
         )
 
         gate_up_scales, down_scales = strategy.prepare_weight_scales(
@@ -297,10 +302,24 @@ class MoEQuantized(MoE):
         )
 
         gate_up = silu_gate(gate_up, self.moe_dim)
+
+        if nvfp4:
+            # down_expert = weight_scale * down_input_i (per-expert),
+            # but quantize() below scales activations by max(down_input)
+            # (global). Multiply through by max / down_input_i so the
+            # activation scale and expert scale agree.
+            max_down_input = _scalar_max(nvfp4.down_input)
+            adjusted_down_expert = nvfp4.down_expert * (
+                max_down_input / nvfp4.down_input
+            )
+        else:
+            max_down_input = None
+            adjusted_down_expert = None
+
         gate_up_quant, gate_up_scales = strategy.quantize(
             gate_up,
             self._token_group_size,
-            nvfp4.down_input if nvfp4 else None,
+            max_down_input,
         )
 
         down_inputs = (gate_up_quant, gate_up_scales) + expert_inputs[2:]
@@ -308,7 +327,7 @@ class MoEQuantized(MoE):
         down = strategy.grouped_matmul(
             self.down_proj,
             down_scales,
-            expert_scales=nvfp4.down_expert if nvfp4 else None,
+            expert_scales=adjusted_down_expert,
             expert_inputs=down_inputs,
         )
 
