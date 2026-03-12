@@ -149,10 +149,10 @@ struct SHMEMScope(Equatable, ImplicitlyCopyable):
     comptime warp = Self("_warp")
     """Execute RMA operation at warp scope (NVIDIA extension)."""
 
-    fn __init__(out self, value: StaticString):
+    def __init__(out self, value: StaticString):
         self.value = value
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self.value == other.value
 
 
@@ -188,10 +188,10 @@ struct SHMEMUniqueID(ImplicitlyCopyable):
 
     var data: InlineArray[Byte, 128]
 
-    fn __init__(out self):
+    def __init__(out self):
         self.data = InlineArray[Byte, 128](fill=0)
 
-    fn __copyinit__(out self, copy: Self):
+    def __copyinit__(out self, copy: Self):
         self.data = copy.data.copy()
 
 
@@ -200,7 +200,7 @@ struct SHMEMUniqueID(ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_init() raises:
+def shmem_init() raises:
     """A collective operation that allocates and initializes the resources used
     by the SHMEM library.
 
@@ -230,7 +230,7 @@ fn shmem_init() raises:
         ]()
 
 
-fn shmem_init_thread_mpi(ctx: DeviceContext, gpus_per_node: Int = -1) raises:
+def shmem_init_thread_mpi(ctx: DeviceContext, gpus_per_node: Int = -1) raises:
     """Modular-specific init that enables initializing SHMEM on one GPU per
     thread.
 
@@ -252,7 +252,7 @@ fn shmem_init_thread_mpi(ctx: DeviceContext, gpus_per_node: Int = -1) raises:
         ]()
 
 
-fn shmem_create_uniqueid(
+def shmem_create_uniqueid(
     server_ip: String, server_port: c_int
 ) raises -> SHMEMUniqueID:
     """Create a unique ID for rocSHMEM TCP bootstrap.
@@ -277,7 +277,7 @@ fn shmem_create_uniqueid(
         ]()
 
 
-fn shmem_init_thread_tcp(
+def shmem_init_thread_tcp(
     ctx: DeviceContext,
     var node_id: Int = -1,
     var total_nodes: Int = -1,
@@ -363,7 +363,7 @@ fn shmem_init_thread_tcp(
         ]()
 
 
-fn shmem_finalize():
+def shmem_finalize():
     """A collective operation that releases all resources used by SHMEM.
 
     `shmem_finalize` ends the SHMEM portion of a program previously initialized
@@ -401,7 +401,7 @@ fn shmem_finalize():
         ]()
 
 
-fn shmem_my_pe() -> c_int:
+def shmem_my_pe() -> c_int:
     """Returns the number of the calling PE.
 
     Returns:
@@ -420,7 +420,7 @@ fn shmem_my_pe() -> c_int:
         ]()
 
 
-fn shmem_n_pes() -> c_int:
+def shmem_n_pes() -> c_int:
     """Returns the number of PEs running in a program.
 
     Returns:
@@ -442,7 +442,7 @@ fn shmem_n_pes() -> c_int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_malloc[
+def shmem_malloc[
     dtype: DType
 ](size: UInt) raises -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
     """Collectively allocate symmetric memory.
@@ -484,7 +484,7 @@ fn shmem_malloc[
         ]()
 
 
-fn shmem_calloc[
+def shmem_calloc[
     dtype: DType
 ](count: UInt, size: UInt = UInt(size_of[dtype]())) raises -> UnsafePointer[
     Scalar[dtype], MutExternalOrigin
@@ -530,7 +530,7 @@ fn shmem_calloc[
         ]()
 
 
-fn shmem_free[
+def shmem_free[
     dtype: DType, //
 ](ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin]):
     """Collectively deallocate symmetric memory.
@@ -566,7 +566,7 @@ fn shmem_free[
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_team_my_pe(team: shmem_team_t = SHMEM_TEAM_NODE) -> c_int:
+def shmem_team_my_pe(team: shmem_team_t = SHMEM_TEAM_NODE) -> c_int:
     """Returns the number of the calling PE within a specified team.
 
     When team specifies a valid team, the shmem_team_my_pe routine returns the
@@ -601,7 +601,7 @@ fn shmem_team_my_pe(team: shmem_team_t = SHMEM_TEAM_NODE) -> c_int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_get[
+def shmem_get[
     dtype: DType,
     scope: SHMEMScope = SHMEMScope.default,
 ](
@@ -633,7 +633,7 @@ fn shmem_get[
         ]()
 
 
-fn shmem_get_nbi[
+def shmem_get_nbi[
     dtype: DType,
     scope: SHMEMScope = SHMEMScope.default,
 ](
@@ -668,7 +668,7 @@ fn shmem_get_nbi[
         ]()
 
 
-fn shmem_g[
+def shmem_g[
     dtype: DType
 ](source: UnsafePointer[Scalar[dtype], _], pe: c_int) -> Scalar[dtype]:
     """Copies one data item from a remote PE.
@@ -694,7 +694,7 @@ fn shmem_g[
         ]()
 
 
-fn shmem_put[
+def shmem_put[
     dtype: DType,
     //,
     kind: SHMEMScope = SHMEMScope.default,
@@ -731,7 +731,7 @@ fn shmem_put[
         ]()
 
 
-fn shmem_put_nbi[
+def shmem_put_nbi[
     dtype: DType,
     //,
     kind: SHMEMScope = SHMEMScope.default,
@@ -770,7 +770,7 @@ fn shmem_put_nbi[
         ]()
 
 
-fn shmem_p[
+def shmem_p[
     dtype: DType
 ](
     dest: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -806,7 +806,7 @@ fn shmem_p[
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_put_signal_nbi[
+def shmem_put_signal_nbi[
     dtype: DType
 ](
     dest: UnsafePointer[Scalar[dtype], _],
@@ -886,7 +886,7 @@ fn shmem_put_signal_nbi[
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_barrier_all():
+def shmem_barrier_all():
     """Registers the arrival of a PE at a barrier and blocks the PE until all
     other PEs arrive at the barrier and all local updates and remote memory
     updates on the default context are completed.
@@ -917,7 +917,7 @@ fn shmem_barrier_all():
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_signal_wait_until(
+def shmem_signal_wait_until(
     sig_addr: UnsafePointer[mut=True, UInt64, _], cmp: c_int, cmp_value: UInt64
 ):
     """Wait for a variable on the local PE to change from a signaling operation.
@@ -956,7 +956,7 @@ fn shmem_signal_wait_until(
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_fence():
+def shmem_fence():
     """Ensures ordering of delivery of operations on symmetric data objects.
 
     All operations on symmetric data objects issued to a particular PE on the
@@ -987,7 +987,7 @@ fn shmem_fence():
 # be generalized to support both NVSHMEM and ROCSHMEM where possible.
 
 
-fn shmem_signal_op(
+def shmem_signal_op(
     sig_addr: UnsafePointer[mut=True, UInt64, _],
     signal: UInt64,
     sig_op: c_int,
@@ -1015,7 +1015,7 @@ fn shmem_signal_op(
         ]()
 
 
-fn shmem_barrier_all_on_stream(stream: DeviceStream) raises:
+def shmem_barrier_all_on_stream(stream: DeviceStream) raises:
     """
     Mechanism for synchronizing all PEs at once. This routine blocks the calling
     PE until all PEs have called nvshmem_barrier_all. In a multithreaded NVSHMEM
@@ -1043,7 +1043,7 @@ fn shmem_barrier_all_on_stream(stream: DeviceStream) raises:
         ]()
 
 
-fn shmem_module_init(device_function: DeviceFunction) raises:
+def shmem_module_init(device_function: DeviceFunction) raises:
     """
     Initializes the device state in the compiled function module so that it's
     able to perform SHMEM operations. Must have completed device
@@ -1073,7 +1073,7 @@ fn shmem_module_init(device_function: DeviceFunction) raises:
         ]()
 
 
-fn shmem_module_finalize(device_function: DeviceFunction) raises:
+def shmem_module_finalize(device_function: DeviceFunction) raises:
     """
     Finalizes the device state in the compiled function module and cleans up
     NVSHMEM operations. This should be called when NVSHMEM operations are no

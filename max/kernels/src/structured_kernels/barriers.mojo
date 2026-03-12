@@ -51,7 +51,7 @@ struct SmemBarriers[
         struct MySmem[...]:
             var barriers: SmemBarriers[num_group, num_accum, num_clc]
 
-            fn input_barriers(ref[AddressSpace.SHARED] self):
+            def input_barriers(ref[AddressSpace.SHARED] self):
                 return self.barriers.input_barriers()
         ```
     """
@@ -85,42 +85,42 @@ struct SmemBarriers[
 
     # ========== Accessors ==========
     @always_inline
-    fn input_barriers(ref[AddressSpace.SHARED] self) -> Self.InputBarriers:
+    def input_barriers(ref[AddressSpace.SHARED] self) -> Self.InputBarriers:
         """Returns input tile pipeline barriers (2 per group stage)."""
         return Self.InputBarriers(self.input_barriers_storage)
 
     @always_inline
-    fn accum_barriers(ref[AddressSpace.SHARED] self) -> Self.AccumBarriers:
+    def accum_barriers(ref[AddressSpace.SHARED] self) -> Self.AccumBarriers:
         """Returns accumulator pipeline barriers (2 per accum stage)."""
         return Self.AccumBarriers(self.accum_barriers_storage)
 
     @always_inline
-    fn clc_full(ref[AddressSpace.SHARED] self) -> Self.ClcBarriers:
+    def clc_full(ref[AddressSpace.SHARED] self) -> Self.ClcBarriers:
         """Returns CLC full barriers (1 per CLC stage)."""
         return Self.ClcBarriers(self.clc_full_storage)
 
     @always_inline
-    fn clc_empty(ref[AddressSpace.SHARED] self) -> Self.ClcBarriers:
+    def clc_empty(ref[AddressSpace.SHARED] self) -> Self.ClcBarriers:
         """Returns CLC empty barriers (1 per CLC stage)."""
         return Self.ClcBarriers(self.clc_empty_storage)
 
     @always_inline
-    fn clc_throttle(ref[AddressSpace.SHARED] self) -> Self.ClcThrottleBarriers:
+    def clc_throttle(ref[AddressSpace.SHARED] self) -> Self.ClcThrottleBarriers:
         """Returns CLC throttle barriers (2 per CLC stage)."""
         return Self.ClcThrottleBarriers(self.clc_throttle_storage)
 
     @always_inline
-    fn clc_response(ref[AddressSpace.SHARED] self) -> Self.ClcResponse:
+    def clc_response(ref[AddressSpace.SHARED] self) -> Self.ClcResponse:
         """Returns CLC response storage (1 UInt128 per CLC stage)."""
         return Self.ClcResponse(self.clc_response_storage)
 
     @always_inline
-    fn tmem_dealloc(ref[AddressSpace.SHARED] self) -> Self.TmemDealloc:
+    def tmem_dealloc(ref[AddressSpace.SHARED] self) -> Self.TmemDealloc:
         """Returns TMEM deallocation barrier."""
         return Self.TmemDealloc(self.tmem_dealloc_storage)
 
     @always_inline
-    fn tmem_addr(ref[AddressSpace.SHARED] self) -> Self.TmemAddr:
+    def tmem_addr(ref[AddressSpace.SHARED] self) -> Self.TmemAddr:
         """Returns TMEM address storage."""
         return Self.TmemAddr(self.tmem_addr_storage)
 
@@ -136,18 +136,18 @@ struct WarpGroupBarrier[num_threads: Int, barrier_id: Int = 0](
 
     @staticmethod
     @always_inline
-    fn arrive():
+    def arrive():
         """Signal arrival without blocking (non-blocking arrive)."""
         named_barrier_arrive[Int32(Self.num_threads)](Int32(Self.barrier_id))
 
     @staticmethod
     @always_inline
-    fn wait():
+    def wait():
         """Block until all threads have arrived."""
         named_barrier[Int32(Self.num_threads)](Int32(Self.barrier_id))
 
     @staticmethod
     @always_inline
-    fn sync():
+    def sync():
         """Full barrier: arrive and wait for all threads."""
         named_barrier[Int32(Self.num_threads)](Int32(Self.barrier_id))

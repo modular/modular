@@ -13,7 +13,7 @@
 """Provides APIs for registering MAX Graph operations."""
 
 
-fn register_internal(name: StaticString):
+def register_internal(name: StaticString):
     """
     This decorator registers a given mojo function as being an implementation
     of a mo op or a `mo.custom` op. This decorator is used for built-in
@@ -27,7 +27,7 @@ fn register_internal(name: StaticString):
 
     ```mojo
     @register_internal("mo.add")
-    fn my_op[...](...):
+    def my_op[...](...):
       ...
     ```
 
@@ -39,7 +39,7 @@ fn register_internal(name: StaticString):
     return
 
 
-fn __mogg_intrinsic_attr(intrin: StaticString):
+def __mogg_intrinsic_attr(intrin: StaticString):
     """
     Attaches the given intrinsic annotation onto the function.
     """

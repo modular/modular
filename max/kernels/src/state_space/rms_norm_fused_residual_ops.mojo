@@ -53,7 +53,7 @@ struct RMSNormFusedResidual:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         target: StaticString,
@@ -79,7 +79,7 @@ struct RMSNormFusedResidual:
 
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
             return input.load[width=width](
@@ -88,7 +88,7 @@ struct RMSNormFusedResidual:
 
         @parameter
         @always_inline
-        fn residual_input_fn[
+        def residual_input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
             return residual_input.load[width=width](
@@ -97,7 +97,7 @@ struct RMSNormFusedResidual:
 
         @parameter
         @always_inline
-        fn output_fn[
+        def output_fn[
             width: Int, _rank: Int, alignment: Int
         ](coords: IndexList[_rank], val: SIMD[dtype, width]):
             output._fused_store[width=width, element_alignment=alignment](
@@ -107,7 +107,7 @@ struct RMSNormFusedResidual:
 
         @parameter
         @always_inline
-        fn residual_output_fn[
+        def residual_output_fn[
             width: Int, _rank: Int, alignment: Int
         ](coords: IndexList[_rank], val: SIMD[dtype, width]):
             residual_output._fused_store[
@@ -135,7 +135,7 @@ struct RMSNormFusedResidual:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
         rank: Int,
     ](

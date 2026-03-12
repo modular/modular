@@ -34,7 +34,7 @@ comptime Strides3D = IndexList[3]
 comptime Strides4D = IndexList[4]
 
 
-fn varlen_selective_state_update_gpu[
+def varlen_selective_state_update_gpu[
     kernel_dtype: DType,
     DSTATE: Int,
     state_layout: Layout,
@@ -241,7 +241,7 @@ fn varlen_selective_state_update_gpu[
         )
 
 
-fn varlen_selective_scan_fwd_gpu[
+def varlen_selective_scan_fwd_gpu[
     kernel_dtype: DType,
     DSTATE: Int,
     u_layout: Layout,
@@ -472,7 +472,7 @@ fn varlen_selective_scan_fwd_gpu[
         )
 
 
-fn varlen_selective_state_update_cpu[
+def varlen_selective_state_update_cpu[
     kernel_dtype: DType,
     DSTATE: Int,
     state_layout: Layout,
@@ -528,7 +528,7 @@ fn varlen_selective_state_update_cpu[
     var has_state_batch_indices_bool = Bool(Int(has_state_batch_indices) != 0)
 
     @parameter
-    fn worker(idx: Int):
+    def worker(idx: Int):
         var b = idx // (nheads * dim)
         var remaining = idx % (nheads * dim)
         var h = remaining // dim
@@ -656,7 +656,7 @@ fn varlen_selective_state_update_cpu[
     sync_parallelize[worker](batch * nheads * dim)
 
 
-fn varlen_selective_scan_fwd_cpu[
+def varlen_selective_scan_fwd_cpu[
     kernel_dtype: DType,
     DSTATE: Int,
     u_layout: Layout,
@@ -720,7 +720,7 @@ fn varlen_selective_scan_fwd_cpu[
     var group_size = dim // ngroups
 
     @parameter
-    fn worker(d: Int):
+    def worker(d: Int):
         # Pre-load D and delta_bias for this dim
         var D_val = Float32(0.0)
         if has_D:

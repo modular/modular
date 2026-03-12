@@ -49,7 +49,7 @@ from shmem.ep_comm import (
 # This should eventually be moved to ffi.mojo with a more general global cache method
 # cache key is a string and cache value is a pointer.
 @always_inline
-fn global_cache_lookup(key: String) -> OpaquePointer[ExternalOrigin[mut=True]]:
+def global_cache_lookup(key: String) -> OpaquePointer[ExternalOrigin[mut=True]]:
     return external_call[
         "KGEN_CompilerRT_GetGlobalOrNull",
         OpaquePointer[ExternalOrigin[mut=True]],
@@ -57,7 +57,7 @@ fn global_cache_lookup(key: String) -> OpaquePointer[ExternalOrigin[mut=True]]:
 
 
 @always_inline
-fn global_cache_insert(key: String, value: OpaquePointer[mut=True, _]):
+def global_cache_insert(key: String, value: OpaquePointer[mut=True, _]):
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(key),
         value,
@@ -65,7 +65,7 @@ fn global_cache_insert(key: String, value: OpaquePointer[mut=True, _]):
 
 
 @always_inline
-fn pack_ptrs_array[
+def pack_ptrs_array[
     input_layout: Layout,
     //,
     ptr_type: DType,
@@ -95,7 +95,7 @@ fn pack_ptrs_array[
 
 
 @always_inline
-fn ep_dispatch_async_kernel_api[
+def ep_dispatch_async_kernel_api[
     token_fmt_type: TokenFormat,
     n_experts: Int,
     max_token_per_rank: Int,
@@ -176,7 +176,7 @@ fn ep_dispatch_async_kernel_api[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         # fmt: off
         return String(
             "input_dtype=", input_tokens.dtype,
@@ -240,7 +240,7 @@ fn ep_dispatch_async_kernel_api[
 
 
 @always_inline
-fn ep_dispatch_wait_kernel_api[
+def ep_dispatch_wait_kernel_api[
     token_fmt_type: TokenFormat,
     //,
     n_experts: Int,
@@ -323,7 +323,7 @@ fn ep_dispatch_wait_kernel_api[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         # fmt: off
         return String(
             "token_fmt_type=", token_fmt_type.get_type_name(),
@@ -373,7 +373,7 @@ fn ep_dispatch_wait_kernel_api[
 
 
 @always_inline
-fn ep_fused_dispatch_kernel_api[
+def ep_fused_dispatch_kernel_api[
     token_fmt_type: TokenFormat,
     dispatch_dtype: DType,
     //,
@@ -476,7 +476,7 @@ fn ep_fused_dispatch_kernel_api[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         # fmt: off
         return String(
             "token_fmt_type=", token_fmt_type.get_type_name(),
@@ -547,7 +547,7 @@ fn ep_fused_dispatch_kernel_api[
 
 
 @always_inline
-fn ep_combine_async_kernel_api[
+def ep_combine_async_kernel_api[
     combine_dtype: DType,
     hidden_size: Int,
     top_k: Int,
@@ -640,7 +640,7 @@ fn ep_combine_async_kernel_api[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         # fmt: off
         return String(
             "combine_dtype=", combine_dtype,
@@ -707,7 +707,7 @@ fn ep_combine_async_kernel_api[
 
 
 @always_inline
-fn ep_combine_wait_kernel_api[
+def ep_combine_wait_kernel_api[
     combine_dtype: DType,
     //,
     hidden_size: Int,
@@ -789,7 +789,7 @@ fn ep_combine_wait_kernel_api[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         # fmt: off
         return String(
             "combine_dtype=", combine_dtype,
@@ -837,7 +837,7 @@ fn ep_combine_wait_kernel_api[
 
 
 @always_inline
-fn ep_fused_combine_kernel_api[
+def ep_fused_combine_kernel_api[
     combine_dtype: DType,
     //,
     hidden_size: Int,
@@ -939,7 +939,7 @@ fn ep_fused_combine_kernel_api[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         # fmt: off
         return String(
             "combine_dtype=", combine_dtype,

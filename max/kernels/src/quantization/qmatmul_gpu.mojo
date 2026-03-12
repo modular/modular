@@ -58,7 +58,7 @@ from std.utils.numerics import get_accum_type
 
 
 @always_inline
-fn args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
+def args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
     comptime if swap:
         return (arg_1, arg_0)
     else:
@@ -66,7 +66,7 @@ fn args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
 
 
 @always_inline
-fn multistage_mma_q[
+def multistage_mma_q[
     BM: Int,
     BN: Int,
     BK: Int,
@@ -171,7 +171,7 @@ fn multistage_mma_q[
 
     @always_inline
     @parameter
-    fn _copy_tensor_to_sram[
+    def _copy_tensor_to_sram[
         thread_layout: Layout, swizzle: Bool
     ](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
         copy_dram_to_sram_async[thread_layout=thread_layout, swizzle=swizzle](
@@ -492,7 +492,7 @@ fn multistage_mma_q[
                 barrier()
 
 
-fn multistage_qgemm_kernel[
+def multistage_qgemm_kernel[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -722,7 +722,7 @@ fn multistage_qgemm_kernel[
 
     @always_inline
     @parameter
-    fn apply_epilogue():
+    def apply_epilogue():
         # This block is identical to the one used for f32 case
         # but putting this in a lambda function leads to test failures
         # TODO: Refactor to remove code duplication
@@ -944,7 +944,7 @@ fn multistage_qgemm_kernel[
 # with shape = IntTuple(IntTuple(64, TN),IntTuple(2, TK))
 # and stride = IntTuple(IntTuple(2, TK * 128),IntTuple(1, 128))
 @always_inline
-fn pack_Q_tile(input: SIMD[DType.uint8, 16]) -> SIMD[DType.uint32, 4]:
+def pack_Q_tile(input: SIMD[DType.uint8, 16]) -> SIMD[DType.uint32, 4]:
     # Q-tile is the smallest indivisible unit when performing gemm
     # operations with quantized matrices.
 
@@ -965,13 +965,13 @@ fn pack_Q_tile(input: SIMD[DType.uint8, 16]) -> SIMD[DType.uint32, 4]:
 
 
 @always_inline
-fn unpack_4bit_int(val: SIMD[DType.uint32, _], idx: Int) -> UInt8:
+def unpack_4bit_int(val: SIMD[DType.uint32, _], idx: Int) -> UInt8:
     var u32_val = rebind[UInt32](val)
     return (u32_val >> UInt32(idx * 4)).cast[DType.uint8]() & 0x0F
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
-fn repack_Q4_0_for_sm8x[
+def repack_Q4_0_for_sm8x[
     q_layout: Layout,
     repack_layout: Layout,
     scales_type: DType,
@@ -1008,7 +1008,7 @@ fn repack_Q4_0_for_sm8x[
 
     @always_inline
     @parameter
-    fn convert_bytes_to_bf16[
+    def convert_bytes_to_bf16[
         scales_type: DType
     ](input_bytes: SIMD[DType.uint8, _]) -> Scalar[scales_type]:
         var f32_values = bitcast[DType.float16, 1](input_bytes).cast[
@@ -1160,7 +1160,7 @@ fn repack_Q4_0_for_sm8x[
 # [K_groups, N]. The input is a uint8 tensor of shape
 # [K_groups * group_bytes, N].
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
-fn repack_GPTQ_for_sm8x[
+def repack_GPTQ_for_sm8x[
     in_layout: Layout,
     out_layout: Layout,
     scales_type: DType,
@@ -1200,7 +1200,7 @@ fn repack_GPTQ_for_sm8x[
 
     @always_inline
     @parameter
-    fn convert_bytes_to_bf16[
+    def convert_bytes_to_bf16[
         scales_type: DType
     ](input_bytes: SIMD[raw_scales_type, _]) -> Scalar[scales_type]:
         var f32_values = bitcast[DType.float16, 1](input_bytes).cast[
@@ -1398,7 +1398,7 @@ fn repack_GPTQ_for_sm8x[
 
 
 @always_inline
-fn q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
+def q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
     comptime num_warp_k_partitions = config.num_warp_k_partitions
     comptime block_mnk = config.block_tile_shape
     comptime num_pipeline_stages = config.num_pipeline_stages
@@ -1420,7 +1420,7 @@ fn q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
     return max(c_usage, Int(smem_usage), Int(slice_k_reduction))
 
 
-fn multistage_gemm_q[
+def multistage_gemm_q[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1529,7 +1529,7 @@ fn multistage_gemm_q[
 
 
 @always_inline
-fn matmul_gpu_qint4[
+def matmul_gpu_qint4[
     c_type: DType,
     a_type: DType,
     //,
@@ -1556,7 +1556,7 @@ fn matmul_gpu_qint4[
 
 
 @always_inline
-fn matmul_gpu_qint4_impl[
+def matmul_gpu_qint4_impl[
     c_type: DType,
     a_type: DType,
     //,
@@ -2056,7 +2056,7 @@ fn matmul_gpu_qint4_impl[
 
 
 @always_inline
-fn gpu_qint4_repack_Q4_0[
+def gpu_qint4_repack_Q4_0[
     b_shape: DimList,
     //,
     target: StaticString,
@@ -2102,7 +2102,7 @@ fn gpu_qint4_repack_Q4_0[
 
 
 @always_inline
-fn gpu_qint4_repack_GPTQ[
+def gpu_qint4_repack_GPTQ[
     group_size: Int,
     target: StaticString,
 ](
