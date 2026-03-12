@@ -3005,22 +3005,18 @@ static LogicalResult processTraitSignatureDecorator(ExprNode *decorator,
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "register_passable") {
       // MOCO-3233: Mark deprecated and remove after 26.2.
-      shared.emitWarning(decorator->getLoc(),
-                         "@register_passable is deprecated, conform to "
-                         "RegisterPassable instead");
-      traitOp.setConvention(TypeConvention::RegisterPassable);
-      return success();
+      shared.emitError(decorator->getLoc(),
+                       Diag::DiagID::err_decorator_replaced_with_trait,
+                       "@register_passable", "RegisterPassable");
     }
     // We don't process @explicit_destroy here, we do it in resolveSignature.
   }
   if (auto callNode = dyn_cast<CallNode>(decorator)) {
     if (isTrivialRegisterPassable(callNode)) {
       // MOCO-3189: Mark deprecated and remove after 26.2.
-      shared.emitWarning(decorator->getLoc(),
-                         "@register_passable(\"trivial\") is deprecated, "
-                         "conform to TrivialRegisterPassable instead");
-      traitOp.setConvention(TypeConvention::RegisterPassableTrivial);
-      return success();
+      shared.emitError(
+          decorator->getLoc(), Diag::DiagID::err_decorator_replaced_with_trait,
+          "@register_passable(\"trivial\")", "TrivialRegisterPassable");
     }
   }
   return failure();
@@ -3087,16 +3083,11 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
 
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "register_passable") {
-      // MOCO-3233: Mark deprecated and remove after 26.2.
-      shared.emitWarning(decorator->getLoc(),
-                         "@register_passable is deprecated, conform to "
-                         "RegisterPassable instead");
-      structOp.setConvention(TypeConvention::RegisterPassable);
-      // RP types implicitly conforms to Movable
-      if (ASTDecl *decl = shared.lookupBuiltinTrait("Movable", parentDecl,
-                                                    decorator->getLoc()))
-        traits.push_back(decl->getSymbolRef());
-      return success();
+      shared.emitError(decorator->getLoc(),
+                       Diag::DiagID::err_decorator_replaced_with_trait,
+                       "@register_passable", "RegisterPassable");
+
+      return failure();
     }
     // @align without parentheses is an error
     if (declRef->spelling == "align") {
@@ -3111,18 +3102,11 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
   if (auto callNode = dyn_cast<CallNode>(decorator)) {
     if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
       if (isTrivialRegisterPassable(callNode)) {
-        // MOCO-3189: Mark deprecated and remove after 26.2.
-        shared.emitWarning(decorator->getLoc(),
-                           "@register_passable(\"trivial\") is deprecated, "
-                           "conform to TrivialRegisterPassable instead");
-        structOp.setConvention(TypeConvention::RegisterPassableTrivial);
-        if (ASTDecl *decl = shared.lookupBuiltinTrait(
-                "ImplicitlyCopyable", parentDecl, decorator->getLoc()))
-          traits.push_back(decl->getSymbolRef());
-        if (ASTDecl *decl = shared.lookupBuiltinTrait("Movable", parentDecl,
-                                                      decorator->getLoc()))
-          traits.push_back(decl->getSymbolRef());
-        return success();
+        shared.emitError(decorator->getLoc(),
+                         Diag::DiagID::err_decorator_replaced_with_trait,
+                         "@register_passable(\"trivial\")",
+                         "TrivialRegisterPassable");
+        return failure();
       }
 
       // @__nonmaterializable(TargetType)

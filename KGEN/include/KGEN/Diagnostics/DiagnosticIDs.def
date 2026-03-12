@@ -145,6 +145,8 @@ DIAG(err_comparison_result_types_chained_comparison, Error, Parser,
      "comparison result types of chained comparison must match")
 DIAG(err_comprehensions_supported_compile_time, Error, Parser,
      "comprehensions are not supported at compile time; move into a function and call it")
+DIAG(err_decorator_replaced_with_trait, Error, Parser,
+     "decorator {0} is removed, conform to {1} trait instead")
 DIAG(err_decorators_supported_statement, Error, Parser,
      "decorators not supported on this statement")
 DIAG(err_defining_main_within_package_yet, Error, Parser,

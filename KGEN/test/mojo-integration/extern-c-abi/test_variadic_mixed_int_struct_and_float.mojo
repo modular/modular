@@ -9,7 +9,7 @@
 # RUN: %t.dir/test_variadic_mixed_int_struct_and_float | FileCheck %s
 
 # Regression test: when a multi-field struct forces the ABI coercion path,
-# a single-field @register_passable float struct (flattened to bare f32 at
+# a single-field RegisterPassable float struct (flattened to bare f32 at
 # the POP level) must still be passed correctly as a variadic argument.
 # On ARM64, this requires float→int bitcast to prevent LLVM's float→double
 # promotion.

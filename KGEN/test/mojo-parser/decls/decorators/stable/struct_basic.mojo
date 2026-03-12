@@ -24,10 +24,11 @@ struct UnstableStruct:
 
 
 # Verify @stable works when combined with other decorators.
-# The choice of @register_passable is arbitrary - any struct decorator
-# would work. This test ensures decorator composition doesn't break @stable.
+# The choice of @fieldwise_init is arbitrary - any struct decorator
+# works. This test ensures decorator composition doesn't break @stable.
 # CHECK: lit.struct.decl @StableWithOtherDecorators
 # CHECK-SAME: hasStableDecorator
 @stable
+@fieldwise_init
 struct StableWithOtherDecorators(RegisterPassable):
     pass

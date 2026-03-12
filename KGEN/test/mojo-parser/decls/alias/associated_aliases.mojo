@@ -462,7 +462,7 @@ trait TraitWithAliasReturnMethod:
         ...
 
 
-# TODO(MOCO-1109): also check that this works with the thunk generation for @register_passable methods
+# TODO(MOCO-1109): also check that this works with the thunk generation for RegisterPassable methods
 # CHECK-LABEL: lit.struct.decl @GenericStructWithAliasMethod<Z: !ATrait>
 @fieldwise_init
 struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasReturnMethod):
@@ -514,7 +514,7 @@ trait TraitWithAliasReturnMethod:
         ...
 
 
-# TODO(MOCO-1109): also check that this works with the thunk generation for @register_passable methods
+# TODO(MOCO-1109): also check that this works with the thunk generation for RegisterPassable methods
 @fieldwise_init
 struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasReturnMethod):
     comptime T: ATrait = Self.Z
@@ -668,7 +668,7 @@ trait TraitWithSelfDotAliasReturnMethod:
         ...
 
 
-# TODO(MOCO-1109): also check that this works with the thunk generation for @register_passable methods
+# TODO(MOCO-1109): also check that this works with the thunk generation for RegisterPassable methods
 # CHECK-LABEL: lit.struct.decl @GenericStructWithSelfDotAliasReturnMethod<Z: !ATrait>
 @fieldwise_init
 struct GenericStructWithSelfDotAliasReturnMethod[Z: ATrait](
@@ -728,7 +728,7 @@ trait TraitWithSelfDotAliasReturnMethod:
         ...
 
 
-# TODO(MOCO-1109): also check that this works with the thunk generation for @register_passable methods
+# TODO(MOCO-1109): also check that this works with the thunk generation for RegisterPassable methods
 @fieldwise_init
 struct GenericStructWithSelfDotAliasReturnMethod[Z: ATrait](
     TraitWithSelfDotAliasReturnMethod

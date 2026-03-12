@@ -17,13 +17,12 @@ struct AlignedBuffer[alignment: Int]:
     var data: Int
 
 
-# Test parametric alignment with @register_passable
+# Test parametric alignment with TrivialRegisterPassable
 # CHECK-LABEL: lit.struct.decl @AlignedTrivialParam
 # CHECK-SAME: register_passable_trivial
 # CHECK-SAME: minAlignment = #lit.struct.extract<:!Int n, "_mlir_value"> : index
 @align(n)
-@register_passable("trivial")
-struct AlignedTrivialParam[n: Int]:
+struct AlignedTrivialParam[n: Int](TrivialRegisterPassable):
     var value: __mlir_type.index
 
 

@@ -60,7 +60,7 @@ fn test_parametric_align_stack() raises:
 
 
 fn test_parametric_align_trivial() raises:
-    """Test parametric alignment on @register_passable structs."""
+    """Test parametric alignment on RegisterPassable structs."""
     assert_equal(align_of[AlignedTrivialParam[32]](), 32)
     assert_equal(align_of[AlignedTrivialParam[64]](), 64)
 

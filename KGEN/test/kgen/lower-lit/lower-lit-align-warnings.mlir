@@ -1,7 +1,7 @@
 // RUN: kgen-opt -verify-parameters -lower-lit -split-input-file -verify-diagnostics %s
 
 //===----------------------------------------------------------------------===//
-// @align on single-element @register_passable struct should NOT warn.
+// @align on single-element RegisterPassable struct should NOT warn.
 // The struct is preserved (not flattened) to maintain alignment metadata.
 //===----------------------------------------------------------------------===//
 

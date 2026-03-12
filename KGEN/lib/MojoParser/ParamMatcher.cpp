@@ -127,7 +127,6 @@ ParamMatcher::FailableScope::FailableScope(ParamMatcher &matcher)
 // something like:
 //
 // @fieldwise_init
-// @register_passable("trivial")
 // struct NDBuffer[
 //     mut: Bool,
 //     //,
@@ -135,7 +134,7 @@ ParamMatcher::FailableScope::FailableScope(ParamMatcher &matcher)
 //     rank: Int,
 //     origin: Origin[mut=mut],
 //     ...
-// ](
+// ](TrivialRegisterPassable):
 //   @implicit
 //   fn __init__(
 //       out self,
