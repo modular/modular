@@ -20,7 +20,7 @@ trait MMAOperandDescriptor(TrivialRegisterPassable):
     """
 
     @always_inline
-    fn __add__(self, offset: Int) -> Self:
+    def __add__(self, offset: Int) -> Self:
         """Adds an offset to the operand descriptor.
 
         Args:

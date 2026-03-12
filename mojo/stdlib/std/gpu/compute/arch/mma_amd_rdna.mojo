@@ -33,7 +33,7 @@ from ..mma import _has_type, _has_shape, _unsupported_mma_op
 
 
 @always_inline
-fn _load_matrix_a_amd_rdna[
+def _load_matrix_a_amd_rdna[
     m: Int, n: Int, k: Int
 ](
     a_ptr: UnsafePointer[Float16, _],
@@ -55,7 +55,7 @@ fn _load_matrix_a_amd_rdna[
 
 
 @always_inline
-fn _load_matrix_a_amd_rdna[
+def _load_matrix_a_amd_rdna[
     m: Int, n: Int, k: Int
 ](
     a_ptr: UnsafePointer[BFloat16, _],
@@ -77,7 +77,7 @@ fn _load_matrix_a_amd_rdna[
 
 
 @always_inline
-fn _load_matrix_b_amd_rdna[
+def _load_matrix_b_amd_rdna[
     m: Int, n: Int, k: Int
 ](
     b_ptr: UnsafePointer[Float16, _],
@@ -99,7 +99,7 @@ fn _load_matrix_b_amd_rdna[
 
 
 @always_inline
-fn _load_matrix_b_amd_rdna[
+def _load_matrix_b_amd_rdna[
     m: Int, n: Int, k: Int
 ](
     b_ptr: UnsafePointer[BFloat16, _],
@@ -121,7 +121,7 @@ fn _load_matrix_b_amd_rdna[
 
 
 @always_inline
-fn load_matrix_a_amd_rdna16x16x16(
+def load_matrix_a_amd_rdna16x16x16(
     a_ptr: UnsafePointer[Float16, _],
     tile_row: Int,
     tile_col: Int,
@@ -151,7 +151,7 @@ fn load_matrix_a_amd_rdna16x16x16(
 
 
 @always_inline
-fn load_matrix_a_amd_rdna16x16x16(
+def load_matrix_a_amd_rdna16x16x16(
     a_ptr: UnsafePointer[BFloat16, _],
     tile_row: Int,
     tile_col: Int,
@@ -181,7 +181,7 @@ fn load_matrix_a_amd_rdna16x16x16(
 
 
 @always_inline
-fn load_matrix_b_amd_rdna16x16x16(
+def load_matrix_b_amd_rdna16x16x16(
     b_ptr: UnsafePointer[Float16, _],
     tile_row: Int,
     tile_col: Int,
@@ -211,7 +211,7 @@ fn load_matrix_b_amd_rdna16x16x16(
 
 
 @always_inline
-fn load_matrix_b_amd_rdna16x16x16(
+def load_matrix_b_amd_rdna16x16x16(
     b_ptr: UnsafePointer[BFloat16, _],
     tile_row: Int,
     tile_col: Int,
@@ -246,7 +246,7 @@ fn load_matrix_b_amd_rdna16x16x16(
 
 
 @always_inline
-fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     """Performs AMD RDNA3+ WMMA (Wave Matrix Multiply-Accumulate) operations.
 
     This function implements matrix multiply-accumulate operations for AMD RDNA3+
@@ -354,7 +354,7 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     """
 
     @parameter
-    fn get_intrinsic_name() -> String:
+    def get_intrinsic_name() -> String:
         # ===------------------------------------------------------------------===#
         # F32 = F16 * F16 + F32 (16x16x16)
         # Or

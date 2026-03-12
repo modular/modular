@@ -35,7 +35,7 @@ from std.sys import CompilationTarget, is_amd_gpu, is_nvidia_gpu
 
 
 @always_inline
-fn load_matrix_a[
+def load_matrix_a[
     m: Int, n: Int, k: Int
 ](
     a_ptr: UnsafePointer[mut=False, Float32, _],
@@ -81,7 +81,7 @@ fn load_matrix_a[
 
 
 @always_inline
-fn load_matrix_a[
+def load_matrix_a[
     m: Int, n: Int, k: Int
 ](
     a_ptr: UnsafePointer[mut=False, Float16, _],
@@ -129,7 +129,7 @@ fn load_matrix_a[
 
 
 @always_inline
-fn load_matrix_a[
+def load_matrix_a[
     m: Int, n: Int, k: Int
 ](
     a_ptr: UnsafePointer[mut=False, BFloat16, _],
@@ -205,7 +205,7 @@ fn load_matrix_a[
 
 
 @always_inline
-fn load_matrix_a_amd[
+def load_matrix_a_amd[
     m: Int, n: Int, k: Int
 ](
     a_ptr: UnsafePointer[mut=False, Float32, _],
@@ -241,7 +241,7 @@ fn load_matrix_a_amd[
 
 
 @always_inline
-fn load_matrix_a_amd[
+def load_matrix_a_amd[
     dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
     a_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
@@ -311,7 +311,7 @@ fn load_matrix_a_amd[
 
 
 @always_inline
-fn load_matrix_b[
+def load_matrix_b[
     m: Int, n: Int, k: Int
 ](
     b_ptr: UnsafePointer[mut=False, Float32, _],
@@ -354,7 +354,7 @@ fn load_matrix_b[
 
 
 @always_inline
-fn load_matrix_b[
+def load_matrix_b[
     m: Int, n: Int, k: Int
 ](
     b_ptr: UnsafePointer[mut=False, Float16, _],
@@ -397,7 +397,7 @@ fn load_matrix_b[
 
 
 @always_inline
-fn load_matrix_b[
+def load_matrix_b[
     m: Int, n: Int, k: Int
 ](
     b_ptr: UnsafePointer[mut=False, BFloat16, _],
@@ -457,7 +457,7 @@ fn load_matrix_b[
 
 
 @always_inline
-fn load_matrix_b_amd[
+def load_matrix_b_amd[
     m: Int, n: Int, k: Int
 ](
     b_ptr: UnsafePointer[mut=False, Float32, _],
@@ -489,7 +489,7 @@ fn load_matrix_b_amd[
 
 
 @always_inline
-fn load_matrix_b_amd[
+def load_matrix_b_amd[
     dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
     b_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
@@ -561,7 +561,7 @@ fn load_matrix_b_amd[
 
 
 @always_inline
-fn _store_matrix_d_nvidia[
+def _store_matrix_d_nvidia[
     dtype: DType, //, m: Int, n: Int, k: Int
 ](
     d_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
@@ -612,7 +612,7 @@ fn _store_matrix_d_nvidia[
 
 
 @always_inline
-fn _store_matrix_d_amd[
+def _store_matrix_d_amd[
     dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
     d_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
@@ -679,7 +679,7 @@ fn _store_matrix_d_amd[
 
 
 @always_inline
-fn store_matrix_d[
+def store_matrix_d[
     dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
     d_ptr: UnsafePointer[mut=True, Scalar[dtype], _],

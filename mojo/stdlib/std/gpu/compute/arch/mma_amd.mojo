@@ -48,12 +48,12 @@ struct _AMD_F8F6F4_MATRIX_FORMAT(TrivialRegisterPassable):
     comptime float6_e3m2 = Self(3)
     comptime float4_e2m1 = Self(4)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
 
 @always_inline
-fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     comptime if _is_amd_rdna():
         # Use WMMA instructions for RDNA3+ consumer GPUs.
         _mma_wmma_rdna(d, a, b, c)
@@ -67,7 +67,7 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     comptime bf8_dtype = get_amd_bf8_dtype()
 
     @parameter
-    fn _f8f6f4_intrinsic() -> SIMD[d.dtype, d.size]:
+    def _f8f6f4_intrinsic() -> SIMD[d.dtype, d.size]:
         comptime assert _cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"
 
         comptime intrinsic_name = "llvm.amdgcn.mfma.scale.f32.16x16x128.f8f6f4" if _has_shape[
@@ -77,7 +77,7 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         ) else "llvm.amdgcn.mfma.scale.f32.32x32x64.f8f6f4"
 
         @parameter
-        fn _matrix_format[dtype: DType]() -> _AMD_F8F6F4_MATRIX_FORMAT:
+        def _matrix_format[dtype: DType]() -> _AMD_F8F6F4_MATRIX_FORMAT:
             return (
                 _AMD_F8F6F4_MATRIX_FORMAT.float8_e4m3 if dtype
                 == fp8_dtype else _AMD_F8F6F4_MATRIX_FORMAT.float8_e5m2

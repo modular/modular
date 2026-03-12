@@ -33,7 +33,7 @@ from ..mma import _has_type, _has_shape, _unsupported_mma_op
 
 
 @always_inline
-fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+def _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F16 = F16 * F16 + F16
     # ===------------------------------------------------------------------===#

@@ -57,7 +57,7 @@ The warp size is a fundamental parameter that affects:
 """
 
 
-fn _resolve_warp_size() -> Int:
+def _resolve_warp_size() -> Int:
     comptime if is_nvidia_gpu():
         return 32
     elif _is_amd_rdna():
@@ -87,7 +87,7 @@ Warpgroup is used for wgmma instructions on Hopper and tcgen05.ld on Blackwell.
 """
 
 
-fn _resolve_warpgroup_size() -> Int:
+def _resolve_warpgroup_size() -> Int:
     # We can't constrain it here because the constant is used on host for
     # compilation test w/o nvidia GPUs.
     # comptime assert is_nvidia_gpu(), "Warpgroup only applies to Nvidia GPUs."
@@ -104,7 +104,7 @@ comptime MAX_THREADS_PER_BLOCK_METADATA = _resolve_max_threads_per_block_metadat
 give a hint to the compiler about the max threads per block that's used."""
 
 
-fn _resolve_max_threads_per_block_metadata() -> __mlir_type.`!kgen.string`:
+def _resolve_max_threads_per_block_metadata() -> __mlir_type.`!kgen.string`:
     comptime if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
         return "nvvm.maxntid".value
     elif is_amd_gpu() or has_amd_gpu_accelerator():

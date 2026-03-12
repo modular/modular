@@ -36,7 +36,7 @@ from std.gpu.primitives.warp import shuffle_down
 
 
 @always_inline
-fn tc_reduce_gevm_8x[
+def tc_reduce_gevm_8x[
     out_type: DType, in_type: DType, simd_width: Int
 ](val1: SIMD[in_type, simd_width], val2: SIMD[in_type, simd_width]) -> SIMD[
     out_type, simd_width
@@ -74,7 +74,7 @@ fn tc_reduce_gevm_8x[
 
 
 @always_inline
-fn tc_reduce_gevm_4x[
+def tc_reduce_gevm_4x[
     out_type: DType, in_type: DType, simd_width: Int
 ](val1: SIMD[in_type, simd_width]) -> SIMD[out_type, simd_width]:
     """Performs a 4x GEVM reduction using tensor cores.
@@ -106,7 +106,7 @@ fn tc_reduce_gevm_4x[
 
 
 @always_inline
-fn tc_reduce[
+def tc_reduce[
     in_type: DType, simd_width: Int, //, out_type: DType
 ](val: SIMD[in_type, simd_width]) -> Scalar[out_type]:
     """Performs tensor core based reduction on a SIMD vector.
@@ -134,7 +134,7 @@ fn tc_reduce[
 
 
 @always_inline
-fn _tc_reduce_vector[
+def _tc_reduce_vector[
     in_type: DType, simd_width: Int, //, out_type: DType
 ](val: SIMD[in_type, simd_width]) -> Scalar[out_type]:
     """Internal vector reduction implementation using tensor cores.
@@ -226,7 +226,7 @@ fn _tc_reduce_vector[
 
 
 @always_inline
-fn _tc_reduce_scalar[
+def _tc_reduce_scalar[
     in_type: DType, //, out_type: DType
 ](val: Scalar[in_type]) -> Scalar[out_type]:
     """Internal scalar reduction implementation using tensor cores.

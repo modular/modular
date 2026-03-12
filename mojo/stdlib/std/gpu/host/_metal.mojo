@@ -30,7 +30,7 @@ comptime MTLDevice = UnsafePointer[_MTLDevice, MutAnyOrigin]
 # Use `var metal_device: MTLDevice = metal_device(ctx)` where ctx is a `DeviceContext` to get access to the
 # underlying MTLDevice.
 @always_inline
-fn metal_device(ctx: DeviceContext) raises -> MTLDevice:
+def metal_device(ctx: DeviceContext) raises -> MTLDevice:
     var result = MTLDevice()
     # const char *AsyncRT_DeviceContext_metal_device(MTL::Device **result, const DeviceContext *ctx)
     _checked(

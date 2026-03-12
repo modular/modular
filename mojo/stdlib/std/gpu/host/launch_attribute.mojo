@@ -158,7 +158,7 @@ struct LaunchAttributeID(Equatable, TrivialRegisterPassable, Writable):
     the launch."""
 
     @always_inline("nodebug")
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Checks if two `LaunchAttribute` instances are equal.
 
         Compares the underlying integer values of the attributes.
@@ -172,7 +172,7 @@ struct LaunchAttributeID(Equatable, TrivialRegisterPassable, Writable):
         return self._value == other._value
 
     @always_inline("nodebug")
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Checks if two `LaunchAttribute` instances are not equal.
 
         Args:
@@ -184,7 +184,7 @@ struct LaunchAttributeID(Equatable, TrivialRegisterPassable, Writable):
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the string representation of the attribute to a writer.
 
         Args:
@@ -210,11 +210,11 @@ struct LaunchAttributeValue(Defaultable, TrivialRegisterPassable):
     var _storage: Self._storage_type
     """Internal storage for the attribute value, represented as a fixed-size byte array."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initializes a new `LaunchAttributeValue` with zeroed storage."""
         self._storage = StaticTuple[UInt8, 64](0)
 
-    fn __init__(out self, policy: AccessPolicyWindow):
+    def __init__(out self, policy: AccessPolicyWindow):
         """Initializes a `LaunchAttributeValue` from an `AccessPolicyWindow`.
 
         Args:
@@ -224,7 +224,7 @@ struct LaunchAttributeValue(Defaultable, TrivialRegisterPassable):
         var ptr = UnsafePointer(to=tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
 
-    fn __init__(out self, dim: Dim):
+    def __init__(out self, dim: Dim):
         """Initializes a LaunchAttributeValue from a Dim (dimension) object.
 
         Args:
@@ -236,7 +236,7 @@ struct LaunchAttributeValue(Defaultable, TrivialRegisterPassable):
         var ptr = UnsafePointer(to=tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
 
-    fn __init__(out self, value: Bool):
+    def __init__(out self, value: Bool):
         """Initializes a LaunchAttributeValue from a boolean object..
 
         Args:
@@ -271,7 +271,7 @@ struct AccessProperty(Equatable, TrivialRegisterPassable, Writable):
     """Persisting access is more likely to persist in cache, optimized for reused data."""
 
     @always_inline("nodebug")
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Compares two `AccessProperty` instances for equality.
 
         Args:
@@ -283,7 +283,7 @@ struct AccessProperty(Equatable, TrivialRegisterPassable, Writable):
         return self._value == other._value
 
     @always_inline("nodebug")
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Compares two `AccessProperty` instances for inequality.
 
         Args:
@@ -295,7 +295,7 @@ struct AccessProperty(Equatable, TrivialRegisterPassable, Writable):
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the `AccessProperty` to a writer.
 
         Args:
@@ -326,13 +326,13 @@ struct LaunchAttribute(Defaultable, TrivialRegisterPassable):
     var value: LaunchAttributeValue
     """The value associated with this launch attribute."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initializes a new LaunchAttribute with IGNORE ID and zeroed value."""
         self.id = LaunchAttributeID.IGNORE
         self.__pad = {}
         self.value = {}
 
-    fn __init__(out self, id: LaunchAttributeID, value: LaunchAttributeValue):
+    def __init__(out self, id: LaunchAttributeID, value: LaunchAttributeValue):
         """Initializes a `LaunchAttribute` with a specific ID and value.
 
         Args:
@@ -343,7 +343,7 @@ struct LaunchAttribute(Defaultable, TrivialRegisterPassable):
         self.__pad = {}
         self.value = value
 
-    fn __init__(out self, policy: AccessPolicyWindow):
+    def __init__(out self, policy: AccessPolicyWindow):
         """Initializes a `LaunchAttribute` from an `AccessPolicyWindow`.
 
         Creates a launch attribute with `ACCESS_POLICY_WINDOW` ID and the provided policy.
@@ -356,7 +356,7 @@ struct LaunchAttribute(Defaultable, TrivialRegisterPassable):
         self.value = LaunchAttributeValue(policy)
 
     @staticmethod
-    fn from_cluster_dim(dim: Dim) -> Self:
+    def from_cluster_dim(dim: Dim) -> Self:
         """Creates a `LaunchAttribute` for cluster dimensions.
 
         Creates a launch attribute with `CLUSTER_DIMENSION` ID and the provided dimensions.
@@ -408,7 +408,7 @@ struct AccessPolicyWindow(Defaultable, TrivialRegisterPassable, Writable):
     """AccessProperty applied to miss segments within the window.
     Must be either NORMAL or STREAMING."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initializes a new AccessPolicyWindow with default values."""
         self.base_ptr = {}
         self.num_bytes = 0
@@ -416,7 +416,7 @@ struct AccessPolicyWindow(Defaultable, TrivialRegisterPassable, Writable):
         self.hit_prop = AccessProperty.NORMAL
         self.miss_prop = AccessProperty.NORMAL
 
-    fn __init__[
+    def __init__[
         T: AnyType
     ](
         out self,
@@ -450,7 +450,7 @@ struct AccessPolicyWindow(Defaultable, TrivialRegisterPassable, Writable):
         self.miss_prop = miss_prop
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the `AccessPolicyWindow` to a writer.
 
         This method formats all the fields of the AccessPolicyWindow into a human-readable

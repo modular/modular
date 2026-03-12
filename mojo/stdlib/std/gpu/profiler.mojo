@@ -59,7 +59,7 @@ struct ProfileBlock[enabled: Bool = False](ImplicitlyCopyable):
     """Start time of the profiling block in nanoseconds, captured using perf_counter_ns()."""
 
     @always_inline
-    fn __init__(out self, name: StaticString):
+    def __init__(out self, name: StaticString):
         """Initialize a new ProfileBlock.
 
         Args:
@@ -75,7 +75,7 @@ struct ProfileBlock[enabled: Bool = False](ImplicitlyCopyable):
             self.loc = SourceLocation(0, 0, "")
 
     @always_inline
-    fn __enter__(mut self):
+    def __enter__(mut self):
         """Enter the profiling block and record start time if enabled."""
 
         comptime if not Self.enabled:
@@ -83,7 +83,7 @@ struct ProfileBlock[enabled: Bool = False](ImplicitlyCopyable):
         self.start_time = perf_counter_ns()
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         """Exit the profiling block, record end time and print timing if enabled.
         """
 

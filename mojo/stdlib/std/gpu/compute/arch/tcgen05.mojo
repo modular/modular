@@ -26,7 +26,7 @@ from std.memory import bitcast
 
 
 @always_inline("nodebug")
-fn check_blackwell_constraint():
+def check_blackwell_constraint():
     """Compile-time constraint ensuring Blackwell hardware is targeted."""
     comptime assert _has_blackwell_tcgen05(), (
         "The tcgen05 instructions are only applicable on nVidia Blackwell"
@@ -46,7 +46,7 @@ struct TensorMemory(TrivialRegisterPassable):
     """The number of columns in the tensor memory."""
 
     @always_inline
-    fn __init__(out self, num_cols: UInt32):
+    def __init__(out self, num_cols: UInt32):
         """Initialize the TensorMemory struct.
 
         Args:
@@ -60,7 +60,7 @@ struct TensorMemory(TrivialRegisterPassable):
 
 
 @always_inline
-fn tcgen05_alloc[
+def tcgen05_alloc[
     cta_group: Int32
 ](
     ptr_tmem_addr: UnsafePointer[
@@ -96,7 +96,7 @@ fn tcgen05_alloc[
 
 
 @always_inline
-fn tcgen05_dealloc[cta_group: Int32](tmem_addr: UInt32, num_cols: UInt32):
+def tcgen05_dealloc[cta_group: Int32](tmem_addr: UInt32, num_cols: UInt32):
     """Deallocates tensor memory allocated by tcgen05_alloc().
 
     This function deallocates tensor memory that was previously allocated using
@@ -125,7 +125,7 @@ fn tcgen05_dealloc[cta_group: Int32](tmem_addr: UInt32, num_cols: UInt32):
 
 
 @always_inline
-fn tcgen05_ld[
+def tcgen05_ld[
     *,
     datapaths: Int,
     bits: Int,
@@ -215,7 +215,7 @@ fn tcgen05_ld[
 
     @parameter
     @always_inline("nodebug")
-    fn call_ld_intrinsic[
+    def call_ld_intrinsic[
         pack_type: TrivialRegisterPassable
     ]() -> InlineArray[Scalar[dtype], width]:
         var r = inlined_assembly[
@@ -306,7 +306,7 @@ fn tcgen05_ld[
     # fmt: on
 
 
-fn tcgen05_st[
+def tcgen05_st[
     dtype: DType,
     width: Int,
     //,
@@ -456,7 +456,7 @@ fn tcgen05_st[
 
 
 @always_inline
-fn tcgen05_release_allocation_lock[cta_group: Int32]():
+def tcgen05_release_allocation_lock[cta_group: Int32]():
     """Releases the allocation lock for the current CTA group.
 
     Parameters:
@@ -479,7 +479,7 @@ fn tcgen05_release_allocation_lock[cta_group: Int32]():
 
 
 @always_inline
-fn tcgen05_load_wait():
+def tcgen05_load_wait():
     """Waits for tensor memory loads to complete.
 
 
@@ -497,7 +497,7 @@ fn tcgen05_load_wait():
 
 
 @always_inline
-fn tcgen05_store_wait():
+def tcgen05_store_wait():
     """Waits for tensor memory stores to complete.
 
     Note:
@@ -514,7 +514,7 @@ fn tcgen05_store_wait():
 
 
 @always_inline
-fn tcgen05_fence_before():
+def tcgen05_fence_before():
     """Orders all the prior asynchronous `tcgen05` operations.
 
     Note:
@@ -531,7 +531,7 @@ fn tcgen05_fence_before():
 
 
 @always_inline
-fn tcgen05_fence_after():
+def tcgen05_fence_after():
     """Orders all the subsequent asynchronous `tcgen05` operations.
 
     Note:
@@ -548,7 +548,7 @@ fn tcgen05_fence_after():
 
 
 @always_inline
-fn tcgen05_cp[
+def tcgen05_cp[
     *,
     cta_group: Int32,
     datapaths: Int,

@@ -21,7 +21,7 @@ from std.utils import StaticTuple
 
 
 @always_inline
-fn to_llvm_shared_cluster_mem_ptr[
+def to_llvm_shared_cluster_mem_ptr[
     type: AnyType
 ](
     ptr: UnsafePointer[type, address_space=AddressSpace.SHARED_CLUSTER, ...]
@@ -37,7 +37,7 @@ fn to_llvm_shared_cluster_mem_ptr[
 
 
 @always_inline
-fn to_llvm_shared_mem_ptr[
+def to_llvm_shared_mem_ptr[
     type: AnyType
 ](
     ptr: UnsafePointer[type, address_space=AddressSpace.SHARED, ...]
@@ -56,7 +56,7 @@ fn to_llvm_shared_mem_ptr[
 
 
 @always_inline
-fn to_llvm_ptr[
+def to_llvm_ptr[
     type: AnyType
 ](ptr: UnsafePointer[type, ...]) -> __mlir_type.`!llvm.ptr`:
     """Cast a pointer to LLVMPointer Type.
@@ -73,7 +73,7 @@ fn to_llvm_ptr[
 
 
 @always_inline
-fn to_i32(val: Int32) -> __mlir_type.i32:
+def to_i32(val: Int32) -> __mlir_type.i32:
     """Cast Scalar I32 value into MLIR i32.
 
     Args:
@@ -88,7 +88,7 @@ fn to_i32(val: Int32) -> __mlir_type.i32:
 
 
 @always_inline
-fn to_i16(val: UInt16) -> __mlir_type.i16:
+def to_i16(val: UInt16) -> __mlir_type.i16:
     """Cast a scalar UInt16 value into MLIR i16.
 
     Args:
@@ -103,7 +103,7 @@ fn to_i16(val: UInt16) -> __mlir_type.i16:
 
 
 @always_inline
-fn to_i64(val: Int64) -> __mlir_type.i64:
+def to_i64(val: Int64) -> __mlir_type.i64:
     """Cast Scalar I64 value into MLIR i64.
 
     Args:
@@ -200,7 +200,7 @@ comptime kgen_struct_dtype_splat_type[dtype: DType, n: Int] = kgen_struct_splat[
 
 
 @always_inline
-fn simd_to_llvm_struct[
+def simd_to_llvm_struct[
     dtype: DType, n: Int
 ](simd: SIMD[dtype, n]) -> llvm_struct_dtype_splat_type[dtype, n]:
     """Repack a SIMD value to a `!llvm.struct`.
@@ -232,7 +232,7 @@ fn simd_to_llvm_struct[
 
 
 @always_inline
-fn llvm_struct_to_simd[
+def llvm_struct_to_simd[
     dtype: DType, n: Int
 ](llvmst: llvm_struct_dtype_splat_type[dtype, n]) -> SIMD[dtype, n]:
     """Repack value of a `!llvm.struct` type to SIMD.
@@ -259,7 +259,7 @@ fn llvm_struct_to_simd[
 
 
 @always_inline
-fn array_to_llvm_struct[
+def array_to_llvm_struct[
     dtype: DType, n: Int
 ](array: StaticTuple[Scalar[dtype], n]) -> llvm_struct_dtype_splat_type[
     dtype, n
@@ -293,7 +293,7 @@ fn array_to_llvm_struct[
 
 
 @always_inline
-fn llvm_struct_to_array[
+def llvm_struct_to_array[
     dtype: DType, n: Int
 ](llvmst: llvm_struct_dtype_splat_type[dtype, n]) -> StaticTuple[
     Scalar[dtype], n
