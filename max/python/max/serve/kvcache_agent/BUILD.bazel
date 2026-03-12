@@ -13,10 +13,17 @@ modular_py_library(
         "kvcache_agent.py",
     ],
     deps = [
+        ":kvcache_types",
         requirement("grpcio"),  # NOTE: Order matters for PYTHONPATH nonsense
         ":kvcache_agent_proto_srcs",
         "//max/python/max/serve/worker_interface",
     ],
+)
+
+modular_py_library(
+    name = "kvcache_types",
+    srcs = ["kvcache_types.py"],
+    deps = [":kvcache_agent_proto_srcs"],
 )
 
 modular_py_library(

@@ -19,6 +19,12 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 
+# WARNING: This module is currently unused in production (see kvcache_worker.py).
+# When we start using it, we need to deal with the fact that importing grpc causes
+# "Metric registered more than once" warnings when running through pixi, because
+# our pixi setup pulls grpcio from conda-forge which dynamically links against a
+# shared libgrpc. See https://github.com/grpc/grpc/issues/41672.
+# Shared types live in types.py so that other modules can avoid this import.
 import grpc
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     KVCacheStateUpdate,
@@ -30,18 +36,10 @@ from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2_grpc import (
     KVCacheAgentServiceServicer,
     add_KVCacheAgentServiceServicer_to_server,
 )
+from max.serve.kvcache_agent.kvcache_types import KVCacheChangeMessage
 from max.serve.worker_interface.zmq_queue import ZmqPullSocket
 
 logger = logging.getLogger("max.serve")
-
-
-@dataclass
-class KVCacheChangeMessage:
-    """A message that MAX Serve uses to communicate the KV cache updates to the agent."""
-
-    cache_id: str
-    memory_tier: MemoryTier
-    update_type: UpdateType
 
 
 @dataclass

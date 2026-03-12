@@ -21,7 +21,7 @@ from contextlib import asynccontextmanager
 from multiprocessing.synchronize import Event
 
 from max.serve.config import Settings
-from max.serve.kvcache_agent import start_kvcache_agent_service
+from max.serve.kvcache_agent.kvcache_agent import start_kvcache_agent_service
 from max.serve.process_control import (
     ProcessManager,
     subprocess_manager,

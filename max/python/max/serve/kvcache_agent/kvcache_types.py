@@ -11,9 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .dispatcher_v2 import DispatcherClientV2, DispatcherServerV2
+from dataclasses import dataclass
 
-__all__ = [
-    "DispatcherClientV2",
-    "DispatcherServerV2",
-]
+from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
+    MemoryTier,
+    UpdateType,
+)
+
+
+@dataclass
+class KVCacheChangeMessage:
+    """A message that MAX Serve uses to communicate the KV cache updates to the agent."""
+
+    cache_id: str
+    memory_tier: MemoryTier
+    update_type: UpdateType

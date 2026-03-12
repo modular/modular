@@ -29,11 +29,11 @@ import logging
 import multiprocessing
 
 from max.profiler import traced
-from max.serve.kvcache_agent.kvcache_agent import KVCacheChangeMessage
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
     UpdateType,
 )
+from max.serve.kvcache_agent.kvcache_types import KVCacheChangeMessage
 
 from .block_utils import FreeKVCacheBlockQueue, KVCacheBlock
 
