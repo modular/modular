@@ -21,31 +21,6 @@ import numpy.typing as npt
 FILL_VAL = -10000.0
 
 
-def _normalize_token_mask(
-    token_mask: npt.ArrayLike,
-    *,
-    mask_name: str = "token_mask",
-) -> npt.NDArray[np.bool_]:
-    """Normalize a token mask to rank-2 bool array [batch, padded_seq_len]."""
-    token_mask_np = np.asarray(token_mask)
-    if token_mask_np.ndim == 1:
-        token_mask_np = token_mask_np[np.newaxis, :]
-    elif token_mask_np.ndim != 2:
-        raise ValueError(
-            f"{mask_name} must be rank-1 or rank-2, got shape {token_mask_np.shape}."
-        )
-
-    token_mask_np = token_mask_np.astype(np.bool_, copy=False)
-    if token_mask_np.shape[1] == 0:
-        raise ValueError(f"{mask_name} must have non-empty sequence length.")
-    if not np.all(token_mask_np.any(axis=1)):
-        raise ValueError(
-            f"Each {mask_name} row must contain at least one valid token."
-        )
-
-    return token_mask_np
-
-
 def causal_attention_mask(
     original_start_pos: list[int],
     original_seq_len: list[int],
@@ -116,7 +91,14 @@ def causal_attention_mask_with_token_mask(
         Float32 additive mask array where visible positions are 0 and masked
         positions are a large negative value.
     """
-    token_mask_np = _normalize_token_mask(token_mask, mask_name=mask_name)
+    token_mask_np = np.asarray(token_mask)
+    if token_mask_np.ndim == 1:
+        token_mask_np = token_mask_np[np.newaxis, :]
+    elif token_mask_np.ndim != 2:
+        raise ValueError(
+            f"{mask_name} must be rank-1 or rank-2, got shape {token_mask_np.shape}."
+        )
+    token_mask_np = token_mask_np.astype(np.bool_, copy=False)
     batch_size, padded_length = token_mask_np.shape
 
     if len(original_start_pos) != batch_size:

@@ -15,13 +15,15 @@
 
 from __future__ import annotations
 
-from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Linear, Module
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
+from max.nn.kernels import masked_flash_attention_gpu as _masked_flash_attention_gpu
 
 from .rotary_embedding import RotaryEmbedding
+
+masked_flash_attention_gpu = F.functional(_masked_flash_attention_gpu)
 
 
 class EncoderAttention(Module[..., Tensor]):
@@ -74,7 +76,8 @@ class EncoderAttention(Module[..., Tensor]):
 
         # [S, H_kv, D] -> [S, H_kv, 1, D] -> [S, H_kv, n_rep, D] -> [S, H, D]
         x = F.unsqueeze(x, 2)
-        x = F.tile(x, [1, 1, n_rep, 1])
+        # Avoid tile here: it forces a CPU round-trip for every layer.
+        x = F.concat([x] * n_rep, axis=2)
         x = F.reshape(x, (seq_len, n_kv_heads * n_rep, head_dim))
 
         return x
@@ -120,18 +123,13 @@ class EncoderAttention(Module[..., Tensor]):
         q = F.unsqueeze(q, 0)
         k = F.unsqueeze(k, 0)
         v = F.unsqueeze(v, 0)
-        q = F.transpose(q, 1, 2)  # [1, H, S, D]
-        k = F.transpose(k, 1, 2)
-        v = F.transpose(v, 1, 2)
-
-        attn_weights = F.matmul(q, F.transpose(k, -1, -2)) * self.scale
-        attn_weights = attn_weights + F.cast(attention_bias, x.dtype)
-        attn_weights = F.softmax(F.cast(attn_weights, DType.float32), axis=-1)
-        attn_weights = F.cast(attn_weights, x.dtype)
-        attn_out = F.matmul(attn_weights, v)
-        attn_out = F.transpose(attn_out, 1, 2)  # [1, S, H, D]
-        attn_out = F.reshape(
-            attn_out, (1, total_seq_len, self.n_heads * self.head_dim)
+        attn_out = masked_flash_attention_gpu(
+            q,
+            k,
+            v,
+            mask=F.squeeze(attention_bias, axis=1),
+            scale=self.scale,
         )
         attn_out = F.squeeze(attn_out, 0)
+        attn_out = F.reshape(attn_out, (total_seq_len, -1))
         return self.o_proj(attn_out)

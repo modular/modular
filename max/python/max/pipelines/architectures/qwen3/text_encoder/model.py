@@ -89,7 +89,8 @@ class Qwen3TextEncoderModel(ComponentModel):
 
         Contract:
         - 0 = token embeddings
-        - i (1 <= i <= num_hidden_layers) = output after transformer block i-1
+        - i (1 <= i < num_hidden_layers) = output after transformer block i-1
+        - num_hidden_layers = final normalized hidden state
         - negative indices follow standard Python indexing over the available
           hidden-states tuple of length ``num_hidden_layers + 1``
         """
@@ -147,26 +148,23 @@ class Qwen3TextEncoderModel(ComponentModel):
         attention_mask: np.ndarray,
         *,
         expected_seq_len: int | None = None,
-        mask_name: str = "attention_mask",
     ) -> np.ndarray:
         additive_mask = causal_attention_mask_with_token_mask(
             [0],
             attention_mask,
-            mask_name=mask_name,
         )
         # TODO: Lift this batch_size=1 restriction if the Klein text-encoder
         # path needs batched prompt-mask handling.
         if additive_mask.shape[0] != 1:
             raise ValueError(
-                "Qwen3TextEncoderModel expects batch_size=1 for "
-                f"{mask_name} input, got batch size {additive_mask.shape[0]}."
+                f"batch size must be 1, got {additive_mask.shape[0]}."
             )
         if (
             expected_seq_len is not None
             and additive_mask.shape[1] != expected_seq_len
         ):
             raise ValueError(
-                f"{mask_name} must have the same sequence length as tokens "
+                "seq_len must match tokens "
                 f"({additive_mask.shape[1]} != {expected_seq_len})."
             )
         return additive_mask[:, np.newaxis, :, :].astype(np.float32, copy=False)

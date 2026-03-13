@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import math
+
 import max.driver as md
 import numpy as np
 import pytest
@@ -21,16 +23,21 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
+from max.nn.kernels import masked_flash_attention_gpu
 from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen3.layers.attention import (
     Qwen3Attention as MaxQwen3Attention,
+)
+from max.pipelines.architectures.qwen3.text_encoder.model import (
+    Qwen3TextEncoderModel,
 )
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 from transformers.models.qwen3.configuration_qwen3 import Qwen3Config
 from transformers.models.qwen3.modeling_qwen3 import (
     Qwen3Attention,
+    Qwen3Model,
     Qwen3RotaryEmbedding,
 )
 
@@ -248,4 +255,113 @@ def test_attention(
         from_dlpack(max_output).to(torch.bfloat16),
         rtol=2 * torch.finfo(torch.bfloat16).eps,
         atol=8 * torch.finfo(torch.bfloat16).eps,
+    )
+
+
+def _materialized_attention_mask(
+    token_mask: torch.Tensor,
+) -> torch.Tensor:
+    seq_len = token_mask.shape[0]
+    mask = torch.full(
+        (1, seq_len, seq_len),
+        -10000.0,
+        dtype=torch.float32,
+        device=token_mask.device,
+    )
+    for row in range(seq_len):
+        for col in range(seq_len):
+            if bool(token_mask[col]) and col <= row:
+                mask[0, row, col] = 0.0
+    return mask
+
+
+def _masked_flash_attention_max(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    mask: torch.Tensor,
+) -> torch.Tensor:
+    dtype = DType.from_torch(q.dtype)
+    _batch, q_seq_len, nheads, head_dim = q.shape
+    kv_seq_len = k.shape[1]
+
+    q_type = TensorType(
+        dtype,
+        shape=["batch", q_seq_len, nheads, head_dim],
+        device=DeviceRef.GPU(),
+    )
+    kv_type = TensorType(
+        dtype,
+        shape=["batch", kv_seq_len, nheads, head_dim],
+        device=DeviceRef.GPU(),
+    )
+    mask_type = TensorType(
+        DType.float32,
+        shape=["batch", q_seq_len, kv_seq_len],
+        device=DeviceRef.GPU(),
+    )
+
+    session = InferenceSession(devices=[Accelerator()])
+    with Graph(
+        "masked_flash_attention_gpu",
+        input_types=[q_type, kv_type, kv_type, mask_type],
+    ) as graph:
+        q_in, k_in, v_in, mask_in = graph.inputs
+        graph.output(
+            masked_flash_attention_gpu(
+                q_in.tensor,
+                k_in.tensor,
+                v_in.tensor,
+                mask_in.tensor,
+                scale=math.sqrt(1.0 / head_dim),
+            )
+        )
+
+    model = session.load(graph)
+    output = model.execute(
+        q.detach(),
+        k.detach(),
+        v.detach(),
+        mask.detach(),
+    )[0]
+    assert isinstance(output, Buffer)
+    return torch.from_dlpack(output)
+
+
+def test_masked_flash_attention_gpu_matches_naive() -> None:
+    if md.accelerator_api() != "cuda":
+        pytest.skip("NVIDIA GPUs are required for this test.")
+
+    batch_size = 1
+    seq_len = 7
+    nheads = 4
+    head_dim = 32
+    scale = math.sqrt(1.0 / head_dim)
+    device = "cuda"
+    dtype = torch.bfloat16
+
+    q = torch.randn((batch_size, seq_len, nheads, head_dim), device=device, dtype=dtype)
+    k = torch.randn((batch_size, seq_len, nheads, head_dim), device=device, dtype=dtype)
+    v = torch.randn((batch_size, seq_len, nheads, head_dim), device=device, dtype=dtype)
+    token_mask = torch.tensor(
+        [True, True, True, True, False, False, False],
+        device=device,
+    )
+    materialized_mask = _materialized_attention_mask(token_mask)
+
+    out_max = _masked_flash_attention_max(q, k, v, materialized_mask)
+
+    q_ref = q.permute(0, 2, 1, 3).to(torch.float32)
+    k_ref = k.permute(0, 2, 1, 3).to(torch.float32)
+    v_ref = v.permute(0, 2, 1, 3).to(torch.float32)
+    attn_scores = torch.matmul(q_ref, k_ref.transpose(-1, -2)) * scale
+    attn_scores = attn_scores + materialized_mask.unsqueeze(1)
+    attn_probs = torch.softmax(attn_scores, dim=-1)
+    out_ref = torch.matmul(attn_probs, v_ref).permute(0, 2, 1, 3)
+
+    torch.testing.assert_close(
+        out_max.to(torch.float32),
+        out_ref,
+        rtol=1e-2,
+        atol=2e-2,
     )
