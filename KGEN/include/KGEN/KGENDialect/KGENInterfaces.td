@@ -586,4 +586,32 @@ class MultiplyAdd {
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// UnifiedFolding Trait
+//===----------------------------------------------------------------------===//
+
+/// Unifies fold, interpret, and parametric_interpret into a single
+/// target-aware fold function.  The C++ trait template
+/// `detail::UnifiedFoldingOpInterfaceTrait<ConcreteOp>` (defined in
+/// UnifiedFolding.h) provides default `interpret`, `parametric_interpret`,
+/// and `foldTrait` implementations that delegate to a single `unifiedFold`
+/// method.
+///
+/// Usage:
+///   - List `UnifiedFolding` and `InterpreterOpInterface` in the op's traits.
+///   - Set `let hasFolder = 0;` (fold is provided via `foldTrait`).
+///   - Implement `unifiedFold` in the .cpp file.
+///   - To override a defaulted hook (e.g. `parametric_interpret`), add a
+///     declaration in the op's `extraClassDeclaration` — C++ name lookup will
+///     shadow the trait's default.
+def UnifiedFolding : NativeOpTrait<
+    "UnifiedFoldingOpInterfaceTrait",
+    /*traits=*/[],
+    /*extraOpDeclaration=*/[{
+  ::M::KGEN::FoldValue unifiedFold(::M::KGEN::FoldValues operands,
+                                   ::M::TargetInfoAttr target);
+}]> {
+  let cppNamespace = "::M::detail";
+}
+
 #endif // KGEN_KGENDIALECT_KGENINTERFACES_TD

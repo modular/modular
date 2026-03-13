@@ -105,23 +105,8 @@ OpFoldResult TruncOp::fold(FoldAdaptor adaptor) {
       [](bool val) { return val; });
 }
 
-OpFoldResult AbsOp::fold(FoldAdaptor adaptor) {
-  return foldOpWithTarget(
-      FoldValues(adaptor.getOperands(), getOperation()->getOperands()),
-      lookupTargetInfo(*this), foldSIMDAbs);
-}
-
-ErrorTreeOrSuccess AbsOp::interpret(ArrayRef<Attribute> operands,
-                                    InterpreterState &state) {
-  return interpretOpWithFold(getLoc(), getOperation()->getName().getStringRef(),
-                             operands, state, foldSIMDAbs);
-}
-
-ErrorTreeOrSuccess
-AbsOp::parametric_interpret(ArrayRef<Attribute> operands,
-                            ParametricInterpreterState &state) {
-  return interpretOpWithFold(getLoc(), getOperation()->getName().getStringRef(),
-                             operands, state, foldSIMDAbs);
+FoldValue AbsOp::unifiedFold(FoldValues operands, TargetInfoAttr target) {
+  return foldSIMDAbs(operands, target);
 }
 
 OpFoldResult RoundOp::fold(FoldAdaptor adaptor) {
@@ -320,22 +305,8 @@ LogicalResult DivOp::canonicalize(DivOp op, PatternRewriter &b) {
   return success();
 }
 
-OpFoldResult DivOp::fold(FoldAdaptor adaptor) {
-  return foldOpWithTarget(FoldValues(adaptor.getOperands(), getOperands()),
-                          lookupTargetInfo(*this), foldSIMDDiv);
-}
-
-ErrorTreeOrSuccess DivOp::interpret(ArrayRef<Attribute> operands,
-                                    InterpreterState &state) {
-  return interpretOpWithFold(getLoc(), getOperation()->getName().getStringRef(),
-                             operands, state, foldSIMDDiv);
-}
-
-ErrorTreeOrSuccess
-DivOp::parametric_interpret(ArrayRef<Attribute> operands,
-                            ParametricInterpreterState &state) {
-  return interpretOpWithFold(getLoc(), getOperation()->getName().getStringRef(),
-                             operands, state, foldSIMDDiv);
+FoldValue DivOp::unifiedFold(FoldValues operands, TargetInfoAttr target) {
+  return foldSIMDDiv(operands, target);
 }
 
 /// Helper function to fold rem operations. The target is used for index types.
@@ -396,22 +367,8 @@ RemOp::parametric_interpret(ArrayRef<Attribute> operands,
   return ErrorTree(getLoc(), "failed to interpret POP::RemOp");
 }
 
-OpFoldResult FloorDivOp::fold(FoldAdaptor adaptor) {
-  return foldOpWithTarget(FoldValues(adaptor.getOperands(), getOperands()),
-                          lookupTargetInfo(*this), foldSIMDFloorDiv);
-}
-
-ErrorTreeOrSuccess FloorDivOp::interpret(ArrayRef<Attribute> operands,
-                                         InterpreterState &state) {
-  return interpretOpWithFold(getLoc(), getOperation()->getName().getStringRef(),
-                             operands, state, foldSIMDFloorDiv);
-}
-
-ErrorTreeOrSuccess
-FloorDivOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                 ParametricInterpreterState &state) {
-  return interpretOpWithFold(getLoc(), getOperation()->getName().getStringRef(),
-                             operands, state, foldSIMDFloorDiv);
+FoldValue FloorDivOp::unifiedFold(FoldValues operands, TargetInfoAttr target) {
+  return foldSIMDFloorDiv(operands, target);
 }
 
 template <typename OpT>
@@ -455,40 +412,12 @@ OpFoldResult MinOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
-OpFoldResult ShlOp::fold(FoldAdaptor adaptor) {
-  return foldOpWithTarget(FoldValues(adaptor.getOperands(), getOperands()),
-                          lookupTargetInfo(*this), foldSIMDShl);
+FoldValue ShlOp::unifiedFold(FoldValues operands, TargetInfoAttr target) {
+  return foldSIMDShl(operands, target);
 }
 
-ErrorTreeOrSuccess ShlOp::interpret(ArrayRef<Attribute> operands,
-                                    InterpreterState &state) {
-  return interpretOpWithFold(getLoc(), getOperation()->getName().getStringRef(),
-                             operands, state, foldSIMDShl);
-}
-
-ErrorTreeOrSuccess
-ShlOp::parametric_interpret(ArrayRef<Attribute> operands,
-                            ParametricInterpreterState &state) {
-  return interpretOpWithFold(getLoc(), getOperation()->getName().getStringRef(),
-                             operands, state, foldSIMDShl);
-}
-
-OpFoldResult ShrOp::fold(FoldAdaptor adaptor) {
-  return foldOpWithTarget(FoldValues(adaptor.getOperands(), getOperands()),
-                          lookupTargetInfo(*this), foldSIMDShr);
-}
-
-ErrorTreeOrSuccess ShrOp::interpret(ArrayRef<Attribute> operands,
-                                    InterpreterState &state) {
-  return interpretOpWithFold(getLoc(), getOperation()->getName().getStringRef(),
-                             operands, state, foldSIMDShr);
-}
-
-ErrorTreeOrSuccess
-ShrOp::parametric_interpret(ArrayRef<Attribute> operands,
-                            ParametricInterpreterState &state) {
-  return interpretOpWithFold(getLoc(), getOperation()->getName().getStringRef(),
-                             operands, state, foldSIMDShr);
+FoldValue ShrOp::unifiedFold(FoldValues operands, TargetInfoAttr target) {
+  return foldSIMDShr(operands, target);
 }
 
 //===----------------------------------------------------------------------===//
@@ -630,34 +559,8 @@ LoadOp::parametric_interpret(ArrayRef<Attribute> operands,
 // CmpOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
-  auto pred = getPred();
-  return foldOpWithTarget(FoldValues(adaptor.getOperands(), getOperands()),
-                          lookupTargetInfo(*this),
-                          [&](FoldValues ops, TargetInfoAttr t) {
-                            return foldSIMDCmp(pred, ops, t);
-                          });
-}
-
-ErrorTreeOrSuccess CmpOp::interpret(ArrayRef<Attribute> operands,
-                                    InterpreterState &state) {
-  auto pred = getPred();
-  return interpretOpWithFold(getLoc(), getOperation()->getName().getStringRef(),
-                             operands, state,
-                             [&](FoldValues ops, TargetInfoAttr t) {
-                               return foldSIMDCmp(pred, ops, t);
-                             });
-}
-
-ErrorTreeOrSuccess
-CmpOp::parametric_interpret(ArrayRef<Attribute> operands,
-                            ParametricInterpreterState &state) {
-  auto pred = getPred();
-  return interpretOpWithFold(getLoc(), getOperation()->getName().getStringRef(),
-                             operands, state,
-                             [&](FoldValues ops, TargetInfoAttr t) {
-                               return foldSIMDCmp(pred, ops, t);
-                             });
+FoldValue CmpOp::unifiedFold(FoldValues operands, TargetInfoAttr target) {
+  return foldSIMDCmp(getPred(), operands, target);
 }
 
 //===----------------------------------------------------------------------===//

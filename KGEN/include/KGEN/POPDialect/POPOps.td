@@ -162,7 +162,8 @@ def POP_RoundOp : POP_ArithmeticOrBoolUnaryOp<"round", [NoMemoryEffect,
 //===----------------------------------------------------------------------===//
 
 def POP_AbsOp : POP_ArithmeticOrBoolUnaryOp<"abs", [NoMemoryEffect,
-                DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+                UnifiedFolding, InterpreterOpInterface]> {
+  let hasFolder = 0;
   let summary = "abs";
   let description = [{
     The `pop.abs` operation takes a `!pop.simd` value and returns the absolute
@@ -277,8 +278,9 @@ def POP_MulOp : POP_ArithmeticBinaryOp<"mul", [Commutative, Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_DivOp : POP_ArithmeticBinaryOp<"div", [NoMemoryEffect,
-                DeclareOpInterfaceMethods<InterpreterOpInterface>,
+                UnifiedFolding, InterpreterOpInterface,
                 DeclareOpInterfaceMethods<ComputeOpInterface>]>, Division {
+  let hasFolder = 0;
   let summary = "divide";
   let description = [{
     The `pop.div` operation takes two `!pop.simd` values and divides them. The
@@ -326,8 +328,9 @@ def POP_RemOp : POP_ArithmeticBinaryOp<"rem", [NoMemoryEffect,
 //===----------------------------------------------------------------------===//
 
 def POP_FloorDivOp : POP_ArithmeticBinaryOp<"floordiv", [NoMemoryEffect,
-                     DeclareOpInterfaceMethods<InterpreterOpInterface>,
+                     UnifiedFolding, InterpreterOpInterface,
                      DeclareOpInterfaceMethods<ComputeOpInterface>]>, Division {
+  let hasFolder = 0;
   let summary = "floor divide";
   let description = [{
     The `pop.floordiv` operation takes two `!pop.simd` values and divides them,
@@ -407,7 +410,8 @@ def POP_MinOp : POPOp<"min", [Commutative, Pure, SameOperandsAndResultType]> {
 //===----------------------------------------------------------------------===//
 
 def POP_ShlOp : POP_ArithmeticBinaryOp<"shl", [Pure,
-                DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+                UnifiedFolding, InterpreterOpInterface]> {
+  let hasFolder = 0;
   let summary = "shift left";
   let description = [{
     The `pop.shl` operation returns the first operand shifted to the left a
@@ -433,7 +437,8 @@ def POP_ShlOp : POP_ArithmeticBinaryOp<"shl", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_ShrOp : POP_ArithmeticBinaryOp<"shr", [Pure,
-                DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+                UnifiedFolding, InterpreterOpInterface]> {
+  let hasFolder = 0;
   let summary = "shift right";
   let description = [{
     The `pop.shr` operation returns the first operand shifted to the right a
@@ -508,8 +513,9 @@ def POP_FMAOp : POP_ArithmeticTernaryOp<"fma",
 //===----------------------------------------------------------------------===//
 
 def POP_CmpOp : POPOp<"cmp", [Pure, SameTypeOperands, InferTypeOpAdaptor,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
+    UnifiedFolding, InterpreterOpInterface,
     DeclareOpInterfaceMethods<ComputeOpInterface>]>, Comparison {
+  let hasFolder = 0;
   let summary = "comparison";
   let description = [{
     The `pop.cmp` operation takes a comparison predicate and two `!pop.scalar`
@@ -534,7 +540,6 @@ def POP_CmpOp : POPOp<"cmp", [Pure, SameTypeOperands, InferTypeOpAdaptor,
   let assemblyFormat = [{
     `` $pred `(` $lhs `,` $rhs `)` attr-dict `:` type($lhs)
   }];
-  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
