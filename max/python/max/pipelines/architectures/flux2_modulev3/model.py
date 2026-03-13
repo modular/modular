@@ -60,7 +60,7 @@ class Flux2TransformerModel(ComponentModel):
         self._enable_fbc = False
         self.load_model()
 
-    @traced
+    @traced(message="Flux2TransformerModel.load_model")
     def load_model(self) -> Callable[..., Any]:
         state_dict = {key: value.data() for key, value in self.weights.items()}
 
@@ -140,7 +140,7 @@ class Flux2TransformerModel(ComponentModel):
             "Flux2 transformer not compiled. Call compile_model() first."
         )
 
-    @traced
+    @traced(message="Flux2TransformerModel.compile_model")
     def compile_model(self, enable_fbc: bool) -> None:
         self._enable_fbc = enable_fbc
         self.model = self._flux_model.compile(
@@ -151,7 +151,7 @@ class Flux2TransformerModel(ComponentModel):
         del self._state_dict
         del self._flux_model
 
-    @traced
+    @traced(message="Flux2TransformerModel.__call__")
     def __call__(
         self,
         hidden_states: Tensor,
