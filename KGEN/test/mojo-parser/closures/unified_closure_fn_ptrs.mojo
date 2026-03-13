@@ -35,7 +35,7 @@ def use_closure[Impl: def(x: Int) unified -> Int](cb: Impl) -> Int:
 
 
 def wrap_fn() -> Int:
-    return use_closure[top_level](top_level)
+    return use_closure(top_level)
 
 # // -----
 
@@ -55,7 +55,7 @@ def use_closure[Impl: def(x: Int) unified -> Int](cb: Impl) -> Int:
 
 
 def wrap_fn() -> Int:
-    return use_closure[a](a) + use_closure[b](b)
+    return use_closure(a) + use_closure(b)
 
 # // -----
 
@@ -74,4 +74,4 @@ def use_closure[Impl: def(Int) unified -> Int](cb: Impl) -> Int:
 
 
 def wrap_fn() -> Int:
-    return use_closure[top_level](top_level)
+    return use_closure(top_level)
