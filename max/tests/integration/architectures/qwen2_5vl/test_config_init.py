@@ -1,0 +1,116 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+"""Config compatibility test for Qwen2.5-VL.
+
+Exercises every static method on Qwen2_5VLConfig that the pipeline
+framework calls with an HF config, using a local config.json (no
+network).  Catches transformers v4/v5 attribute-access regressions
+before they reach the smoke tests.
+"""
+
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+from max.driver import DeviceSpec
+from max.dtype import DType
+from max.graph import DeviceRef
+from max.pipelines.architectures.qwen2_5vl.model_config import Qwen2_5VLConfig
+from max.pipelines.architectures.qwen2_5vl.tokenizer import (
+    Qwen2_5VLTokenizer,
+)
+from max.pipelines.lib import KVCacheConfig
+from transformers import AutoConfig
+
+CONFIG_DIR = Path(__file__).parent / "configs" / "qwen2_5vl_3b"
+
+
+def _load_hf_config() -> AutoConfig:
+    return AutoConfig.from_pretrained(str(CONFIG_DIR), trust_remote_code=True)
+
+
+def _mock_pipeline_config(
+    hf_config: AutoConfig | None = None,
+) -> Mock:
+    """Builds a minimal PipelineConfig mock for config init."""
+    model = Mock()
+    model.kv_cache.cache_dtype = "bfloat16"
+    model.quantization_encoding = "bfloat16"
+    model.weight_path = [Path("model.safetensors")]
+    model.rope_type = "default"
+    model.device_specs = [DeviceSpec.cpu()]
+    model.max_length = None
+    model.graph_quantization_encoding = None
+    model._quant = None
+    model.use_subgraphs = True
+    model.data_parallel_degree = 1
+    model.huggingface_config = hf_config
+
+    pipeline_config = Mock()
+    pipeline_config.model = model
+    pipeline_config.lora = None
+    return pipeline_config
+
+
+def test_all_config_entry_points() -> None:
+    """Every static method the pipeline framework calls must work with the
+    current transformers version's HF config object."""
+    hf_config = _load_hf_config()
+    pipeline_config = _mock_pipeline_config()
+    devices = [DeviceRef.CPU()]
+
+    # initialize_from_config
+    config = Qwen2_5VLConfig.initialize_from_config(pipeline_config, hf_config)
+    assert config.llm_config is not None
+
+    # construct_kv_params -- the path that crashed in the smoke test
+    kv_params = Qwen2_5VLConfig.construct_kv_params(
+        hf_config,
+        pipeline_config,
+        devices,
+        KVCacheConfig(),
+        DType.bfloat16,
+    )
+    assert kv_params.n_kv_heads > 0
+
+    # get_num_layers
+    n_layers = Qwen2_5VLConfig.get_num_layers(hf_config)
+    assert n_layers > 0
+
+    # calculate_max_seq_len
+    max_seq_len = Qwen2_5VLConfig.calculate_max_seq_len(
+        pipeline_config, hf_config
+    )
+    assert max_seq_len > 0
+
+
+@patch("max.pipelines.architectures.qwen2_5vl.tokenizer.AutoTokenizer")
+def test_tokenizer_config_access(mock_auto_tokenizer: Mock) -> None:
+    """Tokenizer init must not crash reading attributes from the HF config."""
+    mock_delegate = Mock()
+    mock_delegate.model_max_length = 32768
+    mock_delegate.eos_token_id = 151645
+    mock_auto_tokenizer.from_pretrained.return_value = mock_delegate
+
+    hf_config = _load_hf_config()
+    pipeline_config = _mock_pipeline_config(hf_config)
+
+    tokenizer = Qwen2_5VLTokenizer(
+        model_path="fake/model",
+        pipeline_config=pipeline_config,
+        max_length=32768,
+    )
+
+    assert tokenizer.image_token_id == 151655
+    assert tokenizer.video_token_id == 151656
+    assert tokenizer.vision_start_token_id == 151652
