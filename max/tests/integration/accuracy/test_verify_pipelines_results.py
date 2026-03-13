@@ -13,35 +13,35 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
-from click.testing import CliRunner
-
+import pytest
 import verify_pipelines
-
+from click.testing import CliRunner
 
 PIXEL_PIPELINE = "black-forest-labs/FLUX.1-dev-bfloat16"
 RUNNER = CliRunner()
 
 
-def _fail_run_llm_verification(*args, **kwargs):
+def _fail_run_llm_verification(*args: Any, **kwargs: Any) -> None:
     raise AssertionError("LLM verification should not run for pixel pipelines")
 
 
 def _invoke_verify_pipelines(
-    monkeypatch, *args: str
+    monkeypatch: pytest.MonkeyPatch, *args: str
 ) -> Path | None:
     """Run the CLI with pixel verification mocked and return the saved dir."""
     captured: dict[str, Path | None] = {}
 
     def fake_run_pixel_generation_verification(
-        config,
+        config: verify_pipelines.PipelineConfig,
         *,
-        device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances,
-        pixel_results_dir,
+        device_type: verify_pipelines.DeviceKind,
+        devices: str,
+        find_tolerances: bool,
+        print_suggested_tolerances: bool,
+        pixel_results_dir: Path | None,
     ) -> verify_pipelines.VerificationVerdict:
         del config
         del device_type
@@ -123,13 +123,18 @@ def test_save_pixel_outputs_writes_expected_files(tmp_path: Path) -> None:
     }
 
 
-def test_main_defaults_to_not_saving_pixel_results(monkeypatch) -> None:
+def test_main_defaults_to_not_saving_pixel_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     assert _invoke_verify_pipelines(monkeypatch) is None
 
 
 def test_main_passes_pixel_results_dir_when_requested(
-    monkeypatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    assert _invoke_verify_pipelines(
-        monkeypatch, "--pixel-results-dir", str(tmp_path)
-    ) == tmp_path
+    assert (
+        _invoke_verify_pipelines(
+            monkeypatch, "--pixel-results-dir", str(tmp_path)
+        )
+        == tmp_path
+    )

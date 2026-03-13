@@ -42,6 +42,7 @@ from max.tests.integration.accuracy.logit_verification.logit_verification_config
     PregeneratedTorchGoldens,
     SupportedEncoding,
 )
+from PIL import Image
 from tag_filters import TagFilter, TagFilterParamType
 from test_common.evaluate import ModelOutput
 from test_common.numpy_encoder import NumpyDecoder
@@ -49,7 +50,6 @@ from test_common.process_isolation import run_in_isolated_process
 from test_common.storage import load_from_tar
 from verify import DiscrepancyReport, verify
 from verify import ModelModality as Modality
-from PIL import Image
 
 # This is far from a universal standard, but this is the closest to a standard
 # that I could find: BSD-derived programs sometimes use exit codes from
@@ -175,6 +175,7 @@ def load_verdicts_from_json(filepath: Path) -> dict[str, VerificationVerdict]:
     except Exception as e:
         print(f"Error loading verdicts from JSON: {e}", file=sys.stderr)
         return {}
+
 
 def _to_uint8_image(image: np.ndarray) -> np.ndarray:
     """Convert a normalized HWC image array to uint8 for preview output."""
