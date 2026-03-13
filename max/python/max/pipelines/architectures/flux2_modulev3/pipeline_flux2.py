@@ -623,7 +623,7 @@ class Flux2Pipeline(DiffusionPipeline):
             if attention_mask is None:
                 prompt_embeds = self.text_encoder(tokens)
             else:
-                prompt_embeds = self.text_encoder(
+                prompt_embeds = self.text_encoder(  # type: ignore[call-arg]
                     tokens,
                     attention_mask=attention_mask,
                 )
