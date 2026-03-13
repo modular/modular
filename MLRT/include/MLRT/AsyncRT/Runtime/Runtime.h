@@ -273,8 +273,8 @@ struct RuntimeOptions {
   /// Return the number of threads specified at the command-line.
   size_t getNumThreads() const { return numThreads; }
 
-  /// Create a Runtime based on the CL argument specifications.
-  std::unique_ptr<Runtime> createRuntime() const;
+  /// Create a copy of the RuntimeOptions.
+  RuntimeOptions copy() const;
 
   RuntimeOptions &forDebug() {
     singleThreaded = true;
