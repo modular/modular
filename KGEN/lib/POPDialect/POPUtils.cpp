@@ -515,6 +515,30 @@ OpFoldResult POP::foldSIMDRound(Attribute operand, TargetInfoAttr targetInfo) {
   });
 }
 
+FoldValue POP::foldSIMDDiv(FoldValues operands, TargetInfoAttr target) {
+  assert(operands.size() == 2 && "expected binary div operands");
+  std::optional<int64_t> indexBitWidth;
+  if (target)
+    indexBitWidth = target.resolveIndexBitWidth();
+
+  if (auto fold = foldSIMDOp(
+          operands.getAttrs(), indexBitWidth,
+          [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+            if (rhs.isZero())
+              return std::nullopt;
+            return lhs / rhs;
+          },
+          [](APFloat lhs, APFloat rhs) { return lhs / rhs; },
+          [](bool lhs, bool rhs) -> std::optional<bool> {
+            if (!rhs)
+              return std::nullopt;
+            return lhs;
+          }))
+    return FoldValue(fold);
+
+  return {};
+}
+
 FoldValue POP::foldSIMDFloorDiv(FoldValues operands, TargetInfoAttr target) {
   assert(operands.size() == 2 && "expected binary floordiv operands");
   std::optional<int64_t> indexBitWidth;

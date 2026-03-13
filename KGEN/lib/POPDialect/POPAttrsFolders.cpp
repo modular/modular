@@ -44,6 +44,16 @@ SIMDAbsAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDDivAttr
+//===----------------------------------------------------------------------===//
+
+FailureOr<TypedAttr>
+SIMDDivAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
+  Attribute operands[] = {getLhs(), getRhs()};
+  return foldAttrWithTarget(context, operands, foldSIMDDiv);
+}
+
+//===----------------------------------------------------------------------===//
 // SIMDFloorDivAttr
 //===----------------------------------------------------------------------===//
 

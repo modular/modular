@@ -290,10 +290,14 @@ kgen.func @div(%arg0: !pop.scalar<si64>, %arg1: !pop.simd<2, si32>, %arg2: !pop.
 kgen.func @div_zero() -> (!pop.scalar<si4>, !pop.scalar<f32>) {
   %0 = kgen.param.constant: scalar<si4> = <0>
   %1 = kgen.param.constant: scalar<f32> = <"0">
-  // CHECK: pop.div
+  // Integer division by zero is UB - don't fold.
+  // CHECK-DAG: %[[ZERO:.*]] = kgen.param.constant: scalar<si4> = <0>
   %2 = pop.div %0, %0 : !pop.scalar<si4>
-  // CHECK: pop.div
+  // Float division by zero folds per IEEE 754 (0.0/0.0 = NaN).
+  // CHECK-DAG: %[[NAN:.*]] = kgen.param.constant: scalar<f32> = <"NaN">
   %3 = pop.div %1, %1 : !pop.scalar<f32>
+  // CHECK: %[[DIV:.*]] = pop.div %[[ZERO]], %[[ZERO]] : !pop.scalar<si4>
+  // CHECK: kgen.return %[[DIV]], %[[NAN]] : !pop.scalar<si4>, !pop.scalar<f32>
   kgen.return %2, %3 : !pop.scalar<si4>, !pop.scalar<f32>
 }
 }
