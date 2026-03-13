@@ -263,8 +263,6 @@ build:ci-remote-b200 --config=ci-gpu-common
 build:ci-remote-b200 --config=remote-b200
 build:ci-remote-b200 --test_keep_going=false
 
-build:gfx90a --mojocopt=--target-accelerator=amdgpu:gfx90a
-
 build:remote-mi355 --config=remote
 build:remote-mi355 --repo_env=MODULAR_SKIP_AUTO_PLATFORMS=1
 build:remote-mi355 --platforms=//:mi355-platform
