@@ -300,7 +300,7 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
 
 # CHECK-LABEL: lit.fn @"ref_copyability
 fn ref_copyability[*element_types: ImplicitlyCopyable](*args: *element_types):
-  # CHECK: [[ITEM:%.*]] = lit.call tail @std::@builtin::@stubs::@VariadicPack::@"__getitem__
+  # CHECK: [[ITEM:%.*]] = lit.call tail @std::@builtin::@stubs::@VariadicPack::@"__getitem_param__
   # CHECK: %_x = lit.var.decl
   # CHECK: lit.call[!lit.generator<[2](*, "copy"{{.*}}#kgen.get_witness<{{.*}}__init__{{.*}}([[ITEM]], %_x)
   var _x = args[4]

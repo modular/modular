@@ -1534,6 +1534,63 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
            << cast<StringLiteralNode>(exprOperands[0].expr)->getValue() << "'";
   };
 
+  // As an extension to Python, we allow types to define getattr/getitem where
+  // the indices are interpreted as parameters instead of arguments.  This is
+  // important for types like Tuple and ThreadIdx that need comptime values for
+  // their indices. However, some types VariadicParamList can support both
+  // static and dynamic indices, and the implementations have different
+  // constraints, and they can't be overloaded.
+  //
+  // We solve this by having a special name for the static index version, then
+  // doing some checks to see if the indices are all static, and if so, using
+  // it. Note that the base may be a dynamic value, and we may be in a dynamic
+  // context; our support here is just about whether the indices are static.
+  StringRef staticGetterName =
+      isSubscript ? "__getitem_param__" : "__getattr_param__";
+  LookupResult staticGetters = emitter.shared.lookupAndResolveDecl(
+      staticGetterName, node->getLoc(), baseType,
+      /*searchParentScopes=*/false);
+  if (staticGetters.isSuccess()) {
+    // The indices may have dynamic values in them that can't be emitted in a
+    // parameter context, but could still be emitted to a __getitem__. If the
+    // type has a __getitem__ then we have to decide what path to use.
+    if (emitter.shared.typeHasMember(baseType, "__getitem__", node->getLoc())) {
+      // Check if the indices are all static.
+      bool anyDynamic = false;
+      size_t numEmitted = 0;
+      for (const Operand &operand : exprOperands) {
+        emitter.emitExpressionWithOutEvaluatingIt(
+            operand.expr, EC_Origin, [&](CValue result, IREmitter &emitter) {
+              anyDynamic |= !result.getIfPValue();
+              ++numEmitted;
+            });
+      }
+      if (numEmitted != exprOperands.size())
+        return {}; // Operand had an error emitting it.
+      if (anyDynamic)
+        staticGetters.setToFailure();
+    }
+  }
+  // Ok, if we haven't veto'd the static index version, emit it.
+  if (staticGetters.isSuccess()) {
+    // emit base.__getitem_param__[indices]() or base.__getitem_param__[indices]
+    // depending on whether the decl we found is a fn or a comptime.
+    SyntheticNode baseNode(node->getLoc(), base.ir);
+    AttributeRefNode getItemNode(
+        &baseNode, node->getLoc(),
+        StringAttr::get(emitter.getContext(), staticGetterName));
+    SubscriptNode subscriptNode(&getItemNode, node->getLoc(), exprOperands,
+                                node->getLoc());
+    if (isa_and_nonnull<AliasDeclOp>(
+            staticGetters.getIfSuccess().front()->getIfOperation())) {
+      return emitter.emitExpr(&subscriptNode, dest);
+    }
+
+    CallNode callNode(&subscriptNode, node->getLoc(),
+                      /*no operands*/ ArrayRef<Operand>(), node->getRangeEnd());
+    return emitter.emitExpr(&callNode, dest);
+  }
+
   // Look up the getter and setter candidate list on the self type.
   StringRef getterName = isSubscript ? "__getitem__" : "__getattr__";
   OverloadSet getterSet = OverloadSet::lookup(emitter.getDeclScope(), baseType,
@@ -1552,51 +1609,9 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     lookupError();
     return {};
   }
-  // Otherwise we'll be calling the getter and/or setter.
-  // Check to see if the subscript operands should be passed as arguments or
-  // parameters of a getitem.  While this support could be expanded in the
-  // future, we just handle the simple case of a getitem that takes parameters.
-  // This is enough to handle VariadicPack and Tuple.
-  if (getterSet && !setterSet) {
-    bool shouldBindParameters = true;
-    // Check for a getitem with no arguments.
-    for (ASTDecl *elt : getterSet.fnDecls) {
-      // TODO: This is really naive: it doesn't account for default arguments,
-      // variadic, byref_result, etc etc etc.
-      auto fnGen = cast<FnOp>(elt->getIfOperation()).getFuncTypeGenerator();
-      size_t implicitArguments = /*self*/ 1 + fnGen.hasMemoryOnlyResult();
 
-      // A raising operation will have two added arguments, because the return
-      // value is changed to a boolean and the result (or error) is emitted via
-      // two out arguments. We only need to add one extra argument here, because
-      // the hasMemoryOnlyResult test above will handle one of them.
-      if (fnGen.getFnEffects().isThrows())
-        implicitArguments += 1;
-
-      if (fnGen.getNumArguments() != implicitArguments) {
-        shouldBindParameters = false;
-        break;
-      }
-    }
-    // If we have this, just emit it syntactically as a call to the getter so
-    // we don't have to duplicate all the param binding logic.
-    if (shouldBindParameters) {
-      // emit base.__getitem__[indices]()
-      SyntheticNode baseNode(node->getLoc(), base.ir);
-      AttributeRefNode getItemNode(
-          &baseNode, node->getLoc(),
-          StringAttr::get(emitter.getContext(),
-                          isSubscript ? "__getitem__" : "__getattr__"));
-      SubscriptNode subscriptNode(&getItemNode, node->getLoc(), exprOperands,
-                                  node->getLoc());
-      CallNode callNode(&subscriptNode, node->getLoc(),
-                        /*no operands*/ ArrayRef<Operand>(),
-                        node->getRangeEnd());
-      return emitter.emitExpr(&callNode, dest);
-    }
-  }
-
-  // Otherwise we're passing these exprOperands as normal dynamic arguments.
+  // Ok, we'll be calling the getter and/or setter, passing the indices as
+  // dynamic arguments.
   CallOperands operands(CallSyntax::kMethodCall, node);
   operands.addSelf(base);
 
@@ -4226,7 +4241,7 @@ AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
         resultType = result.getRValueType();
       });
 
-  if (!resultType)
+  if (!resultType) // Error emitting subexpr.
     return {};
 
   return emitter.emitResult(PValue(resultType), this, dest);
@@ -4736,7 +4751,8 @@ LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,
   if (vaAttr.getValues().size() == exprs.size()) {
     for (auto [i, typeElt] : llvm::enumerate(vaAttr.getValues())) {
       PValue eltPVal = getTupleItem(ASTType(typeElt), i);
-      if (failed(exprs[i]->emitDestructuringPValue(eltPVal, emitter)))
+      if (!eltPVal ||
+          failed(exprs[i]->emitDestructuringPValue(eltPVal, emitter)))
         return failure();
     }
   } else {
