@@ -653,7 +653,7 @@ def is_vec_a[w: Int](vec: ToySIMD[1, w]) -> ToyMask[1, w]:
 
 def repro_top_level():
     var s = MiniSpan[1](0)
-    _ = s.count[is_vec_a](is_vec_a)
+    _ = s.count(is_vec_a)
 
 
 # // -----

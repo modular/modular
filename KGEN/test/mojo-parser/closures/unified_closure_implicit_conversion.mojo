@@ -31,22 +31,13 @@ def take_closure_arg[
     pass
 
 
-def test_function_to_closure_param():
-    # success: function-typed value -> closure-typed parameter.
-    take_closure_param[id_simd]()
-
-    # error: function-typed value with incompatible signature.
-    # expected-error @below {{invalid call to 'take_closure_param'}}
-    take_closure_param[int32_simd]()
-
-
 def test_function_to_wrapper_struct():
     # success: function-typed value -> concrete closure wrapper struct type.
-    take_closure_arg[id_simd](id_simd)
+    take_closure_arg(id_simd)
 
     # error: function-typed value with incompatible signature.
     # expected-error @below {{invalid call to 'take_closure_arg'}}
-    take_closure_arg[id_simd](int32_simd)
+    take_closure_arg(int32_simd)
 
 
 def test_wrapper_to_closure_param():
@@ -94,9 +85,6 @@ def symbol_renamed[
 
 
 def test_canonical_equiv_symbol_to_parameter_success():
-    # Success: symbol -> parameter implicit conversion
-    take_closure_param[symbol_renamed]()
-
     def wrapped_renamed[
         n: Int
     ](x: SIMD[DType.uint32, n]) unified {} -> SIMD[DType.uint32, n]:

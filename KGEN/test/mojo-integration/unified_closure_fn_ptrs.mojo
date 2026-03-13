@@ -21,7 +21,7 @@ def main() raises:
     var y = atol(argv()[2])
 
     # CHECK: 3
-    takeIt[top_level](top_level, x)
+    takeIt(top_level, x)
 
     # CHECK: 4
-    takeIt[top_level](top_level, y)
+    takeIt(top_level, y)

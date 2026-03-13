@@ -137,7 +137,7 @@ def topLevelConcrete[TT: Coord](arg: TT) -> Cartesian:
 
 
 def testTopLevelConcreteWithOtherParams(t: Int):
-    var result = hasParam[Cartesian, topLevelConcrete](topLevelConcrete, t)
+    var result = hasParam[Cartesian](topLevelConcrete, t)
     result.prettyPrint()
 
 
