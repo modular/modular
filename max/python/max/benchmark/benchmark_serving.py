@@ -1719,10 +1719,12 @@ async def benchmark(
             ],
             "errors": [output.error for output in pixel_generation_outputs],
             "request_submit_times": [
-                output.request_submit_time for output in pixel_generation_outputs
+                output.request_submit_time
+                for output in pixel_generation_outputs
             ],
             "request_complete_times": [
-                output.request_complete_time for output in pixel_generation_outputs
+                output.request_complete_time
+                for output in pixel_generation_outputs
             ],
             "peak_gpu_memory_mib": pixel_metrics.peak_gpu_memory_mib,
             "available_gpu_memory_mib": pixel_metrics.available_gpu_memory_mib,
