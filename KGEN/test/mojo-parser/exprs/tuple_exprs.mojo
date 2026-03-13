@@ -82,12 +82,12 @@ fn tuples_lv(i0: Int, f0: FloatDyn):
 
     # Tuple LValue
     # CHECK: [[IMMTUP:%.*]] = lit.ref.immut %iTup
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}([[IMMTUP]])
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}([[IMMTUP]])
     # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELT]]
     # CHECK: lit.ref.store [[ELTV]], %i1
 
     # CHECK: [[IMMTUP:%.*]] = lit.ref.immut %iTup
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}([[IMMTUP]])
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}([[IMMTUP]])
     # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELT]]
     # CHECK: lit.ref.store [[ELTV]], %i2
     (i1, i2) = iTup
@@ -99,16 +99,16 @@ fn tuples_lv(i0: Int, f0: FloatDyn):
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}#Tuple
     # CHECK: [[TUPRV:%.*]] = lit.call {{.*}}__init__{{.*}}({{.*}}, [[TMPVAR]])
 
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}>(
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}>(
     # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELT]]
     # CHECK: lit.ref.store [[ELTV]], %i1
 
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}>(
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}>(
     # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELT]]
     # CHECK: lit.ref.store [[ELTV]], %i2
     (i1, i2) = (i2, i1)
 
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}__getitem__{{.*}}(%iTup)
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}__getitem_param__{{.*}}(%iTup)
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i1
     # CHECK-NEXT: lit.ref.store [[TMP]], [[ELT]]
     iTup[1] = i1
@@ -213,13 +213,13 @@ fn takesSugarTuple[T: ImplicitlyCopyable](elements: Tuple[T, T]):
 fn index_homogenous_tuple[idx: Int]():
     var tup = (1, 2, 3, 4)
     # CHECK: %test1 = lit.var.decl "test1"
-    # CHECK-NEXT: [[ELTPTR:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}:!Int {1}{{.*}}(%tup)
+    # CHECK-NEXT: [[ELTPTR:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}:!Int {1}{{.*}}(%tup)
     # CHECK-NEXT: [[INTVAL:%.*]] = lit.ref.load [[ELTPTR]]
     # CHECK-NEXT: lit.ref.store [[INTVAL]], %test1
     var test1: Int = tup[1]
 
     # CHECK: %test2 = lit.var.decl "test2"
-    # CHECK-NEXT: [[ELTPTR:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}:!Int idx{{.*}}(%tup)
+    # CHECK-NEXT: [[ELTPTR:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}:!Int idx{{.*}}(%tup)
     # CHECK-NEXT: [[INTVAL:%.*]] = lit.ref.load [[ELTPTR]]
     # CHECK-NEXT: lit.ref.store [[INTVAL]], %test2
     var test2: Int = tup[idx]

@@ -740,21 +740,19 @@ public:
   /// Return decls only if lookup was a success, because failures can
   /// also store decls for diagnostic purposes.
   ArrayRef<ASTDecl *> getIfSuccess() const {
-    if (isSuccess())
-      return decls;
-    else
-      return {};
+    return isSuccess() ? decls : ArrayRef<ASTDecl *>{};
   }
   /// Return decls from a failed lookup, for diagnostic purposes.
   ArrayRef<ASTDecl *> getIfFailure() const {
-    if (isFailure())
-      return decls;
-    else
-      return {};
+    return isFailure() ? decls : ArrayRef<ASTDecl *>{};
   }
   bool isSuccess() const { return kind == kSuccess; }
   bool isFailure() const { return kind == kFailure; }
   bool isErroneous() const { return kind == kErroneous; }
+  void setToFailure() {
+    kind = kFailure;
+    decls = {};
+  }
 };
 
 /// This is the result of lookupAllDeclsWithName that collects all matching

@@ -8,7 +8,7 @@
 
 @fieldwise_init
 struct Foo:
-    fn __getitem__[T: AnyType](self) raises:
+    fn __getitem_param__[T: AnyType](self) raises:
         pass
 
 

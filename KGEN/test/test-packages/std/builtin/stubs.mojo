@@ -991,7 +991,7 @@ struct VariadicPack[
     fn __init__(out self, value: Self._mlir_pack_type):
         pass
 
-    fn __getitem__[
+    fn __getitem_param__[
         index: Int
     ](self) -> ref[Self.origin] Self.element_types[index]:
         while True:
@@ -1103,7 +1103,7 @@ struct Tuple[*element_types: AnyType](ImplicitlyCopyable):
     fn __init__(out self, *, deinit take: Self):
         pass
 
-    fn __getitem__[i: Int](ref self) -> ref[self] Self.element_types[i]:
+    fn __getitem_param__[i: Int](ref self) -> ref[self] Self.element_types[i]:
         while __mlir_attr.true:
             pass
 

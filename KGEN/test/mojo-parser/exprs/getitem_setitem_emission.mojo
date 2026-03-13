@@ -165,7 +165,7 @@ fn test_dlvalue_to_pvalue[arr: RegWeirdArray, y: Int]():
 
 
 struct XYZ:
-    fn __getattr__[name: StringLiteral](self) -> Int:
+    fn __getattr_param__[name: StringLiteral](self) -> Int:
         comptime if name == "x":
             return 4
         elif name == "y":
@@ -176,18 +176,18 @@ struct XYZ:
 
 
 struct ParamIndex:
-    fn __getitem__[a: Int, b: Int](self) -> Int:
+    fn __getitem_param__[a: Int, b: Int](self) -> Int:
         return 42
 
 
 # CHECK-LABEL: lit.fn @"test_param_indexing
 fn test_param_indexing(a: XYZ, b: ParamIndex) -> Int:
     # Issue #35662: Support parameter input to getattr
-    # CHECK: lit.call {{.*}}__getattr__{{.*}}!lit.struct<#StringLiteral <:string "x">> *?>(%a)
+    # CHECK: lit.call {{.*}}__getattr_param__{{.*}}!lit.struct<#StringLiteral <:string "x">> *?>(%a)
     _ = a.x
-    # CHECK: lit.call {{.*}}__getattr__{{.*}}!lit.struct<#StringLiteral <:string "y">> *?>(%a)
+    # CHECK: lit.call {{.*}}__getattr_param__{{.*}}!lit.struct<#StringLiteral <:string "y">> *?>(%a)
     _ = a.y
-    # CHECK: lit.call {{.*}}__getitem__{{.*}}<:!Int {2}, :!Int {4}>(%b)
+    # CHECK: lit.call {{.*}}__getitem_param__{{.*}}<:!Int {2}, :!Int {4}>(%b)
     _ = b[2, 4]
 
 
@@ -305,12 +305,12 @@ struct MyInt(FromInt):
 
 @fieldwise_init
 struct Test[T: FromInt](ImplicitlyCopyable):
-    # CHECK:       lit.fn @"__getattr__
+    # CHECK:       lit.fn @"__getattr_param__
     # CHECK-SAME:  byref_result
-    fn __getattr__[dim: StringLiteral](self) -> Self.T:
+    fn __getattr_param__[dim: StringLiteral](self) -> Self.T:
         return Self.T(from_int=42)
 
 
 comptime t = Test[MyInt]()
-# CHECK: lit.alias.decl *"tx{{.*}}": !MyInt = <{{.*}}@"__getattr__
+# CHECK: lit.alias.decl *"tx{{.*}}": !MyInt = <{{.*}}@"__getattr_param__
 comptime tx = t.x
