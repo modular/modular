@@ -15,6 +15,7 @@
 #include "KGEN/KGENDialect/KGENEnums.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/MojoDiags.h"
+#include "llvm/ADT/DenseMap.h"
 
 namespace M::KGEN::LIT {
 class CallOperands;
@@ -27,6 +28,8 @@ class PogListAttr;
 /// the reason for the mismatch.
 class OverloadFitness {
 public:
+  using VisibleParamDeclBindings = llvm::DenseMap<StringAttr, TypedAttr>;
+
   OverloadFitness(OverloadFitness &&other) = default;
 
   ~OverloadFitness() {
@@ -90,11 +93,15 @@ public:
   ///
   /// The 'funcIfDirect' member is set if this is a direct call, or null if
   /// indirect.  It can be used to tune diagnostics.
-  static OverloadFitness evaluate(FnTypeGeneratorType signature,
-                                  ASTDecl *funcIfDirect,
-                                  const OverloadSet &callable,
-                                  const CallOperands &callOperands,
-                                  bool allowImplicitConversions);
+  static OverloadFitness
+  evaluate(FnTypeGeneratorType signature, ASTDecl *funcIfDirect,
+           const OverloadSet &callable, const CallOperands &callOperands,
+           bool allowImplicitConversions,
+           const VisibleParamDeclBindings *visibleParamDeclBindings = nullptr);
+
+  /// Collect hoisted `kgen.param.declare` bindings visible from a callsite.
+  static VisibleParamDeclBindings
+  collectVisibleParamDeclBindings(ASTDecl *callsiteScope);
 
   /// Determine whether the specified signature can be invoked with the
   /// parameter bindings specified in `callable`.

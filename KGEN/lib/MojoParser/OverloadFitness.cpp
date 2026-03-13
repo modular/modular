@@ -19,6 +19,7 @@
 #include "MojoUtils.h"
 #include "ParamInf.h"
 
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
@@ -619,17 +620,41 @@ closureParamCapturesIfClosure(ASTDecl *funcIfDirect,
   return nullptr;
 }
 
+OverloadFitness::VisibleParamDeclBindings
+OverloadFitness::collectVisibleParamDeclBindings(ASTDecl *callsiteScope) {
+  VisibleParamDeclBindings bindings;
+  if (!callsiteScope)
+    return bindings;
+  auto &index = callsiteScope->getShared()
+                    .getClosureEmitter()
+                    .getHoistedBindingsByScope();
+  for (ASTDecl *scope = callsiteScope; scope; scope = scope->getParentDecl()) {
+    auto it = index.find(scope);
+    if (it != index.end())
+      for (auto &[attr, paramDecl] : it->second)
+        bindings.try_emplace(paramDecl.getName(), attr);
+  }
+  return bindings;
+}
+
+static void injectVisibleParamDeclBindings(
+    const OverloadFitness::VisibleParamDeclBindings &bindings,
+    ParameterEvaluator &evaluator) {
+  for (const auto &[name, value] : bindings)
+    evaluator.setDeclBinding(name, value);
+}
+
 /// Determine whether the specified signature can be invoked with the
 /// parameter bindings specified in `callable` and the arguments specified in
 /// `callOperands`.
 ///
 /// The 'funcIfDirect' member is set if this is a direct call, or null if
 /// indirect.  It can be used to tune diagnostics.
-OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
-                                          ASTDecl *funcIfDirect,
-                                          const OverloadSet &callable,
-                                          const CallOperands &operands,
-                                          bool allowImplicitConversions) {
+OverloadFitness OverloadFitness::evaluate(
+    FnTypeGeneratorType signature, ASTDecl *funcIfDirect,
+    const OverloadSet &callable, const CallOperands &operands,
+    bool allowImplicitConversions,
+    const VisibleParamDeclBindings *visibleParamDeclBindings) {
   // We set up diagnostics.
   size_t numPosOperands = operands.getNumPositional();
   size_t numOperands = operands.size();
@@ -968,12 +993,25 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   // Check that all fn constraints are satisfied.
   SmallVector<ConstraintAttr> fnUnprovableConstraints;
+  bool hasHoistedBindings =
+      visibleParamDeclBindings && !visibleParamDeclBindings->empty();
+  std::optional<ParameterEvaluator> fnConstraintEvaluator;
+  if (hasHoistedBindings) {
+    const ParameterEvaluator &inferenceEvaluator = inference.getEvaluator();
+    fnConstraintEvaluator.emplace(inferenceEvaluator.getDeclBindings(),
+                                  inferenceEvaluator.getIndexBindings(),
+                                  inferenceEvaluator.getInputDepth());
+    fnConstraintEvaluator->setEvaluationContext(
+        inferenceEvaluator.getEvaluationContext());
+    injectVisibleParamDeclBindings(*visibleParamDeclBindings,
+                                   *fnConstraintEvaluator);
+  }
   checkConstraints(callable.paramBindings.declScope,
                    originalSignature.getMetadata(),
                    signature.getFnMetadata().getConstraints(),
                    originalSignature.getFnMetadata().getConstraints(), getDiag,
                    &fnUnprovableConstraints,
-                   /*evaluator=*/nullptr);
+                   hasHoistedBindings ? &*fnConstraintEvaluator : nullptr);
   if (diag)
     return std::move(*diag);
   if (!fnUnprovableConstraints.empty())

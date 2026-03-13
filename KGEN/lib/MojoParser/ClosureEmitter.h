@@ -115,6 +115,10 @@ public:
                                   ASTDecl *signatureDecl = nullptr);
   ASTDecl *getOrCreateClosureTrait(FnTypeGeneratorType key,
                                    llvm::function_ref<ASTDecl *()> creation);
+  /// Canonicalize a unified-closure signature and hoist expression-shaped
+  /// parameters into parent-scope `kgen.param.declare` entries.
+  FnTypeGeneratorType hoistParamExpressionsForClosureTrait(
+      FnTypeGeneratorType sig, ASTDecl &closureDecl, Location insertLoc);
   /// Given a name and a trait decl, generate a struct that conforms to the
   /// trait and has a single field that also conforms to that same trait. For
   /// example, if the trait is:
@@ -221,6 +225,11 @@ public:
   TraitType getWrapperTraitType(ASTDecl &traitDecl, ASTDecl &moduleDecl,
                                 bool isCopyable, TypeConvention typeConvention);
 
+  const DenseMap<ASTDecl *, DenseMap<TypedAttr, ParamDeclAttr>> &
+  getHoistedBindingsByScope() const {
+    return hoistedBindingsByScope;
+  }
+
 private:
   /// Given a name, a list of builtin parent traits (like "Movable" for
   /// example), a location, and a populate method, return a trait declaration
@@ -272,6 +281,14 @@ private:
   /// Closure traits live in the top level module. This cache guards against
   /// emitting duplicates.
   DenseMap<Type, ASTDecl *> closureTraitCache;
+
+  /// Monotonic counter for hoisted closure parameter names (E1, E2, ...).
+  unsigned nextHoistedParamIdx = 0;
+  /// Maps each target scope to its hoisted parameter bindings (original attr
+  /// → hoisted ParamDeclAttr).  Used for deduplication during hoisting and
+  /// looked up during overload resolution to avoid redundant IR walks.
+  DenseMap<ASTDecl *, DenseMap<TypedAttr, ParamDeclAttr>>
+      hoistedBindingsByScope;
 };
 
 } // namespace M::KGEN::LIT
