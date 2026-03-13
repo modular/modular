@@ -52,16 +52,16 @@ def addStableDecorator(mojo_json) -> None:  # noqa: ANN001
 
 
 def addImplicitConversionDecorator(mojo_json) -> None:  # noqa: ANN001
-    """Show @implicit on implicit constructors. We reuse the "convention"
-    field which is also used for marking structs with the register-passable
-    decorator. The isImplicitConversion flag should only appear on constructors,
-    but check just in case."""
+    """Show @implicit on implicit constructors.  The isImplicitConversion
+    flag should only appear on constructors, but check just in case.
+    For now we assume that this is the only decorator we show
+    (the @stable decorator is not in the templates at present)."""
     for struct in mojo_json["structs"] + mojo_json["traits"]:
         for overload_set in struct["functions"]:
             for function in overload_set["overloads"]:
                 if function["isImplicitConversion"]:
                     if function["name"] == "__init__":
-                        function["convention"] = "@implicit"
+                        function["implicit"] = True
                     else:
                         print(
                             f"Error: {struct['name']}.{function['name']} "
@@ -77,25 +77,6 @@ def copyFieldTypesToValue(mojo_json) -> None:  # noqa: ANN001
     for struct in mojo_json["structs"] + mojo_json["traits"]:
         for field in struct["fields"]:
             field["value"] = field["type"]
-
-
-def processStructConvention(mojo_json) -> None:  # noqa: ANN001
-    """We want to show the decorators for register-passable types; don't display
-    anything for the default case (memory-only)."""
-    for struct in mojo_json["structs"]:
-        if "convention" in struct:
-            if struct["convention"] == "register_passable":
-                struct["convention"] = "@register_passable"
-            elif struct["convention"] == "register_passable_trivial":
-                struct["convention"] = "@register_passable(trivial)"
-            elif struct["convention"] == "memory_only":
-                del struct["convention"]
-            else:
-                print(
-                    f"Unknown struct convention: {struct['convention']}",
-                    file=sys.stderr,
-                )
-                exit(1)
 
 
 def processTraitMethods(mojo_json) -> None:  # noqa: ANN001
@@ -295,7 +276,6 @@ def generateMarkdown(
             addStableDecorator,
             addImplicitConversionDecorator,
             copyFieldTypesToValue,
-            processStructConvention,
             processTraitMethods,
             removeParametersWithoutDocumentation,
             removeArgumentsWithoutDocumentation,
