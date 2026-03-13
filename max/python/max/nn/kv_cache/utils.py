@@ -40,6 +40,7 @@ class AttentionDispatchResolver:
         is_mla: bool,
         n_kv_heads_per_device: int,
         num_q_heads: int | None = None,
+        is_fp8_kv: bool = False,
     ) -> None:
         self._model: Model | None = None
         self._is_mla = is_mla
@@ -50,7 +51,9 @@ class AttentionDispatchResolver:
 
         if self._is_mla:
             assert num_q_heads is not None
-            self._model = self._build_mla_model(session, device, num_q_heads)
+            self._model = self._build_mla_model(
+                session, device, num_q_heads, is_fp8_kv
+            )
         else:
             self._model = self._build_mha_model(
                 session, device, n_kv_heads_per_device
@@ -81,7 +84,10 @@ class AttentionDispatchResolver:
 
     @staticmethod
     def _build_mla_model(
-        session: InferenceSession, device: DeviceRef, num_heads: int
+        session: InferenceSession,
+        device: DeviceRef,
+        num_heads: int,
+        is_fp8_kv: bool = False,
     ) -> Model:
         with Graph(
             "mla_dispatch_args",
@@ -103,7 +109,10 @@ class AttentionDispatchResolver:
                         shape=[4], dtype=DType.int64, device=DeviceRef.CPU()
                     ),
                 ],
-                parameters={"num_heads": num_heads},
+                parameters={
+                    "num_heads": num_heads,
+                    "is_fp8_kv": is_fp8_kv,
+                },
             )
             graph.output(scalars.tensor)
         return session.load(graph)
@@ -164,7 +173,7 @@ class AttentionDispatchMetadataScalars:
     device_buffer: Buffer | None = None
 
     def to_buffer(self) -> Buffer:
-        """Returns a CPU ``[4]`` int64 buffer with the packed metadata."""
+        """Returns a CPU ``[4]`` int64 buffer with packed dispatch metadata."""
         return Buffer.from_numpy(
             np.array(
                 [
@@ -181,6 +190,21 @@ class AttentionDispatchMetadataScalars:
 def build_max_lengths_tensor(
     num_steps: int, max_seq_length: int, max_cache_length: int
 ) -> Buffer:
+    """Builds a ``[num_steps, 2]`` uint32 buffer of per-step maximum lengths.
+
+    Each row encodes the maximum sequence length and maximum cache length for
+    that decode step. The first step uses ``max_seq_length``; subsequent steps
+    use 1 (one new token per step). Cache length increases by 1 each step.
+
+    Args:
+        num_steps: The number of decode steps to pre-compute lengths for.
+        max_seq_length: The maximum sequence length for the first step.
+        max_cache_length: The maximum cache length for the first step.
+
+    Returns:
+        A :class:`~max.driver.Buffer` of shape ``[num_steps, 2]`` and dtype
+        ``uint32`` containing ``(max_seq_length, max_cache_length)`` pairs.
+    """
     # Build a tensor of maximum lengths. Each step slices the first row to
     # advance to the values for the next row.
     max_lengths_np = np.empty((num_steps, 2), np.uint32)

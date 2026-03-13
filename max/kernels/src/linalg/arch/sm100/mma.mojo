@@ -35,7 +35,7 @@ from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
 
 
 # TODO: Add methods to conveniently extract specific modes from a layout.
-fn extract_first_2_modes[l: Layout]() -> Layout:
+def extract_first_2_modes[l: Layout]() -> Layout:
     comptime assert l.rank() >= 2
 
     return Layout(
@@ -51,11 +51,11 @@ struct Major(TrivialRegisterPassable):
     comptime K = Major(0)
     comptime MN = Major(1)
 
-    fn __eq__(self, rhs: Major) -> Bool:
+    def __eq__(self, rhs: Major) -> Bool:
         return self.val == rhs.val
 
 
-fn max_contiguous_tile_shape[
+def max_contiguous_tile_shape[
     rank: Int,
     //,
     dtype: DType,
@@ -86,7 +86,7 @@ fn max_contiguous_tile_shape[
 
 # TODO: add create method to mma_operand trait and unify this with
 # SM90 counter part by abstracting the return dtype.
-fn _create_mma_desc[
+def _create_mma_desc[
     dtype: DType, //, canonical_layout: Layout, swizzle_mode: TensorMapSwizzle
 ](
     ptr: UnsafePointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
@@ -103,7 +103,7 @@ fn _create_mma_desc[
     return MMASmemDescriptor.create[SBO, LBO, swizzle_mode](ptr)
 
 
-fn _create_mma_desc_pair[
+def _create_mma_desc_pair[
     dtype: DType, //, canonical_layout: Layout, swizzle_mode: TensorMapSwizzle
 ](
     ptr: UnsafePointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
@@ -121,7 +121,7 @@ fn _create_mma_desc_pair[
 
 
 @always_inline
-fn smem_descriptor[
+def smem_descriptor[
     dtype: DType,
     //,
     *,
@@ -163,7 +163,7 @@ struct MmaOpSM100_SS[
     var mask: UInt16
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         comptime assert (
             Self.transpose_b
         ), "MmaOpSM100 only supports transposed B"
@@ -215,7 +215,7 @@ struct MmaOpSM100_SS[
                 self.mask |= dim1_mask << UInt16(block_id_in_cluster.x ^ 1)
 
     @always_inline
-    fn mma(
+    def mma(
         self,
         a: LayoutTensor[address_space=AddressSpace.SHARED, ...],
         b: LayoutTensor[address_space=AddressSpace.SHARED, ...],
@@ -267,7 +267,7 @@ struct MmaOpSM100_SS[
             )
 
     @always_inline
-    fn mma(
+    def mma(
         self,
         a: TileTensor[address_space=AddressSpace.SHARED, ...],
         b: TileTensor[address_space=AddressSpace.SHARED, ...],
@@ -372,7 +372,7 @@ struct MmaOpSM100_SS[
             )
 
     @always_inline
-    fn commit(
+    def commit(
         self,
         ptr_mbar: UnsafePointer[address_space=AddressSpace.SHARED, ...],
     ):
@@ -382,11 +382,11 @@ struct MmaOpSM100_SS[
             mma_arrive_multicast[Self.cta_group](ptr_mbar, self.mask)
 
     @always_inline
-    fn wait(self):
+    def wait(self):
         pass
 
     @staticmethod
-    fn _get_umma_kind[dtype: DType]() -> UMMAKind:
+    def _get_umma_kind[dtype: DType]() -> UMMAKind:
         comptime if dtype == DType.float32:
             return UMMAKind.KIND_TF32
         elif dtype in (DType.float16, DType.bfloat16):
@@ -424,7 +424,7 @@ struct MmaOpSM100_BlockScaled_SS[
     var mask: UInt16
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         comptime assert (
             Self.scaling_kind == UMMAKind.KIND_MXF8F6F4
             or Self.scaling_kind == UMMAKind.KIND_MXF4NVF4
@@ -493,7 +493,7 @@ struct MmaOpSM100_BlockScaled_SS[
                 self.mask |= dim1_mask << UInt16((block_id_in_cluster.x ^ 1))
 
     @always_inline
-    fn mma(
+    def mma(
         self,
         a: LayoutTensor[address_space=AddressSpace.SHARED, ...],
         b: LayoutTensor[address_space=AddressSpace.SHARED, ...],
@@ -563,7 +563,7 @@ struct MmaOpSM100_BlockScaled_SS[
 
             @always_inline
             @parameter
-            fn _get_sfb_tmem_offset(
+            def _get_sfb_tmem_offset(
                 sfb_tmem: UInt32,
                 work_tile_coord: Tuple[UInt, UInt],
             ) -> UInt32:
@@ -618,7 +618,7 @@ struct MmaOpSM100_BlockScaled_SS[
                 )
 
     @always_inline
-    fn mma(
+    def mma(
         self,
         a: TileTensor[address_space=AddressSpace.SHARED, ...],
         b: TileTensor[address_space=AddressSpace.SHARED, ...],
@@ -819,12 +819,14 @@ struct MmaOpSM100_BlockScaled_SS[
             self._copy_sf_to_tmem_tt[
                 Self.sfa_dtype, sfa_layout, Self.block_tile_shape[0], 0
             ](sfa_smem, sfa_tmem)
-            self._copy_sf_to_tmem_tt[
-                Self.sfb_dtype,
-                sfb_layout,
-                align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
-                0,
-            ](sfb_smem, sfb_tmem)
+            # only use tcgen_cp for MMA_N shapes that already meet the SFB TMEM alignment requirement. For the rest shapes, we will load them manually using tcgen_st
+            comptime if Self.mma_shape[1] % 64 == 0:
+                self._copy_sf_to_tmem_tt[
+                    Self.sfb_dtype,
+                    sfb_layout,
+                    align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
+                    0,
+                ](sfb_smem, sfb_tmem)
 
         comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
             comptime a_offset = a_layout(IntTuple(0, k)) * size_of[
@@ -863,12 +865,14 @@ struct MmaOpSM100_BlockScaled_SS[
                     Self.block_tile_shape[0],
                     sf_idx,
                 ](sfa_smem, sfa_tmem)
-                self._copy_sf_to_tmem_tt[
-                    Self.sfb_dtype,
-                    sfb_layout,
-                    align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
-                    sf_idx,
-                ](sfb_smem, sfb_tmem)
+                # only use tcgen_cp for MMA_N shapes that already meet the SFB TMEM alignment requirement. For the rest shapes, we will load them manually using tcgen_st
+                comptime if Self.mma_shape[1] % 64 == 0:
+                    self._copy_sf_to_tmem_tt[
+                        Self.sfb_dtype,
+                        sfb_layout,
+                        align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
+                        sf_idx,
+                    ](sfb_smem, sfb_tmem)
 
                 mma[Self.cta_group](
                     a_desc + a_offset,
@@ -883,7 +887,7 @@ struct MmaOpSM100_BlockScaled_SS[
                 )
 
     @always_inline
-    fn commit(
+    def commit(
         self,
         ptr_mbar: UnsafePointer[address_space=AddressSpace.SHARED, ...],
     ):
@@ -893,11 +897,11 @@ struct MmaOpSM100_BlockScaled_SS[
             mma_arrive_multicast[Self.cta_group](ptr_mbar, self.mask)
 
     @always_inline
-    fn wait(self):
+    def wait(self):
         pass
 
     @always_inline
-    fn copy_sf_to_tmem[
+    def copy_sf_to_tmem[
         sf_dtype: DType,
         sf_smem_layout: Layout,
         TILE_MN: Int,
@@ -930,7 +934,7 @@ struct MmaOpSM100_BlockScaled_SS[
             ](sf_tmem_addr, sf_desc)
 
     @always_inline
-    fn _copy_sf_to_tmem_tt[
+    def _copy_sf_to_tmem_tt[
         sf_dtype: DType,
         sf_smem_layout: Layout,
         TILE_MN: Int,

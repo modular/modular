@@ -2073,10 +2073,10 @@ def test_load_and_mma_f32_bf8_16x16x32_transpose_k_group_size_2(
     ](ctx)
 
 
-fn test_load_b_tr(ctx: DeviceContext) raises:
+def test_load_b_tr(ctx: DeviceContext) raises:
     print("== test_load_b_tr")
 
-    fn kernel[
+    def kernel[
         mma_shape: IndexList[3]
     ](flag: UnsafePointer[Scalar[DType.bool], MutAnyOrigin]):
         var smem = LayoutTensor[

@@ -19,11 +19,10 @@ from std.gpu import (
     block_idx,
 )
 from std.gpu import warp_id as get_warp_id, WARP_SIZE
-from layout import IntTuple, Layout, LayoutTensor
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.element import Element
 from layout.layout_tensor import ThreadScope
-from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core import num_matrix_reg
 from std.memory import AddressSpace as BaseAddressSpace
 from std.memory import stack_allocation
@@ -38,12 +37,12 @@ from std.sys._assembly import inlined_assembly
 
 
 @always_inline
-fn get_fragment_layout[mma_shape: IndexList[3]]() -> Layout:
+def get_fragment_layout[mma_shape: IndexList[3]]() -> Layout:
     return Layout.row_major(1, num_matrix_reg[mma_shape[0], mma_shape[1]]())
 
 
 @always_inline
-fn get_nested_fragment_layout[mma_shape: IndexList[3]]() -> Layout:
+def get_nested_fragment_layout[mma_shape: IndexList[3]]() -> Layout:
     return (
         Layout(
             IntTuple(1, IntTuple(4, 4)), IntTuple(1, IntTuple(1, 8))
@@ -53,14 +52,14 @@ fn get_nested_fragment_layout[mma_shape: IndexList[3]]() -> Layout:
 
 
 @always_inline
-fn get_warp_layout[mma_shape: IndexList[3]]() -> Layout:
+def get_warp_layout[mma_shape: IndexList[3]]() -> Layout:
     return Layout.col_major(32, 2) if mma_shape[0] == 32 else Layout.col_major(
         16, 4
     )
 
 
 @always_inline
-fn get_warp_coords[BN: Int, WN: Int]() -> IndexList[2]:
+def get_warp_coords[BN: Int, WN: Int]() -> IndexList[2]:
     comptime num_warps_n = BN // WN
     var warp_row = get_warp_id() // UInt(num_warps_n)
     var warp_col = get_warp_id() % UInt(num_warps_n)
@@ -68,7 +67,7 @@ fn get_warp_coords[BN: Int, WN: Int]() -> IndexList[2]:
 
 
 @always_inline
-fn pad[dtype: DType, depth: Int, size: Int]() -> Int:
+def pad[dtype: DType, depth: Int, size: Int]() -> Int:
     comptime simd_width = simd_width_of[dtype]()
     comptime padding = 0 if depth == 64 else size // simd_width
     return size + padding
@@ -90,7 +89,7 @@ comptime SharedLayoutTensor[dtype: DType, layout: Layout] = LayoutTensor[
 
 
 @always_inline("nodebug")
-fn copy_local_to_dram2[
+def copy_local_to_dram2[
     dst_thread_layout: Layout,
     thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](dst: LayoutTensor, src: LayoutTensor, dst_base: LayoutTensor):
@@ -196,7 +195,7 @@ struct SharedMemoryManager[
     ) * (2 if Self.double_buffer else 1)
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         self.p_smem = stack_allocation[
             Self.p_smem_size,
             Self.dtype,
@@ -221,7 +220,7 @@ struct SharedMemoryManager[
         ]()
 
     @always_inline
-    fn get_k_ptr[
+    def get_k_ptr[
         _dtype: DType
     ](
         self,
@@ -233,7 +232,7 @@ struct SharedMemoryManager[
         return self.k_smem.bitcast[Scalar[_dtype]]()
 
     @always_inline
-    fn get_v_ptr[
+    def get_v_ptr[
         _dtype: DType
     ](
         self,
@@ -245,7 +244,7 @@ struct SharedMemoryManager[
         return self.v_smem.bitcast[Scalar[_dtype]]()
 
     @always_inline
-    fn get_p_ptr[
+    def get_p_ptr[
         _dtype: DType
     ](
         self,
@@ -257,7 +256,7 @@ struct SharedMemoryManager[
         return self.p_smem.bitcast[Scalar[_dtype]]()
 
     @always_inline
-    fn get_warp_scratch_ptr[
+    def get_warp_scratch_ptr[
         _dtype: DType
     ](
         self,
@@ -317,7 +316,7 @@ struct GlobalMemoryManager[
     ]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         q_tile_idx: UInt32,
         kv_head_idx: UInt32,
@@ -355,7 +354,7 @@ struct GlobalMemoryManager[
         )
 
     @always_inline
-    fn get_q_tensor[
+    def get_q_tensor[
         qtype: DType,
     ](
         self,
@@ -372,7 +371,7 @@ struct GlobalMemoryManager[
         return {ptr + Int(self.q_offset), self.q_runtime_layout}
 
     @always_inline
-    fn get_output_tensor[
+    def get_output_tensor[
         out_type: DType,
     ](
         self,
@@ -389,7 +388,7 @@ struct GlobalMemoryManager[
         return {ptr + Int(self.output_offset), self.output_runtime_layout}
 
     @always_inline
-    fn get_kv_tensor[
+    def get_kv_tensor[
         kvtype: DType,
         //,
     ](
@@ -422,7 +421,7 @@ comptime _no_alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.Loca
 
 
 @always_inline
-fn _load_tr16_b64_row(
+def _load_tr16_b64_row(
     tile: LayoutTensor[_, _, address_space=AddressSpace.SHARED, ...]
 ) -> SIMD[tile.dtype, 4]:
     # ds_read_tr16_b64 uses a set of 4x4 lanes (amd calls 16 lanes a "row")
@@ -468,7 +467,7 @@ fn _load_tr16_b64_row(
 
 
 @always_inline
-fn _load_tr16_b64_warp[
+def _load_tr16_b64_warp[
     mma_shape: IndexList[3],
 ](tile: LayoutTensor[_, _, address_space=AddressSpace.SHARED, ...]) -> SIMD[
     tile.dtype, 4
@@ -500,7 +499,7 @@ fn _load_tr16_b64_warp[
 
 
 @always_inline
-fn load_b_tr[
+def load_b_tr[
     mma_shape: IndexList[3]
 ](tile: LayoutTensor[_, _, address_space=AddressSpace.SHARED, ...]) -> SIMD[
     tile.dtype, 8
@@ -570,7 +569,7 @@ fn load_b_tr[
 
 
 @always_inline
-fn copy_dram_to_sram_lds[
+def copy_dram_to_sram_lds[
     swizzle: Optional[Swizzle] = Optional[Swizzle](),
 ](dst: LayoutTensor, src: LayoutTensor, lds_base_ptr: UInt32 = 0):
     comptime thread_layout = Layout.row_major(16, 4)
@@ -673,7 +672,7 @@ fn copy_dram_to_sram_lds[
 
 
 @always_inline
-fn load_b_tile[
+def load_b_tile[
     mma_shape: IndexList[3], swizzle: Optional[Swizzle], k_tile_idx: Int
 ](src: LayoutTensor) -> SIMD[src.dtype, simd_width_of[src.dtype]()]:
     comptime MMA_M = mma_shape[0]
@@ -715,7 +714,7 @@ fn load_b_tile[
 
 
 @always_inline
-fn load_b[
+def load_b[
     mma_shape: IndexList[3], swizzle: Optional[Swizzle]
 ](
     src: LayoutTensor,

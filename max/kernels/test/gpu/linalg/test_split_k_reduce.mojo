@@ -16,8 +16,7 @@ from std.random import rand
 
 from buffer import DimList, NDBuffer
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout
-from layout.layout import UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from linalg.matmul.gpu import split_k_reduce
 from std.testing import assert_almost_equal
 
@@ -25,7 +24,7 @@ from std.utils import IndexList
 from std.utils.index import Index
 
 
-fn _size[rank: Int](dims: IndexList[rank]) -> Int:
+def _size[rank: Int](dims: IndexList[rank]) -> Int:
     var size = 1
 
     comptime for i in range(rank):
@@ -33,7 +32,7 @@ fn _size[rank: Int](dims: IndexList[rank]) -> Int:
     return size
 
 
-fn _create_device_buffer[
+def _create_device_buffer[
     dtype: DType, rank: Int, shape: DimList
 ](ctx: DeviceContext, dynamic_shape: IndexList[rank]) raises -> Tuple[
     DeviceBuffer[dtype], NDBuffer[rank=rank, dtype, MutAnyOrigin, shape]
@@ -47,7 +46,7 @@ fn _create_device_buffer[
     )
 
 
-fn _create_host_buffer[
+def _create_host_buffer[
     dtype: DType, rank: Int, shape: DimList
 ](dynamic_shape: IndexList[rank]) raises -> NDBuffer[
     rank=rank, dtype, MutAnyOrigin, shape
@@ -58,13 +57,15 @@ fn _create_host_buffer[
     )
 
 
-fn _get_test_name[
+def _get_test_name[
     dtype: DType, shape_a: DimList, shape_b: DimList
 ](shape_a_dim: IndexList[2], shape_b_dim: IndexList[2],) -> String:
-    return t"test-case({dtype}) : a -> {shape_a_dim} and b ->{shape_b_dim}"
+    return String(
+        t"test-case({dtype}) : a -> {shape_a_dim} and b ->{shape_b_dim}"
+    )
 
 
-fn _split_k_reduce_verify[
+def _split_k_reduce_verify[
     dtype: DType, a_shape: DimList, b_shape: DimList
 ](
     mut A: NDBuffer[mut=True, rank=2, dtype, _, a_shape],
@@ -148,7 +149,7 @@ def test_split_k_reduce_rank3[
     @parameter
     @always_inline
     @__copy_capture(c, epilogue_buffer)
-    fn epilogue_fn[
+    def epilogue_fn[
         _dtype: DType, _width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_dtype, _width]) capturing -> None:
         var another_val = rebind[SIMD[_dtype, _width]](

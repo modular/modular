@@ -58,8 +58,8 @@ class MAXPushQueue(Protocol, Generic[PushItemType]):
 
         This method is designed to immediately fail (typically by raising an exception)
         if the item cannot be added to the queue at the time of the call. Unlike the
-        traditional 'put' method in many queue implementations—which may block until
-        space becomes available or the transfer is completed—this method never waits.
+        traditional 'put' method in many queue implementations, which may block until
+        space becomes available or the transfer is completed - this method never waits.
         It is intended for use cases where the caller must be notified of failure to
         enqueue immediately, rather than waiting for space.
 

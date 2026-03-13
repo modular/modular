@@ -19,7 +19,7 @@ from std.testing import TestSuite, assert_false, assert_true
 
 def test_compile_atomic() raises:
     @parameter
-    fn my_add_function[
+    def my_add_function[
         dtype: DType
     ](mut x: Atomic[dtype, scope="agent"]) -> Scalar[dtype]:
         return x.fetch_add(1)
@@ -36,7 +36,7 @@ def test_compile_atomic() raises:
 
 def test_compile_fence() raises:
     @parameter
-    fn my_fence_function():
+    def my_fence_function():
         fence[scope="agent"]()
 
     var asm = compile_info[my_fence_function, emission_kind="llvm"]()
@@ -45,7 +45,9 @@ def test_compile_fence() raises:
 
 
 def test_compile_compare_exchange() raises:
-    fn my_cmpxchg_function(mut atm: Atomic[DType.int32, scope="agent"]) -> Bool:
+    def my_cmpxchg_function(
+        mut atm: Atomic[DType.int32, scope="agent"]
+    ) -> Bool:
         var expected = Int32(0)
         return atm.compare_exchange(expected, 42)
 

@@ -25,17 +25,17 @@ from max.nn.attention.multi_latent_attention import MLADecodeMetadata
 from max.nn.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.float8_config import (
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
-    Float8WeightScaleSpec,
-)
 from max.nn.kernels import compute_mla_dispatch_args_scalar
 from max.nn.kv_cache import (
     KVCacheParams,
     unflatten_ragged_attention_inputs,
+)
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
 )
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -242,24 +242,24 @@ def generate_max_outputs_fp8(
     )
 
     # Create FP8 configuration with block-wise dynamic scaling [128, 128]
-    input_spec = Float8InputScaleSpec(
-        granularity=Float8ScaleGranularity.BLOCK,
-        origin=Float8ScaleOrigin.DYNAMIC,
+    input_spec = InputScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        origin=ScaleOrigin.DYNAMIC,
         dtype=DType.float32,
         block_size=(1, 128),
     )
 
-    weight_spec = Float8WeightScaleSpec(
-        granularity=Float8ScaleGranularity.BLOCK,
+    weight_spec = WeightScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
         dtype=DType.float32,
         block_size=(128, 128),
     )
 
-    float8_config = Float8Config(
+    quant_config = QuantConfig(
         input_scale=input_spec,
         weight_scale=weight_spec,
-        mlp_in_float8=set(),
-        attn_qkv_in_float8=set(),
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
         embedding_output_dtype=None,
         quant_method="fp8",
     )
@@ -270,7 +270,7 @@ def generate_max_outputs_fp8(
         num_key_value_heads=config.num_key_value_heads,
         hidden_size=config.hidden_size,
         kv_params=kv_params,
-        float8_config=float8_config,
+        quant_config=quant_config,
         q_lora_rank=config.q_lora_rank,
         kv_lora_rank=config.kv_lora_rank,
         qk_nope_head_dim=config.qk_nope_head_dim,
@@ -326,6 +326,7 @@ def generate_max_outputs_fp8(
                 q_max_seq_len,
                 num_heads=config.num_attention_heads,
                 device=DeviceRef.GPU(),
+                is_fp8_kv=True,
             ).to(DeviceRef.GPU())
             mla_decode_metadata = MLADecodeMetadata(scalar_args=gpu_args)
 

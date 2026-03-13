@@ -26,9 +26,8 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace, external_memory
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
-from layout import Layout, LayoutTensor
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import IntTuple
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
@@ -36,7 +35,6 @@ from layout.tensor_core_async import (
     tile_sf_layout_k_major,
 )
 from layout.layout import tile_to_shape
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE, RuntimeLayout
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from layout.tma_async import (
     SharedMemBarrier,
@@ -73,7 +71,7 @@ from linalg.fp4_utils import (
 from linalg.matmul.vendor.blas import matmul
 
 
-fn simple_init() -> Bool:
+def simple_init() -> Bool:
     for arg in argv():
         if arg == "--simple-init":
             return True
@@ -84,7 +82,7 @@ fn simple_init() -> Bool:
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_scales_tma_op, `nvvm.grid_constant`)
-fn block_scaled_mxfp8_kernel[
+def block_scaled_mxfp8_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -492,7 +490,7 @@ fn block_scaled_mxfp8_kernel[
                     )
 
 
-fn sm100_block_scaled_mxfp8[
+def sm100_block_scaled_mxfp8[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -705,13 +703,13 @@ def test_block_scaled_mxfp8[
 
     # Initialize reference scales
     comptime REF_BLOCK_SCALE = 128
-    comptime static_ref_a_scales_shape = DimList(
+    comptime static_ref_a_scales_shape = DimList[
         ceildiv(k, REF_BLOCK_SCALE), m.dim
-    )
-    comptime static_ref_b_scales_shape = DimList(
+    ]()
+    comptime static_ref_b_scales_shape = DimList[
         ceildiv(Int(n.dim), REF_BLOCK_SCALE),
         ceildiv(k, REF_BLOCK_SCALE),
-    )
+    ]()
 
     var dynamic_ref_a_scales_shape = IndexList[2](
         ceildiv(k, REF_BLOCK_SCALE), m.value
@@ -784,9 +782,9 @@ def test_block_scaled_mxfp8[
         + String(umma_shape)
     )
 
-    comptime static_a_shape = DimList(m.dim, k)
-    comptime static_b_shape = DimList(n.dim, k)
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList[m.dim, k]()
+    comptime static_b_shape = DimList[n.dim, k]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
     var dynamic_a_shape = IndexList[2](m.value, k)
     var dynamic_b_shape = IndexList[2](n.value, k)
     var dynamic_c_shape = IndexList[2](m.value, n.value)
@@ -795,20 +793,20 @@ def test_block_scaled_mxfp8[
     comptime atom_m = (32, 4)
     comptime atom_k = 4
     comptime sf_k = ceildiv(k, SF_VECTOR_SIZE)
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList[
         ceildiv(m.dim, atom_m[0] * atom_m[1]),
         ceildiv(sf_k, atom_k),
         Dim(atom_m[0]),
         Dim(atom_m[1]),
         Dim(atom_k),
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         ceildiv(n.dim, atom_m[0] * atom_m[1]),
         ceildiv(sf_k, atom_k),
         Dim(atom_m[0]),
         Dim(atom_m[1]),
         Dim(atom_k),
-    )
+    ]()
 
     var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, atom_m[0] * atom_m[1]),

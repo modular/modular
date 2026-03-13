@@ -34,11 +34,12 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
+    TensorLayout,
     TileTensor,
     coord_to_index_list,
     row_major,
 )
-from layout.tile_layout import TensorLayout, Layout as TileLayout
+from layout.tile_layout import Layout as TileLayout
 from linalg.bmm import _batched_matmul_gpu, batched_matmul_dynamic_scaled_fp8
 from linalg.matmul import matmul
 from std.utils.index import StaticTuple
@@ -72,7 +73,7 @@ comptime MLA_DECODE_MAX_SEQ_LEN = 4
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
 )
-fn fused_rope_rmsnorm_kernel[
+def fused_rope_rmsnorm_kernel[
     dtype: DType,
     freq_dtype: DType,
     gamma_dtype: DType,
@@ -243,7 +244,7 @@ fn fused_rope_rmsnorm_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
 )
-fn fused_rope_rmsnorm_quantization_kernel[
+def fused_rope_rmsnorm_quantization_kernel[
     dtype: DType,
     freq_dtype: DType,
     gamma_dtype: DType,
@@ -418,7 +419,7 @@ fn fused_rope_rmsnorm_quantization_kernel[
 
 
 @always_inline
-fn mla_fused_rope_rmsnorm[
+def mla_fused_rope_rmsnorm[
     dtype: DType,
     freq_dtype: DType,
     gamma_dtype: DType,
@@ -531,7 +532,7 @@ fn mla_fused_rope_rmsnorm[
 
 
 @always_inline
-fn mla_fused_rope_rmsnorm_quantization[
+def mla_fused_rope_rmsnorm_quantization[
     dtype: DType,
     freq_dtype: DType,
     gamma_dtype: DType,
@@ -654,7 +655,7 @@ fn mla_fused_rope_rmsnorm_quantization[
 # ===-----------------------------------------------------------------------===#
 
 
-fn mla_prefill_branch_fp8[
+def mla_prefill_branch_fp8[
     dtype: DType,
     fp8_dtype: DType,
     fp8_scale_dtype: DType,
@@ -872,7 +873,7 @@ fn mla_prefill_branch_fp8[
     @__copy_capture(k_latent)
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int) -> SIMD[k_latent.dtype, width]:
         return k_latent.load[width=width]((Idx(row), Idx(col)))
@@ -987,7 +988,7 @@ fn mla_prefill_branch_fp8[
 
 
 @always_inline
-fn quantize_and_bmm_fp8_helper[
+def quantize_and_bmm_fp8_helper[
     dtype: DType,
     fp8_dtype: DType,
     fp8_scale_dtype: DType,
@@ -1035,7 +1036,7 @@ fn quantize_and_bmm_fp8_helper[
     @parameter
     @__copy_capture(a)
     @always_inline
-    fn input_fn[
+    def input_fn[
         width: Int, alignment: Int
     ](batch: Int, row: Int, col: Int) capturing -> SIMD[dtype, width]:
         # First transpose the q_nope tensor from [row, batch, col] to [batch, row, col].
@@ -1073,7 +1074,7 @@ fn quantize_and_bmm_fp8_helper[
     )
 
 
-fn mla_decode_branch_fp8[
+def mla_decode_branch_fp8[
     dtype: DType,
     fp8_dtype: DType,
     fp8_scale_dtype: DType,
@@ -1159,8 +1160,7 @@ fn mla_decode_branch_fp8[
             each head's original space. Shape: [num_heads, v_head_dim, kv_latent_dim].
         w_uv_scale: The scale for the w_uv weight matrix. Shape varies
             depending on the float8_config.
-        scalar_args_buf: Buffer containing scalar arguments for device graph
-            capture.
+        scalar_args_buf: Packed MLA dispatch metadata buffer.
         ctx: Device context.
     """
 
@@ -1331,7 +1331,7 @@ fn mla_decode_branch_fp8[
 
 
 @always_inline
-fn mla_prefill_decode_graph_fp8[
+def mla_prefill_decode_graph_fp8[
     dtype: DType,
     fp8_dtype: DType,
     fp8_scale_dtype: DType,
@@ -1451,7 +1451,7 @@ fn mla_prefill_decode_graph_fp8[
 
 
 @always_inline
-fn convert_bf16_to_fp8_e4m3fn(
+def convert_bf16_to_fp8_e4m3fn(
     input_buffer: TileTensor[mut=False, DType.bfloat16, ...],
     output_buffer: TileTensor[mut=True, DType.float8_e4m3fn, ...],
     context: DeviceContext,
@@ -1471,7 +1471,7 @@ fn convert_bf16_to_fp8_e4m3fn(
     @always_inline
     @parameter
     @__copy_capture(input_buffer, output_buffer)
-    fn convert_kernel[
+    def convert_kernel[
         width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         comptime assert rank == 2 or rank == 3, "rank should be 2 or 3"
@@ -1513,7 +1513,7 @@ fn convert_bf16_to_fp8_e4m3fn(
 # ===-----------------------------------------------------------------------===#
 
 
-fn mla_prefill_branch_bf16[
+def mla_prefill_branch_bf16[
     collection_t: KVCollectionT,
     //,
     mask_str: StaticString,
@@ -1672,7 +1672,7 @@ fn mla_prefill_branch_bf16[
         @always_inline
         @parameter
         @__copy_capture(k_fp8_flat)
-        fn k_elementwise_convert[
+        def k_elementwise_convert[
             dtype: DType, width: Int, *, alignment: Int = 1
         ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
             k_fp8_flat.store[width=width](
@@ -1707,7 +1707,7 @@ fn mla_prefill_branch_bf16[
         @always_inline
         @parameter
         @__copy_capture(v_fp8_flat)
-        fn v_elementwise_convert[
+        def v_elementwise_convert[
             dtype: DType, width: Int, *, alignment: Int = 1
         ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
             v_fp8_flat.store[width=width](
@@ -1839,7 +1839,7 @@ fn mla_prefill_branch_bf16[
 # ===-----------------------------------------------------------------------===#
 
 
-fn mla_decode_branch_bf16[
+def mla_decode_branch_bf16[
     collection_t: KVCollectionT,
     //,
     mask_str: StaticString,
@@ -2055,7 +2055,7 @@ fn mla_decode_branch_bf16[
 
 
 @always_inline
-fn mla_prefill_decode_graph_bf16[
+def mla_prefill_decode_graph_bf16[
     collection_t: KVCollectionT,
     //,
     mask_str: StaticString,

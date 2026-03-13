@@ -40,8 +40,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor
-from layout.runtime_layout import RuntimeLayout
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from std.memory import UnsafePointer
 from shmem import *
 from shmem.ep_comm import (
@@ -60,7 +59,7 @@ from shmem._mpi import MPI_Finalize
 from std.utils import IndexList
 
 
-fn legalize_topk_ids[
+def legalize_topk_ids[
     n_experts: Int, top_k: Int
 ](topk_ids: UnsafePointer[mut=True, Int32, _], n_tokens: Int):
     for tok_id in range(n_tokens):
@@ -68,7 +67,7 @@ fn legalize_topk_ids[
 
         # The top-k ids for a token should be unique. If not, we will assign a
         # random id to the duplicate id.
-        fn is_duplicate() -> Int:
+        def is_duplicate() -> Int:
             for i in range(top_k):
                 for j in range(i + 1, top_k):
                     if topk_ids_for_token[i] == topk_ids_for_token[j]:
@@ -81,7 +80,7 @@ fn legalize_topk_ids[
             duplicate_idx = is_duplicate()
 
 
-fn bench_dispatch[
+def bench_dispatch[
     token_dtype: DType,
     scales_dtype: DType,
     hidden_size: Int,
@@ -239,12 +238,12 @@ fn bench_dispatch[
 
     @always_inline
     @parameter
-    fn clean_up(ctx: DeviceContext) raises:
+    def clean_up(ctx: DeviceContext) raises:
         ctx.enqueue_memset(atomic_counter, Int32(0))
 
     @always_inline
     @parameter
-    fn setup_and_run_benchmark[
+    def setup_and_run_benchmark[
         TokenFmtType: TokenFormat,
         FormatHandlerType: TokenFormat,
         ThroughputDtype: DType,
@@ -329,7 +328,7 @@ fn bench_dispatch[
 
         @always_inline
         @parameter
-        fn run_dispatch_async(ctx: DeviceContext) raises:
+        def run_dispatch_async(ctx: DeviceContext) raises:
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
             var recv_buf_ptrs = InlineArray[
                 UnsafePointer[UInt8, MutAnyOrigin], 1
@@ -355,7 +354,7 @@ fn bench_dispatch[
 
         @always_inline
         @parameter
-        fn run_dispatch_async_wait(ctx: DeviceContext) raises:
+        def run_dispatch_async_wait(ctx: DeviceContext) raises:
             ctx.enqueue_function(
                 func_dispatch_wait,
                 format_handler,
@@ -377,13 +376,13 @@ fn bench_dispatch[
 
         @always_inline
         @parameter
-        fn run_dispatch_async_e2e(ctx: DeviceContext) raises:
+        def run_dispatch_async_e2e(ctx: DeviceContext) raises:
             run_dispatch_async(ctx)
             run_dispatch_async_wait(ctx)
 
         @always_inline
         @parameter
-        fn run_combine_async(ctx: DeviceContext) raises:
+        def run_combine_async(ctx: DeviceContext) raises:
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
             var combine_recv_buf_ptrs = InlineArray[
                 UnsafePointer[UInt8, MutAnyOrigin], 1
@@ -414,7 +413,7 @@ fn bench_dispatch[
 
         @always_inline
         @parameter
-        fn run_combine_async_wait(ctx: DeviceContext) raises:
+        def run_combine_async_wait(ctx: DeviceContext) raises:
             ctx.enqueue_function(
                 func_combine_async_wait,
                 output_2_tensor,
@@ -428,7 +427,7 @@ fn bench_dispatch[
 
         @always_inline
         @parameter
-        fn run_combine_async_e2e(ctx: DeviceContext) raises:
+        def run_combine_async_e2e(ctx: DeviceContext) raises:
             run_combine_async(ctx)
             run_combine_async_wait(ctx)
 
@@ -436,45 +435,45 @@ fn bench_dispatch[
 
         @always_inline
         @parameter
-        fn run_dispatch_async_func() raises:
+        def run_dispatch_async_func() raises:
             run_dispatch_async_e2e(ctx)
 
         @always_inline
         @parameter
-        fn run_combine_async_func() raises:
+        def run_combine_async_func() raises:
             run_combine_async_e2e(ctx)
 
         @always_inline
         @parameter
-        fn run_clean_up_func() raises:
+        def run_clean_up_func() raises:
             clean_up(ctx)
 
         @parameter
         @always_inline
-        fn bench_dispatch_func(mut b: Bencher):
+        def bench_dispatch_func(mut b: Bencher):
             @parameter
             @always_inline
-            fn kernel_launch(ctx: DeviceContext) raises:
+            def kernel_launch(ctx: DeviceContext) raises:
                 run_dispatch_async_func()
 
             b.iter_custom[kernel_launch](ctx)
 
         @parameter
         @always_inline
-        fn bench_combine_func(mut b: Bencher):
+        def bench_combine_func(mut b: Bencher):
             @parameter
             @always_inline
-            fn kernel_launch(ctx: DeviceContext) raises:
+            def kernel_launch(ctx: DeviceContext) raises:
                 run_combine_async_func()
 
             b.iter_custom[kernel_launch](ctx)
 
         @parameter
         @always_inline
-        fn bench_clean_up_func(mut b: Bencher):
+        def bench_clean_up_func(mut b: Bencher):
             @parameter
             @always_inline
-            fn kernel_launch(ctx: DeviceContext) raises:
+            def kernel_launch(ctx: DeviceContext) raises:
                 run_clean_up_func()
 
             b.iter_custom[kernel_launch](ctx)

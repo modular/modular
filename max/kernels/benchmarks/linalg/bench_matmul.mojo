@@ -26,7 +26,7 @@ from std.utils import IndexList
 from std.utils.index import Index
 
 
-fn gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, ...]):
+def gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, ...]):
     var m = c.get_shape()[0]
     var n = c.get_shape()[1]
     var k = a.get_shape()[1]
@@ -40,7 +40,7 @@ fn gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, ...]):
                 c[i, j] += a_val * b_val
 
 
-fn verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
+def verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
     var m = c.get_shape()[0]
     var n = c.get_shape()[1]
 
@@ -57,7 +57,7 @@ fn verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
     c_ref_ptr.free()
 
 
-fn bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:
+def bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:
     # disatch to bench_matmul with concrete spec type
     m.bench_with_input[
         MatmulSpec[spec.static_info], bench_matmul[spec.static_info]
@@ -69,7 +69,7 @@ fn bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:
     )
 
 
-fn bench_matmul[
+def bench_matmul[
     static: MatmulSpecStatic
 ](mut bencher: Bencher, spec: MatmulSpec[static]) raises capturing:
     comptime a_type = spec.static_info.a_type
@@ -114,7 +114,7 @@ fn bench_matmul[
 
     @always_inline
     @parameter
-    fn bench_fn() raises:
+    def bench_fn() raises:
         matmul[
             transpose_b=False,
             b_packed=b_packed,
@@ -145,12 +145,7 @@ struct MatmulSpec[static_info: MatmulSpecStatic](ImplicitlyCopyable, Writable):
     var n: Int
     var k: Int
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the matmul spec.
 
         Args:
@@ -173,7 +168,7 @@ struct MatmulSpec[static_info: MatmulSpecStatic](ImplicitlyCopyable, Writable):
             Self.static_info.c_type,
         )
 
-    fn flops(self) -> Int:
+    def flops(self) -> Int:
         return 2 * self.m * self.n * self.k
 
 

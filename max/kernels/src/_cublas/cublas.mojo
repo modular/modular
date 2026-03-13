@@ -53,7 +53,7 @@ comptime CUDA_CUBLAS_LIBRARY_PATHS: List[Path] = [
 ]
 
 
-fn _on_error_msg() -> Error:
+def _on_error_msg() -> Error:
     return Error(
         (
             "Cannot find the cuBLAS libraries. Please make sure that "
@@ -73,14 +73,14 @@ comptime CUDA_CUBLAS_LIBRARY = _Global[
 ]
 
 
-fn _init_dylib() -> OwnedDLHandle:
+def _init_dylib() -> OwnedDLHandle:
     return _find_dylib[abort_on_failure=False](
         materialize[CUDA_CUBLAS_LIBRARY_PATHS]()
     )
 
 
 @always_inline
-fn _get_dylib_function[
+def _get_dylib_function[
     func_name: StaticString, result_type: __TypeOfAllTypes
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
@@ -96,19 +96,19 @@ fn _get_dylib_function[
 
 
 @always_inline
-fn check_cublas_error(stat: Result) raises:
+def check_cublas_error(stat: Result) raises:
     if stat != Result.SUCCESS:
         raise Error(t"failed to operate on CUBLAS due to error: {stat}")
 
 
 @always_inline
-fn check_cublas_error(stat: Result, msg: StringSlice) raises:
+def check_cublas_error(stat: Result, msg: StringSlice) raises:
     if stat != Result.SUCCESS:
         raise Error(t"{msg}. Got a CUBLAS error: {stat}")
 
 
 @always_inline
-fn _convert_to_cublas_datatype[mojo_type: DType]() -> DataType:
+def _convert_to_cublas_datatype[mojo_type: DType]() -> DataType:
     comptime if mojo_type == DType.float32:
         return DataType.R_32F
     elif mojo_type == DType.float16:
@@ -130,7 +130,7 @@ fn _convert_to_cublas_datatype[mojo_type: DType]() -> DataType:
 
 
 @always_inline
-fn _convert_to_cublas_transpose(transpose: Bool) -> cublasOperation_t:
+def _convert_to_cublas_transpose(transpose: Bool) -> cublasOperation_t:
     return (
         cublasOperation_t.CUBLAS_OP_T if transpose else cublasOperation_t.CUBLAS_OP_N
     )
@@ -141,7 +141,7 @@ fn _convert_to_cublas_transpose(transpose: Bool) -> cublasOperation_t:
 # ===-----------------------------------------------------------------------===#
 
 
-fn cublasScopy(
+def cublasScopy(
     handle: cublasHandle_t,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -162,7 +162,7 @@ fn cublasScopy(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn cublasDgemv(
+def cublasDgemv(
     handle: cublasHandle_t,
     trans: cublasOperation_t,
     m: Int16,
@@ -195,7 +195,7 @@ fn cublasDgemv(
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasStpsv(
+def cublasStpsv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -220,7 +220,7 @@ fn cublasStpsv(
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
-fn cublasDgbmv(
+def cublasDgbmv(
     handle: cublasHandle_t,
     trans: cublasOperation_t,
     m: Int16,
@@ -257,7 +257,7 @@ fn cublasDgbmv(
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasDgemmStridedBatched(
+def cublasDgemmStridedBatched(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -321,7 +321,7 @@ fn cublasDgemmStridedBatched(
     )
 
 
-fn cublasDsyrkx(
+def cublasDsyrkx(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -356,7 +356,7 @@ fn cublasDsyrkx(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn cublasUint8gemmBias(
+def cublasUint8gemmBias(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -420,7 +420,7 @@ fn cublasUint8gemmBias(
     )
 
 
-fn cublasGetProperty(
+def cublasGetProperty(
     type: Property, value: UnsafePointer[Int16, _]
 ) raises -> Result:
     return _get_dylib_function[
@@ -429,7 +429,7 @@ fn cublasGetProperty(
     ]()(type, value)
 
 
-fn cublasSsyr(
+def cublasSsyr(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int16,
@@ -454,7 +454,7 @@ fn cublasSsyr(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
-fn cublasIdamax(
+def cublasIdamax(
     handle: cublasHandle_t,
     n: Int16,
     x: UnsafePointer[Float64, _],
@@ -473,7 +473,7 @@ fn cublasIdamax(
     ]()(handle, n, x, incx, result)
 
 
-fn cublasGetMatrix(
+def cublasGetMatrix(
     rows: Int16,
     cols: Int16,
     elem_size: Int16,
@@ -496,7 +496,7 @@ fn cublasGetMatrix(
     ]()(rows, cols, elem_size, _a, lda, _b, ldb)
 
 
-fn cublasSgemvStridedBatched(
+def cublasSgemvStridedBatched(
     handle: cublasHandle_t,
     trans: cublasOperation_t,
     m: Int16,
@@ -554,7 +554,7 @@ fn cublasSgemvStridedBatched(
     )
 
 
-fn cublasStrsm(
+def cublasStrsm(
     handle: cublasHandle_t,
     side: cublasSideMode_t,
     uplo: FillMode,
@@ -587,7 +587,7 @@ fn cublasStrsm(
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
-fn cublasRotmEx(
+def cublasRotmEx(
     handle: cublasHandle_t,
     n: Int16,
     x: OpaquePointer[MutAnyOrigin],
@@ -630,7 +630,7 @@ fn cublasRotmEx(
     )
 
 
-fn cublasSgemm(
+def cublasSgemm(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -667,7 +667,7 @@ fn cublasSgemm(
     ]()(handle, transa, transb, m, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn cublasSgeam(
+def cublasSgeam(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -702,7 +702,7 @@ fn cublasSgeam(
     ]()(handle, transa, transb, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
-fn cublasStrttp(
+def cublasStrttp(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int16,
@@ -723,7 +723,7 @@ fn cublasStrttp(
     ]()(handle, uplo, n, _a, lda, _ap)
 
 
-fn cublasRotmgEx(
+def cublasRotmgEx(
     handle: cublasHandle_t,
     d1: OpaquePointer[MutAnyOrigin],
     d1_type: DataType,
@@ -769,7 +769,7 @@ fn cublasRotmgEx(
     )
 
 
-fn cublasStrmv(
+def cublasStrmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -797,33 +797,33 @@ fn cublasStrmv(
 
 
 @fieldwise_init
-struct cublasPointerMode_t(TrivialRegisterPassable):
+struct cublasPointerMode_t(TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime CUBLAS_POINTER_MODE_HOST = cublasPointerMode_t(0)
     comptime CUBLAS_POINTER_MODE_DEVICE = cublasPointerMode_t(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLAS_POINTER_MODE_HOST:
-            return "CUBLAS_POINTER_MODE_HOST"
+            return writer.write_string("CUBLAS_POINTER_MODE_HOST")
         if self == Self.CUBLAS_POINTER_MODE_DEVICE:
-            return "CUBLAS_POINTER_MODE_DEVICE"
+            return writer.write_string("CUBLAS_POINTER_MODE_DEVICE")
         abort("invalid cublasPointerMode_t entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cublasDnrm2(
+def cublasDnrm2(
     handle: cublasHandle_t,
     n: Int16,
     x: UnsafePointer[Float64, _],
@@ -842,7 +842,7 @@ fn cublasDnrm2(
     ]()(handle, n, x, incx, result)
 
 
-fn cublasIaminEx(
+def cublasIaminEx(
     handle: cublasHandle_t,
     n: Int16,
     x: OpaquePointer[ImmutAnyOrigin],
@@ -863,7 +863,7 @@ fn cublasIaminEx(
     ]()(handle, n, x, x_type, incx, result)
 
 
-fn cublasDger(
+def cublasDger(
     handle: cublasHandle_t,
     m: Int64,
     n: Int64,
@@ -892,7 +892,7 @@ fn cublasDger(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn cublasDgemmStridedBatched(
+def cublasDgemmStridedBatched(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -957,7 +957,7 @@ fn cublasDgemmStridedBatched(
 
 
 @fieldwise_init
-struct cublasMath_t(TrivialRegisterPassable):
+struct cublasMath_t(TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime CUBLAS_DEFAULT_MATH = cublasMath_t(0)
     comptime CUBLAS_TENSOR_OP_MATH = cublasMath_t(1)
@@ -965,34 +965,36 @@ struct cublasMath_t(TrivialRegisterPassable):
     comptime CUBLAS_TF32_TENSOR_OP_MATH = cublasMath_t(3)
     comptime CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION = cublasMath_t(4)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLAS_DEFAULT_MATH:
-            return "CUBLAS_DEFAULT_MATH"
+            return writer.write_string("CUBLAS_DEFAULT_MATH")
         if self == Self.CUBLAS_TENSOR_OP_MATH:
-            return "CUBLAS_TENSOR_OP_MATH"
+            return writer.write_string("CUBLAS_TENSOR_OP_MATH")
         if self == Self.CUBLAS_PEDANTIC_MATH:
-            return "CUBLAS_PEDANTIC_MATH"
+            return writer.write_string("CUBLAS_PEDANTIC_MATH")
         if self == Self.CUBLAS_TF32_TENSOR_OP_MATH:
-            return "CUBLAS_TF32_TENSOR_OP_MATH"
+            return writer.write_string("CUBLAS_TF32_TENSOR_OP_MATH")
         if self == Self.CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION:
-            return "CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION"
+            return writer.write_string(
+                "CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION"
+            )
         abort("invalid cublasMath_t entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cublasSdot(
+def cublasSdot(
     handle: cublasHandle_t,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -1015,7 +1017,7 @@ fn cublasSdot(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn cublasGetMatrixAsync(
+def cublasGetMatrixAsync(
     rows: Int16,
     cols: Int16,
     elem_size: Int16,
@@ -1040,7 +1042,7 @@ fn cublasGetMatrixAsync(
     ]()(rows, cols, elem_size, _a, lda, _b, ldb, stream)
 
 
-fn cublasGetVector(
+def cublasGetVector(
     n: Int64,
     elem_size: Int64,
     x: OpaquePointer[ImmutAnyOrigin],
@@ -1061,7 +1063,7 @@ fn cublasGetVector(
     ]()(n, elem_size, x, incx, y, incy)
 
 
-fn cublasStrsv(
+def cublasStrsv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -1088,7 +1090,7 @@ fn cublasStrsv(
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
-fn cublasSgemv(
+def cublasSgemv(
     handle: cublasHandle_t,
     trans: cublasOperation_t,
     m: Int64,
@@ -1121,13 +1123,13 @@ fn cublasSgemv(
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasXerbla(sr_name: UnsafePointer[Int8, _], info: Int16) raises:
+def cublasXerbla(sr_name: UnsafePointer[Int8, _], info: Int16) raises:
     return _get_dylib_function[
         "cublasXerbla", fn(type_of(sr_name), Int16) -> None
     ]()(sr_name, info)
 
 
-fn cublasGetMatrixAsync(
+def cublasGetMatrixAsync(
     rows: Int64,
     cols: Int64,
     elem_size: Int64,
@@ -1152,7 +1154,7 @@ fn cublasGetMatrixAsync(
     ]()(rows, cols, elem_size, _a, lda, _b, ldb, stream)
 
 
-fn cublasStbsv(
+def cublasStbsv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -1181,7 +1183,7 @@ fn cublasStbsv(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
-fn cublasGetSmCountTarget(
+def cublasGetSmCountTarget(
     handle: cublasHandle_t,
     sm_count_target: UnsafePointer[Int16, _],
 ) raises -> Result:
@@ -1191,7 +1193,7 @@ fn cublasGetSmCountTarget(
     ]()(handle, sm_count_target)
 
 
-fn cublasSetMathMode(
+def cublasSetMathMode(
     handle: cublasHandle_t, mode: cublasMath_t
 ) raises -> Result:
     return _get_dylib_function[
@@ -1200,7 +1202,7 @@ fn cublasSetMathMode(
     ]()(handle, mode)
 
 
-fn cublasDsbmv(
+def cublasDsbmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int64,
@@ -1233,7 +1235,7 @@ fn cublasDsbmv(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasSdot(
+def cublasSdot(
     handle: cublasHandle_t,
     n: Int16,
     x: UnsafePointer[Float32, _],
@@ -1256,7 +1258,7 @@ fn cublasSdot(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn cublasSsbmv(
+def cublasSsbmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int64,
@@ -1289,7 +1291,7 @@ fn cublasSsbmv(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasIsamax(
+def cublasIsamax(
     handle: cublasHandle_t,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -1308,7 +1310,7 @@ fn cublasIsamax(
     ]()(handle, n, x, incx, result)
 
 
-fn cublasSdgmm(
+def cublasSdgmm(
     handle: cublasHandle_t,
     mode: cublasSideMode_t,
     m: Int64,
@@ -1337,7 +1339,7 @@ fn cublasSdgmm(
     ]()(handle, mode, m, n, _a, lda, x, incx, _c, ldc)
 
 
-fn cublasSwapEx(
+def cublasSwapEx(
     handle: cublasHandle_t,
     n: Int64,
     x: OpaquePointer[MutAnyOrigin],
@@ -1362,7 +1364,7 @@ fn cublasSwapEx(
     ]()(handle, n, x, x_type, incx, y, y_type, incy)
 
 
-fn cublasDotcEx(
+def cublasDotcEx(
     handle: cublasHandle_t,
     n: Int16,
     x: OpaquePointer[ImmutAnyOrigin],
@@ -1405,7 +1407,7 @@ fn cublasDotcEx(
     )
 
 
-fn cublasRotEx(
+def cublasRotEx(
     handle: cublasHandle_t,
     n: Int16,
     x: OpaquePointer[MutAnyOrigin],
@@ -1451,7 +1453,7 @@ fn cublasRotEx(
     )
 
 
-fn cublasSsymv(
+def cublasSsymv(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int64,
@@ -1482,7 +1484,7 @@ fn cublasSsymv(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasSsyr2(
+def cublasSsyr2(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int16,
@@ -1511,7 +1513,7 @@ fn cublasSsyr2(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn cublasGetStream(
+def cublasGetStream(
     handle: cublasHandle_t,
     stream_id: UnsafePointer[CUstream, _],
 ) raises -> Result:
@@ -1521,7 +1523,7 @@ fn cublasGetStream(
     ]()(handle, stream_id)
 
 
-fn cublasIsamin(
+def cublasIsamin(
     handle: cublasHandle_t,
     n: Int16,
     x: UnsafePointer[Float32, _],
@@ -1540,7 +1542,7 @@ fn cublasIsamin(
     ]()(handle, n, x, incx, result)
 
 
-fn cublasStbsv(
+def cublasStbsv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -1569,7 +1571,7 @@ fn cublasStbsv(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
-fn cublasSetMatrixAsync(
+def cublasSetMatrixAsync(
     rows: Int16,
     cols: Int16,
     elem_size: Int16,
@@ -1594,7 +1596,7 @@ fn cublasSetMatrixAsync(
     ]()(rows, cols, elem_size, _a, lda, _b, ldb, stream)
 
 
-fn cublasSaxpy(
+def cublasSaxpy(
     handle: cublasHandle_t,
     n: Int64,
     alpha: UnsafePointer[Float32, _],
@@ -1617,7 +1619,7 @@ fn cublasSaxpy(
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
-fn cublasDgeam(
+def cublasDgeam(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -1652,7 +1654,7 @@ fn cublasDgeam(
     ]()(handle, transa, transb, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
-fn cublasCopyEx(
+def cublasCopyEx(
     handle: cublasHandle_t,
     n: Int16,
     x: OpaquePointer[ImmutAnyOrigin],
@@ -1677,11 +1679,11 @@ fn cublasCopyEx(
     ]()(handle, n, x, x_type, incx, y, y_type, incy)
 
 
-fn cublasGetCudartVersion() raises -> Int:
+def cublasGetCudartVersion() raises -> Int:
     return _get_dylib_function["cublasGetCudartVersion", fn() -> Int]()()
 
 
-fn cublasIdamax(
+def cublasIdamax(
     handle: cublasHandle_t,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -1700,7 +1702,7 @@ fn cublasIdamax(
     ]()(handle, n, x, incx, result)
 
 
-fn cublasSsyr2(
+def cublasSsyr2(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int64,
@@ -1729,7 +1731,7 @@ fn cublasSsyr2(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn cublasDaxpy(
+def cublasDaxpy(
     handle: cublasHandle_t,
     n: Int64,
     alpha: UnsafePointer[Float64, _],
@@ -1752,7 +1754,7 @@ fn cublasDaxpy(
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
-fn cublasDsyr2k(
+def cublasDsyr2k(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -1787,7 +1789,7 @@ fn cublasDsyr2k(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn cublasSetLoggerCallback(
+def cublasSetLoggerCallback(
     user_callback: fn(UnsafePointer[Int8, ImmutAnyOrigin]) -> None,
 ) raises -> Result:
     return _get_dylib_function[
@@ -1796,7 +1798,7 @@ fn cublasSetLoggerCallback(
     ]()(user_callback)
 
 
-fn cublasSgeam(
+def cublasSgeam(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -1831,7 +1833,7 @@ fn cublasSgeam(
     ]()(handle, transa, transb, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
-fn cublasDtpttr(
+def cublasDtpttr(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int16,
@@ -1852,7 +1854,7 @@ fn cublasDtpttr(
     ]()(handle, uplo, n, _ap, _a, lda)
 
 
-fn cublasIamaxEx(
+def cublasIamaxEx(
     handle: cublasHandle_t,
     n: Int16,
     x: OpaquePointer[ImmutAnyOrigin],
@@ -1873,7 +1875,7 @@ fn cublasIamaxEx(
     ]()(handle, n, x, x_type, incx, result)
 
 
-fn cublasSspmv(
+def cublasSspmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int64,
@@ -1902,7 +1904,7 @@ fn cublasSspmv(
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
-fn cublasSsymv(
+def cublasSsymv(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int16,
@@ -1933,7 +1935,7 @@ fn cublasSsymv(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasGemmStridedBatchedEx(
+def cublasGemmStridedBatchedEx(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -2012,7 +2014,7 @@ fn cublasGemmStridedBatchedEx(
     )
 
 
-fn cublasNrm2Ex(
+def cublasNrm2Ex(
     handle: cublasHandle_t,
     n: Int64,
     x: OpaquePointer[ImmutAnyOrigin],
@@ -2037,7 +2039,7 @@ fn cublasNrm2Ex(
     ]()(handle, n, x, x_type, incx, result, result_type, execution_type)
 
 
-fn cublasGetPointerMode(
+def cublasGetPointerMode(
     handle: cublasHandle_t,
     mode: UnsafePointer[cublasPointerMode_t, _],
 ) raises -> Result:
@@ -2050,7 +2052,7 @@ fn cublasGetPointerMode(
     ]()(handle, mode)
 
 
-fn cublasSrotm(
+def cublasSrotm(
     handle: cublasHandle_t,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -2074,7 +2076,7 @@ fn cublasSrotm(
 
 
 @fieldwise_init
-struct Algorithm(TrivialRegisterPassable):
+struct Algorithm(TrivialRegisterPassable, Writable):
     var _value: Int32
 
     # According to https://docs.nvidia.com/cuda/cublas/#cublasgemmalgo-t, the
@@ -2124,108 +2126,108 @@ struct Algorithm(TrivialRegisterPassable):
     comptime ALGO14_TENSOR_OP = Self(114)
     comptime ALGO15_TENSOR_OP = Self(115)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.DEFAULT:
-            return "DEFAULT"
+            return writer.write_string("DEFAULT")
         if self == Self.ALGO0:
-            return "ALGO0"
+            return writer.write_string("ALGO0")
         if self == Self.ALGO1:
-            return "ALGO1"
+            return writer.write_string("ALGO1")
         if self == Self.ALGO2:
-            return "ALGO2"
+            return writer.write_string("ALGO2")
         if self == Self.ALGO3:
-            return "ALGO3"
+            return writer.write_string("ALGO3")
         if self == Self.ALGO4:
-            return "ALGO4"
+            return writer.write_string("ALGO4")
         if self == Self.ALGO5:
-            return "ALGO5"
+            return writer.write_string("ALGO5")
         if self == Self.ALGO6:
-            return "ALGO6"
+            return writer.write_string("ALGO6")
         if self == Self.ALGO7:
-            return "ALGO7"
+            return writer.write_string("ALGO7")
         if self == Self.ALGO8:
-            return "ALGO8"
+            return writer.write_string("ALGO8")
         if self == Self.ALGO9:
-            return "ALGO9"
+            return writer.write_string("ALGO9")
         if self == Self.ALGO10:
-            return "ALGO10"
+            return writer.write_string("ALGO10")
         if self == Self.ALGO11:
-            return "ALGO11"
+            return writer.write_string("ALGO11")
         if self == Self.ALGO12:
-            return "ALGO12"
+            return writer.write_string("ALGO12")
         if self == Self.ALGO13:
-            return "ALGO13"
+            return writer.write_string("ALGO13")
         if self == Self.ALGO14:
-            return "ALGO14"
+            return writer.write_string("ALGO14")
         if self == Self.ALGO15:
-            return "ALGO15"
+            return writer.write_string("ALGO15")
         if self == Self.ALGO16:
-            return "ALGO16"
+            return writer.write_string("ALGO16")
         if self == Self.ALGO17:
-            return "ALGO17"
+            return writer.write_string("ALGO17")
         if self == Self.ALGO18:
-            return "ALGO18"
+            return writer.write_string("ALGO18")
         if self == Self.ALGO19:
-            return "ALGO19"
+            return writer.write_string("ALGO19")
         if self == Self.ALGO20:
-            return "ALGO20"
+            return writer.write_string("ALGO20")
         if self == Self.ALGO21:
-            return "ALGO21"
+            return writer.write_string("ALGO21")
         if self == Self.ALGO22:
-            return "ALGO22"
+            return writer.write_string("ALGO22")
         if self == Self.ALGO23:
-            return "ALGO23"
+            return writer.write_string("ALGO23")
         if self == Self.DEFAULT_TENSOR_OP:
-            return "DEFAULT_TENSOR_OP"
+            return writer.write_string("DEFAULT_TENSOR_OP")
         if self == Self.ALGO0_TENSOR_OP:
-            return "ALGO0_TENSOR_OP"
+            return writer.write_string("ALGO0_TENSOR_OP")
         if self == Self.ALGO1_TENSOR_OP:
-            return "ALGO1_TENSOR_OP"
+            return writer.write_string("ALGO1_TENSOR_OP")
         if self == Self.ALGO2_TENSOR_OP:
-            return "ALGO2_TENSOR_OP"
+            return writer.write_string("ALGO2_TENSOR_OP")
         if self == Self.ALGO3_TENSOR_OP:
-            return "ALGO3_TENSOR_OP"
+            return writer.write_string("ALGO3_TENSOR_OP")
         if self == Self.ALGO4_TENSOR_OP:
-            return "ALGO4_TENSOR_OP"
+            return writer.write_string("ALGO4_TENSOR_OP")
         if self == Self.ALGO5_TENSOR_OP:
-            return "ALGO5_TENSOR_OP"
+            return writer.write_string("ALGO5_TENSOR_OP")
         if self == Self.ALGO6_TENSOR_OP:
-            return "ALGO6_TENSOR_OP"
+            return writer.write_string("ALGO6_TENSOR_OP")
         if self == Self.ALGO7_TENSOR_OP:
-            return "ALGO7_TENSOR_OP"
+            return writer.write_string("ALGO7_TENSOR_OP")
         if self == Self.ALGO8_TENSOR_OP:
-            return "ALGO8_TENSOR_OP"
+            return writer.write_string("ALGO8_TENSOR_OP")
         if self == Self.ALGO9_TENSOR_OP:
-            return "ALGO9_TENSOR_OP"
+            return writer.write_string("ALGO9_TENSOR_OP")
         if self == Self.ALGO10_TENSOR_OP:
-            return "ALGO10_TENSOR_OP"
+            return writer.write_string("ALGO10_TENSOR_OP")
         if self == Self.ALGO11_TENSOR_OP:
-            return "ALGO11_TENSOR_OP"
+            return writer.write_string("ALGO11_TENSOR_OP")
         if self == Self.ALGO12_TENSOR_OP:
-            return "ALGO12_TENSOR_OP"
+            return writer.write_string("ALGO12_TENSOR_OP")
         if self == Self.ALGO13_TENSOR_OP:
-            return "ALGO13_TENSOR_OP"
+            return writer.write_string("ALGO13_TENSOR_OP")
         if self == Self.ALGO14_TENSOR_OP:
-            return "ALGO14_TENSOR_OP"
+            return writer.write_string("ALGO14_TENSOR_OP")
         if self == Self.ALGO15_TENSOR_OP:
-            return "ALGO15_TENSOR_OP"
+            return writer.write_string("ALGO15_TENSOR_OP")
         abort("invalid Algorithm entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cublasSsyrk(
+def cublasSsyrk(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -2256,7 +2258,7 @@ fn cublasSsyrk(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
-fn cublasDsyr(
+def cublasDsyr(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int16,
@@ -2281,7 +2283,7 @@ fn cublasDsyr(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
-fn cublasStrmv(
+def cublasStrmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -2308,7 +2310,7 @@ fn cublasStrmv(
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
-fn cublasDcopy(
+def cublasDcopy(
     handle: cublasHandle_t,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -2329,7 +2331,7 @@ fn cublasDcopy(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn cublasDtrmm(
+def cublasDtrmm(
     handle: cublasHandle_t,
     side: cublasSideMode_t,
     uplo: FillMode,
@@ -2366,7 +2368,7 @@ fn cublasDtrmm(
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb, _c, ldc)
 
 
-fn cublasDdot(
+def cublasDdot(
     handle: cublasHandle_t,
     n: Int16,
     x: UnsafePointer[Float64, _],
@@ -2389,7 +2391,7 @@ fn cublasDdot(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn cublasSscal(
+def cublasSscal(
     handle: cublasHandle_t,
     n: Int16,
     alpha: UnsafePointer[Float32, _],
@@ -2408,7 +2410,7 @@ fn cublasSscal(
     ]()(handle, n, alpha, x, incx)
 
 
-fn cublasSgemmStridedBatched(
+def cublasSgemmStridedBatched(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -2472,7 +2474,7 @@ fn cublasSgemmStridedBatched(
     )
 
 
-fn cublasDdgmm(
+def cublasDdgmm(
     handle: cublasHandle_t,
     mode: cublasSideMode_t,
     m: Int64,
@@ -2501,7 +2503,7 @@ fn cublasDdgmm(
     ]()(handle, mode, m, n, _a, lda, x, incx, _c, ldc)
 
 
-fn cublasStpttr(
+def cublasStpttr(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int16,
@@ -2522,7 +2524,7 @@ fn cublasStpttr(
     ]()(handle, uplo, n, _ap, _a, lda)
 
 
-fn cublasDsyr(
+def cublasDsyr(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int64,
@@ -2547,7 +2549,7 @@ fn cublasDsyr(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
-fn cublasSetVector(
+def cublasSetVector(
     n: Int16,
     elem_size: Int16,
     x: OpaquePointer[ImmutAnyOrigin],
@@ -2568,7 +2570,7 @@ fn cublasSetVector(
     ]()(n, elem_size, x, incx, device_ptr, incy)
 
 
-fn cublasSetMatrixAsync(
+def cublasSetMatrixAsync(
     rows: Int64,
     cols: Int64,
     elem_size: Int64,
@@ -2593,13 +2595,13 @@ fn cublasSetMatrixAsync(
     ]()(rows, cols, elem_size, _a, lda, _b, ldb, stream)
 
 
-# fn cublasGetLoggerCallback(user_callback: UNKNOWN) raises -> Result:
+# def cublasGetLoggerCallback(user_callback: UNKNOWN) raises -> Result:
 #     return _get_dylib_function[
-#         "cublasGetLoggerCallback", fn (UNKNOWN) -> Result
+#         "cublasGetLoggerCallback", def (UNKNOWN) -> Result
 #     ]()(user_callback)
 
 
-fn cublasSasum(
+def cublasSasum(
     handle: cublasHandle_t,
     n: Int16,
     x: UnsafePointer[Float32, _],
@@ -2618,7 +2620,7 @@ fn cublasSasum(
     ]()(handle, n, x, incx, result)
 
 
-fn cublasRotgEx(
+def cublasRotgEx(
     handle: cublasHandle_t,
     a: OpaquePointer[MutAnyOrigin],
     b: OpaquePointer[MutAnyOrigin],
@@ -2644,34 +2646,34 @@ fn cublasRotgEx(
 
 
 @fieldwise_init
-struct cublasDiagType_t(TrivialRegisterPassable):
+struct cublasDiagType_t(TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime CUBLAS_DIAG_NON_UNIT = cublasDiagType_t(0)
     comptime CUBLAS_DIAG_UNIT = cublasDiagType_t(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLAS_DIAG_NON_UNIT:
-            return "CUBLAS_DIAG_NON_UNIT"
+            return writer.write_string("CUBLAS_DIAG_NON_UNIT")
         if self == Self.CUBLAS_DIAG_UNIT:
-            return "CUBLAS_DIAG_UNIT"
+            return writer.write_string("CUBLAS_DIAG_UNIT")
         abort("invalid cublasDiagType_t entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
 @fieldwise_init
-struct ComputeType(TrivialRegisterPassable):
+struct ComputeType(TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime COMPUTE_16F = Self(64)
     comptime COMPUTE_16F_PEDANTIC = Self(65)
@@ -2685,46 +2687,46 @@ struct ComputeType(TrivialRegisterPassable):
     comptime COMPUTE_32I = Self(72)
     comptime COMPUTE_32I_PEDANTIC = Self(73)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.COMPUTE_16F:
-            return "COMPUTE_16F"
+            return writer.write_string("COMPUTE_16F")
         if self == Self.COMPUTE_16F_PEDANTIC:
-            return "COMPUTE_16F_PEDANTIC"
+            return writer.write_string("COMPUTE_16F_PEDANTIC")
         if self == Self.COMPUTE_32F:
-            return "COMPUTE_32F"
+            return writer.write_string("COMPUTE_32F")
         if self == Self.COMPUTE_32F_PEDANTIC:
-            return "COMPUTE_32F_PEDANTIC"
+            return writer.write_string("COMPUTE_32F_PEDANTIC")
         if self == Self.COMPUTE_32F_FAST_16F:
-            return "COMPUTE_32F_FAST_16F"
+            return writer.write_string("COMPUTE_32F_FAST_16F")
         if self == Self.COMPUTE_32F_FAST_16BF:
-            return "COMPUTE_32F_FAST_16BF"
+            return writer.write_string("COMPUTE_32F_FAST_16BF")
         if self == Self.COMPUTE_32F_FAST_TF32:
-            return "COMPUTE_32F_FAST_TF32"
+            return writer.write_string("COMPUTE_32F_FAST_TF32")
         if self == Self.COMPUTE_64F:
-            return "COMPUTE_64F"
+            return writer.write_string("COMPUTE_64F")
         if self == Self.COMPUTE_64F_PEDANTIC:
-            return "COMPUTE_64F_PEDANTIC"
+            return writer.write_string("COMPUTE_64F_PEDANTIC")
         if self == Self.COMPUTE_32I:
-            return "COMPUTE_32I"
+            return writer.write_string("COMPUTE_32I")
         if self == Self.COMPUTE_32I_PEDANTIC:
-            return "COMPUTE_32I_PEDANTIC"
+            return writer.write_string("COMPUTE_32I_PEDANTIC")
         abort("invalid ComputeType entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cublasDsymm(
+def cublasDsymm(
     handle: cublasHandle_t,
     side: cublasSideMode_t,
     uplo: FillMode,
@@ -2759,7 +2761,7 @@ fn cublasDsymm(
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn cublasSspr(
+def cublasSspr(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int64,
@@ -2782,7 +2784,7 @@ fn cublasSspr(
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
-fn cublasIdamin(
+def cublasIdamin(
     handle: cublasHandle_t,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -2801,7 +2803,7 @@ fn cublasIdamin(
     ]()(handle, n, x, incx, result)
 
 
-fn cublasGetVectorAsync(
+def cublasGetVectorAsync(
     n: Int16,
     elem_size: Int16,
     device_ptr: OpaquePointer[ImmutAnyOrigin],
@@ -2824,7 +2826,7 @@ fn cublasGetVectorAsync(
     ]()(n, elem_size, device_ptr, incx, host_ptr, incy, stream)
 
 
-fn cublasGetMatrix(
+def cublasGetMatrix(
     rows: Int64,
     cols: Int64,
     elem_size: Int64,
@@ -2847,7 +2849,7 @@ fn cublasGetMatrix(
     ]()(rows, cols, elem_size, _a, lda, _b, ldb)
 
 
-fn cublasDaxpy(
+def cublasDaxpy(
     handle: cublasHandle_t,
     n: Int16,
     alpha: UnsafePointer[Float64, _],
@@ -2870,7 +2872,7 @@ fn cublasDaxpy(
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
-fn cublasDsyr2k(
+def cublasDsyr2k(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -2905,7 +2907,7 @@ fn cublasDsyr2k(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn cublasSger(
+def cublasSger(
     handle: cublasHandle_t,
     m: Int64,
     n: Int64,
@@ -2934,7 +2936,7 @@ fn cublasSger(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn cublasSdgmm(
+def cublasSdgmm(
     handle: cublasHandle_t,
     mode: cublasSideMode_t,
     m: Int16,
@@ -2963,7 +2965,7 @@ fn cublasSdgmm(
     ]()(handle, mode, m, n, _a, lda, x, incx, _c, ldc)
 
 
-fn cublasDtbsv(
+def cublasDtbsv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -2992,7 +2994,7 @@ fn cublasDtbsv(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
-fn cublasDtrsm(
+def cublasDtrsm(
     handle: cublasHandle_t,
     side: cublasSideMode_t,
     uplo: FillMode,
@@ -3025,7 +3027,7 @@ fn cublasDtrsm(
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
-fn cublasStbmv(
+def cublasStbmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -3054,7 +3056,7 @@ fn cublasStbmv(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
-fn cublasDspmv(
+def cublasDspmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int16,
@@ -3083,7 +3085,7 @@ fn cublasDspmv(
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
-fn cublasSswap(
+def cublasSswap(
     handle: cublasHandle_t,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -3104,7 +3106,7 @@ fn cublasSswap(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn cublasDspmv(
+def cublasDspmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int64,
@@ -3133,7 +3135,7 @@ fn cublasDspmv(
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
-fn cublasSrotmg(
+def cublasSrotmg(
     handle: cublasHandle_t,
     d1: UnsafePointer[Float32, _],
     d2: UnsafePointer[Float32, _],
@@ -3154,7 +3156,7 @@ fn cublasSrotmg(
     ]()(handle, d1, d2, x1, y1, param)
 
 
-fn cublasDtpmv(
+def cublasDtpmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -3179,7 +3181,7 @@ fn cublasDtpmv(
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
-fn cublasDasum(
+def cublasDasum(
     handle: cublasHandle_t,
     n: Int16,
     x: UnsafePointer[Float64, _],
@@ -3198,7 +3200,7 @@ fn cublasDasum(
     ]()(handle, n, x, incx, result)
 
 
-fn cublasRotEx(
+def cublasRotEx(
     handle: cublasHandle_t,
     n: Int64,
     x: OpaquePointer[MutAnyOrigin],
@@ -3244,7 +3246,7 @@ fn cublasRotEx(
     )
 
 
-fn cublasDrotm(
+def cublasDrotm(
     handle: cublasHandle_t,
     n: Int16,
     x: UnsafePointer[Float64, _],
@@ -3267,7 +3269,7 @@ fn cublasDrotm(
     ]()(handle, n, x, incx, y, incy, param)
 
 
-fn cublasAxpyEx(
+def cublasAxpyEx(
     handle: cublasHandle_t,
     n: Int16,
     alpha: OpaquePointer[ImmutAnyOrigin],
@@ -3310,7 +3312,7 @@ fn cublasAxpyEx(
     )
 
 
-fn cublasSgemm(
+def cublasSgemm(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -3347,7 +3349,7 @@ fn cublasSgemm(
     ]()(handle, transa, transb, m, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn cublasSsymm(
+def cublasSsymm(
     handle: cublasHandle_t,
     side: cublasSideMode_t,
     uplo: FillMode,
@@ -3382,7 +3384,7 @@ fn cublasSsymm(
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn cublasCopyEx(
+def cublasCopyEx(
     handle: cublasHandle_t,
     n: Int64,
     x: OpaquePointer[ImmutAnyOrigin],
@@ -3407,7 +3409,7 @@ fn cublasCopyEx(
     ]()(handle, n, x, x_type, incx, y, y_type, incy)
 
 
-fn cublasSwapEx(
+def cublasSwapEx(
     handle: cublasHandle_t,
     n: Int16,
     x: OpaquePointer[MutAnyOrigin],
@@ -3432,7 +3434,7 @@ fn cublasSwapEx(
     ]()(handle, n, x, x_type, incx, y, y_type, incy)
 
 
-fn cublasSrot(
+def cublasSrot(
     handle: cublasHandle_t,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -3457,7 +3459,7 @@ fn cublasSrot(
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
-fn cublasGetVector(
+def cublasGetVector(
     n: Int16,
     elem_size: Int16,
     x: OpaquePointer[ImmutAnyOrigin],
@@ -3478,7 +3480,7 @@ fn cublasGetVector(
     ]()(n, elem_size, x, incx, y, incy)
 
 
-fn cublasDtrsv(
+def cublasDtrsv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -3505,7 +3507,7 @@ fn cublasDtrsv(
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
-fn cublasSsymm(
+def cublasSsymm(
     handle: cublasHandle_t,
     side: cublasSideMode_t,
     uplo: FillMode,
@@ -3540,7 +3542,7 @@ fn cublasSsymm(
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn cublasDtrmm(
+def cublasDtrmm(
     handle: cublasHandle_t,
     side: cublasSideMode_t,
     uplo: FillMode,
@@ -3577,7 +3579,7 @@ fn cublasDtrmm(
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb, _c, ldc)
 
 
-fn cublasCherk3mEx(
+def cublasCherk3mEx(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -3617,7 +3619,7 @@ fn cublasCherk3mEx(
 comptime cublasLogCallback = fn(UnsafePointer[Int8, ImmutAnyOrigin]) -> None
 
 
-fn cublasDtrmv(
+def cublasDtrmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -3644,7 +3646,7 @@ fn cublasDtrmv(
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
-fn cublasDdgmm(
+def cublasDdgmm(
     handle: cublasHandle_t,
     mode: cublasSideMode_t,
     m: Int16,
@@ -3673,7 +3675,7 @@ fn cublasDdgmm(
     ]()(handle, mode, m, n, _a, lda, x, incx, _c, ldc)
 
 
-fn cublasDtbsv(
+def cublasDtbsv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -3702,7 +3704,7 @@ fn cublasDtbsv(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
-fn cublasSsyr2k(
+def cublasSsyr2k(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -3737,7 +3739,7 @@ fn cublasSsyr2k(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn cublasDgemm(
+def cublasDgemm(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -3774,7 +3776,7 @@ fn cublasDgemm(
     ]()(handle, transa, transb, m, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn cublasGetMathMode(
+def cublasGetMathMode(
     handle: cublasHandle_t,
     mode: UnsafePointer[cublasMath_t, _],
 ) raises -> Result:
@@ -3787,7 +3789,7 @@ fn cublasGetMathMode(
     ]()(handle, mode)
 
 
-fn cublasDrot(
+def cublasDrot(
     handle: cublasHandle_t,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -3812,7 +3814,7 @@ fn cublasDrot(
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
-fn cublasSspr(
+def cublasSspr(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int16,
@@ -3835,7 +3837,7 @@ fn cublasSspr(
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
-fn cublasGemmEx64(
+def cublasGemmEx64(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -3902,7 +3904,7 @@ fn cublasGemmEx64(
     )
 
 
-fn cublasDotEx(
+def cublasDotEx(
     handle: cublasHandle_t,
     n: Int16,
     x: OpaquePointer[ImmutAnyOrigin],
@@ -3945,7 +3947,7 @@ fn cublasDotEx(
     )
 
 
-fn cublasSswap(
+def cublasSswap(
     handle: cublasHandle_t,
     n: Int16,
     x: UnsafePointer[Float32, _],
@@ -3966,7 +3968,7 @@ fn cublasSswap(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn cublasDrotm(
+def cublasDrotm(
     handle: cublasHandle_t,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -3989,7 +3991,7 @@ fn cublasDrotm(
     ]()(handle, n, x, incx, y, incy, param)
 
 
-fn cublasSgemmEx(
+def cublasSgemmEx(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -4050,7 +4052,7 @@ fn cublasSgemmEx(
     )
 
 
-fn cublasDgemm(
+def cublasDgemm(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -4087,7 +4089,7 @@ fn cublasDgemm(
     ]()(handle, transa, transb, m, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn cublasSsyrk(
+def cublasSsyrk(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -4118,7 +4120,7 @@ fn cublasSsyrk(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
-fn cublasDnrm2(
+def cublasDnrm2(
     handle: cublasHandle_t,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -4137,7 +4139,7 @@ fn cublasDnrm2(
     ]()(handle, n, x, incx, result)
 
 
-fn cublasDasum(
+def cublasDasum(
     handle: cublasHandle_t,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -4156,7 +4158,7 @@ fn cublasDasum(
     ]()(handle, n, x, incx, result)
 
 
-fn cublasDsyrkx(
+def cublasDsyrkx(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -4191,7 +4193,7 @@ fn cublasDsyrkx(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn cublasRotmEx(
+def cublasRotmEx(
     handle: cublasHandle_t,
     n: Int64,
     x: OpaquePointer[MutAnyOrigin],
@@ -4234,7 +4236,7 @@ fn cublasRotmEx(
     )
 
 
-fn cublasDtpsv(
+def cublasDtpsv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -4259,7 +4261,7 @@ fn cublasDtpsv(
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
-fn cublasSspr2(
+def cublasSspr2(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int16,
@@ -4286,7 +4288,7 @@ fn cublasSspr2(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
-fn cublasSetMatrix(
+def cublasSetMatrix(
     rows: Int64,
     cols: Int64,
     elem_size: Int64,
@@ -4309,7 +4311,7 @@ fn cublasSetMatrix(
     ]()(rows, cols, elem_size, _a, lda, _b, ldb)
 
 
-fn cublasDrotg(
+def cublasDrotg(
     handle: cublasHandle_t,
     a: UnsafePointer[Float64, _],
     b: UnsafePointer[Float64, _],
@@ -4328,7 +4330,7 @@ fn cublasDrotg(
     ]()(handle, a, b, c, s)
 
 
-fn cublasGetAtomicsMode(
+def cublasGetAtomicsMode(
     handle: cublasHandle_t,
     mode: UnsafePointer[cublasAtomicsMode_t, _],
 ) raises -> Result:
@@ -4341,7 +4343,7 @@ fn cublasGetAtomicsMode(
     ]()(handle, mode)
 
 
-fn cublasStbmv(
+def cublasStbmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -4370,7 +4372,7 @@ fn cublasStbmv(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
-fn cublasAxpyEx(
+def cublasAxpyEx(
     handle: cublasHandle_t,
     n: Int64,
     alpha: OpaquePointer[ImmutAnyOrigin],
@@ -4413,7 +4415,7 @@ fn cublasAxpyEx(
     )
 
 
-fn cublasIaminEx(
+def cublasIaminEx(
     handle: cublasHandle_t,
     n: Int64,
     x: OpaquePointer[ImmutAnyOrigin],
@@ -4434,7 +4436,7 @@ fn cublasIaminEx(
     ]()(handle, n, x, x_type, incx, result)
 
 
-fn cublasDspr2(
+def cublasDspr2(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int16,
@@ -4461,7 +4463,7 @@ fn cublasDspr2(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
-fn cublasDotEx(
+def cublasDotEx(
     handle: cublasHandle_t,
     n: Int64,
     x: OpaquePointer[ImmutAnyOrigin],
@@ -4504,7 +4506,7 @@ fn cublasDotEx(
     )
 
 
-fn cublasScopy(
+def cublasScopy(
     handle: cublasHandle_t,
     n: Int16,
     x: UnsafePointer[Float32, _],
@@ -4525,7 +4527,7 @@ fn cublasScopy(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn cublasDsyrk(
+def cublasDsyrk(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -4556,14 +4558,14 @@ fn cublasDsyrk(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
-fn cublasDestroy(handle: UnsafePointer[cublasContext, _]) raises -> Result:
+def cublasDestroy(handle: UnsafePointer[cublasContext, _]) raises -> Result:
     return _get_dylib_function[
         "cublasDestroy_v2",
         fn(type_of(handle)) -> Result,
     ]()(handle)
 
 
-fn cublasSetVectorAsync(
+def cublasSetVectorAsync(
     n: Int16,
     elem_size: Int16,
     host_ptr: OpaquePointer[ImmutAnyOrigin],
@@ -4586,7 +4588,7 @@ fn cublasSetVectorAsync(
     ]()(n, elem_size, host_ptr, incx, device_ptr, incy, stream)
 
 
-fn cublasIamaxEx(
+def cublasIamaxEx(
     handle: cublasHandle_t,
     n: Int64,
     x: OpaquePointer[ImmutAnyOrigin],
@@ -4607,7 +4609,7 @@ fn cublasIamaxEx(
     ]()(handle, n, x, x_type, incx, result)
 
 
-fn cublasSsyrkx(
+def cublasSsyrkx(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -4642,7 +4644,7 @@ fn cublasSsyrkx(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn cublasDswap(
+def cublasDswap(
     handle: cublasHandle_t,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -4663,7 +4665,7 @@ fn cublasDswap(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn cublasAsumEx(
+def cublasAsumEx(
     handle: cublasHandle_t,
     n: Int64,
     x: OpaquePointer[ImmutAnyOrigin],
@@ -4689,35 +4691,35 @@ fn cublasAsumEx(
 
 
 @fieldwise_init
-struct FillMode(TrivialRegisterPassable):
+struct FillMode(TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime LOWER = Self(0)
     comptime UPPER = Self(1)
     comptime FULL = Self(2)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __str__(self) -> String:
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.LOWER:
-            return "LOWER"
+            return writer.write_string("LOWER")
         if self == Self.UPPER:
-            return "UPPER"
+            return writer.write_string("UPPER")
         if self == Self.FULL:
-            return "FULL"
+            return writer.write_string("FULL")
         abort("invalid FillMode entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cublasSspr2(
+def cublasSspr2(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int64,
@@ -4744,7 +4746,7 @@ fn cublasSspr2(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
-fn cublasSgbmv(
+def cublasSgbmv(
     handle: cublasHandle_t,
     trans: cublasOperation_t,
     m: Int64,
@@ -4781,7 +4783,7 @@ fn cublasSgbmv(
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasAsumEx(
+def cublasAsumEx(
     handle: cublasHandle_t,
     n: Int16,
     x: OpaquePointer[ImmutAnyOrigin],
@@ -4806,7 +4808,7 @@ fn cublasAsumEx(
     ]()(handle, n, x, x_type, incx, result, result_type, executiontype)
 
 
-fn cublasGetVersion(
+def cublasGetVersion(
     handle: cublasHandle_t,
     version: UnsafePointer[Int16, _],
 ) raises -> Result:
@@ -4816,7 +4818,7 @@ fn cublasGetVersion(
     ]()(handle, version)
 
 
-fn cublasScalEx(
+def cublasScalEx(
     handle: cublasHandle_t,
     n: Int64,
     alpha: OpaquePointer[ImmutAnyOrigin],
@@ -4841,7 +4843,7 @@ fn cublasScalEx(
     ]()(handle, n, alpha, alpha_type, x, x_type, incx, execution_type)
 
 
-fn cublasSetPointerMode(
+def cublasSetPointerMode(
     handle: cublasHandle_t,
     mode: cublasPointerMode_t,
 ) raises -> Result:
@@ -4851,7 +4853,7 @@ fn cublasSetPointerMode(
     ]()(handle, mode)
 
 
-fn cublasDgemv(
+def cublasDgemv(
     handle: cublasHandle_t,
     trans: cublasOperation_t,
     m: Int64,
@@ -4884,7 +4886,7 @@ fn cublasDgemv(
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasGetStatusString(
+def cublasGetStatusString(
     status: Result,
 ) raises -> UnsafePointer[Int8, ImmutAnyOrigin]:
     return _get_dylib_function[
@@ -4893,7 +4895,7 @@ fn cublasGetStatusString(
     ]()(status)
 
 
-fn cublasSnrm2(
+def cublasSnrm2(
     handle: cublasHandle_t,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -4912,7 +4914,7 @@ fn cublasSnrm2(
     ]()(handle, n, x, incx, result)
 
 
-fn cublasDgbmv(
+def cublasDgbmv(
     handle: cublasHandle_t,
     trans: cublasOperation_t,
     m: Int64,
@@ -4949,7 +4951,7 @@ fn cublasDgbmv(
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasDsyr2(
+def cublasDsyr2(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int16,
@@ -4978,7 +4980,7 @@ fn cublasDsyr2(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn cublasDtpsv(
+def cublasDtpsv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -5003,7 +5005,7 @@ fn cublasDtpsv(
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
-fn cublasSetVector(
+def cublasSetVector(
     n: Int64,
     elem_size: Int64,
     x: OpaquePointer[ImmutAnyOrigin],
@@ -5024,7 +5026,7 @@ fn cublasSetVector(
     ]()(n, elem_size, x, incx, device_ptr, incy)
 
 
-fn cublasDgemvStridedBatched(
+def cublasDgemvStridedBatched(
     handle: cublasHandle_t,
     trans: cublasOperation_t,
     m: Int64,
@@ -5082,7 +5084,7 @@ fn cublasDgemvStridedBatched(
     )
 
 
-fn cublasSsyrkx(
+def cublasSsyrkx(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -5117,7 +5119,7 @@ fn cublasSsyrkx(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn cublasGetStatusName(
+def cublasGetStatusName(
     status: Result,
 ) raises -> UnsafePointer[Int8, ImmutAnyOrigin]:
     return _get_dylib_function[
@@ -5126,7 +5128,7 @@ fn cublasGetStatusName(
     ]()(status)
 
 
-fn cublasDtbmv(
+def cublasDtbmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -5155,7 +5157,7 @@ fn cublasDtbmv(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
-fn cublasSrotg(
+def cublasSrotg(
     handle: cublasHandle_t,
     a: UnsafePointer[Float32, _],
     b: UnsafePointer[Float32, _],
@@ -5174,7 +5176,7 @@ fn cublasSrotg(
     ]()(handle, a, b, c, s)
 
 
-fn cublasCherkEx(
+def cublasCherkEx(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -5211,7 +5213,7 @@ fn cublasCherkEx(
     )
 
 
-fn cublasDrotmg(
+def cublasDrotmg(
     handle: cublasHandle_t,
     d1: UnsafePointer[Float64, _],
     d2: UnsafePointer[Float64, _],
@@ -5232,7 +5234,7 @@ fn cublasDrotmg(
     ]()(handle, d1, d2, x1, y1, param)
 
 
-fn cublasDger(
+def cublasDger(
     handle: cublasHandle_t,
     m: Int16,
     n: Int16,
@@ -5261,7 +5263,7 @@ fn cublasDger(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn cublasSscal(
+def cublasSscal(
     handle: cublasHandle_t,
     n: Int64,
     alpha: UnsafePointer[Float32, _],
@@ -5280,7 +5282,7 @@ fn cublasSscal(
     ]()(handle, n, alpha, x, incx)
 
 
-fn cublasSetWorkspace(
+def cublasSetWorkspace(
     handle: cublasHandle_t,
     workspace: OpaquePointer[MutAnyOrigin],
     workspace_size_in_bytes: Int,
@@ -5291,7 +5293,7 @@ fn cublasSetWorkspace(
     ]()(handle, workspace, workspace_size_in_bytes)
 
 
-fn cublasStpsv(
+def cublasStpsv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -5316,7 +5318,7 @@ fn cublasStpsv(
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
-fn cublasDspr(
+def cublasDspr(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int64,
@@ -5339,7 +5341,7 @@ fn cublasDspr(
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
-fn cublasGemmEx(
+def cublasGemmEx(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -5406,7 +5408,7 @@ fn cublasGemmEx(
     )
 
 
-fn cublasSsbmv(
+def cublasSsbmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int16,
@@ -5439,7 +5441,7 @@ fn cublasSsbmv(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasDgemvStridedBatched(
+def cublasDgemvStridedBatched(
     handle: cublasHandle_t,
     trans: cublasOperation_t,
     m: Int16,
@@ -5497,7 +5499,7 @@ fn cublasDgemvStridedBatched(
     )
 
 
-fn cublasDsymv(
+def cublasDsymv(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int16,
@@ -5528,7 +5530,7 @@ fn cublasDsymv(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasLoggerConfigure(
+def cublasLoggerConfigure(
     log_is_on: Int16,
     log_to_std_out: Int16,
     log_to_std_err: Int16,
@@ -5540,7 +5542,7 @@ fn cublasLoggerConfigure(
     ]()(log_is_on, log_to_std_out, log_to_std_err, log_file_name)
 
 
-fn cublasStpmv(
+def cublasStpmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -5565,7 +5567,7 @@ fn cublasStpmv(
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
-fn cublasSgemvStridedBatched(
+def cublasSgemvStridedBatched(
     handle: cublasHandle_t,
     trans: cublasOperation_t,
     m: Int64,
@@ -5623,7 +5625,7 @@ fn cublasSgemvStridedBatched(
     )
 
 
-fn cublasIsamin(
+def cublasIsamin(
     handle: cublasHandle_t,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -5642,7 +5644,7 @@ fn cublasIsamin(
     ]()(handle, n, x, incx, result)
 
 
-fn cublasDrot(
+def cublasDrot(
     handle: cublasHandle_t,
     n: Int16,
     x: UnsafePointer[Float64, _],
@@ -5667,7 +5669,7 @@ fn cublasDrot(
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
-fn cublasDgeam(
+def cublasDgeam(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -5702,7 +5704,7 @@ fn cublasDgeam(
     ]()(handle, transa, transb, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
-fn cublasGetVectorAsync(
+def cublasGetVectorAsync(
     n: Int64,
     elem_size: Int64,
     device_ptr: OpaquePointer[ImmutAnyOrigin],
@@ -5725,7 +5727,7 @@ fn cublasGetVectorAsync(
     ]()(n, elem_size, device_ptr, incx, host_ptr, incy, stream)
 
 
-fn cublasStrsm(
+def cublasStrsm(
     handle: cublasHandle_t,
     side: cublasSideMode_t,
     uplo: FillMode,
@@ -5758,7 +5760,7 @@ fn cublasStrsm(
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
-fn cublasSgemmEx(
+def cublasSgemmEx(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -5819,7 +5821,7 @@ fn cublasSgemmEx(
     )
 
 
-fn cublasStpmv(
+def cublasStpmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -5844,7 +5846,7 @@ fn cublasStpmv(
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
-fn cublasDtrmv(
+def cublasDtrmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -5871,7 +5873,7 @@ fn cublasDtrmv(
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
-fn cublasDtrsv(
+def cublasDtrsv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -5898,7 +5900,7 @@ fn cublasDtrsv(
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
-fn cublasDsyr2(
+def cublasDsyr2(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int64,
@@ -5927,7 +5929,7 @@ fn cublasDsyr2(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn cublasSrot(
+def cublasSrot(
     handle: cublasHandle_t,
     n: Int16,
     x: UnsafePointer[Float32, _],
@@ -5952,7 +5954,7 @@ fn cublasSrot(
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
-fn cublasDscal(
+def cublasDscal(
     handle: cublasHandle_t,
     n: Int16,
     alpha: UnsafePointer[Float64, _],
@@ -5971,7 +5973,7 @@ fn cublasDscal(
     ]()(handle, n, alpha, x, incx)
 
 
-fn cublasCreate(
+def cublasCreate(
     handle: UnsafePointer[UnsafePointer[cublasContext, MutAnyOrigin], _],
 ) raises -> Result:
     return _get_dylib_function[
@@ -5980,7 +5982,7 @@ fn cublasCreate(
     ]()(handle)
 
 
-fn cublasSetSmCountTarget(
+def cublasSetSmCountTarget(
     handle: cublasHandle_t, sm_count_target: Int16
 ) raises -> Result:
     return _get_dylib_function[
@@ -5989,7 +5991,7 @@ fn cublasSetSmCountTarget(
     ]()(handle, sm_count_target)
 
 
-fn cublasDswap(
+def cublasDswap(
     handle: cublasHandle_t,
     n: Int16,
     x: UnsafePointer[Float64, _],
@@ -6010,7 +6012,7 @@ fn cublasDswap(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn cublasStrsv(
+def cublasStrsv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -6037,7 +6039,7 @@ fn cublasStrsv(
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
-fn cublasDspr2(
+def cublasDspr2(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int64,
@@ -6064,7 +6066,7 @@ fn cublasDspr2(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
-fn cublasSsyr(
+def cublasSsyr(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int64,
@@ -6089,7 +6091,7 @@ fn cublasSsyr(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
-fn cublasNrm2Ex(
+def cublasNrm2Ex(
     handle: cublasHandle_t,
     n: Int16,
     x: OpaquePointer[ImmutAnyOrigin],
@@ -6114,7 +6116,7 @@ fn cublasNrm2Ex(
     ]()(handle, n, x, x_type, incx, result, result_type, execution_type)
 
 
-fn cublasDtbmv(
+def cublasDtbmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -6144,33 +6146,33 @@ fn cublasDtbmv(
 
 
 @fieldwise_init
-struct cublasAtomicsMode_t(TrivialRegisterPassable):
+struct cublasAtomicsMode_t(TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime CUBLAS_ATOMICS_NOT_ALLOWED = cublasAtomicsMode_t(0)
     comptime CUBLAS_ATOMICS_ALLOWED = cublasAtomicsMode_t(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLAS_ATOMICS_NOT_ALLOWED:
-            return "CUBLAS_ATOMICS_NOT_ALLOWED"
+            return writer.write_string("CUBLAS_ATOMICS_NOT_ALLOWED")
         if self == Self.CUBLAS_ATOMICS_ALLOWED:
-            return "CUBLAS_ATOMICS_ALLOWED"
+            return writer.write_string("CUBLAS_ATOMICS_ALLOWED")
         abort("invalid cublasAtomicsMode_t entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cublasSsyr2k(
+def cublasSsyr2k(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -6205,7 +6207,7 @@ fn cublasSsyr2k(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn cublasCherk3mEx(
+def cublasCherk3mEx(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -6242,7 +6244,7 @@ fn cublasCherk3mEx(
     )
 
 
-fn cublasScalEx(
+def cublasScalEx(
     handle: cublasHandle_t,
     n: Int16,
     alpha: OpaquePointer[ImmutAnyOrigin],
@@ -6267,7 +6269,7 @@ fn cublasScalEx(
     ]()(handle, n, alpha, alpha_type, x, x_type, incx, execution_type)
 
 
-fn cublasDotcEx(
+def cublasDotcEx(
     handle: cublasHandle_t,
     n: Int64,
     x: OpaquePointer[ImmutAnyOrigin],
@@ -6310,7 +6312,7 @@ fn cublasDotcEx(
     )
 
 
-fn cublasDsymm(
+def cublasDsymm(
     handle: cublasHandle_t,
     side: cublasSideMode_t,
     uplo: FillMode,
@@ -6345,7 +6347,7 @@ fn cublasDsymm(
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn cublasIsamax(
+def cublasIsamax(
     handle: cublasHandle_t,
     n: Int16,
     x: UnsafePointer[Float32, _],
@@ -6364,7 +6366,7 @@ fn cublasIsamax(
     ]()(handle, n, x, incx, result)
 
 
-fn cublasSaxpy(
+def cublasSaxpy(
     handle: cublasHandle_t,
     n: Int16,
     alpha: UnsafePointer[Float32, _],
@@ -6387,7 +6389,7 @@ fn cublasSaxpy(
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
-fn cublasSnrm2(
+def cublasSnrm2(
     handle: cublasHandle_t,
     n: Int16,
     x: UnsafePointer[Float32, _],
@@ -6406,7 +6408,7 @@ fn cublasSnrm2(
     ]()(handle, n, x, incx, result)
 
 
-fn cublasCherkEx(
+def cublasCherkEx(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -6444,33 +6446,33 @@ fn cublasCherkEx(
 
 
 @fieldwise_init
-struct cublasSideMode_t(TrivialRegisterPassable):
+struct cublasSideMode_t(TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime CUBLAS_SIDE_LEFT = cublasSideMode_t(0)
     comptime CUBLAS_SIDE_RIGHT = cublasSideMode_t(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLAS_SIDE_LEFT:
-            return "CUBLAS_SIDE_LEFT"
+            return writer.write_string("CUBLAS_SIDE_LEFT")
         if self == Self.CUBLAS_SIDE_RIGHT:
-            return "CUBLAS_SIDE_RIGHT"
+            return writer.write_string("CUBLAS_SIDE_RIGHT")
         abort("invalid cublasSideMode_t entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cublasSetMatrix(
+def cublasSetMatrix(
     rows: Int16,
     cols: Int16,
     elem_size: Int16,
@@ -6493,7 +6495,7 @@ fn cublasSetMatrix(
     ]()(rows, cols, elem_size, _a, lda, _b, ldb)
 
 
-fn cublasDtrsm(
+def cublasDtrsm(
     handle: cublasHandle_t,
     side: cublasSideMode_t,
     uplo: FillMode,
@@ -6526,7 +6528,7 @@ fn cublasDtrsm(
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
-fn cublasDcopy(
+def cublasDcopy(
     handle: cublasHandle_t,
     n: Int16,
     x: UnsafePointer[Float64, _],
@@ -6547,7 +6549,7 @@ fn cublasDcopy(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn cublasSetVectorAsync(
+def cublasSetVectorAsync(
     n: Int64,
     elem_size: Int64,
     host_ptr: OpaquePointer[ImmutAnyOrigin],
@@ -6570,7 +6572,7 @@ fn cublasSetVectorAsync(
     ]()(n, elem_size, host_ptr, incx, device_ptr, incy, stream)
 
 
-fn cublasDspr(
+def cublasDspr(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int16,
@@ -6593,7 +6595,7 @@ fn cublasDspr(
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
-fn cublasSgemv(
+def cublasSgemv(
     handle: cublasHandle_t,
     trans: cublasOperation_t,
     m: Int16,
@@ -6626,7 +6628,7 @@ fn cublasSgemv(
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasDtrttp(
+def cublasDtrttp(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int16,
@@ -6647,7 +6649,7 @@ fn cublasDtrttp(
     ]()(handle, uplo, n, _a, lda, _ap)
 
 
-fn cublasDdot(
+def cublasDdot(
     handle: cublasHandle_t,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -6670,7 +6672,7 @@ fn cublasDdot(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn cublasGemmStridedBatchedEx(
+def cublasGemmStridedBatchedEx(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -6749,7 +6751,7 @@ fn cublasGemmStridedBatchedEx(
     )
 
 
-fn cublasStrmm(
+def cublasStrmm(
     handle: cublasHandle_t,
     side: cublasSideMode_t,
     uplo: FillMode,
@@ -6786,7 +6788,7 @@ fn cublasStrmm(
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb, _c, ldc)
 
 
-fn cublasDsyrk(
+def cublasDsyrk(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -6817,7 +6819,7 @@ fn cublasDsyrk(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
-fn cublasDscal(
+def cublasDscal(
     handle: cublasHandle_t,
     n: Int64,
     alpha: UnsafePointer[Float64, _],
@@ -6836,7 +6838,7 @@ fn cublasDscal(
     ]()(handle, n, alpha, x, incx)
 
 
-fn cublasDtpmv(
+def cublasDtpmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     trans: cublasOperation_t,
@@ -6861,7 +6863,7 @@ fn cublasDtpmv(
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
-fn cublasSgbmv(
+def cublasSgbmv(
     handle: cublasHandle_t,
     trans: cublasOperation_t,
     m: Int16,
@@ -6898,7 +6900,7 @@ fn cublasSgbmv(
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasSrotm(
+def cublasSrotm(
     handle: cublasHandle_t,
     n: Int16,
     x: UnsafePointer[Float32, _],
@@ -6921,7 +6923,7 @@ fn cublasSrotm(
     ]()(handle, n, x, incx, y, incy, param)
 
 
-fn cublasSetAtomicsMode(
+def cublasSetAtomicsMode(
     handle: cublasHandle_t,
     mode: cublasAtomicsMode_t,
 ) raises -> Result:
@@ -6931,7 +6933,7 @@ fn cublasSetAtomicsMode(
     ]()(handle, mode)
 
 
-fn cublasDsbmv(
+def cublasDsbmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int16,
@@ -6964,7 +6966,7 @@ fn cublasDsbmv(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasSger(
+def cublasSger(
     handle: cublasHandle_t,
     m: Int16,
     n: Int16,
@@ -6993,7 +6995,7 @@ fn cublasSger(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn cublasDsymv(
+def cublasDsymv(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int64,
@@ -7024,7 +7026,7 @@ fn cublasDsymv(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn cublasSetStream(
+def cublasSetStream(
     handle: cublasHandle_t, stream_id: CUstream
 ) raises -> Result:
     return _get_dylib_function[
@@ -7033,7 +7035,7 @@ fn cublasSetStream(
     ]()(handle, stream_id)
 
 
-fn cublasStrmm(
+def cublasStrmm(
     handle: cublasHandle_t,
     side: cublasSideMode_t,
     uplo: FillMode,
@@ -7071,7 +7073,7 @@ fn cublasStrmm(
 
 
 @fieldwise_init
-struct cublasOperation_t(TrivialRegisterPassable):
+struct cublasOperation_t(TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime CUBLAS_OP_N = cublasOperation_t(0)
     comptime CUBLAS_OP_T = cublasOperation_t(1)
@@ -7079,34 +7081,34 @@ struct cublasOperation_t(TrivialRegisterPassable):
     comptime CUBLAS_OP_HERMITAN = cublasOperation_t(2)
     comptime CUBLAS_OP_CONJG = cublasOperation_t(3)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.CUBLAS_OP_N:
-            return "CUBLAS_OP_N"
+            return writer.write_string("CUBLAS_OP_N")
         if self == Self.CUBLAS_OP_T:
-            return "CUBLAS_OP_T"
+            return writer.write_string("CUBLAS_OP_T")
         if self == Self.CUBLAS_OP_C:
-            return "CUBLAS_OP_C"
+            return writer.write_string("CUBLAS_OP_C")
         if self == Self.CUBLAS_OP_HERMITAN:
-            return "CUBLAS_OP_HERMITAN"
+            return writer.write_string("CUBLAS_OP_HERMITAN")
         if self == Self.CUBLAS_OP_CONJG:
-            return "CUBLAS_OP_CONJG"
+            return writer.write_string("CUBLAS_OP_CONJG")
         abort("invalid cublasOperation_t entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cublasIdamin(
+def cublasIdamin(
     handle: cublasHandle_t,
     n: Int16,
     x: UnsafePointer[Float64, _],
@@ -7125,7 +7127,7 @@ fn cublasIdamin(
     ]()(handle, n, x, incx, result)
 
 
-fn cublasSspmv(
+def cublasSspmv(
     handle: cublasHandle_t,
     uplo: FillMode,
     n: Int16,
@@ -7154,7 +7156,7 @@ fn cublasSspmv(
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
-fn cublasSgemmStridedBatched(
+def cublasSgemmStridedBatched(
     handle: cublasHandle_t,
     transa: cublasOperation_t,
     transb: cublasOperation_t,
@@ -7218,7 +7220,7 @@ fn cublasSgemmStridedBatched(
     )
 
 
-fn cublasSasum(
+def cublasSasum(
     handle: cublasHandle_t,
     n: Int64,
     x: UnsafePointer[Float32, _],

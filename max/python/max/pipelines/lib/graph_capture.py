@@ -188,6 +188,7 @@ class ServeGraphCaptureRunner:
             is_mla=kv_params.is_mla,
             n_kv_heads_per_device=kv_params.n_kv_heads_per_device,
             num_q_heads=kv_params.num_q_heads,
+            is_fp8_kv=kv_params.quantized_kv_cache,
         )
         if max_batch_size < 1:
             raise ValueError(

@@ -21,7 +21,7 @@ from std.testing import TestSuite
 from std.utils.index import IndexList, Index
 
 
-fn _linear_index[
+def _linear_index[
     rank: Int
 ](coords: IndexList[rank], shape: IndexList[rank]) -> Int:
     """Convert multi-dimensional coordinates to linear index (row-major)."""
@@ -60,7 +60,7 @@ def test_elementwise() raises:
         @always_inline
         @__copy_capture(buffer1, buffer2, out_buffer, shape)
         @parameter
-        fn func[
+        def func[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var index = rebind[IndexList[outer_rank]](idx)
@@ -104,7 +104,7 @@ def test_elementwise_implicit_runtime() raises:
     @always_inline
     @__copy_capture(vector)
     @parameter
-    fn func[
+    def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         vector.unsafe_ptr()[idx[0]] = 42

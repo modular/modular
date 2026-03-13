@@ -26,11 +26,11 @@ struct __MLIRType[T: __TypeOfAllTypes](TrivialRegisterPassable):
 
 
 # ===-----------------------------------------------------------------------===#
-# @parameter for implementation details
+# comptime for (was @parameter for) implementation details
 # ===-----------------------------------------------------------------------===#
 
 
-fn paramfor_has_next[
+def paramfor_has_next[
     IteratorType: Iterator & Copyable
 ](it: IteratorType) -> Bool where conforms_to(
     IteratorType.Element,
@@ -45,7 +45,7 @@ fn paramfor_has_next[
         return False
 
 
-fn paramfor_next_iter[
+def paramfor_next_iter[
     IteratorType: Iterator & Copyable
 ](it: IteratorType) -> IteratorType where conforms_to(
     IteratorType.Element,
@@ -65,7 +65,7 @@ fn paramfor_next_iter[
         abort()
 
 
-fn paramfor_next_value[
+def paramfor_next_value[
     IteratorType: Iterator & Copyable
 ](it: IteratorType) -> IteratorType.Element:
     # NOTE: This function is called by the compiler's elaborator only when

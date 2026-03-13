@@ -63,7 +63,7 @@ from std.utils.index import Index, IndexList
 
 @__llvm_arg_metadata(template_tma_a, `nvvm.grid_constant`)
 @__llvm_arg_metadata(template_tma_b, `nvvm.grid_constant`)
-fn test_grouped_tensormap_update_kernel[
+def test_grouped_tensormap_update_kernel[
     dtype: DType,
     num_groups: Int,
     num_blocks: Int,

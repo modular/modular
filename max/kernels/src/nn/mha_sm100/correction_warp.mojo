@@ -35,7 +35,7 @@ from nn.mha_mask import MHAMask
 
 
 @always_inline
-fn fa4_correction[
+def fa4_correction[
     qkv_type: DType,
     MaskType: MHAMask,
     config: FA4Config,

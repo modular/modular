@@ -31,7 +31,7 @@ comptime DTYPES = [
 # The bug was triggered when a function using range(Int, Int) was declared
 # before main/test functions, causing a cyclic dependency during overload
 # resolution: range -> Int -> Equatable.__eq__ -> range.
-fn _range_with_int_params_helper(start: Int, end: Int) -> Int:
+def _range_with_int_params_helper(start: Int, end: Int) -> Int:
     var sum = 0
     for i in range(start, end):
         sum += i
@@ -317,7 +317,7 @@ def test_scalar_range() raises:
     assert_equal(r.end, 16)
     assert_equal(r.step, 4)
 
-    fn append_many(mut list: List, *values: list.T):
+    def append_many(mut list: List, *values: list.T):
         for value in values:
             list.append(value.copy())
 

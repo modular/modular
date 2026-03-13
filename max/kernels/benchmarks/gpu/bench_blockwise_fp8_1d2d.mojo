@@ -51,6 +51,7 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major as new_row_major,
 )
 from layout._fillers import random
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -58,7 +59,6 @@ from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
 from linalg.matmul.gpu.sm100.config import MatmulConfig
-from layout.tile_layout import row_major as new_row_major
 from structured_kernels.tile_types import (
     GMEMLayout1D,
 )
@@ -69,7 +69,7 @@ from buffer import Dim, DimList, NDBuffer
 from std.utils.index import Index, IndexList
 
 
-fn bench_blockwise_fp8_1d2d[
+def bench_blockwise_fp8_1d2d[
     num_experts: Int,
     expert_shape: IndexList[2],  # (N, K)
 ](
@@ -161,13 +161,13 @@ fn bench_blockwise_fp8_1d2d[
     ctx.enqueue_copy(expert_scales_dev_buf, expert_scales_host_ptr)
 
     # Create NDBuffer views for legacy kernel
-    comptime static_a_shape = DimList(Dim(), K)
-    comptime static_b_shape = DimList(num_experts, N, K)
-    comptime static_c_shape = DimList(Dim(), N)
-    comptime static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())
-    comptime static_b_scales_shape = DimList(
+    comptime static_a_shape = DimList[Dim(), K]()
+    comptime static_b_shape = DimList[num_experts, N, K]()
+    comptime static_c_shape = DimList[Dim(), N]()
+    comptime static_a_scales_shape = DimList[K // BLOCK_SCALE_K, Dim()]()
+    comptime static_b_scales_shape = DimList[
         num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-    )
+    ]()
 
     var a_ndb = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_dev_buf.unsafe_ptr(), IndexList[2](total_num_tokens, K)
@@ -352,10 +352,10 @@ fn bench_blockwise_fp8_1d2d[
         expert_ids_lt,
     )
     @always_inline
-    fn bench_legacy(mut bencher: Bencher):
+    def bench_legacy(mut bencher: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
                 config=config,
             ](
@@ -391,10 +391,10 @@ fn bench_blockwise_fp8_1d2d[
         expert_scales_struct,
     )
     @always_inline
-    fn bench_structured(mut bencher: Bencher):
+    def bench_structured(mut bencher: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             grouped_matmul_dynamic_scaled_fp8_1d2d[
                 a_scales_type=DType.float32,
                 b_scales_type=DType.float32,

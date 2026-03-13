@@ -13,8 +13,7 @@
 
 from std.gpu.host import get_gpu_target
 from std.gpu.host.compile import _compile_code
-from layout.layout import IntTuple, Layout
-from layout.layout_tensor import LayoutTensor
+from layout import IntTuple, Layout, LayoutTensor
 from std.python import Python, PythonObject
 from std.testing import assert_true
 
@@ -48,7 +47,7 @@ def contains_power_of_2_sequence(asm: String) raises -> Bool:
     return shift_result is not PythonObject(None)
 
 
-fn fast_div_kernel[
+def fast_div_kernel[
     dtype: DType,
     layout: Layout,
     divisor: Int,

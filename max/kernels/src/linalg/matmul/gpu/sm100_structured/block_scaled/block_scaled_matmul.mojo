@@ -28,14 +28,15 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
-    Layout as LegacyLayout,
     LayoutTensor,
+    Layout as LegacyLayout,
+    RowMajorLayout,
     RuntimeInt,
     RuntimeLayout,
+    TensorLayout,
     TileTensor,
     row_major,
 )
-from layout.tile_layout import RowMajorLayout, TensorLayout
 from structured_kernels.tile_types import create_tma_tile
 from structured_kernels.kernel_common import _to_batched_3d
 
@@ -69,7 +70,7 @@ from .block_scaled_smem import BlockScaledSmem
 
 
 @parameter
-fn _reshape_to_3d[layout: LegacyLayout]() -> LegacyLayout:
+def _reshape_to_3d[layout: LegacyLayout]() -> LegacyLayout:
     """Reshape 2D layout to 3D by prepending batch dimension of 1."""
     comptime rank = len(layout.shape)
 
@@ -83,7 +84,7 @@ fn _reshape_to_3d[layout: LegacyLayout]() -> LegacyLayout:
         )
 
 
-fn _convert_input_to_batched_tensor[
+def _convert_input_to_batched_tensor[
     dtype: DType,
     layout: LegacyLayout,
     reshape_layout: LegacyLayout = _reshape_to_3d[layout](),
@@ -143,7 +144,7 @@ Preserves the static/dynamic nature of sf_m and sf_k from the input layout.
 """
 
 
-fn _to_scales_5d_batched(
+def _to_scales_5d_batched(
     tensor: TileTensor[...],
 ) -> tensor.ViewType[_Scales5DLayoutBatched[type_of(tensor).LayoutType]]:
     """Reshape batched (rank 6) scale factors to 5D for TMA.
@@ -164,7 +165,7 @@ fn _to_scales_5d_batched(
     )
 
 
-fn _to_scales_5d_non_batched(
+def _to_scales_5d_non_batched(
     tensor: TileTensor[...],
 ) -> tensor.ViewType[_Scales5DLayoutNonBatched[type_of(tensor).LayoutType]]:
     """Reshape non-batched (rank 5) scale factors to 5D for TMA.
@@ -191,7 +192,7 @@ fn _to_scales_5d_non_batched(
 # =============================================================================
 
 
-fn _create_tma_and_launch[
+def _create_tma_and_launch[
     transpose_b: Bool,
     *,
     config: BlockScaledMatmulConfig[_, _, _, _, _, transpose_b],
@@ -409,7 +410,7 @@ fn _create_tma_and_launch[
 # =============================================================================
 
 
-fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     transpose_b: Bool,
     *,
     config: BlockScaledMatmulConfig[_, _, _, _, _, transpose_b],
@@ -500,7 +501,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         )
 
 
-fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     transpose_b: Bool,
     *,
     config: BlockScaledMatmulConfig[_, _, _, _, _, transpose_b],

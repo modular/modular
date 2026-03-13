@@ -34,7 +34,7 @@ struct _C_Passwd(TrivialRegisterPassable):
     var pw_expire: time_t  # Always 0
 
 
-fn _build_pw_struct(
+def _build_pw_struct(
     passwd_ptr: UnsafePointer[mut=False, _C_Passwd, _]
 ) raises -> Passwd:
     var c_pwuid = passwd_ptr[]
@@ -50,7 +50,7 @@ fn _build_pw_struct(
     return passwd^
 
 
-fn _getpw_macos(uid: UInt32) raises -> Passwd:
+def _getpw_macos(uid: UInt32) raises -> Passwd:
     var passwd_ptr = external_call[
         "getpwuid", UnsafePointer[_C_Passwd, MutExternalOrigin]
     ](uid)
@@ -59,7 +59,7 @@ fn _getpw_macos(uid: UInt32) raises -> Passwd:
     return _build_pw_struct(passwd_ptr)
 
 
-fn _getpw_macos(var name: String) raises -> Passwd:
+def _getpw_macos(var name: String) raises -> Passwd:
     var passwd_ptr = external_call[
         "getpwnam", UnsafePointer[_C_Passwd, MutExternalOrigin]
     ](name.as_c_string_slice().unsafe_ptr())

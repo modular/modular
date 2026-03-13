@@ -58,7 +58,7 @@ comptime _USE_CLC_WORK_STEALING = get_defined_bool[
 
 
 @always_inline("nodebug")
-fn _mbarrier_wait_acquire_cta(
+def _mbarrier_wait_acquire_cta(
     mbar: UnsafePointer[mut=True, Int64, _, address_space=AddressSpace.SHARED],
     phase: UInt32,
 ):
@@ -85,7 +85,7 @@ fn _mbarrier_wait_acquire_cta(
 
 
 @always_inline
-fn _elementwise_impl_gpu_clc[
+def _elementwise_impl_gpu_clc[
     rank: Int,
     //,
     func: fn[width: Int, rank: Int, alignment: Int = 1](
@@ -134,7 +134,7 @@ fn _elementwise_impl_gpu_clc[
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
     )
-    fn _kernel[*, block_size: UInt, handle_uneven_simd: Bool]():
+    def _kernel[*, block_size: UInt, handle_uneven_simd: Bool]():
         var result = stack_allocation[
             1,
             UInt128,
@@ -262,7 +262,7 @@ fn _elementwise_impl_gpu_clc[
 
 
 @always_inline
-fn _elementwise_impl_gpu_grid_stride[
+def _elementwise_impl_gpu_grid_stride[
     rank: Int,
     //,
     func: fn[width: Int, rank: Int, alignment: Int = 1](
@@ -318,7 +318,7 @@ fn _elementwise_impl_gpu_grid_stride[
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
     )
-    fn _kernel[*, block_size: UInt, handle_uneven_simd: Bool]():
+    def _kernel[*, block_size: UInt, handle_uneven_simd: Bool]():
         # process the packed region
         var tid = thread_idx.x + block_size * block_idx.x
 
@@ -391,7 +391,7 @@ fn _elementwise_impl_gpu_grid_stride[
 
 
 @always_inline
-fn _elementwise_impl_gpu[
+def _elementwise_impl_gpu[
     rank: Int,
     //,
     func: fn[width: Int, rank: Int, alignment: Int = 1](

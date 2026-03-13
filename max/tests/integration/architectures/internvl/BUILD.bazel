@@ -34,6 +34,7 @@ modular_py_library(
 # Unit tests that don't require GPU
 modular_py_test(
     name = "unit_tests",
+    size = "large",
     srcs = [
         "tests/test_embedding_merge_unit.py",
         "tests/test_embeddings_unit.py",

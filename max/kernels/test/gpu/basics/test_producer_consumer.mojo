@@ -26,7 +26,7 @@ from std.testing import assert_equal
 from std.utils import IndexList
 
 
-fn producer_consumer_kernel[NUM_THREADS: Int]():
+def producer_consumer_kernel[NUM_THREADS: Int]():
     var warp_id = get_warp_id()
     var mbar = stack_allocation[
         1,
@@ -65,7 +65,7 @@ def test_producer_consumer_kernel(ctx: DeviceContext) raises:
     # CHECK-DAG: Consumer thread_idx: 56 warp_idx:  1
 
 
-fn producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
+def producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
     var k_tile_iters = num_iters
 
     var producer_mbar = stack_allocation[
@@ -145,7 +145,7 @@ def test_producer_consumer_pipeline_kernel(ctx: DeviceContext) raises:
     # CHECK: producing:  3
 
 
-fn cpaysnc_producer_consumer_pipeline_kernel[
+def cpaysnc_producer_consumer_pipeline_kernel[
     num_stages: Int,
 ](src: Span[Float32, ImmutAnyOrigin], dst: Span[Float32, MutAnyOrigin]):
     comptime size_per_copy = 16 // size_of[DType.float32]()

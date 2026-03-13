@@ -34,4 +34,19 @@ class DistributedAttentionImpl(Module, ABC):
         kv_collections: list[PagedCacheValues],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
-    ) -> list[TensorValue]: ...
+    ) -> list[TensorValue]:
+        """Runs a distributed attention forward pass.
+
+        Args:
+            layer_idx: The index of the current transformer layer.
+            x: Per-device input tensors, one per device.
+            signal_buffers: Per-device signal buffers used for collective
+                communication.
+            kv_collections: Per-device paged KV cache values.
+            freqs_cis: Per-device rotary embedding frequency tensors.
+            input_row_offsets: Per-device ragged row offset tensors.
+
+        Returns:
+            A list of output tensors, one per device.
+        """
+        ...

@@ -31,7 +31,7 @@ comptime CUDA_CURAND_LIBRARY_PATHS: List[Path] = [
 ]
 
 
-fn _on_error_msg() -> Error:
+def _on_error_msg() -> Error:
     return Error(
         (
             "Cannot find the CUDNN libraries. Please make sure that "
@@ -51,14 +51,14 @@ comptime CUDA_CURAND_LIBRARY = _Global[
 ]
 
 
-fn _init_dylib() -> OwnedDLHandle:
+def _init_dylib() -> OwnedDLHandle:
     return _find_dylib[abort_on_failure=False](
         materialize[CUDA_CURAND_LIBRARY_PATHS]()
     )
 
 
 @always_inline
-fn _get_dylib_function[
+def _get_dylib_function[
     func_name: StaticString, result_type: __TypeOfAllTypes
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
@@ -114,7 +114,7 @@ struct curandDiscreteDistribution_st(TrivialRegisterPassable):
     var host_gen: UInt32
 
 
-fn curandGeneratePoissonMethod(
+def curandGeneratePoissonMethod(
     generator: curandGenerator_t,
     output_ptr: UnsafePointer[Int16, _],
     n: Int,
@@ -129,7 +129,7 @@ fn curandGeneratePoissonMethod(
     ]()(generator, output_ptr, n, func, method)
 
 
-fn curandGenerateLongLong(
+def curandGenerateLongLong(
     generator: curandGenerator_t, output_ptr: UnsafePointer[Int64, _], num: Int
 ) raises -> curandStatus:
     """
@@ -171,7 +171,7 @@ struct libraryPropertyType_t(TrivialRegisterPassable):
     comptime PATCH_LEVEL = Self(2)
 
 
-fn curandGetProperty(
+def curandGetProperty(
     type: libraryPropertyType_t, value: UnsafePointer[Int16, _]
 ) raises -> curandStatus:
     """
@@ -215,59 +215,55 @@ struct curandRngType(
     comptime CURAND_RNG_QUASI_SOBOL64 = Self(10)
     comptime CURAND_RNG_QUASI_SCRAMBLED_SOBOL64 = Self(11)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CURAND_RNG_TEST:
-            return writer.write("CURAND_RNG_TEST")
+            return writer.write_string("CURAND_RNG_TEST")
         if self is Self.CURAND_RNG_PSEUDO_DEFAULT:
-            return writer.write("CURAND_RNG_PSEUDO_DEFAULT")
+            return writer.write_string("CURAND_RNG_PSEUDO_DEFAULT")
         if self is Self.CURAND_RNG_PSEUDO_XORWOW:
-            return writer.write("CURAND_RNG_PSEUDO_XORWOW")
+            return writer.write_string("CURAND_RNG_PSEUDO_XORWOW")
         if self is Self.CURAND_RNG_PSEUDO_MRG32K3A:
-            return writer.write("CURAND_RNG_PSEUDO_MRG32K3A")
+            return writer.write_string("CURAND_RNG_PSEUDO_MRG32K3A")
         if self is Self.CURAND_RNG_PSEUDO_MTGP32:
-            return writer.write("CURAND_RNG_PSEUDO_MTGP32")
+            return writer.write_string("CURAND_RNG_PSEUDO_MTGP32")
         if self is Self.CURAND_RNG_PSEUDO_MT19937:
-            return writer.write("CURAND_RNG_PSEUDO_MT19937")
+            return writer.write_string("CURAND_RNG_PSEUDO_MT19937")
         if self is Self.CURAND_RNG_PSEUDO_PHILOX4_32_10:
-            return writer.write("CURAND_RNG_PSEUDO_PHILOX4_32_10")
+            return writer.write_string("CURAND_RNG_PSEUDO_PHILOX4_32_10")
         if self is Self.CURAND_RNG_QUASI_DEFAULT:
-            return writer.write("CURAND_RNG_QUASI_DEFAULT")
+            return writer.write_string("CURAND_RNG_QUASI_DEFAULT")
         if self is Self.CURAND_RNG_QUASI_SOBOL32:
-            return writer.write("CURAND_RNG_QUASI_SOBOL32")
+            return writer.write_string("CURAND_RNG_QUASI_SOBOL32")
         if self is Self.CURAND_RNG_QUASI_SCRAMBLED_SOBOL32:
-            return writer.write("CURAND_RNG_QUASI_SCRAMBLED_SOBOL32")
+            return writer.write_string("CURAND_RNG_QUASI_SCRAMBLED_SOBOL32")
         if self is Self.CURAND_RNG_QUASI_SOBOL64:
-            return writer.write("CURAND_RNG_QUASI_SOBOL64")
+            return writer.write_string("CURAND_RNG_QUASI_SOBOL64")
         if self is Self.CURAND_RNG_QUASI_SCRAMBLED_SOBOL64:
-            return writer.write("CURAND_RNG_QUASI_SCRAMBLED_SOBOL64")
+            return writer.write_string("CURAND_RNG_QUASI_SCRAMBLED_SOBOL64")
         abort("invalid curandRngType entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
+    def write_repr_to(self, mut writer: Some[Writer]):
+        t"curandRngType({self})".write_to(writer)
 
-    @no_inline
-    fn __repr__(self) -> String:
-        return t"curandRngType({self})"
-
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
 comptime curandHistogramM2K_t = UnsafePointer[Int16, MutAnyOrigin]
 
 
-fn curandDestroyGenerator(generator: curandGenerator_t) raises -> curandStatus:
+def curandDestroyGenerator(generator: curandGenerator_t) raises -> curandStatus:
     """
     \\brief Destroy an existing generator.
 
@@ -284,7 +280,7 @@ fn curandDestroyGenerator(generator: curandGenerator_t) raises -> curandStatus:
     ]()(generator)
 
 
-fn curandGetScrambleConstants64(
+def curandGetScrambleConstants64(
     constants: UnsafePointer[UnsafePointer[Int64, MutAnyOrigin], _],
 ) raises -> curandStatus:
     """
@@ -317,7 +313,7 @@ comptime curandDiscreteDistribution_t = UnsafePointer[
 ]
 
 
-fn curandGenerateSeeds(generator: curandGenerator_t) raises -> curandStatus:
+def curandGenerateSeeds(generator: curandGenerator_t) raises -> curandStatus:
     """
     \\brief Setup starting states.
 
@@ -342,7 +338,7 @@ fn curandGenerateSeeds(generator: curandGenerator_t) raises -> curandStatus:
     ]()(generator)
 
 
-fn curandGenerateBinomial(
+def curandGenerateBinomial(
     generator: curandGenerator_t,
     output_ptr: UnsafePointer[Int16, _],
     num: Int,
@@ -357,7 +353,7 @@ fn curandGenerateBinomial(
     ]()(generator, output_ptr, num, n, p)
 
 
-fn curandGenerateLogNormalDouble(
+def curandGenerateLogNormalDouble(
     generator: curandGenerator_t,
     output_ptr: UnsafePointer[Float64, _],
     n: Int,
@@ -417,7 +413,7 @@ fn curandGenerateLogNormalDouble(
     ]()(generator, output_ptr, n, mean, stddev)
 
 
-fn curandGenerateNormal(
+def curandGenerateNormal(
     generator: curandGenerator_t,
     output_ptr: UnsafePointer[Float32, _],
     n: Int,
@@ -475,7 +471,7 @@ fn curandGenerateNormal(
     ]()(generator, output_ptr, n, mean, stddev)
 
 
-fn curandGenerateLogNormal(
+def curandGenerateLogNormal(
     generator: curandGenerator_t,
     output_ptr: UnsafePointer[Float32, _],
     n: Int,
@@ -562,60 +558,56 @@ struct curandMethod(Equatable, Identifiable, TrivialRegisterPassable, Writable):
     comptime CURAND_DEFINITION = Self(12)
     comptime CURAND_POISSON = Self(13)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CURAND_CHOOSE_BEST:
-            return writer.write("CURAND_CHOOSE_BEST")
+            return writer.write_string("CURAND_CHOOSE_BEST")
         if self is Self.CURAND_ITR:
-            return writer.write("CURAND_ITR")
+            return writer.write_string("CURAND_ITR")
         if self is Self.CURAND_KNUTH:
-            return writer.write("CURAND_KNUTH")
+            return writer.write_string("CURAND_KNUTH")
         if self is Self.CURAND_HITR:
-            return writer.write("CURAND_HITR")
+            return writer.write_string("CURAND_HITR")
         if self is Self.CURAND_M1:
-            return writer.write("CURAND_M1")
+            return writer.write_string("CURAND_M1")
         if self is Self.CURAND_M2:
-            return writer.write("CURAND_M2")
+            return writer.write_string("CURAND_M2")
         if self is Self.CURAND_BINARY_SEARCH:
-            return writer.write("CURAND_BINARY_SEARCH")
+            return writer.write_string("CURAND_BINARY_SEARCH")
         if self is Self.CURAND_DISCRETE_GAUSS:
-            return writer.write("CURAND_DISCRETE_GAUSS")
+            return writer.write_string("CURAND_DISCRETE_GAUSS")
         if self is Self.CURAND_REJECTION:
-            return writer.write("CURAND_REJECTION")
+            return writer.write_string("CURAND_REJECTION")
         if self is Self.CURAND_DEVICE_API:
-            return writer.write("CURAND_DEVICE_API")
+            return writer.write_string("CURAND_DEVICE_API")
         if self is Self.CURAND_FAST_REJECTION:
-            return writer.write("CURAND_FAST_REJECTION")
+            return writer.write_string("CURAND_FAST_REJECTION")
         if self is Self.CURAND_3RD:
-            return writer.write("CURAND_3RD")
+            return writer.write_string("CURAND_3RD")
         if self is Self.CURAND_DEFINITION:
-            return writer.write("CURAND_DEFINITION")
+            return writer.write_string("CURAND_DEFINITION")
         if self is Self.CURAND_POISSON:
-            return writer.write("CURAND_POISSON")
+            return writer.write_string("CURAND_POISSON")
         abort("invalid curandMethod entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
+    def write_repr_to(self, mut writer: Some[Writer]):
+        t"curandMethod({self})".write_to(writer)
 
-    @no_inline
-    fn __repr__(self) -> String:
-        return t"curandMethod({self})"
-
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn curandSetGeneratorOffset(
+def curandSetGeneratorOffset(
     generator: curandGenerator_t, offset: Int64
 ) raises -> curandStatus:
     """
@@ -639,7 +631,7 @@ fn curandSetGeneratorOffset(
     ]()(generator, offset)
 
 
-fn curandSetQuasiRandomGeneratorDimensions(
+def curandSetQuasiRandomGeneratorDimensions(
     generator: curandGenerator_t, num_dimensions: Int16
 ) raises -> curandStatus:
     """
@@ -675,7 +667,7 @@ comptime curandDistributionM2Shift_t = UnsafePointer[
 ]
 
 
-fn curandGetVersion(version: UnsafePointer[Int16, _]) raises -> curandStatus:
+def curandGetVersion(version: UnsafePointer[Int16, _]) raises -> curandStatus:
     """
     \\brief Return the version number of the library.
 
@@ -720,54 +712,52 @@ struct curandStatus(Equatable, Identifiable, TrivialRegisterPassable, Writable):
     comptime CURAND_STATUS_ARCH_MISMATCH = Self(11)
     comptime CURAND_STATUS_INTERNAL_ERROR = Self(12)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CURAND_STATUS_SUCCESS:
-            return writer.write("CURAND_STATUS_SUCCESS")
+            return writer.write_string("CURAND_STATUS_SUCCESS")
         if self is Self.CURAND_STATUS_VERSION_MISMATCH:
-            return writer.write("CURAND_STATUS_VERSION_MISMATCH")
+            return writer.write_string("CURAND_STATUS_VERSION_MISMATCH")
         if self is Self.CURAND_STATUS_NOT_INITIALIZED:
-            return writer.write("CURAND_STATUS_NOT_INITIALIZED")
+            return writer.write_string("CURAND_STATUS_NOT_INITIALIZED")
         if self is Self.CURAND_STATUS_ALLOCATION_FAILED:
-            return writer.write("CURAND_STATUS_ALLOCATION_FAILED")
+            return writer.write_string("CURAND_STATUS_ALLOCATION_FAILED")
         if self is Self.CURAND_STATUS_TYPE_ERROR:
-            return writer.write("CURAND_STATUS_TYPE_ERROR")
+            return writer.write_string("CURAND_STATUS_TYPE_ERROR")
         if self is Self.CURAND_STATUS_OUT_OF_RANGE:
-            return writer.write("CURAND_STATUS_OUT_OF_RANGE")
+            return writer.write_string("CURAND_STATUS_OUT_OF_RANGE")
         if self is Self.CURAND_STATUS_LENGTH_NOT_MULTIPLE:
-            return writer.write("CURAND_STATUS_LENGTH_NOT_MULTIPLE")
+            return writer.write_string("CURAND_STATUS_LENGTH_NOT_MULTIPLE")
         if self is Self.CURAND_STATUS_DOUBLE_PRECISION_REQUIRED:
-            return writer.write("CURAND_STATUS_DOUBLE_PRECISION_REQUIRED")
+            return writer.write_string(
+                "CURAND_STATUS_DOUBLE_PRECISION_REQUIRED"
+            )
         if self is Self.CURAND_STATUS_LAUNCH_FAILURE:
-            return writer.write("CURAND_STATUS_LAUNCH_FAILURE")
+            return writer.write_string("CURAND_STATUS_LAUNCH_FAILURE")
         if self is Self.CURAND_STATUS_PREEXISTING_FAILURE:
-            return writer.write("CURAND_STATUS_PREEXISTING_FAILURE")
+            return writer.write_string("CURAND_STATUS_PREEXISTING_FAILURE")
         if self is Self.CURAND_STATUS_INITIALIZATION_FAILED:
-            return writer.write("CURAND_STATUS_INITIALIZATION_FAILED")
+            return writer.write_string("CURAND_STATUS_INITIALIZATION_FAILED")
         if self is Self.CURAND_STATUS_ARCH_MISMATCH:
-            return writer.write("CURAND_STATUS_ARCH_MISMATCH")
+            return writer.write_string("CURAND_STATUS_ARCH_MISMATCH")
         if self is Self.CURAND_STATUS_INTERNAL_ERROR:
-            return writer.write("CURAND_STATUS_INTERNAL_ERROR")
+            return writer.write_string("CURAND_STATUS_INTERNAL_ERROR")
         abort("invalid curandStatus entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
+    def write_repr_to(self, mut writer: Some[Writer]):
+        t"curandStatus({self})".write_to(writer)
 
-    @no_inline
-    fn __repr__(self) -> String:
-        return t"curandStatus({self})"
-
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -785,40 +775,40 @@ struct curandDirectionVectorSet(
     comptime CURAND_DIRECTION_VECTORS_64_JOEKUO6 = Self(2)
     comptime CURAND_SCRAMBLED_DIRECTION_VECTORS_64_JOEKUO6 = Self(3)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CURAND_DIRECTION_VECTORS_32_JOEKUO6:
-            return writer.write("CURAND_DIRECTION_VECTORS_32_JOEKUO6")
+            return writer.write_string("CURAND_DIRECTION_VECTORS_32_JOEKUO6")
         if self is Self.CURAND_SCRAMBLED_DIRECTION_VECTORS_32_JOEKUO6:
-            return writer.write("CURAND_SCRAMBLED_DIRECTION_VECTORS_32_JOEKUO6")
+            return writer.write_string(
+                "CURAND_SCRAMBLED_DIRECTION_VECTORS_32_JOEKUO6"
+            )
         if self is Self.CURAND_DIRECTION_VECTORS_64_JOEKUO6:
-            return writer.write("CURAND_DIRECTION_VECTORS_64_JOEKUO6")
+            return writer.write_string("CURAND_DIRECTION_VECTORS_64_JOEKUO6")
         if self is Self.CURAND_SCRAMBLED_DIRECTION_VECTORS_64_JOEKUO6:
-            return writer.write("CURAND_SCRAMBLED_DIRECTION_VECTORS_64_JOEKUO6")
+            return writer.write_string(
+                "CURAND_SCRAMBLED_DIRECTION_VECTORS_64_JOEKUO6"
+            )
         abort("invalid curandDirectionVectorSet entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
+    def write_repr_to(self, mut writer: Some[Writer]):
+        t"curandDirectionVectorSet({self})".write_to(writer)
 
-    @no_inline
-    fn __repr__(self) -> String:
-        return t"curandDirectionVectorSet({self})"
-
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn curandGenerateUniform(
+def curandGenerateUniform(
     generator: curandGenerator_t,
     output_ptr: UnsafePointer[Float32, _],
     num: Int,
@@ -855,7 +845,7 @@ fn curandGenerateUniform(
     ]()(generator, output_ptr, num)
 
 
-fn curandGenerateBinomialMethod(
+def curandGenerateBinomialMethod(
     generator: curandGenerator_t,
     output_ptr: UnsafePointer[Int16, _],
     num: Int,
@@ -876,7 +866,7 @@ fn curandGenerateBinomialMethod(
     ]()(generator, output_ptr, num, n, p, method)
 
 
-fn curandCreatePoissonDistribution(
+def curandCreatePoissonDistribution(
     func: Float64,
     discrete_distribution: UnsafePointer[curandDiscreteDistribution_t, _],
 ) raises -> curandStatus:
@@ -911,7 +901,7 @@ fn curandCreatePoissonDistribution(
 comptime curandDirectionVectorSet_t = curandDirectionVectorSet
 
 
-fn curandCreateGenerator(
+def curandCreateGenerator(
     generator: UnsafePointer[curandGenerator_t, _], rng_type: curandRngType
 ) raises -> curandStatus:
     """
@@ -1001,7 +991,7 @@ fn curandCreateGenerator(
     ]()(generator, rng_type)
 
 
-fn curandSetGeneratorOrdering(
+def curandSetGeneratorOrdering(
     generator: curandGenerator_t, order: curandOrdering
 ) raises -> curandStatus:
     """
@@ -1045,7 +1035,7 @@ comptime curandDistribution_st = Float64
 comptime curandRngType_t = curandRngType
 
 
-fn curandGenerateUniformDouble(
+def curandGenerateUniformDouble(
     generator: curandGenerator_t,
     output_ptr: UnsafePointer[Float64, _],
     num: Int,
@@ -1083,7 +1073,7 @@ fn curandGenerateUniformDouble(
     ]()(generator, output_ptr, num)
 
 
-fn curandGenerateNormalDouble(
+def curandGenerateNormalDouble(
     generator: curandGenerator_t,
     output_ptr: UnsafePointer[Float64, _],
     n: Int,
@@ -1142,7 +1132,7 @@ fn curandGenerateNormalDouble(
     ]()(generator, output_ptr, n, mean, stddev)
 
 
-fn curandGetDirectionVectors32(
+def curandGetDirectionVectors32(
     vectors: OpaquePointer[_], set: curandDirectionVectorSet
 ) raises -> curandStatus:
     """
@@ -1172,7 +1162,7 @@ fn curandGetDirectionVectors32(
     ]()(vectors, set)
 
 
-fn curandDestroyDistribution(
+def curandDestroyDistribution(
     discrete_distribution: curandDiscreteDistribution_t,
 ) raises -> curandStatus:
     """
@@ -1192,7 +1182,7 @@ fn curandDestroyDistribution(
     ]()(discrete_distribution)
 
 
-fn curandGenerate(
+def curandGenerate(
     generator: curandGenerator_t, output_ptr: UnsafePointer[Int16, _], num: Int
 ) raises -> curandStatus:
     """
@@ -1253,44 +1243,40 @@ struct curandOrdering(
     comptime CURAND_ORDERING_PSEUDO_DYNAMIC = Self(4)
     comptime CURAND_ORDERING_QUASI_DEFAULT = Self(5)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CURAND_ORDERING_PSEUDO_BEST:
-            return writer.write("CURAND_ORDERING_PSEUDO_BEST")
+            return writer.write_string("CURAND_ORDERING_PSEUDO_BEST")
         if self is Self.CURAND_ORDERING_PSEUDO_DEFAULT:
-            return writer.write("CURAND_ORDERING_PSEUDO_DEFAULT")
+            return writer.write_string("CURAND_ORDERING_PSEUDO_DEFAULT")
         if self is Self.CURAND_ORDERING_PSEUDO_SEEDED:
-            return writer.write("CURAND_ORDERING_PSEUDO_SEEDED")
+            return writer.write_string("CURAND_ORDERING_PSEUDO_SEEDED")
         if self is Self.CURAND_ORDERING_PSEUDO_LEGACY:
-            return writer.write("CURAND_ORDERING_PSEUDO_LEGACY")
+            return writer.write_string("CURAND_ORDERING_PSEUDO_LEGACY")
         if self is Self.CURAND_ORDERING_PSEUDO_DYNAMIC:
-            return writer.write("CURAND_ORDERING_PSEUDO_DYNAMIC")
+            return writer.write_string("CURAND_ORDERING_PSEUDO_DYNAMIC")
         if self is Self.CURAND_ORDERING_QUASI_DEFAULT:
-            return writer.write("CURAND_ORDERING_QUASI_DEFAULT")
+            return writer.write_string("CURAND_ORDERING_QUASI_DEFAULT")
         abort("invalid curandOrdering entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
+    def write_repr_to(self, mut writer: Some[Writer]):
+        t"curandOrdering({self})".write_to(writer)
 
-    @no_inline
-    fn __repr__(self) -> String:
-        return t"curandOrdering({self})"
-
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn curandSetPseudoRandomGeneratorSeed(
+def curandSetPseudoRandomGeneratorSeed(
     generator: curandGenerator_t, seed: Int64
 ) raises -> curandStatus:
     """
@@ -1315,7 +1301,7 @@ fn curandSetPseudoRandomGeneratorSeed(
     ]()(generator, seed)
 
 
-fn curandSetStream(
+def curandSetStream(
     generator: curandGenerator_t, stream: CUstream
 ) raises -> curandStatus:
     """
@@ -1336,7 +1322,7 @@ fn curandSetStream(
     ]()(generator, stream)
 
 
-fn curandCreateGeneratorHost(
+def curandCreateGeneratorHost(
     generator: UnsafePointer[curandGenerator_t, _], rng_type: curandRngType
 ) raises -> curandStatus:
     """
@@ -1429,7 +1415,7 @@ fn curandCreateGeneratorHost(
 comptime curandOrdering_t = curandOrdering
 
 
-fn curandGeneratePoisson(
+def curandGeneratePoisson(
     generator: curandGenerator_t,
     output_ptr: UnsafePointer[Int16, _],
     n: Int,
@@ -1478,7 +1464,7 @@ fn curandGeneratePoisson(
 comptime curandDirectionVectors32_t = StaticTuple[UInt32, 32]
 
 
-fn curandGetScrambleConstants32(
+def curandGetScrambleConstants32(
     constants: UnsafePointer[UnsafePointer[Int16, MutAnyOrigin], _],
 ) raises -> curandStatus:
     """
@@ -1502,7 +1488,7 @@ fn curandGetScrambleConstants32(
     ]()(constants)
 
 
-fn curandGetDirectionVectors64(
+def curandGetDirectionVectors64(
     vectors: OpaquePointer[_], set: curandDirectionVectorSet
 ) raises -> curandStatus:
     """

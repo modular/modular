@@ -21,7 +21,7 @@ on-the-fly during memory loads.
 
 from std.gpu.memory import AddressSpace
 from layout.tma_async import SharedMemBarrier, TMATensorTileIm2col
-from layout.tile_tensor import TileTensor, TensorLayout
+from layout import TensorLayout, TileTensor
 from std.utils.index import IndexList
 
 
@@ -60,12 +60,12 @@ struct TileLoaderTMAIm2col[
     var multicast_mask: UInt16
 
     @always_inline
-    fn __init__(out self, tma_op: Self.TmaOpPtr, multicast_mask: UInt16):
+    def __init__(out self, tma_op: Self.TmaOpPtr, multicast_mask: UInt16):
         self.tma_op = tma_op
         self.multicast_mask = multicast_mask
 
     @always_inline
-    fn load[
+    def load[
         LayoutType: TensorLayout
     ](
         self,
@@ -76,8 +76,8 @@ struct TileLoaderTMAIm2col[
             address_space=AddressSpace.SHARED,
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
-        k_coord: UInt,
-        m_coord: UInt,
+        k_coord: Int,
+        m_coord: Int,
     ):
         """Load a TileTensor tile using im2col TMA.
 

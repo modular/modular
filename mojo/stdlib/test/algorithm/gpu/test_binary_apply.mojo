@@ -16,7 +16,7 @@ from std.gpu.host import DeviceContext
 from std.testing import assert_equal, TestSuite
 
 
-fn vec_func[
+def vec_func[
     op: fn(Float32, Float32) capturing[_] -> Float32
 ](
     in0: UnsafePointer[Float32, MutAnyOrigin],
@@ -32,7 +32,7 @@ fn vec_func[
 
 # Force the capture to be captured instead of inlined away.
 @no_inline
-fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
+def run_binary_add(ctx: DeviceContext, capture: Float32) raises:
     print("== run_binary_add")
 
     comptime length = 1024
@@ -47,7 +47,7 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
             in1_host[i] = 2
 
     @parameter
-    fn add(lhs: Float32, rhs: Float32) -> Float32:
+    def add(lhs: Float32, rhs: Float32) -> Float32:
         return capture + lhs + rhs
 
     var block_dim = 32

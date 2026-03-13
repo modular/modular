@@ -17,8 +17,6 @@ Activations (BF16) are cast to FP8 on-the-fly.
 """
 
 from std.algorithm.functional import elementwise
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
 from std.sys.info import _accelerator_arch, simd_width_of
 from layout import Coord, Idx, TileTensor, row_major
@@ -28,7 +26,7 @@ from .mxfp4_dequant import dequant_mxfp4
 from .matmul.gpu import _matmul_gpu
 
 
-fn mxfp4_matmul_sm90(
+def mxfp4_matmul_sm90(
     c: TileTensor,
     a: TileTensor,
     b_packed: TileTensor,
@@ -81,42 +79,25 @@ fn mxfp4_matmul_sm90(
         b_fp8_tt,
         b_packed,
         b_scales,
-        num_rows=Int(static_N),
-        num_cols=Int(static_K),
+        num_rows=static_N,
+        num_cols=static_K,
     )
 
     # Step 2: Cast BF16 activations to FP8
     var a_fp8_buf = ctx.enqueue_create_buffer[fp8_type](M * static_K)
     var a_fp8_tt = TileTensor(a_fp8_buf, row_major((Idx(M), Idx[static_K]())))
 
-    _cast_bf16_to_fp8(ctx, a_fp8_tt, a, M, Int(static_K))
+    _cast_bf16_to_fp8(ctx, a_fp8_tt, a, M, static_K)
 
     # Step 3: FP8 GEMM via _matmul_gpu (handles dispatch + fallback)
-    var c_ndbuf = NDBuffer[
-        rank=2, DType.bfloat16, MutAnyOrigin, DimList.create_unknown[2]()
-    ](
-        c.ptr.bitcast[Scalar[DType.bfloat16]]().as_any_origin(),
-        Index(M, static_N),
-    )
-    var a_fp8_ndbuf = NDBuffer[
-        rank=2, fp8_type, MutAnyOrigin, DimList.create_unknown[2]()
-    ](
-        a_fp8_tt.ptr.bitcast[Scalar[fp8_type]]().as_any_origin(),
-        Index(M, static_K),
-    )
-    var b_fp8_ndbuf = NDBuffer[
-        rank=2, fp8_type, MutAnyOrigin, DimList(static_N, static_K)
-    ](
-        b_fp8_tt.ptr.bitcast[Scalar[fp8_type]]().as_any_origin(),
-    )
-    _matmul_gpu[transpose_b=True](c_ndbuf, a_fp8_ndbuf, b_fp8_ndbuf, ctx)
+    _matmul_gpu[transpose_b=True](c, a_fp8_tt, b_fp8_tt, ctx)
 
     # Keep temp buffers alive through async GEMM enqueue.
     _ = b_fp8_buf^
     _ = a_fp8_buf^
 
 
-fn _cast_bf16_to_fp8(
+def _cast_bf16_to_fp8(
     ctx: DeviceContext,
     output: TileTensor,
     input: TileTensor,
@@ -132,7 +113,7 @@ fn _cast_bf16_to_fp8(
     @always_inline
     @__copy_capture(out_tt, in_tt)
     @parameter
-    fn cast_fn[
+    def cast_fn[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank],):
         comptime assert rank == 2, "cast_fn only supports rank-2 tensors"

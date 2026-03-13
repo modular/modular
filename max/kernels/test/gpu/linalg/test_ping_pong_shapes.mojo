@@ -25,7 +25,7 @@ from linalg.matmul.gpu.amd.pingpong_kernel import ping_pong_matmul
 from std.testing import assert_true
 
 
-fn test_shape[
+def test_shape[
     in_dtype: DType, M: Int, N: Int, K: Int, enable_swizzle: Bool = True
 ](ctx: DeviceContext) raises:
     """Test a single shape."""
@@ -90,7 +90,7 @@ fn test_shape[
                         host_c_ref[i],
                     )
 
-        assert_true(errors == 0, msg=t"Test failed:{errors} errors")
+        assert_true(errors == 0, msg=String(t"Test failed:{errors} errors"))
 
 
 def main() raises:

@@ -34,7 +34,7 @@ comptime kv_params_test = KVCacheStaticParams(num_heads=4, head_size=64)
 comptime dtype = DType.float32
 
 
-fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
+def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     comptime dtype = DType.float32
     comptime page_size = 128
     comptime num_kv_heads = 2
@@ -133,7 +133,7 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     @parameter
     @always_inline
     @__copy_capture(q_device_tensor)
-    fn input_fn[
+    def input_fn[
         width: Int, alignment: Int
     ](idx: IndexList[3]) -> SIMD[dtype, width]:
         return q_device_tensor.load[width](idx)
@@ -209,7 +209,7 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     _ = paged_lut^
 
 
-fn test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
+def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
     comptime dtype = DType.float32
     comptime page_size = 128
     comptime num_kv_heads = 2
@@ -328,7 +328,7 @@ fn test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
     @parameter
     @always_inline
     @__copy_capture(q_device_tensor)
-    fn input_fn[
+    def input_fn[
         width: Int, alignment: Int
     ](idx: IndexList[4]) -> SIMD[dtype, width]:
         return q_device_tensor.load[width](idx)

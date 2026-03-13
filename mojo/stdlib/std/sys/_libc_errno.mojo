@@ -15,7 +15,7 @@ from std.ffi import c_int, external_call
 from std.sys.info import CompilationTarget, platform_map
 
 
-fn _errno_ptr(out result: UnsafePointer[c_int, MutExternalOrigin]):
+def _errno_ptr(out result: UnsafePointer[c_int, MutExternalOrigin]):
     comptime if CompilationTarget.is_linux():
         result = external_call["__errno_location", type_of(result)]()
     elif CompilationTarget.is_macos():
@@ -24,7 +24,7 @@ fn _errno_ptr(out result: UnsafePointer[c_int, MutExternalOrigin]):
         CompilationTarget.unsupported_target_error[operation="get_errno"]()
 
 
-fn get_errno() -> ErrNo:
+def get_errno() -> ErrNo:
     """Gets the current value of the libc errno.
 
     This function retrieves the thread-local errno value set by the last
@@ -40,7 +40,7 @@ fn get_errno() -> ErrNo:
     return ErrNo(_errno_ptr()[])
 
 
-fn set_errno(errno: ErrNo):
+def set_errno(errno: ErrNo):
     """Sets the C library errno to a specific value.
 
     This function sets the thread-local errno value. It's typically used to
@@ -399,7 +399,7 @@ struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
     """Interface output queue is full."""
     # fmt: on
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         """Constructs an ErrNo from an integer value.
 
         Args:
@@ -410,7 +410,7 @@ struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
         ), "constructed ErrNo from an `Int` out of range of `c_int`"
         self.value = c_int(value)
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the human-readable error description to a writer.
 
         Args:
@@ -425,17 +425,8 @@ struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
         var string = StringSlice(unsafe_from_utf8_ptr=ptr)
         string.write_to(writer)
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Returns the human-readable error description as a string.
-
-        Returns:
-            A string containing the error description from `strerror`.
-        """
-        return String.write(self)
-
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Checks if two `ErrNo` values are equal.
 
         Args:
@@ -447,7 +438,7 @@ struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
         return self.value == other.value
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Checks if two `ErrNo` values are not equal.
 
         Args:

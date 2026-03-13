@@ -96,11 +96,6 @@ struct DriverVersion(ImplicitlyCopyable, Writable):
     fn patch(self) raises -> Int:
         return Int(self._value[2]) if len(self._value) > 2 else 0
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        var patch = self._value[2] if len(self._value) > 2 else ""
-        return t"{self._value[0]}.{self._value[1]}.{patch}"
-
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the driver version string.
 
@@ -281,10 +276,6 @@ struct Result(Equatable, TrivialRegisterPassable, Writable):
             writer.write("NVML_GPU_NOT_FOUND")
         else:
             writer.write("NVML_UNKNOWN")
-
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return String(self)
 
 
 @always_inline
@@ -586,16 +577,12 @@ struct Device(Writable):
         raise Error("unable to set max gpu clock for ", device)
 
     @no_inline
-    fn __str__(self) -> String:
-        return self.__repr__()
-
-    @no_inline
     fn write_to(self, mut writer: Some[Writer]):
-        writer.write("Device(", self.idx, ")")
+        t"Device({self.idx})".write_to(writer)
 
     @no_inline
-    fn __repr__(self) -> String:
-        return String.write(self)
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        self.write_to(writer)
 
 
 @fieldwise_init

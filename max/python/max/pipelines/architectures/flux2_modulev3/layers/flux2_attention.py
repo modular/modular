@@ -35,6 +35,7 @@ def _apply_flux2_qk_rope(
     key: Tensor,
     cos: Tensor,
     sin: Tensor,
+    position_ids: Tensor,
 ) -> tuple[Tensor, Tensor]:
     batch_size = query.shape[0]
     seq_len = query.shape[1]
@@ -51,11 +52,6 @@ def _apply_flux2_qk_rope(
         F.stack([cos_pairs, sin_pairs], axis=-1),
         [cos.shape[0], cos.shape[1]],
     )
-    position_ids = F.arange(0, seq_len, dtype=DType.uint32, device=query.device)
-    # broadcast_to instead of tile: tile has no GPU kernel and forces a
-    # CPU round-trip. broadcast_to expands [1, seq_len] -> [batch_size, seq_len]
-    # entirely on GPU.
-    position_ids = F.broadcast_to(position_ids[None, :], [batch_size, seq_len])
     position_ids = F.reshape(position_ids, [batch_size * seq_len])
 
     query_out = rope_ragged_with_position_ids(
@@ -273,6 +269,7 @@ class Flux2Attention(Module[..., Tensor | tuple[Tensor, Tensor]]):
         encoder_hidden_states: Tensor | None = None,
         # attention_mask: Optional[Tensor] = None,
         image_rotary_emb: tuple[Tensor, Tensor] | None = None,
+        position_ids: Tensor | None = None,
     ) -> Tensor | tuple[Tensor, Tensor]:
         """Apply dual-stream attention.
 
@@ -348,8 +345,14 @@ class Flux2Attention(Module[..., Tensor | tuple[Tensor, Tensor]]):
 
         # Apply rotary embeddings if provided
         if image_rotary_emb is not None:
+            if position_ids is None:
+                raise ValueError(
+                    "position_ids must be provided when image_rotary_emb is set"
+                )
             cos, sin = image_rotary_emb
-            query, key = _apply_flux2_qk_rope(query, key, cos, sin)
+            query, key = _apply_flux2_qk_rope(
+                query, key, cos, sin, position_ids
+            )
 
         # Scaled dot-product attention
         scale = 1.0 / (self.head_dim**0.5)
@@ -447,6 +450,7 @@ class Flux2ParallelSelfAttention(Module[[Tensor], Tensor]):
         hidden_states: Tensor,
         attention_mask: Tensor | None = None,
         image_rotary_emb: tuple[Tensor, Tensor] | None = None,
+        position_ids: Tensor | None = None,
     ) -> Tensor:
         """Apply parallel self-attention and MLP.
 
@@ -486,8 +490,14 @@ class Flux2ParallelSelfAttention(Module[[Tensor], Tensor]):
 
         # Apply rotary embeddings
         if image_rotary_emb is not None:
+            if position_ids is None:
+                raise ValueError(
+                    "position_ids must be provided when image_rotary_emb is set"
+                )
             cos, sin = image_rotary_emb
-            query, key = _apply_flux2_qk_rope(query, key, cos, sin)
+            query, key = _apply_flux2_qk_rope(
+                query, key, cos, sin, position_ids
+            )
 
         # Attention computation
         hidden_states = flash_attention_gpu(

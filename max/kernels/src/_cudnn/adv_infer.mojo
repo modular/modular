@@ -47,14 +47,14 @@ comptime CUDA_CUDNN_ADV_INFER_LIBRARY = _Global[
 ]
 
 
-fn _init_dylib() -> OwnedDLHandle:
+def _init_dylib() -> OwnedDLHandle:
     return _find_dylib["CUDA cuDNN Adv Infer"](
         materialize[CUDA_CUDNN_ADV_INFER_LIBRARY_PATHS]()
     )
 
 
 @always_inline
-fn _get_dylib_function[
+def _get_dylib_function[
     func_name: StaticString, result_type: __TypeOfAllTypes
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
@@ -175,7 +175,7 @@ struct cudnnRNNDataLayout_t(TrivialRegisterPassable):
     """Padded, outer stride from one batch to the next."""
 
 
-fn cudnnGetRNNDescriptor_v6(
+def cudnnGetRNNDescriptor_v6(
     handle: UnsafePointer[cudnnContext, _],
     rnn_desc: UnsafePointer[cudnnRNNStruct, _],
     hidden_size: UnsafePointer[Int16, _],
@@ -223,36 +223,32 @@ struct cudnnForwardMode_t(
     comptime CUDNN_FWD_MODE_INFERENCE = Self(0)
     comptime CUDNN_FWD_MODE_TRAINING = Self(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_FWD_MODE_INFERENCE:
-            return writer.write("CUDNN_FWD_MODE_INFERENCE")
+            return writer.write_string("CUDNN_FWD_MODE_INFERENCE")
         if self is Self.CUDNN_FWD_MODE_TRAINING:
-            return writer.write("CUDNN_FWD_MODE_TRAINING")
+            return writer.write_string("CUDNN_FWD_MODE_TRAINING")
         abort("invalid cudnnForwardMode_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
+    def write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnForwardMode_t({self})".write_to(writer)
 
-    @no_inline
-    fn __repr__(self) -> String:
-        return t"cudnnForwardMode_t({self})"
-
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnDestroyAttnDescriptor(
+def cudnnDestroyAttnDescriptor(
     attn_desc: UnsafePointer[cudnnAttnStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -261,7 +257,7 @@ fn cudnnDestroyAttnDescriptor(
     ]()(attn_desc)
 
 
-fn cudnnGetRNNTempSpaceSizes(
+def cudnnGetRNNTempSpaceSizes(
     handle: UnsafePointer[cudnnContext, _],
     rnn_desc: UnsafePointer[cudnnRNNStruct, _],
     fwd_mode: cudnnForwardMode_t,
@@ -282,7 +278,7 @@ fn cudnnGetRNNTempSpaceSizes(
     ]()(handle, rnn_desc, fwd_mode, x_desc, work_space_size, reserve_space_size)
 
 
-fn cudnnSetRNNDescriptor_v6(
+def cudnnSetRNNDescriptor_v6(
     handle: UnsafePointer[cudnnContext, _],
     rnn_desc: UnsafePointer[cudnnRNNStruct, _],
     hidden_size: Int16,
@@ -322,7 +318,7 @@ fn cudnnSetRNNDescriptor_v6(
     )
 
 
-fn cudnnCreatePersistentRNNPlan(
+def cudnnCreatePersistentRNNPlan(
     rnn_desc: UnsafePointer[cudnnRNNStruct, _],
     minibatch: Int16,
     data_type: cudnnDataType_t,
@@ -339,7 +335,7 @@ fn cudnnCreatePersistentRNNPlan(
     ]()(rnn_desc, minibatch, data_type, plan)
 
 
-fn cudnnGetSeqDataDescriptor(
+def cudnnGetSeqDataDescriptor(
     seq_data_desc: UnsafePointer[cudnnSeqDataStruct, _],
     data_type: UnsafePointer[cudnnDataType_t, _],
     nb_dims: UnsafePointer[Int16, _],
@@ -379,7 +375,7 @@ fn cudnnGetSeqDataDescriptor(
     )
 
 
-fn cudnnRNNGetClip_v8(
+def cudnnRNNGetClip_v8(
     rnn_desc: UnsafePointer[cudnnRNNStruct, _],
     clip_mode: UnsafePointer[cudnnRNNClipMode_t, _],
     clip_nan_opt: UnsafePointer[cudnnNanPropagation_t, _],
@@ -398,7 +394,7 @@ fn cudnnRNNGetClip_v8(
     ]()(rnn_desc, clip_mode, clip_nan_opt, lclip, rclip)
 
 
-fn cudnnSetRNNAlgorithmDescriptor(
+def cudnnSetRNNAlgorithmDescriptor(
     handle: UnsafePointer[cudnnContext, _],
     rnn_desc: UnsafePointer[cudnnRNNStruct, _],
     algo_desc: UnsafePointer[cudnnAlgorithmStruct, _],
@@ -413,7 +409,7 @@ fn cudnnSetRNNAlgorithmDescriptor(
     ]()(handle, rnn_desc, algo_desc)
 
 
-fn cudnnGetRNNParamsSize(
+def cudnnGetRNNParamsSize(
     handle: UnsafePointer[cudnnContext, _],
     rnn_desc: UnsafePointer[cudnnRNNStruct, _],
     x_desc: UnsafePointer[cudnnTensorStruct, _],
@@ -432,7 +428,7 @@ fn cudnnGetRNNParamsSize(
     ]()(handle, rnn_desc, x_desc, size_in_bytes, data_type)
 
 
-fn cudnnSetRNNMatrixMathType(
+def cudnnSetRNNMatrixMathType(
     rnn_desc: UnsafePointer[cudnnRNNStruct, _], m_type: cudnnMathType_t
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -441,7 +437,7 @@ fn cudnnSetRNNMatrixMathType(
     ]()(rnn_desc, m_type)
 
 
-fn cudnnGetAttnDescriptor(
+def cudnnGetAttnDescriptor(
     attn_desc: UnsafePointer[cudnnAttnStruct, _],
     attn_mode: UnsafePointer[Int16, _],
     n_heads: UnsafePointer[Int16, _],
@@ -511,7 +507,7 @@ fn cudnnGetAttnDescriptor(
     )
 
 
-fn cudnnRNNSetClip(
+def cudnnRNNSetClip(
     handle: UnsafePointer[cudnnContext, _],
     rnn_desc: UnsafePointer[cudnnRNNStruct, _],
     clip_mode: cudnnRNNClipMode_t,
@@ -532,7 +528,7 @@ fn cudnnRNNSetClip(
     ]()(handle, rnn_desc, clip_mode, clip_nan_opt, lclip, rclip)
 
 
-fn cudnnGetMultiHeadAttnWeights(
+def cudnnGetMultiHeadAttnWeights(
     handle: UnsafePointer[cudnnContext, _],
     attn_desc: UnsafePointer[cudnnAttnStruct, _],
     w_kind: cudnnMultiHeadAttnWeightKind_t,
@@ -557,7 +553,7 @@ fn cudnnGetMultiHeadAttnWeights(
     )
 
 
-fn cudnnSetSeqDataDescriptor(
+def cudnnSetSeqDataDescriptor(
     seq_data_desc: UnsafePointer[cudnnSeqDataStruct, _],
     data_type: cudnnDataType_t,
     nb_dims: Int16,
@@ -591,7 +587,7 @@ fn cudnnSetSeqDataDescriptor(
     )
 
 
-fn cudnnCreateSeqDataDescriptor(
+def cudnnCreateSeqDataDescriptor(
     seq_data_desc: UnsafePointer[
         UnsafePointer[cudnnSeqDataStruct, ExternalOrigin[mut=True]], _
     ],
@@ -602,7 +598,7 @@ fn cudnnCreateSeqDataDescriptor(
     ]()(seq_data_desc)
 
 
-fn cudnnGetRNNPaddingMode(
+def cudnnGetRNNPaddingMode(
     rnn_desc: UnsafePointer[cudnnRNNStruct, _],
     padding_mode: UnsafePointer[Int16, _],
 ) raises -> cudnnStatus_t:
@@ -619,7 +615,7 @@ comptime cudnnAttnDescriptor_t = UnsafePointer[
 comptime cudnnAttnQueryMap_t = Int16
 
 
-fn cudnnGetRNNLinLayerBiasParams(
+def cudnnGetRNNLinLayerBiasParams(
     handle: UnsafePointer[cudnnContext, _],
     rnn_desc: UnsafePointer[cudnnRNNStruct, _],
     pseudo_layer: Int16,
@@ -656,7 +652,7 @@ fn cudnnGetRNNLinLayerBiasParams(
     )
 
 
-fn cudnnGetRNNForwardInferenceAlgorithmMaxCount(
+def cudnnGetRNNForwardInferenceAlgorithmMaxCount(
     handle: UnsafePointer[cudnnContext, _],
     rnn_desc: UnsafePointer[cudnnRNNStruct, _],
     count: UnsafePointer[Int16, _],
@@ -671,7 +667,7 @@ fn cudnnGetRNNForwardInferenceAlgorithmMaxCount(
     ]()(handle, rnn_desc, count)
 
 
-fn cudnnGetRNNWeightParams(
+def cudnnGetRNNWeightParams(
     handle: UnsafePointer[cudnnContext, _],
     rnn_desc: UnsafePointer[cudnnRNNStruct, _],
     pseudo_layer: Int32,
@@ -711,7 +707,7 @@ fn cudnnGetRNNWeightParams(
     )
 
 
-fn cudnnGetRNNDescriptor_v8(
+def cudnnGetRNNDescriptor_v8(
     rnn_desc: UnsafePointer[cudnnRNNStruct, _],
     algo: UnsafePointer[cudnnRNNAlgo_t, _],
     cell_mode: UnsafePointer[cudnnRNNMode_t, _],
@@ -776,40 +772,36 @@ struct cudnnSeqDataAxis_t(
     comptime CUDNN_SEQDATA_BEAM_DIM = Self(2)
     comptime CUDNN_SEQDATA_VECT_DIM = Self(3)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_SEQDATA_TIME_DIM:
-            return writer.write("CUDNN_SEQDATA_TIME_DIM")
+            return writer.write_string("CUDNN_SEQDATA_TIME_DIM")
         if self is Self.CUDNN_SEQDATA_BATCH_DIM:
-            return writer.write("CUDNN_SEQDATA_BATCH_DIM")
+            return writer.write_string("CUDNN_SEQDATA_BATCH_DIM")
         if self is Self.CUDNN_SEQDATA_BEAM_DIM:
-            return writer.write("CUDNN_SEQDATA_BEAM_DIM")
+            return writer.write_string("CUDNN_SEQDATA_BEAM_DIM")
         if self is Self.CUDNN_SEQDATA_VECT_DIM:
-            return writer.write("CUDNN_SEQDATA_VECT_DIM")
+            return writer.write_string("CUDNN_SEQDATA_VECT_DIM")
         abort("invalid cudnnSeqDataAxis_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
+    def write_repr_to(self, mut writer: Some[Writer]):
+        t"cudnnSeqDataAxis_t({self})".write_to(writer)
 
-    @no_inline
-    fn __repr__(self) -> String:
-        return t"cudnnSeqDataAxis_t({self})"
-
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-fn cudnnSetRNNPaddingMode(
+def cudnnSetRNNPaddingMode(
     rnn_desc: UnsafePointer[cudnnRNNStruct, _], padding_mode: Int16
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -818,7 +810,7 @@ fn cudnnSetRNNPaddingMode(
     ]()(rnn_desc, padding_mode)
 
 
-fn cudnnDestroyRNNDescriptor(
+def cudnnDestroyRNNDescriptor(
     rnn_desc: UnsafePointer[cudnnRNNStruct, _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
@@ -827,7 +819,7 @@ fn cudnnDestroyRNNDescriptor(
     ]()(rnn_desc)
 
 
-fn cudnnSetRNNDataDescriptor(
+def cudnnSetRNNDataDescriptor(
     rnn_data_desc: UnsafePointer[cudnnRNNDataStruct, _],
     data_type: cudnnDataType_t,
     layout: cudnnRNNDataLayout_t,

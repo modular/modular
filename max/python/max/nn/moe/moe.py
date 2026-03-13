@@ -27,10 +27,10 @@ from typing_extensions import Self
 
 from ..comm.ep import EPBatchManager
 from ..comm.ep.ep_kernels import fused_silu
-from ..float8_config import Float8Config
 from ..kernels import grouped_matmul_ragged, moe_create_indices
 from ..layer import Layer, LayerList, Module, Shardable
 from ..linear import MLP, Linear
+from ..quant_config import QuantConfig
 
 
 class MoEGate(Module):
@@ -146,9 +146,9 @@ class MoE(Module, Shardable):
         num_experts_per_token: The number of experts per token.
         moe_dim: The intermediate dimension of each expert.
         gate_cls: The model-specific gate implementation. Defaults to
-            :class:`MoEGate`.
+            :class:`~max.nn.moe.moe.MoEGate`.
         mlp_cls: The MLP class to use for experts. Defaults to
-            :class:`MLP`.
+            :class:`~max.nn.linear.MLP`.
         has_shared_experts: Whether to use shared experts. Defaults to
             ``False``.
         shared_experts_dim: The dimension of the shared experts.
@@ -160,7 +160,7 @@ class MoE(Module, Shardable):
             first. Defaults to ``False``.
         ep_batch_manager: The expert parallel batch manager. Defaults to
             ``None``.
-        float8_config: The FP8 quantization configuration. Defaults to
+        quant_config: The scaled quantization configuration. Defaults to
             ``None``.
         is_sharding: Whether the constructor is being called during
             sharding. Defaults to ``False``.
@@ -199,7 +199,7 @@ class MoE(Module, Shardable):
         dtype: DType = DType.bfloat16,
         apply_router_weight_first: bool = False,
         ep_batch_manager: EPBatchManager | None = None,
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
         is_sharding: bool = False,
     ):
         super().__init__()
@@ -223,7 +223,7 @@ class MoE(Module, Shardable):
             dtype=DType.bfloat16,
         )
         self.num_local_experts = num_experts // ep_size
-        self.float8_config = float8_config
+        self.quant_config = quant_config
 
         if has_shared_experts:
             assert shared_experts_dim > 0, (
@@ -235,7 +235,7 @@ class MoE(Module, Shardable):
                 hidden_dim=self.hidden_dim,
                 feed_forward_length=self.shared_experts_dim,
                 devices=self.devices,
-                float8_config=self.float8_config,
+                quant_config=self.quant_config,
             )
 
         if ep_batch_manager:
@@ -256,7 +256,7 @@ class MoE(Module, Shardable):
                 hidden_dim=self.hidden_dim,
                 feed_forward_length=self.moe_dim,
                 devices=self.devices,
-                float8_config=self.float8_config,
+                quant_config=self.quant_config,
             )
             for _ in range(self.num_experts)
         ]
@@ -349,7 +349,7 @@ class MoE(Module, Shardable):
                 ep_size=self.ep_size,
                 dtype=self.dtype,
                 apply_router_weight_first=self.apply_router_weight_first,
-                float8_config=self.float8_config,
+                quant_config=self.quant_config,
                 is_sharding=True,
             )
 

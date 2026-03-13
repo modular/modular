@@ -39,7 +39,7 @@ from std.collections import OptionalReg
 comptime logger = Logger()
 
 
-fn _is_valid_cluster_shape[
+def _is_valid_cluster_shape[
     cluster_shape: IndexList[3]
 ](grid_shape: IndexList[2], num_tiles_n: Int) -> Bool:
     if num_tiles_n % cluster_shape[0] != 0:
@@ -55,7 +55,7 @@ fn _is_valid_cluster_shape[
     return True
 
 
-fn _get_grid_shape[
+def _get_grid_shape[
     cluster_shape: IndexList[3] = Index(1, 1, 1)
 ](num_tiles_n: Int) -> IndexList[2]:
     # Hardcode values on purpose until we move this inside tile scheduler
@@ -76,7 +76,7 @@ fn _get_grid_shape[
     return adjusted_grid_shape
 
 
-fn _is_valid_grid_shape[
+def _is_valid_grid_shape[
     grid_shape: IndexList[2], cluster_shape: IndexList[3]
 ](num_tiles_n: Int) -> Bool:
     comptime assert (
@@ -92,7 +92,7 @@ fn _is_valid_grid_shape[
     return grid_shape[0] % num_tiles_n == 0
 
 
-fn warp_specialize_gemm_with_multicasting[
+def warp_specialize_gemm_with_multicasting[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -163,7 +163,7 @@ fn warp_specialize_gemm_with_multicasting[
         ](c_device, a_device, b_device, ctx)
 
 
-fn _warp_specialize_gemm_with_multicasting_impl[
+def _warp_specialize_gemm_with_multicasting_impl[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -284,8 +284,8 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         Int32(config.cluster_shape[2]),
     )
 
-    comptime CLUSTER_N = UInt(cluster_shape[0])
-    comptime CLUSTER_M = UInt(cluster_shape[1])
+    comptime CLUSTER_N = Int(cluster_shape[0])
+    comptime CLUSTER_M = Int(cluster_shape[1])
 
     comptime c_smem_layout = _get_c_smem_layout[
         config.block_tile_shape,
@@ -435,14 +435,14 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         comptime if not swapAB:
             var a_tma_op = create_tensor_tile[
                 Index(
-                    BM // Int(CLUSTER_N), BK
+                    BM // CLUSTER_N, BK
                 ) if config.partitioned_multicast else Index(BM, BK),
                 swizzle_mode=a_swizzle,
             ](ctx, a)
 
             var b_tma_op = create_tensor_tile[
                 Index(
-                    BN // Int(CLUSTER_M), BK
+                    BN // CLUSTER_M, BK
                 ) if config.partitioned_multicast else Index(BN, BK),
                 swizzle_mode=b_swizzle,
             ](ctx, b)
@@ -510,14 +510,14 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         else:
             var a_tma_op = create_tensor_tile[
                 Index(
-                    BM // Int(CLUSTER_N), BK
+                    BM // CLUSTER_N, BK
                 ) if config.partitioned_multicast else Index(BM, BK),
                 swizzle_mode=a_swizzle,
             ](ctx, b)
 
             var b_tma_op = create_tensor_tile[
                 Index(
-                    BN // Int(CLUSTER_M), BK
+                    BN // CLUSTER_M, BK
                 ) if config.partitioned_multicast else Index(BN, BK),
                 swizzle_mode=b_swizzle,
             ](ctx, a)
@@ -579,7 +579,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         )
 
 
-fn _get_c_smem_layout[
+def _get_c_smem_layout[
     block_tile_shape: IndexList[3],
     a_type: DType,
     b_type: DType,
@@ -637,7 +637,7 @@ fn _get_c_smem_layout[
         + String(pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type]())
     )
 
-    fn _get_max_wg_bn() capturing -> Int:
+    def _get_max_wg_bn() capturing -> Int:
         var WG_BN = MAX_WG_BN
         while (
             available_c_smem_size < WG_BM * WG_BN * size_of[c_type]()
@@ -652,7 +652,7 @@ fn _get_c_smem_layout[
     )
 
 
-fn warp_specialize_gemm_with_multicasting_splitk[
+def warp_specialize_gemm_with_multicasting_splitk[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -717,8 +717,8 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         Int32(config.cluster_shape[2]),
     )
 
-    comptime CLUSTER_N = UInt(cluster_shape[0])
-    comptime CLUSTER_M = UInt(cluster_shape[1])
+    comptime CLUSTER_N = Int(cluster_shape[0])
+    comptime CLUSTER_M = Int(cluster_shape[1])
 
     comptime c_smem_layout = _get_c_smem_layout[
         config.block_tile_shape,
@@ -741,15 +741,15 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
     a_tma_op = create_tensor_tile[
-        Index(
-            BM // Int(CLUSTER_N), BK
-        ) if config.partitioned_multicast else Index(BM, BK),
+        Index(BM // CLUSTER_N, BK) if config.partitioned_multicast else Index(
+            BM, BK
+        ),
         swizzle_mode=a_swizzle,
     ](ctx, a)
     b_tma_op = create_tensor_tile[
-        Index(
-            BN // Int(CLUSTER_M), BK
-        ) if config.partitioned_multicast else Index(BN, BK),
+        Index(BN // CLUSTER_M, BK) if config.partitioned_multicast else Index(
+            BN, BK
+        ),
         swizzle_mode=b_swizzle,
     ](ctx, b)
 

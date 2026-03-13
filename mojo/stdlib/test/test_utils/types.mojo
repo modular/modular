@@ -49,7 +49,7 @@ struct MoveOnly[T: Movable & ImplicitlyDestructible](Movable):
     """Test data payload."""
 
     @implicit
-    fn __init__(out self, var i: Self.T):
+    def __init__(out self, var i: Self.T):
         """Construct a MoveOnly providing the payload data.
 
         Args:
@@ -76,7 +76,7 @@ struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
     var value: Int
     """Test value payload."""
 
-    fn __init__(out self, value: Int, actions: Self._U):
+    def __init__(out self, value: Int, actions: Self._U):
         """Constructs a new instance and records the initialization.
 
         Args:
@@ -87,7 +87,7 @@ struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
         self.value = value
         self.actions.unsafe_mut_cast[True]()[0].append("__init__")
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         """Moves from an existing instance and records the operation.
 
         Args:
@@ -97,7 +97,7 @@ struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
         self.value = take.value
         self.actions.unsafe_mut_cast[True]()[0].append("move ctor")
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Destroys the instance and records the operation."""
         self.actions.unsafe_mut_cast[True]()[0].append("__del__")
 
@@ -116,7 +116,7 @@ struct ExplicitCopyOnly(Copyable):
     """Number of times this instance has been copied."""
 
     @implicit
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         """Constructs a new instance.
 
         Args:
@@ -125,7 +125,7 @@ struct ExplicitCopyOnly(Copyable):
         self.value = value
         self.copy_count = 0
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Copies from another instance and increments the count.
 
         Args:
@@ -149,7 +149,7 @@ struct ImplicitCopyOnly(ImplicitlyCopyable):
     """Number of times this instance has been copied."""
 
     @implicit
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         """Constructs a new instance.
 
         Args:
@@ -158,7 +158,7 @@ struct ImplicitCopyOnly(ImplicitlyCopyable):
         self.value = value
         self.copy_count = 0
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Copies from another instance and increments the count.
 
         Args:
@@ -192,11 +192,11 @@ struct CopyCounter[
     var copy_count: Int
     """Number of times this instance has been copied."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Constructs a new instance with default value."""
         self = Self(Self.T())
 
-    fn __init__(out self, s: Self.T):
+    def __init__(out self, s: Self.T):
         """Constructs a new instance with the given value.
 
         Args:
@@ -211,7 +211,7 @@ struct CopyCounter[
         self.value = s
         self.copy_count = 0
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Copies from another instance and increments the count.
 
         Args:
@@ -220,7 +220,7 @@ struct CopyCounter[
         self.value = copy.value
         self.copy_count = copy.copy_count + 1
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes a string representation to the writer.
 
         Args:
@@ -254,7 +254,7 @@ struct MoveCounter[
     """Number of times this instance has been moved."""
 
     @implicit
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         """Constructs a new instance of this type. This initial move is not counted.
 
         Args:
@@ -269,7 +269,7 @@ struct MoveCounter[
         self.value = value^
         self.move_count = 0
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         """Moves from an existing instance and increments the count.
 
         Args:
@@ -292,12 +292,12 @@ struct MoveCopyCounter(ImplicitlyCopyable):
     var moved: Int
     """Number of times this instance has been moved."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Constructs a new instance with zero counts."""
         self.copied = 0
         self.moved = 0
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Copies from another instance and increments the copy count.
 
         Args:
@@ -306,7 +306,7 @@ struct MoveCopyCounter(ImplicitlyCopyable):
         self.copied = copy.copied + 1
         self.moved = copy.moved
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         """Moves from an existing instance and increments the move count.
 
         Args:
@@ -336,7 +336,7 @@ struct TriviallyCopyableMoveCounter(Copyable):
     # Copying this type is trivial, it doesn't care to track copies.
     comptime __copy_ctor_is_trivial = True
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         """Moves from an existing instance and increments the count.
 
         Args:
@@ -363,7 +363,7 @@ struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable):
     var destructor_recorder: UnsafePointer[List[Int], Self.recorder_origin]
     """Pointer to list for recording destructor calls."""
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Records this instance's value when destroyed."""
         self.destructor_recorder.unsafe_mut_cast[True]()[].append(self.value)
 
@@ -384,7 +384,7 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](ImplicitlyCopyable):
     var target: UnsafePointer[Bool, Self.origin]
     """Pointer to boolean flag set on destruction."""
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Sets the target flag to True when destroyed."""
         self.target.init_pointee_move(True)
 
@@ -402,7 +402,7 @@ struct ExplicitDelOnly(Movable):
     var data: Int
     """Test data payload."""
 
-    fn destroy(deinit self):
+    def destroy(deinit self):
         """Explicitly destroy this linear type."""
 
         pass
@@ -429,11 +429,11 @@ struct DelCounter[counter_origin: ImmutOrigin, *, trivial_del: Bool = False](
     var counter: UnsafePointer[Int, Self.counter_origin]
     """Pointer to counter incremented on destruction."""
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Increments the counter when destroyed."""
         self.counter.unsafe_mut_cast[True]()[] += 1
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes a string representation to the writer.
 
         Args:
@@ -457,7 +457,7 @@ struct AbortOnDel(ImplicitlyCopyable):
     var value: Int
     """Test value payload."""
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Aborts the program if called."""
         abort("We should never call the destructor of AbortOnDel")
 
@@ -477,7 +477,7 @@ struct CopyCountedStruct(ImplicitlyCopyable):
     """String value payload."""
 
     @implicit
-    fn __init__(out self, value: String):
+    def __init__(out self, value: String):
         """Constructs a new instance with the given value.
 
         Args:
@@ -499,7 +499,7 @@ struct AbortOnCopy(ImplicitlyCopyable):
     Used to test that implicit copies do not occur in certain scenarios.
     """
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Aborts the program if called.
 
         Args:
@@ -534,7 +534,7 @@ struct Observable[
     var _moves: Optional[Pointer[Int, Self.MoveOrigin]]
     var _dels: Optional[Pointer[Int, Self.DelOrigin]]
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         var copies: Optional[Pointer[Int, Self.CopyOrigin]] = None,
@@ -553,7 +553,7 @@ struct Observable[
         self._moves = moves^
         self._dels = dels^
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Copy initialize the Observable and increment the copy count.
 
         Args:
@@ -566,7 +566,7 @@ struct Observable[
         if self._copies:
             self._copies.value()[] += 1
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         """Move initialize the Observable and increment the move count.
 
         Args:
@@ -579,13 +579,13 @@ struct Observable[
         if self._moves:
             self._moves.value()[] += 1
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Destroy the Observable and increment the del count."""
         if self._dels:
             self._dels.value()[] += 1
 
     @staticmethod
-    fn niche_count() -> Int where Self.opt_into_unsafe_niche:
+    def niche_count() -> Int where Self.opt_into_unsafe_niche:
         """Returns the number of niche values available.
 
         Uses `_always_zero` (which is always `0` in a live instance) to store
@@ -597,7 +597,7 @@ struct Observable[
         return Int(Byte.MAX - 1)
 
     @staticmethod
-    fn write_niche[
+    def write_niche[
         index: Int
     ](
         memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
@@ -614,7 +614,7 @@ struct Observable[
         (memory.bitcast[Byte]() + niche_offset).store(Byte(index + 1))
 
     @staticmethod
-    fn classify_niche(
+    def classify_niche(
         memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
     ) -> NicheIndex where Self.opt_into_unsafe_niche:
         """Classifies the bit pattern at `memory` as a niche or a live value.

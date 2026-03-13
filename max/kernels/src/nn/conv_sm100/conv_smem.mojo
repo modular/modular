@@ -158,22 +158,22 @@ struct Conv2dSmem[
 
     # ========== Tile Accessors ==========
     @always_inline
-    fn act_tiles(ref[AddressSpace.SHARED] self) -> Self.ActTileArray:
+    def act_tiles(ref[AddressSpace.SHARED] self) -> Self.ActTileArray:
         """Get activation tiles (im2col'd)."""
         return self.input_tiles.a_tiles()
 
     @always_inline
-    fn filter_tiles(ref[AddressSpace.SHARED] self) -> Self.FilterTileArray:
+    def filter_tiles(ref[AddressSpace.SHARED] self) -> Self.FilterTileArray:
         """Get filter tiles."""
         return self.input_tiles.b_tiles()
 
     @always_inline
-    fn out_tiles(ref[AddressSpace.SHARED] self) -> Self.OutTileArray:
+    def out_tiles(ref[AddressSpace.SHARED] self) -> Self.OutTileArray:
         """Get output tiles."""
         return self.output_tiles.c_tiles()
 
     @always_inline
-    fn src_tiles(ref[AddressSpace.SHARED] self) -> Self.SrcTileArray:
+    def src_tiles(ref[AddressSpace.SHARED] self) -> Self.SrcTileArray:
         """Get source C tiles (for residual operations)."""
         return self.source_tiles.src_tiles()
 
@@ -210,7 +210,9 @@ struct Conv2dSmem[
 
     # ========== Conv2D-specific Barrier Accessors ==========
     @always_inline
-    fn epi_load_barriers(ref[AddressSpace.SHARED] self) -> Self.EpiLoadBarriers:
+    def epi_load_barriers(
+        ref[AddressSpace.SHARED] self,
+    ) -> Self.EpiLoadBarriers:
         """Get epilogue load pipeline barriers.
 
         Used for synchronization between EpilogueLoad warp (producer)
@@ -219,7 +221,7 @@ struct Conv2dSmem[
         return self.epi_load_pipeline.barriers.barriers()
 
     @always_inline
-    fn get_load_order_barrier(
+    def get_load_order_barrier(
         ref[AddressSpace.SHARED] self,
     ) -> Self.LoadOrderBarriers:
         """Get load order barrier.

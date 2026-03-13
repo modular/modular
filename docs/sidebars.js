@@ -31,6 +31,7 @@ const maxSidebars = {
       items : [
         "max/inference/text-to-text",
         "max/inference/image-to-text",
+        "max/inference/image-generation",
         "max/inference/embeddings",
         "max/serve/function-calling",
         "max/serve/structured-output",
@@ -131,11 +132,6 @@ const maxSidebars = {
       collapsed : false,
       items : [
         {
-          id : "pixi",
-          type : "doc",
-          className : "external-link",
-        },
-        {
           label : "max CLI",
           type : "category",
           collapsed : true,
@@ -221,7 +217,6 @@ const maxSidebars = {
             "mojo/manual/decorators/implicit",
             "mojo/manual/decorators/no-inline",
             "mojo/manual/decorators/parameter",
-            "mojo/manual/decorators/register-passable",
             "mojo/manual/decorators/staticmethod",
           ],
         },
@@ -423,6 +418,11 @@ const maxSidebars = {
           label: "OpenAI API compatibility",
           type: "link",
           href: "/max/api/serve#section/OpenAI-API-compatibility",
+        },
+        {
+          label: "Create response",
+          type: "link",
+          href: "/max/api/serve#operation/createResponse",
         },
         {
           label: "Create chat completion",

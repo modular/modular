@@ -57,7 +57,7 @@ def test_erf_libm() raises:
     ## libm erf result
     ####################
     @always_inline
-    fn erf_libm[
+    def erf_libm[
         dtype: DType, simd_width: Int
     ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return libm_call["erff", "err"](arg)

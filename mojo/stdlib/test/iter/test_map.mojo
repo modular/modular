@@ -18,7 +18,7 @@ from std.testing import TestSuite, assert_equal, assert_raises
 def test_map() raises:
     var l = [1, 2, 3]
 
-    fn add_one(x: Int) -> Int:
+    def add_one(x: Int) -> Int:
         return x + 1
 
     var m = map[add_one](l)
@@ -28,7 +28,7 @@ def test_map() raises:
     with assert_raises():
         _ = m.__next__()  # raises StopIteration
 
-    fn to_str(x: Int) -> String:
+    def to_str(x: Int) -> String:
         return String(x)
 
     var m2 = map[to_str](l)
@@ -40,10 +40,10 @@ def test_map() raises:
 
 
 def test_map_function_can_take_owned_value() raises:
-    fn report_copies_owned(var counter: CopyCounter[NoneType]) -> Int:
+    def report_copies_owned(var counter: CopyCounter[NoneType]) -> Int:
         return counter.copy_count
 
-    fn report_copies_ref(counter: CopyCounter[NoneType]) -> Int:
+    def report_copies_ref(counter: CopyCounter[NoneType]) -> Int:
         return counter.copy_count
 
     # FIXME: fix compiler, just to make progress.

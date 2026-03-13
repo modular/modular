@@ -122,6 +122,12 @@ class KVCacheBuffer:
 
     @property
     def all_buffers(self) -> list[Buffer]:
+        """Returns all value and scale buffers in a single flat list.
+
+        Returns:
+            A list containing every value buffer followed by every scale
+            buffer (if scales are present).
+        """
         return [*self.values, *(self.scales if self.scales is not None else [])]
 
 
@@ -297,6 +303,13 @@ class KVCacheParams(KVCacheParamInterface):
 
     @property
     def quantized_kv_cache(self) -> bool:
+        """Returns whether FP8 KV cache quantization is enabled.
+
+        Returns:
+            ``True`` when the cache dtype is ``float8_e4m3fn`` or
+            ``float8_e4m3fnuz`` and a valid quantization scale dtype is
+            configured; ``False`` otherwise.
+        """
         # Currently only FP8_E4M3 KVCache quantization is supported.
         valid_scale = False
         if self.kvcache_quant_config is not None:
@@ -590,6 +603,21 @@ class MultiKVCacheParams(KVCacheParamInterface):
 
     @classmethod
     def from_params(cls, *params: KVCacheParams) -> MultiKVCacheParams:
+        """Creates a :class:`MultiKVCacheParams` from one or more :class:`KVCacheParams`.
+
+        Args:
+            params: One or more :class:`KVCacheParams` instances to aggregate.
+                All params must share the same ``page_size``,
+                ``data_parallel_degree``, ``n_devices``,
+                ``enable_kvcache_swapping_to_host``, and
+                ``host_kvcache_swap_space_gb`` values.
+
+        Returns:
+            A new :class:`MultiKVCacheParams` aggregating all provided params.
+
+        Raises:
+            ValueError: If no params are provided.
+        """
         if len(params) == 0:
             raise ValueError("MultiKVCacheParams requires at least one param.")
         return cls(

@@ -69,9 +69,15 @@ from buffer.dimlist import Dim, DimList
 from std.gpu.host import DeviceContext
 from std.gpu.host._nvidia_cuda import CUDA
 from std.gpu import block_dim, block_idx, thread_idx
-from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple, UNKNOWN_VALUE
-from layout.tile_layout import row_major
-from layout.tile_tensor import stack_allocation as tt_stack_allocation
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
+    row_major,
+    stack_allocation as tt_stack_allocation,
+)
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from std.runtime.asyncrt import parallelism_level
@@ -133,7 +139,7 @@ struct Naive2dConvolution[
     var filter_shape: IndexList[5]  # QRSCF layout.
 
     @staticmethod
-    fn run(
+    def run(
         output: UnsafePointer[Scalar[Self.output_type], Self.output_origin],
         input: UnsafePointer[Scalar[Self.input_type], Self.input_origin],
         filter: UnsafePointer[Scalar[Self.filter_type], Self.filter_origin],
@@ -168,7 +174,7 @@ struct Naive2dConvolution[
         # Run the actual loops and computations.
         naive2d_convolution._outer_loop()
 
-    fn __init__(
+    def __init__(
         out self,
         output: UnsafePointer[Scalar[Self.output_type], Self.output_origin],
         input: UnsafePointer[Scalar[Self.input_type], Self.input_origin],
@@ -196,7 +202,7 @@ struct Naive2dConvolution[
         self.dilation = dilation
         self.num_groups = num_groups
 
-    fn _outer_loop(self):
+    def _outer_loop(self):
         """Implementation of the outermost loop of a convolution operator with
         loops covering the iteration space of batch, filter count, height and wi-
         dth dimensions.
@@ -215,7 +221,7 @@ struct Naive2dConvolution[
                             #  ion.
                             self._compute_point(n, do, ho, wo, f)
 
-    fn _compute_point(self, n: Int, do: Int, ho: Int, wo: Int, f: Int):
+    def _compute_point(self, n: Int, do: Int, ho: Int, wo: Int, f: Int):
         """Implementation of the inner loop computation of a conv2d operator
         producing a single scalar value at the given output tensor index.
         """
@@ -293,7 +299,7 @@ struct Naive2dConvolution[
 
 
 @always_inline
-fn _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> IndexList[3]:
+def _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> IndexList[3]:
     """Converts post-im2col m dimension index to pre-im2col coordinates on
     (N, Hout, Wout) dimensions.
         Args:
@@ -313,7 +319,7 @@ fn _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> IndexList[3]:
 
 # Reduce helper when the input channel dimension is partitioned.
 @always_inline
-fn _reduce_output[
+def _reduce_output[
     dtype: DType,
     //,
     simd_size: Int,
@@ -333,12 +339,12 @@ fn _reduce_output[
     # Reduce from the output scratch buffer to the actual output.
     @parameter
     @always_inline
-    fn reduce_task(tid: Int):
+    def reduce_task(tid: Int):
         # Use all threads in reduction.
         var reduce_range = partition_work(tid, num_threads, num_rows, 1)
 
         @always_inline
-        fn sum[width: Int](offset: Int) unified {mut}:
+        def sum[width: Int](offset: Int) unified {mut}:
             var tid_output_offset = reduce_range[0] * F + offset
             var vec = scratch.load[width=width](tid_output_offset)
             # The number of partitions here is typically small.
@@ -424,7 +430,7 @@ struct ConvDirectNHWC[
     ]() and Self.filter_layout.shape.all_known() and Self.filter_packed
 
     @staticmethod
-    fn run(
+    def run(
         output: LayoutTensor[
             Self.output_type, Self.output_layout, Self.output_origin
         ],
@@ -504,7 +510,7 @@ struct ConvDirectNHWC[
         )
         @parameter
         @always_inline
-        fn task_func(task_id: Int):
+        def task_func(task_id: Int):
             var partition = get_partition(
                 task_id,
                 num_partitions,
@@ -574,13 +580,13 @@ struct ConvDirectNHWC[
             # Use sync to work around #12624
             sync_parallelize[task_func](num_tasks)
 
-    fn _batch_group_loop(self):
+    def _batch_group_loop(self):
         """Loop over the batch and group dimensions. The two dimension are
         merged and partitioned for parallelism."""
 
         @always_inline
         @parameter
-        fn body[padded: Bool]():
+        def body[padded: Bool]():
             for ng in range(
                 self.partition.ng_offset,
                 self.partition.ng_offset + self.partition.ng_size,
@@ -591,7 +597,7 @@ struct ConvDirectNHWC[
 
         unswitch[body](self.conv_shape.padded())
 
-    fn _c_tile_loop[padded: Bool](self, n: Int, g: Int, tile_size: Int):
+    def _c_tile_loop[padded: Bool](self, n: Int, g: Int, tile_size: Int):
         """Loop over C tiles."""
 
         # TODO: Extend to 1D/3D.
@@ -605,7 +611,7 @@ struct ConvDirectNHWC[
 
         @always_inline
         @parameter
-        fn c_tile_iteration(c_tile_offset: Int, c_tile_size: Int):
+        def c_tile_iteration(c_tile_offset: Int, c_tile_size: Int):
             # Only apply static shape optimizations to shapes with padding since
             # there is a fast path for pointwise (no padding) conv with strides.
             # Grouped conv logic has not been plumbed into static specialized funcs yet.
@@ -654,7 +660,7 @@ struct ConvDirectNHWC[
                     c_round_by_tile_residual,
                 )
 
-    fn _f_tile_loop[
+    def _f_tile_loop[
         padded: Bool, last_c_tile: Bool
     ](self, n: Int, g: Int, c_tile_offset: Int, c_tile_size: Int):
         """Loop over F tiles."""
@@ -671,7 +677,7 @@ struct ConvDirectNHWC[
 
         @always_inline
         @parameter
-        fn f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
+        def f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
             comptime if not merge_output_space_loops:
                 self.output_space_loop[
                     micro_kernel_height, size // simd_size, False, last_c_tile
@@ -736,13 +742,13 @@ struct ConvDirectNHWC[
                 )
 
     @always_inline
-    fn is_new_c_accum(self, c_idx: Int) -> Bool:
+    def is_new_c_accum(self, c_idx: Int) -> Bool:
         # returns true when processing first C in a group or first C in a C partition
         if self.conv_shape.num_groups > 1:
             return self.conv_shape.c_in_group(c_idx) == 0
         return c_idx == self.partition.c_offset
 
-    fn update_output_tile_no_padding[
+    def update_output_tile_no_padding[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         c_fully_cached: Bool,
@@ -904,7 +910,7 @@ struct ConvDirectNHWC[
                 )
 
     @always_inline
-    fn _init_output_micro_tile[
+    def _init_output_micro_tile[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
@@ -934,7 +940,7 @@ struct ConvDirectNHWC[
                 )
 
     @always_inline
-    fn _load_output_micro_tile[
+    def _load_output_micro_tile[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
@@ -992,7 +998,7 @@ struct ConvDirectNHWC[
                 output_ptr = output_ptr + self.conv_shape.f
 
     @always_inline
-    fn _store_output_micro_tile[
+    def _store_output_micro_tile[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
@@ -1051,7 +1057,7 @@ struct ConvDirectNHWC[
                 output_ptr = output_ptr + self.conv_shape.f
 
     @always_inline
-    fn _accumulate[
+    def _accumulate[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
@@ -1092,7 +1098,7 @@ struct ConvDirectNHWC[
         )
 
     @always_inline
-    fn _accumulate[
+    def _accumulate[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
@@ -1139,7 +1145,7 @@ struct ConvDirectNHWC[
             F % simd_size,
         )
 
-    fn output_space_flat_loop[
+    def output_space_flat_loop[
         micro_kernel_f_size: Int, has_residual: Bool, last_c_tile: Bool
     ](
         self,
@@ -1155,10 +1161,10 @@ struct ConvDirectNHWC[
 
         @always_inline
         @parameter
-        fn iteration[tile_size: Int](output_flat_coord: Int):
+        def iteration[tile_size: Int](output_flat_coord: Int):
             @always_inline
             @parameter
-            fn body[c_fully_cached: Bool]():
+            def body[c_fully_cached: Bool]():
                 self.update_output_tile_no_padding[
                     tile_size,  # micro kernel height
                     micro_kernel_width,
@@ -1185,7 +1191,7 @@ struct ConvDirectNHWC[
             self.partition.ho_or_howo_offset + self.partition.ho_or_howo_size,
         )
 
-    fn output_space_loop[
+    def output_space_loop[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         has_residual: Bool,
@@ -1313,7 +1319,7 @@ struct ConvDirectNHWC[
                 right_pad_impact_start,
             )
 
-    fn output_space_loop_1d[
+    def output_space_loop_1d[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         has_residual: Bool,
@@ -1346,7 +1352,7 @@ struct ConvDirectNHWC[
 
         @parameter
         @always_inline
-        fn work_fn[height: Int, effected_by_padding: Bool](wo: Int):
+        def work_fn[height: Int, effected_by_padding: Bool](wo: Int):
             conv1d_update_wo_tile[
                 height,
                 micro_kernel_width,
@@ -1386,7 +1392,7 @@ struct ConvDirectNHWC[
         _ = input_base
         _ = output_base
 
-    fn output_space_loop_2d[
+    def output_space_loop_2d[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         has_residual: Bool,
@@ -1430,7 +1436,7 @@ struct ConvDirectNHWC[
 
             @parameter
             @always_inline
-            fn work_fn[height: Int, effected_by_padding: Bool](wo: Int):
+            def work_fn[height: Int, effected_by_padding: Bool](wo: Int):
                 conv2d_update_wo_tile[
                     height,
                     micro_kernel_width,
@@ -1470,7 +1476,7 @@ struct ConvDirectNHWC[
             _ = input_base
             _ = output_base
 
-    fn output_space_loop_3d[
+    def output_space_loop_3d[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         has_residual: Bool,
@@ -1524,7 +1530,7 @@ struct ConvDirectNHWC[
 
                 @parameter
                 @always_inline
-                fn work_fn[height: Int, effected_by_padding: Bool](wo: Int):
+                def work_fn[height: Int, effected_by_padding: Bool](wo: Int):
                     conv3d_update_wo_tile[
                         height,
                         micro_kernel_width,
@@ -1565,7 +1571,7 @@ struct ConvDirectNHWC[
                 _ = input_base
                 _ = output_base
 
-    fn _f_tile_loop_static[
+    def _f_tile_loop_static[
         last_c_tile: Bool
     ](self, n: Int, c_tile_offset: Int, c_tile_size: Int):
         comptime assert Self.conv_attr_rank == Self.input_layout.rank() - 2
@@ -1583,7 +1589,7 @@ struct ConvDirectNHWC[
 
         @always_inline
         @parameter
-        fn f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
+        def f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
             self._h_loop_static[
                 micro_kernel_shape[0],
                 size // simd_size,
@@ -1616,7 +1622,7 @@ struct ConvDirectNHWC[
             ](n, f_round_by_simd, simd_size, c_tile_offset, c_tile_size)
 
     @always_inline
-    fn _h_loop_static[
+    def _h_loop_static[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         has_residual: Bool,
@@ -1735,7 +1741,7 @@ struct ConvDirectNHWC[
                 @__copy_capture(filter_base)
                 @always_inline
                 @parameter
-                fn update_middle[height: Int](wo: Int):
+                def update_middle[height: Int](wo: Int):
                     self._inner_loops_static[
                         height,
                         micro_kernel_width,
@@ -1794,7 +1800,7 @@ struct ConvDirectNHWC[
                 )
 
     @always_inline
-    fn _inner_loops_static[
+    def _inner_loops_static[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         padded_left: Bool,
@@ -1962,7 +1968,7 @@ struct ConvDirectNHWC[
 
 
 @always_inline
-fn accumulate_wo_tile_1d[
+def accumulate_wo_tile_1d[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
     simd_size: Int,
@@ -2040,7 +2046,7 @@ fn accumulate_wo_tile_1d[
         )
 
 
-fn conv1d_update_wo_tile[
+def conv1d_update_wo_tile[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
     simd_size: Int,
@@ -2151,7 +2157,7 @@ fn conv1d_update_wo_tile[
 
 
 @always_inline
-fn accumulate_wo_tile_2d[
+def accumulate_wo_tile_2d[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
     simd_size: Int,
@@ -2206,7 +2212,7 @@ fn accumulate_wo_tile_2d[
         )
 
 
-fn conv2d_update_wo_tile[
+def conv2d_update_wo_tile[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
     simd_size: Int,
@@ -2331,7 +2337,7 @@ fn conv2d_update_wo_tile[
 
 # TODO: Simplify this with a rank parameter + recursion.
 @always_inline
-fn accumulate_wo_tile_3d[
+def accumulate_wo_tile_3d[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
     simd_size: Int,
@@ -2385,7 +2391,7 @@ fn accumulate_wo_tile_3d[
         )
 
 
-fn conv3d_update_wo_tile[
+def conv3d_update_wo_tile[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
     simd_size: Int,
@@ -2511,7 +2517,7 @@ fn conv3d_update_wo_tile[
 
 
 @always_inline
-fn pack_filter_shape_impl[
+def pack_filter_shape_impl[
     filter_type: DType
 ](Q: Int, R: Int, S: Int, C: Int, F: Int, num_groups: Int) -> IndexList[6]:
     """
@@ -2550,7 +2556,7 @@ fn pack_filter_shape_impl[
 
 
 @always_inline
-fn pack_conv_filter_shape[
+def pack_conv_filter_shape[
     single_thread_blocking_override: Bool,
 ](filter: LayoutTensor, num_groups: Int) -> IndexList[filter.rank + 1]:
     """
@@ -2592,7 +2598,7 @@ fn pack_conv_filter_shape[
 
 
 @always_inline
-fn pack_filter_shape[
+def pack_filter_shape[
     filter_type: DType,
     input_shape: DimList,
     filter_shape: DimList,
@@ -2660,7 +2666,7 @@ fn pack_filter_shape[
 
 
 @always_inline
-fn _get_group_filter_base(
+def _get_group_filter_base(
     packed_filter: LayoutTensor, group_idx: Int, f_per_group: Int
 ) -> UnsafePointer[
     Scalar[packed_filter.dtype],
@@ -2696,7 +2702,7 @@ fn _get_group_filter_base(
 
 
 @always_inline
-fn pack_filter(
+def pack_filter(
     filter: LayoutTensor,
     packed_filter: LayoutTensor[mut=True, ...],
     num_groups: Int,
@@ -2725,7 +2731,7 @@ fn pack_filter(
 
 
 @always_inline
-fn pack_filter[
+def pack_filter[
     simd_size: Int,
     micro_kernel_f_size: Int,  # 64
 ](
@@ -2789,7 +2795,7 @@ fn pack_filter[
         @always_inline
         @__copy_capture(group_start, F_per_group, F)
         @parameter
-        fn pack[f_tile_size: Int](f_tile_start: Int):
+        def pack[f_tile_size: Int](f_tile_start: Int):
             var packed_filter_ptr = group_start + f_tile_start * outer_dims_prod
 
             for row in range(outer_dims_prod):
@@ -2841,7 +2847,7 @@ fn pack_filter[
 
 
 @always_inline
-fn conv_shape[
+def conv_shape[
     input_type: DType,
     filter_type: DType,
     strides_type: DType,
@@ -2954,7 +2960,7 @@ fn conv_shape[
     return output_shape
 
 
-fn conv_nhwc_direct[
+def conv_nhwc_direct[
     conv_info_rank: Int,
     input_origin: Origin[mut=False],
     filter_origin: Origin[mut=False],
@@ -2991,7 +2997,7 @@ fn conv_nhwc_direct[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return ";".join(
             Span(
                 [
@@ -3025,13 +3031,13 @@ fn conv_nhwc_direct[
         # The closure updates a row segment of the output.
         @always_inline
         @parameter
-        fn elementwise_epilogue[
+        def elementwise_epilogue[
             rank: Int
         ](coords: IndexList[rank], f_size: Int):
             comptime simd_size = simd_width_of[output_type]()
 
             @always_inline
-            fn body[width: Int](idx: Int) unified {mut}:
+            def body[width: Int](idx: Int) unified {mut}:
                 # Coordinates of the current index.
                 var curr_coords = rebind[IndexList[input.rank]](coords)
                 curr_coords[input.rank - 1] += idx
@@ -3066,7 +3072,7 @@ fn conv_nhwc_direct[
 # ===----------------------------------------------------------------------=== #
 
 
-fn conv2d_gpu_naive_nhwc_rscf[
+def conv2d_gpu_naive_nhwc_rscf[
     input_layout: Layout,
     filter_layout: Layout,
     output_layout: Layout,
@@ -3082,6 +3088,7 @@ fn conv2d_gpu_naive_nhwc_rscf[
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
+    num_groups: Int,
 ):
     var N = input.dim[0]()
     var H = input.dim[1]()
@@ -3089,9 +3096,11 @@ fn conv2d_gpu_naive_nhwc_rscf[
     var C_in = input.dim[3]()  # channel_in
     var R = filter.dim[0]()
     var S = filter.dim[1]()
+    var C_per_group = filter.dim[2]()  # C_in / num_groups
     var H_out = output.dim[1]()
     var W_out = output.dim[2]()
     var C_out = output.dim[3]()  # channel_out or #F
+    var F_per_group = C_out // num_groups
     var pad_h = padding[0]
     var pad_w = padding[1]
     var stride_h = stride[0]
@@ -3109,15 +3118,19 @@ fn conv2d_gpu_naive_nhwc_rscf[
     for co in range(C_out):
         comptime accum_type = get_accum_type[output_type]()
         var value = Scalar[accum_type](0)
+        var g = co // F_per_group
+        var ci_base = g * C_per_group
         for r in range(R):
             for s in range(S):
                 var h_in = h * UInt(stride_h) - UInt(pad_h) + UInt(r * dil_h)
                 var w_in = w * UInt(stride_w) - UInt(pad_w) + UInt(s * dil_w)
                 if 0 <= Int(h_in) < H and 0 <= Int(w_in) < W:
-                    for ci in range(C_in):
+                    for ci in range(C_per_group):
                         value += (
                             input.load[width=1](
-                                IndexList[4](Int(n), Int(h_in), Int(w_in), ci)
+                                IndexList[4](
+                                    Int(n), Int(h_in), Int(w_in), ci_base + ci
+                                )
                             ).cast[accum_type]()
                             * filter.load[width=1](
                                 IndexList[4](r, s, ci, co)
@@ -3143,7 +3156,7 @@ fn conv2d_gpu_naive_nhwc_rscf[
 
 
 @always_inline
-fn check_cudnn_error(stat: cudnnStatus_t):
+def check_cudnn_error(stat: cudnnStatus_t):
     if stat != cudnnStatus_t.CUDNN_STATUS_SUCCESS:
         print(stat)
 
@@ -3157,7 +3170,7 @@ struct CuDNNConvMeta(ImplicitlyCopyable, RegisterPassable):
     ]
     var ptr_output_desc: UnsafePointer[cudnnTensorStruct, AnyOrigin[mut=True]]
 
-    fn __init__(out self) raises:
+    def __init__(out self) raises:
         self.ptr_handle = UnsafePointer[cudnnContext, AnyOrigin[mut=True]]()
         check_cudnn_error(cudnnCreate(UnsafePointer(to=self.ptr_handle)))
 
@@ -3191,7 +3204,7 @@ struct CuDNNConvMeta(ImplicitlyCopyable, RegisterPassable):
             cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_output_desc))
         )
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         try:
             check_cudnn_error(
                 cudnnDestroyTensorDescriptor(self.ptr_output_desc)
@@ -3208,7 +3221,7 @@ struct CuDNNConvMeta(ImplicitlyCopyable, RegisterPassable):
             abort(String(e))
 
 
-fn _get_cudnn_meta(
+def _get_cudnn_meta(
     ctx: DeviceContext,
 ) raises -> UnsafePointer[CuDNNConvMeta, AnyOrigin[mut=True]]:
     """Get the cuDNN metadata with proper device context management.
@@ -3254,7 +3267,7 @@ fn _get_cudnn_meta(
     return ptr_meta
 
 
-fn get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
+def get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
     """Map Mojo DType to cuDNN data type.
 
     Support only floating point dtypes for now.
@@ -3296,7 +3309,7 @@ struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable):
     var stride: Tuple[Int, Int]
     var dil: Tuple[Int, Int]
 
-    fn __init__(out self) raises:
+    def __init__(out self) raises:
         self.ptr_handle = UnsafePointer[cudnnContext, AnyOrigin[mut=True]]()
         check_cudnn_error(cudnnCreate(UnsafePointer(to=self.ptr_handle)))
 
@@ -3345,7 +3358,7 @@ struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable):
         self.dil = (0, 0)
 
 
-fn _get_cached_cudnn_meta_nhwc_full(
+def _get_cached_cudnn_meta_nhwc_full(
     ctx: DeviceContext,
 ) raises -> UnsafePointer[CachedCuDNNMetaNHWCFull, AnyOrigin[mut=True]]:
     var cache_key = "CUDA_CUDNN_CACHED_META_NHWC_FULL_" + String(ctx.id())
@@ -3373,7 +3386,7 @@ fn _get_cached_cudnn_meta_nhwc_full(
     return new_ptr_meta
 
 
-fn _conv_cudnn[
+def _conv_cudnn[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -3594,7 +3607,7 @@ fn _conv_cudnn[
     _ = workspace_buffer^
 
 
-fn conv_cudnn[
+def conv_cudnn[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -3615,7 +3628,7 @@ fn conv_cudnn[
         )
 
 
-fn conv_gpu[
+def conv_gpu[
     conv_rank: Int,
     //,
     input_layout: Layout,
@@ -3626,6 +3639,7 @@ fn conv_gpu[
     output_type: DType,
     maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
     filter_is_fcrs: Bool = False,
+    has_residual: Bool = False,
 ](
     input: LayoutTensor[input_type, input_layout, MutAnyOrigin],
     filter: LayoutTensor[filter_type, filter_layout, MutAnyOrigin],
@@ -3635,6 +3649,10 @@ fn conv_gpu[
     padding: IndexList[2 * conv_rank],
     num_groups: Int,
     ctx: DeviceContext,
+    source_ptr: UnsafePointer[
+        Scalar[output_type], MutAnyOrigin
+    ] = UnsafePointer[Scalar[output_type], MutAnyOrigin](),
+    beta: Float32 = 0.0,
 ) raises:
     comptime assert conv_rank == input.rank - 2
 
@@ -3716,6 +3734,7 @@ fn conv_gpu[
             output_type,
             maybe_epilogue_func,
             filter_is_fcrs,
+            has_residual,
         ](
             padded_input,
             filter,
@@ -3725,6 +3744,8 @@ fn conv_gpu[
             zero_padding,
             num_groups,
             ctx,
+            source_ptr,
+            beta,
         )
 
         return
@@ -3766,10 +3787,11 @@ fn conv_gpu[
         comptime _is_sm100 = ctx.default_device_info == B200
         comptime _is_supported_dtype = input_type == DType.bfloat16
 
-        comptime if _is_sm100 and _is_supported_dtype and not maybe_epilogue_func:
+        comptime if _is_sm100 and _is_supported_dtype:
             from nn.conv_sm100.dispatch import (
                 dispatch_sm100_conv2d,
             )
+            from linalg.utils import elementwise_epilogue_type
 
             # SM100 dispatch: stride=1, dilation=1, groups=1,
             # and channels aligned to 64 (TMA tile K alignment)
@@ -3786,21 +3808,69 @@ fn conv_gpu[
                 and in_c % 64 == 0
                 and out_c % 128 == 0
             ):
-                dispatch_sm100_conv2d[
-                    input_layout,
-                    filter_layout,
-                    output_layout,
-                    input_type,
-                    filter_type,
-                    output_type,
-                    filter_is_fcrs,
-                ](
-                    input,
-                    filter,
-                    output,
-                    rebind[IndexList[2]](symmetric_padding),
-                    ctx,
-                )
+
+                @parameter
+                @always_inline
+                def _sm100_dispatch[
+                    _epilogue: Optional[elementwise_epilogue_type] = None,
+                ]() raises:
+                    dispatch_sm100_conv2d[
+                        input_layout,
+                        filter_layout,
+                        output_layout,
+                        input_type,
+                        filter_type,
+                        output_type,
+                        filter_is_fcrs,
+                        elementwise_lambda_fn=_epilogue,
+                        has_residual=has_residual,
+                    ](
+                        input,
+                        filter,
+                        output,
+                        rebind[IndexList[2]](symmetric_padding),
+                        ctx,
+                        source_ptr,
+                        beta,
+                    )
+
+                comptime if maybe_epilogue_func:
+                    # Wrap the 4D NHWC epilogue into a 2D GEMM-space
+                    # void epilogue for the SM100 kernel. The kernel
+                    # calls this with (m, n) coords where
+                    # m = batch*H_out*W_out + h*W_out + w, n = channel.
+                    comptime epilogue = maybe_epilogue_func.value()
+                    var out_h = output.dim[1]()
+                    var out_w = output.dim[2]()
+                    var hw = out_h * out_w
+
+                    @parameter
+                    @always_inline
+                    @__copy_capture(hw, out_w)
+                    def sm100_void_epilogue[
+                        _dtype: DType,
+                        _width: Int,
+                        *,
+                        alignment: Int = 1,
+                    ](coords_2d: IndexList[2], val: SIMD[_dtype, _width],):
+                        var m = coords_2d[0]
+                        var n = coords_2d[1]
+                        var batch_idx: Int
+                        var rem: Int
+                        var h_idx: Int
+                        var w_idx: Int
+                        batch_idx, rem = divmod(m, hw)
+                        h_idx, w_idx = divmod(rem, out_w)
+                        epilogue(
+                            IndexList[4](batch_idx, h_idx, w_idx, n),
+                            rebind[SIMD[output_type, _width]](val),
+                        )
+
+                    _sm100_dispatch[
+                        Optional[elementwise_epilogue_type](sm100_void_epilogue)
+                    ]()
+                else:
+                    _sm100_dispatch[]()
                 return
 
         # Fallback paths for non-SM100, unsupported dtypes, or constraints
@@ -3849,7 +3919,7 @@ fn conv_gpu[
                 @parameter
                 @__copy_capture(output_tmp)
                 @always_inline
-                fn epilogue_wrapper[
+                def epilogue_wrapper[
                     _width: Int, _rank: Int, alignment: Int = 1
                 ](coords: IndexList[_rank]):
                     comptime align = align_of[SIMD[output_type, _width]]()
@@ -3908,6 +3978,7 @@ fn conv_gpu[
                 stride,
                 dilation,
                 symmetric_padding,
+                num_groups,
                 grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
                 block_dim=(block_size, block_size),
             )
@@ -3923,12 +3994,13 @@ fn conv_gpu[
             stride,
             dilation,
             symmetric_padding,
+            num_groups,
             grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
             block_dim=(block_size, block_size),
         )
 
 
-fn conv3d_gpu_naive_ndhwc_qrscf[
+def conv3d_gpu_naive_ndhwc_qrscf[
     input_layout: Layout,
     filter_layout: Layout,
     output_layout: Layout,
@@ -3944,6 +4016,7 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
     stride: IndexList[3],
     dilation: IndexList[3],
     padding: IndexList[3],
+    num_groups: Int,
 ):
     var N = input.dim[0]()
     var D = input.dim[1]()  # depth
@@ -3954,11 +4027,13 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
     var Q = filter.dim[0]()
     var R = filter.dim[1]()
     var S = filter.dim[2]()
+    var C_per_group = filter.dim[3]()  # C_in / num_groups
 
     var D_out = output.dim[1]()  # depth
     var H_out = output.dim[2]()
     var W_out = output.dim[3]()
     var C_out = output.dim[4]()  # channel_output
+    var F_per_group = C_out // num_groups
 
     var pad_d = padding[0]
     var pad_h = padding[1]
@@ -3996,6 +4071,8 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
     for co in range(C_out):
         comptime accum_type = get_accum_type[output_type]()
         var value = Scalar[accum_type](0)
+        var g = co // F_per_group
+        var ci_base = g * C_per_group
 
         for q in range(Q):
             for r in range(R):
@@ -4016,12 +4093,13 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
                         - UInt(pad_w)
                     )
 
-                    # check all input bounds bro
                     if 0 <= d_in < D and 0 <= h_in < H and 0 <= w_in < W:
-                        for ci in range(C_in):
+                        for ci in range(C_per_group):
                             value += (
                                 input.load[width=1](
-                                    IndexList[5](Int(n), d_in, h_in, w_in, ci)
+                                    IndexList[5](
+                                        Int(n), d_in, h_in, w_in, ci_base + ci
+                                    )
                                 ).cast[accum_type]()
                                 * filter.load[width=1](
                                     IndexList[5](q, r, s, ci, co)

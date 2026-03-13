@@ -24,7 +24,7 @@ from std.gpu.host import DeviceContext
 from std.testing import assert_true
 
 
-fn sleep_kernel_100ms(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
+def sleep_kernel_100ms(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
     """GPU kernel that sleeps for 100ms and stores elapsed time."""
     # Use global_perf_counter_ns() which returns actual nanoseconds on NVIDIA
     # GPUs, unlike perf_counter_ns() which returns cycle counts.
@@ -34,7 +34,7 @@ fn sleep_kernel_100ms(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
     result_ptr[] = end - start
 
 
-fn sleep_kernel_500us(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
+def sleep_kernel_500us(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
     """GPU kernel that sleeps for 500 microseconds (sub-1ms)."""
     var start = global_perf_counter_ns()
     sleep(0.0005)
@@ -42,7 +42,7 @@ fn sleep_kernel_500us(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
     result_ptr[] = end - start
 
 
-fn sleep_kernel_zero(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
+def sleep_kernel_zero(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
     """GPU kernel that sleeps for zero duration (should return immediately)."""
     var start = global_perf_counter_ns()
     sleep(0.0)

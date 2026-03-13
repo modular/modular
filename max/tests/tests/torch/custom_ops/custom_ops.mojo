@@ -37,7 +37,7 @@ from std.utils.index import IndexList
 @register("grayscale")
 struct Grayscale:
     @staticmethod
-    fn execute[
+    def execute[
         # The kind of device this is running on: "cpu" or "gpu"
         target: StaticString,
     ](
@@ -47,7 +47,7 @@ struct Grayscale:
     ) raises:
         @parameter
         @always_inline
-        fn color_to_grayscale[
+        def color_to_grayscale[
             simd_width: Int
         ](idx: IndexList[img_out.rank]) -> SIMD[DType.uint8, simd_width]:
             var row = idx[0]
@@ -71,7 +71,7 @@ struct Grayscale:
 @register("myadd")
 struct MyAdd:
     @staticmethod
-    fn execute[
+    def execute[
         type: DType, rank: Int, target: StaticString
     ](
         C: OutputTensor[dtype=type, rank=rank, ...],
@@ -81,7 +81,7 @@ struct MyAdd:
     ) raises:
         @parameter
         @always_inline
-        fn doit[
+        def doit[
             simd_width: Int
         ](idx: IndexList[C.rank]) -> SIMD[C.dtype, simd_width]:
             var a = A.load[simd_width](idx)
@@ -94,7 +94,7 @@ struct MyAdd:
 @register("parameter_increment")
 struct ParameterIncrement:
     @staticmethod
-    fn execute[
+    def execute[
         type: DType, rank: Int, increment: Int, target: StaticString
     ](
         B: OutputTensor[dtype=type, rank=rank, ...],
@@ -103,7 +103,7 @@ struct ParameterIncrement:
     ) raises:
         @parameter
         @always_inline
-        fn doit[
+        def doit[
             simd_width: Int
         ](idx: IndexList[B.rank]) -> SIMD[B.dtype, simd_width]:
             var a = A.load[simd_width](idx)
@@ -115,7 +115,7 @@ struct ParameterIncrement:
 @register("scalar_add")
 struct ScalarAdd:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
     ](
         C: OutputTensor[dtype=dtype, rank=1, ...],
@@ -128,7 +128,7 @@ struct ScalarAdd:
 @register("unsupported_type_op")
 struct UnsupportedTypeOp:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType, rank: Int
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
@@ -139,7 +139,7 @@ struct UnsupportedTypeOp:
         # The String parameter should cause a validation error
         @parameter
         @always_inline
-        fn copy[
+        def copy[
             simd_width: Int
         ](idx: IndexList[output.rank]) -> SIMD[output.dtype, simd_width]:
             return input.load[simd_width](idx)

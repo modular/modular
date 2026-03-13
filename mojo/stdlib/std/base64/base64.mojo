@@ -30,7 +30,7 @@ from ._b64encode import _b64encode
 
 
 @always_inline
-fn _ascii_to_value[validate: Bool = False](char: Byte) raises -> Byte:
+def _ascii_to_value[validate: Bool = False](char: Byte) raises -> Byte:
     """Converts an ASCII character to its integer value for base64 decoding.
 
     Args:
@@ -79,7 +79,7 @@ fn _ascii_to_value[validate: Bool = False](char: Byte) raises -> Byte:
 
 
 @always_inline
-fn b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
+def b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
     """Performs base64 encoding on the input string.
 
     Args:
@@ -94,7 +94,7 @@ fn b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
 
 
 @always_inline
-fn b64encode(input_string: StringSlice[mut=False, _]) -> String:
+def b64encode(input_string: StringSlice[mut=False, _]) -> String:
     """Performs base64 encoding on the input string.
 
     Args:
@@ -107,7 +107,7 @@ fn b64encode(input_string: StringSlice[mut=False, _]) -> String:
 
 
 @always_inline
-fn b64encode(input_bytes: Span[mut=False, Byte, _]) -> String:
+def b64encode(input_bytes: Span[mut=False, Byte, _]) -> String:
     """Performs base64 encoding on the input string.
 
     Args:
@@ -126,7 +126,7 @@ fn b64encode(input_bytes: Span[mut=False, Byte, _]) -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-fn b64decode[
+def b64decode[
     *, validate: Bool = False
 ](str: StringSlice[mut=False, _]) raises -> String:
     """Performs base64 decoding on the input string.
@@ -178,7 +178,7 @@ fn b64decode[
 # ===-----------------------------------------------------------------------===#
 
 
-fn b16encode(str: StringSlice[mut=False, _]) -> String:
+def b16encode(str: StringSlice[mut=False, _]) -> String:
     """Performs base16 encoding on the input string slice.
 
     Args:
@@ -209,7 +209,7 @@ fn b16encode(str: StringSlice[mut=False, _]) -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-fn b16decode(str: StringSlice[mut=False, _]) -> String:
+def b16decode(str: StringSlice[mut=False, _]) -> String:
     """Performs base16 decoding on the input string.
 
     Args:
@@ -229,7 +229,7 @@ fn b16decode(str: StringSlice[mut=False, _]) -> String:
     # TODO: Measure perf against lookup table approach
     @parameter
     @always_inline
-    fn decode(c: Byte) -> Byte:
+    def decode(c: Byte) -> Byte:
         if `A` <= c <= `Z`:
             return c - `A` + Byte(10)
         elif `a` <= c <= `z`:

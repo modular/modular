@@ -128,32 +128,29 @@ struct MyType(
 ):
     var value: Float64
 
-    fn __init__(out self):
+    def __init__(out self):
         self.value = 0.0
 
-    fn __init__(out self, value: Float64, /):
+    def __init__(out self, value: Float64, /):
         self.value = value
 
-    fn __lt__(self, other: Self) -> Bool:
+    def __lt__(self, other: Self) -> Bool:
         return self.value < other.value
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self.value == other.value
 
-    fn __sub__(self, other: Self) -> Self:
+    def __sub__(self, other: Self) -> Self:
         return Self(self.value - other.value)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self.value)
 
-    fn __float__(self) -> Float64:
+    def __float__(self) -> Float64:
         return self.value
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(self.value)
-
-    fn __str__(self) -> String:
-        return String.write(self)
 
 
 def test_interval_floating() raises:

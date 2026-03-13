@@ -65,11 +65,11 @@ GPU profiling modes control the level of instrumentation when profiling
 MAX applications with NVIDIA Nsight Systems or Nsight Compute. Higher
 levels provide more detail but may introduce additional overhead.
 
-- ``"off"``: Disable GPU profiling instrumentation. This is the default
+- ``off``: Disable GPU profiling instrumentation. This is the default
   mode and incurs no profiling overhead.
-- ``"on"``: Enable basic GPU profiling. Adds CUDA driver calls and NVTX
+- ``on``: Enable basic GPU profiling. Adds CUDA driver calls and NVTX
   markers for correlating kernel executions with host-side code.
-- ``"detailed"``: Enable detailed GPU profiling with additional NVTX
+- ``detailed``: Enable detailed GPU profiling with additional NVTX
   markers from Python code. This mode provides the most visibility into
   which Python operations correspond to which GPU kernels, but has the
   highest overhead.
@@ -304,7 +304,7 @@ class SplitKReductionPrecision(IntEnum):
     OUTPUT = auto()
 
 
-class PdlLevel(IntEnum):
+class PDLLevel(IntEnum):
     """Internal use."""
 
     # No PDL
@@ -343,7 +343,7 @@ class LogLevel(str, Enum):
 class InferenceSession:
     """Manages an inference session in which you can load and run models.
 
-    You need an instance of this to load a model as a :obj:`Model` object.
+    You need an instance of this to load a model as a :class:`~max.engine.Model` object.
     For example:
 
     .. code-block:: python
@@ -430,6 +430,9 @@ class InferenceSession:
 
         if use_fi_topk := os.getenv("USE_FI_TOPK_KERNEL"):
             self.use_fi_topk_kernel(use_fi_topk)
+
+        if pdl_level := os.getenv("PDL_LEVEL"):
+            self._pdl_level(pdl_level)
 
     def __repr__(self) -> str:
         if self.num_threads:
@@ -685,10 +688,10 @@ class InferenceSession:
         Args:
             mode: The profiling mode to set. One of:
 
-                - ``"off"``: Disable profiling (default).
-                - ``"on"``: Enable basic profiling with
+                - ``off``: Disable profiling (default).
+                - ``on``: Enable basic profiling with
                   NVTX markers for kernel correlation.
-                - ``"detailed"``: Enable detailed profiling
+                - ``detailed``: Enable detailed profiling
                   with additional Python-level NVTX markers.
 
         See Also:
@@ -745,12 +748,12 @@ class InferenceSession:
 
         self._set_mojo_define("MODULE_USE_VENDOR_BLAS", 1)
 
-    def _pdl_level(self, level: str | PdlLevel) -> None:
+    def _pdl_level(self, level: str | PDLLevel) -> None:
         """Level of overlap of kernel launch."""
-        if not isinstance(level, PdlLevel):
+        if not isinstance(level, PDLLevel):
             if level not in {"0", "1", "2"}:
                 raise TypeError(
-                    f"Invalid pdl level ({level}). Please use one of: {[0, 1, 2]} corresponding to {[x.name for x in PdlLevel]}"
+                    f"Invalid pdl level ({level}). Please use one of: {[0, 1, 2]} corresponding to {[x.name for x in PDLLevel]}"
                 )
 
         self._set_mojo_define("PDL_LEVEL", int(level))

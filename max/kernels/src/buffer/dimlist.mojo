@@ -241,17 +241,6 @@ struct Dim(
             return self.get() == rhs.get()
         return (not self) == (not rhs)
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Converts the Dim to a String. If the value is unknown, then the
-        string "?" is returned.
-
-        Returns:
-            The string representation of the type.
-        """
-        return String.write(self)
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         """
@@ -296,114 +285,37 @@ fn _get_row_major_dims[shape: IndexList]() -> IndexList[shape.size]:
     return result
 
 
-struct DimList(ImplicitlyCopyable, Sized, Writable):
-    """This type represents a list of dimensions. Each dimension may have a
-    static value or not have a value, which represents a dynamic dimension."""
+struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
+    """This type represents a list of statically-known dimensions. Each
+    dimension may have a static value or not have a value, which represents a
+    dynamic dimension.
 
-    var value: VariadicParamList[Dim]
-    """The underlying storage for the list of dimensions."""
+    Parameters:
+        values: The list of dimensions.
+    """
 
-    @always_inline("nodebug")
-    fn __init__(out self, *, copy: Self):
-        """Creates a dimension list from the given list of values.
-
-        Args:
-            copy: The list to copy.
-        """
-        self.value = copy.value.copy()
-
-    @always_inline("nodebug")
-    @implicit
-    fn __init__[T: Indexer](out self, value: T):
-        """Creates a dimension list from the given list of values.
-
-        Parameters:
-            T: A type able to be converted to an index integer.
-
-        Args:
-            value: The initial dim values list.
-        """
-        self = Self(Dim(value), _dim_version=())
+    comptime rank = Int(
+        mlir_value=__mlir_attr[
+            `#kgen.variadic.size<`,
+            Self.values,
+            `> : index`,
+        ]
+    )
+    """The number of dimensions in the DimList."""
 
     @always_inline("nodebug")
-    fn __init__[I0: Indexer, I1: Indexer](out self, val0: I0, val1: I1):
-        """Creates a dimension list from the given list of values.
-
-        Parameters:
-            I0: A type that can be used as an Index.
-            I1: A type that can be used as an Index.
-
-        Args:
-            val0: The initial dim value.
-            val1: The initial dim value.
-        """
-        self = Self(Dim(val0), Dim(val1), _dim_version=())
-
-    @always_inline("nodebug")
-    fn __init__[
-        I0: Indexer, I1: Indexer, I2: Indexer
-    ](out self, val0: I0, val1: I1, val2: I2):
-        """Creates a dimension list from the given list of values.
-
-        Parameters:
-            I0: A type that can be used as an Index.
-            I1: A type that can be used as an Index.
-            I2: A type that can be used as an Index.
-
-        Args:
-            val0: The initial dim value.
-            val1: The initial dim value.
-            val2: The initial dim value.
-        """
-        self = Self(Dim(val0), Dim(val1), Dim(val2), _dim_version=())
-
-    @always_inline("nodebug")
-    fn __init__[
-        I0: Indexer, I1: Indexer, I2: Indexer, I3: Indexer
-    ](out self, val0: I0, val1: I1, val2: I2, val3: I3):
-        """Creates a statically-known dimension.
-
-        Parameters:
-            I0: A type that can be used as an Index.
-            I1: A type that can be used as an Index.
-            I2: A type that can be used as an Index.
-            I3: A type that can be used as an Index.
-
-        Args:
-            val0: The initial dim value.
-            val1: The initial dim value.
-            val2: The initial dim value.
-            val3: The initial dim value.
-        """
-        self = Self(Dim(val0), Dim(val1), Dim(val2), Dim(val3), _dim_version=())
-
-    @always_inline("nodebug")
-    fn __init__(out self, values: VariadicParamList[Dim]):
-        """Creates a dimension list from the given list of values.
-
-        Args:
-            values: The initial dim values list.
-        """
-        self.value = values
-
-    @always_inline("nodebug")
-    fn __init__(out self, *values: Dim, _dim_version: () = ()):
-        """Creates a dimension list from the given Dim values.
-
-        Args:
-            values: The initial dim values.
-            _dim_version: Used to help overload resolution.
-        """
-        self.value = VariadicParamList[Dim](values, comptime_only=())
+    fn __init__(out self):
+        """Creates a dimension list from the given list of values."""
+        pass
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
-        """Gets the size of the DimList.
+        """Gets the length of the DimList.
 
         Returns:
             The number of elements in the DimList.
         """
-        return len(self.value)
+        return Self.rank
 
     @always_inline("nodebug")
     fn get[i: Int](self) -> Int:
@@ -416,7 +328,7 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
             The static dimension value at the specified index.
         """
         comptime assert i >= 0, "index must be positive"
-        return self.value[i].get()
+        return Self.values[i].get()
 
     @always_inline("nodebug")
     fn at[i: Int](self) -> Dim:
@@ -429,7 +341,7 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
             The dimension at the specified index.
         """
         comptime assert i >= 0, "index must be positive"
-        return self.value[i]
+        return Self.values[i]
 
     @always_inline("nodebug")
     fn has_value[i: Int](self) -> Bool:
@@ -442,24 +354,25 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
             Whether the specified dimension has a static value.
         """
         comptime assert i >= 0, "index must be positive"
-        return self.value[i].__bool__()
+        return Self.values[i].__bool__()
 
-    # FIXME: This should become a normal method when DimList is upgraded.
     @always_inline
-    @staticmethod
-    fn get_row_major_strides[shape: DimList]() -> Self:
+    fn get_row_major_strides(
+        self,
+    ) -> DimList[
+        *Self.from_index_list[
+            _get_row_major_dims[
+                DimList[*Self.values]().to_index_list[Self.rank]()
+            ]()
+        ]().values
+    ]:
         """Interpret the current index list as a shape, and return the strides
         to traverse such a shape in row-major order.
-
-        Parameters:
-            shape: The shape to compute the strides for.
 
         Returns:
             The strides to traverse the index list in row-major order.
         """
-        return Self.from_index_list[
-            _get_row_major_dims[shape.to_index_list[len(shape)]()]()
-        ]()
+        return {}
 
     @always_inline
     fn product[length: Int](self) -> Dim:
@@ -494,9 +407,8 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
             return Dim()
 
         var res = 1
-
         comptime for i in range(start, end):
-            res *= self.value[i].get()
+            res *= self.get[i]()
         return res
 
     @always_inline
@@ -509,10 +421,10 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
             The product of all the dimensions.
         """
         var res = 1
-        for i in range(len(self)):
-            if not self.value[i]:
+        comptime for i in range(Self.rank):
+            if not Self.values[i]:
                 return Dim()
-            var val = self.value[i].get()
+            var val = self.get[i]()
             if val:
                 res *= val
         return res
@@ -543,16 +455,13 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
         return self._contains_impl[0, length](value)
 
     @always_inline
-    fn all_known[length: Int](self) -> Bool:
+    fn all_known(self) -> Bool:
         """Determines whether all dimensions are statically known.
-
-        Parameters:
-            length: The number of elements in the list.
 
         Returns:
             True if all dimensions have a static value.
         """
-        return not self.contains[length](Dim())
+        return not self.contains[Self.rank](Dim())
 
     @always_inline
     fn all_known[start: Int, end: Int](self) -> Bool:
@@ -569,11 +478,11 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
         return not self._contains_impl[start, end](Dim())
 
     @always_inline
-    fn to_index_list[rank: Int](self) -> IndexList[rank]:
+    fn to_index_list[num_elements: Int](self) -> IndexList[num_elements]:
         """Copy the DimList values into an `IndexList`, providing the rank.
 
         Parameters:
-            rank: The rank of the output IndexList.
+            num_elements: The number of elements in the index list.
 
         Returns:
             An IndexList with the same dimensions as the DimList.
@@ -581,24 +490,31 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
         ```mojo
         from buffer import DimList
 
-        comptime dim_list = DimList(2, 4)
-        var index_list = comptime(dim_list.to_index_list[rank=2]())
+        comptime dim_list = DimList[2, 4]()
+        var index_list = comptime(dim_list.to_index_list[2]())
         ```
         """
-        var num_elements = len(self)
         assert (
-            rank == num_elements
+            Self.rank == num_elements
         ), "[DimList] mismatch in the number of elements"
-        var index_list = IndexList[rank]()
+        var index_list = IndexList[num_elements]()
 
-        comptime for idx in range(rank):
-            index_list[idx] = Int(self.at[idx]())
+        comptime for idx, dim in enumerate(VariadicParamList[*Self.values]()):
+            index_list[idx] = Int(dim)
 
         return index_list
 
+    comptime _transform_index_to_dim[
+        list: IndexList[_], idx: Int
+    ]: Dim = Dim() if list[idx] < 0 else Dim(list[idx])
+
     @always_inline("nodebug")
     @staticmethod
-    fn from_index_list[rank: Int, //, value: IndexList[rank]]() -> Self:
+    fn from_index_list[
+        rank: Int, //, value: IndexList[rank]
+    ]() -> DimList[
+        *Variadic.tabulate[rank, Self._transform_index_to_dim[value, _]]
+    ]:
         """Creates a dimension list from the given index list.
 
         Parameters:
@@ -608,14 +524,13 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
         Returns:
             A dimension list with the same dimensions as the index list.
         """
-        comptime transform[idx: Int]: Dim = Dim() if value[idx] < 0 else Dim(
-            value[idx]
-        )
-        return DimList(comptime (Variadic.tabulate[rank, transform]))
+        return {}
 
     @always_inline
     @staticmethod
-    fn create_unknown[length: Int]() -> Self:
+    fn create_unknown[
+        length: Int
+    ]() -> DimList[*Variadic.splat_value[length, Dim()]]:
         """Creates a dimension list of all dynamic dimension values.
 
         Parameters:
@@ -625,28 +540,7 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
             A list of all dynamic dimension values.
         """
         comptime assert length > 0, "length must be positive"
-        return Self(Variadic.splat_value[length, Dim()])
-
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Converts the DimList to a String. The String is a comma separated
-        list of the string representation of Dim.
-
-        Returns:
-            The string representation of the type.
-        """
-        return String.write(self)
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        """Converts the DimList to a readable String representation.
-
-        Returns:
-            The string representation of the type.
-        """
-        var string = String()
-        self.write_repr_to(string)
-        return string^
+        return {}
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: DimList) -> Bool:
@@ -661,11 +555,11 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
         Returns:
             True if the DimLists are the same.
         """
-        if len(self) != len(rhs):
+        comptime if Self.rank != rhs.rank:
             return False
 
-        for i in range(len(self)):
-            if self.value[i] != rhs.value[i]:
+        comptime for i in range(Self.rank):
+            if self.get[i]() != rhs.get[i]():
                 return False
 
         return True
@@ -679,10 +573,10 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
 
         writer.write_string("[")
 
-        for i in range(len(self)):
+        comptime for i in range(Self.rank):
             if i:
                 writer.write_string(", ")
-            writer.write(self.value[i])
+            writer.write(self.values[i])
 
         writer.write_string("]")
 
@@ -692,7 +586,7 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
         Args:
             writer: The object to write to.
         """
-        t"DimList({self})".write_to(writer)
+        t"DimList[{self}]()".write_to(writer)
 
 
 @always_inline

@@ -49,8 +49,7 @@ from std.gpu.primitives.cluster import (
 )
 from std.gpu.sync import syncwarp
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import TileTensor
-from layout.tile_layout import TensorLayout
+from layout import RowMajorLayout, TensorLayout, TileTensor
 from structured_kernels.tile_types import (
     GMEMLayout1D,
     TmaOpType,
@@ -58,7 +57,7 @@ from structured_kernels.tile_types import (
     tma_desc_layout_3d,
     tma_desc_layout_4d,
 )
-from layout.tile_layout import RowMajorLayout, _IntToComptimeInt
+from layout.tile_layout import _IntToComptimeInt
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
@@ -467,7 +466,7 @@ struct Grouped1D1DMatmulKernel[
     # ========== Validation ==========
 
     @staticmethod
-    fn validate_config():
+    def validate_config():
         """Compile-time validation of kernel configuration."""
         comptime assert (
             Self.a_type == Self.b_type
@@ -485,7 +484,7 @@ struct Grouped1D1DMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn init_barriers(
+    def init_barriers(
         elect_one_warp: Bool,
         elect_one_thread: Bool,
         a_tma_op: Self.ATmaOp,
@@ -535,7 +534,7 @@ struct Grouped1D1DMatmulKernel[
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
-    fn run(
+    def run(
         # Grid-constant TMA descriptors
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
@@ -626,7 +625,7 @@ struct Grouped1D1DMatmulKernel[
         var mma_complete_mask = UInt16((1 << Self.cta_group) - 1)
 
         # K iteration count
-        var num_k_iters = Int(ceildiv(Int(K), Self.BK))
+        var num_k_iters = ceildiv(Int(K), Self.BK)
 
         # ===== Barrier Initialization =====
         Self.init_barriers(
@@ -779,7 +778,7 @@ struct Grouped1D1DMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn _get_sf_coords(
+    def _get_sf_coords(
         m_coord: UInt32,
         n_coord: UInt32,
         expert_id: Int32,
@@ -811,7 +810,7 @@ struct Grouped1D1DMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn load_input_tiles[
+    def load_input_tiles[
         tiles_origin: MutOrigin,
         //,
     ](
@@ -970,7 +969,7 @@ struct Grouped1D1DMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn _compute_sfb_tmem_adj(
+    def _compute_sfb_tmem_adj(
         m_coord: UInt32, n_coord: UInt32, m_start: UInt32
     ) -> UInt32:
         """Compute SFB TMEM column adjustment for MMA_N < SF_MN_GROUP_SIZE.
@@ -985,18 +984,18 @@ struct Grouped1D1DMatmulKernel[
         internally.
         """
         comptime if Self.MMA_N % SF_MN_GROUP_SIZE != 0:
-            var effective_n: UInt
+            var effective_n: Int
             comptime if Self.config.AB_swapped:
-                effective_n = UInt(m_coord) - UInt(m_start)
+                effective_n = Int(m_coord) - Int(m_start)
             else:
-                effective_n = UInt(n_coord)
-            return UInt32(Int(effective_n) // Self.MMA_N % 2) * 2
+                effective_n = Int(n_coord)
+            return UInt32(effective_n // Self.MMA_N % 2) * 2
         else:
             return UInt32(0)
 
     @staticmethod
     @always_inline
-    fn mma[
+    def mma[
         tiles_origin: MutOrigin,
         //,
     ](
@@ -1052,7 +1051,7 @@ struct Grouped1D1DMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn epilogue(
+    def epilogue(
         c_tiles: Self.SmemType.Core.CTileArray,
         c_tma_op: Self.CTmaOp,
         c_device: Self.CDeviceTile,

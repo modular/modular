@@ -115,28 +115,25 @@ struct Backend(Equatable, TrivialRegisterPassable, Writable):
     comptime ROCBLAS = Self(3)
     comptime HIPBLASLT = Self(4)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
+    def __isnot__(self, other: Self) -> Bool:
         return self != other
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.AUTOMATIC:
             return writer.write("AUTOMATIC")
         if self is Self.CUBLAS:
@@ -148,7 +145,7 @@ struct Backend(Equatable, TrivialRegisterPassable, Writable):
         writer.write("HIPBLASLT")
 
 
-fn _resolve_backend[
+def _resolve_backend[
     backend: Backend, dtype: DType = DType.invalid
 ]() -> Backend:
     comptime if backend is not Backend.AUTOMATIC:
@@ -184,7 +181,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
     ]
     var _handle: Self.type
 
-    fn __init__(out self) raises:
+    def __init__(out self) raises:
         comptime if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
             var handle = Self._cublas_type()
             check_cublas_error(cublasCreate(UnsafePointer(to=handle)))
@@ -207,11 +204,11 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
             )
 
     @always_inline
-    fn __enter__(self) -> Self:
+    def __enter__(self) -> Self:
         return self
 
     @always_inline
-    fn __exit__(mut self) raises:
+    def __exit__(mut self) raises:
         comptime if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
             check_cublas_error(cublasDestroy(self._get_cublas()))
             self._handle = Self._cublas_type()
@@ -229,7 +226,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
 
         raise Error("the backend is not currently supported")
 
-    fn _is_null(self) -> Bool:
+    def _is_null(self) -> Bool:
         comptime if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
             return self._get_cublas() == Self._cublas_type()
         elif Self.resolved_backend is Backend.ROCBLAS:
@@ -239,29 +236,29 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
 
         return False
 
-    fn _get_cublas(self) -> Self._cublas_type:
+    def _get_cublas(self) -> Self._cublas_type:
         comptime assert Self.resolved_backend in (
             Backend.CUBLAS,
             Backend.CUBLASLT,
         ), "backend must be CUBLAS/CUBLASLT"
         return self._handle[Self._cublas_type]
 
-    fn _get_rocblas(self) -> Self._rocblas_type:
+    def _get_rocblas(self) -> Self._rocblas_type:
         comptime assert (
             Self.resolved_backend is Backend.ROCBLAS
         ), "backend must be ROCBLAS"
         return self._handle[Self._rocblas_type]
 
-    fn _get_hipblaslt(self) -> Self._hipblaslt_type:
+    def _get_hipblaslt(self) -> Self._hipblaslt_type:
         comptime assert (
             Self.resolved_backend is Backend.HIPBLASLT
         ), "backend must be HIPBLASLT"
         return self._handle[Self._hipblaslt_type]
 
-    fn __is__(self, other: Backend) -> Bool:
+    def __is__(self, other: Backend) -> Bool:
         return Self.resolved_backend is other
 
-    fn __isnot__(self, other: Backend) -> Bool:
+    def __isnot__(self, other: Backend) -> Bool:
         return Self.resolved_backend is not other
 
 
@@ -272,7 +269,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
 comptime _DEBUG_VENDOR_BLAS = False
 
 
-fn _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
+def _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
     comptime if handle.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
         check_cublas_error(
             cublasSetStream(handle._get_cublas(), CUDA(ctx.stream()))
@@ -296,7 +293,7 @@ fn _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
         )
 
 
-fn _get_global_handle[
+def _get_global_handle[
     dtype: DType,
     backend: Backend = _resolve_backend[Backend.AUTOMATIC, dtype=dtype](),
 ](ctx: DeviceContext) raises -> Handle[backend]:
@@ -320,7 +317,7 @@ fn _get_global_handle[
     return handle_ptr[]
 
 
-fn matmul[
+def matmul[
     use_tf32: Bool = False,
     *,
     scales_type: DType = DType.invalid,
@@ -373,7 +370,7 @@ fn matmul[
         )
 
 
-fn matmul[
+def matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -422,7 +419,7 @@ fn matmul[
         )
 
 
-fn matmul[
+def matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -455,7 +452,7 @@ fn matmul[
 ) raises:
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return String(
             trace_arg(
                 "A",
@@ -548,7 +545,7 @@ fn matmul[
             )
 
 
-fn matmul[
+def matmul[
     use_tf32: Bool = False
 ](
     ctx: DeviceContext,
@@ -586,7 +583,7 @@ fn matmul[
 # ===----------------------------------------------------------------------===#
 
 
-fn _cublas_matmul[
+def _cublas_matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -739,7 +736,7 @@ fn _cublas_matmul[
 # ===----------------------------------------------------------------------===#
 
 
-fn _rocblas_matmul[
+def _rocblas_matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -785,7 +782,7 @@ fn _rocblas_matmul[
     # transformation. To be rigorous though, we should set `c_is_row_major = True`
     # for accuracy validations and uses default column-major in benchmark.
 
-    fn _convert_to_rocblas_transpose(tr: Bool) -> _rocblas.types.Operation:
+    def _convert_to_rocblas_transpose(tr: Bool) -> _rocblas.types.Operation:
         if tr:
             return _rocblas.types.Operation.TRANSPOSE
         return _rocblas.types.Operation.NONE
@@ -855,7 +852,7 @@ fn _rocblas_matmul[
 # ===----------------------------------------------------------------------===#
 
 
-fn _cublasLt_matmul[
+def _cublasLt_matmul[
     d_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1285,7 +1282,7 @@ fn _cublasLt_matmul[
 # ===----------------------------------------------------------------------===#
 
 
-fn _hipblasLt_matmul[
+def _hipblasLt_matmul[
     d_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1320,7 +1317,7 @@ fn _hipblasLt_matmul[
 
     @always_inline
     @parameter
-    fn create_matrix_layout[
+    def create_matrix_layout[
         buf_type: DType,
         buf_layout: Layout,
     ](
@@ -1339,7 +1336,7 @@ fn _hipblasLt_matmul[
         return _desc
 
     @always_inline
-    fn set_matrix_layout_batch_size(
+    def set_matrix_layout_batch_size(
         mat_layout: hipblasLtMatrixLayout_t,
         batch_size: Int,
         batch_stride: Int64,

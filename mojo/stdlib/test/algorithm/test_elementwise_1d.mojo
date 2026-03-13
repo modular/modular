@@ -33,7 +33,7 @@ def test_elementwise_1d() raises:
     @always_inline
     @__copy_capture(vector)
     @parameter
-    fn func[
+    def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         var elem = vector.unsafe_ptr().load[width=simd_width](idx[0])

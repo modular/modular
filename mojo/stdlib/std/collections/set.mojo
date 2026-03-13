@@ -76,7 +76,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__(out self, *ts: Self.T, __set_literal__: () = ()):
+    def __init__(out self, *ts: Self.T, __set_literal__: () = ()):
         """Construct a set from initial elements.
 
         Args:
@@ -90,7 +90,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             self.add(t)
 
     # TODO: Should take the list owned so we can transfer the elements out.
-    fn __init__(out self, elements: List[Self.T, ...]):
+    def __init__(out self, elements: List[Self.T, ...]):
         """Construct a set from a List of elements.
 
         Args:
@@ -104,7 +104,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __contains__(self, t: Self.T) -> Bool:
+    def __contains__(self, t: Self.T) -> Bool:
         """Whether or not the set contains an element.
 
         Args:
@@ -115,7 +115,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return t in self._data
 
-    fn __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
+    def __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Set equality.
 
         Args:
@@ -133,7 +133,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
                 return False
         return True
 
-    fn __and__(self, other: Self) -> Self:
+    def __and__(self, other: Self) -> Self:
         """The set intersection operator.
 
         Args:
@@ -145,7 +145,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return self.intersection(other)
 
-    fn __iand__(mut self, other: Self):
+    def __iand__(mut self, other: Self):
         """In-place set intersection.
 
         Updates the set to contain only the elements which are already in
@@ -156,7 +156,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         self.intersection_update(other)
 
-    fn __or__(self, other: Self) -> Self:
+    def __or__(self, other: Self) -> Self:
         """The set union operator.
 
         Args:
@@ -168,7 +168,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return self.union(other)
 
-    fn __ior__(mut self, other: Self):
+    def __ior__(mut self, other: Self):
         """In-place set union.
 
         Updates the set to contain all elements in the `other` set
@@ -179,7 +179,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         self.update(other)
 
-    fn __sub__(self, other: Self) -> Self:
+    def __sub__(self, other: Self) -> Self:
         """Set subtraction.
 
         Args:
@@ -191,7 +191,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return self.difference(other)
 
-    fn __isub__(mut self, other: Self):
+    def __isub__(mut self, other: Self):
         """In-place set subtraction.
 
         Updates the set to remove any elements from the `other` set.
@@ -201,7 +201,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         self.difference_update(other)
 
-    fn __le__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
+    def __le__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Overloads the <= operator for sets. Works like as `issubset` method.
 
         Args:
@@ -212,7 +212,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return self.issubset(other)
 
-    fn __ge__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
+    def __ge__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Overloads the >= operator for sets. Works like as `issuperset` method.
 
         Args:
@@ -223,7 +223,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return self.issuperset(other)
 
-    fn __gt__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
+    def __gt__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Overloads the > operator for strict superset comparison of sets.
 
         Args:
@@ -234,7 +234,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return len(self) > len(other) and other.issubset(self)
 
-    fn __lt__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
+    def __lt__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Overloads the < operator for strict subset comparison of sets.
 
         Args:
@@ -245,7 +245,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return len(self) < len(other) and self.issubset(other)
 
-    fn __xor__(self, other: Self) -> Self:
+    def __xor__(self, other: Self) -> Self:
         """Overloads the ^ operator for sets. Works like as `symmetric_difference` method.
 
         Args:
@@ -256,7 +256,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return self.symmetric_difference(other)
 
-    fn __ixor__(mut self, other: Self):
+    def __ixor__(mut self, other: Self):
         """Overloads the ^= operator. Works like as `symmetric_difference_update` method.
 
         Updates the set with the symmetric difference of itself and another set.
@@ -270,7 +270,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Whether the set is non-empty or not.
 
         Returns:
@@ -278,7 +278,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return len(self).__bool__()
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """The size of the set.
 
         Returns:
@@ -286,7 +286,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return len(self._data)
 
-    fn __hash__(
+    def __hash__(
         self, mut hasher: Some[Hasher]
     ) where conforms_to(Self.T, Hashable):
         """Updates hasher with the underlying values.
@@ -303,37 +303,13 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             hash_value ^= hash(e)
         hasher.update(hash_value)
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String where conforms_to(Self.T, Writable):
-        """Returns the string representation of the set.
-
-        Returns:
-            The string representation of the set.
-        """
-        var output = String()
-        self.write_to(output)
-        return output
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __repr__(self) -> String where conforms_to(Self.T, Writable):
-        """Returns the string representation of the set.
-
-        Returns:
-            The string representation of the set.
-        """
-        var output = String()
-        self.write_repr_to(output)
-        return output
-
-    fn _write_self_to[
+    def _write_self_to[
         *, is_repr: Bool
     ](self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         var iterator = self.__iter__()
 
         @parameter
-        fn iterate(mut w: Some[Writer]) raises StopIteration:
+        def iterate(mut w: Some[Writer]) raises StopIteration:
             ref element = iterator.__next__()
 
             comptime if is_repr:
@@ -345,7 +321,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         _ = iterator^
 
     @no_inline
-    fn write_to(
+    def write_to(
         self, mut writer: Some[Writer]
     ) where conforms_to(Self.T, Writable):
         """Write this set to a `Writer`.
@@ -356,7 +332,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         self._write_self_to[is_repr=False](writer)
 
     @no_inline
-    fn write_repr_to(
+    def write_repr_to(
         self, mut writer: Some[Writer]
     ) where conforms_to(Self.T, Writable):
         """Write this set to a `Writer`.
@@ -366,7 +342,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
 
         @parameter
-        fn write_fields(mut w: Some[Writer]):
+        def write_fields(mut w: Some[Writer]):
             self._write_self_to[is_repr=True](w)
 
         FormatStruct(writer, "Set").params(
@@ -378,7 +354,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn __iter__(
+    def __iter__(
         ref self,
     ) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the set, returning immutable references.
@@ -391,7 +367,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             _DictKeyIter(_DictEntryIter(0, 0, self._data))
         )
 
-    fn add(mut self, t: Self.T):
+    def add(mut self, t: Self.T):
         """Add an element to the set.
 
         Args:
@@ -399,7 +375,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         self._data[t.copy()] = None
 
-    fn remove(mut self, t: Self.T) raises:
+    def remove(mut self, t: Self.T) raises:
         """Remove an element from the set.
 
         Args:
@@ -410,7 +386,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         self._data.pop(t)
 
-    fn pop(mut self) raises -> Self.T:
+    def pop(mut self) raises -> Self.T:
         """Remove any one item from the set, and return it.
 
         As an implementation detail this will remove the last item
@@ -427,7 +403,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         except:
             raise "Pop on empty set"
 
-    fn union(self, other: Self) -> Self:
+    def union(self, other: Self) -> Self:
         """Set union.
 
         Args:
@@ -443,7 +419,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
 
         return result^
 
-    fn intersection(self, other: Self) -> Self:
+    def intersection(self, other: Self) -> Self:
         """Set intersection.
 
         Args:
@@ -460,7 +436,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
 
         return result^
 
-    fn difference(self, other: Self) -> Self:
+    def difference(self, other: Self) -> Self:
         """Set difference.
 
         Args:
@@ -476,7 +452,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
                 result.add(e)
         return result^
 
-    fn update(mut self, other: Self):
+    def update(mut self, other: Self):
         """In-place set update.
 
         Updates the set to contain all elements in the `other` set
@@ -488,7 +464,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         for e in other:
             self.add(e)
 
-    fn intersection_update(mut self, other: Self):
+    def intersection_update(mut self, other: Self):
         """In-place set intersection update.
 
         Updates the set by retaining only elements found in both this set and the `other` set,
@@ -501,7 +477,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         # careful about concurrent iteration + mutation
         self.difference_update(self - other)
 
-    fn difference_update(mut self, other: Self):
+    def difference_update(mut self, other: Self):
         """In-place set subtraction.
 
         Updates the set by removing all elements found in the `other` set,
@@ -516,7 +492,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             except:
                 pass
 
-    fn issubset(self, other: Self) -> Bool:
+    def issubset(self, other: Self) -> Bool:
         """Check if this set is a subset of another set.
 
         Args:
@@ -534,7 +510,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
 
         return True
 
-    fn isdisjoint(self, other: Self) -> Bool:
+    def isdisjoint(self, other: Self) -> Bool:
         """Check if this set is disjoint with another set.
 
         Args:
@@ -549,7 +525,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
 
         return True
 
-    fn issuperset(self, other: Self) -> Bool:
+    def issuperset(self, other: Self) -> Bool:
         """Check if this set is a superset of another set.
 
         Args:
@@ -567,7 +543,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
 
         return True
 
-    fn symmetric_difference(self, other: Self) -> Self:
+    def symmetric_difference(self, other: Self) -> Self:
         """Returns the symmetric difference of two sets.
 
         Args:
@@ -588,7 +564,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
 
         return result^
 
-    fn symmetric_difference_update(mut self, other: Self):
+    def symmetric_difference_update(mut self, other: Self):
         """Updates the set with the symmetric difference of itself and another set.
 
         Args:
@@ -596,7 +572,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         self = self.symmetric_difference(other)
 
-    fn discard(mut self, value: Self.T):
+    def discard(mut self, value: Self.T):
         """Remove a value from the set if it exists. Pass otherwise.
 
         Args:
@@ -607,7 +583,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         except:
             pass
 
-    fn clear(mut self):
+    def clear(mut self):
         """Removes all elements from the set.
 
         This method modifies the set in-place, removing all of its elements.

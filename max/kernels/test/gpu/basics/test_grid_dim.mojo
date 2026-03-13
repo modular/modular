@@ -18,7 +18,7 @@ from std.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 
-fn kernel(
+def kernel(
     output: UnsafePointer[Float32, MutAnyOrigin],
     size: Int,
 ):
@@ -33,7 +33,7 @@ fn kernel(
         output[global_tid] = Float32(grid_dim.z)
 
 
-fn test_grid_dim(ctx: DeviceContext) raises:
+def test_grid_dim(ctx: DeviceContext) raises:
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size
     var output_host = alloc[Float32](buffer_size)

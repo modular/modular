@@ -24,7 +24,13 @@ from std.random import rand
 from internal_utils import assert_almost_equal
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.tile_tensor import TileTensor
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
@@ -43,11 +49,10 @@ from linalg.fp4_utils import (
 )
 from std.random import random_ui64
 from std.builtin.simd import _convert_f32_to_float8_ue8m0
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-fn simple_init() -> Bool:
+def simple_init() -> Bool:
     for arg in argv():
         if arg == "--simple-init":
             return True
@@ -91,9 +96,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE} alpha={alpha}"
     )
 
-    comptime static_a_shape = DimList(m.dim, k.dim // 2)
-    comptime static_b_shape = DimList(n.dim, k.dim // 2)
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList[m.dim, k.dim // 2]()
+    comptime static_b_shape = DimList[n.dim, k.dim // 2]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
     var dynamic_a_shape = IndexList[2](m.value, k.value // 2)
     var dynamic_b_shape = IndexList[2](n.value, k.value // 2)
     var dynamic_c_shape = IndexList[2](m.value, n.value)
@@ -136,20 +141,20 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList[
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
+    ]()
 
     var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),

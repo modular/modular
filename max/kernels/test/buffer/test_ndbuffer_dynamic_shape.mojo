@@ -41,7 +41,7 @@ def test_ndbuffer_dynamic_shape() raises:
         rank=2,
         DType.int,
         _,
-        DimList(42, Dim()),
+        DimList[42, Dim()](),
     ](buffer.unsafe_ptr(), IndexList[2](42, 1))
 
     matrix2.dynamic_shape[1] = 43

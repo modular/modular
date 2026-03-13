@@ -20,12 +20,13 @@ from typing import Any
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.ep import EPConfig
-from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParamInterface, KVCacheQuantizationConfig
+from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -83,7 +84,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     norm_dtype: DType = DType.bfloat16
     correction_bias_dtype: DType | None = None
     max_batch_context_length: int = 131072
-    float8_config: Float8Config | None = None
+    quant_config: QuantConfig | None = None
     ep_config: EPConfig | None = None
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
 
@@ -99,7 +100,10 @@ class DeepseekV3Config(ArchConfigWithKVCache):
                 "'silu' is the only hidden_act currently supported"
             )
 
-        if self.rope_scaling and self.rope_scaling["type"] != "yarn":
+        rope_type = self.rope_scaling and self.rope_scaling.get(
+            "rope_type", self.rope_scaling.get("type")
+        )
+        if rope_type and rope_type != "yarn":
             raise ValueError(
                 "'yarn' is the only rope_scaling type currently supported"
             )
@@ -170,7 +174,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
         This method creates a config instance with all fields that can be determined
         from the pipeline configuration, without needing the state_dict.
-        Fields that depend on the state_dict (like norm_dtype, float8_config, etc.)
+        Fields that depend on the state_dict (like norm_dtype, quant_config, etc.)
         should be set via the `finalize()` method.
 
         Args:
@@ -244,7 +248,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             max_seq_len=max_seq_len,
             rms_norm_eps=config.rms_norm_eps,
             tie_word_embeddings=config.tie_word_embeddings,
-            rope_theta=config.rope_theta,
+            rope_theta=get_rope_theta(config),
             rope_scaling=config.rope_scaling,
             rope_interleave=getattr(config, "rope_interleave", True),
             scoring_func=config.scoring_func,

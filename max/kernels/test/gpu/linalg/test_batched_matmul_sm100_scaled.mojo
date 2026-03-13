@@ -102,18 +102,20 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
 
     assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
 
-    comptime static_a_shape = DimList(batch_size.dim, m.dim, k.dim)
-    comptime static_b_shape = DimList(
-        batch_size.dim, n.dim, k.dim
-    ) if transpose_b else DimList(batch_size.dim, k.dim, n.dim)
-    comptime static_c_shape = DimList(batch_size.dim, m.dim, n.dim)
+    comptime static_a_shape = DimList[batch_size.dim, m.dim, k.dim]()
+    comptime static_b_shape = DimList[
+        batch_size.dim,
+        n.dim if transpose_b else k.dim,
+        k.dim if transpose_b else n.dim,
+    ]()
+    comptime static_c_shape = DimList[batch_size.dim, m.dim, n.dim]()
 
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList[
         batch_size.dim, k.dim // BLOCK_SCALE_K, m.dim
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         batch_size.dim, n.dim // BLOCK_SCALE_K, k.dim // BLOCK_SCALE_K
-    )
+    ]()
 
     var dynamic_a_shape = IndexList[3](bs, M, K)
     var dynamic_b_shape = IndexList[3](bs, N, K) if transpose_b else IndexList[
@@ -125,16 +127,16 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         bs, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
 
-    comptime static_a_shape_2D = DimList(m.dim, k.dim)
-    comptime static_b_shape_2D = DimList(
-        n.dim, k.dim
-    ) if transpose_b else DimList(k.dim, n.dim)
-    comptime static_c_shape_2D = DimList(m.dim, n.dim)
+    comptime static_a_shape_2D = DimList[m.dim, k.dim]()
+    comptime static_b_shape_2D = DimList[
+        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
+    ]()
+    comptime static_c_shape_2D = DimList[m.dim, n.dim]()
 
-    comptime static_a_scales_shape_2D = DimList(k.dim // BLOCK_SCALE_K, m.dim)
-    comptime static_b_scales_shape_2D = DimList(
+    comptime static_a_scales_shape_2D = DimList[k.dim // BLOCK_SCALE_K, m.dim]()
+    comptime static_b_scales_shape_2D = DimList[
         n.dim // BLOCK_SCALE_K, k.dim // BLOCK_SCALE_K
-    )
+    ]()
 
     var dynamic_a_shape_2D = IndexList[2](m.value, k.value)
     var dynamic_b_shape_2D = IndexList[2](
@@ -221,7 +223,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     @parameter
     @always_inline
     @__copy_capture(c_tensor, M, N)
-    fn epilogue_fn[
+    def epilogue_fn[
         dtype: DType,
         width: Int,
         rank: Int,
@@ -358,16 +360,16 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
 
     assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
 
-    comptime static_a_shape = DimList(B, Dim(), K)
-    comptime static_b_shape = DimList(B, N, K) if transpose_b else DimList(
-        B, K, N
-    )
-    comptime static_c_shape = DimList(B, Dim(), N)
+    comptime static_a_shape = DimList[B, Dim(), K]()
+    comptime static_b_shape = DimList[
+        B, N if transpose_b else K, K if transpose_b else N
+    ]()
+    comptime static_c_shape = DimList[B, Dim(), N]()
 
-    comptime static_a_scales_shape = DimList(B, K // BLOCK_SCALE_K, Dim())
-    comptime static_b_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList[B, K // BLOCK_SCALE_K, Dim()]()
+    comptime static_b_scales_shape = DimList[
         B, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-    )
+    ]()
 
     var dynamic_a_shape = IndexList[3](bs, M, K)
     var dynamic_b_shape = IndexList[3](bs, N, K) if transpose_b else IndexList[

@@ -20,7 +20,7 @@ from std.memory.unsafe import bitcast
 # ===-----------------------------------------------------------------------===#
 
 
-fn _neon_dotprod[
+def _neon_dotprod[
     a_type: DType, b_type: DType, c_type: DType, width: Int
 ](
     c: SIMD[c_type, width],
@@ -32,7 +32,7 @@ fn _neon_dotprod[
 
     @parameter
     @always_inline
-    fn call_intrinsic[intrin: StaticString]() -> SIMD[c_type, width]:
+    def call_intrinsic[intrin: StaticString]() -> SIMD[c_type, width]:
         return llvm_intrinsic[intrin, SIMD[c_type, width]](c, a, b)
 
     comptime if a_type == DType.uint8 and b_type == DType.uint8:
@@ -43,7 +43,7 @@ fn _neon_dotprod[
         comptime assert False, "unsupported A and B types"
 
 
-fn _neon_dotprod_lane[
+def _neon_dotprod_lane[
     lane: Int,
     a_type: DType,
     b_type: DType,
@@ -72,7 +72,7 @@ fn _neon_dotprod_lane[
 # ===-----------------------------------------------------------------------===#
 
 
-fn _neon_matmul[
+def _neon_matmul[
     a_type: DType, b_type: DType, c_type: DType, width: Int
 ](
     c: SIMD[c_type, width],
@@ -84,7 +84,7 @@ fn _neon_matmul[
 
     @parameter
     @always_inline
-    fn call_intrinsic[intrin: StaticString]() -> SIMD[c_type, width]:
+    def call_intrinsic[intrin: StaticString]() -> SIMD[c_type, width]:
         return llvm_intrinsic[intrin, SIMD[c_type, width]](c, a, b)
 
     comptime if a_type == DType.uint8 and b_type == DType.uint8:
