@@ -14,7 +14,7 @@
 
 import pytest
 from conftest import axes, shapes, tensor_types
-from hypothesis import assume, given
+from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 from max.graph import Graph, Shape, TensorType, ops
 
@@ -36,6 +36,7 @@ def test_squeeze(input_type: TensorType, axis: int) -> None:
         graph.output(out)
 
 
+@settings(suppress_health_check=[HealthCheck.filter_too_much])
 @given(
     input_type=tensor_types(shapes=shared_squeeze_shape),
     axis=axes(shared_squeeze_shape),

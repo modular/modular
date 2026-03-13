@@ -105,6 +105,7 @@ modular_py_test(
 
 modular_multi_py_version_test(
     name = "multi_version_tests",
+    size = "large",
     srcs = _MULTI_VERSION_TEST_SRCS + [
         "conftest.py",
     ],

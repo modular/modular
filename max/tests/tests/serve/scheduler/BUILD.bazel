@@ -19,6 +19,7 @@ _MACOS_INCOMPATIBLE_TESTS = [
 [
     modular_py_test(
         name = src.split("/")[-1].split(".")[0],
+        size = "large",
         srcs = [src],
         mojo_deps = ["//max:MOGGKernelAPI"],
         tags = [
