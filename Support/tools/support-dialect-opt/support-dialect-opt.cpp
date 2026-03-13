@@ -24,7 +24,7 @@ int main(int argc, char **argv) {
   registry.insert<mlir::func::FuncDialect, mlir::index::IndexDialect,
                   mlir::LLVM::LLVMDialect, DebugInfo::DebugInfoDialect,
                   MDialect, mlir::ub::UBDialect>();
-  mlir::registerCanonicalizer();
+  mlir::registerCanonicalizerPass();
   DebugInfo::registerDebugInfoToLLVMPass();
   DebugInfo::registerTransformsPasses();
 

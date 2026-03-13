@@ -124,8 +124,8 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
   let regions = (region SizedRegion<1>:$body);
 
   let assemblyFormat = [{
-    ` ``[` $lowerBound `to` $upperBound `step` $step ``$cmpPredicateType ``
-    $indVarComputeType`]` ``
+    ` ``[` $lowerBound `to` $upperBound `step` $step $cmpPredicateType
+    $indVarComputeType `]` ``
     custom<Loop>($iterArgs, type($iterArgs), type($results), $body) attr-dict
   }];
 

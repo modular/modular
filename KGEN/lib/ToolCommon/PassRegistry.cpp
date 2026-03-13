@@ -21,8 +21,8 @@ void KGEN::registerDefaultKGENPasses(const std::string &cacheBaseExtra) {
   mlir::registerCanonicalizerPass();
   mlir::registerConvertIndexToLLVMPass();
   mlir::registerReconcileUnrealizedCastsPass();
-  mlir::registerPrintOpStats();
-  mlir::registerStripDebugInfo();
+  mlir::registerPrintOpStatsPass();
+  mlir::registerStripDebugInfoPass();
 
   // Register opt passes.
   KGEN::registerApplyInliner();
