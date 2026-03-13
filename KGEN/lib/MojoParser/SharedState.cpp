@@ -2832,7 +2832,8 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
           std::swap(lhs, rhs);
           break;
         }
-        auto resultType = evaluator.getReboundType(cmpOp.getType());
+        auto resultType =
+            cast<POP::SIMDType>(evaluator.getReboundType(cmpOp.getType()));
         auto cmp = POP::SIMDCmpAttr::get(cc, lhs, rhs, resultType);
 
         // For NE comparisons, negate the EQ result with an XOR

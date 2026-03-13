@@ -632,21 +632,20 @@ LoadOp::parametric_interpret(ArrayRef<Attribute> operands,
 
 OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
   auto pred = getPred();
-  auto outType = getType();
   return foldOpWithTarget(FoldValues(adaptor.getOperands(), getOperands()),
                           lookupTargetInfo(*this),
                           [&](FoldValues ops, TargetInfoAttr t) {
-                            return foldSIMDCmp(pred, ops, outType, t);
+                            return foldSIMDCmp(pred, ops, t);
                           });
 }
 
 ErrorTreeOrSuccess CmpOp::interpret(ArrayRef<Attribute> operands,
                                     InterpreterState &state) {
   auto pred = getPred();
-  auto resultType = cast<SIMDType>(getType());
-  return interpretOpWithFold(getLoc(), "POP::CmpOp", operands, state,
+  return interpretOpWithFold(getLoc(), getOperation()->getName().getStringRef(),
+                             operands, state,
                              [&](FoldValues ops, TargetInfoAttr t) {
-                               return foldSIMDCmp(pred, ops, resultType, t);
+                               return foldSIMDCmp(pred, ops, t);
                              });
 }
 
@@ -654,10 +653,10 @@ ErrorTreeOrSuccess
 CmpOp::parametric_interpret(ArrayRef<Attribute> operands,
                             ParametricInterpreterState &state) {
   auto pred = getPred();
-  auto resultType = cast<SIMDType>(state.getReboundType(getType()));
-  return interpretOpWithFold(getLoc(), "POP::CmpOp", operands, state,
+  return interpretOpWithFold(getLoc(), getOperation()->getName().getStringRef(),
+                             operands, state,
                              [&](FoldValues ops, TargetInfoAttr t) {
-                               return foldSIMDCmp(pred, ops, resultType, t);
+                               return foldSIMDCmp(pred, ops, t);
                              });
 }
 

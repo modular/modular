@@ -139,7 +139,11 @@ def SIMDShlAttr : DialectAttribute<(attr TypedAttr:$val, TypedAttr:$shft)>;
 def SIMDShrAttr : DialectAttribute<(attr TypedAttr:$val, TypedAttr:$shft)>;
 
 def SIMDCmpAttr : DialectAttribute<(attr
-  EnumAttr<"NormalizedCmpPredicate">:$cc, TypedAttr:$lhs, TypedAttr:$rhs, Type:$type)>;
+  EnumAttr<"NormalizedCmpPredicate">:$cc,
+  TypedAttr:$lhs,
+  TypedAttr:$rhs,
+  ConcreteType<"SIMDType">:$type
+)>;
 
 def CastAttr : DialectAttribute<(attr
   TypedAttr:$arg, Type:$type
