@@ -70,6 +70,7 @@ from layout import (
     RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
+    lt_to_tt,
 )
 from layout.layout import blocked_product, make_layout, flatten, coalesce
 from layout.layout_tensor import LayoutTensorIter
@@ -982,14 +983,14 @@ def copy_accum_to_gmem[
                 warp_offset = warp_i * tile_width
                 stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     upper_frag_casted,
-                    c_smem_warp_tile_upper,
+                    lt_to_tt(c_smem_warp_tile_upper),
                     UInt32(warp_offset),
                 )
 
                 warp_offset += tile_width // 2
                 stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     lower_frag_casted,
-                    c_smem_warp_tile_lower,
+                    lt_to_tt(c_smem_warp_tile_lower),
                     UInt32(warp_offset),
                 )
 
@@ -1044,7 +1045,7 @@ def copy_accum_to_gmem[
                 warp_offset = Int(warp_id) * tile_width
                 stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     upper_frag_casted,
-                    c_smem_warp_tile_upper,
+                    lt_to_tt(c_smem_warp_tile_upper),
                     UInt32(warp_offset),
                 )
 
@@ -1086,7 +1087,7 @@ def copy_accum_to_gmem[
                 data_paths, stageN
             ](0, 0)
             stsm_helper[swizzle, stageN, transpose_c=transpose_c](
-                upper_frag_casted, c_smem_warp_tile_upper
+                upper_frag_casted, lt_to_tt(c_smem_warp_tile_upper)
             )
 
             var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
@@ -1095,7 +1096,7 @@ def copy_accum_to_gmem[
 
             comptime if is_lower_frag_required:
                 stsm_helper[swizzle, stageN, transpose_c=transpose_c](
-                    lower_frag_casted, c_smem_warp_tile_lower
+                    lower_frag_casted, lt_to_tt(c_smem_warp_tile_lower)
                 )
 
             # Guard the write to shared memory is done.

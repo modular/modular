@@ -35,12 +35,20 @@ from std.gpu.sync import (
     mbarrier_arrive,
 )
 from std.gpu.compute.arch.tcgen05 import *
-from layout import IntTuple, Layout, LayoutTensor, RuntimeTuple, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
+from layout.int_tuple import IntTuple
 from layout.layout import coalesce
 from layout.layout_tensor import LayoutTensorIter
 from layout.runtime_tuple import idx2crd
 from layout.swizzle import Swizzle, make_swizzle
 from layout.tensor_core_async import st_matrix_n_layout
+from layout.tile_layout import TensorLayout
 from layout.tma_async import TMATensorTile
 from structured_kernels.tile_types import (
     SMemTileArray2D,
@@ -268,28 +276,40 @@ def f32_frag_to_smem[
     swizzle_mode: TensorMapSwizzle,
     vec_dtype: DType,
     vec_size: Int,
+    DstLayout: TensorLayout,
 ](
     vec: InlineArray[Scalar[vec_dtype], vec_size],
-    dst: LayoutTensor[mut=True, _, _, address_space=AddressSpace.SHARED, ...],
+    dst: TileTensor[
+        _, DstLayout, MutAnyOrigin, address_space=AddressSpace.SHARED
+    ],
 ):
-    # TODO: apply swizzle. Somehow swizzle+distribute results in wrong values.
-    # alias swizzle = make_swizzle[DType.float64, swizzle_mode]() # hack
-    # var dst_frag = dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4), swizzle=swizzle](lane_id())
-    var dst_frag = dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
-        Int(lane_id())
-    )
-    comptime assert (
-        2 * dst_frag.layout.size() == vec_size
-    ), "2*dst_frag.layout.size() must be equal to vec_size"
+    # Manual implementation of dst.vectorize[1, 2]().distribute[row_major(8, 4)]
+    # because the compiler can't prove `all_dims_known` through layout types
+    # produced by `lt_to_tt()`. See MSTDL-2422.
+    comptime stride0 = dst.static_stride[0]
+    comptime shape0 = dst.static_shape[0]
+    comptime shape1 = dst.static_shape[1]
 
-    comptime for i in range(dst_frag.layout.shape[0].value()):
-        comptime for j in range(dst_frag.layout.shape[1].value()):
-            comptime i_vec = i + j * dst_frag.layout.shape[0].value()
-            val = SIMD[dst.dtype, 2](
+    comptime frag_rows = shape0 // 8
+    comptime frag_cols = shape1 // 8
+    comptime assert (
+        2 * frag_rows * frag_cols == vec_size
+    ), "2*frag_rows*frag_cols must be equal to vec_size"
+
+    var lane = lane_id()
+    var thread_row = Int((lane >> 2) & 7)
+    var thread_col = Int(lane & 3)
+    var base_offset = thread_row * Int(stride0) + thread_col * 2
+
+    comptime for i in range(frag_rows):
+        comptime for j in range(frag_cols):
+            comptime i_vec = i + j * frag_rows
+            var val = SIMD[dst.dtype, 2](
                 rebind[Scalar[dst.dtype]](vec[2 * i_vec]),
                 rebind[Scalar[dst.dtype]](vec[2 * i_vec + 1]),
             )
-            dst_frag[i, j] = rebind[dst_frag.element_type](val)
+            var offset = base_offset + i * 8 * Int(stride0) + j * 8
+            (dst.ptr + offset).store(val)
 
 
 @always_inline
@@ -298,11 +318,14 @@ def stsm_helper[
     stageN: Int,
     vec_dtype: DType,
     vec_size: Int,
+    DstLayout: TensorLayout,
     transpose_c: Bool = False,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
     vec: InlineArray[Scalar[vec_dtype], vec_size],
-    dst: LayoutTensor[mut=True, _, _, address_space=AddressSpace.SHARED, ...],
+    dst: TileTensor[
+        _, DstLayout, MutAnyOrigin, address_space=AddressSpace.SHARED
+    ],
     warp_offset: UInt32 = 0,
 ):
     comptime if size_of[dst.dtype]() == 4:
@@ -318,17 +341,20 @@ def stsm_helper[
     # E.g. dst layout can be (16, 16) : (32, 1), which is tiled from
     # row-major(16, 32). The map should use tile's stride to calculate
     # the dst row offset.
-    comptime stride0 = dst.layout.stride[0].value()
-    comptime stride1 = dst.layout.stride[1].value()
+    comptime stride0 = dst.static_stride[0]
+    comptime stride1 = dst.static_stride[1]
     comptime assert stride1 == 1, (
         "stride1 must be 1. Got: "
         + String(stride1)
-        + " for layout: "
-        + String(dst.layout)
+        + " for strides ("
+        + String(stride0)
+        + ", "
+        + String(stride1)
+        + ")"
     )
-    comptime shape0 = dst.layout.shape[
+    comptime shape0 = dst.static_shape[
         1
-    ].value() if not transpose_c else dst.layout.shape[0].value()
+    ] if not transpose_c else dst.static_shape[0]
     # the layout looks like
     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-matrix-fragments-shape-16256b
     # but transposed and coalesced by 8 elements.

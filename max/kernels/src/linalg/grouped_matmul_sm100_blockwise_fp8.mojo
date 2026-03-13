@@ -49,6 +49,7 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
     UNKNOWN_VALUE,
+    lt_to_tt,
 )
 from layout.layout import zipped_divide
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -965,7 +966,7 @@ def multi_stage_reg_epilogue[
             comptime for _j in range(cast_width):
                 upper_st[offset + _j] = casted[_j]
         stsm_helper[swizzle, stageN, swizzle_mode=c_swizzle](
-            upper_st, c_smem_warp_tile_upper
+            upper_st, lt_to_tt(c_smem_warp_tile_upper)
         )
 
         var c_smem_warp_tile_lower = c_smem_warp_tile.tile[data_paths, stageN](
@@ -986,7 +987,7 @@ def multi_stage_reg_epilogue[
                 comptime for _j in range(cast_width):
                     lower_st[offset + _j] = casted[_j]
             stsm_helper[swizzle, stageN, swizzle_mode=c_swizzle](
-                lower_st, c_smem_warp_tile_lower
+                lower_st, lt_to_tt(c_smem_warp_tile_lower)
             )
 
         # Guard the write to shared memory is done.
