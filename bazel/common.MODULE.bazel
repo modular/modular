@@ -315,6 +315,7 @@ mojo.gpu_toolchains(
         "NVIDIA GeForce GTX 1080 Ti": "gtx1080ti",
         "NVIDIA GeForce GTX 1060": "gtx1060",
         "NVIDIA GeForce GTX 970": "gtx970",
+        "GB10": "gb10",
         "MI300X": "mi300x",
         "MI325": "mi325",
         "MI355": "mi355",
@@ -324,6 +325,7 @@ mojo.gpu_toolchains(
         "AMD Radeon PRO W7900": "W7900",
         "AMD Radeon Pro W7900": "W7900",
         "Phoenix3": "780M",
+        "Strix Halo": "strixhalo",
         "Metal 1": "",  # Unsupported, macOS updates on any hardware get you to Metal 3+
         "Metal 2": "",  # Unsupported, macOS updates on any hardware get you to Metal 3+
         "Metal 3": "metal3",  # macOS 15
@@ -350,7 +352,9 @@ mojo.gpu_toolchains(
         "gtx1060": "nvidia:sm_61",
         "rtx4090": "nvidia:sm_89",
         "rtx5090": "nvidia:sm_120a",
+        "gb10": "nvidia:sm_121",
         "rx6900xt": "amdgpu:gfx1030",
+        "strixhalo": "amdgpu:gfx1151",
         "metal3": "metal:3",
         "metal4": "metal:4",
     },
