@@ -10,13 +10,13 @@ from std.collections import Deque
 from std.collections.deque import _DequeIter
 
 
-fn not_a_list[
+def not_a_list[
     T: Copyable & ImplicitlyDestructible
 ](ref value: Deque[T]) -> _DequeIter[T, origin_of(value), False]:
     return value.__reversed__()
 
 
-fn needs_default[
+def needs_default[
     IterableTypeA: Iterable
 ](ref iterable_a: IterableTypeA) -> IterableTypeA.IteratorType[
     origin_of(iterable_a)

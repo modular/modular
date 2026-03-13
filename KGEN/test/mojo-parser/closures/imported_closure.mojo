@@ -9,7 +9,7 @@ from test_package.return_closure import pass_int
 
 
 # CHECK-LABEL: lit.fn @"call_it
-fn call_it() -> Int:
+def call_it() -> Int:
     # CHECK: %0 = kgen.param.constant: !Int = <{50}>
     # CHECK: lit.call {{.*}}pass_int{{.*}}(%0, %__call_result_tmp__)
     # CHECK-SAME: !lit.ref<!Int1, mut {{.*}}> byref_result

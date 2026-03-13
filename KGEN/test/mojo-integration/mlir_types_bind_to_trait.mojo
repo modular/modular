@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full -O0 %s 2 3 | FileCheck %s
 
-comptime TestFn = fn(x: Int) raises -> Tuple[Bool, Int]
+comptime Testdef = def(x: Int) raises -> Tuple[Bool, Int]
 
 
 @no_inline
-fn printIt[T: AnyType & ImplicitlyCopyable]():
+def printIt[T: AnyType & ImplicitlyCopyable]():
     if T.__del__is_trivial:
         print("del trivial")
     if T.__move_ctor_is_trivial:
@@ -22,4 +22,4 @@ def main() raises:
     # CHECK: del trivial
     # CHECK: move trivial
     # CHECK: copy trivial
-    printIt[TestFn]()
+    printIt[Testdef]()

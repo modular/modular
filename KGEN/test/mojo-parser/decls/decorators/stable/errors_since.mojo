@@ -12,47 +12,47 @@
 # Error: positional string argument — only keyword 'since' is accepted.
 # expected-error @+1 {{@stable only accepts the keyword argument 'since'}}
 @stable("1.0")
-fn fn_positional_string():
+def fn_positional_string():
     pass
 
 
 # Error: unknown keyword argument.
 # expected-error @+1 {{@stable only accepts the keyword argument 'since'}}
 @stable(unknown="1.0")
-fn fn_unknown_kwarg():
+def fn_unknown_kwarg():
     pass
 
 
 # Error: since= value must be a string literal, not a number.
 # expected-error @+1 {{'since' argument must be a string literal}}
 @stable(since=1)
-fn fn_since_not_string():
+def fn_since_not_string():
     pass
 
 
 # Error: version string must start with a digit.
 # expected-error @+1 {{'since' argument must be a valid version string}}
 @stable(since="v1.0")
-fn fn_since_starts_with_letter():
+def fn_since_starts_with_letter():
     pass
 
 
 # Error: empty version string.
 # expected-error @+1 {{'since' argument must be a valid version string}}
 @stable(since="")
-fn fn_since_empty():
+def fn_since_empty():
     pass
 
 
 # Error: version string with invalid characters (hyphen is not allowed).
 # expected-error @+1 {{'since' argument must be a valid version string}}
 @stable(since="1.0-alpha")
-fn fn_since_hyphen():
+def fn_since_hyphen():
     pass
 
 
 # Error: too many arguments.
 # expected-error @+1 {{@stable accepts only the 'since' argument}}
 @stable(since="1.0", extra="x")
-fn fn_too_many_args():
+def fn_too_many_args():
     pass

@@ -31,7 +31,7 @@ struct DupUnconditionalAndConditional[T: Movable](
 ):
     var data: Self.T
 
-    fn __init__(out self, var data: Self.T):
+    def __init__(out self, var data: Self.T):
         self.data = data^
 
 
@@ -53,7 +53,7 @@ struct DupDifferentConstraints[T: Movable](
 ):
     var data: Self.T
 
-    fn __init__(out self, var data: Self.T):
+    def __init__(out self, var data: Self.T):
         self.data = data^
 
 
@@ -81,5 +81,5 @@ struct CompositionConflictsWithStandalone[T: Movable](
 ):
     var data: Self.T
 
-    fn __init__(out self, var data: Self.T):
+    def __init__(out self, var data: Self.T):
         self.data = data^

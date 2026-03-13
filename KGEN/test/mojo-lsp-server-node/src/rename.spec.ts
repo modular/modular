@@ -16,7 +16,7 @@ describe("rename", function() {
 
   it("should rename local variables", async function() {
     let document = new Document(server, "test:///test.mojo", `
-fn main():
+def main():
   var someVar = 123
   print(someVar)
       `);
@@ -83,7 +83,7 @@ var someGlobal = 123
       server,
       "test:///test.mojo",
       `
-fn something(arg: Int):
+def something(arg: Int):
   pass
             `
     );
@@ -116,7 +116,7 @@ fn something(arg: Int):
       server,
       "test:///test.mojo",
       `
-fn main():
+def main():
   print(1 + 2)
             `
     );
@@ -149,7 +149,7 @@ fn main():
       server,
       "test:///test.mojo",
       `
-fn main():
+def main():
   print(1 + 2)
             `
     );

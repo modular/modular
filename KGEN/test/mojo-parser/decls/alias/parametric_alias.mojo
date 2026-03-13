@@ -85,12 +85,12 @@ comptime myDouble[x: Int] = myDependentDefaultAdd[x]
 
 # CHECK-LABEL: fn @"expect_two_ints
 # CHECK-SAME: <binop: !lit.generator<<"x": !Int, "y": !Int>!Int>>
-fn expect_two_ints[binop: type_of(myIntAdd)]():
+def expect_two_ints[binop: type_of(myIntAdd)]():
     pass
 
 
 # CHECK-LABEL: fn @"implicit_conversions()"
-fn implicit_conversions():
+def implicit_conversions():
     # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> #alias_myIntAdd
     expect_two_ints[myIntAdd]()
     # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> {{.*}}#kgen.gen<
@@ -102,7 +102,7 @@ fn implicit_conversions():
 
 
 # CHECK-LABEL: lit.fn @"test_type_equality()"
-fn test_type_equality():
+def test_type_equality():
     # CHECK-NEXT: %[[PS_345:.*]] = lit.var.decl "ps_345" {{.*}}<#PS <:!Int {3}, :!Int {4}, :!Int {5}>
     # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {3}, :!Int {4}, :!Int {5}>(%[[PS_345]])
     var ps_345: PS[3, 4, 5] = PS[idInt[3], myIntAdd[2, 2], myDefaultAdd[4]]()
@@ -120,12 +120,12 @@ fn test_type_equality():
     var ps_213: PS_21x[myIntFMA[1, 3, 0]] = PS_xy3[2, 1]()
 
 
-fn two_identical_inputs[T: AnyType](x: T, y: T):
+def two_identical_inputs[T: AnyType](x: T, y: T):
     pass
 
 
 # CHECK-LABEL: fn @"test_type_inference()"
-fn test_type_inference():
+def test_type_inference():
     # CHECK: lit.call @parametric_alias::@"two_identical_inputs
     # CHECK-SAME: <:!AnyType @parametric_alias::@PS<:!Int {2}, :!Int {1}, :!Int {5}>>
     # CHECK-SAME: "x": !lit.ref<!lit.struct<#PS <:!Int {2}, :!Int {1}, :!Int {5}>>
@@ -134,7 +134,7 @@ fn test_type_inference():
 
 
 # CHECK-LABEL: fn @"partial_binding()"
-fn partial_binding():
+def partial_binding():
     # CHECK: lit.alias.decl *"myIntMulPlus3{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<{{.*}}{_mlir_value = add({{.*}}mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">){{.*}}, 3)}
     comptime myIntMulPlus3 = myIntFMA[z=3, ...]
     # CHECK: lit.alias.decl *"myIntMul2Plus3{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<{{.*}}{_mlir_value = add({{.*}}mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2){{.*}}, 3)}
@@ -144,7 +144,7 @@ fn partial_binding():
 
 
 # CHECK-LABEL: fn @"nested_generators()"
-fn nested_generators():
+def nested_generators():
     # CHECK-NEXT: lit.alias.decl *"myCurriedIntAdd{{.*}}": !lit.generator<<"x": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<#kgen.gen<{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(1,0), "_mlir_value">)}
     comptime myCurriedIntAdd[x: Int] = myIntAdd[x, _]
 
@@ -162,7 +162,7 @@ fn nested_generators():
 
 
 # CHECK: lit.fn @"dependent_function_type[::Bool]()"<cond: !Bool>[mut *"__result__`"](?, %__result__: !lit.ref<:!AnyType cond(#lit.struct.extract<:!Bool cond, "_mlir_value">, !Int, !FloatDyn), mut *"__result__`"> byref_result)
-fn dependent_function_type[cond: Bool]() -> myTypeSelector[cond, Int, FloatDyn]:
+def dependent_function_type[cond: Bool]() -> myTypeSelector[cond, Int, FloatDyn]:
     pass
 
 
@@ -172,7 +172,7 @@ fn dependent_function_type[cond: Bool]() -> myTypeSelector[cond, Int, FloatDyn]:
 trait TraitWithParamAlias:
     comptime MyReturnType[m: Bool]: AnyType
 
-    fn getReturn[m: Bool](self) -> Self.MyReturnType[m]:
+    def getReturn[m: Bool](self) -> Self.MyReturnType[m]:
         ...
 
 
@@ -187,5 +187,5 @@ struct MyConformingStruct(TraitWithParamAlias):
     # to obtain the expected `getReturn` type from this struct.
     comptime MyReturnType[m: Bool]: AnyType = MyElemType[m]
 
-    fn getReturn[m: Bool](self) -> Self.MyReturnType[m]:
+    def getReturn[m: Bool](self) -> Self.MyReturnType[m]:
         return MyElemType[m]()

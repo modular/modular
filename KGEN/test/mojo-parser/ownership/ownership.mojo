@@ -11,9 +11,9 @@
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample(ImplicitlyCopyable, Copyable):
   var x : Int
-  fn __init__(out self): self.x = 42; pass
-  fn noop(self): pass
-  fn __bool__(self) -> Bool: return True
+  def __init__(out self): self.x = 42; pass
+  def noop(self): pass
+  def __bool__(self) -> Bool: return True
 
   # Destructor should not recurse.
   # CHECK-LABEL: lit.fn @"__del__
@@ -22,49 +22,49 @@ struct MemExample(ImplicitlyCopyable, Copyable):
   # CHECK-NEXT:    %none = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT:    lit.ownership.mark_destroyed %self
   # CHECK-NEXT:    kgen.return %none : !kgen.none
-  fn __del__(deinit self):
+  def __del__(deinit self):
     self.noop()
 
-fn consume(var a: MemExample): pass
+def consume(var a: MemExample): pass
 
 struct MemPair:
   var a: MemExample
   var b: MemExample
-  fn __init__(out self):
+  def __init__(out self):
     self.a = self.b := MemExample()
 
-  fn use(self): pass
+  def use(self): pass
 
 
 # CHECK-LABEL: lit.struct.decl @RegExample
 # CHECK: destructor {{.*}}@RegExample::@"__del__
 struct RegExample(ImplicitlyCopyable, RegisterPassable):
-  fn __init__(out self):
+  def __init__(out self):
     return
 
   @implicit
-  fn __init__(out self, value: Int):
+  def __init__(out self, value: Int):
     pass
 
-  fn __init__(out self, *, copy: Self): # CHECK: lit.fn @"__init__{{.*}}%copy
+  def __init__(out self, *, copy: Self): # CHECK: lit.fn @"__init__{{.*}}%copy
     return
 
-  fn noop(self): pass
+  def noop(self): pass
   # CHECK-LABEL: lit.fn @"__del__
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT: lit.ownership.mark_destroyed %self
   # CHECK-NEXT: kgen.return
-  fn __del__(deinit self):
+  def __del__(deinit self):
     pass
 
-  fn mutate(mut self):
+  def mutate(mut self):
     pass
 
-fn consume(var a: RegExample): pass
+def consume(var a: RegExample): pass
 
 # CHECK-LABEL: lit.fn @"destructors
 # CHECK-SAME: (%arg0: !lit.ref<!MemExample, mut {{.*}}> owned_in_mem)
-fn destructors(var arg0: MemExample):
+def destructors(var arg0: MemExample):
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%arg0)
 
   # CHECK-NEXT: %mem1 = lit.var.decl "mem1" var
@@ -159,7 +159,7 @@ fn destructors(var arg0: MemExample):
 
 
 # CHECK-LABEL: lit.fn @"indirect_call
-fn indirect_call[detail_fn: fn() -> MemExample]():
+def indirect_call[detail_fn: def() -> MemExample]():
        # CHECK: %mem = lit.var.decl
        # CHECK-NEXT: lifetime.start %mem
        # CHECK-NEXT: lit.call{{.*}}(%mem)
@@ -171,13 +171,13 @@ fn indirect_call[detail_fn: fn() -> MemExample]():
 
 # CHECK-LABEL: lit.struct.decl @Parameterized<level: !Int>
 struct Parameterized[level: Int]:
-    fn __init__(out self): pass
+    def __init__(out self): pass
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 # CHECK-LABEL: lit.fn @"test_parameterized
-fn test_parameterized():
+def test_parameterized():
   # CHECK: %x = lit.var.decl "x"
   # expected-warning @+1 {{assignment to 'x' was never used}}
   var x = Parameterized[4]()
@@ -191,7 +191,7 @@ struct Complicated:
 # This exercises turning a pop.pointer into an RValue, which produces an 'owned'
 # pointer magically from memory.
 # CHECK-LABEL: lit.fn @"testTakePointeeAsOwned1
-fn testTakePointeeAsOwned1(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`]):
+def testTakePointeeAsOwned1(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`]):
   # This should run the destructor.
   # CHECK-NEXT: [[REF1:%.*]] = lit.ref.from_pointer %ptr end_uninit :
   # CHECK-NEXT: lit.ownership.use [[REF1]]
@@ -207,7 +207,7 @@ fn testTakePointeeAsOwned1(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`]):
 
 
 # CHECK-LABEL: lit.fn @"testTakePointeeAsOwned2
-fn testTakePointeeAsOwned2(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
+def testTakePointeeAsOwned2(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
                           i1ptr: __mlir_type.`!kgen.pointer<i1>`):
 
   # The RValue can be consumed directly.
@@ -229,7 +229,7 @@ fn testTakePointeeAsOwned2(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
 
 
 # CHECK-LABEL: testGetAsUninitializedObject
-fn testGetAsUninitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`]):
+def testGetAsUninitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`]):
    # Overwriting the value in a __get_address_as_uninit_lvalue does not destroy
   # the memory, because it is uninit.
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.from_pointer %ptr start_uninit :
@@ -239,9 +239,9 @@ fn testGetAsUninitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `
   # CHECK-NEXT: kgen.param.constant: none
 
 # CHECK-LABEL: testCondGetAsUninitializedObject
-# Early exit from fn using __get_address_as_uninit_lvalue should work.
+# Early exit from def using __get_address_as_uninit_lvalue should work.
 # https://github.com/modularml/modular/issues/27472
-fn testCondGetAsUninitializedObject(exit_early: __mlir_type.i1,
+def testCondGetAsUninitializedObject(exit_early: __mlir_type.i1,
                                   ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`]):
   # CHECK: hlcf.elif
   if exit_early:
@@ -260,7 +260,7 @@ struct FieldSensitiveMemExample(ImplicitlyCopyable):
   var f2 : MemExample
 
   # CHECK: lit.fn @"__init__
-  fn __init__(out self):
+  def __init__(out self):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %self[f1]
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%0)
     self.f1 = MemExample()
@@ -271,15 +271,15 @@ struct FieldSensitiveMemExample(ImplicitlyCopyable):
     # CHECK-NEXT: kgen.return
 
   # CHECK: lit.fn @"__init__
-  fn __init__(out self, a: MemExample, b: MemExample):
+  def __init__(out self, a: MemExample, b: MemExample):
     self.f1 = a
     self.f2 = b
 
-  fn __init__(out self, *, copy: Self):
+  def __init__(out self, *, copy: Self):
     self = Self(copy.f1, copy.f2)
 
   # CHECK-LABEL: lit.fn @"mutate
-  fn mutate(mut self):
+  def mutate(mut self):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %self[f1]
     # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%0)
 
@@ -289,7 +289,7 @@ struct FieldSensitiveMemExample(ImplicitlyCopyable):
     # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
   # CHECK-LABEL: lit.fn @"mutate2
-  fn mutate2(deinit self):
+  def mutate2(deinit self):
     # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%self)
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%self)
     self = FieldSensitiveMemExample()
@@ -305,7 +305,7 @@ struct FieldSensitiveMemExample(ImplicitlyCopyable):
 
   # This disables the destructor of 'x' which causes the fields to be destroyed.
   # CHECK-LABEL: lit.fn @"disableDtor
-  fn disableDtor(deinit x):
+  def disableDtor(deinit x):
     # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %x[f1]
     # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}([[F1R]])
     # CHECK-NEXT: [[F2R:%.*]] = lit.ref.struct.ger %x[f2]
@@ -325,7 +325,7 @@ struct FieldSensitiveMemExample(ImplicitlyCopyable):
 
 
 # CHECK-LABEL: lit.fn @"regpassable_owned_args_mutable
-fn regpassable_owned_args_mutable(var x: RegExample):
+def regpassable_owned_args_mutable(var x: RegExample):
   # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}(%x)
   x.mutate()
 
@@ -342,22 +342,22 @@ fn regpassable_owned_args_mutable(var x: RegExample):
 # argument, because this forms a mutable reference to something immutable
 # implicitly.  We must invoke the copy ctor.
 # CHECK-LABEL: lit.fn @"use_and_return
-fn use_and_return(a: FieldSensitiveMemExample) -> FieldSensitiveMemExample:
+def use_and_return(a: FieldSensitiveMemExample) -> FieldSensitiveMemExample:
   # This will read from 'a' and write into the result slot in an arbitrary
   # order. They cannot alias.
   return FieldSensitiveMemExample(a.f2, a.f1)
 
-fn use_and_return2(a: FieldSensitiveMemExample) -> MemExample:
+def use_and_return2(a: FieldSensitiveMemExample) -> MemExample:
   return a.f2
 
-fn use_inout_and_return(mut a: FieldSensitiveMemExample) -> FieldSensitiveMemExample:
+def use_inout_and_return(mut a: FieldSensitiveMemExample) -> FieldSensitiveMemExample:
   return a
 
-fn return_ref(mut a: FieldSensitiveMemExample) -> ref [a] FieldSensitiveMemExample:
+def return_ref(mut a: FieldSensitiveMemExample) -> ref [a] FieldSensitiveMemExample:
   return a
 
 # CHECK-LABEL: lit.fn @"test_result_optimization
-fn test_result_optimization():
+def test_result_optimization():
   # CHECK-NEXT: %example = lit.var.decl "example"
   # CHECK-NEXT: lifetime.start %example
   # CHECK-NEXT: lit.call {{.*}}"__init__{{.*}}(%example)
@@ -412,7 +412,7 @@ fn test_result_optimization():
   # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
 # CHECK-LABEL: lit.fn @"impl_mutable_arg
-fn impl_mutable_arg(mut a: FieldSensitiveMemExample, mut b: FieldSensitiveMemExample):
+def impl_mutable_arg(mut a: FieldSensitiveMemExample, mut b: FieldSensitiveMemExample):
   # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%b)
   # CHECK-NEXT: lit.call {{.*}}use_inout_and_return{{.*}}(%a, %b)
 
@@ -423,7 +423,7 @@ fn impl_mutable_arg(mut a: FieldSensitiveMemExample, mut b: FieldSensitiveMemExa
 ##===----------------------------------------------------------------------===##
 
 # CHECK: lit.fn @"test_result_consume_reg
-fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
+def test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
   # CHECK-NEXT: %example2 = lit.var.decl
   # CHECK-NEXT: lit.var.lifetime.start %example2
@@ -446,13 +446,13 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
     return example2  # copy/del -> move optimization.
 
 # CHECK: lit.fn @"consumeMem
-fn consumeMem(var x: MemExample):
+def consumeMem(var x: MemExample):
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%x)
   # CHECK-NEXT: kgen.param.constant: none
   pass
 
 # CHECK: lit.fn @"test_result_consume_mem
-fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
+def test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   # CHECK-NEXT: %example = lit.var.decl
   # CHECK-NEXT: lifetime.start %example
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%example)
@@ -490,7 +490,7 @@ struct BigRegExample(ImplicitlyCopyable, RegisterPassable):
   var b: RegExample
 
   # CHECK-LABEL: lit.fn @"__init__()"
-  fn __init__(out self):
+  def __init__(out self):
     # CHECK-NEXT: %self = lit.var.decl "self" initoutarg
     # CHECK-NEXT: [[A:%.*]] = lit.ref.struct.ger %self[a]
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
@@ -505,7 +505,7 @@ struct BigRegExample(ImplicitlyCopyable, RegisterPassable):
     self.b = RegExample()
 
   # CHECK-LABEL: lit.fn @"__init__{{.*}}"{{.*}}*, %copy:
-  fn __init__(out self, *, copy: Self):
+  def __init__(out self, *, copy: Self):
     # CHECK-NEXT: %self = lit.var.decl "self" initoutarg
     # CHECK-NEXT: [[SA:%.*]] = lit.ref.struct.ger %self[a]
     # CHECK-NEXT: [[EA:%.*]] = lit.ref.struct.ger %copy[a]
@@ -531,12 +531,12 @@ struct BigRegExample(ImplicitlyCopyable, RegisterPassable):
   # CHECK-NEXT: kgen.return
 
 
-fn take_regexample_ref(ref r: RegExample): pass
-fn ret_big_reg() -> BigRegExample:
+def take_regexample_ref(ref r: RegExample): pass
+def ret_big_reg() -> BigRegExample:
   return BigRegExample()
 
 # CHECK-LABEL: lit.fn @"bigreg_test
-fn bigreg_test():
+def bigreg_test():
   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
   # CHECK-NEXT: %varThing = lit.var.decl "varThing"
   # CHECK-NEXT: lifetime.start %varThing
@@ -586,7 +586,7 @@ struct ExoticDelExample(RegisterPassable):
   var c: RegExample
 
  # CHECK-LABEL: lit.fn @"__del__
-  fn __del__(deinit self):
+  def __del__(deinit self):
     # self.b gets destroyed ASAP since it isn't used.
     # CHECK-NEXT: [[BPTR:%.*]] = lit.ref.struct.ger %self[b]
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BPTR]])
@@ -632,9 +632,9 @@ struct AddrSpace(TrivialRegisterPassable):
     var _value: __mlir_type.index
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: __mlir_type.index):
+    def __init__(out self, value: __mlir_type.index):
         self._value = value
-    fn value(self) -> __mlir_type.index:
+    def value(self) -> __mlir_type.index:
         return self._value
 @fieldwise_init
 struct MemExamplePtr[addrspace: AddrSpace = __mlir_attr.`0:index`](TrivialRegisterPassable):
@@ -642,7 +642,7 @@ struct MemExamplePtr[addrspace: AddrSpace = __mlir_attr.`0:index`](TrivialRegist
         `!kgen.pointer<`, MemExample, `, `, Self.addrspace._value, `>`
     ]
 
-fn sadge(ptr: MemExamplePtr[]):
+def sadge(ptr: MemExamplePtr[]):
     __get_address_as_uninit_lvalue(ptr.value) = MemExample()
     return
 
@@ -651,17 +651,17 @@ trait SomeTrait:
     pass
 
 struct GenericType(SomeTrait):
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 struct GenericRegType(RegisterPassable, SomeTrait):
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 # CHECK-LABEL: lit.fn @"destruct_generic_return
-fn destruct_generic_return():
+def destruct_generic_return():
     @parameter
-    fn return_generic_type[T: SomeTrait]() -> T:
+    def return_generic_type[T: SomeTrait]() -> T:
         while True:
             pass
 
@@ -673,7 +673,7 @@ fn destruct_generic_return():
 
 # CHECK-LABEL: lit.struct.decl @RegisterExistingDtor
 struct RegisterExistingDtor(RegisterPassable):
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 struct RegisterNoDtor(RegisterPassable):
@@ -689,7 +689,7 @@ struct MemoryNoDtor:
 @fieldwise_init
 struct RegExampleValue(ImplicitlyCopyable, RegisterPassable):
   var x: RegExample
-  fn __init__(out self):
+  def __init__(out self):
     self.x = RegExample()
 
   # Make sure the synthesized dtor is taken register style.
@@ -702,7 +702,7 @@ struct RegExampleValue(ImplicitlyCopyable, RegisterPassable):
 # [Bug] __result__ is uninitialized
 # https://github.com/modularml/modular/issues/27792
 # CHECK-LABEL: lit.fn @"test_or
-fn test_or(a: MemExample) -> MemExample:
+def test_or(a: MemExample) -> MemExample:
   # CHECK: hlcf.if {{.*}} {
   # CHECK:   lit.memcpy %a,
   # CHECK: } else {
@@ -718,7 +718,7 @@ fn test_or(a: MemExample) -> MemExample:
 # CHECK-LABEL: lit.fn @"variadic_mems
 # CHECK-SAME: [imm *"mems`"](
 # CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, imm *"mems`">> read_mem|pos_vararg)
-fn variadic_mems(*mems: MemExample):
+def variadic_mems(*mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
   # CHECK-NEXT: lifetime.start %mems_0
   # CHECK-NEXT: lit.call {{.*}}@VariadicList::@"__init__
@@ -726,7 +726,7 @@ fn variadic_mems(*mems: MemExample):
   pass
 
 # CHECK-LABEL: lit.fn @"call_variadic_mems
-fn call_variadic_mems(a: MemExample, b: MemExample):
+def call_variadic_mems(a: MemExample, b: MemExample):
   # CHECK-NEXT: %0 = kgen.rebind %a : !lit.ref<!MemExample, imm *"a`"> to !lit.ref<!MemExample, imm {*"a`", *"b`1"}>
   # CHECK-NEXT: %1 = kgen.rebind %b : !lit.ref<!MemExample, imm *"b`1"> to !lit.ref<!MemExample, imm {*"a`", *"b`1"}>
   # CHECK-NEXT: [[VAR:%.*]] = pop.variadic.create [%0, %1]
@@ -747,7 +747,7 @@ fn call_variadic_mems(a: MemExample, b: MemExample):
   # CHECK-NEXT: kgen.param.constant: none
 
 # CHECK-LABEL: lit.fn @"variadic_field_sensitivity
-fn variadic_field_sensitivity():
+def variadic_field_sensitivity():
   # Test that we field sensitively track variadics.
   # CHECK:  %memPair = lit.var.decl
   var memPair = MemPair()
@@ -779,7 +779,7 @@ fn variadic_field_sensitivity():
 # CHECK-LABEL: lit.fn @"variadic_inout_mems
 # CHECK-SAME: [mut *"mems`"](
 # CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">> mut|pos_vararg)
-fn variadic_inout_mems(mut *mems: MemExample):
+def variadic_inout_mems(mut *mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
   # CHECK-NEXT: lifetime.start %mems_0
   # CHECK-NEXT: lit.call {{.*}}@VariadicList::@"__init__
@@ -797,7 +797,7 @@ fn variadic_inout_mems(mut *mems: MemExample):
   # CHECK-NEXT: kgen.return
 
 # CHECK-LABEL: lit.fn @"call_variadic_inout_mems
-fn call_variadic_inout_mems():
+def call_variadic_inout_mems():
   var a = MemExample()
   var b = MemExample()
   # CHECK: [[AR:%.*]] = kgen.rebind %a : !lit.ref<!MemExample, mut *"a`"> to !lit.ref<!MemExample, mut {*"a`", *"b`1"}>
@@ -815,7 +815,7 @@ fn call_variadic_inout_mems():
   # CHECK-NEXT: kgen.return
 
 # CHECK-LABEL: lit.fn @"variadic_owned_mems
-fn variadic_owned_mems(var *mems: MemExample):
+def variadic_owned_mems(var *mems: MemExample):
     # CHECK: lit.call {{.*}}::@VariadicList::@"__init__{{.*}}"[{{.*}}]<{{.*}}>({{.*}}) :
     # CHECK-SAME: !lit.generator<[1]("value": !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">>
     # CHECK-SAME: "self": !lit.ref<{{.*}}#VariadicList <:!Bool {:i1 1},
@@ -823,7 +823,7 @@ fn variadic_owned_mems(var *mems: MemExample):
 
 
 # CHECK-LABEL: lit.fn @"call_variadic_owned_mems
-fn call_variadic_owned_mems(var c: MemExample, var d: MemExample):
+def call_variadic_owned_mems(var c: MemExample, var d: MemExample):
     variadic_owned_mems(c^, d^)
     # COM: Ensure owned convention of callee is honored.
     # CHECK:  lit.call {{.*}}::@"variadic_owned_mems{{.*}}
@@ -832,7 +832,7 @@ fn call_variadic_owned_mems(var c: MemExample, var d: MemExample):
 
 
 # CHECK-LABEL: lit.fn @"test_partial_overwrite
-fn test_partial_overwrite(cond: __mlir_type.i1):
+def test_partial_overwrite(cond: __mlir_type.i1):
   # CHECK-NEXT: %pair = lit.var.decl "pair"
   # CHECK-NEXT: lifetime.start %pair
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%pair)
@@ -871,7 +871,7 @@ struct UninitField:
   var field: MemExample
 
   # CHECK: lit.fn @"__init__()"
-  fn __init__(out self):
+  def __init__(out self):
       # Show that we can mark a field as intentionally uninitialized.
       # Even after checklifetimes, we don't want the thing initialized.
       __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self.field))
@@ -881,13 +881,13 @@ struct UninitField:
       # CHECK-NEXT: %none = kgen.param.constant
       # CHECK-NEXT: kgen.return %none
 
-fn maybeMemExample() raises -> MemExample:
+def maybeMemExample() raises -> MemExample:
    return MemExample()
 
 struct HasMemExample:
   var fh: MemExample
   # CHECK-LABEL: lit.fn @"destroyPotentiallyOverwrittenValueRegardlessOfOutcome
-  fn destroyPotentiallyOverwrittenValueRegardlessOfOutcome(mut self):
+  def destroyPotentiallyOverwrittenValueRegardlessOfOutcome(mut self):
     # CHECK-NEXT: %__try_error__ = lit.var.dec
     # CHECK-NEXT: lit.try "try0" {
     try:
@@ -928,19 +928,19 @@ struct HasMemExample:
 struct Dim(ImplicitlyCopyable):
   var dim: Int
 
-fn maybeDim() raises -> Dim:
+def maybeDim() raises -> Dim:
    return Dim(3)
 
 @fieldwise_init
 struct List(ImplicitlyCopyable):
-  fn append(self, d: MemExample):
+  def append(self, d: MemExample):
      pass
 
 @fieldwise_init
 struct DoNotPropagateErrorStateIntoContinueSet:
   var dims: List
   # CHECK-LABEL: lit.fn @"__init__(
-  fn __init__(out self, cond: __mlir_type.`i1`, var list: List) raises:
+  def __init__(out self, cond: __mlir_type.`i1`, var list: List) raises:
     # CHECK:     hlcf.loop "_loop_0" {
     # CHECK-NEXT:  hlcf.if %cond {
     # CHECK-NEXT:    hlcf.yield
@@ -951,10 +951,10 @@ struct DoNotPropagateErrorStateIntoContinueSet:
       list.append(maybeMemExample())
     self.dims = list
 
-fn use(x: MemExample): pass
+def use(x: MemExample): pass
 
 # CHECK-LABEL: lit.fn @"destroyWholeValuesIfLastReferenceWasInLoop
-fn destroyWholeValuesIfLastReferenceWasInLoop(cond: __mlir_type.`i1`,
+def destroyWholeValuesIfLastReferenceWasInLoop(cond: __mlir_type.`i1`,
                                               var memPair: MemPair):
    # Part of mempair is used in the loop, but this keeps the entire thing
    # alive during the loop.  The solution here is to destroy memPair immediately
@@ -971,7 +971,7 @@ fn destroyWholeValuesIfLastReferenceWasInLoop(cond: __mlir_type.`i1`,
 
 # CHECK-LABEL: lit.fn @"overwrite
 # MOCO-700
-fn overwrite(y: MemExample, x: Bool) raises:
+def overwrite(y: MemExample, x: Bool) raises:
    var foo = MemPair()
    if x:
    # CHECK: } then {
@@ -989,7 +989,7 @@ fn overwrite(y: MemExample, x: Bool) raises:
 # CHECK-LABEL: lit.fn @"test_if_ownership
 # MOCO-721: Test that ownership is transferred and all the move optimizations are
 # done.
-fn test_if_ownership(x: Bool, var a: RegExample, var b: RegExample) -> RegExample:
+def test_if_ownership(x: Bool, var a: RegExample, var b: RegExample) -> RegExample:
     # CHECK-NEXT: lit.call {{.*}}__mlir_i1__
     # CHECK-NEXT: [[RES:%.*]] = hlcf.if
     # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %a
@@ -1016,7 +1016,7 @@ struct MyStructWithMarkDestroyed[T: ImplicitlyCopyable]:
     var b: Self.T
 
 # CHECK-LABEL: lit.fn @{{.*}}reap
-    fn reap(deinit self, out result: Self.T):
+    def reap(deinit self, out result: Self.T):
         # "a" field is never used here so it is destroyed early.
         # CHECK-NEXT: [[AREF:%.*]] = lit.ref.struct.ger %self[a]
         # CHECK-NEXT: lit.call{{.*}}__del__{{.*}}([[AREF]]
@@ -1036,7 +1036,7 @@ struct MyStructWithMarkDestroyed[T: ImplicitlyCopyable]:
 
 
 # CHECK-LABEL: lit.fn @"field_sensitive_ref_last_use
-fn field_sensitive_ref_last_use(var write_state : IntAndOptional):
+def field_sensitive_ref_last_use(var write_state : IntAndOptional):
     # should destroy ALL OF write_state after the copy into msg.
     var msg = write_state.error.value()
 
@@ -1052,7 +1052,7 @@ struct IntAndOptional:
 
 
 # CHECK: lit.fn @"caught_eh_cleanup
-fn caught_eh_cleanup():
+def caught_eh_cleanup():
     # CHECK-NEXT: %eh1 = lit.var.decl "eh1"
     # CHECK-NEXT: lit.try "{{.*}}" {
     try:
@@ -1104,7 +1104,7 @@ fn caught_eh_cleanup():
 
 # CHECK-LABEL: lit.fn @"test_ref_field
 # https://linear.app/modularml/issue/MOCO-1251
-fn test_ref_field(var mem: MemPair):
+def test_ref_field(var mem: MemPair):
   # Pointer to subfield.
   r = Pointer(to=mem.a)
 
@@ -1113,12 +1113,12 @@ fn test_ref_field(var mem: MemPair):
   _ = r == r
   # CHECK-NEXT: lit.call {{.*}}MemPair::@"__del__
 
-fn get_inner_ptr(s: String) -> UnsafePointer[UInt8, AnyOrigin[mut=True]]:
+def get_inner_ptr(s: String) -> UnsafePointer[UInt8, AnyOrigin[mut=True]]:
   return {}
-fn use_inner_pointer[origin: Origin[mut=True]](ptr: UnsafePointer[UInt8, origin]): pass
+def use_inner_pointer[origin: Origin[mut=True]](ptr: UnsafePointer[UInt8, origin]): pass
 
 # CHECK-LABEL: lit.fn @"handleAnyLifetime1
-fn handleAnyLifetime1():
+def handleAnyLifetime1():
   str = String()
   # Make sure this keeps alive str until after the call.
   # CHECK: lit.call {{.*}}use_inner_pointer
@@ -1127,7 +1127,7 @@ fn handleAnyLifetime1():
   # CHECK-NEXT: lit.var.lifetime.end %str
 
 # CHECK-LABEL: lit.fn @"handleAnyLifetime2
-fn handleAnyLifetime2():
+def handleAnyLifetime2():
   ui8 = UInt8()
 
   # Make sure this keeps 'ui8' alive until after the call even though
@@ -1137,7 +1137,7 @@ fn handleAnyLifetime2():
   # CHECK-NEXT: lit.var.lifetime.end %ui8
 
 # CHECK-LABEL: lit.fn @"handleAnyLifetime3
-fn handleAnyLifetime3():
+def handleAnyLifetime3():
     # CHECK-NEXT: lit.call {{.*}}__init__
     # CHECK-NEXT: %a_packed_ptr = lit.var.decl
     # CHECK-NEXT: lit.var.lifetime.start %a_packed_ptr
@@ -1156,12 +1156,12 @@ fn handleAnyLifetime3():
     a_packed_ptr = UnsafePointer[Int, AnyOrigin[mut=True]]()
 
 
-fn take_pack[*Ts: AnyType](*values: *Ts): pass
+def take_pack[*Ts: AnyType](*values: *Ts): pass
 
 # CHECK-LABEL: lit.fn @"handleAnyLifetime4
 # VariadicPack's need to extend the lifetime in the pack
 # https://github.com/modular/mojo/issues/3559
-fn handleAnyLifetime4():
+def handleAnyLifetime4():
   str = String()
   ptr = UnsafePointer(to=str)
 
@@ -1175,14 +1175,14 @@ fn handleAnyLifetime4():
 
 struct A:
     var data: UnsafePointer[Int, AnyOrigin[mut=True]]
-    fn __init__(out self):
+    def __init__(out self):
         self.data = UnsafePointer[Int, AnyOrigin[mut=True]]()
-    fn __del__(deinit self): pass
+    def __del__(deinit self): pass
 
-fn use_int(a: Int): pass
+def use_int(a: Int): pass
 
 # CHECK-LABEL: lit.fn @"handleAnyLifetime5
-fn handleAnyLifetime5():
+def handleAnyLifetime5():
     # lit.ref.load needs to extend the lifetime of A.
     a = A()
     # CHECK: [[INT_REF:%.*]] = {{.*}}UnsafePointer::@"__getitem__
@@ -1197,7 +1197,7 @@ fn handleAnyLifetime5():
 # to reason about these.
 
 # CHECK-LABEL: lit.fn @"test_origin_ctor_folding
-fn test_origin_ctor_folding[orig1: Origin](abcdef: A):
+def test_origin_ctor_folding[orig1: Origin](abcdef: A):
     # CHECK-NEXT: lit.alias.decl *"x{{.*}}:origin<0> *"abcdef`2">>
     comptime x = origin_of(abcdef)
 
@@ -1209,10 +1209,10 @@ fn test_origin_ctor_folding[orig1: Origin](abcdef: A):
     # CHECK-NEXT: lit.alias.decl *"o2{{.*}}:origin<0> {*"abcdef`2", (mutcast mut={{.*}}, *"orig1._mlir_origin`1")}>>
     comptime o2 = origin_of(orig1, abcdef)
 
-fn useMemory(a: MemExample): pass
+def useMemory(a: MemExample): pass
 
 # CHECK-LABEL: lit.fn @"testConds1
-fn testConds1(cond: __mlir_type.i1, reg: RegExample, i: Int):
+def testConds1(cond: __mlir_type.i1, reg: RegExample, i: Int):
   # Implicit conversions.
   # Mojo Issue #49: https://github.com/modular/mojo/issues/49
 
@@ -1239,7 +1239,7 @@ fn testConds1(cond: __mlir_type.i1, reg: RegExample, i: Int):
 
 # Memory only conds. Issue (#13379)
 # CHECK-LABEL: lit.fn @"testConds2
-fn testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample:
+def testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample:
   # CHECK:      [[IF:%.*]] = hlcf.if %cond
   # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind %a
   # CHECK-NEXT:   hlcf.yield [[TMP]]
@@ -1288,7 +1288,7 @@ fn testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample:
   return a if cond else b
 
 # CHECK-LABEL: lit.fn @"testConds3
-fn testConds3(cond: __mlir_type.i1, var a: MemExample, var b: MemExample,
+def testConds3(cond: __mlir_type.i1, var a: MemExample, var b: MemExample,
               var m: RegExample, var n: RegExample):
   # CHECK-NEXT: %t1 = lit.var.decl
   # CHECK-NEXT: hlcf.if %cond
@@ -1327,7 +1327,7 @@ fn testConds3(cond: __mlir_type.i1, var a: MemExample, var b: MemExample,
 
 # CHECK-LABEL: lit.fn @"my_min1
 # CHECK-SAME: !lit.ref<!Int, mut=and(*"x_is_mut`", *"y_is_mut`2"), {(mutcast mut=*"x_is_mut`", *"x_is_origin`1"), (mutcast mut=*"y_is_mut`2", *"y_is_origin`3")}>
-fn my_min1(cond: __mlir_type.i1, ref x: Int, ref y: Int) -> ref [x, y] Int:
+def my_min1(cond: __mlir_type.i1, ref x: Int, ref y: Int) -> ref [x, y] Int:
   # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
   # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %x
   # CHECK-NEXT:    hlcf.yield [[TMP]]
@@ -1340,12 +1340,12 @@ fn my_min1(cond: __mlir_type.i1, ref x: Int, ref y: Int) -> ref [x, y] Int:
   return x if cond else y
 
 # CHECK-LABEL: lit.fn @"my_min2
-fn my_min2[T: AnyType](ref a: T, ref b: T) -> ref [a, b] T:
+def my_min2[T: AnyType](ref a: T, ref b: T) -> ref [a, b] T:
     return a
 
 # CHECK-LABEL: lit.fn @"test_min2
 # https://github.com/modular/mojo/issues/3815
-fn test_min2(a: String):
+def test_min2(a: String):
     # CHECK: lit.call {{.*}}String::@"__init__
     var x = String()
     # CHECK: lit.call {{.*}}String::@"__init__
@@ -1369,7 +1369,7 @@ struct MyParameterizedField[T: ImplicitlyCopyable](ImplicitlyCopyable):
   var a: Self.T
   var b: Self.T
 
-fn use_parameterized_field():
+def use_parameterized_field():
   var s = MyParameterizedField[Dim](Dim(8), Dim(3))
   var litref = __get_mvalue_as_litref(s.b)
   var rebind = __mlir_op.`kgen.rebind`
@@ -1382,7 +1382,7 @@ fn use_parameterized_field():
 struct OuterStruct:
     var outers_field: RefResultStruct
     # CHECK: lit.fn @"__del__
-    fn __del__(deinit self):
+    def __del__(deinit self):
         # CHECK: lit.call {{.*}}use(::String)
         use(self.outers_field.x)
         # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[outers_field]
@@ -1391,19 +1391,19 @@ struct OuterStruct:
 
 struct RefResultStruct:
   var x: String
-  fn __init__(out self):
+  def __init__(out self):
     self.x = String()
 
-  fn method(self) -> ref [self.x] String:
+  def method(self) -> ref [self.x] String:
       return self.x
 
-fn use(a: String): pass
+def use(a: String): pass
 
 # https://github.com/modular/modular/issues/4163
 #  BUG] Mojo compiler error when two instance variables of type PythonObject are initialized by Python.import_module in a struct's __init__()
 struct SomeStruct:
     var test_agent: SomeValue[Int]
-    fn __init__(out self) raises:
+    def __init__(out self) raises:
         self.test_agent = SomeValue(123)
 
 struct SomeValue[T: ImplicitlyCopyable]:
@@ -1411,7 +1411,7 @@ struct SomeValue[T: ImplicitlyCopyable]:
     var name: String
     var tmp: Int
 
-    fn __init__(out self, value: Self.T) raises:
+    def __init__(out self, value: Self.T) raises:
         self.value = value
         self.name = "example"
         self.tmp = 1 #<- remove this field and it works
@@ -1423,10 +1423,10 @@ struct ParametricTask[T1: Movable & ImplicitlyDestructible,
                       T2: Movable & ImplicitlyDestructible](Movable):
     var t1: Self.T1
     var t2: Self.T2
-    fn __init__(out self, var t1: Self.T1, var t2: Self.T2):
+    def __init__(out self, var t1: Self.T1, var t2: Self.T2):
         self.t1 = t1^
         self.t2 = t2^
-    fn concat(var self, var other: Self) -> ParametricTask[Self, Self]:
+    def concat(var self, var other: Self) -> ParametricTask[Self, Self]:
         return ParametricTask(self^, other^)
 
     # Verify that deinit causes the individual fields to be destroyed.
@@ -1435,18 +1435,18 @@ struct ParametricTask[T1: Movable & ImplicitlyDestructible,
     # CHECK-NEXT: lit.call{{.*}}__del__
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[t2]
     # CHECK-NEXT: lit.call{{.*}}__del__
-    fn explicit_destroy(deinit self):
+    def explicit_destroy(deinit self):
       pass
 
     # Verify that var causes the whole thing to be destroyed.
     # CHECK: lit.fn @"var_method
     # CHECK-NEXT: lit.call {{.*}}ParametricTask::@"__del__
-    fn var_method(var self):
+    def var_method(var self):
       pass
 
 
 # https://github.com/modular/modular/issues/4518
-fn issue4518():
+def issue4518():
     val1 = 0
 
     try:
@@ -1457,13 +1457,13 @@ fn issue4518():
     if val1:  # use of uninitialized value 'val1'
         pass
 
-fn issue4518_fn_that_raises() raises -> Int: return 0
+def issue4518_fn_that_raises() raises -> Int: return 0
 
 
 # MOCO-2918: Default traits methods don't work if they have variadic packs
 # Test direct passing of the variadic pack.
 trait HasBarWVariadicPack:
-    fn method_with_pack[*Ts: AnyType](mut self, *args: *Ts):
+    def method_with_pack[*Ts: AnyType](mut self, *args: *Ts):
         pass
 # CHECK-LABEL: lit.struct.decl @InheritDefaultFromHasBarWVariadicPack
 struct InheritDefaultFromHasBarWVariadicPack(HasBarWVariadicPack):
@@ -1482,7 +1482,7 @@ struct TestRaiseFromInit:
     var y: String
 
   # CHECK: lit.fn @"__init__
-    fn __init__(out self) raises Int:
+    def __init__(out self) raises Int:
         # CHECK-NEXT: %0 = lit.ref.struct.ger %self[y]
         # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}(%0)
         # CHECK-NEXT: lit.call {{.*}}String::@"__del__{{.*}}(%0)

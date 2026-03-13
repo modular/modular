@@ -18,5 +18,5 @@ from debuginfo_module import VeryUniqueStruct
 # CHECK-DAG: #[[LOC]] = loc(fused<#[[FILE]]>[#loc{{[0-9]+}}])
 
 
-fn caller():
+def caller():
     var y = VeryUniqueStruct.very_unique_func(__mlir_attr.`0 : index`)

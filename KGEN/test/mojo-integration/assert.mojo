@@ -7,11 +7,11 @@
 # RUN: %mojo %s | FileCheck %s
 
 
-fn check_positive(x: Int):
+def check_positive(x: Int):
     assert x > 0, "expected positive"
 
 
-fn check_range(x: Int, lo: Int, hi: Int):
+def check_range(x: Int, lo: Int, hi: Int):
     assert x >= lo
     assert x < hi
 
@@ -20,15 +20,15 @@ struct Point:
     var x: Int
     var y: Int
 
-    fn __init__(out self, x: Int, y: Int):
+    def __init__(out self, x: Int, y: Int):
         self.x = x
         self.y = y
 
-    fn is_valid(self) -> Bool:
+    def is_valid(self) -> Bool:
         return self.x >= 0 and self.y >= 0
 
 
-fn main():
+def main():
     # CHECK-LABEL: test_basic
     print("== test_basic")
 

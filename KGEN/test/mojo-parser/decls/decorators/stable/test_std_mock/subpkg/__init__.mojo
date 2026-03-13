@@ -13,7 +13,7 @@ from test_std_mock import UnstableStruct
 
 
 @stable
-fn subpkg_stable_fn() -> Int:
+def subpkg_stable_fn() -> Int:
     # This uses UnstableStruct from the parent package.  Both this sub-package
     # and the parent are under the opted-in "test_std_mock" package, so this
     # is intra-package usage and should NOT warn.

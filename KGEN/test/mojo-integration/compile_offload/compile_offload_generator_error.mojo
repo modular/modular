@@ -11,11 +11,11 @@
 from std.compile import compile_info
 
 
-fn param_fn[x: Int, y: Int]() -> Int:
+def param_fn[x: Int, y: Int]() -> Int:
     return x + y
 
 
-fn my_wrapper[f: fn() -> Int]() -> fn() -> Int:
+def my_wrapper[f: def() -> Int]() -> def() -> Int:
     return f
 
 

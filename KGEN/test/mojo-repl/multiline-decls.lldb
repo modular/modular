@@ -21,9 +21,9 @@ trait TestTrait:
 struct Foo[
     *Ts: TrivialRegisterPassable
     ](TestTrait):
-  fn __init__(out self):
+  def __init__(out self):
     pass
-  fn foo(self):
+  def foo(self):
     print("called foo")
 
 # CHECK: called foo
@@ -32,9 +32,9 @@ Foo[Int]().foo()
 # Will test a struct with trait and a multiline declaration
 struct \
   Bar(RegisterPassable):
-  fn __init__(out self):
+  def __init__(out self):
     return
-  fn bar(self):
+  def bar(self):
     print("called bar")
 
 # Will test variable persistence by using `bar` in a later expression
@@ -44,7 +44,7 @@ var bar = Bar()
 bar.bar()
 
 # Will test a multiline declaration for a function
-fn foo(x
+def foo(x
 : Int
 ) -> Int       :
   print(x * x)
@@ -55,7 +55,7 @@ foo(420)
 
 # Will test a function with a decorator
 @always_inline
-fn zaz():
+def zaz():
   print("zaz")
 
 # CHECK: zaz
@@ -81,6 +81,6 @@ comptime unary_fn_type = __mlir_type[
 ]
 
 # CHECK-NOT: error
-fn using_alias(callback: unary_fn_type):
+def using_alias(callback: unary_fn_type):
   pass
 

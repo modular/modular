@@ -5,5 +5,5 @@
 # ===----------------------------------------------------------------------=== #
 
 # @expected-note @below {{'Foo' declared here}}
-fn Foo():
+def Foo():
     pass

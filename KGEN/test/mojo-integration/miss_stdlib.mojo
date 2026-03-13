@@ -9,9 +9,9 @@
 
 
 # CHECK: unable to locate module 'std'
-# CHECK: fn baz(ignore: Bool):
+# CHECK: def baz(ignore: Bool):
 # CHECK: ^
 # CHECK: 'std' is required for all normal mojo compiles.
 # CHECK: If you see this either:
-fn baz(ignore: Bool):
+def baz(ignore: Bool):
     pass

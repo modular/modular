@@ -34,7 +34,7 @@
 # CHECK-NEXT:      %inside_else = lit.var.decl "inside_else"
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    }
-fn test_elif_chain(a: Bool, b: Int, c: Bool, d: Int) -> Bool:
+def test_elif_chain(a: Bool, b: Int, c: Bool, d: Int) -> Bool:
     if a:
         var inside_a: Int
     elif b == d:
@@ -47,7 +47,7 @@ fn test_elif_chain(a: Bool, b: Int, c: Bool, d: Int) -> Bool:
 
 
 # CHECK-LABEL: lit.fn @"test_constant
-fn test_constant(a: Bool) -> Bool:
+def test_constant(a: Bool) -> Bool:
     # CHECK: [[FOUR:%.*]] = kgen.param.constant{{.*}}4
     # CHECK-NEXT: store [[FOUR]], %z
     var z: Int = 4
@@ -66,7 +66,7 @@ fn test_constant(a: Bool) -> Bool:
 
 
 # CHECK-LABEL: lit.fn @"test_if_nested
-fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
+def test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     # CHECK-NEXT: hlcf.elif {
     # CHECK-NEXT:   %0 = lit.call {{.*}}@"__mlir_i1__{{.*}}"(%a)
     # CHECK-NEXT:   hlcf.elif.yield %0
@@ -111,7 +111,7 @@ fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
 # [Mojo] Can't have try inside else branch
 # https://github.com/modularml/modular/issues/25305
 # CHECK-LABEL: lit.fn @"if_try
-fn if_try(p: Bool):
+def if_try(p: Bool):
     # CHECK:      hlcf.elif {
     # CHECK-NEXT:   [[TEST_P:%*.]] = lit.call {{.*}}@"__mlir_i1__{{.*}}"(%p)
     # CHECK-NEXT:   hlcf.elif.yield [[TEST_P]]
@@ -148,14 +148,14 @@ fn if_try(p: Bool):
 
 
 # CHECK-LABEL: lit.fn @"testCondAsArg
-fn testCondAsArg(exit_early: __mlir_type.i1):
+def testCondAsArg(exit_early: __mlir_type.i1):
     # CHECK: hlcf.elif
     if exit_early:
         return
 
 
 # CHECK-LABEL: lit.fn @"constantTrue
-fn constantTrue(cond: Bool, x: Int, y: Int) -> Int:
+def constantTrue(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK-NEXT: hlcf.elif {
     # CHECK-NEXT:  %0 = kgen.param.constant: i1 = <{{.*}}1{{.*}}>
     # CHECK-NEXT:  hlcf.elif.yield %0
@@ -170,7 +170,7 @@ fn constantTrue(cond: Bool, x: Int, y: Int) -> Int:
 
 
 # CHECK-LABEL: lit.fn @"constantFalse
-fn constantFalse(cond: Bool, x: Int, y: Int) -> Int:
+def constantFalse(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK:      hlcf.elif {
     # CHECK-NEXT:   %0 = lit.call {{.*}}@"__mlir_i1__{{.*}}"(%cond)
     # CHECK-NEXT:   hlcf.elif.yield %0
@@ -226,7 +226,7 @@ fn constantFalse(cond: Bool, x: Int, y: Int) -> Int:
 # CHECK-NEXT:    kgen.param.constant: !Int = <{2}>
 # CHECK-NEXT:    lit.ref.store
 # CHECK-NEXT:    lit.loop.yield
-fn test_while(a: Bool, b: Bool) -> Bool:
+def test_while(a: Bool, b: Bool) -> Bool:
     var inside_a: Int
     var inside_b: Int
     var inside_else: Int
@@ -325,21 +325,21 @@ def `pass`() raises:
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.fn @"return_impl_convert
-fn return_impl_convert() -> Int:
+def return_impl_convert() -> Int:
     # CHECK: %0 = kgen{{.*}}{4}
     # CHECK: lit.return %0
     return 4  # Implicit conversion from literal to Int
 
 
 # CHECK-LABEL: lit.fn @"return_new_line
-fn return_new_line() -> Int:
+def return_new_line() -> Int:
     # CHECK: %0 = kgen{{.*}}{17}
     return
         17  # Weird indentation should be fine
 
 
 # CHECK-LABEL: lit.fn @"return_impl_convert_raises
-fn return_impl_convert_raises() raises -> Int:
+def return_impl_convert_raises() raises -> Int:
     # CHECK: %0 = kgen{{.*}}{4}
     # CHECK-NEXT: lit.ref.store %0, %__result__
     # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
@@ -362,7 +362,7 @@ fn return_impl_convert_raises() raises -> Int:
 # CHECK-NEXT:   lit.return %none :  !kgen.none
 # CHECK-NEXT:   lit.end_fn
 # CHECK-NEXT: }
-fn test_simple(a: Bool):
+def test_simple(a: Bool):
     while a:
         pass
 
@@ -373,18 +373,18 @@ fn test_simple(a: Bool):
 
 # This iterator returns elements by value.
 struct ValueIter:
-    fn __init__(out self): pass
-    fn __next__(mut self) raises StopIteration -> Int: return 0
+    def __init__(out self): pass
+    def __next__(mut self) raises StopIteration -> Int: return 0
 
 struct ListValueIter:
-    fn __init__(out self): pass
-    fn __iter__(self) -> ValueIter: return ValueIter()
+    def __init__(out self): pass
+    def __iter__(self) -> ValueIter: return ValueIter()
 
-fn use(value: Int): pass
+def use(value: Int): pass
 
 
 # CHECK-LABEL: lit.fn @"for_range_loop
-fn for_range_loop():
+def for_range_loop():
     var value_iter_list = ListValueIter()
 
     # CHECK: %$ITER = lit.var.decl "$ITER" synth
@@ -417,16 +417,16 @@ fn for_range_loop():
 # of the list.
 struct RefIter[list_mutability: Bool, //,
                list_origin: Origin[mut=list_mutability]]:
-    fn __init__(out self): pass
-    fn __next__(mut self) raises StopIteration -> ref [Self.list_origin] Int: pass
+    def __init__(out self): pass
+    def __next__(mut self) raises StopIteration -> ref [Self.list_origin] Int: pass
 
 struct ListWithRefIter:
-    fn __init__(out self): pass
-    fn __iter__(ref self) -> RefIter[origin_of(self)]:
+    def __init__(out self): pass
+    def __iter__(ref self) -> RefIter[origin_of(self)]:
         return RefIter[origin_of(self)]()
 
 # CHECK-LABEL: lit.fn @"for_range_ref_loop
-fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
+def for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
                       mut mut_list_ref_iter: ListWithRefIter):
 
     # CHECK-NEXT: %$ITER = lit.var.decl "$ITER" synth
@@ -463,17 +463,17 @@ struct IterRange(Iterator, ImplicitlyCopyable):
 
     var value: Int
 
-    fn __iter__(self) -> Self:
+    def __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self) raises StopIteration -> Int:
+    def __next__(mut self) raises StopIteration -> Int:
         if self.value <= 0:
             raise StopIteration()
         return self.value
 
 
 # CHECK-LABEL: @"induction_var_scope()"
-fn induction_var_scope():
+def induction_var_scope():
     # CHECK: lit.loop {
     for item in IterRange(0):
         # CHECK: __next__
@@ -509,7 +509,7 @@ def induction_var_scope_def() raises:
 
 # CHECK-LABEL: lit.fn @"weird_llvm_dialect_op
 # https://github.com/modular/mojo/issues/3805
-fn weird_llvm_dialect_op():
+def weird_llvm_dialect_op():
     # CHECK: %0 = llvm.mlir.zero : !llvm.ptr
    x = __mlir_op.`llvm.mlir.zero`[_type = __mlir_type.`!llvm.ptr<0>`]()
 
@@ -520,7 +520,7 @@ fn weird_llvm_dialect_op():
 
 # struct Iterable:
 
-# fn test_for(iterable: Iterable):
+# def test_for(iterable: Iterable):
 #  var result = 0
 #  for i in iterable:
 #    result += i

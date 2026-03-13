@@ -15,18 +15,18 @@ from std.utils._select import _select_register_value as select
 
 
 struct IntT[x: Int](ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
 
 struct BoolT[x: Bool](ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
 
@@ -36,7 +36,7 @@ struct BoolT[x: Bool](ImplicitlyCopyable):
 
 
 # CHECK-LABEL: lit.fn @"fold_select_op
-fn fold_select_op[B: Int = 4, C: Int = 3]() -> IntT[B]:
+def fold_select_op[B: Int = 4, C: Int = 3]() -> IntT[B]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#IntT <:!Int B>>, mut *"a`1">
     var a = IntT[select(True, B, C)]()
     return a
@@ -48,7 +48,7 @@ fn fold_select_op[B: Int = 4, C: Int = 3]() -> IntT[B]:
 
 
 # CHECK-LABEL: lit.fn @"fold_bool_init
-fn fold_bool_init() -> BoolT[True]:
+def fold_bool_init() -> BoolT[True]:
     comptime T = Bool(
         mlir_value=__mlir_attr.`#pop.simd<true> : !pop.scalar<bool>`
     )
@@ -68,10 +68,10 @@ fn fold_bool_init() -> BoolT[True]:
 
 
 struct UInt8T[x: UInt8._mlir_type](ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
 
@@ -79,7 +79,7 @@ comptime UI8_139 = __mlir_attr.`#pop.simd<139> : !pop.scalar<ui8>`
 
 
 # CHECK-LABEL: lit.fn @"fold_dtype_as_ui8
-fn fold_dtype_as_ui8() -> UInt8T[UI8_139]:
+def fold_dtype_as_ui8() -> UInt8T[UI8_139]:
     comptime A: DType = DType.int32
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#UInt8T <:scalar<ui8> {{.*}}, 139)>>, mut *"a
     var a = UInt8T[A._as_ui8()]()
@@ -87,15 +87,15 @@ fn fold_dtype_as_ui8() -> UInt8T[UI8_139]:
 
 
 struct DTypeT[x: DType](ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
 
 # CHECK-LABEL: lit.fn @"fold_dtype_from_ui8
-fn fold_dtype_from_ui8() -> DTypeT[DType.int32]:
+def fold_dtype_from_ui8() -> DTypeT[DType.int32]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#DTypeT <:!DType {:dtype si32}>>, mut *"a
     var a = DTypeT[DType._from_ui8(UI8_139)]()
     return a
@@ -106,13 +106,13 @@ fn fold_dtype_from_ui8() -> DTypeT[DType.int32]:
 ##===----------------------------------------------------------------------===##
 
 
-fn fold_constrained_func[x: Int]() -> IntT[x]:
+def fold_constrained_func[x: Int]() -> IntT[x]:
     comptime assert False, "this is being ignored anyway"
     return IntT[x]()
 
 
 # CHECK-LABEL: lit.fn @"fold_constrained()
-fn fold_constrained() -> IntT[1]:
+def fold_constrained() -> IntT[1]:
     return fold_constrained_func[1]()
 
 
@@ -122,12 +122,12 @@ fn fold_constrained() -> IntT[1]:
 
 
 @always_inline("builtin")
-fn comptime_statements() -> Bool:
+def comptime_statements() -> Bool:
     comptime t = True
     comptime s = not t
     return s
 
 
-fn fold_comptime_statements() -> BoolT[False]:
+def fold_comptime_statements() -> BoolT[False]:
     var b = BoolT[comptime_statements()]()
     return b

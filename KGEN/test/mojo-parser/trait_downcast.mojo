@@ -15,19 +15,19 @@
 
 
 trait ToCastInto:
-    fn test(self):
+    def test(self):
         ...
 
 
 # CHECK-LABEL: lit.fn @"trait_downcast_reg_type
-fn trait_downcast_reg_type[T: TrivialRegisterPassable](x: T):
+def trait_downcast_reg_type[T: TrivialRegisterPassable](x: T):
     # CHECK: lit.var.decl "y" var : !lit.ref<:!ToCastInto downcast(:!AnyType !kgen.param<:!TrivialRegisterPassable T>), mut *"y`1">
     var y = trait_downcast[ToCastInto](x)
     y.test()
 
 
 # CHECK-LABEL: lit.fn @"trait_downcast_anytype
-fn trait_downcast_anytype[T: AnyType](x: T):
+def trait_downcast_anytype[T: AnyType](x: T):
     # CHECK = lit.var.decl "y" ref : !lit.ref<!lit.ref<:!ToCastInto downcast(:!AnyType T), {{.*}}">, {{.*}}">
     ref y = trait_downcast[ToCastInto](x)
     y.test()

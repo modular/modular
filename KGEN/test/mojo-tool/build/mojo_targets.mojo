@@ -25,5 +25,5 @@
 # CHECK_LINUX_AARCH64: "target-features"="+aes,+bf16,+ccdp,+ccidx,+complxnum,+crc,+dotprod,+fp-armv8,+fp16fml,+fullfp16,+i8mm,+jsconv,+lse,+neon,+pauth,+perfmon,+rand,+ras,+rcpc,+rdm,+sha2,+sha3,+sm4,+spe,+ssbs,+sve"
 
 
-fn main():
+def main():
     pass

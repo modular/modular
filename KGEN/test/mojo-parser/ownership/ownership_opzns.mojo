@@ -15,41 +15,41 @@
 struct MemExample(ImplicitlyCopyable):
     var x: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.x = 42
         pass
 
-    fn noop(self):
+    def noop(self):
         pass
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         self.x = take.x
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.x = copy.x
 
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         return True
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 
 # CHECK-LABEL: lit.struct.decl @RegExample
 struct RegExample(ImplicitlyCopyable, RegisterPassable):
-    fn __init__(out self):
+    def __init__(out self):
         return
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         return
 
-    fn noop(self):
+    def noop(self):
         pass
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
-    fn mutate(mut self):
+    def mutate(mut self):
         pass
 
 
@@ -58,11 +58,11 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
 struct MemoryUniqueMovable(Movable):
     var state: MemExample
 
-    fn __init__(out self):
+    def __init__(out self):
         self.state = MemExample()
 
     # CHECK: lit.fn @"__init__{{.*}}(*, %take:
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         # Mercilessly steal 'take's state which could be interesting.
 
         # CHECK-NEXT: %0 = lit.ref.struct.ger %self[state]
@@ -81,22 +81,22 @@ struct MemoryUniqueMovable(Movable):
 struct MemoryMovableCopyable(ImplicitlyCopyable):
     var state: MemExample
 
-    fn __init__(out self):
+    def __init__(out self):
         self.state = MemExample()
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         # Mercilessly steal 'take's state which could be interesting.
         self.state = take.state^
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.state = copy.state
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 
 # CHECK-LABEL: lit.fn @"result_mem1
-fn result_mem1(var a: MemoryUniqueMovable) -> MemoryUniqueMovable:
+def result_mem1(var a: MemoryUniqueMovable) -> MemoryUniqueMovable:
     # CHECK-NEXT: lit.ownership.use %a
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}take"
     # CHECK-NEXT: kgen.param.constant: none
@@ -105,7 +105,7 @@ fn result_mem1(var a: MemoryUniqueMovable) -> MemoryUniqueMovable:
 
 
 # CHECK-LABEL: lit.fn @"result_mem3
-fn result_mem3(var a: MemoryMovableCopyable) -> MemoryMovableCopyable:
+def result_mem3(var a: MemoryMovableCopyable) -> MemoryMovableCopyable:
     # CHECK-NEXT: lit.ownership.use %a
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}take"{{.*}} deinit_mem{{.*}}byref_result
     # CHECK-NEXT: kgen.param.constant: none
@@ -114,7 +114,7 @@ fn result_mem3(var a: MemoryMovableCopyable) -> MemoryMovableCopyable:
 
 
 # CHECK-LABEL: lit.fn @"self_copy
-fn self_copy(mut x: MemoryMovableCopyable):
+def self_copy(mut x: MemoryMovableCopyable):
     # Mojo introduces a temporary to avoid exclusivity error.
     # CHECK: %__call_result_tmp__ = lit.var.decl
     # CHECK: lit.call {{.*}}__init__{{.*}}take"
@@ -123,26 +123,26 @@ fn self_copy(mut x: MemoryMovableCopyable):
 
 
 struct RegUniqueMovable(RegisterPassable):
-    fn __init__(out self):
+    def __init__(out self):
         return
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 
 struct RegMovableCopyable(ImplicitlyCopyable, RegisterPassable):
-    fn __init__(out self):
+    def __init__(out self):
         return
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         return
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 
 # CHECK-LABEL: lit.fn @"result_reg1
-fn result_reg1(var a: RegUniqueMovable) -> RegUniqueMovable:
+def result_reg1(var a: RegUniqueMovable) -> RegUniqueMovable:
     # CHECK-NEXT: lit.ownership.use %a
     # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume %a
     # CHECK-NEXT: kgen.return [[AVAL]]
@@ -150,14 +150,14 @@ fn result_reg1(var a: RegUniqueMovable) -> RegUniqueMovable:
 
 
 # CHECK-LABEL: lit.fn @"result_reg2
-fn result_reg2(var a: RegMovableCopyable) -> RegMovableCopyable:
+def result_reg2(var a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume %a
     # CHECK-NEXT: kgen.return [[A]]
     return a
 
 
 # CHECK-LABEL: lit.fn @"result_reg3
-fn result_reg3(var a: RegMovableCopyable) -> RegMovableCopyable:
+def result_reg3(var a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: lit.ownership.use %a
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume %a
     # CHECK-NEXT: kgen.return [[A]]
@@ -165,7 +165,7 @@ fn result_reg3(var a: RegMovableCopyable) -> RegMovableCopyable:
 
 
 # CHECK-LABEL: lit.fn @"result_reg4
-fn result_reg4(var a: RegMovableCopyable) -> RegMovableCopyable:
+def result_reg4(var a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: lit.ownership.use %a
     # CHECK-NEXT: %x = lit.var.decl "x"
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume %a
@@ -180,12 +180,12 @@ fn result_reg4(var a: RegMovableCopyable) -> RegMovableCopyable:
     return x^
 
 
-fn takeOwnedInt(var x: Int):
+def takeOwnedInt(var x: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"passFieldToOwnedInt
-fn passFieldToOwnedInt(var a: MemExample):
+def passFieldToOwnedInt(var a: MemExample):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %a[x]
     # CHECK-NEXT: %1 = lit.ref.load %0
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
@@ -204,21 +204,21 @@ struct MyGenericType[Type: TrivialRegisterPassable]:
     var value: Self.Type
 
     @implicit
-    fn __init__(out self, v: Self.Type):
+    def __init__(out self, v: Self.Type):
         self.value = v
 
 
-fn takeTwo(var x: RegExample, var y: RegExample):
+def takeTwo(var x: RegExample, var y: RegExample):
     pass
 
 
-fn takeTwo(var x: MemExample, var y: MemExample):
+def takeTwo(var x: MemExample, var y: MemExample):
     pass
 
 
 # Check that copies that are immediately destroyed are elided.
 # CHECK-LABEL: lit.fn @"optimizeCopyElision
-fn optimizeCopyElision():
+def optimizeCopyElision():
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
     # CHECK: %a = lit.var.decl "a"
     # CHECK-NEXT: lifetime.start %a
@@ -266,12 +266,12 @@ fn optimizeCopyElision():
     # CHECK-NEXT: kgen.param.constant: none
 
 
-fn consume(var value: MemExample):
+def consume(var value: MemExample):
     pass
 
 
 # CHECK-LABEL: lit.fn @"copyElisionArgument
-fn copyElisionArgument(var value: MemExample):
+def copyElisionArgument(var value: MemExample):
     # CHECK-NEXT: %0 = lit.ref.immut %value
     # CHECK-NEXT: kgen.param.declare
     # CHECK-NEXT: %1 = kgen.rebind %value
@@ -281,7 +281,7 @@ fn copyElisionArgument(var value: MemExample):
 
 
 # CHECK-LABEL: lit.fn @"optimizeCopyToMove
-fn optimizeCopyToMove():
+def optimizeCopyToMove():
     # All the copy ctors should be eliminated in favor of moves.
 
     # CHECK: %m1 = lit.var.decl
@@ -347,7 +347,7 @@ fn optimizeCopyToMove():
 
 # This is an integration test for elideCopyDestroyPair
 # CHECK-LABEL: lit.fn @"optimize_copies
-fn optimize_copies() -> MemExample:
+def optimize_copies() -> MemExample:
     # CHECK: lit.call {{.*}}__init__{{.*}}(%x
     var x = MemExample()
 
@@ -370,7 +370,7 @@ fn optimize_copies() -> MemExample:
 
 # CHECK-LABEL: lit.fn @"optimize_transfers
 # Issue #34138
-fn optimize_transfers() -> MemExample:
+def optimize_transfers() -> MemExample:
     # CHECK: lit.call {{.*}}__init__{{.*}}(%x
     var x = MemExample()
 

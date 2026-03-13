@@ -19,30 +19,30 @@ struct s9: pass
 struct s10: pass
 struct s11: pass
 
-fn go10(x: s1): pass
-fn go10(x: s2): pass
-fn go10(x: s3): pass
-fn go10(x: s4): pass
-fn go10(x: s5): pass
-fn go10(x: s6): pass
-fn go10(x: s7): pass
-fn go10(x: s8): pass
-fn go10(x: s9): pass
-fn go10(x: s10): pass
+def go10(x: s1): pass
+def go10(x: s2): pass
+def go10(x: s3): pass
+def go10(x: s4): pass
+def go10(x: s5): pass
+def go10(x: s6): pass
+def go10(x: s7): pass
+def go10(x: s8): pass
+def go10(x: s9): pass
+def go10(x: s10): pass
 
-fn go11(x: s1): pass
-fn go11(x: s2): pass
-fn go11(x: s3): pass
-fn go11(x: s4): pass
-fn go11(x: s5): pass
-fn go11(x: s6): pass
-fn go11(x: s7): pass
-fn go11(x: s8): pass
-fn go11(x: s9): pass
-fn go11(x: s10): pass
-fn go11(x: s11): pass
+def go11(x: s1): pass
+def go11(x: s2): pass
+def go11(x: s3): pass
+def go11(x: s4): pass
+def go11(x: s5): pass
+def go11(x: s6): pass
+def go11(x: s7): pass
+def go11(x: s8): pass
+def go11(x: s9): pass
+def go11(x: s10): pass
+def go11(x: s11): pass
 
-fn foo():
+def foo():
   # CHECK: 8 more notes omitted
   go10(__mlir_attr.`0 : index`)
   # CHECK: 9 more notes omitted

@@ -14,22 +14,22 @@ from std.sys import get_defined_bool
 
 # expected-error @+2{{function instantiation failed}}
 @export
-fn entry_method():
+def entry_method():
     foo()  # expected-note {{call expansion failed}}
 
 
 @always_inline("nodebug")
-fn foo():
+def foo():
     bar()  # expected-note {{call expansion failed}}
 
 
 @always_inline("nodebug")
-fn bar():
+def bar():
     baz()  # expected-note {{call expansion failed}}
 
 
 @always_inline("nodebug")
-fn baz():
+def baz():
     __mlir_op.`kgen.param.assert`[
         cond=__mlir_attr.`false`, message="oops".value
     ]()  # expected-note {{constraint failed}}
@@ -37,18 +37,18 @@ fn baz():
 
 # expected-error @+2{{function instantiation failed}}
 @export
-fn test_no_params():
+def test_no_params():
     no_parameters()  # expected-note {{call expansion failed}}
 
 
 # expected-note @+2{{function instantiation failed}}
 @no_inline
-fn no_parameters():
+def no_parameters():
     parametric[1]()  # expected-note {{call expansion failed}}
 
 
 @no_inline
-fn parametric[param: Int]():  # expected-note {{function instantiation failed}}
+def parametric[param: Int]():  # expected-note {{function instantiation failed}}
     comptime assert (  # expected-note {{constraint failed: param must be 2}}
         param == 2
     ), "param must be 2"
@@ -56,7 +56,7 @@ fn parametric[param: Int]():  # expected-note {{function instantiation failed}}
 
 # This is copied so the note ends up in this file.
 @always_inline("nodebug")
-fn constrained[cond: Bool, msg: StaticString]():
+def constrained[cond: Bool, msg: StaticString]():
     comptime msg_literal = _get_kgen_string[msg]()
     __mlir_op.`kgen.param.assert`[
         cond=cond.__mlir_i1__(), message=msg_literal
@@ -65,29 +65,29 @@ fn constrained[cond: Bool, msg: StaticString]():
 
 # expected-error @+2{{function instantiation failed}}
 @export
-fn test_comptime_assert():
+def test_comptime_assert():
     parametric_assert[1]()  # expected-note {{call expansion failed}}
 
 
 # expected-note @+2{{function instantiation failed}}
 @no_inline
-fn parametric_assert[param: Int]():
+def parametric_assert[param: Int]():
     # expected-note @below {{constraint failed: param must be 2}}
     comptime assert param == 2, "param must be 2"
 
 
 # This creates recursive cycles: foo[D] -> bar[D] -> foo[D] and foo[D] -> baz[D] -> foo[D]
-fn bar[D: Int]() -> Int:
+def bar[D: Int]() -> Int:
     comptime x = foo[D]()
     return x
 
 
-fn baz[D: Int]() -> Int:
+def baz[D: Int]() -> Int:
     comptime x = foo[D]()
     return x
 
 
-fn foo[D: Int]() -> Int:
+def foo[D: Int]() -> Int:
     var x = bar[D]()
     # CHECK-RECURSION2: call expansion failed with parameter value(s): ("D": 2)
     var y = baz[D]()
@@ -96,7 +96,7 @@ fn foo[D: Int]() -> Int:
     return y
 
 
-fn test_recursion2():
+def test_recursion2():
     comptime run_test = get_defined_bool["TEST_RECURSION2", False]()
 
     comptime if run_test:
@@ -108,18 +108,18 @@ fn test_recursion2():
 
 
 # This creates a recursive cycle: foo1[D] -> bar1[D] -> foo1[D]
-fn bar1[D: Int]() -> Int:
+def bar1[D: Int]() -> Int:
     comptime x = foo1[D]()
     return x
 
 
-fn foo1[D: Int]() -> Int:
+def foo1[D: Int]() -> Int:
     # CHECK-RECURSION3: call expansion failed with parameter value(s): ("D": 1)
     var x = bar1[D]()
     return x
 
 
-fn test_recursion3():
+def test_recursion3():
     comptime run_test = get_defined_bool["TEST_RECURSION3", False]()
 
     comptime if run_test:
@@ -130,6 +130,6 @@ fn test_recursion3():
         # CHECK-RECURSION3: recursively instantiated through here
 
 
-fn main():
+def main():
     test_recursion2()
     test_recursion3()

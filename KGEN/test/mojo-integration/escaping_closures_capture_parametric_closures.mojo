@@ -6,7 +6,7 @@
 # RUN: kgen -elaborate -O0 %s -S | FileCheck %s
 
 
-fn use(lhs: Int, rhs: Int) -> Int:
+def use(lhs: Int, rhs: Int) -> Int:
     return rhs
 
 
@@ -37,35 +37,35 @@ fn use(lhs: Int, rhs: Int) -> Int:
 
 
 @no_inline
-fn takeClosure(writer: fn(v: Int) escaping -> Int, value: Int):
+def takeClosure(writer: def(v: Int) escaping -> Int, value: Int):
     _ = writer(value)
 
 
 @no_inline
-fn makeEscapingClosure[
-    parametricClosure: fn[x: Int](v: Int) capturing -> Int
-](x: Int) -> fn(v: Int) escaping -> Int:
-    fn writer(v: Int) -> Int:
+def makeEscapingClosure[
+    parametricClosure: def[x: Int](v: Int) capturing -> Int
+](x: Int) -> def(v: Int) escaping -> Int:
+    def writer(v: Int) -> Int:
         return parametricClosure[2](use(x, v))
 
     return writer
 
 
 @export
-fn top(a: Int, b: Int):
+def top(a: Int, b: Int):
     var x = use(a, b)
     var y = use(b, a)
 
     @no_inline
     @__copy_capture(x)
     @parameter
-    fn writer(v: Int) -> Int:
+    def writer(v: Int) -> Int:
         return use(x, v)
 
     @no_inline
     @__copy_capture(y)
     @parameter
-    fn writer2[x: Int](v: Int) -> Int:
+    def writer2[x: Int](v: Int) -> Int:
         return use(y, writer(v))
 
     var f = makeEscapingClosure[writer2](y)

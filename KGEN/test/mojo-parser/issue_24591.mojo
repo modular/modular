@@ -10,7 +10,7 @@ comptime NoneType = __mlir_type.`!kgen.none`
 
 struct Optional[T: __mlir_type.`!kgen.type`](RegisterPassable):
     @implicit
-    fn __init__(out self, none: NoneType):
+    def __init__(out self, none: NoneType):
         pass
 
 
@@ -22,5 +22,5 @@ struct Param[x: Int](RegisterPassable):
 # struct so we can match with 0.
 # CHECK: "lit.struct.decl"() {{.*}} convention = 0 :
 # CHECK-SAME: signature = !lit.type_signature<"x": !Int, "y": !lit.struct<#Optional{{.*}}!lit.generator<<"y": !Int>() -> !lit.struct<#Param <:!Int *(1,0)>>
-struct Thing[x: Int, y: Optional[fn[y: Int]() -> Param[x]] = None]:
+struct Thing[x: Int, y: Optional[def[y: Int]() -> Param[x]] = None]:
     comptime z = 1

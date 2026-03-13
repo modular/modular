@@ -11,14 +11,14 @@ from std.collections import List
 # CHECK: "name": "foo"
 # CHECK: "type": "List"
 # CHECK: "signature": "foo(x: List[Int])"
-fn foo(x: List[Int]):
+def foo(x: List[Int]):
     pass
 
 
 # CHECK: "name": "bar"
 # CHECK: "type": "List"
 # CHECK: "signature": "bar[x: List[Int]]()"
-fn bar[x: List[Int]]():
+def bar[x: List[Int]]():
     pass
 
 
@@ -27,14 +27,14 @@ fn bar[x: List[Int]]():
 # CHECK:    "type": "List"
 # CHECK: }
 # CHECK: "signature": "baz() -> List[Int]"
-fn baz() -> List[Int]:
+def baz() -> List[Int]:
     return List[Int]()
 
 
 # CHECK: "name": "higher_order"
 # CHECK: "type": "fn(List[Int]) -> Int"
 # CHECK: "signature": "higher_order(f: fn(List[Int]) -> Int) -> fn(List[Int]) -> Int"
-fn higher_order(
+def higher_order(
     f: fn(List[Int]) -> Int,
 ) -> fn(List[Int]) -> Int:
     return f

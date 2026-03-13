@@ -19,7 +19,7 @@ from test_package_trait.module import (
 
 # CHECK: lit.struct.decl @MyType({{.*}}PackageTrait
 struct MyType(PackageTrait):
-    fn method(self):
+    def method(self):
         pass
 
     # CHECK: kgen.conformance {{.*}}::PackageTrait
@@ -28,19 +28,19 @@ struct MyType(PackageTrait):
 
 # CHECK: lit.struct.decl @MyRegType({{.*}}PackageTrait
 struct MyRegType(PackageTrait, RegisterPassable):
-    fn method(self):
+    def method(self):
         pass
 
     # CHECK: kgen.conformance {{.*}}::PackageTrait
     # CHECK: kgen.witness "method{{.*}}" : !lit.generator<[1]("self": !lit.ref<!MyRegType, imm *[0,0]> read_mem) -> !kgen.none> = {{.*}}::@MyRegType::@"method
 
 
-fn bind_trait[T: PackageTrait]():
+def bind_trait[T: PackageTrait]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"test
-fn test():
+def test():
     # CHECK-NEXT: <:!PackageTrait !MyType>
     bind_trait[MyType]()
     # CHECK-NEXT: <:!PackageTrait !MyRegType>
@@ -54,22 +54,22 @@ fn test():
     contains_thunk_ref()
 
 
-fn use_trait[T: PackageTrait](x: UseTrait, y: T):
+def use_trait[T: PackageTrait](x: UseTrait, y: T):
     y.method()
 
 
 # This function calls a closure whose signature matches a closure uses by a
 # function in the test_package_trait package. The signatures of these closures
 # must match so that the closure trait is first loaded from the package.
-fn my_vectorize[
-    func: fn[x: Int, y: Int, z: Int](idx: Int) unified -> None
+def my_vectorize[
+    func: def[x: Int, y: Int, z: Int](idx: Int) unified -> None
 ](closure: func):
     closure[0, 1, 1](0)
 
 
 # CHECK-LABEL: lit.fn @"my_test
-fn my_test():
-    fn foo[width: Int, x: Int, y: Int](idx: Int) unified {var}:
+def my_test():
+    def foo[width: Int, x: Int, y: Int](idx: Int) unified {var}:
         print(width + x + y)
 
     my_vectorize(foo)

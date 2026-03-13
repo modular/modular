@@ -11,18 +11,18 @@ from std.compile import compile_info
 from std.sys import argv, size_of
 
 
-fn get_type(dtype: DType) -> DType:
+def get_type(dtype: DType) -> DType:
     return dtype
 
 
-fn compiled_fn[dtype: DType](M: SIMD[get_type(dtype), 4]) -> Int:
+def compiled_fn[dtype: DType](M: SIMD[get_type(dtype), 4]) -> Int:
     comptime b = size_of[get_type(dtype)]()
     return b + Int(M[0])
 
 
 def main() raises:
     comptime myCompiledFn = compiled_fn[DType.uint32]
-    # compile myCompileFn into a shared object binary
+    # compile myCompiledFn into a shared object binary
     var myShared = compile_info[myCompiledFn, emission_kind="object"]()
 
     idx = 0

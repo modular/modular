@@ -7,7 +7,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-fn diverge_comptime(i: Int) -> Int:
+def diverge_comptime(i: Int) -> Int:
     var t = 0
     # Intentionally have then and else branches mismatch logic for testing.
     if __is_run_in_comptime_interpreter:
@@ -18,7 +18,7 @@ fn diverge_comptime(i: Int) -> Int:
     return t + 1
 
 
-fn test_is_run_in_comptime_interpreter():
+def test_is_run_in_comptime_interpreter():
     # CHECK-LABEL: testing test_is_run_in_comptime_interpreter
     print("testing test_is_run_in_comptime_interpreter")
 
@@ -31,7 +31,7 @@ fn test_is_run_in_comptime_interpreter():
     print("runtime value:", b)
 
 
-fn might_throw(cond: Bool) -> Int:
+def might_throw(cond: Bool) -> Int:
     var result = 0
     try:
         if cond:
@@ -50,7 +50,7 @@ fn might_throw(cond: Bool) -> Int:
 
 
 # MOCO-246: Test EH at comptime.
-fn test_exception_handling():
+def test_exception_handling():
     # CHECK-LABEL: test_exception_handling
     print("test_exception_handling")
 
@@ -69,6 +69,6 @@ fn test_exception_handling():
     print("run value:", might_throw(False))
 
 
-fn main():
+def main():
     test_is_run_in_comptime_interpreter()
     test_exception_handling()

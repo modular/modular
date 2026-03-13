@@ -20,7 +20,7 @@
 # YAML: ...
 
 
-fn no_fixits_needed():
+def no_fixits_needed():
     pass
 
 

@@ -24,16 +24,16 @@ struct SomeVA[*elt_types: AnyType]:
 
 
 # @expected-note @below{{function declared here}}
-fn all_copyable[*elt_type: Copyable](t: SomeVA[*elt_type]):
+def all_copyable[*elt_type: Copyable](t: SomeVA[*elt_type]):
     pass
 
 
 # @expected-note @below{{function declared here}}
-fn all_int[*elt_type: type_of(Int)](t: SomeVA[*elt_type]):
+def all_int[*elt_type: type_of(Int)](t: SomeVA[*elt_type]):
     pass
 
 
-fn foo():
+def foo():
     # @expected-error @below{{invalid call to 'all_copyable': value passed to 't' cannot be converted from 'SomeVA[SomeCopyable, SomeNonCopyable]' to 'SomeVA[elt_type]'}}
     # @expected-note @below{{.elt_types of left value is 'SomeCopyable, SomeNonCopyable' but the right value is 'elt_type'}}
     all_copyable(SomeVA[SomeCopyable, SomeNonCopyable]())
@@ -50,7 +50,7 @@ struct ParamSubst[
     pass
 
 
-fn main():
+def main():
     # We do not handle conversion between variadic of values at the moment (maybe we should?).
     # expected-error @below {{'ParamSubst' parameter 'shape' has 'Variadic[Int]' type, but value has type 'Variadic[__mlir_type.index]'}}
     var _: ParamSubst[

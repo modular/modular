@@ -7,7 +7,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 
-fn main():
+def main():
     comptime a, (b, c) = 1, (2, 3)
     # CHECK:      1
     # CHECK-NEXT: 2

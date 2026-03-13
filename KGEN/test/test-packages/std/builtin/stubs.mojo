@@ -43,17 +43,17 @@ struct Origin[
     mut: Bool = False, _mlir_origin: _lit_origin_type_of_mut[mut], //
 ](TrivialRegisterPassable):
     @always_inline("builtin")
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @always_inline("builtin")
     @implicit
-    fn __init__(v: Origin) -> Origin[mut=False, _mlir_origin=v._mlir_origin]:
+    def __init__(v: Origin) -> Origin[mut=False, _mlir_origin=v._mlir_origin]:
         return {}
 
     @always_inline("builtin")
     @staticmethod
-    fn unsafe_mut_cast[
+    def unsafe_mut_cast[
         dest_mut: Bool
     ]() -> Origin[
         _mlir_origin=__mlir_attr[
@@ -82,7 +82,7 @@ trait Iterable:
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         ...
 
 
@@ -99,21 +99,21 @@ comptime KeyElement = Copyable  # & Hashable & Equatable
 
 
 struct Error(Copyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @implicit
-    fn __init__(out self, value: StringLiteral):
+    def __init__(out self, value: StringLiteral):
         pass
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
     # A method for testing.
-    fn use(self):
+    def use(self):
         pass
 
 
@@ -126,7 +126,7 @@ struct NoneType(TrivialRegisterPassable):
     # FIXME: Fix representation of None literal to remove this.
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: __mlir_type.`!kgen.none`):
+    def __init__(out self, value: __mlir_type.`!kgen.none`):
         self._value = value
 
 
@@ -144,12 +144,12 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
 
     @stable
     @always_inline("builtin")
-    fn __init__(out self):
+    def __init__(out self):
         """Constructor for any value."""
         pass
 
     @always_inline("builtin")
-    fn __ne__(self, rhs: IntLiteral[_]) -> Bool:
+    def __ne__(self, rhs: IntLiteral[_]) -> Bool:
         return __mlir_attr[
             `#pop<int_literal_cmp<ne `,
             self.value,
@@ -159,7 +159,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         ]
 
     @always_inline("builtin")
-    fn __le__(self, rhs: IntLiteral[_]) -> Bool:
+    def __le__(self, rhs: IntLiteral[_]) -> Bool:
         return __mlir_attr[
             `#pop<int_literal_cmp<le `,
             self.value,
@@ -169,11 +169,11 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         ]
 
     @always_inline("builtin")
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         return self != Self._zero
 
     @always_inline("builtin")
-    fn __mul__(
+    def __mul__(
         self,
         rhs: IntLiteral[_],
         out result: IntLiteral[
@@ -189,7 +189,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         result = type_of(result)()
 
     @always_inline("builtin")
-    fn __sub__(
+    def __sub__(
         self,
         rhs: IntLiteral[_],
         out result: IntLiteral[
@@ -205,15 +205,15 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         result = type_of(result)()
 
     @always_inline("builtin")
-    fn __neg__(self) -> type_of(0 - self):
+    def __neg__(self) -> type_of(0 - self):
         return 0 - self
 
     @always_inline("builtin")
-    fn __pos__(self) -> Self:
+    def __pos__(self) -> Self:
         return self
 
     @always_inline("builtin")
-    fn __pow__(
+    def __pow__(
         self, rhs: IntLiteral[_]
     ) -> IntLiteral[
         __mlir_attr[
@@ -227,7 +227,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __floordiv__(
+    def __floordiv__(
         self, rhs: IntLiteral[_]
     ) -> IntLiteral[
         __mlir_attr[
@@ -241,7 +241,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __xor__(
+    def __xor__(
         self, rhs: IntLiteral[_]
     ) -> IntLiteral[
         __mlir_attr[
@@ -255,7 +255,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __lshift__(
+    def __lshift__(
         self, rhs: IntLiteral[_]
     ) -> IntLiteral[
         __mlir_attr[
@@ -274,12 +274,12 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     TrivialRegisterPassable
 ):
     @always_inline("builtin")
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @always_inline("builtin")
     @implicit
-    fn __init__(
+    def __init__(
         val: IntLiteral[_],
         out result: FloatLiteral[
             __mlir_attr[
@@ -292,11 +292,11 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         result = type_of(result)()
 
     @always_inline("builtin")
-    fn __neg__(self, out result: type_of(self * -1)):
+    def __neg__(self, out result: type_of(self * -1)):
         result = type_of(result)()
 
     @always_inline("builtin")
-    fn __mul__(
+    def __mul__(
         self,
         rhs: FloatLiteral,
         out result: FloatLiteral[
@@ -312,7 +312,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         result = type_of(result)()
 
     @always_inline("builtin")
-    fn __truediv__(
+    def __truediv__(
         self, rhs: FloatLiteral
     ) -> FloatLiteral[
         __mlir_attr[
@@ -331,19 +331,19 @@ struct FloatDyn(TrivialRegisterPassable):
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: __mlir_type.`!pop.scalar<f64>`):
+    def __init__(out self, value: __mlir_type.`!pop.scalar<f64>`):
         self._mlir_value = value
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: FloatLiteral):
+    def __init__(out self, value: FloatLiteral):
         self = __mlir_attr[
             `#pop<float_literal_convert<`, +value.value, `>> : !pop.scalar<f64>`
         ]
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: IntLiteral):
+    def __init__(out self, value: IntLiteral):
         self = FloatLiteral(value)
 
 
@@ -353,20 +353,20 @@ struct Int(Intable, Stringable, TrivialRegisterPassable):
 
     @stable
     @always_inline("builtin")
-    fn __init__(out self):
+    def __init__(out self):
         self._mlir_value = __mlir_op.`index.constant`[
             value=__mlir_attr.`0:index`
         ]()
 
     @stable
     @always_inline("builtin")
-    fn __init__(out self, *, mlir_value: __mlir_type.index):
+    def __init__(out self, *, mlir_value: __mlir_type.index):
         self._mlir_value = mlir_value
 
     @stable
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: IntLiteral[_]):
+    def __init__(out self, value: IntLiteral[_]):
         self._mlir_value = __mlir_attr[
             `#pop.cast_to_builtin<#pop.int_literal_convert<`,
             +value.value,
@@ -374,173 +374,173 @@ struct Int(Intable, Stringable, TrivialRegisterPassable):
         ]
 
     @always_inline("builtin")
-    fn __add__(lhs, rhs: Int) -> Int:
+    def __add__(lhs, rhs: Int) -> Int:
         return Int(
             mlir_value=__mlir_op.`index.add`(lhs._mlir_value, rhs._mlir_value)
         )
 
     @always_inline("builtin")
-    fn __sub__(lhs, rhs: Int) -> Int:
+    def __sub__(lhs, rhs: Int) -> Int:
         return Int(
             mlir_value=__mlir_op.`index.sub`(lhs._mlir_value, rhs._mlir_value)
         )
 
     @always_inline("builtin")
-    fn __mul__(lhs, rhs: Int) -> Int:
+    def __mul__(lhs, rhs: Int) -> Int:
         return Int(
             mlir_value=__mlir_op.`index.mul`(lhs._mlir_value, rhs._mlir_value)
         )
 
     @always_inline("nodebug")
-    fn __iadd__(mut self, rhs: Int):
+    def __iadd__(mut self, rhs: Int):
         self = self + rhs
 
     @always_inline("nodebug")
-    fn __isub__(mut self, rhs: Int):
+    def __isub__(mut self, rhs: Int):
         self = self - rhs
 
     @always_inline("nodebug")
-    fn __ifloordiv__(mut self, rhs: Int):
+    def __ifloordiv__(mut self, rhs: Int):
         self = self // rhs
 
     @always_inline("nodebug")
-    fn __imod__(mut self, rhs: Int):
+    def __imod__(mut self, rhs: Int):
         self = self % rhs
 
     @always_inline("nodebug")
-    fn __ipow__(mut self, rhs: Int):
+    def __ipow__(mut self, rhs: Int):
         self = self**rhs
 
     @always_inline("nodebug")
-    fn __ilshift__(mut self, rhs: Int):
+    def __ilshift__(mut self, rhs: Int):
         self = self << rhs
 
     @always_inline("nodebug")
-    fn __iand__(mut self, rhs: Int):
+    def __iand__(mut self, rhs: Int):
         self = self & rhs
 
     @always_inline("nodebug")
-    fn __ixor__(mut self, rhs: Int):
+    def __ixor__(mut self, rhs: Int):
         self = self ^ rhs
 
     @always_inline("nodebug")
-    fn __ior__(mut self, rhs: Int):
+    def __ior__(mut self, rhs: Int):
         self = self | rhs
 
     @always_inline("nodebug")
-    fn __mod__(self, rhs: Int) -> Int:
+    def __mod__(self, rhs: Int) -> Int:
         pass
 
     @always_inline("builtin")
-    fn __eq__(lhs, rhs: Int) -> Bool:
+    def __eq__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
             pred=__mlir_attr.`#index<cmp_predicate eq>`
         ](lhs._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
-    fn __ne__(self, rhs: Int) -> Bool:
+    def __ne__(self, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
             pred=__mlir_attr.`#index<cmp_predicate ne>`
         ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
-    fn __lt__(lhs, rhs: Int) -> Bool:
+    def __lt__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
             pred=__mlir_attr.`#index<cmp_predicate sgt>`
         ](rhs._mlir_value, lhs._mlir_value)
 
     @always_inline("builtin")
-    fn __le__(lhs, rhs: Int) -> Bool:
+    def __le__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
             pred=__mlir_attr.`#index<cmp_predicate sle>`
         ](lhs._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
-    fn __gt__(lhs, rhs: Int) -> Bool:
+    def __gt__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
             pred=__mlir_attr.`#index<cmp_predicate sgt>`
         ](lhs._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
-    fn __ge__(lhs, rhs: Int) -> Bool:
+    def __ge__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
             pred=__mlir_attr.`#index<cmp_predicate sge>`
         ](lhs._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         return not (self == 0)
 
     @always_inline("builtin")
-    fn __mlir_index__(self) -> __mlir_type.index:
+    def __mlir_index__(self) -> __mlir_type.index:
         return self._mlir_value
 
     @always_inline("builtin")
-    fn __truediv__(self, rhs: Int) -> Int:
+    def __truediv__(self, rhs: Int) -> Int:
         return Int(
             mlir_value=__mlir_op.`index.divs`(self._mlir_value, rhs._mlir_value)
         )
 
     @always_inline("nodebug")
-    fn __floordiv__(self, rhs: Int) -> Int:
+    def __floordiv__(self, rhs: Int) -> Int:
         pass
 
     @always_inline("builtin")
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return self
 
     @always_inline("nodebug")
-    fn __pow__(self, exp: Self) -> Self:
+    def __pow__(self, exp: Self) -> Self:
         pass
 
     @always_inline("builtin")
-    fn __neg__(self) -> Int:
+    def __neg__(self) -> Int:
         return self * -1
 
     @always_inline("builtin")
-    fn __and__(self, rhs: Int) -> Int:
+    def __and__(self, rhs: Int) -> Int:
         return Int(
             mlir_value=__mlir_op.`index.and`(self._mlir_value, rhs._mlir_value)
         )
 
     @always_inline("nodebug")
-    fn __imul__(mut self, rhs: Int):
+    def __imul__(mut self, rhs: Int):
         self = self * rhs
 
     @always_inline("nodebug")
-    fn __irshift__(mut self, rhs: Int):
+    def __irshift__(mut self, rhs: Int):
         self = self >> rhs
 
     @always_inline("nodebug")
-    fn __rshift__(self, rhs: Int) -> Int:
+    def __rshift__(self, rhs: Int) -> Int:
         pass
 
     @always_inline("nodebug")
-    fn __lshift__(self, rhs: Int) -> Int:
+    def __lshift__(self, rhs: Int) -> Int:
         pass
 
     @always_inline("builtin")
-    fn __or__(self, rhs: Int) -> Int:
+    def __or__(self, rhs: Int) -> Int:
         return Int(
             mlir_value=__mlir_op.`index.or`(self._mlir_value, rhs._mlir_value)
         )
 
     @always_inline("builtin")
-    fn __xor__(self, rhs: Int) -> Int:
+    def __xor__(self, rhs: Int) -> Int:
         return Int(
             mlir_value=__mlir_op.`index.xor`(self._mlir_value, rhs._mlir_value)
         )
 
-    fn __str__(self) -> String:
+    def __str__(self) -> String:
         return "[unimplemented]"
 
 
 struct UInt8(TrivialRegisterPassable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @implicit
-    fn __init__(out self, value: IntLiteral):
+    def __init__(out self, value: IntLiteral):
         pass
 
 
@@ -557,11 +557,11 @@ struct Span[
     var _data: UnsafePointer[Self.T, Self.origin]
     var _len: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self._data = UnsafePointer[Self.T, Self.origin]()
         self._len = 0
 
-    fn unsafe_ptr(
+    def unsafe_ptr(
         self,
     ) -> UnsafePointer[Self.T, Self.origin]:
         return self._data
@@ -574,18 +574,18 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 ):
     @stable
     @always_inline("builtin")
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @always_inline("nodebug")
-    fn __eq__(self, other: StringLiteral) -> Bool:
+    def __eq__(self, other: StringLiteral) -> Bool:
         return Bool()
 
     # TODO(MSTDL-1327): Reduce pain when string literals can't be
     # nonmaterializable by making them merge into StaticString.  They should
     # eventually merge into String through nonmaterialization.
     @always_inline("nodebug")
-    fn __merge_with__[
+    def __merge_with__[
         other_type: type_of(StringLiteral[_]),
     ](self) -> StaticString:
         return self
@@ -597,27 +597,27 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     var _slice: Span[Byte, Self.origin]
 
     @implicit
-    fn __init__[
+    def __init__[
         _origin: Origin[], //
     ](out self: StringSlice[_origin], ref[_origin] value: String):
         self._slice = Span[Byte, _origin]()
 
     @implicit
-    fn __init__(out self: StaticString, lit: StringLiteral):
+    def __init__(out self: StaticString, lit: StringLiteral):
         pass
 
     @always_inline
-    fn __init__(out self: StaticString, _kgen: __mlir_type.`!kgen.string`):
+    def __init__(out self: StaticString, _kgen: __mlir_type.`!kgen.string`):
         pass
 
     @always_inline
-    fn unsafe_ptr(
+    def unsafe_ptr(
         self,
     ) -> UnsafePointer[Byte, origin]:
         return self._slice.unsafe_ptr()
 
     @always_inline
-    fn byte_length(self) -> Int:
+    def byte_length(self) -> Int:
         return self._slice._len
 
 
@@ -625,7 +625,7 @@ comptime StaticString = StringSlice[StaticConstantOrigin]
 
 
 @always_inline("builtin")
-fn _get_kgen_string[
+def _get_kgen_string[
     string: StaticString, *extra: StaticString
 ]() -> __mlir_type.`!kgen.string`:
     return __mlir_attr[
@@ -638,50 +638,50 @@ fn _get_kgen_string[
 
 
 @always_inline("nodebug")
-fn get_static_string[
+def get_static_string[
     string: StaticString, *extra: StaticString
 ]() -> StaticString:
     return StaticString(_get_kgen_string[string, extra]())
 
 
 trait Stringable:
-    fn __str__(self) -> String:
+    def __str__(self) -> String:
         ...
 
 
 struct String(ImplicitlyCopyable, KeyElement):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @implicit
-    fn __init__(out self, literal: StringLiteral):
+    def __init__(out self, literal: StringLiteral):
         pass
 
-    fn __init__[T: Stringable](out self, value: T):
+    def __init__[T: Stringable](out self, value: T):
         self = value.__str__()
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
-    fn __init__(out self, *, deinit take: String):
+    def __init__(out self, *, deinit take: String):
         pass
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         return 0
 
-    fn __contains__(self, substr: StringSlice[mut=False, ...]) -> Bool:
+    def __contains__(self, substr: StringSlice[mut=False, ...]) -> Bool:
         return True
 
-    fn __iadd__(mut self, rhs: StringSlice[mut=False, ...]):
+    def __iadd__(mut self, rhs: StringSlice[mut=False, ...]):
         pass
 
-    fn byte_length(self) -> Int:
+    def byte_length(self) -> Int:
         return 0
 
-    fn unsafe_ptr(
+    def unsafe_ptr(
         self,
     ) -> UnsafePointer[UInt8, origin_of(self)]:
         return {}
@@ -693,41 +693,41 @@ struct Bool(TrivialRegisterPassable):
 
     @stable
     @always_inline("builtin")
-    fn __init__(out self):
+    def __init__(out self):
         self._mlir_value = __mlir_attr.`0 : i1`
 
     @stable
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: __mlir_type.i1):
+    def __init__(out self, value: __mlir_type.i1):
         self._mlir_value = value
 
     @always_inline("builtin")
-    fn __mlir_i1__(self) -> __mlir_type.i1:
+    def __mlir_i1__(self) -> __mlir_type.i1:
         return self._mlir_value
 
     @always_inline("builtin")
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         return self
 
     @always_inline("builtin")
-    fn __invert__(self) -> Bool:
+    def __invert__(self) -> Bool:
         return __mlir_op.`pop.xor`(self._mlir_value, __mlir_attr.true)
 
     @always_inline("builtin")
-    fn __and__(self, rhs: Bool) -> Bool:
+    def __and__(self, rhs: Bool) -> Bool:
         return __mlir_op.`pop.and`(self._mlir_value, rhs._mlir_value)
 
 
 struct Slice(TrivialRegisterPassable):
     @implicit
-    fn __init__(out self, end: Int):
+    def __init__(out self, end: Int):
         pass
 
-    fn __init__(out self, start: Int, end: Int):
+    def __init__(out self, start: Int, end: Int):
         return
 
-    fn __init__[
+    def __init__[
         T0: TrivialRegisterPassable,
         T1: TrivialRegisterPassable,
         T2: TrivialRegisterPassable,
@@ -753,48 +753,48 @@ struct _ListIter[
     var src: Pointer[List[Self.Element], Self.origin]
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __next__(
+    def __next__(
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
         abort()
 
 
 struct List[T: Copyable & ImplicitlyDestructible](Copyable, Iterable):
-    fn __init__(out self, *elements: Self.T, __list_literal__: () = ()):
+    def __init__(out self, *elements: Self.T, __list_literal__: () = ()):
         pass
 
-    fn append(mut self, var value: Self.T):
+    def append(mut self, var value: Self.T):
         pass
 
-    fn __getitem__(ref self, idx: Int) -> ref[self] Self.T:
+    def __getitem__(ref self, idx: Int) -> ref[self] Self.T:
         pass
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _ListIter[Self.T, iterable_origin, True]
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         abort()
 
 
 struct Set[T: AnyType]:
-    fn __init__(out self, *elements: Self.T, __set_literal__: () = ()):
+    def __init__(out self, *elements: Self.T, __set_literal__: () = ()):
         pass
 
-    fn add(mut self, var value: Self.T):
+    def add(mut self, var value: Self.T):
         pass
 
 
 struct Dict[
     K: Copyable & ImplicitlyDestructible, V: Copyable & ImplicitlyDestructible
 ]:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(
+    def __init__(
         out self,
         var keys: List[Self.K],
         var values: List[Self.V],
@@ -802,7 +802,7 @@ struct Dict[
     ):
         pass
 
-    fn __setitem__(mut self, key: Self.K, value: Self.V):
+    def __setitem__(mut self, key: Self.K, value: Self.V):
         pass
 
 
@@ -819,11 +819,11 @@ trait AnyType:
 
 @explicit_destroy
 trait Copyable(Movable):
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         ...
 
     @always_inline
-    fn copy(self) -> Self:
+    def copy(self) -> Self:
         return Self(copy=self)
 
     comptime __copy_ctor_is_trivial: Bool
@@ -843,7 +843,7 @@ trait RegisterPassable(Movable):
     pass
 
 
-fn materialize[T: AnyType, //, value: T](out result: T):
+def materialize[T: AnyType, //, value: T](out result: T):
     """Explicitly materialize a compile time parameter into a runtime value."""
     __mlir_op.`lit.materialize_into`[value=value](
         __get_mvalue_as_litref(result)
@@ -852,20 +852,20 @@ fn materialize[T: AnyType, //, value: T](out result: T):
 
 @explicit_destroy
 trait ExplicitlyDestroyedMovable:
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         ...
 
 
 @explicit_destroy
 trait Movable:
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         ...
 
     comptime __move_ctor_is_trivial: Bool
 
 
 trait ImplicitlyDestructible:
-    fn __del__(deinit self, /):
+    def __del__(deinit self, /):
         ...
 
     comptime __del__is_trivial: Bool
@@ -879,11 +879,11 @@ trait ImplicitlyDestructible:
 struct VariadicParamList[type: TrivialRegisterPassable, //, *values: type](
     TrivialRegisterPassable
 ):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @always_inline
-    fn __getitem__(self, idx: Int) -> Self.type:
+    def __getitem__(self, idx: Int) -> Self.type:
         pass
 
 
@@ -914,7 +914,7 @@ struct _VariadicListIter[
     var index: Int
     var src: Pointer[Self.variadic_list_type, Self.list_origin]
 
-    fn __next__(
+    def __next__(
         mut self,
     ) raises StopIteration -> ref[Self.elt_origin] Self.elt_type:
         raise StopIteration()
@@ -935,13 +935,13 @@ struct VariadicList[
     ]
 
     @implicit
-    fn __init__(
+    def __init__(
         out self,
         value: Self._mlir_type,
     ):
         pass
 
-    fn __getitem__(
+    def __getitem__(
         self, idx: Int
     ) -> ref[
         # cast mutability of self to match the mutability of the element,
@@ -952,7 +952,7 @@ struct VariadicList[
         while True:
             pass
 
-    fn __iter__(
+    def __iter__(
         self,
         out result: _VariadicListIter[
             Self.element_type, Self.origin, origin_of(self), Self.is_owned
@@ -988,10 +988,10 @@ struct VariadicPack[
     # raw variadic pack which can have nested origins in it (which this does not
     # dereference).
     @__unsafe_disable_nested_origin_exclusivity
-    fn __init__(out self, value: Self._mlir_pack_type):
+    def __init__(out self, value: Self._mlir_pack_type):
         pass
 
-    fn __getitem_param__[
+    def __getitem_param__[
         index: Int
     ](self) -> ref[Self.origin] Self.element_types[index]:
         while True:
@@ -1005,7 +1005,7 @@ struct AddressSpace(TrivialRegisterPassable):
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = value
 
     # CPU address space
@@ -1019,7 +1019,7 @@ struct AddressSpace(TrivialRegisterPassable):
     comptime SHARED_CLUSTER = AddressSpace(7)
 
     @always_inline("builtin")
-    fn __mlir_index__(self) -> __mlir_type.index:
+    def __mlir_index__(self) -> __mlir_type.index:
         return self._value._mlir_value
 
 
@@ -1044,11 +1044,11 @@ struct Pointer[
 
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, _mlir_value: Self._mlir_type):
+    def __init__(out self, _mlir_value: Self._mlir_type):
         self._value = _mlir_value
 
     @always_inline("nodebug")
-    fn __init__(
+    def __init__(
         out self,
         *,
         ref[Self.origin, Self.address_space._value._mlir_value] to: Self.type,
@@ -1062,23 +1062,23 @@ struct Pointer[
 
     @staticmethod
     @always_inline("nodebug")
-    fn address_of(
+    def address_of(
         ref[Self.origin, Self.address_space] value: Self.type
     ) -> Self:
         return Pointer(_mlir_value=__get_mvalue_as_litref(value))
 
-    fn __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
+    def __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
         return __get_litref_as_mvalue(self._value)
 
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
-    fn __eq__(
+    def __eq__(
         self, rhs: Pointer[Self.type, _, Self.address_space, ...]
     ) -> Bool:
         return True
 
     @always_inline("nodebug")
-    fn __merge_with__[
+    def __merge_with__[
         other_type: type_of(Pointer[Self.type, _, Self.address_space]),
     ](self) -> Pointer[
         mut=Self.mut & other_type.origin.mut,
@@ -1090,20 +1090,20 @@ struct Pointer[
 
 
 struct Tuple[*element_types: AnyType](ImplicitlyCopyable):
-    fn __init__(out self: Tuple[]):
+    def __init__(out self: Tuple[]):
         pass
 
     @implicit
-    fn __init__(out self, *args: * Self.element_types):
+    def __init__(out self, *args: * Self.element_types):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         pass
 
-    fn __getitem_param__[i: Int](ref self) -> ref[self] Self.element_types[i]:
+    def __getitem_param__[i: Int](ref self) -> ref[self] Self.element_types[i]:
         while __mlir_attr.true:
             pass
 
@@ -1125,16 +1125,16 @@ struct UnsafePointer[
     ]
     var address: Self._mlir_type
 
-    fn __init__(out self):
+    def __init__(out self):
         self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
 
     @implicit
     @always_inline("builtin")
-    fn __init__(out self, value: Self._mlir_type):
+    def __init__(out self, value: Self._mlir_type):
         self.address = value
 
     @always_inline("nodebug")
-    fn __init__(
+    def __init__(
         out self,
         *,
         ref[Self.origin, Self.address_space._value._mlir_value] to: Self.type,
@@ -1147,14 +1147,14 @@ struct UnsafePointer[
         self = Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(to)))
 
     @staticmethod
-    fn address_of(ref[Self.address_space] arg: Self.type) -> Self:
+    def address_of(ref[Self.address_space] arg: Self.type) -> Self:
         return Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(arg)))
 
-    fn __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
+    def __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
         while __mlir_attr.true:
             pass
 
-    fn __getitem__(
+    def __getitem__(
         self, offset: Int
     ) -> ref[Self.origin, Self.address_space] Self.type:
         while __mlir_attr.true:
@@ -1163,7 +1163,7 @@ struct UnsafePointer[
     # This returns a reference to an element with an origin specified by as a
     # unique reference from this pointer.  The returned reference is always
     # mutable.
-    fn get_unique_item_ref[
+    def get_unique_item_ref[
         self_origin: Origin[]
     ](ref[self_origin] self, offset: Int = 0) -> ref[
         _lit_indirect_origin[self_origin].unsafe_mut_cast[True](),
@@ -1173,7 +1173,7 @@ struct UnsafePointer[
             pass
 
     @always_inline
-    fn take_pointee[
+    def take_pointee[
         T: Movable, //
     ](self: UnsafePointer[T, _]) -> T where type_of(self).mut:
         return __get_address_as_owned_value(self.address)
@@ -1192,7 +1192,7 @@ struct _StridedRangeIterator(Iterator, TrivialRegisterPassable):
     var step: Int
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         if self.step > 0 and self.start < self.end:
             return self.end - self.start
         elif self.step < 0 and self.start > self.end:
@@ -1201,7 +1201,7 @@ struct _StridedRangeIterator(Iterator, TrivialRegisterPassable):
             return 0
 
     @always_inline
-    fn __next__(mut self) raises StopIteration -> Int:
+    def __next__(mut self) raises StopIteration -> Int:
         if self.__len__() <= 0:
             raise StopIteration()
         var result = self.start
@@ -1222,11 +1222,11 @@ struct StopIteration(TrivialRegisterPassable):
 trait Iterator(ImplicitlyDestructible, Movable):
     comptime Element: Movable
 
-    fn __next__(mut self) raises StopIteration -> Self.Element:
+    def __next__(mut self) raises StopIteration -> Self.Element:
         ...
 
 
-fn paramfor_has_next[
+def paramfor_has_next[
     IteratorType: Iterator & Copyable
 ](it: IteratorType) -> Bool where conforms_to(
     IteratorType.Element,
@@ -1241,7 +1241,7 @@ fn paramfor_has_next[
         return False
 
 
-fn paramfor_next_iter[
+def paramfor_next_iter[
     IteratorType: Iterator & Copyable
 ](it: IteratorType) -> IteratorType where conforms_to(
     IteratorType.Element,
@@ -1261,7 +1261,7 @@ fn paramfor_next_iter[
     return result^
 
 
-fn paramfor_next_value[
+def paramfor_next_value[
     IteratorType: Iterator & Copyable
 ](it: IteratorType) -> IteratorType.Element:
     # NOTE: This function is called by the compiler's elaborator only when
@@ -1275,27 +1275,27 @@ fn paramfor_next_value[
 
 
 struct Optional[T: Movable](Copyable):
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @implicit
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         # This isn't correct impl, but silences an error.
         __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(value))
 
     @implicit
-    fn __init__(out self, value: NoneType):
+    def __init__(out self, value: NoneType):
         pass
 
     # FIXME: None literal should be of NoneType not !kgen.none.
     @implicit
-    fn __init__(out self, x: __mlir_type.`!kgen.none`):
+    def __init__(out self, x: __mlir_type.`!kgen.none`):
         pass
 
-    fn value(ref self) -> ref[self] Self.T:
+    def value(ref self) -> ref[self] Self.T:
         while True:
             pass
 
@@ -1306,7 +1306,7 @@ struct Optional[T: Movable](Copyable):
 
 
 @always_inline("builtin")
-fn rebind[
+def rebind[
     src_type: TrivialRegisterPassable,
     //,
     dest_type: TrivialRegisterPassable,
@@ -1315,7 +1315,7 @@ fn rebind[
 
 
 @always_inline("nodebug")
-fn rebind[
+def rebind[
     src_type: AnyType,
     //,
     dest_type: AnyType,
@@ -1325,7 +1325,7 @@ fn rebind[
     return __get_litref_as_mvalue(rebound)
 
 
-fn rebind_var[
+def rebind_var[
     src_type: Movable,
     //,
     dest_type: Movable,
@@ -1346,20 +1346,20 @@ comptime downcast[_Trait: AnyTrait, T: AnyType] = __mlir_attr[
 
 
 @always_inline
-fn trait_downcast[
+def trait_downcast[
     T: TrivialRegisterPassable, //, Trait: AnyTrait
 ](var x: T) -> downcast[Trait, T]:
     return rebind[downcast[Trait, T]](x)
 
 
 @always_inline
-fn trait_downcast[
+def trait_downcast[
     T: AnyType, //, Trait: AnyTrait
 ](ref x: T) -> ref[x] downcast[Trait, T]:
     return rebind[downcast[Trait, T]](x)
 
 
-fn trait_downcast_var[
+def trait_downcast_var[
     T: Movable,
     //,
     Trait: type_of(Movable),
@@ -1373,7 +1373,7 @@ fn trait_downcast_var[
 
 
 trait Intable(ImplicitlyDestructible):
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         ...
 
 
@@ -1393,7 +1393,7 @@ struct DType(TrivialRegisterPassable):
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: Self.type):
+    def __init__(out self, value: Self.type):
         self._mlir_value = value
 
 
@@ -1416,17 +1416,17 @@ struct SIMD[dtype: DType, size: Int](TrivialRegisterPassable):
     """The underlying storage for the vector."""
 
     @always_inline("nodebug")
-    fn __init__(out self, *, mlir_value: Self._mlir_type):
+    def __init__(out self, *, mlir_value: Self._mlir_type):
         self._mlir_value = mlir_value
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         comptime res = SIMD[Self.dtype, Self.size](Int())
         self = res
 
     @implicit
     @always_inline
-    fn __init__(out self, value: Int, /):
+    def __init__(out self, value: Int, /):
         var index = __mlir_op.`pop.cast_from_builtin`[
             _type=__mlir_type.`!pop.scalar<index>`
         ](value._mlir_value)
@@ -1442,41 +1442,41 @@ struct SIMD[dtype: DType, size: Int](TrivialRegisterPassable):
             ](s)
 
     @implicit
-    fn __init__(out self, value: FloatLiteral, /):
+    def __init__(out self, value: FloatLiteral, /):
         var res = __mlir_attr[
             `#pop<float_literal_convert<`, value.value, `>> : `, Self._mlir_type
         ]
         self = Self(mlir_value=res)
 
-    fn __add__(lhs, rhs: Self) -> Self:
+    def __add__(lhs, rhs: Self) -> Self:
         while __mlir_attr.true:
             pass
 
     @staticmethod
-    fn splat():
+    def splat():
         pass
 
     @always_inline("nodebug")
-    fn __truediv__(self, rhs: Self) -> Self:
+    def __truediv__(self, rhs: Self) -> Self:
         return Self(
             mlir_value=__mlir_op.`pop.div`(self._mlir_value, rhs._mlir_value)
         )
 
     @always_inline("nodebug")
-    fn __rtruediv__(self, value: Self) -> Self:
+    def __rtruediv__(self, value: Self) -> Self:
         return value / self
 
     @always_inline("nodebug")
-    fn __iadd__(mut self, rhs: Self):
+    def __iadd__(mut self, rhs: Self):
         self = self + rhs
 
     @always_inline("nodebug")
-    fn join(self, other: Self) -> SIMD[Self.dtype, 2 * Self.size]:
+    def join(self, other: Self) -> SIMD[Self.dtype, 2 * Self.size]:
         return SIMD[Self.dtype, 2 * Self.size]()
 
 
 @no_inline
-fn abort() -> Never:
+def abort() -> Never:
     __mlir_op.`llvm.intr.trap`()
     while True:
         pass

@@ -8,5 +8,5 @@ from .simple_struct import BaseType
 
 
 __extension BaseType:
-    fn greet(self):
+    def greet(self):
         pass

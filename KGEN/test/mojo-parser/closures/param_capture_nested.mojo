@@ -8,11 +8,11 @@
 
 @fieldwise_init
 struct Foo[A: Int, B: Int](ImplicitlyCopyable, RegisterPassable):
-    fn get(self) -> Int:
+    def get(self) -> Int:
         return Self.A
 
 
-fn use(a: Int):
+def use(a: Int):
     pass
 
 
@@ -23,8 +23,8 @@ fn use(a: Int):
 # CHECK: lit.struct.decl @"fn{{.*}}"<p0: !Int, |>
 
 
-fn make_closure[c_type: Int](w: Int) -> fn (z: Foo[2, c_type]) escaping -> None:
-    fn foo(z: Foo[2, c_type]) escaping -> None:
+def make_closure[c_type: Int](w: Int) -> def (z: Foo[2, c_type]) escaping -> None:
+    def foo(z: Foo[2, c_type]) escaping -> None:
         use(z.get())
 
     return foo

@@ -12,12 +12,12 @@ from simple_struct_package.simple import PlainStruct
 
 
 __extension PlainStruct:
-    fn sparklebark(self: PlainStruct) -> Bool:
+    def sparklebark(self: PlainStruct) -> Bool:
         return True
 
 
 # CHECK-LABEL: kgen.generator @"struct_extensions::test
-fn test():
+def test():
     var plainStruct = PlainStruct()
     # CHECK: kgen.call {{.*}}PlainStruct::sparklebark
     var result = plainStruct.sparklebark()

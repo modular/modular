@@ -7,6 +7,6 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-fn main():
+def main():
     # CHECK: Hello, 🔥!
     print("Hello, 🔥!")

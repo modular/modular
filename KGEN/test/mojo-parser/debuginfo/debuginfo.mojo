@@ -20,7 +20,7 @@ struct MemPair:
 
 
 # CHECK-LABEL: lit.fn @"power
-fn power(lhs: Int, rhs: Int) -> MemPair:
+def power(lhs: Int, rhs: Int) -> MemPair:
     return MemPair(lhs, rhs)
     # CHECK: lit.end_fn
     # CHECK-NEXT: } loc(#[[LOC_FUNC:.*]])

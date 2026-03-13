@@ -23,11 +23,11 @@ struct DeprecatedStruct:
 
 @deprecated("deprecated function")
 # expected-note @below {{'deprecated_fn' declared here}}
-fn deprecated_fn():
+def deprecated_fn():
     pass
 
 
-fn normal_fn():
+def normal_fn():
     pass
 
 
@@ -55,15 +55,15 @@ struct StructWithDeprecatedMembers:
     # Note: @deprecated on fields is not supported - decorators cannot be applied
     # to `var` statements. This is a parser-level limitation.
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @deprecated("deprecated method")
     # expected-note @below {{'deprecated_method' declared here}}
-    fn deprecated_method(self):
+    def deprecated_method(self):
         pass
 
-    fn normal_method(self):
+    def normal_method(self):
         pass
 
 
@@ -73,7 +73,7 @@ struct StructWithDeprecatedMembers:
 
 
 # expected-warning @below {{deprecated struct}}
-fn use_deprecated_struct_in_signature(value: DeprecatedStruct):
+def use_deprecated_struct_in_signature(value: DeprecatedStruct):
     pass
 
 
@@ -82,7 +82,7 @@ fn use_deprecated_struct_in_signature(value: DeprecatedStruct):
 # ===----------------------------------------------------------------------=== #
 
 
-fn test_deprecated_function_call():
+def test_deprecated_function_call():
     # expected-warning @below {{deprecated function}}
     deprecated_fn()
 
@@ -95,11 +95,11 @@ fn test_deprecated_function_call():
 # ===----------------------------------------------------------------------=== #
 
 
-fn takes_fn_ref(f: fn () -> None):
+def takes_fn_ref(f: def () -> None):
     f()
 
 
-fn test_deprecated_function_reference():
+def test_deprecated_function_reference():
     # Taking a reference to a deprecated function also emits the deprecation warning.
     # expected-warning @below {{deprecated function}}
     var f = deprecated_fn
@@ -130,7 +130,7 @@ struct StructConformingToNormalTrait(NormalTrait):
 # ===----------------------------------------------------------------------=== #
 
 
-fn test_deprecated_alias():
+def test_deprecated_alias():
     # expected-warning @below {{deprecated alias}}
     _ = deprecated_alias
 
@@ -143,7 +143,7 @@ fn test_deprecated_alias():
 # ===----------------------------------------------------------------------=== #
 
 
-fn test_deprecated_method_call():
+def test_deprecated_method_call():
     var obj = StructWithDeprecatedMembers()
 
     # expected-warning @below {{deprecated method}}
@@ -157,7 +157,7 @@ fn test_deprecated_method_call():
 # Test: Deprecated method reference (not call)
 # ===----------------------------------------------------------------------=== #
 
-fn test_deprecated_method_reference():
+def test_deprecated_method_reference():
     # Taking a reference to a deprecated method emits the deprecation warning.
     # expected-warning @below {{deprecated method}}
     _ = StructWithDeprecatedMembers.deprecated_method
@@ -173,16 +173,16 @@ fn test_deprecated_method_reference():
 
 @deprecated("deprecated overload")
 # expected-note @below {{'overloaded_fn' declared here}}
-fn overloaded_fn():
+def overloaded_fn():
     pass
 
 
 # expected-warning @below {{deprecated struct}}
-fn overloaded_fn(value: DeprecatedStruct):
+def overloaded_fn(value: DeprecatedStruct):
     pass
 
 
-fn test_deprecated_function_overload():
+def test_deprecated_function_overload():
     # expected-warning @below {{deprecated overload}}
     overloaded_fn()
 
@@ -194,7 +194,7 @@ fn test_deprecated_function_overload():
 
 # expected-error @below {{@deprecated requires a warning message}}
 @deprecated
-fn no_message():
+def no_message():
     pass
 
 
@@ -203,13 +203,13 @@ comptime NOT_A_STRING = 123
 
 # expected-error @below {{'reason' argument must be a string literal}}
 @deprecated(NOT_A_STRING)
-fn deprecated_with_non_string_reason():
+def deprecated_with_non_string_reason():
     pass
 
 
 # expected-error @below {{'reason' argument must be a string literal}}
 @deprecated(reason=NOT_A_STRING)
-fn deprecated_with_non_string_keyword_reason():
+def deprecated_with_non_string_keyword_reason():
     pass
 
 
@@ -222,7 +222,7 @@ fn deprecated_with_non_string_keyword_reason():
 @deprecated("use something else")
 # expected-error @below {{@deprecated and @stable cannot be used together}}
 @stable
-fn deprecated_and_stable():
+def deprecated_and_stable():
     pass
 
 
@@ -230,7 +230,7 @@ fn deprecated_and_stable():
 @stable
 # expected-error @below {{@deprecated and @stable cannot be used together}}
 @deprecated("use something else")
-fn stable_and_deprecated():
+def stable_and_deprecated():
     pass
 
 
@@ -239,7 +239,7 @@ fn stable_and_deprecated():
 @no_inline
 # expected-error @below {{@deprecated and @stable cannot be used together}}
 @stable
-fn deprecated_other_stable():
+def deprecated_other_stable():
     pass
 
 
@@ -248,7 +248,7 @@ fn deprecated_other_stable():
 # ===----------------------------------------------------------------------=== #
 
 
-fn some_top_level_func():
+def some_top_level_func():
     pass
 
 
@@ -256,7 +256,7 @@ struct InstanceMethodRefTopLevel:
     # Instance methods cannot reference top-level functions as replacements.
     # expected-error @below {{cannot reference unknown value 'some_top_level_func'}}
     @deprecated(use=some_top_level_func)
-    fn instance_method(self):
+    def instance_method(self):
         pass
 
 
@@ -269,5 +269,5 @@ from imported_module import DeprecatedInAnotherModule
 
 
 # expected-warning @below {{use of deprecated struct 'DeprecatedInAnotherModule'}}
-fn use_deprecated_import(value: DeprecatedInAnotherModule):
+def use_deprecated_import(value: DeprecatedInAnotherModule):
     pass

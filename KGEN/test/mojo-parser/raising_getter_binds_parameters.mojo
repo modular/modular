@@ -8,12 +8,12 @@
 
 @fieldwise_init
 struct Foo:
-    fn __getitem_param__[T: AnyType](self) raises:
+    def __getitem_param__[T: AnyType](self) raises:
         pass
 
 
 # expected-note @below {{or mark surrounding function as 'raises'}}
-fn main():
+def main():
   var f = Foo()
 
   # expected-error @below {{cannot call function that may raise in a context that cannot raise}}

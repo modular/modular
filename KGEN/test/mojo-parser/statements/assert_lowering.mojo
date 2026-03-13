@@ -15,13 +15,13 @@
 
 
 # PARSE-LABEL: lit.fn @"test_assert_basic
-fn test_assert_basic(cond: Bool):
+def test_assert_basic(cond: Bool):
     # PARSE: debug_assert
     assert cond
 
 
 # PARSE-LABEL: lit.fn @"test_assert_with_message
-fn test_assert_with_message(cond: Bool):
+def test_assert_with_message(cond: Bool):
     # PARSE: debug_assert
     assert cond, "something went wrong"
 

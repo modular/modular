@@ -10,7 +10,7 @@ from std.sys import argv
 
 
 trait RGTrivialTrait(TrivialRegisterPassable):
-    fn doSomething(self):
+    def doSomething(self):
         ...
 
 
@@ -19,14 +19,14 @@ struct Conforms(RGTrivialTrait):
     var x: Int
 
     @no_inline
-    fn doSomething(self):
+    def doSomething(self):
         print(self.x)
 
 
 # ELABORATE: kgen.func @"{{.*}}bar{{.*}}"(%arg0: index)
 # ELABORATE-NEXT: kgen.call @"{{.*}}::Conforms::doSomething{{.*}}"(%arg0) : (index) -> ()
 @no_inline
-fn bar[x: RGTrivialTrait](y: x):
+def bar[x: RGTrivialTrait](y: x):
     y.doSomething()
 
 

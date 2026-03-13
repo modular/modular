@@ -13,19 +13,19 @@
 from test_std_mock import stable_fn, unstable_fn
 
 
-fn takes_fn_ref(f: fn() -> None):
+def takes_fn_ref(f: def() -> None):
     """Helper function that takes a function reference."""
     f()
 
 
-fn test_stable_fn_reference():
+def test_stable_fn_reference():
     """Referencing a stable function should not trigger a warning."""
     # No warning expected here.
     var f = stable_fn
     takes_fn_ref(f)
 
 
-fn test_unstable_fn_reference():
+def test_unstable_fn_reference():
     """Referencing an unstable function (not calling it) should trigger a warning."""
     # CHECK: warning: use of unstable API 'unstable_fn'
     var f = unstable_fn

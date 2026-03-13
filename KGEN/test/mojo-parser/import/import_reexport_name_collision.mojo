@@ -8,7 +8,7 @@
 # over the submodule of the same name during name resolution.
 #
 # When a package re-exports a function whose name collides with a submodule
-# (e.g. `test_reexport_name_collision/foo.mojo` defines `fn foo`, and
+# (e.g. `test_reexport_name_collision/foo.mojo` defines `def foo`, and
 # `__init__.mojo` does `from .foo import foo`), importing via the package
 # should resolve to the function, not the module.
 
@@ -29,7 +29,7 @@ from test_reexport_name_collision import baz
 from test_reexport_name_collision import qux
 
 # CHECK-LABEL: lit.fn @"main
-fn main():
+def main():
     # Parametric function: direct import works fine.
     # CHECK: lit.call {{.*}}@test_reexport_name_collision::@foo::@"foo
     var a = foo_direct[42]()

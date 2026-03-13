@@ -14,5 +14,5 @@ struct PlainStruct:
     pass
 
 __extension PlainStruct:
-   fn sparklebark(self: PlainStruct):
+   def sparklebark(self: PlainStruct):
        pass

@@ -10,17 +10,17 @@
 trait R1:
     comptime N: Int
 
-    fn f1(self, x: Bool):
+    def f1(self, x: Bool):
         ...
 
-    fn f1(self, x: Int):
+    def f1(self, x: Int):
         ...
 
 
 trait R2:
     comptime T: AnyType
 
-    fn f2(self, x: Self.T):
+    def f2(self, x: Self.T):
         ...
 
 
@@ -34,15 +34,15 @@ struct S1[X: Int](TrivialRegisterPassable, R1, R1Child, R2):
     comptime T: AnyType = Int
 
     # CHECK: lit.fn @"f1[[F1_BOOL_NAME:.+]]"({{.*}}, %x: !Bool)
-    fn f1(self, x: Bool):
+    def f1(self, x: Bool):
         pass
 
     # CHECK: lit.fn @"f1[[F1_INT_NAME:.+]]"({{.*}}, %x: !Int)
-    fn f1(self, x: Int):
+    def f1(self, x: Int):
         pass
 
     # CHECK: lit.fn @"f2[[F2_NAME:.+]]"({{.*}}, %x: !Int)
-    fn f2(self, x: Int):
+    def f2(self, x: Int):
         pass
 
     # CHECK: lit.fn @"__del__[[DEL_NAME:.+]]"[

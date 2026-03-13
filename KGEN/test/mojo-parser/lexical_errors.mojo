@@ -18,12 +18,12 @@ struct Issue4181IndentWeirdness[dt: DType]:
       pass
 
 # Failed to parse due to indentation.
-fn issue_6291(
+def issue_6291(
     val: __mlir_type.index
 ) -> __mlir_type.index:
     return val
 
-fn testIndentation6291[index: __mlir_type.index](
+def testIndentation6291[index: __mlir_type.index](
     ptr: __mlir_type.`!kgen.pointer<!pop.scalar<index>>`):
   var result = __mlir_op.`pop.load`[
             alignment=__mlir_attr.`1: index`,
@@ -32,21 +32,21 @@ fn testIndentation6291[index: __mlir_type.index](
 
 # This file contains parsing related bugs.
 
-fn bracketError1():
+def bracketError1():
   _ = ] # expected-error {{unexpected token in expression}}
 
-fn bracketError2():
+def bracketError2():
   _ = [[1, 2], }# expected-error {{unexpected token in expression}}
 
 
 # Indentation errors
-fn nothing(): pass
+def nothing(): pass
 
-fn test_indentation1():
+def test_indentation1():
   nothing()   # expected-note {{indentation should match previous statement}}
     nothing() # expected-error {{statement has excess indentation}}
 
-fn test_indentation2(p: Bool):
+def test_indentation2(p: Bool):
   nothing()
   if p:   # expected-note {{indentation should match previous statement}}
       nothing()
@@ -55,12 +55,12 @@ fn test_indentation2(p: Bool):
 # Decorator processing.
 # https://github.com/modular/mojo/issues/1655
 @ : # expected-error {{unexpected token in expression}}
-    fn a  # expected-error {{expected '(' for argument list}}
+    def a  # expected-error {{expected '(' for argument list}}
 
 # https://github.com/modular/mojo/issues/1230
 # Parser crashes on incomplete decorator
 @ # expected-error {{missing decorator expression after '@'}}
-fn m # expected-error {{expected '(' for argument list}}
+def m # expected-error {{expected '(' for argument list}}
 
 # Issue #6909
 # expected-error @below {{invalid comptime declaration: expected an identifier or '_'}}

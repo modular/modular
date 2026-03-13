@@ -27,12 +27,12 @@ struct DefaultPosOnly[a: Int = 1, /, b: Int = 2, *, c: Int = 3]:
     pass
 
 
-fn variadic_params[*a: Int]():
+def variadic_params[*a: Int]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_unbound_pack
-fn test_unbound_pack():
+def test_unbound_pack():
     # CHECK: lit.alias.decl *"all_unbound`": meta<!lit.struct<#StructWithDefault <:!Int ?, :!Int ?, :!Int ?, :!Int ?>, <"a": !Int, "b": !Int, "c": !Int = {{.*}}1{{.*}}, "d": !Int = {{.*}}2{{.*}}>>>
     comptime all_unbound = StructWithDefault[...]
 

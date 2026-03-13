@@ -11,7 +11,7 @@
 # expected-error @+2 {{@explicit_destroy cannot be used on a trait that conforms to ImplicitlyDestructible}}
 @explicit_destroy("Hmm, what am I?")
 trait ExplicitDestroyOnImplicitlyDestructible(ImplicitlyDestructible):
-    fn __del__(deinit self):
+    def __del__(deinit self):
         ...
 
 
@@ -20,5 +20,5 @@ trait ExplicitDestroyOnImplicitlyDestructible(ImplicitlyDestructible):
 # expected-error @+2 {{@explicit_destroy cannot be used on a trait that conforms to ImplicitlyDestructible}}
 @explicit_destroy("")
 trait ExplicitDestroyEmptyMsgOnImplicitlyDestructible(ImplicitlyDestructible):
-    fn __del__(deinit self):
+    def __del__(deinit self):
         ...

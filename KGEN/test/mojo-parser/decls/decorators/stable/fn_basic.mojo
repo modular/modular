@@ -11,14 +11,14 @@
 # CHECK: lit.fn @"stable_function()"
 # CHECK-SAME: hasStableDecorator
 @stable
-fn stable_function():
+def stable_function():
     pass
 
 
 # CHECK: lit.fn @"unstable_function()"
 # CHECK-NOT: hasStableDecorator
 # CHECK-SAME: sourceName
-fn unstable_function():
+def unstable_function():
     pass
 
 
@@ -30,18 +30,18 @@ struct TestStruct:
     # CHECK: lit.fn @"stable_method{{.*}}TestStruct)"
     # CHECK-SAME: hasStableDecorator
     @stable
-    fn stable_method(self):
+    def stable_method(self):
         pass
 
     # CHECK: lit.fn @"unstable_method{{.*}}TestStruct)"
     # CHECK-NOT: hasStableDecorator
     # CHECK-SAME: sourceName
-    fn unstable_method(self):
+    def unstable_method(self):
         pass
 
     # CHECK: lit.fn @"stable_static()"
     # CHECK-SAME: hasStableDecorator
     @stable
     @staticmethod
-    fn stable_static():
+    def stable_static():
         pass

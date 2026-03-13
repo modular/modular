@@ -14,11 +14,11 @@
 
 
 @extern("my_add_one")
-fn my_add_one(x: UnsafePointer[Int32, MutAnyOrigin]):
+def my_add_one(x: UnsafePointer[Int32, MutAnyOrigin]):
     ...
 
 
-fn main():
+def main():
     # CHECK: 3
     var two: Int32 = 2
     my_add_one(UnsafePointer(to=two))

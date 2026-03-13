@@ -10,7 +10,7 @@
 struct Spaceship:
     var location: Int
 
-    fn set_location(mut self, new_location: Int):
+    def set_location(mut self, new_location: Int):
         self.location = new_location
 
 
@@ -20,7 +20,7 @@ __extension Spaceship:
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
     # CHECK-SAME: %new_location: !Int
-    fn fly_to(mut self: Spaceship, new_location: Int):
+    def fly_to(mut self: Spaceship, new_location: Int):
         self.set_location(new_location)
 
 
@@ -30,7 +30,7 @@ __extension Spaceship:
 struct Spaceship:
     var location: Int
 
-    fn set_location(mut self, new_location: Int):
+    def set_location(mut self, new_location: Int):
         self.location = new_location
 
 
@@ -40,12 +40,12 @@ __extension Spaceship:
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
     # CHECK-SAME: %new_location: !Int
-    fn fly_to(mut self: Spaceship, new_location: Int):
+    def fly_to(mut self: Spaceship, new_location: Int):
         self.set_location(new_location)
 
 
 # CHECK-LABEL: lit.fn @"do_things
-fn do_things(mut ship: Spaceship):
+def do_things(mut ship: Spaceship):
     # CHECK: lit.call {{.*}}@"fly_to
     # CHECK-SAME: "self": !lit.ref<!Spaceship, mut *[0,0]>
     ship.fly_to(2)
@@ -59,7 +59,7 @@ fn do_things(mut ship: Spaceship):
 struct Spaceship:
     var location: Int
 
-    fn set_location(mut self, new_location: Int):
+    def set_location(mut self, new_location: Int):
         self.location = new_location
 
 
@@ -71,7 +71,7 @@ __extension Spaceship:
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
     # CHECK-SAME: %new_location: !Int
-    fn fly_to(mut self: Spaceship, new_location: Int):
+    def fly_to(mut self: Spaceship, new_location: Int):
         self.set_location(new_location)
 
 
@@ -81,7 +81,7 @@ __extension Spaceship:
 # This checks that we're naming this struct extension something different.
 # CHECK-SAME: targetStruct = @struct_extensions::@Spaceship
 __extension Spaceship:
-    fn something_else(self: Spaceship):
+    def something_else(self: Spaceship):
         pass
 
 
@@ -100,12 +100,12 @@ struct PlainStruct:
 # CHECK-SAME: targetStruct = @struct_extensions::@PlainStruct
 __extension PlainStruct:
     # CHECK-LABEL: lit.fn @"__init__
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
 # CHECK-LABEL: lit.fn @"zork
-fn zork():
+def zork():
     # CHECK: lit.call {{.*}}@"__init__
     var z = PlainStruct()
 
@@ -116,16 +116,16 @@ fn zork():
 
 
 struct BaseStruct:
-    fn same_name(self):
+    def same_name(self):
         pass
 
 
 __extension BaseStruct:
-    fn same_name(self, i: __mlir_type.index):
+    def same_name(self, i: __mlir_type.index):
         pass
 
 
-fn test_overloads(s: BaseStruct):
+def test_overloads(s: BaseStruct):
     var result = s.same_name()
 
 
@@ -137,12 +137,12 @@ fn test_overloads(s: BaseStruct):
 struct Spaceship:
     var location: Int
 
-    fn set_location(mut self, new_location: Int):
+    def set_location(mut self, new_location: Int):
         self.location = new_location
 
 
 trait Flying:
-    fn fly_to(mut self, new_location: Int):
+    def fly_to(mut self, new_location: Int):
         ...
 
 
@@ -153,7 +153,7 @@ __extension Spaceship(Flying):
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
     # CHECK-SAME: %new_location: !Int
-    fn fly_to(mut self: Spaceship, new_location: Int):
+    def fly_to(mut self: Spaceship, new_location: Int):
         self.set_location(new_location)
 
 
@@ -168,28 +168,28 @@ __extension Spaceship(Flying):
 
 
 trait Flying:
-    fn fly_to(mut self, new_location: Int):
+    def fly_to(mut self, new_location: Int):
         ...
 
 
 struct Spaceship:
     var location: Int
 
-    fn set_location(mut self, new_location: Int):
+    def set_location(mut self, new_location: Int):
         self.location = new_location
 
 
 __extension Spaceship(Flying):
-    fn fly_to(mut self: Spaceship, new_location: Int):
+    def fly_to(mut self: Spaceship, new_location: Int):
         self.set_location(new_location)
 
 
-fn launch_flying[F: Flying](mut flying: F):
+def launch_flying[F: Flying](mut flying: F):
     flying.fly_to(2)
 
 
 # CHECK-LABEL: lit.fn @"launch_ship
-fn launch_ship(mut ship: Spaceship):
+def launch_ship(mut ship: Spaceship):
     # CHECK: lit.call tail @struct_extensions::@"launch_flying[struct_extensions::Flying]
     # CHECK-SAME: <:!Flying !Spaceship>
     launch_flying(ship)
@@ -198,27 +198,27 @@ fn launch_ship(mut ship: Spaceship):
 # // -----
 
 # Define a capturing lambda type (like elementwise_epilogue_type)
-comptime capturing_lambda_type = fn (Int) capturing -> Int
+comptime capturing_lambda_type = def (Int) capturing -> Int
 
 
 struct StructWithCapturingLambda[T: Int, my_lambda: capturing_lambda_type]:
     var value: Int
 
     # This part of the test is here to establish the fact that struct
-    # methods get 'capturing' when the struct has a capturing fn parameter.
+    # methods get 'capturing' when the struct has a capturing def parameter.
     # Further below, we'll CHECK that the same thing happens for extensions.
     # CHECK-LABEL: lit.fn @"helper_with_capturing_lambda
     # CHECK-SAME: capturing -> !Int
-    fn helper_with_capturing_lambda(self) -> Int:
+    def helper_with_capturing_lambda(self) -> Int:
         return Self.T
 
 
 __extension StructWithCapturingLambda:
     # CHECK-LABEL: lit.fn @"user_from_extension
     # This is the important check, that extension methods also get 'capturing'
-    # if the struct has any capturing fn parameters.
+    # if the struct has any capturing def parameters.
     # CHECK-SAME: ) capturing -> !Int attributes
-    fn user_from_extension(self) -> Int:
+    def user_from_extension(self) -> Int:
         return Self.helper_with_capturing_lambda(self)
 
 
@@ -228,12 +228,12 @@ __extension StructWithCapturingLambda:
 struct Spaceship:
     var location: Int
 
-    fn set_location(mut self, new_location: Int):
+    def set_location(mut self, new_location: Int):
         self.location = new_location
 
 
 trait Flying:
-    fn fly_to(mut self, new_location: Int):
+    def fly_to(mut self, new_location: Int):
         ...
 
 
@@ -248,7 +248,7 @@ __extension Spaceship(Flying):
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
     # CHECK-SAME: %new_location: !Int
-    fn fly_to(mut self: Spaceship, new_location: Int):
+    def fly_to(mut self: Spaceship, new_location: Int):
         self.set_location(new_location)
 
 
@@ -262,7 +262,7 @@ __extension Spaceship(Flying):
 
 
 struct ZDType:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
@@ -301,7 +301,7 @@ __extension MyContainer:
     pass
 
 
-fn test_param_access[dtype: Int]():
+def test_param_access[dtype: Int]():
     # Note the Int below, thats what makes sure it's working.
     # CHECK: lit.alias.decl *"element_type`": !Int = <dtype>
     comptime element_type = MyContainer[dtype].d
@@ -316,7 +316,7 @@ fn test_param_access[dtype: Int]():
 __extension MyThing:
     # In the extension's scope, `Self` didn't have generic parameters.
     @staticmethod
-    fn foo() -> Self:
+    def foo() -> Self:
         return Self()
 
 
@@ -325,11 +325,11 @@ struct MyThing[N: Int]:
     pass
 
 
-fn zork(m: MyThing[5]):
+def zork(m: MyThing[5]):
     pass
 
 
-fn bork(m: MyThing[5]):
+def bork(m: MyThing[5]):
     # This had a mismatch, because m.foo()'s return type was MyThing but
     # zork expected the proper MyThing[5].
     zork(m.foo())

@@ -16,7 +16,7 @@ __extension Spaceship:
 
 
 # CHECK-LABEL: lit.fn @"test_function
-fn test_function():
+def test_function():
     # CHECK: lit.alias.decl *"MySpeed`"
     comptime MySpeed = Spaceship.MaxSpeed
     # CHECK: lit.var.decl "speed"
@@ -29,10 +29,10 @@ fn test_function():
 
 
 struct ZInt(ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, other: ZInt):
+    def __init__(out self, other: ZInt):
         pass
 
 
@@ -46,7 +46,7 @@ __extension Spaceship:
 
 
 # CHECK-LABEL: lit.fn @"test_function()"
-fn test_function():
+def test_function():
     # Note how this is resolving to ZInt right here, it means the lookup worked.
     # CHECK: lit.alias.decl *"MySpeed`": !alias_InnerType1 = <sugar_member_alias(!Spaceship, "MaxSpeed",
     comptime MySpeed = Spaceship.MaxSpeed
@@ -61,10 +61,10 @@ fn test_function():
 
 
 struct ZInt(ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, other: ZInt):
+    def __init__(out self, other: ZInt):
         pass
 
 
@@ -76,7 +76,7 @@ __extension Spaceship:
     comptime MaxSpeed = ZInt()
 
     # CHECK-LABEL: lit.fn @"get_max_speed
-    fn get_max_speed(self: Spaceship) -> ZInt:
+    def get_max_speed(self: Spaceship) -> ZInt:
         # Note how it's ZInt right here, it means the lookup worked.
         # CHECK: kgen.param.materialize: !ZInt
         return ZInt(MaxSpeed)
@@ -88,10 +88,10 @@ __extension Spaceship:
 
 
 struct ZInt(ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, other: ZInt):
+    def __init__(out self, other: ZInt):
         pass
 
 
@@ -102,7 +102,7 @@ struct Rocket:
 
 __extension Rocket:
     # CHECK-LABEL: lit.fn @"get_default_fuel
-    fn get_default_fuel(self) -> ZInt:
+    def get_default_fuel(self) -> ZInt:
         # Note how it's ZInt right here, it means the lookup worked.
         # CHECK: kgen.param.materialize: !ZInt
         return self.DefaultFuel  # access via self
@@ -128,10 +128,10 @@ __extension Rocket:
 
 
 struct ZInt(ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, other: ZInt):
+    def __init__(out self, other: ZInt):
         pass
 
 
@@ -143,12 +143,12 @@ __extension Container:
     comptime ElementType = Self.T
     comptime DefaultSize = ZInt()
 
-    fn get_element_via_self(self: Container[Self.T]) -> Self.T:
+    def get_element_via_self(self: Container[Self.T]) -> Self.T:
         return self.data
 
 
 # CHECK-LABEL: lit.fn @"test_self_alias_with_generic_1
-fn test_self_alias_with_generic_1(container: Container[ZInt]):
+def test_self_alias_with_generic_1(container: Container[ZInt]):
     # Note how it's ZInt right here, it means the lookup worked.
     # CHECK: lit.alias.decl *"MyElementType`1": !ImplicitlyCopyable =
     # CHECK-SAME: <sugar_member_alias(!lit.struct<#Container <:!ImplicitlyCopyable !ZInt>>, "ElementType", !ZInt)>
@@ -156,7 +156,7 @@ fn test_self_alias_with_generic_1(container: Container[ZInt]):
 
 
 # CHECK-LABEL: lit.fn @"test_self_alias_with_generic_2
-fn test_self_alias_with_generic_2(container: Container[ZInt]):
+def test_self_alias_with_generic_2(container: Container[ZInt]):
     # Note how it's ZInt right here, it means the lookup worked.
     # CHECK: %element = lit.var.decl "element" var : !lit.ref<!ZInt,
     var element = container.get_element_via_self()

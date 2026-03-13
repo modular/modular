@@ -11,11 +11,11 @@
 struct Foo[a: Int](ImplicitlyCopyable, RegisterPassable):
     var b: Int
 
-    fn get(self) -> Int:
+    def get(self) -> Int:
         return Self.a + self.b
 
 
-fn foo[Z: Int, W: Int]() -> Int:
+def foo[Z: Int, W: Int]() -> Int:
     return Z + W
 
 
@@ -30,12 +30,12 @@ fn foo[Z: Int, W: Int]() -> Int:
 # CHECK: lit.fn @"__init__{{.*}}<?, Y: !Int>
 # CHECK-SAME: (%impl: !lit.ref<!lit.struct<#escaping0 <:!Int p0, :!Int p1, :!Int Y>
 # CHECK-SAME: %self: !lit.ref<{{.*}}@"fn{{.*}}"<:!Int p0, :!Int p1>
-fn test_captures_are_ordered_correctly[
+def test_captures_are_ordered_correctly[
     aa: Int, a: Int, b: Int, bb: Int, Y: Int
-](c: Int) -> fn (x: Int, y: Foo[b]) escaping -> Foo[a]:
+](c: Int) -> def (x: Int, y: Foo[b]) escaping -> Foo[a]:
     comptime Y2 = foo[aa, bb]()
 
-    fn p_capture(x: Int, y: Foo[b]) -> Foo[a]:
+    def p_capture(x: Int, y: Foo[b]) -> Foo[a]:
         return Foo[a](c + Y + b)
 
     return p_capture

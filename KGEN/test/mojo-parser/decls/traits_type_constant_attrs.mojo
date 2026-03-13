@@ -7,12 +7,12 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 trait SubTraitT(TrivialRegisterPassable):
-    fn subget(self) -> Int:
+    def subget(self) -> Int:
         ...
 
 
 trait SubTraitT2(TrivialRegisterPassable):
-    fn subget2(self) -> Int:
+    def subget2(self) -> Int:
         ...
 
 
@@ -20,26 +20,26 @@ trait MainTraitT(TrivialRegisterPassable):
     comptime ret_type: SubTraitT
     comptime anything: AnyType
 
-    fn get(self) -> Self.ret_type:
+    def get(self) -> Self.ret_type:
         ...
 
 
 trait MainTraitT2(TrivialRegisterPassable):
     comptime ret_type: SubTraitT2
 
-    fn get2(self) -> Self.ret_type:
+    def get2(self) -> Self.ret_type:
         ...
 
 
 @fieldwise_init
 struct ImplT(SubTraitT, SubTraitT2, TrivialRegisterPassable):
-    fn subget(self) -> Int:
+    def subget(self) -> Int:
         return 0
 
-    fn subget2(self) -> Int:
+    def subget2(self) -> Int:
         return 0
 
-    fn BAR(self) -> Int:
+    def BAR(self) -> Int:
         return 1
 
 
@@ -50,13 +50,13 @@ struct MainImplT(MainTraitT, MainTraitT2, TrivialRegisterPassable):
     # CHECK: lit.alias.decl *"anything{{.*}}": !mt_Int = <!Int>
     comptime anything = Int
 
-    fn get(self) -> Self.ret_type:
+    def get(self) -> Self.ret_type:
         return ImplT()
 
-    fn get2(self) -> Self.ret_type:
+    def get2(self) -> Self.ret_type:
         return ImplT()
 
-    fn doSomethingNonTraity(self) -> Int:
+    def doSomethingNonTraity(self) -> Int:
         # Verify the ImplT type is returned, not a type value of trait metatype.
         # CHECK: lit.call tail @{{.*}}::@MainImplT::@"get{{.*}}"(%self) : !lit.generator<("self": !MainImplT)
         # CHECK-SAME:  -> !kgen.param<:!mt_ImplT sugar_member_alias(!MainImplT, "ret_type", !ImplT)>>
@@ -65,7 +65,7 @@ struct MainImplT(MainTraitT, MainTraitT2, TrivialRegisterPassable):
         return a
 
 
-fn repro_issue[
+def repro_issue[
     main_t: MainTraitT, main_t2: MainTraitT2
 ](t: main_t, t2: main_t2) -> Int:
     var a = t.get().subget()
@@ -75,7 +75,7 @@ fn repro_issue[
 
 
 @export
-fn callIt() -> Int:
+def callIt() -> Int:
     var t = MainImplT()
     var a = repro_issue(t, t)
     return a
@@ -87,14 +87,14 @@ fn callIt() -> Int:
 
 
 # Just make sure this parses.
-fn declval[T: AnyType]() -> T:
+def declval[T: AnyType]() -> T:
     pass
 
 
 trait MyThingTrait:
-    fn thing(self) -> __mlir_type.i1:
+    def thing(self) -> __mlir_type.i1:
         ...
 
 
-fn propagate_type[T: MyThingTrait](range: T) -> type_of(declval[T]().thing()):
+def propagate_type[T: MyThingTrait](range: T) -> type_of(declval[T]().thing()):
     pass

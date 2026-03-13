@@ -12,7 +12,7 @@
 #
 # Exp[x] = 1 + x + x^2/2 + x^3/6 + x^4/24 + x^5/120 + x^6/720 + x^7/5040
 #        = 1 + x (1 + x (1/2 + x (1/6 + x (1/24 + (1/120 + x/720) x))))
-fn exp_scalar_taylor_float32(x: Float32) -> Float32:
+def exp_scalar_taylor_float32(x: Float32) -> Float32:
     return 1.0 + x * (
         1.0
         + x
@@ -24,11 +24,11 @@ fn exp_scalar_taylor_float32(x: Float32) -> Float32:
     )
 
 
-fn erf_taylor_vector(x: Float32) -> Float32:
+def erf_taylor_vector(x: Float32) -> Float32:
     return x * (x * x).fma(-0.37612638903183752463, 1.1283791670955125739)
 
 
-fn main():
+def main():
     var res_exp = exp_scalar_taylor_float32(2.3)
     # CHECK: 9.88
     print(res_exp)

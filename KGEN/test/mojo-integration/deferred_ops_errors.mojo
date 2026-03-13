@@ -29,11 +29,11 @@ def extra_attribute(a: Int, b: Int) raises -> Bool:
 
 # expected-error @+2{{function instantiation failed}}
 @export
-fn invalid_predicate_passed(x: Int, y: Int) -> Bool:
-    fn pred() -> __mlir_type.`!kgen.string`:
+def invalid_predicate_passed(x: Int, y: Int) -> Bool:
+    def pred() -> __mlir_type.`!kgen.string`:
         return __mlir_attr[`"xyz" : !kgen.string`]
 
-    fn get_pred() -> __mlir_type.`!kgen.deferred`:
+    def get_pred() -> __mlir_type.`!kgen.deferred`:
         return __mlir_deferred_attr[`#index<cmp_predicate `, pred(), `>`]
 
     # expected-note @below {{invalid MLIR attribute: failed to parse IndexCmpPredicateAttr parameter 'value' which is to be a `::mlir::index::IndexCmpPredicate`}}

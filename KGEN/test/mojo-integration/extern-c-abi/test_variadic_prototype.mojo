@@ -14,7 +14,7 @@
 
 # CHECK: variadic_sum: 63
 # Test 1: Simple variadic sum
-fn test_variadic_ints():
+def test_variadic_ints():
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_sum_ints".value,
         variadicType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
@@ -33,7 +33,7 @@ struct Struct4(TrivialRegisterPassable):
     var d: UInt8
 
 
-fn test_variadic_struct4():
+def test_variadic_struct4():
     var s = Struct4(1, 2, 3, 4)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_struct4".value,
@@ -57,7 +57,7 @@ struct Struct16(TrivialRegisterPassable):
     var b: UInt64
 
 
-fn test_variadic_struct16():
+def test_variadic_struct16():
     var s = Struct16(100, 200)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_struct16".value,
@@ -76,7 +76,7 @@ struct Struct17(TrivialRegisterPassable):
     var c: UInt8
 
 
-fn test_variadic_struct17():
+def test_variadic_struct17():
     var s = Struct17(10, 20, 30)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_struct17".value,
@@ -88,7 +88,7 @@ fn test_variadic_struct17():
 
 # CHECK: variadic_mixed: 32.5
 # Test 5: Variadic mixed int and float
-fn test_variadic_mixed():
+def test_variadic_mixed():
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_mixed".value,
         variadicType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<f64>`,],
@@ -97,7 +97,7 @@ fn test_variadic_mixed():
     print("variadic_mixed:", result)
 
 
-fn main():
+def main():
     test_variadic_ints()
     test_variadic_struct4()
     test_variadic_struct16()

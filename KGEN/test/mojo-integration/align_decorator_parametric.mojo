@@ -18,7 +18,7 @@ from std.testing import assert_equal, assert_true, TestSuite
 struct AlignedBuffer[alignment: Int]:
     var data: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.data = 0
 
 
@@ -27,7 +27,7 @@ struct AlignedTrivialParam[alignment: Int](TrivialRegisterPassable):
     var value: Int
 
 
-fn test_parametric_align() raises:
+def test_parametric_align() raises:
     """Test that align_of[T]() reflects parametric @align values."""
     assert_equal(align_of[AlignedBuffer[64]](), 64)
     assert_equal(align_of[AlignedBuffer[128]](), 128)
@@ -35,7 +35,7 @@ fn test_parametric_align() raises:
     assert_equal(align_of[AlignedBuffer[4096]](), 4096)
 
 
-fn test_parametric_align_stack() raises:
+def test_parametric_align_stack() raises:
     """Test that stack allocations respect parametric @align."""
     # Test 64-byte alignment
     var buf64 = AlignedBuffer[64]()
@@ -59,13 +59,13 @@ fn test_parametric_align_stack() raises:
     )
 
 
-fn test_parametric_align_trivial() raises:
+def test_parametric_align_trivial() raises:
     """Test parametric alignment on RegisterPassable structs."""
     assert_equal(align_of[AlignedTrivialParam[32]](), 32)
     assert_equal(align_of[AlignedTrivialParam[64]](), 64)
 
 
-fn test_different_instantiations() raises:
+def test_different_instantiations() raises:
     """Test that different instantiations have correct independent alignment."""
     # Create multiple instantiations with different alignments
     comptime A32 = AlignedBuffer[32]
@@ -84,11 +84,11 @@ struct Outer[alignment: Int]:
 
     var inner: AlignedBuffer[Self.alignment]
 
-    fn __init__(out self):
+    def __init__(out self):
         self.inner = AlignedBuffer[Self.alignment]()
 
 
-fn test_nested_parametric_align() raises:
+def test_nested_parametric_align() raises:
     """Test nested structs with parametric alignment."""
     # Outer struct should have the same alignment as its inner parametric struct
     assert_equal(align_of[Outer[64]](), 64)
@@ -100,7 +100,7 @@ fn test_nested_parametric_align() raises:
     assert_true((addr & 63) == 0, "Outer[64] should be 64-byte aligned")
 
 
-fn test_parametric_align_default() raises:
+def test_parametric_align_default() raises:
     """Test parametric @align(1) which is the default alignment."""
     # @align(1) is the default and should use natural alignment (8 for Int).
     assert_equal(align_of[AlignedBuffer[1]](), 8)
@@ -119,12 +119,12 @@ struct ContainsParametricAligned[alignment: Int]:
     var first: Int
     var second: AlignedBuffer[Self.alignment]
 
-    fn __init__(out self, first: Int):
+    def __init__(out self, first: Int):
         self.first = first
         self.second = AlignedBuffer[Self.alignment]()
 
 
-fn test_parametric_field_offset_alignment() raises:
+def test_parametric_field_offset_alignment() raises:
     """Test that fields with parametric @align are at correct offsets.
 
     When a struct has a field with parametric @align(N), that field should be
@@ -164,7 +164,7 @@ fn test_parametric_field_offset_alignment() raises:
     )
 
 
-fn test_parametric_align_heap() raises:
+def test_parametric_align_heap() raises:
     """Test that heap allocations respect parametric @align."""
     # Allocate on the heap with 64-byte alignment.
     var ptr64 = alloc[AlignedBuffer[64]](1)
@@ -203,5 +203,5 @@ fn test_parametric_align_heap() raises:
         ptr.free()
 
 
-fn main() raises:
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

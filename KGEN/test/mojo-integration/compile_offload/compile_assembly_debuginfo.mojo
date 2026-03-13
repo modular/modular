@@ -9,16 +9,16 @@ from std.compile import compile_info
 from std.sys import size_of
 
 
-fn get_type(dtype: DType) -> DType:
+def get_type(dtype: DType) -> DType:
     return dtype
 
 
-fn compiled_fn[dtype: DType](M: SIMD[get_type(dtype), 4]) -> Int:
+def compiled_fn[dtype: DType](M: SIMD[get_type(dtype), 4]) -> Int:
     comptime b = size_of[get_type(dtype)]()
     return b + Int(M[0])
 
 
-fn main():
+def main():
     comptime myCompiledFn = compiled_fn[DType.uint32]
     print(compile_info[myCompiledFn, emission_kind="llvm"]())
 

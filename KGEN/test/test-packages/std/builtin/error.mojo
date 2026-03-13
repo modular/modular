@@ -5,5 +5,5 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn __mojo_debugger_raise_hook():
+def __mojo_debugger_raise_hook():
     pass

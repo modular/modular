@@ -16,21 +16,21 @@ comptime myIntFMA[x: Int, y: Int, z: Int] = x * y + z
 
 
 @no_inline
-fn just_print[n: Int]():
+def just_print[n: Int]():
     print(n)
 
 
 @no_inline
-fn bind_unop_and_print[unop: type_of(myIntAdd[2, ...])]():
+def bind_unop_and_print[unop: type_of(myIntAdd[2, ...])]():
     just_print[unop[7]]()
 
 
 @no_inline
-fn bind_binop_and_print[binop: type_of(myIntAdd)]():
+def bind_binop_and_print[binop: type_of(myIntAdd)]():
     bind_unop_and_print[binop[5, ...]]()
 
 
-fn main():
+def main():
     # CHECK: 12
     bind_binop_and_print[myIntAdd]()
     # CHECK: 35

@@ -6,5 +6,5 @@
 
 
 @export("my_add_one")
-fn my_add_one(x: UnsafePointer[Int32, MutAnyOrigin]):
+def my_add_one(x: UnsafePointer[Int32, MutAnyOrigin]):
     x[] += 1

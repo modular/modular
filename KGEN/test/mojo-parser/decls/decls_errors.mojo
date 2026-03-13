@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 struct HasIntParam[x: Int]:
-  fn __init__(out self): pass
+  def __init__(out self): pass
 
 ##===----------------------------------------------------------------------===##
 # Functions
@@ -18,41 +18,41 @@ def missing_raises_is_ok():
 
 struct NotBoolConvertible: pass
 # expected-note @+1 {{function declared here}}
-fn test_bool_context(a: NotBoolConvertible): pass
+def test_bool_context(a: NotBoolConvertible): pass
 
-fn voidReturningFn(): pass
-fn badCall():
+def voidReturningFn(): pass
+def badCall():
   # expected-error @+1 {{invalid call to 'test_bool_context': value passed to 'a' cannot be converted from 'None' to 'NotBoolConvertible'}}
   test_bool_context(voidReturningFn())
 
 
-fn missing_ret_val() -> __mlir_type.index:
+def missing_ret_val() -> __mlir_type.index:
   return # expected-error {{cannot implicitly convert 'None' value to '__mlir_type.index' in return value}}
 
-fn ret_type_mismatch() -> __mlir_type.index:
+def ret_type_mismatch() -> __mlir_type.index:
   return 4.0 # expected-error {{cannot implicitly convert 'FloatLiteral[4]' value to '__mlir_type.index' in return value}}
 
-async fn testAsyncVoid(): pass
-async fn testAsyncInt() -> Int: return 42
+async def testAsyncVoid(): pass
+async def testAsyncInt() -> Int: return 42
 
-fn callsWith():
+def callsWith():
   testAsyncVoid() # expected-warning {{awaitable 'Coroutine[None, {}]' value was never awaited}}
   testAsyncInt() # expected-warning {{awaitable 'Coroutine[Int, {}]' value was never awaited}}
 
 
 struct ThingWithStaticMethod:
    @staticmethod
-   fn splat(x: Int): # expected-note {{function declared here}}
+   def splat(x: Int): # expected-note {{function declared here}}
      pass
 
-fn testThingWithStaticMethod():
+def testThingWithStaticMethod():
   # expected-error @+1 {{invalid call to 'splat': value passed to 'x' cannot be converted from 'FloatLiteral[4]' to 'Int'}}
   ThingWithStaticMethod.splat(4.0)
 
 
 def top_level_fn(a: Int) raises:
     # expected-error @below {{TODO: closures cannot have parameters}}
-    fn bar[b: Int]() -> Int:
+    def bar[b: Int]() -> Int:
       return a
 
 def use_non_copyable_type(a: ThingWithStaticMethod) raises:
@@ -69,35 +69,35 @@ struct MemType(ImplicitlyCopyable):
 # COM: Issue https://github.com/modularml/modular/issues/37758 where the
 # COM: key test is that the below is not crashing due to assertion violation.
 # expected-error @+1 {{expected ':' in function definition}}
-fn missingColon(x: Int)
+def missingColon(x: Int)
   return x
 
-fn out1(a: Int, out b: Int): pass
+def out1(a: Int, out b: Int): pass
 
 # expected-error @+1 {{'out' convention may not be variadic}}
-fn bad_out2(out *b: Int): pass
+def bad_out2(out *b: Int): pass
 
 # expected-error @+1 {{expected ']' for parameter list}}
-fn bad_out3[out x: Int](): pass
+def bad_out3[out x: Int](): pass
 
 # expected-error @+1 {{function may not have multiple 'out' arguments}}
-fn bad_out4(out a: Int, out b: Int): pass
+def bad_out4(out a: Int, out b: Int): pass
 
 # expected-error @+1 {{function cannot have both an 'out' argument and an explicit result type}}
-fn bad_out5(out a: Int) -> Int: pass
+def bad_out5(out a: Int) -> Int: pass
 
 # expected-error @+1 {{function cannot have both an 'out' argument and an explicit result type; remove the '-> None' to fix it}}
-fn bad_out6(out self) -> None: pass
+def bad_out6(out self) -> None: pass
 
 struct BadInitResult:
   # expected-error @+1 {{__init__ method must return Self type with 'out' argument}}
-  fn __init__(mut self) raises -> None:
+  def __init__(mut self) raises -> None:
     pass
 
 struct BadInitType:
     # expected-error @below {{__init__ method must return Self type with 'out' argument}}
     # expected-error @below {{self argument must be present in instance method}}
-    fn __init__():
+    def __init__():
         pass
 
 # expected-error @+1 {{argument type must be specified}}
@@ -109,7 +109,7 @@ def defaultArgumentUntyped(a=1) raises:
 ##===----------------------------------------------------------------------===##
 
 # COM: Issue https://github.com/modular/mojo/issues/1091
-fn missing_arg_type_or_default(
+def missing_arg_type_or_default(
     # expected-error @+1 {{number of arguments does not match number of argument names: 5 != 6}}
     a: Int = 9,
     # expected-error @+2 {{required positional argument follows optional positional argument}}
@@ -134,56 +134,56 @@ def missing_default(
     pass
 
 # expected-error @+1 {{use of unknown declaration 'unknown'}}
-fn defaultArgumentUnknownDeclaration(a: Int = unknown): pass
+def defaultArgumentUnknownDeclaration(a: Int = unknown): pass
 
 # expected-error @+1 {{cannot use a dynamic value in default argument}}
-fn defaultArgumentReferencesArgument(a: Int = 0, b: Int = a): pass
+def defaultArgumentReferencesArgument(a: Int = 0, b: Int = a): pass
 
 # expected-error @+1 {{cannot implicitly convert 'FloatLiteral[1]' value to 'Int'}}
-fn defaultArgumentBadType(a: Int = 1.0): pass
+def defaultArgumentBadType(a: Int = 1.0): pass
 
 # expected-note @+1 {{function declared here}}
-fn defaultArgumentBadType2[T: AnyType](a: T = 1.0): pass
-fn callDefaultArgumentBadType2():
+def defaultArgumentBadType2[T: AnyType](a: T = 1.0): pass
+def callDefaultArgumentBadType2():
   # expected-error @+1 {{invalid call to 'defaultArgumentBadType2': value passed to 'a' cannot be converted from 'FloatLiteral[1]' to 'Int'}}
   defaultArgumentBadType2[Int]()
   defaultArgumentBadType2[Float64]()
 
 # expected-error @+1 {{invalid call to '__init__': no candidates found}}
-fn test_contextual_default[T: AnyType](copies: T = {}):
+def test_contextual_default[T: AnyType](copies: T = {}):
     pass
 
 # this should work.
-fn test_contextual_default2[i: Int](x: HasIntParam[i] = {}):
+def test_contextual_default2[i: Int](x: HasIntParam[i] = {}):
     pass
 
 # expected-error @+1 {{'mut' arguments may not have defaults}}
-fn byref_default(mut x: Int = 2): pass
+def byref_default(mut x: Int = 2): pass
 
 # expected-error @below {{'**' marker must be at end of argument list}}
-fn starStarLast(**a: Int, b: Int): pass
+def starStarLast(**a: Int, b: Int): pass
 
 # expected-error @below {{'**' marker must be at end of argument list}}
-fn twoStarStar(**a: Int, **b: Int): pass
+def twoStarStar(**a: Int, **b: Int): pass
 
 # expected-error @+1 {{expected argument name}}
-fn starSpaceStar(* *a: Int): pass
+def starSpaceStar(* *a: Int): pass
 
 # expected-error @+1 {{variadic arguments may not have defaults}}
-fn noDefaultVariadics(*a: Int = 42): pass
+def noDefaultVariadics(*a: Int = 42): pass
 
 # expected-note @+1 {{function declared here}}
-fn exampleVariadic(a: FloatLiteral, *b: Int): pass
+def exampleVariadic(a: FloatLiteral, *b: Int): pass
 # expected-note @+1 {{function declared here}}
-fn exampleVariadicAndKeyword(*a: Int, b: Int): pass
+def exampleVariadicAndKeyword(*a: Int, b: Int): pass
 # expected-note @+1 {{function declared here}}
-fn exampleByRefVariadic(a: FloatLiteral, mut *b: Int): pass
+def exampleByRefVariadic(a: FloatLiteral, mut *b: Int): pass
 # expected-note @+1 {{function declared here}}
-fn parameterizedVariadic[T: TrivialRegisterPassable](*args: T): pass
+def parameterizedVariadic[T: TrivialRegisterPassable](*args: T): pass
 
-fn ownedPack[*Ts: AnyType](var *args: *Ts): pass
-fn ownedVariadic(var *args: Inner): pass
-fn ownedVariadicReg(var *args: WrongType): pass
+def ownedPack[*Ts: AnyType](var *args: *Ts): pass
+def ownedVariadic(var *args: Inner): pass
+def ownedVariadicReg(var *args: WrongType): pass
 
 
 # expected-note @+1 {{struct declared here}}
@@ -193,16 +193,16 @@ struct ParameterizedStruct[T: TrivialRegisterPassable]:
         pass
 
 struct BadResultParams[a: Int]:
-  fn __init__(out self: Self): pass # Ok.
+  def __init__(out self: Self): pass # Ok.
   # expected-error @+1 {{cannot use Self parameter 'a' in constructor whose result defines it to '(a + 1)'}}
-  fn __init__(x: Int, out self: BadResultParams[Self.a + 1]): pass
+  def __init__(x: Int, out self: BadResultParams[Self.a + 1]): pass
   # expected-error @+1 {{cannot use Self parameter 'a' in constructor whose result defines it to '4'}}
-  fn __init__(x: BadResultParams[Self.a], out self: BadResultParams[4]): pass
+  def __init__(x: BadResultParams[Self.a], out self: BadResultParams[4]): pass
   # expected-error @+1 {{cannot use Self parameter 'a' in constructor whose result defines it to '7'}}
-  fn __init__[p: BadResultParams[Self.a]](*, y: Int, out self: BadResultParams[7]):
+  def __init__[p: BadResultParams[Self.a]](*, y: Int, out self: BadResultParams[7]):
       pass
 
-fn useBadResultParams():
+def useBadResultParams():
   # These shouldn't generate errors.
   _ = BadResultParams[1](1)
   _ = BadResultParams()
@@ -211,10 +211,10 @@ fn useBadResultParams():
 @fieldwise_init
 struct TestTuple[*Ts: __mlir_type.`!kgen.type`]:
     # expected-note @+1 {{function declared here}}
-    fn test[i: Int, j: Int](self):
+    def test[i: Int, j: Int](self):
         pass
 
-fn badCalls(arg: Int):
+def badCalls(arg: Int):
   # expected-error @+1 {{value passed to 'b' cannot be converted from 'FloatLiteral[1]' to 'Int'}}
   exampleVariadic(1.0, 1.0)
   # expected-error @+1 {{value passed to 'b' cannot be converted from 'FloatLiteral[1]' to 'Int'}}
@@ -244,60 +244,60 @@ fn badCalls(arg: Int):
   # expected-error @below {{invalid call to 'test': failed to infer parameter 'j'}}
   TestTuple[Int, FloatLiteral]().test[1]()
 
-fn badError(a: ParameterizedStruct[Int]):
+def badError(a: ParameterizedStruct[Int]):
   # expected-error @+1 {{cannot implicitly convert 'ParameterizedStruct[Int]' value to 'ParameterizedStruct[Bool]'}}
   var b: ParameterizedStruct[Bool] = a
 
 # expected-note @below {{candidate declared here}}
-fn overloadedFunc(x: Int): pass
+def overloadedFunc(x: Int): pass
 # expected-note @below {{candidate declared here}}
-fn overloadedFunc(x: Int, y: Int): pass
+def overloadedFunc(x: Int, y: Int): pass
 
 # expected-note @below {{function declared here}}
-fn takeFuncArgument(f: Int): pass
+def takeFuncArgument(f: Int): pass
 
-fn callWithOverloadedArg():
+def callWithOverloadedArg():
   # expected-error @below {{cannot convert function to non-function type 'Int'}}
   takeFuncArgument(overloadedFunc)
 
 # expected-error @+1 {{unexpected token in expression}}
-fn invalidStarExpression(*x: *): pass
+def invalidStarExpression(*x: *): pass
 
 # expected-error @+1 {{pack argument type list must reference a variadic list}}
-fn invalidPackType(*x: *Int): pass
+def invalidPackType(*x: *Int): pass
 
-fn invalidParameterPack[*Ts: AnyType]():
+def invalidParameterPack[*Ts: AnyType]():
   # expected-error @+1 {{parameters may not be variadic packs}}
-  fn invalid[*Us: *Ts](): pass
+  def invalid[*Us: *Ts](): pass
 
 # expected-error @+2 {{only variadic arguments' types can be unpacked}}
 # expected-note @+1 {{'x' is not a variadic argument}}
-fn invalidArgumentUnpack[*Ts: AnyType](x: *Ts): pass
+def invalidArgumentUnpack[*Ts: AnyType](x: *Ts): pass
 
 # expected-error @+1 {{argument already has a convention specified}}
-fn invalidOwned(var var x: Int): pass
+def invalidOwned(var var x: Int): pass
 
 # expected-note @+1 {{function declared here}}
-fn examplePack[*Ts: AnyType](*args: *Ts):
+def examplePack[*Ts: AnyType](*args: *Ts):
   pass
 
-fn packArgOverload():
+def packArgOverload():
   pass
 
-fn packArgOverload(x: Int):
+def packArgOverload(x: Int):
   pass
 
 
 # expected-note @+1 {{function declared here}}
-fn first_and_rest[T: TrivialRegisterPassable, *Ts: AnyType](*values: *Ts):
+def first_and_rest[T: TrivialRegisterPassable, *Ts: AnyType](*values: *Ts):
     pass
 
 
-fn unresolvedPackCall[*t : AnyType](var *args: *t):
+def unresolvedPackCall[*t : AnyType](var *args: *t):
   # expected-error @below {{assigning 0 operands to an unresolvable variadic pack argument}}
   var _ = examplePack[*t]()
 
-fn badPackCalls(value: Int):
+def badPackCalls(value: Int):
   # expected-error @+1 {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 1 positional operand, but 2 were specified}}
   examplePack[Int](1, 2)
   # expected-error @+1 {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 2 positional operands, but 1 was specified}}
@@ -312,39 +312,39 @@ fn badPackCalls(value: Int):
 struct TestPackErrorMessage[*Ts: AnyType]:
     # expected-error @below {{'self' argument must have type 'TestPackErrorMessage[Ts]', but actually has type 'VariadicPack[False, AnyType, Ts]'}}
     # expected-error @below {{__init__ method must return Self type with 'out' argument}}
-    fn __init__(*args: *Self.Ts):
+    def __init__(*args: *Self.Ts):
          pass
 
 # expected-error @+1 {{variadic pack elements declared as '__TypeOfAllTypes' are removed, please declare elements as 'AnyType' instead of '__TypeOfAllTypes'}}
-fn badAnyRegPack[*Ts: __mlir_type.`!kgen.type`](*args: *Ts):
+def badAnyRegPack[*Ts: __mlir_type.`!kgen.type`](*args: *Ts):
   pass
 
 # always_inline("builtin")
 
 # expected-error @+2 {{'@always_inline("builtin")' does not support this argument convention}}
 @always_inline("builtin")
-async fn always_inline_builtin_1(): pass
+async def always_inline_builtin_1(): pass
 
 # expected-error @+2 {{'@always_inline("builtin")' does not support this argument convention}}
 @always_inline("builtin")
-fn always_inline_builtin_2(a: MemType): pass
+def always_inline_builtin_2(a: MemType): pass
 
 # expected-error @+2 {{'@always_inline("builtin")' does not support this argument convention}}
 @always_inline("builtin")
-fn always_inline_builtin_3() raises: pass
+def always_inline_builtin_3() raises: pass
 
 @always_inline("builtin")
-fn always_inline_builtin_4(a: Bool):
+def always_inline_builtin_4(a: Bool):
   # expected-error @+1 {{'@always_inline("builtin")' does not support MLIR operation hlcf.elif}}
   if a:
      pass
 
 # expected-error @+1 {{where clauses can only be used for compile time parameters}}
-fn illegal_runtime_where[x: Int](a: Int where a > 1):
+def illegal_runtime_where[x: Int](a: Int where a > 1):
   pass
 
 # expected-note @+1 {{function declared here}}
-fn simple_constraints[x: Int, y: Int]()
+def simple_constraints[x: Int, y: Int]()
   # expected-note @+1 {{constraint declared here}}
   where x > 1
   # expected-note @+1 {{constraint declared here}}
@@ -352,26 +352,26 @@ fn simple_constraints[x: Int, y: Int]()
     pass
 
 # expected-note @below {{cannot evaluate call to non-builtin function declared here}}
-fn unfoldable_predicate(y: Int) -> Bool:
+def unfoldable_predicate(y: Int) -> Bool:
   return y > 2
 
 @always_inline("builtin")
-fn foldable_predicate(y: Int) -> Bool:
+def foldable_predicate(y: Int) -> Bool:
   return y > 10
 
 # expected-note @below {{cannot prove constraint for candidate}}
 # expected-note @below {{constraint declared here needs evidence for 'foldable_predicate(x)'}}
-fn need_foldable_predicate[a: Int]() where foldable_predicate(a):
+def need_foldable_predicate[a: Int]() where foldable_predicate(a):
   pass
 
-fn call_need_foldable_predicate[x: Int]():
+def call_need_foldable_predicate[x: Int]():
   # expected-error @below {{invalid call to 'need_foldable_predicate': lacking evidence to prove correctness}}
   # expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
   need_foldable_predicate[x]()
 
 # expected-note @below {{function declared here}}
 # expected-note @below {{cannot prove constraint}}
-fn unprovable_constraints[x: Int, y: Int]()
+def unprovable_constraints[x: Int, y: Int]()
   # expected-note @+1 {{constraint declared here evaluated to False, expected '(x > 1)'}}
   where x > 1
   # expected-note @+1 {{constraint declared here needs evidence for 'unfoldable_predicate(0)'}}
@@ -379,7 +379,7 @@ fn unprovable_constraints[x: Int, y: Int]()
     pass
 
 comptime IntVariadic = __mlir_type[`!kgen.variadic<`, Int, `>`]
-comptime IntSumReducerFn[Prev: Int, *From: Int, Idx: __mlir_type.index]: Int = Prev + From[Idx]
+comptime IntSumReducerdef[Prev: Int, *From: Int, Idx: __mlir_type.index]: Int = Prev + From[Idx]
 
 comptime IntSumReducer[Variadic: IntVariadic] = __mlir_attr[
   `#kgen.variadic.reduce<`,
@@ -387,17 +387,17 @@ comptime IntSumReducer[Variadic: IntVariadic] = __mlir_attr[
   `,`,
   Variadic,
   `,`,
-  IntSumReducerFn,
+  IntSumReducerdef,
   `> : `,
   Int,
 ]
 
 # expected-note @below {{function declared here}}
 # expected-note @below {{constraint declared here evaluated to False}}
-fn failing_constraint_with_depth[*vals: Int]() where IntSumReducer[vals] == 9:
+def failing_constraint_with_depth[*vals: Int]() where IntSumReducer[vals] == 9:
   pass
 
-fn test_constraints():
+def test_constraints():
   # expected-error @+1 {{violated constraint}}
   simple_constraints[0, 0]()
   # expected-error @+1 {{violated constraint}}
@@ -416,10 +416,10 @@ fn test_constraints():
 
 # expected-note @below {{constraint declared here evaluated to False, expected '(x > 1)'}}
 # expected-note @below {{function declared here}}
-fn unprovable_param_constraints[x: Int where x > 1]():
+def unprovable_param_constraints[x: Int where x > 1]():
   pass
 
-fn test_param_constraints():
+def test_param_constraints():
   # expected-error @below {{invalid call to 'unprovable_param_constraints': violated constraint}}
   unprovable_param_constraints[0]()
 
@@ -433,20 +433,20 @@ struct ConstraintStruct[
     pass
 
 # expected-error @below {{invalid bindings for 'ConstraintStruct': lacking evidence to prove correctness}}
-fn use_constraint_struct[x: Int, cs: ConstraintStruct[x]]():
+def use_constraint_struct[x: Int, cs: ConstraintStruct[x]]():
     pass
 
 # expected-error @below {{violated constraint}}
-fn violate_constraint_struct[cs: ConstraintStruct[0]]():
+def violate_constraint_struct[cs: ConstraintStruct[0]]():
     pass
 
 # expected-error @below {{default value violated constraint}}
 # expected-note @below {{constraint declared here evaluated to False, expected '(x > 3)'}}
-fn violated_default_constraint[x: Int where x > 3 = 1]():
+def violated_default_constraint[x: Int where x > 3 = 1]():
     pass
 
 # There should NOT be any errors / warnings here.
-fn unprovable_default_constraint[x: Int = 3, y: Int where x + y > 3 = 1]():
+def unprovable_default_constraint[x: Int = 3, y: Int where x + y > 3 = 1]():
     pass
 
 ##===----------------------------------------------------------------------===##
@@ -454,46 +454,46 @@ fn unprovable_default_constraint[x: Int = 3, y: Int where x + y > 3 = 1]():
 ##===----------------------------------------------------------------------===##
 
 # expected-note @+1 {{previous definition here}}
-fn fn_redecl(): pass
+def fn_redecl(): pass
 # expected-error @+1 {{redefinition of function 'fn_redecl' with identical signature}}
-fn fn_redecl(): pass
+def fn_redecl(): pass
 
 # expected-note @+1 {{previous definition here}}
-fn fn_redecl2() raises -> Int: pass
+def fn_redecl2() raises -> Int: pass
 # expected-error @+1 {{redefinition of function 'fn_redecl2' cannot overload on return type only}}
-fn fn_redecl2() -> FloatDyn: pass
+def fn_redecl2() -> FloatDyn: pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: value passed to 'a' cannot be converted from 'TestOverloading' to 'Int'}}
 # expected-note @below {{candidate not viable: expected at most 1 positional argument, got 2}}
-fn overloadIntFloat32(a: Int): pass
+def overloadIntFloat32(a: Int): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note-re @below {{candidate not viable: value passed to 'a' cannot be converted from 'TestOverloading' to 'FloatDyn'}}
 # expected-note @below {{candidate not viable: expected at most 1 positional argument, got 2}}
-fn overloadIntFloat32(a: FloatDyn): pass
+def overloadIntFloat32(a: FloatDyn): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: missing 1 required positional argument: 'b'}}
 # expected-note-re @below {{candidate not viable: value passed to 'b' cannot be converted from 'FloatDyn' to 'Int'}}
-fn overloadIntFloat32(a: Int, b: Int): pass
+def overloadIntFloat32(a: Int, b: Int): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: missing 1 required positional argument: 'b'}}
 # expected-note @below {{value passed to mutable argument 'b' must be mutable}}
-fn overloadIntFloat32(a: Int, mut b: FloatDyn): pass
+def overloadIntFloat32(a: Int, mut b: FloatDyn): pass
 
 # expected-note @below {{candidate not viable: missing 2 required positional arguments: 'b', 'c'}}
 # expected-note @below {{candidate not viable: missing 1 required positional argument: 'c'}}
 # expected-note @below {{candidate declared here}}
-fn overloadIntFloat32(a: Int, mut b: FloatDyn, c: Int, *args: Int): pass
+def overloadIntFloat32(a: Int, mut b: FloatDyn, c: Int, *args: Int): pass
 
 struct TestOverloading:
   var a: Int   # expected-note {{cannot overload with this non-function definition}}
-  fn a(self):  # expected-error {{invalid redefinition of 'a'}}
+  def a(self):  # expected-error {{invalid redefinition of 'a'}}
     pass
 
-  fn test(self, a: Int, b: FloatDyn) raises:
+  def test(self, a: Int, b: FloatDyn) raises:
     # expected-note @below {{did you mean to call it?}}
     # expected-error @below {{cannot form a reference to overloaded declaration}}
     var bad = overloadIntFloat32
@@ -508,66 +508,66 @@ struct OverloadedKwArgs:
     var vals: List[Int]
 
     # expected-note @below {{previous definition here}}
-    fn __getitem__(self, idx: Int) -> Int:
+    def __getitem__(self, idx: Int) -> Int:
         return self.vals[idx]
 
     # expected-error @below {{redefinition of function '__getitem__' cannot overload on return type only}}
-    fn __getitem__(self, idx: Int) -> Bool:
+    def __getitem__(self, idx: Int) -> Bool:
         return self.vals[idx] > 0
 
 # Test that static methods don't get dispatched if their first arg is self type.
 struct StructWithStaticMethod:
-    fn __init__(out self): pass
+    def __init__(out self): pass
 
     # expected-note @+2 {{function declared here}}
     @staticmethod
-    fn bar(mut f: StructWithStaticMethod): pass
+    def bar(mut f: StructWithStaticMethod): pass
 
 
-fn test_static_overload():
+def test_static_overload():
     var a = StructWithStaticMethod()
     # expected-error @below {{invalid call to 'bar': missing 1 required positional argument: 'f'}}
     a.bar()
 
 
 # expected-note @+1 {{function declared here}}
-fn takesAtLeastOneInt(x: Int, *y: Int): pass
-fn badTakesAtLeastOneInt():
+def takesAtLeastOneInt(x: Int, *y: Int): pass
+def badTakesAtLeastOneInt():
   # expected-error @+1 {{invalid call to 'takesAtLeastOneInt': missing 1 required positional argument: 'x'}}
   takesAtLeastOneInt()
 
 
 # COM: Issue #23007
 # expected-note @+1 {{function declared here}}
-fn too_few_pos_only(a: Int, b: Int, /, msg: Int = 2): pass
+def too_few_pos_only(a: Int, b: Int, /, msg: Int = 2): pass
 
-fn test_too_few_pos_only(a: Int, msg: Int = 3):
+def test_too_few_pos_only(a: Int, msg: Int = 3):
   # expected-error @+1 {{invalid call to 'too_few_pos_only': missing 1 required positional argument: 'b'}}
   too_few_pos_only(a, msg=msg)
 
 
 # COM: Issue #23007
 # expected-note @+1 {{function declared here}}
-fn missing_args(a: Int, b: Int, c: Int = 2, d: Int = 2): pass
+def missing_args(a: Int, b: Int, c: Int = 2, d: Int = 2): pass
 
-fn test_missing_args():
+def test_missing_args():
   # expected-error @+1 {{invalid call to 'missing_args': missing 2 required positional arguments: 'a', 'b'}}
   _ = missing_args(c=1, d=1)
 
 
 struct ConvertibleFromInt:
   @implicit
-  fn __init__(out self, value: Int):
+  def __init__(out self, value: Int):
     pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: value passed to 'b' cannot be converted from 'ConvertibleFromInt' to 'Int'}}
-fn ambiguousConversions(a: ConvertibleFromInt, b: Int): pass
+def ambiguousConversions(a: ConvertibleFromInt, b: Int): pass
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: value passed to 'a' cannot be converted from 'ConvertibleFromInt' to 'Int'}}
-fn ambiguousConversions(a: Int, b: ConvertibleFromInt): pass
+def ambiguousConversions(a: Int, b: ConvertibleFromInt): pass
 
-fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
+def testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
   ambiguousConversions(a, b) # ok
   ambiguousConversions(b, a) # ok
   # expected-error @+1 {{ambiguous call to 'ambiguousConversions', each candidate requires 1 implicit conversion, disambiguate with an explicit cast}}
@@ -575,22 +575,22 @@ fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
   # expected-error @+1 {{no matching function in call}}
   ambiguousConversions(b, b)
 
-  var localFn = testAmbiguousConversions  # ok
-  localFn(a, b)
-  localFn(a, a)
-  localFn(1, b)
+  var localdef = testAmbiguousConversions  # ok
+  localdef(a, b)
+  localdef(a, a)
+  localdef(1, b)
   # expected-error @+1 {{invalid indirect call: value passed to 'a' cannot be converted from 'ConvertibleFromInt' to 'Int'}}
-  localFn(b, b)
+  localdef(b, b)
 
 # COM: https://github.com/modular/mojo/issues/1530
 # COM: Do not crash when explicitly unbound parameter cannot be deduced due to missing arguments.
 struct Parametric[a: Int]: pass
 
 # expected-note @below {{function declared here}}
-fn takes_same_arg_types[x: Int](a: Parametric[x], b: Parametric[x]): pass
+def takes_same_arg_types[x: Int](a: Parametric[x], b: Parametric[x]): pass
 
-fn test_param_deduction_failure[
-    func: fn[y: Int] (c: Parametric[y], d: Parametric[y]) -> None,
+def test_param_deduction_failure[
+    func: def[y: Int] (c: Parametric[y], d: Parametric[y]) -> None,
 ](u: Int, v: Int):
     # expected-error @+1 {{missing 1 required positional argument: 'b'}}
     takes_same_arg_types[_](u)
@@ -608,12 +608,12 @@ fn test_param_deduction_failure[
 struct InitOverloaded:
   # expected-note @below {{value passed to 'a' cannot be converted from 'StringLiteral["foo"]' to 'Int'}}
   # expected-note @below {{value passed to 'a' cannot be converted from 'Parametric[1]' to 'Int'}}
-  fn __init__(out self, a: Int): pass
+  def __init__(out self, a: Int): pass
   # expected-note @below {{value passed to 'a' cannot be converted from 'StringLiteral["foo"]' to '__mlir_type.index'}}
   # expected-note @below {{value passed to 'a' cannot be converted from 'Parametric[1]' to '__mlir_type.index'}}
-  fn __init__(out self, a: __mlir_type.index): pass
+  def __init__(out self, a: __mlir_type.index): pass
 
-fn testOverloadInitError(a: InitOverloaded, b: Parametric[1], c: Int):
+def testOverloadInitError(a: InitOverloaded, b: Parametric[1], c: Int):
   # expected-error @+1 {{cannot construct 'InitOverloaded' with itself, you can remove the constructor call}}
   _ = InitOverloaded(a)
 
@@ -660,8 +660,8 @@ struct Rec2[
   p2: Rec1]:
 
 
-# expected-error @+1 {{'fn' statement must be on its own line}}
-struct Struct: fn foo(mut self): pass
+# expected-error @+1 {{'def' statement must be on its own line}}
+struct Struct: def foo(mut self): pass
 
 struct ReturnFromStruct:
   # expected-error @+1 {{cannot return from this context}}
@@ -673,7 +673,7 @@ struct ReDef: pass # expected-error {{invalid redefinition of 'ReDef'}}
 # Ambiguous Lookup Case for Referencing Redefined Struct (ALCFRRS)
 # This tests that we don't crash or anything when we reference a redefined
 # struct.
-fn reference_redefined_struct(arg: ReDef):
+def reference_redefined_struct(arg: ReDef):
   pass
 
 struct StructMemberRedefinition:
@@ -682,38 +682,38 @@ struct StructMemberRedefinition:
 
 struct SpecialFunctions:
   # expected-error @+1 {{'__new__' is not supported on structs}}
-  fn __new__() -> Self:
+  def __new__() -> Self:
     pass
 
   # expected-error @+1 {{'__add__' requires 2 operands}}
-  fn __add__(self):
+  def __add__(self):
     pass
 
   # This is ok, SpecialFunctions may be a reference semantic struct like Object.
   # Issue #7573: Cannot have LValue or RValue overloads of special methods
-  fn __iadd__(a: SpecialFunctions, b: SpecialFunctions): pass
+  def __iadd__(a: SpecialFunctions, b: SpecialFunctions): pass
 
   # expected-error @+1 {{'__iadd__' result type must be elided (or None)}}
-  fn __iadd__(mut self, rhs: SpecialFunctions) -> SpecialFunctions: pass
+  def __iadd__(mut self, rhs: SpecialFunctions) -> SpecialFunctions: pass
 
-  fn failures(self):
+  def failures(self):
     self+self # Supports this, even though it isn't valid.  Shouldn't crash.
     self*self # expected-error {{'SpecialFunctions' does not implement the '__mul__' method}}
 
-  # expected-error @+1 {{destructor cannot be declared as raising an exception}}
-  fn __del__(deinit self) raises:
+  # expected-error @+1 {{cannot define destructor as 'def'; 'def' implicitly raises}}
+  def __del__(deinit self) raises:
      pass
 
 struct TestOwnedDeinitErrors:
   # 'owned' is no longer a keyword; it is parsed as parameter name, then 'self' is unexpected
   # expected-error @+1 {{expected ')' in argument list}}
-  fn __del__(owned self): pass
+  def __del__(owned self): pass
 
   # expected-error @+1 {{expected ')' in argument list}}
-  fn __moveinit__(out self, owned x: TestOwnedDeinitErrors): pass
+  def __moveinit__(out self, owned x: TestOwnedDeinitErrors): pass
 
   # expected-error @+1 {{expected ')' in argument list}}
-  fn method(owned x): pass
+  def method(owned x): pass
 
 # expected-note @+1 {{previous definition here}}
 struct WrongType(RegisterPassable):
@@ -722,44 +722,44 @@ struct WrongType(RegisterPassable):
   def __init__(self: None) raises: pass
 
   # expected-error @+1 {{'self' argument must have type 'WrongType', but actually has type 'Int'}}
-  fn __init__(out self: Int): pass
+  def __init__(out self: Int): pass
 
   # expected-error @+1 {{existing value argument must be passed as 'read'}}
-  fn __copyinit__(out self, mut copy: Self): pass
+  def __copyinit__(out self, mut copy: Self): pass
 
   # TODO: Should err.
-  fn __init__(out self, *, copy: Int): pass
+  def __init__(out self, *, copy: Int): pass
 
   # expected-error @+2 {{redefinition of function '__init__' cannot overload on return type only}}
   # expected-error @+1 {{'RegisterPassable' types may not have an explicit move constructor, they are always movable by copying a register}}
-  fn __init__(out self, *, deinit take: Self): pass
+  def __init__(out self, *, deinit take: Self): pass
 
 
 struct WrongSelfType[a: Int]:
   # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]', but actually has type 'Int'}}
-  fn badMethod(self: Int): pass
-  fn goodMethod(mut self: WrongSelfType[Self.a]): pass
+  def badMethod(self: Int): pass
+  def goodMethod(mut self: WrongSelfType[Self.a]): pass
 
   # Issue #13358
-  fn __init__(out self, *, copy: Self, moar: Int): pass
+  def __init__(out self, *, copy: Self, moar: Int): pass
 
   # expected-error @+1 {{'__add__' requires 2 operands}}
-  fn __add__(self): pass
+  def __add__(self): pass
 
-  fn __pow__(self, exp: Int): pass
+  def __pow__(self, exp: Int): pass
 
-  fn __pow__(self, exp: Int, mod: Int): pass
+  def __pow__(self, exp: Int, mod: Int): pass
 
   # expected-error @+1 {{'__pow__' requires at least 2 operands}}
-  fn __pow__(self): pass
+  def __pow__(self): pass
 
   # expected-error @+1 {{'__pow__' requires at most 3 operands}}
-  fn __pow__(self, exp: Int, mod: Int, extra: Int): pass
+  def __pow__(self, exp: Int, mod: Int, extra: Int): pass
 
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
   @implicit
-  fn __init__(out self, elem: BadInit[Int(1)._mlir_value]) raises:
+  def __init__(out self, elem: BadInit[Int(1)._mlir_value]) raises:
     var x : __mlir_type[`!pop.simd<`, Self.size, `, FloatDyn>`]
     # expected-error @+1 {{cannot implicitly convert '__mlir_type.`!pop.simd<size, FloatDyn>`' value to 'BadInit[size]'}}
     self = x
@@ -785,51 +785,51 @@ struct OtherInMemStruct:
 
 struct MoveInitTakeWrongName:
   # expected-error @+1 {{take argument of '__moveinit__' must be named 'take'}}
-  fn __moveinit__(out self, deinit existing: Self): pass
+  def __moveinit__(out self, deinit existing: Self): pass
 
 # expected-note @+1 {{previous definition here}}
 struct InvalidMember(TrivialRegisterPassable):
   var x: __mlir_type.index
   # expected-error @+1 {{'RegisterPassable' types may not have an explicit move constructor, they are always movable by copying a register}}
-  fn __init__(out self, *, deinit take: Self): pass
+  def __init__(out self, *, deinit take: Self): pass
   # expected-error @+2 {{redefinition of function '__init__' cannot overload on return type only}}
   # expected-error @+1 {{trivial types may not have an explicit copy constructor, they are always trivially copyable}}
-  fn __init__(out self, *, copy: Self): pass
+  def __init__(out self, *, copy: Self): pass
   # expected-error @+1 {{trivial types may not have a '__del__' method, they are always trivially destroyable}}
-  fn __del__(deinit self): pass
+  def __del__(deinit self): pass
 
-fn noop():  # expected-error {{expected body statements; use 'pass' if none is required}}
+def noop():  # expected-error {{expected body statements; use 'pass' if none is required}}
 
 struct BadDtor1:
-  fn __del__(self): # expected-error {{'self' argument must be passed as 'deinit'}}
+  def __del__(self): # expected-error {{'self' argument must be passed as 'deinit'}}
     pass
 
   # expected-error @+1 {{only arguments of Self type may be marked 'deinit'}}
-  fn bad1(self, deinit x: Int): pass
+  def bad1(self, deinit x: Int): pass
   # expected-error @+1 {{deinit arguments may not be variadic}}
-  fn bad2(deinit *self): pass
+  def bad2(deinit *self): pass
 
 # expected-error @+1 {{only struct methods may be 'deinit'}}
-fn invalid_deinit(deinit self: Int) raises:
+def invalid_deinit(deinit self: Int) raises:
     pass
 
 struct GoodDtor:
-   fn __del__(deinit self): pass
-   fn explicit_dtor(deinit self): pass
-   fn explicit_dtor2(deinit self, deinit other: Self): pass
-   fn normal_var(var self): pass
+   def __del__(deinit self): pass
+   def explicit_dtor(deinit self): pass
+   def explicit_dtor2(deinit self, deinit other: Self): pass
+   def normal_var(var self): pass
 
 struct GoodDtor2[A: Int]:
-   fn explicit_dtor(deinit self, deinit other: GoodDtor2[0]): pass
+   def explicit_dtor(deinit self, deinit other: GoodDtor2[0]): pass
 
-fn test_deinit_fn_types():
-  var fp1 : fn(var self: GoodDtor) -> None
+def test_deinit_fn_types():
+  var fp1 : def(var self: GoodDtor) -> None
   fp1 = GoodDtor.__del__
   fp1 = GoodDtor.explicit_dtor
   fp1 = GoodDtor.normal_var
 
   # expected-error @+1 {{'deinit' is not supported in function types, use 'var' instead}}
-  var fp2 : fn(deinit self: GoodDtor) -> None
+  var fp2 : def(deinit self: GoodDtor) -> None
 
 @fieldwise_init
 struct CantSynthesize(ImplicitlyCopyable):
@@ -843,23 +843,23 @@ struct CantSynthesize(ImplicitlyCopyable):
 struct ResolveErrorIsBubbled:
    var x: Int
    @implicit
-   fn __init__(out self, x: unknown): # expected-error {{use of unknown declaration 'unknown'}}
+   def __init__(out self, x: unknown): # expected-error {{use of unknown declaration 'unknown'}}
       pass
 
-fn function_with_struct():
+def function_with_struct():
   struct Foo: # expected-error {{struct inside a function not supported here}}
     var x: Int
 
 # https://github.com/modularml/modular/issues/12598
 struct not_nested_struct[*Ts: AnyType]:
     @implicit
-    fn __init__(out self, *args: *Self.Ts):
+    def __init__(out self, *args: *Self.Ts):
         pass
-fn function_with_struct2():
+def function_with_struct2():
     var s1 = not_nested_struct()  # ok
     struct S2[*Ts: AnyType]: # expected-error {{struct inside a function not supported here}}
         @implicit
-        fn __init__(out self, *args: *Ts):
+        def __init__(out self, *args: *Ts):
             pass
     var s2 = S2() # In issue https://github.com/modularml/modular/issues/12598 this was crashing.
 
@@ -867,7 +867,7 @@ fn function_with_struct2():
 struct HasBadCtor:
     var v: Int
     # expected-error @below {{function cannot have both an 'out' argument and an explicit result type}}
-    fn __init__(out self, v: Int) -> Self:
+    def __init__(out self, v: Int) -> Self:
         self.v = v
 def useBadCtor() raises:
     # Note that the key thing we're checking for here is that this does NOT have
@@ -875,7 +875,7 @@ def useBadCtor() raises:
     var fromBadCtor = HasBadCtor(123)
 
 struct NotRegisterPassable:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 # https://github.com/modularml/modular/issues/34551
@@ -887,11 +887,11 @@ struct Outer34551(ImplicitlyCopyable, RegisterPassable): # expected-error {{all 
     # expected-error @below {{cannot synthesize copy constructor because field '_inner' has non-copyable type 'NotRegisterPassable'}}
     # expected-note @below {{'_inner' declared with type 'NotRegisterPassable'}}
     var _inner: NotRegisterPassable
-    fn __init__(out self):
+    def __init__(out self):
         self._inner = NotRegisterPassable()
     # The key point of this test is that these errors break an invariant needed
     # for emission, so previously it would crash while emitting this __del__.
-    fn __del__(deinit self):
+    def __del__(deinit self):
         _ = self._inner ^
 
 struct StructWithoutBody(RegisterPassable):
@@ -920,7 +920,7 @@ struct ImplicitCopyableStructWithExplicitBody(ImplicitlyCopyable, RegisterPassab
 
 # MOCO-2186: Initializer syntax should reject incorrect result type
 struct StructWithSpecificInit[X: Int]:
-    fn __init__(out self: StructWithSpecificInit[4]): # expected-note {{function declared here}}
+    def __init__(out self: StructWithSpecificInit[4]): # expected-note {{function declared here}}
         pass
 def testStructWithSpecificInit() raises:
     # expected-error @+1 {{invalid initialization: return type 'StructWithSpecificInit[4]' parameter 'X' value '4' doesn't match expected value '1'}}
@@ -943,13 +943,13 @@ struct StructWithUnknownTrait(UnknownTrait):
 trait EverythingIsWrongTrait:
     var value: Int # expected-error {{fields in traits are not supported yet}}
 
-    fn trait_fn_no_dot_dot_dot(self): # expected-error {{expected body statements; use 'pass' if none is required}}
+    def trait_fn_no_dot_dot_dot(self): # expected-error {{expected body statements; use 'pass' if none is required}}
 
     trait NestedTrait: # expected-error {{nested trait not supported here}}
         ...
 
     # expected-note @below {{function declared here}}
-    fn parametric[x: Int](self): ...
+    def parametric[x: Int](self): ...
 
     struct NestedStruct: # expected-error {{nested struct in a trait not supported here}}
         pass
@@ -957,12 +957,12 @@ trait EverythingIsWrongTrait:
 trait TraitWithParams[T: TrivialRegisterPassable]: # expected-error {{TODO: trait declarations do not support parameters yet}}
     ...
 
-fn bad_trait_params[T: EverythingIsWrongTrait](x: T):
+def bad_trait_params[T: EverythingIsWrongTrait](x: T):
   # expected-error @below {{invalid call to 'parametric': failed to infer parameter 'x'}}
   x.parametric()
 
 trait Shape(ImplicitlyCopyable):
-	fn area(self) -> Int:
+	def area(self) -> Int:
 	    ...
 
 @fieldwise_init
@@ -975,52 +975,52 @@ struct ShapeContainer:
 
 trait CFMTrait: # expected-note {{trait 'CFMTrait' declared here}}
     # expected-note @below {{no 'f1' candidates have type 'fn(self: CFMStructFail) -> None'}}
-    fn f1(self):
+    def f1(self):
         ...
 
     @staticmethod
-    fn f2(): # expected-note {{required function 'f2' is not implemented}}
+    def f2(): # expected-note {{required function 'f2' is not implemented}}
         ...
 
 # struct implements CFMTrait but does not have f2().
 struct CFMStructFail(TrivialRegisterPassable, CFMTrait): # expected-error {{'CFMStructFail' does not implement all requirements for 'CFMTrait'}}
-  fn f1(self, x: Int): # expected-note {{candidate declared here with type 'fn(self: CFMStructFail, x: Int) -> None'}}
+  def f1(self, x: Int): # expected-note {{candidate declared here with type 'fn(self: CFMStructFail, x: Int) -> None'}}
     pass
 
 struct NoTraits(TrivialRegisterPassable):
     pass
 
 # expected-note @+1 {{function declared here}}
-fn trait_fn[T: CFMTrait]():
+def trait_fn[T: CFMTrait]():
     pass
 
-fn invalid_trait_bind():
+def invalid_trait_bind():
     trait_fn[NoTraits]() # expected-error {{invalid call to 'trait_fn': 'trait_fn' parameter 'T' has 'CFMTrait' type, but value has type 'AnyStruct[NoTraits]'}}
 
-fn non_copyable_trait[T: CFMTrait](value: T):
+def non_copyable_trait[T: CFMTrait](value: T):
     var copy = value # expected-error {{value of type 'T' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
 
 
-fn trait_fn_infer[T: CFMTrait](x: T):
+def trait_fn_infer[T: CFMTrait](x: T):
     pass
 
-fn dont_crash_pvalue_convert(x: CFMStructFail):
+def dont_crash_pvalue_convert(x: CFMStructFail):
     # This will succeed, the error will be raised when resolving `CFMStructFail`.
     trait_fn_infer(x)
 
 trait GrandFather: # expected-note {{trait 'GrandFather' declared here}}
-    fn foo(self): # expected-note {{required function 'foo' is not implemented}}
+    def foo(self): # expected-note {{required function 'foo' is not implemented}}
         ...
 
 trait Father(GrandFather): # expected-note {{inherited through 'Father' here}}
     pass
 
-# expected-error @below {{'MissingInheritedFn' does not implement all requirements for 'GrandFather'}}
-struct MissingInheritedFn(Father, GrandFather):
+# expected-error @below {{'MissingInheriteddef' does not implement all requirements for 'GrandFather'}}
+struct MissingInheriteddef(Father, GrandFather):
     pass
 
 struct InheritsTwice(Father, Father):
-    fn foo(self):
+    def foo(self):
         pass
 
 
@@ -1029,12 +1029,12 @@ struct InheritsTwice(Father, Father):
 # expected-note @below {{trait 'TraitWithIntParamOnMethod' declared here}}
 trait TraitWithIntParamOnMethod:
   # expected-note @below {{no 'f' candidates have type 'fn[n: Int](self: UseTraitWithIntParamOnMethod) -> None'}}
-  fn f[n: Int](self):
+  def f[n: Int](self):
     ...
 # expected-error @below {{'UseTraitWithIntParamOnMethod' does not implement all requirements for 'TraitWithIntParamOnMethod'}}
 struct UseTraitWithIntParamOnMethod(TraitWithIntParamOnMethod):
   # expected-note @below {{candidate declared here with type 'fn[n: Bool](self: UseTraitWithIntParamOnMethod) -> None'}}
-  fn f[n: Bool](self):
+  def f[n: Bool](self):
     pass
 
 ##===----------------------------------------------------------------------===##
@@ -1059,8 +1059,8 @@ struct copy_init_def:
     self.field = existing.field
 
 struct copy_init_raises:
-  # expected-error @+1 {{copy constructor cannot be declared as raising an exception}}
-  fn __init__(out self, *, copy: Self) raises:
+  # expected-error @+1 {{cannot define copy constructor as 'def'; 'def' implicitly raises}}
+  def __init__(out self, *, copy: Self) raises:
      pass
 
 
@@ -1100,11 +1100,11 @@ struct OtherBadStruct:
     var b: Int
     comptime b = 0  # expected-error {{invalid redefinition of 'b'}}
 
-    fn b(mut self):  # expected-error {{invalid redefinition of 'b'}}
+    def b(mut self):  # expected-error {{invalid redefinition of 'b'}}
         pass
 
 
-fn test_bad_struct():
+def test_bad_struct():
     _ = BadStruct(1)
     _ = OtherBadStruct(2)
 
@@ -1117,7 +1117,7 @@ fn test_bad_struct():
 struct HasBoolParam[a: Bool]:
    pass
 
-fn test(arg: HasBoolParam[True]):
+def test(arg: HasBoolParam[True]):
   # expected-error @+1 {{cannot implicitly convert 'HasBoolParam[True]' value to 'HasBoolParam[False]'}}
   var bad : HasBoolParam[False] = arg
 
@@ -1131,15 +1131,15 @@ struct ContainsFoo:
     var foo: Foo
 
 # expected-note @+1 {{function declared here}}
-fn take_foo(x: Foo): pass
+def take_foo(x: Foo): pass
 
-fn return_foo(x: Int) -> Foo:
+def return_foo(x: Int) -> Foo:
     return x # expected-error {{cannot implicitly convert 'Int' value to 'Foo'}}
 
     return 1.2 # expected-error {{cannot implicitly convert 'FloatLiteral[1.2]' value to 'Foo'}}
 
 # When attempting to do implicit conversions without an @implicit decorator
-fn implicit_conversions():
+def implicit_conversions():
     # assigning to expected type
     var x = 42
     var a: Foo = x # expected-error {{cannot implicitly convert 'Int' value to 'Foo'}}
@@ -1165,10 +1165,10 @@ fn implicit_conversions():
 # Top Level Code
 ##===----------------------------------------------------------------------===##
 
-fn top_level_func() raises -> Int:
+def top_level_func() raises -> Int:
    pass
 
-fn use_error(e: Error):
+def use_error(e: Error):
    pass
 
 # expected-error @below {{expressions are not supported at the file scope}}
@@ -1182,7 +1182,7 @@ except e:
     use_error(e)
 
 
-fn top_level_func_param[p: Int]():
+def top_level_func_param[p: Int]():
     pass
 
 comptime a = 100
@@ -1194,7 +1194,7 @@ var globalVar = 1
 
 
 struct S[param: Int]: #expected-note {{previous definition here}}
-  fn method[param: Int](self): # expected-error {{invalid redefinition of 'param'}}
+  def method[param: Int](self): # expected-error {{invalid redefinition of 'param'}}
     pass
 
 struct MyParam[p: Int]:
@@ -1203,14 +1203,14 @@ struct MyParam[p: Int]:
 
 #expected-note @below {{previous definition here}}
 struct MyStruct[p: Int, m1: MyParam[_], m2: MyParam[_]]:
-  fn method[p: Int](self): # expected-error {{invalid redefinition of 'p'}}
+  def method[p: Int](self): # expected-error {{invalid redefinition of 'p'}}
     pass
 
 # https://github.com/modular/modular/issues/5479
-fn __del__(): # expected-error {{'__del__' must be a method, not a global function}}
+def __del__(): # expected-error {{'__del__' must be a method, not a global function}}
   pass
 
-fn raises_int() raises Int:
+def raises_int() raises Int:
   raise 1
 
   # expected-error @+1 {{cannot implicitly convert 'FloatLiteral[4]' value to 'Int'}}
@@ -1219,7 +1219,7 @@ fn raises_int() raises Int:
   # expected-error @+1 {{cannot implicitly convert 'Error' value to 'Int'}}
   raise Error()
 
-fn bad_raises_fn2() raises:
+def bad_raises_fn2() raises:
   # expected-error @+1 {{cannot call function that may raise 'Int' in context that supports an error type of 'Error'}}
   raises_int()
 
@@ -1245,12 +1245,12 @@ fn bad_raises_fn2() raises:
 
 # expected-error @+1 {{@export can not be applied on parametric functions}}
 @export
-fn foo(s: SIMD):
+def foo(s: SIMD):
     pass
 
 # expected-error @+1 {{@export can not be applied on parametric functions}}
 @export
-fn bar[n: Int]():
+def bar[n: Int]():
     pass
 
 

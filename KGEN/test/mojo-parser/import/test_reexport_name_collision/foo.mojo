@@ -8,5 +8,5 @@
 # Used to test that re-exporting this function from __init__.mojo
 # resolves to the function, not the module.
 
-fn foo[x: Int]() -> Int:
+def foo[x: Int]() -> Int:
     return x

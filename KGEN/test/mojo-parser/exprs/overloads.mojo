@@ -14,19 +14,19 @@ struct MyInt(TrivialRegisterPassable):
 
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, v: Int):
+    def __init__(out self, v: Int):
         self.value = v
 
-fn overloaded_arg(a: Int, b: MyInt):
+def overloaded_arg(a: Int, b: MyInt):
     pass
 
 
-fn overloaded_arg(a: Int, b: Int):
+def overloaded_arg(a: Int, b: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_kw_args_overload{{.*}}"(%x: !Int, %y: !Int)
-fn test_kw_args_overload(x: Int, y: Int):
+def test_kw_args_overload(x: Int, y: Int):
     # CHECK: call {{.*}}@"overloaded_arg{{.*}}"(%x, %y)
     overloaded_arg(b=y, a=x)
 
@@ -36,16 +36,16 @@ fn test_kw_args_overload(x: Int, y: Int):
 
 
 # COM: test parametric overload in the presence of keyword operands.
-fn take_kw_param_infer[A: TrivialRegisterPassable, B: TrivialRegisterPassable](a: A, b: B):
+def take_kw_param_infer[A: TrivialRegisterPassable, B: TrivialRegisterPassable](a: A, b: B):
     pass
 
 
-fn take_kw_param_infer[B: TrivialRegisterPassable](a: MyInt, b: B):
+def take_kw_param_infer[B: TrivialRegisterPassable](a: MyInt, b: B):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_kw_args_param_infer
-fn test_kw_args_param_infer(x: Int, f: __mlir_type.`!pop.scalar<f64>`, s: MyInt):
+def test_kw_args_param_infer(x: Int, f: __mlir_type.`!pop.scalar<f64>`, s: MyInt):
     # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterPassable,::TrivialRegisterPassable]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
     take_kw_param_infer(x, b=f)
 
@@ -64,19 +64,19 @@ fn test_kw_args_param_infer(x: Int, f: __mlir_type.`!pop.scalar<f64>`, s: MyInt)
 
 # COM: Test overloading precedence in the presence of static methods.
 struct StaticOverloadStruct:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn foo(mut self):
+    def foo(mut self):
         pass
 
     @staticmethod
-    fn foo():
+    def foo():
         pass
 
 
 # CHECK-LABEL: lit.fn @"test_static_overload()"
-fn test_static_overload():
+def test_static_overload():
     var a = StaticOverloadStruct()
     # CHECK-NEXT: %a = lit.var.decl
     # CHECK-NEXT: lit.call{{.*}}__init__{{.*}}(%a)
@@ -93,21 +93,21 @@ struct MyElement(TrivialRegisterPassable):
 
 struct ConvertibleFromInt:
     @implicit
-    fn __init__(out self, a: Int):
+    def __init__(out self, a: Int):
         pass
 
 
 struct MyContainer[T: ImplicitlyCopyable]:
     var v: Self.T
 
-    fn foo(self, limits: ConvertibleFromInt):
+    def foo(self, limits: ConvertibleFromInt):
         pass
 
-    fn foo(self, index: Int) -> Self.T:
+    def foo(self, index: Int) -> Self.T:
         return self.v
 
 
 # CHECK-LABEL: lit.fn @"test_impl
-fn test_impl(a: MyContainer[MyElement], b: Int):
+def test_impl(a: MyContainer[MyElement], b: Int):
     # CHECK: lit.call {{.*}}@MyContainer::@"foo{{.*}}, "index": !Int
     _ = a.foo(b)

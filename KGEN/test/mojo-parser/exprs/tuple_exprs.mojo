@@ -11,12 +11,12 @@
 ##===----------------------------------------------------------------------===##
 
 
-fn use[T: AnyType](a: T):
+def use[T: AnyType](a: T):
     pass
 
 
 # CHECK-LABEL: lit.fn @"tuples_rv
-fn tuples_rv(a: Int, b: FloatDyn):
+def tuples_rv(a: Int, b: FloatDyn):
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl{{.*}}Tuple <:variadic<!AnyType> []>>,
     # CHECK: lit.call {{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]])
     use(())
@@ -69,7 +69,7 @@ fn tuples_rv(a: Int, b: FloatDyn):
 
 
 # CHECK-LABEL: lit.fn @"tuples_lv
-fn tuples_lv(i0: Int, f0: FloatDyn):
+def tuples_lv(i0: Int, f0: FloatDyn):
     var i1 = 1
     var i2 = 2
 
@@ -130,15 +130,15 @@ trait CollectionType(ImplicitlyCopyable):
 struct Container[T: CollectionType]:
     var x: Self.T
 
-    fn __setitem__(mut self, i: Int, var value: Self.T):
+    def __setitem__(mut self, i: Int, var value: Self.T):
         self.x = value
 
-    fn __getitem__(self, i: Int) -> Self.T:
+    def __getitem__(self, i: Int) -> Self.T:
         return self.x
 
 
 # CHECK-LABEL: lit.fn @"swap_container_fields
-fn swap_container_fields(mut v: Container[_]):
+def swap_container_fields(mut v: Container[_]):
     v[0], v[1] = v[1], v[0]
 
 
@@ -151,21 +151,21 @@ fn swap_container_fields(mut v: Container[_]):
 
 # CHECK-LABEL: lit.fn @"returnTup0
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:variadic<!AnyType> []>
-fn returnTup0() -> Tuple[]:
+def returnTup0() -> Tuple[]:
     # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}(%__result__)
     return ()
 
 
 # CHECK-LABEL: lit.fn @"returnTup0a
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:variadic<!AnyType> []>
-fn returnTup0a() -> ():
+def returnTup0a() -> ():
     # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}(%__result__)
     return ()
 
 
 # CHECK-LABEL: lit.fn @"returnTup1
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:variadic<!AnyType> [!Int]>>,
-fn returnTup1() -> Tuple[Int]:
+def returnTup1() -> Tuple[Int]:
     # CHECK: %0 = kgen.param.constant: !Int
     # CHECK:   = lit.ref.pack.create({{.*}}) : !lit.ref.pack<:variadic<!AnyType> [!Int],
     # CHECK:  = lit.call{{.*}}__init__
@@ -174,17 +174,17 @@ fn returnTup1() -> Tuple[Int]:
 
 # CHECK-LABEL: lit.fn @"returnTup1
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:variadic<!AnyType> [!Int]>
-fn returnTup1a() -> Tuple[Int]:
+def returnTup1a() -> Tuple[Int]:
     return (Int(4),)
 
 
-fn returnTup1b() -> Tuple[Int]:
+def returnTup1b() -> Tuple[Int]:
     return (Int(4),)
 
 
 # CHECK-LABEL: lit.fn @"returnTup2
 # CHECK-SAME:  %__result__: !lit.ref<{{.*}}#Tuple <:variadic<!AnyType> [!Int, !FloatDyn]>
-fn returnTup2() -> Tuple[Int, FloatDyn]:
+def returnTup2() -> Tuple[Int, FloatDyn]:
     # CHECK:  = kgen.param.constant: !Int = <{4}>
     # CHECK:  = kgen.param.constant: !FloatDyn = <{{.*}}{:scalar<f64> "2"}
     # CHECK: lit.ref.pack.create({{.*}}) : !lit.ref.pack<:variadic<!AnyType> [!Int, !FloatDyn]
@@ -193,24 +193,24 @@ fn returnTup2() -> Tuple[Int, FloatDyn]:
 
 # CHECK-LABEL: lit.fn @"returnTup2a
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:variadic<!AnyType> [!Int, !FloatDyn]>>,
-fn returnTup2a() -> Tuple[Int, FloatDyn]:
+def returnTup2a() -> Tuple[Int, FloatDyn]:
     # CHECK: lit.ref.pack.create({{.*}}) : !lit.ref.pack<:variadic<!AnyType> [!Int, !FloatDyn]
     return (Int(4), 2.0)
 
 
 # CHECK-LABEL: lit.fn @"returnTup2b
-fn returnTup2b() -> Tuple[Int, FloatDyn]:
+def returnTup2b() -> Tuple[Int, FloatDyn]:
     return Int(4), 2.0
 
 
 # CHECK-LABEL: lit.fn @"takesSugarTuple{{.*}}<T: !ImplicitlyCopyable>
 # CHECK-SAME: #Tuple <:variadic<!AnyType> [!kgen.param<:!ImplicitlyCopyable T>, !kgen.param<:!ImplicitlyCopyable T>]>
-fn takesSugarTuple[T: ImplicitlyCopyable](elements: Tuple[T, T]):
+def takesSugarTuple[T: ImplicitlyCopyable](elements: Tuple[T, T]):
     pass
 
 
 # CHECK-LABEL: lit.fn @"index_homogenous_tuple
-fn index_homogenous_tuple[idx: Int]():
+def index_homogenous_tuple[idx: Int]():
     var tup = (1, 2, 3, 4)
     # CHECK: %test1 = lit.var.decl "test1"
     # CHECK-NEXT: [[ELTPTR:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}:!Int {1}{{.*}}(%tup)

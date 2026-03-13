@@ -11,26 +11,26 @@
 # COM: To avoid having fragile tests, mark this test as unsupported on these platforms.
 
 
-fn foo() raises:
+def foo() raises:
     raise Error("gotcha!")
 
 
 @no_inline
-fn nested_func() raises:
+def nested_func() raises:
     foo1()
 
 
 @no_inline
-fn foo1() raises:
+def foo1() raises:
     foo2()
 
 
 @no_inline
-fn foo2() raises:
+def foo2() raises:
     raise Error("nested gotcha!")
 
 
-fn main():
+def main():
     try:
         foo()
     except e:

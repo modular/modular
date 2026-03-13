@@ -19,7 +19,7 @@ describe("references", function () {
       server,
       "test:///test.mojo",
       `
-fn function(foo: Int):
+def function(foo: Int):
     var bar: Int = foo + 420
     print(foo)
     print("foo")
@@ -38,7 +38,7 @@ fn function(foo: Int):
     assert.deepStrictEqual(
       await doc.references(doc.findFirstPosition("foo"), true),
       [
-        { uri: doc.uri, range: Range.create(1, 12, 1, 15) },
+        { uri: doc.uri, range: Range.create(1, 13, 1, 16) },
         { uri: doc.uri, range: Range.create(2, 19, 2, 22) },
         { uri: doc.uri, range: Range.create(3, 10, 3, 13) },
       ]

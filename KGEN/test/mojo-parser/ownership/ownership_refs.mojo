@@ -9,7 +9,7 @@
 # RUN: %parse-mojo-isolated %s --mlir-print-debuginfo -o %t.mlir
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-parameters -verify-diagnostics | FileCheck %s
 
-fn use_any[*Ts: AnyType](*args: *Ts): pass
+def use_any[*Ts: AnyType](*args: *Ts): pass
 
 # ===----------------------------------------------------------------------=== #
 # Parsing of references
@@ -17,43 +17,43 @@ fn use_any[*Ts: AnyType](*args: *Ts): pass
 
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample(ImplicitlyCopyable):
-  fn __init__(out self): pass
-  fn __init__(out self, *, deinit take: Self): pass
-  fn __init__(out self, *, copy: Self): pass
-  fn __del__(deinit self): pass
-  fn noop(self): pass
-  fn mutate(mut self): pass
+  def __init__(out self): pass
+  def __init__(out self, *, deinit take: Self): pass
+  def __init__(out self, *, copy: Self): pass
+  def __del__(deinit self): pass
+  def noop(self): pass
+  def mutate(mut self): pass
 
 # CHECK-LABEL: lit.fn @"borrow{{.*}}"<{{.*}}>(%a: !lit.ref<!MemExample, imm *"lt._mlir_origin`">
-fn borrow[lt: Origin[]](a: Pointer[MemExample, lt]._mlir_type):
+def borrow[lt: Origin[]](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
 # CHECK-LABEL: lit.fn @"mutate{{.*}}"<{{.*}}>(%a: !lit.ref<!MemExample, mut *"lt._mlir_origin`">
-fn mutate[lt: Origin[mut=True]](a: Pointer[MemExample, lt]._mlir_type):
+def mutate[lt: Origin[mut=True]](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
 # CHECK-LABEL: lit.fn @"implicit_borrow
-fn implicit_borrow(a: MemExample):
+def implicit_borrow(a: MemExample):
   pass
 
 # CHECK-LABEL: lit.fn @"implicit_inout
-fn implicit_inout(mut a: MemExample):
+def implicit_inout(mut a: MemExample):
   pass
 
 # CHECK-LABEL: lit.fn @"implicit_owned
-fn implicit_owned(var a: MemExample):
+def implicit_owned(var a: MemExample):
   pass
 
 # This preserves reference mutability
 # CHECK-LABEL: lit.fn @"parametricMut
 # CHECK-SAME: (%a: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool *"o.mut`", "_mlir_value">, *"o._mlir_origin`1">) ->
 # CHECK-SAME: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool *"o.mut`", "_mlir_value">, *"o._mlir_origin`1">
-fn parametricMut[o: Origin](a: Pointer[MemExample, o]._mlir_type)
+def parametricMut[o: Origin](a: Pointer[MemExample, o]._mlir_type)
    -> Pointer[MemExample, o]._mlir_type:
   return a
 
 # CHECK-LABEL: lit.fn @"testParametricMut
-fn testParametricMut(i: MemExample, mut m: MemExample):
+def testParametricMut(i: MemExample, mut m: MemExample):
   # This infers an immutable reference.
   # CHECK:  lit.call {{.*}}parametricMut{{.*}}!lit.ref<!MemExample, imm *"i`">
   _ = parametricMut(__get_mvalue_as_litref(i))
@@ -67,7 +67,7 @@ fn testParametricMut(i: MemExample, mut m: MemExample):
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.fn @"testUseConditional
-fn testUseConditional(cond: __mlir_type.i1):
+def testUseConditional(cond: __mlir_type.i1):
   # CHECK-NOT: __del__
 
   # CHECK: lit.call {{.*}}__init__{{.*}}(%a)
@@ -93,7 +93,7 @@ fn testUseConditional(cond: __mlir_type.i1):
   # CHECK-NEXT: lifetime.end %b
 
 # CHECK-LABEL: lit.fn @"testDefConditional
-fn testDefConditional(cond: __mlir_type.i1):
+def testDefConditional(cond: __mlir_type.i1):
   # CHECK-NOT: lit.call {{[^)]*}}__del__
 
   var a = MemExample()
@@ -151,7 +151,7 @@ fn testDefConditional(cond: __mlir_type.i1):
 
 # CHECK-LABEL: lit.fn @"testUseConditionalReference
 
-fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
+def testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   # CHECK: %a = lit.var.decl {{.*}} : !lit.ref<!MemExample, mut *"a`1">
   # CHECK: lit.call {{.*}}__init__{{.*}}(%a)
 
@@ -205,15 +205,15 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
 # https://github.com/modularml/modular/issues/29069
 
 struct SelfRefTest(ImplicitlyCopyable):
-  fn __init__(out self): pass
-  fn __del__(deinit self): pass
+  def __init__(out self): pass
+  def __del__(deinit self): pass
   # CHECK-LABEL: lit.fn @"method
   # CHECK-SAME: (%self: !lit.ref<!SelfRefTest
-  fn method(ref self) -> Pointer[Self, origin_of(self)]:
+  def method(ref self) -> Pointer[Self, origin_of(self)]:
       return Pointer(to=self)
 
 # CHECK-LABEL: lit.fn @"testSelfRef
-fn testSelfRef(a: SelfRefTest, mut b: SelfRefTest):
+def testSelfRef(a: SelfRefTest, mut b: SelfRefTest):
   # Bind immutably to a
   # CHECK: = lit.call {{.*}}method{{.*}}<:i1 0, :origin<0> *"a`">(%a)
   _ = a.method()
@@ -226,19 +226,19 @@ fn testSelfRef(a: SelfRefTest, mut b: SelfRefTest):
 # CHECK-LABEL: lit.fn @"testLifetimeOf1
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> read_mem) ->
 # CHECK-SAME: !lit.struct<#Pointer <{{.*}}:origin<0> *"a`">> *?, :!AddressSpace {_value: !Int = {0}}>>
-fn testLifetimeOf1(a: MemExample) -> Pointer[MemExample, origin_of(a)]:
+def testLifetimeOf1(a: MemExample) -> Pointer[MemExample, origin_of(a)]:
   return Pointer(to=a)
 
 # CHECK-LABEL: lit.fn @"testLifetimeOf2
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> read_mem) ->
 # CHECK-SAME: !lit.ref<!MemExample, imm *"a`">
-fn testLifetimeOf2(a: MemExample) -> Pointer[MemExample, origin_of(a)]._mlir_type:
+def testLifetimeOf2(a: MemExample) -> Pointer[MemExample, origin_of(a)]._mlir_type:
 
   # CHECK: kgen.return {{.*}} : !lit.ref<!MemExample, imm *"a`">
   return Pointer(to=a)._value
 
 # CHECK-LABEL: lit.fn @"callByRefResultLifetime
-fn callByRefResultLifetime(mut x: MemExample, mut y: MemExample, z: MemExample):
+def callByRefResultLifetime(mut x: MemExample, mut y: MemExample, z: MemExample):
   # CHECK: lit.var.decl "l1" var : !lit.ref<{{.*}}(mutcast mut *"x`")
   var l1 = returnOneArgLifetime(x)
 
@@ -251,20 +251,20 @@ fn callByRefResultLifetime(mut x: MemExample, mut y: MemExample, z: MemExample):
 
   use_any(l1, l2, l3, l4)
 
-fn returnOneArgLifetime(a: MemExample)
+def returnOneArgLifetime(a: MemExample)
   -> OneLifetime[origin_of(a)]:
   return OneLifetime[origin_of(a)]()
 
-fn returnTwoArgLifetimes(a: MemExample, b: MemExample)
+def returnTwoArgLifetimes(a: MemExample, b: MemExample)
   -> TwoLifetimes[origin_of(a), origin_of(b)]:
   return TwoLifetimes[origin_of(a), origin_of(b)]()
 
 struct OneLifetime[a_origin: Origin[]]:
-  fn __init__(out self): pass
+  def __init__(out self): pass
 
 struct TwoLifetimes[a_origin: Origin[],
                     b_origin: Origin[]]:
-  fn __init__(out self): pass
+  def __init__(out self): pass
 
 # Test that we can infer the type of 'T' in the func param invocation.
 # CHECK-LABEL: CutDownVariadicPack
@@ -272,14 +272,14 @@ struct CutDownVariadicPack[element_trait: type_of(AnyType),
                            *element_types: element_trait]:
 
     # CHECK: lit.fn @"each_hack
-    fn each_hack[i: Int, func: fn[T: Self.element_trait] (T) -> None](self):
+    def each_hack[i: Int, func: def[T: Self.element_trait] (T) -> None](self):
         # Test that we can infer the type of 'T' from the argument.
         # CHECK-NEXT: [[REFVAL:%.*]] = lit.call {{.*}}get_element{{.*}}(%self)
         # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}}([[REFVAL]])
         # CHECK-NEXT: lit.call{{.*}} func, :!kgen.param<:!lit.anytrait<!AnyType> element_trait> #kgen.variadic.get<:variadic<:!lit.anytrait<!AnyType> element_trait> element_types{{.*}}([[REF]])
         func(self.get_element[i]()[])
 
-    fn get_element[index: Int](self) -> Pointer[
+    def get_element[index: Int](self) -> Pointer[
         Self.element_types[index],
         origin_of(self),
     ]:
@@ -288,7 +288,7 @@ struct CutDownVariadicPack[element_trait: type_of(AnyType),
 # Test that you can implicitly convert an "any" mutable reference (as is returned
 # by UnsafePointer for example) to mortal reference with specified origin.
 # CHECK: lit.fn @"test_immortal_to_mortal
-fn test_immortal_to_mortal(arg: Pointer[Int, _])
+def test_immortal_to_mortal(arg: Pointer[Int, _])
     -> Pointer[Int, arg.origin]:
   # CHECK-NEXT: [[ARGREF:%.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}}(%arg)
   # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__init__{{.*}}([[ARGREF]])
@@ -299,7 +299,7 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
 
 
 # CHECK-LABEL: lit.fn @"ref_copyability
-fn ref_copyability[*element_types: ImplicitlyCopyable](*args: *element_types):
+def ref_copyability[*element_types: ImplicitlyCopyable](*args: *element_types):
   # CHECK: [[ITEM:%.*]] = lit.call tail @std::@builtin::@stubs::@VariadicPack::@"__getitem_param__
   # CHECK: %_x = lit.var.decl
   # CHECK: lit.call[!lit.generator<[2](*, "copy"{{.*}}#kgen.get_witness<{{.*}}__init__{{.*}}([[ITEM]], %_x)
@@ -311,8 +311,8 @@ fn ref_copyability[*element_types: ImplicitlyCopyable](*args: *element_types):
 
 # FIXME (Patch #48185): need to support implicit conversions to immutable reference.
 
-#fn thing_taking_immutable_ref[T: AnyType, value_origin: Origin[]](a: Pointer[T, value_origin]): pass
-#fn test_passing_mutable_ref(mut i: String):
+#def thing_taking_immutable_ref[T: AnyType, value_origin: Origin[]](a: Pointer[T, value_origin]): pass
+#def test_passing_mutable_ref(mut i: String):
 #    thing_taking_immutable_ref(Pointer(to=i))
 
 # Verify that we can propagate parametric mutability through field accesses.
@@ -320,25 +320,25 @@ struct ThingWithFields:
   var field: Int
 
 # CHECK-LABEL: lit.fn @"parametric_mut_mbvalue
-fn parametric_mut_mbvalue[origin: Origin](a: Pointer[ThingWithFields, origin]) -> Pointer[Int, origin_of(a[].field)]:
+def parametric_mut_mbvalue[origin: Origin](a: Pointer[ThingWithFields, origin]) -> Pointer[Int, origin_of(a[].field)]:
   # CHECK: lit.ref.struct.ger
   return Pointer(to=a[].field)
 
 # Pointer directly with inferred params.
 struct SomeStructWithReferenceSelfArgument:
-    fn __init__(out self): pass
-    fn hello(ref self):
+    def __init__(out self): pass
+    def hello(ref self):
         pass
 
 # CHECK-LABEL: lit.fn @"testMethodRef
-fn testMethodRef(a: SomeStructWithReferenceSelfArgument):
+def testMethodRef(a: SomeStructWithReferenceSelfArgument):
     # CHECK-NEXT: lit.call {{.*}}@"hello{{.*}}(%a)
     a.hello()
 
 
 
 # CHECK-LABEL: lit.fn @"variadic_inout_mems_iter
-fn variadic_inout_mems_iter(mut *mems: MemExample):
+def variadic_inout_mems_iter(mut *mems: MemExample):
   # Verify the iterator keeps the VariadicList alive.
   # CHECK-NEXT: %mems_0 = lit.var.decl
 
@@ -382,7 +382,7 @@ fn variadic_inout_mems_iter(mut *mems: MemExample):
 
 
 # CHECK-LABEL: lit.fn @"test_pvalue_ref_formation
-fn test_pvalue_ref_formation[a: SelfRefTest]():
+def test_pvalue_ref_formation[a: SelfRefTest]():
   # This is invoking a method (accepting a ref) on a pvalue.  This need to
   # materialize into a temporary and use the origin of the temporary, not an
   # immortal origin.
@@ -404,7 +404,7 @@ struct FieldRefPropagation:
   var field1 : Optional[Int]
   var field2 : Int
 
-  fn __init__(out self):
+  def __init__(out self):
      # Should be able to initialize field1 and use it.
      self.field1 = 42
      # Should be able to project it and assign through ref.
@@ -416,21 +416,21 @@ struct FieldRefPropagation:
 # Issue #3444 (nightly) Raising init causing use of uninitialized variable
 # https://github.com/modular/mojo/issues/3444
 struct HasRaisingInit(Copyable):
-  fn __init__(out self) raises: pass
+  def __init__(out self) raises: pass
 
 struct ImmovableRaisingInit:
-  fn __init__(out self) raises: pass
+  def __init__(out self) raises: pass
 
 struct RaisingInitWrapper:
     var field: HasRaisingInit
     var immfield: ImmovableRaisingInit
 
-    fn __init__(out self) raises:
+    def __init__(out self) raises:
       self.field = HasRaisingInit()
       self.immfield = ImmovableRaisingInit()
 
 # CHECK-LABEL: lit.fn @"test_inout_raising_init
-fn test_inout_raising_init(mut a: HasRaisingInit, mut b: RaisingInitWrapper) raises:
+def test_inout_raising_init(mut a: HasRaisingInit, mut b: RaisingInitWrapper) raises:
   # These init calls need a temporary instead of direct assignment into the dest
   # to avoid invalidating a value on the error path.
   # CHECK-NEXT: [[TEMP:%.*]] = lit.var.decl
@@ -447,10 +447,10 @@ fn test_inout_raising_init(mut a: HasRaisingInit, mut b: RaisingInitWrapper) rai
   # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}(*, "take":
 
 # CHECK-LABEL: lit.fn @"test_parameter_closure_captures
-fn test_parameter_closure_captures(var x: MemExample, var y: MemExample):
+def test_parameter_closure_captures(var x: MemExample, var y: MemExample):
   # CHECK: lit.fn *"capture
   @parameter
-  fn capture():
+  def capture():
     _ = x^
     _ = y^
 
@@ -459,14 +459,14 @@ fn test_parameter_closure_captures(var x: MemExample, var y: MemExample):
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
   capture()
 
-fn higher_order_function[lts: __mlir_type.`!lit.origin.set`, //, f: fn() capturing [lts] -> None]():
+def higher_order_function[lts: __mlir_type.`!lit.origin.set`, //, f: def() capturing [lts] -> None]():
   pass
 
 # CHECK-LABEL: lit.fn @"test_higher_order_capture
-fn test_higher_order_capture(var x: MemExample, var y: MemExample):
+def test_higher_order_capture(var x: MemExample, var y: MemExample):
   # CHECK: lit.fn *"capture
   @parameter
-  fn capture():
+  def capture():
     _ = x^
     _ = y^
 
@@ -477,11 +477,11 @@ fn test_higher_order_capture(var x: MemExample, var y: MemExample):
 
 # CHECK-LABEL: lit.fn @"test_origin_ref_spec
 # CHECK-SAME: !lit.ref<!Int, mut *"our_origin._mlir_origin`"> mutref)
-fn test_origin_ref_spec[our_origin: Origin[mut=True]](ref[our_origin] a: Int):
+def test_origin_ref_spec[our_origin: Origin[mut=True]](ref[our_origin] a: Int):
     pass
 
 # CHECK-LABEL: lit.fn @"another_min
-fn another_min[mut: Bool, //, ao: Origin[mut=mut], bo: Origin[mut=mut]](ref [ao]a: Int, ref [bo]b: Int) -> ref [a, b] Int:
+def another_min[mut: Bool, //, ao: Origin[mut=mut], bo: Origin[mut=mut]](ref [ao]a: Int, ref [bo]b: Int) -> ref [a, b] Int:
     if a < b:
         return a
     else: # This failed due to union canonicalization problems.
@@ -489,8 +489,8 @@ fn another_min[mut: Bool, //, ao: Origin[mut=mut], bo: Origin[mut=mut]](ref [ao]
 
 struct RefResultStruct:
   var x: Int
-  fn __init__(out self):  self.x = 1
-  fn method(self) -> ref [self.x] Int: return self.x
+  def __init__(out self):  self.x = 1
+  def method(self) -> ref [self.x] Int: return self.x
 
 # https://github.com/modular/mojo/issues/3960
 # CHECK-LABEL: lit.struct.decl @FieldSensitiveUse
@@ -499,7 +499,7 @@ struct FieldSensitiveUse:
     var y: String
 
     # CHECK: lit.fn @"__init__
-    fn __init__(out self):
+    def __init__(out self):
         # CHECK: lit.call {{.*}}RefResultStruct::@"__init__
         self.x = RefResultStruct()
         # CHECK: [[TMP:%.*]] = lit.call {{.*}}RefResultStruct::@"method
@@ -512,22 +512,22 @@ struct FieldSensitiveUse:
 
 # MOCO-2077: https://github.com/modular/modular/issues/4705
 # CHECK-LABEL: lit.fn @"test_getitem_setitem
-fn test_getitem_setitem(mut d: TestDict[Int, Int]):
+def test_getitem_setitem(mut d: TestDict[Int, Int]):
     # This should bind to a mutable reference, not an immutable one.
     # CHECK: %0 = lit.call {{.*}}@TestDict::@"__getitem__
     # CHECK: lit.call {{.*}}@"check_mutability{{.*}}<:!Bool {:i1 1}, {{.*}}(%0)
     check_mutability(d[])
 
 
-fn check_mutability[
+def check_mutability[
     is_mutable: Bool, //, origin: Origin[mut=is_mutable], T: AnyType
 ](ref [origin]s: T):
     pass
 
 
 struct TestDict[K: AnyType, V: ImplicitlyDestructible]:
-    fn __getitem__(ref self) -> ref [self] Self.V:
+    def __getitem__(ref self) -> ref [self] Self.V:
         while True: pass
 
-    fn __setitem__(mut self, var value: Self.V):
+    def __setitem__(mut self, var value: Self.V):
         pass

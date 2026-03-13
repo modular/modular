@@ -11,5 +11,5 @@
 # CHECK-NEXT: lit.raise
 
 
-fn foo() raises:
+def foo() raises:
     raise "exception"

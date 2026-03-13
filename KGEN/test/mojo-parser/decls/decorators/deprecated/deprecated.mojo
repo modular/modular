@@ -25,7 +25,7 @@ struct DeprecatedStruct:
 # CHECK-LABEL: lit.fn @"deprecated_func
 # CHECK-SAME: deprecationInfo = #lit.deprecation<"func">
 @deprecated("func")
-fn deprecated_func():
+def deprecated_func():
     pass
 
 
@@ -58,14 +58,14 @@ struct DeprecatedStructUse:
     pass
 
 
-fn deprecated_func_target():
+def deprecated_func_target():
     pass
 
 
 # CHECK-LABEL: lit.fn @"deprecated_func_use
 # CHECK-SAME: deprecationInfo = #lit.deprecation<"'deprecated_func_use' is deprecated, use 'deprecated_func_target' instead", "deprecated_func_target">
 @deprecated(use=deprecated_func_target)
-fn deprecated_func_use():
+def deprecated_func_use():
     pass
 
 
@@ -95,24 +95,24 @@ comptime deprecated_alias_use = 1
 
 
 struct MethodDeprecationTest:
-    fn replacement_method(self):
+    def replacement_method(self):
         pass
 
     # CHECK-LABEL: lit.fn @"deprecated_method_use
     # CHECK-SAME: deprecationInfo = #lit.deprecation<"'deprecated_method_use' is deprecated, use 'replacement_method' instead", "replacement_method">
     @deprecated(use=replacement_method)
-    fn deprecated_method_use(self):
+    def deprecated_method_use(self):
         pass
 
 
 struct StaticMethodDeprecationTest:
     @staticmethod
-    fn replacement_static():
+    def replacement_static():
         pass
 
     # CHECK-LABEL: lit.fn @"deprecated_static_use
     # CHECK-SAME: deprecationInfo = #lit.deprecation<"'deprecated_static_use' is deprecated, use 'replacement_static' instead", "replacement_static">
     @staticmethod
     @deprecated(use=replacement_static)
-    fn deprecated_static_use():
+    def deprecated_static_use():
         pass

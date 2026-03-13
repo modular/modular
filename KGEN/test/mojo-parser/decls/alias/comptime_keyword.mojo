@@ -22,7 +22,7 @@ struct MyStruct:
     comptime SIZE = 100
     comptime Type = Int
 
-    fn use_comptime(self) -> Int:
+    def use_comptime(self) -> Int:
         return Self.SIZE
 
 # In trait

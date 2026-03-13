@@ -95,12 +95,12 @@ struct Foo(Copyable, Movable):
   var _sunder_: Int
   var _priv: Int
   var normal: Int
-  fn foo(self): pass
-  fn _foobar_(self): pass
-  fn _bar(self): pass
-  fn __baz__(self): pass
+  def foo(self): pass
+  def _foobar_(self): pass
+  def _bar(self): pass
+  def __baz__(self): pass
 
-fn function(arg: Foo):
+def function(arg: Foo):
   arg.
 `
     );
@@ -136,7 +136,7 @@ fn function(arg: Foo):
       server,
       "test:///test.mojo",
       `
-fn function(arg: Int):
+def function(arg: Int):
     arg.
 `
     );
@@ -161,7 +161,7 @@ fn function(arg: Int):
       server,
       "test:///test.mojo",
       `
-fn function() -> Int:
+def function() -> Int:
     var value: Int = 10
     return value
 `
@@ -187,12 +187,12 @@ fn function() -> Int:
       server,
       "test:///moto-767.mojo",
       `
-fn main() raises -> :
+def main() raises -> :
   pass
 
 alias T = Tuple[StringLiteral, StringLiteral, StringLiteral]
 
-fn f[T: Equatable](s: T):
+def f[T: Equatable](s: T):
   pass
 `
     );
@@ -215,9 +215,9 @@ fn f[T: Equatable](s: T):
     it("should complete for partial functions", async function () {
       let doc = new Document(
         server,
-        "test:///fn_no_colon.mojo",
+        "test:///def_no_colon.mojo",
         `
-fn function(arg: Int)`
+def function(arg: Int)`
       );
       await checkSnippet(doc, "nt");
     });
@@ -227,7 +227,7 @@ fn function(arg: Int)`
         server,
         "test:///if_no_colon.mojo",
         `
-fn function(arg: Int):
+def function(arg: Int):
   if arg.value`
       );
       await checkSnippet(doc, "value");
@@ -238,7 +238,7 @@ fn function(arg: Int):
         server,
         "test:///elif_no_colon.mojo",
         `
-fn function(arg: Int):
+def function(arg: Int):
   if False:
     return
   elif arg.value`
@@ -251,7 +251,7 @@ fn function(arg: Int):
         server,
         "test:///while_no_colon.mojo",
         `
-fn function(arg: Int):
+def function(arg: Int):
   while arg.value`
       );
       await checkSnippet(doc, "value");
@@ -262,7 +262,7 @@ fn function(arg: Int):
         server,
         "test:///with_no_colon.mojo",
         `
-fn function(arg: Int):
+def function(arg: Int):
   with arg.value`
       );
       await checkSnippet(doc, "value");

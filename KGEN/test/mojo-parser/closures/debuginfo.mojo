@@ -20,8 +20,8 @@
 # CHECK-DAG: #[[LOC26]] = loc(fused<#[[SP9]]>[#
 
 
-fn makes_escaping_closure(m: Int, z: Int) -> fn (n: Int) escaping -> Int:
-    fn myclosure(n: Int) -> Int:
+def makes_escaping_closure(m: Int, z: Int) -> def (n: Int) escaping -> Int:
+    def myclosure(n: Int) -> Int:
         return m
 
     return myclosure^
@@ -49,10 +49,10 @@ fn makes_escaping_closure(m: Int, z: Int) -> fn (n: Int) escaping -> Int:
 # CHECK-DAG: #[[LOC1]] = loc(fused<#[[LEXBLOCK]]>[#
 
 
-fn closure_in_block(m: Int, z: Int, b: Bool) -> Int:
+def closure_in_block(m: Int, z: Int, b: Bool) -> Int:
     if b:
 
-        fn myclosure(n: Int) -> Int:
+        def myclosure(n: Int) -> Int:
             return m
 
         return myclosure(z)

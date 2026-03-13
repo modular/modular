@@ -18,9 +18,9 @@ from debuginfo_module import imported_fn
 
 
 struct CalledStruct[param: __mlir_type.index]:
-    fn test(self):
+    def test(self):
         imported_fn()
 
 
-fn callerFn[rows: __mlir_type.index](arg0: CalledStruct[rows]):
+def callerFn[rows: __mlir_type.index](arg0: CalledStruct[rows]):
     return arg0.test()

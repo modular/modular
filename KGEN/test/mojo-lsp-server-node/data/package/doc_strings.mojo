@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn completion_test():
+def completion_test():
     """Test doc string.
 
     ```mojo

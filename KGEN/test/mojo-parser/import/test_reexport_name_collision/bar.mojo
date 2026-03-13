@@ -8,5 +8,5 @@
 # Used to test that re-exporting works for plain functions too,
 # not just parametric ones.
 
-fn bar() -> Int:
+def bar() -> Int:
     return 99

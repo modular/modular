@@ -17,7 +17,7 @@ from imported_cached_module import (
 
 
 # CHECK-LABEL: lit.fn @"assign_from()"
-fn assign_from():
+def assign_from():
     # CHECK: string = <"foobar">
     var foo = StringLiteralAlias
 
@@ -29,5 +29,5 @@ struct Struct(Trait):
 
 # CHECK-LABEL: lit.file_module @imported_cached_module
 # CHECK: lit.struct.field func_ref : {{.*}}@FuncRefField::@"foo()"
-fn pull_symbol(x: FuncRefField):
+def pull_symbol(x: FuncRefField):
     pass

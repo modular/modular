@@ -8,11 +8,11 @@
 
 # Helper function for testing t-strings as function arguments
 # CHECK-LABEL: lit.fn @"dummy_function(::String,::String)"
-fn dummy_function(arg1: String, arg2: String):
+def dummy_function(arg1: String, arg2: String):
     pass
 
 # CHECK-LABEL: lit.fn @"test_t_strings()"
-fn test_t_strings():
+def test_t_strings():
     # Basic t-string literal with no interpolations - now uses .make_tstring() for consistency
     # CHECK: lit.call @{{.*}}__make_tstring{{.*}}:string "Hello, World!"
     var s1 = t"Hello, World!"

@@ -16,19 +16,19 @@ struct NoDebugInlineTest:
     # Two decorators stacked up
     @always_inline("nodebug")
     @staticmethod
-    fn test():
+    def test():
         return
 
 
 # Test some graph compiler decorators.
-fn elementwise(): return
+def elementwise(): return
 
-fn register(a: StringLiteral): return
+def register(a: StringLiteral): return
 
 # CHECK-LABEL: lit.fn @"decorated_fn()"
 # CHECK-NEXT: decorators <:!lit.generator<() -> !kgen.none> @{{.*}}::@"elementwise()">
 @elementwise
-fn decorated_fn():
+def decorated_fn():
     pass
 
 # CHECK-LABEL: lit.struct.decl @DecoratedStruct
@@ -43,23 +43,23 @@ struct DecoratedStruct:
 
 # CHECK: lit.fn @"test_always_inline()"() -> index always_inline
 @always_inline
-fn test_always_inline() -> __mlir_type.index:
+def test_always_inline() -> __mlir_type.index:
     return Int(1)._mlir_value
 
 # CHECK-LABEL: lit.fn @"test_always_inline_no_debug
 # CHECK-SAME: always_inline_no_debug
 @always_inline("nodebug")
-fn test_always_inline_no_debug():
+def test_always_inline_no_debug():
     pass
 
 
 # CHECK-LABEL: lit.fn @"math{{.*}} always_inline_builtin
 @always_inline("builtin")
-fn math(a: __mlir_type.index, b: __mlir_type.index) -> __mlir_type.index:
+def math(a: __mlir_type.index, b: __mlir_type.index) -> __mlir_type.index:
     return __mlir_op.`index.add`(a, b)
 
 # CHECK-LABEL: lit.fn @"use_math
-fn use_math(a: __mlir_type.index) -> __mlir_type.index:
+def use_math(a: __mlir_type.index) -> __mlir_type.index:
     # CHECK: %index3 = kgen.param.constant = <3>
     # CHECK: %0 = lit.call tail @decorators::@"math(
     # CHECK: lit.return %0 : index
@@ -75,10 +75,10 @@ fn use_math(a: __mlir_type.index) -> __mlir_type.index:
 # https://github.com/modularml/modular/issues/8500
 struct AlwaysInlineByRef:
     @always_inline("nodebug")
-    fn do_by_ref(mut self):
+    def do_by_ref(mut self):
         pass
 
-fn test_inline_by_ref(mut a: AlwaysInlineByRef):
+def test_inline_by_ref(mut a: AlwaysInlineByRef):
     a.do_by_ref()
 
 
@@ -89,12 +89,12 @@ struct AIBuiltinPair(TrivialRegisterPassable):
     comptime MyAlias = AIBuiltinPair
 
     @always_inline("builtin")
-    fn __init__(out self: Self.MyAlias, x: Int, y: Int):
+    def __init__(out self: Self.MyAlias, x: Int, y: Int):
         self.a = x
         self.b = y
 
 # CHECK-LABEL: lit.fn @"test_ai_builtin_pair
-fn test_ai_builtin_pair():
+def test_ai_builtin_pair():
     # CHECK-NEXT: lit.alias.decl *"example{{.*}}!AIBuiltinPair {a: !Int = {1}, b: !Int = {2}}
     comptime example = AIBuiltinPair(1, 2)
 
@@ -107,7 +107,7 @@ struct StaticMethodTest:
     # CHECK-LABEL: lit.fn @"some_static_method()"()
     # CHECK-SAME: isStatic
     @staticmethod
-    fn some_static_method():
+    def some_static_method():
         pass
 
 
@@ -118,7 +118,7 @@ struct StaticMethodTest:
 # CHECK-LABEL: lit.fn @"test_no_inline
 # CHECK-SAME: no_inline
 @no_inline
-fn test_no_inline():
+def test_no_inline():
     pass
 
 # ===----------------------------------------------------------------------=== #
@@ -127,19 +127,19 @@ fn test_no_inline():
 
 struct DeprecatedImplicitConversion:
     @implicit(deprecated=True)
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         pass
 
 struct NotDeprecatedImplicitConversion:
     @implicit(deprecated=False)
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         pass
 
-fn foo(y: DeprecatedImplicitConversion): pass
+def foo(y: DeprecatedImplicitConversion): pass
 
-fn foo(z: Int): pass
+def foo(z: Int): pass
 
-fn deprecated_implicit_conversion():
+def deprecated_implicit_conversion():
     # There should be no warnings here.
     _: NotDeprecatedImplicitConversion = 1
     _ = DeprecatedImplicitConversion(1)
@@ -156,7 +156,7 @@ fn deprecated_implicit_conversion():
 @__llvm_metadata(
     `nvvm.maxntid`=__mlir_attr[`#pop.array<`, x, `> : !pop.array<1, `, Int, `>`]
 )
-fn kernel[x: Int]():
+def kernel[x: Int]():
     pass
 
 # CHECK-LABEL: lit.fn @"kernel_1{{.*}}"<x:
@@ -166,7 +166,7 @@ comptime mname = "nvvm.maxntid"
 @__llvm_metadata(
     mname=__mlir_attr[`#pop.array<`, x, `> : !pop.array<1, `, Int, `>`]
 )
-fn kernel_1[x: Int]():
+def kernel_1[x: Int]():
     pass
 
 # CHECK-LABEL: lit.fn @"kernel_2{{.*}}"<x:
@@ -174,7 +174,7 @@ fn kernel_1[x: Int]():
 @__llvm_metadata(
     `mname`=__mlir_attr[`#pop.array<`, x, `> : !pop.array<1, `, Int, `>`]
 )
-fn kernel_2[x: Int]():
+def kernel_2[x: Int]():
     pass
 
 # TODO: Figure out how to get the value of the alias.
@@ -182,7 +182,7 @@ fn kernel_2[x: Int]():
 # CHECK-SAME: LLVMMetadataArray = [
 # CHECK-SAME: data_to_str({{.*}}alias_parametric_fn
 # CHECK-SAME: #kgen.unknown : !lit.struct<#IntLiteral <:!pop.int_literal 128>>
-fn alias_parametric_fn() -> StaticString:
+def alias_parametric_fn() -> StaticString:
     comptime if True:
         return "nvvm.maxntid"
     else:
@@ -192,7 +192,7 @@ fn alias_parametric_fn() -> StaticString:
 comptime mname1 = _get_kgen_string[alias_parametric_fn()]()
 
 @__llvm_metadata(mname1=128)
-fn kernel_3[x: Int]():
+def kernel_3[x: Int]():
     pass
 
 # ===----------------------------------------------------------------------=== #
@@ -206,7 +206,7 @@ fn kernel_3[x: Int]():
 @__llvm_arg_metadata(
     d, mname=__mlir_attr[`#pop.array<`, x, `> : !pop.array<1, `, Int, `>`]
 )
-fn llvm_arg_meta[x: Int](a: Int, b: Int, c: Int, d: Int, e: Int):
+def llvm_arg_meta[x: Int](a: Int, b: Int, c: Int, d: Int, e: Int):
     pass
 
 
@@ -214,7 +214,7 @@ fn llvm_arg_meta[x: Int](a: Int, b: Int, c: Int, d: Int, e: Int):
 # Struct decorators
 # ===----------------------------------------------------------------------=== #
 
-fn register_internal(x: StaticString):
+def register_internal(x: StaticString):
     pass
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder1
@@ -268,10 +268,10 @@ struct DecoratorOrder4(TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.struct.decl @StructExample
 struct StructExample(ImplicitlyCopyable, RegisterPassable):
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
@@ -419,7 +419,7 @@ struct TraitMember[T: ImplicitlyCopyable](ImplicitlyCopyable):
     # CHECK: lit.call{{.*}}__init__(copy:$0)">
 
 
-# CHECK: lit.fn @"notSynthetic{{.*}}(%self: !lit.ref<!NotSynthetic, imm {{.*}}> read_mem) -> !kgen.none attributes {sourceName = "notSynthetic", specialFnKind = 0 : i8}
+# CHECK: lit.fn @"notSynthetic{{.*}}(%self: !lit.ref<!NotSynthetic, imm {{.*}}> read_mem) -> !kgen.none attributes {def, sourceName = "notSynthetic", specialFnKind = 0 : i8}
 # CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %take:{{.*}}synthetic
 # CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %copy:{{.*}}synthetic
 # CHECK: lit.fn @"__init__{{.*}}synthetic
@@ -427,7 +427,7 @@ struct TraitMember[T: ImplicitlyCopyable](ImplicitlyCopyable):
 struct NotSynthetic(ImplicitlyCopyable):
     var member: __mlir_type.`index`
 
-    fn notSynthetic(self):
+    def notSynthetic(self):
         pass
 
 
@@ -439,7 +439,7 @@ struct VarArgInit(TrivialRegisterPassable):
     # CHECK: lit.fn @"__init__(decorators::ValueMem*)"{{.*}}(%values: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>> read_mem|pos_vararg
     # The argument is intentionally memory-only.
     @implicit
-    fn __init__(out self, *values: ValueMem):
+    def __init__(out self, *values: ValueMem):
         self.a = 42
 
     # CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !VarArgInit
@@ -469,5 +469,5 @@ struct RaisingFieldwiseInit(ImplicitlyCopyable):
     var x: Int
 
     # CHECK-LABEL: lit.fn @"__init__{{.*}} throws
-    fn __init__(out self, x: Int) raises:
+    def __init__(out self, x: Int) raises:
         pass

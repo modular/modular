@@ -8,15 +8,15 @@
 
 @fieldwise_init
 struct MemType(ImplicitlyCopyable):
-    fn __add__(self, rhs: MemType) -> MemType:
+    def __add__(self, rhs: MemType) -> MemType:
         return MemType()
 
 
 # CHECK-LABEL: lit.fn @"makes_escaping_closure
-fn makes_escaping_closure(m: MemType, w: Int):
+def makes_escaping_closure(m: MemType, w: Int):
     # CHECK: [[IMPL:%.*]] = lit.var.decl "__call_result_tmp__" synth
     # CHECK-NEXT: lit.call {{.*}}::@"__init__{{.*}}(%m, [[IMPL]])
-    fn myclosure_with_mem_types(n: MemType) escaping -> MemType:
+    def myclosure_with_mem_types(n: MemType) escaping -> MemType:
         return n + m
 
     # CHECK: [[A:%.*]] = lit.ref.load %a
@@ -26,6 +26,6 @@ fn makes_escaping_closure(m: MemType, w: Int):
     # CHECK-NEXT: lit.call {{.*}}::@"__init__{{.*}}([[IMPL]], [[WRAPPER]])
     var a = w
 
-    fn myclosure_with_reg_types(x: Int) escaping -> Int:
+    def myclosure_with_reg_types(x: Int) escaping -> Int:
         a = a + 1
         return x + w

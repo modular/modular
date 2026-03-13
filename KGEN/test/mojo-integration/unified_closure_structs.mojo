@@ -15,32 +15,32 @@ trait ATrait(Movable):
     # effect. Note that the legacy closures are responsible for this restriction.
     # In particular, the following is not supported:
     # trait ATrait(Movable):
-    #     fn my_method(self) -> Int:
+    #     def my_method(self) -> Int:
     #         ...
 
-    # struct ParamStruct[func: fn (x: Int) capturing -> Int](ATrait):
-    #     fn my_method(self) -> Int:
+    # struct ParamStruct[func: def (x: Int) capturing -> Int](ATrait):
+    #     def my_method(self) -> Int:
     #         return func(2)
-    fn my_method(self) capturing -> Int:
+    def my_method(self) capturing -> Int:
         ...
 
 
-struct AStruct[func: fn(x: Int) unified -> Int](ATrait):
+struct AStruct[func: def(x: Int) unified -> Int](ATrait):
     var myFunc: Self.func
 
-    fn __init__(out self, var x: Self.func):
+    def __init__(out self, var x: Self.func):
         self.myFunc = x^
 
-    fn my_method(self) -> Int:
+    def my_method(self) -> Int:
         return self.myFunc(3)
 
 
-fn takeIt[T: ATrait](impl: T):
+def takeIt[T: ATrait](impl: T):
     print(impl.my_method())
 
 
 # COM: Test the capturing effect is propagated through to trait methods
-trait DefinesClosure(fn(z: Int) unified -> Int):
+trait DefinesClosure(def(z: Int) unified -> Int):
     pass
 
 
@@ -48,11 +48,11 @@ trait DefinesClosure(fn(z: Int) unified -> Int):
 struct DefinesClosureImpl(DefinesClosure):
     var x: Int
 
-    fn __call__(self, z: Int) -> Int:
+    def __call__(self, z: Int) -> Int:
         return z + self.x
 
 
-fn takeIt[f: fn(z: Int) unified -> Int](impl: f, y: Int):
+def takeIt[f: def(z: Int) unified -> Int](impl: f, y: Int):
     print(impl(y))
 
 
@@ -61,7 +61,7 @@ def main() raises:
     var one = atol(argv()[2])
     var four = atol(argv()[3])
 
-    fn myclosure(x: Int) unified {var y} -> Int:
+    def myclosure(x: Int) unified {var y} -> Int:
         return y + x
 
     var s = AStruct(myclosure^)

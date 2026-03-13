@@ -14,7 +14,7 @@ from extension_only_package import MyStruct
 
 
 # CHECK-LABEL: kgen.generator @"struct_extensions_cross_package::test
-fn test():
+def test():
     var car = MyStruct()
 
     # Call method from the original struct

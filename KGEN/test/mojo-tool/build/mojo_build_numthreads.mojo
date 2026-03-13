@@ -8,5 +8,5 @@
 # RUN: %mojo-build --num-threads 5 %s
 
 # This is a very simple test that just checks that we can pass --num-threads command line argument.
-fn main():
+def main():
     pass

@@ -8,15 +8,15 @@
 
 
 struct MyAffine:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 
 # CHECK-LABEL: @"testAffineThing
-fn testAffineThing():
+def testAffineThing():
     _ = MyAffine()
     # CHECK: lit.call {{.*}}MyAffine::@"__del__
     # CHECK: kgen.return
@@ -25,22 +25,22 @@ fn testAffineThing():
 # CHECK-LABEL: lit.struct.decl @EmptyExplicit
 @explicit_destroy
 struct EmptyExplicit:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     # CHECK-LABEL: @"consume
-    fn consume(deinit self):
+    def consume(deinit self):
         # CHECK: lit.ownership.mark_destroyed %self
         pass
         # CHECK-NOT: lit.call {{.*}}__del__
 
     # Deinit method should be able to transfer all of self to another
     # deinit method.
-    fn consume2(deinit self):
+    def consume2(deinit self):
         self^.consume()
 
 
-fn correctUseExample():
+def correctUseExample():
     var l = EmptyExplicit()
     l^.consume()
 
@@ -52,15 +52,15 @@ struct ExplicitDestroyThrowing:
 
     # CHECK-LABEL: lit.fn @"foo
     # CHECK: lit.call {{.*}}MyAffine::@"__del__
-    fn foo(deinit self):
+    def foo(deinit self):
         pass
 
     # CHECK-LABEL: lit.fn @"method_that_raises
-    fn method_that_raises(self) raises:
+    def method_that_raises(self) raises:
         pass
 
     # CHECK-LABEL: lit.fn @"raising_callee
-    fn raising_callee(deinit self) raises:
+    def raising_callee(deinit self) raises:
         # This should be ok even though method() is throwing. The error path
         # should assume 't' is deinited.
         # CHECK: %__call_result_tmp__ = lit.var.decl
@@ -77,24 +77,24 @@ struct ExplicitDestroyThrowing:
 struct ImplicitlyDestructibleContainerOfExplicit:
     var m: EmptyExplicit
 
-    fn __init__(out self):
+    def __init__(out self):
         self.m = EmptyExplicit()
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         self.m^.consume()
 
 
-fn foo1[T: Movable](var x: T) -> T:
+def foo1[T: Movable](var x: T) -> T:
     # Is fine, we move it away instead of calling x.__del__()
     return x^
 
 
-fn foo2[T: AnyType](x: T):
+def foo2[T: AnyType](x: T):
     # Is fine, since x is a borrow
     pass
 
 
-fn foo3[T: ImplicitlyDestructible](var x: T):
+def foo3[T: ImplicitlyDestructible](var x: T):
     # Is fine, there's a x.__del__() available
     pass
 
@@ -110,27 +110,27 @@ struct I(Iterator):
 struct _MapIterator[
     InnerIteratorType: Iterator,
     //,
-    Function: fn (InnerIteratorType.Element) -> Int,
+    Function: def (InnerIteratorType.Element) -> Int,
 ]():
     var _inner: Self.InnerIteratorType
 
-    fn __init__(out self):
+    def __init__(out self):
         while True:
             pass
 
 
-fn f(x: Int) -> Int:
+def f(x: Int) -> Int:
     return 1
 
 
-fn map[
-    func: fn (Int) -> Int,
+def map[
+    func: def (Int) -> Int,
 ](ref iterable: I) -> _MapIterator[InnerIteratorType=I, Function=func]:
     return {}
 
 
 # CHECK-LABEL: lit.fn @"moco2373(
-fn moco2373(l: I):
+def moco2373(l: I):
     var l2 = map[f](l)
     # This shouldn't cause a crash, it should successfully destruct it.
     # CHECK: lit.call {{.*}}@_MapIterator::@"__del__

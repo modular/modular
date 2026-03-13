@@ -23,19 +23,19 @@ struct Wrapper(ImplicitlyCopyable, RegisterPassable):
 struct MyInt(TrivialRegisterPassable):
     var value: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.value = 0
 
     @implicit
-    fn __init__(out self, arg: Wrapper)
+    def __init__(out self, arg: Wrapper)
         where orig():
         self.value = arg.value
 
 
-fn take_myint(arg: MyInt):
+def take_myint(arg: MyInt):
     pass
 
 
-fn orig() -> Bool
+def orig() -> Bool
     where take_myint(Wrapper(0)):
     return True

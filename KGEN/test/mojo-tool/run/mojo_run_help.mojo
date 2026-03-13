@@ -22,7 +22,7 @@
 from std.sys import argv
 
 
-fn main() -> None:
+def main() -> None:
     # CHECK-ARGV: mojo_run_help.mojo
     # CHECK-ARGV: --help
     print(argv()[0])

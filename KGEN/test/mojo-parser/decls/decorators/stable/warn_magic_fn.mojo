@@ -11,14 +11,14 @@
 # RUN: %parse-mojo-isolated -warn-on-unstable-apis -verify-diagnostics %s
 
 
-fn test_stable_magic_functions():
+def test_stable_magic_functions():
     """Stable magic functions should NOT trigger warnings."""
     var x = 42
     # type_of, origin_of, conforms_to, __functions_in_module are stable.
     comptime t = type_of(x)
 
 
-fn test_unstable_get_current_function_name():
+def test_unstable_get_current_function_name():
     """Using __get_current_function_name should trigger an unstable warning."""
     # expected-warning @+1 {{use of unstable function '__get_current_function_name'}}
     comptime name = __get_current_function_name()

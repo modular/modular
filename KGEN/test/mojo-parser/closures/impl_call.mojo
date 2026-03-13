@@ -8,7 +8,7 @@
 
 @fieldwise_init
 struct MemType(ImplicitlyCopyable):
-    fn __add__(self, rhs: MemType) -> MemType:
+    def __add__(self, rhs: MemType) -> MemType:
         return MemType()
 
 
@@ -51,26 +51,26 @@ struct MemType(ImplicitlyCopyable):
 # CHECK-NEXT: lit.return
 
 
-fn use(x: MemType):
+def use(x: MemType):
     pass
 
 
-fn use(x: Int):
+def use(x: Int):
     pass
 
 
-fn make_diff_closures(m: MemType, z: __mlir_type.index, var w: Int):
+def make_diff_closures(m: MemType, z: __mlir_type.index, var w: Int):
     var x = w
 
-    fn ret_mem(y: MemType) -> MemType:
+    def ret_mem(y: MemType) -> MemType:
         return m + y
 
-    fn ret_mlir_type() -> __mlir_type.index:
+    def ret_mlir_type() -> __mlir_type.index:
         return __mlir_op.`index.mul`(z, w._mlir_value)
 
-    fn ret_none(p: Int):
+    def ret_none(p: Int):
         use(m)
 
-    fn capture_slvalue(var q: Int, ww: Int):
+    def capture_slvalue(var q: Int, ww: Int):
         x = x + x
         use(w)

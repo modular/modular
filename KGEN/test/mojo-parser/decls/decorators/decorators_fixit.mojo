@@ -16,15 +16,15 @@
 
 struct DeprecatedImplicit:
     @implicit(deprecated=True)
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         pass
 
 
-fn takes_deprecated_implicit(x: DeprecatedImplicit):
+def takes_deprecated_implicit(x: DeprecatedImplicit):
     pass
 
 
-fn main():
+def main():
     # Variable assignment with implicit conversion.
     # The fixit suggests wrapping the literal with the explicit constructor call.
     # The fixIts are on the note diagnostic, not the warning.

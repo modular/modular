@@ -32,5 +32,5 @@
 
 
 @export("my_add_one")
-fn my_add_one(x: Int32) -> Int32:
+def my_add_one(x: Int32) -> Int32:
     return x + 1

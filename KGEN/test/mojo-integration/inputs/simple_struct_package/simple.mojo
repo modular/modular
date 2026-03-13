@@ -15,18 +15,18 @@ struct PlainStruct:
 struct GenericBox[T: ImplicitlyCopyable]:
     var value: Self.T
 
-    fn __init__(out self, value: Self.T):
+    def __init__(out self, value: Self.T):
         self.value = value
 
-    fn get(self) -> Self.T:
+    def get(self) -> Self.T:
         return self.value
 
 
 struct MyStruct(Copyable):
     var value: Int
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.value = value
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.value = copy.value

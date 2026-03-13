@@ -14,15 +14,15 @@ from std.runtime.asyncrt import create_task
 
 
 # CHECK-LABEL: test_runtime_task
-fn main():
+def main():
     print("== test_runtime_task")
 
     @parameter
-    async fn test_asyncrt_add[lhs: Int](rhs: Int) -> Int:
+    async def test_asyncrt_add[lhs: Int](rhs: Int) -> Int:
         return lhs + rhs
 
     @parameter
-    async fn test_asyncrt_add_two_of_them(a: Int, b: Int) -> Int:
+    async def test_asyncrt_add_two_of_them(a: Int, b: Int) -> Int:
         return await create_task(test_asyncrt_add[1](a)) + await create_task(
             test_asyncrt_add[2](b)
         )

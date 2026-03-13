@@ -12,25 +12,25 @@ struct my_iter:
     var end: Int
     var list: MyList
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.start = copy.start
         self.end = copy.end
         self.list = copy.list
 
     @implicit
-    fn __init__(out self, list: MyList):
+    def __init__(out self, list: MyList):
         self.start = 0
         self.end = list.size
         self.list = list
 
-    fn __next__(mut self: my_iter) raises StopIteration -> Int:
+    def __next__(mut self: my_iter) raises StopIteration -> Int:
         if self.__len__() <= 0:
             raise StopIteration()
         var result: Int = self.start
         self.start += 1
         return self.list[result]
 
-    fn __len__(self: my_iter) -> Int:
+    def __len__(self: my_iter) -> Int:
         if self.start < self.end:
             return self.end - self.start
         return 0
@@ -41,23 +41,23 @@ struct MyList(ImplicitlyCopyable):
     var start: UnsafePointer[Int, MutAnyOrigin]
     var size: Int
 
-    fn __setitem__(mut self, idx: Int, val: Int):
+    def __setitem__(mut self, idx: Int, val: Int):
         var ptr = self.start + idx
         ptr[] = val
 
-    fn __getitem__(mut self, idx: Int) -> Int:
+    def __getitem__(mut self, idx: Int) -> Int:
         var ptr = self.start + idx
         return ptr[]
 
-    fn __iter__(mut self) -> my_iter:
+    def __iter__(mut self) -> my_iter:
         return my_iter(self)
 
 
-fn printInt(x: Int):
+def printInt(x: Int):
     print(x)
 
 
-fn main():
+def main():
     var buffer = __mlir_op.`pop.stack_allocation`[
         count=Int(3)._mlir_value,
         _type=__mlir_type[`!kgen.pointer<`, Int, `>`],

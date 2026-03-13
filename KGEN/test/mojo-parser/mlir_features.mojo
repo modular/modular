@@ -10,7 +10,7 @@ comptime one = __mlir_attr.`1 : index`
 
 
 # CHECK: lit.fn @"mlirMagicTest{{.*}}(%x: bf16, %y: f8E5M2)
-fn mlirMagicTest(
+def mlirMagicTest(
     x: __mlir_type.bf16, y: __mlir_type.f8E5M2
 ) -> __mlir_type.index:
     # CHECK: lit.alias.decl [[A:.*]] = <#alias_one>
@@ -51,7 +51,7 @@ fn mlirMagicTest(
 
 
 # CHECK-LABEL: lit.fn @"mlirTypesAndAttrs{{.*}}()"<dtype: dtype>()
-fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`]():
+def mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`]():
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<scalar<dtype>, mut
     var a: __mlir_type[`!pop.scalar<`, dtype, `>`]
     # CHECK: %b = lit.var.decl "b" var : !lit.ref<simd<4, dtype>,
@@ -67,13 +67,13 @@ struct ComplexSubstitution[T: __mlir_type.`!kgen.dtype`]:
 
 # Issue #6374: [Lit] Add support for type placeholder
 # CHECK-LABEL: typePlaceholder
-fn typePlaceholder():
+def typePlaceholder():
     # CHECK: %x = lit.var.decl {{.*}} : !lit.ref<variadic<i32>,
     var x: __mlir_type[`!kgen.variadic<`, __mlir_type.i32, `>`]
 
 
 # CHECK-LABEL: lit.fn @"fancierSubstitutions
-fn fancierSubstitutions():
+def fancierSubstitutions():
     # CHECK: = lit.var.decl {{.*}} : !lit.ref<complex<i32>,
     var complexInt: __mlir_type[`complex<`, __mlir_type.i32, `>`]
 
@@ -88,7 +88,7 @@ fn fancierSubstitutions():
 # This shows that we can use unary+ to make the printer avoid printing types.
 # See Issue #6468: [Lit] __mlir_attr construction fails for !kgen.list
 # CHECK-LABEL: @"testAttrConcatWithoutType{{.*}}()"<length>() ->
-fn testAttrConcatWithoutType[
+def testAttrConcatWithoutType[
     length: __mlir_type.index,
 ]():
     # CHECK: lit.alias.decl *"x{{.*}}": variadic<index> = <[1, length]>
@@ -108,12 +108,12 @@ struct MyPointer[elType: __mlir_type.`!kgen.non_struct_type`](RegisterPassable):
     var value: Self.StorageTy
 
     @implicit
-    fn __init__(out self, value: Self.StorageTy):
+    def __init__(out self, value: Self.StorageTy):
         self.value = value
 
 
 # CHECK-LABEL: lit.fn @"structured_for_loop()"
-fn structured_for_loop() -> __mlir_type.index:
+def structured_for_loop() -> __mlir_type.index:
     # CHECK: %0 = hlcf.loop (%arg0 = %index0 : index) -> index {
     __mlir_region loop_body(i: __mlir_type.index):
         # CHECK-NEXT: %index = kgen.param.constant = <#alias_one>
@@ -128,7 +128,7 @@ fn structured_for_loop() -> __mlir_type.index:
 
 
 # CHECK-LABEL: lit.fn @"mlir_properties
-fn mlir_properties(arg0: __mlir_type.i64, arg1: __mlir_type.i64):
+def mlir_properties(arg0: __mlir_type.i64, arg1: __mlir_type.i64):
     # CHECK: llvm.add %arg0, %arg1 overflow<nsw> : i64
     _ = __mlir_op.`llvm.add`[
         _type=__mlir_type.i64,

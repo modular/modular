@@ -20,6 +20,6 @@ struct UnstableStruct:
 
 
 @stable(since="1.0")
-fn stable_fn_with_version():
+def stable_fn_with_version():
     """A stable function with a version string."""
     pass

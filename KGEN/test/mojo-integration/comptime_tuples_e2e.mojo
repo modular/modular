@@ -15,31 +15,31 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
     var elts: List[Self.Element]
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         self.elts = List[Self.Element]()
 
     @always_inline
-    fn __init__(out self, value: Self.Element):
+    def __init__(out self, value: Self.Element):
         self.elts = List[Self.Element]()
         self.elts.append(value)
 
     @always_inline
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         self.elts = take.elts^
 
     @always_inline
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.elts = copy.elts.copy()
 
     @always_inline
-    fn cons(self, var other: Self) -> Self:
+    def cons(self, var other: Self) -> Self:
         var new = self
         for e in other.elts:
             new.elts.append(e)
         return new
 
     @always_inline
-    fn __add__(self, var other: Self) -> Self:
+    def __add__(self, var other: Self) -> Self:
         var new = Self()
         for e in self.elts:
             new.elts.append(e)
@@ -47,7 +47,7 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
             new.elts.append(e)
         return new
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("(")
 
         for i in range(len(self.elts)):
@@ -68,14 +68,14 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
 comptime IntTuple = MTuple[Int]
 
 
-fn main():
+def main():
     comptime tup = IntTuple(IntTuple(3) + IntTuple(4))
     # CHECK: (3, 4)
     print(tup)
     add_print[tup]()
 
 
-fn add_print[x: IntTuple]():
+def add_print[x: IntTuple]():
     comptime tup = x + IntTuple(4)
     # CHECK: ((3, 4), 4)
     print(tup)

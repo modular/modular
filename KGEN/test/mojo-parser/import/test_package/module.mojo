@@ -10,12 +10,12 @@ from .test_nested_package.module import nested_function
 comptime top_level_alias = 2
 
 
-fn function():
+def function():
     call_nested_function()
     return
 
 
-fn call_nested_function():
+def call_nested_function():
     nested_function()
     return
 
@@ -30,7 +30,7 @@ struct `weird()struct[]`:
     pass
 
 
-fn `use()weird[]`() -> `weird()struct[]`:
+def `use()weird[]`() -> `weird()struct[]`:
     return `weird()struct[]`()
 
 
@@ -45,5 +45,5 @@ struct Wrapper:
 
     comptime MyType = ParameterizedType[42]
 
-    fn unused_method(mut self) -> Self.MyType:
+    def unused_method(mut self) -> Self.MyType:
         return Self.MyType()

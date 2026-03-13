@@ -11,16 +11,16 @@ struct MemExample:
     pass
 
 
-fn return_generic_memory_only[T: AnyType]() -> T:
+def return_generic_memory_only[T: AnyType]() -> T:
     pass
 
 
-fn fudge_int(x: Int) -> Int:
+def fudge_int(x: Int) -> Int:
     return x
 
 
 # CHECK-LABEL: lit.fn @"var_decls()
-fn var_decls():
+def var_decls():
     # CHECK: %y = lit.var.decl "y" var
     var y: Int
 
@@ -39,7 +39,7 @@ fn var_decls():
 
 
 # CHECK-LABEL: lit.fn @"test_var_let_scopes
-fn test_var_let_scopes(cond: Bool):
+def test_var_let_scopes(cond: Bool):
     # CHECK: lit.var.decl "c"
     # CHECK: hlcf.elif
     var c = 10
@@ -53,7 +53,7 @@ fn test_var_let_scopes(cond: Bool):
 
 
 # CHECK-LABEL: lit.fn @"test_var_origin_mangling
-fn test_var_origin_mangling[x: Int](c: Bool):
+def test_var_origin_mangling[x: Int](c: Bool):
     # CHECK: hlcf.elif
     if c:
         # CHECK: lit.var.decl "y" var : !lit.ref<!Int, mut *"y`">
@@ -65,21 +65,21 @@ fn test_var_origin_mangling[x: Int](c: Bool):
 
 
 # CHECK-LABEL: lit.fn @"test_nested_var_origin_mangling
-fn test_nested_var_origin_mangling[x: Int](c: Bool):
+def test_nested_var_origin_mangling[x: Int](c: Bool):
     # CHECK: hlcf.elif
     if c:
         # CHECK: lit.var.decl "y" var : !lit.ref<!Int, mut *"y`">
         var y = x
 
     # CHECK: lit.fn *"nested()"
-    fn nested():
+    def nested():
         # CHECK: lit.var.decl "y" var : !lit.ref<!Int, mut *"y`2x">
         var y = x
 
 
 # Issue #18157 and issue #18158, shadowing variables should be able to reference
 # the shadowed variable on the RHS.
-fn test_shadowing_reference_shadowed(cond: Bool):
+def test_shadowing_reference_shadowed(cond: Bool):
     var num: Int = 10
     if cond:
         var num = fudge_int(42)
@@ -102,7 +102,7 @@ def var_decls_implicit() raises -> None:
     x = fudge_int(42)
 
 
-fn use_int(x: Int):
+def use_int(x: Int):
     pass
 
 
@@ -151,7 +151,7 @@ def reuse_implicit(a: Int, cond: __mlir_type.i1) raises:
 
 
 # CHECK-LABEL: lit.fn @"addrSpaces
-fn addrSpaces[lt1: Origin[mut=True], lt2: Origin[], as1: AddressSpace]():
+def addrSpaces[lt1: Origin[mut=True], lt2: Origin[], as1: AddressSpace]():
     # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut {{.*}}lt1{{.*}}, #lit.struct.extract<:!Int #lit.struct.extract<:!AddressSpace as1, "_value">, "_mlir_value">>
     var ref1: Pointer[MemExample, lt1, as1]._mlir_type
 
@@ -171,7 +171,7 @@ fn addrSpaces[lt1: Origin[mut=True], lt2: Origin[], as1: AddressSpace]():
 
 
 # https://github.com/modular/modular/issues/4765
-fn redundant_var_ref():
+def redundant_var_ref():
     var n = 1
     # expected-warning @+1 {{nested 'var' or 'ref' patterns are redundant, remove the outer pattern}}
     var ref a = n

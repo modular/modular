@@ -14,21 +14,21 @@
 
 
 trait Trait:
-    fn method(self) -> Int:
+    def method(self) -> Int:
         ...
 
 
 struct SomeStruct[param: Int](TrivialRegisterPassable, Trait):
-    fn method(self) -> Int:
+    def method(self) -> Int:
         pass
 
 
-fn param_func[T: Trait](value: T) -> Int:
+def param_func[T: Trait](value: T) -> Int:
     pass
 
 
 # CHECK-LABEL: lit.fn @"top
-fn top[pvalue: SomeStruct[2]]():
+def top[pvalue: SomeStruct[2]]():
     # CHECK: lit.alias.decl [[alias_decl:.*]]: !lit.struct<#SomeStruct <:!Int {2}>> = <pvalue>
     comptime alias_decl = pvalue
     # CHECK: result{{.*}} = <apply{{.*}} store_to_mem(#alias_alias_decl))>

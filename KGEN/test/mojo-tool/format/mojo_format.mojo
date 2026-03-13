@@ -11,9 +11,9 @@
 # RUN: mojo format %t.mojo
 # RUN: cat %t.mojo | grep -v "# CHECK:" | FileCheck %t.mojo
 
-# CHECK: fn function() -> Int:
+# CHECK: def function() -> Int:
 # CHECK: return 10
-fn function()    -> Int:
+def function()    -> Int:
     return     10
 
 

@@ -12,22 +12,22 @@ struct RP_NotTrivial(RegisterPassable):
 
 
 struct Foo:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 # expected-note @+1 {{function declared here}}
-fn take_instance_param[a: Foo]():
+def take_instance_param[a: Foo]():
     pass
 
 
 # expected-note @+1 {{function declared here}}
-fn takes_instance_arg(a: Foo):
+def takes_instance_arg(a: Foo):
     pass
 
 
 # COM: Issue #27654: Parser crash: Assertion failed: Types should match
 # COM: https://github.com/modular/mojo/issues/1607 Improved error message for this common error
-fn test_type_instead_of_instance() -> Foo:
+def test_type_instead_of_instance() -> Foo:
     # expected-error @+1 {{'take_instance_param' parameter 'a' has 'Foo' type, but value has type 'AnyStruct[Foo]'}}
     take_instance_param[Foo]
     # expected-error @+1 {{invalid call to 'takes_instance_arg': value passed to 'a' cannot be converted from type value 'Foo' to an instance of 'Foo'; did you mean to instantiate 'Foo'?}}
@@ -40,7 +40,7 @@ fn test_type_instead_of_instance() -> Foo:
 # COM: ensure we do not crash in the example below, but emit an error.
 struct MadeFromPack[*Ts: AnyType]:
     @implicit
-    fn __init__(out self, *args: *Self.Ts):
+    def __init__(out self, *args: *Self.Ts):
         pass
 
 
@@ -48,25 +48,25 @@ struct WrapsMadeFromPack[*Ts: AnyType]:
     var data: MadeFromPack[*Self.Ts]
 
     @implicit
-    fn __init__(out self, *args: *Self.Ts):
+    def __init__(out self, *args: *Self.Ts):
         # expected-error @+1 {{cannot implicitly convert 'VariadicPack[False, AnyType, Ts]' value to 'MadeFromPack[Ts]'}}
         self.data = args
 
 
 struct Constructible:
     @implicit
-    fn __init__(out self, arg: Int):
+    def __init__(out self, arg: Int):
         pass
 
 
-fn init_self_conversion():
+def init_self_conversion():
     # expected-error @below {{cannot implicitly convert 'fn(arg: Int) -> Constructible' value to 'fn() -> None'}}
-    comptime f: fn () -> None = Constructible.__init__
+    comptime f: def () -> None = Constructible.__init__
 
 
 struct ConvertibleFromInt(ImplicitlyCopyable):
     @implicit
-    fn __init__(out self, arg: Int):
+    def __init__(out self, arg: Int):
         pass
 
 
@@ -77,29 +77,29 @@ struct AmbiguousCtor:
     var b: Int
 
     # expected-note @below {{candidate declared here}}
-    fn __init__(out self, b: Int, a: ConvertibleFromInt):
+    def __init__(out self, b: Int, a: ConvertibleFromInt):
         pass
 
 
 struct AlsoConvertibleFromInt:
     @implicit
-    fn __init__(out self, arg: Int):
+    def __init__(out self, arg: Int):
         pass
 
 
 struct AmbiguousConversion:
     @implicit
     # expected-note @below {{candidate declared here}}
-    fn __init__(out self, x: ConvertibleFromInt):
+    def __init__(out self, x: ConvertibleFromInt):
         pass
 
     @implicit
     # expected-note @below {{candidate declared here}}
-    fn __init__(out self, x: AlsoConvertibleFromInt):
+    def __init__(out self, x: AlsoConvertibleFromInt):
         pass
 
 
-fn ambiguous_ctor_call(x: Int):
+def ambiguous_ctor_call(x: Int):
     # expected-error @below {{ambiguous call}}
     AmbiguousCtor(x, x)
 
@@ -109,23 +109,23 @@ fn ambiguous_ctor_call(x: Int):
 
 # MOCO-990: Conditional conformance trick fails on SIMD constructor from Bool
 struct MySIMD[value: Int]:
-    fn __init__(out self: MySIMD[0], val: MyBool):
+    def __init__(out self: MySIMD[0], val: MyBool):
         pass
 
 
 struct MyBool:
     @implicit
-    fn __init__(out self, value: MySIMD[0]):
+    def __init__(out self, value: MySIMD[0]):
         pass
 
 
-fn test_bad_conversion(a: MySIMD[0]):
+def test_bad_conversion(a: MySIMD[0]):
     # expected-error @+1 {{cannot implicitly convert 'MySIMD[0]' value to 'MySIMD[1]'}}
     var b: MySIMD[1] = a
 
 
 # MOCO-1090: bad parameter inference error message.
-fn test_rp_trivial_inference(a: RP_NotTrivial, b: Foo):
+def test_rp_trivial_inference(a: RP_NotTrivial, b: Foo):
     # expected-error @below {{invalid call to 'infer_rp_trivial': value passed to 'val' cannot be converted from 'RP_NotTrivial' to 'T', argument type 'RP_NotTrivial' does not conform to trait 'TrivialRegisterPassable'}}
     _ = infer_rp_trivial(a)
 
@@ -134,13 +134,13 @@ fn test_rp_trivial_inference(a: RP_NotTrivial, b: Foo):
 
 
 # expected-note @below {{function declared here}}
-fn infer_rp_trivial[T: TrivialRegisterPassable](val: T):
+def infer_rp_trivial[T: TrivialRegisterPassable](val: T):
     pass
 
-fn stripping_raises():
-  fn fn_raises() raises: pass
+def stripping_raises():
+  def fn_raises() raises: pass
   # expected-error @+1 {{cannot implicitly convert 'fn() raises -> None' value to 'fn() -> None'}}
-  var fp : fn () = fn_raises
+  var fp : def () = fn_raises
 
   # expected-error @+1 {{cannot implicitly convert 'fn() raises -> None' value to 'fn() raises Int -> None'}}
-  var fp2 : fn () raises Int = fn_raises
+  var fp2 : def () raises Int = fn_raises

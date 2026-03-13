@@ -15,7 +15,7 @@
 
 
 # CHECK-LABEL: lit.fn @"exhaustive_comptime_if
-fn exhaustive_comptime_if[x: Int]() -> Int:
+def exhaustive_comptime_if[x: Int]() -> Int:
     comptime if x > 0:
         return 1
     elif x == 0:
@@ -33,7 +33,7 @@ fn exhaustive_comptime_if[x: Int]() -> Int:
 
 
 # CHECK-LABEL: lit.fn @"dead_code_after_assert
-fn dead_code_after_assert(mut x: Int) -> Int:
+def dead_code_after_assert(mut x: Int) -> Int:
     x = 7
     comptime assert False
     # CHECK: kgen.param.assert <0>

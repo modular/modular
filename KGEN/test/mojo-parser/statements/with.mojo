@@ -13,61 +13,61 @@
 
 # Issue #12358
 # CHECK-LABEL: lit.fn @"raise_error
-fn raise_error() raises:
+def raise_error() raises:
     # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: {{.*}}#StringLiteral <:string "thing">> = <*?>
     # CHECK-NEXT: [[ERR:%.*]] = lit.call {{.*}}Error::@"__init__{{.*}}([[TMP]], %__error__)
     # CHECK-NEXT: lit.raise
     raise "thing"
 
-fn raise_string() raises String:
+def raise_string() raises String:
     pass
 
-fn raise_int() raises Int:
+def raise_int() raises Int:
     pass
 
 
 struct ExampleCM(ImplicitlyCopyable):
-    fn __enter__(self) -> Int:
+    def __enter__(self) -> Int:
         return 42
 
-    fn __exit__(self):
+    def __exit__(self):
         pass  # normal
 
-    fn __exit__(self, err: Error) -> Bool:
+    def __exit__(self, err: Error) -> Bool:
         return True  # Raise
 
 
 # Cannot use mutating __enter__
 # https://github.com/modularml/modular/issues/27371
 struct MutatingCM:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __enter__(mut self) -> Int:
+    def __enter__(mut self) -> Int:
         return 42
 
-    fn __exit__(mut self):
+    def __exit__(mut self):
         pass  # normal
 
 
 @fieldwise_init
 struct NoExitCMReg:
-    fn __enter__(mut self) -> Int:
+    def __enter__(mut self) -> Int:
         pass
 
 
 @fieldwise_init
 struct NoExitCMMem:
-    fn __enter__(mut self) -> Self:
+    def __enter__(mut self) -> Self:
         pass
 
 
-fn noop(a: Int):
+def noop(a: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"testWithNonRaising
-fn testWithNonRaising(a: ExampleCM):
+def testWithNonRaising(a: ExampleCM):
     # CHECK-NEXT: %$CONTEXTMGR = lit.var.decl "$CONTEXTMGR"
     # CHECK-NEXT: lit.memcpy %a, %$CONTEXTMGR
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
@@ -122,7 +122,7 @@ fn testWithNonRaising(a: ExampleCM):
 
 
 # CHECK-LABEL: lit.fn @"testWithRaising
-fn testWithRaising(a: ExampleCM) raises:
+def testWithRaising(a: ExampleCM) raises:
     # CHECK: %$CONTEXTMGR = lit.var.decl
     # CHECK-NEXT: lit.memcpy %a, %$CONTEXTMGR
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
@@ -167,7 +167,7 @@ fn testWithRaising(a: ExampleCM) raises:
 
 
 # CHECK-LABEL: lit.fn @"testWithInTry
-fn testWithInTry(a: ExampleCM):
+def testWithInTry(a: ExampleCM):
     # CHECK: %e = lit.var.decl "e" var
     # CHECK-NEXT: lit.try %e
     try:
@@ -189,9 +189,9 @@ fn testWithInTry(a: ExampleCM):
 
 
 # CHECK-LABEL: lit.fn @"testWithScoping
-fn testWithScoping(a: ExampleCM):
+def testWithScoping(a: ExampleCM):
     # This is a test that issue #18811 is fixed, in which a `with`
-    # statement inside a `fn` does not respect lexical scope and binds
+    # statement inside a `def` does not respect lexical scope and binds
     # its variable in its parent scope.
     with a as withDecl:
         # CHECK: %withDecl = lit.var.decl "withDecl"
@@ -232,19 +232,19 @@ def testWithInDef(a: ExampleCM) raises:
 
 
 struct CMWithoutExit(Movable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     # This context manager consumes itself and returns it as the value.
-    fn __enter__(var self) -> Self:
+    def __enter__(var self) -> Self:
         return self^
 
-    fn method(self):
+    def method(self):
         pass
 
 
 # CHECK-LABEL: lit.fn @"testCMWithoutExit
-fn testCMWithoutExit():
+def testCMWithoutExit():
     # CHECK: %$CONTEXTMGR = lit.var.decl "$CONTEXTMGR"
     # CHECK: %a = lit.var.decl "a"
     # CHECK: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%$CONTEXTMGR, %a)
@@ -293,7 +293,7 @@ fn testCMWithoutExit():
 
 
 # CHECK-LABEL: lit.fn @"testMultiClauseWith
-fn testMultiClauseWith():
+def testMultiClauseWith():
     # Tests that multiple-clause `with` statements (like below) are interpreted
     # as multiple nested "single" with statements like.
     #     with MyClass() as a:
@@ -324,7 +324,7 @@ fn testMultiClauseWith():
 
 
 # CHECK-LABEL: lit.fn @"testAmbiguousMultiContextWith
-fn testAmbiguousMultiContextWith():
+def testAmbiguousMultiContextWith():
     # Make sure that we don't interpret the below like this:
     #     with (CMWithoutExit(), CMWithoutExit()) as b:
     #         noop(b)
@@ -337,7 +337,7 @@ fn testAmbiguousMultiContextWith():
 
 # CHECK-LABEL: lit.fn @"testCMWithoutExitEarlyReturn
 # https://github.com/modularml/modular/issues/23693
-fn testCMWithoutExitEarlyReturn():
+def testCMWithoutExitEarlyReturn():
     # CHECK: %$CONTEXTMGR = lit.var.decl "$CONTEXTMGR"
     # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}(%$CONTEXTMGR)
     # CHECK: %a = lit.var.decl "a"
@@ -364,15 +364,15 @@ fn testCMWithoutExitEarlyReturn():
 
 @fieldwise_init
 struct CMUnconditionalExit:
-    fn __enter__(self):
+    def __enter__(self):
         pass
 
-    fn __exit__(mut self):
+    def __exit__(mut self):
         pass
 
 
 # CHECK-LABEL: lit.fn @"unconditional_exit
-fn unconditional_exit() raises:
+def unconditional_exit() raises:
     # CHECK: lit.try %__with_error__
     with CMUnconditionalExit():
         # CHECK: lit.call {{.*}}noop
@@ -393,21 +393,21 @@ fn unconditional_exit() raises:
 
 
 struct ExampleCMTuple(ImplicitlyCopyable):
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
-    fn __enter__(self) -> Tuple[Int, Int]:
+    def __enter__(self) -> Tuple[Int, Int]:
         return (42, 43)
 
-    fn __exit__(self):
+    def __exit__(self):
         pass  # normal
 
-    fn __exit__(self, err: Error) -> Bool:
+    def __exit__(self, err: Error) -> Bool:
         return True  # Raise
 
 
 # CHECK-LABEL: lit.fn @"testExampleCMTuple
-fn testExampleCMTuple(cm: ExampleCMTuple):
+def testExampleCMTuple(cm: ExampleCMTuple):
     # CHECK: %a = lit.var.decl "a"
     # CHECK: %b = lit.var.decl "b"
     # CHECK: [[TARGET:%.*]] = lit.call {{.*}}__enter__
@@ -424,27 +424,27 @@ struct GenericExitCtxtMgr:
     var handle: Bool
 
     @implicit
-    fn __init__(out self, handle: Bool = True):
+    def __init__(out self, handle: Bool = True):
         self.handle = handle
 
-    fn __enter__(self):
+    def __enter__(self):
         pass
 
-    fn __exit__(self):
+    def __exit__(self):
         pass
 
-    fn __exit__[ErrType: AnyType](self, err: ErrType) -> Bool:
+    def __exit__[ErrType: AnyType](self, err: ErrType) -> Bool:
         return self.handle
 
-fn with_infer_error() raises:
+def with_infer_error() raises:
     with GenericExitCtxtMgr():
         raise_error()
 
-fn with_infer_string() raises String:
+def with_infer_string() raises String:
     with GenericExitCtxtMgr():
         raise_string()
 
-fn with_infer_int() raises Int:
+def with_infer_int() raises Int:
     with GenericExitCtxtMgr():
         raise_int()
 
@@ -453,24 +453,24 @@ struct FloatErrorExitCtxtMgr:
     var handle: Bool
 
     @implicit
-    fn __init__(out self, handle: Bool = True):
+    def __init__(out self, handle: Bool = True):
         self.handle = handle
 
-    fn __enter__(self):
+    def __enter__(self):
         pass
 
-    fn __exit__(self):
+    def __exit__(self):
         pass
 
-    fn __exit__(self, err: Float32) -> Bool:
+    def __exit__(self, err: Float32) -> Bool:
         return self.handle
 
-fn with_impl_convert() raises Float32:
+def with_impl_convert() raises Float32:
     with FloatErrorExitCtxtMgr():
         # This should implicitly convert to Float32, not be a type error.
         raise_int()
 
-fn with_doesnt_actually_throw():
+def with_doesnt_actually_throw():
     with FloatErrorExitCtxtMgr():
         noop(42)
 
@@ -478,9 +478,9 @@ fn with_doesnt_actually_throw():
 # Issue #5176: Context manager don't work with consuming __exit__(var self)
 @fieldwise_init
 struct ConsumingExitCM(Movable):
-    fn __enter__(mut self): pass
-    fn __exit__(var self): pass
-fn testConsumingExitCM():
+    def __enter__(mut self): pass
+    def __exit__(var self): pass
+def testConsumingExitCM():
     with ConsumingExitCM() as a:
         _ = a
 

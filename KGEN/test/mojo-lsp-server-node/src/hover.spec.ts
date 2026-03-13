@@ -20,7 +20,7 @@ describe("hover", function () {
       server,
       "test:///test.mojo",
       `
-fn function():
+def function():
   var something: Int = 100
   var other = 1 + \`something\`
   print(other)
@@ -60,7 +60,7 @@ fn function():
       contents: {
         kind: "markdown",
         value: `\`\`\`mojo
-(function) fn __init__(out self, borrowed_input: Int, init_arg: Int, var owned_input: Int, *init_kargs: Int)
+(function) def __init__(out self, borrowed_input: Int, init_arg: Int, var owned_input: Int, *init_kargs: Int)
 \`\`\`
 ---
 
@@ -86,7 +86,7 @@ Init documentation.
       {
         contents: {
           kind: "markdown",
-          value: `\`\`\`mojo\n(function) fn static_method() -> Int\n\`\`\``,
+          value: `\`\`\`mojo\n(function) def static_method() -> Int\n\`\`\``,
         },
         range: doc.findFirstRange("static_method"),
       }
@@ -97,7 +97,7 @@ Init documentation.
       {
         contents: {
           kind: "markdown",
-          value: `\`\`\`mojo\n(function) async fn async_function(mut self)\n\`\`\``,
+          value: `\`\`\`mojo\n(function) async def async_function(mut self)\n\`\`\``,
         },
         range: doc.findFirstRange("async_function"),
       }
@@ -108,7 +108,7 @@ Init documentation.
       {
         contents: {
           kind: "markdown",
-          value: `\`\`\`mojo\n(function) fn non_capturing_nested_function()\n\`\`\``,
+          value: `\`\`\`mojo\n(function) def non_capturing_nested_function()\n\`\`\``,
         },
         range: doc.findFirstRange("non_capturing_nested_function"),
       }
@@ -119,7 +119,7 @@ Init documentation.
       {
         contents: {
           kind: "markdown",
-          value: `\`\`\`mojo\n(function) fn parameter_nested_function()\n\`\`\``,
+          value: `\`\`\`mojo\n(function) def parameter_nested_function()\n\`\`\``,
         },
         range: doc.findFirstRange("parameter_nested_function"),
       }
@@ -130,7 +130,7 @@ Init documentation.
       {
         contents: {
           kind: "markdown",
-          value: `\`\`\`mojo\n(function) fn another_nested_function()\n\`\`\``,
+          value: `\`\`\`mojo\n(function) def another_nested_function()\n\`\`\``,
         },
         range: doc.findFirstRange("another_nested_function"),
       }
@@ -142,7 +142,7 @@ Init documentation.
         contents: {
           kind: "markdown",
           value: `\`\`\`mojo
-(function) fn function_that_raises(mut self, arg_in_function_that_raises: Int) raises -> String
+(function) def function_that_raises(mut self, arg_in_function_that_raises: Int) raises -> String
 \`\`\`
 ---
 
@@ -164,7 +164,7 @@ A function that raises.
         contents: {
           kind: "markdown",
           value: `\`\`\`mojo
-(function) fn function_with_param[Param1: Int, Param2: Int](mut self)
+(function) def function_with_param[Param1: Int, Param2: Int](mut self)
 \`\`\`
 ---
 
@@ -188,7 +188,7 @@ A function with param.
         contents: {
           kind: "markdown",
           value: `\`\`\`mojo
-(function) fn exported_function()
+(function) def exported_function()
 \`\`\`
 ---
 
@@ -332,11 +332,11 @@ struct SomeStruct:
     var a_field: Int
     """Summary of a_field."""
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
-fn main():
+def main():
     var someStruct = SomeStruct()
     _ = someStruct.a_field
 `
@@ -543,7 +543,7 @@ Another Int param.
     assert.deepStrictEqual(await doc.hover(doc.findFirstPosition("function")), {
       contents: {
         kind: "markdown",
-        value: "```mojo\n(function) fn function() -> Int\n```",
+        value: "```mojo\n(function) def function() -> Int\n```",
       },
       range: doc.findFirstRange("function"),
     });
@@ -603,13 +603,13 @@ Load library lazily (defer function resolution until needed).
       server,
       "test:///test.mojo",
       `
-fn print(x: StringLiteral):
+def print(x: StringLiteral):
     pass
 
-fn print(x: Bool):
+def print(x: Bool):
     pass
 
-fn function[type: TrivialRegisterPassable](arg: type):
+def function[type: TrivialRegisterPassable](arg: type):
     print("string")
     print(arg)
 `
@@ -620,7 +620,7 @@ fn function[type: TrivialRegisterPassable](arg: type):
       (await doc.hover(doc.findFirstPosition("print(")))!.contents,
       {
         kind: "markdown",
-        value: "```mojo\n(function) fn print(x: StringLiteral[x.value])\n```",
+        value: "```mojo\n(function) def print(x: StringLiteral[x.value])\n```",
       }
     );
 
@@ -629,12 +629,12 @@ fn function[type: TrivialRegisterPassable](arg: type):
       {
         kind: "markdown",
         value: `\`\`\`mojo
-(function) fn print(x: StringLiteral[x.value])
+(function) def print(x: StringLiteral[x.value])
 \`\`\`
 ---
 
 \`\`\`mojo
-(function) fn print(x: Bool)
+(function) def print(x: Bool)
 \`\`\``,
       }
     );
@@ -646,8 +646,8 @@ fn function[type: TrivialRegisterPassable](arg: type):
       "test:///test.mojo",
       `
 def function[
-    func: fn (Int) capturing -> Int
-]() -> fn (Int) capturing -> Int:
+    func: def (Int) capturing -> Int
+]() -> def (Int) capturing -> Int:
     pass
 `
     );
@@ -668,11 +668,11 @@ def function[
       server,
       "test:///test.mojo",
       `
-fn fn1[f: fn [p1: DType](foo: Scalar[p1]) -> type_of(foo)]():
+def fn1[f: def [p1: DType](foo: Scalar[p1]) -> type_of(foo)]():
   ...
 
 
-fn fn2[f: fn [dt: DType, dt2: Int](arg1: Scalar[dt], arg2: Int) -> None]():
+def fn2[f: def [dt: DType, dt2: Int](arg1: Scalar[dt], arg2: Int) -> None]():
   ...
 `
     );
@@ -709,13 +709,13 @@ fn fn2[f: fn [dt: DType, dt2: Int](arg1: Scalar[dt], arg2: Int) -> None]():
       "test:///test.mojo",
       `
 @always_inline
-fn parametric[
+def parametric[
     type: DType, simd_width: Int, //, other: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     return x * x
 
 
-fn foo():
+def foo():
     var v = SIMD[DType.float16, 4](33)
     _ = parametric[12](v)
 `
@@ -727,7 +727,7 @@ fn foo():
       {
         kind: "markdown",
         value:
-          "```mojo\n(function) fn parametric[type: DType, simd_width: Int, //, other: Int](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]\n```",
+          "```mojo\n(function) def parametric[type: DType, simd_width: Int, //, other: Int](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]\n```",
       }
     );
   });
@@ -742,10 +742,10 @@ from layout import IntTuple
 struct Foo:
     var t: IntTuple
 
-    fn __init__(out self: Foo):
+    def __init__(out self: Foo):
         self.t = IntTuple()
 
-fn baz():
+def baz():
     comptime f = Foo()
     comptime ft = f.t[0]
 `

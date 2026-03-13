@@ -9,12 +9,12 @@ from std.sys import argv
 
 
 trait Coord(ImplicitlyCopyable):
-    fn prettyPrint(self):
+    def prettyPrint(self):
         ...
 
 
 trait Euclidean:
-    fn distance(self, other: Self) -> Int:
+    def distance(self, other: Self) -> Int:
         ...
 
 
@@ -23,10 +23,10 @@ struct Cartesian(Coord, Euclidean):
     var x: Int
     var y: Int
 
-    fn prettyPrint(self):
+    def prettyPrint(self):
         print("Cart:", self.x, ",", self.y)
 
-    fn distance(self, other: Cartesian) -> Int:
+    def distance(self, other: Cartesian) -> Int:
         return self.x - other.x
 
 
@@ -35,7 +35,7 @@ struct Sphere(Coord):
     var theta: Int
     var phi: Int
 
-    fn prettyPrint(self):
+    def prettyPrint(self):
         print("sphere:", self.theta, ",", self.phi)
 
 
@@ -44,7 +44,7 @@ struct Polar(Coord):
     var r: Int
     var theta: Int
 
-    fn prettyPrint(self):
+    def prettyPrint(self):
         print("polar:", self.r, ",", self.theta)
 
 
@@ -57,12 +57,12 @@ struct Polar(Coord):
 struct DefinesParam[T: Coord, R: Coord]:
     var state: Self.T
 
-    fn method[C: fn(arg: Self.T) unified -> Self.R](self, impl: C) -> Self.R:
+    def method[C: def(arg: Self.T) unified -> Self.R](self, impl: C) -> Self.R:
         return impl(self.state)
 
 
-fn testCapturedParamFromStruct[T: Coord, R: Coord](t: T, r: R):
-    fn closureImpl(arg: T) unified {var} -> R:
+def testCapturedParamFromStruct[T: Coord, R: Coord](t: T, r: R):
+    def closureImpl(arg: T) unified {var} -> R:
         t.prettyPrint()
         return r
 
@@ -75,12 +75,14 @@ fn testCapturedParamFromStruct[T: Coord, R: Coord](t: T, r: R):
 # ===----------------------------------------------------------------------=== #
 
 
-fn func[T: Coord, R: Coord, C: fn(arg: T) unified -> R](impl: C, state: T) -> R:
+def func[
+    T: Coord, R: Coord, C: def(arg: T) unified -> R
+](impl: C, state: T) -> R:
     return impl(state)
 
 
-fn testCapturedParamFromFn[T: Coord, R: Coord](t: T, r: R):
-    fn closureImpl(arg: T) unified {var} -> R:
+def testCapturedParamFromFn[T: Coord, R: Coord](t: T, r: R):
+    def closureImpl(arg: T) unified {var} -> R:
         t.prettyPrint()
         return r
 
@@ -92,17 +94,17 @@ fn testCapturedParamFromFn[T: Coord, R: Coord](t: T, r: R):
 # ===----------------------------------------------------------------------=== #
 
 
-fn funcWithNestedCall[
-    T: Coord, R: Coord, C: fn(arg: T) unified -> R
+def funcWithNestedCall[
+    T: Coord, R: Coord, C: def(arg: T) unified -> R
 ](impl: C, state: T) -> R:
-    fn kernel() unified {read} -> R:
+    def kernel() unified {read} -> R:
         return impl(state)
 
     return kernel()
 
 
-fn testCapturedParamFromNestedCall[T: Coord, R: Coord](t: T, r: R):
-    fn closureImpl(arg: T) unified {var} -> R:
+def testCapturedParamFromNestedCall[T: Coord, R: Coord](t: T, r: R):
+    def closureImpl(arg: T) unified {var} -> R:
         t.prettyPrint()
         return r
 
@@ -114,27 +116,27 @@ fn testCapturedParamFromNestedCall[T: Coord, R: Coord](t: T, r: R):
 # ===----------------------------------------------------------------------=== #
 
 
-fn hasParam[
-    R: Coord, C: fn[TT: Coord](arg: TT) unified -> R
+def hasParam[
+    R: Coord, C: def[TT: Coord](arg: TT) unified -> R
 ](impl: C, x: Int) -> R:
     var state = Sphere(x, x)
     return impl(state)
 
 
-fn testCapturedParamWithOtherParamsFromFn[R: Coord](t: Int, r: R):
-    fn closureImpl[TT: Coord](arg: TT) unified {var} -> R:
+def testCapturedParamWithOtherParamsFromFn[R: Coord](t: Int, r: R):
+    def closureImpl[TT: Coord](arg: TT) unified {var} -> R:
         arg.prettyPrint()
         return r
 
     _ = hasParam[R, type_of(closureImpl)](closureImpl, t)
 
 
-fn topLevelConcrete[TT: Coord](arg: TT) -> Cartesian:
+def topLevelConcrete[TT: Coord](arg: TT) -> Cartesian:
     arg.prettyPrint()
     return Cartesian(6, 7)
 
 
-fn testTopLevelConcreteWithOtherParams(t: Int):
+def testTopLevelConcreteWithOtherParams(t: Int):
     var result = hasParam[Cartesian, topLevelConcrete](topLevelConcrete, t)
     result.prettyPrint()
 
@@ -142,12 +144,12 @@ fn testTopLevelConcreteWithOtherParams(t: Int):
 # ===----------------------------------------------------------------------=== #
 # Captured Param Default
 # ===----------------------------------------------------------------------=== #
-fn funcWithDefault[R: Coord, C: fn[N: Int = 3]() unified -> R](impl: C) -> R:
+def funcWithDefault[R: Coord, C: def[N: Int = 3]() unified -> R](impl: C) -> R:
     return impl()
 
 
-fn testCapturedParamFromFnWithDefault[R: Coord](r: R):
-    fn closureImpl[N: Int = 3]() unified {var} -> R:
+def testCapturedParamFromFnWithDefault[R: Coord](r: R):
+    def closureImpl[N: Int = 3]() unified {var} -> R:
         print(N)
         return r
 
@@ -159,9 +161,9 @@ fn testCapturedParamFromFnWithDefault[R: Coord](r: R):
 # ===----------------------------------------------------------------------=== #
 
 
-fn testNestedClosureCapture[RR: Coord](r: RR, x: Int):
-    fn l1[R: Coord](arg0: R) unified {var} -> R:
-        fn l2[TT: Coord](arg: TT) unified {var} -> R:
+def testNestedClosureCapture[RR: Coord](r: RR, x: Int):
+    def l1[R: Coord](arg0: R) unified {var} -> R:
+        def l2[TT: Coord](arg: TT) unified {var} -> R:
             arg.prettyPrint()
             return arg0
 
@@ -175,8 +177,8 @@ fn testNestedClosureCapture[RR: Coord](r: RR, x: Int):
 # ===----------------------------------------------------------------------=== #
 
 
-fn testLazyConformance[NOT_T: Coord](something: NOT_T):
-    fn closureImpl(arg1: NOT_T) unified {var} -> Sphere:
+def testLazyConformance[NOT_T: Coord](something: NOT_T):
+    def closureImpl(arg1: NOT_T) unified {var} -> Sphere:
         something.prettyPrint()
         return Sphere(33, 34)
 
@@ -184,16 +186,19 @@ fn testLazyConformance[NOT_T: Coord](something: NOT_T):
     _ = definesParam.method(closureImpl)
 
 
-fn manyCaptures[
-    A: Coord, B: Coord, D: Coord, F: fn[C: Coord](a: A, b: B, c: C) unified -> D
+def manyCaptures[
+    A: Coord,
+    B: Coord,
+    D: Coord,
+    F: def[C: Coord](a: A, b: B, c: C) unified -> D,
 ](impl: F, arg1: A, arg2: B, r: Int):
     var polar = Polar(r, r)
     var result = impl(arg1, arg2, polar)
     result.prettyPrint()
 
 
-fn testLazyConformanceManyCaptures[BB: Coord](arg: BB, a0: Cartesian, r: Int):
-    fn closure[CC: Coord](a1: Cartesian, b1: BB, c1: CC) unified {var} -> BB:
+def testLazyConformanceManyCaptures[BB: Coord](arg: BB, a0: Cartesian, r: Int):
+    def closure[CC: Coord](a1: Cartesian, b1: BB, c1: CC) unified {var} -> BB:
         a1.prettyPrint()
         b1.prettyPrint()
         return arg
@@ -201,13 +206,13 @@ fn testLazyConformanceManyCaptures[BB: Coord](arg: BB, a0: Cartesian, r: Int):
     manyCaptures[Cartesian, BB, BB, type_of(closure)](closure, a0, arg, r)
 
 
-fn superset[B: Coord, D: Coord, F: fn(b: B) unified -> D](impl: F, arg: B):
+def superset[B: Coord, D: Coord, F: def(b: B) unified -> D](impl: F, arg: B):
     var result = impl(arg)
     result.prettyPrint()
 
 
-fn testLazyConformanceSuperset[BB: Coord & Euclidean](arg: BB):
-    fn closure(b1: BB) unified {var} -> BB:
+def testLazyConformanceSuperset[BB: Coord & Euclidean](arg: BB):
+    def closure(b1: BB) unified {var} -> BB:
         return arg
 
     superset[BB, BB, type_of(closure)](closure, arg)

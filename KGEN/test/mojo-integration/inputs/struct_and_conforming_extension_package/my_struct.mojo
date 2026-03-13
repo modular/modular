@@ -6,19 +6,19 @@
 
 
 trait Convertible:
-    fn convert(self) -> Int:
+    def convert(self) -> Int:
         ...
 
 
 struct MyStruct:
     var value: Int
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.value = value
 
 
 __extension MyStruct(Convertible):
     comptime ExtensionAlias = Int
 
-    fn convert(self) -> Int:
+    def convert(self) -> Int:
         return self.value

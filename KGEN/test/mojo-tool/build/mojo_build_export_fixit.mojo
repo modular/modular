@@ -29,7 +29,7 @@
 # ERROR: cannot use both --experimental-fixit and --experimental-export-fixit simultaneously
 
 
-fn test_fixit[T: AnyType](a: T):
+def test_fixit[T: AnyType](a: T):
     _ = __origin_of(a)
 
 

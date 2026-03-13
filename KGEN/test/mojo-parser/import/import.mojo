@@ -14,7 +14,7 @@ from test_package.module import top_level_alias
 
 
 # CHECK-LABEL: lit.fn @"foo
-fn foo():
+def foo():
     var t = top_level_alias
 
 
@@ -28,7 +28,7 @@ from test_package_user import using_test_package
 # CHECK-LABEL: lit.fn @"test_package_user
 
 
-fn test_package_user():
+def test_package_user():
     using_test_package()
 
 
@@ -53,7 +53,7 @@ from test_package import *
 # CHECK:      lit.fn @"nested_function()"
 
 
-fn test_function_calls():
+def test_function_calls():
     function()
     nested_function()
     method_defined_in_init()

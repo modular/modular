@@ -5,5 +5,5 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn print_from_input():
+def print_from_input():
     print("print_from_input")

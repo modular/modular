@@ -14,7 +14,7 @@
 struct PStruct[*a: Int]:
     @always_inline("builtin")
     @staticmethod
-    fn predicate() -> Bool:
+    def predicate() -> Bool:
         comptime size = Int(
             mlir_value=__mlir_attr[`#kgen.variadic.size<:`, type_of(Self.a), ` `, +Self.a, `> :index`]
         )
@@ -28,14 +28,14 @@ struct PStruct[*a: Int]:
 # CHECK-SAME: eq(#kgen.variadic.size<:variadic<!Int> *"x.a`">, 2)), #{{[[:alnum:]]+}}>, <
 # CHECK-SAME: ::@PStruct::@"predicate()"
 # CHECK-SAME: eq(#kgen.variadic.size<:variadic<!Int> *"y.a`2">, 2)), #{{[[:alnum:]]+}}>}
-fn double_where_clause(
+def double_where_clause(
     x: PStruct[...], y: PStruct[...]
 ) where type_of(x).predicate() where type_of(y).predicate():
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_nested_double_where_clause
-fn test_nested_double_where_clause(x: PStruct[...], y: PStruct[...]):
+def test_nested_double_where_clause(x: PStruct[...], y: PStruct[...]):
     comptime if type_of(x).predicate():
 
         comptime if type_of(y).predicate():

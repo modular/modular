@@ -21,7 +21,7 @@ struct VectorStruct8(TrivialRegisterPassable):
     var v: SIMD[DType.float32, 2]
 
 
-fn test_vec_8byte():
+def test_vec_8byte():
     var s = VectorStruct8(SIMD[DType.float32, 2](1.0, 2.0))
     var result = external_call["c_func_vec_8byte", VectorStruct8](s)
     print("vec_8byte:", result.v[0], result.v[1])
@@ -30,5 +30,5 @@ fn test_vec_8byte():
 # CHECK: vec_8byte: 2.0 3.0
 
 
-fn main():
+def main():
     test_vec_8byte()

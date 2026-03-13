@@ -14,7 +14,7 @@ from std.reflection import (
 
 trait CanDoSomething:
     # An unsafe default that assumes all fields implement CanDoSomething.
-    fn do_something(self):
+    def do_something(self):
         comptime names = struct_field_names[Self]()
 
         comptime for i in range(names.size):
@@ -26,13 +26,13 @@ trait CanDoSomething:
 
 @fieldwise_init
 struct Overriding(CanDoSomething, ImplicitlyCopyable):
-    fn do_something(self):
+    def do_something(self):
         print("overriding")
 
 
 @fieldwise_init
 struct Overriding2(CanDoSomething, ImplicitlyCopyable):
-    fn do_something(self):
+    def do_something(self):
         print("overriding2")
 
 
@@ -42,11 +42,11 @@ struct WrapperStruct(CanDoSomething):
     var y: Overriding2
 
 
-fn call_do_something[T: CanDoSomething](ref t: T):
+def call_do_something[T: CanDoSomething](ref t: T):
     t.do_something()
 
 
-fn main():
+def main():
     var my_struct = WrapperStruct(Overriding(), Overriding2())
     call_do_something(my_struct)
     # CHECK: x: overriding

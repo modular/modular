@@ -9,7 +9,7 @@
 
 # Error tests for parametric @align decorator.
 @no_inline
-fn calculate_illegal_alignment(x: Int) -> Int:
+def calculate_illegal_alignment(x: Int) -> Int:
     return x * 3
 
 
@@ -20,11 +20,11 @@ struct AlignedTrivialParam[alignment: Int](TrivialRegisterPassable):
 
 
 @no_inline
-fn return_illegally_aligned_struct() -> AlignedTrivialParam[23]:
+def return_illegally_aligned_struct() -> AlignedTrivialParam[23]:
     return {}
 
 
 # CHECK: function instantiation failed
-fn main():
+def main():
     # CHECK: struct alignment must be a positive power of 2, got 69
     print(return_illegally_aligned_struct().alignment)

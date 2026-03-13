@@ -12,35 +12,35 @@
 trait Foo:
     # CHECK: lit.fn @"foo
     # CHECK-SAME: defaultedTraitFn
-    fn foo(self) -> Int:
+    def foo(self) -> Int:
         return Int()
 
     # CHECK: lit.fn @"foo
     # CHECK-NOT: defaultedTraitFn
-    fn foo(self, x: Int) -> Int:
+    def foo(self, x: Int) -> Int:
         ...
 
     # CHECK: lit.fn @"foo
     # CHECK-SAME: defaultedTraitFn
     @staticmethod
-    fn foo() -> Int:
+    def foo() -> Int:
         return Int()
 
     # Make sure we correctly handle cases with params, nesting of braces/parens
 
     # CHECK: lit.fn @"foo
     # CHECK-SAME: defaultedTraitFn
-    fn foo[
+    def foo[
         x: Int,
-        y: fn[p: Int, f: fn[pp: Int] (x: Int) -> Int] (x: Int, y: Int) -> Int,
+        y: def[p: Int, f: def[pp: Int] (x: Int) -> Int] (x: Int, y: Int) -> Int,
     ](self) -> Int:
         return Int()
 
     # CHECK: lit.fn @"foo
     # CHECK-NOT: defaultedTraitFn
-    fn foo[
+    def foo[
         x: Int,
-        y: fn[p: Int, f: fn[pp: Int] (x: Int) -> Int, z: Int] (
+        y: def[p: Int, f: def[pp: Int] (x: Int) -> Int, z: Int] (
             x: Int, y: Int
         ) -> Int,
     ](self) -> Int:
@@ -50,10 +50,10 @@ trait Foo:
 
     # CHECK: lit.fn @"bar
     # CHECK-SAME: defaultedTraitFn
-    fn bar(self) capturing raises -> Int:
+    def bar(self) capturing raises -> Int:
         return Int()
 
     # CHECK: lit.fn @"bar
-    # CHECK-SAME: attributes {sourceName = "bar", specialFnKind = 0 : i8}
-    fn bar(self, x: Int) capturing raises -> Int:
+    # CHECK-SAME: attributes {def, sourceName = "bar", specialFnKind = 0 : i8}
+    def bar(self, x: Int) capturing raises -> Int:
         ...

@@ -12,7 +12,7 @@ trait Foo:
     comptime x: Bool
 
 
-fn main():
+def main():
     # expected-error @+1 {{Direct access of trait members is not supported}}
     var b = Foo.x
     _ = b

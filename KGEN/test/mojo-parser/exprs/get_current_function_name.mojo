@@ -11,7 +11,7 @@
 
 
 # CHECK-LABEL: lit.fn @"test_simple_function
-fn test_simple_function():
+def test_simple_function():
     # CHECK: #StringLiteral <:string "test_simple_function">
     var name = __get_current_function_name()
     _ = name
@@ -23,18 +23,18 @@ struct MyStruct:
     # CHECK: lit.alias.decl *"comptimeField`": !lit.struct<#StringLiteral <:string "">>
     comptime comptimeField = __get_current_function_name()
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     # CHECK-LABEL: lit.fn @"my_method
-    fn my_method(self):
+    def my_method(self):
         # CHECK: #StringLiteral <:string "my_method">
         var name = __get_current_function_name()
         _ = name
 
     # CHECK-LABEL: lit.fn @"my_static_method
     @staticmethod
-    fn my_static_method():
+    def my_static_method():
         # CHECK: #StringLiteral <:string "my_static_method">
         var name = __get_current_function_name()
         _ = name
@@ -43,30 +43,30 @@ struct MyStruct:
 # CHECK-LABEL: lit.trait.decl @MyTrait
 trait MyTrait:
     # CHECK-LABEL: lit.fn @"trait_method
-    fn trait_method(self):
+    def trait_method(self):
         # CHECK: #StringLiteral <:string "trait_method">
         var name = __get_current_function_name()
         _ = name
 
 
 struct AnotherStruct(MyTrait):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
 # CHECK-LABEL: lit.extension.decl @"extension:AnotherStruct"
 __extension AnotherStruct:
     # CHECK-LABEL: lit.fn @"extension_method
-    fn extension_method(self: AnotherStruct):
+    def extension_method(self: AnotherStruct):
         # CHECK: #StringLiteral <:string "extension_method">
         var name = __get_current_function_name()
         _ = name
 
 
 # CHECK-LABEL: lit.fn @"test_nested_function
-fn test_nested_function():
+def test_nested_function():
     # CHECK-LABEL: lit.fn *"inner
-    fn inner():
+    def inner():
         # CHECK: #StringLiteral <:string "inner">
         var name = __get_current_function_name()
         _ = name
@@ -75,11 +75,11 @@ fn test_nested_function():
 
 
 # CHECK-LABEL: lit.fn @"test_unified_clsoures
-fn test_unified_clsoures():
+def test_unified_clsoures():
     var capture = 1
 
-    fn closure[param: Int](arg: Int) unified {var capture}:
-        fn nested_closure[param: Int](arg: Int) unified {var capture}:
+    def closure[param: Int](arg: Int) unified {var capture}:
+        def nested_closure[param: Int](arg: Int) unified {var capture}:
             _ = param + arg + capture
             # CHECK: #StringLiteral <:string "nested_closure">
             var name = __get_current_function_name()
@@ -90,7 +90,7 @@ fn test_unified_clsoures():
     closure[1](1)
 
 
-fn main():
+def main():
     test_simple_function()
     test_nested_function()
     var s = MyStruct()

@@ -15,8 +15,8 @@ from test_package_trait.module2 import *
 
 # CHECK: lit.struct.decl @MyType({{.*}}PackageChildTrait
 struct MyType(PackageChildTrait):
-    fn method(self):
+    def method(self):
         pass
 
-    fn method2(self):
+    def method2(self):
         pass

@@ -19,7 +19,7 @@ struct FloatStruct4(TrivialRegisterPassable):
     var f: Float32
 
 
-fn test_float_4byte():
+def test_float_4byte():
     var s = FloatStruct4(10.5)
     var result = external_call["c_func_float_4byte", FloatStruct4](s)
     print("float_4byte:", result.f)
@@ -37,7 +37,7 @@ struct FloatStruct8(TrivialRegisterPassable):
     var f2: Float32
 
 
-fn test_float_8byte():
+def test_float_8byte():
     var s = FloatStruct8(10.5, 20.5)
     var result = external_call["c_func_float_8byte", FloatStruct8](s)
     print("float_8byte:", result.f1, result.f2)
@@ -54,7 +54,7 @@ struct DoubleStruct8(TrivialRegisterPassable):
     var d: Float64
 
 
-fn test_double_8byte():
+def test_double_8byte():
     var s = DoubleStruct8(100.25)
     var result = external_call["c_func_double_8byte", DoubleStruct8](s)
     print("double_8byte:", result.d)
@@ -73,7 +73,7 @@ struct FloatStruct12(TrivialRegisterPassable):
     var f3: Float32
 
 
-fn test_float_12byte():
+def test_float_12byte():
     var s = FloatStruct12(10.5, 20.5, 30.5)
     var result = external_call["c_func_float_12byte", FloatStruct12](s)
     print("float_12byte:", result.f1, result.f2, result.f3)
@@ -93,7 +93,7 @@ struct FloatStruct16(TrivialRegisterPassable):
     var f4: Float32
 
 
-fn test_float_16byte():
+def test_float_16byte():
     var s = FloatStruct16(10.5, 20.5, 30.5, 40.5)
     var result = external_call["c_func_float_16byte", FloatStruct16](s)
     print("float_16byte:", result.f1, result.f2, result.f3, result.f4)
@@ -111,7 +111,7 @@ struct DoubleStruct16(TrivialRegisterPassable):
     var d2: Float64
 
 
-fn test_double_16byte():
+def test_double_16byte():
     var s = DoubleStruct16(100.25, 200.25)
     var result = external_call["c_func_double_16byte", DoubleStruct16](s)
     print("double_16byte:", result.d1, result.d2)
@@ -132,7 +132,7 @@ struct FloatStruct17(TrivialRegisterPassable):
     var extra: UInt8
 
 
-fn test_float_17byte():
+def test_float_17byte():
     var s = FloatStruct17(10.5, 20.5, 30.5, 40.5, 100)
     var result = external_call["c_func_float_17byte", FloatStruct17](s)
     print(
@@ -164,7 +164,7 @@ struct FloatStruct33(TrivialRegisterPassable):
     var extra: UInt8
 
 
-fn test_float_33byte():
+def test_float_33byte():
     var s = FloatStruct33(1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 10)
     var result = external_call["c_func_float_33byte", FloatStruct33](s)
     print(
@@ -197,7 +197,7 @@ struct MixedFloat32Float64(TrivialRegisterPassable):
     var d: Float64
 
 
-fn test_mixed_f32_f64():
+def test_mixed_f32_f64():
     var s = MixedFloat32Float64(10.5, 100.25)
     var result = external_call["c_func_mixed_f32_f64", MixedFloat32Float64](s)
     print("mixed_f32_f64:", result.f, result.d)
@@ -219,7 +219,7 @@ struct MixedFloat64Float32(TrivialRegisterPassable):
     var f: Float32
 
 
-fn test_mixed_f64_f32():
+def test_mixed_f64_f32():
     var s = MixedFloat64Float32(100.25, 10.5)
     var result = external_call["c_func_mixed_f64_f32", MixedFloat64Float32](s)
     print("mixed_f64_f32:", result.d, result.f)
@@ -243,7 +243,7 @@ struct FiveFloats(TrivialRegisterPassable):
     var f5: Float32
 
 
-fn test_five_floats():
+def test_five_floats():
     var s = FiveFloats(1.5, 2.5, 3.5, 4.5, 5.5)
     var result = external_call["c_func_five_floats", FiveFloats](s)
     print("five_floats:", result.f1, result.f2, result.f3, result.f4, result.f5)
@@ -255,7 +255,7 @@ fn test_five_floats():
 # ============================================================================
 # Main - run all tests
 # ============================================================================
-fn main():
+def main():
     # Homogeneous float structs (valid HFAs or HFA-like)
     test_float_4byte()
     test_float_8byte()

@@ -13,7 +13,7 @@
 # WITH-WARNINGS: warning: Use bar instead
 # WITHOUT-WARNINGS-NOT: warning: Use bar instead
 @deprecated("Use bar instead")
-fn deprecatedFn():
+def deprecatedFn():
     pass
 
 
@@ -21,11 +21,11 @@ fn deprecatedFn():
 #
 # WITH-WARNINGS: warning: assignment to 'x' was never used
 # WITHOUT-WARNINGS-NOT: warning: assignment to 'x' was never used
-fn unusedLocal():
+def unusedLocal():
     var x = 42
 
 
-fn main():
+def main():
     deprecatedFn()
     unusedLocal()
     return

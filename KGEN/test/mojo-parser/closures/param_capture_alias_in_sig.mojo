@@ -15,8 +15,8 @@ struct Param[y: __mlir_type.index](RegisterPassable):
 
 
 # CHECK-LABEL: lit.fn @"param
-fn param[X: __mlir_type.index]():
+def param[X: __mlir_type.index]():
     # CHECK: call {{.*}}_CI_{{.*}}__init__{{.*}}<X>
     # CHECK: call {{.*}}fn{{.*}}__init__{{.*}}<X>
-    fn in_sig(y: Param[X]) escaping:
+    def in_sig(y: Param[X]) escaping:
         pass

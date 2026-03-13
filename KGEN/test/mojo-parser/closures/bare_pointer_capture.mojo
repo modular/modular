@@ -14,6 +14,6 @@ comptime ptr = __mlir_type.`!kgen.pointer<none>`
 # CHECK-SAME: byref_result)
 
 
-fn bare_ptr(x: ptr):
-    fn capture() -> ptr:
+def bare_ptr(x: ptr):
+    def capture() -> ptr:
         return x

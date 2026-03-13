@@ -5,21 +5,21 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn marker():
+def marker():
     pass
 
 
 # RUN: %parse-mojo-isolated %s -verify-diagnostics | FileCheck %s
 struct Unmovable:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
-fn throwing_fn() raises -> Int:
+def throwing_fn() raises -> Int:
     return 0
 
 
-fn literal_promotion[cond: Bool]():
+def literal_promotion[cond: Bool]():
     # This needs to coerce to the materialization type of float literal
     comptime a = 2.0 if cond else 3
 
@@ -30,25 +30,25 @@ fn literal_promotion[cond: Bool]():
 
 
 struct ListInitializable[T: AnyType](ImplicitlyCopyable):
-    fn __init__(out self, *elements: Self.T, __list_literal__: () = ()):
+    def __init__(out self, *elements: Self.T, __list_literal__: () = ()):
         pass
 
 
 struct RHSInferenceStruct:
     var field: ListInitializable[Int]
 
-    fn __setitem__(self, value: ListInitializable[Int]):
+    def __setitem__(self, value: ListInitializable[Int]):
         pass
 
 
 # None of these should be ambiguous.
-fn test_rhs_inference():
+def test_rhs_inference():
     var a: ListInitializable[Int]
-    a = []  # DeclRefNode
+    a = []  # DeclRedefode
     (a) = []  # ParenNode
 
     var lf: RHSInferenceStruct
-    (lf).field = []  # AttributeRefNode
+    (lf).field = []  # AttributeRedefode
 
     lf[] = []  # SubscriptNode
 
@@ -109,12 +109,12 @@ def test_var_decl_patterns(c: Bool) raises:
     # the "fn" as part of the list (a function expression).
     _ = (1,)
 
-    fn test():
+    def test():
         pass
 
 
 # CHECK-LABEL: lit.fn @"test_ref_decl_patterns
-fn test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
+def test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
     # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{0}>
     # CHECK-NEXT: [[ASUB:%.*]] = lit.call {{.*}}List::@"__getitem__{{.*}}(%a, [[ZERO]])
     # CHECK-NEXT: %r = lit.var.decl "r" ref
@@ -160,7 +160,7 @@ fn test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
 
 
 # CHECK-LABEL: lit.fn @"test_type_patterns
-fn test_type_patterns():
+def test_type_patterns():
     # Implicitly declared variables go at the top.
     # CHECK-NEXT: %c = lit.var.decl "c" imp : !lit.ref<!lit.struct<#List <:!Copyable_ImplicitlyDestructible !Int>>,
     # CHECK-NEXT: %b = lit.var.decl "b" imp : !lit.ref<!UInt8,
@@ -193,13 +193,13 @@ fn test_type_patterns():
 
 
 # NOTE: Don't remove this argument, this was defeating return slot opzn.
-fn getUnmovable(a: Unmovable) -> Unmovable:
+def getUnmovable(a: Unmovable) -> Unmovable:
     return Unmovable()
 
 
 # This can only be codegen'd directly into x.
 # CHECK-LABEL: lit.fn @"testUnmovable
-fn testUnmovable(a: Unmovable):
+def testUnmovable(a: Unmovable):
     # CHECK-NEXT: %x = lit.var.decl "x"
     # CHECK-NEXT: lit.call {{.*}}(%a, %x)
     var x: Unmovable = getUnmovable(a)
@@ -213,18 +213,18 @@ comptime _index = __mlir_type.index
 
 
 # CHECK-LABEL: lit.fn @"simple_typeof_return(index)"(%x: index) -> index
-fn simple_typeof_return(x: _index) -> type_of(x):
+def simple_typeof_return(x: _index) -> type_of(x):
     return x
 
 
 # CHECK-LABEL: lit.fn @"typeof_arg(index,index)"(%x: index, %y: index) -> index
-fn typeof_arg(x: __mlir_type.index, y: type_of(x)) -> _index:
+def typeof_arg(x: __mlir_type.index, y: type_of(x)) -> _index:
     var z: type_of(x) = y
     return z
 
 
 # CHECK-LABEL: lit.fn @"typeof_dynval_in_param(
-fn typeof_dynval_in_param(x: _index):
+def typeof_dynval_in_param(x: _index):
     # CHECK-NEXT:  %y = lit.var.decl
     # CHECK-NEXT: lit.call {{.*}}String::@"__init__
     var y = String()
@@ -244,7 +244,7 @@ fn typeof_dynval_in_param(x: _index):
 
 
 # CHECK-LABEL: lit.fn @"lifetime_of
-fn lifetime_of(x: Unmovable, y: Unmovable, mut z: Unmovable):
+def lifetime_of(x: Unmovable, y: Unmovable, mut z: Unmovable):
     # CHECK-NEXT: lit.alias.decl *"lt0{{.*}}:origin<0> {}
     comptime lt0 = origin_of()
     # CHECK-NEXT: lit.alias.decl *"lt1{{.*}}:origin<0> *"x`">>
@@ -265,7 +265,7 @@ def take_string_var(var x: String, y: String) raises:
     imm_ref_to(y)
 
 
-fn imm_ref_to[origin: Origin[]](ref[origin] to: String):
+def imm_ref_to[origin: Origin[]](ref[origin] to: String):
     pass
 
 
@@ -275,7 +275,7 @@ fn imm_ref_to[origin: Origin[]](ref[origin] to: String):
 
 
 # CHECK-LABEL: lit.fn @"test_in
-fn test_in(a: String, b: String):
+def test_in(a: String, b: String):
     # CHECK-NEXT: [[SLICE:%.*]] = lit.call {{.*}}StringSlice::@"__init__{{.*}}(%a)
     # CHECK-NEXT: lit.call {{.*}}__contains__{{.*}}(%b, [[SLICE]])
     _ = a in b
@@ -292,7 +292,7 @@ fn test_in(a: String, b: String):
 
 
 # CHECK-LABEL: lit.fn @"test_string_literal1
-fn test_string_literal1(cond: Bool):
+def test_string_literal1(cond: Bool):
     _ = 4
 
     # String literals should be fine at start of expression.
@@ -304,7 +304,7 @@ fn test_string_literal1(cond: Bool):
 
 
 # Issue #1850: Mojo assumes string literal at start of a function is a doc comment
-fn test_expr_not_doc_string():
+def test_expr_not_doc_string():
     # expected-warning @+1 {{'Bool' value is unused}}
     "a".__eq__("b")
 
@@ -315,39 +315,39 @@ fn test_expr_not_doc_string():
 
 
 struct TypeA(TrivialRegisterPassable):
-    fn __merge_with__[other_type: type_of(TypeB)](self) -> TypeB:
+    def __merge_with__[other_type: type_of(TypeB)](self) -> TypeB:
         pass
 
-    fn __merge_with__[other_type: type_of(TypeC)](self) -> Int:
+    def __merge_with__[other_type: type_of(TypeC)](self) -> Int:
         pass
 
 
 struct TypeB(TrivialRegisterPassable):
-    fn __merge_with__[other_type: type_of(Int)](self) -> Int:
+    def __merge_with__[other_type: type_of(Int)](self) -> Int:
         pass
 
 
 struct TypeC(TrivialRegisterPassable):
-    fn __merge_with__[other_type: type_of(TypeA)](self) -> Int:
+    def __merge_with__[other_type: type_of(TypeA)](self) -> Int:
         pass
 
-    fn __merge_with__[other_type: type_of(TypeD)](self) -> TypeE:
+    def __merge_with__[other_type: type_of(TypeD)](self) -> TypeE:
         pass
 
 
 struct TypeD(TrivialRegisterPassable):
-    fn __merge_with__[other_type: type_of(TypeA)](self) -> Int:
+    def __merge_with__[other_type: type_of(TypeA)](self) -> Int:
         pass
 
 
 struct TypeE(TrivialRegisterPassable):
     @implicit
-    fn __init__(out self, other: TypeD):
+    def __init__(out self, other: TypeD):
         pass
 
 
 # CHECK-LABEL: lit.fn @"test_mergewith
-fn test_mergewith(cond: __mlir_type.i1, a: TypeA, b: TypeB, c: TypeC, d: TypeD):
+def test_mergewith(cond: __mlir_type.i1, a: TypeA, b: TypeB, c: TypeC, d: TypeD):
     # One merges to the other.
     _ = a if cond else b
     # CHECK: hlcf.if %cond
@@ -402,7 +402,7 @@ fn test_mergewith(cond: __mlir_type.i1, a: TypeA, b: TypeB, c: TypeC, d: TypeD):
 
 
 # CHECK-LABEL: lit.fn @"chained_cmp
-fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
+def chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK:      [[CMP_A_B:%.*]] = lit.call tail @{{.*}}__lt__{{.*}}(%a, %b)
     # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = lit.call tail @{{.*}}__mlir_i1__{{.*}}([[CMP_A_B]])
     # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_I1]]
@@ -452,7 +452,7 @@ comptime chainedCmpAlias3 = 1 <= 2 <= 9 <= 4 <= 5
 
 
 # CHECK-LABEL: lit.fn @"chainedCmpSemiDyn
-fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
+def chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
     # CHECK-NEXT: [[IFCOND:%.*]] = kgen.param.constant: i1 = <1>
     # CHECK-NEXT: [[FINALRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
     # CHECK-NEXT:   [[PV:%.*]] = {{.*}}constant{{.*}}77
@@ -494,15 +494,15 @@ fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
 
 # MOCO-1987: Parser error when temporary PythonObject appears in or expression
 struct RPType(ImplicitlyCopyable, RegisterPassable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         return Bool()
 
 
 # CHECK-LABEL: lit.fn @"test_rp_and_or
-fn test_rp_and_or():
+def test_rp_and_or():
     # Evaluate the LHS, but materialize the rvalue into a memory slot.
 
     # CHECK-NEXT: [[LHS:%.*]] = lit.call {{.*}}RPType::@"__init__()
@@ -524,11 +524,11 @@ fn test_rp_and_or():
 
 
 struct MatchExample:
-    fn match(self):
+    def match(self):
         pass
 
 
-fn test_match(a: MatchExample):
+def test_match(a: MatchExample):
     a.match()
 
 
@@ -542,7 +542,7 @@ struct MoveOnly(Movable):
 
 
 # CHECK-LABEL: lit.fn @"test_if_else_move
-fn test_if_else_move(r: Bool, var a: MoveOnly, var b: MoveOnly):
+def test_if_else_move(r: Bool, var a: MoveOnly, var b: MoveOnly):
     # This should move a/b into t.
     var t = b^ if r else a^
 
@@ -563,11 +563,11 @@ fn test_if_else_move(r: Bool, var a: MoveOnly, var b: MoveOnly):
 
 
 struct NotRuntimeMaterializable:
-    fn method(self) -> Int:
+    def method(self) -> Int:
         pass
 
 
-fn test_comptime_expression[nrm: NotRuntimeMaterializable]():
+def test_comptime_expression[nrm: NotRuntimeMaterializable]():
     # Ok to materialize an int.
     var b = comptime (nrm.method())
 
@@ -577,15 +577,15 @@ fn test_comptime_expression[nrm: NotRuntimeMaterializable]():
 ##===----------------------------------------------------------------------===##
 
 
-fn test_ellipsis_overloading(a: Int):
+def test_ellipsis_overloading(a: Int):
     pass
 
 
-fn test_ellipsis_overloading(a: EllipsisType):
+def test_ellipsis_overloading(a: EllipsisType):
     pass
 
 
-fn test_ellipsis():
+def test_ellipsis():
     var x = ...
     test_ellipsis_overloading(4)
     test_ellipsis_overloading(...)

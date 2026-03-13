@@ -42,7 +42,7 @@
 # DEPRECATED-WERROR: error: unknown argument 'y' in doc string
 
 
-fn f(x: Int):
+def f(x: Int):
     """This is a function with an invalid doc string.
 
     Args:

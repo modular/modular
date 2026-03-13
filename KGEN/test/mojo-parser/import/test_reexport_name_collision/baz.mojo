@@ -11,5 +11,5 @@
 struct baz:
     var x: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.x = 42

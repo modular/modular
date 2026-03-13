@@ -11,5 +11,5 @@
 
 
 @export
-fn use_int(a: Int):
+def use_int(a: Int):
     return

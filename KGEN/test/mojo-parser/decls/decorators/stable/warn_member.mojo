@@ -12,13 +12,13 @@
 from test_std_mock import StructWithMethods
 
 
-fn test_stable_method():
+def test_stable_method():
     # Calling a stable method should not trigger a warning.
     var s = StructWithMethods()
     _ = s.stable_method()
 
 
-fn test_unstable_method():
+def test_unstable_method():
     # Calling an unstable method should trigger a warning.
     var s = StructWithMethods()
     # CHECK: warning: use of unstable API 'unstable_method'

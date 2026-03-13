@@ -18,8 +18,8 @@
 # CHECK: lit.fn @"fn{{.*}}_call_`_CI_{{.*}}) throws -> i1
 
 
-fn makes_escaping_closure(m: Int) raises:
-    fn two_effects(n: Int) escaping raises -> Int:
+def makes_escaping_closure(m: Int) raises:
+    def two_effects(n: Int) escaping raises -> Int:
         raise Error()
 
     _ = two_effects(m)

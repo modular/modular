@@ -13,11 +13,11 @@ struct Index(TrivialRegisterPassable):
 
 @fieldwise_init
 struct MemType(ImplicitlyCopyable):
-    fn __add__(self, rhs: MemType) -> MemType:
+    def __add__(self, rhs: MemType) -> MemType:
         return MemType()
 
 
-fn foo(x: Index, y: MemType, z: MemType):
+def foo(x: Index, y: MemType, z: MemType):
     pass
 
 
@@ -32,6 +32,6 @@ fn foo(x: Index, y: MemType, z: MemType):
 
 
 # CHECK-LABEL: lit.fn @"makes_escaping_closure_3
-fn makes_escaping_closure_3(var x: Index, var y: MemType, mut z: MemType):
-    fn take_owned_and_escape():
+def makes_escaping_closure_3(var x: Index, var y: MemType, mut z: MemType):
+    def take_owned_and_escape():
         foo(x, y, z)

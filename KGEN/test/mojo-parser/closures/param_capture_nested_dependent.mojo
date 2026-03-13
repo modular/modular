@@ -28,7 +28,7 @@
 struct Foo[C: Int, D: Int](ImplicitlyCopyable):
     var x: Int
 
-    fn get(self) -> Int:
+    def get(self) -> Int:
         return self.x + Self.C
 
 
@@ -36,8 +36,8 @@ struct Foo[C: Int, D: Int](ImplicitlyCopyable):
 struct Bat[A: Int](ImplicitlyCopyable, RegisterPassable):
     var b: Int
 
-    fn get_test[B: Int](self) -> fn(y: Int) escaping -> Foo[B, Self.A]:
-        fn bar(y: Int) -> Foo[B, Self.A]:
+    def get_test[B: Int](self) -> def(y: Int) escaping -> Foo[B, Self.A]:
+        def bar(y: Int) -> Foo[B, Self.A]:
             var w = B + self.b + y
             return Foo[B, Self.A](w + Self.A)
 

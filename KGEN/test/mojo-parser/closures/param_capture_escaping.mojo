@@ -19,15 +19,15 @@
 # CHECK-NEXT: lit.ref.store [[RES]], [[GEP]]
 
 
-fn func[pf: fn() capturing -> Int](x: Int):
-    fn escaping(y: Int) -> Int:
+def func[pf: def() capturing -> Int](x: Int):
+    def escaping(y: Int) -> Int:
         return y + x + pf()  # this use of 'pf' is a parameter capture
         # ParamDeclRefAttr
 
 
-fn pass_it(x: Int):
+def pass_it(x: Int):
     @parameter
-    fn closure() -> Int:
+    def closure() -> Int:
         return x
 
     func[closure](17)

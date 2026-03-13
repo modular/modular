@@ -10,7 +10,7 @@
 # COM: To avoid having fragile test, mark this test as unsupported on MacOS
 
 
-fn main() raises:
+def main() raises:
     var x = List[Int]()
 
     print(x[10000000000])

@@ -8,7 +8,7 @@
 
 # CHECK: define {{.*}}agnostic_user{{.*}} !dbg ![[SP:[0-9]+]]
 @no_inline
-fn agnostic_user[
+def agnostic_user[
     T: AnyType, dt: DType
 ](b: UnsafePointer[T, _], dp: UnsafePointer[Scalar[dt], _]):
     print(Bool(b.bitcast[UInt32]()))
@@ -19,7 +19,7 @@ fn agnostic_user[
 # CHECK-NOT: define {{.*}}agnostic_user
 
 
-fn main():
+def main():
     var x: Int = 8
     var y: Float64 = 42.5
     var d: UInt8 = 9

@@ -8,7 +8,7 @@
 
 comptime index42 = __mlir_attr.`42 : index`
 
-fn test_mlir():
+def test_mlir():
   var x: __mlir_type.index
   x += x # expected-error {{'__mlir_type.index' does not implement the '__iadd__' method}}
 
@@ -26,7 +26,7 @@ fn test_mlir():
     value=index42,  # expected-error {{duplicate keyword parameter 'value'}}
   ]
 
-fn test_mlir2():
+def test_mlir2():
   # expected-error @below {{invalid MLIR type: kgen.dtype}}
   # expected-note @below {{MLIR error: expected non-function type}}
   var y : __mlir_type.`kgen.dtype`  # should be !kgen.dtype
@@ -68,7 +68,7 @@ fn test_mlir2():
   _ = __mlir_type[`!kgen.pointer<!b>`]
 
 
-fn colon_instead_of_equal():
+def colon_instead_of_equal():
   # expected-error @below {{attribute spec requires a keyword parameter; did you mean 'value=...'?}}
   _ = __mlir_op.`lit.crazy`[value:index42]()
 
@@ -76,28 +76,28 @@ struct Int(TrivialRegisterPassable):
   var value : __mlir_type.index
 
 # Issue #7307: Error message can be improved when a user accidentally uses = instead of :
-fn equal_instead_of_colon():
+def equal_instead_of_colon():
   var someInt : Int
   # expected-error @+1 {{unable to infer result type from MLIR operation 'pop.array.gep'}}
   var ptr = __mlir_op.`pop.array.gep`((((someInt))), index42)
 
-fn crash_on_invalid():
+def crash_on_invalid():
   # expected-error @+1 {{use of unregistered MLIR operation 'invalid_op'}}
   _ = __mlir_op.`invalid_op`[_type=__mlir_type.i16]()
 
 
 # expected-error @below {{invalid MLIR type}}
 # expected-note @below {{argument #0 with convention 'mut' in func type should be a `!kgen.pointer`}}
-fn bad_signature_type[func: __mlir_type[`!kgen.func<(index mut) -> !kgen.none>`]]():
+def bad_signature_type[func: __mlir_type[`!kgen.func<(index mut) -> !kgen.none>`]]():
     pass
 
 
-fn mlir_magic_keyword_param():
+def mlir_magic_keyword_param():
     # expected-error @below {{only positional operands allowed in mlir magic}}
     comptime a = __mlir_type[a=`!pop.scalar<bool>`]
 
 
-fn mlir_properties(arg0: __mlir_type.i64, arg1: __mlir_type.i64):
+def mlir_properties(arg0: __mlir_type.i64, arg1: __mlir_type.i64):
     _ = __mlir_op.`llvm.add`[
         _type = __mlir_type.i64,
         _properties = __mlir_attr.`#llvm.overflow<nsw>`,
@@ -106,7 +106,7 @@ fn mlir_properties(arg0: __mlir_type.i64, arg1: __mlir_type.i64):
     # expected-error @above {{expected DictionaryAttr to set properties}}
 
 
-fn mlir_illegal_op():
+def mlir_illegal_op():
     # Intentional typo for `is_zero_poison`:
     # expected-error @below {{attribute 'is_zero_poson' is not an inherent attribute of 'llvm.intr.ctlz'}}
     __mlir_op.`llvm.intr.ctlz`[_type=Int, is_zero_poson=__mlir_attr.`0: i1`](1)

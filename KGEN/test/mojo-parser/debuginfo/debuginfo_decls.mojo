@@ -8,14 +8,14 @@
 
 
 ##===----------------------------------------------------------------------===##
-# fn/def
+# def/def
 ##===----------------------------------------------------------------------===##
 
 
 # CHECK-LABEL: lit.fn @"testAlwaysInline
 # CHECK-SAME: always_inline
 @always_inline
-fn testAlwaysInline():
+def testAlwaysInline():
     # CHECK: lit.return {{.*}} loc(#[[LOC_INLINE:.+]])
     pass
 
@@ -23,7 +23,7 @@ fn testAlwaysInline():
 # CHECK-LABEL: lit.fn @"testAlwaysInlineNoDebug
 # CHECK-SAME: always_inline_no_debug
 @always_inline("nodebug")
-fn testAlwaysInlineNoDebug():
+def testAlwaysInlineNoDebug():
     # CHECK: lit.return {{.*}} loc(#[[LOC_INLINE_NODEBUG:.+]])
     pass
 
@@ -60,7 +60,7 @@ def testImplicitVarDeclScopeNoDebug() raises:
 # // -----
 
 # CHECK-DAG: lit.fn @"fn_where_clause{{.*}}, #[[LOC_WHERE_FN:loc[0-9]+]]>} attributes
-fn fn_where_clause[x: Int]() where x:
+def fn_where_clause[x: Int]() where x:
     pass
 
 # COM: Make sure this is a FileLineColLoc and not a FusedLoc.
@@ -69,7 +69,7 @@ fn fn_where_clause[x: Int]() where x:
 # // -----
 
 # CHECK-DAG: lit.fn @"param_where_clause{{.*}}, #[[LOC_WHERE_PARAM:loc[0-9]+]]>}
-fn param_where_clause[x: Int where x]():
+def param_where_clause[x: Int where x]():
     pass
 
 # COM: Make sure this is a FileLineColLoc and not a FusedLoc.

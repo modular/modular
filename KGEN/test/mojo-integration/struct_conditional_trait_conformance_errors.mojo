@@ -20,13 +20,13 @@ struct ConditionalCopyableWrapper[T: ImplicitlyDestructible & Movable](
 ):
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
-    fn __moveinit__(out self, deinit take: Self):
+    def __moveinit__(out self, deinit take: Self):
         self.value = take.value^
 
-    fn __copyinit__(
+    def __copyinit__(
         out self, copy: Self, /
     ) where conforms_to(Self.T, Copyable):
         self.value = rebind_var[Self.T](
@@ -35,7 +35,7 @@ struct ConditionalCopyableWrapper[T: ImplicitlyDestructible & Movable](
 
 
 # A function that requires Copyable
-fn needs_copyable[T: Copyable](x: T):
+def needs_copyable[T: Copyable](x: T):
     pass
 
 
@@ -43,10 +43,10 @@ fn needs_copyable[T: Copyable](x: T):
 struct MovableOnlyType(ImplicitlyDestructible, Movable):
     var x: Int
 
-    fn __init__(out self, x: Int):
+    def __init__(out self, x: Int):
         self.x = x
 
-    fn __moveinit__(out self, deinit take: Self):
+    def __moveinit__(out self, deinit take: Self):
         self.x = take.x
 
 
@@ -56,7 +56,7 @@ struct MovableOnlyType(ImplicitlyDestructible, Movable):
 
 
 trait Printable:
-    fn print_value(self):
+    def print_value(self):
         ...
 
 
@@ -64,13 +64,13 @@ trait Printable:
 struct NonPrintableType(ImplicitlyCopyable):
     var x: Int
 
-    fn __init__(out self, x: Int):
+    def __init__(out self, x: Int):
         self.x = x
 
-    fn __moveinit__(out self, deinit take: Self):
+    def __moveinit__(out self, deinit take: Self):
         self.x = take.x
 
-    fn __copyinit__(out self, copy: Self, /):
+    def __copyinit__(out self, copy: Self, /):
         self.x = copy.x
 
 
@@ -81,21 +81,21 @@ struct PrintableWrapper[T: ImplicitlyCopyable](
 ):
     var value: Self.T
 
-    fn __init__(out self, value: Self.T):
+    def __init__(out self, value: Self.T):
         self.value = value
 
-    fn __moveinit__(out self, deinit take: Self):
+    def __moveinit__(out self, deinit take: Self):
         self.value = take.value
 
-    fn __copyinit__(out self, copy: Self, /):
+    def __copyinit__(out self, copy: Self, /):
         self.value = copy.value
 
-    fn print_value(self) where conforms_to(Self.T, Printable):
+    def print_value(self) where conforms_to(Self.T, Printable):
         trait_downcast[Printable](self.value).print_value()
 
 
-fn use_printable_closure[
-    T: Printable & ImplicitlyCopyable, C: fn() unified -> T
+def use_printable_closure[
+    T: Printable & ImplicitlyCopyable, C: def() unified -> T
 ](impl: C):
     var result = impl()
     result.print_value()
@@ -110,7 +110,7 @@ fn use_printable_closure[
 
 
 # CHECK: argument type 'ConditionalCopyableWrapper[T]' does not conform to trait 'Copyable'
-fn unsound_generic_call[
+def unsound_generic_call[
     T: ImplicitlyDestructible & Movable
 ](x: ConditionalCopyableWrapper[T]):
     needs_copyable(x)
@@ -124,7 +124,7 @@ fn unsound_generic_call[
 
 
 # CHECK: argument type 'Tuple[types]' does not conform to trait 'Copyable'
-fn unsound_variadic_call[*types: Movable](t: Tuple[*types]):
+def unsound_variadic_call[*types: Movable](t: Tuple[*types]):
     needs_copyable(t)
 
 
@@ -135,13 +135,13 @@ fn unsound_variadic_call[*types: Movable](t: Tuple[*types]):
 
 
 # CHECK: argument type 'ConditionalCopyableWrapper[T]' does not conform to trait 'Copyable'
-fn wrong_where_clause[
+def wrong_where_clause[
     T: ImplicitlyDestructible & Movable
 ](x: ConditionalCopyableWrapper[T]) where conforms_to(T, Intable):
     needs_copyable(x)
 
 
-fn main():
+def main():
     # ConditionalCopyableWrapper[MovableOnlyType] should NOT be Copyable because
     # MovableOnlyType is not Copyable.
     var wrapped = ConditionalCopyableWrapper(MovableOnlyType(42))
@@ -152,7 +152,7 @@ fn main():
     # NonPrintableType is not Printable.
     var captured = NonPrintableType(42)
 
-    fn make_wrapper() unified {var} -> PrintableWrapper[NonPrintableType]:
+    def make_wrapper() unified {var} -> PrintableWrapper[NonPrintableType]:
         return PrintableWrapper(captured)
 
     # CHECK: 'use_printable_closure' parameter 'T' has 'Printable & ImplicitlyCopyable' type, but value has type 'AnyStruct[PrintableWrapper[NonPrintableType]]'

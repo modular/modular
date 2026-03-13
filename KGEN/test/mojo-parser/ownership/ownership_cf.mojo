@@ -11,19 +11,19 @@
 # Control flow related CheckLifetimes tests.
 
 
-fn use(err: Error):
+def use(err: Error):
     pass
 
 
-fn use(str: String):
+def use(str: String):
     pass
 
 
-fn use(a: MemExample):
+def use(a: MemExample):
     pass
 
 
-fn use_mut(mut a: MemExample):
+def use_mut(mut a: MemExample):
     pass
 
 
@@ -31,31 +31,31 @@ fn use_mut(mut a: MemExample):
 struct MemExample(ImplicitlyCopyable):
     var x: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.x = 42
         pass
 
-    fn noop(self):
+    def noop(self):
         pass
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         self.x = take.x
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.x = copy.x
 
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         return True
 
-    fn unsafe_ptr(self) -> UnsafePointer[Int, AnyOrigin[mut=True]]:
+    def unsafe_ptr(self) -> UnsafePointer[Int, AnyOrigin[mut=True]]:
         return UnsafePointer[Int, AnyOrigin[mut=True]]()
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 
 # CHECK-LABEL: lit.fn @"if_examples
-fn if_examples(cond: __mlir_type.i1):
+def if_examples(cond: __mlir_type.i1):
     # CHECK: %_a = lit.var.decl
     var _a: MemExample
 
@@ -137,7 +137,7 @@ fn if_examples(cond: __mlir_type.i1):
 
 
 # CHECK-LABEL: lit.fn @"try_examples
-fn try_examples(cond: __mlir_type.i1):
+def try_examples(cond: __mlir_type.i1):
     # CHECK-NEXT: %a = lit.var.decl
     # CHECK-NEXT: %caught_error = lit.var.decl
     var a: MemExample
@@ -263,7 +263,7 @@ fn try_examples(cond: __mlir_type.i1):
 
 
 # CHECK-LABEL: lit.fn @"chris_origin_example
-fn chris_origin_example(a: Bool, b: Bool):
+def chris_origin_example(a: Bool, b: Bool):
     var x: MemExample
     # CHECK: lit.try
     try:
@@ -303,7 +303,7 @@ fn chris_origin_example(a: Bool, b: Bool):
 
 
 # CHECK-LABEL: lit.fn @"loop_example
-fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
+def loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
     # CHECK-NEXT: %a = lit.var.decl "a"
     var a: MemExample
     # CHECK-NEXT: %b = lit.var.decl "b"
@@ -375,7 +375,7 @@ struct TestLoopWithWholeObjectBit:
 
     # CHECK: lit.fn @"__init__
     @implicit
-    fn __init__(out self, cond: __mlir_type.i1):
+    def __init__(out self, cond: __mlir_type.i1):
         # CHECK-NEXT: %buf = lit.var.decl "buf"
         # CHECK-NEXT: lifetime.start %buf
         # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%buf)
@@ -404,7 +404,7 @@ struct TestLoopWithWholeObjectBit:
 
 
 # CHECK-LABEL: lit.fn @"testInfiniteloop
-fn testInfiniteloop():
+def testInfiniteloop():
     # CHECK-NEXT:  hlcf.loop "_loop_0" {
     # CHECK-NEXT:    %0 = kgen.param.constant: i1 = <1>
     # CHECK-NEXT:    hlcf.if %0 {
@@ -430,22 +430,22 @@ fn testInfiniteloop():
 struct TrivialRange(TrivialRegisterPassable, Iterator):
     comptime Element = Int
 
-    fn __iter__(self) -> Self:
+    def __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self) raises StopIteration -> Int:
+    def __next__(mut self) raises StopIteration -> Int:
         if self.__len__() > 0:
             return 1
         else:
             raise StopIteration()
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         return 1
 
 
 # Issue #98: https://github.com/modular/mojo/issues/98
 # CHECK-LABEL: lit.fn @"mojo98
-fn mojo98(n: Int):
+def mojo98(n: Int):
     var a = MemExample()
     for i in TrivialRange():
         a.x = i
@@ -454,21 +454,21 @@ fn mojo98(n: Int):
 struct MyStringReturningCtx(Movable):
     var s: String
 
-    fn __init__(out self):
+    def __init__(out self):
         self.s = "hey"
 
-    fn __enter__(var self) -> Self:
+    def __enter__(var self) -> Self:
         return self^
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         self.s = ""
 
-    fn read(self) raises -> String:
+    def read(self) raises -> String:
         return ""
 
 
 # CHECK-LABEL: lit.fn @"testErrorReturn
-fn testErrorReturn() raises:
+def testErrorReturn() raises:
     var input: String
     # CHECK: try
     with MyStringReturningCtx() as ctx:
@@ -480,13 +480,13 @@ fn testErrorReturn() raises:
     use(input)
 
 
-fn marker():
+def marker():
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_param_for1
 # MOCO-831
-fn test_param_for1(cond: Bool, cond2: Bool):
+def test_param_for1(cond: Bool, cond2: Bool):
     # CHECK-NEXT: %mem = lit.var.decl
     # CHECK-NEXT: lifetime.start %mem
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mem)
@@ -553,7 +553,7 @@ fn test_param_for1(cond: Bool, cond2: Bool):
 
 # CHECK-LABEL: lit.fn @"test_param_for2
 # MOCO-831
-fn test_param_for2():
+def test_param_for2():
     # CHECK: lit.call {{.*}}__init__{{.*}}(%mem)
     var mem = MemExample()
 
@@ -583,7 +583,7 @@ fn test_param_for2():
 
 
 # CHECK-LABEL: lit.fn @"test_elif
-fn test_elif(cond: Bool, cond2: Bool):
+def test_elif(cond: Bool, cond2: Bool):
     var mem1 = MemExample()
     var mem2 = MemExample()
     var mem3 = MemExample()
@@ -650,7 +650,7 @@ fn test_elif(cond: Bool, cond2: Bool):
 # https://github.com/modular/mojo/issues/3710
 # Mojo frees memory while reference to it is still in use
 # CHECK-LABEL: lit.fn @"loop_any_origin
-fn loop_any_origin(var mem: MemExample, cond: Bool):
+def loop_any_origin(var mem: MemExample, cond: Bool):
     # CHECK: lit.call {{.*}}unsafe_ptr
     ptr = mem.unsafe_ptr()
 
@@ -670,26 +670,26 @@ fn loop_any_origin(var mem: MemExample, cond: Bool):
 
 # 4694: or/and handling of comparisons on PythonObject
 struct PyObjLike(RegisterPassable):
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
-    fn __eq__(self, other: Self) raises -> Self:
+    def __eq__(self, other: Self) raises -> Self:
         while True:
             pass
 
-    fn __bool__(self) raises -> Bool:
+    def __bool__(self) raises -> Bool:
         return True
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 
 # CHECK-LABEL: lit.fn @"test4694
-fn test4694(a: PyObjLike, b: PyObjLike) raises:
+def test4694(a: PyObjLike, b: PyObjLike) raises:
     # Just check that we don't get a verifier error.
     if a == b or b == a:
         gotit()
 
 
-fn gotit():
+def gotit():
     pass

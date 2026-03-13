@@ -30,5 +30,5 @@
 # TSAN: __tsan_init
 
 
-fn main():
+def main():
     return

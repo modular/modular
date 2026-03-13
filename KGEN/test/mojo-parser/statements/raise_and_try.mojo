@@ -12,7 +12,7 @@
 
 
 # CHECK-LABEL: lit.fn @"simpleTryExcept
-fn simpleTryExcept():
+def simpleTryExcept():
     var a: Int
     # CHECK: lit.try
     try:
@@ -29,7 +29,7 @@ fn simpleTryExcept():
 
 
 # CHECK-LABEL: lit.fn @"tryExceptElse
-fn tryExceptElse():
+def tryExceptElse():
     var a: Int
     # CHECK: lit.try
     try:
@@ -43,12 +43,12 @@ fn tryExceptElse():
         # CHECK-NEXT: lit.try.yield
 
 
-fn eatError(err: Error):
+def eatError(err: Error):
     pass
 
 
 # CHECK-LABEL: lit.fn @"tryExceptArgDef
-fn tryExceptArgDef():
+def tryExceptArgDef():
     try:
         pass
     # CHECK: } except {
@@ -59,7 +59,7 @@ fn tryExceptArgDef():
 
 
 # CHECK-LABEL: lit.fn @"tryFinally
-fn tryFinally():
+def tryFinally():
     # CHECK: lit.try
     try:
         # CHECK-NEXT: lit.try.yield
@@ -97,7 +97,7 @@ def propagateErrorInDef() raises:
 
 
 # CHECK-LABEL: lit.fn @"propagateErrorInRaisingFn
-fn propagateErrorInRaisingFn() raises:
+def propagateErrorInRaisingFn() raises:
     # CHECK:  %a = lit.var.decl {{.*}} : !lit.ref<!Int,
     var a: Int
     # CHECK:  lit.call {{.*}}maybeRaises{{.*}}(%__error__, %a)
@@ -105,7 +105,7 @@ fn propagateErrorInRaisingFn() raises:
 
 
 # CHECK-LABEL: lit.fn @"propagateErrorInTry
-fn propagateErrorInTry():
+def propagateErrorInTry():
     var a: Int
     # CHECK: lit.try
     try:
@@ -133,7 +133,7 @@ def raiseErrorInIf(cond: Bool) raises:
 
 
 # CHECK-LABEL: lit.fn @"raiseErrorInTry
-fn raiseErrorInTry():
+def raiseErrorInTry():
     # CHECK: lit.try %__try_error__
     try:
         # CHECK-NEXT: lit.call {{.*}}@Error::@"__init__{{.*}}(%__try_error__)
@@ -144,7 +144,7 @@ fn raiseErrorInTry():
 
 
 # CHECK-LABEL: lit.fn @"rethrowsToRethrow
-fn rethrowsToRethrow():
+def rethrowsToRethrow():
     # CHECK: lit.try [[TRY_ERROR1:%.*]] :
     try:
         # CHECK: lit.try [[TRY_ERROR2:%.*]] :
@@ -167,19 +167,19 @@ struct S(ImplicitlyCopyable, Movable):
     var v: Int
 
     @implicit
-    fn __init__(out self, x: Int):
+    def __init__(out self, x: Int):
         self.v = x
 
-    fn __init__(out self) raises:
+    def __init__(out self) raises:
         self.v = 1
 
 
-fn fail() raises -> S:
+def fail() raises -> S:
     return 0
 
 
 # CHECK-LABEL: lit.fn @"call_raising
-fn call_raising():
+def call_raising():
     # CHECK: lit.try %e
     try:
         # CHECK: [[ERR:%.*]] =  lit.call {{.*}}::@"fail{{.*}}(%e, %x)
@@ -192,16 +192,16 @@ fn call_raising():
         pass
 
 
-fn fail_raises() raises -> S:
+def fail_raises() raises -> S:
     return fail()
 
 
-fn fail_register() raises -> Int:
+def fail_register() raises -> Int:
     return 0
 
 
 # CHECK-LABEL: lit.fn @"fail_register_raises
-fn fail_register_raises() raises -> Int:
+def fail_register_raises() raises -> Int:
     # CHECK-NEXT: call {{.*}}fail_register{{.*}}(%__error__, %__result__)
     # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
     # CHECK-NEXT: lit.return [[FALSE]]

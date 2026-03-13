@@ -27,34 +27,34 @@ struct S1(C):
     pass
 
 
-fn foo[T: AnyType]():
+def foo[T: AnyType]():
     comptime if conforms_to(T, A & B):
         print("T conforms to 'A & B'")
     else:
         print("T does not conform to 'A & B'")
 
 
-fn bar[T: AnyType]() where conforms_to(T, A & B):
+def bar[T: AnyType]() where conforms_to(T, A & B):
     print("overload A")
     return
 
 
-fn bar[T: AnyType]() where conforms_to(T, C):
+def bar[T: AnyType]() where conforms_to(T, C):
     print("overload B")
     return
 
 
-fn indirect_target[T: AnyType]() where conforms_to(T, C):
+def indirect_target[T: AnyType]() where conforms_to(T, C):
     print("selected indirectly")
     return
 
 
-fn indirect[T: C]():
+def indirect[T: C]():
     indirect_target[T]()
     return
 
 
-fn main():
+def main():
     # CHECK: S conforms to 'A & B'
     comptime if conforms_to(S, A & B):
         print("S conforms to 'A & B'")

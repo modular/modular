@@ -69,5 +69,5 @@
 # CHECK_ACCELERATORS: apple-m4
 
 
-fn main():
+def main():
     pass

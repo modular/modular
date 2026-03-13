@@ -16,14 +16,14 @@ struct Param[x: Int](TrivialRegisterPassable):
     comptime value = Self.x
 
     @staticmethod
-    fn foo():
+    def foo():
         pass
 
     # COM: Test self type of parametric struct.
     # CHECK-LABEL: lit.fn @"self_type
     # CHECK-SAME: -> !lit.struct<[[SELF:.*]]>
     @staticmethod
-    fn self_type() -> Self:
+    def self_type() -> Self:
         pass
 
 
@@ -34,12 +34,12 @@ struct TwoParam[x: Int, y: Int](TrivialRegisterPassable):
     comptime second = Self.y
 
     @staticmethod
-    fn foo():
+    def foo():
         pass
 
 
 # CHECK-LABEL: fully_bound_alias
-fn fully_bound_alias():
+def fully_bound_alias():
     # COM: Test alias to a fully bound parametric type.
     # CHECK: BoundType{{.*}}: meta<!lit.struct<{{.*}}Param <{{.*}}1{{.*}}>>> = <{{.*}}@Param<{{.*}}1{{.*}}>>
     comptime BoundType = Param[1]
@@ -52,7 +52,7 @@ fn fully_bound_alias():
 
 
 # CHECK-LABEL: unbound_alias
-fn unbound_alias():
+def unbound_alias():
     # COM: Test alias to a fully unbound parametric type.
     # CHECK: [[UNBOUND:\*"Unbound.*]]: meta<!lit.struct<#Param <:!Int ?>, <"x": !Int>>> = <{{.*}}@Param<:!Int ?>>
     comptime Unbound = Param
@@ -70,16 +70,16 @@ fn unbound_alias():
 
 
 # CHECK-LABEL: partially_bound_alias
-fn partially_bound_alias():
+def partially_bound_alias():
     # COM: Test partially binding a type.
     # CHECK: [[PBOUND:\*"PartiallyBound.*]]: meta<!lit.struct<#TwoParam <:!Int {1}, :!Int ?>, <"y": !Int>>> = <{{.*}}@TwoParam<:!Int {1}, :!Int ?>>
     comptime PartiallyBound = TwoParam[1, _]
 
     # COM: Test taking a function from a partially bound type.
-    # CHECK: [[PBOUND_FN:\*"PartiallyBoundFn.*]]: !lit.generator<<"y": !Int, +>() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<:!Int {1}, :!Int ?>>
-    comptime PartiallyBoundFn = PartiallyBound.foo
-    # CHECK: FullyBoundFn{{.*}}: {{.*}} =   <@metatypes_param::@TwoParam::@"foo()"<:!Int {1}, :!Int {2}>>
-    comptime FullyBoundFn = PartiallyBoundFn[y=2]
+    # CHECK: [[PBOUND_FN:\*"PartiallyBounddef.*]]: !lit.generator<<"y": !Int, +>() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<:!Int {1}, :!Int ?>>
+    comptime PartiallyBounddef = PartiallyBound.foo
+    # CHECK: FullyBounddef{{.*}}: {{.*}} =   <@metatypes_param::@TwoParam::@"foo()"<:!Int {1}, :!Int {2}>>
+    comptime FullyBounddef = PartiallyBounddef[y=2]
 
     # COM: Test fully binding a partially bound type.
     # CHECK: *"BoundFromPartial`3": meta<!lit.struct<#TwoParam <:!Int {1}, :!Int {2}>>> =
@@ -89,12 +89,12 @@ fn partially_bound_alias():
     comptime first = BoundFromPartial.first
     # CHECK: second{{.*}} = <sugar_member_alias(!alias_BoundFromPartial1, "second", {2})>
     comptime second = BoundFromPartial.second
-    # CHECK: fn_from_bound{{.*}}: !lit.generator<() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<:!Int {1}, :!Int {2}>>
-    comptime fn_from_bound = BoundFromPartial.foo
+    # CHECK: def_from_bound{{.*}}: !lit.generator<() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<:!Int {1}, :!Int {2}>>
+    comptime def_from_bound = BoundFromPartial.foo
 
 
 # CHECK-LABEL: partially_bound_kw
-fn partially_bound_kw():
+def partially_bound_kw():
     # COM: Test partially binding the parameters out-of-order with keywords.
     # CHECK: TwoParam <:!Int ?, :!Int {1}>
     comptime PartiallyBound = TwoParam[y=1, ...]
@@ -108,7 +108,7 @@ fn partially_bound_kw():
 
 # CHECK-LABEL: lit.fn @"partial_autoparam
 # CHECK-SAME: <?, [[X:.*]]: !Int>(%value: !lit.struct<#TwoParam <:!Int [[X]], :!Int {1}>>
-fn partial_autoparam(value: TwoParam[y=1, ...]):
+def partial_autoparam(value: TwoParam[y=1, ...]):
     comptime first = value.x
     comptime second = value.y
 
@@ -119,7 +119,7 @@ struct ParamVarArg[F: Int, *I: Int](TrivialRegisterPassable):
     # CHECK-LABEL: lit.fn @"self_type
     # CHECK-SAME: #ParamVarArg <:!Int F, :variadic<!Int> I>
     @staticmethod
-    fn self_type() -> Self:
+    def self_type() -> Self:
         # CHECK: lit.alias.decl {{.*}}Unbound{{.*}}: {{.*}}ParamVarArg <:!Int ?, :variadic<!Int> ?>, <"F": !Int, "I": variadic<!Int> pos_vararg>>
         comptime Unbound = ParamVarArg
         # CHECK: lit.alias.decl {{.*}}BoundSome{{.*}}: {{.*}}ParamVarArg <:!Int {1}, :variadic<!Int> ?>
@@ -142,7 +142,7 @@ struct DependentParam[
 
 
 # CHECK-LABEL: lit.fn @"direct_binding
-fn direct_binding():
+def direct_binding():
     # Test direct bind of StructType
     # CHECK: alias.decl *"a{{.*}} meta<!lit.struct<#DependentParam <?, ?, :!lit.struct<#ParamType <?>> ?>, <"a": index, "b": index, "c": !lit.struct<#ParamType <*(0,1)>>
     comptime a = DependentParam
@@ -159,7 +159,7 @@ fn direct_binding():
 
 
 # CHECK: lit.fn @"indirect_binding
-fn indirect_binding():
+def indirect_binding():
     # CHECK: lit.alias.decl [[a:\*"a.*"]]: meta
     comptime a = DependentParam
     # Test indirect binds.

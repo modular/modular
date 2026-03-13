@@ -11,14 +11,14 @@ struct MemType:
     pass
 
 
-fn mut_ship_function(mut x: MemType):
+def mut_ship_function(mut x: MemType):
     ...
 
 
-# We can convert from fn(read MemType)->None to fn(mut MemType)->None but not
+# We can convert from def(read MemType)->None to def(mut MemType)->None but not
 # vice versa (see TTSMFS).
 # expected-error @below {{cannot implicitly convert 'fn(mut x: MemType) -> None' value to 'fn(MemType) -> None' in comptime initializer}}
-comptime read_ship_fn_alias: fn(read MemType) -> None = mut_ship_function
+comptime read_ship_fn_alias: def(read MemType) -> None = mut_ship_function
 
 
 # // -----
@@ -28,19 +28,19 @@ comptime read_ship_fn_alias: fn(read MemType) -> None = mut_ship_function
 
 
 # expected-note @below {{function declared here}}
-fn infer_variadic[
+def infer_variadic[
     ArgTypes: __mlir_type[`!kgen.variadic<`, AnyType, `>`],
     //,
-    func: fn(x: Int, y: Int, * args: * ArgTypes) -> None,
+    func: def(x: Int, y: Int, * args: * ArgTypes) -> None,
 ]():
     pass
 
 
-fn device_func(i: Int):
+def device_func(i: Int):
     pass
 
 
-fn test_infer_variadic():
+def test_infer_variadic():
     # expected-error @below {{invalid call to 'infer_variadic': value passed to 'func' cannot be converted from 'fn(i: Int) -> None' to 'fn(x: Int, y: Int, *args: *ArgTypes) -> None'}}
     infer_variadic[device_func]()
 
@@ -57,24 +57,24 @@ struct ZInt:
 
 
 trait Sprongling:
-    fn sprongle(self):
+    def sprongle(self):
         ...
 
 
 # expected-note @below {{function declared here}}
-fn infer_variadic[
+def infer_variadic[
     ArgTypes: __mlir_type[`!kgen.variadic<`, Sprongling, `>`],
     //,
-    func: fn(* args: * ArgTypes) -> None,
+    func: def(* args: * ArgTypes) -> None,
 ]():
     pass
 
 
-fn device_func(i: ZInt, j: ZInt):
+def device_func(i: ZInt, j: ZInt):
     pass
 
 
-fn test_infer_variadic():
+def test_infer_variadic():
     # expected-error @below {{cannot bind type 'ZInt' to trait 'Sprongling'}}
     # expected-error @below {{invalid call to 'infer_variadic': value passed to 'func' cannot be converted from 'fn(i: ZInt, j: ZInt) -> None' to 'fn(*args: *ArgTypes) -> None'}}
     infer_variadic[device_func]()
@@ -83,26 +83,26 @@ fn test_infer_variadic():
 # // -----
 
 
-fn device_func(a: Int, b: Bool) -> Int:
+def device_func(a: Int, b: Bool) -> Int:
     return 73
 
 
 @fieldwise_init
 struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
     # expected-note @below {{function declared here}}
-    fn call(self, *args: * Self.ArgTypes) -> Int:
+    def call(self, *args: * Self.ArgTypes) -> Int:
         return 91
 
 
-fn compile[
+def compile[
     ArgTypes: __mlir_type[`!kgen.variadic<`, TrivialRegisterPassable, `>`],
     //,
-    func: fn(* args: * ArgTypes) -> Int,
+    func: def(* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
 
 
-fn main():
+def main():
     var thing = compile[device_func]()
     # expected-error @below {{invalid call to 'call': value passed to 'args' cannot be converted from 'StringLiteral["hello"]' to 'Bool'}}
     var result2 = thing.call(42, "hello")
@@ -114,12 +114,12 @@ fn main():
 
 
 # A function that has a T that can't be inferred from anything
-fn device_func_unusedT[T: AnyType](a: Int, b: Bool) -> Int:
+def device_func_unusedT[T: AnyType](a: Int, b: Bool) -> Int:
     return 73
 
 
 # A function that has a T that can be inferred from arguments
-fn device_func_usedT[T: AnyType](a: T, b: Bool) -> Int:
+def device_func_usedT[T: AnyType](a: T, b: Bool) -> Int:
     return 73
 
 
@@ -129,22 +129,22 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
 
 
 # expected-note @below {{function declared here}}
-fn compile[
+def compile[
     ArgTypes: __mlir_type[`!kgen.variadic<`, TrivialRegisterPassable, `>`],
     //,
-    func: fn(* args: * ArgTypes) -> Int,
+    func: def(* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
 
 
-fn test_reject_generic_device_func_unusedT():
+def test_reject_generic_device_func_unusedT():
     # TODO(MOCO-1828): Better error message.
     # expected-error @below {{invalid call to 'compile': value passed to 'func' cannot be converted from 'fn[T: AnyType](a: Int, b: Bool) -> Int' to 'fn(*args: *ArgTypes) -> Int'}}
     var thing = compile[device_func_unusedT]()
 
 
 # Slightly different case, for no particular reason
-fn test_reject_generic_device_func_usedT():
+def test_reject_generic_device_func_usedT():
     # TODO(MOCO-1828): Better error message.
     # expected-error @below {{invalid call to 'compile': value passed to 'func' cannot be converted from 'fn[T: AnyType](a: T, b: Bool) -> Int' to 'fn(*args: *ArgTypes) -> Int'}}
     var thing = compile[device_func_usedT]()
@@ -153,26 +153,26 @@ fn test_reject_generic_device_func_usedT():
 # // -----
 
 
-fn device_func(a: Int, b: Bool) -> Int:
+def device_func(a: Int, b: Bool) -> Int:
     return 73
 
 
 @fieldwise_init
 struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
     # expected-note @below {{function declared here}}
-    fn call(self, *args: * Self.ArgTypes) -> Int:
+    def call(self, *args: * Self.ArgTypes) -> Int:
         return 91
 
 
-fn compile[
+def compile[
     ArgTypes: __mlir_type[`!kgen.variadic<`, TrivialRegisterPassable, `>`],
     //,
-    func: fn(* args: * ArgTypes) -> Int,
+    func: def(* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
 
 
-fn main():
+def main():
     var thing = compile[device_func]()
     # expected-error @below {{invalid call to 'call': value passed to 'args' cannot be converted from 'StringLiteral["hello"]' to 'Bool'}}
     var result2 = thing.call(42, "hello")
@@ -181,23 +181,23 @@ fn main():
 # // -----
 
 # Tests that we can properly reject a `raises` function when handed to a
-# non-raising input-parameter fn.
+# non-raising input-parameter def.
 
 
-fn device_func(a: Int, b: Bool) raises -> Int:
+def device_func(a: Int, b: Bool) raises -> Int:
     return 73
 
 
 # expected-note @below {{function declared here}}
-fn compile[
+def compile[
     ArgTypes: __mlir_type[`!kgen.variadic<`, TrivialRegisterPassable, `>`],
     //,
-    func: fn(* args: * ArgTypes) -> Int,
+    func: def(* args: * ArgTypes) -> Int,
 ]():
     pass
 
 
-fn main():
+def main():
     # expected-note @below {{memory-only type bound to generic result type: payload returns 'Int' by reference}}
     # expected-error @below {{invalid call to 'compile': value passed to 'func' cannot be converted from 'fn(a: Int, b: Bool) raises -> Int' to 'fn(*args: *ArgTypes) -> Int'}}
     compile[device_func]()
@@ -221,7 +221,7 @@ struct ZBool:
 
 # Copied from stdlib
 @always_inline("nodebug")
-fn rebind[
+def rebind[
     src_type: TrivialRegisterPassable,
     //,
     dest_type: TrivialRegisterPassable,
@@ -232,16 +232,16 @@ fn rebind[
 trait ConvertibleToZPointer:
     comptime Pointee: AnyType
 
-    fn to_zpointer(self) -> ZPointer[Self.Pointee]:
+    def to_zpointer(self) -> ZPointer[Self.Pointee]:
         ...
 
 
 struct ZPointer[T: AnyType](TrivialRegisterPassable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @implicit
-    fn __init__[C: ConvertibleToZPointer](out self, c: C):
+    def __init__[C: ConvertibleToZPointer](out self, c: C):
         # TODO(MOCO-1106): If we can remove this rebind, we win. We'd need to
         # constrain C.Pointee=T somehow, or make ConvertibleToZPointer into a
         # generic trait instead of using an associated alias.
@@ -251,29 +251,29 @@ struct ZPointer[T: AnyType](TrivialRegisterPassable):
 
 
 trait ConvertibleToZLayoutTensor:
-    fn to_tensor(self) -> ZLayoutTensor:
+    def to_tensor(self) -> ZLayoutTensor:
         ...
 
 
 struct ZLayoutTensor(TrivialRegisterPassable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @implicit
-    fn __init__[C: ConvertibleToZLayoutTensor](out self, c: C):
+    def __init__[C: ConvertibleToZLayoutTensor](out self, c: C):
         var z: ZLayoutTensor = c.to_tensor()
 
 
 @fieldwise_init
 struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
     # expected-note @below {{function declared here}}
-    fn call(self, *args: * Self.ArgTypes) -> Int:
+    def call(self, *args: * Self.ArgTypes) -> Int:
         return 91
 
 
 @fieldwise_init
 struct ManagedLayoutTensor(ConvertibleToZLayoutTensor):
-    fn to_tensor(self) -> ZLayoutTensor:
+    def to_tensor(self) -> ZLayoutTensor:
         return ZLayoutTensor()
 
 
@@ -283,19 +283,19 @@ struct NDBuffer(TrivialRegisterPassable):
     pass
 
 
-fn kernel(t: ZLayoutTensor, p: ZPointer[Int], n: NDBuffer) -> Int:
+def kernel(t: ZLayoutTensor, p: ZPointer[Int], n: NDBuffer) -> Int:
     return 73
 
 
-fn compile[
+def compile[
     ArgTypes: __mlir_type[`!kgen.variadic<`, TrivialRegisterPassable, `>`],
     //,
-    func: fn(* args: * ArgTypes) -> Int,
+    func: def(* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
 
 
-fn main():
+def main():
     var thing = compile[kernel]()
     var mlt = ManagedLayoutTensor()
     var ndb = NDBuffer()

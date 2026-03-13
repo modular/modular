@@ -15,10 +15,10 @@
 # CHECK-SAME: "text":"origin_of"
 
 
-fn test_fixit[T: AnyType](a: T):
+def test_fixit[T: AnyType](a: T):
     # __origin_of is deprecated and suggests origin_of as a fixit
     _ = __origin_of(a)
 
 
-fn main():
+def main():
     test_fixit(1)

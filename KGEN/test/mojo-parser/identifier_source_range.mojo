@@ -10,11 +10,11 @@
 # COM: needed because mlir diagnostics ignore source ranges.
 # RUN: not %parse-mojo-isolated -use-mlir-diagnostics=false %s 2>&1 | FileCheck %s
 
-fn foo(x: __mlir_type.index):
+def foo(x: __mlir_type.index):
     pass
 
 
-fn bar():
+def bar():
     # CHECK-NOT: unexpected character
     # CHECK: error: invalid call to 'foo'
     # CHECK-NOT: unexpected character

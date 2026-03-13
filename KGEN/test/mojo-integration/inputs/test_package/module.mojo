@@ -10,17 +10,17 @@ struct PlainStruct:
     pass
 
 
-fn identity[T: Movable](var data: T) -> T:
+def identity[T: Movable](var data: T) -> T:
     return data^
 
 
 trait PackageTrait:
-    fn method(self):
+    def method(self):
         pass
 
 
 trait PackageTrait2:
-    fn method2(self):
+    def method2(self):
         pass
 
 
@@ -29,32 +29,32 @@ trait PackageChildTrait(PackageTrait, PackageTrait2):
 
 
 trait UsedInPackageTrait:
-    fn method(self):
+    def method(self):
         pass
 
 
 struct UseTrait(UsedInPackageTrait):
-    fn method(self):
+    def method(self):
         pass
 
 
 struct UseTraitReg(RegisterPassable, UsedInPackageTrait):
-    fn method(self):
+    def method(self):
         pass
 
 
-fn trait_method[T: UsedInPackageTrait]():
+def trait_method[T: UsedInPackageTrait]():
     pass
 
 
 # COM: Create a thunk that is only referenced in this module.
 struct _PrivateReg(TrivialRegisterPassable, UsedInPackageTrait):
-    fn method(self):
+    def method(self):
         pass
 
 
 @always_inline
-fn contains_thunk_ref():
+def contains_thunk_ref():
     trait_method[_PrivateReg]()
 
 
@@ -63,12 +63,12 @@ fn contains_thunk_ref():
 # it. Its definition should remain in this package module, and be callable from
 # other modules.
 @no_inline
-fn dont_inline_me():
+def dont_inline_me():
     print("Don't you dare!")
 
 
 @export
-fn exported_func():
+def exported_func():
     pass
 
 
@@ -76,8 +76,8 @@ fn exported_func():
 # a module using this package uses a closure with an identical signature, the
 # declaration will first be pulled from this package. Thus the signatures of
 # the two closures must match.
-fn call_closure[
-    func: fn[x: Int, y: Int, z: Int](idx: Int) unified -> None,
+def call_closure[
+    func: def[x: Int, y: Int, z: Int](idx: Int) unified -> None,
     //,
     simd_width: Int,
 ](size: Int, closure: func):

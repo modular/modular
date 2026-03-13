@@ -13,5 +13,5 @@
 # CHECK-NOT: dead
 
 
-fn main():
+def main():
     pass

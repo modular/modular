@@ -12,5 +12,5 @@ from test_package.module import dont_inline_me
 # that it, in turn, calls a function defined in another separate package), the
 # module importing this function can invoke it and its dependent symbols.
 @no_inline
-fn dont_inline_me_either():
+def dont_inline_me_either():
     dont_inline_me()

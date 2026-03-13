@@ -11,6 +11,6 @@
 # RUN: %mojo %s 2>&1 | FileCheck %s
 
 
-fn main():
+def main():
     # CHECK: hello world
     print("hello world")

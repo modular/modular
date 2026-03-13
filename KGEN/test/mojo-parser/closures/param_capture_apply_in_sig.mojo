@@ -10,7 +10,7 @@
 struct Foo[x: Int](ImplicitlyCopyable, RegisterPassable):
     var b: Int
 
-    fn get(self) -> Int:
+    def get(self) -> Int:
         return self.b
 
 
@@ -19,8 +19,8 @@ struct Foo[x: Int](ImplicitlyCopyable, RegisterPassable):
 # CHECK-SAME: #Foo <:!Int apply(:{{.*}}@Foo::@"get{{.*}}"<:!Int a>), store_to_mem(Y))>
 
 
-fn alias_ref_apply_in_sig[a: Int, Y: Foo[a]]():
+def alias_ref_apply_in_sig[a: Int, Y: Foo[a]]():
     # alias Y = Foo[a](__mlir_attr.`2 : index`)
 
-    fn p_capture(x: Int, y: Foo[Y.get()]) escaping -> Int:
+    def p_capture(x: Int, y: Foo[Y.get()]) escaping -> Int:
         return Foo[a](x).get()

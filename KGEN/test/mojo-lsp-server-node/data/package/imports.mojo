@@ -9,7 +9,7 @@ import std.collections.string
 from .aliases import function, StructWithAlias
 
 
-fn main():
+def main():
     # Test nested imports.
     if False:
         pass

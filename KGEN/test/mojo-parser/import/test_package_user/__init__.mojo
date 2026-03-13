@@ -9,5 +9,5 @@
 
 import test_package
 
-fn using_test_package():
+def using_test_package():
   test_package.module.function()

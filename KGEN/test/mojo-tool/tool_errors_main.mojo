@@ -9,5 +9,5 @@
 
 # CHECK: module does not define a `main` function
 @export
-fn foo() -> Float32:
+def foo() -> Float32:
     return 0.0

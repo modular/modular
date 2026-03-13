@@ -16,11 +16,11 @@ comptime _, (b, c) = 1, (2, 3.0)
 # alias T1, (_, T3) = (Int, (Int, FloatDyn))
 
 
-fn use[T: AnyType](t: T):
+def use[T: AnyType](t: T):
     pass
 
 
-fn foo():
+def foo():
     # CHECK: kgen.param.constant: !Int
     # CHECK: kgen.param.constant: !FloatDyn
     use(b)

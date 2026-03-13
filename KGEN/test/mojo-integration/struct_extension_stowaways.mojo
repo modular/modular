@@ -15,7 +15,7 @@ from transitive_extension_package.stowaway import IntConfig
 
 
 # CHECK-LABEL: kgen.generator @"struct_extension_stowaways::test
-fn test():
+def test():
     var obj = MyStruct(0)
 
     # Call method from the extension in the stowaway module, even though we

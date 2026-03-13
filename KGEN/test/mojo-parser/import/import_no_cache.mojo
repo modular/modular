@@ -10,7 +10,7 @@ from test_package.module import *
 
 
 # CHECK-LABEL: lit.fn @"foo
-fn foo():
+def foo():
     var x = Wrapper(33)
     var y = x.data
 

@@ -12,13 +12,13 @@ struct MemType(ImplicitlyCopyable):
 
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.x = value
 
-    fn __add__(self, rhs: MemType) -> MemType:
+    def __add__(self, rhs: MemType) -> MemType:
         return MemType(rhs.x + self.x)
 
-    fn __add__(self, rhs: Int) -> MemType:
+    def __add__(self, rhs: Int) -> MemType:
         return MemType(self.x + rhs)
 
 
@@ -28,11 +28,11 @@ struct MemType(ImplicitlyCopyable):
 
 # COM: Check that the parameter capture "A" is forwarded to the outer escaping closure
 # CHECK: lit.struct.decl @"`_CI_{{.*}}escaping0"<{{.*}}*"n`{{.*}}": origin<0>, [[A]]: !Int, |>
-fn makes_escaping_closure[
+def makes_escaping_closure[
     A: Int
-](m: MemType) -> fn(n: MemType) escaping -> MemType:
-    fn myclosure(n: MemType) -> MemType:
-        fn nested_nested(k: MemType, l: MemType) -> MemType:
+](m: MemType) -> def(n: MemType) escaping -> MemType:
+    def myclosure(n: MemType) -> MemType:
+        def nested_nested(k: MemType, l: MemType) -> MemType:
             return n + k + A
 
         return nested_nested(n, m)

@@ -7,21 +7,21 @@
 
 
 trait SelfMethod:
-    fn foo(self):
+    def foo(self):
         pass
 
 
 struct SelfStruct(SelfMethod):
-    fn foo(self):
+    def foo(self):
         pass
 
 
 # CHECK-LABEL: kgen.func @"{{.*}}call_it{{.*}}T=
-fn call_it[T: SelfMethod](x: T):
+def call_it[T: SelfMethod](x: T):
     # CHECK: call {{.*}}SelfStruct::foo{{.*}}(%arg0)
     x.foo()
 
 
 @export
-fn pass_it(x: SelfStruct):
+def pass_it(x: SelfStruct):
     call_it(x)

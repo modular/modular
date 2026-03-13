@@ -46,5 +46,5 @@
 # CHECK_MARCH: "target-cpu"="x86-64"
 
 
-fn main():
+def main():
     pass

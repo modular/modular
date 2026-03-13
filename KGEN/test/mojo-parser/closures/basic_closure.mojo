@@ -11,11 +11,11 @@
 
 @fieldwise_init
 struct MemType(ImplicitlyCopyable):
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 
-fn use(y: MemType, z: Int, u: __mlir_type.index):
+def use(y: MemType, z: Int, u: __mlir_type.index):
     pass
 
 
@@ -83,9 +83,9 @@ fn use(y: MemType, z: Int, u: __mlir_type.index):
 # CHECK-NEXT: }
 
 
-fn makes_escaping_closure(m: MemType, z: MemType, y: Bool):
+def makes_escaping_closure(m: MemType, z: MemType, y: Bool):
     var register_passable_var: Int = 3
     var mlir_type_var: __mlir_type.index = register_passable_var._mlir_value
 
-    fn dummy(n: MemType):
+    def dummy(n: MemType):
         use(m, register_passable_var, mlir_type_var)

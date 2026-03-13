@@ -26,7 +26,7 @@ struct FloatStruct4(TrivialRegisterPassable):
     var a: Float32
 
 
-fn test_variadic_mixed_int_struct_and_float():
+def test_variadic_mixed_int_struct_and_float():
     var s_int = IntStruct8(10, 20)
     var s_float = FloatStruct4(5.5)
     # IntStruct8 forces ABI coercion; FloatStruct4 is flattened to f32
@@ -41,5 +41,5 @@ fn test_variadic_mixed_int_struct_and_float():
 # CHECK: variadic_mixed_int_struct_and_float: 36.5
 
 
-fn main():
+def main():
     test_variadic_mixed_int_struct_and_float()

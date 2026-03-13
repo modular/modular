@@ -14,6 +14,6 @@
 from lazy_test import simple_extension
 
 
-fn main():
+def main():
     # CHECK: lit.call @lazy_test::@simple_struct::@BaseType::@"__init__()"
     var x = lazy_test.simple_struct.BaseType()

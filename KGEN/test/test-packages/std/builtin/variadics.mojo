@@ -15,12 +15,12 @@ struct Variadic:
 
     @staticmethod
     @always_inline("builtin")
-    fn size[T: AnyType](seq: Self.ValuesOfType[T]) -> Int:
+    def size[T: AnyType](seq: Self.ValuesOfType[T]) -> Int:
         return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
 
     @staticmethod
     @always_inline("builtin")
-    fn size[T: type_of(AnyType)](seq: Self.TypesOfTrait[T]) -> Int:
+    def size[T: type_of(AnyType)](seq: Self.TypesOfTrait[T]) -> Int:
         return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
 
     # ===-----------------------------------------------------------------------===#

@@ -7,10 +7,10 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-fn print_or(value: Int, condition: Bool):
+def print_or(value: Int, condition: Bool):
     @always_inline
     @parameter
-    fn do_print(value: Int):
+    def do_print(value: Int):
         if condition:
             print(value)
             return
@@ -19,7 +19,7 @@ fn print_or(value: Int, condition: Bool):
     do_print(value)
 
 
-fn main():
+def main():
     # CHECK: 5
     print_or(5, True)
     # CHECK: refuse

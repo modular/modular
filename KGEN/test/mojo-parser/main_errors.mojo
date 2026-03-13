@@ -8,7 +8,7 @@
 
 
 # expected-error @below {{expected 'main' function to have no arguments}}
-fn main(arg: Int):
+def main(arg: Int):
     return
 
 # // -----
@@ -20,26 +20,26 @@ def main(arg: Int) raises:
 # // -----
 
 # expected-error @below {{expected 'main' function to return 'None'}}
-fn main() -> Int:
+def main() -> Int:
     return 10
 
 # // -----
 
 # expected-error @below {{expected 'main' function to have no parameters}}
-fn main[input: Int]():
+def main[input: Int]():
     return
 
 # // -----
 
 # expected-error @below {{'main' can only be exported as 'main'}}
 @export("foo")
-fn main():
+def main():
     return
 
 # // -----
 
 # expected-error @below {{only 'main' can be exported as 'main'}}
 @export("main")
-fn fooMain():
+def fooMain():
     return
 

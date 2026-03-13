@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn pass_int(x: Int) -> fn () escaping -> Int:
-    fn closure() -> Int:
+def pass_int(x: Int) -> def () escaping -> Int:
+    def closure() -> Int:
         return x
 
     return closure

@@ -8,20 +8,20 @@
 
 
 struct SimpleIntRange(TrivialRegisterPassable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         pass
 
-    fn __next__(mut self) raises StopIteration -> Int:
+    def __next__(mut self) raises StopIteration -> Int:
         pass
 
-    fn __iter__(self) -> Self:
+    def __iter__(self) -> Self:
         pass
 
 
-fn var_let_decls():
+def var_let_decls():
     # CHECK: %xx = lit.var.decl "xx" var
     # CHECK: %[[V1:.*]] = kgen.param.constant: !Int = <{42}>
     # CHECK: lit.ref.store %[[V1]], %xx
@@ -70,19 +70,19 @@ fn var_let_decls():
 
 
 struct IntList(TrivialRegisterPassable):
-    fn __init__(out self, *list_elements: Int, __list_literal__: () = ()):
+    def __init__(out self, *list_elements: Int, __list_literal__: () = ()):
         pass
 
-    fn append(mut self, value: Int):
+    def append(mut self, value: Int):
         pass
 
 
-fn inspect(list: List[_]):
+def inspect(list: List[_]):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_list_literal
-fn test_list_literal():
+def test_list_literal():
     # CHECK: [[VARIADIC:%.*]] = pop.variadic.create
     # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!AnyType> []>)
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
@@ -115,7 +115,7 @@ fn test_list_literal():
 
 
 # CHECK-LABEL: lit.fn @"test_list_comprehension
-fn test_list_comprehension():
+def test_list_comprehension():
     # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#List <:!Copyable_ImplicitlyDestructible !Int>
     # CHECK: lit.loop {
     # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous*"
@@ -170,7 +170,7 @@ fn test_list_comprehension():
 
 
 struct MyDict[K: Copyable&ImplicitlyDestructible, V: Copyable&ImplicitlyDestructible]:
-    fn __init__(
+    def __init__(
         out self,
         var keys: List[Self.K],
         var values: List[Self.V],
@@ -180,14 +180,14 @@ struct MyDict[K: Copyable&ImplicitlyDestructible, V: Copyable&ImplicitlyDestruct
 
 
 struct IntDict:
-    fn __init__(
+    def __init__(
         out self, keys: IntList, values: IntList, __dict_literal__: () = ()
     ):
         pass
 
 
 # CHECK-LABEL: lit.fn @"test_dict_literal
-fn test_dict_literal(aBool: Bool):
+def test_dict_literal(aBool: Bool):
     # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}({{.*}}, [[KEYS_LIST:%.*]]) :
     # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}({{.*}}, [[VALUES_LIST:%.*]]) :
     # CHECK: lit.call {{.*}}@Dict::@"__init__{{.*}}([[KEYS_LIST]], [[VALUES_LIST]], {{.*}}, %a) :
@@ -205,7 +205,7 @@ fn test_dict_literal(aBool: Bool):
 
 
 # CHECK-LABEL: lit.fn @"test_dict_comprehension
-fn test_dict_comprehension():
+def test_dict_comprehension():
     # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Dict <:!Copyable_ImplicitlyDestructible !Int, :!Copyable_ImplicitlyDestructible !String>
     # CHECK: lit.loop {
     # CHECK-NEXT: [[ANONI:%.*]] = lit.var.decl "anonymous*"
@@ -226,16 +226,16 @@ fn test_dict_comprehension():
 
 
 struct MySet[T: AnyType]:
-    fn __init__(out self, var *values: Self.T, __set_literal__: ()):
+    def __init__(out self, var *values: Self.T, __set_literal__: ()):
         pass
 
 
-fn param_infer_equal[T: AnyType](a: T, b: T):
+def param_infer_equal[T: AnyType](a: T, b: T):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_set_literal
-fn test_set_literal():
+def test_set_literal():
     # CHECK: [[VARIADIC:%.*]] = pop.variadic.create
     # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!AnyType> []>)
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
@@ -255,7 +255,7 @@ fn test_set_literal():
 
 
 # CHECK-LABEL: lit.fn @"test_set_comprehension
-fn test_set_comprehension():
+def test_set_comprehension():
     # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Set <:!AnyType !Int>
     # CHECK: lit.loop {
     # CHECK-NEXT: [[ANONI1:%.*]] = lit.var.decl "anonymous*"
@@ -277,15 +277,15 @@ fn test_set_comprehension():
 
 
 struct InitType[T: AnyType]:
-    fn __init__(out self, value: Self.T):
+    def __init__(out self, value: Self.T):
         pass
 
-    fn __init__(out self, value: Self.T, value2: Int):
+    def __init__(out self, value: Self.T, value2: Int):
         pass
 
 
 # CHECK-LABEL: lit.fn @"test_initializer_list
-fn test_initializer_list():
+def test_initializer_list():
     # CHECK: [[TMP:%.*]] = lit.ref.immut
     # CHECK: lit.call {{.*}}@InitType::@"__init__{{.*}}([[TMP]], %a)
     var a: InitType[Int] = {1}
@@ -306,24 +306,24 @@ fn test_initializer_list():
 
 # This can be formed with any collection and has its own initializer list too.
 struct AnyCollection:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, value: AnyType):
+    def __init__(out self, value: AnyType):
         pass
 
-    fn __init__(out self, var *values: Int, __list_literal__: ()):
+    def __init__(out self, var *values: Int, __list_literal__: ()):
         pass
 
-    fn __init__(out self, var *values: Int, __set_literal__: ()):
+    def __init__(out self, var *values: Int, __set_literal__: ()):
         pass
 
-    fn __init__(out self, keys: IntList, values: IntList, __dict_literal__: ()):
+    def __init__(out self, keys: IntList, values: IntList, __dict_literal__: ()):
         pass
 
 
 # CHECK-LABEL: lit.fn @"test_any_collection
-fn test_any_collection():
+def test_any_collection():
     # CHECK: lit.call {{.*}}@AnyCollection::@"__init__{{.*}}({{.*}}, %a){{.*}}__dict_literal__
     var a: AnyCollection = {}
     # CHECK: lit.call {{.*}}@AnyCollection::@"__init__{{.*}}({{.*}}, %b){{.*}}__set_literal__
@@ -340,21 +340,21 @@ fn test_any_collection():
 
 
 struct IntPairRange(TrivialRegisterPassable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         pass
 
-    fn __next__(mut self) raises StopIteration -> Tuple[Int, Int]:
+    def __next__(mut self) raises StopIteration -> Tuple[Int, Int]:
         pass
 
-    fn __iter__(self) -> Self:
+    def __iter__(self) -> Self:
         pass
 
 
 # CHECK-LABEL: lit.fn @"test_unpack
-fn test_unpack():
+def test_unpack():
     var elts = [a * b for (a, b) in IntPairRange()]
 
 
@@ -367,16 +367,16 @@ struct IterRange(ImplicitlyCopyable, Iterator):
 
     var value: Int
 
-    fn __iter__(self) -> Self:
+    def __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self) raises StopIteration -> Int:
+    def __next__(mut self) raises StopIteration -> Int:
         if self.value < 0:
             raise StopIteration()
         return self.value
 
 
-fn useIt(expr: List[Int]):
+def useIt(expr: List[Int]):
     pass
 
 

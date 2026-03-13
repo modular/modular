@@ -12,12 +12,12 @@ from generic_struct_package import Container
 
 
 __extension Container:
-    fn double(self) -> T:
+    def double(self) -> T:
         return self.value
 
 
 # CHECK-LABEL: kgen.generator @"struct_extensions_generic::my_test
-fn my_test():
+def my_test():
     var container = Container(42)
     # CHECK: kgen.call @"struct_extensions_generic::extension:Container::double
     var result = container.double()

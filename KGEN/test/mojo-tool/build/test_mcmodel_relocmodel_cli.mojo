@@ -18,5 +18,5 @@
 # CHECK-PIC: GOTOFF
 # CHECK-STATIC-NOT: GOTOFF
 #
-fn main():
+def main():
     print("hello world.")

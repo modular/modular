@@ -8,7 +8,7 @@
 
 
 # CHECK: "default": "\"\\n\"",
-fn testFn(stringArgument: StaticString = "\n"):
+def testFn(stringArgument: StaticString = "\n"):
     """Function description text.
 
     Args:

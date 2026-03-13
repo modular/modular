@@ -4,5 +4,5 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-fn method_defined_in_init():
+def method_defined_in_init():
   return

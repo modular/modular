@@ -20,12 +20,12 @@ print(value)
 # CHECK: 25
 
 # Test an error diagnosed in the MLIR pass pipeline, not during the parser.
-fn foo() -> Int:
+def foo() -> Int:
     pass
-# CHECK-STDERR: Expression [5]:2:4: return expected at end of function with results
+# CHECK-STDERR: Expression [5]:2:5: return expected at end of function with results
 
 # Test an error diagnosed in the MLIR pass pipeline, not during the parser.
-fn foo() -> Int:
+def foo() -> Int:
     return 0
 # CHECK-STDERR-NOT: return expected at end of function with results
 

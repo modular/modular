@@ -14,12 +14,12 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn new_function():
+def new_function():
     pass
 
 
 @deprecated(use=new_function)
-fn deprecated_function():
+def deprecated_function():
     pass
 
 
@@ -29,14 +29,14 @@ fn deprecated_function():
 
 
 struct MethodTest:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn new_method(self):
+    def new_method(self):
         pass
 
     @deprecated(use=new_method)
-    fn deprecated_method(self):
+    def deprecated_method(self):
         pass
 
 
@@ -47,12 +47,12 @@ struct MethodTest:
 
 struct StaticMethodTest:
     @staticmethod
-    fn brand_new_static():
+    def brand_new_static():
         pass
 
     @staticmethod
     @deprecated(use=brand_new_static)
-    fn old_static():
+    def old_static():
         pass
 
 
@@ -62,14 +62,14 @@ struct StaticMethodTest:
 
 
 struct OpTest:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn add(self, other: Self) -> Self:
+    def add(self, other: Self) -> Self:
         return Self()
 
     @deprecated(use=add)
-    fn __add__(self, other: Self) -> Self:
+    def __add__(self, other: Self) -> Self:
         return Self()
 
 
@@ -79,7 +79,7 @@ struct OpTest:
 
 
 @deprecated("This function is deprecated")
-fn deprecated_no_use():
+def deprecated_no_use():
     pass
 
 
@@ -88,36 +88,36 @@ fn deprecated_no_use():
 # ===----------------------------------------------------------------------=== #
 
 
-fn new_func_for_cast():
+def new_func_for_cast():
     pass
 
 
 @deprecated(use=new_func_for_cast)
-fn deprecated_func_for_cast():
+def deprecated_func_for_cast():
     pass
 
 
-fn takes_func(f: fn () -> None):
+def takes_func(f: def () -> None):
     f()
 
 
 struct MethodCastTest:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn new_method_for_cast(self):
+    def new_method_for_cast(self):
         pass
 
     @deprecated(use=new_method_for_cast)
-    fn deprecated_method_for_cast(self):
+    def deprecated_method_for_cast(self):
         pass
 
 
-fn takes_method(m: fn (MethodCastTest) -> None):
+def takes_method(m: def (MethodCastTest) -> None):
     pass
 
 
-fn main():
+def main():
     # Direct function call: fixit covers "deprecated_function" (columns 5-24)
     # CHECK: "fixIts":[{"end":{"column":24,"line":[[#@LINE+1]]},"start":{"column":5,"line":[[#@LINE+1]]},"text":"new_function"}]
     deprecated_function()
