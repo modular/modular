@@ -30,7 +30,7 @@ std::unique_ptr<Runtime> RuntimeOptions::createRuntime() const {
 #else
     llvm::errs() << "The use-after-free allocator is not available for this "
                     "target. Using the leak-checker runtime instead.";
-    options.leakCheckedAllocator = true;
+    runtimeOptions.leakCheckedAllocator = true;
 #endif
     break;
   }
