@@ -17,11 +17,11 @@ from std.random import rand, seed
 
 from std.collections import Optional
 from layout import (
+    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    IntTuple,
     UNKNOWN_VALUE,
 )
 from nn.flash_attention import flash_attention, flash_attention_split_kv
@@ -47,7 +47,7 @@ def reference_attention_bshd[
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
     comptime layout_4d = Layout.row_major[4]()
 
-    fn reshape_4d(
+    def reshape_4d(
         buf: LayoutTensor[dtype, ...]
     ) -> LayoutTensor[
         dtype, layout_4d, buf.origin, address_space=buf.address_space
@@ -59,7 +59,7 @@ def reference_attention_bshd[
             buf.ptr, RuntimeLayout[layout_4d].row_major(shape_4d)
         )
 
-    fn reshape_mask_4d(
+    def reshape_mask_4d(
         buf: LayoutTensor[dtype, ...]
     ) -> LayoutTensor[
         dtype, layout_4d, buf.origin, address_space=buf.address_space
@@ -181,7 +181,7 @@ def reference_attention_bshd_with_sinks[
 
     comptime layout_4d = Layout.row_major[4]()
 
-    fn reshape_4d(
+    def reshape_4d(
         buf: LayoutTensor[dtype, ...]
     ) -> LayoutTensor[
         dtype, layout_4d, buf.origin, address_space=buf.address_space
@@ -193,7 +193,7 @@ def reference_attention_bshd_with_sinks[
             buf.ptr, RuntimeLayout[layout_4d].row_major(shape_4d)
         )
 
-    fn reshape_mask_4d(
+    def reshape_mask_4d(
         buf: LayoutTensor[dtype, ...]
     ) -> LayoutTensor[
         dtype, layout_4d, buf.origin, address_space=buf.address_space
@@ -309,12 +309,12 @@ struct TestCaseConfig[batch_rank: Int](TrivialRegisterPassable):
     var scale: Float32
 
     @always_inline
-    fn prev_seq_len(self) -> Int:
+    def prev_seq_len(self) -> Int:
         """Returns the KV cache length from previous iterations."""
         return self.kv_seq_len - self.seq_len
 
     @always_inline
-    fn build_shape[
+    def build_shape[
         *, shape_rank: Int = Self.rank, is_kv: Bool = False
     ](self, x: Int, y: Int) -> IndexList[shape_rank]:
         var shape = IndexList[shape_rank]()
@@ -340,7 +340,7 @@ struct TestCaseConfig[batch_rank: Int](TrivialRegisterPassable):
         return shape
 
     @always_inline
-    fn build_shape_bshd[
+    def build_shape_bshd[
         *, shape_rank: Int = Self.rank, is_kv: Bool = False
     ](self, x: Int, y: Int) -> IndexList[shape_rank]:
         var shape = IndexList[shape_rank]()
@@ -459,21 +459,21 @@ def test_case[
 
     @parameter
     @always_inline
-    fn input_k_fn[
+    def input_k_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width](rebind[IndexList[k.rank]](idx))
 
     @parameter
     @always_inline
-    fn input_v_fn[
+    def input_v_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width](rebind[IndexList[v.rank]](idx))
 
     @parameter
     @always_inline
-    fn mask_fn[
+    def mask_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return mask.load[width=simd_width](rebind[IndexList[mask.rank]](idx))
@@ -625,7 +625,7 @@ def test_case_split_kv[
     # Define input lambdas for split KV cache attn `flash_attention_split_kv`.
     @parameter
     @always_inline
-    fn input_k_fn[
+    def input_k_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width](
@@ -636,7 +636,7 @@ def test_case_split_kv[
 
     @parameter
     @always_inline
-    fn input_v_fn[
+    def input_v_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width](
@@ -647,7 +647,7 @@ def test_case_split_kv[
 
     @parameter
     @always_inline
-    fn input_k_cache_fn[
+    def input_k_cache_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width](
@@ -656,7 +656,7 @@ def test_case_split_kv[
 
     @parameter
     @always_inline
-    fn input_v_cache_fn[
+    def input_v_cache_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width](
@@ -665,7 +665,7 @@ def test_case_split_kv[
 
     @parameter
     @always_inline
-    fn mask_fn[
+    def mask_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return mask.load[width=simd_width](rebind[IndexList[mask.rank]](idx))
@@ -809,21 +809,21 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
     # Test flash attention without sinks
     @parameter
     @always_inline
-    fn input_k_fn[
+    def input_k_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width](rebind[IndexList[k.rank]](idx))
 
     @parameter
     @always_inline
-    fn input_v_fn[
+    def input_v_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width](rebind[IndexList[v.rank]](idx))
 
     @parameter
     @always_inline
-    fn mask_fn[
+    def mask_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return mask.load[width=simd_width](rebind[IndexList[mask.rank]](idx))

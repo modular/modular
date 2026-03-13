@@ -43,12 +43,14 @@ from std.gpu.compute.arch.tcgen05 import (
 )
 from std.gpu.primitives.warp import _vote_nvidia_helper
 from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
-from layout.int_tuple import IntTuple, UNKNOWN_VALUE
-from layout.layout import (
+from layout import (
+    IntTuple,
     Layout,
-)
-from layout.layout_tensor import (
     LayoutTensor,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
+    row_major,
+    stack_allocation as tt_stack_allocation,
 )
 from layout.swizzle import make_ldmatrix_swizzle
 from layout.tensor_core_async import (
@@ -62,7 +64,6 @@ from layout.tma_async import (
     _default_desc_shape,
     TMATensorTile,
 )
-from layout.runtime_layout import RuntimeLayout
 from std.memory import bitcast
 from nn.mha_fa3_utils import (
     OptionalPointer,
@@ -83,7 +84,6 @@ from nn.sm100_attention_utils import (
     MBarPipeline,
     sub_ftz,
 )
-from layout import row_major, stack_allocation as tt_stack_allocation
 from nn.mha_fa3_utils import KVTMATile
 from std.builtin.device_passable import DevicePassable
 from std.sys._assembly import inlined_assembly
@@ -105,7 +105,7 @@ comptime QOTMATile[
 
 
 @always_inline
-fn tma_tile_qo[
+def tma_tile_qo[
     dtype: DType,
     //,
     swizzle_mode: TensorMapSwizzle,
@@ -131,6 +131,57 @@ fn tma_tile_qo[
     )
 
 
+# Per-token scales TMA tile: loads BN contiguous float32 values via TMA.
+# Scales are treated as a flat 1D array indexed by row_idx (same paging
+# as the KV cache blocks).  The TMA uses a [1, total_elements] 2D layout
+# so the inner dimension (total_elements * 4 bytes) exceeds the TMA minimum
+# of 32 bytes, with tile shape [1, BN] and SWIZZLE_NONE.
+#
+# We set desc_shape = tile_shape (no sub-tiling) so that desc_bytes ==
+# tile_bytes and the 128-byte alignment constraint for multi-copy TMA is
+# not triggered.  With BN=64, tile_bytes = 256 which is already 128-aligned.
+comptime ScalesTMATile[BN: Int] = TMATensorTile[
+    DType.float32,
+    2,
+    IndexList[2](1, BN),
+    IndexList[2](1, BN),
+    is_k_major=True,
+]
+
+
+@always_inline
+def tma_tile_scales[
+    BN: Int,
+](
+    ctx: DeviceContext,
+    ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    total_elements: Int,
+    out res: ScalesTMATile[BN],
+) raises:
+    """Create a TMA descriptor for per-token float32 scales.
+
+    The scales are a flat array of float32 values indexed by the same
+    row_idx as the KV cache blocks.  We create a 2D TMA with shape
+    [1, total_elements] and tile [1, BN] so that each async_copy loads
+    BN contiguous float32 values (BN * 4 bytes) starting at the
+    specified column offset.
+    """
+    comptime layout = Layout.row_major(1, UNKNOWN_VALUE)
+    var rt_layout = RuntimeLayout[layout].row_major(
+        IndexList[2](1, total_elements)
+    )
+    var tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
+        ptr, rt_layout
+    )
+    res = rebind[ScalesTMATile[BN]](
+        create_tensor_tile[
+            IndexList[2](1, BN),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+            __desc_shape=IndexList[2](1, BN),
+        ](ctx, tensor)
+    )
+
+
 # ------------------------------------------------------------------------------
 # Helper functions for MLA decoding pack
 # ------------------------------------------------------------------------------
@@ -146,19 +197,19 @@ struct MLA_Decode_Pack[
     var lse_accum_split_ptr: Self.SplitAccumType
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         return "Pack"
 
     @staticmethod
-    fn get_device_type_name() -> String:
+    def get_device_type_name() -> String:
         return Self.get_type_name()
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         mask: Self.MaskType,
         valid_length: Self.ValidLengthType,
@@ -175,7 +226,7 @@ struct MLA_Decode_Pack[
 
 
 @always_inline
-fn num_matrix_view_rows_decode[
+def num_matrix_view_rows_decode[
     dtype: DType,
     //,
 ](q: LayoutTensor[dtype, ...]) -> Int:
@@ -243,6 +294,8 @@ struct MLA_SM100_Decode_Config:
     var swizzle_mode: TensorMapSwizzle
     var kv_mma_swizzle_mode: TensorMapSwizzle
     var kv_tma_swizzle_mode: TensorMapSwizzle
+    var content_swizzle_mode: TensorMapSwizzle  # FP8 content: SWIZZLE_64B
+    var rope_swizzle_mode: TensorMapSwizzle  # BF16 rope: SWIZZLE_128B
     comptime MMA_K = 16
     comptime sm100_smem_carveout = B200.shared_memory_per_multiprocessor - 1024
     comptime sm100_tmem_cols = 512
@@ -255,8 +308,10 @@ struct MLA_SM100_Decode_Config:
     var scale_block_size: Int  # 0 = tensorwise, 32/64/128 = blockwise FP8 scaling
     var scales_per_token: Int  # ceildiv(q_depth, scale_block_size) when blockwise, else 0
     var scale_smem_per_stage: Int  # BN * scales_per_token bytes per stage (0 if tensorwise)
+    var per_token_scale_rope_aware: Bool  # Split content(FP8)/rope(BF16) with per-token FP8 scaling
+    var per_token_scales_per_stage: Int  # BN(64) tokens * 1 scale * sizeof(float32)(4) = 256 bytes per stage
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         num_q_heads: Int,
@@ -272,6 +327,7 @@ struct MLA_SM100_Decode_Config:
         split_page_size: Int = 128,
         scale_block_size: Int = 0,
         native_fp8: Bool = False,
+        per_token_scale_rope_aware: Bool = False,
     ):
         self.num_q_heads = num_q_heads
         self.num_kv_heads = num_q_heads // group
@@ -297,12 +353,36 @@ struct MLA_SM100_Decode_Config:
             TensorMapSwizzle.SWIZZLE_64B if kv_type_size
             == 1 else TensorMapSwizzle.SWIZZLE_128B
         )
-        # Native FP8 uses 3 WGs (384 threads) like BF16 — no converter WG.
-        # Old FP8 converter path uses 4 WGs (512 threads).
-        if native_fp8:
-            self.num_threads = 128 * 3
+        # Split content/rope swizzle modes for per_token_scale_rope_aware:
+        # Content is FP8 (1 byte) -> SWIZZLE_64B, Rope is BF16 (2 bytes) -> SWIZZLE_128B.
+        # When not per_token_scale_rope_aware, both use the same swizzle as kv_tma_swizzle_mode.
+        if per_token_scale_rope_aware:
+            self.content_swizzle_mode = TensorMapSwizzle.SWIZZLE_64B
+            self.rope_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
         else:
-            self.num_threads = 128 * Int(4 if kv_type_size == 1 else 3)
+            self.content_swizzle_mode = self.kv_tma_swizzle_mode
+            self.rope_swizzle_mode = self.kv_tma_swizzle_mode
+        self.per_token_scale_rope_aware = per_token_scale_rope_aware
+        # Per-token scales for SnapMLA: 1 float32 scale per KV token (sigma_KV).
+        # In MLA's absorbed mode K and V both derive from the same latent c_KV,
+        # so they share a single per-token quantization scale.
+        # Per stage: BN(64) tokens * 1 * sizeof(float32)(4) = 256 bytes.
+        if per_token_scale_rope_aware:
+            self.per_token_scales_per_stage = self.BN * 1 * 4
+        else:
+            self.per_token_scales_per_stage = 0
+        # All paths use 3 WGs (384 threads) except the old FP8 converter path
+        # (Q=BF16, KV=FP8, both blockwise and tensorwise) which uses 4 WGs (512
+        # threads) for the extra FP8-to-BF16 conversion warpgroup.
+        var _old_fp8_converter = (
+            kv_type_size == 1
+            and not native_fp8
+            and not per_token_scale_rope_aware
+        )
+        if _old_fp8_converter:
+            self.num_threads = 128 * 4
+        else:
+            self.num_threads = 128 * 3
 
         # 4 bytes for the TMEM base pointer
         var smem_use = 4
@@ -329,7 +409,12 @@ struct MLA_SM100_Decode_Config:
         # - BF16 / old FP8 converter: BF16-sized Q (64x576x2 = 73728 bytes)
         # - Native FP8: FP8-sized Q (64x576x1 = 36864 bytes), Q arrives as FP8
         #   from TMA with SWIZZLE_64B. No conversion needed.
-        if native_fp8:
+        # - Per-token-scale: split Q = FP8 content (BM*512*1=32768) + BF16 rope (BM*64*2=8192) = 40960 bytes
+        if per_token_scale_rope_aware:
+            smem_use += (
+                self.BM * self.padded_depth * 1 + self.BM * self.rope_depth * 2
+            )
+        elif native_fp8:
             smem_use += self.BM * self.padded_q_depth * kv_type_size
         else:
             smem_use += self.BM * self.padded_q_depth * dtype_size
@@ -359,9 +444,39 @@ struct MLA_SM100_Decode_Config:
         # - Native FP8: FP8-sized stages (BN * padded_q_depth * kv_type_size)
         #   P lives in a separate SMEM region (not inside KV stages), so KV stages
         #   can be FP8-sized. This gives 3 stages instead of 2.
+        # - Per-token-scale: split KV = FP8 content (BN*512*1=32768) + BF16 rope (BN*64*2=8192) = 40960 bytes/stage
+        #   P lives in a separate SMEM region (same as native FP8). P stage = BM*BN*1 = 4096 bytes.
         var smem_per_kv: Int
         var smem_for_p: Int
-        if native_fp8:
+        if per_token_scale_rope_aware:
+            # Per-token-scale: KV stage = content FP8 + rope BF16
+            smem_per_kv = (
+                self.BN * self.padded_depth * 1 + self.BN * self.rope_depth * 2
+            )
+            # P reuses the KV rope SMEM region (no separate P allocation).
+            # This is safe because rope is consumed by QK MMA (warp 9)
+            # BEFORE softmax produces P, and KV stage barriers prevent
+            # the Load warp from overwriting until PV MMA (warp 10) finishes.
+            # P (4096 bytes FP8) fits inside rope (8192 bytes BF16).
+            # P_i maps to rope stage i: same stage indexing, same barriers.
+            # Per-token scales: 256 bytes per stage (64 tokens * 1 * 4 bytes).
+            var smem_per_stage_total = (
+                smem_per_kv
+                + self.per_token_scales_per_stage
+                + 6 * Self.mbar_size
+            )
+            var fixed_barrier_reserve = 11 * Self.mbar_size
+            var available = (
+                Self.sm100_smem_carveout - smem_use - fixed_barrier_reserve
+            )
+            var out_bar_count = (self.depth // self.BN) * 2
+            var extra_bar_count = ((self.depth // self.BN) - 1) * 2
+            available -= (out_bar_count + extra_bar_count) * Self.mbar_size
+            self.num_kv_stages = min(
+                Self.MAX_TMEM_S_SLOTS, available // smem_per_stage_total
+            )
+            smem_for_p = 0  # P reuses rope SMEM, no separate allocation
+        elif native_fp8:
             smem_per_kv = self.BN * self.padded_q_depth * kv_type_size
             # Native FP8: P lives in a separate SMEM region (not inside KV
             # stages). Each P stage is BM * BN * kv_type_size bytes.
@@ -398,6 +513,8 @@ struct MLA_SM100_Decode_Config:
             ) // smem_per_kv
         smem_use += smem_for_p
         smem_use += self.num_kv_stages * (smem_per_kv)
+        # Per-token scale SMEM: N stages * 256 bytes each (only for per_token_scale_rope_aware)
+        smem_use += self.num_kv_stages * self.per_token_scales_per_stage
         # We have the following resources that need smem barriers:
 
         # bar_write_prod[depth/BN] → 8  producer pipeline - softmax epilogue
@@ -421,10 +538,10 @@ struct MLA_SM100_Decode_Config:
         # Fixed barrier count depends on the path:
         # BF16: 23 barriers (2-stage KV/S/P pipelines)
         # Old FP8 converter: 27 barriers (23 + 4 for convert pipeline)
-        # Native FP8: 6*N + 11 barriers where N = num_kv_stages
+        # Native FP8 / per_token_scale_rope_aware: 6*N + 11 barriers where N = num_kv_stages
         #   bar_q(1) + kv(2N) + s(2N) + p(2N) + o(4) + c(2) + corr_done(4)
         var fixed_barriers: Int
-        if native_fp8:
+        if per_token_scale_rope_aware or native_fp8:
             fixed_barriers = 6 * self.num_kv_stages + 11
         elif kv_type_size == 1:
             fixed_barriers = (
@@ -441,12 +558,16 @@ struct MLA_SM100_Decode_Config:
         # Old FP8: Q(73728) + KV_stages(2*73728) + max/li(1536) + scale + barriers(27)
         # Native FP8: Q(36864) + KV_stages(N*36864) + P_stages(N*4096) + max/li(1536) + barriers(6N+11)
         #   where N = num_kv_stages (dynamically computed, typically 4)
+        # Per-token-scale: Q(40960) + KV_stages(N*40960) + scales(N*256) + max/li(1536) + barriers(6N+11)
+        #   Q = FP8 content(32768) + BF16 rope(8192), KV = FP8 content(32768) + BF16 rope(8192)
+        #   Per-token scales: N * 256 bytes (64 tokens * 1 scale * 4 bytes float32)
+        #   P reuses KV rope SMEM (P_i maps to rope stage i; 4096B FP8 fits in 8192B BF16 rope)
         # max uses double-buffered SMEM (2x128x4=1024B) to avoid race; li uses 1x128x4=512B
         # Plus num_out_barrier = (depth/BN)*2 output barriers,
         # plus ((depth/BN)-1)*2 additional barriers.
         self.smem_used = smem_use
 
-    fn supported(self) -> Bool:
+    def supported(self) -> Bool:
         return (
             self.q_depth == 576
             and self.BN == 64
@@ -478,9 +599,10 @@ struct OffsetPosition[
     var batch_idx: Int  # Which batch this CTA handles
     var kv_start_row: Int  # Starting KV row for this split
     var num_keys_this_split: Int  # Number of keys this split processes
+    var q_token_idx: Int  # Global Q token index for per-token Q scale lookup
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         k: Self.KVLUTType,
         valid_length: UnsafePointer[
@@ -499,6 +621,7 @@ struct OffsetPosition[
         self.batch_idx = 0
         self.kv_start_row = 0
         self.num_keys_this_split = 0
+        self.q_token_idx = 0
 
         # Decode block_idx.z into split_idx and batch_idx
         # Grid layout: block_z = batch_size * num_partitions
@@ -516,6 +639,10 @@ struct OffsetPosition[
             var start_of_seq = Int(valid_length[self.batch_idx])
             var end_of_seq = Int(valid_length[self.batch_idx + 1])
             self.seq_len = end_of_seq - start_of_seq
+
+            # Global Q token index for per-token scale lookup.
+            # In ragged mode, Q tokens are packed: token = start_of_seq + seq_idx
+            self.q_token_idx = start_of_seq + Int(block_idx.y)
 
             # Q row offset: no split dimension
             # Q shape: (total_tokens * num_heads, depth)
@@ -546,6 +673,10 @@ struct OffsetPosition[
         # This is when the sequence length is Fixed
         else:
             self.seq_len = max_seq_len
+
+            # Global Q token index for per-token scale lookup.
+            # In fixed mode: token = batch_idx * seq_len + seq_idx
+            self.q_token_idx = self.batch_idx * self.seq_len + Int(block_idx.y)
 
             # Q row offset: (batch * seq_len * num_heads, depth)
             # Row = batch_idx * (seq_len * num_heads) + seq_idx * num_heads + head_block * BM
@@ -601,12 +732,12 @@ struct OffsetPosition[
             self.num_keys_this_split = self.num_keys
 
     @always_inline
-    fn cache_len(self) -> Int:
+    def cache_len(self) -> Int:
         # num_keys is total keys, seq_len is chunk length
         return max(self.num_keys - self.seq_len, 0)
 
     @always_inline
-    fn start_pos(self, cache_start_pos: UInt32) -> UInt32:
+    def start_pos(self, cache_start_pos: UInt32) -> UInt32:
         # start_pos is the base absolute Q index for this chunk (plus any external base)
         return UInt32(self.cache_len()) + cache_start_pos
 
@@ -642,7 +773,7 @@ struct KVLoad2CvtProducer[dtype: DType, config: MLA_SM100_Decode_Config](
     var smem_upper_fp8: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pipe: Self.KVPipeType,
         smem_upper_fp8: SharedMemPointer[Scalar[Self.dtype]],
@@ -652,11 +783,11 @@ struct KVLoad2CvtProducer[dtype: DType, config: MLA_SM100_Decode_Config](
         self.pipe.state._phase = 1
 
     @always_inline
-    fn init(self):
+    def init(self):
         self.pipe.init()
 
     @always_inline
-    fn stage_base_ptr[
+    def stage_base_ptr[
         *, qk_stage: Int = 0
     ](self) -> SharedMemPointer[Scalar[Self.dtype]]:
         var stage_idx: UInt32 = self.pipe.state.index()
@@ -665,15 +796,15 @@ struct KVLoad2CvtProducer[dtype: DType, config: MLA_SM100_Decode_Config](
         )
 
     @always_inline
-    fn producer_mbar[*, qk_stage: Int = 0](self) -> MBarType:
+    def producer_mbar[*, qk_stage: Int = 0](self) -> MBarType:
         return self.pipe.producer_mbar[qk_stage]()
 
     @always_inline("nodebug")
-    fn acquire[*, qk_stage: Int = 0](self):
+    def acquire[*, qk_stage: Int = 0](self):
         self.pipe.producer_acquire[qk_stage]()
 
     @always_inline("nodebug")
-    fn commit_step(mut self):
+    def commit_step(mut self):
         self.pipe.state.step()
 
 
@@ -704,7 +835,7 @@ struct KVLoad2CvtConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
     var smem_upper_fp8: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pipe: Self.PipeT,
         smem_upper_fp8: SharedMemPointer[Scalar[Self.dtype]],
@@ -713,16 +844,16 @@ struct KVLoad2CvtConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
         self.smem_upper_fp8 = smem_upper_fp8
 
     @always_inline
-    fn stage_base_ptr(self) -> SharedMemPointer[Scalar[Self.dtype]]:
+    def stage_base_ptr(self) -> SharedMemPointer[Scalar[Self.dtype]]:
         var idx: UInt32 = self.pipe.state.index()
         return self.smem_upper_fp8 + idx * UInt32(Self.fp8_stage_stride_elems)
 
     @always_inline("nodebug")
-    fn wait(self):
+    def wait(self):
         self.pipe.consumer_wait[0]()
 
     @always_inline("nodebug")
-    fn release_all(mut self):
+    def release_all(mut self):
         _ = self.pipe.consumer_mbar[0]()[].arrive()
         self.pipe.state.step()
 
@@ -744,7 +875,7 @@ struct KVCvt2MmaProducer[dtype: DType, config: MLA_SM100_Decode_Config](
     var smem: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self, pipe: Self.PipeT, smem: SharedMemPointer[Scalar[Self.dtype]]
     ):
         self.pipe = pipe
@@ -752,21 +883,21 @@ struct KVCvt2MmaProducer[dtype: DType, config: MLA_SM100_Decode_Config](
         self.pipe.state._phase = 1
 
     @always_inline("nodebug")
-    fn acquire(self):
+    def acquire(self):
         # waits until MMA (2 consumers) released this stage
         self.pipe.producer_acquire[0]()
 
     @always_inline
-    fn stage_index(self) -> UInt32:
+    def stage_index(self) -> UInt32:
         return self.pipe.state.index()
 
     @always_inline
-    fn stage_base_ptr(self) -> SharedMemPointer[Scalar[Self.dtype]]:
+    def stage_base_ptr(self) -> SharedMemPointer[Scalar[Self.dtype]]:
         var idx = self.pipe.state.index()
         return self.smem + idx * UInt32(Self.kv_stage_elems)
 
     @always_inline("nodebug")
-    fn commit_all(mut self):
+    def commit_all(mut self):
         # 128 threads arrive on producer mbar
         _ = self.pipe.producer_mbar[0]()[].arrive()
         self.pipe.state.step()
@@ -787,7 +918,7 @@ struct KVCvt2MmaConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
     var smem: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pipe: Self.KVPipeType,
         smem: SharedMemPointer[Scalar[Self.dtype]],
@@ -796,7 +927,7 @@ struct KVCvt2MmaConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
         self.smem = smem
 
     @always_inline
-    fn stage_base_ptr[
+    def stage_base_ptr[
         *, qk_stage: Int = 0
     ](self) -> SharedMemPointer[Scalar[Self.dtype]]:
         var stage_idx: UInt32 = self.pipe.state.index()
@@ -804,16 +935,16 @@ struct KVCvt2MmaConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
         return self.smem + stage_offset
 
     @always_inline
-    fn stage_index[*, qk_stage: Int = 0](self) -> UInt32:
+    def stage_index[*, qk_stage: Int = 0](self) -> UInt32:
         return self.pipe.state.index()
 
     @always_inline("nodebug")
-    fn wait[*, qk_stage: Int = 0](self):
+    def wait[*, qk_stage: Int = 0](self):
         # Wait on producer mbar for (current index, current phase)
         self.pipe.consumer_wait[qk_stage]()
 
     @always_inline("nodebug")
-    fn release[*, qk_stage: Int = 0](mut self, e: Int32):
+    def release[*, qk_stage: Int = 0](mut self, e: Int32):
         # Signal "stage consumed" to the producer via consumer mbar
         self.pipe.consumer_release[qk_stage](e)
 
@@ -823,10 +954,14 @@ struct KVCvt2MmaConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
 # ------------------------------------------------------------------------------
 
 
-struct DecodeKVProducer[dtype: DType, config: MLA_SM100_Decode_Config](
-    TrivialRegisterPassable
-):
-    comptime KVPipeType = KVPipelineGeneric[Self.config.num_kv_stages, 1, 1, 2]
+struct DecodeKVProducer[
+    dtype: DType,
+    config: MLA_SM100_Decode_Config,
+    num_producer: Int = 1,
+](TrivialRegisterPassable):
+    comptime KVPipeType = KVPipelineGeneric[
+        Self.config.num_kv_stages, 1, Self.num_producer, 2
+    ]
 
     # One KV "stage" = whole 64 x 576 logical K tile (loaded as 9 x 64x64)
     comptime kv_stage_elems = Self.config.BN * Self.config.q_depth
@@ -836,7 +971,7 @@ struct DecodeKVProducer[dtype: DType, config: MLA_SM100_Decode_Config](
     var smem: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pipe: Self.KVPipeType,
         smem: SharedMemPointer[Scalar[Self.dtype]],
@@ -848,11 +983,11 @@ struct DecodeKVProducer[dtype: DType, config: MLA_SM100_Decode_Config](
         self.pipe.state._phase = 1
 
     @always_inline
-    fn init(self):
+    def init(self):
         self.pipe.init()
 
     @always_inline
-    fn stage_base_ptr[
+    def stage_base_ptr[
         *, qk_stage: Int = 0
     ](self) -> SharedMemPointer[Scalar[Self.dtype]]:
         var stage_idx: UInt32 = self.pipe.state.index()
@@ -860,20 +995,20 @@ struct DecodeKVProducer[dtype: DType, config: MLA_SM100_Decode_Config](
         return self.smem + stage_offset
 
     @always_inline
-    fn stage_index[*, qk_stage: Int = 0](self) -> UInt32:
+    def stage_index[*, qk_stage: Int = 0](self) -> UInt32:
         return self.pipe.state.index()
 
     @always_inline
-    fn producer_mbar[*, qk_stage: Int = 0](self) -> MBarType:
+    def producer_mbar[*, qk_stage: Int = 0](self) -> MBarType:
         return self.pipe.producer_mbar[qk_stage]()
 
     @always_inline("nodebug")
-    fn acquire[*, qk_stage: Int = 0](self):
+    def acquire[*, qk_stage: Int = 0](self):
         # Block until consumer has released this stage
         self.pipe.producer_acquire[qk_stage]()
 
     @always_inline("nodebug")
-    fn commit_step(mut self):
+    def commit_step(mut self):
         # After we have launched TMA copies for this stage
         # we advance producer's logical stage index.
         self.pipe.state.step()
@@ -882,17 +1017,21 @@ struct DecodeKVProducer[dtype: DType, config: MLA_SM100_Decode_Config](
 # ------------------------------------------------------------------------------
 # MLA decoding ConsumerKVPipeline
 # ------------------------------------------------------------------------------
-struct DecodeKVConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
-    TrivialRegisterPassable
-):
-    comptime KVPipeType = KVPipelineGeneric[Self.config.num_kv_stages, 1, 1, 2]
+struct DecodeKVConsumer[
+    dtype: DType,
+    config: MLA_SM100_Decode_Config,
+    num_producer: Int = 1,
+](TrivialRegisterPassable):
+    comptime KVPipeType = KVPipelineGeneric[
+        Self.config.num_kv_stages, 1, Self.num_producer, 2
+    ]
     comptime kv_stage_elems = Self.config.BN * Self.config.q_depth
 
     var pipe: Self.KVPipeType
     var smem: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pipe: Self.KVPipeType,
         smem: SharedMemPointer[Scalar[Self.dtype]],
@@ -903,7 +1042,7 @@ struct DecodeKVConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
         self.smem = smem
 
     @always_inline
-    fn stage_base_ptr[
+    def stage_base_ptr[
         *, qk_stage: Int = 0
     ](self) -> SharedMemPointer[Scalar[Self.dtype]]:
         var stage_idx: UInt32 = self.pipe.state.index()
@@ -911,16 +1050,16 @@ struct DecodeKVConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
         return self.smem + stage_offset
 
     @always_inline
-    fn stage_index[*, qk_stage: Int = 0](self) -> UInt32:
+    def stage_index[*, qk_stage: Int = 0](self) -> UInt32:
         return self.pipe.state.index()
 
     @always_inline("nodebug")
-    fn wait[*, qk_stage: Int = 0](self):
+    def wait[*, qk_stage: Int = 0](self):
         # Wait on producer mbar for (current index, current phase)
         self.pipe.consumer_wait[qk_stage]()
 
     @always_inline("nodebug")
-    fn release[*, qk_stage: Int = 0](mut self, e: Int32):
+    def release[*, qk_stage: Int = 0](mut self, e: Int32):
         # Signal "stage consumed" to the producer via consumer mbar
         self.pipe.consumer_release[qk_stage](e)
 
@@ -952,12 +1091,12 @@ struct KVPipelineGeneric[
     var state: PipelineState[Self.num_kv_stages]
 
     @always_inline
-    fn __init__(out self, mbar: MBarType):
+    def __init__(out self, mbar: MBarType):
         self.mbar = mbar
         self.state = {}
 
     @always_inline
-    fn init(self):
+    def init(self):
         # Consumer & Producer mbars: arrived by 1 thread performing TMA/mma
         comptime for i in range(Self.num_stages):
             self.mbar[i].init(Int32(Self.num_producer))
@@ -966,32 +1105,32 @@ struct KVPipelineGeneric[
             self.mbar[i].init(Int32(Self.num_consumer))
 
     @always_inline
-    fn producer_mbar[qk_stage: Int](self) -> MBarType:
+    def producer_mbar[qk_stage: Int](self) -> MBarType:
         var idx: UInt32 = self.state.index()
         return self.mbar + UInt32(Self.num_qk_stages) * idx + qk_stage
 
     @always_inline
-    fn consumer_mbar[qk_stage: Int](self, idx: UInt32) -> MBarType:
+    def consumer_mbar[qk_stage: Int](self, idx: UInt32) -> MBarType:
         comptime const_offset = qk_stage + Self.num_stages
         return self.mbar + UInt32(Self.num_qk_stages) * idx + const_offset
 
     @always_inline
-    fn consumer_mbar[qk_stage: Int](self) -> MBarType:
+    def consumer_mbar[qk_stage: Int](self) -> MBarType:
         return self.consumer_mbar[qk_stage](self.state.index())
 
     @always_inline("nodebug")
-    fn producer_acquire[qk_stage: Int = Self.num_qk_stages - 1](self):
+    def producer_acquire[qk_stage: Int = Self.num_qk_stages - 1](self):
         """
         Returns the dynamic pipe idx.
         """
         self.consumer_mbar[qk_stage]()[].wait(self.state.phase())
 
     @always_inline("nodebug")
-    fn consumer_wait[qk_stage: Int = Self.num_qk_stages - 1](self):
+    def consumer_wait[qk_stage: Int = Self.num_qk_stages - 1](self):
         self.producer_mbar[qk_stage]()[].wait(self.state.phase())
 
     @always_inline("nodebug")
-    fn consumer_release[
+    def consumer_release[
         qk_stage: Int = Self.num_qk_stages - 1
     ](mut self, e: Int32):
         elect_mma_arrive(self.consumer_mbar[qk_stage](), e)
@@ -1001,7 +1140,7 @@ struct KVPipelineGeneric[
 
     @staticmethod
     @always_inline
-    fn num_mbars() -> UInt32:
+    def num_mbars() -> UInt32:
         return UInt32(2 * Self.num_qk_stages * Self.num_kv_stages)
 
 
@@ -1016,11 +1155,11 @@ struct DecodeSM100MiscMBars[
     # Generic barrier pair (producer + consumer) with num_stages slots.
 
     @always_inline
-    fn __init__(out self, mbar_base: MBarType):
+    def __init__(out self, mbar_base: MBarType):
         self.mbar_base = mbar_base
 
     @always_inline
-    fn init(self):
+    def init(self):
         # Layout: [prod[0..num_stages-1], cons[0..num_stages-1]]
         var s_pipe = MBarPipeline[Self.num_stages](self.mbar_base)
         # e.g. for S: 1 producer thread (elect in MMA warpgroup), 128 consumer threads (softmax warpgroup)
@@ -1031,15 +1170,15 @@ struct DecodeSM100MiscMBars[
         ]()
 
     @always_inline
-    fn producer(self) -> ProducerPipeline[Self.num_stages]:
+    def producer(self) -> ProducerPipeline[Self.num_stages]:
         return {self.mbar_base, self.mbar_base + Self.num_stages}
 
     @always_inline
-    fn consumer(self) -> ConsumerPipeline[Self.num_stages]:
+    def consumer(self) -> ConsumerPipeline[Self.num_stages]:
         return {self.mbar_base, self.mbar_base + Self.num_stages}
 
     @always_inline
-    fn end(self) -> MBarType:
+    def end(self) -> MBarType:
         # We consumed 2 * s_num_stages mbars: prod[2] + cons[2]
         return self.mbar_base + 2 * Self.num_stages
 
@@ -1053,21 +1192,21 @@ struct DecodeSProducer(TrivialRegisterPassable):
     var pipe: ProducerPipeline[Self.SNumStages]
 
     @always_inline
-    fn __init__(out self, pipe: ProducerPipeline[Self.SNumStages]):
+    def __init__(out self, pipe: ProducerPipeline[Self.SNumStages]):
         # Copy initialized pipeline (state: index=0, phase=1)
         self.pipe = pipe
 
     @always_inline
-    fn acquire(self):
+    def acquire(self):
         # Wait for softmax to mark this S slot "free"
         self.pipe.acquire()
 
     @always_inline
-    fn slot_index(self) -> UInt32:
+    def slot_index(self) -> UInt32:
         return self.pipe.state.index()
 
     @always_inline
-    fn commit_mma(mut self, elect: Int32):
+    def commit_mma(mut self, elect: Int32):
         # Signal "S slot is filled" to softmax
         self.pipe.commit_mma(elect)
         # Advance producer's stage/phase bookkeeping
@@ -1080,17 +1219,17 @@ struct DecodeSConsumer(TrivialRegisterPassable):
     var pipe: ConsumerPipeline[Self.SNumStages]
 
     @always_inline
-    fn __init__(out self, pipe: ConsumerPipeline[Self.SNumStages]):
+    def __init__(out self, pipe: ConsumerPipeline[Self.SNumStages]):
         self.pipe = pipe
 
     @always_inline
-    fn wait(self) -> UInt32:
+    def wait(self) -> UInt32:
         # Block until MMA has filled the current S slot
         self.pipe.wait()
         return self.pipe.state.index()
 
     @always_inline
-    fn release(mut self):
+    def release(mut self):
         # Mark this S slot as "consumed" so MMA can reuse it
         self.pipe.release()
 
@@ -1100,19 +1239,19 @@ struct DecodeSProducerN[num_stages: Int](TrivialRegisterPassable):
     var pipe: ProducerPipeline[Self.num_stages]
 
     @always_inline
-    fn __init__(out self, pipe: ProducerPipeline[Self.num_stages]):
+    def __init__(out self, pipe: ProducerPipeline[Self.num_stages]):
         self.pipe = pipe
 
     @always_inline
-    fn acquire(self):
+    def acquire(self):
         self.pipe.acquire()
 
     @always_inline
-    fn slot_index(self) -> UInt32:
+    def slot_index(self) -> UInt32:
         return self.pipe.state.index()
 
     @always_inline
-    fn commit_mma(mut self, elect: Int32):
+    def commit_mma(mut self, elect: Int32):
         self.pipe.commit_mma(elect)
         self.pipe.step()
 
@@ -1121,16 +1260,16 @@ struct DecodeSConsumerN[num_stages: Int](TrivialRegisterPassable):
     var pipe: ConsumerPipeline[Self.num_stages]
 
     @always_inline
-    fn __init__(out self, pipe: ConsumerPipeline[Self.num_stages]):
+    def __init__(out self, pipe: ConsumerPipeline[Self.num_stages]):
         self.pipe = pipe
 
     @always_inline
-    fn wait(self) -> UInt32:
+    def wait(self) -> UInt32:
         self.pipe.wait()
         return self.pipe.state.index()
 
     @always_inline
-    fn release(mut self):
+    def release(mut self):
         self.pipe.release()
 
 
@@ -1143,25 +1282,25 @@ struct DecodePProducer(TrivialRegisterPassable):
     var pipe: ProducerPipeline[Self.PNumStages]
 
     @always_inline
-    fn __init__(out self, pipe: ProducerPipeline[Self.PNumStages]):
+    def __init__(out self, pipe: ProducerPipeline[Self.PNumStages]):
         self.pipe = pipe
 
     # Softmax threads collectively wait until MMA has released P
     @always_inline
-    fn acquire(self):
+    def acquire(self):
         self.pipe.acquire()
         # -> consumer_mbar.wait(phase), all 128 threads see the same phase
 
     # After writing P, all 128 threads call commit()
     @always_inline("nodebug")
-    fn commit(mut self):
+    def commit(mut self):
         self.pipe.commit()
         # -> producer_mbar.arrive() (128 arrivals total)
         # -> state.step() (phase toggles for next iteration)
 
     # optional helper
     @always_inline
-    fn stage_index(self) -> UInt32:
+    def stage_index(self) -> UInt32:
         return self.pipe.state.index()
 
 
@@ -1171,12 +1310,12 @@ struct DecodePConsumer(TrivialRegisterPassable):
     var pipe: ConsumerPipeline[Self.PNumStages]
 
     @always_inline
-    fn __init__(out self, pipe: ConsumerPipeline[Self.PNumStages]):
+    def __init__(out self, pipe: ConsumerPipeline[Self.PNumStages]):
         self.pipe = pipe
 
     # Should be called by MMA elect thread only
     @always_inline("nodebug")
-    fn wait(self) -> UInt32:
+    def wait(self) -> UInt32:
         self.pipe.wait()
         return self.pipe.state.index()
         # -> producer_mbar.wait(phase)
@@ -1185,7 +1324,7 @@ struct DecodePConsumer(TrivialRegisterPassable):
     # Also called by MMA elect thread only
 
     @always_inline("nodebug")
-    fn release_mma(mut self, elect: Int32):
+    def release_mma(mut self, elect: Int32):
         # Like KVPipeline.consumer_release but for generic pipeline
         var mbar = self.pipe.consumer_mbar()
         elect_mma_arrive(mbar, elect)
@@ -1197,19 +1336,19 @@ struct DecodePProducerN[num_stages: Int](TrivialRegisterPassable):
     var pipe: ProducerPipeline[Self.num_stages]
 
     @always_inline
-    fn __init__(out self, pipe: ProducerPipeline[Self.num_stages]):
+    def __init__(out self, pipe: ProducerPipeline[Self.num_stages]):
         self.pipe = pipe
 
     @always_inline
-    fn acquire(self):
+    def acquire(self):
         self.pipe.acquire()
 
     @always_inline("nodebug")
-    fn commit(mut self):
+    def commit(mut self):
         self.pipe.commit()
 
     @always_inline
-    fn stage_index(self) -> UInt32:
+    def stage_index(self) -> UInt32:
         return self.pipe.state.index()
 
 
@@ -1217,16 +1356,16 @@ struct DecodePConsumerN[num_stages: Int](TrivialRegisterPassable):
     var pipe: ConsumerPipeline[Self.num_stages]
 
     @always_inline
-    fn __init__(out self, pipe: ConsumerPipeline[Self.num_stages]):
+    def __init__(out self, pipe: ConsumerPipeline[Self.num_stages]):
         self.pipe = pipe
 
     @always_inline("nodebug")
-    fn wait(self) -> UInt32:
+    def wait(self) -> UInt32:
         self.pipe.wait()
         return self.pipe.state.index()
 
     @always_inline("nodebug")
-    fn release_mma(mut self, elect: Int32):
+    def release_mma(mut self, elect: Int32):
         var mbar = self.pipe.consumer_mbar()
         elect_mma_arrive(mbar, elect)
         self.pipe.step()
@@ -1241,21 +1380,21 @@ struct DecodeOProducer(TrivialRegisterPassable):
     var pipe: ProducerPipeline[Self.ONumStages]
 
     @always_inline
-    fn __init__(out self, pipe: ProducerPipeline[Self.ONumStages]):
+    def __init__(out self, pipe: ProducerPipeline[Self.ONumStages]):
         # Copy initialized pipeline (state: index=0, phase=1)
         self.pipe = pipe
 
     @always_inline
-    fn acquire(self):
+    def acquire(self):
         # Wait for correction to mark this O slot "free"
         self.pipe.acquire()
 
     @always_inline
-    fn slot_index(self) -> UInt32:
+    def slot_index(self) -> UInt32:
         return self.pipe.state.index()
 
     @always_inline
-    fn commit_mma(mut self, elect: Int32):
+    def commit_mma(mut self, elect: Int32):
         # Signal "O slot is filled" to correction
         self.pipe.commit_mma(elect)
         # Advance producer's stage/phase bookkeeping
@@ -1268,17 +1407,17 @@ struct DecodeOConsumer(TrivialRegisterPassable):
     var pipe: ConsumerPipeline[Self.ONumStages]
 
     @always_inline
-    fn __init__(out self, pipe: ConsumerPipeline[Self.ONumStages]):
+    def __init__(out self, pipe: ConsumerPipeline[Self.ONumStages]):
         self.pipe = pipe
 
     @always_inline
-    fn wait(self):
+    def wait(self):
         # Block until MMA has filled the current O slot
         self.pipe.wait()
         _ = self.pipe.state.index()
 
     @always_inline
-    fn release(mut self):
+    def release(mut self):
         # Mark this O slot as "consumed" so MMA can reuse it
         self.pipe.release()
 
@@ -1291,18 +1430,18 @@ struct DecodeCProducer(TrivialRegisterPassable):
     var pipe: ProducerPipeline[Self.CNumStages]
 
     @always_inline
-    fn __init__(out self, pipe: ProducerPipeline[Self.CNumStages]):
+    def __init__(out self, pipe: ProducerPipeline[Self.CNumStages]):
         self.pipe = pipe
 
     # Softmax warpgroup: all 128 threads call acquire() before writing corr scalars
     @always_inline("nodebug")
-    fn acquire(self):
+    def acquire(self):
         self.pipe.acquire()
         # -> consumer_mbar.wait(phase) on correction side (prev iteration)
 
     # After writing correction scalars for this O:
     @always_inline("nodebug")
-    fn commit(mut self):
+    def commit(mut self):
         self.pipe.commit()
         # producer_mbar.arrive() from 128 threads + state.step()
 
@@ -1313,16 +1452,16 @@ struct DecodeCConsumer(TrivialRegisterPassable):
 
     # Correction warpgroup: all 128 threads wait until correction scalars are ready
     @always_inline
-    fn __init__(out self, pipe: ConsumerPipeline[Self.CNumStages]):
+    def __init__(out self, pipe: ConsumerPipeline[Self.CNumStages]):
         self.pipe = pipe
 
     @always_inline("nodebug")
-    fn wait(self):
+    def wait(self):
         # perform producer_mbar.wait(phase)
         self.pipe.wait()
 
     @always_inline("nodebug")
-    fn release(mut self):
+    def release(mut self):
         # perform consumer_mbar.arrive() from 128 threads + state.step()
         self.pipe.release()
 
@@ -1348,12 +1487,12 @@ struct OutPipeline[num_out_stages: Int, num_producer: Int, num_consumer: Int](
     var state: PipelineState[Self.num_stages]
 
     @always_inline
-    fn __init__(out self, mbar: MBarType):
+    def __init__(out self, mbar: MBarType):
         self.mbar = mbar
         self.state = {}
 
     @always_inline
-    fn init(self):
+    def init(self):
         # Consumer & Producer mbars: arrived by num_producer and num_consumer threads
         comptime for i in range(Self.num_stages):
             self.mbar[i].init(Int32(Self.num_producer))
@@ -1362,15 +1501,15 @@ struct OutPipeline[num_out_stages: Int, num_producer: Int, num_consumer: Int](
             (self.mbar + Self.num_stages)[i].init(Int32(Self.num_consumer))
 
     @always_inline
-    fn producer_mbar(self) -> MBarType:
+    def producer_mbar(self) -> MBarType:
         return self.mbar
 
     @always_inline
-    fn consumer_mbar(self) -> MBarType:
+    def consumer_mbar(self) -> MBarType:
         return self.mbar + Self.num_stages
 
     @always_inline("nodebug")
-    fn producer_acquire(self):
+    def producer_acquire(self):
         """
         Returns the dynamic pipe idx.
         """
@@ -1378,18 +1517,18 @@ struct OutPipeline[num_out_stages: Int, num_producer: Int, num_consumer: Int](
         self.consumer_mbar()[idx].wait(self.state.phase())
 
     @always_inline("nodebug")
-    fn consumer_wait(self):
+    def consumer_wait(self):
         var idx = self.state.index()
         self.producer_mbar()[idx].wait(self.state.phase())
 
     @always_inline("nodebug")
-    fn consumer_release[](mut self, e: Int32):
+    def consumer_release[](mut self, e: Int32):
         var idx = self.state.index()
         elect_mma_arrive(self.consumer_mbar() + idx, e)
         self.state.step()
 
     @always_inline("nodebug")
-    fn producer_commit(mut self):
+    def producer_commit(mut self):
         # All 128 producer threads should call this.
         # mbar was initialized with num_producer = WARPGROUP_SIZE,
         # so producer_mbar()[].arrive() must be called by each producer thread.
@@ -1399,7 +1538,7 @@ struct OutPipeline[num_out_stages: Int, num_producer: Int, num_consumer: Int](
 
     @staticmethod
     @always_inline
-    fn num_mbars() -> UInt32:
+    def num_mbars() -> UInt32:
         return UInt32(2 * Self.num_stages)
 
 
@@ -1422,7 +1561,7 @@ struct DecodeOutProducer[dtype: DType, config: MLA_SM100_Decode_Config](
     var smem: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pipe: Self.OutPipeType,
         smem: SharedMemPointer[Scalar[Self.dtype]],
@@ -1434,12 +1573,12 @@ struct DecodeOutProducer[dtype: DType, config: MLA_SM100_Decode_Config](
         self.pipe.state._phase = 1
 
     @always_inline
-    fn init(self):
+    def init(self):
         # Only producer OR consumer should call init(), not both.
         self.pipe.init()
 
     @always_inline
-    fn stage_base_ptr(
+    def stage_base_ptr(
         self, half_idx: Int
     ) -> SharedMemPointer[Scalar[Self.dtype]]:
         var stage_idx: UInt32 = self.pipe.state.index()
@@ -1451,16 +1590,16 @@ struct DecodeOutProducer[dtype: DType, config: MLA_SM100_Decode_Config](
         return self.smem + stage_offset
 
     @always_inline
-    fn producer_mbar(self) -> MBarType:
+    def producer_mbar(self) -> MBarType:
         return self.pipe.producer_mbar()
 
     @always_inline("nodebug")
-    fn acquire(self):
+    def acquire(self):
         # Block until consumer has released this stage
         self.pipe.producer_acquire()
 
     @always_inline("nodebug")
-    fn commit_step(mut self):
+    def commit_step(mut self):
         # After we have launched TMA copies for this stage
         # we advance producer's logical stage index.
 
@@ -1483,7 +1622,7 @@ struct DecodeOutConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
     var smem: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pipe: Self.OutPipeType,
         smem: SharedMemPointer[Scalar[Self.dtype]],
@@ -1492,7 +1631,7 @@ struct DecodeOutConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
         self.smem = smem
 
     @always_inline
-    fn stage_base_ptr(
+    def stage_base_ptr(
         self, half_idx: Int
     ) -> SharedMemPointer[Scalar[Self.dtype]]:
         var stage_idx: UInt32 = self.pipe.state.index()
@@ -1504,12 +1643,12 @@ struct DecodeOutConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
         return self.smem + stage_offset
 
     @always_inline("nodebug")
-    fn wait(self):
+    def wait(self):
         # Wait on producer mbar for (current index, current phase)
         self.pipe.consumer_wait()
 
     @always_inline("nodebug")
-    fn release(mut self, e: Int32):
+    def release(mut self, e: Int32):
         # Signal "stage consumed" to the producer via consumer mbar
         self.pipe.consumer_release(e)
 
@@ -1520,7 +1659,7 @@ struct DecodeOutConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
 
 
 @always_inline
-fn build_mma_ss_ws(
+def build_mma_ss_ws(
     kind: String,
     layout_a: Layout,
     layout_b: Layout,
@@ -1581,7 +1720,7 @@ setp.eq.s32 %pj, $6, 0;
 
 
 @always_inline
-fn bulk_mma_ws[
+def bulk_mma_ws[
     kind: UMMAKind,
     //,
     layout_a: Layout,
@@ -1657,7 +1796,7 @@ struct DecodeSM100QKTSS[
 
     @staticmethod
     @always_inline
-    fn descriptor_q_block(
+    def descriptor_q_block(
         q_smem: SharedMemPointer[Scalar[Self.operand_type]],
     ) -> MMASmemDescriptorPair:
         # Q: 64 x 64, k-major, same swizzle as TMA
@@ -1671,7 +1810,7 @@ struct DecodeSM100QKTSS[
 
     @staticmethod
     @always_inline
-    fn descriptor_k_block(
+    def descriptor_k_block(
         kv_smem: SharedMemPointer[Scalar[Self.operand_type]],
     ) -> MMASmemDescriptorPair:
         var base = kv_smem
@@ -1685,7 +1824,7 @@ struct DecodeSM100QKTSS[
 
     @staticmethod
     @always_inline
-    fn mma[
+    def mma[
         *, stage_idx: Int = 0
     ](
         a: MMASmemDescriptorPair,
@@ -1750,7 +1889,7 @@ struct DecodeSM100PVSS[
 
     @staticmethod
     @always_inline
-    fn descriptor_v_block(
+    def descriptor_v_block(
         kv_smem: SharedMemPointer[Scalar[Self.operand_type]],
     ) -> MMASmemDescriptorPair:
         var base = kv_smem
@@ -1764,7 +1903,7 @@ struct DecodeSM100PVSS[
 
     @staticmethod
     @always_inline
-    fn descriptor_p_block(
+    def descriptor_p_block(
         p_smem: SharedMemPointer[Scalar[Self.operand_type]],
     ) -> MMASmemDescriptorPair:
         var base = p_smem
@@ -1778,7 +1917,7 @@ struct DecodeSM100PVSS[
 
     @staticmethod
     @always_inline
-    fn mma[
+    def mma[
         *, stage_idx: Int = 0
     ](
         a: MMASmemDescriptorPair,
@@ -1843,7 +1982,7 @@ struct DecodeSM100QKTSS_FP8[
 
     @staticmethod
     @always_inline
-    fn descriptor_q_block(
+    def descriptor_q_block(
         q_smem: SharedMemPointer[Scalar[Self.operand_type]],
     ) -> MMASmemDescriptorPair:
         var base = q_smem
@@ -1856,7 +1995,7 @@ struct DecodeSM100QKTSS_FP8[
 
     @staticmethod
     @always_inline
-    fn descriptor_k_block(
+    def descriptor_k_block(
         kv_smem: SharedMemPointer[Scalar[Self.operand_type]],
     ) -> MMASmemDescriptorPair:
         var base = kv_smem
@@ -1869,7 +2008,7 @@ struct DecodeSM100QKTSS_FP8[
 
     @staticmethod
     @always_inline
-    fn mma[
+    def mma[
         *, stage_idx: Int = 0
     ](
         a: MMASmemDescriptorPair,
@@ -1888,6 +2027,193 @@ struct DecodeSM100QKTSS_FP8[
             operand_size=Self.operand_size,
             tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
             mma_k=Self.MMA_K,
+        ](Self.UMMAInstDesc, a, b, c, c_scale, elect)
+
+
+# ------------------------------------------------------------------------------
+# MLA decoding Tensor AccumulatorSS for QKT — split content FP8 (KIND_F8F6F4)
+# Content-only: Q_nope and K_nope are FP8 e4m3 in SMEM.
+# BK = padded_depth (512), MMA_K=32, SWIZZLE_64B.
+# Used by the per-token-scale rope-aware split content/rope kernel.
+# ------------------------------------------------------------------------------
+struct DecodeSM100QKTSS_Content_FP8[
+    operand_type: DType,
+    accum_type: DType,
+    *,
+    config: MLA_SM100_Decode_Config,
+](TrivialRegisterPassable):
+    comptime MMA_M = Self.config.MMA_M  # 64 rows
+    comptime MMA_N = Self.config.MMA_QK_N  # 64 cols
+    comptime MMA_K = 32  # FP8 MMA_K
+    comptime BK = Self.config.padded_depth  # 512 (content only)
+    comptime num_k_mmas = Self.BK // Self.MMA_K  # 16
+    comptime operand_size = size_of[Self.operand_type]()
+
+    # ----- A (Q_nope) tile layout: FP8, SWIZZLE_64B -----
+    comptime ALayout = tile_layout_k_major[
+        Self.operand_type,
+        Self.config.BM,  # 64 rows
+        Self.BK,  # 512 cols
+        TensorMapSwizzle.SWIZZLE_64B,
+    ]()
+
+    # ----- B (K_nope) tile layout: FP8, SWIZZLE_64B -----
+    comptime BLayout = tile_layout_k_major[
+        Self.operand_type,
+        Self.config.BN,  # 64 rows
+        Self.BK,  # 512 cols
+        TensorMapSwizzle.SWIZZLE_64B,
+    ]()
+
+    # ----- Instruction descriptor for FP8 -----
+    comptime UMMAInstDesc = UMMAInsDescriptor[UMMAKind.KIND_F8F6F4].create[
+        Self.accum_type,
+        Self.operand_type,
+        Self.operand_type,
+        Index[dtype=DType.uint32](Self.MMA_M, Self.MMA_N),
+        transpose_b=True,  # QK^T
+    ]()
+
+    @staticmethod
+    @always_inline
+    def descriptor_q_block(
+        q_smem: SharedMemPointer[Scalar[Self.operand_type]],
+    ) -> MMASmemDescriptorPair:
+        var base = q_smem
+        return smem_descriptor[
+            BMN=Self.config.BM,  # 64 rows
+            BK=Self.BK,  # 512 (padded_depth)
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
+            is_k_major=True,
+        ](base)
+
+    @staticmethod
+    @always_inline
+    def descriptor_k_block(
+        kv_smem: SharedMemPointer[Scalar[Self.operand_type]],
+    ) -> MMASmemDescriptorPair:
+        var base = kv_smem
+        return smem_descriptor[
+            BMN=Self.config.BN,  # 64 rows
+            BK=Self.BK,  # 512 columns
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
+            is_k_major=True,
+        ](base)
+
+    @staticmethod
+    @always_inline
+    def mma[
+        *, stage_idx: Int = 0
+    ](
+        a: MMASmemDescriptorPair,
+        b: MMASmemDescriptorPair,
+        c: UInt32,
+        *,
+        c_scale: UInt32,
+        elect: Int32,
+    ):
+        comptime assert stage_idx == 0, "stage_idx should be 0"
+        bulk_mma_ws[
+            kind=UMMAKind.KIND_F8F6F4,
+            layout_a=Self.ALayout,
+            layout_b=Self.BLayout,
+            num_k_mmas=Self.num_k_mmas,
+            operand_size=Self.operand_size,
+            tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
+            mma_k=Self.MMA_K,
+        ](Self.UMMAInstDesc, a, b, c, c_scale, elect)
+
+
+# ------------------------------------------------------------------------------
+# MLA decoding Tensor AccumulatorSS for QKT — split rope BF16 (KIND_F16)
+# Rope-only: Q_rope and K_rope are BF16 in SMEM.
+# BK = rope_depth (64), MMA_K=16, SWIZZLE_128B.
+# Used by the per-token-scale rope-aware split content/rope kernel.
+# ------------------------------------------------------------------------------
+struct DecodeSM100QKTSS_Rope_BF16[
+    operand_type: DType,
+    accum_type: DType,
+    *,
+    config: MLA_SM100_Decode_Config,
+](TrivialRegisterPassable):
+    comptime MMA_M = Self.config.MMA_M  # 64 rows
+    comptime MMA_N = Self.config.MMA_QK_N  # 64 cols
+    comptime MMA_K = 16  # BF16 MMA_K
+    comptime BK = Self.config.rope_depth  # 64 (rope only)
+    comptime num_k_mmas = Self.BK // Self.MMA_K  # 4
+    comptime operand_size = size_of[Self.operand_type]()
+
+    # ----- A (Q_rope) tile layout: BF16, SWIZZLE_128B -----
+    comptime ALayout = tile_layout_k_major[
+        Self.operand_type,
+        Self.config.BM,  # 64 rows
+        Self.BK,  # 64 cols
+        TensorMapSwizzle.SWIZZLE_128B,
+    ]()
+
+    # ----- B (K_rope) tile layout: BF16, SWIZZLE_128B -----
+    comptime BLayout = tile_layout_k_major[
+        Self.operand_type,
+        Self.config.BN,  # 64 rows
+        Self.BK,  # 64 cols
+        TensorMapSwizzle.SWIZZLE_128B,
+    ]()
+
+    # ----- Instruction descriptor for BF16 -----
+    comptime UMMAInstDesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+        Self.accum_type,
+        Self.operand_type,
+        Self.operand_type,
+        Index[dtype=DType.uint32](Self.MMA_M, Self.MMA_N),
+        transpose_b=True,  # QK^T
+    ]()
+
+    @staticmethod
+    @always_inline
+    def descriptor_q_block(
+        q_smem: SharedMemPointer[Scalar[Self.operand_type]],
+    ) -> MMASmemDescriptorPair:
+        var base = q_smem
+        return smem_descriptor[
+            BMN=Self.config.BM,  # 64 rows
+            BK=Self.BK,  # 64 (rope_depth)
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
+            is_k_major=True,
+        ](base)
+
+    @staticmethod
+    @always_inline
+    def descriptor_k_block(
+        kv_smem: SharedMemPointer[Scalar[Self.operand_type]],
+    ) -> MMASmemDescriptorPair:
+        var base = kv_smem
+        return smem_descriptor[
+            BMN=Self.config.BN,  # 64 rows
+            BK=Self.BK,  # 64 columns
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
+            is_k_major=True,
+        ](base)
+
+    @staticmethod
+    @always_inline
+    def mma[
+        *, stage_idx: Int = 0
+    ](
+        a: MMASmemDescriptorPair,
+        b: MMASmemDescriptorPair,
+        c: UInt32,
+        *,
+        c_scale: UInt32,
+        elect: Int32,
+    ):
+        comptime assert stage_idx == 0, "stage_idx should be 0"
+        bulk_mma_ws[
+            kind=UMMAKind.KIND_F16,
+            layout_a=Self.ALayout,
+            layout_b=Self.BLayout,
+            num_k_mmas=Self.num_k_mmas,
+            operand_size=Self.operand_size,
+            tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
         ](Self.UMMAInstDesc, a, b, c, c_scale, elect)
 
 
@@ -1937,7 +2263,7 @@ struct DecodeSM100PVSS_FP8[
 
     @staticmethod
     @always_inline
-    fn descriptor_v_block(
+    def descriptor_v_block(
         kv_smem: SharedMemPointer[Scalar[Self.operand_type]],
     ) -> MMASmemDescriptorPair:
         var base = kv_smem
@@ -1950,7 +2276,7 @@ struct DecodeSM100PVSS_FP8[
 
     @staticmethod
     @always_inline
-    fn descriptor_p_block(
+    def descriptor_p_block(
         p_smem: SharedMemPointer[Scalar[Self.operand_type]],
     ) -> MMASmemDescriptorPair:
         var base = p_smem
@@ -1963,7 +2289,7 @@ struct DecodeSM100PVSS_FP8[
 
     @staticmethod
     @always_inline
-    fn mma[
+    def mma[
         *, stage_idx: Int = 0
     ](
         a: MMASmemDescriptorPair,
@@ -1991,7 +2317,7 @@ struct DecodeSM100PVSS_FP8[
 
 
 @always_inline
-fn write_bf16x2_row_to_smem_chunked[
+def write_bf16x2_row_to_smem_chunked[
     local_tile_size: Int,
     *,
     out_dtype: DType,
@@ -2053,7 +2379,7 @@ fn write_bf16x2_row_to_smem_chunked[
 
 
 @always_inline
-fn write_fp8_row_to_smem_chunked[
+def write_fp8_row_to_smem_chunked[
     local_tile_size: Int,
     *,
     out_dtype: DType,
@@ -2120,7 +2446,7 @@ fn write_fp8_row_to_smem_chunked[
 
 
 @always_inline
-fn st_shared_v4_b32_at_fp8_elem_off[
+def st_shared_v4_b32_at_fp8_elem_off[
     out_dtype: DType
 ](
     dst_fp8: UnsafePointer[
@@ -2139,7 +2465,7 @@ fn st_shared_v4_b32_at_fp8_elem_off[
 
 
 @always_inline
-fn ld_shared_v4_u32(
+def ld_shared_v4_u32(
     src_u8: UnsafePointer[
         Scalar[DType.uint8], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
@@ -2157,7 +2483,7 @@ fn ld_shared_v4_u32(
 
 
 @always_inline
-fn cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
+def cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
     *,
     fp8_dtype: DType,
     out_dtype: DType,
@@ -2169,7 +2495,7 @@ fn cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
 
 
 @always_inline
-fn st_shared_v4_b32_at_bf16_elem_off[
+def st_shared_v4_b32_at_bf16_elem_off[
     out_dtype: DType
 ](
     dst_bf16: UnsafePointer[
@@ -2188,7 +2514,7 @@ fn st_shared_v4_b32_at_bf16_elem_off[
 
 
 @always_inline
-fn e8m0_to_bf16_broadcast(scale_byte: UInt8) -> UInt32:
+def e8m0_to_bf16_broadcast(scale_byte: UInt8) -> UInt32:
     """Convert an e8m0 scale byte to a bf16 value broadcast into both halves of a uint32.
 
     e8m0 format: value = 2^(byte - 127). The bf16 representation is
@@ -2202,7 +2528,7 @@ fn e8m0_to_bf16_broadcast(scale_byte: UInt8) -> UInt32:
 
 
 @always_inline
-fn hmul2_bf16x8_by_scalar[
+def hmul2_bf16x8_by_scalar[
     out_dtype: DType,
 ](packed: SIMD[DType.uint32, 4], scale_bf16: UInt32) -> SIMD[DType.uint32, 4]:
     """Multiply 8 packed bf16 values (in 4 uint32 registers) by a bf16x2 scalar broadcast.
@@ -2223,7 +2549,7 @@ fn hmul2_bf16x8_by_scalar[
 # MLA decoding softmax Pipeline
 # --------------------------------------------------------------------------
 @always_inline
-fn clamped_index_coordinate(
+def clamped_index_coordinate(
     var prompt_idx: UInt32,
     var q_head_idx: UInt32,
     var q_idx_abs: UInt32,
@@ -2301,7 +2627,7 @@ struct MLA_SM100_Decode_Common[
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
-    fn pdl_early_exit(
+    def pdl_early_exit(
         split_idx: Int,
         batch_idx: Int,
         max_seq_len: Int,
@@ -2355,7 +2681,7 @@ struct MLA_SM100_Decode_Common[
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
-    fn load_kv(
+    def load_kv(
         tma: KVTMATile[
             dtype=Self.kv_type,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,
@@ -2383,7 +2709,7 @@ struct MLA_SM100_Decode_Common[
 
     @staticmethod
     @always_inline
-    fn load_q(
+    def load_q(
         tma: QOTMATile[
             dtype=Self.q_type,
             BM=Self.config.BM,  # tile_m =64
@@ -2410,7 +2736,7 @@ struct MLA_SM100_Decode_Common[
 
     @staticmethod
     @always_inline
-    fn apply_mask[
+    def apply_mask[
         half_load: Int, NonCausalMask: Bool, CausalMask: Bool
     ](
         tiles_done: Int,
@@ -2484,8 +2810,11 @@ struct MLA_SM100_Decode_Common[
 
     @staticmethod
     @always_inline
-    fn Softmax[
-        native_fp8: Bool = False, num_sp_stages: Int = 2
+    def Softmax[
+        native_fp8: Bool = False,
+        num_sp_stages: Int = 2,
+        fp8_p_stage_stride: Int = 0,
+        has_per_token_scales: Bool = False,
     ](
         tmem_addr: UInt32,
         s_bars: DecodeSM100MiscMBars[
@@ -2534,6 +2863,12 @@ struct MLA_SM100_Decode_Common[
         prompt_idx: UInt32,  # batch index
         lse_accum_split_ptr: Self.SplitAccumType,
         batch_size: Int,
+        scale_k_smem: SharedMemPointer[
+            Scalar[DType.float32]
+        ] = SharedMemPointer[Scalar[DType.float32]](),
+        q_scale_ptr: UnsafePointer[
+            Scalar[DType.float32], origin=MutAnyOrigin
+        ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
     ):
         comptime MaskName: String = Self.MaskType.name()
         comptime assert Self.AccumType.is_floating_point()
@@ -2592,7 +2927,24 @@ struct MLA_SM100_Decode_Common[
         var li: Scalar[Self.AccumType] = 0.0
         comptime log2e_f32 = Scalar[Self.AccumType](log2e)
         comptime half_load = (Self.config.BN >> 1)
-        var scale_log2e = scale.cast[Self.AccumType]()
+        # ------------------------------------------------------------------
+        # Fold sigma_Q (per-query-token scale) into scale_log2e.
+        #
+        # sigma_Q is per-token (varies by Q sequence position), but all
+        # BM=64 rows in this CTA are different heads of the SAME Q token,
+        # so sigma_Q is constant for the entire CTA.  We fold it into
+        # scale_log2e once (not per-KV-tile) so softmax scaling becomes:
+        #   score * (scale * sigma_Q) * log2e
+        #
+        # The per-KV-token sigma_KV[t] is applied separately per column
+        # (Place 1 for QK dequant, Place 2 for PV pre-fuse) and is
+        # unchanged by this folding.
+        # ------------------------------------------------------------------
+        var effective_scale = scale
+        comptime if has_per_token_scales:
+            var _q_token_idx = offset_position.q_token_idx
+            effective_scale = scale * q_scale_ptr[_q_token_idx]
+        var scale_log2e = effective_scale.cast[Self.AccumType]()
 
         var tiles_done: Int = 0
         # Use num_keys_this_split for loop bounds (each split processes its portion)
@@ -2622,13 +2974,72 @@ struct MLA_SM100_Decode_Common[
 
             s_cons.release()
 
+            # ------------------------------------------------------------------
+            # Per-token KV scale: load into registers ONCE per tile.
+            #
+            # When has_per_token_scales is True, each KV token t has a float32
+            # scale sigma_KV[t] stored in scale SMEM.  We need these scales in
+            # TWO places: (1) QK dequant and (2) PV pre-fuse.  To avoid
+            # reading SMEM twice (2 x 32 x 4 = 256 bytes per place), we cache
+            # all 32 sigma_KV values for this thread's columns into registers
+            # ONCE here, then reuse them in both places.
+            # ------------------------------------------------------------------
+            # Register-cached per-token scales for this tile.
+            # Declared outside the comptime if so it's in scope for Place 2.
+            var _sigma_kv_regs = tt_stack_allocation[
+                dtype=Self.AccumType, address_space=AddressSpace.LOCAL
+            ](row_major[half_load]())
+            comptime if has_per_token_scales:
+                # Compute the scale SMEM pointer for this pipeline stage.
+                # per_token_scales_per_stage bytes = BN * 1 * sizeof(f32) = 256
+                # In float32 elements per stage: BN = 64.
+                comptime _scale_elems_per_stage = Self.config.BN
+                var _scale_stage_ptr = scale_k_smem + slot_idx * UInt32(
+                    _scale_elems_per_stage
+                )
+                # Load all 32 sigma_KV values for this thread's columns into
+                # registers ONCE.  This is the ONLY SMEM read for scales in the
+                # entire tile processing.
+                # The last k-tile TMA may load OOB scale slots that
+                # contain uninitialized NaN.  After softmax, P=0 for those
+                # columns, but 0*NaN=NaN poisons the PV MMA output.  Clamping
+                # via max(sigma, 0) maps NaN→0 per PTX semantics (max(NaN,0)=0)
+                # and is a no-op for valid positive scales.
+                comptime for _j in range(half_load):
+                    _sigma_kv_regs.ptr.store(
+                        _j,
+                        max(
+                            rebind[Scalar[Self.AccumType]](
+                                _scale_stage_ptr[col0 + _j]
+                            ),
+                            Scalar[Self.AccumType](0),
+                        ),
+                    )
+
+                # Place 1: QK dequant — multiply each score column by its
+                # token's sigma_KV[t] BEFORE the scale_log2e multiplication.
+                # Uses register-cached scales (no SMEM read).
+                # Fused with scale_log2e below when per-token scales active.
+
             var s_row_val_vectorized = s_row.vectorize[2]()
             comptime vs_count = (half_load + 2 - 1) // 2
 
-            comptime for _vi in range(vs_count):
-                s_row_val_vectorized[_vi] = (
-                    s_row_val_vectorized[_vi] * scale_log2e
-                )
+            comptime if has_per_token_scales:
+                # Fused Place 1 + scale_log2e: vectorized multiply of
+                # sigma_KV and scale_log2e in a single pass to halve
+                # instruction count vs two separate scalar loops.
+                var _sigma_kv_vec_p1 = _sigma_kv_regs.vectorize[2]()
+                comptime for _vi in range(vs_count):
+                    s_row_val_vectorized[_vi] = (
+                        s_row_val_vectorized[_vi]
+                        * _sigma_kv_vec_p1[_vi]
+                        * scale_log2e
+                    )
+            else:
+                comptime for _vi in range(vs_count):
+                    s_row_val_vectorized[_vi] = (
+                        s_row_val_vectorized[_vi] * scale_log2e
+                    )
 
             comptime if NoMask or CausalMask:
                 current_max = Self.apply_mask[
@@ -2725,12 +3136,38 @@ struct MLA_SM100_Decode_Common[
             p_prod.acquire()
             var p_stage = p_prod.stage_index()
 
+            # ------------------------------------------------------------------
+            # Place 2: Per-token KV scale: pre-fuse sigma_KV[t] into P for
+            # PV dequant.  Uses register-cached scales loaded at the top of
+            # the tile loop (no SMEM read).
+            #
+            # In MLA absorbed mode V derives from the same FP8 latent as K,
+            # so it shares the same per-token scale sigma_KV[t].  The correct
+            # PV output is: O[d] = sum_t P[t] * sigma_KV[t] * V_fp8[t][d].
+            # We fuse sigma_KV[t] into P before it is written to SMEM and
+            # consumed by the PV MMA: P'[t] = P[t] * sigma_KV[t].
+            # ------------------------------------------------------------------
+            comptime if has_per_token_scales:
+                # Reuse register-cached sigma_KV values from Place 1.
+                # Vectorized: use SIMD[Float32, 2] to halve instruction count.
+                var _sigma_kv_vec_p2 = _sigma_kv_regs.vectorize[2]()
+                var _s_row_vec_p2 = s_row.vectorize[2]()
+                comptime _vs_count_p2 = (half_load + 2 - 1) // 2
+                comptime for _vi in range(_vs_count_p2):
+                    _s_row_vec_p2[_vi] = (
+                        _s_row_vec_p2[_vi] * _sigma_kv_vec_p2[_vi]
+                    )
+
             comptime if native_fp8:
-                # FP8 path: P lives in a separate SMEM region
+                # FP8 path: P lives in SMEM (separate region or reusing rope)
                 comptime fp8_p_type = DType.float8_e4m3fn
+                # When fp8_p_stage_stride > 0, P reuses KV rope SMEM:
+                # P_i is at rope_base + i * fp8_p_stage_stride (in FP8 elems).
+                # When 0 (default), P stages are contiguous at BlockElems apart.
+                comptime _p_stride = fp8_p_stage_stride if fp8_p_stage_stride > 0 else Self.BlockElems
                 var p_smem_stage = p_smem_ptr.bitcast[
                     Scalar[fp8_p_type]
-                ]() + p_stage * UInt32(Self.BlockElems)
+                ]() + p_stage * UInt32(_p_stride)
                 write_fp8_row_to_smem_chunked[
                     half_load,
                     out_dtype=fp8_p_type,
@@ -2853,9 +3290,14 @@ struct MLA_SM100_Decode_Common[
             out_pipeline, out_smem
         )
 
-        # Pre-compute scale factor
+        # Pre-compute scale factor.
+        # Guard against NaN in li (possible when all scores in a split are
+        # masked, producing exp2(-inf+inf)=NaN that poisons li).  Using
+        # `li[0] > 0` instead of `li[0] != 0` ensures NaN maps to 0,
+        # zeroing the output for this split — consistent with the LSE path's
+        # max(li, 0) guard and the combine kernel's weighting.
         var o_scale_li: Scalar[Self.AccumType] = (
-            recip(li)[0] if li[0] != 0 else 0
+            recip(li)[0] if li[0] > 0 else 0
         )
 
         var warp_pair = UInt32(warp_idx >> 1)
@@ -2930,7 +3372,7 @@ struct MLA_SM100_Decode_Common[
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
-    fn Correction(
+    def Correction(
         tmem_addr: UInt32,
         o_bars: DecodeSM100MiscMBars[
             num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
@@ -3058,7 +3500,7 @@ struct MLA_SM100_Decode_Common[
     # O_tmem wait and release as it starts one stage before MMA
     @staticmethod
     @always_inline
-    fn store(
+    def store(
         out_pipeline: OutPipeline[
             num_out_stages=DecodeOutProducer[
                 Self.output_type, Self.config

@@ -20,7 +20,7 @@ def main() raises:
 
     # Function applied to the value at each index
     @parameter
-    fn exponent_2(idx: Int):
+    def exponent_2(idx: Int):
         list[idx] = 2.0 ** list[idx]
 
     # Apply the mapped function across the index range

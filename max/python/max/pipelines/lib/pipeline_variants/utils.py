@@ -111,7 +111,7 @@ def update_context_and_prepare_responses(
 
             if overwrite_future:
                 # If generated_length is still 0, then there is no placeholder
-                # future token. This is possible due to chunked prefill.
+                # future token. This is possible due to chunked prefill or preemption.
                 if context.tokens.generated_length:
                     context.realize_future_token(
                         new_token=next_token, log_probabilities=log_probs
@@ -131,6 +131,19 @@ def update_context_and_prepare_responses(
             res[context.request_id] = output
 
     return res
+
+
+def get_rope_theta(config: AutoConfig) -> float:
+    """Gets rope_theta from a HuggingFace config, compatible with transformers v4 and v5.
+
+    Transformers v5 moved rope_theta into config.rope_parameters["rope_theta"].
+    This function checks rope_parameters first, then falls back to config.rope_theta.
+    """
+    rope_params = getattr(config, "rope_parameters", None)
+    if isinstance(rope_params, dict) and "rope_theta" in rope_params:
+        return rope_params["rope_theta"]
+
+    return config.rope_theta
 
 
 def get_eos_tokens(hf_config: AutoConfig, eos_token_id: int) -> set[int]:

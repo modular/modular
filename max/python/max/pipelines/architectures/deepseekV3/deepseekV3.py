@@ -45,10 +45,7 @@ from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.layer import LayerList, Module
-from max.nn.linear import (
-    MLP,
-    ColumnParallelLinear,
-)
+from max.nn.linear import MLP, ColumnParallelLinear
 from max.nn.moe import MoE, MoEQuantized
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import (
@@ -56,8 +53,9 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.transformer import ReturnLogits
 from max.nn.transformer.distributed_transformer import (
+    extract_hs,
     forward_sharded_layers,
 )
 
@@ -142,17 +140,17 @@ class DeepseekV3DecoderLayer(Module):
         )
 
         nvfp4_enabled = (
-            config.float8_config is not None and config.float8_config.is_nvfp4
+            config.quant_config is not None and config.quant_config.is_nvfp4
         )
-        use_fp8_mla = config.float8_config is not None and not nvfp4_enabled
+        use_fp8_mla = config.quant_config is not None and not nvfp4_enabled
 
         if (
-            config.float8_config is not None
+            config.quant_config is not None
             and nvfp4_enabled
             and config.n_routed_experts
             != 384  # nvidia/KimiK2.5-NVFP4 out projections are not quantized
         ):
-            mla_kwargs["o_proj_float8_config"] = config.float8_config
+            mla_kwargs["o_proj_quant_config"] = config.quant_config
             mla_kwargs["o_proj_dtype"] = config.dtype
 
         mla_cls: (
@@ -160,7 +158,7 @@ class DeepseekV3DecoderLayer(Module):
             | type[DataParallelLatentAttentionWithRopeFp8]
         )
         if use_fp8_mla:
-            mla_kwargs["float8_config"] = config.float8_config
+            mla_kwargs["quant_config"] = config.quant_config
             mla_cls = DataParallelLatentAttentionWithRopeFp8
         else:
             mla_kwargs["dtype"] = DType.bfloat16
@@ -247,11 +245,11 @@ class DeepseekV3DecoderLayer(Module):
                 ep_size=ep_size,
                 apply_router_weight_first=False,
                 ep_batch_manager=self.ep_manager,
-                float8_config=config.float8_config,
+                quant_config=config.quant_config,
             )
 
             moe: MoE
-            if config.float8_config is not None:
+            if config.quant_config is not None:
                 moe = MoEQuantized(**moe_kwargs)
             else:
                 moe = MoE(**moe_kwargs)
@@ -269,7 +267,7 @@ class DeepseekV3DecoderLayer(Module):
                 hidden_dim=config.hidden_size,
                 feed_forward_length=config.intermediate_size,
                 devices=config.devices,
-                float8_config=config.float8_config,
+                quant_config=config.quant_config,
             )
             mlp.sharding_strategy = ShardingStrategy.replicate(
                 len(config.devices)
@@ -372,6 +370,8 @@ class DeepseekV3(Module):
     classes from the HuggingFace Transformers implementation.
     """
 
+    subgraph_layer_prefix: str = "layers"
+
     def __init__(self, config: DeepseekV3Config) -> None:
         super().__init__()
         self.config = config
@@ -383,8 +383,8 @@ class DeepseekV3(Module):
         embedding_output_dtype = config.dtype
         if embedding_output_dtype == DType.uint8:
             embedding_output_dtype = DType.bfloat16
-        if config.float8_config and config.float8_config.embedding_output_dtype:
-            embedding_output_dtype = config.float8_config.embedding_output_dtype
+        if config.quant_config and config.quant_config.embedding_output_dtype:
+            embedding_output_dtype = config.quant_config.embedding_output_dtype
         self.embed_tokens = VocabParallelEmbedding(
             config.vocab_size,
             config.hidden_size,
@@ -481,14 +481,38 @@ class DeepseekV3(Module):
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
     ) -> tuple[TensorValue, ...]:
+        h = self.embed_tokens(tokens, signal_buffers)
+
+        return self._process_hidden_states(
+            h,
+            signal_buffers,
+            kv_collections,
+            return_n_logits,
+            input_row_offsets,
+            host_input_row_offsets,
+            data_parallel_splits,
+            batch_context_lengths,
+            ep_inputs,
+        )
+
+    def _process_hidden_states(
+        self,
+        h: list[TensorValue],
+        signal_buffers: list[BufferValue],
+        kv_collections: list[PagedCacheValues],
+        return_n_logits: TensorValue,
+        input_row_offsets: TensorValue,
+        host_input_row_offsets: TensorValue,
+        data_parallel_splits: TensorValue,
+        batch_context_lengths: list[TensorValue],
+        ep_inputs: list[Value[Any]] | None = None,
+    ) -> tuple[TensorValue, ...]:
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("input_row_offsets must be located on CPU")
         if not data_parallel_splits.device == DeviceRef.CPU():
             raise ValueError("data_parallel_splits must be located on CPU")
 
         devices = self.config.devices
-        h = self.embed_tokens(tokens, signal_buffers)
-
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
         # Keep this as explicit per-device `.to()` copies.
         # Broadcasting graph-time constants can hang when chained after
@@ -588,7 +612,7 @@ class DeepseekV3(Module):
                 subgraph_layer.build_subgraph(
                     f"dist_transformer_block_{group_idx}",
                     subgraph_input_types,
-                    f"layers.{layer_group[0]}.",
+                    f"{self.subgraph_layer_prefix}.{layer_group[0]}.",
                 )
             )
 
@@ -620,7 +644,7 @@ class DeepseekV3(Module):
                                 else ()
                             ),
                             *(ep_inputs if ep_inputs is not None else ()),
-                            prefix=f"layers.{idx}.",
+                            prefix=f"{self.subgraph_layer_prefix}.{idx}.",
                         )
                     ]
                     break
@@ -771,18 +795,13 @@ class DeepseekV3(Module):
         if logits is not None and offsets is not None:
             ret_val += (logits, offsets)
 
-        if self.return_hidden_states == ReturnHiddenStates.ALL:
-            ret_val += tuple(h)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST:
-            if self.config.data_parallel_degree > 1:
-                ret_val += tuple(last_token_per_dev)
-            else:
-                ret_val += tuple(last_token_distributed)
-        elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
-            norm_h = forward_sharded_layers(self.norm_shards, h)
-            ret_val += tuple(norm_h)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
-            ret_val += tuple(norm_last_token)
+        ret_val += extract_hs(
+            return_hidden_states=self.return_hidden_states,
+            last_token_hs_distributed=last_token_distributed,
+            all_hs_distributed=h,
+            normalizer=self.norm_shards,
+            signal_buffers=signal_buffers,
+        )
 
         return ret_val
 

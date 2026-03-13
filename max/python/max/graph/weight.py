@@ -53,12 +53,12 @@ def col_sharding_strategy(
     """Shards a weight tensor by column for a given device.
 
     Args:
-        weight: The :obj:`Weight` to shard.
+        weight: The :class:`Weight` to shard.
         i: The index of the current device.
         num_devices: The total number of devices to shard across.
 
     Returns:
-        A :obj:`TensorValue` representing the sharded portion of the weight
+        A :class:`~max.graph.TensorValue` representing the sharded portion of the weight
         for the i-th device.
     """
     start, end = _compute_shard_range(
@@ -74,12 +74,12 @@ def row_sharding_strategy(
     """Shards a weight tensor by row for a given device.
 
     Args:
-        weight: The :obj:`Weight` to shard.
+        weight: The :class:`Weight` to shard.
         i: The index of the current device.
         num_devices: The total number of devices to shard across.
 
     Returns:
-        A :obj:`TensorValue` representing the sharded portion of the weight
+        A :class:`~max.graph.TensorValue` representing the sharded portion of the weight
         for the i-th device.
     """
     start, end = _compute_shard_range(
@@ -95,12 +95,12 @@ def replicate_sharding_strategy(
     """Replicates the entire weight tensor for a given device.
 
     Args:
-        weight: The :obj:`Weight` to replicate.
+        weight: The :class:`Weight` to replicate.
         i: The index of the current device (unused in this strategy).
         num_devices: The total number of devices (unused in this strategy).
 
     Returns:
-        A :obj:`TensorValue` representing the full weight tensor.
+        A :class:`~max.graph.TensorValue` representing the full weight tensor.
     """
     return weight[:]
 
@@ -118,14 +118,14 @@ def head_aware_col_sharding_strategy(
     columns are in_dim // 2; in that case column indices are halved.
 
     Args:
-        weight: The :obj:`Weight` to shard.
+        weight: The :class:`Weight` to shard.
         i: The index of the current device.
         num_devices: The total number of devices to shard across.
         num_heads: Total number of attention heads.
         head_dim: Dimension per attention head.
 
     Returns:
-        A :obj:`TensorValue` representing the sharded portion for the i-th device.
+        A :class:`~max.graph.TensorValue` representing the sharded portion for the i-th device.
     """
     # Compute the head range for this device
     head_start, head_end = _compute_shard_range(num_heads, i, num_devices)
@@ -156,14 +156,14 @@ def stacked_qkv_sharding_strategy(
     attention heads.
 
     Args:
-        weight: The stacked QKV :obj:`Weight` to shard.
+        weight: The stacked QKV :class:`Weight` to shard.
         i: The index of the current device.
         num_devices: The total number of devices to shard across.
         num_heads: Total number of attention heads.
         head_dim: Dimension per attention head.
 
     Returns:
-        A :obj:`TensorValue` representing the sharded QKV for the i-th device.
+        A :class:`~max.graph.TensorValue` representing the sharded QKV for the i-th device.
     """
     # Weight shape is [3 * hidden_size, hidden_size]
     total_rows = int(weight.shape[0])
@@ -205,18 +205,18 @@ def stacked_qkv_sharding_strategy(
 def tensor_parallel_sharding_strategy(
     weight: Weight, i: int, num_devices: int
 ) -> TensorValue:
-    """Shards a :obj:`Module` across multiple devices using tensor parallel.
+    """Shards a :class:`~max.nn.Module` across multiple devices using tensor parallel.
 
-    This strategy is designed for :obj:`Module` that has multiple weights,
+    This strategy is designed for :class:`~max.nn.Module` that has multiple weights,
     for which a single weight sharding strategy is not sufficient.
 
     Args:
-        weight: The :obj:`Weight` to shard.
+        weight: The :class:`Weight` to shard.
         i: The index of the current device.
         num_devices: The total number of devices to shard across.
 
     Returns:
-        A :obj:`TensorValue` representing the sharded portion of the weight
+        A :class:`~max.graph.TensorValue` representing the sharded portion of the weight
         for the i-th device.
     """
     raise NotImplementedError(
@@ -228,18 +228,18 @@ def tensor_parallel_sharding_strategy(
 def expert_parallel_sharding_strategy(
     weight: Weight, i: int, num_devices: int
 ) -> TensorValue:
-    """Shards a :obj:`Module` across multiple devices using expert parallel.
+    """Shards a :class:`~max.nn.Module` across multiple devices using expert parallel.
 
-    This strategy is designed for :obj:`Module` that has multiple weights,
+    This strategy is designed for :class:`~max.nn.Module` that has multiple weights,
     for which a single weight sharding strategy is not sufficient.
 
     Args:
-        weight: The :obj:`Weight` to shard.
+        weight: The :class:`Weight` to shard.
         i: The index of the current device.
         num_devices: The total number of devices to shard across.
 
     Returns:
-        A :obj:`TensorValue` representing the sharded portion of the weight
+        A :class:`~max.graph.TensorValue` representing the sharded portion of the weight
         for the i-th device.
     """
     raise NotImplementedError(
@@ -257,13 +257,13 @@ def gate_up_sharding_strategy(
     concatenated along a specific axis. It shards both projections equally.
 
     Args:
-        weight: The :obj:`Weight` to shard.
+        weight: The :class:`Weight` to shard.
         i: The index of the current device.
         num_devices: The total number of devices to shard across.
         axis: The axis along which the gate and up projections are concatenated.
 
     Returns:
-        A :obj:`TensorValue` representing the sharded portion for the i-th device.
+        A :class:`~max.graph.TensorValue` representing the sharded portion for the i-th device.
     """
     full_dim = int(weight.shape[axis])
     if full_dim % 2 != 0:
@@ -297,7 +297,7 @@ def gate_up_sharding_strategy(
 
 @dataclass(frozen=True)
 class ShardingStrategy:
-    """Specifies how a :obj:`Weight` should be sharded across multiple devices.
+    """Specifies how a :class:`Weight` should be sharded across multiple devices.
 
     This class encapsulates a sharding function and the number of devices
     over which to shard. It provides static methods for common sharding
@@ -308,8 +308,8 @@ class ShardingStrategy:
     """The number of devices to shard the weight across."""
 
     shard: Callable[[Weight, int, int], TensorValue]
-    """A callable that takes a :obj:`Weight`, a device index, and the total
-    number of devices, and returns the sharded :obj:`TensorValue` for that
+    """A callable that takes a :class:`Weight`, a device index, and the total
+    number of devices, and returns the sharded :class:`~max.graph.TensorValue` for that
     device.
     """
 
@@ -317,11 +317,11 @@ class ShardingStrategy:
         """Applies the sharding strategy to a given weight for a specific device.
 
         Args:
-            weight: The :obj:`Weight` to be sharded.
+            weight: The :class:`Weight` to be sharded.
             i: The index of the device for which to get the shard.
 
         Returns:
-            A :obj:`TensorValue` representing the portion of the weight for the
+            A :class:`~max.graph.TensorValue` representing the portion of the weight for the
             i-th device.
         """
         return self.shard(weight, i, self.num_devices)
@@ -385,7 +385,7 @@ class ShardingStrategy:
             num_devices: The number of devices to shard the weight across.
 
         Returns:
-            A :obj:`ShardingStrategy` instance configured for row-wise sharding.
+            A :class:`ShardingStrategy` instance configured for row-wise sharding.
         """
         return ShardingStrategy(
             num_devices=num_devices, shard=row_sharding_strategy
@@ -401,7 +401,7 @@ class ShardingStrategy:
             num_devices: The number of devices to shard the weight across.
 
         Returns:
-            A :obj:`ShardingStrategy` instance configured for column-wise sharding.
+            A :class:`ShardingStrategy` instance configured for column-wise sharding.
         """
         return ShardingStrategy(
             num_devices=num_devices, shard=col_sharding_strategy
@@ -446,7 +446,7 @@ class ShardingStrategy:
                 the weight is replicated).
 
         Returns:
-            A :obj:`ShardingStrategy` instance configured for replication.
+            A :class:`ShardingStrategy` instance configured for replication.
         """
         return ShardingStrategy(
             num_devices=num_devices, shard=replicate_sharding_strategy
@@ -469,7 +469,7 @@ class ShardingStrategy:
             head_dim: Dimension per attention head.
 
         Returns:
-            A :obj:`ShardingStrategy` instance configured for stacked QKV sharding.
+            A :class:`ShardingStrategy` instance configured for stacked QKV sharding.
         """
         # Use partial to bind num_heads and head_dim to the sharding function
         shard_fn = partial(
@@ -496,7 +496,7 @@ class ShardingStrategy:
             head_dim: Dimension per attention head.
 
         Returns:
-            A :obj:`ShardingStrategy` instance configured for head-aware column sharding.
+            A :class:`ShardingStrategy` instance configured for head-aware column sharding.
         """
         shard_fn = partial(
             head_aware_col_sharding_strategy,
@@ -509,16 +509,16 @@ class ShardingStrategy:
     def tensor_parallel(num_devices: int) -> ShardingStrategy:
         """Creates a tensor parallel sharding strategy.
 
-        This strategy is designed for Module that has multiple weights, for
+        This strategy is designed for :class:`~max.nn.Module` that has multiple weights, for
         which a single weight sharding strategy is not sufficient. This strategy
         is a placeholder and should not be called directly. Modules are expected
         to implement their own tensor parallel sharding strategy.
 
         Args:
-            num_devices: The number of devices to shard the Module across.
+            num_devices: The number of devices to shard the :class:`~max.nn.Module` across.
 
         Returns:
-            A :obj:`ShardingStrategy` instance configured for tensor parallel sharding.
+            A :class:`ShardingStrategy` instance configured for tensor parallel sharding.
         """
         return ShardingStrategy(
             num_devices=num_devices, shard=tensor_parallel_sharding_strategy
@@ -528,16 +528,16 @@ class ShardingStrategy:
     def expert_parallel(num_devices: int) -> ShardingStrategy:
         """Creates an expert parallel sharding strategy.
 
-        This strategy is designed for Module that has multiple weights,
+        This strategy is designed for :class:`~max.nn.Module` that has multiple weights,
         for which a single weight sharding strategy is not sufficient. This strategy
         is a placeholder and should not be called directly. Modules are expected
         to implement their own expert parallel sharding strategy.
 
         Args:
-            num_devices: The number of devices to shard the Module across.
+            num_devices: The number of devices to shard the :class:`~max.nn.Module` across.
 
         Returns:
-            A :obj:`ShardingStrategy` instance configured for expert parallel sharding.
+            A :class:`ShardingStrategy` instance configured for expert parallel sharding.
         """
         return ShardingStrategy(
             num_devices=num_devices, shard=expert_parallel_sharding_strategy
@@ -556,7 +556,7 @@ class ShardingStrategy:
                 Defaults to 2 (common for MoE experts).
 
         Returns:
-            A :obj:`ShardingStrategy` instance configured for gate_up sharding.
+            A :class:`ShardingStrategy` instance configured for gate_up sharding.
         """
         shard_fn = partial(gate_up_sharding_strategy, axis=axis)
         return ShardingStrategy(num_devices=num_devices, shard=shard_fn)
@@ -578,9 +578,9 @@ class _ShardingStrategyContainer:
 # TODO: Make Weight explicitly inherit from Shardable. We currently do not do this
 # because importing Shardable from nn causes a circular dependency.
 class Weight(TensorValue):
-    """Represents a value in a :class:`Graph` that can be loaded at a later time.
+    """Represents a value in a :class:`~max.graph.Graph` that can be loaded at a later time.
 
-    Weights can be initialized outside of a :class:`Graph` and are lazily-added
+    Weights can be initialized outside of a :class:`~max.graph.Graph` and are lazily-added
     to the parent graph when used. If there is no parent graph when a weight is
     used, an error will be raised.
 

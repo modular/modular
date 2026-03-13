@@ -30,7 +30,7 @@ from std.utils import IndexList
 from std.utils.index import Index
 
 
-fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
+def bench_conv(mut m: Bench, spec: ConvSpec) raises:
     comptime input_type = spec.static_info.input_type
     comptime filter_type = spec.static_info.filter_type
     comptime output_type = spec.static_info.output_type
@@ -133,7 +133,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
     @parameter
     @always_inline
-    fn bench_conv_wrapper(
+    def bench_conv_wrapper(
         mut b: Bencher, concrete_spec: ConvSpec[spec.static_info]
     ) raises:
         # Count the iteration to decide which input copy to use.
@@ -141,7 +141,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
         @always_inline
         @parameter
-        fn bench_fn():
+        def bench_fn():
             comptime layout_2 = Layout.row_major[spec.static_info.rank + 2]()
             comptime layout_3 = Layout.row_major[spec.static_info.rank + 3]()
             var input = LayoutTensor[input_type, layout_2](
@@ -216,13 +216,8 @@ struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Writable):
     var pad: IndexList[2 * Self.static_info.rank]
     var num_groups: Int
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
     # fmt: off
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "n=", self.n,
             ";input=", self.input_dims,
@@ -234,7 +229,7 @@ struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Writable):
         )
     # fmt: on
 
-    fn flops(self) -> Int:
+    def flops(self) -> Int:
         var output_dims = IndexList[Self.static_info.rank](1)
 
         comptime for i in range(Self.static_info.rank):
@@ -267,16 +262,16 @@ def main() raises:
     )
 
     @always_inline
-    fn rebind1d(idx: IndexList[1]) -> IndexList[fp32_1d.rank]:
+    def rebind1d(idx: IndexList[1]) -> IndexList[fp32_1d.rank]:
         return rebind[IndexList[fp32_1d.rank]](idx)
 
     @always_inline
-    fn rebind1d_pad(idx: IndexList[2]) -> IndexList[2 * fp32_1d.rank]:
+    def rebind1d_pad(idx: IndexList[2]) -> IndexList[2 * fp32_1d.rank]:
         return rebind[IndexList[2 * fp32_1d.rank]](idx)
 
     # fmt: off
     @always_inline
-    fn spec1d(N: Int, W: Int, C: Int, S: Int, F: Int, st: Int, di: Int, \
+    def spec1d(N: Int, W: Int, C: Int, S: Int, F: Int, st: Int, di: Int, \
         pa: IndexList[2], ng: Int
     ) -> ConvSpec[fp32_1d]:
         return (
@@ -302,15 +297,15 @@ def main() raises:
     )
 
     @always_inline
-    fn rebind2d(idx: IndexList[2]) -> IndexList[fp32_2d.rank]:
+    def rebind2d(idx: IndexList[2]) -> IndexList[fp32_2d.rank]:
         return rebind[IndexList[fp32_2d.rank]](idx)
 
     @always_inline
-    fn rebind2d_pad(idx: IndexList[4]) -> IndexList[2 * fp32_2d.rank]:
+    def rebind2d_pad(idx: IndexList[4]) -> IndexList[2 * fp32_2d.rank]:
         return rebind[IndexList[2 * fp32_2d.rank]](idx)
 
     @always_inline
-    fn spec2d(
+    def spec2d(
         N: Int,
         H: Int,
         W: Int,
@@ -343,11 +338,11 @@ def main() raises:
     )
 
     @always_inline
-    fn rebind3d(idx: IndexList[3]) -> IndexList[fp32_3d.rank]:
+    def rebind3d(idx: IndexList[3]) -> IndexList[fp32_3d.rank]:
         return rebind[IndexList[fp32_3d.rank]](idx)
 
     @always_inline
-    fn rebind3d_pad(idx: IndexList[6]) -> IndexList[3 * fp32_3d.rank]:
+    def rebind3d_pad(idx: IndexList[6]) -> IndexList[3 * fp32_3d.rank]:
         return rebind[IndexList[3 * fp32_3d.rank]](idx)
 
     # 1D benchmarks for wavlm

@@ -38,7 +38,7 @@ def rebind(
     Args:
         x: The input symbolic tensor to rebind.
         shape: The symbolic shape to assert for ``x``, as a list of
-               [``Dim``](/max/api/python/graph/type/Dim) values.
+               :obj:`~max.graph.Dim` values.
         message: The message printed if the rebind fails at runtime.
         layout: A layout of the weights used by some operations like `conv`.
 

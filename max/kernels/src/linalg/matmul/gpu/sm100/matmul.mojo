@@ -35,21 +35,20 @@ from std.gpu.sync import (
     mbarrier_arrive,
 )
 from std.gpu.compute.arch.tcgen05 import *
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    RuntimeTuple,
-)
-from layout.int_tuple import IntTuple
+from layout import IntTuple, Layout, LayoutTensor, RuntimeTuple, UNKNOWN_VALUE
 from layout.layout import coalesce
 from layout.layout_tensor import LayoutTensorIter
 from layout.runtime_tuple import idx2crd
 from layout.swizzle import Swizzle, make_swizzle
 from layout.tensor_core_async import st_matrix_n_layout
 from layout.tma_async import TMATensorTile
+from structured_kernels.tile_types import (
+    SMemTileArray2D,
+    swizzle_mode_to_bytes,
+)
 
 from std.utils.fast_div import FastDiv
-from std.utils.index import IndexList
+from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 from ....arch.sm100 import MmaOpSM100_SS
@@ -67,45 +66,47 @@ struct WarpRole[has_scheduler: Bool = True](TrivialRegisterPassable):
     comptime Epilogue = Self(3)
 
     @always_inline
-    fn __eq__(self, other: UInt) -> Bool:
+    def __eq__(self, other: UInt) -> Bool:
         return self._role == Int32(other)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._role == other._role
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self._role != other._role
 
     @always_inline
-    fn __ge__(self, other: UInt) -> Bool:
+    def __ge__(self, other: UInt) -> Bool:
         return self._role >= Int32(other)
 
     @staticmethod
     @always_inline
-    fn is_main_load() -> Bool:
+    def is_main_load() -> Bool:
         return Self.MainLoad == warp_id()
 
     @staticmethod
     @always_inline
-    fn is_mma() -> Bool:
+    def is_mma() -> Bool:
         return Self.Mma == warp_id()
 
     @staticmethod
     @always_inline
-    fn is_epilogue() -> Bool:
+    def is_epilogue() -> Bool:
         return Self.Epilogue >= warp_id()
 
     @staticmethod
     @always_inline
-    fn is_scheduler() -> Bool:
+    def is_scheduler() -> Bool:
         comptime assert Self.has_scheduler, "Scheduler warp is not enabled"
         return Self.Scheduler == warp_id()
 
 
+# TODO: Remove this LayoutTensorIter overload once all callers migrate
+# to SMemTileArray2D. See the TileTensor overload below.
 @always_inline
-fn consumer_main_loop[
+def consumer_main_loop[
     accum_type: DType,
     c_type: DType,
     a_type: DType,
@@ -178,15 +179,93 @@ fn consumer_main_loop[
         mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
 
 
+@always_inline
+def consumer_main_loop[
+    accum_type: DType,
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_dim0: Int,
+    a_dim1: Int,
+    a_num_tiles: Int,
+    a_swizzle_bytes: Int,
+    b_dim0: Int,
+    b_dim1: Int,
+    b_num_tiles: Int,
+    b_swizzle_bytes: Int,
+    a_swizzle: TensorMapSwizzle,
+    b_swizzle: TensorMapSwizzle,
+    transpose_b: Bool,
+    pipeline_stages: Int,
+    /,
+    *,
+    block_tile_shape: IndexList[3],
+    mma_shape: IndexList[3],
+    cta_group: Int = 1,
+    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    k_group_size: Int = 1,
+](
+    tmem_addr: UInt32,
+    a_smem_tiles: SMemTileArray2D[
+        a_type, a_dim0, a_dim1, a_num_tiles, a_swizzle_bytes
+    ],
+    b_smem_tiles: SMemTileArray2D[
+        b_type, b_dim0, b_dim1, b_num_tiles, b_swizzle_bytes
+    ],
+    load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
+    mma_op: MmaOpSM100_SS[
+        c_type,
+        a_type,
+        b_type,
+        block_tile_shape,
+        mma_shape,
+        accum_type=accum_type,
+        cta_group=cta_group,
+        cluster_shape=cluster_shape,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
+        transpose_b=transpose_b,
+    ],
+    elect_one_warp: Bool,
+    iter_idx: UInt32,
+    k_start: UInt32,
+):
+    """TileTensor overload of `consumer_main_loop`.
+
+    Accepts `SMemTileArray2D` instead of `LayoutTensorIter`, indexing directly
+    into the tile arrays to get TileTensor tiles for MMA. The tile dimension
+    and swizzle parameters (a_dim0, a_dim1, etc.) are explicit because Mojo
+    requires them for overload resolution with parametric struct arguments.
+    """
+    var stage = load_mma_pipeline.consumer_stage()
+
+    load_mma_pipeline.wait_producer()
+
+    # Compose TMEM address: accum stage encoded in column field with stride in columns.
+    if elect_one_sync():
+        for j in range(UInt32(k_group_size)):
+            var offset = stage * UInt32(k_group_size) + j
+            var a_smem_tile = a_smem_tiles[offset]
+            var b_smem_tile = b_smem_tiles[offset]
+            mma_op.mma(
+                a_smem_tile,
+                b_smem_tile,
+                tmem_addr,
+                init_c=(
+                    (iter_idx + j) == k_start
+                ),  # Initialize C on first iteration
+            )
+        mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
+
+
 comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
     layout, element_type=DType.uint32, linear_idx_type=DType.uint32
 ]
 
 
 @always_inline
-fn f32_frag_to_smem[
+def f32_frag_to_smem[
     swizzle_mode: TensorMapSwizzle,
-    stageN: UInt,
     vec_dtype: DType,
     vec_size: Int,
 ](
@@ -197,7 +276,7 @@ fn f32_frag_to_smem[
     # alias swizzle = make_swizzle[DType.float64, swizzle_mode]() # hack
     # var dst_frag = dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4), swizzle=swizzle](lane_id())
     var dst_frag = dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
-        lane_id()
+        Int(lane_id())
     )
     comptime assert (
         2 * dst_frag.layout.size() == vec_size
@@ -214,9 +293,9 @@ fn f32_frag_to_smem[
 
 
 @always_inline
-fn stsm_helper[
+def stsm_helper[
     swizzle: Swizzle,
-    stageN: UInt,
+    stageN: Int,
     vec_dtype: DType,
     vec_size: Int,
     transpose_c: Bool = False,
@@ -228,7 +307,7 @@ fn stsm_helper[
 ):
     comptime if size_of[dst.dtype]() == 4:
         comptime assert not transpose_c, "transpose_c must be False"
-        return f32_frag_to_smem[swizzle_mode, stageN](vec, dst)
+        return f32_frag_to_smem[swizzle_mode](vec, dst)
     # Number of elements in one row is 32B and 16B per stsmx4 and stmtx2 tile, respectively.
     comptime stsmx_row_size = 32 // size_of[
         dst.dtype
@@ -295,7 +374,7 @@ fn stsm_helper[
 
 
 @always_inline
-fn shared_memory_epilogue_transpose[
+def shared_memory_epilogue_transpose[
     stage: UInt,
     stageN: UInt,
     c_type: DType,
@@ -475,7 +554,7 @@ fn shared_memory_epilogue_transpose[
 
 
 @always_inline
-fn shared_memory_epilogue[
+def shared_memory_epilogue[
     MMA_M: UInt,
     data_paths: UInt,
     num_stages: UInt,
@@ -527,11 +606,11 @@ fn shared_memory_epilogue[
     )
     var c_smem_upper_frag = c_smem_warp_tile_upper.vectorize[
         1, Int(simd_size)
-    ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
+    ]().distribute[distribute_layout, swizzle=swizzle](Int(lane_id()))
 
     var c_smem_lower_frag = c_smem_warp_tile_lower.vectorize[
         1, Int(simd_size)
-    ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
+    ]().distribute[distribute_layout, swizzle=swizzle](Int(lane_id()))
 
     comptime fragment_size = c_smem_upper_frag.layout.size()
 
@@ -665,7 +744,7 @@ fn shared_memory_epilogue[
 
 
 @always_inline
-fn _compute_register_lambda_fn[
+def _compute_register_lambda_fn[
     epilogue_dtype: DType,
     frag_size: Int,
     inc: Int,
@@ -726,7 +805,7 @@ fn _compute_register_lambda_fn[
 
 
 @always_inline
-fn register_epilogue[
+def register_epilogue[
     MMA_M: Int,
     data_paths: Int,
     num_stages: Int,
@@ -834,7 +913,7 @@ fn register_epilogue[
 
 
 @always_inline
-fn accum_arrive[
+def accum_arrive[
     cta_group: Int
 ](mma_output_pipeline: ProducerConsumerPipeline, mma_output_stage: UInt32):
     comptime if cta_group == 1:

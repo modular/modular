@@ -27,8 +27,20 @@ from ..value import TensorValue, TensorValueLike, Value, _ChainValue
 def cond(
     pred: TensorValueLike,
     out_types: Iterable[Type[Any]] | None,
-    then_fn: Callable[[], Iterable[Value[Any]] | Value[Any] | None],
-    else_fn: Callable[[], Iterable[Value[Any]] | Value[Any] | None],
+    then_fn: Callable[
+        [],
+        Iterable[Value[Any] | TensorValueLike]
+        | Value[Any]
+        | TensorValueLike
+        | None,
+    ],
+    else_fn: Callable[
+        [],
+        Iterable[Value[Any] | TensorValueLike]
+        | Value[Any]
+        | TensorValueLike
+        | None,
+    ],
 ) -> list[TensorValue]:
     """Conditionally execute one of two branches based on a boolean predicate.
 

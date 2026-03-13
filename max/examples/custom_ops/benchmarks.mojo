@@ -40,6 +40,7 @@ from tensor import (
     ManagedTensorSlice,
     Output,
     StaticTensorSpec,
+    get_row_major_tensor_spec,
 )
 
 
@@ -50,7 +51,7 @@ struct Tensor[
     rank: Int,
     //,
     io_spec: IOSpec,
-    static_spec: StaticTensorSpec[dtype, rank],
+    static_spec: StaticTensorSpec[dtype, rank, _, _],
 ](ImplicitlyCopyable):
     comptime size = Int(Self.static_spec.shape.product())
 
@@ -59,35 +60,35 @@ struct Tensor[
     ]
     var buffer: DeviceBuffer[Self.dtype]
 
-    fn __init__(out self, ctx: DeviceContext) raises:
+    def __init__(out self, ctx: DeviceContext) raises:
         self.buffer = ctx.enqueue_create_buffer[Self.dtype](Self.size)
 
         self.slice = ManagedTensorSlice[
             io_spec=Self.io_spec, static_spec=Self.static_spec
         ](
             self.buffer.unsafe_ptr(),
-            Self.static_spec.shape.into_index_list[Self.rank](),
-            Self.static_spec.strides.into_index_list[Self.rank](),
+            Self.static_spec.shape.to_index_list[Self.rank](),
+            Self.static_spec.strides.to_index_list[Self.rank](),
         )
 
-    fn rand(self) raises -> Self:
+    def rand(self) raises -> Self:
         with self.buffer.map_to_host() as host_buffer:
             rand(host_buffer.unsafe_ptr(), Self.size)
             return self
 
-    fn iota(self) raises -> Self:
+    def iota(self) raises -> Self:
         with self.buffer.map_to_host() as host_buffer:
             iota(host_buffer.unsafe_ptr(), Self.size)
             return self
 
-    fn fill(self, value: Scalar[Self.dtype]) raises -> Self:
+    def fill(self, value: Scalar[Self.dtype]) raises -> Self:
         with self.buffer.map_to_host() as host_buffer:
             var ptr = host_buffer.unsafe_ptr()
             for i in range(Self.size):
                 ptr[i] = value
             return self
 
-    fn custom_fill_a(self, M: Int, K: Int) raises -> Self:
+    def custom_fill_a(self, M: Int, K: Int) raises -> Self:
         with self.buffer.map_to_host() as host_buffer:
             var ptr = host_buffer.unsafe_ptr()
             for i in range(M):
@@ -95,7 +96,7 @@ struct Tensor[
                     ptr[i * K + j] = Scalar[Self.dtype](i)
             return self
 
-    fn custom_fill_b(self, K: Int, N: Int) raises -> Self:
+    def custom_fill_b(self, K: Int, N: Int) raises -> Self:
         with self.buffer.map_to_host() as host_buffer:
             var ptr = host_buffer.unsafe_ptr()
             for i in range(K):
@@ -113,9 +114,9 @@ def top_k() raises:
     comptime val_dtype = DType.float32
     comptime idx_dtype = DType.int32
 
-    comptime shape = DimList(batch_size, K)
-    comptime val_spec = StaticTensorSpec[val_dtype, rank](shape)
-    comptime idx_spec = StaticTensorSpec[idx_dtype, rank](shape)
+    comptime shape = DimList[batch_size, K]()
+    comptime val_spec = get_row_major_tensor_spec[val_dtype, rank, shape]()
+    comptime idx_spec = get_row_major_tensor_spec[idx_dtype, rank, shape]()
 
     var cpu_ctx = DeviceContext(api="cpu")
 
@@ -168,9 +169,9 @@ def matmul() raises:
 
     comptime FLOPS = M * N * (2 * K - 1)
 
-    comptime a_spec = StaticTensorSpec[dtype, rank](DimList(M, K))
-    comptime b_spec = StaticTensorSpec[dtype, rank](DimList(K, N))
-    comptime c_spec = StaticTensorSpec[dtype, rank](DimList(M, N))
+    comptime a_spec = get_row_major_tensor_spec[dtype, rank, DimList[M, K]()]()
+    comptime b_spec = get_row_major_tensor_spec[dtype, rank, DimList[K, N]()]()
+    comptime c_spec = get_row_major_tensor_spec[dtype, rank, DimList[M, N]()]()
 
     var cpu_ctx = DeviceContext(api="cpu")
 
@@ -238,9 +239,11 @@ def tensor_core_mma() raises:
 
     comptime FLOPS = M * N * (2 * K - 1)
 
-    comptime a_spec = StaticTensorSpec[dtype, rank](DimList(M, K))
-    comptime b_spec = StaticTensorSpec[dtype, rank](DimList(K, N))
-    comptime c_spec = StaticTensorSpec[DType.float32, rank](DimList(M, N))
+    comptime a_spec = get_row_major_tensor_spec[dtype, rank, DimList[M, K]()]()
+    comptime b_spec = get_row_major_tensor_spec[dtype, rank, DimList[K, N]()]()
+    comptime c_spec = get_row_major_tensor_spec[
+        DType.float32, rank, DimList[M, N]()
+    ]()
 
     var cpu_ctx = DeviceContext(api="cpu")
 

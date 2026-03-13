@@ -82,7 +82,7 @@ struct OutputPipelineConfig(Copyable, Equatable, TrivialRegisterPassable):
 # ============================================================================
 
 
-fn _compute_block_tile_shape[
+def _compute_block_tile_shape[
     a_type: DType
 ](mma_shape: IndexList[3], cta_group: Int) -> IndexList[3]:
     """Compute block tile shape from MMA shape and CTA group."""
@@ -93,29 +93,38 @@ fn _compute_block_tile_shape[
     )
 
 
-fn _compute_output_tile_shape(
-    mma_shape: IndexList[3], cta_group: Int, AB_swapped: Bool
+def _compute_output_tile_shape(
+    c_type: DType, mma_shape: IndexList[3], cta_group: Int, AB_swapped: Bool
 ) -> IndexList[2]:
     """Compute output tile shape based on MMA config."""
     # If MMA_M is 256, each of the pair ctas has the entire MMA_N.
     # If MMA_M is 128, each of the pair ctas has 1/2 of MMA_N.
     # If cta_group=1, the cta has the entire MMA_N.
-    var c_tile_n = mma_shape[1] if (
-        mma_shape[0] == 256 or cta_group == 1
-    ) else (mma_shape[1] // 2)
-    var output_tile_n = 8
-    if c_tile_n % 32 == 0:
-        output_tile_n = 32
-    elif c_tile_n % 16 == 0:
-        output_tile_n = 16
+
     # MMA_M=128/256 cta_group=2 all use 128 rows in output tile.
     var output_tile_m = 128 if cta_group == 2 else mma_shape[0]
-    return Index(output_tile_n, output_tile_m) if AB_swapped else Index(
-        output_tile_m, output_tile_n
-    )
+
+    if c_type == DType.bfloat16:
+        var c_tile_n = mma_shape[1] if (
+            mma_shape[0] == 256 or cta_group == 1
+        ) else (mma_shape[1] // 2)
+        var output_tile_n = 8
+        if c_tile_n % 32 == 0:
+            output_tile_n = 32
+        elif c_tile_n % 16 == 0:
+            output_tile_n = 16
+        return Index(output_tile_n, output_tile_m) if AB_swapped else Index(
+            output_tile_m, output_tile_n
+        )
+    else:  # FP8 output tile shape
+        var output_tile_n = 16  # no swizzle for fp8 output dtype
+        return Index(output_tile_n, output_tile_m) if AB_swapped else Index(
+            output_tile_m, output_tile_n
+        )
 
 
-fn _compute_swizzle_modes(
+def _compute_swizzle_modes(
+    c_type: DType,
     output_tile_shape: IndexList[2],
     AB_swapped: Bool,
     is_gmm: Bool = False,
@@ -124,21 +133,26 @@ fn _compute_swizzle_modes(
     var a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     var b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     var c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
-    if AB_swapped:
-        c_swizzle = (
-            TensorMapSwizzle.SWIZZLE_32B if is_gmm else TensorMapSwizzle.SWIZZLE_128B
-        )
+
+    if c_type == DType.bfloat16:
+        if AB_swapped:
+            c_swizzle = (
+                TensorMapSwizzle.SWIZZLE_32B if is_gmm else TensorMapSwizzle.SWIZZLE_128B
+            )
+        else:
+            # When not swapped, output_tile_shape[1] is the N dimension
+            var tile_n = output_tile_shape[1]
+            if tile_n == 32:
+                c_swizzle = TensorMapSwizzle.SWIZZLE_64B
+            elif tile_n == 16:
+                c_swizzle = TensorMapSwizzle.SWIZZLE_32B
     else:
-        # When not swapped, output_tile_shape[1] is the N dimension
-        var tile_n = output_tile_shape[1]
-        if tile_n == 32:
-            c_swizzle = TensorMapSwizzle.SWIZZLE_64B
-        elif tile_n == 16:
-            c_swizzle = TensorMapSwizzle.SWIZZLE_32B
+        c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
+
     return (a_swizzle, b_swizzle, c_swizzle)
 
 
-fn _maximize_pipeline_stages[
+def _maximize_pipeline_stages[
     a_type: DType, b_type: DType, c_type: DType
 ](
     block_tile_shape: IndexList[3],
@@ -183,7 +197,7 @@ fn _maximize_pipeline_stages[
     ) // AB_smem_per_stage
 
 
-fn _write_common_config[
+def _write_common_config[
     W: Writer,
     a_type: DType,
     c_type: DType,
@@ -269,7 +283,7 @@ struct MatmulConfig[
 
     var k_group_size: Int
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         cta_group: Int = 2,
@@ -299,7 +313,7 @@ struct MatmulConfig[
             mma_shape, cta_group
         )
         self.output_tile_shape = _compute_output_tile_shape(
-            mma_shape, cta_group, AB_swapped
+            Self.c_type, mma_shape, cta_group, AB_swapped
         )
 
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
@@ -308,7 +322,7 @@ struct MatmulConfig[
         self.num_split_k = num_split_k
 
         var swizzles = _compute_swizzle_modes(
-            self.output_tile_shape, AB_swapped
+            self.c_type, self.output_tile_shape, AB_swapped
         )
         self.a_swizzle = swizzles[0]
         self.b_swizzle = swizzles[1]
@@ -333,7 +347,7 @@ struct MatmulConfig[
             self.num_pipeline_stages, self.k_group_size
         )
 
-    fn swap_AB_type(
+    def swap_AB_type(
         self,
     ) -> MatmulConfig[Self.b_type, Self.a_type, Self.c_type, Self.transpose_b]:
         return MatmulConfig[
@@ -352,11 +366,7 @@ struct MatmulConfig[
             num_split_k=self.num_split_k,
         )
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    fn write_to[W: Writer](self, mut writer: W):
+    def write_to[W: Writer](self, mut writer: W):
         writer.write("kernel_")
         _write_common_config[W, Self.a_type, Self.c_type, Self.transpose_b](
             writer,
@@ -378,12 +388,11 @@ struct MatmulConfig[
             self.num_split_k,
         )
 
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        return String.write(self)
+    def write_repr_to(self, mut writer: Some[Writer]):
+        self.write_to(writer)
 
 
-fn choose_config[
+def choose_config[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -430,7 +439,7 @@ fn choose_config[
 
         @parameter
         @always_inline
-        fn select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
+        def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
             N_alignby16 = align_up(N, 16)
             max_mma_n = min(N_alignby16, 256)
             # In pratice 64x16 mma creates too many ctas and increase L2
@@ -513,7 +522,7 @@ fn choose_config[
     )
 
 
-fn build_configs[
+def build_configs[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -577,7 +586,7 @@ struct BlockScaledMatmulConfig[
     var vec_sf_size: Int
     var num_sf_k_tiles: Int
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         scaling_kind: UMMAKind,
@@ -608,7 +617,7 @@ struct BlockScaledMatmulConfig[
             mma_shape, cta_group
         )
         self.output_tile_shape = _compute_output_tile_shape(
-            mma_shape, cta_group, AB_swapped
+            Self.c_type, mma_shape, cta_group, AB_swapped
         )
 
         # Scaling factors configuration (SFA, SFB)
@@ -631,7 +640,7 @@ struct BlockScaledMatmulConfig[
         self.num_split_k = num_split_k
 
         var swizzles = _compute_swizzle_modes(
-            self.output_tile_shape, AB_swapped, is_gmm
+            self.c_type, self.output_tile_shape, AB_swapped, is_gmm
         )
         self.a_swizzle = swizzles[0]
         self.b_swizzle = swizzles[1]
@@ -681,7 +690,7 @@ struct BlockScaledMatmulConfig[
             self.num_pipeline_stages, self.k_group_size
         )
 
-    fn swap_AB_type(
+    def swap_AB_type(
         self,
     ) -> BlockScaledMatmulConfig[
         Self.b_type,
@@ -713,11 +722,7 @@ struct BlockScaledMatmulConfig[
             scaling_kind=self.scaling_kind,
         )
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    fn write_to[W: Writer](self, mut writer: W):
+    def write_to[W: Writer](self, mut writer: W):
         writer.write("kernel_")
         writer.write(self.scaling_kind, "_")
         writer.write("A_vec", self.vec_sf_size, "_")
@@ -744,12 +749,11 @@ struct BlockScaledMatmulConfig[
             self.num_split_k,
         )
 
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        return String.write(self)
+    def write_repr_to(self, mut writer: Some[Writer]):
+        self.write_to(writer)
 
 
-fn choose_block_scaled_config[
+def choose_block_scaled_config[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -803,7 +807,7 @@ fn choose_block_scaled_config[
 
         @parameter
         @always_inline
-        fn select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
+        def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
             N_alignby64 = align_up(N, 64)
             max_mma_n = min(N_alignby64, 256)
             # In pratice 64x16 mma creates too many ctas and increase L2
@@ -896,7 +900,7 @@ fn choose_block_scaled_config[
     )
 
 
-fn build_block_scaled_configs[
+def build_block_scaled_configs[
     a_type: DType,
     b_type: DType,
     c_type: DType,

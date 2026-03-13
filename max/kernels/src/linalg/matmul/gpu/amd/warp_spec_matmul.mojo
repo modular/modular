@@ -73,7 +73,7 @@ comptime GlobalTensor[dtype: DType, layout: Layout] = LayoutTensor[
 
 
 @parameter
-fn validate_config[
+def validate_config[
     BM: Int,
     BN: Int,
     BK: Int,
@@ -117,7 +117,7 @@ fn validate_config[
 
 
 @always_inline
-fn determine_thread_role[
+def determine_thread_role[
     producer_a_warps: Int,
     producer_b_warps: Int,
 ]() -> Tuple[ThreadRole, Int]:
@@ -137,7 +137,7 @@ fn determine_thread_role[
 
 
 @parameter
-fn smem_tile_layout[
+def smem_tile_layout[
     k_tile_size: Int, block_rows: Int, block_cols: Int
 ]() -> Layout:
     # Shared memory layout
@@ -181,7 +181,7 @@ fn smem_tile_layout[
 
 
 @parameter
-fn get_producer_warp_thread_layout[
+def get_producer_warp_thread_layout[
     k_tile_size: Int, simd_width: Int, block_rows: Int, block_cols: Int
 ]() -> Layout:
     # TODO: Document the logic behind this layout
@@ -232,7 +232,7 @@ fn get_producer_warp_thread_layout[
 
 
 @always_inline
-fn lgkm_wait():
+def lgkm_wait():
     inlined_assembly[
         "s_waitcnt lgkmcnt(0)",
         NoneType,
@@ -242,7 +242,7 @@ fn lgkm_wait():
 
 
 @always_inline
-fn run_producer[
+def run_producer[
     dtype: DType,
     layout: Layout,
     block_rows: Int,  # BM for A, BN for B
@@ -334,7 +334,7 @@ fn run_producer[
         )
     )
 )
-fn warp_specialized_matmul_kernel[
+def warp_specialized_matmul_kernel[
     in_type: DType,
     out_type: DType,
     a_layout: Layout,
@@ -519,7 +519,7 @@ fn warp_specialized_matmul_kernel[
         ]()
 
         @parameter
-        fn compute_indices(consumer_iteration: Int) -> Tuple[Int, Int]:
+        def compute_indices(consumer_iteration: Int) -> Tuple[Int, Int]:
             """Computes warp tile indices for this consumer iteration."""
             var warp_tile_idx = (
                 consumer_warp_id + consumer_iteration * consumer_warps
@@ -578,7 +578,7 @@ fn warp_specialized_matmul_kernel[
 
 
 @always_inline
-fn warp_specialized_matmul[
+def warp_specialized_matmul[
     M: Int,
     N: Int,
     K: Int,

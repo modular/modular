@@ -18,9 +18,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
 from std.gpu import block_dim
 from std.gpu.host import DeviceContext
-from layout import TileTensor
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.testing import assert_almost_equal
 
@@ -49,12 +47,12 @@ def test_vendor_blas[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var a = NDBuffer[dtype, 2](a_device.unsafe_ptr(), (M, K))
-    var b = NDBuffer[dtype, 2](
+    var a = NDBuffer[rank=2, dtype](a_device.unsafe_ptr(), (M, K))
+    var b = NDBuffer[rank=2, dtype](
         b_device.unsafe_ptr(), (N, K) if transpose_b else (K, N)
     )
-    var c = NDBuffer[dtype, 2](c_device.unsafe_ptr(), (M, N))
-    var c_ref = NDBuffer[dtype, 2](c_device_ref.unsafe_ptr(), (M, N))
+    var c = NDBuffer[rank=2, dtype](c_device.unsafe_ptr(), (M, N))
+    var c_ref = NDBuffer[rank=2, dtype](c_device_ref.unsafe_ptr(), (M, N))
 
     vendor_blas.matmul(ctx, c, a, b, c_row_major=True, transpose_b=transpose_b)
 

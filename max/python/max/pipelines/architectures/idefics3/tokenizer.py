@@ -98,7 +98,9 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         # Force skip_special_tokens=True to filter out tokens like <end_of_utterance>
         kwargs_with_special_filter = kwargs.copy()
         kwargs_with_special_filter["skip_special_tokens"] = True
-        return self.delegate.decode(encoded, **kwargs_with_special_filter)
+        return self.delegate.decode(
+            encoded.tolist(), **kwargs_with_special_filter
+        )
 
     def apply_chat_template(
         self, messages: list[TextGenerationRequestMessage]
@@ -116,36 +118,33 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             ValueError: If template application fails.
         """
 
-        # Convert to text-only messages first
         text_messages: list[dict[str, Any]] = []
         for message in messages:
             text_message: dict[str, Any] = {"role": message.role}
             content = message.content
 
             if isinstance(content, str):
-                text_message["content"] = content
+                text_message["content"] = [{"type": "text", "text": content}]
             elif isinstance(content, list):
-                text_parts: list[str] = []
+                text_context: list[dict[str, Any]] = []
                 for item in content:
-                    if isinstance(item, TextContentPart):
-                        # Handle both "content" and "text" keys
-                        text_content = item.text
-                        if text_content:
-                            text_parts.append(text_content)
-                    elif isinstance(item, ImageContentPart):
-                        # Add image placeholder
-                        text_parts.append("<image>")
-                text_message["content"] = " ".join(text_parts)
+                    if isinstance(item, ImageContentPart):
+                        text_context.append({"type": "image"})
+                    elif isinstance(item, TextContentPart) and item.text:
+                        text_context.append({"type": "text", "text": item.text})
+                if not text_context:
+                    raise ValueError(
+                        f"Message from '{message.role}' has no usable content"
+                    )
+                text_message["content"] = text_context
             else:
-                text_message["content"] = ""
+                raise ValueError(f"Unexpected content type: {type(content)}")
 
             text_messages.append(text_message)
 
-        templated_prompt = self.delegate.apply_chat_template(
+        return self.processor.apply_chat_template(
             text_messages, tokenize=False, add_generation_prompt=True
         )
-
-        return templated_prompt
 
     async def new_context(
         self, request: TextGenerationRequest

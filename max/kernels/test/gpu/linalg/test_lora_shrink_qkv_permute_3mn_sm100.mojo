@@ -26,7 +26,7 @@ from std.utils import IndexList
 from std.utils.index import Index
 
 
-fn test[
+def test[
     in_type: DType,
     out_type: DType,
     num_experts: Int,
@@ -69,20 +69,20 @@ fn test[
         )
 
     # Define shapes
-    comptime static_a_shape = DimList(Dim(), K)
+    comptime static_a_shape = DimList[Dim(), K]()
     var dynamic_a_shape = IndexList[2](total_num_tokens, K)
     var a_size = total_num_tokens * K
 
     comptime actual_N = 3 * N
-    comptime static_c_ref_shape = DimList(Dim(), actual_N)
+    comptime static_c_ref_shape = DimList[Dim(), actual_N]()
     var dynamic_c_ref_shape = IndexList[2](total_num_tokens, actual_N)
     var c_ref_size = total_num_tokens * actual_N
 
-    comptime static_lora_c_shape = DimList(3, Dim(), N)
+    comptime static_lora_c_shape = DimList[3, Dim(), N]()
     var dynamic_lora_c_shape = IndexList[3](3, total_num_tokens, N)
     var lora_c_size = 3 * total_num_tokens * N
 
-    comptime static_b_shape = DimList(num_experts, 3 * N, K)
+    comptime static_b_shape = DimList[num_experts, 3 * N, K]()
     var dynamic_b_shape = IndexList[3](num_experts, 3 * N, K)
     var b_size = num_experts * 3 * N * K
 
@@ -140,27 +140,27 @@ fn test[
         num_experts
     )
 
-    var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_dev = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(),
         IndexList[2](total_num_tokens, K),
     )
-    var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
+    var b_dev = NDBuffer[rank=3, b_type, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(),
         dynamic_b_shape,
     )
-    var c_dev = NDBuffer[c_type, 3, _, static_lora_c_shape](
+    var c_dev = NDBuffer[rank=3, c_type, _, static_lora_c_shape](
         c_dev_buffer.unsafe_ptr(),
         IndexList[3](3, total_num_tokens, N),
     )
-    var c_ref_dev = NDBuffer[c_type, 2, _, static_c_ref_shape](
+    var c_ref_dev = NDBuffer[rank=2, c_type, _, static_c_ref_shape](
         c_ref_dev_buffer.unsafe_ptr(),
         IndexList[2](total_num_tokens, actual_N),
     )
-    var a_offsets_dev = NDBuffer[DType.uint32, 1](
+    var a_offsets_dev = NDBuffer[rank=1, DType.uint32](
         a_offsets_dev_buffer.unsafe_ptr(),
         IndexList[1](num_experts + 1),
     )
-    var expert_ids_dev = NDBuffer[DType.int32, 1](
+    var expert_ids_dev = NDBuffer[rank=1, DType.int32](
         expert_ids_dev_buffer.unsafe_ptr(),
         IndexList[1](num_experts),
     )
@@ -202,7 +202,7 @@ fn test[
 
     rtol = 1e-2
 
-    for qkv_idx, m, n in itertools.product(
+    for qkv_idx, m, n in std.itertools.product(
         range(3), range(total_num_tokens), range(N)
     ):
         var expect = c_ref_host[m, qkv_idx * N + n][0]
@@ -211,7 +211,7 @@ fn test[
         assert_almost_equal(
             actual,
             expect,
-            msg=(
+            msg=String(
                 t"qkv_idx: {qkv_idx} m: {m} n: {n} ref: {expect} actual:"
                 t" {actual}"
             ),

@@ -19,13 +19,17 @@ efficiently for penalty calculations.
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import numpy as np
 import numpy.typing as npt
+import pytest
 from max.driver import CPU
-from max.interfaces import TokenBuffer
+from max.interfaces import SamplingParams, TokenBuffer
 from max.pipelines.core import TextContext
 from max.pipelines.lib.sampling.sampling_logits_processor import (
     FrequencyData,
+    FusedSamplingProcessor,
     _build_token_frequency_csr,
 )
 
@@ -531,3 +535,42 @@ class TestBuildTokenFrequencyCSRDataTypes:
         # Should be 2D with second dimension = 2 (token_id, count)
         assert data_np.ndim == 2
         assert data_np.shape[1] == 2
+
+
+class TestFusedSamplingProcessorInit:
+    """Tests for FusedSamplingProcessor.__init__ penalty input construction."""
+
+    @pytest.mark.parametrize(
+        ("enable_penalties", "expect_penalty_inputs"),
+        [
+            pytest.param(True, True, id="enabled"),
+            pytest.param(False, False, id="disabled"),
+        ],
+    )
+    def test_penalty_inputs_follows_enable_penalties_flag(
+        self, enable_penalties: bool, expect_penalty_inputs: bool
+    ) -> None:
+        """penalty_inputs is constructed iff enable_penalties=True.
+
+        Regression: the sampler graph is compiled with penalty buffer slots
+        when enable_penalties=True, so PenaltyInputs must always be created
+        regardless of per-request penalty values.
+        """
+        context = TextContext(
+            max_length=100,
+            tokens=TokenBuffer(np.array([1, 2, 3], dtype=np.int64)),
+            sampling_params=SamplingParams(),
+        )
+        config = MagicMock()
+        config.sampling.enable_penalties = enable_penalties
+        config.sampling.enable_min_tokens = False
+
+        processor = FusedSamplingProcessor(
+            sampler=MagicMock(),
+            pipeline_config=config,
+            context_batch=[context],
+            num_steps=1,
+            device=CPU(),
+        )
+
+        assert (processor.penalty_inputs is not None) == expect_penalty_inputs

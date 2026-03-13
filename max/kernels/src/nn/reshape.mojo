@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout.coord import Coord, DynamicCoord, Idx
-from layout.tile_layout import Layout, TensorLayout
-from layout import TileTensor
+from layout import Coord, Idx, TensorLayout, TileTensor
+from layout.coord import DynamicCoord
+from layout.tile_layout import Layout
 from register import register_internal
 
 from std.utils.index import IndexList
@@ -22,7 +22,7 @@ from std.utils.index import IndexList
 # Reshape assumes inputs are contiguous. It should always be fused last and
 # a non-contiguous tensor cannot be fused *into* this as input.
 @always_inline
-fn reshape[
+def reshape[
     dtype: DType,
     //,
     output_rank: Int,
@@ -57,7 +57,7 @@ fn reshape[
 
 @register_internal("layout_tensor_reshape")
 @always_inline
-fn layout_tensor_reshape[
+def layout_tensor_reshape[
     output_rank: Int,
     dtype: DType,
     single_thread_blocking_override: Bool,
@@ -80,7 +80,7 @@ fn layout_tensor_reshape[
 
 
 @always_inline
-fn reshape_shape[
+def reshape_shape[
     output_rank: Int,
     input_type: DType,
     target_shape_type: DType,
@@ -115,7 +115,7 @@ fn reshape_shape[
         else:
             non_negative_dim_product *= target_dim
 
-    var input_num_elems = input_buf.numel()
+    var input_num_elems = input_buf.num_elements()
     var output_num_elems = non_negative_dim_product
     # Infer a dimension as the remaining elements, if needed.
     if to_be_inferred_axis != -1:

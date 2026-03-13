@@ -35,16 +35,22 @@ from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
-    Layout as LegacyLayout,
+    ComptimeInt,
+    Coord,
+    CoordLike,
+    Idx,
+    IntTuple,
+    LTToTTLayout,
     LayoutTensor,
+    Layout as LegacyLayout,
+    RuntimeInt,
+    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    row_major,
     lt_to_tt,
-    LTToTTLayout,
+    row_major,
 )
 from buffer import Dim, DimList
-from layout.int_tuple import IntTuple
 from layout.coord import _DimsToCoordLike
 from layout.tma_async import (
     SharedMemBarrier,
@@ -53,14 +59,7 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 from std.builtin.variadics import Variadic
-from layout.coord import (
-    ComptimeInt,
-    Coord,
-    CoordLike,
-    Idx,
-    RuntimeInt,
-)
-from layout.tile_layout import Layout, TensorLayout
+from layout.tile_layout import Layout
 from .smem_types import SMemTileArray as LTSMemTileArray
 from std.utils.index import IndexList
 from std.memory import stack_allocation
@@ -219,6 +218,22 @@ comptime internal_sf_k_major[
 
 
 # ============================================================================
+# sf_tile_dim0/dim1 -- Compute SF tile dimensions from matmul tile parameters
+# ============================================================================
+
+# dim0 for internal_sf_k_major: (BM // SF_MN_GROUP_SIZE) * SF_ATOM_M[0]
+# BM is the M-dimension (or align_up(MMA_N, SF_MN_GROUP_SIZE) for SFB).
+comptime sf_tile_dim0[BM: Int] = (BM // _SF_MN_GROUP_SIZE) * _SF_ATOM_M_0
+
+# dim1 for internal_sf_k_major:
+#   (sf_bk // (SF_ATOM_K * vec_sf_size)) * (SF_ATOM_M[1] * SF_ATOM_K)
+# sf_bk = SF_K_GROUP_SIZE * num_sf_k_tiles (NOT raw BK).
+comptime sf_tile_dim1[sf_bk: Int, vec_sf_size: Int] = (
+    sf_bk // (_SF_ATOM_K * vec_sf_size)
+) * (_SF_ATOM_M_1 * _SF_ATOM_K)
+
+
+# ============================================================================
 # Core TileTensor type for shared memory
 # ============================================================================
 
@@ -246,8 +261,6 @@ Parameters:
     layout: The full layout including swizzle information.
     alignment: Memory alignment (default 128 for shared memory).
 """
-
-from layout.tile_layout import TensorLayout
 
 
 # ============================================================================
@@ -290,7 +303,7 @@ Used for sub-tiles that are strided views into wider rows. Shape is
 """
 
 
-fn _strided_layout[
+def _strided_layout[
     dim0: Int, dim1: Int, stride0: Int
 ]() -> _StridedLayout[dim0, dim1, stride0]:
     return Layout(
@@ -305,7 +318,7 @@ fn _strided_layout[
 
 
 @parameter
-fn _to_index_list[L: TensorLayout]() -> IndexList[L.rank]:
+def _to_index_list[L: TensorLayout]() -> IndexList[L.rank]:
     """Extract static shapes from a TensorLayout into an IndexList.
 
     Works for any rank. TMA layouts are always fully static.
@@ -318,7 +331,7 @@ fn _to_index_list[L: TensorLayout]() -> IndexList[L.rank]:
     return result
 
 
-fn _to_index_list[rank: Int, L: TensorLayout]() -> IndexList[rank]:
+def _to_index_list[rank: Int, L: TensorLayout]() -> IndexList[rank]:
     """Extract static shapes from a TensorLayout into an IndexList with explicit rank.
 
     Used when the compiler can't prove the TensorLayout's rank matches
@@ -645,7 +658,7 @@ struct SMemTileArrayWithLayout[
         Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
 
-    fn __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
+    def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
         """Initialize from inline storage.
 
         Args:
@@ -656,7 +669,7 @@ struct SMemTileArrayWithLayout[
         """
         return Self(storage.unsafe_ptr())
 
-    fn __init__(
+    def __init__(
         out self,
         # TODO: this should correctly propagate mutability.
         unsafe_ptr: UnsafePointer[
@@ -673,7 +686,7 @@ struct SMemTileArrayWithLayout[
         self.ptr = rebind[type_of(self.ptr)](unsafe_ptr)
 
     @always_inline
-    fn __getitem__[T: Intable](self, index: T) -> Self.Tile:
+    def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
 
         Args:
@@ -685,7 +698,7 @@ struct SMemTileArrayWithLayout[
         var tile_ptr = self.ptr + Self.tile_size * Int(index)
         return Self.Tile(tile_ptr, Self.tile_layout)
 
-    fn slice[
+    def slice[
         length: Int
     ](
         self,
@@ -709,7 +722,7 @@ struct SMemTileArrayWithLayout[
 
     @always_inline
     @staticmethod
-    fn stack_allocation() -> Self:
+    def stack_allocation() -> Self:
         """Allocate the array on the stack (in shared memory).
 
         Returns:
@@ -791,7 +804,7 @@ struct SMemTileArray[
         Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
 
-    fn __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
+    def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
         """Initialize from inline storage.
 
         Args:
@@ -802,7 +815,7 @@ struct SMemTileArray[
         """
         return Self(storage.unsafe_ptr())
 
-    fn __init__(
+    def __init__(
         out self,
         # TODO: This should correctly propagate mutability
         unsafe_ptr: UnsafePointer[
@@ -819,7 +832,7 @@ struct SMemTileArray[
         self.ptr = rebind[type_of(self.ptr)](unsafe_ptr)
 
     @always_inline
-    fn __getitem__[T: Intable](self, index: T) -> Self.Tile:
+    def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
 
         Args:
@@ -836,7 +849,7 @@ struct SMemTileArray[
         )
         return Self.Tile(tile_ptr, layout)
 
-    fn slice[
+    def slice[
         length: Int
     ](
         self,
@@ -864,7 +877,7 @@ struct SMemTileArray[
 
     @always_inline
     @staticmethod
-    fn stack_allocation() -> Self:
+    def stack_allocation() -> Self:
         """Allocate the array on the stack (in shared memory).
 
         Returns:
@@ -956,7 +969,7 @@ struct SMemTileArray2D[
         Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
 
-    fn __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
+    def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
         """Initialize from inline storage.
 
         Args:
@@ -967,7 +980,7 @@ struct SMemTileArray2D[
         """
         return Self(storage.unsafe_ptr())
 
-    fn __init__(
+    def __init__(
         out self,
         # TODO: This should correctly propagate mutability
         unsafe_ptr: UnsafePointer[
@@ -989,7 +1002,7 @@ struct SMemTileArray2D[
     ]
 
     @always_inline
-    fn __getitem__[T: Intable](self, index: T) -> Self.Tile:
+    def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
 
         Args:
@@ -1005,7 +1018,7 @@ struct SMemTileArray2D[
         )
 
     @always_inline
-    fn get_with_layout[
+    def get_with_layout[
         tile_layout: Layout, T: Intable
     ](self, index: T) -> SMemTile[
         Self.dtype, tile_layout, alignment=Self.alignment
@@ -1031,7 +1044,7 @@ struct SMemTileArray2D[
             tile_ptr, tile_layout
         )
 
-    fn slice[
+    def slice[
         length: Int
     ](
         self,
@@ -1055,7 +1068,7 @@ struct SMemTileArray2D[
 
     @always_inline
     @staticmethod
-    fn stack_allocation() -> Self:
+    def stack_allocation() -> Self:
         """Allocate the array on the stack (in shared memory).
 
         Returns:
@@ -1126,7 +1139,7 @@ struct SMemTileArray2DRowMajor[
         Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
 
-    fn __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
+    def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
         """Initialize from inline storage.
 
         Args:
@@ -1137,7 +1150,7 @@ struct SMemTileArray2DRowMajor[
         """
         return Self(storage.unsafe_ptr())
 
-    fn __init__(
+    def __init__(
         out self,
         # TODO: This should correctly propagate mutability
         unsafe_ptr: UnsafePointer[
@@ -1154,7 +1167,7 @@ struct SMemTileArray2DRowMajor[
         self.ptr = rebind[type_of(self.ptr)](unsafe_ptr)
 
     @always_inline
-    fn __getitem__[T: Intable](self, index: T) -> Self.Tile:
+    def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
 
         Args:
@@ -1169,7 +1182,7 @@ struct SMemTileArray2DRowMajor[
             Self.tile_layout,
         )
 
-    fn slice[
+    def slice[
         length: Int
     ](
         self,
@@ -1193,7 +1206,7 @@ struct SMemTileArray2DRowMajor[
 
     @always_inline
     @staticmethod
-    fn stack_allocation() -> Self:
+    def stack_allocation() -> Self:
         """Allocate the array on the stack (in shared memory).
 
         Returns:

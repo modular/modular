@@ -24,7 +24,7 @@ struct Point(Writable):
     var x: Int
     var y: Int
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("Point(", self.x, ", ", self.y, ")")
 
 
@@ -32,7 +32,7 @@ struct Point(Writable):
 def test_write_to_stdout() raises:
     print("== test_write_to_stdout")
 
-    var stdout = sys.stdout
+    var stdout = std.sys.stdout
 
     # CHECK: Hello, World!
     stdout.write("Hello, World!")

@@ -78,7 +78,7 @@ from shmem.ep_comm import (
 struct Struct_ep_init:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dispatch_dtype: DType,
         combine_dtype: DType,
         hidden_size: Int,
@@ -181,7 +181,9 @@ struct Struct_ep_init:
         # Calculate buffer sizes for combine phase
         # Combine messages only contain the processed token
         comptime combine_msg_size = hidden_size * size_of[combine_dtype]()
-        comptime combine_send_size = n_experts * max_token_per_rank * combine_msg_size
+        comptime combine_send_size = max_token_per_rank * combine_msg_size * min(
+            n_experts, n_gpus_per_node * n_nodes * top_k
+        )
         comptime combine_recv_size = top_k * max_token_per_rank * combine_msg_size
 
         # Initialize atomic counters to zero for synchronization
@@ -252,9 +254,10 @@ struct Struct_ep_init:
                 n_experts
             ).take_ptr()
 
-            combine_send_p = gpu_ctx.enqueue_create_buffer[DType.uint8](
-                combine_send_size
-            ).take_ptr()
+            # When all the devices are on the same node, we skip the combine
+            # send buffer and directly send tokens to each device's recv buffer.
+            # Hence, we don't need to allocate the combine send buffer.
+            combine_send_p = UnsafePointer[UInt8, MutAnyOrigin]()
             combine_recv_p = gpu_ctx.enqueue_create_buffer[DType.uint8](
                 combine_recv_size
             ).take_ptr()
@@ -303,7 +306,7 @@ struct Struct_ep_init:
 struct Struct_ep_dispatch_async:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         input_dtype: DType,
         dispatch_dtype: DType,
         hidden_size: Int,
@@ -385,7 +388,7 @@ struct Struct_ep_dispatch_async_nvfp4:
     @always_inline
     @staticmethod
     @parameter
-    fn execute[
+    def execute[
         input_dtype: DType,
         dispatch_dtype: DType,
         hidden_size: Int,
@@ -414,7 +417,7 @@ struct Struct_ep_dispatch_async_nvfp4:
         @parameter
         @always_inline
         @__copy_capture(input_scales_tensor)
-        fn input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
+        def input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
             # Currently only use one global input scale for all experts
             return rebind[Scalar[dtype]](input_scales_tensor[0].cast[dtype]())
 
@@ -455,7 +458,7 @@ struct Struct_ep_dispatch_async_nvfp4:
 struct Struct_ep_dispatch_wait:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         hidden_size: Int,
         top_k: Int,
         n_experts: Int,
@@ -511,7 +514,7 @@ struct Struct_ep_dispatch_wait:
 struct Struct_ep_dispatch_wait_fused_shared_expert:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         hidden_size: Int,
         top_k: Int,
         n_experts: Int,
@@ -579,7 +582,7 @@ struct Struct_ep_dispatch_wait_fused_shared_expert:
 struct Struct_ep_dispatch_wait_fp8:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dispatch_dtype: DType,
         dispatch_scale_dtype: DType,
         hidden_size: Int,
@@ -640,7 +643,7 @@ struct Struct_ep_dispatch_wait_fp8:
 struct Struct_ep_dispatch_wait_fp8_fused_shared_expert:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dispatch_dtype: DType,
         dispatch_scale_dtype: DType,
         hidden_size: Int,
@@ -715,7 +718,7 @@ struct Struct_ep_dispatch_wait_fp8_fused_shared_expert:
 struct Struct_ep_dispatch_wait_nvfp4:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dispatch_dtype: DType,
         dispatch_scale_dtype: DType,
         hidden_size: Int,
@@ -780,7 +783,7 @@ struct Struct_ep_dispatch_wait_nvfp4:
 struct Struct_ep_dispatch:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dispatch_dtype: DType,
         hidden_size: Int,
         top_k: Int,
@@ -839,7 +842,7 @@ struct Struct_ep_dispatch:
 struct Struct_ep_dispatch_fp8:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         input_dtype: DType,
         dispatch_dtype: DType,
         dispatch_scale_dtype: DType,
@@ -904,7 +907,7 @@ struct Struct_ep_dispatch_nvfp4:
     @always_inline
     @staticmethod
     @parameter
-    fn execute[
+    def execute[
         input_dtype: DType,
         dispatch_dtype: DType,
         dispatch_scale_dtype: DType,
@@ -944,7 +947,7 @@ struct Struct_ep_dispatch_nvfp4:
         @parameter
         @always_inline
         @__copy_capture(input_scales_tensor)
-        fn input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
+        def input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
             # Currently only use one global input scale for all experts
             return rebind[Scalar[dtype]](input_scales_tensor[0].cast[dtype]())
 
@@ -984,7 +987,7 @@ struct Struct_ep_dispatch_nvfp4:
 struct Struct_ep_combine_async:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         combine_dtype: DType,
         hidden_size: Int,
         top_k: Int,
@@ -1029,7 +1032,7 @@ struct Struct_ep_combine_async:
 struct Struct_ep_combine_async_fused_shared_expert:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         combine_dtype: DType,
         hidden_size: Int,
         top_k: Int,
@@ -1091,7 +1094,7 @@ struct Struct_ep_combine_wait:
     @parameter
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         combine_dtype: DType,
         router_weights_dtype: DType,
         //,
@@ -1117,7 +1120,7 @@ struct Struct_ep_combine_wait:
         @parameter
         @always_inline
         @__copy_capture(router_weights_tensor)
-        fn router_weights_fn[
+        def router_weights_fn[
             width: Int
         ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
             return router_weights_tensor.load[width=width](
@@ -1126,7 +1129,7 @@ struct Struct_ep_combine_wait:
 
         @parameter
         @always_inline
-        fn output_fn[
+        def output_fn[
             dtype: DType, width: Int, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[dtype, width]):
             output_tokens._lambda_store[
@@ -1162,7 +1165,7 @@ struct Struct_ep_combine:
     @always_inline
     @staticmethod
     @parameter
-    fn execute[
+    def execute[
         combine_dtype: DType,
         router_weights_dtype: DType,
         hidden_size: Int,
@@ -1192,7 +1195,7 @@ struct Struct_ep_combine:
         @parameter
         @always_inline
         @__copy_capture(router_weights_tensor)
-        fn router_weights_fn[
+        def router_weights_fn[
             width: Int
         ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
             return router_weights_tensor.load[width=width](
@@ -1201,7 +1204,7 @@ struct Struct_ep_combine:
 
         @parameter
         @always_inline
-        fn output_fn[
+        def output_fn[
             dtype: DType, width: Int, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[dtype, width]):
             output_tokens._lambda_store[
@@ -1245,7 +1248,7 @@ struct Struct_ep_combine:
 struct Struct_ep_fused_silu:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         output_dtype: DType,
         input_dtype: DType,
         //,
@@ -1289,7 +1292,7 @@ struct Struct_ep_fused_silu:
 
         @always_inline
         @parameter
-        fn description_fn() -> String:
+        def description_fn() -> String:
             # fmt: off
             return String(
                 "output_dtype=", output_dtype,
@@ -1316,7 +1319,7 @@ struct Struct_ep_fused_silu:
 struct Struct_ep_fused_silu_fp8:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         fp8_dtype: DType,
         scales_dtype: DType,
         input_dtype: DType,
@@ -1368,7 +1371,7 @@ struct Struct_ep_fused_silu_fp8:
 
         @always_inline
         @parameter
-        fn description_fn() -> String:
+        def description_fn() -> String:
             # fmt: off
             return String(
                 "fp8_dtype=", fp8_dtype,
@@ -1398,7 +1401,7 @@ struct Struct_ep_fused_silu_fp8:
 struct Struct_ep_fused_silu_nvfp4:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         fp4_dtype: DType,
         scales_dtype: DType,
         input_dtype: DType,
@@ -1457,7 +1460,7 @@ struct Struct_ep_fused_silu_nvfp4:
 
         @always_inline
         @parameter
-        fn description_fn() -> String:
+        def description_fn() -> String:
             # fmt: off
             return String(
                 "fp4_dtype=", fp4_dtype,

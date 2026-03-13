@@ -79,6 +79,13 @@ class SharedMemoryArray:
     array.
     """
 
+    name: str
+    """The unique name of the shared memory segment."""
+    shape: tuple[int, ...]
+    """The shape of the NumPy array stored in shared memory."""
+    dtype: str
+    """The NumPy dtype string of the array (for example, ``<f4`` for float32)."""
+
     def __init__(self, name: str, shape: tuple[int, ...], dtype: str) -> None:
         self.name = name
         self.shape = shape
@@ -154,7 +161,7 @@ def open_shm_array(meta: dict[str, Any]) -> npt.NDArray[Any]:
     """Opens a shared memory array and returns it as a NumPy view.
 
     Args:
-        meta: Dictionary with ``'name'``, ``'shape'``, and ``'dtype'`` keys.
+        meta: Dictionary with ``name``, ``shape``, and ``dtype`` keys.
 
     Returns:
         A NumPy array as a view of the shared memory.

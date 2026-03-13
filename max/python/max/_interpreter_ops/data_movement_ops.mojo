@@ -24,12 +24,11 @@ from std.sys.info import has_accelerator, simd_width_of
 from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
 from std.runtime.asyncrt import DeviceContextPtr
-from tensor.managed_tensor_slice import ManagedTensorSlice
+from tensor import ManagedTensorSlice
 from tensor.io_spec import Input, Output
 from compiler_internal import StaticTensorSpec
 from buffer.dimlist import DimList
 from MOGGKernelAPI.MOGGKernelAPI import Slice, StaticBroadcastTo, Transpose
-
 from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_size, MAX_RANK
 
 
@@ -39,7 +38,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_size, MAX_RANK
 
 
 @export
-fn PyInit_data_movement_ops() -> PythonObject:
+def PyInit_data_movement_ops() -> PythonObject:
     """Create a Python module with data movement kernel function bindings."""
     try:
         var b = PythonModuleBuilder("data_movement_ops")
@@ -66,7 +65,7 @@ fn PyInit_data_movement_ops() -> PythonObject:
 # =============================================================================
 
 
-fn _pad_shape_to_max_rank(
+def _pad_shape_to_max_rank(
     shape_obj: PythonObject, rank: Int
 ) raises -> IndexList[MAX_RANK]:
     """Pad shape with leading 1s to make it MAX_RANK."""
@@ -80,7 +79,7 @@ fn _pad_shape_to_max_rank(
 
 
 @always_inline
-fn _make_ptr[
+def _make_ptr[
     dtype: DType
 ](addr: Int) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
     return UnsafePointer[Scalar[dtype], MutExternalOrigin](
@@ -94,7 +93,7 @@ fn _make_ptr[
 
 
 @always_inline
-fn static_broadcast_to_op[
+def static_broadcast_to_op[
     dtype: DType
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -116,8 +115,8 @@ fn static_broadcast_to_op[
         ctx: Device context pointer (null for CPU).
     """
     # Create ManagedTensorSlice wrappers
-    comptime in_spec = StaticTensorSpec[dtype, MAX_RANK].create_unknown()
-    comptime out_spec = StaticTensorSpec[dtype, MAX_RANK].create_unknown()
+    comptime in_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
+    comptime out_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
 
     var input_tensor = ManagedTensorSlice[io_spec=Input, static_spec=in_spec](
         in_ptr, in_shape
@@ -160,7 +159,7 @@ fn static_broadcast_to_op[
             raise Error("No GPU accelerator available")
 
 
-fn static_broadcast_to_dispatcher(
+def static_broadcast_to_dispatcher(
     out_buffer: PythonObject,
     in_buffer: PythonObject,
     out_shape_obj: PythonObject,
@@ -312,7 +311,7 @@ fn static_broadcast_to_dispatcher(
 
 
 @always_inline
-fn transpose_op[
+def transpose_op[
     dtype: DType
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -335,9 +334,9 @@ fn transpose_op[
         perm_data: Padded permutation array (MAX_RANK).
         ctx: Device context pointer (null for CPU).
     """
-    comptime in_spec = StaticTensorSpec[dtype, MAX_RANK].create_unknown()
-    comptime out_spec = StaticTensorSpec[dtype, MAX_RANK].create_unknown()
-    comptime perm_spec = StaticTensorSpec[DType.int64, 1].create_unknown()
+    comptime in_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
+    comptime out_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
+    comptime perm_spec = StaticTensorSpec[DType.int64, 1, ...].get_unknown()
 
     var input_tensor = ManagedTensorSlice[io_spec=Input, static_spec=in_spec](
         in_ptr, in_shape
@@ -385,7 +384,7 @@ fn transpose_op[
             raise Error("No GPU accelerator available")
 
 
-fn transpose_dispatcher(
+def transpose_dispatcher(
     out_buffer: PythonObject,
     in_buffer: PythonObject,
     perm_obj: PythonObject,
@@ -559,7 +558,7 @@ fn transpose_dispatcher(
 # ===----------------------------------------------------------------------=== #
 
 
-fn memcpy_dispatcher(
+def memcpy_dispatcher(
     dst_buffer: PythonObject,
     src_buffer: PythonObject,
     dst_offset: PythonObject,
@@ -714,7 +713,7 @@ fn memcpy_dispatcher(
 
 
 @always_inline
-fn memcpy_op[
+def memcpy_op[
     dtype: DType
 ](
     dst_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -743,7 +742,7 @@ fn memcpy_op[
     @always_inline
     @parameter
     @__copy_capture(d, s)
-    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         var i = rebind[IndexList[1]](idx)[0]
         d.store[width=width](i, s.load[width=width](i))
 
@@ -776,7 +775,7 @@ fn memcpy_op[
 
 
 @always_inline
-fn slice_op[
+def slice_op[
     dtype: DType
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -803,8 +802,8 @@ fn slice_op[
         steps_ptr: Pointer to padded step indices (int64, length MAX_RANK).
         ctx: Device context pointer (null for CPU).
     """
-    comptime in_spec = StaticTensorSpec[dtype, MAX_RANK].create_unknown()
-    comptime out_spec = StaticTensorSpec[dtype, MAX_RANK].create_unknown()
+    comptime in_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
+    comptime out_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
 
     var input_tensor = ManagedTensorSlice[io_spec=Input, static_spec=in_spec](
         in_ptr, in_shape
@@ -813,7 +812,7 @@ fn slice_op[
         io_spec=Output, static_spec=out_spec
     ](out_ptr, out_shape)
 
-    comptime idx_spec = StaticTensorSpec[DType.int64, 1].create_unknown()
+    comptime idx_spec = StaticTensorSpec[DType.int64, 1, ...].get_unknown()
 
     var starts_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
         starts_ptr, IndexList[1](MAX_RANK)
@@ -872,7 +871,7 @@ fn slice_op[
             raise Error("No GPU accelerator available")
 
 
-fn slice_dispatcher(
+def slice_dispatcher(
     out_buffer: PythonObject,
     in_buffer: PythonObject,
     starts_buffer: PythonObject,

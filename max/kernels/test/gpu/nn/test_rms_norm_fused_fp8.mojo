@@ -36,7 +36,7 @@ from std.utils.numerics import max_finite, min_finite
 from nn.normalization import rms_norm_fused_fp8
 
 
-fn initialize_test_data[
+def initialize_test_data[
     dtype: DType
 ](data: UnsafePointer[mut=True, Scalar[dtype], _], size: Int):
     """Initialize test data with diverse positive values to avoid FP8 saturation.
@@ -65,7 +65,7 @@ fn initialize_test_data[
         data[i] = val.cast[dtype]()
 
 
-fn compute_reference_dynamic_scaling[
+def compute_reference_dynamic_scaling[
     in_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
@@ -136,7 +136,7 @@ fn compute_reference_dynamic_scaling[
     temp_storage.free()
 
 
-fn test_dynamic[
+def test_dynamic[
     in_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
@@ -212,19 +212,19 @@ fn test_dynamic[
         scales_device, RuntimeLayout[layout_1d].row_major(Index(rows))
     )
 
-    var out_buffer = NDBuffer[mut=True, out_dtype, rank, MutAnyOrigin](
+    var out_buffer = NDBuffer[mut=True, rank=rank, out_dtype, MutAnyOrigin](
         out_tensor.ptr, shape
     )
     var scale_shape = shape
     scale_shape[rank - 1] = 1
-    var scale_buffer = NDBuffer[mut=True, scales_dtype, rank, MutAnyOrigin](
-        scales_tensor.ptr, scale_shape
-    )
+    var scale_buffer = NDBuffer[
+        mut=True, rank=rank, scales_dtype, MutAnyOrigin
+    ](scales_tensor.ptr, scale_shape)
 
     @__copy_capture(in_tensor)
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
         var idx_linear = in_tensor.runtime_layout(
@@ -285,7 +285,7 @@ fn test_dynamic[
     expected_scales_host.free()
 
 
-fn main() raises:
+def main() raises:
     print("Running fused RMSNorm + FP8 tests...")
     var ctx = DeviceContext()
 

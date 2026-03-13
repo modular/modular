@@ -47,7 +47,7 @@ from std.utils.index import Index, IndexList
 
 
 @__llvm_arg_metadata(act_tma_op, `nvvm.grid_constant`)
-fn im2col_load_kernel[
+def im2col_load_kernel[
     dtype: DType,
     tile_rank: Int,
     tile_shape: IndexList[tile_rank],
@@ -126,11 +126,11 @@ fn im2col_load_kernel[
 # ============================================================================
 
 
-fn im2col_reference[
+def im2col_reference[
     dtype: DType,
 ](
     output: UnsafePointer[mut=True, Scalar[dtype], _],
-    input: NDBuffer[dtype, 4],  # NHWC
+    input: NDBuffer[rank=4, dtype],  # NHWC
     batch: Int,
     in_height: Int,
     in_width: Int,
@@ -169,10 +169,8 @@ fn im2col_reference[
             continue
 
         # Decompose M into (n, oh, ow)
-        var n = m // hw
-        var m_rem = m % hw
-        var oh = m_rem // out_width
-        var ow = m_rem % out_width
+        var n, m_rem = divmod(m, hw)
+        var oh, ow = divmod(m_rem, out_width)
 
         for k_local in range(BK):
             var k = k_start + k_local
@@ -183,10 +181,8 @@ fn im2col_reference[
 
             # Decompose K into (r, s, c)
             # K = r * filter_w * in_channels + s * in_channels + c
-            var c = k % in_channels
-            var filter_idx = k // in_channels
-            var r = filter_idx // filter_w
-            var s = filter_idx % filter_w
+            var filter_idx, c = divmod(k, in_channels)
+            var r, s = divmod(filter_idx, filter_w)
 
             # Compute input coordinates
             var ih = oh * stride_h + r - pad_h
@@ -211,7 +207,7 @@ fn im2col_reference[
 # ============================================================================
 
 
-fn run_im2col_test[
+def run_im2col_test[
     dtype: DType,
     batch: Int,
     in_height: Int,
@@ -280,8 +276,8 @@ fn run_im2col_test[
     # Create NDBuffer view with compile-time static shape
     # Note: For runtime dynamic shapes, we would need to use RuntimeLayout
     # to properly compute strides. For now, we use comptime known shapes.
-    comptime static_shape = DimList(batch, in_height, in_width, in_channels)
-    var input_nd = NDBuffer[dtype, 4, _, static_shape](
+    comptime static_shape = DimList[batch, in_height, in_width, in_channels]()
+    var input_nd = NDBuffer[rank=4, dtype, _, static_shape](
         input_device.unsafe_ptr(), static_shape
     )
     var input_tensor = from_ndbuffer_row_major(input_nd)
@@ -327,7 +323,7 @@ fn run_im2col_test[
     var ref_host = alloc[Scalar[dtype]](tile_size)
 
     # Compute reference on CPU for tile at (k=0, m=0)
-    var input_nd_host = NDBuffer[dtype, 4, _, static_shape](
+    var input_nd_host = NDBuffer[rank=4, dtype, _, static_shape](
         input_host, static_shape
     )
     im2col_reference[dtype](

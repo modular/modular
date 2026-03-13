@@ -15,13 +15,7 @@ from std.collections import Optional
 from std.sys import size_of
 
 from std.gpu.host import DeviceContext, HostBuffer
-from layout import (
-    Coord,
-    CoordLike,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, CoordLike, Idx, TileTensor, row_major
 from nn.concat import (
     _concat_gpu,
     _concat_inner_most_single_dim,
@@ -33,7 +27,7 @@ from std.utils import IndexList, StaticTuple
 from std.utils.index import product
 
 
-fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
+def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     print("== test_concat_4_inputs_rank5")
 
     comptime rank = 5
@@ -129,7 +123,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     @parameter
     @always_inline
     @__copy_capture(output_dyn)
-    fn epilogue_plus_one[
+    def epilogue_plus_one[
         c_type: DType, _rank: Int, width: Int, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
@@ -161,7 +155,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         input_3_dyn,
     )
     @parameter
-    fn run_concat_inner_most_single_dim(ctx: DeviceContext) raises:
+    def run_concat_inner_most_single_dim(ctx: DeviceContext) raises:
         ctx.enqueue_function[kernel, kernel](
             output_dyn.as_any_origin(),
             StaticTuple[
@@ -185,7 +179,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     )
     print(
         "transfer rate = ",
-        Float64(output_dyn.numel() * size_of[UInt8]() * 2)
+        Float64(output_dyn.num_elements() * size_of[UInt8]() * 2)
         * 1e9
         / Float64((1024**3))
         / Float64(nstime_kernel),
@@ -197,7 +191,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     ctx.enqueue_copy(output_host_buffer, output_device_buffer)
     ctx.synchronize()
 
-    fn validate_results() raises:
+    def validate_results() raises:
         for i in range(d0):
             for j in range(d1):
                 for k in range(d2):
@@ -237,7 +231,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         input_3_dyn,
     )
     @parameter
-    fn run_concat_gpu(ctx: DeviceContext) raises:
+    def run_concat_gpu(ctx: DeviceContext) raises:
         # uses default stream
         _concat_gpu[
             epilogue_fn=Optional[elementwise_epilogue_type](
@@ -262,7 +256,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     print("concat_gpu time = ", Float64(nstime) * 1e-6, " ms")
     print(
         "transfer rate = ",
-        Float64(output_dyn.numel() * size_of[UInt8]() * 2)
+        Float64(output_dyn.num_elements() * size_of[UInt8]() * 2)
         * 1e9
         / Float64((1024**3))
         / Float64(nstime),

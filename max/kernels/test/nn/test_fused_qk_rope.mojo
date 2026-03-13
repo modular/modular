@@ -54,7 +54,7 @@ def test_fused_qk_rope[dtype: DType]() raises -> None:
     comptime num_layers = 1
     var lookup_table: List[UInt32] = [0, 1]
 
-    fn _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
+    def _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
         comptime assert len(items) > 0, "empty list in _max"
         items_dyn = materialize[items]()
         max_item = items_dyn[0]
@@ -184,7 +184,9 @@ def test_fused_qk_rope[dtype: DType]() raises -> None:
     )
 
     # Compare output and expected query tensors.
-    assert_almost_equal(q_out.ptr, expected_q_out.ptr, expected_q_out.numel())
+    assert_almost_equal(
+        q_out.ptr, expected_q_out.ptr, expected_q_out.num_elements()
+    )
 
     # Compare output and expected key cache buffers.
     for batch_idx in range(batch_size):

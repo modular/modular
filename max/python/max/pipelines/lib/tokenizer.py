@@ -190,7 +190,7 @@ class PreTrainedPipelineTokenizer(
     ) -> str:
         """Decodes token ids to text via the delegate."""
         try:
-            return self.delegate.decode(encoded, **kwargs)
+            return self.delegate.decode(encoded.tolist(), **kwargs)
         except OverflowError as e:
             error_msg = _handle_decode_overflow(encoded, len(self.delegate))
             raise OverflowError(error_msg) from e
@@ -256,7 +256,6 @@ class TextTokenizer(
         trust_remote_code: bool = False,
         enable_llama_whitespace_fix: bool = False,
         chat_template: str | None = None,
-        context_validators: list[Callable[[TextContext], None]] | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -302,10 +301,6 @@ class TextTokenizer(
 
         # cache tokenizer eos token ids
         self._default_eos_token_ids = set([self.eos])
-
-        self._context_validators = (
-            context_validators if context_validators else []
-        )
 
         if pipeline_config:
             huggingface_config = pipeline_config.model.huggingface_config
@@ -417,7 +412,7 @@ class TextTokenizer(
             return self._decode_with_llama_whitespace_fix(encoded, **kwargs)
 
         try:
-            return self.delegate.decode(encoded, **kwargs)
+            return self.delegate.decode(encoded.tolist(), **kwargs)
         except OverflowError as e:
             error_msg = _handle_decode_overflow(encoded, len(self.delegate))
             raise OverflowError(error_msg) from e
@@ -512,9 +507,6 @@ class TextTokenizer(
             target_endpoint=request.target_endpoint,
         )
 
-        for validator in self._context_validators:
-            validator(context)
-
         return context
 
     @property
@@ -543,7 +535,9 @@ class TextTokenizer(
             encoded = encoded.reshape((1,))
 
         decoded = self.delegate.decode(
-            np.insert(encoded, 0, self._llama_whitespace_fix_dummy_token_id),
+            np.insert(
+                encoded, 0, self._llama_whitespace_fix_dummy_token_id
+            ).tolist(),
             **kwargs,
         )
         return decoded[self._llama_whitespace_fix_dummy_token_len :]
@@ -577,8 +571,6 @@ class TextAndVisionTokenizer(
         revision: str | None = None,
         max_length: int | None = None,
         trust_remote_code: bool = False,
-        context_validators: list[Callable[[TextAndVisionContext], None]]
-        | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -610,10 +602,6 @@ class TextAndVisionTokenizer(
 
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
-        )
-
-        self._context_validators = (
-            context_validators if context_validators else []
         )
 
         # Qwen2.5VL uses image_token_id
@@ -696,7 +684,7 @@ class TextAndVisionTokenizer(
     ) -> str:
         """Transformer a provided encoded token array, back into readable text."""
         try:
-            return self.delegate.decode(encoded, **kwargs)
+            return self.delegate.decode(encoded.tolist(), **kwargs)
         except OverflowError as e:
             error_msg = _handle_decode_overflow(encoded, len(self.delegate))
             raise OverflowError(error_msg) from e
@@ -841,9 +829,6 @@ class TextAndVisionTokenizer(
             ],
             vision_token_ids=self.vision_token_ids,
         )
-
-        for validator in self._context_validators:
-            validator(context)
 
         return context
 

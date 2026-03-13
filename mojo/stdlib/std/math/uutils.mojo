@@ -20,7 +20,7 @@ handling negative values requires additional instructions.
 
 
 @always_inline
-fn ufloordiv(a: Int, b: Int) -> Int:
+def ufloordiv(a: Int, b: Int) -> Int:
     """Perform unsigned floor division (`//`) on Int arguments.
 
     This function treats both arguments as unsigned values and performs
@@ -39,7 +39,7 @@ fn ufloordiv(a: Int, b: Int) -> Int:
 
 
 @always_inline
-fn umod(a: Int, b: Int) -> Int:
+def umod(a: Int, b: Int) -> Int:
     """Perform unsigned modulo (`%`) on Int arguments.
 
     This function treats both arguments as unsigned values and performs
@@ -58,7 +58,7 @@ fn umod(a: Int, b: Int) -> Int:
 
 
 @always_inline
-fn udivmod(a: Int, b: Int) -> Tuple[Int, Int]:
+def udivmod(a: Int, b: Int) -> Tuple[Int, Int]:
     """Perform unsigned divmod on Int arguments.
 
     Computes the quotient and remainder in a single unsigned division,
@@ -77,3 +77,49 @@ fn udivmod(a: Int, b: Int) -> Tuple[Int, Int]:
     var ub = UInt(b)
     var q, r = divmod(ua, ub)
     return Int(q), Int(r)
+
+
+@always_inline
+def ualign_up(value: Int, alignment: Int) -> Int:
+    """Returns the closest multiple of alignment that is greater than or equal
+    to value.
+
+    Args:
+        value: The value to align.
+        alignment: Value to align to.
+
+    Returns:
+        Closest multiple of the alignment that is greater than or equal to the
+        input value. In other words, ceiling(value / alignment) * alignment.
+    """
+    return Int(align_up(UInt(value), UInt(alignment)))
+
+
+@always_inline
+def ualign_down(value: Int, alignment: Int) -> Int:
+    """Returns the closest multiple of alignment that is less than or equal to
+    value.
+
+    Args:
+        value: The value to align.
+        alignment: Value to align to.
+
+    Returns:
+        Closest multiple of the alignment that is less than or equal to the
+        input value. In other words, floor(value / alignment) * alignment.
+    """
+    return Int(align_down(UInt(value), UInt(alignment)))
+
+
+@always_inline
+def uceildiv(numerator: Int, denominator: Int) -> Int:
+    """Return the rounded-up result of dividing numerator by denominator.
+
+    Args:
+        numerator: The numerator.
+        denominator: The denominator.
+
+    Returns:
+        The ceiling of dividing numerator by denominator.
+    """
+    return Int(UInt(numerator).__ceildiv__(UInt(denominator)))

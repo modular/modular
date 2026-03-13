@@ -39,19 +39,19 @@ comptime Strides4D = IndexList[4]
 # ===----------------------------------------------------------------------=== #
 
 
-fn softplus(val: Float32) -> Float32:
+def softplus(val: Float32) -> Float32:
     """Softplus activation: log(1 + exp(x)) with numerical stability."""
     if val > 20.0:
         return val
-    var exp_val = math.exp(val)
-    return math.log(1.0 + exp_val)
+    var exp_val = std.math.exp(val)
+    return std.math.log(1.0 + exp_val)
 
 
-fn sigmoid(val: Float32) -> Float32:
+def sigmoid(val: Float32) -> Float32:
     """Optimized sigmoid using fast approximation for large negative values."""
     if val < -20.0:
         return 0.0
-    var exp_neg = math.exp(-val)
+    var exp_neg = std.math.exp(-val)
     return 1.0 / (1.0 + exp_neg)
 
 
@@ -60,7 +60,7 @@ fn sigmoid(val: Float32) -> Float32:
 # ===----------------------------------------------------------------------=== #
 
 
-fn selective_scan_fwd_gpu[
+def selective_scan_fwd_gpu[
     kernel_dtype: DType,
     DSTATE: Int,
     output_layout: Layout,
@@ -431,7 +431,7 @@ fn selective_scan_fwd_gpu[
         t += 1
 
 
-fn selective_scan_fwd_gpu_minimal[
+def selective_scan_fwd_gpu_minimal[
     kernel_dtype: DType,
     DSTATE: Int,
     output_layout: Layout,
@@ -595,7 +595,7 @@ fn selective_scan_fwd_gpu_minimal[
 # ===----------------------------------------------------------------------=== #
 
 
-fn selective_scan_update_gpu[
+def selective_scan_update_gpu[
     kernel_dtype: DType,
     DSTATE: Int,
     state_out_layout: Layout,
@@ -764,7 +764,7 @@ fn selective_scan_update_gpu[
     output.ptr[out_offset] = Scalar[kernel_dtype](out_val.cast[kernel_dtype]())
 
 
-fn selective_scan_update_cpu[
+def selective_scan_update_cpu[
     kernel_dtype: DType,
     DSTATE: Int,
     state_out_layout: Layout,
@@ -813,7 +813,7 @@ fn selective_scan_update_cpu[
     var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
 
     @parameter
-    fn worker(idx: Int):
+    def worker(idx: Int):
         var b = idx // dim
         var d = idx % dim
 
@@ -934,7 +934,7 @@ fn selective_scan_update_cpu[
     sync_parallelize[worker](batch * dim)
 
 
-fn selective_scan_fwd_cpu[
+def selective_scan_fwd_cpu[
     kernel_dtype: DType,
     DSTATE: Int,
     output_layout: Layout,
@@ -980,7 +980,7 @@ fn selective_scan_fwd_cpu[
     """CPU kernel for selective scan forward pass."""
 
     @parameter
-    fn worker(idx: Int):
+    def worker(idx: Int):
         var b = idx // dim
         var d = idx % dim
 
@@ -1257,7 +1257,7 @@ fn selective_scan_fwd_cpu[
     sync_parallelize[worker](batch * dim)
 
 
-fn selective_scan_fwd_cpu_minimal[
+def selective_scan_fwd_cpu_minimal[
     kernel_dtype: DType,
     DSTATE: Int,
     output_layout: Layout,
@@ -1292,7 +1292,7 @@ fn selective_scan_fwd_cpu_minimal[
     """
 
     @parameter
-    fn worker(idx: Int):
+    def worker(idx: Int):
         var b = idx // dim
         var d = idx % dim
 
@@ -1411,7 +1411,7 @@ fn selective_scan_fwd_cpu_minimal[
 # ===----------------------------------------------------------------------=== #
 
 
-fn ssd_combined_gpu[
+def ssd_combined_gpu[
     kernel_dtype: DType,
     DSTATE: Int,
     output_layout: Layout,
@@ -1830,7 +1830,7 @@ fn ssd_combined_gpu[
         t += 1
 
 
-fn ssd_combined_cpu[
+def ssd_combined_cpu[
     kernel_dtype: DType,
     DSTATE: Int,
     output_layout: Layout,
@@ -1914,7 +1914,7 @@ fn ssd_combined_cpu[
     var gamma_stride = UInt32(1)
 
     @parameter
-    fn worker(idx: Int):
+    def worker(idx: Int):
         var b = idx // dim
         var d = idx % dim
 
@@ -2243,7 +2243,7 @@ fn ssd_combined_cpu[
 # ===----------------------------------------------------------------------=== #
 
 
-fn mamba_split_conv1d_scan_combined_cpu[
+def mamba_split_conv1d_scan_combined_cpu[
     kernel_dtype: DType,
     DSTATE: Int,
     zxbcdt_layout: Layout,
@@ -2397,7 +2397,7 @@ fn mamba_split_conv1d_scan_combined_cpu[
     var dt_start = 2 * dim + 2 * ngroups * DSTATE
 
     @parameter
-    fn worker(idx: Int) raises:
+    def worker(idx: Int) raises:
         var b = idx // dim
         var d = idx % dim
         var h = d // headdim
@@ -2544,7 +2544,9 @@ fn mamba_split_conv1d_scan_combined_cpu[
                             conv_weight.ptr[weight_offset]
                         ).cast[DType.float32]()
                         B_conv_sum = B_conv_sum + input_val * weight_val
-                B_vals[n] = B_conv_sum / (1.0 + math.exp(-B_conv_sum))  # SiLU
+                B_vals[n] = B_conv_sum / (
+                    1.0 + std.math.exp(-B_conv_sum)
+                )  # SiLU
 
                 # Store B
                 var B_offset = (
@@ -2584,7 +2586,9 @@ fn mamba_split_conv1d_scan_combined_cpu[
                             conv_weight.ptr[weight_offset]
                         ).cast[DType.float32]()
                         C_conv_sum = C_conv_sum + input_val * weight_val
-                C_vals[n] = C_conv_sum / (1.0 + math.exp(-C_conv_sum))  # SiLU
+                C_vals[n] = C_conv_sum / (
+                    1.0 + std.math.exp(-C_conv_sum)
+                )  # SiLU
 
                 # Store C
                 var C_offset = (
@@ -2746,7 +2750,7 @@ fn mamba_split_conv1d_scan_combined_cpu[
     sync_parallelize[worker](batch * dim)
 
 
-fn mamba_split_conv1d_scan_combined_gpu[
+def mamba_split_conv1d_scan_combined_gpu[
     kernel_dtype: DType,
     DSTATE: Int,
     zxbcdt_layout: Layout,
@@ -2975,7 +2979,7 @@ fn mamba_split_conv1d_scan_combined_gpu[
                 conv_sum = conv_sum + input_val * weight_val
 
         # Apply SiLU activation
-        var x_val = conv_sum / (1.0 + math.exp(-conv_sum))
+        var x_val = conv_sum / (1.0 + std.math.exp(-conv_sum))
 
         # Step 3: Compute B and C for this group
         var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)

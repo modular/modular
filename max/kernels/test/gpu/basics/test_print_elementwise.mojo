@@ -15,14 +15,13 @@ from std.sys import simd_width_of
 
 from std.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext, get_gpu_target
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 
 from std.utils.index import IndexList
 
 
-fn test_elementwise_print[
+def test_elementwise_print[
     c_type: DType,
     c_layout: Layout,
 ](c01: LayoutTensor[c_type, c_layout, ...], ctx: DeviceContext) raises:
@@ -35,7 +34,7 @@ fn test_elementwise_print[
     @always_inline
     @__copy_capture(c01, N)
     @parameter
-    fn binary[
+    def binary[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var m: Int = idx0[0]
@@ -50,7 +49,7 @@ fn test_elementwise_print[
     print("finished elementwise")
 
 
-fn runtime_row_major[
+def runtime_row_major[
     cols: Int
 ](
     rows: Int,
@@ -61,7 +60,7 @@ fn runtime_row_major[
     return type_of(res).row_major(IndexList[2]((rows, cols)))
 
 
-fn test_dual_matmul[
+def test_dual_matmul[
     N: Int = 512, K: Int = 512
 ](ctx: DeviceContext, M: Int = 512) raises:
     comptime dst_type = DType.float32

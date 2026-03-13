@@ -22,7 +22,7 @@ from std.testing import assert_false, assert_true
 from std.testing import TestSuite
 
 
-fn test_os_query() raises:
+def test_os_query() raises:
     assert_true(CompilationTarget.is_macos())
     assert_false(CompilationTarget.is_linux())
 

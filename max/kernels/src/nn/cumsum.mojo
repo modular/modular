@@ -11,20 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    coord_to_index_list,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 
 from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type
 
 
 @always_inline
-fn cumsum[
+def cumsum[
     dtype: DType,
     exclusive: Bool,
     reverse: Bool,
@@ -77,11 +71,11 @@ fn cumsum[
 
     var output_data = TileTensor(
         output.ptr,
-        row_major(Coord(Idx(output.numel()))),
+        row_major(Coord(Idx(output.num_elements()))),
     )
     var input_data = TileTensor(
         input.ptr,
-        row_major(Coord(Idx(input.numel()))),
+        row_major(Coord(Idx(input.num_elements()))),
     )
 
     for outer_index in range(outer):

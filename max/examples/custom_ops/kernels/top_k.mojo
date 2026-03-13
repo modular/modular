@@ -34,10 +34,10 @@ struct TopKElement[T: DType](Comparable, TrivialRegisterPassable):
     var idx: Int32
     var val: Scalar[Self.T]
 
-    fn __eq__(self, rhs: Self) -> Bool:
+    def __eq__(self, rhs: Self) -> Bool:
         return self.val == rhs.val
 
-    fn __lt__(self, rhs: Self) -> Bool:
+    def __lt__(self, rhs: Self) -> Bool:
         return self.val < rhs.val
 
 
@@ -51,7 +51,7 @@ struct TopK:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         //,  # Forces the previous two params to be inferred from the args
@@ -77,7 +77,7 @@ struct TopK:
         var in_vals_tensor = in_vals.to_layout_tensor()
 
         @parameter
-        fn top_k_gpu[
+        def top_k_gpu[
             K: Int,
         ](
             out_vals: type_of(out_vals_tensor),
@@ -140,13 +140,13 @@ struct TopK:
         else:
 
             @parameter
-            fn top_k_cpu(start_idx: Int, end_idx: Int):
+            def top_k_cpu(start_idx: Int, end_idx: Int):
                 for row_idx in range(start_idx, end_idx):
                     var offset = row_idx * K
                     iota(out_idxs.unsafe_ptr() + offset, K)
 
                     @parameter
-                    fn val_greater_than(lhs: Int32, rhs: Int32) -> Bool:
+                    def val_greater_than(lhs: Int32, rhs: Int32) -> Bool:
                         return (
                             in_vals[row_idx, Int(lhs)]
                             > in_vals[row_idx, Int(rhs)]

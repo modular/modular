@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.algorithm._gpu.reduction import reduce_launch
+from std.algorithm.backend.gpu.reduction import reduce_launch
 from std.gpu.host import DeviceContext
 from std.testing import assert_equal, TestSuite
 
@@ -20,7 +20,7 @@ from std.utils import IndexList, StaticTuple
 comptime num_reductions = 2
 
 
-fn fused_reduce_inner_test[
+def fused_reduce_inner_test[
     reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
@@ -71,7 +71,7 @@ fn fused_reduce_inner_test[
 
     @__copy_capture(input_buf_device, shape)
     @parameter
-    fn input_fn[
+    def input_fn[
         dtype: DType,
         width: Int,
         _rank: Int,
@@ -89,7 +89,7 @@ fn fused_reduce_inner_test[
 
     @__copy_capture(output_buf_device0, output_buf_device1, out_shape)
     @parameter
-    fn output_fn[
+    def output_fn[
         _dtype: DType, width: Int, _rank: Int
     ](
         coords: IndexList[_rank],
@@ -132,7 +132,7 @@ fn fused_reduce_inner_test[
     _ = res_device1
 
 
-fn reduce_inner_test[
+def reduce_inner_test[
     reduce_fn: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing[_] -> SIMD[dtype, width],
@@ -174,7 +174,7 @@ fn reduce_inner_test[
 
     @always_inline
     @parameter
-    fn reduce_wrapper[
+    def reduce_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert reduction_idx < num_reductions, "invalid reduction idx"
@@ -183,7 +183,7 @@ fn reduce_inner_test[
 
     @__copy_capture(input_buf_device, shape)
     @parameter
-    fn input_fn[
+    def input_fn[
         dtype: DType,
         width: Int,
         _rank: Int,
@@ -201,7 +201,7 @@ fn reduce_inner_test[
 
     @__copy_capture(output_buf_device, out_shape)
     @parameter
-    fn output_fn[
+    def output_fn[
         _dtype: DType, width: Int, _rank: Int
     ](
         coords: IndexList[_rank],
@@ -232,21 +232,21 @@ fn reduce_inner_test[
 
 def test_reduce() raises:
     @parameter
-    fn reduce_add[
+    def reduce_add[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
     @parameter
-    fn reduce_max[
+    def reduce_max[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return max(x, y)
 
     @parameter
-    fn fused_reduce_add_max[
+    def fused_reduce_add_max[
         dtype: DType,
         width: Int,
         reduction_idx: Int,

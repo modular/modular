@@ -15,7 +15,7 @@ from std.math import ceildiv
 from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import barrier, warp_id, lane_id
+from std.gpu import barrier, warp_id, lane_id_int as lane_id
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, thread_idx
@@ -44,13 +44,13 @@ from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
 
-fn _compute_reg_tile_layout(layout: Layout, frag_size: Int) -> Layout:
+def _compute_reg_tile_layout(layout: Layout, frag_size: Int) -> Layout:
     var local_size = layout.size() // 128
     return Layout.row_major(local_size // frag_size, frag_size)
 
 
 @always_inline
-fn _load_a_reg_tile[
+def _load_a_reg_tile[
     dtype: DType,
     layout: Layout,
     //,
@@ -100,7 +100,7 @@ fn _load_a_reg_tile[
 
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-fn tma_wgmma_kernel[
+def tma_wgmma_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,

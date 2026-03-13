@@ -43,7 +43,6 @@ from .config import (
     supported_encoding_supported_on,
 )
 from .embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
-from .float8 import parse_float8_config
 from .hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
@@ -67,6 +66,7 @@ from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
 from .pixel_tokenizer import PixelGenerationTokenizer
+from .quant import parse_quant_config
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .sampling import (
     SamplingConfig,
@@ -141,7 +141,7 @@ __all__ = [
     "get_default_max_config_file_section_name",
     "is_float4_encoding",
     "max_tokens_to_generate",
-    "parse_float8_config",
+    "parse_quant_config",
     "parse_supported_encoding_from_file_name",
     "rejection_sampler",
     "rejection_sampler_with_residuals",

@@ -33,7 +33,7 @@ from max.graph import (
     ops,
 )
 
-from ...float8_config import Float8Config
+from ...quant_config import QuantConfig
 from .ep_config import NUM_GROUPS, EPConfig
 
 
@@ -66,10 +66,10 @@ def _ep_dispatch_output_types(
         device=device_ref,
     )
 
-    if config.dispatch_fp8_config is not None:
-        float8_config = config.dispatch_fp8_config
+    if config.dispatch_quant_config is not None:
+        quant_config = config.dispatch_quant_config
 
-        out_scales_type = float8_config.quantized_scales_type(
+        out_scales_type = quant_config.quantized_scales_type(
             Shape([max_recv_tokens, config.hidden_size]), device_ref
         )
 
@@ -81,7 +81,7 @@ def _ep_dispatch_output_types(
                 expert_ids_type,
                 src_info_type,
             ]
-        elif float8_config.is_nvfp4:
+        elif quant_config.is_nvfp4:
             # NVFP4 format will produce an extra tensor for offsets of the
             # padded scales.
             scales_offsets_type = TensorType(
@@ -146,8 +146,8 @@ def call_ep_init(
         "n_gpus_per_node": config.n_gpus_per_node,
         "n_nodes": config.n_nodes,
     }
-    if config.dispatch_fp8_config is not None:
-        if config.dispatch_fp8_config.is_nvfp4:
+    if config.dispatch_quant_config is not None:
+        if config.dispatch_quant_config.is_nvfp4:
             parameters["dispatch_fmt_str"] = "NVFP4"
             parameters["dispatch_scale_dtype"] = DType.float8_e4m3fn
         elif config.dispatch_dtype.is_float8():
@@ -237,9 +237,9 @@ def call_ep_dispatch_async(
         recv_count_ptrs,
     ]
 
-    if config.dispatch_fp8_config is not None:
-        float8_config = config.dispatch_fp8_config
-        if float8_config.is_nvfp4:
+    if config.dispatch_quant_config is not None:
+        quant_config = config.dispatch_quant_config
+        if quant_config.is_nvfp4:
             if input_scales is None:
                 raise ValueError(
                     "input_scales must be provided when using NVFP4 dispatch"
@@ -322,7 +322,9 @@ def call_ep_dispatch_wait(
         "n_nodes": config.n_nodes,
     }
 
-    max_recv_tokens = config.max_tokens_per_rank * config.n_experts
+    max_recv_tokens = config.max_tokens_per_rank * min(
+        config.n_experts, config.n_gpus_per_node * config.n_nodes * config.top_k
+    )
     n_ranks = config.n_gpus_per_node * config.n_nodes
     n_local_experts = config.n_experts // n_ranks
     device_ref = atomic_counter.device
@@ -345,8 +347,8 @@ def call_ep_dispatch_wait(
 
     output_last_dim = config.hidden_size
     if (
-        config.dispatch_fp8_config is not None
-        and config.dispatch_fp8_config.is_nvfp4
+        config.dispatch_quant_config is not None
+        and config.dispatch_quant_config.is_nvfp4
     ):
         output_last_dim //= 2
 
@@ -358,15 +360,15 @@ def call_ep_dispatch_wait(
         device_ref,
     )
 
-    if config.dispatch_fp8_config is not None:
-        float8_config = config.dispatch_fp8_config
+    if config.dispatch_quant_config is not None:
+        quant_config = config.dispatch_quant_config
 
         if config.dispatch_dtype.is_float8():
             op_name += ".fp8"
             parameters["dispatch_scale_granularity"] = str(
-                float8_config.input_scale.granularity
+                quant_config.input_scale.granularity
             )
-        elif float8_config.is_nvfp4:
+        elif quant_config.is_nvfp4:
             op_name += ".nvfp4"
             if config.fused_shared_expert:
                 raise ValueError(
@@ -624,7 +626,9 @@ def call_ep_dispatch(
 
     device_ref = atomic_counter.device
     op_name = "ep.dispatch"
-    max_recv_tokens = config.max_tokens_per_rank * config.n_experts
+    max_recv_tokens = config.max_tokens_per_rank * min(
+        config.n_experts, config.n_gpus_per_node * config.n_nodes * config.top_k
+    )
     n_ranks = config.n_gpus_per_node * config.n_nodes
     n_local_experts = config.n_experts // n_ranks
 
@@ -643,8 +647,8 @@ def call_ep_dispatch(
 
     token_last_dim = config.hidden_size
     if (
-        config.dispatch_fp8_config is not None
-        and config.dispatch_fp8_config.is_nvfp4
+        config.dispatch_quant_config is not None
+        and config.dispatch_quant_config.is_nvfp4
     ):
         token_last_dim //= 2
 
@@ -656,15 +660,15 @@ def call_ep_dispatch(
         device_ref,
     )
 
-    if config.dispatch_fp8_config is not None:
-        float8_config = config.dispatch_fp8_config
+    if config.dispatch_quant_config is not None:
+        quant_config = config.dispatch_quant_config
 
         if config.dispatch_dtype.is_float8():
             op_name += ".fp8"
             parameters["dispatch_scale_granularity"] = str(
-                float8_config.input_scale.granularity
+                quant_config.input_scale.granularity
             )
-        elif float8_config.is_nvfp4:
+        elif quant_config.is_nvfp4:
             if input_scales is None:
                 raise ValueError(
                     "input_scales must be provided when using NVFP4 dispatch"
@@ -832,7 +836,7 @@ def fused_silu(
 def fused_silu_quantized(
     input: TensorValue,
     row_offsets: TensorValue,
-    fp8_config: Float8Config,
+    quant_config: QuantConfig,
     out_type: DType,
     input_scales: TensorValue | None = None,
     scales_offsets: TensorValue | None = None,
@@ -853,7 +857,7 @@ def fused_silu_quantized(
         row_offsets: Row offsets to determine the actual number of received
             tokens in the input tensor.
             Shape: (n_local_experts + 1,)
-        fp8_config: FP8 configuration.
+        quant_config: Quantization configuration.
         out_type: Output dtype.
         input_scales: Optional input scales tensor. Needed by NVFP4.
         scales_offsets: Optional scales offsets tensor. Needed by NVFP4.
@@ -877,7 +881,7 @@ def fused_silu_quantized(
     op_name = "ep.fused_silu"
     input_vals: list[Value[Any]] = [input, row_offsets]
 
-    if fp8_config.is_nvfp4:
+    if quant_config.is_nvfp4:
         op_name += ".nvfp4"
         hidden_size //= 2  # Two FP4 elements are packed into one uint8 element
         assert scales_offsets is not None and input_scales is not None, (
@@ -889,10 +893,10 @@ def fused_silu_quantized(
         op_name += ".fp8"
     else:
         raise ValueError(
-            f"Unsupported quantization format: {fp8_config.quant_method}"
+            f"Unsupported quantization format: {quant_config.quant_method}"
         )
 
-    out_scales_type = fp8_config.quantized_scales_type(
+    out_scales_type = quant_config.quantized_scales_type(
         Shape([input.shape[0], input.shape[1] // 2]), input.device
     )
 

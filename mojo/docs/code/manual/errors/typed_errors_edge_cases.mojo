@@ -33,7 +33,7 @@ struct NetworkError(Copyable, Writable):
     var code: Int
     var message: String
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("NetworkError[", self.code, "]: ", self.message)
 
 
@@ -44,7 +44,7 @@ struct ParseError(Copyable, Writable):
     var position: Int
     var expected: String
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "ParseError at ", self.position, ": expected ", self.expected
         )
@@ -57,16 +57,16 @@ struct ApplicationError(Copyable, Writable):
     var source: String
     var details: String
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("ApplicationError[", self.source, "]: ", self.details)
 
     @staticmethod
-    fn from_network(e: NetworkError) -> Self:
+    def from_network(e: NetworkError) -> Self:
         """Convert a NetworkError to ApplicationError."""
         return Self(source="network", details=String(e))
 
     @staticmethod
-    fn from_parse(e: ParseError) -> Self:
+    def from_parse(e: ParseError) -> Self:
         """Convert a ParseError to ApplicationError."""
         return Self(source="parse", details=String(e))
 
@@ -76,17 +76,17 @@ struct ApplicationError(Copyable, Writable):
 # =============================================================================
 
 
-fn fetch_data() raises NetworkError -> String:
+def fetch_data() raises NetworkError -> String:
     """Simulate fetching data that may fail."""
     raise NetworkError(code=404, message="Resource not found")
 
 
-fn parse_data(data: String) raises ParseError -> Int:
+def parse_data(data: String) raises ParseError -> Int:
     """Simulate parsing data that may fail."""
     raise ParseError(position=0, expected="integer")
 
 
-fn fetch_and_parse() raises ApplicationError -> Int:
+def fetch_and_parse() raises ApplicationError -> Int:
     """Handle different error types using nested try blocks.
 
     Since Mojo only supports one except clause per try block,
@@ -109,17 +109,17 @@ fn fetch_and_parse() raises ApplicationError -> Int:
 # =============================================================================
 
 
-fn level3() raises NetworkError:
+def level3() raises NetworkError:
     """Deepest level - raises the error."""
     raise NetworkError(code=500, message="Server error")
 
 
-fn level2() raises NetworkError:
+def level2() raises NetworkError:
     """Middle level - propagates error unchanged."""
     level3()
 
 
-fn level1() raises NetworkError:
+def level1() raises NetworkError:
     """Top level - propagates error unchanged."""
     level2()
 
@@ -129,7 +129,7 @@ fn level1() raises NetworkError:
 # =============================================================================
 
 
-fn reraise_with_logging() raises NetworkError -> String:
+def reraise_with_logging() raises NetworkError -> String:
     """Catch, log, and re-raise the same error."""
     try:
         return fetch_data()
@@ -138,7 +138,7 @@ fn reraise_with_logging() raises NetworkError -> String:
         raise e^  # Use ^ to transfer ownership
 
 
-fn reraise_as_different_type() raises ApplicationError -> String:
+def reraise_as_different_type() raises ApplicationError -> String:
     """Catch one type and raise a different type."""
     try:
         return fetch_data()
@@ -146,7 +146,7 @@ fn reraise_as_different_type() raises ApplicationError -> String:
         raise ApplicationError.from_network(e)
 
 
-fn reraise_modified() raises NetworkError -> String:
+def reraise_modified() raises NetworkError -> String:
     """Catch, modify, and raise a new error."""
     try:
         return fetch_data()
@@ -159,7 +159,7 @@ fn reraise_modified() raises NetworkError -> String:
 # =============================================================================
 
 
-fn suppress_error() -> String:
+def suppress_error() -> String:
     """Catch an error and return a default value instead of re-raising."""
     try:
         return fetch_data()
@@ -168,7 +168,7 @@ fn suppress_error() -> String:
         return "default value"
 
 
-fn suppress_and_continue():
+def suppress_and_continue():
     """Catch an error and continue execution."""
     try:
         _ = fetch_data()
@@ -182,7 +182,7 @@ fn suppress_and_continue():
 # =============================================================================
 
 
-fn main():
+def main():
     print("=== Pattern 1: Nested try blocks ===")
     try:
         _ = fetch_and_parse()

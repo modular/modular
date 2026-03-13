@@ -16,7 +16,7 @@ from std.utils import IndexList
 
 
 @always_inline
-fn _dot_prod[rank: Int](x: IndexList[rank], y: IndexList[rank]) -> Int:
+def _dot_prod[rank: Int](x: IndexList[rank], y: IndexList[rank]) -> Int:
     var offset = 0
 
     comptime for i in range(rank):
@@ -25,7 +25,7 @@ fn _dot_prod[rank: Int](x: IndexList[rank], y: IndexList[rank]) -> Int:
 
 
 @always_inline
-fn _slice_to_tuple[
+def _slice_to_tuple[
     func: fn(Slice) capturing[_] -> Int, rank: Int
 ](slices: InlineArray[Slice, rank]) -> IndexList[rank]:
     """Takes a tuple of `Slice`s and returns a tuple of Ints.
@@ -37,14 +37,3 @@ fn _slice_to_tuple[
     comptime for i in range(rank):
         tuple[i] = func(slices[i])
     return tuple
-
-
-@always_inline
-fn _row_major_strides[rank: Int](shape: IndexList[rank]) -> IndexList[rank]:
-    var offset = 1
-    var strides = IndexList[rank]()
-
-    comptime for i in reversed(range(rank)):
-        strides[i] = offset
-        offset *= shape[i]
-    return strides

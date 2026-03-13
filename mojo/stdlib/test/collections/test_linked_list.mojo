@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import LinkedList
+from std.hashlib import hash
 
 from test_utils import (
     CopyCountedStruct,
@@ -639,21 +640,28 @@ def test_write_repr_to() raises:
     )
 
 
+def test_hash() raises:
+    var l1 = LinkedList[Int](1, 2, 3)
+    var l2 = LinkedList[Int](1, 2, 3)
+    var l3 = LinkedList[Int](3, 2, 1)
+    assert_equal(hash(l1), hash(l2))
+    # Different order should (very likely) produce different hash
+    assert_true(hash(l1) != hash(l3))
+
+
 struct NonEquatable(Copyable):
     pass
 
 
 def test_linked_list_conditional_conformances() raises:
     assert_true(conforms_to(LinkedList[Int], Equatable))
-    # TODO(MOCO-3413): The `conforms_to` builtin does not evaluate the
-    # `where` clause on conditional conformances — it sees that `LinkedList`
-    # has a conformance for `Equatable` and returns True without checking
-    # whether the condition holds for the concrete `ElementType`. The type
-    # checker at call sites *does* enforce the condition correctly.
-    # assert_false(conforms_to(LinkedList[NonEquatable], Equatable))
+    assert_false(conforms_to(LinkedList[NonEquatable], Equatable))
 
     assert_true(conforms_to(LinkedList[Int], Writable))
-    # assert_false(conforms_to(LinkedList[NonEquatable], Writable))
+    assert_false(conforms_to(LinkedList[NonEquatable], Writable))
+
+    assert_true(conforms_to(LinkedList[Int], Copyable))
+    assert_true(conforms_to(LinkedList[Int], Hashable))
 
 
 def main() raises:

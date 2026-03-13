@@ -24,7 +24,7 @@ from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils_gpu import MatmulKernels
 
 
-fn test_fp8_multistage_gemm[
+def test_fp8_multistage_gemm[
     dtype: DType,
     M: Int,
     N: Int,
@@ -35,9 +35,11 @@ fn test_fp8_multistage_gemm[
 ](ctx: DeviceContext) raises:
     print("test fp8 multistage matmul")
 
-    comptime static_a_shape = DimList(M, K)
-    comptime static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
-    comptime static_c_shape = DimList(M, N)
+    comptime static_a_shape = DimList[M, K]()
+    comptime static_b_shape = DimList[
+        N if transpose_b else K, K if transpose_b else N
+    ]()
+    comptime static_c_shape = DimList[M, N]()
 
     comptime a_size = M * K
     comptime b_size_0 = N if transpose_b else K
@@ -50,10 +52,10 @@ fn test_fp8_multistage_gemm[
     var c_host_ptr = alloc[Scalar[DType.float32]](c_size)
     var c_host_ref_ptr = alloc[Scalar[DType.float32]](c_size)
 
-    var a_host = NDBuffer[dtype, 2, _, static_a_shape](a_host_ptr)
-    var b_host = NDBuffer[dtype, 2, _, static_b_shape](b_host_ptr)
-    var c_host = NDBuffer[DType.float32, 2, _, static_c_shape](c_host_ptr)
-    var c_host_ref = NDBuffer[DType.float32, 2, _, static_c_shape](
+    var a_host = NDBuffer[rank=2, dtype, _, static_a_shape](a_host_ptr)
+    var b_host = NDBuffer[rank=2, dtype, _, static_b_shape](b_host_ptr)
+    var c_host = NDBuffer[rank=2, DType.float32, _, static_c_shape](c_host_ptr)
+    var c_host_ref = NDBuffer[rank=2, DType.float32, _, static_c_shape](
         c_host_ref_ptr
     )
 
@@ -73,16 +75,16 @@ fn test_fp8_multistage_gemm[
     var c_device = ctx.enqueue_create_buffer[DType.float32](c_size)
     var c_device_ref = ctx.enqueue_create_buffer[DType.float32](c_size)
 
-    var a_device_nd = NDBuffer[dtype, 2, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=2, dtype, _, static_a_shape](
         a_device.unsafe_ptr()
     )
-    var b_device_nd = NDBuffer[dtype, 2, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=2, dtype, _, static_b_shape](
         b_device.unsafe_ptr()
     )
-    var c_device_nd = NDBuffer[DType.float32, 2, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=2, DType.float32, _, static_c_shape](
         c_device.unsafe_ptr()
     )
-    var c_device_ref_nd = NDBuffer[DType.float32, 2, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=2, DType.float32, _, static_c_shape](
         c_device_ref.unsafe_ptr()
     )
 
@@ -144,7 +146,7 @@ fn test_fp8_multistage_gemm[
         # TODO: Matrix B should always be in col-major layout for cublasLt to work
         comptime b_col_major_size = N * K
         var b_host_col_major_ptr = alloc[Scalar[dtype]](b_col_major_size)
-        var b_host_col_major = NDBuffer[dtype, 2, _, DimList(N, K)](
+        var b_host_col_major = NDBuffer[rank=2, dtype, _, DimList[N, K]()](
             b_host_col_major_ptr
         )
 
@@ -155,7 +157,7 @@ fn test_fp8_multistage_gemm[
         var b_device_col_major = ctx.enqueue_create_buffer[dtype](
             b_col_major_size
         )
-        var b_device_col_major_nd = NDBuffer[dtype, 2, _, DimList(N, K)](
+        var b_device_col_major_nd = NDBuffer[rank=2, dtype, _, DimList[N, K]()](
             b_device_col_major.unsafe_ptr()
         )
         ctx.enqueue_copy(b_device_col_major, b_host_col_major_ptr)

@@ -13,24 +13,19 @@
 
 from buffer import Dim, DimList
 from std.collections import InlineArray
-from layout.layout import Layout
 from layout.layout_tensor import LayoutTensorIter
 from layout import *
 from layout._fillers import arange
 from layout.layout import (
-    UNKNOWN_VALUE,
-    Layout,
     MakeLayoutList,
     blocked_product,
     coalesce,
     complement,
-    composition,
     expand_modes_alike,
     format_layout,
     is_row_major,
     logical_divide,
     logical_product,
-    print_layout,
     right_inverse,
     size,
     sublayout,
@@ -45,7 +40,7 @@ from std.utils import IndexList
 
 
 # CHECK-LABEL: test_layout_basic
-fn test_layout_basic() raises:
+def test_layout_basic() raises:
     print("== test_layout_basic")
 
     # Basic constructor
@@ -103,7 +98,7 @@ fn test_layout_basic() raises:
     )
 
     # testing col major
-    comptime dl = DimList(3, 64, 128)
+    comptime dl = DimList[3, 64, 128]()
 
     assert_equal(
         Layout.col_major[dims=dl](),
@@ -111,7 +106,7 @@ fn test_layout_basic() raises:
     )
 
     assert_equal(
-        Layout.col_major[dims=DimList(Dim(), 64, 128)](),
+        Layout.col_major[dims=DimList[Dim(), 64, 128]()](),
         Layout(
             IntTuple(UNKNOWN_VALUE, 64, 128),
             IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),
@@ -170,7 +165,7 @@ def test_layout_stride_value_access() raises:
     assert_equal(layout_2d.shape.value(1), 8)
 
 
-fn test_unknowns() raises:
+def test_unknowns() raises:
     print("== test_unknowns")
     comptime shape = IntTuple(2, IntTuple(UNKNOWN_VALUE, 4))
     comptime stride = IntTuple(1, IntTuple(2, 6))
@@ -180,7 +175,7 @@ fn test_unknowns() raises:
     assert_equal(comptime (layout.all_dims_known()), False)
 
 
-fn validate_coalesce[layout: Layout]() raises:
+def validate_coalesce[layout: Layout]() raises:
     comptime layoutR = coalesce(layout)
 
     # print(layout, "=> ", layoutR)
@@ -192,7 +187,7 @@ fn validate_coalesce[layout: Layout]() raises:
 
 
 # CHECK-LABEL: test_coalesce
-fn test_coalesce() raises:
+def test_coalesce() raises:
     print("== test_coalesce")
 
     validate_coalesce[
@@ -235,7 +230,7 @@ fn test_coalesce() raises:
     print(coalesce(Layout(IntTuple(2, 8), IntTuple(4, 8)), keep_rank=True))
 
 
-fn validate_composition[layoutA: Layout, layoutB: Layout]() raises:
+def validate_composition[layoutA: Layout, layoutB: Layout]() raises:
     var layoutR = composition(materialize[layoutA](), materialize[layoutB]())
 
     # print(layoutA, "o", layoutB, "=>", layoutR)
@@ -251,7 +246,7 @@ fn validate_composition[layoutA: Layout, layoutB: Layout]() raises:
 
 
 # CHECK-LABEL: test_composition
-fn test_composition() raises:
+def test_composition() raises:
     print("== test_composition")
 
     validate_composition[Layout(1, 0), Layout(1, 0)]()
@@ -400,7 +395,7 @@ fn test_composition() raises:
 
 
 # CHECK-LABEL: test_by_mode_composition
-fn test_by_mode_composition() raises:
+def test_by_mode_composition() raises:
     print("== test_by_mode_composition")
 
     # The correctness here is built on top of default composition, which has
@@ -420,7 +415,7 @@ fn test_by_mode_composition() raises:
     )
 
 
-fn validate_complement[layout: Layout]() raises:
+def validate_complement[layout: Layout]() raises:
     comptime layoutR = complement(layout)
 
     # print(layout, " => ", layoutR)
@@ -439,7 +434,7 @@ fn validate_complement[layout: Layout]() raises:
 
 
 # CHECK-LABEL: test_complement
-fn test_complement() raises:
+def test_complement() raises:
     print("== test_complement")
     comptime c0 = complement(Layout(4, 1), 24)
     assert_equal(String(materialize[c0]()), "(6:4)")
@@ -487,7 +482,7 @@ fn test_complement() raises:
 
 
 # CHECK-LABEL: test_logcial_divide
-fn test_logcial_divide() raises:
+def test_logcial_divide() raises:
     print("== test_logcial_divide")
     var ld0 = logical_divide(
         Layout(IntTuple(4, 2, 3), IntTuple(2, 1, 8)), Layout(4, 2)
@@ -509,7 +504,7 @@ fn test_logcial_divide() raises:
 
 
 # CHECK-LABEL: test_logical_product
-fn test_logical_product() raises:
+def test_logical_product() raises:
     print("== test_logical_product")
     var lp0 = logical_product(
         Layout(IntTuple(2, 2), IntTuple(4, 1)), Layout(6, 1)
@@ -527,7 +522,7 @@ fn test_logical_product() raises:
 
 
 # CHECK-LABEL: test_blocked_product
-fn test_blocked_product() raises:
+def test_blocked_product() raises:
     print("== test_blocked_product")
     var bp0 = blocked_product(
         Layout(IntTuple(2, 5), IntTuple(5, 1)),
@@ -563,7 +558,7 @@ fn test_blocked_product() raises:
     assert_equal(String(materialize[bp3]()), "((128, (8, 4)):(8, (1, 1024)))")
 
 
-fn test_tile_to_shape() raises:
+def test_tile_to_shape() raises:
     print("== test_tile_to_shape")
     var a = Layout(IntTuple(2, 5), IntTuple(5, 1))
     var b = tile_to_shape(a.copy(), IntTuple(6, 20))
@@ -591,7 +586,7 @@ fn test_tile_to_shape() raises:
 # CHECK:     +----+----+----+----+
 # CHECK:  3  | 10 | 11 | 14 | 15 |
 # CHECK:     +----+----+----+----+
-fn test_print_layout():
+def test_print_layout():
     print("== test_print_layout")
     var l0 = Layout(IntTuple(2, 2), IntTuple(1, 2))
     var l1 = Layout(
@@ -602,7 +597,7 @@ fn test_print_layout():
     print_layout(l1)
 
 
-fn test_format_layout_grid() raises:
+def test_format_layout_grid() raises:
     var expected = """\
        0    1    2    3
     +----+----+----+----+
@@ -627,7 +622,7 @@ fn test_format_layout_grid() raises:
 
 
 # CHECK-LABEL: test_zipped_divide
-fn test_zipped_divide() raises:
+def test_zipped_divide() raises:
     print("== test_zipped_divide")
     var layout_4x4_row_major = Layout.row_major(4, 4)
     assert_equal(
@@ -748,7 +743,7 @@ def test_expand_modes_alike() raises:
     print(ema3[1])
 
 
-fn test_upcast() raises:
+def test_upcast() raises:
     print("== test_upcast")
     comptime scatter = Layout(IntTuple(4, 3), IntTuple(2, 4))
     var up2 = materialize[upcast(scatter, 2)]()
@@ -762,13 +757,13 @@ fn test_upcast() raises:
     assert_equal(String(up16), "((8, 64):(64, 1))")
 
 
-fn validate_right_inverse[layout: Layout]() raises:
+def validate_right_inverse[layout: Layout]() raises:
     var rinv_layout = materialize[right_inverse(layout)]()
     for i in range(comptime (layout.size())):
         assert_equal(i, materialize[layout]()(rinv_layout(i)))
 
 
-fn test_right_inverse() raises:
+def test_right_inverse() raises:
     validate_right_inverse[
         Layout(
             IntTuple(2, IntTuple(3, IntTuple(4))),
@@ -794,7 +789,7 @@ fn test_right_inverse() raises:
 
 
 # CHECK-LABEL: test_transpose
-fn test_transpose() raises:
+def test_transpose() raises:
     print("== test_transpose")
 
     # Test 2D transpose - row-major to column-major

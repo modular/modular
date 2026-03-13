@@ -37,32 +37,32 @@ comptime TEST_VARIANT_POISON = _Global[
 ]
 
 
-fn _initialize_poison() -> Bool:
+def _initialize_poison() -> Bool:
     return False
 
 
-fn _poison_ptr() -> UnsafePointer[Bool, MutExternalOrigin]:
+def _poison_ptr() -> UnsafePointer[Bool, MutExternalOrigin]:
     try:
         return TEST_VARIANT_POISON.get_or_create_ptr()
     except:
         abort("Failed to get or create TEST_VARIANT_POISON")
 
 
-fn assert_no_poison() raises:
+def assert_no_poison() raises:
     assert_false(_poison_ptr().take_pointee())
 
 
 struct Poison(ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         _poison_ptr().init_pointee_move(True)
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         _poison_ptr().init_pointee_move(True)
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         _poison_ptr().init_pointee_move(True)
 
 
@@ -355,11 +355,52 @@ def test_niched_variant_correctly_handles_lifecycle() raises:
     assert_equal(dels, 2)
 
 
+def test_variant_eq() raises:
+    comptime IntOrStr = Variant[Int, String]
+    assert_true(IntOrStr(42) == IntOrStr(42))
+    assert_true(IntOrStr("hello") == IntOrStr("hello"))
+    assert_false(IntOrStr(42) == IntOrStr(99))
+    assert_false(IntOrStr("hello") == IntOrStr("world"))
+    assert_false(IntOrStr(42) == IntOrStr("42"))
+
+    assert_true(IntOrStr(1) != IntOrStr(2))
+    assert_true(IntOrStr(42) != IntOrStr("42"))
+    assert_false(IntOrStr(1) != IntOrStr(1))
+
+    comptime V3 = Variant[Int, String, Float64]
+    assert_true(V3(42) == V3(42))
+    assert_false(V3(42) == V3(3.14))
+    assert_false(V3(42) == V3("42"))
+
+    comptime V1 = Variant[Int]
+    assert_true(V1(42) == V1(42))
+    assert_false(V1(42) != V1(42))
+    assert_true(V1(42) != V1(99))
+
+
+def test_variant_hash() raises:
+    comptime IntOrStr = Variant[Int, String]
+    assert_equal(hash(IntOrStr(42)), hash(IntOrStr(42)))
+    assert_equal(hash(IntOrStr("hello")), hash(IntOrStr("hello")))
+    assert_true(hash(IntOrStr(42)) != hash(IntOrStr(99)))
+    assert_true(hash(IntOrStr(42)) != hash(IntOrStr("42")))
+
+    comptime V1 = Variant[Int]
+    assert_equal(hash(V1(42)), hash(V1(42)))
+    assert_true(hash(V1(42)) != hash(V1(99)))
+
+
 def test_variant_conditional_conformances() raises:
+    assert_true(conforms_to(Variant[Int, String], Equatable))
+    assert_true(conforms_to(Variant[Int], Equatable))
+    assert_true(conforms_to(Variant[Int, String], Hashable))
+    assert_true(conforms_to(Variant[Int], Hashable))
     assert_true(conforms_to(Variant[Int, String], Writable))
     assert_true(conforms_to(Variant[Int], Writable))
-    # TODO(MOCO-3413): Enable negative test cases
-    # assert_false(conforms_to(Variant[MoveOnly[Int]], Writable))
+
+    assert_false(conforms_to(Variant[MoveOnly[Int]], Equatable))
+    assert_false(conforms_to(Variant[MoveOnly[Int]], Hashable))
+    assert_false(conforms_to(Variant[MoveOnly[Int]], Writable))
 
 
 def main() raises:

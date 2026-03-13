@@ -21,15 +21,15 @@ from std.testing import TestSuite
 # CHECK-LABEL: test_print_stderr
 def test_print_stderr() raises:
     # CHECK-STDERR: stderr
-    print("stderr", file=sys.stderr)
+    print("stderr", file=std.sys.stderr)
     # CHECK-STDERR: a/b/c
-    print("a", "b", "c", sep="/", file=sys.stderr)
+    print("a", "b", "c", sep="/", file=std.sys.stderr)
     # CHECK-STDERR: world
-    print("world", flush=True, file=sys.stderr)
+    print("world", flush=True, file=std.sys.stderr)
     # CHECK-STDERR: helloworld
-    print("hello", end="world", file=sys.stderr)
+    print("hello", end="world", file=std.sys.stderr)
     # CHECK-STDERR: hello world
-    print("hello world", file=sys.stderr)
+    print("hello world", file=std.sys.stderr)
 
 
 def main() raises:

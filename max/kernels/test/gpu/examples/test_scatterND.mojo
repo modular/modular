@@ -28,7 +28,7 @@ comptime MAX_THREADS_PER_BLOCK = 256
 
 
 # TODO: Follow-up: Eliminate offsets calculations and use NDBuffers directly.
-fn scatter_nd_gpu[
+def scatter_nd_gpu[
     dtype: DType,
     indices_type: DType,
 ](
@@ -44,7 +44,7 @@ fn scatter_nd_gpu[
     if id >= num_indices:
         return
 
-    var element_counts_and_input_dims = NDBuffer[DType.int64, 1](
+    var element_counts_and_input_dims = NDBuffer[rank=1, DType.int64](
         element_counts_and_input_dims_ptr, Index(last_index_dimension * 2)
     )
 
@@ -91,17 +91,17 @@ fn scatter_nd_gpu[
 
 
 # TODO: Extend for using reduce function if needed.
-fn scatter_nd[
+def scatter_nd[
     dtype: DType,
     indices_type: DType,
     data_rank: Int,
     indices_rank: Int,
     updates_rank: Int,
 ](
-    data: NDBuffer[dtype, data_rank, _, _, _],
-    indices: NDBuffer[indices_type, indices_rank, _, _, _],
-    updates: NDBuffer[dtype, updates_rank, _, _, _],
-    output: NDBuffer[dtype, data_rank, _, _, _],
+    data: NDBuffer[rank=data_rank, dtype, _, _, _],
+    indices: NDBuffer[rank=indices_rank, indices_type, _, _, _],
+    updates: NDBuffer[rank=updates_rank, dtype, _, _, _],
+    output: NDBuffer[rank=data_rank, dtype, _, _, _],
     ctx: DeviceContext,
 ) raises:
     """
@@ -184,14 +184,14 @@ fn scatter_nd[
     # (combine both in one to reduce number of memcpy from H->D).
     var ptr = alloc[Int64](last_shape_of_indices * 2)
     var element_counts_and_input_dims = NDBuffer[DType.int64, 1](
-        ptr, DimList(last_shape_of_indices * 2)
+        ptr, DimList[last_shape_of_indices * 2]()
     )
 
     # input_strides
     # e.g., for a shape of 2, 3, 4, 5
     #       input_strides --> [3*4*5, 4*5, 5, 1]
     var input_strides = NDBuffer[
-        DType.int64, 1, MutAnyOrigin, DimList(data_rank)
+        rank=1, DType.int64, MutAnyOrigin, DimList[data_rank]()
     ]().stack_allocation()
     for i in range(data_rank):
         var total_stride = 1
@@ -255,16 +255,16 @@ fn scatter_nd[
     ptr.free()
 
 
-fn linear_fill[
+def linear_fill[
     dtype: DType
-](buf: NDBuffer[dtype, _, MutAnyOrigin, ...], elems: Span[Scalar[dtype]],):
+](buf: NDBuffer[rank=_, dtype, MutAnyOrigin, ...], elems: Span[Scalar[dtype]],):
     assert buf.num_elements() == len(elems), "must fill all elements of tensor"
 
     for i in range(buf.num_elements()):
         buf[i] = elems[i]
 
 
-fn test_case[
+def test_case[
     dtype: DType,
     input_shape: DimList,
     indices_shape: DimList,
@@ -275,18 +275,20 @@ fn test_case[
     updates_vals: Span[Scalar[dtype]],
     output_ref_vals: Span[Scalar[dtype]],
 ) raises:
-    var data = NDBuffer[dtype, 3, MutAnyOrigin, input_shape].stack_allocation()
+    var data = NDBuffer[
+        rank=3, dtype, MutAnyOrigin, input_shape
+    ].stack_allocation()
     linear_fill(data, data_vals)
     var indices = NDBuffer[
-        DType.int64, 2, MutAnyOrigin, indices_shape
+        rank=2, DType.int64, MutAnyOrigin, indices_shape
     ].stack_allocation()
     linear_fill(indices, indices_vals)
     var updates = NDBuffer[
-        dtype, 3, MutAnyOrigin, updates_shape
+        rank=3, dtype, MutAnyOrigin, updates_shape
     ].stack_allocation()
     linear_fill(updates, updates_vals)
     var output = NDBuffer[
-        dtype, 3, MutAnyOrigin, input_shape
+        rank=3, dtype, MutAnyOrigin, input_shape
     ].stack_allocation()
 
     # Note: This is for the specific set of examples
@@ -299,7 +301,7 @@ fn test_case[
     _ = updates
 
     var output_ref = NDBuffer[
-        dtype, 3, MutAnyOrigin, input_shape
+        rank=3, dtype, MutAnyOrigin, input_shape
     ].stack_allocation()
     linear_fill(output_ref, output_ref_vals)
 
@@ -310,8 +312,8 @@ fn test_case[
             assert_false(True)
 
 
-fn main():
-    fn test_scatternd_gpu():
+def main():
+    def test_scatternd_gpu():
         print("== test_scatternd_gpu")
         var data: List[Float32] = [
             # fmt: off
@@ -372,9 +374,9 @@ fn main():
 
         _ = test_case[
             DType.float32,
-            input_shape=DimList(4, 4, 4),
-            indices_shape=DimList(2, 1),
-            updates_shape=DimList(2, 4, 4),
+            input_shape=DimList[4, 4, 4](),
+            indices_shape=DimList[2, 1](),
+            updates_shape=DimList[2, 4, 4](),
         ]
         (
             data,

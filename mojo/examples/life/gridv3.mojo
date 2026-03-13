@@ -30,16 +30,16 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__(out self):
+    def __init__(out self):
         self.data = alloc[Int8](self.num_cells)
         memset_zero(self.data, self.num_cells)
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.data = alloc[Int8](self.num_cells)
         memcpy(dest=self.data, src=copy.data, count=self.num_cells)
         # The lifetime of `existing` continues unchanged
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         self.data.free()
 
     # ===-------------------------------------------------------------------===#
@@ -47,14 +47,14 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    fn random(seed: Optional[Int] = None) -> Self:
+    def random(seed: Optional[Int] = None) -> Self:
         if seed:
-            random.seed(seed.value())
+            std.random.seed(seed.value())
         else:
-            random.seed()
+            std.random.seed()
 
         grid = Self()
-        random.randint(grid.data, grid.num_cells, 0, 1)
+        std.random.randint(grid.data, grid.num_cells, 0, 1)
 
         return grid^
 
@@ -62,17 +62,17 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
     # Indexing
     # ===-------------------------------------------------------------------===#
 
-    fn __getitem__(self, row: Int, col: Int) -> Int8:
+    def __getitem__(self, row: Int, col: Int) -> Int8:
         return (self.data + row * Self.cols + col)[]
 
-    fn __setitem__(mut self, row: Int, col: Int, value: Int8) -> None:
+    def __setitem__(mut self, row: Int, col: Int, value: Int8) -> None:
         (self.data + row * Self.cols + col)[] = value
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         for row in range(Self.rows):
             for col in range(Self.cols):
                 if self[row, col] == 1:
@@ -86,11 +86,11 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn evolve(self) -> Self:
+    def evolve(self) -> Self:
         next_generation = Self()
 
         @parameter
-        fn worker(row: Int) -> None:
+        def worker(row: Int) -> None:
             # Calculate neighboring row indices, handling "wrap-around"
             row_above = (row - 1) % Self.rows
             row_below = (row + 1) % Self.rows

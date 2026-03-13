@@ -45,7 +45,7 @@ struct DataType(TrivialRegisterPassable):
     comptime TFLOAT32_FTZ = Self(12)
 
     @staticmethod
-    fn from_dtype[dtype: DType]() -> Self:
+    def from_dtype[dtype: DType]() -> Self:
         """
         Convert a DType to a DataType enum value.
 
@@ -112,7 +112,7 @@ struct SwizzleMode(
     comptime _128B = Self(3)
 
     @always_inline("nodebug")
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         """Convert SwizzleMode to integer representation.
 
         Returns:
@@ -121,7 +121,7 @@ struct SwizzleMode(
         return Int(self._value)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Check equality between two SwizzleMode instances.
 
         Args:
@@ -133,7 +133,7 @@ struct SwizzleMode(
         return self._value == other._value
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Check inequality between two SwizzleMode instances.
 
         Args:
@@ -145,7 +145,7 @@ struct SwizzleMode(
         return self._value != other._value
 
     @always_inline
-    fn bytes(self) -> Int:
+    def bytes(self) -> Int:
         """Get the swizzle size in bytes.
 
         Returns:
@@ -157,18 +157,8 @@ struct SwizzleMode(
         """
         return Int((2**self._value) * 16)
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Convert SwizzleMode to string representation.
-
-        Returns:
-            A human-readable string describing the swizzle mode.
-        """
-        return String.write(self)
-
     @always_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write a human-readable representation of the SwizzleMode to a writer.
 
         Args:
@@ -235,7 +225,7 @@ struct TensorMap(ImplicitlyCopyable):
     """The underlying 128-byte opaque descriptor data filled by the CUDA driver API."""
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize an empty TensorMap descriptor.
 
         Creates a zero-initialized 128-byte tensor map descriptor.
@@ -245,7 +235,7 @@ struct TensorMap(ImplicitlyCopyable):
         self.data = StaticTuple[UInt8, 128]()
 
     @always_inline
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Copy constructor for TensorMap.
 
         Args:
@@ -255,7 +245,7 @@ struct TensorMap(ImplicitlyCopyable):
 
 
 @always_inline
-fn create_tensormap[
+def create_tensormap[
     dtype: DType,
     rank: Int,
     //,
@@ -371,7 +361,7 @@ fn create_tensormap[
 
 
 @always_inline
-fn create_tensormap_im2col[
+def create_tensormap_im2col[
     dtype: DType,
     rank: Int,
     spatial_rank: Int,

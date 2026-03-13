@@ -67,7 +67,7 @@ comptime LIB_ACC_PATH = "/System/Library/Frameworks/Accelerate.framework/Acceler
 # ===-----------------------------------------------------------------------===#
 
 
-fn _on_error_msg() -> Error:
+def _on_error_msg() -> Error:
     return Error(
         (
             "Cannot find the Apple Accelerate libraries. Please make sure that "
@@ -84,7 +84,7 @@ comptime APPLE_ACCELERATE = _Global[
 ]
 
 
-fn _init_dylib() -> OwnedDLHandle:
+def _init_dylib() -> OwnedDLHandle:
     # Note: we can't use _find_dylib here because this is not a real path
     # (it's a framework path).
     try:
@@ -94,8 +94,8 @@ fn _init_dylib() -> OwnedDLHandle:
 
 
 @always_inline
-fn _get_dylib_function[
-    func_name: StaticString, result_type: __TypeOfAllTypes
+def _get_dylib_function[
+    func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
     comptime assert (
         CompilationTarget.is_macos()
@@ -108,7 +108,7 @@ fn _get_dylib_function[
 
 
 @always_inline
-fn get_cblas_f32_function() raises -> cblas_gemm_type:
+def get_cblas_f32_function() raises -> cblas_gemm_type:
     # void cblas_sgemm(const enum CBLAS_ORDER ORDER,
     #                  const enum CBLAS_TRANSPOSE TRANSA,
     #                  const enum CBLAS_TRANSPOSE TRANSB,
@@ -132,7 +132,7 @@ fn get_cblas_f32_function() raises -> cblas_gemm_type:
 
 
 @always_inline
-fn use_apple_accelerate_lib[
+def use_apple_accelerate_lib[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -160,7 +160,7 @@ struct _CBLASTranspose(TrivialRegisterPassable):
 
 # _cblas_f32 used by apple_batched_matmul (via the corresponding apple_matmul)
 @always_inline
-fn _cblas_f32[
+def _cblas_f32[
     *,
     transpose_b: Bool = False,
 ](
@@ -198,7 +198,7 @@ fn _cblas_f32[
 # _cblas_f32 used by apple_matmul (except via the apple_matmul in
 # apple_batched_matmul)
 @always_inline
-fn _cblas_f32[
+def _cblas_f32[
     *,
     transpose_b: Bool = False,
 ](
@@ -242,15 +242,15 @@ fn _cblas_f32[
 # apple_matmul (which internally calls cblas_sgemm, which in turns calls a
 # cblas_sgemv has been found to have suboptimal performance compared to this.
 @always_inline
-fn apple_gemv[
+def apple_gemv[
     *,
     b_packed: Bool,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[mut=False, _, 2, _, _],
-    b: NDBuffer[mut=False, _, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, _, _, _],
+    a: NDBuffer[mut=False, rank=2, _, _, _],
+    b: NDBuffer[mut=False, rank=2, _, _, _],
 ) raises:
     # Recall:
     # if b_packed=True, this will be called AFTER pack shape and actual packing
@@ -258,7 +258,7 @@ fn apple_gemv[
     var K = a.dim[1]() if b_packed else b.dim[0]()
     var N = b.dim[0]() if transpose_b or b_packed else b.dim[1]()
 
-    var transposed_b = NDBuffer[b.type, 2, MutAnyOrigin]()
+    var transposed_b = NDBuffer[rank=2, b.type, MutAnyOrigin]()
     var transposed_b_ptr = UnsafePointer[Scalar[b.type], MutExternalOrigin]()
 
     # If both b_packed and transpose_b are False, we need to transpose B at
@@ -266,7 +266,7 @@ fn apple_gemv[
     comptime if b_packed == False and not transpose_b:
         var transposed_b_shape = Index(b.dim[1](), b.dim[0]())
         transposed_b_ptr = alloc[Scalar[b.type]](b.num_elements())
-        transposed_b = NDBuffer[b.type, 2, MutAnyOrigin](
+        transposed_b = NDBuffer[rank=2, b.type, MutAnyOrigin](
             transposed_b_ptr, transposed_b_shape
         )
 
@@ -289,13 +289,13 @@ fn apple_gemv[
     @always_inline
     @__copy_capture(c, a, b, K)
     @parameter
-    fn process_rows(start_row: Int, end_row: Int):
+    def process_rows(start_row: Int, end_row: Int):
         for var n in range(start_row, end_row):
             var acc_vector = SIMD[c.type, simd_width]()
             var acc_scalar = Scalar[c.type]()
 
             @always_inline
-            fn compute_fn[width: Int](k: Int) unified {mut}:
+            def compute_fn[width: Int](k: Int) unified {mut}:
                 var a_val = a.load[width=width](0, k).cast[c.type]()
                 var b_val = (
                     b.load[width=width](n, k).cast[c.type]() if b_packed
@@ -343,7 +343,7 @@ fn apple_gemv[
 
 # apple_matmul used by apple_batched_matmul
 @always_inline
-fn apple_matmul[
+def apple_matmul[
     *,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
@@ -404,7 +404,7 @@ fn apple_matmul[
 
         @always_inline
         @parameter
-        fn epilogue_on_col_chunk[
+        def epilogue_on_col_chunk[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var c_coord = IndexList[2](idx[0], idx[1])
@@ -416,7 +416,7 @@ fn apple_matmul[
 
 # apple_matmul used by all matmuls except apple_batched_matmul
 @always_inline
-fn apple_matmul[
+def apple_matmul[
     *,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
@@ -437,7 +437,7 @@ fn apple_matmul[
 
 
 @always_inline
-fn apple_batched_matmul[
+def apple_batched_matmul[
     *,
     transpose_b: Bool = False,
     elementwise_epilogue_fn: Optional[
@@ -456,13 +456,13 @@ fn apple_batched_matmul[
     var cblas_gemm = get_cblas_f32_function()
 
     for batch in range(batch_size):
-        var c2 = NDBuffer[c.type, 2, address_space=c.address_space](
+        var c2 = NDBuffer[rank=2, c.type, address_space=c.address_space](
             c3.data + (c_shape[0] * c_shape[1]) * batch, c_shape
         )
-        var a2 = NDBuffer[a.type, 2, address_space=a.address_space](
+        var a2 = NDBuffer[rank=2, a.type, address_space=a.address_space](
             a3.data + (a_shape[0] * a_shape[1]) * batch, a_shape
         )
-        var b2 = NDBuffer[b.type, 2, address_space=b.address_space](
+        var b2 = NDBuffer[rank=2, b.type, address_space=b.address_space](
             b3.data + (b_shape[0] * b_shape[1]) * batch, b_shape
         )
 
@@ -473,7 +473,7 @@ fn apple_batched_matmul[
 
         @parameter
         @__copy_capture(batch_coords)
-        fn elementwise_lambda_2d[
+        def elementwise_lambda_2d[
             c_type: DType, width: Int, *, alignment: Int = 1
         ](out_coords: IndexList[2], out_val: SIMD[c_type, width]):
             var local_batch_coords = batch_coords

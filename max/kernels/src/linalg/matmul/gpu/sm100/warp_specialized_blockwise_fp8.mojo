@@ -46,14 +46,14 @@ from std.gpu.sync import (
 )
 from std.gpu.compute.arch.tcgen05 import *
 from layout import (
-    UNKNOWN_VALUE,
+    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
     TileTensor,
+    UNKNOWN_VALUE,
 )
-from layout.int_tuple import IntTuple
 from layout.layout_tensor import LayoutTensorIter
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
@@ -80,10 +80,14 @@ from .config import MatmulConfig
 from .matmul import WarpRole, consumer_main_loop, stsm_helper, accum_arrive
 from .tile_scheduler import TileScheduler, WorkInfo
 from .pipeline import ProducerConsumerPipeline
+from structured_kernels.tile_types import (
+    SMemTileArray2D,
+    swizzle_mode_to_bytes,
+)
 
 
 @always_inline
-fn _get_accumulator_size[
+def _get_accumulator_size[
     *,
     c_smem_layout: Layout,
     block_tile_shape: IndexList[3],
@@ -118,7 +122,7 @@ fn _get_accumulator_size[
 
 
 @always_inline
-fn load_AB[
+def load_AB[
     a_type: DType,
     b_type: DType,
     a_scales_type: DType,
@@ -252,7 +256,7 @@ fn load_AB[
 
 
 @always_inline
-fn multi_stage_reg_epilogue[
+def multi_stage_reg_epilogue[
     c_smem_layout: Layout,
     c_rank: Int,
     c_tile_shape: IndexList[c_rank],
@@ -348,7 +352,7 @@ fn multi_stage_reg_epilogue[
             var casted = src.cast[c_type]()
             comptime for _j in range(cast_width):
                 upper_st[offset + _j] = casted[_j]
-        stsm_helper[swizzle, UInt(stageN)](upper_st, c_smem_warp_tile_upper)
+        stsm_helper[swizzle, stageN](upper_st, c_smem_warp_tile_upper)
 
         var c_smem_warp_tile_lower = c_smem_warp_tile.tile[data_paths, stageN](
             1, 0
@@ -367,7 +371,7 @@ fn multi_stage_reg_epilogue[
                 var casted = src.cast[c_type]()
                 comptime for _j in range(cast_width):
                     lower_st[offset + _j] = casted[_j]
-            stsm_helper[swizzle, UInt(stageN)](lower_st, c_smem_warp_tile_lower)
+            stsm_helper[swizzle, stageN](lower_st, c_smem_warp_tile_lower)
 
         # Guard the write to shared memory is done.
         named_barrier[Int32(num_output_warps * WARP_SIZE)]()
@@ -433,7 +437,7 @@ fn multi_stage_reg_epilogue[
 
 
 @always_inline
-fn promote_accumulators[
+def promote_accumulators[
     pipeline_stages: Int,
     num_accum_pipeline_stages: Int,
     accum_type: DType,
@@ -757,7 +761,7 @@ fn promote_accumulators[
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
-fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
+def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -903,6 +907,22 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         b_smem_base,
         b_smem_size,
     )
+
+    # TileTensor views of the same SMEM for consumer_main_loop (MMA path).
+    var a_smem_tt = SMemTileArray2D[
+        a_type,
+        BM,
+        BK,
+        num_pipeline_stages,
+        swizzle_mode_to_bytes[config.a_swizzle],
+    ](a_smem_base)
+    var b_smem_tt = SMemTileArray2D[
+        b_type,
+        BN,
+        BK,
+        num_pipeline_stages,
+        swizzle_mode_to_bytes[config.b_swizzle],
+    ](b_smem_base)
 
     var c_smem_iter = LayoutTensorIter[
         c_type,
@@ -1184,8 +1204,8 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                         cluster_shape=config.cluster_shape,
                     ](
                         tmem_offset,
-                        a_smem,
-                        b_smem,
+                        a_smem_tt,
+                        b_smem_tt,
                         load_mma_pipeline,
                         mma_op,
                         elect_one_warp,
@@ -1313,7 +1333,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         _ = tmem_dealloc_mbar[].arrive()
 
 
-fn sm100_warp_specialized_blockwise_fp8[
+def sm100_warp_specialized_blockwise_fp8[
     transpose_b: Bool,
     a_scales_type: DType,
     b_scales_type: DType,

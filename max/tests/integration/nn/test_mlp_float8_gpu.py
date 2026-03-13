@@ -38,12 +38,12 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, TensorValue
 from max.graph.weights import WeightData
 from max.nn import MLP
-from max.nn.float8_config import (
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
-    Float8WeightScaleSpec,
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
 )
 
 
@@ -53,26 +53,26 @@ def _skip_if_no_gpu() -> None:
         pytest.skip("No GPU available for FP8 MLP test")
 
 
-def _create_fbgemm_fp8_config() -> Float8Config:
-    """Creates Float8Config.
+def _create_fbgemm_fp8_config() -> QuantConfig:
+    """Creates QuantConfig.
     - Dynamic, column-wise (per-token) input scaling
     - Static, row-wise weight scaling
     """
-    input_spec = Float8InputScaleSpec(
-        granularity=Float8ScaleGranularity.COLWISE,
-        origin=Float8ScaleOrigin.DYNAMIC,
+    input_spec = InputScaleSpec(
+        granularity=ScaleGranularity.COLWISE,
+        origin=ScaleOrigin.DYNAMIC,
         dtype=DType.float32,
         activation_scale_ub=None,
     )
-    weight_spec = Float8WeightScaleSpec(
-        granularity=Float8ScaleGranularity.ROWWISE,
+    weight_spec = WeightScaleSpec(
+        granularity=ScaleGranularity.ROWWISE,
         dtype=DType.float32,
     )
-    return Float8Config(
+    return QuantConfig(
         input_scale=input_spec,
         weight_scale=weight_spec,
-        mlp_in_float8={0},
-        attn_qkv_in_float8=set(),
+        mlp_quantized_layers={0},
+        attn_quantized_layers=set(),
         embedding_output_dtype=DType.bfloat16,
         quant_method="fbgemm_fp8",
     )
@@ -257,7 +257,7 @@ def test_mlp_float8_fbgemm() -> None:
 
     device = Accelerator(0)
     device_ref = DeviceRef(device.label, device.id)
-    float8_config = _create_fbgemm_fp8_config()
+    quant_config = _create_fbgemm_fp8_config()
 
     gate_proj_bf16 = _generate_weights(
         (feed_forward_length, hidden_dim), torch.bfloat16, seed=42
@@ -290,7 +290,7 @@ def test_mlp_float8_fbgemm() -> None:
         devices=[device_ref],
         activation_function=activation,
         has_bias=False,
-        float8_config=float8_config,
+        quant_config=quant_config,
     )
     mlp.load_state_dict(state_dict)
 

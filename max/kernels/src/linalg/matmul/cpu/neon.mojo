@@ -27,7 +27,7 @@ from .impl import InnerMatmulKernel
 @fieldwise_init
 struct Inner_matmul_neon(InnerMatmulKernel, Movable):
     @always_inline
-    fn _accumulate_lane[
+    def _accumulate_lane[
         simd_size: Int,
         a_col_size: Int,
         kernel_rows: Int,
@@ -98,7 +98,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
             b_ptr = b_ptr + kernel_cols
 
     @always_inline
-    fn __inner_matmul__[
+    def __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
         simd_size: Int,

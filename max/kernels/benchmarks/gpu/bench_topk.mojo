@@ -26,13 +26,7 @@ from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    coord_to_index_list,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 
 from nn.topk import _top_k_cpu, _topk_gpu, _topk_topp_sampling_fi, topk_gpu
 from std.testing import assert_almost_equal, assert_equal
@@ -47,7 +41,7 @@ from std.sys import (
 from std.sys.info import size_of
 
 
-fn bench_topk_batched[
+def bench_topk_batched[
     dtype: DType, out_idx_type: DType, rank: Int
 ](
     ctx: DeviceContext,
@@ -141,7 +135,9 @@ fn bench_topk_batched[
         K_host_ptr[i] = Int64(K)
 
     var max_k = Int(
-        reduce_max(Span(ptr=K_host_buffer.ptr, length=K_host_buffer.numel()))
+        reduce_max(
+            Span(ptr=K_host_buffer.ptr, length=K_host_buffer.num_elements())
+        )
     )
 
     ctx.enqueue_copy(K_dev_buffer, K_host_ptr)
@@ -161,10 +157,10 @@ fn bench_topk_batched[
     @parameter
     @always_inline
     @__copy_capture(K_dev_buffer, top_p_dev_buffer)
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             _topk_gpu[sampling=sampling, largest=largest](
                 ctx,
                 max_k,
@@ -187,7 +183,7 @@ fn bench_topk_batched[
         "bench-topk", "/N=", N, "/K=", K, "/batch_size=", batch_size
     )
 
-    var num_bytes = device_in.numel() * size_of[dtype]()
+    var num_bytes = device_in.num_elements() * size_of[dtype]()
     m.bench_function[bench_func](
         BenchId(kernel_name),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
@@ -220,7 +216,7 @@ fn bench_topk_batched[
             k=K_host_buffer.as_any_origin().as_immut(),
         )
 
-        for i in range(topk_vals.numel()):
+        for i in range(topk_vals.num_elements()):
             assert_almost_equal(
                 topk_vals_ptr[i],
                 topk_vals_cpu_ptr[i],
@@ -252,7 +248,7 @@ fn bench_topk_batched[
     _ = top_p_dev_buffer^
 
 
-fn bench_topk_multi_rank[
+def bench_topk_multi_rank[
     dtype: DType,
     rank: Int,
     out_idx_type: DType = DType.int,
@@ -333,16 +329,18 @@ fn bench_topk_multi_rank[
     ctx.enqueue_copy(K_dev_buffer, K_host_ptr)
     ctx.synchronize()
     var max_k = Int(
-        reduce_max(Span(ptr=K_host_buffer.ptr, length=K_host_buffer.numel()))
+        reduce_max(
+            Span(ptr=K_host_buffer.ptr, length=K_host_buffer.num_elements())
+        )
     )
 
     @parameter
     @always_inline
     @__copy_capture(k)
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             topk_gpu[sampling=sampling, largest=largest](
                 ctx,
                 max_k,
@@ -359,7 +357,7 @@ fn bench_topk_multi_rank[
         b.iter_custom[kernel_launch](ctx)
 
     var kernel_name = "topk-multirank"
-    var num_bytes = device_in.numel() * size_of[dtype]()
+    var num_bytes = device_in.num_elements() * size_of[dtype]()
     m.bench_function[bench_func](
         BenchId(kernel_name), [ThroughputMeasure(BenchMetric.bytes, num_bytes)]
     )
@@ -391,7 +389,7 @@ fn bench_topk_multi_rank[
             k=K_host_buffer.as_any_origin().as_immut(),
         )
 
-        for i in range(topk_vals.numel()):
+        for i in range(topk_vals.num_elements()):
             assert_almost_equal(
                 topk_vals_ptr[i],
                 topk_vals_cpu_ptr[i],
@@ -419,7 +417,7 @@ fn bench_topk_multi_rank[
     _ = K_dev_buffer^
 
 
-fn bench_topk_fi[
+def bench_topk_fi[
     dtype: DType,
     out_idx_type: DType,
 ](
@@ -484,10 +482,10 @@ fn bench_topk_fi[
 
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             _topk_topp_sampling_fi[dtype, out_idx_type](
                 ctx,
                 K,
@@ -512,7 +510,7 @@ fn bench_topk_fi[
         top_p,
     )
 
-    var num_bytes = device_in.numel() * size_of[dtype]()
+    var num_bytes = device_in.num_elements() * size_of[dtype]()
     m.bench_function[bench_func](
         BenchId(kernel_name),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
@@ -528,21 +526,21 @@ fn bench_topk_fi[
     _ = seed_device_buffer^
 
 
-fn fill_random[
+def fill_random[
     rank: Int, dtype: DType
 ](mut buffer: TileTensor[mut=True, dtype, ...]):
     comptime min_val = -1e9
     comptime max_val = 1e9
-    var total_elements = buffer.numel()
+    var total_elements = buffer.num_elements()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
         buffer.ptr[i] = random_value.cast[dtype]()
 
 
-fn fill_constant[
+def fill_constant[
     rank: Int, dtype: DType
 ](mut buffer: TileTensor[mut=True, dtype, ...]):
-    var total_elements = buffer.numel()
+    var total_elements = buffer.num_elements()
     for i in range(total_elements):
         if i % 3 == 1:
             buffer.ptr[i] = 1.0
@@ -550,7 +548,7 @@ fn fill_constant[
             buffer.ptr[i] = 0.0
 
 
-fn fill_iota[
+def fill_iota[
     rank: Int, dtype: DType
 ](mut buf: TileTensor[mut=True, dtype, ...]):
     iota(
@@ -559,7 +557,7 @@ fn fill_iota[
     )
 
 
-fn fill_buffer[
+def fill_buffer[
     rank: Int, dtype: DType
 ](mut buffer: TileTensor[mut=True, dtype, ...], mode: String) raises:
     if mode == "fill_constant":
@@ -583,7 +581,7 @@ struct TestCase[_sampling: Bool, _largest: Bool = True](ImplicitlyCopyable):
     var num_blocks_per_input: Int
 
 
-fn main() raises:
+def main() raises:
     var N = arg_parse("N", -1)
     var K = arg_parse("K", -1)
     var block_size = arg_parse("block_size", 256)

@@ -369,7 +369,10 @@ class TextContext:
 
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt."""
-        self.tokens.reset_as_new_prompt()
+        delete_last_generated_token = self.tokens.all[-1] == FUTURE_TOKEN
+        self.tokens.reset_as_new_prompt(
+            delete_last_generated_token=delete_last_generated_token
+        )
         self._is_initial_prompt = True
         self._spec_decoding_state = None
 
@@ -675,6 +678,7 @@ class PixelContext:
         guidance_scale: Guidance scale for classifier-free guidance.
         num_images_per_prompt: Number of images/videos to generate per prompt.
         input_image: Optional input image for image-to-image generation (PIL.Image.Image).
+        residual_threshold: Residual threshold for step-cache early stopping.
         model_name: Name of the model being used.
     """
 
@@ -727,6 +731,8 @@ class PixelContext:
     true_cfg_scale: float = field(default=1.0)
     num_warmup_steps: int = field(default=0)
     num_images_per_prompt: int = field(default=1)
+    residual_threshold: float = field(default=0.08)
+    """Residual threshold for step-cache early stopping during denoising."""
     input_image: npt.NDArray[np.uint8] | None = field(default=None)
     """Input image as numpy array (H, W, C) in uint8 format for image-to-image generation."""
     image: npt.NDArray[np.uint8] | None = field(default=None)
@@ -762,7 +768,7 @@ class PixelContext:
         return GenerationOutput(
             request_id=self.request_id,
             final_status=self.status,
-            output=[OutputImageContent.from_numpy(self.image, format="png")],
+            output=[OutputImageContent.from_numpy(self.image, format="jpeg")],
         )
 
 

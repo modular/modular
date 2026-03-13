@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Linear, Module, module_dataclass
@@ -21,8 +23,10 @@ from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
 from max.nn.kernels import (
     rope_ragged_with_position_ids as _rope_ragged_with_position_ids,
 )
+from max.nn.quant_config import QuantConfig
 
 from .embeddings import get_1d_rotary_pos_embed
+from .nvfp4_linear import NVFP4Linear
 
 flash_attention_gpu = F.functional(_flash_attention_gpu)
 rope_ragged_with_position_ids = F.functional(_rope_ragged_with_position_ids)
@@ -30,11 +34,27 @@ rope_ragged_with_position_ids = F.functional(_rope_ragged_with_position_ids)
 from max.experimental.nn.norm import RMSNorm
 
 
+def _make_linear(
+    in_dim: int,
+    out_dim: int,
+    *,
+    bias: bool = False,
+    quant_config: QuantConfig | None = None,
+) -> Linear | NVFP4Linear:
+    """Create a Linear or NVFP4Linear depending on quantization config."""
+    if quant_config is not None and quant_config.is_nvfp4:
+        return NVFP4Linear(
+            in_dim, out_dim, quant_config=quant_config, bias=bias
+        )
+    return Linear(in_dim, out_dim, bias=bias)
+
+
 def _apply_flux2_qk_rope(
     query: Tensor,
     key: Tensor,
     cos: Tensor,
     sin: Tensor,
+    position_ids: Tensor,
 ) -> tuple[Tensor, Tensor]:
     batch_size = query.shape[0]
     seq_len = query.shape[1]
@@ -51,11 +71,6 @@ def _apply_flux2_qk_rope(
         F.stack([cos_pairs, sin_pairs], axis=-1),
         [cos.shape[0], cos.shape[1]],
     )
-    position_ids = F.arange(0, seq_len, dtype=DType.uint32, device=query.device)
-    # broadcast_to instead of tile: tile has no GPU kernel and forces a
-    # CPU round-trip. broadcast_to expands [1, seq_len] -> [batch_size, seq_len]
-    # entirely on GPU.
-    position_ids = F.broadcast_to(position_ids[None, :], [batch_size, seq_len])
     position_ids = F.reshape(position_ids, [batch_size * seq_len])
 
     query_out = rope_ragged_with_position_ids(
@@ -92,9 +107,9 @@ class Flux2SwiGLU(Module[[Tensor], Tensor]):
 
 
 class Flux2FeedForward(Module[[Tensor], Tensor]):
-    linear_in: Linear
+    linear_in: Linear | NVFP4Linear
     act_fn: Flux2SwiGLU
-    linear_out: Linear
+    linear_out: Linear | NVFP4Linear
 
     def __init__(
         self,
@@ -103,6 +118,7 @@ class Flux2FeedForward(Module[[Tensor], Tensor]):
         mult: float = 3.0,
         inner_dim: int | None = None,
         bias: bool = False,
+        quant_config: QuantConfig | None = None,
     ):
         """Initialize Flux2FeedForward.
 
@@ -112,15 +128,20 @@ class Flux2FeedForward(Module[[Tensor], Tensor]):
             mult: Multiplier for hidden dimension (defaults to 3.0).
             inner_dim: Explicit inner dimension (overrides mult if provided).
             bias: Whether to use bias in linear layers.
+            quant_config: Optional NVFP4 quantization config.
         """
         if inner_dim is None:
             inner_dim = int(dim * mult)
         dim_out = dim_out or dim
 
         # Flux2SwiGLU will reduce the dimension by half
-        self.linear_in = Linear(dim, inner_dim * 2, bias=bias)
+        self.linear_in = _make_linear(
+            dim, inner_dim * 2, bias=bias, quant_config=quant_config
+        )
         self.act_fn = Flux2SwiGLU()
-        self.linear_out = Linear(inner_dim, dim_out, bias=bias)
+        self.linear_out = _make_linear(
+            inner_dim, dim_out, bias=bias, quant_config=quant_config
+        )
 
     def forward(self, x: Tensor) -> Tensor:
         """Apply feedforward transformation.
@@ -199,6 +220,7 @@ class Flux2Attention(Module[..., Tensor | tuple[Tensor, Tensor]]):
         out_bias: bool = True,
         eps: float = 1e-5,
         out_dim: int | None = None,
+        quant_config: QuantConfig | None = None,
     ):
         """Initialize Flux2Attention.
 
@@ -213,6 +235,7 @@ class Flux2Attention(Module[..., Tensor | tuple[Tensor, Tensor]]):
             out_bias: Whether to use bias in output projection.
             eps: Epsilon for RMSNorm.
             out_dim: Output dimension (defaults to query_dim).
+            quant_config: Optional NVFP4 quantization config.
         """
         self.head_dim = dim_head
         self.inner_dim = out_dim if out_dim is not None else dim_head * heads
@@ -220,20 +243,33 @@ class Flux2Attention(Module[..., Tensor | tuple[Tensor, Tensor]]):
         self.added_kv_proj_dim = added_kv_proj_dim
         out_dim = out_dim if out_dim is not None else query_dim
 
-        # Main Q/K/V projections
-        self.to_q = Linear(query_dim, self.inner_dim, bias=bias)
-        self.to_k = Linear(query_dim, self.inner_dim, bias=bias)
-        self.to_v = Linear(query_dim, self.inner_dim, bias=bias)
+        # Main Q/K/V projections (FP4 when quantized)
+        self.to_q = _make_linear(
+            query_dim, self.inner_dim, bias=bias, quant_config=quant_config
+        )
+        self.to_k = _make_linear(
+            query_dim, self.inner_dim, bias=bias, quant_config=quant_config
+        )
+        self.to_v = _make_linear(
+            query_dim, self.inner_dim, bias=bias, quant_config=quant_config
+        )
 
         # QK normalization
         self.norm_q = RMSNorm(dim_head, eps=eps)
         self.norm_k = RMSNorm(dim_head, eps=eps)
 
-        # Output projection (skip dropout as it's not supported)
+        # Output projection (FP4 when quantized)
         self.to_out = ModuleList()
-        self.to_out.append(Linear(self.inner_dim, out_dim, bias=out_bias))
+        self.to_out.append(
+            _make_linear(
+                self.inner_dim,
+                out_dim,
+                bias=out_bias,
+                quant_config=quant_config,
+            )
+        )
 
-        # Optional: encoder projections
+        # Optional: encoder projections (always BF16 in NVFP4 checkpoints)
         self.norm_added_q: RMSNorm | None
         self.norm_added_k: RMSNorm | None
         self.add_q_proj: Linear | None
@@ -243,20 +279,15 @@ class Flux2Attention(Module[..., Tensor | tuple[Tensor, Tensor]]):
         if added_kv_proj_dim is not None:
             self.norm_added_q = RMSNorm(dim_head, eps=eps)
             self.norm_added_k = RMSNorm(dim_head, eps=eps)
+            add_bias = added_proj_bias if added_proj_bias is not None else False
             self.add_q_proj = Linear(
-                added_kv_proj_dim,
-                self.inner_dim,
-                bias=added_proj_bias if added_proj_bias is not None else False,
+                added_kv_proj_dim, self.inner_dim, bias=add_bias
             )
             self.add_k_proj = Linear(
-                added_kv_proj_dim,
-                self.inner_dim,
-                bias=added_proj_bias if added_proj_bias is not None else False,
+                added_kv_proj_dim, self.inner_dim, bias=add_bias
             )
             self.add_v_proj = Linear(
-                added_kv_proj_dim,
-                self.inner_dim,
-                bias=added_proj_bias if added_proj_bias is not None else False,
+                added_kv_proj_dim, self.inner_dim, bias=add_bias
             )
             self.to_add_out = Linear(self.inner_dim, query_dim, bias=out_bias)
         else:
@@ -273,6 +304,7 @@ class Flux2Attention(Module[..., Tensor | tuple[Tensor, Tensor]]):
         encoder_hidden_states: Tensor | None = None,
         # attention_mask: Optional[Tensor] = None,
         image_rotary_emb: tuple[Tensor, Tensor] | None = None,
+        position_ids: Tensor | None = None,
     ) -> Tensor | tuple[Tensor, Tensor]:
         """Apply dual-stream attention.
 
@@ -348,8 +380,14 @@ class Flux2Attention(Module[..., Tensor | tuple[Tensor, Tensor]]):
 
         # Apply rotary embeddings if provided
         if image_rotary_emb is not None:
+            if position_ids is None:
+                raise ValueError(
+                    "position_ids must be provided when image_rotary_emb is set"
+                )
             cos, sin = image_rotary_emb
-            query, key = _apply_flux2_qk_rope(query, key, cos, sin)
+            query, key = _apply_flux2_qk_rope(
+                query, key, cos, sin, position_ids
+            )
 
         # Scaled dot-product attention
         scale = 1.0 / (self.head_dim**0.5)
@@ -403,6 +441,7 @@ class Flux2ParallelSelfAttention(Module[[Tensor], Tensor]):
         out_dim: int | None = None,
         mlp_ratio: float = 4.0,
         mlp_mult_factor: int = 2,
+        quant_config: QuantConfig | None = None,
     ):
         """Initialize Flux2ParallelSelfAttention.
 
@@ -417,6 +456,7 @@ class Flux2ParallelSelfAttention(Module[[Tensor], Tensor]):
             out_dim: Output dimension (defaults to query_dim).
             mlp_ratio: Multiplier for MLP hidden dimension.
             mlp_mult_factor: Multiplier for MLP projection (2 for SwiGLU).
+            quant_config: Optional NVFP4 quantization config.
         """
         self.head_dim = dim_head
         self.inner_dim = out_dim if out_dim is not None else dim_head * heads
@@ -428,7 +468,9 @@ class Flux2ParallelSelfAttention(Module[[Tensor], Tensor]):
 
         # Fused QKV + MLP input projection
         fused_dim = self.inner_dim * 3 + self.mlp_hidden_dim * mlp_mult_factor
-        self.to_qkv_mlp_proj = Linear(query_dim, fused_dim, bias=bias)
+        self.to_qkv_mlp_proj = _make_linear(
+            query_dim, fused_dim, bias=bias, quant_config=quant_config
+        )
 
         # MLP activation
         self.mlp_act_fn = Flux2SwiGLU()
@@ -438,8 +480,11 @@ class Flux2ParallelSelfAttention(Module[[Tensor], Tensor]):
         self.norm_k = RMSNorm(dim_head, eps=eps)
 
         # Fused output projection (Attention output + MLP output)
-        self.to_out = Linear(
-            self.inner_dim + self.mlp_hidden_dim, out_dim, bias=out_bias
+        self.to_out = _make_linear(
+            self.inner_dim + self.mlp_hidden_dim,
+            out_dim,
+            bias=out_bias,
+            quant_config=quant_config,
         )
 
     def forward(
@@ -447,6 +492,7 @@ class Flux2ParallelSelfAttention(Module[[Tensor], Tensor]):
         hidden_states: Tensor,
         attention_mask: Tensor | None = None,
         image_rotary_emb: tuple[Tensor, Tensor] | None = None,
+        position_ids: Tensor | None = None,
     ) -> Tensor:
         """Apply parallel self-attention and MLP.
 
@@ -486,8 +532,14 @@ class Flux2ParallelSelfAttention(Module[[Tensor], Tensor]):
 
         # Apply rotary embeddings
         if image_rotary_emb is not None:
+            if position_ids is None:
+                raise ValueError(
+                    "position_ids must be provided when image_rotary_emb is set"
+                )
             cos, sin = image_rotary_emb
-            query, key = _apply_flux2_qk_rope(query, key, cos, sin)
+            query, key = _apply_flux2_qk_rope(
+                query, key, cos, sin, position_ids
+            )
 
         # Attention computation
         hidden_states = flash_attention_gpu(

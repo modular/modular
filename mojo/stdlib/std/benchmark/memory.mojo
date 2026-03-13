@@ -26,7 +26,7 @@ from std.os.atomic import Consistency, fence
 
 
 @always_inline
-fn clobber_memory():
+def clobber_memory():
     """Forces all pending memory writes to be flushed to memory.
 
     This ensures that the compiler does not optimize away memory writes if it

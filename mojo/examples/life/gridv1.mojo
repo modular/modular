@@ -31,7 +31,7 @@ struct Grid(Copyable, Writable):
     # Indexing
     # ===-------------------------------------------------------------------===#
 
-    fn __getitem__(self, row: Int, col: Int) -> Int:
+    def __getitem__(self, row: Int, col: Int) -> Int:
         return self.data[row][col]
 
     def __setitem__(mut self, row: Int, col: Int, value: Int) raises -> None:
@@ -41,7 +41,7 @@ struct Grid(Copyable, Writable):
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         # Iterate through rows 0 through rows-1
         for row in range(self.rows):
             # Iterate through columns 0 through cols-1
@@ -61,7 +61,7 @@ struct Grid(Copyable, Writable):
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    fn glider() -> Self:
+    def glider() -> Self:
         var glider = [
             [0, 1, 0, 0, 0, 0, 0, 0],
             [0, 0, 1, 0, 0, 0, 0, 0],
@@ -75,12 +75,12 @@ struct Grid(Copyable, Writable):
         return Grid(8, 8, glider^)
 
     @staticmethod
-    fn random(rows: Int, cols: Int, seed: Optional[Int] = None) -> Self:
+    def random(rows: Int, cols: Int, seed: Optional[Int] = None) -> Self:
         if seed:
-            random.seed(seed.value())
+            std.random.seed(seed.value())
         else:
             # Seed the random number generator using the current time.
-            random.seed()
+            std.random.seed()
 
         data = List[List[Int]]()
 
@@ -88,7 +88,7 @@ struct Grid(Copyable, Writable):
             row_data = List[Int]()
             for _col in range(cols):
                 # Generate a random 0 or 1 and append it to the row.
-                row_data.append(Int(random.random_si64(0, 1)))
+                row_data.append(Int(std.random.random_si64(0, 1)))
             data.append(row_data^)
 
         return Self(rows, cols, data^)
@@ -97,7 +97,7 @@ struct Grid(Copyable, Writable):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn evolve(self) -> Self:
+    def evolve(self) -> Self:
         next_generation = List[List[Int]]()
 
         for row in range(self.rows):

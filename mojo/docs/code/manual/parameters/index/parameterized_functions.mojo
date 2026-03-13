@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn repeat[count: Int](msg: String):
+def repeat[count: Int](msg: String):
     comptime for i in range(count):
         print(msg)
 

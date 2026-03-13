@@ -25,7 +25,7 @@ comptime nr = 64
 comptime simd_size = 16
 
 
-fn kernel6x4(
+def kernel6x4(
     a_ptr: UnsafePointer[Float32, _],
     b_ptr: UnsafePointer[Float32, _],
     c_ptr: UnsafePointer[mut=True, Float32, _],
@@ -33,9 +33,9 @@ fn kernel6x4(
     k: Int,
     kc: Int,
 ):
-    var a = NDBuffer[DType.float32, 1, _, Dim()](a_ptr, mr * k)
-    var b = NDBuffer[DType.float32, 1, _, Dim()](b_ptr, kc * nr)
-    var c = NDBuffer[DType.float32, 1, _, Dim()](c_ptr, mr * n)
+    var a = NDBuffer[rank=1, DType.float32, _, Dim()](a_ptr, mr * k)
+    var b = NDBuffer[rank=1, DType.float32, _, Dim()](b_ptr, kc * nr)
+    var c = NDBuffer[rank=1, DType.float32, _, Dim()](c_ptr, mr * n)
 
     var cv0 = c.load[width=simd_size](n * 0 + simd_size * 0)
     var cv1 = c.load[width=simd_size](n * 0 + simd_size * 1)
@@ -142,7 +142,7 @@ fn kernel6x4(
     c.store[width=simd_size](n * 5 + simd_size * 3, cv23)
 
 
-fn kernel6x4_naive(
+def kernel6x4_naive(
     a_ptr: UnsafePointer[Float32, _],
     b_ptr: UnsafePointer[Float32, _],
     c_ptr: UnsafePointer[mut=True, Float32, _],
@@ -150,9 +150,9 @@ fn kernel6x4_naive(
     k: Int,
     kc: Int,
 ):
-    var a = NDBuffer[DType.float32, 1, _, Dim()](a_ptr, mr * k)
-    var b = NDBuffer[DType.float32, 1, _, Dim()](b_ptr, kc * nr)
-    var c = NDBuffer[DType.float32, 1, _, Dim()](c_ptr, mr * n)
+    var a = NDBuffer[rank=1, DType.float32, _, Dim()](a_ptr, mr * k)
+    var b = NDBuffer[rank=1, DType.float32, _, Dim()](b_ptr, kc * nr)
+    var c = NDBuffer[rank=1, DType.float32, _, Dim()](c_ptr, mr * n)
 
     for ir in range(mr):
         for jr in range(nr):

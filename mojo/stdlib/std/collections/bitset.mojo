@@ -51,19 +51,19 @@ comptime _WORD_BITS_LOG2 = log2_floor(_WORD_BITS)
 
 
 @always_inline
-fn _word_index(idx: Int) -> Int:
+def _word_index(idx: Int) -> Int:
     """Computes the 0-based index of the 64-bit word containing bit `idx`."""
     return idx >> _WORD_BITS_LOG2
 
 
 @always_inline
-fn _bit_mask(idx: Int) -> Int:
+def _bit_mask(idx: Int) -> Int:
     """Returns a Int64 mask with only the bit corresponding to `idx` set."""
     return 1 << (idx & _WORD_BITS - 1)
 
 
 @always_inline
-fn _check_index_bounds[operation_name: StaticString](idx: Int, max_size: Int):
+def _check_index_bounds[operation_name: StaticString](idx: Int, max_size: Int):
     """Checks if the index is within bounds for a BitSet operation.
 
     Parameters:
@@ -114,11 +114,11 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
     # Constructors
     # --------------------------------------------------------------------- #
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initializes an empty BitSet with zero capacity and size."""
         self._words = type_of(self._words)(fill=0)
 
-    fn __init__(init: SIMD[DType.bool, _], out self: BitSet[init.size]):
+    def __init__(init: SIMD[DType.bool, _], out self: BitSet[init.size]):
         """Initializes a BitSet with the given SIMD vector of booleans.
 
         Args:
@@ -140,7 +140,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
     # --------------------------------------------------------------------- #
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Counts the total number of bits that are set to 1 in the bitset.
 
         Uses the efficient `pop_count` intrinsic for each underlying word.
@@ -158,7 +158,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         return total
 
     @always_inline
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Checks if the bitset is non-empty (contains at least one set bit).
 
         Returns:
@@ -171,7 +171,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
     # --------------------------------------------------------------------- #
 
     @always_inline
-    fn set(mut self, idx: Int):
+    def set(mut self, idx: Int):
         """Sets the bit at the specified index `idx` to 1.
 
         If `idx` is greater than or equal to the current logical size,
@@ -186,7 +186,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         self._words.unsafe_get(w) |= Int64(_bit_mask(idx))
 
     @always_inline
-    fn clear(mut self, idx: Int):
+    def clear(mut self, idx: Int):
         """Clears the bit at the specified index `idx` (sets it to 0).
 
         Aborts if `idx` is negative or greater than or equal to the
@@ -200,7 +200,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         self._words.unsafe_get(w) &= Int64(~_bit_mask(idx))
 
     @always_inline
-    fn toggle(mut self, idx: Int):
+    def toggle(mut self, idx: Int):
         """Toggles (inverts) the bit at the specified index `idx`.
 
         If the bit becomes 1 and `idx` is greater than or equal to the
@@ -215,7 +215,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         self._words.unsafe_get(w) ^= Int64(_bit_mask(idx))
 
     @always_inline
-    fn test(self, idx: Int) -> Bool:
+    def test(self, idx: Int) -> Bool:
         """Tests if the bit at the specified index `idx` is set (is 1).
 
         Aborts if `idx` is negative or greater than or equal to the
@@ -231,7 +231,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         var w = _word_index(idx)
         return (self._words.unsafe_get(w) & Int64(_bit_mask(idx))) != 0
 
-    fn clear_all(mut self):
+    def clear_all(mut self):
         """Clears all bits in the set, resetting the logical size to 0.
 
         The allocated storage capacity remains unchanged. Equivalent to
@@ -239,14 +239,14 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         """
         self = Self()
 
-    fn toggle_all(mut self):
+    def toggle_all(mut self):
         """Toggles (inverts) all bits in the set up to the compile-time `size`.
         """
 
         comptime for i in range(self._words_size):
             self._words.unsafe_get(i) ^= ~0
 
-    fn set_all(mut self):
+    def set_all(mut self):
         """Sets all bits in the set up to the compile-time `size`."""
 
         comptime for i in range(self._words_size):
@@ -257,7 +257,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
     # --------------------------------------------------------------------- #
     @always_inline
     @staticmethod
-    fn _vectorize_apply[
+    def _vectorize_apply[
         func: fn[simd_width: Int](
             SIMD[DType.int64, simd_width],
             SIMD[DType.int64, simd_width],
@@ -293,7 +293,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
 
         # Define a vectorized operation that processes multiple words at once
         @always_inline
-        fn _intersect[
+        def _intersect[
             simd_width: Int
         ](offset: Int) unified {mut res, read left, read right}:
             # Initialize SIMD vectors to hold multiple words from each bitset
@@ -328,7 +328,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
 
         return res^
 
-    fn union(self, other: Self) -> Self:
+    def union(self, other: Self) -> Self:
         """Returns a new bitset that is the union of `self` and `other`.
 
         Args:
@@ -340,7 +340,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
 
         @parameter
         @always_inline
-        fn _union[
+        def _union[
             simd_width: Int
         ](
             left: SIMD[DType.int64, simd_width],
@@ -350,7 +350,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
 
         return Self._vectorize_apply[_union](self, other)
 
-    fn intersection(self, other: Self) -> Self:
+    def intersection(self, other: Self) -> Self:
         """Returns a new bitset that is the intersection of `self` and `other`.
 
         Args:
@@ -362,7 +362,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
 
         @parameter
         @always_inline
-        fn _intersection[
+        def _intersection[
             simd_width: Int
         ](
             left: SIMD[DType.int64, simd_width],
@@ -372,7 +372,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
 
         return Self._vectorize_apply[_intersection](self, other)
 
-    fn difference(self, other: Self) -> Self:
+    def difference(self, other: Self) -> Self:
         """Returns a new bitset that is the difference of `self` and `other`.
 
         Args:
@@ -384,7 +384,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
 
         @parameter
         @always_inline
-        fn _difference[
+        def _difference[
             simd_width: Int
         ](
             left: SIMD[DType.int64, simd_width],
@@ -399,7 +399,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
     # --------------------------------------------------------------------- #
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the set bits to the given writer.
         Outputs the indices of the set bits in ascending order, enclosed in
         curly braces and separated by commas (e.g., "{1, 5, 42}"). Uses
@@ -449,33 +449,10 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         writer.write("}")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write the string representation of the `BitSet` to the writer.
 
         Args:
             writer: The value to write to.
         """
         FormatStruct(writer, "BitSet").params(Self.size).fields(self)
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        """Returns a developer-friendly string representation of the bitset.
-
-        Currently equivalent to `__str__`.
-
-        Returns:
-            A string showing the set bits (e.g., "{1, 5, 42}").
-        """
-        return String(self)
-
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Returns a user-friendly string representation of the bitset.
-
-        Formats the set bits as a comma-separated list within curly braces,
-        like "{1, 5, 42}". Uses the `write_to` method internally.
-
-        Returns:
-            A string showing the set bits.
-        """
-        return String.write(self)

@@ -34,7 +34,7 @@ from std.utils.index import Index, IndexList
 comptime alignment = 64
 
 
-fn gemm_naive[](
+def gemm_naive[](
     a: NDBuffer,
     b: NDBuffer,
     c: NDBuffer[mut=True, ...],
@@ -63,7 +63,7 @@ def test_matmul[
 ](m: Int, n: Int, k: Int, kernel_type_m: Int) raises:
     var a_ptr = alloc[Scalar[a_type],](m * k, alignment=alignment)
     var b_ptr = alloc[Scalar[b_type],](k * n, alignment=alignment)
-    var b = NDBuffer[b_type, 2, _, b_shape](b_ptr, Index(k, n))
+    var b = NDBuffer[rank=2, b_type, _, b_shape](b_ptr, Index(k, n))
 
     var padded_n_k: IndexList[2]
     if kernel_type_m != 0:
@@ -96,14 +96,14 @@ def test_matmul[
     var c0_ptr = alloc[Scalar[c_type],](m * n, alignment=alignment)
     var c1_ptr = alloc[Scalar[c_type],](m * n, alignment=alignment)
 
-    var a = NDBuffer[a_type, 2, _, a_shape](a_ptr, Index(m, k))
+    var a = NDBuffer[rank=2, a_type, _, a_shape](a_ptr, Index(m, k))
 
-    var bp = NDBuffer[b_type, 2, _, DimList.create_unknown[2]()](
+    var bp = NDBuffer[rank=2, b_type, _, DimList.create_unknown[2]()](
         bp_ptr, Index(padded_k, padded_n)
     )
-    var c = NDBuffer[c_type, 2, _, c_shape](c0_ptr, Index(m, n))
+    var c = NDBuffer[rank=2, c_type, _, c_shape](c0_ptr, Index(m, n))
 
-    var golden = NDBuffer[c_type, 2, _, c_shape](c1_ptr, Index(m, n))
+    var golden = NDBuffer[rank=2, c_type, _, c_shape](c1_ptr, Index(m, n))
 
     # saturated VNNI only has a range [0,127] for the input a
     var vnni_range: Int = 128 if saturated else 256
@@ -148,7 +148,7 @@ def test_matmul[
         ](
             c,
             a,
-            rebind[NDBuffer[b_type, 2, bp.origin, b_shape]](bp),
+            rebind[NDBuffer[rank=2, b_type, bp.origin, b_shape]](bp),
             kernel_type_m,
         )
     else:
@@ -156,7 +156,7 @@ def test_matmul[
             transpose_b=transpose_b,
             b_packed=b_packed,
             saturated_vnni=saturated,
-        ](c, a, rebind[NDBuffer[b_type, 2, bp.origin, b_shape]](bp))
+        ](c, a, rebind[NDBuffer[rank=2, b_type, bp.origin, b_shape]](bp))
 
     gemm_naive(a, b, golden, m, n, k)
 
@@ -223,7 +223,7 @@ def test_shapes[
     mixed_kernels: Bool,
 ]() raises:
     @parameter
-    fn test_shapes_helper(m: Int, n: Int, k: Int) raises:
+    def test_shapes_helper(m: Int, n: Int, k: Int) raises:
         test_matmul[
             a_type=a_type,
             b_type=b_type,

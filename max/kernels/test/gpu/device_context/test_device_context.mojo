@@ -16,12 +16,11 @@ from std.math import iota
 from std.builtin.device_passable import DevicePassable
 from std.gpu import *
 from std.gpu.host import DeviceBuffer, DeviceContext
-from std.memory import LegacyUnsafePointer
 from std.testing import assert_equal
 
 
 # A Simple Kernel performing the sum of two arrays
-fn vec_func(
+def vec_func(
     in0: UnsafePointer[Float32, ImmutAnyOrigin],
     in1: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
@@ -38,7 +37,7 @@ def test_is_compatible(ctx: DeviceContext) raises:
     assert_equal(ctx.is_compatible(), True)
 
 
-fn test_basic(ctx: DeviceContext) raises:
+def test_basic(ctx: DeviceContext) raises:
     comptime length = 1024
 
     # Host memory buffers for input and output data
@@ -148,56 +147,6 @@ def test_print(ctx: DeviceContext) raises:
     assert_equal(String(large_buffer), expected_large)
 
 
-@fieldwise_init
-struct ToLegacyUnsafePointer(Copyable, DevicePassable):
-    comptime device_type: AnyType = LegacyUnsafePointer[mut=True, Float32]
-
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = Self.device_type()
-
-    @staticmethod
-    fn get_type_name() -> String:
-        return ""
-
-
-@fieldwise_init
-struct ToUnsafePointer(Copyable, DevicePassable):
-    comptime device_type: AnyType = UnsafePointer[Float32, MutAnyOrigin]
-
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = Self.device_type()
-
-    @staticmethod
-    fn get_type_name() -> String:
-        return ""
-
-
-def test_kernel_pointer_conversions(ctx: DeviceContext) raises:
-    fn kernel(
-        legacy: LegacyUnsafePointer[mut=True, Float32],
-        unsafe_pointer: UnsafePointer[Float32, MutAnyOrigin],
-    ):
-        pass
-
-    # No conversion needed
-    ctx.enqueue_function_experimental[kernel](
-        ToLegacyUnsafePointer(),
-        ToUnsafePointer(),
-        grid_dim=1,
-        block_dim=1,
-    )
-
-    # Converts from UnsafePointer <-> LegacyUnsafePointer
-    ctx.enqueue_function_experimental[kernel](
-        ToUnsafePointer(),
-        ToLegacyUnsafePointer(),
-        grid_dim=1,
-        block_dim=1,
-    )
-
-    ctx.synchronize()
-
-
 def main() raises:
     # Create an instance of the DeviceContext
     with DeviceContext() as ctx:
@@ -207,4 +156,3 @@ def main() raises:
         test_move(ctx)
         test_id(ctx)
         test_print(ctx)
-        test_kernel_pointer_conversions(ctx)

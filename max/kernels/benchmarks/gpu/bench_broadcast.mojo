@@ -47,7 +47,7 @@ from std.testing import assert_true
 
 @always_inline
 @parameter
-fn _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
+def _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
     """Generate position-based input value that includes root rank.
 
     Each element has a unique value based on position, and includes the root
@@ -57,7 +57,7 @@ fn _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
     return Scalar[dtype](Scalar[dtype](root + 1) + Scalar[dtype](j % 251))
 
 
-fn _get_test_str[
+def _get_test_str[
     dtype: DType, use_multimem: Bool, use_vendor_ccl: Bool, cache_busting: Bool
 ](ngpus: Int, num_bytes: Int, root: Int) -> String:
     var multimem_tag = "-multimem" if use_multimem else ""
@@ -78,7 +78,7 @@ fn _get_test_str[
     )
 
 
-fn bench_broadcast[
+def bench_broadcast[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -181,20 +181,20 @@ fn bench_broadcast[
     list_of_ctx[root].enqueue_copy(cb_in.device_buffer(), host_buffer)
 
     # Create NDBuffer wrappers for outputs
-    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
+    var out_bufs = InlineArray[NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus](
         fill={}
     )
 
     comptime if use_multimem:
         # All GPUs use the same multicast pointer for output
         for i in range(ngpus):
-            out_bufs[i] = NDBuffer[dtype, rank](
+            out_bufs[i] = NDBuffer[rank=rank, dtype](
                 out_multicast_ptr, IndexList[rank](length)
             )
             list_of_ctx[i].synchronize()
     else:
         for i in range(ngpus):
-            out_bufs[i] = NDBuffer[dtype, rank](
+            out_bufs[i] = NDBuffer[rank=rank, dtype](
                 out_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
             )
             # Ensure setup has propagated.
@@ -215,13 +215,13 @@ fn bench_broadcast[
 
     @parameter
     @always_inline
-    fn bench_iter(
+    def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
         @parameter
         @always_inline
-        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
-            var in_buf_offset = NDBuffer[dtype, rank, MutAnyOrigin](
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+            var in_buf_offset = NDBuffer[rank=rank, dtype, MutAnyOrigin](
                 cb_in.offset_ptr(cache_iter),
                 IndexList[rank](length),
             )
@@ -285,7 +285,7 @@ fn bench_broadcast[
         list_of_ctx[i].synchronize()
 
     # Create input buffer for verification (no cache offset)
-    var in_buf_verify = NDBuffer[dtype, rank, MutAnyOrigin](
+    var in_buf_verify = NDBuffer[rank=rank, dtype, MutAnyOrigin](
         cb_in.unsafe_ptr(),
         IndexList[rank](length),
     )

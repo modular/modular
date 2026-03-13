@@ -28,7 +28,7 @@ from internal_utils import (
 from std.random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from linalg.matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul import (
     blockwise_fp8_matmul,
@@ -38,14 +38,14 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 
-fn simple_init() -> Bool:
+def simple_init() -> Bool:
     for arg in argv():
         if arg == "--simple-init":
             return True
     return False
 
 
-fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
+def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -99,23 +99,23 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         sep="",
     )
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList[m.dim, k.dim]()
+    comptime static_b_shape = DimList[
+        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
+    ]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
     var dynamic_a_shape = IndexList[2](m.value, k.value)
     var dynamic_b_shape = IndexList[2](
         n.value, k.value
     ) if transpose_b else IndexList[2](k.value, n.value)
     var dynamic_c_shape = IndexList[2](m.value, n.value)
 
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList[
         ceildiv(Int(k.dim), BLOCK_SCALE_K), m.dim
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         ceildiv(Int(n.dim), BLOCK_SCALE_K), ceildiv(Int(k.dim), BLOCK_SCALE_K)
-    )
+    ]()
 
     var dynamic_a_scales_shape = IndexList[2](
         ceildiv(k.value, BLOCK_SCALE_K), m.value
@@ -133,56 +133,56 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     )
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var a_host = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_host = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var b_host = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_host = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
     var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
     var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
     )
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_device.unsafe_ptr(), dynamic_b_shape
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
     )
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
     var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_size)
-    var a_scales_host = NDBuffer[scales_type, 2, _, static_a_scales_shape](
+    var a_scales_host = NDBuffer[rank=2, scales_type, _, static_a_scales_shape](
         a_scales_host_ptr, dynamic_a_scales_shape
     )
     var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_size)
-    var b_scales_host = NDBuffer[scales_type, 2, _, static_b_scales_shape](
+    var b_scales_host = NDBuffer[rank=2, scales_type, _, static_b_scales_shape](
         b_scales_host_ptr, dynamic_b_scales_shape
     )
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_type](a_scales_size)
-    var a_scales_device_nd = NDBuffer[scales_type, 2, _, static_a_scales_shape](
-        a_scales_device.unsafe_ptr(), dynamic_a_scales_shape
-    )
+    var a_scales_device_nd = NDBuffer[
+        rank=2, scales_type, _, static_a_scales_shape
+    ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_type](b_scales_size)
-    var b_scales_device_nd = NDBuffer[scales_type, 2, _, static_b_scales_shape](
-        b_scales_device.unsafe_ptr(), dynamic_b_scales_shape
-    )
+    var b_scales_device_nd = NDBuffer[
+        rank=2, scales_type, _, static_b_scales_shape
+    ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
     c_host.zero()
     c_host_ref.zero()

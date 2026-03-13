@@ -314,7 +314,7 @@ def test_convert_simd_to_string() raises:
     )
 
 
-fn _test_repr(value: SIMD, expected: String) raises:
+def _test_repr(value: SIMD, expected: String) raises:
     # Test write_repr_to
     var string = String()
     value.write_repr_to(string)
@@ -431,7 +431,7 @@ def test_issue_30237() raises:
 
     @parameter
     @always_inline
-    fn eval1(x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    def eval1(x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         var c_last = coefficients[coefficients_len - 1]
         var c_second_from_last = coefficients[coefficients_len - 2]
 
@@ -445,7 +445,7 @@ def test_issue_30237() raises:
 
     @parameter
     @always_inline
-    fn eval2(x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    def eval2(x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         var c_last = coefficients[coefficients_len - 1]
         var c_second_from_last = coefficients[coefficients_len - 2]
 
@@ -494,7 +494,7 @@ def test_truthy() raises:
     )
 
     @parameter
-    fn test_dtype[dtype: DType]() raises:
+    def test_dtype[dtype: DType]() raises:
         # Scalars of 0-values are false-y, 1-values are truth-y
         assert_false(Scalar[dtype](0))
         assert_true(Scalar[dtype](1))
@@ -1347,7 +1347,7 @@ def test_extract() raises:
 
 def test_limits() raises:
     @parameter
-    fn test_integral_overflow[dtype: DType]() raises:
+    def test_integral_overflow[dtype: DType]() raises:
         var max_value = Scalar[dtype].MAX
         var min_value = Scalar[dtype].MIN
         assert_equal(max_value + 1, min_value)
@@ -1954,7 +1954,7 @@ def test_comparison() raises:
     )
 
     @parameter
-    fn test_dtype[dtype: DType]() raises:
+    def test_dtype[dtype: DType]() raises:
         comptime X4 = SIMD[dtype, 4]
 
         comptime if dtype.is_signed():
@@ -2300,7 +2300,7 @@ def test_vector_from_bytes_as_bytes() raises:
 
 
 def test_reversed() raises:
-    fn test[dtype: DType]() raises:
+    def test[dtype: DType]() raises:
         assert_equal(
             SIMD[dtype, 4](1, 2, 3, 4).reversed(), SIMD[dtype, 4](4, 3, 2, 1)
         )

@@ -35,19 +35,19 @@ from std.runtime.asyncrt import parallelism_level
 from std.utils.index import IndexList, StaticTuple
 
 
-fn _transpose_inplace_4x4[
+def _transpose_inplace_4x4[
     rows: Int,
     cols: Int,
     dtype: DType,
-](bufloat0: NDBuffer[mut=True, dtype, 2, _, DimList(rows, cols)]):
+](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
     comptime assert rows == 4
     comptime assert cols == 4
     var buf = rebind[
         NDBuffer[
+            rank=2,
             dtype,
-            2,
             bufloat0.origin,
-            DimList(4, 4),
+            DimList[4, 4](),
         ],
     ](bufloat0)
 
@@ -72,7 +72,7 @@ fn _transpose_inplace_4x4[
     buf.store[width=4](IndexList[2](3, 0), r3)
 
 
-fn _transpose_inplace_4x4[
+def _transpose_inplace_4x4[
     dtype: DType,
 ](bufloat0: LayoutTensor[mut=True, dtype, ...]):
     comptime rows = Int(bufloat0.layout.shape[0])
@@ -123,19 +123,19 @@ fn _transpose_inplace_4x4[
     buf.ptr.store[width=4](idx3, r3)
 
 
-fn _transpose_inplace_8x8[
+def _transpose_inplace_8x8[
     rows: Int,
     cols: Int,
     dtype: DType,
-](bufloat0: NDBuffer[mut=True, dtype, 2, _, DimList(rows, cols)]):
+](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
     comptime assert rows == 8
     comptime assert cols == 8
     var buf = rebind[
         NDBuffer[
+            rank=2,
             dtype,
-            2,
             bufloat0.origin,
-            DimList(8, 8),
+            DimList[8, 8](),
         ],
     ](bufloat0)
 
@@ -149,13 +149,13 @@ fn _transpose_inplace_8x8[
     var row7 = buf.load[width=8](IndexList[2](7, 0))
 
     @parameter
-    fn _apply_permute_0(
+    def _apply_permute_0(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
         return vec.shuffle[0, 8, 1, 9, 4, 12, 5, 13](other)
 
     @parameter
-    fn _apply_permute_1(
+    def _apply_permute_1(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
         return vec.shuffle[2, 10, 3, 11, 6, 14, 7, 15](other)
@@ -170,13 +170,13 @@ fn _transpose_inplace_8x8[
     var k7 = _apply_permute_1(row6, row7)
 
     @parameter
-    fn _apply_permute_2(
+    def _apply_permute_2(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
         return vec.shuffle[0, 1, 8, 9, 4, 5, 12, 13](other)
 
     @parameter
-    fn _apply_permute_3(
+    def _apply_permute_3(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
         return vec.shuffle[2, 3, 10, 11, 6, 7, 14, 15](other)
@@ -191,13 +191,13 @@ fn _transpose_inplace_8x8[
     var k571 = _apply_permute_3(k5, k7)
 
     @parameter
-    fn _apply_permute_4(
+    def _apply_permute_4(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
         return vec.shuffle[0, 1, 2, 3, 8, 9, 10, 11](other)
 
     @parameter
-    fn _apply_permute_5(
+    def _apply_permute_5(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
         return vec.shuffle[4, 5, 6, 7, 12, 13, 14, 15](other)
@@ -221,7 +221,7 @@ fn _transpose_inplace_8x8[
     buf.store[width=8](IndexList[2](7, 0), r7)
 
 
-fn _transpose_inplace_8x8[
+def _transpose_inplace_8x8[
     dtype: DType,
 ](bufloat0: LayoutTensor[mut=True, dtype, ...]):
     comptime rows = Int(bufloat0.layout.shape[0])
@@ -281,13 +281,13 @@ fn _transpose_inplace_8x8[
     var row7 = buf.ptr.load[width=8](idx7)
 
     @parameter
-    fn _apply_permute_0(
+    def _apply_permute_0(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
         return vec.shuffle[0, 8, 1, 9, 4, 12, 5, 13](other)
 
     @parameter
-    fn _apply_permute_1(
+    def _apply_permute_1(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
         return vec.shuffle[2, 10, 3, 11, 6, 14, 7, 15](other)
@@ -302,13 +302,13 @@ fn _transpose_inplace_8x8[
     var k7 = _apply_permute_1(row6, row7)
 
     @parameter
-    fn _apply_permute_2(
+    def _apply_permute_2(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
         return vec.shuffle[0, 1, 8, 9, 4, 5, 12, 13](other)
 
     @parameter
-    fn _apply_permute_3(
+    def _apply_permute_3(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
         return vec.shuffle[2, 3, 10, 11, 6, 7, 14, 15](other)
@@ -323,13 +323,13 @@ fn _transpose_inplace_8x8[
     var k571 = _apply_permute_3(k5, k7)
 
     @parameter
-    fn _apply_permute_4(
+    def _apply_permute_4(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
         return vec.shuffle[0, 1, 2, 3, 8, 9, 10, 11](other)
 
     @parameter
-    fn _apply_permute_5(
+    def _apply_permute_5(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
         return vec.shuffle[4, 5, 6, 7, 12, 13, 14, 15](other)
@@ -353,24 +353,24 @@ fn _transpose_inplace_8x8[
     buf.ptr.store[width=8](idx7, r7)
 
 
-fn _transpose_inplace_16x16[
+def _transpose_inplace_16x16[
     rows: Int,
     cols: Int,
     dtype: DType,
-](bufloat0: NDBuffer[mut=True, dtype, 2, _, DimList(rows, cols)]):
+](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
     comptime assert rows == 16
     comptime assert cols == 16
     var buf = rebind[
         NDBuffer[
+            rank=2,
             dtype,
-            2,
             bufloat0.origin,
-            DimList(16, 16),
+            DimList[16, 16](),
         ],
     ](bufloat0)
 
     @parameter
-    fn _apply_permute_0(
+    def _apply_permute_0(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
         return vec.shuffle[
@@ -378,7 +378,7 @@ fn _transpose_inplace_16x16[
         ](other)
 
     @parameter
-    fn _apply_permute_1(
+    def _apply_permute_1(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
         return vec.shuffle[
@@ -386,7 +386,7 @@ fn _transpose_inplace_16x16[
         ](other)
 
     @parameter
-    fn _apply_permute_2(
+    def _apply_permute_2(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
         return vec.shuffle[
@@ -394,7 +394,7 @@ fn _transpose_inplace_16x16[
         ](other)
 
     @parameter
-    fn _apply_permute_3(
+    def _apply_permute_3(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
         return vec.shuffle[
@@ -402,7 +402,7 @@ fn _transpose_inplace_16x16[
         ](other)
 
     @parameter
-    fn _apply_permute_4(
+    def _apply_permute_4(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
         return vec.shuffle[
@@ -410,7 +410,7 @@ fn _transpose_inplace_16x16[
         ](other)
 
     @parameter
-    fn _apply_permute_5(
+    def _apply_permute_5(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
         return vec.shuffle[
@@ -418,7 +418,7 @@ fn _transpose_inplace_16x16[
         ](other)
 
     @parameter
-    fn _apply_permute_6(
+    def _apply_permute_6(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
         return vec.shuffle[
@@ -426,7 +426,7 @@ fn _transpose_inplace_16x16[
         ](other)
 
     @parameter
-    fn _apply_permute_7(
+    def _apply_permute_7(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
         return vec.shuffle[
@@ -536,7 +536,7 @@ fn _transpose_inplace_16x16[
     buf.store[width=16](IndexList[2](15, 0), r15)
 
 
-fn _transpose_inplace_16x16[
+def _transpose_inplace_16x16[
     dtype: DType,
 ](bufloat0: LayoutTensor[mut=True, dtype, ...]):
     comptime rows = Int(bufloat0.layout.shape[0])
@@ -547,7 +547,7 @@ fn _transpose_inplace_16x16[
     var buf = bufloat0.reshape[Layout.row_major(16, 16)]()
 
     @parameter
-    fn _apply_permute_0(
+    def _apply_permute_0(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
         return vec.shuffle[
@@ -555,7 +555,7 @@ fn _transpose_inplace_16x16[
         ](other)
 
     @parameter
-    fn _apply_permute_1(
+    def _apply_permute_1(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
         return vec.shuffle[
@@ -563,7 +563,7 @@ fn _transpose_inplace_16x16[
         ](other)
 
     @parameter
-    fn _apply_permute_2(
+    def _apply_permute_2(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
         return vec.shuffle[
@@ -571,7 +571,7 @@ fn _transpose_inplace_16x16[
         ](other)
 
     @parameter
-    fn _apply_permute_3(
+    def _apply_permute_3(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
         return vec.shuffle[
@@ -579,7 +579,7 @@ fn _transpose_inplace_16x16[
         ](other)
 
     @parameter
-    fn _apply_permute_4(
+    def _apply_permute_4(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
         return vec.shuffle[
@@ -587,7 +587,7 @@ fn _transpose_inplace_16x16[
         ](other)
 
     @parameter
-    fn _apply_permute_5(
+    def _apply_permute_5(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
         return vec.shuffle[
@@ -595,7 +595,7 @@ fn _transpose_inplace_16x16[
         ](other)
 
     @parameter
-    fn _apply_permute_6(
+    def _apply_permute_6(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
         return vec.shuffle[
@@ -603,7 +603,7 @@ fn _transpose_inplace_16x16[
         ](other)
 
     @parameter
-    fn _apply_permute_7(
+    def _apply_permute_7(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
         return vec.shuffle[
@@ -793,11 +793,11 @@ fn _transpose_inplace_16x16[
     buf.ptr.store[width=16](idx15, r15)
 
 
-fn _transpose_inplace_naive[
+def _transpose_inplace_naive[
     rows: Int,
     cols: Int,
     dtype: DType,
-](buf: NDBuffer[mut=True, dtype, 2, _, DimList(rows, cols)]):
+](buf: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
     for i in range(rows):
         for j in range(i + 1, cols):
             var tmp = buf[i, j]
@@ -805,7 +805,7 @@ fn _transpose_inplace_naive[
             buf[IndexList[2](j, i)] = tmp
 
 
-fn _transpose_inplace_naive[
+def _transpose_inplace_naive[
     dtype: DType,
 ](buf: LayoutTensor[mut=True, dtype, ...]):
     comptime rows = Int(buf.layout.shape[0])
@@ -818,11 +818,11 @@ fn _transpose_inplace_naive[
             buf[j, i] = tmp
 
 
-fn transpose_inplace[
+def transpose_inplace[
     rows: Int,
     cols: Int,
     dtype: DType,
-](buf: NDBuffer[mut=True, dtype, 2, _, DimList(rows, cols)]):
+](buf: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
     # Reject sizes covered by specialized implementations
     comptime assert rows == cols
 
@@ -836,7 +836,7 @@ fn transpose_inplace[
         _transpose_inplace_naive[rows, cols, dtype](buf)
 
 
-fn transpose_inplace[
+def transpose_inplace[
     rows: Int,
     cols: Int,
     dtype: DType,
@@ -857,7 +857,7 @@ fn transpose_inplace[
         _transpose_inplace_naive(buf)
 
 
-fn _permute_data[
+def _permute_data[
     size: Int,
     dtype: DType,
 ](
@@ -875,12 +875,12 @@ fn _permute_data[
         output[idx] = perm_data
 
 
-fn _fill_strides[
+def _fill_strides[
     rank: Int,
     input_shape: DimList,
     dtype: DType,
 ](
-    buf: NDBuffer[dtype, rank, _, input_shape],
+    buf: NDBuffer[rank=rank, dtype, _, input_shape],
     strides: UnsafePointer[mut=True, Scalar[DType.int], _],
 ):
     """
@@ -889,16 +889,16 @@ fn _fill_strides[
 
     Note that `buf` is only used for querying its dimensions.
     """
-    _fill_strides(buf, NDBuffer[DType.int, 1, _, rank](strides))
+    _fill_strides(buf, NDBuffer[rank=1, DType.int, _, DimList[rank]()](strides))
 
 
-fn _fill_strides[
+def _fill_strides[
     rank: Int,
     input_shape: DimList,
     dtype: DType,
 ](
-    buf: NDBuffer[dtype, rank, _, input_shape],
-    strides: NDBuffer[mut=True, DType.int, 1, _, rank],
+    buf: NDBuffer[rank=rank, dtype, _, input_shape],
+    strides: NDBuffer[mut=True, rank=1, DType.int, _, DimList[rank]()],
 ):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
@@ -919,7 +919,7 @@ fn _fill_strides[
         strides[axis] = curr_axis_stride
 
 
-fn _fill_strides[
+def _fill_strides[
     dtype: DType,
 ](buf: TileTensor[dtype, ...], strides: TileTensor[mut=True, DType.int, ...],):
     """
@@ -948,7 +948,7 @@ fn _fill_strides[
 # Transpose Permutation simplification
 # ===------------------------------------------------------------------=== #
 @always_inline
-fn _collapse_unpermuted_dims[
+def _collapse_unpermuted_dims[
     rank: Int, tuple_size: Int
 ](
     mut simplified_shape: IndexList[tuple_size],
@@ -973,7 +973,7 @@ fn _collapse_unpermuted_dims[
 
 
 @always_inline
-fn _devare_size_1_dim[
+def _devare_size_1_dim[
     rank: Int, tuple_size: Int
 ](
     mut simplified_shape: IndexList[tuple_size],
@@ -997,7 +997,7 @@ fn _devare_size_1_dim[
 
 
 @always_inline
-fn _simplify_transpose_perms_impl[
+def _simplify_transpose_perms_impl[
     rank: Int, tuple_size: Int
 ](
     mut simplified_rank: Int,
@@ -1028,7 +1028,7 @@ fn _simplify_transpose_perms_impl[
 
 
 @always_inline
-fn _simplify_transpose_perms[
+def _simplify_transpose_perms[
     rank: Int
 ](
     mut simplified_rank: Int,
@@ -1054,7 +1054,7 @@ fn _simplify_transpose_perms[
 
 
 @always_inline
-fn _convert_transpose_perms_to_static_int_tuple[
+def _convert_transpose_perms_to_static_int_tuple[
     rank: Int
 ](perms: UnsafePointer[mut=False, Scalar[DType.int], _]) -> IndexList[rank]:
     var simplified_perms = IndexList[rank]()
@@ -1068,7 +1068,7 @@ fn _convert_transpose_perms_to_static_int_tuple[
 #  Transpose special cases
 # ===------------------------------------------------------------------=== #
 @always_inline
-fn _process_tile[
+def _process_tile[
     tile_size_m: Int, tile_size_n: Int, dtype: DType
 ](
     m: Int,
@@ -1097,11 +1097,11 @@ fn _process_tile[
         out_ptr.store(output_tile_offset + N * i, output_vals[i])
 
 
-fn _transpose_2d_serial_tiled[
+def _transpose_2d_serial_tiled[
     rank: Int, dtype: DType, //
 ](
-    output: NDBuffer[mut=True, dtype, rank, _, _],
-    input: NDBuffer[dtype, rank, _, _],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
+    input: NDBuffer[rank=rank, dtype, _, _],
     perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -1124,7 +1124,7 @@ fn _transpose_2d_serial_tiled[
     @parameter
     @__copy_capture(N, M)
     @always_inline
-    fn process_tile[tile_size_m: Int, tile_size_n: Int](m: Int, n: Int):
+    def process_tile[tile_size_m: Int, tile_size_n: Int](m: Int, n: Int):
         _process_tile[tile_size_m, tile_size_n, dtype](
             m, n, M, N, output.data + offset, input.data + offset
         )
@@ -1134,7 +1134,7 @@ fn _transpose_2d_serial_tiled[
 
 
 @always_inline
-fn _should_run_parallel(
+def _should_run_parallel(
     M: Int, N: Int, simd_width: Int, min_work_per_task: Int
 ) -> Bool:
     if N == 1:
@@ -1156,11 +1156,11 @@ fn _should_run_parallel(
     return True
 
 
-fn _transpose_2d_parallel_tiled[
+def _transpose_2d_parallel_tiled[
     rank: Int, dtype: DType, //
 ](
-    output: NDBuffer[mut=True, dtype, rank, _, _],
-    input: NDBuffer[dtype, rank, _, _],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
+    input: NDBuffer[rank=rank, dtype, _, _],
     perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -1199,7 +1199,7 @@ fn _transpose_2d_parallel_tiled[
     @parameter
     @__copy_capture(work_block_size, m_tiles, N, M)
     @always_inline
-    fn _parallel_tile(thread_id: Int):
+    def _parallel_tile(thread_id: Int):
         var n_tile_begin = work_block_size * thread_id
         var n_tile_end = min(work_block_size * (thread_id + 1), work)
 
@@ -1219,14 +1219,14 @@ fn _transpose_2d_parallel_tiled[
     sync_parallelize[_parallel_tile](num_tasks)
 
 
-fn transpose_2d[
+def transpose_2d[
     rank: Int,
     output_shape: DimList,
     input_shape: DimList,
     dtype: DType,
 ](
-    output: NDBuffer[mut=True, dtype, rank, _, output_shape],
-    input: NDBuffer[dtype, rank, _, input_shape],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, output_shape],
+    input: NDBuffer[rank=rank, dtype, _, input_shape],
     perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -1262,7 +1262,7 @@ fn transpose_2d[
         return
 
 
-fn _transpose_4d_swap_middle_helper[
+def _transpose_4d_swap_middle_helper[
     dtype: DType, //
 ](
     dst_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
@@ -1309,14 +1309,12 @@ fn _transpose_4d_swap_middle_helper[
         @parameter
         @__copy_capture(work, work_block_size)
         @always_inline
-        fn _parallel_copy(thread_id: Int):
+        def _parallel_copy(thread_id: Int):
             var begin = work_block_size * thread_id
             var end = min(work_block_size * (thread_id + 1), work)
             for block_idx in range(begin, end):
-                var l = block_idx // (M * N)
-                var block_idx_mn = block_idx % (M * N)
-                var m = block_idx_mn // N
-                var n = block_idx_mn % N
+                var l, block_idx_mn = divmod(block_idx, M * N)
+                var m, n = divmod(block_idx_mn, N)
 
                 var in_off = l * M * N * K + m * N * K + n * K
                 var out_off = l * M * N * K + n * M * K + m * K
@@ -1329,11 +1327,11 @@ fn _transpose_4d_swap_middle_helper[
         sync_parallelize[_parallel_copy](num_tasks)
 
 
-fn transpose_4d_swap_middle[
+def transpose_4d_swap_middle[
     rank: Int, dtype: DType, //
 ](
-    output: NDBuffer[mut=True, dtype, rank, _, _],
-    input: NDBuffer[dtype, rank, _, _, _],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
+    input: NDBuffer[rank=rank, dtype, _, _, _],
     perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -1352,14 +1350,14 @@ fn transpose_4d_swap_middle[
     _transpose_4d_swap_middle_helper(dst_ptr, src_ptr, L, M, N, K)
 
 
-fn transpose_3d_swap_outer[
+def transpose_3d_swap_outer[
     rank: Int,
     output_shape: DimList,
     input_shape: DimList,
     dtype: DType,
 ](
-    output: NDBuffer[mut=True, dtype, rank, _, output_shape],
-    input: NDBuffer[dtype, rank, _, input_shape],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, output_shape],
+    input: NDBuffer[rank=rank, dtype, _, input_shape],
     perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -1379,11 +1377,11 @@ fn transpose_3d_swap_outer[
     _transpose_4d_swap_middle_helper(dst_ptr, src_ptr, 1, M, N, K)
 
 
-fn transpose_3d_swap_inner[
+def transpose_3d_swap_inner[
     rank: Int, dtype: DType, //
 ](
-    output: NDBuffer[mut=True, dtype, rank, _, _],
-    input: NDBuffer[dtype, rank, _, _],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
+    input: NDBuffer[rank=rank, dtype, _, _],
     perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -1409,14 +1407,14 @@ fn transpose_3d_swap_inner[
         offset += step
 
 
-fn transpose_trivial_memcpy[
+def transpose_trivial_memcpy[
     rank: Int,
     output_shape: DimList,
     input_shape: DimList,
     dtype: DType,
 ](
-    output: NDBuffer[mut=True, dtype, rank, _, output_shape],
-    input: NDBuffer[dtype, rank, _, input_shape],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, output_shape],
+    input: NDBuffer[rank=rank, dtype, _, input_shape],
 ):
     var src_ptr = input.data + 0
     var dst_ptr = output.data + 0
@@ -1447,11 +1445,11 @@ fn transpose_trivial_memcpy[
 # ===------------------------------------------------------------------=== #
 #  Transpose generic strided implementation
 # ===------------------------------------------------------------------=== #
-fn _copy_with_strides[
+def _copy_with_strides[
     rank: Int, dtype: DType, //
 ](
     axis: Int,
-    output: NDBuffer[mut=True, dtype, rank, _, _],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
     input: UnsafePointer[mut=False, Scalar[dtype], _],
     input_strides: UnsafePointer[mut=False, Scalar[DType.int], _],
     output_strides: UnsafePointer[mut=False, Scalar[DType.int], _],
@@ -1486,7 +1484,7 @@ fn _copy_with_strides[
         else:
 
             @always_inline
-            fn _copy[
+            def _copy[
                 simd_width: Int
             ](offset: Int) unified {
                 var input_axis_stride,
@@ -1548,7 +1546,7 @@ fn _copy_with_strides[
             output_axis_stride,
         )
         @parameter
-        fn _parallel_copy(thread_id: Int) raises:
+        def _parallel_copy(thread_id: Int) raises:
             var next_input_offset = (
                 thread_id * work_block_size * input_axis_stride + input_offset
             )
@@ -1577,11 +1575,11 @@ fn _copy_with_strides[
         sync_parallelize[_parallel_copy](num_tasks)
 
 
-fn transpose_strided[
+def transpose_strided[
     rank: Int, dtype: DType, //
 ](
-    output: NDBuffer[mut=True, dtype, rank, _, _],
-    input: NDBuffer[dtype, rank, _, _],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
+    input: NDBuffer[rank=rank, dtype, _, _],
     perms: UnsafePointer[Scalar[DType.int], _],
 ) raises:
     # Compute `permuted_input_strides`
@@ -1621,11 +1619,11 @@ fn transpose_strided[
 # ===------------------------------------------------------------------=== #
 #  Transpose entry points
 # ===------------------------------------------------------------------=== #
-fn transpose[
+def transpose[
     rank: Int, dtype: DType, //
 ](
-    output: NDBuffer[mut=True, dtype, rank, _, _],
-    input: NDBuffer[dtype, rank, _, _],
+    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
+    input: NDBuffer[rank=rank, dtype, _, _],
     perms: UnsafePointer[Scalar[DType.int], _],
 ) raises:
     """

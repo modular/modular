@@ -296,7 +296,7 @@ INTERNVL_INSTRUCT_MESSAGES = [
 ]
 INTERNVL_INSTRUCT_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/internvl_instruct_image.jpg"
 
-IDEFICS3_INSTRUCT_PROMPT = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n<image> Describe the image:<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+IDEFICS3_INSTRUCT_PROMPT = "<|begin_of_text|>User:<image>Describe the image:<end_of_utterance>\nAssistant:"
 IDEFICS3_INSTRUCT_MESSAGES = [
     {
         "role": "user",
@@ -363,6 +363,33 @@ DEFAULT_PIXEL_GENERATION_PROMPTS = [
 DEFAULT_PIXEL_GENERATION = [
     MockPixelGenerationRequest.from_prompt(prompt=prompt, seed=42)
     for prompt in DEFAULT_PIXEL_GENERATION_PROMPTS
+]
+
+# The prompt contains Kimi-specific media tokens for the vLLM path, which
+# uses it directly.  The messages are the clean (no special tokens) version
+# that the MAX tokenizer runs through the HuggingFace chat template.
+KIMIK2_5_PROMPT = (
+    "<|im_user|>user<|media_begin|>image<|media_content|>"
+    "<|media_pad|><|media_end|>Describe this image.<|im_end|>"
+    "<|im_assistant|>assistant<|im_middle|></think>"
+)
+KIMIK2_5_MESSAGES = [
+    {
+        "role": "user",
+        "content": [
+            {"type": "image"},
+            {"type": "text", "text": "Describe this image."},
+        ],
+    }
+]
+KIMIK2_5_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/kimik2_5_image.jpg"
+
+KIMIK2_5_REQUESTS = [
+    MockTextGenerationRequest.with_images(
+        prompt=KIMIK2_5_PROMPT,
+        images=[KIMIK2_5_IMAGE],
+        messages=KIMIK2_5_MESSAGES,
+    ),
 ]
 
 FLUX2_PIXEL_GENERATION_I2I = [

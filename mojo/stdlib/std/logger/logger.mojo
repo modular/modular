@@ -96,7 +96,7 @@ struct Level(
     """A serious error indicating that the program itself may be unable to continue running."""
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Returns True if this level equals the other level.
 
         Args:
@@ -107,7 +107,7 @@ struct Level(
         """
         return self._value == other._value
 
-    fn __lt__(self, other: Self) -> Bool:
+    def __lt__(self, other: Self) -> Bool:
         """Returns True if this level is less than the other level.
 
         Args:
@@ -118,7 +118,7 @@ struct Level(
         """
         return self._value < other._value
 
-    fn color(self) -> Color:
+    def color(self) -> Color:
         """Returns the ANSI color of the level.
 
         Returns:
@@ -140,7 +140,7 @@ struct Level(
         return Color("")
 
     @staticmethod
-    fn _from_str(name: StringSlice) -> Self:
+    def _from_str(name: StringSlice) -> Self:
         """Converts a string level name to a Level value.
 
         Args:
@@ -166,7 +166,7 @@ struct Level(
             return Self.CRITICAL
         return Self.NOTSET
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the string representation of this level to a writer.
 
         Args:
@@ -187,28 +187,6 @@ struct Level(
         elif self == Self.CRITICAL:
             writer.write("CRITICAL")
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns the string representation of this level.
-
-        Returns:
-            String: A human-readable string representation of the level
-                (e.g., "DEBUG", "INFO").
-        """
-        return String.write(self)
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns the detailed string representation of this level.
-
-        Returns:
-            String: A string representation including the type name and level
-                value (e.g., "Level.DEBUG").
-        """
-        return t"Level.{self}"
-
 
 # ===-----------------------------------------------------------------------===#
 # Logger
@@ -226,9 +204,9 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
     var _prefix: String
     var _source_location: Bool
 
-    fn __init__(
+    def __init__(
         out self,
-        fd: FileDescriptor = sys.stdout,
+        fd: FileDescriptor = std.sys.stdout,
         *,
         prefix: String = "",
         source_location: Bool = False,
@@ -248,7 +226,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
 
     @always_inline
     @staticmethod
-    fn _is_disabled[target_level: Level]() -> Bool:
+    def _is_disabled[target_level: Level]() -> Bool:
         """Returns True if logging at the target level is disabled.
 
         Parameters:
@@ -263,7 +241,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         return Self.level > target_level
 
     @always_inline
-    fn trace[
+    def trace[
         *Ts: Writable
     ](
         self,
@@ -295,7 +273,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             )
 
     @always_inline
-    fn debug[
+    def debug[
         *Ts: Writable
     ](
         self,
@@ -327,7 +305,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             )
 
     @always_inline
-    fn info[
+    def info[
         *Ts: Writable
     ](
         self,
@@ -359,7 +337,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             )
 
     @always_inline
-    fn warning[
+    def warning[
         *Ts: Writable
     ](
         self,
@@ -391,7 +369,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             )
 
     @always_inline
-    fn error[
+    def error[
         *Ts: Writable
     ](
         self,
@@ -423,7 +401,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             )
 
     @always_inline
-    fn critical[
+    def critical[
         *Ts: Writable
     ](
         self,
@@ -457,7 +435,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
 
         abort()
 
-    fn _write_out[
+    def _write_out[
         _level: Level
     ](
         self,

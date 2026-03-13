@@ -23,7 +23,11 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheInputsPerDevice, KVCacheParams
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheInputsPerDevice,
+    KVCacheParams,
+)
 from max.nn.kv_cache.data_parallelism_utils import (
     split_input_row_offsets,
     split_into_groups,
@@ -200,10 +204,13 @@ def _execute_ragged_increment_cache_lengths_graph(
 
     updated_cache_lengths = model.execute(*exec_args)
 
+    inputs = list(kv_cache_inputs.inputs)
+    kv_cache_inputs.inputs = inputs
+
     start_idx = 0
     for replica_devices in devices_per_replica:
         # max_lengths is host allocated and the same across each replica.
-        max_lengths = kv_cache_inputs.inputs[start_idx].max_lengths
+        max_lengths = inputs[start_idx].max_lengths
 
         # Advance to the next step of the max_lengths tensor.
         updated_max_lengths = max_lengths[1:, :]
@@ -213,31 +220,27 @@ def _execute_ragged_increment_cache_lengths_graph(
             raise ValueError(
                 "attention_dispatch_metadata must be present in KV cache inputs"
             )
-        metadata_np = metadata.to_numpy().copy()
-        if updated_max_lengths.shape[0] > 0:
-            # Update dispatch metadata with new max_cache_valid_length.
-            updated_max_lengths_np = updated_max_lengths.to_numpy()
-            metadata_np[3] = np.int64(updated_max_lengths_np[0, 1])
-        updated_metadata_cpu = Buffer.from_numpy(metadata_np)
 
-        # Return our updated batch.
-        assert isinstance(kv_cache_inputs.inputs, list)
+        updated_metadata = metadata
+        if not params.is_mla and updated_max_lengths.shape[0] > 0:
+            metadata_np = metadata.to_numpy().copy()
+            metadata_np[3] = np.int64(updated_max_lengths.to_numpy()[0, 1])
+            updated_metadata = Buffer.from_numpy(metadata_np)
+
         for i in range(len(replica_devices)):
             updated_cache_length = updated_cache_lengths[start_idx + i]
             assert isinstance(updated_cache_length, Buffer)
-            # Preserve the original device (GPU for MLA, CPU for MHA).
-            orig = attention_dispatch_metadata[start_idx + i]
-            if orig is not None and not orig.device.is_host:
-                dev_metadata = updated_metadata_cpu.to(orig.device)
-            else:
-                dev_metadata = updated_metadata_cpu
-            kv_cache_inputs.inputs[start_idx + i] = KVCacheInputsPerDevice(
+            inputs[start_idx + i] = KVCacheInputsPerDevice(
                 blocks=blocks[start_idx + i],
                 cache_lengths=updated_cache_length,
                 lookup_table=lookup_table[start_idx + i],
                 max_lengths=updated_max_lengths,
                 kv_scales=kv_scales[start_idx + i],
-                attention_dispatch_metadata=dev_metadata,
+                attention_dispatch_metadata=(
+                    attention_dispatch_metadata[start_idx + i]
+                    if params.is_mla
+                    else updated_metadata
+                ),
             )
         start_idx += len(replica_devices)
     return kv_cache_inputs

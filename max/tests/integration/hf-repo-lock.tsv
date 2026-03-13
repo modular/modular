@@ -93,8 +93,10 @@ moonshotai/Kimi-K2.5	3367c8d1c68584429fab7faf845a32d5195b6ac1
 neubla/tiny-random-LlamaForCausalLM	1c81a3fba044af78df253edc66bdbab183184932
 nvidia/DeepSeek-R1-0528-NVFP4-v2	25a138f28f49022958b9f2d205f9b7de0cdb6e18
 nvidia/DeepSeek-V3.1-NVFP4	68b4a17cce1482e94030ca00dacda3dec4c6359d
+nvidia/Kimi-K2.5-NVFP4	e4e908c073784de20ad3af0be653421f1088922d
 nvidia/Llama-3.1-405B-Instruct-NVFP4	8ddfc523e75da0cd52d8d486895aa984282f6db9
 nvidia/Llama-3.1-8B-Instruct-NVFP4	bdb54e24298451af785c0ac63c1b485e9b7400a2
+openai/gpt-oss-20b	6cee5e81ee83917806bbde320786a8fb61efebee
 openai/whisper-large-v3	06f233fe06e710322aca913c1bc4249a0d71fce1
 replit/replit-code-v1_5-3b	b85a5dd28ef6053ad095bf5113dd740a86a67597
 sentence-transformers/all-mpnet-base-v2	9a3225965996d404b775526de6dbfe85d3368642

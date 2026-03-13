@@ -19,31 +19,29 @@ from buffer import DimList, NDBuffer
 from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from std.random import rand
-from layout import TileTensor
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from linalg.matmul.vendor.blas import matmul
 
 
-fn test_matmul[
+def test_matmul[
     input_type: DType, M: Int, N: Int, K: Int
 ](ctx: DeviceContext) raises:
     print("== test_vendor_blas", input_type, "x", M, "x", N, "x", K)
 
-    comptime static_a_shape = DimList(M, K)
-    comptime static_b_shape = DimList(N, K)
-    comptime static_c_shape = DimList(M, N)
+    comptime static_a_shape = DimList[M, K]()
+    comptime static_b_shape = DimList[N, K]()
+    comptime static_c_shape = DimList[M, N]()
 
     var a_host_ptr = alloc[Scalar[input_type]](M * K)
-    var a_host = NDBuffer[input_type, 2, _, static_a_shape](a_host_ptr)
+    var a_host = NDBuffer[rank=2, input_type, _, static_a_shape](a_host_ptr)
     var b_size = N * K
     var b_host_ptr = alloc[Scalar[input_type]](b_size)
-    var b_host = NDBuffer[input_type, 2, _, static_b_shape](b_host_ptr)
+    var b_host = NDBuffer[rank=2, input_type, _, static_b_shape](b_host_ptr)
     var c_host_ptr = alloc[Scalar[DType.float32]](M * N)
-    var c_host = NDBuffer[DType.float32, 2, _, static_c_shape](c_host_ptr)
+    var c_host = NDBuffer[rank=2, DType.float32, _, static_c_shape](c_host_ptr)
     var c_host_ref_ptr = alloc[Scalar[DType.float32]](M * N)
-    var c_host_ref = NDBuffer[DType.float32, 2, _, static_c_shape](
+    var c_host_ref = NDBuffer[rank=2, DType.float32, _, static_c_shape](
         c_host_ref_ptr
     )
 
@@ -54,19 +52,19 @@ fn test_matmul[
     c_host_ref.zero()
 
     var a_device = ctx.enqueue_create_buffer[input_type](M * K)
-    var a_device_nd = NDBuffer[input_type, 2, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=2, input_type, _, static_a_shape](
         a_device.unsafe_ptr()
     )
     var b_device = ctx.enqueue_create_buffer[input_type](b_size)
-    var b_device_nd = NDBuffer[input_type, 2, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=2, input_type, _, static_b_shape](
         b_device.unsafe_ptr()
     )
     var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var c_device_nd = NDBuffer[DType.float32, 2, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=2, DType.float32, _, static_c_shape](
         c_device.unsafe_ptr()
     )
     var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var c_device_ref_nd = NDBuffer[DType.float32, 2, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=2, DType.float32, _, static_c_shape](
         c_device_ref.unsafe_ptr()
     )
 
@@ -149,7 +147,7 @@ fn test_matmul[
     _ = c_device_ref^
 
 
-fn test_matmul[input_types: List[DType]]() raises:
+def test_matmul[input_types: List[DType]]() raises:
     with DeviceContext() as ctx:
         comptime for input_type in input_types:
             test_matmul[input_type, 64, 16, 32](ctx)

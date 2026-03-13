@@ -44,6 +44,7 @@ def mock_pipeline_config(
     pipeline_config.runtime.max_batch_total_tokens = None
     pipeline_config.runtime.ep_size = NUM_RANKS
     pipeline_config.runtime.max_batch_input_tokens = MAX_SEND_TOKENS_PER_RANK
+    pipeline_config.speculative = None
 
     return pipeline_config
 
@@ -103,21 +104,21 @@ def test_deepseekv3_memory_estimation_exact() -> None:
     mem = deepseek_model.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
-    assert mem == 17966301184
+    assert mem == 5225054208
 
     # For PrefillAndDecode, we also need to consider mla_activation_memory
     pipeline_config = mock_pipeline_config("prefill_and_decode")
     mem = deepseek_model.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
-    assert mem == 561279664128
+    assert mem == 551759642624
 
     # Also check model with different quantization encoding
     pipeline_config = mock_pipeline_config("decode_only", "float4_e2m1fnx2")
     mem = deepseek_model.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
-    assert mem == 16315711488
+    assert mem == 4399759360
 
 
 def mock_weights_pipeline_config(

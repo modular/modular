@@ -61,7 +61,7 @@ from layout import (
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-fn simple_init() -> Bool:
+def simple_init() -> Bool:
     for arg in argv():
         if arg == "--simple-init":
             return True
@@ -112,11 +112,11 @@ def _test_kernel_impl[
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
 
-    comptime static_a_shape = DimList(Dim(), expert_shape[1] // 2)
-    comptime static_b_shape = DimList(
+    comptime static_a_shape = DimList[Dim(), expert_shape[1] // 2]()
+    comptime static_b_shape = DimList[
         num_experts, expert_shape[0], expert_shape[1] // 2
-    )
-    comptime static_c_shape = DimList(Dim(), expert_shape[0])
+    ]()
+    comptime static_c_shape = DimList[Dim(), expert_shape[0]]()
     var dynamic_a_shape = IndexList[2](total_num_tokens, K // 2)
     var dynamic_b_shape = IndexList[3](
         num_experts, expert_shape[0], expert_shape[1] // 2
@@ -128,60 +128,60 @@ def _test_kernel_impl[
     var c_size = total_num_tokens * expert_shape[0]
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var a_host = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_host = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var b_host = NDBuffer[b_type, 3, _, static_b_shape](
+    var b_host = NDBuffer[rank=3, b_type, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
     var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
     var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
     )
     var a_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         num_active_experts + 1
     )
-    var a_offsets_device_nd = NDBuffer[DType.uint32, 1](
+    var a_offsets_device_nd = NDBuffer[rank=1, DType.uint32](
         a_offsets_device.unsafe_ptr(), num_active_experts + 1
     )
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[b_type, 3, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=3, b_type, _, static_b_shape](
         b_device.unsafe_ptr(), dynamic_b_shape
     )
     var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](
         num_active_experts
     )
-    var expert_ids_device_nd = NDBuffer[DType.int32, 1](
+    var expert_ids_device_nd = NDBuffer[rank=1, DType.int32](
         expert_ids_device.unsafe_ptr(), num_active_experts
     )
     var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         num_active_experts
     )
-    var a_scale_offsets_device_nd = NDBuffer[DType.uint32, 1](
+    var a_scale_offsets_device_nd = NDBuffer[rank=1, DType.uint32](
         a_scale_offsets_device.unsafe_ptr(), num_active_experts
     )
     var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
         num_experts
     )
-    var expert_scales_device_nd = NDBuffer[DType.float32, 1](
+    var expert_scales_device_nd = NDBuffer[rank=1, DType.float32](
         expert_scales_device.unsafe_ptr(), num_experts
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
     )
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
@@ -205,22 +205,22 @@ def _test_kernel_impl[
         a_scale_dim0 += ceildiv(local_m, SF_MN_GROUP_SIZE)
         expert_ids_host_ptr[i] = Int32(expert_ids[i])
 
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList[
         # ceildiv(total_num_tokens, SF_MN_GROUP_SIZE),
         Dim(),
         ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         num_experts,
         ceildiv(expert_shape[0], SF_MN_GROUP_SIZE),
         ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
+    ]()
 
     var dynamic_a_scales_shape = IndexList[5](
         a_scale_dim0,
@@ -255,25 +255,25 @@ def _test_kernel_impl[
     )
 
     var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
-    var a_scales_host = NDBuffer[scales_dtype, 5, _, static_a_scales_shape](
-        a_scales_host_ptr, dynamic_a_scales_shape
-    )
+    var a_scales_host = NDBuffer[
+        rank=5, scales_dtype, _, static_a_scales_shape
+    ](a_scales_host_ptr, dynamic_a_scales_shape)
     var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
-    var b_scales_host = NDBuffer[scales_dtype, 6, _, static_b_scales_shape](
-        b_scales_host_ptr, dynamic_b_scales_shape
-    )
+    var b_scales_host = NDBuffer[
+        rank=6, scales_dtype, _, static_b_scales_shape
+    ](b_scales_host_ptr, dynamic_b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
     var a_scales_device_nd = NDBuffer[
-        scales_dtype, 5, _, static_a_scales_shape
+        rank=5, scales_dtype, _, static_a_scales_shape
     ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
     var b_scales_device_nd = NDBuffer[
-        scales_dtype, 6, _, static_b_scales_shape
+        rank=6, scales_dtype, _, static_b_scales_shape
     ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
     var a_tensor = from_ndbuffer_row_major(a_device_nd)
@@ -539,6 +539,8 @@ def _test_kernel_impl[
             num_active_experts,
             ctx,
         )
+        # Synchronize after our kernel to isolate crashes from vendor_blas
+        ctx.synchronize()
     else:
         comptime assert False, "kernel_type must be 'old' or 'new'"
         pass
@@ -1231,6 +1233,375 @@ def main() raises:
             [2, 0, 1],
             ctx,
         )
+
+        # --- MMA_N=8, 16, 32 incremental tests ---
+        comptime for mma_n_val in [8, 16, 32]:
+            print("\n========================================")
+            print("Testing NEW kernel with MMA_N=", mma_n_val)
+            print("========================================\n")
+
+            comptime umma_shape_small = Index(bm, mma_n_val, MMA_K)
+            comptime block_tile_shape_small = Index(bm, mma_n_val, BK)
+
+            # Step 1: single active expert, aligned M, tests expert selection
+            print("Step 1: single active expert (expert 3 of 4), aligned M")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                1,
+                [512],
+                [3],
+                ctx,
+            )
+
+            # Step 2: single active expert, unaligned M
+            print("Step 2: single active expert, unaligned M")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                1,
+                [1000],
+                [0],
+                ctx,
+            )
+
+            # Step 3a0: expert 0, 129 tokens (isolate partial M-tile)
+            print("Step 3a0: expert 0, 129 tokens")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                1,
+                [129],
+                [0],
+                ctx,
+            )
+
+            # Step 3a: expert 3, barely unaligned (129 tokens)
+            print("Step 3a: expert 3, barely unaligned (129 tokens)")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                1,
+                [129],
+                [3],
+                ctx,
+            )
+
+            # Step 3b: expert 1, unaligned 1000 tokens
+            print("Step 3b: expert 1, unaligned 1000 tokens")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                1,
+                [1000],
+                [1],
+                ctx,
+            )
+
+            # Step 3c: expert 3, unaligned 1000 tokens
+            print("Step 3c: expert 3, unaligned M")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                1,
+                [1000],
+                [3],
+                ctx,
+            )
+
+            # Step 3d: same config with MMA_N=128 to verify B loading is correct
+            print("Step 3d: CONTROL - expert 3, 1000 tokens, MMA_N=128")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                Index(bm, 128, BK),
+                Index(bm, 128, MMA_K),
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                1,
+                [1000],
+                [3],
+                ctx,
+            )
+
+            # Step 4: two experts, aligned M, same size
+            print("Step 4: two experts, aligned M, same size")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                2,
+                [512, 512],
+                [3, 1],
+                ctx,
+            )
+
+            # Step 5: two experts, aligned M, different sizes
+            print("Step 5: two experts, aligned M, different sizes")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                2,
+                [512, 1024],
+                [3, 1],
+                ctx,
+            )
+
+            # Step 6a: unaligned first expert, aligned second
+            print("Step 6a: unaligned first + aligned second")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                2,
+                [500, 1024],
+                [3, 1],
+                ctx,
+            )
+
+            # Step 6b: aligned first expert, unaligned second
+            print("Step 6b: aligned first + unaligned second")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                2,
+                [512, 1000],
+                [3, 1],
+                ctx,
+            )
+
+            # Step 6c: both unaligned
+            print("Step 6c: both unaligned")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                2,
+                [500, 1000],
+                [3, 1],
+                ctx,
+            )
+
+            # Step 7: full test — large token counts, 4 experts
+            print("Step 7: full test — 4 experts, large tokens")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=6,
+                expert_shape=Index(2048, 1024),
+            ](
+                4,
+                [512, 1000, 2000, 3000],
+                [0, 3, 2, 4],
+                ctx,
+            )
+
+            # Step 8: unaligned token counts
+            print("Step 8: unaligned token counts")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                3,
+                [64 + 1, 1024 + 3, 128 * 3 + 2],
+                [2, 0, 1],
+                ctx,
+            )
+
+            # Step 9: small token counts
+            print("Step 9: small token counts")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                3,
+                [31, 97, 63],
+                [2, 0, 1],
+                ctx,
+            )
 
         print("\n========================================")
         print("ALL TESTS PASSED!")

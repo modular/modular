@@ -6,6 +6,10 @@ config.llvm_use_sanitizer = "@LLVM_USE_SANITIZER@"
 if @ENABLE_ASSERTIONS@:
     config.available_features.add("ASSERTIONS")
 
+config.mojo_version_major = @MOJO_VERSION_MAJOR@
+config.mojo_version_minor = @MOJO_VERSION_MINOR@
+config.mojo_version_patch = @MOJO_VERSION_PATCH@
+
 import lit.llvm
 lit.llvm.initialize(lit_config, config)
 lit.llvm.llvm_config.use_default_substitutions()

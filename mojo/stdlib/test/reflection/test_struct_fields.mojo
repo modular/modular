@@ -140,7 +140,7 @@ struct TripleNested:
 
 @fieldwise_init
 struct Bar[x: Int, f: Float32 = 1.3](Intable):
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return self.x
 
     var y: Int
@@ -220,7 +220,7 @@ def test_is_struct_type_with_empty_struct() raises:
     assert_true(is_struct_type[EmptyStruct]())
 
 
-fn _is_struct_generic[T: AnyType]() -> Bool:
+def _is_struct_generic[T: AnyType]() -> Bool:
     """Helper function to test is_struct_type through generic parameter."""
     return is_struct_type[T]()
 
@@ -261,7 +261,7 @@ def test_is_struct_type_field_types_through_generic() raises:
     assert_false(_is_struct_generic[field_types[1]]())
 
 
-fn safe_field_count[T: AnyType]() -> Int:
+def safe_field_count[T: AnyType]() -> Int:
     """Safe field count that returns -1 for non-struct types.
 
     Note: Use `@parameter if` (not runtime `if`) since `is_struct_type` must
@@ -554,7 +554,7 @@ struct GenericTestPoint:
     var z: Float64
 
 
-fn generic_field_info_printer[T: AnyType]():
+def generic_field_info_printer[T: AnyType]():
     """Generic function that uses magic functions to introspect any struct."""
 
     comptime for i in range(struct_field_count[T]()):
@@ -572,7 +572,7 @@ def test_generic_iteration() raises:
     generic_field_info_printer[Outer]()
 
 
-fn count_fields_generically[T: AnyType]() -> Int:
+def count_fields_generically[T: AnyType]() -> Int:
     """Counts fields generically - works with any struct type."""
     return struct_field_count[T]()
 
@@ -586,7 +586,7 @@ def test_count_through_generic_function() raises:
     assert_equal(count_fields_generically[MixedVisibility](), 3)
 
 
-fn get_first_field_name_generically[T: AnyType]() -> StaticString:
+def get_first_field_name_generically[T: AnyType]() -> StaticString:
     """Gets first field name - works with any struct type."""
     # Only call this for structs with at least one field
     return struct_field_names[T]()[0]
@@ -634,7 +634,7 @@ struct ParametricTestStruct[T: Copyable & ImplicitlyDestructible, size: Int]:
     var data: Self.T
     var count: Int
 
-    fn __init__(out self, var data: Self.T, count: Int):
+    def __init__(out self, var data: Self.T, count: Int):
         self.data = data^
         self.count = count
 
@@ -649,7 +649,7 @@ def test_user_defined_parametric_struct() raises:
     assert_equal(names[1], "count")
 
 
-fn generic_parametric_inspector[
+def generic_parametric_inspector[
     T: Copyable & ImplicitlyDestructible, size: Int
 ]() -> Int:
     """Generic function that inspects a parametric struct."""
@@ -794,17 +794,17 @@ def test_iterate_parametric_field_types_no_crash() raises:
 # ===----------------------------------------------------------------------=== #
 
 
-fn _count_fields_generic[T: AnyType]() -> Int:
+def _count_fields_generic[T: AnyType]() -> Int:
     """Helper function to test struct_field_count through generic parameter."""
     return struct_field_count[T]()
 
 
-fn _get_field_names_generic[T: AnyType]() -> StaticString:
+def _get_field_names_generic[T: AnyType]() -> StaticString:
     """Helper function to test struct_field_names through generic parameter."""
     return struct_field_names[T]()[0]
 
 
-fn _get_type_name_generic[T: AnyType]() -> StaticString:
+def _get_type_name_generic[T: AnyType]() -> StaticString:
     """Helper function to test get_type_name through generic parameter."""
     return get_type_name[T]()
 
@@ -894,7 +894,7 @@ def test_conforms_to_field_iteration() raises:
     assert_equal(copyable_count, 2)
 
 
-fn count_copyable_fields[T: AnyType]() -> Int:
+def count_copyable_fields[T: AnyType]() -> Int:
     """Generic function that counts fields conforming to Copyable."""
     var count = 0
 
@@ -927,10 +927,10 @@ struct NonCopyableValue:
 
     var data: Int
 
-    fn __init__(out self, data: Int):
+    def __init__(out self, data: Int):
         self.data = data
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         # If this is called, we have a bug!
         print("ERROR: NonCopyableValue was copied!")
         self.data = copy.data
@@ -943,7 +943,7 @@ struct ContainerWithNonCopyable:
     var resource: NonCopyableValue
     var count: Int
 
-    fn __init__(out self, id: Int, value: Int, count: Int):
+    def __init__(out self, id: Int, value: Int, count: Int):
         self.id = id
         self.resource = NonCopyableValue(value)
         self.count = count
@@ -954,7 +954,7 @@ struct PointForRef:
     var x: Int
     var y: Int
 
-    fn __init__(out self, x: Int, y: Int):
+    def __init__(out self, x: Int, y: Int):
         self.x = x
         self.y = y
 
@@ -1035,7 +1035,7 @@ def test___struct_field_ref_with_names() raises:
     assert_equal(f1, 40)
 
 
-fn print_struct_debug[T: AnyType](ref s: T):
+def print_struct_debug[T: AnyType](ref s: T):
     """Example: A generic debug-print function using struct field reflection.
 
     This demonstrates a common use case: implementing a Debug-like
@@ -1171,7 +1171,7 @@ def test_offset_of_index_and_name_are_consistent() raises:
     )
 
 
-fn get_offset_generically[T: AnyType, idx: Int]() -> Int:
+def get_offset_generically[T: AnyType, idx: Int]() -> Int:
     """Helper to test offset calculation through generic function."""
     return offset_of[T, index=idx]()
 
@@ -1234,11 +1234,11 @@ def test_offset_by_name_with_generic_type() raises:
 
     # Test offset_of through a generic function
     # The field name must be a string literal, but T can be a generic type parameter
-    fn get_x_offset[T: AnyType]() -> Int:
+    def get_x_offset[T: AnyType]() -> Int:
         """Helper that uses offset_of with a generic type parameter."""
         return offset_of[T, name="x"]()
 
-    fn get_a_offset[T: AnyType]() -> Int:
+    def get_a_offset[T: AnyType]() -> Int:
         """Helper that uses offset_of with a generic type parameter."""
         return offset_of[T, name="a"]()
 
@@ -1251,7 +1251,7 @@ def test_offset_by_name_with_generic_type() raises:
     assert_equal(off2, 0)
 
 
-fn get_all_offsets_generically[T: AnyType]() -> InlineArray[Int, 4]:
+def get_all_offsets_generically[T: AnyType]() -> InlineArray[Int, 4]:
     """Helper to get all field offsets for a struct with up to 4 fields."""
     var offsets = InlineArray[Int, 4](fill=0)
     comptime count = struct_field_count[T]()

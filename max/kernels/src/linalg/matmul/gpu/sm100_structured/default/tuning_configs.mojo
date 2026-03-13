@@ -35,7 +35,7 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
     var num_clc_pipeline_stages: UInt
     var num_split_k: Int
 
-    fn __init__(
+    def __init__(
         out self,
         M: Int,
         N: Int,
@@ -68,11 +68,7 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
         self.num_split_k = num_split_k
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the tuning config as a string.
 
         Args:
@@ -80,7 +76,7 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         """
         writer.write("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
 
-    fn __init__(
+    def __init__(
         out self,
         M: Int,
         M_end: Int,
@@ -135,7 +131,7 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
 # ===----------------------------------------------------------------------=== #
 
 
-fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
+def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
     return [
         TuningConfigSM100(
             M=2048,
@@ -390,7 +386,9 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
 # ===----------------------------------------------------------------------=== #
 
 
-fn _get_tuning_list_sm100_fp8[mma_k: Int, bk: Int]() -> List[TuningConfigSM100]:
+def _get_tuning_list_sm100_fp8[
+    mma_k: Int, bk: Int
+]() -> List[TuningConfigSM100]:
     # ----------------BEGIN-TUNING-LIST-SM100-FP8----------------
     comptime config_list = [
         # Automatically generated from [tuning_table_sm100_fp8.yaml]
@@ -1551,7 +1549,7 @@ fn _get_tuning_list_sm100_fp8[mma_k: Int, bk: Int]() -> List[TuningConfigSM100]:
     return materialize[config_list]()
 
 
-fn _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
+def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
     comptime config_list = [
         TuningConfigSM100(
             M=1,
@@ -1567,12 +1565,82 @@ fn _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=0,
         ),
+        TuningConfigSM100(
+            M=1,
+            M_end=2,
+            N=16384,
+            K=2048,
+            mma_shape=Index(256, 64, 32),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=4,
+            num_clc_pipeline_stages=0,
+        ),
+        TuningConfigSM100(
+            M=1,
+            M_end=2,
+            N=16384,
+            K=6656,
+            mma_shape=Index(256, 64, 32),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=4,
+            num_clc_pipeline_stages=0,
+        ),
+        TuningConfigSM100(
+            M=1,
+            M_end=2,
+            N=2304,
+            K=16384,
+            mma_shape=Index(256, 64, 32),
+            cta_group=2,
+            cluster_shape=Index(4, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+        ),
+        TuningConfigSM100(
+            M=1,
+            M_end=2,
+            N=6656,
+            K=16384,
+            mma_shape=Index(256, 64, 32),
+            cta_group=2,
+            cluster_shape=Index(4, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+        ),
+        TuningConfigSM100(
+            M=1,
+            M_end=2,
+            N=13312,
+            K=16384,
+            mma_shape=Index(256, 64, 32),
+            cta_group=2,
+            cluster_shape=Index(4, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+        ),
     ]
 
     return materialize[config_list]()
 
 
-fn _get_tuning_list_sm100_mxfp8() -> List[TuningConfigSM100]:
+def _get_tuning_list_sm100_mxfp8() -> List[TuningConfigSM100]:
     comptime config_list = [
         TuningConfigSM100(
             M=1,

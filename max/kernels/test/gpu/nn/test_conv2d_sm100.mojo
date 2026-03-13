@@ -23,6 +23,8 @@ Test coverage:
 - 3x3 and 1x1 convolutions
 - 1-SM and 2-SM cluster modes
 - Epilogue lambda fusion (bias addition)
+- conv_gpu scale/additive epilogues via dispatch path
+- Native TMA residual add via conv_gpu dispatch path
 
 Usage:
     bazel test //max/kernels/test/gpu/linalg:test_conv2d_sm100 --config=b200
@@ -30,12 +32,16 @@ Usage:
 
 from std.collections import Optional
 from std.sys import align_of
+from std.testing import assert_false
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
+from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
 from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
+from nn.conv import conv_gpu
+from nn.conv_utils import elementwise_simd_epilogue_type
 from std.random import rand
 from std.utils.index import IndexList
 from nn.conv_sm100.conv2d import (
@@ -50,7 +56,7 @@ from nn.conv_sm100.conv_config import (
 from linalg.utils import elementwise_compute_lambda_type
 
 
-fn test_conv2d_implicit_im2col[
+def test_conv2d_implicit_im2col[
     act_type: DType,
     filter_type: DType,
     out_type: DType,
@@ -128,31 +134,31 @@ fn test_conv2d_implicit_im2col[
     var out_host_ref_ptr = alloc[Scalar[out_type]](out_size)
 
     # NDBuffers with dynamic dimensions
-    comptime static_act_shape = DimList(-1, -1, -1, -1)
-    comptime static_filter_shape = DimList(-1, -1, -1, -1)
-    comptime static_out_shape = DimList(-1, -1, -1, -1)
+    comptime static_act_shape = DimList[-1, -1, -1, -1]()
+    comptime static_filter_shape = DimList[-1, -1, -1, -1]()
+    comptime static_out_shape = DimList[-1, -1, -1, -1]()
     var dynamic_act_shape = IndexList[4](batch, in_h, in_w, in_c)
     var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
     var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
 
-    var act_host = NDBuffer[act_type, 4, _, static_act_shape](
+    var act_host = NDBuffer[rank=4, act_type, _, static_act_shape](
         act_host_ptr, dynamic_act_shape
     )
-    var filter_host = NDBuffer[filter_type, 4, _, static_filter_shape](
+    var filter_host = NDBuffer[rank=4, filter_type, _, static_filter_shape](
         filter_host_ptr, dynamic_filter_shape
     )
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[act_type](act_size)
-    var act_device_nd = NDBuffer[act_type, 4, _, static_act_shape](
+    var act_device_nd = NDBuffer[rank=4, act_type, _, static_act_shape](
         act_device.unsafe_ptr(), dynamic_act_shape
     )
     var filter_device = ctx.enqueue_create_buffer[filter_type](filter_size)
-    var filter_device_nd = NDBuffer[filter_type, 4, _, static_filter_shape](
-        filter_device.unsafe_ptr(), dynamic_filter_shape
-    )
+    var filter_device_nd = NDBuffer[
+        rank=4, filter_type, _, static_filter_shape
+    ](filter_device.unsafe_ptr(), dynamic_filter_shape)
     var out_device = ctx.enqueue_create_buffer[out_type](out_size)
-    var out_device_nd = NDBuffer[out_type, 4, _, static_out_shape](
+    var out_device_nd = NDBuffer[rank=4, out_type, _, static_out_shape](
         out_device.unsafe_ptr(), dynamic_out_shape
     )
 
@@ -184,7 +190,7 @@ fn test_conv2d_implicit_im2col[
     # Perform im2col on host - use DimList with actual values for proper shape inference
     var im2col_host_ptr = alloc[Scalar[act_type]](im2col_size)
     var dynamic_im2col_shape = IndexList[2](M, K)
-    var im2col_host = NDBuffer[act_type, 2](
+    var im2col_host = NDBuffer[rank=2, act_type](
         im2col_host_ptr, dynamic_im2col_shape
     )
     im2col(im2col_host, act_host, problem)
@@ -194,13 +200,13 @@ fn test_conv2d_implicit_im2col[
     var dynamic_a_ref_shape = IndexList[2](M, K)
     var dynamic_b_ref_shape = IndexList[2](N, K)
     var dynamic_c_ref_shape = IndexList[2](M, N)
-    var im2col_device_nd = NDBuffer[act_type, 2](
+    var im2col_device_nd = NDBuffer[rank=2, act_type](
         im2col_device.unsafe_ptr(), dynamic_a_ref_shape
     )
-    var filter_2d_device_nd = NDBuffer[filter_type, 2](
+    var filter_2d_device_nd = NDBuffer[rank=2, filter_type](
         filter_device.unsafe_ptr(), dynamic_b_ref_shape
     )
-    var out_2d_ref_nd = NDBuffer[out_type, 2](
+    var out_2d_ref_nd = NDBuffer[rank=2, out_type](
         out_device_ref.unsafe_ptr(), dynamic_c_ref_shape
     )
 
@@ -246,7 +252,7 @@ fn test_conv2d_implicit_im2col[
     _ = im2col_device
 
 
-fn test_conv2d_1sm[
+def test_conv2d_1sm[
     act_type: DType,
     filter_type: DType,
     out_type: DType,
@@ -329,31 +335,31 @@ fn test_conv2d_1sm[
     var out_host_ref_ptr = alloc[Scalar[out_type]](out_size)
 
     # NDBuffers with dynamic dimensions
-    comptime static_act_shape = DimList(-1, -1, -1, -1)
-    comptime static_filter_shape = DimList(-1, -1, -1, -1)
-    comptime static_out_shape = DimList(-1, -1, -1, -1)
+    comptime static_act_shape = DimList[-1, -1, -1, -1]()
+    comptime static_filter_shape = DimList[-1, -1, -1, -1]()
+    comptime static_out_shape = DimList[-1, -1, -1, -1]()
     var dynamic_act_shape = IndexList[4](batch, in_h, in_w, in_c)
     var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
     var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
 
-    var act_host = NDBuffer[act_type, 4, _, static_act_shape](
+    var act_host = NDBuffer[rank=4, act_type, _, static_act_shape](
         act_host_ptr, dynamic_act_shape
     )
-    var filter_host = NDBuffer[filter_type, 4, _, static_filter_shape](
+    var filter_host = NDBuffer[rank=4, filter_type, _, static_filter_shape](
         filter_host_ptr, dynamic_filter_shape
     )
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[act_type](act_size)
-    var act_device_nd = NDBuffer[act_type, 4, _, static_act_shape](
+    var act_device_nd = NDBuffer[rank=4, act_type, _, static_act_shape](
         act_device.unsafe_ptr(), dynamic_act_shape
     )
     var filter_device = ctx.enqueue_create_buffer[filter_type](filter_size)
-    var filter_device_nd = NDBuffer[filter_type, 4, _, static_filter_shape](
-        filter_device.unsafe_ptr(), dynamic_filter_shape
-    )
+    var filter_device_nd = NDBuffer[
+        rank=4, filter_type, _, static_filter_shape
+    ](filter_device.unsafe_ptr(), dynamic_filter_shape)
     var out_device = ctx.enqueue_create_buffer[out_type](out_size)
-    var out_device_nd = NDBuffer[out_type, 4, _, static_out_shape](
+    var out_device_nd = NDBuffer[rank=4, out_type, _, static_out_shape](
         out_device.unsafe_ptr(), dynamic_out_shape
     )
 
@@ -383,7 +389,7 @@ fn test_conv2d_1sm[
 
     var im2col_host_ptr = alloc[Scalar[act_type]](im2col_size)
     var dynamic_im2col_shape = IndexList[2](M, K)
-    var im2col_host = NDBuffer[act_type, 2](
+    var im2col_host = NDBuffer[rank=2, act_type](
         im2col_host_ptr, dynamic_im2col_shape
     )
     im2col(im2col_host, act_host, problem)
@@ -393,13 +399,13 @@ fn test_conv2d_1sm[
     var dynamic_a_ref_shape = IndexList[2](M, K)
     var dynamic_b_ref_shape = IndexList[2](N, K)
     var dynamic_c_ref_shape = IndexList[2](M, N)
-    var im2col_device_nd = NDBuffer[act_type, 2](
+    var im2col_device_nd = NDBuffer[rank=2, act_type](
         im2col_device.unsafe_ptr(), dynamic_a_ref_shape
     )
-    var filter_2d_device_nd = NDBuffer[filter_type, 2](
+    var filter_2d_device_nd = NDBuffer[rank=2, filter_type](
         filter_device.unsafe_ptr(), dynamic_b_ref_shape
     )
-    var out_2d_ref_nd = NDBuffer[out_type, 2](
+    var out_2d_ref_nd = NDBuffer[rank=2, out_type](
         out_device_ref.unsafe_ptr(), dynamic_c_ref_shape
     )
 
@@ -445,7 +451,7 @@ fn test_conv2d_1sm[
     _ = im2col_device
 
 
-fn test_conv2d_epilogue_lambda[
+def test_conv2d_epilogue_lambda[
     act_type: DType,
     filter_type: DType,
     out_type: DType,
@@ -529,31 +535,31 @@ fn test_conv2d_epilogue_lambda[
     var bias_host_ptr = alloc[Scalar[out_type]](bias_size)
 
     # NDBuffers with dynamic dimensions
-    comptime static_act_shape = DimList(-1, -1, -1, -1)
-    comptime static_filter_shape = DimList(-1, -1, -1, -1)
-    comptime static_out_shape = DimList(-1, -1, -1, -1)
+    comptime static_act_shape = DimList[-1, -1, -1, -1]()
+    comptime static_filter_shape = DimList[-1, -1, -1, -1]()
+    comptime static_out_shape = DimList[-1, -1, -1, -1]()
     var dynamic_act_shape = IndexList[4](batch, in_h, in_w, in_c)
     var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
     var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
 
-    var act_host = NDBuffer[act_type, 4, _, static_act_shape](
+    var act_host = NDBuffer[rank=4, act_type, _, static_act_shape](
         act_host_ptr, dynamic_act_shape
     )
-    var filter_host = NDBuffer[filter_type, 4, _, static_filter_shape](
+    var filter_host = NDBuffer[rank=4, filter_type, _, static_filter_shape](
         filter_host_ptr, dynamic_filter_shape
     )
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[act_type](act_size)
-    var act_device_nd = NDBuffer[act_type, 4, _, static_act_shape](
+    var act_device_nd = NDBuffer[rank=4, act_type, _, static_act_shape](
         act_device.unsafe_ptr(), dynamic_act_shape
     )
     var filter_device = ctx.enqueue_create_buffer[filter_type](filter_size)
-    var filter_device_nd = NDBuffer[filter_type, 4, _, static_filter_shape](
-        filter_device.unsafe_ptr(), dynamic_filter_shape
-    )
+    var filter_device_nd = NDBuffer[
+        rank=4, filter_type, _, static_filter_shape
+    ](filter_device.unsafe_ptr(), dynamic_filter_shape)
     var out_device = ctx.enqueue_create_buffer[out_type](out_size)
-    var out_device_nd = NDBuffer[out_type, 4, _, static_out_shape](
+    var out_device_nd = NDBuffer[rank=4, out_type, _, static_out_shape](
         out_device.unsafe_ptr(), dynamic_out_shape
     )
     var bias_device = ctx.enqueue_create_buffer[out_type](bias_size)
@@ -573,9 +579,9 @@ fn test_conv2d_epilogue_lambda[
 
     # Create bias tensor view for epilogue lambda
     # Bias is 1D [out_c], needs to be broadcast over [M, N] output
-    comptime bias_shape = DimList(-1)
+    comptime bias_shape = DimList[-1]()
     var dynamic_bias_shape = IndexList[1](out_c)
-    var bias_tensor = NDBuffer[out_type, 1, _, bias_shape](
+    var bias_tensor = NDBuffer[rank=1, out_type, _, bias_shape](
         bias_device.unsafe_ptr(), dynamic_bias_shape
     )
 
@@ -585,7 +591,7 @@ fn test_conv2d_epilogue_lambda[
     @parameter
     @always_inline
     @__copy_capture(bias_tensor)
-    fn epilogue_add_bias[
+    def epilogue_add_bias[
         _dtype: DType,
         width: Int,
         *,
@@ -622,7 +628,7 @@ fn test_conv2d_epilogue_lambda[
 
     var im2col_host_ptr = alloc[Scalar[act_type]](im2col_size)
     var dynamic_im2col_shape = IndexList[2](M, K)
-    var im2col_host = NDBuffer[act_type, 2](
+    var im2col_host = NDBuffer[rank=2, act_type](
         im2col_host_ptr, dynamic_im2col_shape
     )
     im2col(im2col_host, act_host, problem)
@@ -632,13 +638,13 @@ fn test_conv2d_epilogue_lambda[
     var dynamic_a_ref_shape = IndexList[2](M, K)
     var dynamic_b_ref_shape = IndexList[2](N, K)
     var dynamic_c_ref_shape = IndexList[2](M, N)
-    var im2col_device_nd = NDBuffer[act_type, 2](
+    var im2col_device_nd = NDBuffer[rank=2, act_type](
         im2col_device.unsafe_ptr(), dynamic_a_ref_shape
     )
-    var filter_2d_device_nd = NDBuffer[filter_type, 2](
+    var filter_2d_device_nd = NDBuffer[rank=2, filter_type](
         filter_device.unsafe_ptr(), dynamic_b_ref_shape
     )
-    var out_2d_ref_nd = NDBuffer[out_type, 2](
+    var out_2d_ref_nd = NDBuffer[rank=2, out_type](
         out_device_ref.unsafe_ptr(), dynamic_c_ref_shape
     )
 
@@ -693,7 +699,7 @@ fn test_conv2d_epilogue_lambda[
     _ = im2col_device
 
 
-fn test_conv2d_bias_fusion[
+def test_conv2d_bias_fusion[
     dtype: DType,
     use_1sm: Bool,
 ](
@@ -785,20 +791,20 @@ fn test_conv2d_bias_fusion[
     ctx.enqueue_copy(bias_dev, bias_host)
 
     # Create NDBuffers
-    comptime dyn_shape_4d = DimList(-1, -1, -1, -1)
-    var act_nd = NDBuffer[dtype, 4, _, dyn_shape_4d](
+    comptime dyn_shape_4d = DimList[-1, -1, -1, -1]()
+    var act_nd = NDBuffer[rank=4, dtype, _, dyn_shape_4d](
         act_dev.unsafe_ptr(), IndexList[4](batch, in_h, in_w, in_c)
     )
-    var filter_nd = NDBuffer[dtype, 4, _, dyn_shape_4d](
+    var filter_nd = NDBuffer[rank=4, dtype, _, dyn_shape_4d](
         filter_dev.unsafe_ptr(), IndexList[4](out_c, filter_h, filter_w, in_c)
     )
-    var out_nd = NDBuffer[dtype, 4, _, dyn_shape_4d](
+    var out_nd = NDBuffer[rank=4, dtype, _, dyn_shape_4d](
         out_dev.unsafe_ptr(), IndexList[4](batch, out_h, out_w, out_c)
     )
 
     # Create bias tensor for capture
-    comptime dyn_shape_1d = DimList(-1)
-    var bias_tensor = NDBuffer[dtype, 1, _, dyn_shape_1d](
+    comptime dyn_shape_1d = DimList[-1]()
+    var bias_tensor = NDBuffer[rank=1, dtype, _, dyn_shape_1d](
         bias_dev.unsafe_ptr(), IndexList[1](out_c)
     )
 
@@ -806,7 +812,7 @@ fn test_conv2d_bias_fusion[
     @parameter
     @always_inline
     @__copy_capture(bias_tensor)
-    fn add_bias[
+    def add_bias[
         _dtype: DType,
         width: Int,
         *,
@@ -843,21 +849,23 @@ fn test_conv2d_bias_fusion[
         )
 
     # Reference: im2col + GEMM + bias (CPU bias add)
-    var act_host_nd = NDBuffer[dtype, 4, _, dyn_shape_4d](
+    var act_host_nd = NDBuffer[rank=4, dtype, _, dyn_shape_4d](
         act_host, IndexList[4](batch, in_h, in_w, in_c)
     )
     var im2col_host = alloc[Scalar[dtype]](M * K)
-    var im2col_host_nd = NDBuffer[dtype, 2](im2col_host, IndexList[2](M, K))
+    var im2col_host_nd = NDBuffer[rank=2, dtype](
+        im2col_host, IndexList[2](M, K)
+    )
     im2col(im2col_host_nd, act_host_nd, problem)
     ctx.enqueue_copy(im2col_dev, im2col_host)
 
-    var im2col_nd = NDBuffer[dtype, 2](
+    var im2col_nd = NDBuffer[rank=2, dtype](
         im2col_dev.unsafe_ptr(), IndexList[2](M, K)
     )
-    var filter_2d_nd = NDBuffer[dtype, 2](
+    var filter_2d_nd = NDBuffer[rank=2, dtype](
         filter_dev.unsafe_ptr(), IndexList[2](N, K)
     )
-    var out_ref_nd = NDBuffer[dtype, 2](
+    var out_ref_nd = NDBuffer[rank=2, dtype](
         out_ref_dev.unsafe_ptr(), IndexList[2](M, N)
     )
 
@@ -902,7 +910,7 @@ fn test_conv2d_bias_fusion[
     _ = im2col_dev^
 
 
-fn test_conv2d_residual_api[
+def test_conv2d_residual_api[
     dtype: DType,
 ](
     ctx: DeviceContext,
@@ -983,32 +991,32 @@ fn test_conv2d_residual_api[
     var source_host_ptr = alloc[Scalar[dtype]](out_size)
 
     # NDBuffers with dynamic dimensions
-    comptime static_act_shape = DimList(-1, -1, -1, -1)
-    comptime static_filter_shape = DimList(-1, -1, -1, -1)
-    comptime static_out_shape = DimList(-1, -1, -1, -1)
+    comptime static_act_shape = DimList[-1, -1, -1, -1]()
+    comptime static_filter_shape = DimList[-1, -1, -1, -1]()
+    comptime static_out_shape = DimList[-1, -1, -1, -1]()
     var dynamic_act_shape = IndexList[4](batch, in_h, in_w, in_c)
     var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
     var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
 
-    var act_host = NDBuffer[dtype, 4, _, static_act_shape](
+    var act_host = NDBuffer[rank=4, dtype, _, static_act_shape](
         act_host_ptr, dynamic_act_shape
     )
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[dtype](act_size)
-    var act_device_nd = NDBuffer[dtype, 4, _, static_act_shape](
+    var act_device_nd = NDBuffer[rank=4, dtype, _, static_act_shape](
         act_device.unsafe_ptr(), dynamic_act_shape
     )
     var filter_device = ctx.enqueue_create_buffer[dtype](filter_size)
-    var filter_device_nd = NDBuffer[dtype, 4, _, static_filter_shape](
+    var filter_device_nd = NDBuffer[rank=4, dtype, _, static_filter_shape](
         filter_device.unsafe_ptr(), dynamic_filter_shape
     )
     var out_device = ctx.enqueue_create_buffer[dtype](out_size)
-    var out_device_nd = NDBuffer[dtype, 4, _, static_out_shape](
+    var out_device_nd = NDBuffer[rank=4, dtype, _, static_out_shape](
         out_device.unsafe_ptr(), dynamic_out_shape
     )
     var source_device = ctx.enqueue_create_buffer[dtype](out_size)
-    var source_device_nd = NDBuffer[dtype, 4, _, static_out_shape](
+    var source_device_nd = NDBuffer[rank=4, dtype, _, static_out_shape](
         source_device.unsafe_ptr(), dynamic_out_shape
     )
 
@@ -1069,7 +1077,9 @@ fn test_conv2d_residual_api[
 
     var im2col_host_ptr = alloc[Scalar[dtype]](im2col_size)
     var dynamic_im2col_shape = IndexList[2](M, K)
-    var im2col_host = NDBuffer[dtype, 2](im2col_host_ptr, dynamic_im2col_shape)
+    var im2col_host = NDBuffer[rank=2, dtype](
+        im2col_host_ptr, dynamic_im2col_shape
+    )
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
@@ -1077,13 +1087,13 @@ fn test_conv2d_residual_api[
     var dynamic_a_ref_shape = IndexList[2](M, K)
     var dynamic_b_ref_shape = IndexList[2](N, K)
     var dynamic_c_ref_shape = IndexList[2](M, N)
-    var im2col_device_nd = NDBuffer[dtype, 2](
+    var im2col_device_nd = NDBuffer[rank=2, dtype](
         im2col_device.unsafe_ptr(), dynamic_a_ref_shape
     )
-    var filter_2d_device_nd = NDBuffer[dtype, 2](
+    var filter_2d_device_nd = NDBuffer[rank=2, dtype](
         filter_device.unsafe_ptr(), dynamic_b_ref_shape
     )
-    var out_2d_ref_nd = NDBuffer[dtype, 2](
+    var out_2d_ref_nd = NDBuffer[rank=2, dtype](
         out_device_ref.unsafe_ptr(), dynamic_c_ref_shape
     )
 
@@ -1138,7 +1148,7 @@ fn test_conv2d_residual_api[
     _ = im2col_device
 
 
-fn test_conv2d_problem_shape():
+def test_conv2d_problem_shape():
     """Test Conv2dProblemShape computations."""
     print("Testing Conv2dProblemShape...")
 
@@ -1220,6 +1230,425 @@ fn test_conv2d_problem_shape():
         return
 
     print("  1x1 Conv: PASSED\n")
+
+
+# ============================================================
+# conv_gpu dispatch-level epilogue and residual tests
+# ============================================================
+
+
+def test_conv_gpu_scale_epilogue[
+    N: Int,
+    H: Int,
+    W: Int,
+    C_in: Int,
+    R: Int,
+    S: Int,
+    C_out: Int,
+    pad: Int,
+    name: StringLiteral,
+](ctx: DeviceContext) raises:
+    """Test conv_gpu with a scale-by-2 epilogue fused into the kernel."""
+    comptime Hout = H + 2 * pad - R + 1
+    comptime Wout = W + 2 * pad - S + 1
+    comptime dtype = DType.bfloat16
+    comptime input_layout = Layout.row_major(N, H, W, C_in)
+    comptime filter_layout = Layout.row_major(R, S, C_in, C_out)
+    comptime output_layout = Layout.row_major(N, Hout, Wout, C_out)
+    comptime in_size = N * H * W * C_in
+    comptime filter_size = R * S * C_in * C_out
+    comptime out_size = N * Hout * Wout * C_out
+
+    print("  ", name, sep="")
+
+    var input_host = alloc[Scalar[dtype]](in_size)
+    var filter_host = alloc[Scalar[dtype]](filter_size)
+    var out_epilogue_host = alloc[Scalar[dtype]](out_size)
+    var out_ref_host = alloc[Scalar[dtype]](out_size)
+
+    rand(input_host, in_size)
+    rand(filter_host, filter_size)
+
+    var input_dev = ctx.enqueue_create_buffer[dtype](in_size)
+    var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
+    var out_epilogue_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    var out_ref_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    ctx.enqueue_copy(input_dev, input_host)
+    ctx.enqueue_copy(filter_dev, filter_host)
+
+    var input_lt = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
+    var filter_lt = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
+    var out_epilogue_lt = LayoutTensor[dtype, output_layout](
+        out_epilogue_dev.unsafe_ptr()
+    )
+    var out_ref_lt = LayoutTensor[dtype, output_layout](
+        out_ref_dev.unsafe_ptr()
+    )
+    var out_epilogue_tt = TileTensor(
+        out_epilogue_dev.unsafe_ptr(), row_major[N, Hout, Wout, C_out]()
+    )
+
+    @parameter
+    @always_inline
+    @__copy_capture(out_epilogue_tt)
+    def scale_epilogue[
+        _dtype: DType, _rank: Int, _width: Int
+    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+        var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
+        out_epilogue_tt.store[width=_width](
+            Coord(
+                Idx(coords[0]), Idx(coords[1]), Idx(coords[2]), Idx(coords[3])
+            ),
+            scaled,
+        )
+
+    conv_gpu[
+        input_layout,
+        filter_layout,
+        output_layout,
+        dtype,
+        dtype,
+        dtype,
+        Optional[elementwise_simd_epilogue_type](scale_epilogue),
+    ](
+        input_lt.as_any_origin(),
+        filter_lt.as_any_origin(),
+        out_epilogue_lt.as_any_origin(),
+        IndexList[2](1, 1),
+        IndexList[2](1, 1),
+        IndexList[4](pad, pad, pad, pad),
+        1,
+        ctx,
+    )
+
+    conv_gpu[
+        input_layout,
+        filter_layout,
+        output_layout,
+        dtype,
+        dtype,
+        dtype,
+    ](
+        input_lt.as_any_origin(),
+        filter_lt.as_any_origin(),
+        out_ref_lt.as_any_origin(),
+        IndexList[2](1, 1),
+        IndexList[2](1, 1),
+        IndexList[4](pad, pad, pad, pad),
+        1,
+        ctx,
+    )
+
+    ctx.synchronize()
+    ctx.enqueue_copy(out_epilogue_host, out_epilogue_dev)
+    ctx.enqueue_copy(out_ref_host, out_ref_dev)
+    ctx.synchronize()
+
+    var max_diff: Float32 = 0.0
+    var errors = 0
+    for i in range(out_size):
+        var epilogue_val = out_epilogue_host[i].cast[DType.float32]()
+        var ref_val = out_ref_host[i].cast[DType.float32]()
+        var expected = (
+            (ref_val * 2.0).cast[DType.bfloat16]().cast[DType.float32]()
+        )
+        var diff = abs(epilogue_val - expected)
+        if diff > max_diff:
+            max_diff = diff
+        var scale = max(abs(expected), Float32(1e-6))
+        if diff / scale > 0.02:
+            errors += 1
+
+    if errors > 0:
+        print("    FAILED: ", errors, " errors, max_diff=", max_diff)
+    else:
+        print("    PASSED (max_diff=", max_diff, ")")
+    assert_false(errors > 0, "conv_gpu scale epilogue mismatch")
+
+    input_host.free()
+    filter_host.free()
+    out_epilogue_host.free()
+    out_ref_host.free()
+    _ = input_dev^
+    _ = filter_dev^
+    _ = out_epilogue_dev^
+    _ = out_ref_dev^
+
+
+def test_conv_gpu_additive_epilogue[
+    N: Int,
+    H: Int,
+    W: Int,
+    C_in: Int,
+    R: Int,
+    S: Int,
+    C_out: Int,
+    pad: Int,
+    name: StringLiteral,
+](ctx: DeviceContext) raises:
+    """Test conv_gpu with an additive bias epilogue."""
+    comptime Hout = H + 2 * pad - R + 1
+    comptime Wout = W + 2 * pad - S + 1
+    comptime dtype = DType.bfloat16
+    comptime input_layout = Layout.row_major(N, H, W, C_in)
+    comptime filter_layout = Layout.row_major(R, S, C_in, C_out)
+    comptime output_layout = Layout.row_major(N, Hout, Wout, C_out)
+    comptime in_size = N * H * W * C_in
+    comptime filter_size = R * S * C_in * C_out
+    comptime out_size = N * Hout * Wout * C_out
+
+    print("  ", name, sep="")
+
+    var input_host = alloc[Scalar[dtype]](in_size)
+    var filter_host = alloc[Scalar[dtype]](filter_size)
+    var out_epilogue_host = alloc[Scalar[dtype]](out_size)
+    var out_ref_host = alloc[Scalar[dtype]](out_size)
+    var bias_host = alloc[Scalar[dtype]](out_size)
+
+    rand(input_host, in_size)
+    rand(filter_host, filter_size)
+    for i in range(out_size):
+        bias_host[i] = Scalar[dtype](1.0)
+
+    var input_dev = ctx.enqueue_create_buffer[dtype](in_size)
+    var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
+    var out_epilogue_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    var out_ref_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    ctx.enqueue_copy(input_dev, input_host)
+    ctx.enqueue_copy(filter_dev, filter_host)
+    ctx.enqueue_copy(out_epilogue_dev, bias_host)
+
+    var input_lt = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
+    var filter_lt = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
+    var out_epilogue_lt = LayoutTensor[dtype, output_layout](
+        out_epilogue_dev.unsafe_ptr()
+    )
+    var out_ref_lt = LayoutTensor[dtype, output_layout](
+        out_ref_dev.unsafe_ptr()
+    )
+    var out_epilogue_tt = TileTensor(
+        out_epilogue_dev.unsafe_ptr(), row_major[N, Hout, Wout, C_out]()
+    )
+
+    @parameter
+    @always_inline
+    @__copy_capture(out_epilogue_tt)
+    def add_bias_epilogue[
+        _dtype: DType, _rank: Int, _width: Int
+    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+        var coord = Coord(
+            Idx(coords[0]), Idx(coords[1]), Idx(coords[2]), Idx(coords[3])
+        )
+        var existing = out_epilogue_tt.load[width=_width](coord)
+        var result = (
+            val.cast[DType.float32]() + existing.cast[DType.float32]()
+        ).cast[dtype]()
+        out_epilogue_tt.store[width=_width](coord, result)
+
+    conv_gpu[
+        input_layout,
+        filter_layout,
+        output_layout,
+        dtype,
+        dtype,
+        dtype,
+        Optional[elementwise_simd_epilogue_type](add_bias_epilogue),
+    ](
+        input_lt.as_any_origin(),
+        filter_lt.as_any_origin(),
+        out_epilogue_lt.as_any_origin(),
+        IndexList[2](1, 1),
+        IndexList[2](1, 1),
+        IndexList[4](pad, pad, pad, pad),
+        1,
+        ctx,
+    )
+
+    conv_gpu[
+        input_layout,
+        filter_layout,
+        output_layout,
+        dtype,
+        dtype,
+        dtype,
+    ](
+        input_lt.as_any_origin(),
+        filter_lt.as_any_origin(),
+        out_ref_lt.as_any_origin(),
+        IndexList[2](1, 1),
+        IndexList[2](1, 1),
+        IndexList[4](pad, pad, pad, pad),
+        1,
+        ctx,
+    )
+
+    ctx.synchronize()
+    ctx.enqueue_copy(out_epilogue_host, out_epilogue_dev)
+    ctx.enqueue_copy(out_ref_host, out_ref_dev)
+    ctx.synchronize()
+
+    var max_diff: Float32 = 0.0
+    var errors = 0
+    for i in range(out_size):
+        var epilogue_val = out_epilogue_host[i].cast[DType.float32]()
+        var ref_val = out_ref_host[i].cast[DType.float32]()
+        var expected = (
+            (ref_val + Float32(1.0))
+            .cast[DType.bfloat16]()
+            .cast[DType.float32]()
+        )
+        var diff = abs(epilogue_val - expected)
+        if diff > max_diff:
+            max_diff = diff
+        var scale = max(abs(expected), Float32(1e-6))
+        if diff / scale > 0.02:
+            errors += 1
+
+    if errors > 0:
+        print("    FAILED: ", errors, " errors, max_diff=", max_diff)
+    else:
+        print("    PASSED (max_diff=", max_diff, ")")
+    assert_false(errors > 0, "conv_gpu additive epilogue mismatch")
+
+    input_host.free()
+    filter_host.free()
+    out_epilogue_host.free()
+    out_ref_host.free()
+    bias_host.free()
+    _ = input_dev^
+    _ = filter_dev^
+    _ = out_epilogue_dev^
+    _ = out_ref_dev^
+
+
+def test_conv_gpu_residual[
+    N: Int,
+    H: Int,
+    W: Int,
+    C_in: Int,
+    R: Int,
+    S: Int,
+    C_out: Int,
+    pad: Int,
+    name: StringLiteral,
+](ctx: DeviceContext) raises:
+    """Test conv_gpu with native TMA-based residual add."""
+    comptime Hout = H + 2 * pad - R + 1
+    comptime Wout = W + 2 * pad - S + 1
+    comptime dtype = DType.bfloat16
+    comptime input_layout = Layout.row_major(N, H, W, C_in)
+    comptime filter_layout = Layout.row_major(R, S, C_in, C_out)
+    comptime output_layout = Layout.row_major(N, Hout, Wout, C_out)
+    comptime in_size = N * H * W * C_in
+    comptime filter_size = R * S * C_in * C_out
+    comptime out_size = N * Hout * Wout * C_out
+
+    print("  ", name, sep="")
+
+    var input_host = alloc[Scalar[dtype]](in_size)
+    var filter_host = alloc[Scalar[dtype]](filter_size)
+    var source_host = alloc[Scalar[dtype]](out_size)
+    var out_residual_host = alloc[Scalar[dtype]](out_size)
+    var out_ref_host = alloc[Scalar[dtype]](out_size)
+
+    rand(input_host, in_size)
+    rand(filter_host, filter_size)
+    rand(source_host, out_size)
+
+    var input_dev = ctx.enqueue_create_buffer[dtype](in_size)
+    var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
+    var source_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    var out_residual_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    var out_ref_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    ctx.enqueue_copy(input_dev, input_host)
+    ctx.enqueue_copy(filter_dev, filter_host)
+    ctx.enqueue_copy(source_dev, source_host)
+
+    var input_lt = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
+    var filter_lt = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
+    var out_residual_lt = LayoutTensor[dtype, output_layout](
+        out_residual_dev.unsafe_ptr()
+    )
+    var out_ref_lt = LayoutTensor[dtype, output_layout](
+        out_ref_dev.unsafe_ptr()
+    )
+
+    conv_gpu[
+        input_layout,
+        filter_layout,
+        output_layout,
+        dtype,
+        dtype,
+        dtype,
+        has_residual=True,
+    ](
+        input_lt.as_any_origin(),
+        filter_lt.as_any_origin(),
+        out_residual_lt.as_any_origin(),
+        IndexList[2](1, 1),
+        IndexList[2](1, 1),
+        IndexList[4](pad, pad, pad, pad),
+        1,
+        ctx,
+        source_dev.unsafe_ptr(),
+        Float32(1.0),
+    )
+
+    conv_gpu[
+        input_layout,
+        filter_layout,
+        output_layout,
+        dtype,
+        dtype,
+        dtype,
+    ](
+        input_lt.as_any_origin(),
+        filter_lt.as_any_origin(),
+        out_ref_lt.as_any_origin(),
+        IndexList[2](1, 1),
+        IndexList[2](1, 1),
+        IndexList[4](pad, pad, pad, pad),
+        1,
+        ctx,
+    )
+
+    ctx.synchronize()
+    ctx.enqueue_copy(out_residual_host, out_residual_dev)
+    ctx.enqueue_copy(out_ref_host, out_ref_dev)
+    ctx.synchronize()
+
+    var max_diff: Float32 = 0.0
+    var errors = 0
+    for i in range(out_size):
+        var residual_val = out_residual_host[i].cast[DType.float32]()
+        var ref_val = out_ref_host[i].cast[DType.float32]()
+        var src_val = source_host[i].cast[DType.float32]()
+        var expected = (
+            (ref_val + src_val).cast[DType.bfloat16]().cast[DType.float32]()
+        )
+        var diff = abs(residual_val - expected)
+        if diff > max_diff:
+            max_diff = diff
+        var scale = max(abs(expected), Float32(1e-6))
+        if diff / scale > 0.02:
+            errors += 1
+
+    if errors > 0:
+        print("    FAILED: ", errors, " errors, max_diff=", max_diff)
+    else:
+        print("    PASSED (max_diff=", max_diff, ")")
+    assert_false(errors > 0, "conv_gpu residual output mismatch")
+
+    input_host.free()
+    filter_host.free()
+    source_host.free()
+    out_residual_host.free()
+    out_ref_host.free()
+    _ = input_dev^
+    _ = filter_dev^
+    _ = source_dev^
+    _ = out_residual_dev^
+    _ = out_ref_dev^
 
 
 def main() raises:
@@ -1375,6 +1804,52 @@ def main() raises:
         # - std/gpu/compute/mma.mojo st_matrix() also only supports BF16/F32
         # - Full FP16 support would require updates across multiple files
         # For now, CUTLASS comparison requires modifying CUTLASS to use BF16
+
+        # ============================================================
+        # Tests 8-12: Scale-by-2 epilogue on FLUX layer shapes
+        # ============================================================
+        print("--- Scale-by-2 Epilogue ---")
+        test_conv_gpu_scale_epilogue[1, 16, 16, 512, 3, 3, 512, 1, "3x3_512"](
+            ctx
+        )
+        test_conv_gpu_scale_epilogue[
+            1, 32, 32, 512, 3, 3, 256, 1, "3x3_512to256"
+        ](ctx)
+        test_conv_gpu_scale_epilogue[
+            1, 32, 32, 512, 1, 1, 256, 0, "1x1_shortcut"
+        ](ctx)
+        test_conv_gpu_scale_epilogue[
+            1, 64, 64, 256, 3, 3, 128, 1, "3x3_256to128"
+        ](ctx)
+        test_conv_gpu_scale_epilogue[
+            1, 16, 32, 512, 3, 3, 512, 1, "3x3_nonsquare"
+        ](ctx)
+
+        # ============================================================
+        # Tests 13-14: Additive bias epilogue
+        # ============================================================
+        print("\n--- Additive Bias Epilogue ---")
+        test_conv_gpu_additive_epilogue[
+            1, 16, 16, 512, 3, 3, 512, 1, "3x3_512_bias"
+        ](ctx)
+        test_conv_gpu_additive_epilogue[
+            1, 64, 64, 256, 3, 3, 128, 1, "3x3_256to128_bias"
+        ](ctx)
+
+        # ============================================================
+        # Tests 15-18: Native TMA residual add
+        # ============================================================
+        print("\n--- Native TMA Residual Add ---")
+        test_conv_gpu_residual[1, 16, 16, 512, 3, 3, 512, 1, "3x3_512_res"](ctx)
+        test_conv_gpu_residual[
+            1, 32, 32, 512, 3, 3, 256, 1, "3x3_512to256_res"
+        ](ctx)
+        test_conv_gpu_residual[
+            1, 32, 32, 512, 1, 1, 256, 0, "1x1_shortcut_res"
+        ](ctx)
+        test_conv_gpu_residual[
+            1, 64, 64, 256, 3, 3, 128, 1, "3x3_256to128_res"
+        ](ctx)
 
     print("=" * 60)
     print("ALL CONV2D TESTS PASSED!")

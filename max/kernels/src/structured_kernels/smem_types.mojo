@@ -138,7 +138,7 @@ struct SMemTileArray[
         Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
 
-    fn __init__(
+    def __init__(
         ref[AddressSpace.SHARED] storage: Self.Storage,
     ) -> Self:
         """Initialize with Storage.
@@ -148,7 +148,7 @@ struct SMemTileArray[
         """
         return Self(storage.unsafe_ptr())
 
-    fn __init__(
+    def __init__(
         out self,
         # TODO: This should correctly propagate mutability.
         unsafe_ptr: UnsafePointer[
@@ -169,7 +169,7 @@ struct SMemTileArray[
         self.ptr = rebind[type_of(self.ptr)](unsafe_ptr)
 
     @always_inline
-    fn __getitem__[T: Intable](self, index: T) -> Self.Tile:
+    def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at index.
 
         Args:
@@ -180,7 +180,7 @@ struct SMemTileArray[
         """
         return Self.Tile(self.ptr + eval[Self.layout.size()] * Int(index))
 
-    fn slice[
+    def slice[
         length: Int
     ](
         self,
@@ -193,7 +193,7 @@ struct SMemTileArray[
 
     @always_inline
     @staticmethod
-    fn stack_allocation() -> Self:
+    def stack_allocation() -> Self:
         var ptr = stack_allocation[
             Self.storage_size,
             Self.dtype,
@@ -203,7 +203,9 @@ struct SMemTileArray[
         return Self(ptr)
 
 
-struct SMemArray[type: __TypeOfAllTypes, size: Int](TrivialRegisterPassable):
+struct SMemArray[type: TrivialRegisterPassable, size: Int](
+    TrivialRegisterPassable
+):
     """Shared memory array of fixed size.
 
     Parameters:
@@ -220,7 +222,7 @@ struct SMemArray[type: __TypeOfAllTypes, size: Int](TrivialRegisterPassable):
     var ptr: Self.ptr_type
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         unsafe_ptr: Self.ptr_type,
     ):
@@ -231,12 +233,12 @@ struct SMemArray[type: __TypeOfAllTypes, size: Int](TrivialRegisterPassable):
         """
         self.ptr = unsafe_ptr
 
-    fn __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
+    def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
         """Initialize from Storage."""
         return Self(rebind[Self.ptr_type](storage.unsafe_ptr()))
 
     @always_inline
-    fn __getitem__[T: Intable](self, index: T) -> Self.ptr_type:
+    def __getitem__[T: Intable](self, index: T) -> Self.ptr_type:
         """Get a pointer to the element at index.
 
         Args:
@@ -249,7 +251,7 @@ struct SMemArray[type: __TypeOfAllTypes, size: Int](TrivialRegisterPassable):
 
     @always_inline
     @staticmethod
-    fn len() -> Int:
+    def len() -> Int:
         """Get array length in bytes.
 
         Returns:
@@ -259,7 +261,7 @@ struct SMemArray[type: __TypeOfAllTypes, size: Int](TrivialRegisterPassable):
 
     @always_inline
     @staticmethod
-    fn stack_allocation[alignment: Int = align_of[Self.type]()]() -> Self:
+    def stack_allocation[alignment: Int = align_of[Self.type]()]() -> Self:
         var ptr = stack_allocation[
             Self.len(),
             Self.type,

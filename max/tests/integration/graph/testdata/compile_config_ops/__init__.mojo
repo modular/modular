@@ -26,7 +26,7 @@ comptime logger = Logger()
 @compiler.register("use_splitk_reduction_scheme")
 struct UseSplitkReductionScheme:
     @staticmethod
-    fn execute(
+    def execute(
         output: OutputTensor[dtype=DType.int32, rank=1, ...],
     ):
         comptime split_k_reduction_scheme = get_defined_int[
@@ -38,7 +38,7 @@ struct UseSplitkReductionScheme:
 @compiler.register("use_logger")
 struct UseLogger:
     @staticmethod
-    fn execute(
+    def execute(
         output: OutputTensor[dtype=DType.int32, rank=1, ...],
     ):
         logger.error("I'm a custom Mojo function!")
@@ -48,7 +48,7 @@ struct UseLogger:
 @compiler.register("add_one_custom")
 struct AddOneCustom:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString
     ](
         output: OutputTensor,
@@ -56,13 +56,13 @@ struct AddOneCustom:
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
-        fn add_one[width: Int](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
+        def add_one[width: Int](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
         foreach[add_one, target=target](output, ctx)
 
     @staticmethod
-    fn shape(
+    def shape(
         x: InputTensor,
     ) raises -> IndexList[x.rank]:
         raise "NotImplemented"

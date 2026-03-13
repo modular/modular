@@ -17,12 +17,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from max.graph import BufferValue, ShardingStrategy, TensorValue, ops
+from max.dtype import DType
+from max.graph import BufferValue, DeviceRef, ShardingStrategy, TensorValue, ops
 from max.nn.comm import Allreduce
 from max.nn.kernels import tpool_patch_merger
 from max.nn.layer import Module
-from max.pipelines.architectures.kimik2_5.model_config import VisionConfig
 
+from ...model_config import VisionConfig
 from .encoder import Encoder
 from .patch_embedding import PatchEmbedding
 from .patch_merger import PatchMergerMLP
@@ -43,83 +44,67 @@ class Transformer(Module):
     """
 
     def __init__(self, config: VisionConfig) -> None:
-        patch_size = config.patch_size
-        in_channels = config.in_channels
-        hidden_dim = config.vt_hidden_size
-        num_heads = config.vt_num_attention_heads
-        mlp_dim = config.vt_intermediate_size
-        num_layers = config.vt_num_hidden_layers
-        init_pos_emb_height = config.init_pos_emb_height
-        init_pos_emb_width = config.init_pos_emb_width
-        init_pos_emb_time = config.init_pos_emb_time
-        rope_max_height = config.rope_max_height
-        rope_max_width = config.rope_max_width
-        rope_theta = config.rope_theta
-        kH, kW = config.merge_kernel_size
-        merge_kernel_size: tuple[int, int] = (kH, kW)
-        decoder_hidden_size = config.text_hidden_size
-        dtype = config.dtype
-        devices = config.devices
-        has_bias = config.has_bias
-        merger_eps = config.projector_ln_eps
         super().__init__()
-        self.devices = devices
-        self.merge_kernel_size = merge_kernel_size
+        self.devices = config.devices
+        self.merge_kernel_size = (
+            config.merge_kernel_size[0],
+            config.merge_kernel_size[1],
+        )
 
-        device = devices[0]
+        device = config.devices[0]
         self.patch_embed = PatchEmbedding(
-            patch_size=patch_size,
-            in_channels=in_channels,
-            hidden_size=hidden_dim,
-            init_pos_emb_height=init_pos_emb_height,
-            init_pos_emb_width=init_pos_emb_width,
-            init_pos_emb_time=init_pos_emb_time,
-            dtype=dtype,
+            patch_size=config.patch_size,
+            in_channels=config.in_channels,
+            hidden_size=config.vt_hidden_size,
+            init_pos_emb_height=config.init_pos_emb_height,
+            init_pos_emb_width=config.init_pos_emb_width,
+            init_pos_emb_time=config.init_pos_emb_time,
+            dtype=config.dtype,
             device=device,
-            has_bias=has_bias,
+            has_bias=config.has_bias,
         )
         self.encoder = Encoder(
-            num_heads=num_heads,
-            hidden_dim=hidden_dim,
-            mlp_dim=mlp_dim,
-            num_layers=num_layers,
-            rope_max_height=rope_max_height,
-            rope_max_width=rope_max_width,
-            rope_theta=rope_theta,
-            dtype=dtype,
+            num_heads=config.vt_num_attention_heads,
+            hidden_dim=config.vt_hidden_size,
+            mlp_dim=config.vt_intermediate_size,
+            num_layers=config.vt_num_hidden_layers,
+            rope_max_height=config.rope_max_height,
+            rope_max_width=config.rope_max_width,
+            rope_theta=config.rope_theta,
+            dtype=config.dtype,
             device=device,
-            has_bias=has_bias,
+            has_bias=config.has_bias,
         )
         self.patch_merger = PatchMergerMLP(
-            dtype=dtype,
+            dtype=config.dtype,
             device=device,
             mm_hidden_size=config.mm_hidden_size,
-            hidden_size=decoder_hidden_size,
-            merge_kernel_size=merge_kernel_size,
-            eps=merger_eps,
+            hidden_size=config.text_hidden_size,
+            merge_kernel_size=self.merge_kernel_size,
+            eps=config.projector_ln_eps,
         )
 
-        if len(devices) > 1:
+        if len(config.devices) > 1:
             self.patch_embed.sharding_strategy = ShardingStrategy.replicate(
-                len(devices)
+                len(config.devices)
             )
             self.encoder.sharding_strategy = ShardingStrategy.tensor_parallel(
-                len(devices)
+                len(config.devices)
             )
             self.patch_merger.sharding_strategy = (
-                ShardingStrategy.tensor_parallel(len(devices))
+                ShardingStrategy.tensor_parallel(len(config.devices))
             )
-            self.patch_embed_shards = self.patch_embed.shard(devices)
-            self.encoder_shards = self.encoder.shard(devices)
-            self.patch_merger_shards = self.patch_merger.shard(devices)
+            self.patch_embed_shards = self.patch_embed.shard(config.devices)
+            self.encoder_shards = self.encoder.shard(config.devices)
+            self.patch_merger_shards = self.patch_merger.shard(config.devices)
         else:
             self.patch_embed_shards = [self.patch_embed]
             self.encoder_shards = [self.encoder]
             self.patch_merger_shards = [self.patch_merger]
 
         self.allreduce = (
-            Allreduce(num_accelerators=len(devices))
-            if len(devices) > 1
+            Allreduce(num_accelerators=len(config.devices))
+            if len(config.devices) > 1
             else None
         )
 
@@ -131,8 +116,6 @@ class Transformer(Module):
         max_seq_len: Sequence[TensorValue],
         position_ids: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
-        max_h: int,
-        max_w: int,
         total_output_patches: int,
     ) -> list[TensorValue]:
         """Full vision transformer forward pass.
@@ -151,10 +134,12 @@ class Transformer(Module):
             signal_buffers: Per-device communication buffers for allreduce.
                 Only required when using multiple devices; ignored on
                 single device.
-            max_h: Maximum grid height across all videos in the batch.
-            max_w: Maximum grid width across all videos in the batch.
-            total_output_patches: Total number of output patches after
-                merging, i.e. ``sum(H_i * W_i)`` over all videos.
+            total_output_patches: Static upper bound on ``sum(H_i * W_i)``
+                across all images in a batch. Used as the compile-time output
+                shape of ``tpool_patch_merger``. The Mojo kernel has no
+                registered ``mogg.shape`` function so a dynamic string dim is
+                not supported; callers should pass
+                ``pipeline_config.runtime.max_batch_input_tokens``.
 
         Returns:
             Per-device allreduced merged patch tensors of shape
@@ -178,21 +163,37 @@ class Transformer(Module):
             )
         ]
         kH, kW = self.merge_kernel_size
+        # Compute max_h and max_w at runtime from grid_thws (replicated across
+        # devices, so any shard gives the same values). ops.max keeps rank,
+        # returning shape (1,); reshape to () (rank-0 scalar) and move to CPU
+        # as the kernel requires scalar operands on the host.
+        grid0 = grid_thws[0]  # (n_videos, 3), int64, on GPU
+        max_h_tv = ops.reshape(
+            ops.max(grid0[:, 1], axis=0).cast(DType.int32), []
+        ).to(DeviceRef.CPU())
+        max_w_tv = ops.reshape(
+            ops.max(grid0[:, 2], axis=0).cast(DType.int32), []
+        ).to(DeviceRef.CPU())
         hs = [
             tpool_patch_merger(
                 h,
                 grid,
                 kH=kH,
                 kW=kW,
-                max_h=max_h,
-                max_w=max_w,
+                max_h=max_h_tv,
+                max_w=max_w_tv,
                 total_output_patches=total_output_patches,
             )
             for h, grid in zip(hs, grid_thws, strict=True)
         ]
         # PatchMergerMLP expects (n_spatial, kH*kW, D); kernel returns (total_output_patches, D).
+        # total_output_patches is a dynamic dim, so rebind first to assert it is
+        # divisible by kH*kW before reshaping (as suggested by the MAX error message).
+        merge_k = kH * kW
         hs = [
-            ops.reshape(h, (h.shape[0] // (kH * kW), kH * kW, h.shape[1]))
+            h.rebind([(h.shape[0] // merge_k) * merge_k, h.shape[1]]).reshape(
+                [h.shape[0] // merge_k, merge_k, h.shape[1]]
+            )
             for h in hs
         ]
         hs = [

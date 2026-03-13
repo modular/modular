@@ -30,7 +30,7 @@ from std.gpu import (
     block_dim,
     block_idx,
     grid_dim,
-    lane_id,
+    lane_id_int as lane_id,
     thread_idx,
 )
 from std.gpu.memory import (
@@ -40,8 +40,8 @@ from std.gpu.memory import (
 )
 from std.gpu.compute.mma import mma
 from layout.layout import *
+from layout import LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.layout_tensor import (
-    LayoutTensor,
     LayoutTensorIter,
     copy_dram_to_sram,
     copy_dram_to_sram_async,
@@ -50,8 +50,6 @@ from layout.layout_tensor import (
     copy_local_to_shared,
     copy_sram_to_dram,
 )
-from layout.runtime_layout import RuntimeLayout
-from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 
@@ -67,7 +65,7 @@ from ...structuring import SMemTile
 
 
 @always_inline
-fn distance[
+def distance[
     dtype: DType, //
 ](
     arg0: UnsafePointer[Scalar[dtype], _],
@@ -85,7 +83,7 @@ comptime WarpSplitKReductionSMem[
 
 
 @always_inline
-fn warp_split_k_reduction[
+def warp_split_k_reduction[
     c_type: DType,
     c_layout: Layout,
     //,
@@ -111,7 +109,7 @@ fn warp_split_k_reduction[
     comptime c_frag_size = c_layout.shape[1].value()
 
     var i_red = num_warp_k_partitions // 2
-    var tid = thread_idx.x
+    var tid = Int(thread_idx.x)
 
     while i_red > 0:
         barrier()
@@ -146,7 +144,7 @@ fn warp_split_k_reduction[
 
 
 @always_inline
-fn warp_split_k_reduction[
+def warp_split_k_reduction[
     c_type: DType,
     c_layout: Layout,
     //,
@@ -174,7 +172,7 @@ fn warp_split_k_reduction[
 
 
 @always_inline
-fn multistage_mma[
+def multistage_mma[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -259,8 +257,7 @@ fn multistage_mma[
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
-    var warp_x = warp_id % UInt32(num_warps_n)
-    var warp_y = warp_id // UInt32(num_warps_n)
+    var warp_y, warp_x = divmod(warp_id, UInt32(num_warps_n))
 
     var a_iter = a_iter_arg
     var b_iter = b_iter_arg
@@ -290,7 +287,7 @@ fn multistage_mma[
 
     @always_inline
     @parameter
-    fn _mask_tensor_row(
+    def _mask_tensor_row(
         tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
     ):
         return {
@@ -308,7 +305,7 @@ fn multistage_mma[
 
     @always_inline
     @parameter
-    fn _copy_tensor_to_sram[
+    def _copy_tensor_to_sram[
         thread_layout: Layout, swizzle: Bool
     ](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
         comptime if is_nvidia_gpu():
@@ -691,7 +688,7 @@ fn multistage_mma[
                 )
 
 
-fn multistage_gemm_kernel[
+def multistage_gemm_kernel[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -905,7 +902,7 @@ fn multistage_gemm_kernel[
 
     @always_inline
     @parameter
-    fn apply_epilogue():
+    def apply_epilogue():
         # This block is identical to the one used for f32 case
         # but putting this in a lambda function leads to test failures
         # TODO: Refactor to remove code duplication
@@ -991,10 +988,10 @@ fn multistage_gemm_kernel[
             )
             var c_gmem_frag = c_gmem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](thread_idx.x)
+            ]().distribute[warp_layout](Int(thread_idx.x))
             var c_smem_frag = accum_smem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](thread_idx.x)
+            ]().distribute[warp_layout](Int(thread_idx.x))
             var thread_offset = c_gmem_frag.distance(c.ptr)
             comptime num_stores_per_thread = type_of(c_gmem_frag).layout.size()
 
@@ -1019,8 +1016,7 @@ fn multistage_gemm_kernel[
                 else:
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
-                var m = (Int(thread_offset) + dst_idx) // Int(N)
-                var n = (Int(thread_offset) + dst_idx) % Int(N)
+                var m, n = divmod(Int(thread_offset) + dst_idx, Int(N))
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
                 if m < Int(M) and n < Int(N):
                     epilogue[alignment=alignment](
@@ -1081,7 +1077,7 @@ fn multistage_gemm_kernel[
         Int32(config.num_threads())
     )
 )
-fn multistage_gemm_split_k_kernel[
+def multistage_gemm_split_k_kernel[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,

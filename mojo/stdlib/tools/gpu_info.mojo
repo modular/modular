@@ -17,7 +17,7 @@ import std.gpu.host
 import std.gpu.host._nvidia_cuda as cuda
 
 
-fn compute_capability_to_arch_name(major: Int, minor: Int) -> StaticString:
+def compute_capability_to_arch_name(major: Int, minor: Int) -> StaticString:
     if major == 1:
         return "tesla"
     if major == 2:
@@ -61,8 +61,7 @@ def main() raises:
 
     var compute_capability = ctx.compute_capability()
     var arch_name = ctx.arch_name()
-    var major = compute_capability // 10
-    var minor = compute_capability % 10
+    var major, minor = divmod(compute_capability, 10)
 
     if ctx.api() == "cuda":
         print("GPUInfo(")

@@ -18,14 +18,14 @@ from std.gpu import (
     thread_idx_int as thread_idx,
 )
 from std.gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
-from layout import Coord, Idx, TileTensor
-from layout.tile_layout import TensorLayout, Layout
+from layout import Coord, Idx, TensorLayout, TileTensor
+from layout.tile_layout import Layout
 from std.math import ceildiv
 from std.sys.info import align_of
 from std.utils.index import IndexList
 
 
-fn _fill_strides_indexlist[
+def _fill_strides_indexlist[
     rank: Int,
 ](input_shape: IndexList[rank], mut strides: IndexList[rank],):
     """
@@ -46,7 +46,7 @@ fn _fill_strides_indexlist[
 
 
 @always_inline
-fn get_row_offset[
+def get_row_offset[
     dtype: DType,
 ](
     input_tensor: TileTensor[dtype, ...],
@@ -60,7 +60,7 @@ fn get_row_offset[
 
 
 @always_inline
-fn scalar_copy_row[
+def scalar_copy_row[
     dtype: DType,
 ](
     input_ptr: UnsafePointer[Scalar[dtype], _],
@@ -74,7 +74,7 @@ fn scalar_copy_row[
 
 
 @always_inline
-fn vector_copy_row[
+def vector_copy_row[
     dtype: DType,
     simd_width: Int,
 ](
@@ -111,7 +111,7 @@ fn vector_copy_row[
         scalar_copy_row(input_ptr, output_ptr, row_length, threads_per_row)
 
 
-fn padded_copy_kernel[
+def padded_copy_kernel[
     InputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,
     OutputLayoutType: TensorLayout,
@@ -152,7 +152,7 @@ fn padded_copy_kernel[
         )
 
 
-fn _pad_constant_impl[
+def _pad_constant_impl[
     dtype: DType,
     simd_width: Int = 1,
     max_threads: Int = 256,
@@ -165,7 +165,7 @@ fn _pad_constant_impl[
     ctx: DeviceContext,
 ) raises:
     var row_length = Int(input_tensor.dim(input_tensor.rank - 1))
-    var total_rows = input_tensor.numel() // row_length
+    var total_rows = input_tensor.num_elements() // row_length
 
     comptime assert threads_per_row > 0 and max_threads % threads_per_row == 0
 
@@ -205,7 +205,7 @@ fn _pad_constant_impl[
     )
 
 
-fn pad_constant[
+def pad_constant[
     rank: Int, dtype: DType, padding_type: DType
 ](
     output: UnsafePointer[mut=True, Scalar[dtype], _],
@@ -282,7 +282,7 @@ fn pad_constant[
     )
 
 
-fn get_padding_output_shape[
+def get_padding_output_shape[
     rank: Int
 ](
     input_shape: IndexList[rank],

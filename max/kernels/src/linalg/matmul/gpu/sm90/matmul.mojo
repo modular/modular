@@ -39,7 +39,7 @@ from std.collections import OptionalReg
 comptime logger = Logger()
 
 
-fn _is_valid_cluster_shape[
+def _is_valid_cluster_shape[
     cluster_shape: IndexList[3]
 ](grid_shape: IndexList[2], num_tiles_n: Int) -> Bool:
     if num_tiles_n % cluster_shape[0] != 0:
@@ -55,7 +55,7 @@ fn _is_valid_cluster_shape[
     return True
 
 
-fn _get_grid_shape[
+def _get_grid_shape[
     cluster_shape: IndexList[3] = Index(1, 1, 1)
 ](num_tiles_n: Int) -> IndexList[2]:
     # Hardcode values on purpose until we move this inside tile scheduler
@@ -76,7 +76,7 @@ fn _get_grid_shape[
     return adjusted_grid_shape
 
 
-fn _is_valid_grid_shape[
+def _is_valid_grid_shape[
     grid_shape: IndexList[2], cluster_shape: IndexList[3]
 ](num_tiles_n: Int) -> Bool:
     comptime assert (
@@ -92,7 +92,64 @@ fn _is_valid_grid_shape[
     return grid_shape[0] % num_tiles_n == 0
 
 
-fn warp_specialize_gemm_with_multicasting[
+def warp_specialize_gemm_with_multicasting[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    //,
+    *,
+    transpose_b: Bool,
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    grid_shape: OptionalReg[IndexList[2]] = None,
+    use_tma_store: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    schedule: MatmulSchedule = MatmulSchedule.NONE,
+    hilbert_swizzle: Bool = False,
+    splits: Int = 0,
+    raster_order: RasterOrder = RasterOrder.AlongM,
+    swapAB: Bool = False,
+](
+    c_device: TileTensor[c_type, ...],
+    a_device: TileTensor[a_type, ...],
+    b_device: TileTensor[b_type, ...],
+    ctx: DeviceContext,
+) raises:
+    """Unified dispatcher for all matmul kernel variants."""
+
+    comptime if splits > 0:
+        # TODO: Remove if unnecessary otherwise add support
+        comptime assert (
+            swapAB == False
+        ), "swapAB is not supported for split-k kernel"
+        # Dispatch to split-k kernel
+        warp_specialize_gemm_with_multicasting_splitk[
+            transpose_b=transpose_b,
+            config=config,
+            splits=splits,
+            raster_order=raster_order,
+            use_tma_store=use_tma_store,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        ](c_device, a_device, b_device, ctx)
+    else:
+        # Dispatch to regular kernel
+        _warp_specialize_gemm_with_multicasting_impl[
+            transpose_b=transpose_b,
+            config=config,
+            grid_shape=grid_shape,
+            use_tma_store=use_tma_store,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            schedule=schedule,
+            hilbert_swizzle=hilbert_swizzle,
+            swapAB=swapAB,
+        ](c_device, a_device, b_device, ctx)
+
+
+def warp_specialize_gemm_with_multicasting[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -114,62 +171,32 @@ fn warp_specialize_gemm_with_multicasting[
     raster_order: RasterOrder = RasterOrder.AlongM,
     swapAB: Bool = False,
 ](
-    c_device: NDBuffer[c_type, 2, _, c_shape],
-    a_device: NDBuffer[a_type, 2, _, a_shape],
-    b_device: NDBuffer[b_type, 2, _, b_shape],
+    c_device: NDBuffer[rank=2, c_type, _, c_shape],
+    a_device: NDBuffer[rank=2, a_type, _, a_shape],
+    b_device: NDBuffer[rank=2, b_type, _, b_shape],
     ctx: DeviceContext,
 ) raises:
-    """Unified dispatcher for all matmul kernel variants."""
-
-    comptime if splits > 0:
-        # TODO: Remove if unnecessary otherwise add support
-        comptime assert (
-            swapAB == False
-        ), "swapAB is not supported for split-k kernel"
-        # Dispatch to split-k kernel
-        warp_specialize_gemm_with_multicasting_splitk[
-            c_type,
-            c_shape,
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            transpose_b=transpose_b,
-            config=config,
-            splits=splits,
-            raster_order=raster_order,
-            use_tma_store=use_tma_store,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        ](c_device, a_device, b_device, ctx)
-    else:
-        # Dispatch to regular kernel
-        _warp_specialize_gemm_with_multicasting_impl[
-            c_type,
-            c_shape,
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            transpose_b=transpose_b,
-            config=config,
-            grid_shape=grid_shape,
-            use_tma_store=use_tma_store,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            schedule=schedule,
-            hilbert_swizzle=hilbert_swizzle,
-            swapAB=swapAB,
-        ](c_device, a_device, b_device, ctx)
+    """NDBuffer overload — converts to TileTensor and delegates."""
+    warp_specialize_gemm_with_multicasting[
+        transpose_b=transpose_b,
+        config=config,
+        grid_shape=grid_shape,
+        use_tma_store=use_tma_store,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        schedule=schedule,
+        hilbert_swizzle=hilbert_swizzle,
+        splits=splits,
+        raster_order=raster_order,
+        swapAB=swapAB,
+    ](TileTensor(c_device), TileTensor(a_device), TileTensor(b_device), ctx)
 
 
-fn _warp_specialize_gemm_with_multicasting_impl[
+def _warp_specialize_gemm_with_multicasting_impl[
     c_type: DType,
-    c_shape: DimList,
     a_type: DType,
-    a_shape: DimList,
     b_type: DType,
-    b_shape: DimList,
+    //,
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
@@ -183,17 +210,23 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     hilbert_swizzle: Bool = False,
     swapAB: Bool = False,
 ](
-    c_device: NDBuffer[c_type, 2, _, c_shape],
-    a_device: NDBuffer[a_type, 2, _, a_shape],
-    b_device: NDBuffer[b_type, 2, _, b_shape],
+    c_device: TileTensor[c_type, ...],
+    a_device: TileTensor[a_type, ...],
+    b_device: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises:
-    var a = TileTensor(a_device).to_layout_tensor()
-    var b = TileTensor(b_device).to_layout_tensor()
-    var c = TileTensor(c_device).to_layout_tensor()
+    comptime assert c_device.rank == 2, "c must be rank 2"
+    comptime assert a_device.rank == 2, "a must be rank 2"
+    comptime assert b_device.rank == 2, "b must be rank 2"
 
-    comptime N_static = c_shape.get[1]()
-    comptime K_static = a_shape.get[1]()
+    var a = a_device.to_layout_tensor()
+    var b = b_device.to_layout_tensor()
+    var c = c_device.to_layout_tensor()
+
+    # Static shape from the LayoutTensor's type-level layout, equivalent to
+    # the DimList.get[i]() used in the NDBuffer overload.
+    comptime N_static = c.layout.shape[1].value()
+    comptime K_static = a.layout.shape[1].value()
 
     comptime assert not swapAB or (
         schedule == MatmulSchedule.NONE
@@ -210,9 +243,9 @@ fn _warp_specialize_gemm_with_multicasting_impl[
 
     # C is in reference to A and B not being swapped
     # so we derive M and N from A and B instead
-    var M = b_device.dim[0]() if swapAB else a_device.dim[0]()
-    var N = a_device.dim[0]() if swapAB else b_device.dim[0]()
-    var K = a_device.dim[1]()
+    var M = b.dim[0]() if swapAB else a.dim[0]()
+    var N = a.dim[0]() if swapAB else b.dim[0]()
+    var K = a.dim[1]()
 
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]
@@ -284,8 +317,8 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         Int32(config.cluster_shape[2]),
     )
 
-    comptime CLUSTER_N = UInt(cluster_shape[0])
-    comptime CLUSTER_M = UInt(cluster_shape[1])
+    comptime CLUSTER_N = Int(cluster_shape[0])
+    comptime CLUSTER_M = Int(cluster_shape[1])
 
     comptime c_smem_layout = _get_c_smem_layout[
         config.block_tile_shape,
@@ -435,14 +468,14 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         comptime if not swapAB:
             var a_tma_op = create_tensor_tile[
                 Index(
-                    BM // Int(CLUSTER_N), BK
+                    BM // CLUSTER_N, BK
                 ) if config.partitioned_multicast else Index(BM, BK),
                 swizzle_mode=a_swizzle,
             ](ctx, a)
 
             var b_tma_op = create_tensor_tile[
                 Index(
-                    BN // Int(CLUSTER_M), BK
+                    BN // CLUSTER_M, BK
                 ) if config.partitioned_multicast else Index(BN, BK),
                 swizzle_mode=b_swizzle,
             ](ctx, b)
@@ -510,14 +543,14 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         else:
             var a_tma_op = create_tensor_tile[
                 Index(
-                    BM // Int(CLUSTER_N), BK
+                    BM // CLUSTER_N, BK
                 ) if config.partitioned_multicast else Index(BM, BK),
                 swizzle_mode=a_swizzle,
             ](ctx, b)
 
             var b_tma_op = create_tensor_tile[
                 Index(
-                    BN // Int(CLUSTER_M), BK
+                    BN // CLUSTER_M, BK
                 ) if config.partitioned_multicast else Index(BN, BK),
                 swizzle_mode=b_swizzle,
             ](ctx, a)
@@ -579,7 +612,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         )
 
 
-fn _get_c_smem_layout[
+def _get_c_smem_layout[
     block_tile_shape: IndexList[3],
     a_type: DType,
     b_type: DType,
@@ -637,7 +670,7 @@ fn _get_c_smem_layout[
         + String(pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type]())
     )
 
-    fn _get_max_wg_bn() capturing -> Int:
+    def _get_max_wg_bn() capturing -> Int:
         var WG_BN = MAX_WG_BN
         while (
             available_c_smem_size < WG_BM * WG_BN * size_of[c_type]()
@@ -652,13 +685,11 @@ fn _get_c_smem_layout[
     )
 
 
-fn warp_specialize_gemm_with_multicasting_splitk[
+def warp_specialize_gemm_with_multicasting_splitk[
     c_type: DType,
-    c_shape: DimList,
     a_type: DType,
-    a_shape: DimList,
     b_type: DType,
-    b_shape: DimList,
+    //,
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
@@ -670,18 +701,24 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         elementwise_compute_lambda_type
     ] = None,
 ](
-    c_device: NDBuffer[c_type, 2, _, c_shape],
-    a_device: NDBuffer[a_type, 2, _, a_shape],
-    b_device: NDBuffer[b_type, 2, _, b_shape],
+    c_device: TileTensor[c_type, ...],
+    a_device: TileTensor[a_type, ...],
+    b_device: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises:
-    var a = TileTensor(a_device).to_layout_tensor()
-    var b = TileTensor(b_device).to_layout_tensor()
-    var c = TileTensor(c_device).to_layout_tensor()
+    comptime assert c_device.rank == 2, "c must be rank 2"
+    comptime assert a_device.rank == 2, "a must be rank 2"
+    comptime assert b_device.rank == 2, "b must be rank 2"
+
+    var a = a_device.to_layout_tensor()
+    var b = b_device.to_layout_tensor()
+    var c = c_device.to_layout_tensor()
 
     var M = c.dim[0]()
-    comptime N = c_shape.get[1]()
-    comptime K = a_shape.get[1]()
+    # Static shape from the LayoutTensor's type-level layout, equivalent to
+    # the DimList.get[i]() used in the NDBuffer overload.
+    comptime N = c.layout.shape[1].value()
+    comptime K = a.layout.shape[1].value()
 
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]
@@ -717,8 +754,8 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         Int32(config.cluster_shape[2]),
     )
 
-    comptime CLUSTER_N = UInt(cluster_shape[0])
-    comptime CLUSTER_M = UInt(cluster_shape[1])
+    comptime CLUSTER_N = Int(cluster_shape[0])
+    comptime CLUSTER_M = Int(cluster_shape[1])
 
     comptime c_smem_layout = _get_c_smem_layout[
         config.block_tile_shape,
@@ -741,15 +778,15 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
     a_tma_op = create_tensor_tile[
-        Index(
-            BM // Int(CLUSTER_N), BK
-        ) if config.partitioned_multicast else Index(BM, BK),
+        Index(BM // CLUSTER_N, BK) if config.partitioned_multicast else Index(
+            BM, BK
+        ),
         swizzle_mode=a_swizzle,
     ](ctx, a)
     b_tma_op = create_tensor_tile[
-        Index(
-            BN // Int(CLUSTER_M), BK
-        ) if config.partitioned_multicast else Index(BN, BK),
+        Index(BN // CLUSTER_M, BK) if config.partitioned_multicast else Index(
+            BN, BK
+        ),
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
@@ -785,7 +822,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     var workspace_data = ctx.enqueue_create_buffer[accum_type](
         NUM_TILES * BM * BN
     )
-    var reduction_workspace = NDBuffer[accum_type, 3](
+    var reduction_workspace = NDBuffer[rank=3, accum_type](
         workspace_data.unsafe_ptr(),
         Index(NUM_TILES, BM, BN),
     )

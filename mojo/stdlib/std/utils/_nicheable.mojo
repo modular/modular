@@ -29,7 +29,7 @@ struct NicheIndex(Equatable, TrivialRegisterPassable):
     var _index: Int
 
     @always_inline
-    fn __init__(out self, index: Int):
+    def __init__(out self, index: Int):
         """Construct a `NicheIndex` with the given index value. Must be in the
         range (`0` <= index <= `Int.MAX`).
 
@@ -39,7 +39,7 @@ struct NicheIndex(Equatable, TrivialRegisterPassable):
         self._index = index
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Returns whether two `NicheIndex` values are equal.
 
         Args:
@@ -82,26 +82,26 @@ trait UnsafeNicheable:
     struct NonMaxUInt(UnsafeNicheable):
         var _n: UInt
 
-        fn __init__(out self, var n: UInt) raises:
+        def __init__(out self, var n: UInt) raises:
             if n == UInt.MAX:
                 raise Error("NonMaxUInt cannot be constructed from a UInt.MAX!")
             else:
                 self._n = n
 
         @staticmethod
-        fn niche_count() -> Int:
+        def niche_count() -> Int:
             # This type only has a single niche value.
             return 1
 
         @staticmethod
-        fn write_niche[index: NicheIndex](
+        def write_niche[index: NicheIndex](
             memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
         ):
             # Write UInt.MAX into the storage, not a valid NonMaxUInt.
             memory.bitcast[UInt]().store(UInt.MAX)
 
         @staticmethod
-        fn classify_niche(
+        def classify_niche(
             memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
         ) -> NicheIndex:
             # UInt.MAX is the niche (index 0), anything else is a valid value.
@@ -112,7 +112,7 @@ trait UnsafeNicheable:
     """
 
     @staticmethod
-    fn niche_count() -> Int:
+    def niche_count() -> Int:
         """Returns the number of invalid bit patterns available as niches.
 
         Returns:
@@ -121,7 +121,7 @@ trait UnsafeNicheable:
         ...
 
     @staticmethod
-    fn write_niche[
+    def write_niche[
         index: Int
     ](memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]):
         """Writes niche bit pattern `index` into the pointed-to storage.
@@ -144,7 +144,7 @@ trait UnsafeNicheable:
         ...
 
     @staticmethod
-    fn classify_niche(
+    def classify_niche(
         memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
     ) -> NicheIndex:
         """Classifies the bit pattern at `memory` as either a niche or a real value.
@@ -198,20 +198,20 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
     struct NonMaxUInt(UnsafeSingleNicheable):
         var _n: UInt
 
-        fn __init__(out self, var n: UInt) raises:
+        def __init__(out self, var n: UInt) raises:
             if n == UInt.MAX:
                 raise Error("NonMaxUInt cannot be constructed from UInt.MAX!")
             else:
                 self._n = n
 
         @staticmethod
-        fn write_niche(
+        def write_niche(
             memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
         ):
             memory.bitcast[UInt]().store(UInt.MAX)
 
         @staticmethod
-        fn isa_niche(
+        def isa_niche(
             memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
         ) -> Bool:
             return memory.bitcast[UInt]()[] == UInt.MAX
@@ -219,7 +219,9 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
     """
 
     @staticmethod
-    fn write_niche(memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]):
+    def write_niche(
+        memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
+    ):
         """Writes the single niche bit pattern into the pointed-to storage.
 
         On entry, `memory` points to properly aligned, correctly sized storage
@@ -234,7 +236,7 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
         ...
 
     @staticmethod
-    fn isa_niche(
+    def isa_niche(
         memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
     ) -> Bool:
         """Returns whether the bit pattern at `memory` is the niche value.
@@ -252,7 +254,7 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
     @staticmethod
     @always_inline
     @doc_private
-    fn niche_count() -> Int:
+    def niche_count() -> Int:
         """Returns `1`, since this type has exactly one niche.
 
         Returns:
@@ -263,7 +265,7 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
     @staticmethod
     @always_inline
     @doc_private
-    fn write_niche[
+    def write_niche[
         index: Int
     ](memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]):
         """Implements `UnsafeNicheable.write_niche` by delegating to the
@@ -281,7 +283,7 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
     @staticmethod
     @always_inline
     @doc_private
-    fn classify_niche(
+    def classify_niche(
         memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
     ) -> NicheIndex:
         """Implements `UnsafeNicheable.classify_niche` by delegating to

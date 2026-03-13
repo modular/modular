@@ -48,8 +48,7 @@ from layout.tma_async import (
     SharedMemBarrier,
     RaggedTMA3DTile,
 )
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
+from layout import Layout, TileTensor
 import std.gpu.primitives.warp as warp
 
 from std.gpu.memory import AddressSpace, external_memory
@@ -94,11 +93,11 @@ struct WarpRole(Equatable, TrivialRegisterPassable):
     comptime Empty = Self(5)
 
     @always_inline
-    fn __eq__(self, other: Int) -> Bool:
+    def __eq__(self, other: Int) -> Bool:
         return self == Self(Int32(other))
 
 
-fn warp_idx_to_role(warp_idx: UInt32) -> WarpRole:
+def warp_idx_to_role(warp_idx: UInt32) -> WarpRole:
     var wg_idx = warp_idx // 4
     if wg_idx == 0:
         return WarpRole.Softmax0
@@ -140,7 +139,7 @@ __extension SM100MLA:
         )
     )
     @__llvm_metadata(`nvvm.minctasm`=Int(1))
-    fn mla_prefill_kernel_generic(
+    def mla_prefill_kernel_generic(
         q_tma_op: QTMATile[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
@@ -274,9 +273,11 @@ __extension SM100MLA:
         if role == WarpRole.Softmax0 or role == WarpRole.Softmax1:
             # softmax $warp_group_idx
             warpgroup_reg_alloc[num_reg_softmax]()
-            var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                batch_size, max_seq_len, valid_length, partition
-            )
+            var seq_info: SeqInfo = get_seq_info[
+                Self.BM,
+                Self.num_q_heads,
+                Self.MaskType.get_type_name() == "CausalMask",
+            ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
                 return
@@ -304,9 +305,11 @@ __extension SM100MLA:
             # correction
             warpgroup_reg_dealloc[num_reg_correction]()
 
-            var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                batch_size, max_seq_len, valid_length, partition
-            )
+            var seq_info: SeqInfo = get_seq_info[
+                Self.BM,
+                Self.num_q_heads,
+                Self.MaskType.get_type_name() == "CausalMask",
+            ](batch_size, max_seq_len, valid_length, partition)
             if not seq_info.is_valid():
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
@@ -322,9 +325,11 @@ __extension SM100MLA:
             )
         elif role == WarpRole.Load:
             warpgroup_reg_dealloc[num_reg_other]()
-            var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                batch_size, max_seq_len, valid_length, partition
-            )
+            var seq_info: SeqInfo = get_seq_info[
+                Self.BM,
+                Self.num_q_heads,
+                Self.MaskType.get_type_name() == "CausalMask",
+            ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
                 return
@@ -350,9 +355,11 @@ __extension SM100MLA:
 
         elif role == WarpRole.MMA:
             warpgroup_reg_dealloc[num_reg_other]()
-            var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                batch_size, max_seq_len, valid_length, partition
-            )
+            var seq_info: SeqInfo = get_seq_info[
+                Self.BM,
+                Self.num_q_heads,
+                Self.MaskType.get_type_name() == "CausalMask",
+            ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
                 tcgen05_release_allocation_lock[Self.cta_group]()
@@ -376,7 +383,7 @@ __extension SM100MLA:
 
     @staticmethod
     @always_inline
-    fn load[
+    def load[
         KRopeType: MHAOperand
     ](
         mbars: Self.MiscMBarsType,
@@ -587,7 +594,7 @@ __extension SM100MLA:
 
     @staticmethod
     @always_inline
-    fn mma(
+    def mma(
         tmem_addr: UInt32,
         mbars: Self.MiscMBarsType,
         score_row: UInt32,
@@ -712,7 +719,7 @@ __extension SM100MLA:
 
 
 @always_inline
-fn mla_sm100_prefill_generic[
+def mla_sm100_prefill_generic[
     output_type: DType,
     q_type: DType,
     KVType: MHAOperand,
@@ -726,13 +733,13 @@ fn mla_sm100_prefill_generic[
     cache_depth: Int,
     _ndbuffer_mha_operand: Bool,
 ](
-    output: LayoutTensor[output_type, address_space=AddressSpace.GENERIC, ...],
-    q: LayoutTensor[q_type, _, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     k: KVType,
     v: KVType,
     k_rope: KRopeType,
     mask_functor: MaskType,
-    valid_length: LayoutTensor[
+    valid_length: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     max_prompt_len: MaxPromptLenType,
@@ -820,7 +827,7 @@ fn mla_sm100_prefill_generic[
 
 
 @always_inline
-fn _mla_prefill_sm100_valid_length_dispatch[
+def _mla_prefill_sm100_valid_length_dispatch[
     KVType: MHAOperand,
     output_type: DType,
     q_type: DType,
@@ -871,7 +878,7 @@ fn _mla_prefill_sm100_valid_length_dispatch[
     kv_lut: KVType,
     k_rope_lut: KRopeType,
     mask_functor: MaskType,
-    valid_length: LayoutTensor[
+    valid_length: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     max_prompt_len: MaxPromptLenType,
@@ -880,7 +887,9 @@ fn _mla_prefill_sm100_valid_length_dispatch[
     ctx: DeviceContext,
 ) raises:
     comptime SchedulerType = TransientScheduler[
-        UInt32(fa4_config.BM), UInt32(fa4_config.num_q_heads)
+        UInt32(fa4_config.BM),
+        UInt32(fa4_config.num_q_heads),
+        flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
     ]
     comptime ValidLengthType = NonNullPointer[DType.uint32]
     comptime SinkType = NullPointer[output_type]

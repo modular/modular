@@ -28,7 +28,7 @@ comptime b_type = DType.float32
 comptime c_type = DType.float32
 
 
-fn gemm_naive(
+def gemm_naive(
     c: NDBuffer[mut=True, ...],
     a: NDBuffer,
     b: NDBuffer,
@@ -53,7 +53,7 @@ def test_matmul(
     k: Int,
 ) raises:
     var golden_ptr = alloc[Scalar[c.type]](m * n, alignment=alignment)
-    var golden = NDBuffer[c.type, 2](golden_ptr, Index(m, n))
+    var golden = NDBuffer[rank=2, c.type](golden_ptr, Index(m, n))
 
     for i in range(m):
         for j in range(k):
@@ -101,9 +101,9 @@ def test_matmul(m: Int, n: Int, k: Int) raises:
     var a_ptr = alloc[Scalar[a_type]](m * k, alignment=alignment)
     var b_ptr = alloc[Scalar[b_type]](k * n, alignment=alignment)
 
-    var c = NDBuffer[c_type, 2](c_ptr, Index(m, n))
-    var a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
-    var b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
+    var c = NDBuffer[rank=2, c_type](c_ptr, Index(m, n))
+    var a = NDBuffer[rank=2, a_type](a_ptr, Index(m, k))
+    var b = NDBuffer[rank=2, b_type](b_ptr, Index(k, n))
 
     test_matmul(c, a, b, m, n, k)
 
@@ -123,7 +123,7 @@ def test_matmul() raises:
     test_matmul(2, 65, 1200)
 
 
-fn bmm_naive(
+def bmm_naive(
     c: NDBuffer[mut=True, ...],
     a: NDBuffer,
     b: NDBuffer,
@@ -151,7 +151,7 @@ def test_batched_matmul(
     k: Int,
 ) raises:
     var golden_ptr = alloc[Scalar[c.type]](batches * m * n, alignment=alignment)
-    var golden = NDBuffer[c.type, 3](golden_ptr, Index(batches, m, n))
+    var golden = NDBuffer[rank=3, c.type](golden_ptr, Index(batches, m, n))
 
     for batch in range(batches):
         for i in range(m):
@@ -211,9 +211,9 @@ def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int) raises:
     var a_ptr = alloc[Scalar[a_type]](batch * m * k, alignment=alignment)
     var b_ptr = alloc[Scalar[b_type]](batch * k * n, alignment=alignment)
 
-    var c = NDBuffer[c_type, 3](c_ptr, Index(batch, m, n))
-    var a = NDBuffer[a_type, 3](a_ptr, Index(batch, m, k))
-    var b = NDBuffer[b_type, 3](b_ptr, Index(batch, k, n))
+    var c = NDBuffer[rank=3, c_type](c_ptr, Index(batch, m, n))
+    var a = NDBuffer[rank=3, a_type](a_ptr, Index(batch, m, k))
+    var b = NDBuffer[rank=3, b_type](b_ptr, Index(batch, k, n))
 
     test_batched_matmul(c, a, b, batch, m, n, k)
 

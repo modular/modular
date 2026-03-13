@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Implements :class:`Weights` loading from safetensors checkpoint files."""
+"""Implements :class:`~max.graph.weights.Weights` loading from safetensors checkpoint files."""
 
 from __future__ import annotations
 

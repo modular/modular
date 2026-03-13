@@ -35,7 +35,7 @@ comptime TILE_SZ_B = 16
 comptime TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
 
 
-fn matmul(
+def matmul(
     a_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
     b_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
     c_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
@@ -43,9 +43,9 @@ fn matmul(
     n: Int,
     k: Int,
 ):
-    var a = NDBuffer[DType.int, 2](a_ptr, Index(m, k))
-    var b = NDBuffer[DType.int, 2](b_ptr, Index(k, n))
-    var c = NDBuffer[DType.int, 2](c_ptr, Index(m, n))
+    var a = NDBuffer[rank=2, DType.int](a_ptr, Index(m, k))
+    var b = NDBuffer[rank=2, DType.int](b_ptr, Index(k, n))
+    var c = NDBuffer[rank=2, DType.int](c_ptr, Index(m, n))
 
     # Compute C = A x B
     #   where A is a (m x k) matrix
@@ -74,8 +74,7 @@ fn matmul(
 
     # Loop over each input tile.
     for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):
-        var i: UInt = thread_idx.x // TILE_SZ_B
-        var j: UInt = thread_idx.x % TILE_SZ_B
+        var i, j = divmod(thread_idx.x, TILE_SZ_B)
 
         # Load the B matrix into shared memory.
         var b_val = Int(b[tile_idx * TILE_SZ_RATIO + Int(i), col + Int(j)])
@@ -106,7 +105,7 @@ fn matmul(
             c[Index(row, col + out_idx)] = c_reg.load(out_idx)
 
 
-fn run_matmul(ctx: DeviceContext) raises:
+def run_matmul(ctx: DeviceContext) raises:
     print("== run_matmul")
 
     comptime m = 512
@@ -117,9 +116,9 @@ fn run_matmul(ctx: DeviceContext) raises:
     var b_host_ptr = alloc[Scalar[DType.int]](k * n)
     var c_host_ptr = alloc[Scalar[DType.int]](m * n)
 
-    var a_host = NDBuffer[DType.int, 2, _, DimList(m, k)](a_host_ptr)
-    var b_host = NDBuffer[DType.int, 2, _, DimList(k, n)](b_host_ptr)
-    var c_host = NDBuffer[DType.int, 2, _, DimList(m, n)](c_host_ptr)
+    var a_host = NDBuffer[rank=2, DType.int, _, DimList[m, k]()](a_host_ptr)
+    var b_host = NDBuffer[rank=2, DType.int, _, DimList[k, n]()](b_host_ptr)
+    var c_host = NDBuffer[rank=2, DType.int, _, DimList[m, n]()](c_host_ptr)
 
     for i in range(m):
         for j in range(k):

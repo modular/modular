@@ -27,7 +27,7 @@ from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.utils.index import IndexList, StaticTuple
 
 
-fn _argsort_cpu[
+def _argsort_cpu[
     *,
     ascending: Bool = True,
 ](
@@ -47,7 +47,7 @@ fn _argsort_cpu[
     comptime assert input.flat_rank == 1
 
     @parameter
-    fn fill_indices_iota[
+    def fill_indices_iota[
         width: Int, rank: Int, alignment: Int = 1
     ](offset: IndexList[rank]):
         indices.ptr.store(
@@ -57,10 +57,10 @@ fn _argsort_cpu[
 
     elementwise[
         fill_indices_iota, simd_width_of[indices.dtype](), target="cpu"
-    ](indices.numel())
+    ](indices.num_elements())
 
     @parameter
-    fn cmp_fn(a: Scalar[indices.dtype], b: Scalar[indices.dtype]) -> Bool:
+    def cmp_fn(a: Scalar[indices.dtype], b: Scalar[indices.dtype]) -> Bool:
         comptime if ascending:
             return input[a] < input[b]
         else:
@@ -70,12 +70,12 @@ fn _argsort_cpu[
         Span[
             Scalar[indices.dtype],
             indices.origin,
-        ](ptr=indices.ptr, length=indices.numel())
+        ](ptr=indices.ptr, length=indices.num_elements())
     )
 
 
 @always_inline
-fn _sentinel_val[dtype: DType, ascending: Bool]() -> Scalar[dtype]:
+def _sentinel_val[dtype: DType, ascending: Bool]() -> Scalar[dtype]:
     """
     Returns a sentinel value based on sort direction.
 
@@ -93,7 +93,7 @@ fn _sentinel_val[dtype: DType, ascending: Bool]() -> Scalar[dtype]:
         return Scalar[dtype].MIN_FINITE
 
 
-fn _argsort_gpu_impl[
+def _argsort_gpu_impl[
     *,
     ascending: Bool = True,
 ](
@@ -115,7 +115,7 @@ fn _argsort_gpu_impl[
     comptime assert input.flat_rank == 1
     comptime assert indices.flat_rank == 1
     # Create a device buffer to store a copy of the input data
-    var n = indices.numel()
+    var n = indices.num_elements()
 
     assert n.is_power_of_two(), "n must be a power of two"
 
@@ -126,7 +126,7 @@ fn _argsort_gpu_impl[
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
     )
-    fn bitonic_sort_step(
+    def bitonic_sort_step(
         indices: TileTensor[indices.dtype, indices.LayoutType, indices.origin],
         input: TileTensor[input.dtype, input.LayoutType, input.origin],
         n: Int,
@@ -187,7 +187,7 @@ fn _argsort_gpu_impl[
         k *= 2
 
 
-fn _argsort_gpu[
+def _argsort_gpu[
     *,
     ascending: Bool = True,
 ](
@@ -209,13 +209,13 @@ fn _argsort_gpu[
     comptime assert indices.flat_rank == 1
     comptime assert input.flat_rank == 1
     # Create a device buffer to store a copy of the input data
-    var n = indices.numel()
+    var n = indices.num_elements()
 
     if n.is_power_of_two():
         # Initialize indices with iota.
         @parameter
         @__copy_capture(indices)
-        fn fill_indices_iota_no_padding[
+        def fill_indices_iota_no_padding[
             width: Int, rank: Int, alignment: Int = 1
         ](offset: IndexList[rank]):
             indices.ptr.store(
@@ -253,7 +253,7 @@ fn _argsort_gpu[
     # Initialize indices with sequential values and copy input data to device
     @parameter
     @__copy_capture(padded_indices, padded_input, input, indices, n)
-    fn fill_indices_iota[
+    def fill_indices_iota[
         width: Int, rank: Int, alignment: Int = 1
     ](offset: IndexList[rank]):
         var i = offset[0]
@@ -290,7 +290,7 @@ fn _argsort_gpu[
     # Extract the unpadded indices from the padded indices.
     @parameter
     @__copy_capture(padded_indices, indices)
-    fn extract_indices[
+    def extract_indices[
         width: Int, rank: Int, alignment: Int = 1
     ](offset: IndexList[rank]):
         indices.ptr.store(
@@ -309,7 +309,7 @@ fn _argsort_gpu[
     _ = padded_indices_buffer^
 
 
-fn _validate_argsort(input: TileTensor, output: TileTensor) raises:
+def _validate_argsort(input: TileTensor, output: TileTensor) raises:
     """
     Validates input and output buffers for argsort operation.
 
@@ -321,11 +321,11 @@ fn _validate_argsort(input: TileTensor, output: TileTensor) raises:
         Error if buffers don't meet requirements for argsort.
     """
 
-    if output.numel() != input.numel():
+    if output.num_elements() != input.num_elements():
         raise "output and input must have the same length"
 
 
-fn argsort[
+def argsort[
     *,
     ascending: Bool = True,
     target: StaticString = "cpu",
@@ -360,7 +360,7 @@ fn argsort[
             return _argsort_gpu[ascending=ascending](output, input, ctx)
 
 
-fn argsort[
+def argsort[
     ascending: Bool = True
 ](
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],

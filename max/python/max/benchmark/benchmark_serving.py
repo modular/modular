@@ -1094,7 +1094,9 @@ async def chat_session_driver(
             benchmark_should_end_time is not None
             and time.perf_counter_ns() >= benchmark_should_end_time
         ):
-            response = RequestFuncOutput(cancelled=True)
+            response = RequestFuncOutput(
+                cancelled=True, request_submit_time=time.perf_counter()
+            )
         else:
             response = await request_driver.request(request_func_input)
         if (
@@ -1159,7 +1161,9 @@ async def run_single_turn_benchmark(
                 benchmark_should_end_time is not None
                 and time.perf_counter_ns() >= benchmark_should_end_time
             ):
-                return RequestFuncOutput(cancelled=True)
+                return RequestFuncOutput(
+                    cancelled=True, request_submit_time=time.perf_counter()
+                )
             return await request_driver.request(request_func_input)
 
     tasks: list[asyncio.Task[RequestFuncOutput]] = []
@@ -1716,6 +1720,12 @@ async def benchmark(
                 output.num_generated_outputs for output in outputs
             ],
             "errors": [output.error for output in outputs],
+            "request_submit_times": [
+                output.request_submit_time for output in outputs
+            ],
+            "request_complete_times": [
+                output.request_complete_time for output in outputs
+            ],
             "peak_gpu_memory_mib": pixel_metrics.peak_gpu_memory_mib,
             "available_gpu_memory_mib": pixel_metrics.available_gpu_memory_mib,
             "gpu_utilization": pixel_metrics.gpu_utilization,
@@ -1805,6 +1815,12 @@ async def benchmark(
         "itls": [output.itl for output in outputs],
         "generated_texts": [output.generated_text for output in outputs],
         "errors": [output.error for output in outputs],
+        "request_submit_times": [
+            output.request_submit_time for output in outputs
+        ],
+        "request_complete_times": [
+            output.request_complete_time for output in outputs
+        ],
         "peak_gpu_memory_mib": text_metrics.peak_gpu_memory_mib,
         "available_gpu_memory_mib": text_metrics.available_gpu_memory_mib,
         "gpu_utilization": text_metrics.gpu_utilization,
@@ -2161,22 +2177,28 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         if args.image_seed is not None:
             image_extra_body["seed"] = args.image_seed
 
-    # Auto-default skip counts to max_concurrency when not explicitly set
+    # Auto-default skip counts to max_concurrency when not explicitly set.
+    # None means "auto" (user did not pass the flag); 0 means "explicitly
+    # no skipping" (user passed --skip-first-n-requests 0).
     skip_first_n_requests = args.skip_first_n_requests
     skip_last_n_requests = args.skip_last_n_requests
     if max_concurrency is not None:
-        if skip_first_n_requests == 0:
+        if skip_first_n_requests is None:
             skip_first_n_requests = max_concurrency
             logger.info(
                 f"Auto-setting skip_first_n_requests={skip_first_n_requests}"
                 f" (max_concurrency={max_concurrency})"
             )
-        if skip_last_n_requests == 0:
+        if skip_last_n_requests is None:
             skip_last_n_requests = max_concurrency
             logger.info(
                 f"Auto-setting skip_last_n_requests={skip_last_n_requests}"
                 f" (max_concurrency={max_concurrency})"
             )
+    if skip_first_n_requests is None:
+        skip_first_n_requests = 0
+    if skip_last_n_requests is None:
+        skip_last_n_requests = 0
 
     logger.info("Starting benchmark run")
     assert args.num_prompts is not None

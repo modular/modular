@@ -23,8 +23,8 @@ modular_py_library(
         "//max/python/max/interfaces",
         "//max/python/max/nn",
         "//max/python/max/profiler",
-        "//max/python/max/serve/kvcache_agent",
         "//max/python/max/serve/kvcache_agent:kvcache_agent_proto_srcs",
+        "//max/python/max/serve/kvcache_agent:kvcache_types",
         "//max/python/max/support",
     ],
 )

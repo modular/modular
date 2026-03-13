@@ -15,7 +15,7 @@ from std.python.python import Python, PythonObject
 from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
 
-fn _test_execute_python_string(mut python: Python) -> String:
+def _test_execute_python_string(mut python: Python) -> String:
     try:
         _ = Python.evaluate("print('evaluated by PyRunString')")
         return String(Python.evaluate("'a' + 'b'"))
@@ -23,7 +23,7 @@ fn _test_execute_python_string(mut python: Python) -> String:
         return String(e)
 
 
-fn _test_local_import(mut python: Python) -> String:
+def _test_local_import(mut python: Python) -> String:
     try:
         var my_module: PythonObject = Python.import_module("my_module")
         if my_module:
@@ -35,7 +35,7 @@ fn _test_local_import(mut python: Python) -> String:
         return String(e)
 
 
-fn _test_dynamic_import(mut python: Python, times: Int = 1) -> String:
+def _test_dynamic_import(mut python: Python, times: Int = 1) -> String:
     comptime INLINE_MODULE = """
 called_already = False
 def hello(name):
@@ -54,7 +54,7 @@ def hello(name):
         return String(e)
 
 
-fn _test_call(mut python: Python) -> String:
+def _test_call(mut python: Python) -> String:
     try:
         var my_module: PythonObject = Python.import_module("my_module")
         return String(

@@ -22,7 +22,7 @@ from std.algorithm.functional import IndexList
 from std.math import sqrt
 from std.memory import OpaquePointer
 from std.runtime.asyncrt import DeviceContextPtr
-from tensor.managed_tensor_slice import ManagedTensorSlice
+from tensor import ManagedTensorSlice
 from tensor.io_spec import Input
 from compiler_internal import StaticTensorSpec
 from nn.normalization import layer_norm as nn_layer_norm
@@ -36,7 +36,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 @export
-fn PyInit_layer_norm_ops() -> PythonObject:
+def PyInit_layer_norm_ops() -> PythonObject:
     """Create a Python module with layer_norm kernel function bindings."""
     try:
         var b = PythonModuleBuilder("layer_norm_ops")
@@ -55,7 +55,7 @@ fn PyInit_layer_norm_ops() -> PythonObject:
 # =============================================================================
 
 
-fn _layer_norm_cpu[
+def _layer_norm_cpu[
     dtype: DType,
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -109,7 +109,7 @@ fn _layer_norm_cpu[
             ) * inv_std * gamma_ptr[i] + beta_ptr[i]
 
 
-fn layer_norm_op[
+def layer_norm_op[
     dtype: DType,
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -164,7 +164,7 @@ fn layer_norm_op[
                 @always_inline
                 @parameter
                 @__copy_capture(in_ptr, feature_dim)
-                fn input_fn[
+                def input_fn[
                     width: Int, rank: Int
                 ](coords: IndexList[rank]) -> SIMD[dtype, width]:
                     var c = rebind[IndexList[2]](coords)
@@ -174,7 +174,7 @@ fn layer_norm_op[
                 @always_inline
                 @parameter
                 @__copy_capture(gamma_ptr)
-                fn gamma_fn[
+                def gamma_fn[
                     width: Int, rank: Int
                 ](coords: IndexList[rank]) -> SIMD[dtype, width]:
                     var c = rebind[IndexList[1]](coords)
@@ -183,7 +183,7 @@ fn layer_norm_op[
                 @always_inline
                 @parameter
                 @__copy_capture(out_ptr, feature_dim)
-                fn output_fn[
+                def output_fn[
                     width: Int, rank: Int, alignment: Int
                 ](coords: IndexList[rank], val: SIMD[dtype, width]):
                     var c = rebind[IndexList[2]](coords)
@@ -191,7 +191,9 @@ fn layer_norm_op[
                     out_ptr.store[width=width](flat_idx, val)
 
                 # Create beta as InputTensor -> TileTensor for the kernel
-                comptime beta_spec = StaticTensorSpec[dtype, 1].create_unknown()
+                comptime beta_spec = StaticTensorSpec[
+                    dtype, 1, ...
+                ].get_unknown()
                 var beta_tensor = ManagedTensorSlice[
                     io_spec=Input, static_spec=beta_spec
                 ](beta_ptr, gamma_shape)
@@ -229,7 +231,7 @@ fn layer_norm_op[
 # =============================================================================
 
 
-fn layer_norm_dispatcher(
+def layer_norm_dispatcher(
     out_buffer: PythonObject,
     in_buffer: PythonObject,
     gamma_buffer: PythonObject,

@@ -44,7 +44,7 @@ from std.gpu.primitives.grid_controls import (
     wait_on_dependent_grids,
     pdl_launch_attributes,
 )
-from layout.layout_tensor import LayoutTensor
+from layout import TileTensor
 from std.memory import bitcast
 from std.utils.numerics import min_or_neg_inf, get_accum_type
 from std.builtin.device_passable import DevicePassable
@@ -94,18 +94,18 @@ struct CombineParams[
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         return "CombineParams"
 
     @staticmethod
-    fn get_device_type_name() -> String:
+    def get_device_type_name() -> String:
         return "CombineParams"
 
-    fn __init__(
+    def __init__(
         out self,
         out_accum_split_ptr: UnsafePointer[
             Scalar[Self.output_type], origin=MutAnyOrigin
@@ -149,7 +149,7 @@ struct CombineParams[
 # Warp-level reduction utilities
 # ===----------------------------------------------------------------------=== #
 @always_inline
-fn warp_reduce_max(val: Float32) -> Float32:
+def warp_reduce_max(val: Float32) -> Float32:
     """Warp-level max reduction using butterfly pattern."""
     var result = val
 
@@ -161,7 +161,7 @@ fn warp_reduce_max(val: Float32) -> Float32:
 
 
 @always_inline
-fn warp_reduce_sum(val: Float32) -> Float32:
+def warp_reduce_sum(val: Float32) -> Float32:
     """Warp-level sum reduction using butterfly pattern."""
     var result = val
 
@@ -175,7 +175,7 @@ fn warp_reduce_sum(val: Float32) -> Float32:
 # ===----------------------------------------------------------------------=== #
 # Main Combine Kernel - Optimized version matching FlashMLA pattern
 # ===----------------------------------------------------------------------=== #
-fn mla_combine_kernel[
+def mla_combine_kernel[
     output_type: DType,
     accum_type: DType,
     head_dim: Int,
@@ -213,8 +213,8 @@ fn mla_combine_kernel[
         if seq_idx >= batch_seq_len:
             return
 
-    var sub_warp_idx = warp_idx % warps_per_head
-    var head_idx = head_block_idx * heads_per_block + warp_idx // warps_per_head
+    var warp_idx_q, sub_warp_idx = divmod(warp_idx, warps_per_head)
+    var head_idx = head_block_idx * heads_per_block + warp_idx_q
 
     if head_idx >= params.num_heads:
         return
@@ -342,8 +342,7 @@ fn mla_combine_kernel[
 
     comptime for split_idx in range(num_splits):
         # Broadcast scale from the owning lane via register shuffle (no smem).
-        comptime k = split_idx // WARP_SIZE
-        comptime src_lane = split_idx % WARP_SIZE
+        comptime k, src_lane = divmod(split_idx, WARP_SIZE)
         var lse_scale = warp.shuffle_idx(local_lse[k], UInt32(src_lane))
         var is_valid = SIMD[DType.bool, vec_size](fill=lse_scale != Float32(0))
 
@@ -398,7 +397,7 @@ fn mla_combine_kernel[
 # ===----------------------------------------------------------------------=== #
 # Kernel Dispatch Function
 # ===----------------------------------------------------------------------=== #
-fn launch_mla_combine_kernel[
+def launch_mla_combine_kernel[
     output_type: DType,
     accum_type: DType,
     head_dim: Int,
@@ -406,13 +405,13 @@ fn launch_mla_combine_kernel[
     ragged: Bool = False,
     warps_per_head: Int = 2,
 ](
-    out_accum_split: LayoutTensor[
+    out_accum_split: TileTensor[
         output_type, address_space=AddressSpace.GENERIC, ...
     ],
-    lse_accum_split: LayoutTensor[
+    lse_accum_split: TileTensor[
         accum_type, address_space=AddressSpace.GENERIC, ...
     ],
-    output: LayoutTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets_ptr: UnsafePointer[
         Scalar[DType.uint32], origin=MutAnyOrigin
     ],
@@ -481,7 +480,7 @@ fn launch_mla_combine_kernel[
 # ===----------------------------------------------------------------------=== #
 # High-level dispatcher to be called from mla_decode_sm100_dispatch.mojo
 # ===----------------------------------------------------------------------=== #
-fn mla_decode_combine_partial_outputs[
+def mla_decode_combine_partial_outputs[
     output_type: DType,
     accum_type: DType,
     head_dim: Int,
@@ -489,13 +488,13 @@ fn mla_decode_combine_partial_outputs[
     ragged: Bool = False,
     warps_per_head: Int = 2,
 ](
-    out_accum_split: LayoutTensor[
+    out_accum_split: TileTensor[
         output_type, address_space=AddressSpace.GENERIC, ...
     ],
-    lse_accum_split: LayoutTensor[
+    lse_accum_split: TileTensor[
         accum_type, address_space=AddressSpace.GENERIC, ...
     ],
-    output: LayoutTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets_ptr: UnsafePointer[
         Scalar[DType.uint32], origin=MutAnyOrigin
     ],

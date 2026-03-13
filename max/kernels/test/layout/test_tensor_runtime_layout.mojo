@@ -13,9 +13,15 @@
 
 from std.math import sqrt
 
-from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
 from layout._fillers import arange, random
-from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import LayoutTensorIter
 
 from std.utils import IndexList
@@ -139,7 +145,7 @@ def test_tile() raises:
     storage.free()
 
 
-fn test_tile_and_distribute():
+def test_tile_and_distribute():
     print("== test_tile_and_distribute")
 
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
@@ -234,9 +240,7 @@ fn test_tile_and_distribute():
             var tile_4x4 = tensor.tile[4, 4](tile_i, tile_j)
             print(tile_4x4)
             for th_i in range(4):
-                var tile_2x2 = tile_4x4.distribute[Layout.row_major(2, 2)](
-                    UInt(th_i)
-                )
+                var tile_2x2 = tile_4x4.distribute[Layout.row_major(2, 2)](th_i)
                 print("----fragments-data[", th_i, "]----")
                 print(tile_2x2)
 
@@ -244,7 +248,7 @@ fn test_tile_and_distribute():
 
 
 # CHECK-LABEL: test_tile_and_vectorize
-fn test_tile_and_vectorize():
+def test_tile_and_vectorize():
     print("== test_tile_and_vectorize")
 
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
@@ -466,7 +470,7 @@ fn test_tile_and_vectorize():
 
 
 # CHECK-LABEL: test_copy_from
-fn test_copy_from():
+def test_copy_from():
     print("== test_copy_from")
     comptime layout = Layout(
         IntTuple(8, 8), IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
@@ -501,7 +505,7 @@ fn test_copy_from():
 
 
 # CHECK-LABEL: test_linspace_fill
-fn test_linspace_fill():
+def test_linspace_fill():
     print("== test_linspace_fill")
     comptime layout = Layout(
         IntTuple(8, 8), IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
@@ -566,7 +570,7 @@ fn test_linspace_fill():
 
 
 # CHECK-LABEL: test_random_fill
-fn test_random_fill():
+def test_random_fill():
     print("== test_random_fill")
     comptime layout = Layout(8 * 8 * 8 * 8)
 
@@ -606,7 +610,7 @@ fn test_random_fill():
 
 
 # CHECK-LABEL: test_iterator
-fn test_iterator():
+def test_iterator():
     print("== test_iterator")
     comptime layout = Layout(IntTuple(UNKNOWN_VALUE, 8), IntTuple(8, 1))
 
@@ -714,7 +718,7 @@ fn test_iterator():
 
 
 # CHECK-LABEL: test_split
-fn test_split():
+def test_split():
     print("== test_split")
 
     var ptr = alloc[Float32](16)

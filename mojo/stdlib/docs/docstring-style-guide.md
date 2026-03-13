@@ -286,7 +286,7 @@ isn't enforced.
 Example:
 
 ```mojo
-fn noop():
+def noop():
     """Does nothing.
 
     Notes:
@@ -315,7 +315,7 @@ examples section aren't indented.
 Example:
 
 ```mojo
-fn select[
+def select[
     result_type: DType
 ](
     self,

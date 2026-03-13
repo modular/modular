@@ -185,7 +185,7 @@ struct SM100MHA2Q[
 
     @staticmethod
     @always_inline
-    fn get_tmem_ptr(
+    def get_tmem_ptr(
         misc_mbars: Self.MiscMBarsType,
     ) -> SharedMemPointer[UInt32]:
         # tmem_ptr comes after all barriers (now unified in MiscMBarsType)
@@ -195,7 +195,7 @@ struct SM100MHA2Q[
 
     @staticmethod
     @always_inline
-    fn get_tmem_addr_storage(
+    def get_tmem_addr_storage(
         misc_mbars: Self.MiscMBarsType,
     ) -> Self.TmemAllocType.SmemAddrStorage:
         """Get TMEM address storage as typed SMemArray for TmemAllocation."""
@@ -203,7 +203,7 @@ struct SM100MHA2Q[
 
     @staticmethod
     @always_inline
-    fn get_q_smem(
+    def get_q_smem(
         misc_mbars: Self.MiscMBarsType,
     ) -> SharedMemPointer[Scalar[Self.qkv_type]]:
         return (misc_mbars.mbar_base - Self.mbar_offset).bitcast[
@@ -212,7 +212,7 @@ struct SM100MHA2Q[
 
     @staticmethod
     @always_inline
-    fn get_kv_smem(
+    def get_kv_smem(
         misc_mbars: Self.MiscMBarsType,
     ) -> SharedMemPointer[Scalar[Self.qkv_type]]:
         return (misc_mbars.mbar_base - Self.mbar_offset).bitcast[
@@ -221,7 +221,7 @@ struct SM100MHA2Q[
 
     @staticmethod
     @always_inline
-    fn get_correction_smem(
+    def get_correction_smem(
         misc_mbars: Self.MiscMBarsType,
     ) -> SharedMemPointer[Float32]:
         return (misc_mbars.mbar_base - Self.mbar_offset).bitcast[
@@ -239,7 +239,7 @@ struct SM100MHA2Q[
         )
     )
     @__llvm_metadata(`nvvm.minctasm`=Int(1))
-    fn kernel(
+    def kernel(
         q_tma_op: QTMATile[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
@@ -358,9 +358,11 @@ struct SM100MHA2Q[
         if warp_idx < 8:
             # softmax $warp_group_idx
             warpgroup_reg_alloc[num_reg_softmax]()
-            var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                batch_size, max_seq_len, valid_length, partition
-            )
+            var seq_info: SeqInfo = get_seq_info[
+                Self.BM,
+                Self.num_q_heads,
+                Self.MaskType.get_type_name() == "CausalMask",
+            ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
                 return
@@ -395,9 +397,11 @@ struct SM100MHA2Q[
             # correction
             warpgroup_reg_dealloc[num_reg_correction]()
 
-            var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                batch_size, max_seq_len, valid_length, partition
-            )
+            var seq_info: SeqInfo = get_seq_info[
+                Self.BM,
+                Self.num_q_heads,
+                Self.MaskType.get_type_name() == "CausalMask",
+            ](batch_size, max_seq_len, valid_length, partition)
             if not seq_info.is_valid():
                 return
             var pos: PositionSummary = PositionSummary.create[
@@ -418,9 +422,11 @@ struct SM100MHA2Q[
         else:
             if warp_idx == 13:  # produce
                 warpgroup_reg_dealloc[num_reg_other]()
-                var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                    batch_size, max_seq_len, valid_length, partition
-                )
+                var seq_info: SeqInfo = get_seq_info[
+                    Self.BM,
+                    Self.num_q_heads,
+                    Self.MaskType.get_type_name() == "CausalMask",
+                ](batch_size, max_seq_len, valid_length, partition)
 
                 if not seq_info.is_valid():
                     return
@@ -456,9 +462,11 @@ struct SM100MHA2Q[
 
             elif warp_idx == 12:  # Q @ K', P @ V
                 warpgroup_reg_dealloc[num_reg_other]()
-                var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                    batch_size, max_seq_len, valid_length, partition
-                )
+                var seq_info: SeqInfo = get_seq_info[
+                    Self.BM,
+                    Self.num_q_heads,
+                    Self.MaskType.get_type_name() == "CausalMask",
+                ](batch_size, max_seq_len, valid_length, partition)
 
                 if not seq_info.is_valid():
                     var tmem = Self.TmemAllocType.from_shared(
@@ -493,7 +501,7 @@ struct SM100MHA2Q[
 
     @staticmethod
     @always_inline
-    fn mask_status(
+    def mask_status(
         mask: Self.MaskType, score_row: UInt32, kv_row: UInt32
     ) -> TileMaskStatus:
         return mask.status(
@@ -506,7 +514,7 @@ struct SM100MHA2Q[
 
     @staticmethod
     @always_inline
-    fn descriptor_q(
+    def descriptor_q(
         q_smem: SharedMemPointer[Scalar[Self.qkv_type]],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[

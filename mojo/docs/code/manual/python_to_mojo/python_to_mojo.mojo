@@ -14,8 +14,8 @@ from std.testing import *
 from std.math import isclose, abs
 
 
-fn test_mut() raises:
-    fn foo(mut value: Int):
+def test_mut() raises:
+    def foo(mut value: Int):
         value += 1
 
     var y = 20
@@ -23,7 +23,7 @@ fn test_mut() raises:
     assert_true(y == 21)
 
 
-fn test_math() raises:
+def test_math() raises:
     var a: Int = 7
     var b: Int = 2
 
@@ -50,7 +50,7 @@ fn test_math() raises:
     assert_almost_equal(g // f, -4.0)  # biased towards negative infinity
 
 
-fn test_collections() raises:
+def test_collections() raises:
     var nums: List[Int] = [1, 2, 3]
     nums.append(4)  # [1, 2, 3, 4]
     assert_true(len(nums) == 4)
@@ -98,7 +98,7 @@ fn test_collections() raises:
     )
 
 
-fn test_loops() raises:
+def test_loops() raises:
     var nums = [0, 1, 2, 3, 4]
     var squares2: List[Int] = []
 
@@ -127,7 +127,7 @@ fn test_loops() raises:
     )
 
 
-fn test_raises() raises:
+def test_raises() raises:
     try:
         raise Error("bad input")
     except e:
@@ -139,11 +139,11 @@ struct MyCustomError(Writable):
     var message: String
 
 
-fn test_typed_error() raises MyCustomError:  # Typed error
+def test_typed_error() raises MyCustomError:  # Typed error
     raise MyCustomError("custom error occurred")
 
 
-fn test_typed_error_catch() raises:
+def test_typed_error_catch() raises:
     try:
         test_typed_error()
     except e:
@@ -154,20 +154,20 @@ struct Point:
     var x: Int
     var y: Int
 
-    fn __init__(out self, x: Int, y: Int):
+    def __init__(out self, x: Int, y: Int):
         self.x = x
         self.y = y
 
 
-fn test_structs() raises:
+def test_structs() raises:
     var p = Point(3, 4)
     assert_true(p.x == 3 and p.y == 4)
 
 
-fn test_typebound() raises:
+def test_typebound() raises:
     var a = 1
 
-    fn foo() raises:
+    def foo() raises:
         var a = "hello"
         assert_true(a == "hello")
 
@@ -176,42 +176,42 @@ fn test_typebound() raises:
 
 
 trait Drawable:
-    fn draw(self):
+    def draw(self):
         ...  # required
 
 
 @fieldwise_init
 struct Circle(Drawable):
-    fn draw(self):
+    def draw(self):
         # Implementation of drawing a circle
         pass
 
 
-fn test_draw[T: Drawable](shape: T):
+def test_draw[T: Drawable](shape: T):
     shape.draw()  # Compiler guarantees shape has draw()
 
 
-fn test_traitbound() raises:
+def test_traitbound() raises:
     var c = Circle()
     test_draw(c)  # Works because Circle implements Drawable
 
 
-fn another_raising_function() raises:
+def another_raising_function() raises:
     raise Error("Message")  # Error raised here
 
 
-fn raising_function() raises:
+def raising_function() raises:
     another_raising_function()  # Error continues to pass
 
 
-fn handles_errors() raises:  # Raises appears here for testing assertion
+def handles_errors() raises:  # Raises appears here for testing assertion
     try:
         raising_function()  # Error handled in this function
     except e:
         assert_true(String(e) == "Message")  # Error message is correct
 
 
-fn test_scoped() raises:
+def test_scoped() raises:
     from std.utils import Variant
 
     comptime StringOrInt = Variant[String, Int]
@@ -223,7 +223,7 @@ fn test_scoped() raises:
         assert_true(a.unsafe_get[String]() == "string")
 
 
-fn test_mixed_types() raises:
+def test_mixed_types() raises:
     from std.utils import Variant
 
     comptime MixedType = Variant[Int, Float64, String, Bool]
@@ -243,7 +243,7 @@ fn test_mixed_types() raises:
     )
 
 
-fn main() raises:
+def main() raises:
     test_mut()
     test_math()
     # size_of[Int]() can't be tested. Depends on target architecture.

@@ -14,6 +14,7 @@
 from std.sys.info import size_of
 
 from std.compile import compile_info
+from std.hashlib import hash
 from std.memory import UnsafeMaybeUninit
 from test_utils import CopyCounter, DelRecorder, MoveCounter, check_write_to
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
@@ -377,7 +378,7 @@ def test_inline_array_triviality() raises:
     assert_true(InlineArray[String, 1].__move_ctor_is_trivial)
 
 
-fn _return_array[copy: Bool = False]() -> InlineArray[Int32, 4]:
+def _return_array[copy: Bool = False]() -> InlineArray[Int32, 4]:
     var arr = InlineArray[Int32, 4](fill=0)
 
     comptime if copy:
@@ -449,15 +450,62 @@ struct NonWritable(Copyable):
     var value: Int
 
 
+def test_inline_array_eq() raises:
+    var a: InlineArray[Int, 3] = [1, 2, 3]
+    var b: InlineArray[Int, 3] = [1, 2, 3]
+    var c: InlineArray[Int, 3] = [1, 2, 4]
+
+    assert_true(a == b)
+    assert_false(a == c)
+    assert_false(a != b)
+    assert_true(a != c)
+
+    var x: InlineArray[Int, 1] = [42]
+    var y: InlineArray[Int, 1] = [42]
+    var z: InlineArray[Int, 1] = [0]
+    assert_true(x == y)
+    assert_true(x != z)
+
+    var s1: InlineArray[String, 2] = ["hello", "world"]
+    var s2: InlineArray[String, 2] = ["hello", "world"]
+    var s3: InlineArray[String, 2] = ["hello", "mojo"]
+    assert_true(s1 == s2)
+    assert_true(s1 != s3)
+
+    # Test arrays of different lengths.
+    var d: InlineArray[Int, 4] = [1, 2, 3, 4]
+    var e: InlineArray[Int, 4] = [1, 2, 3, 4]
+    var f: InlineArray[Int, 4] = [1, 2, 3, 5]
+    assert_true(d == e)
+    assert_true(d != f)
+
+    var g: InlineArray[Int, 5] = [10, 20, 30, 40, 50]
+    var h: InlineArray[Int, 5] = [10, 20, 30, 40, 50]
+    var i: InlineArray[Int, 5] = [10, 20, 99, 40, 50]
+    assert_true(g == h)
+    assert_true(g != i)
+
+
+def test_inline_array_hash() raises:
+    var a: InlineArray[Int, 3] = [1, 2, 3]
+    var b: InlineArray[Int, 3] = [1, 2, 3]
+    var c: InlineArray[Int, 3] = [1, 2, 4]
+
+    # Equal arrays must have equal hashes.
+    assert_equal(hash(a), hash(b))
+
+    # Different arrays should (almost certainly) have different hashes.
+    assert_true(hash(a) != hash(c))
+
+
 def test_inline_array_conditional_conformances() raises:
     assert_true(conforms_to(InlineArray[Int, 3], Writable))
-    # TODO(MOCO-3413): The `conforms_to` builtin does not evaluate the
-    # `where` clause on conditional conformances — it sees that
-    # `InlineArray` has a conformance for `Writable` and returns True
-    # without checking whether the condition holds for the concrete
-    # `ElementType`. The type checker at call sites *does* enforce the
-    # condition correctly.
-    # assert_false(conforms_to(InlineArray[NonWritable, 3], Writable))
+    assert_true(conforms_to(InlineArray[Int, 3], Equatable))
+    assert_true(conforms_to(InlineArray[Int, 3], Hashable))
+    assert_true(conforms_to(InlineArray[Int, 3], Copyable))
+    assert_true(conforms_to(InlineArray[Int, 3], ImplicitlyCopyable))
+    assert_true(conforms_to(InlineArray[Int, 3], ImplicitlyDestructible))
+    assert_false(conforms_to(InlineArray[NonWritable, 3], Writable))
 
 
 def test_inline_array_iter_bounds() raises:

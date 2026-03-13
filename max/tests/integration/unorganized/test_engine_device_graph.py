@@ -307,9 +307,13 @@ def test_debug_verify_replay() -> None:
     # Capture the graph
     model.capture(graph_key, input_tensor)
 
-    # Verify that the captured graph matches eager execution
-    # This should succeed since the execution is identical
-    model.debug_verify_replay(graph_key, input_tensor)
+    verify_input = Buffer.from_numpy(np.arange(4, dtype=np.float32) + 10).to(
+        model.input_devices[0]
+    )
+
+    # Verify that the captured graph matches eager execution even when the
+    # verification run uses a different input buffer.
+    model.debug_verify_replay(graph_key, verify_input)
 
     # Verify the captured output is still correct after verification
     model.replay(graph_key, input_tensor)

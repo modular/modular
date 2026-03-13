@@ -44,7 +44,7 @@ from linalg.matmul.gpu.amd.pingpong_kernel import ping_pong_matmul
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 
-fn _get_run_name[
+def _get_run_name[
     dtype: DType,
     shape_c: DimList,
     shape_a: DimList,
@@ -92,7 +92,7 @@ fn _get_run_name[
     )
 
 
-fn bench_matmul[
+def bench_matmul[
     dtype: DType,
     shape_c: DimList,
     shape_a: DimList,
@@ -115,7 +115,7 @@ fn bench_matmul[
     # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
     # update: using 512 to be 2x the infinity cache on MI300x
     @always_inline
-    fn get_size(shape: IndexList[2]) -> Int:
+    def get_size(shape: IndexList[2]) -> Int:
         return shape[0] * shape[1]
 
     comptime simd_size = 4
@@ -135,24 +135,24 @@ fn bench_matmul[
     @parameter
     @__copy_capture(cb_a, cb_b, cb_c)
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            var tensor_a = NDBuffer[dtype, 2, MutAnyOrigin, shape_a](
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            var tensor_a = NDBuffer[rank=2, dtype, MutAnyOrigin, shape_a](
                 cb_a.offset_ptr(iteration), shape_a_dim
             )
-            var tensor_b = NDBuffer[dtype, 2, MutAnyOrigin, shape_b](
+            var tensor_b = NDBuffer[rank=2, dtype, MutAnyOrigin, shape_b](
                 cb_b.offset_ptr(iteration), shape_b_dim
             )
-            var tensor_c = NDBuffer[c_dtype, 2, MutAnyOrigin, shape_c](
+            var tensor_c = NDBuffer[rank=2, c_dtype, MutAnyOrigin, shape_c](
                 cb_c.offset_ptr(iteration), shape_c_dim
             )
 
             @parameter
             @always_inline
             @__copy_capture(tensor_c)
-            fn test_lambda_add_coords_prod[
+            def test_lambda_add_coords_prod[
                 _dtype: DType,
                 width: Int,
                 *,
@@ -229,7 +229,7 @@ fn bench_matmul[
     _ = cb_c^
 
 
-fn create_matmul_bench[
+def create_matmul_bench[
     dtype: DType,
     *,
     transpose_b: Bool,
@@ -245,9 +245,9 @@ fn create_matmul_bench[
     k: ValOrDim,
     init_type: InitializationType,
 ) raises:
-    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
+    comptime static_b_shape = DimList[
+        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
+    ]()
     var dynamic_b_shape = (n.value, k.value) if transpose_b else (
         k.value,
         n.value,
@@ -255,8 +255,8 @@ fn create_matmul_bench[
 
     bench_matmul[
         dtype,
-        DimList(m.dim, n.dim),
-        DimList(m.dim, k.dim),
+        DimList[m.dim, n.dim](),
+        DimList[m.dim, k.dim](),
         static_b_shape,
         transpose_b=transpose_b,
         cache_busting=cache_busting,

@@ -30,10 +30,10 @@ struct IO(TrivialRegisterPassable):
     comptime _FusedComputeOutput = IO(31)
 
     @always_inline("builtin")
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.value = value
 
-    fn __eq__(self, other: IO) -> Bool:
+    def __eq__(self, other: IO) -> Bool:
         return self.value == other.value
 
 

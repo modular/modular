@@ -1322,7 +1322,7 @@ class StructFieldTypeByNameAttr(max._core.Attribute):
     Example:
 
     ```mlir
-    #kgen.struct_field_type_by_name<#MyStruct, "x"> : !kgen.type
+    #kgen.struct_field_type_by_name<#MyStruct, "x"> : !AnyType
     ```
     """
 
@@ -1330,14 +1330,14 @@ class StructFieldTypeByNameAttr(max._core.Attribute):
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
         field_name: max._core.dialects.builtin.TypedAttr,
-        type: TypeType,
+        type: max._core.Type,
     ) -> None: ...
     @property
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def field_name(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def type(self) -> TypeType: ...
+    def type(self) -> max._core.Type | None: ...
 
 class StructFieldTypesAttr(max._core.Attribute):
     """
@@ -1779,6 +1779,27 @@ class VariadicConcatAttr(max._core.Attribute):
     @property
     def variadics(self) -> max._core.dialects.builtin.TypedAttr: ...
 
+class VariadicGetAttr(max._core.Attribute):
+    @overload
+    def __init__(
+        self,
+        variadic: max._core.dialects.builtin.TypedAttr,
+        index: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: max._core.Type,
+        variadic: max._core.dialects.builtin.TypedAttr,
+        index: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+    @property
+    def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def index(self) -> max._core.dialects.builtin.TypedAttr: ...
+
 class VariadicReduceAttr(max._core.Attribute):
     """
     The `#kgen.variadic.reduce` attribute is used to reduce a variadic of
@@ -2096,8 +2117,6 @@ class POC(enum.Enum):
     apply_result_slot = 26
 
     rebind = 27
-
-    variadic_get = 28
 
     ptr_bitcast = 34
 
@@ -4271,52 +4290,6 @@ class WitnessOp(max._core.Operation):
     @value.setter
     def value(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
 
-class PackageLinkOp(max._core.Operation):
-    """
-    A `kgen.package.link` defines a link to the compiled artifacts of a package.
-    It contains a reference to all precompiled packages, providing an anchor for
-    functions and other operations defined within the package during the
-    lowering pipeline. It may also contain the post-parse bodies which can be
-    used to compile the package.
-
-    Example:
-
-    ```mlir
-    kgen.package.link @foo
-      dependencies([@std])
-      post_parse(dense_resource<...> : tensor<...xi8>)
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        sym_name: max._core.dialects.builtin.StringAttr,
-        post_parse_module: max._core.dialects.builtin.DenseResourceElementsAttr,
-        dependencies: LinkDependencyArrayAttr,
-    ) -> None: ...
-    @property
-    def sym_name(self) -> str: ...
-    @sym_name.setter
-    def sym_name(
-        self, arg: max._core.dialects.builtin.StringAttr, /
-    ) -> None: ...
-    @property
-    def post_parse_module(
-        self,
-    ) -> max._core.dialects.builtin.DenseResourceElementsAttr | None: ...
-    @post_parse_module.setter
-    def post_parse_module(
-        self, arg: max._core.dialects.builtin.DenseResourceElementsAttr, /
-    ) -> None: ...
-    @property
-    def dependencies(
-        self,
-    ) -> Sequence[max._core.dialects.builtin.FlatSymbolRefAttr] | None: ...
-    @dependencies.setter
-    def dependencies(self, arg: LinkDependencyArrayAttr, /) -> None: ...
-
 class ParameterScopeTypeInterface(Protocol):
     """
     The `ParameterScopeTypeInterface` describes a type that declares a nested
@@ -4510,6 +4483,27 @@ class NeverType(max._core.Type):
     constructed. This is used to represent functions that never return or
     generic thrown types that resolve to a concrete type of "not actually
     thrown".
+    ```
+    """
+
+    def __init__(self) -> None: ...
+
+class NonStructTypeType(max._core.Type):
+    """
+    This kgen type presents the type of all L1 non-lit-struct types (which
+    essentially means it is not a mojo struct nor a meta type expression).
+    In particular, this categorizes types that need to be wrapped
+    by `__MLIRType` in Mojo.
+
+    ```mojo
+    comptime mlir_i1 = __mlir_type.i1
+    # type_of(mlir_i1) == !kgen.non_struct_type
+
+    comptime fn_type = fn()->Int
+    # type_of(fn_type) == !kgen.non_struct_type
+
+    # Notably:
+    # type_of(type_of(mlir_i1)) == !kgen.type
     ```
     """
 

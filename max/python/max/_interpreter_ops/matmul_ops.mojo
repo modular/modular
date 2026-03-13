@@ -24,7 +24,9 @@ from linalg.matmul import matmul
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.runtime_layout import RuntimeLayout
 from std.runtime.asyncrt import DeviceContextPtr
-from tensor.managed_tensor_slice import ManagedTensorSlice
+from tensor.managed_tensor_slice import (
+    ManagedTensorSlice,
+)
 from tensor.io_spec import Input, _FusedComputeOutput
 from compiler_internal import StaticTensorSpec
 from MOGGKernelAPI.MOGGKernelAPI import BatchMatmul as BatchMatmulKernel
@@ -32,7 +34,7 @@ from MOGGKernelAPI.MOGGKernelAPI import BatchMatmul as BatchMatmulKernel
 from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
-fn _is_gpu_allowed_matmul_dtype[dtype: DType]() -> Bool:
+def _is_gpu_allowed_matmul_dtype[dtype: DType]() -> Bool:
     """Check if a dtype is allowed for GPU matmul at compile time.
 
     GPU matmul does not support int8, uint8, int16, uint16, or float64.
@@ -52,7 +54,7 @@ fn _is_gpu_allowed_matmul_dtype[dtype: DType]() -> Bool:
 
 
 @export
-fn PyInit_matmul_ops() -> PythonObject:
+def PyInit_matmul_ops() -> PythonObject:
     """Create a Python module with matmul kernel function bindings."""
     try:
         var b = PythonModuleBuilder("matmul_ops")
@@ -78,7 +80,7 @@ fn PyInit_matmul_ops() -> PythonObject:
 # =============================================================================
 
 
-fn matmul_dispatcher(
+def matmul_dispatcher(
     out_buffer: PythonObject,
     lhs_buffer: PythonObject,
     rhs_buffer: PythonObject,
@@ -243,7 +245,7 @@ fn matmul_dispatcher(
 
 
 @always_inline
-fn matmul_op[
+def matmul_op[
     dtype: DType
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -310,7 +312,7 @@ fn matmul_op[
 # =============================================================================
 
 
-fn batch_matmul_shape_dispatcher(
+def batch_matmul_shape_dispatcher(
     lhs_buffer: PythonObject,
     rhs_buffer: PythonObject,
 ) raises -> PythonObject:
@@ -373,7 +375,7 @@ fn batch_matmul_shape_dispatcher(
     return out_shape
 
 
-fn _batch_matmul_shape_for_rank[
+def _batch_matmul_shape_for_rank[
     rank: Int
 ](
     a_dims: InlineArray[Int, MAX_RANK],
@@ -401,7 +403,7 @@ fn _batch_matmul_shape_for_rank[
         b_shape[i] = b_dims[i]
 
     # Create shape-only InputTensors with null pointers
-    comptime spec = StaticTensorSpec[DType.float32, rank].create_unknown()
+    comptime spec = StaticTensorSpec[DType.float32, rank, ...].get_unknown()
     var null_ptr = UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
         unsafe_from_address=0
     )
@@ -420,7 +422,7 @@ fn _batch_matmul_shape_for_rank[
 # =============================================================================
 
 
-fn batch_matmul_dispatcher(
+def batch_matmul_dispatcher(
     out_buffer: PythonObject,
     lhs_buffer: PythonObject,
     rhs_buffer: PythonObject,
@@ -610,7 +612,7 @@ fn batch_matmul_dispatcher(
 
 
 @always_inline
-fn batch_matmul_op[
+def batch_matmul_op[
     dtype: DType
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -642,8 +644,8 @@ fn batch_matmul_op[
         ctx: Device context pointer (null for CPU).
     """
     # Create rank-3 ManagedTensorSlice wrappers with collapsed batch dimension
-    comptime in_spec = StaticTensorSpec[dtype, 3].create_unknown()
-    comptime out_spec = StaticTensorSpec[dtype, 3].create_unknown()
+    comptime in_spec = StaticTensorSpec[dtype, 3, ...].get_unknown()
+    comptime out_spec = StaticTensorSpec[dtype, 3, ...].get_unknown()
 
     var a = ManagedTensorSlice[io_spec=Input, static_spec=in_spec](
         lhs_ptr, IndexList[3](batch_size, m, k)
@@ -658,8 +660,8 @@ fn batch_matmul_op[
     if not ctx:
         # TODO(MXF-108): Remove single_thread_blocking_override
         BatchMatmulKernel.execute[
-            lambdas_have_fusion=False,
             rank=3,
+            lambdas_have_fusion=False,
             transpose_b=False,
             target="cpu",
             single_thread_blocking_override=True,
@@ -669,8 +671,8 @@ fn batch_matmul_op[
             comptime if _is_gpu_allowed_matmul_dtype[dtype]():
                 var device_ctx = DeviceContextPtr(ctx)
                 BatchMatmulKernel.execute[
-                    lambdas_have_fusion=False,
                     rank=3,
+                    lambdas_have_fusion=False,
                     transpose_b=False,
                     target="gpu",
                 ](c, a, b, device_ctx)

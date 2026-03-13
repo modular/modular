@@ -34,7 +34,11 @@ from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from std.utils.index import Index, IndexList, StaticTuple
 
-from ._gpu.reduction import reduce_launch
+# Import CPU implementations.
+from .backend.cpu.reduction import _reduce_generator_cpu
+
+# Import GPU implementations.
+from .backend.gpu.reduction import _reduce_generator_gpu, reduce_launch
 
 # ===-----------------------------------------------------------------------===#
 # ND indexing helper
@@ -42,7 +46,7 @@ from ._gpu.reduction import reduce_launch
 
 
 @always_inline
-fn _get_nd_indices_from_flat_index(
+def _get_nd_indices_from_flat_index(
     flat_index: Int, shape: IndexList, skip_dim: Int, out res: type_of(shape)
 ):
     """Converts a flat index into ND indices but skip over one of the dimensions.
@@ -89,264 +93,6 @@ fn _get_nd_indices_from_flat_index(
 
 
 # ===-----------------------------------------------------------------------===#
-# reduce
-# ===-----------------------------------------------------------------------===#
-
-
-@always_inline
-@parameter
-fn map_reduce[
-    simd_width: Int,
-    dtype: DType,
-    acc_type: DType,
-    origins_gen: OriginSet,
-    input_gen_fn: fn[dtype: DType, width: Int](Int) capturing[
-        origins_gen
-    ] -> SIMD[dtype, width],
-    origins_vec: OriginSet,
-    reduce_vec_to_vec_fn: fn[acc_type: DType, dtype: DType, width: Int](
-        SIMD[acc_type, width], SIMD[dtype, width]
-    ) capturing[origins_vec] -> SIMD[acc_type, width],
-    reduce_vec_to_scalar_fn: fn[dtype: DType, width: Int](
-        SIMD[dtype, width]
-    ) -> Scalar[dtype],
-](dst: Span[mut=True, Scalar[dtype], _], init: Scalar[acc_type]) -> Scalar[
-    acc_type
-]:
-    """Stores the result of calling input_gen_fn in dst and simultaneously
-    reduce the result using a custom reduction function.
-
-    Parameters:
-        simd_width: The vector width for the computation.
-        dtype: The buffer elements dtype.
-        acc_type: The dtype of the reduction accumulator.
-        origins_gen: The OriginSet of captured arguments by the input_gen_fn.
-        input_gen_fn: A function that generates inputs to reduce.
-        origins_vec: The OriginSet of captured arguments by the reduce_vec_to_vec_fn.
-        reduce_vec_to_vec_fn: A mapping function. This function is used to
-          combine (accumulate) two chunks of input data: e.g. we load two
-          `8xfloat32` vectors of elements and need to reduce them into a single
-          `8xfloat32` vector.
-        reduce_vec_to_scalar_fn: A reduction function. This function is used to
-          reduce a vector to a scalar. E.g. when we got `8xfloat32` vector and want
-          to reduce it to an `float32` scalar.
-
-    Args:
-        dst: The output buffer.
-        init: The initial value to use in accumulator.
-
-    Returns:
-        The computed reduction value.
-    """
-
-    @always_inline
-    @parameter
-    fn output_fn[
-        _dtype: DType, width: Int, rank: Int
-    ](idx: Int, val: SIMD[_dtype, width]):
-        dst.unsafe_ptr().store(idx, rebind[SIMD[dtype, width]](val))
-
-    return map_reduce[
-        simd_width,
-        dtype,
-        acc_type,
-        origins_gen,
-        input_gen_fn,
-        origins_vec,
-        reduce_vec_to_vec_fn,
-        reduce_vec_to_scalar_fn,
-        output_fn,
-    ](len(dst), init)
-
-
-@always_inline
-@parameter
-fn map_reduce[
-    simd_width: Int,
-    dtype: DType,
-    acc_type: DType,
-    origins_gen: OriginSet,
-    input_gen_fn: fn[dtype: DType, width: Int](Int) capturing[
-        origins_gen
-    ] -> SIMD[dtype, width],
-    origins_vec: OriginSet,
-    reduce_vec_to_vec_fn: fn[acc_type: DType, dtype: DType, width: Int](
-        SIMD[acc_type, width], SIMD[dtype, width]
-    ) capturing[origins_vec] -> SIMD[acc_type, width],
-    reduce_vec_to_scalar_fn: fn[dtype: DType, width: Int](
-        SIMD[dtype, width]
-    ) -> Scalar[dtype],
-    output_fn: fn[dtype_: DType, width: Int, alignment: Int](
-        idx: Int, val: SIMD[dtype_, width]
-    ) capturing -> None,
-](length: Int, init: Scalar[acc_type]) -> Scalar[acc_type]:
-    """Performs a vectorized map-reduce operation over a sequence.
-
-    Parameters:
-        simd_width: The SIMD vector width to use.
-        dtype: The data type of the input elements.
-        acc_type: The data type of the accumulator.
-        origins_gen: Origin set for the input generation function.
-        input_gen_fn: Function that generates input values at each index.
-        origins_vec: Origin set for the reduction function.
-        reduce_vec_to_vec_fn: Function that reduces a vector into the accumulator.
-        reduce_vec_to_scalar_fn: Function that reduces a final vector to a scalar.
-        output_fn: Function to output intermediate results.
-
-    Args:
-        length: The number of elements to process.
-        init: The initial accumulator value.
-
-    Returns:
-        The final reduced scalar value.
-    """
-    comptime unroll_factor = 8  # TODO: search
-    # TODO: explicitly unroll like vectorize_unroll does.
-    comptime unrolled_simd_width = simd_width * unroll_factor
-    var unrolled_vector_end = align_down(length, unrolled_simd_width)
-    var vector_end = align_down(length, simd_width)
-
-    var acc_unrolled_simd = SIMD[acc_type, unrolled_simd_width](init)
-    for i in range(0, unrolled_vector_end, unrolled_simd_width):
-        var val_simd = input_gen_fn[dtype, unrolled_simd_width](i)
-        output_fn[dtype, unrolled_simd_width, align_of[dtype]()](i, val_simd)
-        acc_unrolled_simd = reduce_vec_to_vec_fn(acc_unrolled_simd, val_simd)
-
-    var acc_simd = SIMD[acc_type, simd_width](init)
-    for i in range(unrolled_vector_end, vector_end, simd_width):
-        var val_simd = input_gen_fn[dtype, simd_width](i)
-        output_fn[dtype, simd_width, align_of[dtype]()](i, val_simd)
-        acc_simd = reduce_vec_to_vec_fn(acc_simd, val_simd)
-
-    var acc = reduce_vec_to_scalar_fn[acc_type, unrolled_simd_width](
-        acc_unrolled_simd
-    )
-    acc = reduce_vec_to_vec_fn(acc, reduce_vec_to_scalar_fn(acc_simd))
-    for i in range(vector_end, length):
-        var val = input_gen_fn[dtype, 1](i)
-        output_fn[dtype, 1, align_of[dtype]()](i, val)
-        acc = reduce_vec_to_vec_fn(acc, val)
-    return acc[0]
-
-
-@always_inline
-@parameter
-fn reduce[
-    reduce_fn: fn[acc_type: DType, dtype: DType, width: Int](
-        SIMD[acc_type, width], SIMD[dtype, width]
-    ) capturing[_] -> SIMD[acc_type, width],
-    dtype: DType,
-](src: Span[Scalar[dtype], _], init: Scalar[dtype]) raises -> Scalar[dtype]:
-    """Computes a custom reduction of buffer elements.
-
-    Parameters:
-        reduce_fn: The lambda implementing the reduction.
-        dtype: The dtype of the input.
-
-    Args:
-        src: The input buffer.
-        init: The initial value to use in accumulator.
-
-    Returns:
-        The computed reduction value.
-
-    Raises:
-        If the operation fails.
-    """
-
-    @always_inline
-    @parameter
-    fn input_fn[
-        _dtype: DType, width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
-        return src.unsafe_ptr().load[width=width](idx[0])._refine[_dtype]()
-
-    var out: Scalar[init.dtype] = 0
-
-    @always_inline
-    @parameter
-    fn output_fn[
-        _dtype: DType, width: Int, rank: Int
-    ](indices: IndexList[rank], value: SIMD[_dtype, width]):
-        out = value._refine[init.dtype, 1]()
-
-    @always_inline
-    @parameter
-    fn reduce_fn_wrapper[
-        _dtype: DType, width: Int
-    ](acc: SIMD[_dtype, width], val: SIMD[_dtype, width]) -> SIMD[
-        _dtype, width
-    ]:
-        return reduce_fn(acc, val)
-
-    var shape = Index(len(src))
-
-    _reduce_generator[
-        input_fn,
-        output_fn,
-        reduce_fn_wrapper,
-        single_thread_blocking_override=True,
-    ](shape, init=init, reduce_dim=0)
-
-    return out
-
-
-@always_inline
-@parameter
-fn reduce_boolean[
-    reduce_fn: fn[dtype: DType, width: Int](SIMD[dtype, width]) capturing[
-        _
-    ] -> Bool,
-    continue_fn: fn(Bool) capturing[_] -> Bool,
-    dtype: DType,
-](src: Span[Scalar[dtype], _], init: Bool) -> Bool:
-    """Computes a bool reduction of buffer elements. The reduction will early
-    exit if the `continue_fn` returns False.
-
-    Parameters:
-        reduce_fn: A boolean reduction function. This function is used to reduce
-          a vector to a scalar. E.g. when we got `8xfloat32` vector and want to
-          reduce it to a `bool`.
-        continue_fn: A function to indicate whether we want to continue
-          processing the rest of the iterations. This takes the result of the
-          reduce_fn and returns True to continue processing and False to early
-          exit.
-        dtype: The dtype of the input.
-
-    Args:
-        src: The input buffer.
-        init: The initial value to use.
-
-    Returns:
-        The computed reduction value.
-    """
-    comptime simd_width = simd_width_of[dtype]()
-    comptime unroll_factor = 8  # TODO: search
-    # TODO: explicitly unroll like vectorize_unroll does.
-    comptime unrolled_simd_width = simd_width * unroll_factor
-
-    var length = len(src)
-    var unrolled_vector_end = align_down(length, unrolled_simd_width)
-    var vector_end = align_down(length, simd_width)
-    var curr = init
-    for i in range(0, unrolled_vector_end, unrolled_simd_width):
-        curr = reduce_fn(src.unsafe_ptr().load[width=unrolled_simd_width](i))
-        if not continue_fn(curr):
-            return curr
-
-    for i in range(unrolled_vector_end, vector_end, simd_width):
-        curr = reduce_fn(src.unsafe_ptr().load[width=simd_width](i))
-        if not continue_fn(curr):
-            return curr
-
-    for i in range(vector_end, length):
-        curr = reduce_fn(src[i])
-        if not continue_fn(curr):
-            return curr
-    return curr
-
-
-# ===-----------------------------------------------------------------------===#
 # MOGG reduce functions.
 # These take lambdas and don't assume contiguous inputs so can compose
 # with mogg kernels / fusion.
@@ -354,7 +100,7 @@ fn reduce_boolean[
 
 
 @always_inline
-fn _reduce_generator[
+def _reduce_generator[
     num_reductions: Int,
     init_type: DType,
     input_0_fn: fn[dtype: DType, width: Int, rank: Int](
@@ -423,139 +169,7 @@ fn _reduce_generator[
 
 
 @always_inline
-fn _reduce_generator_gpu[
-    num_reductions: Int,
-    init_type: DType,
-    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing[_] -> None,
-    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int](
-        SIMD[ty, width], SIMD[ty, width]
-    ) capturing[_] -> SIMD[ty, width],
-    /,
-    single_thread_blocking_override: Bool = False,
-](
-    shape: IndexList[_, element_type=DType.int64],
-    init: StaticTuple[Scalar[init_type], num_reductions],
-    reduce_dim: Int,
-    ctx: DeviceContext,
-) raises:
-    """Reduce the given tensor using the given reduction function on GPU. The
-    num_reductions parameter enables callers to execute fused reductions. The
-    reduce_0_fn and output_0_fn should be implemented in a way which routes
-    between the fused reduction methods using their reduction_idx parameter.
-
-    Parameters:
-        num_reductions: The number of fused reductions to perform.
-        init_type: The initial accumulator value for each reduction.
-        input_0_fn: The lambda to use to access the incoming tensor.
-        output_0_fn: The lambda to use to storing to the output tensor.
-        reduce_function: The lambda implementing the reduction.
-        single_thread_blocking_override: If True, then reduction is run
-          synchronously using a single thread.
-
-    Args:
-        shape: The shape of the tensor we are reducing.
-        init: The value to start the reduction from.
-        reduce_dim: The dimension we are reducing.
-        ctx: The pointer to DeviceContext.
-    """
-
-    var reduce_dim_normalized = (
-        len(shape) + reduce_dim
-    ) if reduce_dim < 0 else reduce_dim
-
-    reduce_launch[
-        num_reductions,
-        input_0_fn,
-        output_0_fn,
-        reduce_function,
-        shape.size,
-        init_type,
-    ](shape, reduce_dim_normalized, init, ctx)
-
-
-@always_inline
-fn _reduce_generator_cpu[
-    num_reductions: Int,
-    init_type: DType,
-    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing[_] -> None,
-    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int](
-        SIMD[ty, width], SIMD[ty, width]
-    ) capturing[_] -> SIMD[ty, width],
-    /,
-    single_thread_blocking_override: Bool = False,
-](
-    shape: IndexList[_, element_type=DType.int64],
-    init: StaticTuple[Scalar[init_type], num_reductions],
-    reduce_dim: Int,
-):
-    """Reduce the given tensor using the given reduction function on CPU. The
-    num_reductions parameter enables callers to execute fused reductions. The
-    reduce_0_fn and output_0_fn should be implemented in a way which routes
-    between the fused reduction methods using their reduction_idx parameter.
-
-    Parameters:
-        num_reductions: The number of fused reductions to perform.
-        init_type: The initial accumulator value for each reduction.
-        input_0_fn: The lambda to use to access the incoming tensor.
-        output_0_fn: The lambda to use to storing to the output tensor.
-        reduce_function: The lambda implementing the reduction.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
-
-    Args:
-        shape: The shape of the tensor we are reducing.
-        init: The value to start the reduction from.
-        reduce_dim: The dimension we are reducing.
-    """
-
-    comptime rank = shape.size
-
-    var reduce_dim_normalized = (
-        rank + reduce_dim
-    ) if reduce_dim < 0 else reduce_dim
-
-    comptime if shape.size == 1:
-        _reduce_along_inner_dimension[
-            num_reductions,
-            init_type,
-            input_0_fn,
-            output_0_fn,
-            reduce_function,
-            single_thread_blocking_override=single_thread_blocking_override,
-        ](shape, init, reduce_dim_normalized)
-    else:
-        if rank - 1 == reduce_dim_normalized:
-            _reduce_along_inner_dimension[
-                num_reductions,
-                init_type,
-                input_0_fn,
-                output_0_fn,
-                reduce_function,
-                single_thread_blocking_override=single_thread_blocking_override,
-            ](shape, init, reduce_dim_normalized)
-        else:
-            _reduce_along_outer_dimension[
-                num_reductions,
-                init_type,
-                input_0_fn,
-                output_0_fn,
-                reduce_function,
-                single_thread_blocking_override=single_thread_blocking_override,
-            ](shape, init, reduce_dim_normalized)
-
-
-@always_inline
-fn _reduce_generator_wrapper[
+def _reduce_generator_wrapper[
     dtype: DType,
     input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
@@ -577,14 +191,14 @@ fn _reduce_generator_wrapper[
 ) raises:
     @always_inline
     @parameter
-    fn input_fn_wrapper[
+    def input_fn_wrapper[
         _dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
         return input_fn[width, rank](idx)._refine[_dtype]()
 
     @always_inline
     @parameter
-    fn output_fn_wrapper[
+    def output_fn_wrapper[
         _dtype: DType,
         width: Int,
         rank: Int,
@@ -593,7 +207,7 @@ fn _reduce_generator_wrapper[
 
     @always_inline
     @parameter
-    fn reduce_fn[
+    def reduce_fn[
         ty: DType, width: Int
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return reduce_function(
@@ -611,7 +225,7 @@ fn _reduce_generator_wrapper[
 
 
 @always_inline
-fn _reduce_generator[
+def _reduce_generator[
     input_0_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
     ) capturing[_] -> SIMD[dtype, width],
@@ -654,7 +268,7 @@ fn _reduce_generator[
 
     @always_inline
     @parameter
-    fn output_fn_wrapper[
+    def output_fn_wrapper[
         dtype: DType, width: Int, rank: Int
     ](
         indices: IndexList[rank],
@@ -664,7 +278,7 @@ fn _reduce_generator[
 
     @always_inline
     @parameter
-    fn reduce_fn_wrapper[
+    def reduce_fn_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](val: SIMD[dtype, width], acc: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
@@ -684,340 +298,13 @@ fn _reduce_generator[
     ](shape, init_wrapped, reduce_dim, context)
 
 
-fn _reduce_along_inner_dimension[
-    num_reductions: Int,
-    init_type: DType,
-    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing[_] -> None,
-    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int](
-        SIMD[ty, width], SIMD[ty, width]
-    ) capturing[_] -> SIMD[ty, width],
-    /,
-    single_thread_blocking_override: Bool = False,
-](
-    shape: IndexList[_, element_type=DType.int64],
-    init_value: StaticTuple[Scalar[init_type], num_reductions],
-    reduce_dim: Int,
-):
-    var total_size: Int = shape.flattened_length()
-    if total_size == 0:
-        return
-
-    var reduce_dim_size = shape[reduce_dim]
-
-    var parallelism_size: Int = total_size // reduce_dim_size
-
-    var num_workers: Int
-
-    comptime if single_thread_blocking_override:
-        num_workers = 1
-    else:
-        num_workers = _get_num_workers(total_size)
-
-    var chunk_size = ceildiv(parallelism_size, num_workers)
-
-    comptime unroll_factor = 8
-    comptime simd_width = simd_width_of[init_type]()
-    comptime unrolled_simd_width = simd_width * unroll_factor
-
-    var unrolled_simd_compatible_size = align_down(
-        reduce_dim_size, unrolled_simd_width
-    )
-    var simd_compatible_size = align_down(reduce_dim_size, simd_width)
-
-    @always_inline
-    @parameter
-    fn simd_reduce_helper_fn[
-        in_width: Int,
-        out_width: Int,
-    ](
-        in_acc_tup: StaticTuple[SIMD[init_type, in_width], num_reductions]
-    ) -> StaticTuple[SIMD[init_type, out_width], num_reductions]:
-        var out_acc_tup = StaticTuple[
-            SIMD[init_type, out_width], num_reductions
-        ]()
-
-        comptime for i in range(num_reductions):
-            out_acc_tup[i] = in_acc_tup[i].reduce[
-                reduce_function[init_type, reduction_idx=i, ...], out_width
-            ]()
-
-        return out_acc_tup
-
-    @always_inline
-    @parameter
-    fn reduce_rows_unrolled(start_row: Int, end_row: Int):
-        # Iterate over the non reduced dimensions.
-        for flat_index in range(start_row, end_row):
-            # In normal elementwise get_nd_indices skips the last dimension as
-            # it is the dimension being iterated over. In our case we don't know
-            # this yet so we do have to calculate the extra one.
-            var indices = _get_nd_indices_from_flat_index(
-                flat_index, shape, reduce_dim
-            )
-
-            @always_inline
-            @parameter
-            fn unrolled_reduce_helper_fn[
-                width: Int,
-            ](
-                start: Int,
-                finish: Int,
-                init: StaticTuple[SIMD[init_type, width], num_reductions],
-            ) -> StaticTuple[SIMD[init_type, width], num_reductions]:
-                var acc = init
-                for idx in range(start, finish, width):
-                    indices[reduce_dim] = idx
-                    var load_value = input_0_fn[init_type, width](indices)
-
-                    comptime for i in range(num_reductions):
-                        acc[i] = reduce_function[init_type, width, i](
-                            load_value, acc[i]
-                        )
-
-                return acc
-
-            # initialize our accumulator
-            var acc_unrolled_simd_tup = StaticTuple[
-                SIMD[
-                    init_type,
-                    unrolled_simd_width,
-                ],
-                num_reductions,
-            ]()
-
-            comptime for i in range(num_reductions):
-                acc_unrolled_simd_tup[i] = SIMD[
-                    init_type,
-                    unrolled_simd_width,
-                ](init_value[i])
-
-            # Loop over unroll_factor*simd_width chunks.
-            acc_unrolled_simd_tup = unrolled_reduce_helper_fn[
-                unrolled_simd_width
-            ](0, unrolled_simd_compatible_size, acc_unrolled_simd_tup)
-
-            # Reduce to simd_width
-            var acc_simd_tup = simd_reduce_helper_fn[
-                unrolled_simd_width,
-                simd_width,
-            ](acc_unrolled_simd_tup)
-
-            # Loop over tail simd_width chunks
-            acc_simd_tup = unrolled_reduce_helper_fn[simd_width](
-                unrolled_simd_compatible_size,
-                simd_compatible_size,
-                acc_simd_tup,
-            )
-
-            # Reduce to scalars
-            var acc_scalar_tup = simd_reduce_helper_fn[
-                simd_width,
-                1,
-            ](acc_simd_tup)
-
-            # Loop over tail scalars
-            acc_scalar_tup = unrolled_reduce_helper_fn[1](
-                simd_compatible_size, reduce_dim_size, acc_scalar_tup
-            )
-
-            # Store the result back to the output.
-            indices[reduce_dim] = 0
-            output_0_fn(indices, acc_scalar_tup)
-
-    @always_inline
-    @parameter
-    fn reduce_rows(i: Int):
-        var start_parallel_offset = i * chunk_size
-        var end_parallel_offset = _min((i + 1) * chunk_size, parallelism_size)
-
-        var length = end_parallel_offset - start_parallel_offset
-        if length <= 0:
-            return
-
-        reduce_rows_unrolled(start_parallel_offset, end_parallel_offset)
-
-    comptime if single_thread_blocking_override:
-        reduce_rows_unrolled(0, parallelism_size)
-    else:
-        sync_parallelize[reduce_rows](num_workers)
-    _ = reduce_dim_size
-    _ = parallelism_size
-    _ = chunk_size
-    _ = unrolled_simd_compatible_size
-    _ = simd_compatible_size
-
-
-fn _reduce_along_outer_dimension[
-    num_reductions: Int,
-    init_type: DType,
-    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-    ) capturing[_] -> None,
-    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int](
-        SIMD[ty, width], SIMD[ty, width]
-    ) capturing[_] -> SIMD[ty, width],
-    /,
-    single_thread_blocking_override: Bool = False,
-](
-    shape: IndexList[_, element_type=DType.int64],
-    init: StaticTuple[Scalar[init_type], num_reductions],
-    reduce_dim: Int,
-):
-    """Reduce the given tensor using the given reduction function. The
-    num_reductions parameter enables callers to execute fused reductions. The
-    reduce_0_fn and output_0_fn should be implemented in a way which routes
-    between the fused reduction methods using their reduction_idx parameter.
-
-    Parameters:
-        num_reductions: The number of fused reductions to execute in parallel.
-        init_type: The initial accumulator value for each reduction.
-        input_0_fn: The lambda to use to access the incoming tensor.
-        output_0_fn: The lambda to use to storing to the output tensor.
-        reduce_function: The lambda implementing the reduction.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
-
-    Args:
-        shape: The shape of the tensor we are reducing
-        init: The value to start the reduction from.
-        reduce_dim: The dimension we are reducing.
-    """
-    comptime rank = shape.size
-    comptime dtype = init.element_type
-
-    # Compute the number of workers to allocate based on ALL work, not just
-    # the dimensions we split across.
-    comptime simd_width = simd_width_of[dtype]()
-
-    var total_size: Int = shape.flattened_length()
-    if total_size == 0:
-        return
-
-    var reduce_dim_size = shape[reduce_dim]
-    var inner_dim = shape[rank - 1]
-
-    # parallelize across slices of the input, where a slice is [reduce_dim, inner_dim]
-    # the slice is composed of [reduce_dim, simd_width] chunks
-    # these chunks are reduced simultaneously across the reduce_dim using simd instructions
-    # and accumulation
-    var parallelism_size: Int = total_size // (reduce_dim_size * inner_dim)
-
-    var num_workers: Int
-
-    comptime if single_thread_blocking_override:
-        num_workers = 1
-    else:
-        num_workers = _get_num_workers(total_size)
-
-    var chunk_size = ceildiv(parallelism_size, num_workers)
-
-    @parameter
-    fn reduce_slices(i: Int):
-        var start_parallel_offset = i * chunk_size
-        var end_parallel_offset = _min((i + 1) * chunk_size, parallelism_size)
-
-        var length = end_parallel_offset - start_parallel_offset
-
-        if length <= 0:
-            return
-
-        for var slice_idx in range(start_parallel_offset, end_parallel_offset):
-
-            @always_inline
-            fn reduce_chunk[simd_width: Int](inner_dim_idx: Int) unified {read}:
-                var acc_simd_tup = StaticTuple[
-                    SIMD[init_type, simd_width], num_reductions
-                ]()
-
-                comptime for i in range(num_reductions):
-                    acc_simd_tup[i] = SIMD[init_type, simd_width](init[i])
-
-                var reduce_vector_idx = slice_idx * inner_dim + inner_dim_idx
-                var indices = _get_nd_indices_from_flat_index(
-                    reduce_vector_idx, shape, reduce_dim
-                )
-                for reduce_dim_idx in range(reduce_dim_size):
-                    indices[reduce_dim] = reduce_dim_idx
-                    var load_value = input_0_fn[
-                        init_type, simd_width, shape.size
-                    ](indices)
-
-                    comptime for i in range(num_reductions):
-                        acc_simd_tup[i] = reduce_function[
-                            init_type, simd_width, i
-                        ](load_value, acc_simd_tup[i])
-
-                indices[reduce_dim] = 0
-                output_0_fn[init_type, simd_width, indices.size](
-                    indices, acc_simd_tup
-                )
-
-            vectorize[simd_width](inner_dim, reduce_chunk)
-
-    comptime if single_thread_blocking_override:
-        reduce_slices(0)
-    else:
-        sync_parallelize[reduce_slices](num_workers)
-
-
 # ===-----------------------------------------------------------------------===#
-# max
+# Dispatch overloads for max, min, sum, product, mean
 # ===-----------------------------------------------------------------------===#
 
 
 @always_inline
-fn _simd_max[
-    dtype: DType,
-    simd_width: Int,
-](x: SIMD[dtype, simd_width]) -> Scalar[dtype]:
-    """Computes the max element in a simd vector and is
-    compatible with the function signature expected by reduce_fn in reduce."""
-    return x.reduce_max()
-
-
-@always_inline
-@parameter
-fn _simd_max_elementwise[
-    acc_type: DType,
-    dtype: DType,
-    simd_width: Int,
-](x: SIMD[acc_type, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
-    acc_type, simd_width
-]:
-    """Computes the elementwise max of each element in a
-    simd vector and is compatible with the function signature expected by map_fn
-    in reduce."""
-    return _max(x, y.cast[acc_type]())
-
-
-fn max[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
-    """Computes the max element in a buffer.
-
-    Parameters:
-        dtype: The dtype of the input.
-
-    Args:
-        src: The buffer.
-
-    Returns:
-        The maximum of the buffer elements.
-
-    Raises:
-        If the operation fails.
-    """
-    return reduce[_simd_max_elementwise](src, Scalar[dtype].MIN)
-
-
-@always_inline
-fn max[
+def max[
     dtype: DType,
     input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
@@ -1058,21 +345,21 @@ fn max[
 
     @always_inline
     @parameter
-    fn input_fn_wrapper[
+    def input_fn_wrapper[
         _dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
         return input_fn[width, rank](idx)._refine[_dtype]()
 
     @always_inline
     @parameter
-    fn output_fn_wrapper[
+    def output_fn_wrapper[
         _dtype: DType, width: Int, rank: Int
     ](indices: IndexList[rank], value: SIMD[_dtype, width]):
         output_fn[width, rank](indices, value._refine[dtype]())
 
     @always_inline
     @parameter
-    fn reduce_impl[
+    def reduce_impl[
         ty: DType, width: Int
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return _max(v1, v2)
@@ -1086,53 +373,8 @@ fn max[
     ](input_shape, Scalar[dtype].MIN, reduce_dim, context=context)
 
 
-# ===-----------------------------------------------------------------------===#
-# min
-# ===-----------------------------------------------------------------------===#
-
-
 @always_inline
-fn _simd_min[
-    dtype: DType, simd_width: Int
-](x: SIMD[dtype, simd_width]) -> Scalar[dtype]:
-    """Computes the min element in a simd vector and is
-    compatible with the function signature expected by reduce_fn in reduce."""
-    return x.reduce_min()
-
-
-@always_inline
-@parameter
-fn _simd_min_elementwise[
-    acc_type: DType, dtype: DType, simd_width: Int
-](x: SIMD[acc_type, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
-    acc_type, simd_width
-]:
-    """Computes the elementwise min of each element in a
-    simd vector and is compatible with the function signature expected by map_fn
-    in reduce."""
-    return _min(x, y.cast[acc_type]())
-
-
-fn min[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
-    """Computes the min element in a buffer.
-
-    Parameters:
-        dtype: The dtype of the input.
-
-    Args:
-        src: The buffer.
-
-    Returns:
-        The minimum of the buffer elements.
-
-    Raises:
-        If the operation fails.
-    """
-    return reduce[_simd_min_elementwise](src, Scalar[dtype].MAX)
-
-
-@always_inline
-fn min[
+def min[
     dtype: DType,
     input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
@@ -1173,21 +415,21 @@ fn min[
 
     @always_inline
     @parameter
-    fn input_fn_wrapper[
+    def input_fn_wrapper[
         _dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
         return input_fn[width, rank](idx)._refine[_dtype]()
 
     @always_inline
     @parameter
-    fn output_fn_wrapper[
+    def output_fn_wrapper[
         _dtype: DType, width: Int, rank: Int
     ](indices: IndexList[rank], value: SIMD[_dtype, width]):
         output_fn[width, rank](indices, value._refine[dtype]())
 
     @always_inline
     @parameter
-    fn reduce_impl[
+    def reduce_impl[
         ty: DType, width: Int
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return _min(v1, v2)
@@ -1201,63 +443,8 @@ fn min[
     ](input_shape, Scalar[dtype].MAX, reduce_dim, context=context)
 
 
-# ===-----------------------------------------------------------------------===#
-# sum
-# ===-----------------------------------------------------------------------===#
-
-
 @always_inline
-fn _simd_sum[
-    dtype: DType, simd_width: Int
-](x: SIMD[dtype, simd_width]) -> Scalar[dtype]:
-    """Computes the sum of elements in a simd vector and is
-    compatible with the function signature expected by reduce_fn in reduce."""
-    return x.reduce_add()
-
-
-@always_inline
-@parameter
-fn _simd_sum_elementwise[
-    acc_type: DType, dtype: DType, simd_width: Int
-](x: SIMD[acc_type, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
-    acc_type, simd_width
-]:
-    """Computes the elementwise sum of each element in a
-    simd vector and is compatible with the function signature expected by map_fn
-    in reduce."""
-    return x + y.cast[acc_type]()
-
-
-fn sum[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
-    """Computes the sum of buffer elements.
-
-    Parameters:
-        dtype: The dtype of the input.
-
-    Args:
-        src: The buffer.
-
-    Returns:
-        The sum of the buffer elements.
-
-    Raises:
-        If the operation fails.
-    """
-
-    @parameter
-    @always_inline
-    fn input_fn_1d[
-        dtype_: DType, width: Int
-    ](idx: Int) capturing -> SIMD[dtype_, width]:
-        return rebind[SIMD[dtype_, width]](
-            src.unsafe_ptr().load[width=width](idx)
-        )
-
-    return sum[dtype, input_fn_1d](len(src))
-
-
-@always_inline
-fn sum[
+def sum[
     dtype: DType,
     input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
@@ -1298,21 +485,21 @@ fn sum[
 
     @always_inline
     @parameter
-    fn input_fn_wrapper[
+    def input_fn_wrapper[
         _dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
         return input_fn[width, rank](idx)._refine[_dtype]()
 
     @always_inline
     @parameter
-    fn output_fn_wrapper[
+    def output_fn_wrapper[
         _dtype: DType, width: Int, rank: Int
     ](indices: IndexList[rank], value: SIMD[_dtype, width]):
         output_fn[width, rank](indices, value._refine[dtype]())
 
     @always_inline
     @parameter
-    fn reduce_impl[
+    def reduce_impl[
         ty: DType, width: Int
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 + v2
@@ -1326,119 +513,8 @@ fn sum[
     ](input_shape, Scalar[dtype](0), reduce_dim, context=context)
 
 
-fn sum[
-    dtype: DType,
-    input_fn_1d: fn[dtype_: DType, width: Int](idx: Int) capturing -> SIMD[
-        dtype_, width
-    ],
-](length: Int) raises -> Scalar[dtype]:
-    """
-    Computes the sum of a 1D array using a provided input function.
-
-    This function performs a reduction (sum) over a 1-dimensional array of the specified length and data type.
-    The input values are provided by the `input_fn_1d` function, which takes an index and returns a SIMD vector
-    of the specified width and data type. The reduction is performed using a single thread for deterministic results.
-
-    Parameters:
-        dtype: The data type of the elements to sum.
-        input_fn_1d: A function that takes a data type, SIMD width, and index, and returns a SIMD vector of input values.
-
-    Args:
-        length: The number of elements in the 1D array.
-
-    Returns:
-        The sum of all elements as a scalar of the specified data type.
-
-    Raises:
-        Any exception raised by the input function or reduction process.
-    """
-
-    @always_inline
-    @parameter
-    fn input_fn_nd[
-        _dtype: DType, width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
-        return input_fn_1d[dtype, width](idx[0])._refine[_dtype]()
-
-    var out: Scalar[dtype] = 0
-
-    @always_inline
-    @parameter
-    fn output_fn[
-        _dtype: DType, width: Int, rank: Int
-    ](indices: IndexList[rank], value: SIMD[_dtype, width]):
-        out = value._refine[dtype, 1]()
-
-    @always_inline
-    @parameter
-    fn reduce_fn_wrapper[
-        dtype: DType, width: Int
-    ](acc: SIMD[dtype, width], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return acc + val
-
-    var shape = IndexList[1](length)
-
-    _reduce_generator[
-        input_fn_nd,
-        output_fn,
-        reduce_fn_wrapper,
-        single_thread_blocking_override=True,
-    ](
-        shape,
-        init=Scalar[dtype](0),
-        reduce_dim=0,
-    )
-
-    return out
-
-
-# ===-----------------------------------------------------------------------===#
-# product
-# ===-----------------------------------------------------------------------===#
-
-
 @always_inline
-fn _simd_product[
-    dtype: DType, simd_width: Int
-](x: SIMD[dtype, simd_width]) -> Scalar[dtype]:
-    """Computes the product of elements in a simd vector and is
-    compatible with the function signature expected by reduce_fn in reduce."""
-    return x.reduce_mul()
-
-
-@always_inline
-@parameter
-fn _simd_product_elementwise[
-    acc_type: DType, dtype: DType, simd_width: Int
-](x: SIMD[acc_type, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
-    acc_type, simd_width
-]:
-    """Computes the elementwise product of each element in a
-    simd vector and is compatible with the function signature expected by map_fn
-    in reduce."""
-    return x * y.cast[acc_type]()
-
-
-fn product[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
-    """Computes the product of the buffer elements.
-
-    Parameters:
-        dtype: The dtype of the input.
-
-    Args:
-        src: The buffer.
-
-    Returns:
-        The product of the buffer elements.
-
-    Raises:
-        If the operation fails.
-    """
-    return reduce[_simd_product_elementwise](src, Scalar[dtype](1))
-
-
-@always_inline
-fn product[
+def product[
     dtype: DType,
     input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
@@ -1478,21 +554,21 @@ fn product[
 
     @always_inline
     @parameter
-    fn input_fn_wrapper[
+    def input_fn_wrapper[
         _dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
         return input_fn[width, rank](idx)._refine[_dtype]()
 
     @always_inline
     @parameter
-    fn output_fn_wrapper[
+    def output_fn_wrapper[
         _dtype: DType, width: Int, rank: Int
     ](indices: IndexList[rank], value: SIMD[_dtype, width]):
         output_fn[width, rank](indices, value._refine[dtype]())
 
     @always_inline
     @parameter
-    fn reduce_impl[
+    def reduce_impl[
         ty: DType, width: Int
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 * v2
@@ -1506,43 +582,8 @@ fn product[
     ](input_shape, Scalar[dtype](1), reduce_dim, context=context)
 
 
-# ===-----------------------------------------------------------------------===#
-# mean
-# ===-----------------------------------------------------------------------===#
-
-
-fn mean[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
-    """Computes the mean value of the elements in a buffer.
-
-    Parameters:
-        dtype: The dtype of the input.
-
-    Args:
-        src: The buffer of elements for which the mean is computed.
-
-    Returns:
-        The mean value of the elements in the given buffer.
-
-    Raises:
-        If the operation fails.
-    """
-
-    assert len(src) != 0, "input must not be empty"
-
-    @parameter
-    @always_inline
-    fn input_fn_1d[
-        dtype_: DType, width: Int
-    ](idx: Int) capturing -> SIMD[dtype_, width]:
-        return rebind[SIMD[dtype_, width]](
-            src.unsafe_ptr().load[width=width](idx)
-        )
-
-    return mean[dtype, input_fn_1d](len(src))
-
-
 @always_inline
-fn mean[
+def mean[
     dtype: DType,
     input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
@@ -1585,7 +626,7 @@ fn mean[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return ";".join(
             Span(
                 [
@@ -1603,14 +644,14 @@ fn mean[
 
         @always_inline
         @parameter
-        fn reduce_impl[
+        def reduce_impl[
             ty: DType, width: Int
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 + v2
 
         @always_inline
         @parameter
-        fn input_fn_wrapper[
+        def input_fn_wrapper[
             _dtype: DType, width: Int, rank: Int
         ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
             return input_fn[width, rank](idx)._refine[_dtype, width]()
@@ -1623,7 +664,7 @@ fn mean[
             @always_inline
             @__copy_capture(reciprocal)
             @parameter
-            fn wrapped_output_mul[
+            def wrapped_output_mul[
                 _dtype: DType, width: Int, rank: Int
             ](indices: IndexList[rank], value: SIMD[_dtype, width]):
                 var mean_val = value * reciprocal.cast[_dtype]()
@@ -1651,7 +692,7 @@ fn mean[
             @always_inline
             @__copy_capture(dim_size)
             @parameter
-            fn wrapped_output_div[
+            def wrapped_output_div[
                 _dtype: DType, width: Int, rank: Int
             ](indices: IndexList[rank], value: SIMD[_dtype, width]):
                 var mean_val = value / SIMD[_dtype, width](dim_size)
@@ -1673,7 +714,564 @@ fn mean[
             )
 
 
-fn mean[
+# ===-----------------------------------------------------------------------===#
+# CPU-only public API functions
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+@parameter
+def map_reduce[
+    simd_width: Int,
+    dtype: DType,
+    acc_type: DType,
+    origins_gen: OriginSet,
+    input_gen_fn: fn[dtype: DType, width: Int](Int) capturing[
+        origins_gen
+    ] -> SIMD[dtype, width],
+    origins_vec: OriginSet,
+    reduce_vec_to_vec_fn: fn[acc_type: DType, dtype: DType, width: Int](
+        SIMD[acc_type, width], SIMD[dtype, width]
+    ) capturing[origins_vec] -> SIMD[acc_type, width],
+    reduce_vec_to_scalar_fn: fn[dtype: DType, width: Int](
+        SIMD[dtype, width]
+    ) -> Scalar[dtype],
+](dst: Span[mut=True, Scalar[dtype], _], init: Scalar[acc_type]) -> Scalar[
+    acc_type
+]:
+    """Stores the result of calling input_gen_fn in dst and simultaneously
+    reduce the result using a custom reduction function.
+
+    Parameters:
+        simd_width: The vector width for the computation.
+        dtype: The buffer elements dtype.
+        acc_type: The dtype of the reduction accumulator.
+        origins_gen: The OriginSet of captured arguments by the input_gen_fn.
+        input_gen_fn: A function that generates inputs to reduce.
+        origins_vec: The OriginSet of captured arguments by the reduce_vec_to_vec_fn.
+        reduce_vec_to_vec_fn: A mapping function. This function is used to
+          combine (accumulate) two chunks of input data: e.g. we load two
+          `8xfloat32` vectors of elements and need to reduce them into a single
+          `8xfloat32` vector.
+        reduce_vec_to_scalar_fn: A reduction function. This function is used to
+          reduce a vector to a scalar. E.g. when we got `8xfloat32` vector and want
+          to reduce it to an `float32` scalar.
+
+    Args:
+        dst: The output buffer.
+        init: The initial value to use in accumulator.
+
+    Returns:
+        The computed reduction value.
+    """
+
+    @always_inline
+    @parameter
+    def output_fn[
+        _dtype: DType, width: Int, rank: Int
+    ](idx: Int, val: SIMD[_dtype, width]):
+        dst.unsafe_ptr().store(idx, rebind[SIMD[dtype, width]](val))
+
+    return map_reduce[
+        simd_width,
+        dtype,
+        acc_type,
+        origins_gen,
+        input_gen_fn,
+        origins_vec,
+        reduce_vec_to_vec_fn,
+        reduce_vec_to_scalar_fn,
+        output_fn,
+    ](len(dst), init)
+
+
+@always_inline
+@parameter
+def map_reduce[
+    simd_width: Int,
+    dtype: DType,
+    acc_type: DType,
+    origins_gen: OriginSet,
+    input_gen_fn: fn[dtype: DType, width: Int](Int) capturing[
+        origins_gen
+    ] -> SIMD[dtype, width],
+    origins_vec: OriginSet,
+    reduce_vec_to_vec_fn: fn[acc_type: DType, dtype: DType, width: Int](
+        SIMD[acc_type, width], SIMD[dtype, width]
+    ) capturing[origins_vec] -> SIMD[acc_type, width],
+    reduce_vec_to_scalar_fn: fn[dtype: DType, width: Int](
+        SIMD[dtype, width]
+    ) -> Scalar[dtype],
+    output_fn: fn[dtype_: DType, width: Int, alignment: Int](
+        idx: Int, val: SIMD[dtype_, width]
+    ) capturing -> None,
+](length: Int, init: Scalar[acc_type]) -> Scalar[acc_type]:
+    """Performs a vectorized map-reduce operation over a sequence.
+
+    Parameters:
+        simd_width: The SIMD vector width to use.
+        dtype: The data type of the input elements.
+        acc_type: The data type of the accumulator.
+        origins_gen: Origin set for the input generation function.
+        input_gen_fn: Function that generates input values at each index.
+        origins_vec: Origin set for the reduction function.
+        reduce_vec_to_vec_fn: Function that reduces a vector into the accumulator.
+        reduce_vec_to_scalar_fn: Function that reduces a final vector to a scalar.
+        output_fn: Function to output intermediate results.
+
+    Args:
+        length: The number of elements to process.
+        init: The initial accumulator value.
+
+    Returns:
+        The final reduced scalar value.
+    """
+    comptime unroll_factor = 8  # TODO: search
+    # TODO: explicitly unroll like vectorize_unroll does.
+    comptime unrolled_simd_width = simd_width * unroll_factor
+    var unrolled_vector_end = align_down(length, unrolled_simd_width)
+    var vector_end = align_down(length, simd_width)
+
+    var acc_unrolled_simd = SIMD[acc_type, unrolled_simd_width](init)
+    for i in range(0, unrolled_vector_end, unrolled_simd_width):
+        var val_simd = input_gen_fn[dtype, unrolled_simd_width](i)
+        output_fn[dtype, unrolled_simd_width, align_of[dtype]()](i, val_simd)
+        acc_unrolled_simd = reduce_vec_to_vec_fn(acc_unrolled_simd, val_simd)
+
+    var acc_simd = SIMD[acc_type, simd_width](init)
+    for i in range(unrolled_vector_end, vector_end, simd_width):
+        var val_simd = input_gen_fn[dtype, simd_width](i)
+        output_fn[dtype, simd_width, align_of[dtype]()](i, val_simd)
+        acc_simd = reduce_vec_to_vec_fn(acc_simd, val_simd)
+
+    var acc = reduce_vec_to_scalar_fn[acc_type, unrolled_simd_width](
+        acc_unrolled_simd
+    )
+    acc = reduce_vec_to_vec_fn(acc, reduce_vec_to_scalar_fn(acc_simd))
+    for i in range(vector_end, length):
+        var val = input_gen_fn[dtype, 1](i)
+        output_fn[dtype, 1, align_of[dtype]()](i, val)
+        acc = reduce_vec_to_vec_fn(acc, val)
+    return acc[0]
+
+
+# ===-----------------------------------------------------------------------===#
+# reduce
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+@parameter
+def reduce[
+    reduce_fn: fn[acc_type: DType, dtype: DType, width: Int](
+        SIMD[acc_type, width], SIMD[dtype, width]
+    ) capturing[_] -> SIMD[acc_type, width],
+    dtype: DType,
+](src: Span[Scalar[dtype], _], init: Scalar[dtype]) raises -> Scalar[dtype]:
+    """Computes a custom reduction of buffer elements.
+
+    Parameters:
+        reduce_fn: The lambda implementing the reduction.
+        dtype: The dtype of the input.
+
+    Args:
+        src: The input buffer.
+        init: The initial value to use in accumulator.
+
+    Returns:
+        The computed reduction value.
+
+    Raises:
+        If the operation fails.
+    """
+
+    @always_inline
+    @parameter
+    def input_fn[
+        _dtype: DType, width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
+        return src.unsafe_ptr().load[width=width](idx[0])._refine[_dtype]()
+
+    var out: Scalar[init.dtype] = 0
+
+    @always_inline
+    @parameter
+    def output_fn[
+        _dtype: DType, width: Int, rank: Int
+    ](indices: IndexList[rank], value: SIMD[_dtype, width]):
+        out = value._refine[init.dtype, 1]()
+
+    @always_inline
+    @parameter
+    def reduce_fn_wrapper[
+        _dtype: DType, width: Int
+    ](acc: SIMD[_dtype, width], val: SIMD[_dtype, width]) -> SIMD[
+        _dtype, width
+    ]:
+        return reduce_fn(acc, val)
+
+    var shape = Index(len(src))
+
+    _reduce_generator[
+        input_fn,
+        output_fn,
+        reduce_fn_wrapper,
+        single_thread_blocking_override=True,
+    ](shape, init=init, reduce_dim=0)
+
+    return out
+
+
+@always_inline
+@parameter
+def reduce_boolean[
+    reduce_fn: fn[dtype: DType, width: Int](SIMD[dtype, width]) capturing[
+        _
+    ] -> Bool,
+    continue_fn: fn(Bool) capturing[_] -> Bool,
+    dtype: DType,
+](src: Span[Scalar[dtype], _], init: Bool) -> Bool:
+    """Computes a bool reduction of buffer elements. The reduction will early
+    exit if the `continue_fn` returns False.
+
+    Parameters:
+        reduce_fn: A boolean reduction function. This function is used to reduce
+          a vector to a scalar. E.g. when we got `8xfloat32` vector and want to
+          reduce it to a `bool`.
+        continue_fn: A function to indicate whether we want to continue
+          processing the rest of the iterations. This takes the result of the
+          reduce_fn and returns True to continue processing and False to early
+          exit.
+        dtype: The dtype of the input.
+
+    Args:
+        src: The input buffer.
+        init: The initial value to use.
+
+    Returns:
+        The computed reduction value.
+    """
+    comptime simd_width = simd_width_of[dtype]()
+    comptime unroll_factor = 8  # TODO: search
+    # TODO: explicitly unroll like vectorize_unroll does.
+    comptime unrolled_simd_width = simd_width * unroll_factor
+
+    var length = len(src)
+    var unrolled_vector_end = align_down(length, unrolled_simd_width)
+    var vector_end = align_down(length, simd_width)
+    var curr = init
+    for i in range(0, unrolled_vector_end, unrolled_simd_width):
+        curr = reduce_fn(src.unsafe_ptr().load[width=unrolled_simd_width](i))
+        if not continue_fn(curr):
+            return curr
+
+    for i in range(unrolled_vector_end, vector_end, simd_width):
+        curr = reduce_fn(src.unsafe_ptr().load[width=simd_width](i))
+        if not continue_fn(curr):
+            return curr
+
+    for i in range(vector_end, length):
+        curr = reduce_fn(src[i])
+        if not continue_fn(curr):
+            return curr
+    return curr
+
+
+# ===-----------------------------------------------------------------------===#
+# max (Span overload)
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def _simd_max[
+    dtype: DType,
+    simd_width: Int,
+](x: SIMD[dtype, simd_width]) -> Scalar[dtype]:
+    """Computes the max element in a simd vector and is
+    compatible with the function signature expected by reduce_fn in reduce."""
+    return x.reduce_max()
+
+
+@always_inline
+@parameter
+def _simd_max_elementwise[
+    acc_type: DType,
+    dtype: DType,
+    simd_width: Int,
+](x: SIMD[acc_type, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
+    acc_type, simd_width
+]:
+    """Computes the elementwise max of each element in a
+    simd vector and is compatible with the function signature expected by map_fn
+    in reduce."""
+    return _max(x, y.cast[acc_type]())
+
+
+def max[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
+    """Computes the max element in a buffer.
+
+    Parameters:
+        dtype: The dtype of the input.
+
+    Args:
+        src: The buffer.
+
+    Returns:
+        The maximum of the buffer elements.
+
+    Raises:
+        If the operation fails.
+    """
+    return reduce[_simd_max_elementwise](src, Scalar[dtype].MIN)
+
+
+# ===-----------------------------------------------------------------------===#
+# min (Span overload)
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def _simd_min[
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> Scalar[dtype]:
+    """Computes the min element in a simd vector and is
+    compatible with the function signature expected by reduce_fn in reduce."""
+    return x.reduce_min()
+
+
+@always_inline
+@parameter
+def _simd_min_elementwise[
+    acc_type: DType, dtype: DType, simd_width: Int
+](x: SIMD[acc_type, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
+    acc_type, simd_width
+]:
+    """Computes the elementwise min of each element in a
+    simd vector and is compatible with the function signature expected by map_fn
+    in reduce."""
+    return _min(x, y.cast[acc_type]())
+
+
+def min[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
+    """Computes the min element in a buffer.
+
+    Parameters:
+        dtype: The dtype of the input.
+
+    Args:
+        src: The buffer.
+
+    Returns:
+        The minimum of the buffer elements.
+
+    Raises:
+        If the operation fails.
+    """
+    return reduce[_simd_min_elementwise](src, Scalar[dtype].MAX)
+
+
+# ===-----------------------------------------------------------------------===#
+# sum (Span and 1d overloads)
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def _simd_sum[
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> Scalar[dtype]:
+    """Computes the sum of elements in a simd vector and is
+    compatible with the function signature expected by reduce_fn in reduce."""
+    return x.reduce_add()
+
+
+@always_inline
+@parameter
+def _simd_sum_elementwise[
+    acc_type: DType, dtype: DType, simd_width: Int
+](x: SIMD[acc_type, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
+    acc_type, simd_width
+]:
+    """Computes the elementwise sum of each element in a
+    simd vector and is compatible with the function signature expected by map_fn
+    in reduce."""
+    return x + y.cast[acc_type]()
+
+
+def sum[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
+    """Computes the sum of buffer elements.
+
+    Parameters:
+        dtype: The dtype of the input.
+
+    Args:
+        src: The buffer.
+
+    Returns:
+        The sum of the buffer elements.
+
+    Raises:
+        If the operation fails.
+    """
+
+    @parameter
+    @always_inline
+    def input_fn_1d[
+        dtype_: DType, width: Int
+    ](idx: Int) capturing -> SIMD[dtype_, width]:
+        return rebind[SIMD[dtype_, width]](
+            src.unsafe_ptr().load[width=width](idx)
+        )
+
+    return sum[dtype, input_fn_1d](len(src))
+
+
+def sum[
+    dtype: DType,
+    input_fn_1d: fn[dtype_: DType, width: Int](idx: Int) capturing -> SIMD[
+        dtype_, width
+    ],
+](length: Int) raises -> Scalar[dtype]:
+    """
+    Computes the sum of a 1D array using a provided input function.
+
+    This function performs a reduction (sum) over a 1-dimensional array of the specified length and data type.
+    The input values are provided by the `input_fn_1d` function, which takes an index and returns a SIMD vector
+    of the specified width and data type. The reduction is performed using a single thread for deterministic results.
+
+    Parameters:
+        dtype: The data type of the elements to sum.
+        input_fn_1d: A function that takes a data type, SIMD width, and index, and returns a SIMD vector of input values.
+
+    Args:
+        length: The number of elements in the 1D array.
+
+    Returns:
+        The sum of all elements as a scalar of the specified data type.
+
+    Raises:
+        Any exception raised by the input function or reduction process.
+    """
+
+    @always_inline
+    @parameter
+    def input_fn_nd[
+        _dtype: DType, width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
+        return input_fn_1d[dtype, width](idx[0])._refine[_dtype]()
+
+    var out: Scalar[dtype] = 0
+
+    @always_inline
+    @parameter
+    def output_fn[
+        _dtype: DType, width: Int, rank: Int
+    ](indices: IndexList[rank], value: SIMD[_dtype, width]):
+        out = value._refine[dtype, 1]()
+
+    @always_inline
+    @parameter
+    def reduce_fn_wrapper[
+        dtype: DType, width: Int
+    ](acc: SIMD[dtype, width], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return acc + val
+
+    var shape = IndexList[1](length)
+
+    _reduce_generator[
+        input_fn_nd,
+        output_fn,
+        reduce_fn_wrapper,
+        single_thread_blocking_override=True,
+    ](
+        shape,
+        init=Scalar[dtype](0),
+        reduce_dim=0,
+    )
+
+    return out
+
+
+# ===-----------------------------------------------------------------------===#
+# product (Span overload)
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def _simd_product[
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> Scalar[dtype]:
+    """Computes the product of elements in a simd vector and is
+    compatible with the function signature expected by reduce_fn in reduce."""
+    return x.reduce_mul()
+
+
+@always_inline
+@parameter
+def _simd_product_elementwise[
+    acc_type: DType, dtype: DType, simd_width: Int
+](x: SIMD[acc_type, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
+    acc_type, simd_width
+]:
+    """Computes the elementwise product of each element in a
+    simd vector and is compatible with the function signature expected by map_fn
+    in reduce."""
+    return x * y.cast[acc_type]()
+
+
+def product[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
+    """Computes the product of the buffer elements.
+
+    Parameters:
+        dtype: The dtype of the input.
+
+    Args:
+        src: The buffer.
+
+    Returns:
+        The product of the buffer elements.
+
+    Raises:
+        If the operation fails.
+    """
+    return reduce[_simd_product_elementwise](src, Scalar[dtype](1))
+
+
+# ===-----------------------------------------------------------------------===#
+# mean (Span and 1d overloads)
+# ===-----------------------------------------------------------------------===#
+
+
+def mean[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
+    """Computes the mean value of the elements in a buffer.
+
+    Parameters:
+        dtype: The dtype of the input.
+
+    Args:
+        src: The buffer of elements for which the mean is computed.
+
+    Returns:
+        The mean value of the elements in the given buffer.
+
+    Raises:
+        If the operation fails.
+    """
+
+    assert len(src) != 0, "input must not be empty"
+
+    @parameter
+    @always_inline
+    def input_fn_1d[
+        dtype_: DType, width: Int
+    ](idx: Int) capturing -> SIMD[dtype_, width]:
+        return rebind[SIMD[dtype_, width]](
+            src.unsafe_ptr().load[width=width](idx)
+        )
+
+    return mean[dtype, input_fn_1d](len(src))
+
+
+def mean[
     dtype: DType,
     input_fn_1d: fn[dtype_: DType, width: Int](idx: Int) capturing -> SIMD[
         dtype_, width
@@ -1707,7 +1305,7 @@ fn mean[
 # ===-----------------------------------------------------------------------===#
 
 
-fn variance[
+def variance[
     dtype: DType
 ](
     src: Span[Scalar[dtype], _], mean_value: Scalar[dtype], correction: Int = 1
@@ -1740,7 +1338,7 @@ fn variance[
     @parameter
     @always_inline
     @__copy_capture(src)
-    fn input_fn_1d[
+    def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
         return rebind[SIMD[dtype_, width]](
@@ -1750,7 +1348,7 @@ fn variance[
     return variance[dtype, input_fn_1d](len(src), mean_value, correction)
 
 
-fn variance[
+def variance[
     dtype: DType,
     input_fn_1d: fn[dtype_: DType, width: Int](idx: Int) capturing -> SIMD[
         dtype_, width
@@ -1789,7 +1387,7 @@ fn variance[
 
     @always_inline
     @parameter
-    fn input_fn_nd[
+    def input_fn_nd[
         _dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
         var mean_simd = SIMD[mean_value.dtype, width](mean_value).cast[_dtype]()
@@ -1801,14 +1399,14 @@ fn variance[
 
     @always_inline
     @parameter
-    fn output_fn[
+    def output_fn[
         _dtype: DType, width: Int, rank: Int
     ](indices: IndexList[rank], value: SIMD[_dtype, width]):
         out = value._refine[dtype, 1]()
 
     @always_inline
     @parameter
-    fn reduce_fn_wrapper[
+    def reduce_fn_wrapper[
         dtype: DType, width: Int
     ](acc: SIMD[dtype, width], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return acc + val
@@ -1829,7 +1427,7 @@ fn variance[
     return out / Scalar[dtype](length - correction)
 
 
-fn variance[
+def variance[
     dtype: DType
 ](src: Span[Scalar[dtype], _], correction: Int = 1) raises -> Scalar[dtype]:
     """Computes the variance value of the elements in a buffer.
@@ -1854,7 +1452,7 @@ fn variance[
 
     @always_inline
     @parameter
-    fn input_fn_1d[
+    def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
         return rebind[SIMD[dtype_, width]](
@@ -1864,7 +1462,7 @@ fn variance[
     return variance[dtype, input_fn_1d](len(src), correction)
 
 
-fn variance[
+def variance[
     dtype: DType,
     input_fn_1d: fn[dtype_: DType, width: Int](idx: Int) capturing -> SIMD[
         dtype_, width
@@ -1898,7 +1496,7 @@ fn variance[
 
 
 @always_inline
-fn _cumsum_small[
+def _cumsum_small[
     dtype: DType
 ](dst: Span[mut=True, Scalar[dtype], _], src: Span[Scalar[dtype], _]):
     dst[0] = src[0]
@@ -1906,7 +1504,7 @@ fn _cumsum_small[
         dst[i] = src[i] + dst[i - 1]
 
 
-fn cumsum[
+def cumsum[
     dtype: DType
 ](dst: Span[mut=True, Scalar[dtype], _], src: Span[Scalar[dtype], _]):
     """Computes the cumulative sum of all elements in a buffer.

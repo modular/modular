@@ -22,7 +22,7 @@ from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 
 
-fn compute_rms[
+def compute_rms[
     dtype: DType
 ](data: TileTensor[dtype, ...], size: Int, eps: Scalar[dtype]) -> Scalar[dtype]:
     comptime assert data.flat_rank == 1, "data.rank must be 1"
@@ -34,13 +34,13 @@ fn compute_rms[
         var val = data[i][0].cast[accum_type]()
         sum_of_squares += val * val
     var result = sqrt(
-        (sum_of_squares / Scalar[accum_type](data.numel()))
+        (sum_of_squares / Scalar[accum_type](data.num_elements()))
         + eps.cast[accum_type]()
     )
     return result.cast[dtype]()
 
 
-fn run_rms_norm_gpu[
+def run_rms_norm_gpu[
     rank: Int, //, dtype: DType, *, static_cols: Int = -1
 ](ctx: DeviceContext, shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     print("== run_rms_norm_gpu")
@@ -73,7 +73,7 @@ fn run_rms_norm_gpu[
     @always_inline
     @__copy_capture(data_buf)
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
@@ -82,7 +82,7 @@ fn run_rms_norm_gpu[
     @always_inline
     @__copy_capture(data_buf)
     @parameter
-    fn identity_output_fn[
+    def identity_output_fn[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var idx = data_buf.layout(Coord(coords))

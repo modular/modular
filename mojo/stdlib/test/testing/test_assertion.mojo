@@ -224,13 +224,13 @@ def test_assert_equal_stringslice() raises:
     str2 = "This is Mojo"
     str3 = StaticString("This is mojo")
 
-    fn _build(value: StaticString, start: Int, end: Int) -> StaticString:
+    def _build(value: StaticString, start: Int, end: Int) -> StaticString:
         return StaticString(
             ptr=value.unsafe_ptr() + start,
             length=end - start,
         )
 
-    fn _build(
+    def _build(
         read value: String, start: Int, end: Int
     ) -> StringSlice[origin_of(value)]:
         return StringSlice[origin_of(value)](

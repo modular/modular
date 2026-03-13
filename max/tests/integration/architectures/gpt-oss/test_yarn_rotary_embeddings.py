@@ -18,6 +18,7 @@ from max.driver import Accelerator, Buffer
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph
 from max.nn import YarnRotaryEmbedding, YarnScalingParams
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from transformers.models.gpt_oss.configuration_gpt_oss import (
     GptOssConfig as PytorchGptOssConfig,
 )
@@ -66,7 +67,7 @@ def generate_max_yarn_rope_outputs(
     rope = YarnRotaryEmbedding(
         dim=config.hidden_size,
         n_heads=config.num_attention_heads,
-        theta=config.rope_theta,
+        theta=get_rope_theta(config),
         max_seq_len=config.max_position_embeddings,
         head_dim=config.head_dim,
         interleaved=False,

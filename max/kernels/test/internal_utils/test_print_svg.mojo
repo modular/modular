@@ -18,7 +18,7 @@ from layout._print_svg import print_svg
 from layout.swizzle import Swizzle
 
 
-fn test_svg_nvidia_shape() raises:
+def test_svg_nvidia_shape() raises:
     # nvidia tensor core a matrix fragment
     comptime layout = Layout.row_major(16, 16)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
@@ -33,11 +33,11 @@ fn test_svg_nvidia_shape() raises:
     for i in range(32):
         tensor_list.append(
             tensor.vectorize[1, 2]()
-            .distribute[Layout.row_major(8, 4)](UInt(i))
+            .distribute[Layout.row_major(8, 4)](i)
             .get_immutable()
         )
 
-    fn color_map(t: Int, v: Int) -> String:
+    def color_map(t: Int, v: Int) -> String:
         colors = [
             StaticString("red"),
             StaticString("blue"),
@@ -61,7 +61,7 @@ fn test_svg_nvidia_shape() raises:
     )
 
 
-fn test_svg_nvidia_tile() raises:
+def test_svg_nvidia_tile() raises:
     # nvidia tensor core a matrix fragment
     comptime layout = Layout.row_major(16, 16)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
@@ -74,7 +74,7 @@ fn test_svg_nvidia_tile() raises:
     )
 
 
-fn test_svg_nvidia_tile_memory_bank() raises:
+def test_svg_nvidia_tile_memory_bank() raises:
     # nvidia tensor core a matrix fragment
     comptime layout = Layout.row_major(16, 16)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
@@ -87,7 +87,7 @@ fn test_svg_nvidia_tile_memory_bank() raises:
     )
 
 
-fn test_svg_amd_shape_a() raises:
+def test_svg_amd_shape_a() raises:
     # amd tensor core a matrix fragment
     comptime layout = Layout.row_major(16, 16)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
@@ -100,7 +100,7 @@ fn test_svg_amd_shape_a() raises:
     )
 
 
-fn test_svg_amd_shape_b() raises:
+def test_svg_amd_shape_b() raises:
     # amd tensor core a matrix fragment
     comptime layout = Layout.row_major(16, 16)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
@@ -113,7 +113,7 @@ fn test_svg_amd_shape_b() raises:
     )
 
 
-fn test_svg_amd_shape_d() raises:
+def test_svg_amd_shape_d() raises:
     # amd tensor core a matrix fragment
     comptime layout = Layout.row_major(16, 16)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
@@ -131,7 +131,7 @@ fn test_svg_amd_shape_d() raises:
     )
 
 
-fn test_svg_wgmma_shape() raises:
+def test_svg_wgmma_shape() raises:
     # wgmma tensor core a matrix fragment
     comptime layout = Layout(
         IntTuple(IntTuple(8, 8), IntTuple(8, 2)),
@@ -147,7 +147,7 @@ fn test_svg_wgmma_shape() raises:
         Layout.col_major(8, 4)
     ](3)
 
-    fn color_map(t: Int, v: Int) -> String:
+    def color_map(t: Int, v: Int) -> String:
         colors = [
             StaticString("red"),
             StaticString("blue"),
@@ -171,7 +171,7 @@ fn test_svg_wgmma_shape() raises:
     )
 
 
-fn test_svg_swizzle() raises:
+def test_svg_swizzle() raises:
     comptime layout = Layout.row_major(8, 8)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
     comptime swizzle = Swizzle(3, 0, 3)
@@ -179,7 +179,7 @@ fn test_svg_swizzle() raises:
 
     # the figure generated here is identical to
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/async-warpgroup-smem-layout-128B-k.png
-    fn color_map(t: Int, v: Int) -> String:
+    def color_map(t: Int, v: Int) -> String:
         var colors = [
             StaticString("blue"),
             StaticString("green"),

@@ -13,13 +13,14 @@
 
 
 from std.algorithm.functional import elementwise
-from buffer import DimList, NDBuffer
 from std.gpu import *
 from std.gpu.host import DeviceContext
 from std.testing import *
 
 from std.utils.fast_div import FastDiv
 from std.utils.index import Index, IndexList
+
+from layout import TileTensor, Idx, row_major
 
 
 def test_fast_div() raises:
@@ -30,7 +31,7 @@ def test_fast_div() raises:
         assert_equal(
             Scalar[fast_div.uint_type](i) / fast_div,
             Scalar[fast_div.uint_type](i // divisor),
-            msg=t"mismatch for {i}/{divisor}",
+            msg=String(t"mismatch for {i}/{divisor}"),
         )
 
 
@@ -51,27 +52,23 @@ log2_shift: 6
 def run_elementwise[type: DType](ctx: DeviceContext) raises:
     comptime length = 256
 
-    var divisors = NDBuffer[
-        type, 1, MutAnyOrigin, DimList(length)
-    ].stack_allocation()
-    var remainders = NDBuffer[
-        type, 1, MutAnyOrigin, DimList(length)
-    ].stack_allocation()
+    var divisors_stack = InlineArray[Scalar[type], length](uninitialized=True)
+    var divisors = TileTensor(divisors_stack, row_major[length]())
+    var remainders_stack = InlineArray[Scalar[type], length](uninitialized=True)
+    var remainders = TileTensor(remainders_stack, row_major[length]())
 
     var out_divisors = ctx.enqueue_create_buffer[type](length)
     var out_remainders = ctx.enqueue_create_buffer[type](length)
 
-    var out_divisors_buffer = NDBuffer[type, 1](
-        out_divisors.unsafe_ptr(), Index(length)
-    )
-    var out_remainders_buffer = NDBuffer[type, 1](
-        out_remainders.unsafe_ptr(), Index(length)
+    var out_divisors_buffer = TileTensor(out_divisors, row_major(Idx(length)))
+    var out_remainders_buffer = TileTensor(
+        out_remainders, row_major(Idx(length))
     )
 
     @always_inline
     @__copy_capture(out_divisors_buffer, out_remainders_buffer)
     @parameter
-    fn func[
+    def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         comptime fast_div = FastDiv[DType.uint32](4)
@@ -86,8 +83,8 @@ def run_elementwise[type: DType](ctx: DeviceContext) raises:
 
     elementwise[func, simd_width=1, target="gpu"](Index(length), ctx)
 
-    ctx.enqueue_copy(divisors.data, out_divisors)
-    ctx.enqueue_copy(remainders.data, out_remainders)
+    ctx.enqueue_copy(divisors.ptr, out_divisors)
+    ctx.enqueue_copy(remainders.ptr, out_remainders)
 
     ctx.synchronize()
 
@@ -101,13 +98,6 @@ def run_elementwise[type: DType](ctx: DeviceContext) raises:
             Scalar[type](i % 4),
             msg="the remainder is not correct",
         )
-
-    _ = out_divisors
-    _ = out_remainders
-    _ = out_divisors_buffer
-    _ = out_remainders_buffer
-    _ = divisors
-    _ = remainders
 
 
 def main() raises:

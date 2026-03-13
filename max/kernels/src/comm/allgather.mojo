@@ -43,14 +43,16 @@ from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, is_p2p_enabled
 
 
 @always_inline
-fn _allgather_naive[
+def _allgather_naive[
     dtype: DType,
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
+    input_buffers: InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
+    ],
     output_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
+        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
     ],
     ctxs: List[DeviceContext],
 ) raises:
@@ -94,7 +96,7 @@ fn _allgather_naive[
             )
 
 
-fn _allgather_p2p_kernel[
+def _allgather_p2p_kernel[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -126,8 +128,7 @@ fn _allgather_p2p_kernel[
     # outputs[i] should contain data from GPU i.
     comptime for src_gpu in range(ngpus):
         var length = lengths[src_gpu]
-        var num_simd_vectors = length // simd_width
-        var remainder = length % simd_width
+        var num_simd_vectors, remainder = divmod(length, simd_width)
 
         # Grid-strided loop for this source (vectorized).
         for idx in range(global_tid, num_simd_vectors, stride):
@@ -151,14 +152,16 @@ fn _allgather_p2p_kernel[
 
 
 @always_inline
-fn _allgather_p2p[
+def _allgather_p2p[
     dtype: DType,
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
+    input_buffers: InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
+    ],
     output_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
+        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
     ],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     max_num_blocks: Int,
@@ -223,14 +226,16 @@ fn _allgather_p2p[
 
 
 @always_inline
-fn allgather[
+def allgather[
     dtype: DType,
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
+    input_buffers: InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
+    ],
     output_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
+        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
     ],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctxs: List[DeviceContext],
@@ -285,14 +290,16 @@ fn allgather[
 # Backward compatibility overload without rank_sigs.
 @deprecated("Use the `signal_buffers` overload of `allgather` instead.")
 @always_inline
-fn allgather[
+def allgather[
     dtype: DType,
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
+    input_buffers: InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
+    ],
     output_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
+        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
     ],
     ctxs: List[DeviceContext],
 ) raises:

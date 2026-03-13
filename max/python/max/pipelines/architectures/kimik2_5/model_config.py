@@ -24,6 +24,7 @@ from max.nn.kv_cache import (
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -40,7 +41,7 @@ class KimiK2_5TextConfig(DeepseekV3Config):
 
         This method creates a config instance with all fields that can be determined
         from the pipeline configuration, without needing the state_dict.
-        Fields that depend on the state_dict (like norm_dtype, float8_config, etc.)
+        Fields that depend on the state_dict (like norm_dtype, quant_config, etc.)
         should be set via the `finalize()` method.
 
         Args:
@@ -115,7 +116,7 @@ class KimiK2_5TextConfig(DeepseekV3Config):
             max_seq_len=max_seq_len,
             rms_norm_eps=config.rms_norm_eps,
             tie_word_embeddings=config.tie_word_embeddings,
-            rope_theta=config.rope_theta,
+            rope_theta=get_rope_theta(config),
             rope_scaling=config.rope_scaling,
             rope_interleave=getattr(config, "rope_interleave", True),
             scoring_func=config.scoring_func,
@@ -214,16 +215,35 @@ class VisionConfig:
         cls,
         pipeline_config: PipelineConfig,
         hf_vision_config: AutoConfig,
+        huggingface_config: AutoConfig | None = None,
     ) -> VisionConfig:
         """Initialize VisionConfig from HuggingFace vision config.
+
+        Args:
+            pipeline_config: MAX Engine pipeline configuration.
+            hf_vision_config: HuggingFace vision sub-config.
+            huggingface_config: Full HuggingFace model config, used to derive
+                ``text_hidden_size`` from ``text_config.hidden_size`` when
+                ``hf_vision_config`` does not carry the attribute directly
+                (e.g. moonshotai/Kimi-VL-A3B-Instruct vs nvidia/Kimi-K2.5-NVFP4).
 
         Note: dtype fields will be set to defaults and should be updated
         via finalize() once state_dict is available.
         """
-        from max.dtype import DType as MaxDType
+        # text_hidden_size is the patch-merger output dim, which must match the
+        # LLM hidden size.  Prefer the explicit attribute on the vision config;
+        # fall back to the LLM text_config hidden_size; then a last-resort default.
+        text_hidden_size = getattr(hf_vision_config, "text_hidden_size", None)
+        if text_hidden_size is None and huggingface_config is not None:
+            llm_cfg = getattr(
+                huggingface_config, "text_config", huggingface_config
+            )
+            text_hidden_size = llm_cfg.hidden_size
+        if text_hidden_size is None:
+            text_hidden_size = 7168  # last-resort default (Kimi-K2.5 value)
 
         return cls(
-            dtype=MaxDType.bfloat16,
+            dtype=DType.bfloat16,
             devices=[
                 DeviceRef(spec.device_type, spec.id)
                 for spec in pipeline_config.model.device_specs
@@ -246,9 +266,7 @@ class VisionConfig:
             projector_ln_eps=getattr(
                 hf_vision_config, "projector_ln_eps", 1e-05
             ),
-            text_hidden_size=getattr(
-                hf_vision_config, "text_hidden_size", 7168
-            ),
+            text_hidden_size=text_hidden_size,
             video_attn_type=getattr(hf_vision_config, "video_attn_type", None),
             vt_hidden_size=hf_vision_config.vt_hidden_size
             if hasattr(hf_vision_config, "vt_hidden_size")
@@ -425,7 +443,9 @@ class KimiK2_5Config(ArchConfigWithKVCache):
             )
 
         vision_config = VisionConfig.initialize_from_config(
-            pipeline_config, hf_vision_config
+            pipeline_config,
+            hf_vision_config,
+            huggingface_config=huggingface_config,
         )
 
         # Create KimiK2_5TextConfig for the language model

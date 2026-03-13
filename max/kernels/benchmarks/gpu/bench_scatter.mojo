@@ -45,7 +45,7 @@ from std.testing import assert_true
 
 @always_inline
 @parameter
-fn _chunk_value[dtype: DType](dp_idx: Int, j: Int) -> Scalar[dtype]:
+def _chunk_value[dtype: DType](dp_idx: Int, j: Int) -> Scalar[dtype]:
     """Generate position-based value that includes the DP replica index.
 
     Each element has a unique value based on position and replica,
@@ -57,7 +57,7 @@ fn _chunk_value[dtype: DType](dp_idx: Int, j: Int) -> Scalar[dtype]:
     )
 
 
-fn _get_test_str[
+def _get_test_str[
     dtype: DType,
     cache_busting: Bool,
 ](ngpus: Int, dp_size: Int, num_elems: Int) -> String:
@@ -76,7 +76,7 @@ fn _get_test_str[
     )
 
 
-fn bench_scatter[
+def bench_scatter[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -154,35 +154,35 @@ fn bench_scatter[
         )
 
     # Build NDBuffer wrappers for scatter API.
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], dp_size](
-        fill={}
-    )
-    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
+    var in_bufs = InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], dp_size
+    ](fill={})
+    var out_bufs = InlineArray[NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus](
         fill={}
     )
 
     for dp_idx in range(dp_size):
-        in_bufs[dp_idx] = NDBuffer[dtype, rank](
+        in_bufs[dp_idx] = NDBuffer[rank=rank, dtype](
             cb_inputs[dp_idx].unsafe_ptr(), IndexList[rank](num_elems)
         )
 
     for gpu_idx in range(ngpus):
-        out_bufs[gpu_idx] = NDBuffer[dtype, rank](
+        out_bufs[gpu_idx] = NDBuffer[rank=rank, dtype](
             out_bufs_list[gpu_idx].unsafe_ptr(), IndexList[rank](num_elems)
         )
         list_of_ctx[gpu_idx].synchronize()
 
     @parameter
     @always_inline
-    fn bench_iter(
+    def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
         @parameter
         @always_inline
-        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             # Update input pointers to the cache-busted offset.
             comptime for dp_idx in range(dp_size):
-                in_bufs[dp_idx] = NDBuffer[dtype, rank](
+                in_bufs[dp_idx] = NDBuffer[rank=rank, dtype](
                     cb_inputs[dp_idx].offset_ptr(cache_iter),
                     IndexList[rank](num_elems),
                 )

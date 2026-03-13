@@ -15,9 +15,7 @@ from std.collections import OptionalReg
 from std.math import ceildiv
 from std.sys import size_of
 from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
-from layout.int_tuple import UNKNOWN_VALUE
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.tma_async import RaggedTMA3DTile
 from std.logger import Logger
 from nn.fa4_config import FA4Config
@@ -44,7 +42,7 @@ comptime logger = Logger()
 
 
 @always_inline
-fn mha_sm100_dispatch[
+def mha_sm100_dispatch[
     q_type: DType,
     KVType: MHAOperand,
     MaskType: MHAMask,
@@ -140,21 +138,23 @@ fn mha_sm100_dispatch[
     ](ctx)
     comptime assert BM == 256
     comptime SchedulerType = TransientScheduler[
-        UInt32(BM), UInt32(fa4_config.num_q_heads)
+        UInt32(BM),
+        UInt32(fa4_config.num_q_heads),
+        flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
     ]
     var scheduler: SchedulerType = SchedulerType()
 
     @parameter
     @always_inline
-    fn with_sink[SinkType: OptionalPointer](sink_ptr: SinkType) raises:
+    def with_sink[SinkType: OptionalPointer](sink_ptr: SinkType) raises:
         @parameter
         @always_inline
-        fn with_kv_offsets[
+        def with_kv_offsets[
             KVRowOffsetsType: OptionalPointer
         ](kv_row_offsets: KVRowOffsetsType) raises:
             @parameter
             @always_inline
-            fn with_valid_length[
+            def with_valid_length[
                 ValidLengthType: OptionalPointer
             ](valid_len: ValidLengthType) raises:
                 # the pack contains all possibly 0-sized objects

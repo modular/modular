@@ -16,13 +16,13 @@ from .defines import get_defined_string, is_defined
 
 
 @always_inline("nodebug")
-fn _build_type() -> StaticString:
+def _build_type() -> StaticString:
     comptime assert is_defined["BUILD_TYPE"](), "the build type must be defined"
     return get_defined_string["BUILD_TYPE"]()
 
 
 @always_inline("nodebug")
-fn is_debug_build() -> Bool:
+def is_debug_build() -> Bool:
     """
     Returns True if the build is in debug mode.
 
@@ -39,7 +39,7 @@ fn is_debug_build() -> Bool:
 
 
 @always_inline("nodebug")
-fn is_release_build() -> Bool:
+def is_release_build() -> Bool:
     """
     Returns True if the build is in release mode.
 

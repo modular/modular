@@ -40,8 +40,8 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.transformer import ReturnHiddenStates
 from max.nn.transformer.distributed_transformer import (
+    extract_hs,
     forward_sharded_layers,
 )
 
@@ -61,8 +61,8 @@ class DeepseekV3NextN(Module):
         )
 
         embedding_output_dtype = config.dtype
-        if config.float8_config and config.float8_config.embedding_output_dtype:
-            embedding_output_dtype = config.float8_config.embedding_output_dtype
+        if config.quant_config and config.quant_config.embedding_output_dtype:
+            embedding_output_dtype = config.quant_config.embedding_output_dtype
         self.embedding_output_dtype = embedding_output_dtype
         self.embed_tokens = VocabParallelEmbedding(
             config.vocab_size,
@@ -161,7 +161,7 @@ class DeepseekV3NextN(Module):
     def __call__(
         self,
         tokens: TensorValue,
-        hidden_states: list[TensorValue],
+        hidden_state: TensorValue,
         signal_buffers: list[BufferValue],
         kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
@@ -178,38 +178,46 @@ class DeepseekV3NextN(Module):
 
         devices = self.config.devices
 
-        if len(hidden_states) != len(devices):
-            raise ValueError(
-                f"hidden_states list length ({len(hidden_states)}) must match "
-                f"number of devices ({len(devices)})"
-            )
-
         h_embed = self.embed_tokens(tokens, signal_buffers)
 
+        # broadcast hidden_state to all devices
+        hidden_states = ops.distributed_broadcast(hidden_state, signal_buffers)
         norm_embed = forward_sharded_layers(self.enorm_shards, h_embed)
         norm_hidden = forward_sharded_layers(self.hnorm_shards, hidden_states)
         freqs_cis = [self.rope.freqs_cis.to(device) for device in devices]
         input_row_offsets_ = ops.distributed_broadcast(
             input_row_offsets.to(devices[0]), signal_buffers
         )
-        # Split embeddings FIRST to match already-split hidden_states from target model
-        # hidden_states are already data-parallel split (different sizes per device),
-        # while norm_embed is replicated (same size on all devices).
-        # We must split norm_embed before concatenating with norm_hidden.
+        # Both norm_embed and norm_hidden are replicated (full batch on each
+        # device). In the DP case, split both before concatenating.
         if self.use_data_parallel_attention:
+            host_offsets_i64 = host_input_row_offsets.cast(DType.int64)
+            unsplit_row_offsets = input_row_offsets_
             norm_embed, input_row_offsets_ = split_batch_replicated(
                 devices,
                 norm_embed,
-                input_row_offsets_,
-                host_input_row_offsets.cast(DType.int64),
+                unsplit_row_offsets,
+                host_offsets_i64,
                 data_parallel_splits,
             )
-            # Rebind split embeddings to match hidden_states dimension names
-            # split_batch_replicated uses 'input_split_{i}' but hidden_states use
-            # 'seq_len_device_{i}' - they're logically the same size at runtime
+            norm_hidden, _ = split_batch_replicated(
+                devices,
+                norm_hidden,
+                unsplit_row_offsets,
+                host_offsets_i64,
+                data_parallel_splits,
+            )
+
             norm_embed = [
                 ops.rebind(
                     norm_embed[i],
+                    [f"seq_len_device_{i}", self.config.hidden_size],
+                )
+                for i in range(len(devices))
+            ]
+            norm_hidden = [
+                ops.rebind(
+                    norm_hidden[i],
                     [f"seq_len_device_{i}", self.config.hidden_size],
                 )
                 for i in range(len(devices))
@@ -301,18 +309,13 @@ class DeepseekV3NextN(Module):
 
         ret_val: tuple[TensorValue, ...] = (last_logits,)
 
-        if self.return_hidden_states == ReturnHiddenStates.ALL:
-            ret_val += tuple(h)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST:
-            if self.config.data_parallel_degree > 1:
-                ret_val += tuple(last_token_per_dev)
-            else:
-                ret_val += tuple(last_token_distributed)
-        elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
-            norm_h = forward_sharded_layers(self.shared_head_norm_shards, h)
-            ret_val += tuple(norm_h)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
-            ret_val += tuple(norm_last_token)
+        ret_val += extract_hs(
+            return_hidden_states=self.return_hidden_states,
+            last_token_hs_distributed=last_token_distributed,
+            all_hs_distributed=h,
+            normalizer=self.shared_head_norm_shards,
+            signal_buffers=signal_buffers,
+        )
 
         return ret_val
 
@@ -329,14 +332,11 @@ class DeepseekV3NextN(Module):
         # Hidden states input types - one per device for data parallelism
         # Each device receives a different slice of the batch (data parallel split)
         # Using device-specific dimension names allows different sizes per device
-        hidden_states_types = [
-            TensorType(
-                self.embedding_output_dtype,
-                shape=[f"seq_len_device_{i}", self.config.hidden_size],
-                device=dev,
-            )
-            for i, dev in enumerate(devices)
-        ]
+        hidden_state_type = TensorType(
+            self.embedding_output_dtype,
+            shape=["total_seq_len", self.config.hidden_size],
+            device=device_ref,
+        )
 
         device_input_row_offsets_type = TensorType(
             DType.uint32,
@@ -361,7 +361,7 @@ class DeepseekV3NextN(Module):
         signal_buffer_types: list[BufferType] = signals.input_types()
 
         all_input_types: list[TensorType | BufferType] = [tokens_type]
-        all_input_types.extend(hidden_states_types)
+        all_input_types.append(hidden_state_type)
         all_input_types.extend(
             [
                 device_input_row_offsets_type,

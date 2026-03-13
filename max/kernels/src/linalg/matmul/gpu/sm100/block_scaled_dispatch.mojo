@@ -14,7 +14,7 @@
 from std.math import align_up, ceildiv
 
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from layout import Layout, LayoutTensor
+from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
 from std.logger import Logger
 from std.gpu.primitives.warp import shuffle_xor
 from std.math import recip
@@ -41,9 +41,6 @@ from linalg.utils import (
 )
 from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
-from layout import TileTensor
-from layout.coord import Coord, Idx
-from layout.tile_layout import row_major
 from std.memory import UnsafePointer, bitcast
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import barrier
@@ -52,6 +49,9 @@ from std.algorithm import elementwise
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
+)
+from linalg.matmul.gpu.sm100.block_scaled_matmul_small_bn import (
+    blackwell_block_scaled_matmul_tma_umma_warp_specialized as blackwell_block_scaled_matmul_small_bn,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.sm100_structured.default.tuning_configs import (
@@ -71,7 +71,7 @@ comptime DISPATCH_MISS = 0
 comptime DISPATCH_HIT = 1
 
 
-fn heuristic_and_outliers_dispatch[
+def heuristic_and_outliers_dispatch[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -151,7 +151,7 @@ fn heuristic_and_outliers_dispatch[
 
     @parameter
     @always_inline
-    fn rule(x: TuningConfigSM100) -> Bool:
+    def rule(x: TuningConfigSM100) -> Bool:
         return x.K == static_K and x.N == static_N
 
     comptime outlier_configs = outliers.find[rule]()
@@ -219,12 +219,186 @@ fn heuristic_and_outliers_dispatch[
     return DISPATCH_MISS
 
 
+def small_bn_dispatch[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    scales_dtype: DType,
+    sfa_layout: Layout,
+    sfb_layout: Layout,
+    //,
+    SF_VECTOR_SIZE: Int,
+    transpose_b: Bool = True,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
+    a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
+    b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
+    tensor_sf: Float32,
+    ctx: DeviceContext,
+) raises -> Int:
+    var m = Int(c.dim[0]())
+
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[
+        1
+    ] * 2 if a_type == DType.uint8 else a.static_shape[1]
+
+    comptime scaling_kind = UMMAKind.KIND_MXF4NVF4 if a_type == DType.uint8 else UMMAKind.KIND_MXF8F6F4
+
+    comptime config = BlockScaledMatmulConfig[
+        a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
+    ](
+        scaling_kind=scaling_kind,
+        cta_group=1,
+        mma_shape=Index(128, 8, 32),
+        cluster_shape=Index(1, 1, 1),
+        block_swizzle_size=8,
+        num_accum_pipeline_stages=2,
+        k_group_size=2,
+        num_clc_pipeline_stages=0,
+        AB_swapped=True,
+    )
+
+    _block_scaled_matmul_small_bn_with_epilogue[
+        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+        transpose_b=transpose_b,
+        config=config,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        pdl_level=pdl_level,
+    ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
+
+    return DISPATCH_HIT
+
+
 ########################################################
 # SM100 Block Scaled matmul with normal epilogue kernel dispatch
 ########################################################
 
 
-fn _block_scaled_matmul_with_epilogue[
+def _block_scaled_matmul_small_bn_with_epilogue[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    scales_dtype: DType,
+    sfa_layout: Layout,
+    sfb_layout: Layout,
+    //,
+    *,
+    SF_VECTOR_SIZE: Int,
+    transpose_b: Bool,
+    config: BlockScaledMatmulConfig[
+        a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
+    ],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
+    a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
+    b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
+    tensor_sf: Float32,
+    ctx: DeviceContext,
+) raises:
+    var m = Int(c.dim[0]())
+    var n = Int(c.dim[1]())
+    if m == 0 or n == 0:
+        return
+
+    comptime if not elementwise_lambda_fn:
+        if not c.ptr:
+            raise "c must be allocated!"
+
+        comptime K_phys = a.static_shape[1]
+        blackwell_block_scaled_matmul_small_bn[
+            transpose_b=transpose_b,
+            K=K_phys,
+            config=config,
+            pdl_level=pdl_level,
+        ](
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            ctx,
+            alpha=tensor_sf,
+        )
+        return
+    else:
+        comptime epilogue = elementwise_lambda_fn.value()
+        comptime use_32b_simd = True
+        comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
+            simd_width_of[c_type, target=get_gpu_target()]()
+        )
+
+        @parameter
+        @__copy_capture(c, n)
+        def epilogue_wrapper[
+            simd_width: Int, rank: Int, alignment: Int = 1
+        ](idx: IndexList[rank]):
+            var c_coord = Index(idx[0], idx[1])
+            var c_val = rebind[SIMD[c_type, simd_width]](
+                c.ptr.load[width=simd_width](idx[0] * n + idx[1])
+            )
+            epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
+
+        if c.ptr:
+            comptime K_phys = a.static_shape[1]
+            blackwell_block_scaled_matmul_small_bn[
+                transpose_b=transpose_b,
+                K=K_phys,
+                config=config,
+                pdl_level=pdl_level,
+            ](
+                c,
+                a,
+                b,
+                a_scales,
+                b_scales,
+                ctx,
+                alpha=tensor_sf,
+            )
+            elementwise[epilogue_wrapper, simd_size, target="gpu"](
+                Index(m, n), ctx
+            )
+            return
+
+        var num_elems = m * n
+        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](num_elems)
+        var c_tmp = TileTensor(
+            rebind[UnsafePointer[Scalar[c_type], MutExternalOrigin]](
+                tmp_device_buffer.unsafe_ptr()
+            ),
+            row_major(Coord(Idx(m), Idx(n))),
+        )
+
+        _block_scaled_matmul_small_bn_with_epilogue[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=transpose_b,
+            config=config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](
+            c_tmp,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            tensor_sf,
+            ctx,
+        )
+
+        _ = tmp_device_buffer^
+
+
+def _block_scaled_matmul_with_epilogue[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -293,7 +467,7 @@ fn _block_scaled_matmul_with_epilogue[
         # can't be proved when c's layout type is fully inferred.
         @parameter
         @__copy_capture(c, n)
-        fn epilogue_wrapper[
+        def epilogue_wrapper[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])
@@ -353,7 +527,7 @@ fn _block_scaled_matmul_with_epilogue[
         _ = tmp_device_buffer^
 
 
-fn _vendor_blas_block_scaled_matmul_with_epilogue[
+def _vendor_blas_block_scaled_matmul_with_epilogue[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -438,7 +612,7 @@ fn _vendor_blas_block_scaled_matmul_with_epilogue[
 
         @parameter
         @__copy_capture(c)
-        fn epilogue_wrapper[
+        def epilogue_wrapper[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])

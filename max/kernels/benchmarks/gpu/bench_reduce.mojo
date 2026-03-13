@@ -14,7 +14,7 @@
 from std.sys import align_of, get_defined_int, get_defined_string, simd_width_of
 from std.sys.info import _TargetType
 
-from std.algorithm._gpu.reduction import reduce_launch
+from std.algorithm.backend.gpu.reduction import reduce_launch
 from std.benchmark import (
     Bench,
     Bencher,
@@ -22,7 +22,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from layout import LayoutTensor, Layout, RuntimeLayout
+from layout import Layout, LayoutTensor, RuntimeLayout
 from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import (
@@ -38,13 +38,13 @@ from std.utils import IndexList, StaticTuple
 from std.utils.index import product
 
 
-fn align_of_simd[dtype: DType, simd_target: _TargetType]() -> Int:
+def align_of_simd[dtype: DType, simd_target: _TargetType]() -> Int:
     # TODO: move this utility function to a module.
     comptime pack_size = simd_width_of[dtype, target=simd_target]()
     return align_of[SIMD[dtype, pack_size]]()
 
 
-fn run_reduce[
+def run_reduce[
     reduce_fn: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing[_] -> SIMD[dtype, width],
@@ -89,7 +89,7 @@ fn run_reduce[
 
     @always_inline
     @parameter
-    fn reduce_wrapper[
+    def reduce_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert reduction_idx < num_reductions, "invalid reduction idx"
@@ -98,7 +98,7 @@ fn run_reduce[
 
     @__copy_capture(res_device)
     @parameter
-    fn output_fn[
+    def output_fn[
         _dtype: DType, width: Int, _rank: Int
     ](
         coords: IndexList[_rank],
@@ -111,10 +111,10 @@ fn run_reduce[
     @__copy_capture(axis)
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             var input_lt = LayoutTensor[
                 dtype, Layout.row_major[rank](), MutAnyOrigin
             ](
@@ -124,7 +124,7 @@ fn run_reduce[
 
             @__copy_capture(input_lt)
             @parameter
-            fn input_fn[
+            def input_fn[
                 dtype: DType,
                 width: Int,
                 _rank: Int,
@@ -170,7 +170,7 @@ fn run_reduce[
 
 
 @parameter
-fn reduce_add[
+def reduce_add[
     dtype: DType,
     width: Int,
 ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:

@@ -28,6 +28,8 @@ def test_init_ep(n_devices: int) -> None:
         "Devices are not enough to run EP test"
     )
 
+    n_nodes = int(os.environ.get("SHMEM_TOTAL_NODES", "1"))
+
     # Initialize the device-contexts
     host = CPU(0)
     devices = [Accelerator(id) for id in range(n_devices)]
@@ -42,12 +44,26 @@ def test_init_ep(n_devices: int) -> None:
         n_experts=min(256, n_devices * (1024 // gpu_warp_size())),
         max_tokens_per_rank=128,
         n_gpus_per_node=n_devices,
-        n_nodes=int(os.environ.get("SHMEM_TOTAL_NODES", "1")),
+        n_nodes=n_nodes,
     )
     ep_initializer = EPCommInitializer(config)
     ep_initializer.ep_init(session)
 
     all_tensors = ep_initializer.model_inputs()
     # check if the returned device pointers are not zero
-    for tensor in all_tensors[2 * n_devices :]:
-        assert np.all(tensor.to_numpy() != 0)
+    group_0_send_buf_ptrs = all_tensors[2 * n_devices]
+    assert np.all(group_0_send_buf_ptrs.to_numpy() != 0)
+
+    # The combine send buffer is only allocated when there are multiple nodes.
+    if n_nodes > 1:
+        group_1_send_buf_ptrs = all_tensors[2 * n_devices + 1]
+        assert np.all(group_1_send_buf_ptrs.to_numpy() != 0)
+
+    group_0_recv_buf_ptrs = all_tensors[2 * n_devices + 2]
+    assert np.all(group_0_recv_buf_ptrs.to_numpy() != 0)
+    group_1_recv_buf_ptrs = all_tensors[2 * n_devices + 3]
+    assert np.all(group_1_recv_buf_ptrs.to_numpy() != 0)
+    group_0_recv_count_ptrs = all_tensors[2 * n_devices + 4]
+    assert np.all(group_0_recv_count_ptrs.to_numpy() != 0)
+    group_1_recv_count_ptrs = all_tensors[2 * n_devices + 5]
+    assert np.all(group_1_recv_count_ptrs.to_numpy() != 0)

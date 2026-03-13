@@ -4,6 +4,7 @@ package(default_visibility = ["//max:consumers"])
 
 _EXTRA_CONSTRAINTS = {
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
+    "test_miopen_conv.mojo": ["//:amd_gpu"],
     "test_conv2d_sm100.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -43,6 +44,10 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mla_prefill_qkv_fp8.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_decode_qkv_fp8_per_token_scale_rope_aware.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -155,6 +160,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    "test_group_norm.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: GEX-3155
 }
 
 _FILECHECK_TESTS = [
@@ -172,10 +181,6 @@ mojo_test(
     size = "large",
     srcs = ["test_allreduce_residual_rmsnorm_fp8.mojo"],
     enable_assertions = False,  # MSTDL-2301: register pressure
-    env = {
-        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
-        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT": "80",
-    },
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -226,7 +231,6 @@ mojo_test(
             # On B200, the SM100 MLA path OOB was fixed (kv_row clamping),
             # so test_mla.mojo can run with assertions enabled.
             "//:b200_gpu": src not in [
-                "test_mha_chunked_causal_mask.mojo",  # Stack frame size exceeds limit with assertions (e.g. amdgpu)
                 "test_flash_attention_amd.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
             ],
             # KERN-2339: H100 MLA kernel has OOB in LayoutTensor masking
@@ -236,7 +240,7 @@ mojo_test(
             # The OOB is functionally benign (masked out by _kernel_mask).
             "//conditions:default": src not in [
                 "test_mla.mojo",
-                "test_mha_chunked_causal_mask.mojo",  # Stack frame size exceeds limit with assertions (e.g. amdgpu)
+                "test_mha_chunked_causal_mask.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions (amdgpu)
                 "test_flash_attention_amd.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
             ],
         }),
