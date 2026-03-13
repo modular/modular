@@ -79,3 +79,35 @@ kgen.generator export @test_simd_shr_index_64() -> !pop.scalar<index> {
   kgen.return %0 : !pop.scalar<index>
 }
 }
+
+// -----
+
+// #pop.simd_abs with index: target-dependent folding on 32-bit.
+// 3000000000 wraps to -1294967296 in 32-bit signed, so abs(-1294967296) = 1294967296.
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
+// CHECK-LABEL: kgen.func export @test_simd_abs_index_32
+kgen.generator export @test_simd_abs_index_32() -> !pop.scalar<index> {
+  kgen.param.declare value : !pop.scalar<index> = <#pop.simd_abs<#pop<simd 3000000000> : !pop.scalar<index>>>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<index> = <1294967296>
+  %0 = kgen.param.constant: !pop.scalar<index> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<index>
+}
+}
+
+// -----
+
+// #pop.simd_abs with index: target-dependent folding on 64-bit.
+// 3000000000 fits in 64-bit as positive, so abs(3000000000) = 3000000000.
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
+// CHECK-LABEL: kgen.func export @test_simd_abs_index_64
+kgen.generator export @test_simd_abs_index_64() -> !pop.scalar<index> {
+  kgen.param.declare value : !pop.scalar<index> = <#pop.simd_abs<#pop<simd 3000000000> : !pop.scalar<index>>>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<index> = <3000000000>
+  %0 = kgen.param.constant: !pop.scalar<index> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<index>
+}
+}

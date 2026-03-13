@@ -2105,11 +2105,10 @@ TypedAttr SIMDDivAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
 //===----------------------------------------------------------------------===//
 
 TypedAttr SIMDAbsAttr::get(MLIRContext *ctx, TypedAttr operand) {
-  // Fold if possible.
-  if (auto fold = POP::foldSIMDAbs(operand,
-                                   /*targetInfo=*/{})) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-      return ret;
+  Attribute operands[] = {operand};
+  if (auto fold = foldSIMDAbs(FoldValues(operands))) {
+    assert(fold.getAttr() && "attribute fold should produce an attribute");
+    return fold.getAttr();
   }
   return Base::get(ctx, operand);
 }

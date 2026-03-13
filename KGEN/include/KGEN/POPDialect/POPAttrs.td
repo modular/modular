@@ -736,8 +736,8 @@ def POP_SIMDSplatAttr : POP_ExprAttr<"SIMDSplat", "simd_splat"> {
 // SIMD Unary Operation Attributes
 //===----------------------------------------------------------------------===//
 
-class POP_SIMDUnaryAttr<string name>
-      : POP_ExprAttr<"SIMD" # name, "simd_" # !tolower(name)> {
+class POP_SIMDUnaryAttr<string name, list<Trait> extraTraits = []>
+      : POP_ExprAttr<"SIMD" # name, "simd_" # !tolower(name), extraTraits> {
   let summary = !strconcat("SIMD ", name, ".");
 
   let parameters = (ins "TypedAttr":$operand);
@@ -807,7 +807,9 @@ def POP_SIMDTruncAttr : POP_SIMDUnaryAttr<"Trunc"> {
   }];
 }
 
-def POP_SIMDAbsAttr : POP_SIMDUnaryAttr<"Abs"> {
+def POP_SIMDAbsAttr : POP_SIMDUnaryAttr<"Abs",
+    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                 ["evaluateWithContext"]>]> {
   let description = [{
     The `#pop.simd_abs` attribute takes a SIMD value and returns the
     absolute value of it.
