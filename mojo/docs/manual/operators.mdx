@@ -421,6 +421,7 @@ These comparisons return a single `Bool` value:
 - Inequality operators (`<`, `<=`, `>`, `>=`) with multi-element `SIMD` values
   are not supported. These operators only work with scalar (single-element)
   `SIMD` values.
+
 - `Scalar` values are simply aliases for single-element `SIMD` vectors and
   support all comparison operators with `Bool` results:
 
@@ -428,12 +429,79 @@ These comparisons return a single `Bool` value:
     var float1: Float16 = 12.345         # SIMD[DType.float16, 1]
     var float2: Float32 = 0.5            # SIMD[DType.float32, 1]
     result = Float32(float1) > float2    # Result is Bool
-    print(result)
+    print(result)  # True
     ```
 
-    ```output
-    True
-    ```
+#### Operating on non-boolean values with boolean-returning operators
+
+Many of Mojo's word-based operators (`in`, `not in`, `is`, `is not`,
+`not`, `and`, `or`) return booleans without their arguments being
+boolean themselves.
+
+For example, `in` and `not in` are used with values and collections:
+
+```mojo
+var list = [1, 2, 3]
+print(1 in list)  # True, `in` operator checks for membership in the list
+print(4 in list)  # False, `in` operator
+print(4 not in list)  # True, `not in` operator
+```
+
+Some types have _identities_ that can be tested with `is` and `not is`.
+Pointers can use their unique addresses to distinguish one allocation
+from another:
+
+```mojo
+# Identity, Wrapped pointers
+struct MemoryHolder(ImplicitlyCopyable):
+    var p: UnsafePointer[Int, MutExternalOrigin]
+
+    fn __init__(out self):
+        self.p = alloc[Int](1)
+
+    fn __is__(self, other: MemoryHolder) -> Bool:
+        return self.p == other.p
+
+    fn __isnot__(self, other: MemoryHolder) -> Bool:
+        return not self.__is__(other)
+
+    fn __del__(deinit self):
+        self.p.destroy_pointee()
+        self.p.free()
+
+...
+
+var p1 = MemoryHolder(); var p2 = MemoryHolder()
+print(p1 is p2)  # False, two pointer allocations
+print(p1 is not p2)  # True, two pointer allocations
+print(p1 is p1)  # True, same pointer allocation
+```
+
+`Boolable` types adopt a kind of _truthiness_. You
+can use them directly in `if`-statements or convert
+them to `Bool`.
+
+```mojo
+var s1 = "Hello"; var s2 = "" # Empty strings are Falsy
+print(Bool(not s1))  # False, non-empty string is Truthy
+print(Bool(not s2))  # True, empty string is Falsy
+print(Bool(s1 and s2)) # False
+print(Bool(s1 and s1)) # True
+print(Bool(s1 or s2)) # True
+print(Bool(s2 or s2)) # False
+```
+
+Integers are `Boolable`, so you can use them with
+`and` and `or`. In this example, `0 or 1` provides
+a boolean check on whether a function can compile.
+0 is falsy and 1 is truthy:
+
+```
+# Change the constraint to 0 to activate the error
+def test() where 0 or 1
+    print("This should be compiled, the condition is true")
+test()  # This should be compiled, the condition is true
+```
 
 #### Elementwise comparisons
 
@@ -442,43 +510,43 @@ comparison methods: `eq()`, `ne()`, `lt()`, `le()`, `gt()`, and `ge()`. These
 methods work with both `SIMD`-to-`SIMD` and `SIMD`-to-scalar comparisons. Here
 are examples showing all six elementwise comparison methods:
 
-    ```mojo
-    simd8 = SIMD[DType.int32, 4](1, 2, 3, 2)
-    simd9 = SIMD[DType.int32, 4](1, 2, 4, 2)
+```mojo
+simd8 = SIMD[DType.int32, 4](1, 2, 3, 2)
+simd9 = SIMD[DType.int32, 4](1, 2, 4, 2)
 
-    print("simd8.eq(simd9):", simd8.eq(simd9))    # Equal
-    print("simd8.ne(simd9):", simd8.ne(simd9))    # Not equal
-    print("simd8.lt(simd9):", simd8.lt(simd9))    # Less than
-    print("simd8.le(simd9):", simd8.le(simd9))    # Less than or equal
-    print("simd8.gt(simd9):", simd8.gt(simd9))    # Greater than
-    print("simd8.ge(simd9):", simd8.ge(simd9))    # Greater than or equal
-    ```
+print("simd8.eq(simd9):", simd8.eq(simd9))    # Equal
+print("simd8.ne(simd9):", simd8.ne(simd9))    # Not equal
+print("simd8.lt(simd9):", simd8.lt(simd9))    # Less than
+print("simd8.le(simd9):", simd8.le(simd9))    # Less than or equal
+print("simd8.gt(simd9):", simd8.gt(simd9))    # Greater than
+print("simd8.ge(simd9):", simd8.ge(simd9))    # Greater than or equal
+```
 
-    ```output
-    simd8.eq(simd9): [True, True, False, True]
-    simd8.ne(simd9): [False, False, True, False]
-    simd8.lt(simd9): [False, False, True, False]
-    simd8.le(simd9): [True, True, True, True]
-    simd8.gt(simd9): [False, False, False, False]
-    simd8.ge(simd9): [True, True, False, True]
-    ```
+```output
+simd8.eq(simd9): [True, True, False, True]
+simd8.ne(simd9): [False, False, True, False]
+simd8.lt(simd9): [False, False, True, False]
+simd8.le(simd9): [True, True, True, True]
+simd8.gt(simd9): [False, False, False, False]
+simd8.ge(simd9): [True, True, False, True]
+```
 
-    You can also use these methods for `SIMD`-to-scalar comparisons:
+You can also use these methods for `SIMD`-to-scalar comparisons:
 
-    ```mojo
-    simd4 = SIMD[DType.int16, 4](-1, 2, -3, 4)
-    simd5 = simd4.gt(2)  # SIMD[DType.bool, 4]
-    print("simd4.gt(2):", simd5)
+```mojo
+simd4 = SIMD[DType.int16, 4](-1, 2, -3, 4)
+simd5 = simd4.gt(2)  # SIMD[DType.bool, 4]
+print("simd4.gt(2):", simd5)
 
-    simd6 = SIMD[DType.float32, 4](1.1, -2.2, 3.3, -4.4)
-    simd7 = simd6.gt(0.5)  # SIMD[DType.bool, 4]
-    print("simd6.gt(0.5):", simd7)
-    ```
+simd6 = SIMD[DType.float32, 4](1.1, -2.2, 3.3, -4.4)
+simd7 = simd6.gt(0.5)  # SIMD[DType.bool, 4]
+print("simd6.gt(0.5):", simd7)
+```
 
-    ```output
-    simd4.gt(2): [False, False, False, True]
-    simd6.gt(0.5): [True, False, True, False]
-    ```
+```output
+simd4.gt(2): [False, False, False, True]
+simd6.gt(0.5): [True, False, True, False]
+```
 
 Use elementwise comparison methods when you need to compare each element
 individually and work with the resulting boolean mask for further processing.
