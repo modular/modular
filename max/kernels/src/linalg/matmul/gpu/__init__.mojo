@@ -507,7 +507,7 @@ def _matmul_gpu[
     comptime matmul_supported_format = matmul_supported_format_amd if has_amd_gpu_accelerator() else matmul_supported_format_nvidia
 
     # NDBuffers for downstream functions that don't yet have TileTensor
-    # overloads (matmul_dispatch_sm90/sm100, gemv_gpu, matmul_vendor)
+    # overloads (matmul_dispatch_sm100, gemv_gpu, matmul_vendor)
     # and for compute_lambda_wrapper's store (needs mut=True).
     # All use MutAnyOrigin to sidestep origin coercion issues between
     # TileTensor and NDBuffer's mut parameter. For gemv_gpu, a_buf/b_buf
@@ -627,7 +627,7 @@ def _matmul_gpu[
             transpose_b,
             elementwise_lambda_fn=elementwise_lambda_wrapper,
             pdl_level=pdl_level,
-        ](c_buf, a_buf, b_buf, ctx)
+        ](c, a, b, ctx)
 
         if status:
             return
