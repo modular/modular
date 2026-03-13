@@ -8,8 +8,7 @@
 #define KGEN_MOJOPARSER_PARAMETERINFERENCE_H
 
 #include "CallEmission.h"
-#include "KGEN/KGENDialect/KGENParameters.h"
-#include "ParserEvaluationContext.h"
+#include "InferenceState.h"
 
 namespace M::KGEN::LIT {
 
@@ -19,7 +18,7 @@ namespace M::KGEN::LIT {
 
 /// This class provides the implementation details that help to infer
 /// information about the specified parameter.
-class ParamInf {
+class ParamInf : public InferenceState {
 public:
   /// These are the bindings originally provided to the callable.
   const ParamBindings &paramBindings;
@@ -28,9 +27,6 @@ public:
   /// maintain a pointer to it so we can emit better diagnostics.  This will be
   /// null when binding a parametric value, like a parametric alias.
   ASTDecl *const declIfKnown;
-
-  /// This is the callback to report diagnostics through.
-  llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag;
 
   ParamInf(
       const ParamBindings &paramBinding, ArrayRef<Type> declaredParamTypes,
@@ -71,9 +67,6 @@ public:
   // Debug util.
   void dump() const;
 
-  // The list of constraints that were not able to be satisfied.
-  SmallVector<ConstraintAttr> unprovableConstraints;
-
 private:
   /// Infer all of the parameters we can from 'givenBindings'.
   ///
@@ -105,15 +98,6 @@ private:
     return paramBindings.getParameters();
   }
 
-  // A simple wrapper around `overwriteIndexBinding` to ensure sugar is aligned
-  // before overwriting parameter value.
-  // Notable, this method does not check there is no existing parameter inferred
-  // and unconditional overwrite everything.
-  //
-  // Return failure when the constraint attached to the parameter can not be
-  // satisfied, it populates unprovableConstraints too.
-  LogicalResult setInferredValue(size_t paramIdx, TypedAttr paramVal);
-
   FailureOr<SmartVariant<CValue, ASTType>>
   inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx, PogListAttr argPogs,
               CallSyntax syntax, ASTType expectedType);
@@ -141,16 +125,9 @@ private:
                                             ASTType expectedType,
                                             size_t paramIdx);
 
-  bool isExplicitlyUnbound(size_t paramIdx) const {
+  bool isExplicitlyUnbound(size_t paramIdx) const override {
     return explicitlyUnboundParams[paramIdx];
   }
-
-  /// This is the evaluator instance parameter inference uses to progressively
-  /// refine dependent types as we infer parameters.
-  ParameterEvaluator evaluator;
-
-  /// Cached finder to identify types that contains unbound ParamIndexRefAttrs.
-  ParamIndexRefAttrFinder paramFinder;
 
   // This says that a parameter with an unresolved dependent type was seen
   // during initial parameter binding application, so resolution of it was
@@ -173,13 +150,6 @@ private:
   // to type `foo[rank = 2, coord = (1, 2)]` here?
   bool hasDeferredGivenParam = false;
 
-  /// This describes the number of type of all of the parameters we're trying to
-  /// resolve for this entire declaration.
-  ArrayRef<Type> declaredParamTypes;
-
-  /// This describes the nature of the parameter list we're inferring for.
-  PogListAttr declaredParamPogs;
-
   /// This describes the parameters that are explicitly unbound (only applicable
   /// for struct binding. For call binding, every parameter might have a
   /// concrete real value).
@@ -187,7 +157,6 @@ private:
 
   /// True if implicit conversions in argument lists are permitted.
   const bool allowImplicitConversions;
-
   bool isInferForStruct = false;
 
   friend class ParamMatcher;

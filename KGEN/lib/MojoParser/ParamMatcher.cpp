@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ParamMatcher.h"
+#include "CallEmission.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "MojoUtils.h"
@@ -107,9 +108,9 @@ void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
       return _result;                                                          \
   } while (0)
 
-ParamMatcher::ParamMatcher(const ExprNode *expr, ParamInf &state,
+ParamMatcher::ParamMatcher(const ExprNode *expr, InferenceState &state,
                            bool allowImplicitConversions)
-    : expr(expr), state(state), shared(state.getShared()),
+    : expr(expr), state(state), shared(state.shared),
       allowImplicitConversions(allowImplicitConversions),
       scopedBinder(shared.getParameterEvaluator()) {}
 
@@ -546,8 +547,8 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   // Scope needed: overload resolution for e.g. repr[T: Writable](Tuple[*Ts])
   // inside a fn with `where AllWritable[*Ts]`.
   FailureOr<bool> typeUpCastable = IREmitter::canMetaTypeUpCastTo(
-      shared, state.getDeclScope().getLoc(), actualType, expectedType,
-      &state.getDeclScope());
+      shared, state.declScope.getLoc(), actualType, expectedType,
+      &state.declScope);
   if (succeeded(typeUpCastable) && typeUpCastable.value())
     return success();
 
@@ -622,7 +623,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
     if (succeeded(result)) {
       // If they are different types but compatible then upcast actualAttr to
       // the expected type.
-      IREmitter emitter(state.getDeclScope(), EC_TypeParamValue);
+      IREmitter emitter(state.declScope, EC_TypeParamValue);
 
       // FIXME: We are running into problems because we have Actual values of
       // "FnTypeGeneratorType" that have named parameters in them, but expected
@@ -669,8 +670,8 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
           }
           // Scope needed: same as matchTypes upcast above.
           FailureOr<bool> upCastable = IREmitter::canMetaTypeUpCastTo(
-              shared, state.getDeclScope().getLoc(), tightestBound, targetMT,
-              &state.getDeclScope());
+              shared, state.declScope.getLoc(), tightestBound, targetMT,
+              &state.declScope);
           return succeeded(upCastable) && upCastable.value();
         });
 
@@ -770,7 +771,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
       if (!isEqualCanon(actualAttr.getType(), expectedType)) {
         // We can only see subtypes in type values, all other values must be
         // aligned perfectly.
-        IREmitter emitter(state.getDeclScope(), EC_TypeParamValue);
+        IREmitter emitter(state.declScope, EC_TypeParamValue);
         ASTExprAnd<CValue> toConvert = {actualAttr, expr};
         actualAttr =
             emitter.emitPValue(toConvert, EC_TypeParamValue, expectedType);
@@ -1003,7 +1004,7 @@ LogicalResult ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
       FailureOr<PValue> pValue = OverloadSet::canConstructType(
           nonParamDRT,
           CallOperands(CallSyntax::kImplicitConvert, expr, {{actual, expr}}),
-          state.getDeclScope());
+          state.declScope);
       if (failed(pValue) || !pValue.value())
         return error(MatchFailure::Unclassified{});
 
