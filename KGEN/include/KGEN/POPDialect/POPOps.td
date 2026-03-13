@@ -538,7 +538,7 @@ def POP_CmpOp : POPOp<"cmp", [Pure, SameTypeOperands, InferTypeOpAdaptor,
   let results = (outs BoolSIMD:$result);
 
   let assemblyFormat = [{
-    `` $pred `(` $lhs `,` $rhs `)` attr-dict `:` type($lhs)
+    $pred `(` $lhs `,` $rhs `)` attr-dict `:` type($lhs)
   }];
 }
 
@@ -2233,8 +2233,8 @@ def POP_AtomicCmpXchgOp : POPOp<"atomic.cmpxchg", [
   let assemblyFormat = [{
     (`weak` $weak^)?
     $ptr `,` $cmp `,` $val
-    (`syncscope` `(` custom<StringParam>($syncscope)^ `)`)? `` $success_ordering
-    `` $failure_ordering (`align` custom<IndexParamValue>($alignment)^ )?
+    (`syncscope` `(` custom<StringParam>($syncscope)^ `)`)? $success_ordering
+    $failure_ordering (`align` custom<IndexParamValue>($alignment)^ )?
     attr-dict `:` qualified(type($ptr))
   }];
 }
@@ -2286,8 +2286,8 @@ def POP_AtomicRMWOp : POPOp<"atomic.rmw", [
   let results = (outs UnboundOrArithmeticScalar:$result);
 
   let assemblyFormat = [{
-    `` $bin_op `(` $ptr `,` $val `)`
-    (`syncscope` `(` custom<StringParam>($syncscope)^ `)`)? `` $ordering
+    $bin_op `(` $ptr `,` $val `)`
+    (`syncscope` `(` custom<StringParam>($syncscope)^ `)`)? $ordering
     attr-dict `:` qualified(type($ptr))
   }];
 }

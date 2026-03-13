@@ -209,6 +209,10 @@ public:
 
   uint32_t GetPointerByteSize() override;
 
+  lldb_private::CompilerType GetPointerDiffType(bool is_signed) override {
+    return {};
+  }
+
   unsigned GetPtrAuthKey(lldb::opaque_compiler_type_t type) override {
     // Unimplemented.
     return 0;
