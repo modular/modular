@@ -152,7 +152,7 @@ async def run_subprocess(
                     )
                 except (TimeoutError, queue.Empty):
                     pass
-                if proc.exitcode is not None:
+                if not proc.is_alive():
                     return None, None  # will check exitcode below
 
         try:

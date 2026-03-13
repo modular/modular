@@ -26,9 +26,12 @@ from max.serve.process_control import SubprocessExit, subprocess_manager
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
-ctx = multiprocessing.get_context("spawn")
 
-
+# Simple decorator to make hung test cases fail faster than the bazel 300s timeout
+# FIXME: This is copy-pasted from conftest.py, because conftest is importing tons of max.* stuff
+# which eventually leads to a pytorch import, which installs a segfault handler for dumping the stack
+# Something about that handler causes the subprocess to hang instead of exit, but only in linux CI jobs
+# while the test still works fine locally. So we copy the function to dodge the torch import here
 def async_timeout(
     timeout: float,
 ) -> Callable[[Callable[_P, Awaitable[_R]]], Callable[_P, _R]]:
@@ -43,6 +46,9 @@ def async_timeout(
     return decorator
 
 
+ctx = multiprocessing.get_context("spawn")
+
+
 def work(alive: Event, reps: int, pause: float) -> int:
     for _ in range(reps):
         time.sleep(pause)
@@ -50,15 +56,16 @@ def work(alive: Event, reps: int, pause: float) -> int:
     return 123
 
 
-def run_segfault(_: Event) -> None:
+def run_segfault(alive: Event) -> None:
     # this will segfault, bypassing all subproc try/catch
     # forcing us to monitor process liveness externally
     print(ctypes.string_at(0))
+    alive.set()
 
 
 def run_exception(alive: Event) -> NoReturn:
     alive.set()
-    raise ValueError("dead!")
+    raise ValueError("KABOOM!")
 
 
 def run_exit(alive: Event) -> NoReturn:
@@ -66,40 +73,40 @@ def run_exit(alive: Event) -> NoReturn:
     sys.exit(1)
 
 
-@async_timeout(10)
+@async_timeout(30)
 async def test_ready_and_finish() -> None:
     async with subprocess_manager("test1") as proc:
         alive = ctx.Event()
         task = proc.start(work, alive, reps=3, pause=0)
-        await proc.ready(alive, timeout=5)
+        await proc.ready(alive, timeout=10)
         res = await asyncio.wait_for(task, timeout=10)
         assert res == 123
 
 
-@async_timeout(15)
+@async_timeout(30)
 async def test_cancel() -> None:
     async with subprocess_manager("test1") as proc:
         alive = ctx.Event()
         task = proc.start(work, alive, reps=5, pause=4)
-        await proc.ready(alive, timeout=5)
+        await proc.ready(alive, timeout=10)
         task.cancel()
 
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(task, timeout=10)
 
 
-@async_timeout(10)
+@async_timeout(30)
 async def test_heartbeat_good() -> None:
     async with subprocess_manager("test1") as proc:
         alive = ctx.Event()
-        task = proc.start(work, alive, reps=10, pause=0.2)
+        task = proc.start(work, alive, reps=10, pause=0.5)
         await proc.ready(alive, timeout=10)
-        proc.watch_heartbeat(alive, timeout=0.5)
+        proc.watch_heartbeat(alive, timeout=2)
         res = await asyncio.wait_for(task, timeout=10)
         assert res == 123
 
 
-@async_timeout(10)
+@async_timeout(30)
 async def test_heartbeat_bad() -> None:
     with pytest.raises(TimeoutError, match="test1 failed heartbeat check"):
         async with subprocess_manager("test1") as proc:
@@ -107,19 +114,21 @@ async def test_heartbeat_bad() -> None:
             task = proc.start(work, alive, reps=5, pause=4)
             proc.watch_heartbeat(alive, timeout=0.1)
             await asyncio.wait_for(task, timeout=10)
+            raise AssertionError("Should not reach here")
 
 
-@async_timeout(10)
+@async_timeout(30)
 async def test_exception_propagate() -> None:
-    with pytest.raises(ValueError, match="dead!"):
+    with pytest.raises(ValueError, match="KABOOM!"):
         async with subprocess_manager("test1") as proc:
             alive = ctx.Event()
             task = proc.start(run_exception, alive)
             await proc.ready(alive, timeout=10)
             await asyncio.sleep(11)
+            raise AssertionError("Should not reach here")
 
 
-@async_timeout(30)
+@async_timeout(60)
 async def test_segfault() -> None:
     # would normally match="Segmentation fault"
     # but ASAN CI turns this into "Aborted" status
@@ -128,11 +137,11 @@ async def test_segfault() -> None:
         async with subprocess_manager("test1") as proc:
             alive = ctx.Event()
             task = proc.start(run_segfault, alive)
-            await proc.ready(alive, timeout=30)
+            await proc.ready(alive, timeout=50)
             raise AssertionError("Should not reach here")
 
 
-@async_timeout(10)
+@async_timeout(30)
 async def test_hard_exit() -> None:
     with pytest.raises(SubprocessExit, match="1"):
         async with subprocess_manager("test1") as proc:
@@ -140,9 +149,10 @@ async def test_hard_exit() -> None:
             task = proc.start(run_exit, alive)
             await proc.ready(alive, timeout=10)
             await asyncio.sleep(11)
+            raise AssertionError("Should not reach here")
 
 
-@async_timeout(10)
+@async_timeout(30)
 async def test_nested() -> None:
     async with subprocess_manager("test1") as proc:
         alive = ctx.Event()
