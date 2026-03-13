@@ -465,31 +465,36 @@ FoldValue POP::foldSIMDShr(FoldValues operands, TargetInfoAttr target) {
   return {};
 }
 
-OpFoldResult POP::foldSIMDAbs(Attribute operand, TargetInfoAttr targetInfo) {
-  auto operandSIMD = dyn_cast_if_present<SIMDAttr>(operand);
-  if (!operandSIMD)
+FoldValue POP::foldSIMDAbs(FoldValues operands, TargetInfoAttr target) {
+  assert(operands.size() == 1 && "expected unary abs operand");
+
+  auto operandAttr = operands.getAttr<SIMDAttr>(0);
+  if (!operandAttr)
     return {};
-  std::optional<KGENDType> dtype = operandSIMD.getType().getResolvedDType();
+  std::optional<KGENDType> dtype = operandAttr.getType().getResolvedDType();
   if (!dtype || dtype->isInvalid())
     return {};
 
   // Bools or unsigned types are already abs'd.
   if (dtype->isBool() || dtype->isUInt())
-    return operand;
+    return operands[0];
 
   std::optional<int64_t> indexBitWidth;
-  if (targetInfo)
-    indexBitWidth = targetInfo.resolveIndexBitWidth();
+  if (target)
+    indexBitWidth = target.resolveIndexBitWidth();
 
-  return foldSIMDOp(
-      operand, indexBitWidth,
-      [](APFloat operand) -> APFloat {
-        operand.clearSign();
-        return operand;
-      },
-      [](APSInt operand) -> std::optional<APSInt> {
-        return APSInt(operand.abs(), /*isUnsigned=*/false);
-      });
+  if (auto fold = foldSIMDOp(
+          operands.getAttrs(), indexBitWidth,
+          [](APFloat val) -> APFloat {
+            val.clearSign();
+            return val;
+          },
+          [](APSInt val) -> std::optional<APSInt> {
+            return APSInt(val.abs(), /*isUnsigned=*/false);
+          }))
+    return FoldValue(fold);
+
+  return {};
 }
 
 OpFoldResult POP::foldSIMDRound(Attribute operand, TargetInfoAttr targetInfo) {

@@ -106,18 +106,18 @@ OpFoldResult TruncOp::fold(FoldAdaptor adaptor) {
 }
 
 OpFoldResult AbsOp::fold(FoldAdaptor adaptor) {
-  if (auto fold = foldSIMDAbs(adaptor.getOperand(), lookupTargetInfo(*this))) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-      return ret;
-  }
+  if (auto fold = foldSIMDAbs(
+          FoldValues(adaptor.getOperands(), getOperation()->getOperands()),
+          lookupTargetInfo(*this)))
+    return fold.asOpFoldResult();
   return {};
 }
 
 ErrorTreeOrSuccess AbsOp::interpret(ArrayRef<Attribute> operands,
                                     InterpreterState &state) {
-  if (auto fold = foldSIMDAbs(operands[0], state.getTarget())) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold))) {
-      state.mapResults(ret);
+  if (auto result = foldSIMDAbs(FoldValues(operands), state.getTarget())) {
+    if (auto attr = result.getAttr()) {
+      state.mapResults(attr);
       return success();
     }
   }
@@ -127,9 +127,9 @@ ErrorTreeOrSuccess AbsOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 AbsOp::parametric_interpret(ArrayRef<Attribute> operands,
                             ParametricInterpreterState &state) {
-  if (auto fold = foldSIMDAbs(operands[0], state.getTarget())) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold))) {
-      state.mapResults(ret);
+  if (auto result = foldSIMDAbs(FoldValues(operands), state.getTarget())) {
+    if (auto attr = result.getAttr()) {
+      state.mapResults(attr);
       return success();
     }
   }

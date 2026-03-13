@@ -43,6 +43,25 @@ SIMDCmpAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDAbsAttr
+//===----------------------------------------------------------------------===//
+
+FailureOr<TypedAttr>
+SIMDAbsAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
+  auto target = context.getTargetInfo();
+  if (!target)
+    return failure();
+
+  Attribute operands[] = {getOperand()};
+  if (auto fold = foldSIMDAbs(FoldValues(operands), target)) {
+    assert(fold.getAttr() && "attribute fold should produce an attribute");
+    return fold.getAttr();
+  }
+
+  return failure();
+}
+
+//===----------------------------------------------------------------------===//
 // SIMDShlAttr
 //===----------------------------------------------------------------------===//
 

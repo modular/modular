@@ -80,7 +80,7 @@ FoldValue foldSIMDShl(FoldValues operands, TargetInfoAttr target = {});
 FoldValue foldSIMDShr(FoldValues operands, TargetInfoAttr target = {});
 
 /// Fold a SIMD abs operation.
-OpFoldResult foldSIMDAbs(Attribute val, TargetInfoAttr targetInfo);
+FoldValue foldSIMDAbs(FoldValues operands, TargetInfoAttr target = {});
 
 /// Fold a SIMD round operation.
 OpFoldResult foldSIMDRound(Attribute val, TargetInfoAttr targetInfo);
