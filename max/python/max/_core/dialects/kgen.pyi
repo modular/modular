@@ -1322,7 +1322,7 @@ class StructFieldTypeByNameAttr(max._core.Attribute):
     Example:
 
     ```mlir
-    #kgen.struct_field_type_by_name<#MyStruct, "x"> : !kgen.type
+    #kgen.struct_field_type_by_name<#MyStruct, "x"> : !AnyType
     ```
     """
 
@@ -1330,14 +1330,14 @@ class StructFieldTypeByNameAttr(max._core.Attribute):
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
         field_name: max._core.dialects.builtin.TypedAttr,
-        type: TypeType,
+        type: max._core.Type,
     ) -> None: ...
     @property
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def field_name(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def type(self) -> TypeType: ...
+    def type(self) -> max._core.Type | None: ...
 
 class StructFieldTypesAttr(max._core.Attribute):
     """

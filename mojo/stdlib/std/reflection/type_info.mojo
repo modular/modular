@@ -88,7 +88,6 @@ def get_function_name[
     return StaticString(res)
 
 
-# TODO: Make this AnyType
 def get_type_name[
     type_type: __mlir_type.`!kgen.type`,
     //,

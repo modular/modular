@@ -130,7 +130,7 @@ def struct_field_index_by_name[
     )
 
 
-struct ReflectedType[T: __mlir_type.`!kgen.type`](TrivialRegisterPassable):
+struct ReflectedType[T: AnyType](TrivialRegisterPassable):
     """Wrapper struct for compile-time type values from reflection.
 
     This struct wraps a `!kgen.non_struct_type` value as a type parameter, allowing
@@ -163,7 +163,8 @@ def struct_field_type_by_name[
         StructT,
         `, `,
         name.value,
-        `> : !kgen.type`,
+        `> : `,
+        AnyType,
     ]
 ]:
     """Returns the type of the field with the given name in struct `StructT`.
@@ -267,7 +268,7 @@ def struct_field_count[T: AnyType]() -> Int:
 
 def struct_field_types[
     T: AnyType,
-]() -> __mlir_type[`!kgen.variadic<!kgen.type>`]:
+]() -> Variadic.TypesOfTrait[AnyType]:
     """Returns the types of all fields in struct `T` as a variadic.
 
     This function works with both concrete types and generic type parameters.

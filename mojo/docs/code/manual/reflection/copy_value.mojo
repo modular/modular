@@ -28,7 +28,11 @@ trait MakeCopyable:
 
             # Perform copy
             ref p_value = __struct_field_ref(idx, self)
-            __struct_field_ref(idx, other) = p_value
+            trait_downcast[Copyable & ImplicitlyDestructible](
+                __struct_field_ref(idx, other)
+            ) = trait_downcast[Copyable & ImplicitlyDestructible](
+                p_value
+            ).copy()
 
 
 @fieldwise_init

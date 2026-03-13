@@ -121,7 +121,7 @@ def test_rebind_downcasted_struct_field_type() raises:
 
     # Test rebind_var with downcasted type
     var value1 = TField()
-    var original1: Int = rebind_var[Int](value1)
+    var original1: Int = rebind_var[Int](value1^)
     assert_equal(original1, 0)
 
     # Test rebind (not rebind_var) with downcasted type
