@@ -11,7 +11,10 @@
 #ifndef KGEN_KGENDIALECT_FOLDUTILS_H
 #define KGEN_KGENDIALECT_FOLDUTILS_H
 
+#include "KGEN/KGENDialect/KGENAttrs.h"
+#include "Support/Compiler/ErrorTree.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Value.h"
@@ -108,6 +111,76 @@ private:
   ArrayRef<Attribute> attrs;
   ValueRange values;
 };
+
+//===----------------------------------------------------------------------===//
+// Fold helpers
+//
+// These reduce the boilerplate for connecting ops and attributes to a shared
+// fold function.  Each fold function has the canonical signature:
+//
+//   FoldValue foldFoo(FoldValues operands, TargetInfoAttr target);
+//
+// The helpers below adapt that signature for the four standard hooks:
+//   - Attr::get            (fold-on-construction, no target)
+//   - evaluateWithContext  (contextual eval, target from context)
+//   - Op::fold             (op folding, target from module)
+//   - Op::interpret        (interpreter, target from state)
+//===----------------------------------------------------------------------===//
+
+/// The canonical fold function signature accepted by all fold helpers.
+using TargetAwareFoldFn = function_ref<FoldValue(FoldValues, TargetInfoAttr)>;
+
+/// Try to fold an attribute during construction (no target info available).
+/// A null TargetInfoAttr is passed, relying on the fold function to treat it
+/// as "unknown target" and only fold when safe.
+inline TypedAttr tryFoldAttr(ArrayRef<Attribute> operands,
+                             TargetAwareFoldFn fold) {
+  if (auto result = fold(FoldValues(operands), {})) {
+    assert(result.getAttr() && "attribute fold should produce an attribute");
+    return result.getAttr();
+  }
+  return {};
+}
+
+/// Evaluate an attribute with context using a target-aware fold function.
+/// Returns the folded attribute if target info is available and the fold
+/// succeeds, or failure() otherwise.
+template <typename ContextT>
+FailureOr<TypedAttr> foldAttrWithTarget(ContextT &context,
+                                        ArrayRef<Attribute> operands,
+                                        TargetAwareFoldFn fold) {
+  auto target = context.getTargetInfo();
+  if (!target)
+    return failure();
+  if (auto result = fold(FoldValues(operands), target)) {
+    assert(result.getAttr() && "attribute fold should produce an attribute");
+    return result.getAttr();
+  }
+  return failure();
+}
+
+/// Fold an op using a target-aware fold function.
+inline OpFoldResult foldOpWithTarget(FoldValues operands, TargetInfoAttr target,
+                                     TargetAwareFoldFn fold) {
+  if (auto result = fold(operands, target))
+    return result.asOpFoldResult();
+  return {};
+}
+
+/// Interpret an op using a target-aware fold function. Works for both
+/// InterpreterState and ParametricInterpreterState.
+template <typename StateT>
+ErrorTreeOrSuccess interpretOpWithFold(Location loc, StringRef opName,
+                                       ArrayRef<Attribute> operands,
+                                       StateT &state, TargetAwareFoldFn fold) {
+  if (auto result = fold(FoldValues(operands), state.getTarget())) {
+    if (auto attr = result.getAttr()) {
+      state.mapResults(attr);
+      return success();
+    }
+  }
+  return ErrorTree(loc, "failed to interpret " + opName);
+}
 
 } // namespace M::KGEN
 
