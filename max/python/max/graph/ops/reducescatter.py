@@ -83,16 +83,13 @@ def sum(
 
     # Compute output types for each device's portion.
     output_types = []
+    scatter_dim = input_shape[axis]
     for dev_idx, device in enumerate(devices):
         output_shape_list = list(input_shape)
-        scatter_dim = input_shape[axis]
-        if scatter_dim is not None:
-            remainder = int(scatter_dim) % num_devices
-            output_shape_list[axis] = (scatter_dim // num_devices) + (
-                1 if dev_idx < remainder else 0
-            )
-        else:
-            output_shape_list[axis] = None
+        # Ragged binning across num_devices bins.
+        output_shape_list[axis] = (
+            scatter_dim + (num_devices - dev_idx - 1)
+        ) // num_devices
         output_types.append(
             TensorType(
                 dtype=input_dtype,
