@@ -228,6 +228,21 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
   ArgConvention convention = conventions[argConventionIndex];
   bool needsGPUTransform =
       transform->target && isGPUTriple(transform->target.getTriple());
+  if (transform->target && isMetalTriple(transform->target.getTriple())) {
+    // HACK HACK HACK:
+    // Need to add extra indirection for `kgen.pointer<none>` when compiling
+    // metal kernel. This is needed, because MetalDeviceContext cannot
+    // distinguish `ptr` and `{ { ptr }, {} }` arguments when it tries to set
+    // MTL::Buffer: when argument is a `ptr` there should be existing tracked
+    // MTL::Buffer created for DeviceBuffer; while for the latter the driver
+    // needs to create new MTL::Buffer. Because these 2 cases have different IR
+    // generated, there is no driver's solution that fits all.
+    if (auto ptr = dyn_cast<PointerType>(type);
+        ptr && convention == ArgConvention::ReadReg) {
+      transform->applyValueTransform(operandIndex, PointerType::get(ptr));
+      conventions[argConventionIndex] = ArgConvention::ReadMem;
+    }
+  }
 
   /// LOWER PTR
   if (isa<PointerType>(type) && !(convention == ArgConvention::ReadMem ||
