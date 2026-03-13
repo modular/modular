@@ -138,7 +138,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         ), "mismatch in the number of elements"
         self = Self()
         comptime for idx in range(Self.size):
-            self.__setitem__[idx](values[idx])
+            self[idx] = values[idx]
 
     @always_inline
     def __init__(
@@ -157,7 +157,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         assert Self.size == len(values), "mismatch in the number of elements"
         self = Self()
         comptime for idx in range(Self.size):
-            self.__setitem__[idx](values[idx])
+            self[idx] = values[idx]
 
     @always_inline("nodebug")
     def __len__(self) -> Int:
@@ -167,23 +167,6 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
             The size of the list.
         """
         return Self.size
-
-    @always_inline("nodebug")
-    def __getitem__[index: Int](self) -> Self.element_type:
-        """Returns the value of the tuple at the given index.
-
-        Parameters:
-            index: The index into the tuple.
-
-        Returns:
-            The value at the specified position.
-        """
-        comptime assert index < Self.size
-        var val = __mlir_op.`pop.array.get`[
-            _type=Self.element_type,
-            index=index._mlir_value,
-        ](self._mlir_value)
-        return val
 
     @always_inline("nodebug")
     def __getitem__[I: Indexer, //](self, idx: I) -> Self.element_type:
@@ -216,18 +199,21 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         self._unsafe_ref(index(idx)) = val
 
     @always_inline("nodebug")
-    def __setitem__[idx: Int](mut self, val: Self.element_type):
-        """Stores a single value into the tuple at the specified index.
+    def get[index: Int](self) -> Self.element_type:
+        """Returns the value of the tuple at the given index.
 
         Parameters:
-            idx: The index into the tuple.
+            index: The index into the tuple.
 
-        Args:
-            val: The value to store.
+        Returns:
+            The value at the specified position.
         """
-        comptime assert idx < Self.size
-
-        self._unsafe_ref(idx) = val
+        comptime assert index < Self.size
+        var val = __mlir_op.`pop.array.get`[
+            _type=Self.element_type,
+            index=index._mlir_value,
+        ](self._mlir_value)
+        return val
 
     @always_inline("nodebug")
     def _unsafe_ref(ref self, idx: Int) -> ref[self] Self.element_type:

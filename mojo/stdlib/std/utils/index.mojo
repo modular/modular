@@ -78,12 +78,10 @@ def _int_tuple_binary_apply[
     c = {}
 
     comptime for i in range(a.size):
-        var a_elem = a.__getitem__[i]()
-        var b_elem = b.__getitem__[i]()
-        c.__setitem__[i](
-            binary_fn[a.element_type](
-                Scalar[a.element_type](a_elem),
-                Scalar[a.element_type](b_elem),
+        c[i] = Int(
+            binary_fn(
+                Scalar[a.element_type](a.get[i]()),
+                Scalar[a.element_type](b.get[i]()),
             )
         )
 
@@ -111,13 +109,9 @@ def _int_tuple_compare[
     var c = StaticTuple[Bool, a.size]()
 
     comptime for i in range(a.size):
-        var a_elem = a.__getitem__[i]()
-        var b_elem = b.__getitem__[i]()
-        c.__setitem__[i](
-            comp_fn[a.element_type](
-                Scalar[a.element_type](a_elem),
-                Scalar[a.element_type](b_elem),
-            )
+        c[i] = comp_fn[a.element_type](
+            Scalar[a.element_type](a.get[i]()),
+            Scalar[a.element_type](b.get[i]()),
         )
 
     return c
@@ -148,7 +142,7 @@ def _bool_tuple_reduce[
     var c: Bool = init
 
     comptime for i in range(a.size):
-        c = reduce_fn(c, a.__getitem__[i]())
+        c = reduce_fn(c, a.get[i]())
 
     return c
 
@@ -295,8 +289,8 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         return Self.size
 
     @always_inline
-    def __getitem__[idx: Int](self) -> Int:
-        """Gets an element from the tuple by index.
+    def get[idx: Int](self) -> Int:
+        """Gets an element from the tuple by index parameter.
 
         Parameters:
             idx: The element index.
@@ -304,7 +298,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Returns:
             The tuple element value.
         """
-        return Int(self.data.__getitem__[idx]())
+        return Int(self.data.get[idx]())
 
     @always_inline("nodebug")
     def __getitem__[I: Indexer](self, idx: I) -> Int:
@@ -320,30 +314,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             The tuple element value.
         """
         return Int(self.data[idx])
-
-    @always_inline("nodebug")
-    def __setitem__[idx: Int](mut self, val: Int):
-        """Sets an element in the tuple at the given static index.
-
-        Parameters:
-            idx: The element index.
-
-        Args:
-            val: The value to store.
-        """
-        self.data.__setitem__[idx](Scalar[Self.element_type](val))
-
-    @always_inline("nodebug")
-    def __setitem__[idx: Int](mut self, val: Self._int_type):
-        """Sets an element in the tuple at the given static index.
-
-        Parameters:
-            idx: The element index.
-
-        Args:
-            val: The value to store.
-        """
-        self.data.__setitem__[idx](val)
 
     @always_inline("nodebug")
     def __setitem__(mut self, idx: Int, val: Int):
@@ -365,7 +335,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         var res = StaticTuple[Int, Self.size]()
 
         comptime for i in range(Self.size):
-            res[i] = self.__getitem__[i]()
+            res[i] = self.get[i]()
         return res
 
     @always_inline("nodebug")
@@ -707,9 +677,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         result = {}
 
         comptime for i in range(Self.size):
-            result.data[i] = self.data.__getitem__[i]().cast[
-                result.element_type
-            ]()
+            result.data[i] = self.data.get[i]().cast[result.element_type]()
 
     def __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
