@@ -37,6 +37,7 @@ from internal_utils._utils import (
     dynamic,
     static,
 )
+from layout import TileTensor
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils import elementwise_compute_lambda_type
 from std.utils import IndexList
@@ -198,7 +199,12 @@ def bench_matmul[
                         transpose_b=transpose_b,
                         elementwise_compute_lambda_fn=optional_lambda_fn,
                         register_based_epilogue=register_based_epilogue,
-                    ](tensor_c, tensor_a, tensor_b, ctx)
+                    ](
+                        TileTensor(tensor_c),
+                        TileTensor(tensor_a),
+                        TileTensor(tensor_b),
+                        ctx,
+                    )
 
         b.iter_custom[kernel_launch](ctx)
 

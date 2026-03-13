@@ -48,7 +48,7 @@ from internal_utils._utils import (
     dynamic,
     static,
 )
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, TileTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils import elementwise_compute_lambda_type
@@ -201,7 +201,12 @@ def verify_matmul[
     _matmul_gpu[
         use_tensor_core=True,
         transpose_b=transpose_b,
-    ](c_device_nd, a_device_nd, b_device_nd, ctx)
+    ](
+        TileTensor(c_device_nd),
+        TileTensor(a_device_nd),
+        TileTensor(b_device_nd),
+        ctx,
+    )
 
     # Launch GPU verification kernel
     comptime NUM_BLOCKS = 32
@@ -473,7 +478,12 @@ def bench_matmul[
                 transpose_b=transpose_b,
                 elementwise_compute_lambda_fn=optional_lambda_fn,
                 register_based_epilogue=register_based_epilogue,
-            ](tensor_c, tensor_a, tensor_b, ctx)
+            ](
+                TileTensor(tensor_c),
+                TileTensor(tensor_a),
+                TileTensor(tensor_b),
+                ctx,
+            )
 
     @parameter
     @always_inline

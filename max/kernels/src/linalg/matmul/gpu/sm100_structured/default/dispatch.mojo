@@ -1721,8 +1721,8 @@ def _matmul_dispatch_sm100[
         return
 
     else:
-        # Epilogue path needs NDBuffer for c.load in the closure.
-        var c_buf = c_tensor._to_ndbuffer()
+        # Epilogue path uses a LayoutTensor for c.load in the closure.
+        var c_lt = c_tensor.to_layout_tensor()
 
         comptime epilogue = elementwise_lambda_fn.value()
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
@@ -1736,25 +1736,23 @@ def _matmul_dispatch_sm100[
         )
 
         @parameter
-        @__copy_capture(c_buf)
+        @__copy_capture(c_lt)
         def epilogue_wrapper[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])
-            var c_val = c_buf.load[
+            var c_val = c_lt.load[
                 width=simd_width,
-                # Load takes alignment in bytes, lambda takes number of elements
-                alignment=alignment * size_of[c_buf.type](),
+                # load_alignment is in bytes, lambda alignment is in elements
+                load_alignment=alignment * size_of[c_type](),
             ](c_coord)
-            epilogue[c_buf.type, simd_width, alignment=alignment](
-                c_coord, c_val
-            )
+            epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
 
         # If c is already allocated, we can just use the sm100 matmul and
         # apply the epilogue.
         if c_tensor.ptr:
-            var m = c_buf.dim[0]()
-            var n = c_buf.dim[1]()
+            var m = c_lt.dim[0]()
+            var n = c_lt.dim[1]()
 
             blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b,
@@ -1769,16 +1767,16 @@ def _matmul_dispatch_sm100[
             return
 
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
-        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](
-            c_buf.num_elements()
-        )
+        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](c_lt.size())
 
-        # Construct a new buffer with external origin pointing to the temporary storage.
+        # Construct a temporary NDBuffer, then wrap it in TileTensor for the
+        # recursive call.
+        # TODO(KERN-2219): construct a TileTensor directly here.
         var c_tmp = NDBuffer[rank=2, c_type, MutExternalOrigin](
             rebind[UnsafePointer[Scalar[c_type], MutExternalOrigin]](
                 tmp_device_buffer.unsafe_ptr()
             ),
-            IndexList[2](c_buf.dim[0](), c_buf.dim[1]()),
+            IndexList[2](c_lt.dim[0](), c_lt.dim[1]()),
         )
 
         _matmul_dispatch_sm100[

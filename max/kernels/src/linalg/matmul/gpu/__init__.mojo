@@ -394,7 +394,6 @@ def _matmul_gpu[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    config: Optional[MatmulConfig[a_type, b_type, c_type, transpose_b]] = None,
     pdl_level: PDLLevel = PDLLevel(),
     register_based_epilogue: Bool = True,
 ](
@@ -403,28 +402,7 @@ def _matmul_gpu[
     b: NDBuffer[mut=False, rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises:
-    """NDBuffer overload — converts to TileTensor and delegates.
-
-    If `config` is provided, bypasses the dispatch heuristic and calls
-    `multistage_gemm` directly with the specified config.
-    """
-    # Config override: bypass dispatch heuristic and all runtime shape
-    # guards, call multistage_gemm directly. The caller is responsible for
-    # ensuring the config is valid for the given shapes. Used by tests to
-    # force a specific kernel configuration.
-    # Note: compute lambda wrapping happens in the TileTensor overload, so
-    # we can't support elementwise_compute_lambda_fn on this path.
-    comptime if config:
-        comptime assert not elementwise_compute_lambda_fn, (
-            "config + elementwise_compute_lambda_fn not supported; use"
-            " elementwise_lambda_fn instead"
-        )
-        return multistage_gemm[
-            transpose_b=transpose_b,
-            config=config.value(),
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](c, a, b, ctx)
-
+    """NDBuffer compatibility shim — converts to TileTensor and delegates."""
     _matmul_gpu[
         use_tensor_core=use_tensor_core,
         transpose_b=transpose_b,
@@ -448,8 +426,8 @@ def _matmul_gpu[
     register_based_epilogue: Bool = True,
 ](
     c: TileTensor[mut=True, ...],
-    a: TileTensor,
-    b: TileTensor,
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
     """TileTensor overload of `_matmul_gpu`. Contains all matmul dispatch
@@ -929,8 +907,8 @@ def multistage_gemm[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[a_type, ...],
-    b: TileTensor[b_type, ...],
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
     ctx: DeviceContext,
 ) raises:
     """TileTensor overload of `multistage_gemm`. Converts to LayoutTensor and
@@ -1046,8 +1024,8 @@ def multistage_gemm[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[a_type, ...],
-    b: TileTensor[b_type, ...],
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
     runtime_config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     ctx: DeviceContext,
 ) raises:

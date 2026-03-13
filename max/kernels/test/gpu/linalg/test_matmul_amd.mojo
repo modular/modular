@@ -19,10 +19,17 @@ import linalg.matmul.vendor.blas as vendor_blas
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import MI355X
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from linalg.matmul.gpu import (
     _amdgpu_matmul_config_from_block_shape,
     _matmul_gpu,
+    multistage_gemm,
 )
 from linalg.utils_gpu import MatmulConfig
 from std.testing import assert_equal
@@ -114,9 +121,20 @@ def test[
     ctx.enqueue_copy(b_device_buffer, b_host_ptr)
     ctx.enqueue_copy(c_device_buffer, c_host_ptr)
 
-    _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b, config=config](
-        c_device, a_device, b_device, ctx
-    )
+    comptime if config:
+        multistage_gemm[transpose_b=transpose_b, config=config.value()](
+            TileTensor(c_device),
+            TileTensor(a_device),
+            TileTensor(b_device),
+            ctx,
+        )
+    else:
+        _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
+            TileTensor(c_device),
+            TileTensor(a_device),
+            TileTensor(b_device),
+            ctx,
+        )
 
     vendor_blas.matmul(
         ctx,

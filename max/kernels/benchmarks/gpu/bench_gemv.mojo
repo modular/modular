@@ -99,7 +99,7 @@ def bench_matmul[
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             _matmul_gpu[transpose_b=False, use_tensor_core=True](
-                mat_c, mat_a, mat_b, ctx
+                TileTensor(mat_c), TileTensor(mat_a), TileTensor(mat_b), ctx
             )
 
         b.iter_custom[kernel_launch](ctx)
@@ -164,7 +164,7 @@ def bench_matmul_transpose[
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             _matmul_gpu[transpose_b=True, use_tensor_core=True](
-                mat_c, mat_a, mat_b, ctx
+                TileTensor(mat_c), TileTensor(mat_a), TileTensor(mat_b), ctx
             )
 
         b.iter_custom[kernel_launch](ctx)
