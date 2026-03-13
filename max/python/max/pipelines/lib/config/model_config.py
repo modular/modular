@@ -941,14 +941,22 @@ class MAXModelConfig(MAXModelConfigBase):
 
         if self.weight_path:
             # Get the encoding of the first weight path file.
-            if os.path.exists(self.weight_path[0]):
-                file_encoding = parse_supported_encoding_from_file_name(
-                    str(self.weight_path[0])
-                )
-            else:
-                file_encoding = self.huggingface_weight_repo.encoding_for_file(
-                    self.weight_path[0]
-                )
+            # Try filename-based detection first — it works for both
+            # local and remote paths and avoids ambiguity when a repo
+            # has multiple dtypes (e.g. NVFP4 repos with F32 norms).
+            file_encoding = parse_supported_encoding_from_file_name(
+                str(self.weight_path[0])
+            )
+            if file_encoding is None:
+                if os.path.exists(self.weight_path[0]):
+                    # Local file with no encoding hint in the name.
+                    file_encoding = None
+                else:
+                    file_encoding = (
+                        self.huggingface_weight_repo.encoding_for_file(
+                            self.weight_path[0]
+                        )
+                    )
 
             if file_encoding:
                 if self.allow_safetensors_weights_fp32_bf6_bidirectional_cast:

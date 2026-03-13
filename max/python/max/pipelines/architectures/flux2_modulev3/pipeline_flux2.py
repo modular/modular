@@ -146,6 +146,7 @@ class Flux2Pipeline(DiffusionPipeline):
         - Flux2 VAE (with BatchNorm-based latent normalization)
     """
 
+    unprefixed_weight_component = "transformer"
     default_num_inference_steps = 28
 
     vae: AutoencoderKLFlux2Model
