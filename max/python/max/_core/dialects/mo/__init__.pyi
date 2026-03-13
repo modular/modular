@@ -2658,7 +2658,7 @@ class CustomOp(max._core.Operation):
 
     ```mojo
       @register_internal("test_custom_op")
-      fn foo(...):
+      def foo(...):
         pass
     ```
 
@@ -2679,7 +2679,7 @@ class CustomOp(max._core.Operation):
     ```
     ```mojo
       @register_internal("test_custom_op")
-      fn foo(...):
+      def foo(...):
         pass
     ```
     """
