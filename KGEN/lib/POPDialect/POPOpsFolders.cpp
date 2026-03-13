@@ -320,61 +320,22 @@ LogicalResult DivOp::canonicalize(DivOp op, PatternRewriter &b) {
   return success();
 }
 
-/// Helper function to fold div operations. The target is used for index types.
-static OpFoldResult foldDivOp(ArrayRef<Attribute> operands,
-                              TargetInfoAttr target) {
-  if (llvm::any_of(operands, [](Attribute operand) {
-        return !isa_and_nonnull<SIMDAttr>(operand);
-      }))
-    return {};
-  std::optional<KGENDType> dtype =
-      cast<SIMDAttr>(operands.front()).getType().getResolvedDType();
-  if (!dtype)
-    return {};
-
-  std::optional<int64_t> indexBitWidth;
-  if (target)
-    indexBitWidth = target.resolveIndexBitWidth();
-
-  return foldSIMDOp(
-      operands, indexBitWidth,
-      [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
-        if (rhs.isZero())
-          return std::nullopt;
-        return lhs / rhs;
-      },
-      [](APFloat lhs, APFloat rhs) -> std::optional<APFloat> {
-        if (rhs.isZero())
-          return std::nullopt;
-        return lhs / rhs;
-      });
-}
-
 OpFoldResult DivOp::fold(FoldAdaptor adaptor) {
-  return foldDivOp(adaptor.getOperands(), lookupTargetInfo(*this));
+  return foldOpWithTarget(FoldValues(adaptor.getOperands(), getOperands()),
+                          lookupTargetInfo(*this), foldSIMDDiv);
 }
 
 ErrorTreeOrSuccess DivOp::interpret(ArrayRef<Attribute> operands,
                                     InterpreterState &state) {
-  if (OpFoldResult result = foldDivOp(operands, state.getTarget())) {
-    if (auto attr = dyn_cast<Attribute>(result)) {
-      state.mapResults(attr);
-      return success();
-    }
-  }
-  return ErrorTree(getLoc(), "failed to interpret POP::DivOp");
+  return interpretOpWithFold(getLoc(), getOperation()->getName().getStringRef(),
+                             operands, state, foldSIMDDiv);
 }
 
 ErrorTreeOrSuccess
 DivOp::parametric_interpret(ArrayRef<Attribute> operands,
                             ParametricInterpreterState &state) {
-  if (OpFoldResult result = foldDivOp(operands, state.getTarget())) {
-    if (auto attr = dyn_cast<Attribute>(result)) {
-      state.mapResults(attr);
-      return success();
-    }
-  }
-  return ErrorTree(getLoc(), "failed to interpret POP::DivOp");
+  return interpretOpWithFold(getLoc(), getOperation()->getName().getStringRef(),
+                             operands, state, foldSIMDDiv);
 }
 
 /// Helper function to fold rem operations. The target is used for index types.

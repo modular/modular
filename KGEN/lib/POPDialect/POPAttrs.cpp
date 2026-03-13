@@ -2078,25 +2078,9 @@ TypedAttr SIMDMulAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
 //===----------------------------------------------------------------------===//
 
 TypedAttr SIMDDivAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
-  // Fold if possible. For integers, division by zero is undefined behavior,
-  // so we don't fold. For floats, IEEE 754 defines the result (inf or NaN).
-  if (auto fold = foldSIMDOp(
-          {lhs, rhs},
-          [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
-            if (rhs.isZero())
-              return std::nullopt;
-            return lhs / rhs;
-          },
-          [](APFloat lhs, APFloat rhs) { return lhs / rhs; },
-          [](bool lhs, bool rhs) -> std::optional<bool> {
-            // Division by zero (false) is undefined, don't fold
-            if (!rhs)
-              return std::nullopt;
-            return lhs;
-          })) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-      return ret;
-  }
+  Attribute operands[] = {lhs, rhs};
+  if (TypedAttr folded = tryFoldAttr(operands, foldSIMDDiv))
+    return folded;
   return Base::get(ctx, lhs, rhs);
 }
 
