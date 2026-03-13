@@ -285,7 +285,7 @@ def test_threadid_compile() raises:
 
     # CHECK-LABEL: @test_compile_gcn_load_store_
     # CHECK: llvm.amdgcn.workitem.id.x
-    # CHECK: %[[VAR:.*]] = tail call ptr addrspace(4) @llvm.amdgcn.implicitarg.ptr()
+    # CHECK: %[[VAR:.*]] = tail call {{.*}}ptr addrspace(4) @llvm.amdgcn.implicitarg.ptr()
     # CHECK: getelementptr inbounds nuw i8, ptr addrspace(4) %[[VAR]], i64 12
     print(
         _compile_code[
