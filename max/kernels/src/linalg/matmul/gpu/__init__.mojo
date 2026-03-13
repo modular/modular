@@ -989,32 +989,6 @@ def multistage_gemm[
 
 def multistage_gemm[
     c_type: DType,
-    c_shape: DimList,
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    //,
-    *,
-    transpose_b: Bool,
-    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-](
-    c: NDBuffer[mut=True, rank=2, c_type, _, c_shape],
-    a: NDBuffer[rank=2, a_type, _, a_shape],
-    b: NDBuffer[rank=2, b_type, _, b_shape],
-    ctx: DeviceContext,
-) raises:
-    """NDBuffer overload — converts to TileTensor and delegates."""
-    multistage_gemm[
-        transpose_b=transpose_b,
-        config=config,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ](TileTensor(c), TileTensor(a), TileTensor(b), ctx)
-
-
-def multistage_gemm[
-    c_type: DType,
     a_type: DType,
     b_type: DType,
     //,
@@ -1270,30 +1244,3 @@ def multistage_gemm[
                 UInt32(config.shared_mem_usage())
             ),
         )
-
-
-def multistage_gemm[
-    c_type: DType,
-    c_shape: DimList,
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    //,
-    *,
-    transpose_b: Bool,
-    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-](
-    c: NDBuffer[mut=True, rank=2, c_type, _, c_shape],
-    a: NDBuffer[mut=False, rank=2, a_type, _, a_shape],
-    b: NDBuffer[mut=False, rank=2, b_type, _, b_shape],
-    runtime_config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    ctx: DeviceContext,
-) raises:
-    """NDBuffer overload — converts to TileTensor and delegates."""
-    multistage_gemm[
-        transpose_b=transpose_b,
-        config=config,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ](TileTensor(c), TileTensor(a), TileTensor(b), runtime_config, ctx)
