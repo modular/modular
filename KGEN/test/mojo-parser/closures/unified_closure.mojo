@@ -974,3 +974,181 @@ def repro_rebind_nonref_operand[
         return func[w=w](val)
 
     _ = body
+
+
+# // -----
+
+# COM: Verify lazy conformance emission for captured param expression closures.
+
+# COM: Verify nested closure conformance for 2-arg closure (emitted before 1-arg).
+# CHECK: kgen.conformance @"fn(x: Container[T], y: Container[U]) -> None" {
+# CHECK: kgen.witness "T" : !Int = #kgen.get_witness<:!{{.*}} impl, "fn(x: Container[{{.*}}], y: Container[{{.*}}]) -> None", "{{.*}}">
+# CHECK: kgen.witness "U" : !Int = #kgen.get_witness<:!{{.*}} impl, "fn(x: Container[{{.*}}], y: Container[{{.*}}]) -> None", "{{.*}}">
+
+# CHECK: kgen.conformance @"fn(x: Container[T]) -> None" {
+# CHECK: kgen.witness "T" : !Int = #kgen.get_witness<:!{{.*}} impl, "fn(x: Container[{{.*}}]) -> None", "{{.*}}">
+
+trait Coord(ImplicitlyCopyable):
+    comptime Dim: Int
+    fn prettyPrint(self):
+        pass
+
+
+@fieldwise_init
+struct Cartesian(Coord):
+    comptime Dim = 2
+    var x: Int
+    var y: Int
+
+    fn prettyPrint(self):
+        pass
+
+
+struct Sphere(Coord):
+    comptime Dim = 2
+    var theta: Int
+    var phi: Int
+
+
+@fieldwise_init
+struct HasParam[T: Coord](ImplicitlyCopyable):
+    comptime P = Self.T.Dim
+    var x: Self.T
+
+
+@fieldwise_init
+struct Container[N: Int]:
+    pass
+
+
+fn takes[T: Int, F: fn(x: Container[T]) unified](impl: F):
+    impl(Container[T]())
+
+fn takes2[T: Int, U: Int, F: fn(x: Container[T], y: Container[U]) unified](impl: F):
+    impl(Container[T](), Container[U]())
+
+
+fn takes_w[T: Int, F: fn(w: Container[T]) unified](impl: F):
+    impl(Container[T]())
+
+# CHECK-LABEL: lit.fn @"defines[
+fn defines[T: Coord](foo: HasParam[T]):
+    # CHECK: kgen.param.declare E1: !Int
+    # CHECK-NOT: kgen.param.declare E2
+    comptime S = foo.P
+
+    fn closure(x: Container[S]) unified {var}:
+        pass
+
+    takes[S, type_of(closure)](closure)
+
+# CHECK-LABEL: lit.fn @"defines_nested[
+fn defines_nested[T: Coord, U: Coord](foo: HasParam[T], bar: HasParam[U]):
+    comptime S = foo.P
+
+    fn closure(w: Container[S]) unified {var}:
+        comptime Q = bar.P
+        fn closure2(x: Container[Q], y: Container[S]) unified {var}:
+            pass
+        takes2[Q, S, type_of(closure2)](closure2)
+
+    takes_w[S, type_of(closure)](closure)
+
+# // -----
+
+# COM: Parameter Expressions are Outlined properly
+
+trait Coord(ImplicitlyCopyable):
+    comptime Dim: Int
+
+    fn prettyPrint(self):
+        pass
+
+
+@fieldwise_init
+struct Cartesian(Coord):
+    comptime Dim = 2
+    var x: Int
+    var y: Int
+
+    fn prettyPrint(self):
+        pass
+
+
+@fieldwise_init
+struct HasParam[T: Coord](ImplicitlyCopyable):
+    comptime P = Self.T.Dim
+    var x: Self.T
+
+
+@fieldwise_init
+struct Container[N: Int]:
+    pass
+
+
+fn takes[T: Int, F: fn[R:Coord](x: Container[T], r:HasParam[R]) unified](impl: F):
+    impl[Cartesian](Container[T](), HasParam[Cartesian](Cartesian(1,2)))
+
+
+# CHECK-LABEL: lit.fn @"foo
+# CHECK-NEXT: kgen.param.declare E1
+fn foo[T: Coord](foo: HasParam[T]):
+    comptime S = foo.P
+   # CHECK: lit.closure.init
+   # CHECK-NEXT: kgen.param.declare E2
+    fn closure[R:Coord](x: Container[S], r:HasParam[R]) unified {var}:
+        fn closure2(x: Container[S]) unified {var}:
+           pass
+        comptime SS = r.P
+        fn closure3[R3:Coord](x: Container[SS], r3:HasParam[R3]) unified {var}:
+           pass
+        takes[SS, type_of(closure3)](closure3)
+    # CHECK-NOT: kgen.param.declare E3
+    fn closure4[R4:Coord](x: Container[S], r4: HasParam[R4]) unified {var}:
+        pass
+    takes[S, type_of(closure)](closure)
+    takes[S, type_of(closure4)](closure4)
+
+
+# // -----
+
+# COM: ParamOperatorAttr expressions are lifted.
+
+@fieldwise_init
+struct Container[N: Int]:
+    pass
+
+
+fn takes_w[T: Int, F: fn(w: Container[T]) unified](impl: F):
+    impl(Container[T]())
+
+
+# CHECK-LABEL: lit.fn @"defines_expression[
+fn defines_expression[X:Int, Y:Int]():
+    # CHECK: kgen.param.declare E1: !Int
+    # CHECK-NOT: kgen.param.declare E1
+    fn closure(ww: Container[X+Y]) unified {var}:
+        pass
+
+    takes_w[X+Y, type_of(closure)](closure)
+
+# // -----
+
+# COM: When the whole expression can be hoisted, do not emit child hoists.
+
+@fieldwise_init
+struct Container[N: Int]:
+    pass
+
+
+fn takes_w[F: fn[X:Int, Y:Int](w: Container[(X+Y)+(X+Y)]) unified](impl: F):
+    pass
+
+
+# CHECK-LABEL: lit.fn @"no_hoist
+fn no_hoist():
+    # CHECK-NOT: kgen.param.declare E1
+    fn closure[X:Int, Y:Int](ww: Container[(X+Y)+(X+Y)]) unified {var}:
+        pass
+
+    takes_w[type_of(closure)](closure)

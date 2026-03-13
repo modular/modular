@@ -1337,10 +1337,15 @@ static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
   Location mlirLoc = shared.translateLocation(loc);
   if (shared.diBuilder)
     mlirLoc = shared.diBuilder->createScopedLoc(mlirLoc);
+  FnTypeGeneratorType closureSig = nestedFn.getFuncTypeGenerator();
+  assert(nestedFnDecl.getParentDecl() &&
+         "closure instance must have a parent function");
+  closureSig = shared.getClosureEmitter().hoistParamExpressionsForClosureTrait(
+      closureSig, nestedFnDecl, mlirLoc);
 
   ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
-  auto [capturedRefs, _] = DeclResolver::createSelfContainedSignature(
-      nestedFn.getFuncTypeGenerator());
+  auto [capturedRefs, _] =
+      DeclResolver::createSelfContainedSignature(closureSig);
 
   // Register captured external parameter references so that call sites can
   // pre-seed auxiliary parameters during overload fitness evaluation.
@@ -1357,15 +1362,14 @@ static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
   }
 
   ASTDecl *closureTrait = shared.getOrCreateClosureTrait(
-      loc, *moduleDecl, nestedFn.getFuncTypeGenerator(),
-      nestedFn.getInlineLevel());
+      loc, *moduleDecl, closureSig, nestedFn.getInlineLevel());
   bool isCopyable = allCopyable(captures, shared, loc);
   TypeConvention convention = getTypeConvention(captures, shared, loc);
-  if (!nestedFn.getFuncTypeGenerator().isRegisterPassable())
+  if (!closureSig.isRegisterPassable())
     convention = TypeConvention::MemoryOnly;
   ASTDecl *closureWrapper = shared.getOrCreateUnifiedClosureWrapper(
-      loc, nestedFn.getFuncTypeGenerator(), moduleDecl,
-      nestedFn.getInlineLevel(), isCopyable, convention, captures.empty());
+      loc, closureSig, moduleDecl, nestedFn.getInlineLevel(), isCopyable,
+      convention, captures.empty());
 
   ClosureEmitter &emitter = shared.getClosureEmitter();
   Value wrapperInstance = emitter.emitClosureOp(
