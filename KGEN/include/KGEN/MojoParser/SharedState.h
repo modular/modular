@@ -440,6 +440,10 @@ public:
   /// error this returns null but does not print an error.
   ASTDecl *lookupBuiltinTrait(StringRef traitName, ASTDecl *context, SMLoc loc);
 
+  /// A handy version of lookupBuiltinTrait, which returns the trait type.
+  TraitType lookupBuiltinTraitType(StringRef traitName, ASTDecl *context,
+                                   SMLoc loc);
+
   /// Lookup the specified name, and check that it is a non-parameterized type.
   /// This emits a diagnostic on error and returns null, or returns the ASTDecl
   /// of the type on success.

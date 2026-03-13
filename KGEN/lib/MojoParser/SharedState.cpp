@@ -1248,6 +1248,15 @@ ASTDecl *SharedState::lookupBuiltinTrait(StringRef traitName, ASTDecl *context,
   return nullptr;
 }
 
+TraitType SharedState::lookupBuiltinTraitType(StringRef traitName,
+                                              ASTDecl *context, SMLoc loc) {
+  ASTDecl *traitDecl = lookupBuiltinTrait(traitName, context, loc);
+  if (!traitDecl || !isa_and_nonnull<TraitDeclOp>(traitDecl->getIfOperation()))
+    return {};
+
+  return cast<TraitDeclOp>(traitDecl->getIfOperation()).bindReference();
+}
+
 ASTDecl *SharedState::lookupNamedTypeDecl(StringRef name, ASTDecl &context,
                                           llvm::SMLoc loc) {
   LookupResult result =

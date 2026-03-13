@@ -1060,14 +1060,11 @@ std::optional<size_t> StructDeclOp::findFieldIndex(StringRef name) {
   return std::nullopt;
 }
 
-TypedAttr StructDeclOp::getFieldType(StringRef name) {
-  for (StructFieldOp field : getFieldDecls()) {
-    if (field.getName() == name) {
-      // FIXME: bound by AnyType
-      return TypeParamAttr::get(field.getType(),
-                                TypeType::get(field.getContext()));
-    }
-  }
+TypedAttr StructDeclOp::getFieldType(StringRef name, Type metaType) {
+  for (StructFieldOp field : getFieldDecls())
+    if (field.getName() == name)
+      return TypeParamAttr::get(field.getType(), metaType);
+
   return nullptr;
 }
 
@@ -1076,10 +1073,10 @@ void StructDeclOp::getFieldNames(SmallVectorImpl<StringAttr> &names) {
     names.push_back(field.getNameAttr());
 }
 
-void StructDeclOp::getFieldTypes(SmallVectorImpl<TypedAttr> &types) {
+void StructDeclOp::getFieldTypes(SmallVectorImpl<TypedAttr> &types,
+                                 Type metaType) {
   for (StructFieldOp field : getFieldDecls())
-    types.push_back(
-        TypeParamAttr::get(field.getType(), TypeType::get(field.getContext())));
+    types.push_back(TypeParamAttr::get(field.getType(), metaType));
 }
 
 /// Verify the debuginfo scope of an op that must be a top-level declaration.

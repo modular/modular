@@ -186,7 +186,9 @@ static std::optional<SmallVector<Type>>
 rebindFieldTypes(StructDeclInterface decl, ParameterEvaluator &evaluator,
                  llvm::function_ref<void(const Twine &)> emitError = nullptr) {
   SmallVector<TypedAttr> fieldTypeAttrs;
-  decl.getFieldTypes(fieldTypeAttrs);
+  // MetaType does not really matter here, they will be striped later by
+  // `ParamType::get(rebound)` anyway.
+  decl.getFieldTypes(fieldTypeAttrs, TypeType::get(decl.getContext()));
 
   SmallVector<Type> fieldTypes;
   for (auto [idx, typeAttr] : llvm::enumerate(fieldTypeAttrs)) {
@@ -230,7 +232,7 @@ FailureOr<TypedAttr> StructFieldTypesAttr::evaluateWithContext(
 
   // Otherwise, use generator types and rebind with param values.
   SmallVector<TypedAttr> fieldTypes;
-  resolved.decl.getFieldTypes(fieldTypes);
+  resolved.decl.getFieldTypes(fieldTypes, getType().getElementType());
 
   FailureOr<TypedAttr> result = failure();
   context.withEvaluator(
@@ -239,7 +241,6 @@ FailureOr<TypedAttr> StructFieldTypesAttr::evaluateWithContext(
         SmallVector<TypedAttr> resultAttrs;
         for (TypedAttr fieldType : fieldTypes)
           resultAttrs.push_back(evaluator.getReboundAttribute(fieldType));
-
         result = cast<TypedAttr>(VariadicAttr::get(resultAttrs, getType()));
       });
   return result;
@@ -328,7 +329,7 @@ FailureOr<TypedAttr> StructFieldTypeByNameAttr::evaluateWithContext(
     return TypedAttr();
 
   // Otherwise, use generator's field type and rebind.
-  TypedAttr fieldType = resolved.decl.getFieldType(fieldName);
+  TypedAttr fieldType = resolved.decl.getFieldType(fieldName, getType());
   if (!fieldType) {
     context.emitMaterializationError(
         "struct '" +
@@ -336,6 +337,7 @@ FailureOr<TypedAttr> StructFieldTypeByNameAttr::evaluateWithContext(
         "' has no field named '" + fieldName + "'");
     return failure();
   }
+
   FailureOr<TypedAttr> result = failure();
   context.withEvaluator(resolved.decl.getInputParams(), resolved.paramValues,
                         [&](ParameterEvaluator &evaluator) {
