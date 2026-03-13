@@ -46,8 +46,23 @@ modular_cc_test(
 
 modular_cc_test(
     name = "LogTest",
-    srcs = ["LogTest.cpp"],
+    srcs = [
+        "Log/LogTest.cpp",
+    ],
     deps = [
+        "//Support:Log",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# Separate test because of global log file state
+modular_cc_test(
+    name = "LogConfigFileTest",
+    srcs = [
+        "Log/LogConfigFileTest.cpp",
+    ],
+    deps = [
+        "//Support:Configuration",
         "//Support:Log",
         "@llvm-project//llvm:Support",
     ],

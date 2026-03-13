@@ -10,6 +10,7 @@
 #include "llvm/Support/Process.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include "Support/Configuration.h"
 #include "Support/Log.h"
 
 #include <atomic>
@@ -34,17 +35,14 @@ struct LogFormatState {
 
 namespace M::Log {
 
-namespace EnvVar {
-static constexpr llvm::StringLiteral LOG_FILE = "MODULAR_LOG_FILE";
-static constexpr llvm::StringLiteral LOG_ISO_TIME = "MODULAR_LOG_ISO_TIME";
-static constexpr llvm::StringLiteral LOG_LEVEL = "MODULAR_LOG_LEVEL";
-static constexpr llvm::StringLiteral LOG_MICROSECONDS =
-    "MODULAR_LOG_MICROSECONDS";
-static constexpr llvm::StringLiteral LOG_NO_ENHANCED =
-    "MODULAR_LOG_NO_ENHANCED";
-static constexpr llvm::StringLiteral LOG_NO_TIMESTAMP =
-    "MODULAR_LOG_NO_TIMESTAMP";
-} // namespace EnvVar
+namespace ConfigEntry {
+static constexpr llvm::StringLiteral LOG_FILE = "log.file";
+static constexpr llvm::StringLiteral LOG_ISO_TIME = "log.iso_time";
+static constexpr llvm::StringLiteral LOG_LEVEL = "log.level";
+static constexpr llvm::StringLiteral LOG_MICROSECONDS = "log.microseconds";
+static constexpr llvm::StringLiteral LOG_NO_ENHANCED = "log.no_enhanced";
+static constexpr llvm::StringLiteral LOG_NO_TIMESTAMP = "log.no_timestamp";
+} // namespace ConfigEntry
 
 static LogLevel parseLogLevelFromString(llvm::StringRef levelStr) {
   if (levelStr == "0")
@@ -80,16 +78,16 @@ static LogFormatState &getLogFormatState() {
     LogFormatState state;
     state.initialized = true;
 
-    // Helper lambda to check if an env var equals a value of "1".
-    auto envIsSet = [](llvm::StringLiteral envVar) -> bool {
-      auto env = llvm::sys::Process::GetEnv(envVar.str());
-      return env && *env == "1";
-    };
+    auto cfgOr = Config::open();
+    if (cfgOr.isError())
+      return state; // Use defaults if we can't read config
 
-    state.useEnhancedFormat = !envIsSet(EnvVar::LOG_NO_ENHANCED);
-    state.showTimeStamp = !envIsSet(EnvVar::LOG_NO_TIMESTAMP);
-    state.useIsoTimestamps = envIsSet(EnvVar::LOG_ISO_TIME);
-    state.showMicroseconds = envIsSet(EnvVar::LOG_MICROSECONDS);
+    using namespace ConfigEntry;
+    auto cfg = cfgOr.takeValue();
+    state.useEnhancedFormat = !cfg.getValueAsBool(LOG_NO_ENHANCED, false);
+    state.showTimeStamp = !cfg.getValueAsBool(LOG_NO_TIMESTAMP, false);
+    state.useIsoTimestamps = cfg.getValueAsBool(LOG_ISO_TIME, false);
+    state.showMicroseconds = cfg.getValueAsBool(LOG_MICROSECONDS, false);
 
     // Respect the standard NO_COLOR env var, any value (even empty) disables
     // color.
@@ -146,13 +144,13 @@ std::atomic<Log::LogLevel> logLevel{Log::LogLevel::WARN};
 
 // Initialize the log level from environment variable.
 static void initLogLevel() {
-  auto env = llvm::sys::Process::GetEnv(EnvVar::LOG_LEVEL.str());
-  if (!env) {
+  auto cfgOr = Config::open();
+  if (cfgOr.isError()) {
     setLogLevel(LogLevel::WARN);
     return;
   }
 
-  setLogLevelFromString(*env);
+  setLogLevelFromString(cfgOr.takeValue().getValue(ConfigEntry::LOG_LEVEL));
 }
 
 void setLogLevel(LogLevel level) {
@@ -239,14 +237,17 @@ static llvm::SmallString<128> buildLogPrefix(LogLevel level) {
 }
 
 static void writeStringToLogFileOrStdout(llvm::StringRef msg) {
-  static auto logFileName = llvm::sys::Process::GetEnv(EnvVar::LOG_FILE.str());
   static std::mutex logFileMutex;
-  static auto ostream = [&]() {
+  static auto ostream = []() {
+    auto cfgOr = Config::open();
+    auto logFileName = cfgOr.isError()
+                           ? llvm::StringRef()
+                           : cfgOr.get().getValue(ConfigEntry::LOG_FILE);
     llvm::raw_ostream *stream = &llvm::outs();
-    if (logFileName) {
+    if (!logFileName.empty()) {
       std::error_code ec;
       static llvm::raw_fd_ostream fdStream(
-          *logFileName, ec, llvm::sys::fs::CD_OpenAlways,
+          logFileName, ec, llvm::sys::fs::CD_OpenAlways,
           llvm::sys::fs::FA_Write, llvm::sys::fs::OF_Append);
       if (!ec) {
         stream = &fdStream;

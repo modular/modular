@@ -985,6 +985,7 @@ modular_cc_library(
     srcs = ["lib/Log.cpp"],
     hdrs = ["include/Support/Log.h"],
     deps = [
+        "Configuration",
         "@fmt",
         "@llvm-project//llvm:Support",
     ],
