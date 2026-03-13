@@ -19,7 +19,9 @@ from max.experimental import functional as F
 from max.experimental.nn import Linear, Module
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
-from max.nn.kernels import masked_flash_attention_gpu as _masked_flash_attention_gpu
+from max.nn.kernels import (
+    masked_flash_attention_gpu as _masked_flash_attention_gpu,
+)
 
 from .rotary_embedding import RotaryEmbedding
 
@@ -76,7 +78,6 @@ class EncoderAttention(Module[..., Tensor]):
 
         # [S, H_kv, D] -> [S, H_kv, 1, D] -> [S, H_kv, n_rep, D] -> [S, H, D]
         x = F.unsqueeze(x, 2)
-        # Avoid tile here: it forces a CPU round-trip for every layer.
         x = F.concat([x] * n_rep, axis=2)
         x = F.reshape(x, (seq_len, n_kv_heads * n_rep, head_dim))
 

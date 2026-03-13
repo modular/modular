@@ -29,15 +29,11 @@ from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen3.layers.attention import (
     Qwen3Attention as MaxQwen3Attention,
 )
-from max.pipelines.architectures.qwen3.text_encoder.model import (
-    Qwen3TextEncoderModel,
-)
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 from transformers.models.qwen3.configuration_qwen3 import Qwen3Config
 from transformers.models.qwen3.modeling_qwen3 import (
     Qwen3Attention,
-    Qwen3Model,
     Qwen3RotaryEmbedding,
 )
 
@@ -340,9 +336,15 @@ def test_masked_flash_attention_gpu_matches_naive() -> None:
     device = "cuda"
     dtype = torch.bfloat16
 
-    q = torch.randn((batch_size, seq_len, nheads, head_dim), device=device, dtype=dtype)
-    k = torch.randn((batch_size, seq_len, nheads, head_dim), device=device, dtype=dtype)
-    v = torch.randn((batch_size, seq_len, nheads, head_dim), device=device, dtype=dtype)
+    q = torch.randn(
+        (batch_size, seq_len, nheads, head_dim), device=device, dtype=dtype
+    )
+    k = torch.randn(
+        (batch_size, seq_len, nheads, head_dim), device=device, dtype=dtype
+    )
+    v = torch.randn(
+        (batch_size, seq_len, nheads, head_dim), device=device, dtype=dtype
+    )
     token_mask = torch.tensor(
         [True, True, True, True, False, False, False],
         device=device,
