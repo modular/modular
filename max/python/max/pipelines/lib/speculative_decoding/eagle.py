@@ -476,7 +476,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 self._target_kv_manager.alloc(
                     context,
                     replica_idx=replica_idx,
-                    num_steps=2 * self._num_draft_steps,
+                    num_steps=2 * self._num_draft_steps + 1,
                 )
 
         # If any request is in prefill (generated_length == 0), route entire batch
