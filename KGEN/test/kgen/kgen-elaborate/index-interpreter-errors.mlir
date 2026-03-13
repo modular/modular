@@ -36,7 +36,7 @@ module attributes {M.target_info = #M.target<triple = "", arch = "", features = 
 // expected-note @below {{failed to interpret function @shr_index}}
 kgen.generator @shr_index(%arg0 : !pop.scalar<index>, %arg1 : !pop.scalar<index>) -> !pop.scalar<index> {
 // expected-note @below {{failed to interpret operation pop.shr(#pop<simd 3> : !pop.scalar<index>, #pop<simd 63> : !pop.scalar<index>)}}
-// expected-note @below {{failed to interpret POP::ShrOp}}
+// expected-note @below {{failed to interpret pop.shr}}
   %0 = pop.shr %arg0, %arg1 : !pop.scalar<index>
   kgen.return %0 : !pop.scalar<index>
 }
@@ -64,7 +64,7 @@ module attributes {M.target_info = #M.target<triple = "", arch = "", features = 
 // expected-note @below {{failed to interpret function @shl_index}}
 kgen.generator @shl_index(%arg0 : !pop.scalar<index>, %arg1 : !pop.scalar<index>) -> !pop.scalar<index> {
 // expected-note @below {{failed to interpret operation pop.shl(#pop<simd 3> : !pop.scalar<index>, #pop<simd 65> : !pop.scalar<index>)}}
-// expected-note @below {{failed to interpret POP::ShlOp}}
+// expected-note @below {{failed to interpret pop.shl}}
   %0 = pop.shl %arg0, %arg1 : !pop.scalar<index>
   kgen.return %0 : !pop.scalar<index>
 }

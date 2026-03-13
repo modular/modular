@@ -24,22 +24,13 @@ using namespace POP;
 
 FailureOr<TypedAttr>
 SIMDCmpAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
-  // The default getter already performs target-agnostic folding.
-  // This contextual evaluator only handles cases where the target is known,
-  // enabling index-type comparisons that require a concrete index bit width.
-  auto target = context.getTargetInfo();
-  if (!target)
-    return failure();
-
   auto outType = cast<SIMDType>(getType());
+  auto pred = toCmpPredicate(getCc());
   Attribute operands[] = {getLhs(), getRhs()};
-  if (auto fold = foldSIMDCmp(toCmpPredicate(getCc()), FoldValues(operands),
-                              outType, target)) {
-    assert(fold.getAttr() && "attribute fold should produce an attribute");
-    return fold.getAttr();
-  }
-
-  return failure();
+  return foldAttrWithTarget(context, operands,
+                            [&](FoldValues ops, TargetInfoAttr target) {
+                              return foldSIMDCmp(pred, ops, outType, target);
+                            });
 }
 
 //===----------------------------------------------------------------------===//
@@ -48,17 +39,8 @@ SIMDCmpAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
 
 FailureOr<TypedAttr>
 SIMDAbsAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
-  auto target = context.getTargetInfo();
-  if (!target)
-    return failure();
-
   Attribute operands[] = {getOperand()};
-  if (auto fold = foldSIMDAbs(FoldValues(operands), target)) {
-    assert(fold.getAttr() && "attribute fold should produce an attribute");
-    return fold.getAttr();
-  }
-
-  return failure();
+  return foldAttrWithTarget(context, operands, foldSIMDAbs);
 }
 
 //===----------------------------------------------------------------------===//
@@ -67,17 +49,8 @@ SIMDAbsAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
 
 FailureOr<TypedAttr>
 SIMDShlAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
-  auto target = context.getTargetInfo();
-  if (!target)
-    return failure();
-
   Attribute operands[] = {getVal(), getShft()};
-  if (auto fold = foldSIMDShl(FoldValues(operands), target)) {
-    assert(fold.getAttr() && "attribute fold should produce an attribute");
-    return fold.getAttr();
-  }
-
-  return failure();
+  return foldAttrWithTarget(context, operands, foldSIMDShl);
 }
 
 //===----------------------------------------------------------------------===//
@@ -86,15 +59,6 @@ SIMDShlAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
 
 FailureOr<TypedAttr>
 SIMDShrAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
-  auto target = context.getTargetInfo();
-  if (!target)
-    return failure();
-
   Attribute operands[] = {getVal(), getShft()};
-  if (auto fold = foldSIMDShr(FoldValues(operands), target)) {
-    assert(fold.getAttr() && "attribute fold should produce an attribute");
-    return fold.getAttr();
-  }
-
-  return failure();
+  return foldAttrWithTarget(context, operands, foldSIMDShr);
 }

@@ -2106,10 +2106,8 @@ TypedAttr SIMDDivAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
 
 TypedAttr SIMDAbsAttr::get(MLIRContext *ctx, TypedAttr operand) {
   Attribute operands[] = {operand};
-  if (auto fold = foldSIMDAbs(FoldValues(operands))) {
-    assert(fold.getAttr() && "attribute fold should produce an attribute");
-    return fold.getAttr();
-  }
+  if (TypedAttr folded = tryFoldAttr(operands, foldSIMDAbs))
+    return folded;
   return Base::get(ctx, operand);
 }
 
@@ -2155,11 +2153,11 @@ TypedAttr SIMDCmpAttr::get(MLIRContext *ctx, NormalizedCmpPredicate cc,
       inDType = cast<SIMDType>(lhs.getType()).getResolvedDType();
       outDType && inDType && outDType->isBool()) {
     Attribute operands[] = {lhs, rhs};
-    if (auto fold =
-            foldSIMDCmp(toCmpPredicate(cc), FoldValues(operands), outType)) {
-      assert(fold.getAttr() && "attribute fold should produce an attribute");
-      return fold.getAttr();
-    }
+    if (TypedAttr fold =
+            tryFoldAttr(operands, [&](FoldValues ops, TargetInfoAttr target) {
+              return foldSIMDCmp(toCmpPredicate(cc), ops, outType, target);
+            }))
+      return fold;
 
     // If either input is a cast_from_builtin, then the width is 1 and we can
     // perform this as a ParameterOperatorAttr comparison to crush the
@@ -2247,10 +2245,8 @@ OpFoldResult SIMDReduceAndAttr::fold(TypedAttr vector, SIMDType outType) {
 
 TypedAttr SIMDShlAttr::get(MLIRContext *ctx, TypedAttr value, TypedAttr shft) {
   Attribute operands[] = {value, shft};
-  if (auto fold = foldSIMDShl(FoldValues(operands))) {
-    assert(fold.getAttr() && "attribute fold should produce an attribute");
-    return fold.getAttr();
-  }
+  if (TypedAttr folded = tryFoldAttr(operands, foldSIMDShl))
+    return folded;
   return Base::get(ctx, value, shft);
 }
 
@@ -2260,10 +2256,8 @@ TypedAttr SIMDShlAttr::get(MLIRContext *ctx, TypedAttr value, TypedAttr shft) {
 
 TypedAttr SIMDShrAttr::get(MLIRContext *ctx, TypedAttr value, TypedAttr shft) {
   Attribute operands[] = {value, shft};
-  if (auto fold = foldSIMDShr(FoldValues(operands))) {
-    assert(fold.getAttr() && "attribute fold should produce an attribute");
-    return fold.getAttr();
-  }
+  if (TypedAttr folded = tryFoldAttr(operands, foldSIMDShr))
+    return folded;
   return Base::get(ctx, value, shft);
 }
 
