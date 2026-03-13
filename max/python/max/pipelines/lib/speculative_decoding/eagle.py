@@ -511,9 +511,22 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=1,
         )
-        target_ce_inputs.saved_draft_tokens = Buffer.from_numpy(  # type: ignore[attr-defined]
-            np.array([], dtype=np.int64)
+
+        # Merge with empty draft tokens (no-op during prefill).
+        # This mirrors the decode path so both use the same merger.
+        assert isinstance(target_ce_inputs, ModelInputsWithTokensAndOffsets)
+        batch_size = len(inputs.flat_batch)
+        saved_draft_tokens = Buffer.from_numpy(
+            np.zeros((batch_size, 0), dtype=np.int64)
         ).to(self.devices[0])
+        merged_tokens, merged_offsets = self._ragged_token_merger.run(
+            target_ce_inputs.tokens,
+            target_ce_inputs.input_row_offsets,
+            saved_draft_tokens,
+        )
+        target_ce_inputs.tokens = merged_tokens
+        target_ce_inputs.input_row_offsets = merged_offsets
+        target_ce_inputs.saved_draft_tokens = saved_draft_tokens
 
         target_outputs = self._target_model.execute(
             model_inputs=target_ce_inputs
@@ -590,6 +603,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         draft_input_offsets = Buffer.from_numpy(draft_input_offsets_np).to(
             self.devices[0]
         )
+
         merged_tokens, merged_offsets = self._ragged_token_merger.run(
             draft_input_tokens,
             draft_input_offsets,
