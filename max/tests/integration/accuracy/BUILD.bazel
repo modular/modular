@@ -112,6 +112,8 @@ modular_py_binary(
         "//max/tests/integration/test_common:process_isolation",
         "//max/tests/integration/test_common:storage",
         "@rules_python//python/runfiles",
+        requirement("numpy"),
+        requirement("pillow"),
     ],
 )
 
