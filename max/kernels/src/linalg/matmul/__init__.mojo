@@ -23,7 +23,7 @@ from buffer.buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_valid_target
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, TileTensor, UNKNOWN_VALUE
 from std.memory import memset_zero
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
@@ -241,7 +241,7 @@ def matmul[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            ](c, a, b, ctx.value())
+            ](TileTensor(c), TileTensor(a), TileTensor(b), ctx.value())
 
 
 def _to_value_or_dim(value: Int) -> Dim:

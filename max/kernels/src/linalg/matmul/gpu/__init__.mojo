@@ -402,7 +402,11 @@ def _matmul_gpu[
     b: NDBuffer[mut=False, rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises:
-    """NDBuffer compatibility shim — converts to TileTensor and delegates."""
+    """NDBuffer compatibility shim — converts to TileTensor and delegates.
+
+    TODO(KERN-2219): Remove once bmm.mojo (the sole remaining caller)
+    is migrated to pass TileTensor directly.
+    """
     _matmul_gpu[
         use_tensor_core=use_tensor_core,
         transpose_b=transpose_b,

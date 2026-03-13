@@ -403,15 +403,9 @@ def run_matmul_split_k[
     var best_config = select_config[dtype, dtype, dtype, False](M, N, K, ctx)
 
     multistage_gemm[transpose_b=False, config=config](
-        TileTensor(
-            rebind[NDBuffer[rank=2, dtype, c_buf.origin, c_shape]](c_buf)
-        ),
-        TileTensor(
-            rebind[NDBuffer[rank=2, dtype, a_buf.origin, a_shape]](a_buf)
-        ),
-        TileTensor(
-            rebind[NDBuffer[rank=2, dtype, b_buf.origin, b_shape]](b_buf)
-        ),
+        TileTensor(c_buf),
+        TileTensor(a_buf),
+        TileTensor(b_buf),
         best_config,
         ctx,
     )
