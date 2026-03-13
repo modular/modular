@@ -23,6 +23,8 @@
 
 namespace M::KGEN {
 
+class ParameterEvaluationContext;
+
 /// A foldable value that can carry an SSA value, a typed attribute, or both.
 /// When both are present, they represent the same logical operand/result.
 class FoldValue {
@@ -145,19 +147,9 @@ inline TypedAttr tryFoldAttr(ArrayRef<Attribute> operands,
 /// Evaluate an attribute with context using a target-aware fold function.
 /// Returns the folded attribute if target info is available and the fold
 /// succeeds, or failure() otherwise.
-template <typename ContextT>
-FailureOr<TypedAttr> foldAttrWithTarget(ContextT &context,
+FailureOr<TypedAttr> foldAttrWithTarget(ParameterEvaluationContext &context,
                                         ArrayRef<Attribute> operands,
-                                        TargetAwareFoldFn fold) {
-  auto target = context.getTargetInfo();
-  if (!target)
-    return failure();
-  if (auto result = fold(FoldValues(operands), target)) {
-    assert(result.getAttr() && "attribute fold should produce an attribute");
-    return result.getAttr();
-  }
-  return failure();
-}
+                                        TargetAwareFoldFn fold);
 
 /// Fold an op using a target-aware fold function.
 inline OpFoldResult foldOpWithTarget(FoldValues operands, TargetInfoAttr target,
@@ -167,20 +159,15 @@ inline OpFoldResult foldOpWithTarget(FoldValues operands, TargetInfoAttr target,
   return {};
 }
 
-/// Interpret an op using a target-aware fold function. Works for both
-/// InterpreterState and ParametricInterpreterState.
-template <typename StateT>
+/// Interpret an op using a target-aware fold function.
 ErrorTreeOrSuccess interpretOpWithFold(Location loc, StringRef opName,
                                        ArrayRef<Attribute> operands,
-                                       StateT &state, TargetAwareFoldFn fold) {
-  if (auto result = fold(FoldValues(operands), state.getTarget())) {
-    if (auto attr = result.getAttr()) {
-      state.mapResults(attr);
-      return success();
-    }
-  }
-  return ErrorTree(loc, "failed to interpret " + opName);
-}
+                                       InterpreterState &state,
+                                       TargetAwareFoldFn fold);
+ErrorTreeOrSuccess interpretOpWithFold(Location loc, StringRef opName,
+                                       ArrayRef<Attribute> operands,
+                                       ParametricInterpreterState &state,
+                                       TargetAwareFoldFn fold);
 
 } // namespace M::KGEN
 
