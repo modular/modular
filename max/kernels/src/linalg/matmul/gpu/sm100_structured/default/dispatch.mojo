@@ -77,22 +77,21 @@ def matmul_dispatch_sm100[
     register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[mut=False, rank=2, a_type, _, _],
-    b: NDBuffer[mut=False, rank=2, b_type, _, _],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises:
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
     comptime assert a_type == b_type, "a_type and b_type must be the same"
 
-    var m = c.dim[0]()
-    comptime static_N = c.shape.get[1]()
-    comptime static_K = a.shape.get[1]()
+    var m = Int(c.dim[0]())
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
 
     comptime if get_defined_bool["AUTOTUNING_MODE", False]():
-        var c_tensor = TileTensor(c)
-        var a_tensor = TileTensor(a)
-        var b_tensor = TileTensor(b)
-
         comptime BM = get_defined_int["TUNE_BM", 128]()
         comptime BN = get_defined_int["TUNE_BN", 64]()
         comptime BK = (
@@ -129,7 +128,7 @@ def matmul_dispatch_sm100[
             transpose_b=transpose_b,
             config=config,
             register_based_epilogue=register_based_epilogue,
-        ](c_tensor, a_tensor, b_tensor, ctx)
+        ](c, a, b, ctx)
 
     # M=1 (or N=1): use GEMV split-K for both BF16 and FP8.
     # static_N=1 is not supported on SM100 due to TMA requirements
@@ -242,6 +241,36 @@ def matmul_dispatch_sm100[
     ](c, a, b, ctx)
 
 
+@always_inline
+def matmul_dispatch_sm100[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    transpose_b: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    register_based_epilogue: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[mut=False, rank=2, a_type, _, _],
+    b: NDBuffer[mut=False, rank=2, b_type, _, _],
+    ctx: DeviceContext,
+) raises:
+    """NDBuffer overload — converts to TileTensor and delegates."""
+    matmul_dispatch_sm100[
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        elementwise_lambda_wrapper=elementwise_lambda_wrapper,
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        register_based_epilogue=register_based_epilogue,
+        pdl_level=pdl_level,
+    ](TileTensor(c), TileTensor(a), TileTensor(b), ctx)
+
+
 # NOTE:
 # 1. SM100 matmul supports compute lambdas so we should just use normal and compute lambdas.
 def matmul_dispatch_sm100_fp8[
@@ -256,17 +285,20 @@ def matmul_dispatch_sm100_fp8[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[rank=2, a_type, _, _],
-    b: NDBuffer[rank=2, b_type, _, _],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
-    comptime static_N = c.shape.get[1]()
-    comptime static_K = a.shape.get[1]()
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
 
     comptime MMA_K = 32
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
-    var m = c.dim[0]()
+    var m = Int(c.dim[0]())
 
     if m <= 128:
         return heuristic_and_outliers_dispatch[
@@ -1349,14 +1381,17 @@ def heuristic_and_outliers_dispatch[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[rank=2, a_type, _, _],
-    b: NDBuffer[rank=2, b_type, _, _],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
-    var m = c.dim[0]()
-    comptime static_N = c.shape.get[1]()
-    comptime static_K = a.shape.get[1]()
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+    var m = Int(c.dim[0]())
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
 
     comptime assert a_type == b_type and a_type in (
         DType.bfloat16,
@@ -1449,14 +1484,17 @@ def matmul_dispatch_sm100_bf16[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[rank=2, a_type, _, _],
-    b: NDBuffer[rank=2, b_type, _, _],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
-    var m = c.dim[0]()
-    comptime static_N = c.shape.get[1]()
-    comptime static_K = a.shape.get[1]()
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+    var m = Int(c.dim[0]())
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
 
     comptime MMA_K = 16
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
@@ -1576,15 +1614,16 @@ def _vendor_blas_matmul_sm100[
     elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[mut=False, rank=2, a_type, _, _],
-    b: NDBuffer[mut=False, rank=2, b_type, _, _],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises:
-    comptime K = a.shape.get[1]()
-    comptime a_shape = a.shape
-    comptime b_shape = b.shape
-    comptime c_shape = c.shape
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+    comptime K = a.static_shape[1]
+
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
@@ -1611,37 +1650,27 @@ def _vendor_blas_matmul_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
-            ](
-                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                config,
-                ctx,
-            )
+            ](c, a, b, config, ctx)
         else:
             comptime BLOCK_DIM = 16
             logger.info("Executing Naive matmul kernel")
-
-            var c_tensor = TileTensor(c)
-            var a_tensor = TileTensor(a)
-            var b_tensor = TileTensor(b)
 
             comptime kernel = matmul_kernel_naive[
                 c_type,
                 a_type,
                 b_type,
-                type_of(c_tensor).LayoutType,
-                type_of(a_tensor).LayoutType,
-                type_of(b_tensor).LayoutType,
+                type_of(c).LayoutType,
+                type_of(a).LayoutType,
+                type_of(b).LayoutType,
                 BLOCK_DIM,
                 transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
             ]
 
             ctx.enqueue_function[kernel, kernel](
-                c_tensor,
-                a_tensor,
-                b_tensor,
+                c,
+                a,
+                b,
                 m,
                 n,
                 k,
@@ -1763,34 +1792,6 @@ def _matmul_dispatch_sm100[
         _ = tmp_device_buffer^
 
 
-def _matmul_dispatch_sm100[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    //,
-    transpose_b: Bool,
-    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    pdl_level: PDLLevel = PDLLevel(),
-](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[rank=2, a_type, _, _],
-    b: NDBuffer[rank=2, b_type, _, _],
-    ctx: DeviceContext,
-) raises:
-    """NDBuffer overload — converts to TileTensor and delegates."""
-    _matmul_dispatch_sm100[
-        transpose_b=transpose_b,
-        config=config,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        pdl_level=pdl_level,
-    ](TileTensor(c), TileTensor(a), TileTensor(b), ctx)
-
-
 @always_inline
 def batched_matmul_dispatch_sm100_bf16[
     c_type: DType,
@@ -1840,14 +1841,17 @@ def sm100_heuristic_and_outliers_dispatch[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[rank=2, a_type, _, _],
-    b: NDBuffer[rank=2, b_type, _, _],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
-    var m = c.dim[0]()
-    comptime static_N = c.shape.get[1]()
-    comptime static_K = a.shape.get[1]()
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+    var m = Int(c.dim[0]())
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
 
     comptime assert a_type == b_type and a_type in (
         DType.bfloat16,
@@ -1867,10 +1871,6 @@ def sm100_heuristic_and_outliers_dispatch[
     @always_inline
     def rule(x: TuningConfigSM100) -> Bool:
         return x.K == static_K and x.N == static_N
-
-    var c_tensor = TileTensor(c)
-    var a_tensor = TileTensor(a)
-    var b_tensor = TileTensor(b)
 
     comptime outlier_configs = outliers.find[rule]()
 
@@ -1903,7 +1903,7 @@ def sm100_heuristic_and_outliers_dispatch[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
-            ](c_tensor, a_tensor, b_tensor, ctx)
+            ](c, a, b, ctx)
 
             return DISPATCH_HIT
 
@@ -1924,7 +1924,7 @@ def sm100_heuristic_and_outliers_dispatch[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
-            ](c_tensor, a_tensor, b_tensor, ctx)
+            ](c, a, b, ctx)
             return DISPATCH_HIT
 
     return DISPATCH_MISS

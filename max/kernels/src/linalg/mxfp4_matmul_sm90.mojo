@@ -27,7 +27,7 @@ from .matmul.gpu import _matmul_gpu
 
 
 def mxfp4_matmul_sm90(
-    c: TileTensor,
+    c: TileTensor[mut=True, ...],
     a: TileTensor,
     b_packed: TileTensor,
     b_scales: TileTensor,

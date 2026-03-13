@@ -446,13 +446,18 @@ def _matmul_gpu[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     register_based_epilogue: Bool = True,
-](c: TileTensor, a: TileTensor, b: TileTensor, ctx: DeviceContext,) raises:
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b: TileTensor,
+    ctx: DeviceContext,
+) raises:
     """TileTensor overload of `_matmul_gpu`. Contains all matmul dispatch
     logic. The NDBuffer overload delegates here via TileTensor(ndbuf).
     """
-    comptime assert c.rank == 2, "c must be rank 2"
-    comptime assert a.rank == 2, "a must be rank 2"
-    comptime assert b.rank == 2, "b must be rank 2"
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
     comptime assert c.flat_rank == 2, "c must have a non-nested layout"
     comptime assert a.flat_rank == 2, "a must have a non-nested layout"
     comptime assert b.flat_rank == 2, "b must have a non-nested layout"
@@ -461,7 +466,7 @@ def _matmul_gpu[
     comptime a_type = a.dtype
     comptime b_type = b.dtype
 
-    # LayoutTensors for GemmShape and dimension access.
+    # LayoutTensors for GemmShape, dimension access, and compute_lambda_wrapper.
     var c_lt = c.to_layout_tensor()
     var a_lt = a.to_layout_tensor()
     var b_lt = b.to_layout_tensor()
@@ -506,40 +511,11 @@ def _matmul_gpu[
 
     comptime matmul_supported_format = matmul_supported_format_amd if has_amd_gpu_accelerator() else matmul_supported_format_nvidia
 
-    # NDBuffers for downstream functions that don't yet have TileTensor
-    # overloads (matmul_dispatch_sm100, gemv_gpu, matmul_vendor)
-    # and for compute_lambda_wrapper's store (needs mut=True).
-    # All use MutAnyOrigin to sidestep origin coercion issues between
-    # TileTensor and NDBuffer's mut parameter. For gemv_gpu, a_buf/b_buf
-    # are rebind-cast to ImmutAnyOrigin at the call site.
-    comptime to_dim[i: Int] = Dim(i) if i > -1 else Dim()
-    comptime c_ndbuf_shape = DimList[
-        to_dim[c.static_shape[0]], to_dim[c.static_shape[1]]
-    ]()
-    var c_buf = NDBuffer[rank=2, c_type, MutAnyOrigin, c_ndbuf_shape](
-        c.ptr.bitcast[Scalar[c_type]]().as_any_origin(),
-        rebind[IndexList[2]](coord_to_index_list(c.layout.shape_coord())),
-    )
-    comptime a_ndbuf_shape = DimList[
-        to_dim[a.static_shape[0]], to_dim[a.static_shape[1]]
-    ]()
-    var a_buf = NDBuffer[rank=2, a_type, MutAnyOrigin, a_ndbuf_shape](
-        a.ptr.bitcast[Scalar[a_type]]().as_any_origin(),
-        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
-    )
-    comptime b_ndbuf_shape = DimList[
-        to_dim[b.static_shape[0]], to_dim[b.static_shape[1]]
-    ]()
-    var b_buf = NDBuffer[rank=2, b_type, MutAnyOrigin, b_ndbuf_shape](
-        b.ptr.bitcast[Scalar[b_type]]().as_any_origin(),
-        rebind[IndexList[2]](coord_to_index_list(b.layout.shape_coord())),
-    )
-
     # Only the H100 version of gemm supports the compute lambda.
     # For the other kernels we wrap it around an epilogue lambda instead.
     @parameter
     @always_inline
-    @__copy_capture(c_buf)
+    @__copy_capture(c_lt)
     def compute_lambda_wrapper[
         _dtype: DType, _width: Int, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[_dtype, _width]):
@@ -549,7 +525,7 @@ def _matmul_gpu[
             comptime assert (
                 output.dtype == c_type
             ), "compute epilogue lambda output and c type mismatch"
-            c_buf.store[alignment=alignment * size_of[c_type]()](
+            c_lt.store[alignment=alignment * size_of[c_type]()](
                 coords, rebind[SIMD[c_type, _width]](output)
             )
 
@@ -557,19 +533,15 @@ def _matmul_gpu[
         compute_lambda_wrapper
     ) if elementwise_compute_lambda_fn else elementwise_lambda_fn
 
-    # Helper for gemv_gpu dispatch. Rebinds a/b from MutAnyOrigin to
-    # ImmutAnyOrigin because gemv_gpu internally converts to TileTensor
-    # and GPU kernels expect immutable inputs.
+    # Helper for gemv_gpu dispatch — passes TileTensor directly.
     @always_inline
     @parameter
     def _gemv_dispatch() raises:
-        comptime ImmA = NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_ndbuf_shape]
-        comptime ImmB = NDBuffer[rank=2, b_type, ImmutAnyOrigin, b_ndbuf_shape]
         gemv_gpu[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_wrapper,
             pdl_level=pdl_level,
-        ](c_buf, rebind[ImmA](a_buf), rebind[ImmB](b_buf), ctx)
+        ](c, a, b, ctx)
 
     # NOTE: k has to be a multiple of BK * num_stages. Hard coded this condition to 128 for now.
     # TODO: Need to find a better dispatch strategy.
@@ -600,7 +572,7 @@ def _matmul_gpu[
         return matmul_vendor[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_wrapper,
-        ](c_buf, a_buf, b_buf, ctx)
+        ](c, a, b, ctx)
 
     comptime use_experimental_kernels = Bool(
         get_defined_int["USE_EXPERIMENTAL_KERNELS", 0]()
@@ -617,7 +589,7 @@ def _matmul_gpu[
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             register_based_epilogue=register_based_epilogue,
             pdl_level=pdl_level,
-        ](c_buf, a_buf, b_buf, ctx)
+        ](c, a, b, ctx)
 
     comptime if ctx.default_device_info == H100:
         var status = matmul_dispatch_sm90[
@@ -654,7 +626,7 @@ def _matmul_gpu[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_wrapper,
-                ](c_buf, a_buf, b_buf, runtime_config, ctx)
+                ](c, a, b, runtime_config, ctx)
 
             @always_inline
             @parameter
@@ -668,7 +640,7 @@ def _matmul_gpu[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_wrapper,
-                ](c_buf, a_buf, b_buf, ctx)
+                ](c, a, b, ctx)
 
             comptime static_N = c.static_shape[1]
             comptime static_K = a.static_shape[1]
@@ -835,7 +807,7 @@ def _matmul_gpu[
             return matmul_vendor[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
-            ](c_buf, a_buf, b_buf, ctx)
+            ](c, a, b, ctx)
         except:
             # Fallback to the naive kernel.
             logger.warning("Vendor BLAS failed")
