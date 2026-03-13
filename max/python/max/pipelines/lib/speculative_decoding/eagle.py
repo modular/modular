@@ -31,7 +31,10 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.pipelines.core import TextContext, reserve_token_space_for_batch
-from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
+from max.pipelines.lib.interfaces import (
+    ModelInputs,
+    PipelineModel,
+)
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -327,6 +330,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         target_inputs.tokens = merged_tokens
         target_inputs.input_row_offsets = merged_offsets
         target_inputs.host_input_row_offsets = host_merged_offsets  # type: ignore[attr-defined]
+        target_inputs.saved_draft_tokens = draft_tokens
 
         # Fix batch_context_lengths: prepare_initial_token_inputs computed
         # current_position outside the context manager (un-bumped).
@@ -507,6 +511,9 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=1,
         )
+        target_ce_inputs.saved_draft_tokens = Buffer.from_numpy(  # type: ignore[attr-defined]
+            np.array([], dtype=np.int64)
+        ).to(self.devices[0])
 
         target_outputs = self._target_model.execute(
             model_inputs=target_ce_inputs
