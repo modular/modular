@@ -155,7 +155,11 @@ class KimiK2_5Model(
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
         encoding = pipeline_config.model.quantization_encoding
-        if encoding is not None and is_float4_encoding(encoding):
+        if (
+            encoding is not None
+            and is_float4_encoding(encoding)
+            and kv_cache_config.kv_cache_format is None
+        ):
             cache_dtype = DType.bfloat16
         return KimiK2_5TextConfig.construct_kv_params(
             huggingface_config=huggingface_config.text_config,

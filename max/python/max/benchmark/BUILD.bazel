@@ -17,6 +17,7 @@ modular_py_library(
     # Transformers secretly depends on jinja2
     ignore_extra_deps = [
         requirement("jinja2"),
+        requirement("tiktoken"),
     ],
     deps = [
         "//max/python/max/benchmark/benchmark_shared",
@@ -25,6 +26,7 @@ modular_py_library(
         requirement("numpy"),
         requirement("pyyaml"),
         requirement("tqdm"),
+        requirement("tiktoken"),
         requirement("transformers"),
     ],
 )
@@ -35,6 +37,7 @@ modular_py_binary(
     # Transformers secretly depends on jinja2
     ignore_extra_deps = [
         requirement("jinja2"),
+        requirement("tiktoken"),
     ],
     imports = ["../.."],
     deps = [
@@ -43,6 +46,7 @@ modular_py_binary(
         requirement("jinja2"),
         requirement("numpy"),
         requirement("tqdm"),
+        requirement("tiktoken"),
         requirement("transformers"),
         requirement("pyyaml"),
     ],
