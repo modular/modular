@@ -318,11 +318,20 @@ class FeedForwardMAX:
                  use_float8=False, device=None):
 
         # Configure Float8 if requested
-        float8_config = None
+        quant_config = None
         if use_float8:
-            float8_config = Float8Config(
-                input_scale_spec=nn.Float8ScaleGranularity.rowwise,
-                weight_scale_spec=nn.Float8ScaleGranularity.colwise
+            quant_config = QuantConfig(
+                input_scale=nn.InputScaleSpec(
+                    granularity=nn.ScaleGranularity.COLWISE,
+                    origin=nn.ScaleOrigin.DYNAMIC,
+                    dtype=DType.float8_e4m3fn,
+                ),
+                weight_scale=nn.WeightScaleSpec(
+                    granularity=nn.ScaleGranularity.ROWWISE,
+                    dtype=DType.float32,
+                ),
+                mlp_quantized_layers=set(),
+                attn_quantized_layers=set(),
             )
 
         self.w1 = nn.Linear(
@@ -330,7 +339,7 @@ class FeedForwardMAX:
             out_dim=intermediate_size,
             dtype=DType.float32,
             device=device,
-            float8_config=float8_config
+            quant_config=quant_config
         )
 
         self.w2 = nn.Linear(
@@ -338,7 +347,7 @@ class FeedForwardMAX:
             out_dim=hidden_size,
             dtype=DType.float32,
             device=device,
-            float8_config=float8_config
+            quant_config=quant_config
         )
 
     def forward(self, x):
@@ -366,13 +375,25 @@ dtype = DType.float16  # Use half precision for tensor cores
 ```python
 # Use Float8 quantization for memory efficiency
 from max import nn
+from max.dtype import DType
 
-config = Float8Config(
-    input_scale_spec=nn.Float8ScaleGranularity.blockwise,
-    weight_scale_spec=nn.Float8ScaleGranularity.colwise
+config = QuantConfig(
+    input_scale=nn.InputScaleSpec(
+        granularity=nn.ScaleGranularity.BLOCK,
+        origin=nn.ScaleOrigin.DYNAMIC,
+        dtype=DType.float32,
+        block_size=(1, 128),
+    ),
+    weight_scale=nn.WeightScaleSpec(
+        granularity=nn.ScaleGranularity.BLOCK,
+        dtype=DType.float32,
+        block_size=(128, 128),
+    ),
+    mlp_quantized_layers=set(),
+    attn_quantized_layers=set(),
 )
 
-linear = nn.Linear(..., float8_config=config)
+linear = nn.Linear(..., quant_config=config)
 ```
 
 ### 3. Use Fused Operations

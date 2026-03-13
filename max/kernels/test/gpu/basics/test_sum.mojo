@@ -22,7 +22,7 @@ from std.testing import assert_equal
 comptime dtype = DType.uint64
 
 
-fn warp_sum_kernel[
+def warp_sum_kernel[
     dtype: DType,
 ](
     output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -81,7 +81,7 @@ def test_warp_sum(ctx: DeviceContext) raises:
     out_host.free()
 
 
-fn block_sum_kernel[
+def block_sum_kernel[
     dtype: DType,
     block_size: Int,
 ](

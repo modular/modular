@@ -42,8 +42,7 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand, seed
 from internal_utils import arg_parse
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout.tile_layout import row_major as tile_row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor, row_major as tile_row_major
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -70,7 +69,7 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scale
 # =============================================================================
 
 
-fn _get_run_name[
+def _get_run_name[
     in_type: DType,
     out_type: DType,
 ](num_groups: Int, m_per_group: Int, n: Int, k: Int, cta_group: Int,) -> String:
@@ -99,7 +98,7 @@ fn _get_run_name[
 # =============================================================================
 
 
-fn bench_grouped_block_scaled_gemm[
+def bench_grouped_block_scaled_gemm[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -360,10 +359,10 @@ fn bench_grouped_block_scaled_gemm[
         total_tiles,
     )
     @always_inline
-    fn bench_func(mut bencher: Bencher):
+    def bench_func(mut bencher: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             grouped_block_scaled_matmul[
                 transpose_b=transpose_b,
                 max_groups=max_groups,

@@ -18,15 +18,14 @@ import std.gpu.primitives.block as block
 from std.algorithm.functional import elementwise
 from std.gpu import block_idx, thread_idx
 from std.gpu.host.info import is_gpu
-from layout.tile_layout import TensorLayout
-from layout import TileTensor
+from layout import TensorLayout, TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 from std.runtime.asyncrt import DeviceContextPtr
 
 from std.utils import IndexList
 
 
-fn apply_penalties_to_logits[
+def apply_penalties_to_logits[
     logit_type: DType,
     penalty_type: DType,
     //,
@@ -67,7 +66,7 @@ fn apply_penalties_to_logits[
 
     @always_inline
     @parameter
-    fn apply_penalties_fn[
+    def apply_penalties_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](idx: IndexList[rank_]):
         comptime assert rank_ == 1, "apply_penalties_fn: rank must be 1"
@@ -107,7 +106,7 @@ fn apply_penalties_to_logits[
     ](dispatch_shape, ctx)
 
 
-fn update_frequency_data_kernel[
+def update_frequency_data_kernel[
     freq_data_origin: MutOrigin,
     FreqDataLayoutType: TensorLayout,
     freq_offsets_origin: ImmutOrigin,
@@ -191,7 +190,7 @@ fn update_frequency_data_kernel[
             return
 
 
-fn update_frequency_data[
+def update_frequency_data[
     token_type: DType,
     //,
     target: StaticString,
@@ -243,7 +242,7 @@ fn update_frequency_data[
 
         @always_inline
         @parameter
-        fn update_frequency_data_fn[
+        def update_frequency_data_fn[
             width: Int, rank_: Int, alignment: Int = 1
         ](idx: IndexList[rank_]):
             comptime assert (

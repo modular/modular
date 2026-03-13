@@ -33,6 +33,7 @@ from max.graph.weights import load_weights
 from max.interfaces import PixelGenerationContext
 from max.interfaces.tokens import TokenBuffer
 from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.profiler import Tracer
 from PIL import Image
 from tqdm import tqdm
 from typing_extensions import Self
@@ -472,28 +473,34 @@ class CompileWrapper:
         input_types_tuple = tuple(input_types)
         self._compiled_module: Callable[..., Any] | None = None
         self._compiled_model: Model | None = None
+        self._target_name = target_name
 
-        if isinstance(compile_target, Module):
-            self._compiled_module = compile_target.compile(*input_types_tuple)
-            return
+        with Tracer(f"compile_{target_name}"):
+            if isinstance(compile_target, Module):
+                self._compiled_module = compile_target.compile(
+                    *input_types_tuple
+                )
+                return
 
-        with Graph(
-            compile_target.__name__, input_types=input_types_tuple
-        ) as graph:
-            output = compile_target(*graph.inputs)
-            if isinstance(output, Iterable):
-                graph.output(*output)
+            with Graph(
+                compile_target.__name__, input_types=input_types_tuple
+            ) as graph:
+                output = compile_target(*graph.inputs)
+                if isinstance(output, Iterable):
+                    graph.output(*output)
+                else:
+                    graph.output(output)
+                compiled_graph = graph
+
+            device: CPU | Accelerator
+            if any(
+                input_type.device.is_gpu() for input_type in input_types_tuple
+            ):
+                device = Accelerator()
             else:
-                graph.output(output)
-            compiled_graph = graph
-
-        device: CPU | Accelerator
-        if any(input_type.device.is_gpu() for input_type in input_types_tuple):
-            device = Accelerator()
-        else:
-            device = CPU()
-        session = InferenceSession([device])
-        self._compiled_model = session.load(compiled_graph)
+                device = CPU()
+            session = InferenceSession([device])
+            self._compiled_model = session.load(compiled_graph)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Execute the compiled session with the given arguments.
@@ -505,19 +512,22 @@ class CompileWrapper:
         Returns:
             The result of the session execution.
         """
-        if self._compiled_module is not None:
-            return self._compiled_module(*args, **kwargs)
+        with Tracer(f"exec_{self._target_name}"):
+            if self._compiled_module is not None:
+                return self._compiled_module(*args, **kwargs)
 
-        if self._compiled_model is None:
-            raise RuntimeError("CompileWrapper has no compiled target.")
+            if self._compiled_model is None:
+                raise RuntimeError("CompileWrapper has no compiled target.")
 
-        normalized_args = tuple(self._unwrap_tensor(arg) for arg in args)
-        normalized_kwargs = {
-            key: self._unwrap_tensor(val) for key, val in kwargs.items()
-        }
-        buffers = self._compiled_model(*normalized_args, **normalized_kwargs)
-        outputs = [Tensor.from_dlpack(buffer) for buffer in buffers]
-        return outputs[0] if len(outputs) == 1 else outputs
+            normalized_args = tuple(self._unwrap_tensor(arg) for arg in args)
+            normalized_kwargs = {
+                key: self._unwrap_tensor(val) for key, val in kwargs.items()
+            }
+            buffers = self._compiled_model(
+                *normalized_args, **normalized_kwargs
+            )
+            outputs = [Tensor.from_dlpack(buffer) for buffer in buffers]
+            return outputs[0] if len(outputs) == 1 else outputs
 
     @staticmethod
     def _unwrap_tensor(value: Any) -> Any:

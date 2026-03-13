@@ -20,9 +20,7 @@ from std.gpu.host import DeviceContext
 from std.gpu import block_idx, thread_idx, warp_id
 from std.gpu.memory import async_copy_wait_all
 from std.gpu.sync import barrier
-from layout import Layout, LayoutTensor, TileTensor
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx
+from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
 from layout._ndbuffer_stub import (
     copy_from_nd_buffer,
     copy_to_nd_buffer,
@@ -40,14 +38,14 @@ from std.testing import assert_almost_equal
 from std.utils import Index
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
     return False
 
 
-fn gemm_kernel[
+def gemm_kernel[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -159,7 +157,7 @@ fn gemm_kernel[
     copy_local_to_dram[dst_thread_layout=warp_layout](c_warp_tile, c_reg)
 
 
-fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
+def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     comptime NUM_THREADS = 256
     comptime BM = 64
     comptime BN = 64
@@ -292,7 +290,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
         @always_inline
         @parameter
-        fn run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises:
             ctx.enqueue_function_experimental[kernel](
                 c_tensor,
                 a_tensor,

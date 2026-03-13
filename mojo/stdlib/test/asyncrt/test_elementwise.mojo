@@ -23,7 +23,7 @@ from std.utils import IndexList
 from std.utils.index import Index
 
 
-fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
+def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     print("-")
     print("run_elementwise[", dtype, "]:")
 
@@ -49,7 +49,7 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(in_buffer, out_buffer)
     @parameter
-    fn func[
+    def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[2]](idx0)

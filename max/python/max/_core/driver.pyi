@@ -161,7 +161,9 @@ class Device:
     @property
     def id(self) -> int:
         """
-        Returns a zero-based device id. For a CPU device this is always 0.
+        Returns a zero-based device id.
+
+        For a CPU device this is always 0.
         For GPU accelerators this is the id of the device relative to this host.
         Along with the ``label``, an id can uniquely identify a device,
         e.g. ``gpu:0``, ``gpu:1``.
@@ -318,14 +320,14 @@ class DeviceEvent:
 
         Returns:
             bool: True if the event is complete, otherwise false.
+
         Raises:
-          ValueError: If querying the event status returned an error
+            ValueError: If querying the event status returned an error.
         """
 
     def elapsed_time(self, end_event: DeviceEvent) -> float:
         """
-        Returns the elapsed GPU time in milliseconds between this event
-        and ``end_event``.
+        Returns the elapsed GPU time in milliseconds between this event and ``end_event``.
 
         Both events must have been created with ``enable_timing=True``
         and recorded on a stream before calling this method. The end
@@ -427,8 +429,7 @@ class DeviceStream:
     @overload
     def wait_for(self, stream: DeviceStream) -> None:
         """
-        Ensures all operations on the other stream complete before future work
-        submitted to this stream is scheduled.
+        Ensures all operations on the other stream complete before future work submitted to this stream is scheduled.
 
         Args:
             stream (DeviceStream): The stream to wait for.
@@ -437,8 +438,7 @@ class DeviceStream:
     @overload
     def wait_for(self, device: Device) -> None:
         """
-        Ensures all operations on device's default stream complete before
-        future work submitted to this stream is scheduled.
+        Ensures all operations on device's default stream complete before future work submitted to this stream is scheduled.
 
         Args:
             device (Device): The device whose default stream to wait for.
@@ -457,7 +457,7 @@ def accelerator_count() -> int:
 
 def set_virtual_device_count(count: int) -> None:
     """
-    Set the number of virtual devices for device creation.
+    Sets the number of virtual devices for device creation.
 
     When count is greater than 0, Device::create() will return VirtualDevice
     instances instead of real hardware devices for GPU APIs, and
@@ -471,7 +471,7 @@ def set_virtual_device_count(count: int) -> None:
 
 def get_virtual_device_count() -> int:
     """
-    Get the current virtual device count.
+    Gets the current virtual device count.
 
     Returns:
         int: The number of virtual devices, or 0 if virtual device mode
@@ -480,7 +480,7 @@ def get_virtual_device_count() -> int:
 
 def is_virtual_device_mode() -> bool:
     """
-    Check if virtual device mode is currently enabled.
+    Checks if virtual device mode is currently enabled.
 
     Returns:
         bool: True if virtual device mode is enabled (count > 0), False otherwise.
@@ -501,7 +501,7 @@ def enable_all_peer_access() -> None:
 
 def set_virtual_device_api(api: str) -> None:
     """
-    Set the target API for virtual devices in compile-only mode.
+    Sets the target API for virtual devices in compile-only mode.
 
     This specifies which GPU API (e.g., "cuda", "hip", "metal") virtual
     devices will use for compilation. Must be called before creating
@@ -514,7 +514,7 @@ def set_virtual_device_api(api: str) -> None:
 
 def get_virtual_device_api() -> str:
     """
-    Get the current target API for virtual devices.
+    Gets the current target API for virtual devices.
 
     Returns:
         str: The target API string, or empty string if not set.
@@ -522,7 +522,7 @@ def get_virtual_device_api() -> str:
 
 def set_virtual_device_target_arch(arch: str) -> None:
     """
-    Set the target GPU architecture for virtual devices in compile-only mode.
+    Sets the target GPU architecture for virtual devices in compile-only mode.
 
     This specifies the GPU architecture (e.g., "sm_80", "sm_90") that virtual
     devices will target when compiling code. Must be called before creating
@@ -535,7 +535,7 @@ def set_virtual_device_target_arch(arch: str) -> None:
 
 def get_virtual_device_target_arch() -> str:
     """
-    Get the current target GPU architecture for virtual devices.
+    Gets the current target GPU architecture for virtual devices.
 
     Returns:
         str: The target GPU architecture string, or empty string if not set.
@@ -611,8 +611,9 @@ class Buffer:
     @property
     def is_contiguous(self) -> bool:
         """
-        Whether or not buffer is contiguously allocated in memory. Returns
-        false if the buffer is a non-contiguous slice.
+        Whether or not buffer is contiguously allocated in memory.
+
+        Returns false if the buffer is a non-contiguous slice.
 
         Currently, we consider certain situations that are contiguous as
         non-contiguous for the purposes of our engine, such as when a buffer
@@ -622,8 +623,9 @@ class Buffer:
     @property
     def is_host(self) -> bool:
         """
-        Whether or not buffer is host-resident. Returns false for GPU buffers,
-        true for CPU buffers.
+        Whether or not buffer is host-resident.
+
+        Returns false for GPU buffers, true for CPU buffers.
 
         .. code-block:: python
 
@@ -702,14 +704,16 @@ class Buffer:
         offset: int = 0,
     ):
         """
-        Create a memory-mapped buffer from a binary file on disk.
+        Creates a memory-mapped buffer from a binary file on disk.
+
         The constructor argument semantics follow that of np.memmap.
         """
 
     def inplace_copy_from(self, src: Buffer) -> None:
         """
-        Copy the contents of another buffer into this one. These buffers may
-        be on different devices.
+        Copies the contents of another buffer into this one.
+
+        These buffers may be on different devices.
         Requires that both buffers are contiguous and have same size.
         """
 
@@ -747,8 +751,9 @@ class Buffer:
 
     def item(self) -> Any:
         """
-        Returns the scalar value at a given location. Currently
-        implemented only for zero-rank buffers. The return type is
+        Returns the scalar value at a given location.
+
+        Currently implemented only for zero-rank buffers. The return type is
         converted to a Python built-in type.
         """
 
@@ -757,7 +762,7 @@ class Buffer:
         value: Any, dtype: max._core.dtype.DType, device: Device | None = None
     ) -> Buffer:
         """
-        Create a scalar value of a given dtype and value.
+        Creates a scalar value of a given dtype and value.
 
         If device is None (default), the buffer will be allocated on the CPU.
         """
@@ -765,7 +770,7 @@ class Buffer:
     @overload
     def to(self, device: Device) -> Buffer:
         """
-        Return a buffer that's guaranteed to be on the given device.
+        Returns a buffer that's guaranteed to be on the given device.
 
         The buffer is only copied if the requested device is different from the
         device upon which the buffer is already resident.
@@ -774,8 +779,7 @@ class Buffer:
     @overload
     def to(self, stream: DeviceStream) -> Buffer:
         """
-        Return a buffer that's guaranteed to be on the given device and associated
-        with the given stream.
+        Returns a buffer that's guaranteed to be on the given device and associated with the given stream.
 
         The buffer is only copied if the requested device is different from the
         device upon which the buffer is already resident. If the destination
@@ -786,7 +790,7 @@ class Buffer:
     @overload
     def to(self, devices: Sequence[Device]) -> list[Buffer]:
         """
-        Return a list of buffers that are guaranteed to be on the given devices.
+        Returns a list of buffers that are guaranteed to be on the given devices.
 
         The buffers are only copied if the requested devices are different from the
         device upon which the buffer is already resident.
@@ -795,7 +799,7 @@ class Buffer:
     @overload
     def to(self, streams: Sequence[DeviceStream]) -> list[Buffer]:
         """
-        Return a list of buffers that are guaranteed to be on the given streams.
+        Returns a list of buffers that are guaranteed to be on the given streams.
 
         The buffers are only copied if the requested streams are different from the
         stream upon which the buffer is already resident.
@@ -820,8 +824,8 @@ class Buffer:
         self, dtype: max._core.dtype.DType, shape: Sequence[int] | None = None
     ) -> Buffer:
         """
-        Return a new buffer with the given type and shape that shares the
-        underlying memory.
+        Returns a new buffer with the given type and shape that shares the underlying memory.
+
         If the shape is not given, it will be deduced if possible, or a
         ValueError is raised.
         """
@@ -858,7 +862,9 @@ class Buffer:
 
     def __getitem__(self, idx: int | slice | Sequence[int | slice]) -> Buffer:
         """
-        Gets a buffer slice. Supports full numpy-style slicing. Invocations
+        Gets a buffer slice.
+
+        Supports full numpy-style slicing. Invocations
         using only integer-based indexes will return zero-rank buffers.
         """
 
@@ -888,7 +894,7 @@ class Buffer:
 
 class DevicePinnedBuffer(Buffer):
     """
-    Create a pinned host memory allocation tied to the given device.
+    Creates a pinned host memory allocation tied to the given device.
 
     Device-pinned memory allocations can provide faster DMA speeds and allow
     properly asynchronous copies between the device and the host.

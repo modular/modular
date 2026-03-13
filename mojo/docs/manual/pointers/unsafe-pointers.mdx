@@ -165,8 +165,8 @@ str_ptr.init_pointee_move(my_string^)
 
 Note that to move the value, you usually need to add the transfer sigil
 (`^`), unless the value is a [trivial
-type](/mojo/manual/types#register-passable-memory-only-and-trivial-types) (like
-`Int`) or a newly-constructed, "owned" value:
+type](/mojo/manual/traits#register-passable) (like `Int`) or a
+newly-constructed, "owned" value:
 
 ```mojo
 str_ptr.init_pointee_move("Owned string")

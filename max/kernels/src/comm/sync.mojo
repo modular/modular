@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.utils import StaticTuple
+from std.math.uutils import umod
 from std.sys import size_of
 
 from std.gpu.host import DeviceContext
@@ -27,15 +28,15 @@ from std.gpu.intrinsics import (
 
 
 # No-op (currently) group operation functions (enables vendor_ccl drop in replacement)
-fn group_start():
+def group_start():
     return
 
 
-fn group_end():
+def group_end():
     return
 
 
-fn enable_p2p() -> Bool:
+def enable_p2p() -> Bool:
     """Enable peer-to-peer memory access between all GPU pairs if supported.
 
     Attempts to enable P2P access between all device pairs. Returns False
@@ -51,7 +52,7 @@ fn enable_p2p() -> Bool:
         return False
 
 
-fn is_p2p_enabled() raises -> Bool:
+def is_p2p_enabled() raises -> Bool:
     """Checks whether P2P access is available between GPUs.
 
     This is a read-only status check. Callers must ensure `enable_p2p()`
@@ -75,6 +76,23 @@ This value has been empirically optimized through grid search across different G
 While this value is optimal for A100 GPUs, H100 GPUs may benefit from more blocks to fully
 saturate NVLink bandwidth.
 """
+
+
+@always_inline
+def circular_add[n: Int](x: Int, y: Int) -> Int:
+    """Addition modulo n, assuming 0 <= x < n and 0 <= y < n.
+
+    Equivalent to (x + y) % n. When n is a power of 2, uses unsigned
+    modulo which compiles to a single `and` instruction. Otherwise uses
+    a conditional subtract to avoid expensive integer division on GPU.
+    """
+
+    comptime if n.is_power_of_two():
+        return umod(x + y, n)
+    else:
+        var z = x + y
+        return z - n if z >= n else z
+
 
 comptime MAX_GPUS = 8
 """Maximum number of GPUs supported in the allreduce implementation.
@@ -128,7 +146,7 @@ struct Signal:
 
 
 @always_inline
-fn _multi_gpu_barrier[
+def _multi_gpu_barrier[
     ngpus: Int,
     is_start: Bool,
     need_fence: Bool = False,

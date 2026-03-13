@@ -27,16 +27,12 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.attention.multi_latent_attention import (
-    MLAPrefillMetadata,
-)
+from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
 from max.nn.comm import Signals
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.nn.transformer.distributed_transformer import (
-    forward_sharded_layers,
-)
+from max.nn.transformer import ReturnLogits
+from max.nn.transformer.distributed_transformer import forward_sharded_layers
 from max.pipelines.architectures.internvl.embedding_utils import (
     merge_multimodal_embeddings,
 )
@@ -45,6 +41,7 @@ from ...deepseekV3.deepseekV3 import (
     DeepseekV3,
     DeepseekV3DecoderLayer,
     _unpack_kv_collections,
+    extract_hs,
 )
 
 
@@ -185,7 +182,7 @@ class KimiDecoder(DeepseekV3):
                 subgraph_layer.build_subgraph(
                     f"dist_transformer_block_{group_idx}",
                     subgraph_input_types,
-                    f"layers.{layer_group[0]}.",
+                    f"language_model.layers.{layer_group[0]}.",
                 )
             )
 
@@ -217,7 +214,7 @@ class KimiDecoder(DeepseekV3):
                                 else ()
                             ),
                             *(ep_inputs if ep_inputs is not None else ()),
-                            prefix=f"layers.{idx}.",
+                            prefix=f"language_model.layers.{idx}.",
                         )
                     ]
                     break
@@ -368,14 +365,13 @@ class KimiDecoder(DeepseekV3):
         if logits is not None and offsets is not None:
             ret_val += (logits, offsets)
 
-        if self.return_hidden_states == ReturnHiddenStates.LAST:
-            if self.config.data_parallel_degree > 1:
-                ret_val += tuple(last_token_per_dev)
-            else:
-                ret_val += tuple(last_token_distributed)
-        elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
-            norm_h = forward_sharded_layers(self.norm_shards, h)
-            ret_val += tuple(norm_h)
+        ret_val += extract_hs(
+            return_hidden_states=self.return_hidden_states,
+            last_token_hs_distributed=last_token_distributed,
+            all_hs_distributed=h,
+            normalizer=self.norm_shards,
+            signal_buffers=signal_buffers,
+        )
 
         return ret_val
 

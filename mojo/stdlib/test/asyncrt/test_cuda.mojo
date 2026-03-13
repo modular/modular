@@ -21,7 +21,7 @@ from std.gpu.host._nvidia_cuda import (
 from std.testing import TestSuite, assert_equal
 
 
-fn _run_cuda_context(ctx: DeviceContext) raises:
+def _run_cuda_context(ctx: DeviceContext) raises:
     print("-")
     print("_run_cuda_context()")
     var initial_ctx: CUcontext = CUDA_get_current_context()
@@ -39,7 +39,7 @@ fn _run_cuda_context(ctx: DeviceContext) raises:
     print("CUcontext:", cuda_ctx)
 
 
-fn _run_cuda_multi_context(ctx0: DeviceContext, ctx1: DeviceContext) raises:
+def _run_cuda_multi_context(ctx0: DeviceContext, ctx1: DeviceContext) raises:
     print("-")
     print("_run_cuda_multi_context()")
     var initial_ctx: CUcontext = CUDA_get_current_context()
@@ -72,7 +72,7 @@ fn _run_cuda_multi_context(ctx0: DeviceContext, ctx1: DeviceContext) raises:
     print("CUcontext(id: 1):", cuda_ctx1)
 
 
-fn _run_cuda_stream(ctx: DeviceContext) raises:
+def _run_cuda_stream(ctx: DeviceContext) raises:
     print("-")
     print("_run_cuda_stream()")
 
@@ -85,12 +85,12 @@ fn _run_cuda_stream(ctx: DeviceContext) raises:
     print("CUstream: ", cuda_stream)
 
 
-fn _run_cuda_external_function(ctx: DeviceContext) raises:
+def _run_cuda_external_function(ctx: DeviceContext) raises:
     print("-")
     print("_run_cuda_external_function()")
 
     # Signature of externally compiled kernel function
-    fn vec_add_sig(
+    def vec_add_sig(
         in0: UnsafePointer[Float32, MutAnyOrigin],
         in1: UnsafePointer[Float32, MutAnyOrigin],
         output: UnsafePointer[Float32, MutAnyOrigin],

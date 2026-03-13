@@ -27,7 +27,7 @@ from std.sys import bit_width_of
 # CHECK: [2.0, 3.0, 4.0, 4.0, 4.0, 6.0, 6.0, 6.0]
 # CHECK: [0.0, -0.0, -0.5, -1.0, -1.0, -1.5, -2.0, -2.0]
 # CHECK: [-2.0, -3.0, -4.0, -4.0, -4.0, -6.0, 6.0, -6.0]
-fn test_simd_f32_to_e2m1():
+def test_simd_f32_to_e2m1():
     print("== test_simd_f32_to_e2m1")
 
     comptime size = 32
@@ -75,7 +75,7 @@ fn test_simd_f32_to_e2m1():
         )
 
 
-fn test_simd_f32_to_e2m1_ptx_kernel[
+def test_simd_f32_to_e2m1_ptx_kernel[
     size: Int,
 ](x: SIMD[DType.float32, size]):
     comptime FP4_E2M1_WIDTH = 4
@@ -101,7 +101,7 @@ fn test_simd_f32_to_e2m1_ptx_kernel[
 # CHECK: 2.0 3.0 4.0 4.0 4.0 6.0 6.0 6.0
 # CHECK: -0.0 -0.0 -0.5 -1.0 -1.0 -1.5 -2.0 -2.0
 # CHECK: -2.0 -3.0 -4.0 -4.0 -4.0 -6.0 6.0 -6.0
-fn test_simd_f32_to_e2m1_ptx_path(ctx: DeviceContext) raises:
+def test_simd_f32_to_e2m1_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_f32_to_e2m1_ptx_path")
 
     comptime size = 32
@@ -145,7 +145,7 @@ fn test_simd_f32_to_e2m1_ptx_path(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-fn test_simd_f4e2m1x2_to_fp16x2_ptx_kernel[
+def test_simd_f4e2m1x2_to_fp16x2_ptx_kernel[
     size: Int,
 ](x: SIMD[DType.uint8, size]):
     comptime for i in range(size // 4):
@@ -160,7 +160,7 @@ fn test_simd_f4e2m1x2_to_fp16x2_ptx_kernel[
 # CHECK: [4.0, -1.0] [1.0, 0.5] [-0.0, 1.5] [6.0, 1.0]
 # CHECK: [0.0, 4.0] [1.5, -1.5] [0.5, 1.5] [1.5, 1.5]
 # CHECK: [-6.0, 0.0] [3.0, 0.5] [-2.0, 2.0] [-4.0, 2.0]
-fn test_simd_f4e2m1x2_to_fp16x2(ctx: DeviceContext) raises:
+def test_simd_f4e2m1x2_to_fp16x2(ctx: DeviceContext) raises:
     print("== test_simd_f4e2m1x2_to_fp16x2")
 
     comptime size = 16
@@ -190,7 +190,7 @@ fn test_simd_f4e2m1x2_to_fp16x2(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-fn main() raises:
+def main() raises:
     test_simd_f32_to_e2m1()
 
     with DeviceContext() as ctx:

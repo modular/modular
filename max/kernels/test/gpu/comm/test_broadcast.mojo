@@ -29,7 +29,7 @@ from comm.sync import enable_p2p
 
 @always_inline
 @parameter
-fn _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
+def _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
     """Generate position-based input value that includes root rank.
 
     Each element has a unique value based on position, and includes the root
@@ -63,7 +63,7 @@ comptime test_dtypes = (DType.bfloat16, DType.float32)
 comptime test_gpu_counts = (2, 4, 8)
 
 
-fn _get_test_str[
+def _get_test_str[
     dtype: DType,
     in_place: Bool,
 ](ngpus: Int, length: Int, root: Int) -> String:
@@ -81,7 +81,7 @@ fn _get_test_str[
     )
 
 
-fn broadcast_test[
+def broadcast_test[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -191,7 +191,7 @@ fn broadcast_test[
 
 
 @parameter
-fn run_broadcast_sweep[]() raises:
+def run_broadcast_sweep[]() raises:
     # Run tests for each configuration.
     comptime for gpu_idx, dtype_idx, length_idx, root_self_copy in product(
         range(len(test_gpu_counts)),

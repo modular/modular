@@ -16,9 +16,7 @@ from std.math import ceildiv
 import std.gpu.primitives.warp as warp
 from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
-from layout import TileTensor
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.gemv import gemv_kernel
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.testing import assert_false
@@ -26,7 +24,7 @@ from std.testing import assert_false
 from std.utils.numerics import isnan
 
 
-fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
+def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     print("== run_matvec kernel")
 
     var iterations = 100
@@ -66,7 +64,7 @@ fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
 
     @always_inline
     @parameter
-    fn run_func_gemv(ctx: DeviceContext) raises:
+    def run_func_gemv(ctx: DeviceContext) raises:
         ctx.enqueue_function_experimental[kernel](
             c_device,
             a_device,
@@ -120,7 +118,7 @@ fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
 
     @always_inline
     @parameter
-    fn run_func_naive(ctx: DeviceContext) raises:
+    def run_func_naive(ctx: DeviceContext) raises:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,

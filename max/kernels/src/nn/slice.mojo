@@ -15,9 +15,9 @@ from std.math import clamp
 
 from std.algorithm import elementwise
 from std.gpu.host import DeviceContext, get_gpu_target
-from layout.coord import Coord, DynamicCoord, Idx, coord_to_index_list
+from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
-from layout import TileTensor, row_major
 from std.runtime.asyncrt import DeviceContextPtr
 from std.sys.info import simd_width_of, _current_target
 
@@ -26,7 +26,7 @@ from std.utils.index import IndexList
 
 
 @always_inline("nodebug")
-fn _normalize_and_clamp_dim(start: Int, step: Int, dim_i: Int) -> Int:
+def _normalize_and_clamp_dim(start: Int, step: Int, dim_i: Int) -> Int:
     # Normalize the start/stop indices
     var normalized_idx = select(start < 0, start + dim_i, start)
 
@@ -44,7 +44,7 @@ fn _normalize_and_clamp_dim(start: Int, step: Int, dim_i: Int) -> Int:
 
 
 @always_inline
-fn slice_dim_as_view[
+def slice_dim_as_view[
     dtype: DType, dim: Int
 ](
     tensor: TileTensor[dtype, ...], start: Int, end: Int, step: Int
@@ -97,7 +97,7 @@ fn slice_dim_as_view[
 
 
 @always_inline
-fn slice_as_view[
+def slice_as_view[
     dtype: DType,
     start_type: DType,
     end_type: DType,
@@ -165,7 +165,7 @@ fn slice_as_view[
 
 
 @always_inline
-fn copy_to_slice[
+def copy_to_slice[
     dtype: DType,
     start_type: DType,
     end_type: DType,
@@ -199,7 +199,7 @@ fn copy_to_slice[
     @always_inline
     @__copy_capture(in_slice, buffer_slice_view)
     @parameter
-    fn copy[
+    def copy[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         var coords = rebind[IndexList[in_slice.rank]](idx)
@@ -221,7 +221,7 @@ fn copy_to_slice[
 
 
 @always_inline
-fn slice_as_copy[
+def slice_as_copy[
     dtype: DType,
     index_type: DType,
 ](
@@ -239,7 +239,7 @@ fn slice_as_copy[
     @always_inline
     @__copy_capture(sliced)
     @parameter
-    fn copy[
+    def copy[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         var index = rebind[IndexList[tensor.rank]](idx)
@@ -259,7 +259,7 @@ fn slice_as_copy[
 
 
 @always_inline
-fn slice_shape[
+def slice_shape[
     input_type: DType,
     start_type: DType,
     stop_type: DType,
@@ -319,7 +319,7 @@ fn slice_shape[
 # ===-----------------------------------------------------------------------===#
 
 
-fn sliced_add[
+def sliced_add[
     dtype: DType,
     //,
     target: StaticString,
@@ -349,7 +349,7 @@ fn sliced_add[
 
     @parameter
     @__copy_capture(batch_end_idx, c, a, b)
-    fn _sliced_add[
+    def _sliced_add[
         width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         var out_val: SIMD[dtype, width]

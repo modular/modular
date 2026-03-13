@@ -17,7 +17,7 @@ compile-time constants without materializing entire data structures in memory.
 """
 
 
-fn global_constant[
+def global_constant[
     T: Copyable & ImplicitlyDestructible, //, value: T
 ]() -> ref[StaticConstantOrigin] T:
     """Creates a reference to a compile-time constant value stored in static memory.
@@ -53,7 +53,7 @@ fn global_constant[
     print(element)  # Prints: 3
 
     # Use with more complex compile-time values
-    fn compute(x: Int) -> Int:
+    def compute(x: Int) -> Int:
         return x * 2 + 1
 
     comptime data: InlineArray[Int, 3] = [1, compute(5), 100]

@@ -118,7 +118,7 @@ def test_compare_exchange() raises:
 
 
 def test_comptime_atomic() raises:
-    fn comptime_fn() -> Int:
+    def comptime_fn() -> Int:
         var atom = Atomic[DType.int](3)
         atom += 4
         atom -= 4
@@ -129,7 +129,7 @@ def test_comptime_atomic() raises:
 
 
 def test_comptime_fence() raises:
-    fn comptime_fn() -> Int:
+    def comptime_fn() -> Int:
         fence()
         return 1
 
@@ -138,7 +138,7 @@ def test_comptime_fence() raises:
 
 
 def test_comptime_compare_exchange() raises:
-    fn comptime_fn(expected_in: Int32) -> Tuple[Bool, Int32, Int32]:
+    def comptime_fn(expected_in: Int32) -> Tuple[Bool, Int32, Int32]:
         var expected = expected_in
         var atom = Atomic[DType.int32](0)
         var success = atom.compare_exchange(expected, 42)

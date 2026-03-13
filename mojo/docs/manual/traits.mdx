@@ -82,7 +82,7 @@ support, the less practical this approach is.
 You might notice that the Mojo versions of `make_it_quack()` don't include the
 `try/except` statement. We don't need it because Mojo's static type checking
 ensures that you can only pass instances of `Duck` or `StealthCow` into the
-`make_it_quack()`function.
+`make_it_quack()` function.
 
 ## Using traits
 
@@ -115,7 +115,7 @@ A trait can supply a default implementation, so conforming structs
 don't need to implement the method themselves. You can provide a full
 implementation or use the `pass` keyword. Using `pass` creates a
 no-op method that does nothing. In your conforming struct, you
-can chose to override this default implementation:
+can choose to override this default implementation:
 
 ```mojo
 trait Quackable:
@@ -416,39 +416,56 @@ struct Thing(MassProducible):
 var thing = factory[Thing]()
 ```
 
-### Register-passable traits
+### Register passable types and the RegisterPassable trait  {#register-passable}
 
-A trait can be declared with either the
-[`@register_passable`](/mojo/manual/decorators/register-passable)
-decorator or the
-[`@register_passable("trivial")`](/mojo/manual/decorators/register-passable#register_passabletrivial)
-decorator. These decorators add requirements for conforming structs:
+"Register passable" tells Mojo that a type should be passed in machine
+registers such as a CPU register. This means the type is always passed
+by value. For data types like an integer or floating-point number, this
+is much more efficient than storing values in stack memory.
 
-- If the trait is declared as `@register_passable`, every struct that conforms
-  to the trait must be either `@register_passable` or
-  `@register_passable("trivial")`.
+Mojo supports two forms of register passable types.
 
-- If the trait is declared as `@register_passable("trivial")`, every struct that
-  conforms to the trait must be
-  struct must be `@register_passable("trivial")`, too.
+The standard _register passable type_ has the following capabilities
+and restrictions:
 
-For the purpose of trait conformance, a trait or struct that's defined with
-`@register_passable` should automatically conform to the `Movable` trait, and a
-trait or struct that's defined with `@register_passable("trivial")` should
-automatically conform to the `Copyable` trait.
+- They have normal lifecycles and can implement or override lifecycle
+  methods.
+- Every field must either be register passable or trivially register
+  passable.
+- The type must be
+  [`Movable`](/mojo/manual/lifecycle/life#move-constructor).
+- Their self pointer is neither stable nor predictable. They can move
+  in memory at any time so they aren't suitable for types that rely on
+  pointer identity.
+- When used as arguments or results, they can be exposed directly to C
+  and C++ through foreign function interfaces (FFI) and don't need to be
+  passed by pointer.
+- They can't override the default move constructor. This guarantees
+  moves are always side-effect-free.
 
-:::note
+You can create custom register-passable types by conforming a type
+to the `RegisterPassable` trait
 
-In some cases, the compiler may not track these automatic conformances
-correctly. If you run into an issue, add the traits to your struct explicitly.
+Trivial register types are typically data types. They include:
 
-`@register_passable("trivial")` decorator is deprecated. Please extend with
-`TrivialRegisterPassable` trait instead.
+- _Arithmetic types_. This includes types such as `Int`, `Int32`,
+  `Bool`, `Float64` etc.
+- _Pointers_. The address value is trivial, not the data being pointed
+  to.
+- _Arrays of other trivial types_. `SIMD` is a good example.
 
-`@register_passable` decorator is also deprecated. Please extend with
-`RegisterPassable` trait instead.
+These types are provided by Mojo's standard library.
 
-:::
+A _trivially register passable type_ has the following capabilities
+and restrictions:
+
+- They do not use lifecycle methods.
+- Every field must be trivially register passable.
+- The type must be
+  [`Copyable`](/mojo/manual/lifecycle/life#copy-constructor).
+- They use a special trivial (no-op) destructor. They are _trivially
+  movable_ (via `Copyable`, which refines `Movable`), _trivially
+  copyable_, and _trivially destructible_.
 
 ## Built-in traits
 
@@ -556,7 +573,7 @@ An important feature of the `Writer` trait is that it **only accepts valid UTF-8
 text**. This means that when you write data to a `Writer`, you can only use
 `StringSlice` values (via the
 [`write_string()`](/mojo/std/format/Writer#write_string) method) or other
-`Writable` types; you cannot write arbitrary bytes. This guarantee ensures that
+`Writable` types; you can't write arbitrary bytes. This guarantee ensures that
 types like `String` can safely implement the `Writer` trait without risking
 corruption of their internal UTF-8 data.
 
@@ -734,10 +751,18 @@ struct MyStack[type: Copyable & ImplicitlyDestructible](Stacklike):
         print("]")
 ```
 
+{/*  TODO:
+   - Maybe move this discussion to the generics chapter, the trait docs only
+     need to mention that you can define a `comptime` member.
+   - If we retain the example, update it  to use real conditional conformance.
+   - Update the text below to point to the real conditional conformance doc,
+     if appropriate.
+*/}
+
 The `MyStack` type adds a `dump()` method that prints the contents of the stack.
 Because a struct that conforms to `Copyable` is not necessarily
 printable, `MyStack` uses
-[conditional conformance](/mojo/manual/parameters/#conditional-conformance) to
+conditional conformance to
 define a `dump()` method that works as long as the element type is
 [writable](/mojo/std/format/Writable/).
 

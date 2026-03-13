@@ -20,7 +20,7 @@ from std.memory import stack_allocation
 # CHECK-LABEL: test_shared_mem_barrier
 # CHECK-NOT: ld.local
 # CHECK-NOT: st.local
-fn test_shared_mem_barrier():
+def test_shared_mem_barrier():
     mbar = stack_allocation[
         10,
         SharedMemBarrier,

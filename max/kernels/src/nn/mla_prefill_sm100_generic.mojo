@@ -48,8 +48,7 @@ from layout.tma_async import (
     SharedMemBarrier,
     RaggedTMA3DTile,
 )
-from layout.layout import Layout
-from layout import TileTensor
+from layout import Layout, TileTensor
 import std.gpu.primitives.warp as warp
 
 from std.gpu.memory import AddressSpace, external_memory
@@ -94,11 +93,11 @@ struct WarpRole(Equatable, TrivialRegisterPassable):
     comptime Empty = Self(5)
 
     @always_inline
-    fn __eq__(self, other: Int) -> Bool:
+    def __eq__(self, other: Int) -> Bool:
         return self == Self(Int32(other))
 
 
-fn warp_idx_to_role(warp_idx: UInt32) -> WarpRole:
+def warp_idx_to_role(warp_idx: UInt32) -> WarpRole:
     var wg_idx = warp_idx // 4
     if wg_idx == 0:
         return WarpRole.Softmax0
@@ -140,7 +139,7 @@ __extension SM100MLA:
         )
     )
     @__llvm_metadata(`nvvm.minctasm`=Int(1))
-    fn mla_prefill_kernel_generic(
+    def mla_prefill_kernel_generic(
         q_tma_op: QTMATile[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
@@ -384,7 +383,7 @@ __extension SM100MLA:
 
     @staticmethod
     @always_inline
-    fn load[
+    def load[
         KRopeType: MHAOperand
     ](
         mbars: Self.MiscMBarsType,
@@ -595,7 +594,7 @@ __extension SM100MLA:
 
     @staticmethod
     @always_inline
-    fn mma(
+    def mma(
         tmem_addr: UInt32,
         mbars: Self.MiscMBarsType,
         score_row: UInt32,
@@ -720,7 +719,7 @@ __extension SM100MLA:
 
 
 @always_inline
-fn mla_sm100_prefill_generic[
+def mla_sm100_prefill_generic[
     output_type: DType,
     q_type: DType,
     KVType: MHAOperand,
@@ -828,7 +827,7 @@ fn mla_sm100_prefill_generic[
 
 
 @always_inline
-fn _mla_prefill_sm100_valid_length_dispatch[
+def _mla_prefill_sm100_valid_length_dispatch[
     KVType: MHAOperand,
     output_type: DType,
     q_type: DType,

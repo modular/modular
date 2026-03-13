@@ -25,7 +25,7 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     matmul_sm100_fallback,
 )
@@ -132,7 +132,7 @@ def test_matmul_sm100_fallback[
     @parameter
     @always_inline
     @__copy_capture(c_tensor)
-    fn epilogue_fn[
+    def epilogue_fn[
         _dtype: DType,
         width: Int,
         *,

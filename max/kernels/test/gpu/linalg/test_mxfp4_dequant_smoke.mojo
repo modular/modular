@@ -19,18 +19,17 @@ for several shapes and scale values. Target runtime: < 30s on H100.
 from std.math import ceildiv
 from std.memory import bitcast
 from std.gpu.host import DeviceContext
-from layout import TileTensor
-from layout.tile_layout import row_major
+from layout import TileTensor, row_major
 from linalg.mxfp4_dequant import dequant_mxfp4
 from linalg.fp4_utils import E2M1_TO_FLOAT32
 
 
-fn _pack_fp4_pair(low: UInt8, high: UInt8) -> UInt8:
+def _pack_fp4_pair(low: UInt8, high: UInt8) -> UInt8:
     """Packs two 4-bit FP4 values into one uint8 byte."""
     return (high & UInt8(0x0F)) << UInt8(4) | (low & UInt8(0x0F))
 
 
-fn _e8m0_to_float32(bits: UInt8) -> Float32:
+def _e8m0_to_float32(bits: UInt8) -> Float32:
     """Converts float8_e8m0fnu scale byte to float32: 2^(exp-127)."""
     if bits == UInt8(0):
         return Float32(0.0)
@@ -38,7 +37,7 @@ fn _e8m0_to_float32(bits: UInt8) -> Float32:
     return bitcast[DType.float32](f32_bits)
 
 
-fn _cpu_dequant_mxfp4[
+def _cpu_dequant_mxfp4[
     out_dtype: DType = DType.bfloat16
 ](
     expected: UnsafePointer[mut=True, Scalar[out_dtype], _],
@@ -67,7 +66,7 @@ fn _cpu_dequant_mxfp4[
             expected[row * num_cols + col] = result
 
 
-fn test_mxfp4_dequant[
+def test_mxfp4_dequant[
     num_rows: Int,
     num_cols: Int,
     out_dtype: DType = DType.bfloat16,

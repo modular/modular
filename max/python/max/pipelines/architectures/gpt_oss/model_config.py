@@ -18,14 +18,15 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams
+from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import YarnScalingParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.float8 import parse_float8_config
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.lib.quant import parse_quant_config
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -127,7 +128,7 @@ class GptOssConfig(ArchConfigWithKVCache):
     kv_params: KVCacheParams
     """KV cache parameters."""
 
-    float8_config: Float8Config | None = None
+    quant_config: QuantConfig | None = None
     """Float8/Float4 quantization configuration, if applicable."""
 
     tie_word_embeddings: bool = False
@@ -328,7 +329,7 @@ class GptOssConfig(ArchConfigWithKVCache):
             hidden_activation=hidden_activation,
             max_position_embeddings=huggingface_config.max_position_embeddings,
             rms_norm_eps=huggingface_config.rms_norm_eps,
-            rope_theta=huggingface_config.rope_theta,
+            rope_theta=get_rope_theta(huggingface_config),
             attention_bias=huggingface_config.attention_bias,
             sliding_window=huggingface_config.sliding_window,
             rope_scaling=rope_scaling_params,
@@ -386,11 +387,11 @@ class GptOssConfig(ArchConfigWithKVCache):
         else:
             normalized_state_dict = dict(state_dict)
 
-        float8_config = parse_float8_config(
+        quant_config = parse_quant_config(
             huggingface_config, normalized_state_dict, self.dtype
         )
 
-        self.float8_config = float8_config
+        self.quant_config = quant_config
         self.tie_word_embeddings = tie_word_embeddings
         self.return_logits = return_logits
 

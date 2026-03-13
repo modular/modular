@@ -32,7 +32,7 @@ from std.utils import Index, IndexList
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
 
-fn test[
+def test[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -149,7 +149,7 @@ fn test[
     _ = c_device_ref_buffer^
 
 
-fn test[
+def test[
     in_type: DType,
     out_type: DType,
     transpose_b: Bool,
@@ -162,7 +162,7 @@ fn test[
     )
 
 
-fn test[
+def test[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -246,6 +246,13 @@ def test_bf16(ctx: DeviceContext) raises:
         N=Int(284),
         K=Int(256),
     ](ctx, 256, 284, 256)
+    test[
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
+        transpose_b=True,
+        N=Int(260),
+        K=Int(1024),
+    ](ctx, 259, 260, 1024)
 
 
 def test_float8[in_type: DType](ctx: DeviceContext) raises:

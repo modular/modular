@@ -51,7 +51,7 @@ comptime out_fp8_dtype = DType.float8_e4m3fnuz if is_amd_gpu() else DType.float8
 # --- Shared verification helpers ---
 
 
-fn _assert_fp8_close[
+def _assert_fp8_close[
     out_dtype: DType,
 ](
     ref_host: UnsafePointer[Scalar[out_dtype], _],
@@ -104,7 +104,7 @@ fn _assert_fp8_close[
         )
 
 
-fn _assert_scales_close(
+def _assert_scales_close(
     ref_host: UnsafePointer[Scalar[DType.float32], _],
     fused_host: UnsafePointer[Scalar[DType.float32], _],
     rows: Int,
@@ -143,7 +143,7 @@ fn _assert_scales_close(
 # --- Test: fully fused allreduce + RMSNorm + FP8 ---
 
 
-fn test_fused_allreduce_rmsnorm_fp8[
+def test_fused_allreduce_rmsnorm_fp8[
     ngpus: Int,
     in_dtype: DType,
     out_dtype: DType,
@@ -246,7 +246,7 @@ fn test_fused_allreduce_rmsnorm_fp8[
     @__copy_capture(ref_sum_ptr)
     @always_inline
     @parameter
-    fn ref_input_fn[
+    def ref_input_fn[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
         var linear_idx = idx[0] * cols + idx[1]
@@ -347,7 +347,7 @@ fn test_fused_allreduce_rmsnorm_fp8[
 # --- Test: fully fused allreduce + residual add + RMSNorm + FP8 ---
 
 
-fn test_fused_allreduce_residual_rmsnorm_fp8[
+def test_fused_allreduce_residual_rmsnorm_fp8[
     ngpus: Int,
     in_dtype: DType,
     out_dtype: DType,
@@ -455,7 +455,7 @@ fn test_fused_allreduce_residual_rmsnorm_fp8[
     @__copy_capture(ref_sum_ptr)
     @always_inline
     @parameter
-    fn ref_input_fn[
+    def ref_input_fn[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
         var linear_idx = idx[0] * cols + idx[1]

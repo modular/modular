@@ -138,6 +138,9 @@ modular_py_test(
         "sample.py",
         "test.yaml",
         "test_python.yaml",
+        "tests/sample_failure.mojo",
+        "tests/test_crash.yaml",
+        "tests/test_timeout.yaml",
     ],
     env = {"KERNEL_BENCHMARKS_ROOT": "max/kernels/benchmarks/"},
     mojo_deps = [

@@ -22,7 +22,7 @@ from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.tile_tensor import TileTensor
+from layout import Layout, LayoutTensor, RuntimeLayout, TileTensor
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_batched_matmul_tma_umma_warp_specialized,
 )
@@ -35,7 +35,7 @@ from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 
-fn simple_init() -> Bool:
+def simple_init() -> Bool:
     for arg in argv():
         if arg == "--simple-init":
             return True
@@ -170,10 +170,8 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     var b_lt = from_ndbuffer_row_major(b_device_nd)
     var c_ref_lt = from_ndbuffer_row_major(c_device_ref_nd)
 
-    from layout import Layout, LayoutTensor, RuntimeLayout
-
     @parameter
-    fn _reshape_to_2d[layout: Layout]() -> Layout:
+    def _reshape_to_2d[layout: Layout]() -> Layout:
         return Layout.row_major(
             layout.shape[1].value(),
             layout.shape[2].value(),

@@ -31,14 +31,14 @@ from std.testing import assert_almost_equal
 from std.utils.index import Index
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
     return False
 
 
-fn test[
+def test[
     mask_rank: Int,
     qkv_type: DType,
     mask_type: DType,
@@ -251,7 +251,7 @@ fn test[
     @parameter
     @always_inline
     @__copy_capture(q_device, k_device, v_device, mask3d, mask4d, output_device)
-    fn kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(ctx: DeviceContext) raises:
         comptime if mask_rank == 3:
             flash_attention(
                 output_device,
@@ -372,7 +372,7 @@ fn test[
     flash_output_ptr.free()
 
 
-fn test_context_encoding[
+def test_context_encoding[
     batch_size: Int, depth: Int
 ](ctx: DeviceContext) raises:
     # # fp32 arbitrary depth and num_heads, baseline impl.
@@ -491,7 +491,7 @@ fn test_context_encoding[
     ](1, 1, ctx)
 
 
-fn test_decoding[
+def test_decoding[
     batch_size: Int,
     depth: Int,
     num_partitions: Optional[Int] = None,

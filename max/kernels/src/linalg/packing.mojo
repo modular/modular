@@ -82,7 +82,7 @@ struct PackMatrixRows[
     # Interface method:
     #  run the packing and store to the given buffer.
     @staticmethod
-    fn run(
+    def run(
         packed_matrix: NDBuffer[
             rank=3, Self.dtype, Self.packed_origin, Self.packed_shape
         ],
@@ -135,7 +135,7 @@ struct PackMatrixRows[
 
         instance._pack()
 
-    fn _transpose_pack_helper[
+    def _transpose_pack_helper[
         skip_row_bound: Bool,
         skip_col_bound: Bool,
     ](
@@ -237,7 +237,7 @@ struct PackMatrixRows[
             # Out of bound columns are discarded as there's no allocation for them
             #  in the packed buffer.
 
-    fn _pack(self):
+    def _pack(self):
         """Helper function: Allocates transpose workspace and launch the
         transpose helper function until all required data has been packed.
         """
@@ -271,7 +271,7 @@ struct PackMatrixRows[
         @always_inline
         @__copy_capture(transpose_buffer)
         @parameter
-        fn transpose_pack_unit[static_switch0: Bool, static_switch1: Bool]():
+        def transpose_pack_unit[static_switch0: Bool, static_switch1: Bool]():
             self._transpose_pack_helper[
                 # skip_row_bound, skip_col_bound
                 static_switch0,
@@ -333,7 +333,7 @@ struct PackMatrixCols[
 
     # Interface function:
     @staticmethod
-    fn run(
+    def run(
         packed_matrix: NDBuffer[
             rank=3, Self.dtype, Self.packed_origin, Self.packed_shape
         ],
@@ -374,7 +374,7 @@ struct PackMatrixCols[
         instance._pack()
 
     @always_inline
-    fn _pack_helper[
+    def _pack_helper[
         skip_row_bound: Bool, skip_col_bound: Bool
     ](self, row_start: Int, valid_row_count: Int, col_start: Int):
         """Helper function: copy several simd vectors on the column from the
@@ -391,7 +391,7 @@ struct PackMatrixCols[
 
         @always_inline
         @parameter
-        fn pack_vector(row_idx: Int, col_idx: Int):
+        def pack_vector(row_idx: Int, col_idx: Int):
             var global_idx = self.global_offset + Index(row_idx, col_idx)
             var data = SIMD[Self.dtype, Self.simd_size](0)
             if skip_col_bound or (
@@ -421,12 +421,12 @@ struct PackMatrixCols[
 
         @always_inline
         @parameter
-        fn pack_body[idx: Int]():
+        def pack_body[idx: Int]():
             pack_vector(row_start + idx, col_start)
 
         @always_inline
         @parameter
-        fn prefetch_body[idx: Int]():
+        def prefetch_body[idx: Int]():
             var global_row_idx = (
                 self.global_offset[0] + row_start + unroll_factor + idx
             )
@@ -446,7 +446,7 @@ struct PackMatrixCols[
             for row_idx in range(row_start, valid_row_count):
                 pack_vector(row_idx, col_start)
 
-    fn _pack_vnni(self):
+    def _pack_vnni(self):
         """Copy the B tile from the original matrix to the packed buffer for VNNI.
         """
         comptime assert Self.use_vnni
@@ -473,7 +473,7 @@ struct PackMatrixCols[
                             val,
                         )
 
-    fn _pack_i8mm(self):
+    def _pack_i8mm(self):
         comptime i8mm_rows = 2
         comptime i8mm_cols = 8
 
@@ -503,7 +503,7 @@ struct PackMatrixCols[
                                 val,
                             )
 
-    fn _pack_default(self):
+    def _pack_default(self):
         """Copy the B tile from the original matrix to the packed buffer.
         Each iteration copies a block of shape (unroll_factor, simd_size)."""
         comptime assert not Self.use_vnni and not Self.use_i8mm
@@ -516,7 +516,7 @@ struct PackMatrixCols[
         @always_inline
         @__copy_capture(valid_row_count)
         @parameter
-        fn pack_unit[skip_row_bound: Bool, skip_col_bound: Bool]():
+        def pack_unit[skip_row_bound: Bool, skip_col_bound: Bool]():
             self._pack_helper[skip_row_bound, skip_col_bound](
                 row_idx, valid_row_count, col_idx
             )
@@ -531,7 +531,7 @@ struct PackMatrixCols[
                 col_idx += Self.simd_size
             row_idx += unroll_factor
 
-    fn _pack(self):
+    def _pack(self):
         comptime if Self.use_vnni:
             self._pack_vnni()
         elif Self.use_i8mm:
@@ -541,7 +541,7 @@ struct PackMatrixCols[
 
 
 @always_inline
-fn _pack_matmul_b_shape_func_impl[
+def _pack_matmul_b_shape_func_impl[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
@@ -568,7 +568,7 @@ fn _pack_matmul_b_shape_func_impl[
 
     @parameter
     @always_inline
-    fn dispatch_on_kernel_type[kernel_type: Bool]():
+    def dispatch_on_kernel_type[kernel_type: Bool]():
         comptime config = get_kernel_config[
             a_type,
             b_type,
@@ -609,7 +609,7 @@ fn _pack_matmul_b_shape_func_impl[
 
 @register_internal("pack_matmul_b_shape_func")
 @always_inline
-fn pack_matmul_b_shape_func[
+def pack_matmul_b_shape_func[
     b_type: DType,
     b_shape: DimList,
     //,
@@ -638,7 +638,7 @@ fn pack_matmul_b_shape_func[
     ](b_input, kernel_type_m)
 
 
-fn pack_b[
+def pack_b[
     transpose_b: Bool,
     simd_size: Int,
     inner_size: Int,
@@ -752,7 +752,7 @@ fn pack_b[
 
 
 @always_inline
-fn _pack_b_ndbuffer_impl[
+def _pack_b_ndbuffer_impl[
     b_type: DType,
     b_shape: DimList,
     //,
@@ -807,7 +807,7 @@ fn _pack_b_ndbuffer_impl[
 
         @parameter
         @always_inline
-        fn dispatch_on_kernel_type[kernel_type: Bool]():
+        def dispatch_on_kernel_type[kernel_type: Bool]():
             comptime config = get_kernel_config[
                 a_type,
                 b_type,
@@ -832,7 +832,7 @@ fn _pack_b_ndbuffer_impl[
 
 
 @register_internal("layout_transform_KN_to_KNkni")
-fn pack_b_ndbuffer[
+def pack_b_ndbuffer[
     b_type: DType,
     b_shape: DimList,
     //,
@@ -860,7 +860,7 @@ fn pack_b_ndbuffer[
 
 
 @register_internal("layout_transform_NK_to_KNkni")
-fn pack_transposed_b_ndbuffer[
+def pack_transposed_b_ndbuffer[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
@@ -911,7 +911,7 @@ struct BTileGenerator[
     # needs to be always_inline so b_tile_stack_ptr gets allocated on caller's stack
     @always_inline
     @staticmethod
-    fn get(
+    def get(
         b: NDBuffer[rank=2, Self.b_type, Self.origin, Self.shape],
         tile_n_k: IndexList[2],
     ) -> BTileGenerator[
@@ -949,7 +949,7 @@ struct BTileGenerator[
             Self.b_packed,
         ](b, b_tile_stack_ptr, tile_n_k)
 
-    fn get_tile[
+    def get_tile[
         inner_size: Int
     ](
         self,

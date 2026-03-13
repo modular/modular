@@ -65,7 +65,7 @@ def execute_gather_nd_test[
                 assert_equal(actual_host[i], expected_host[i])
 
 
-fn test_gather_nd_eg1(ctx: DeviceContext) raises:
+def test_gather_nd_eg1(ctx: DeviceContext) raises:
     # Example 1
     comptime batch_dims = 0
     comptime data_type = DType.int32
@@ -134,7 +134,7 @@ fn test_gather_nd_eg1(ctx: DeviceContext) raises:
     )
 
 
-fn test_gather_nd_eg2(ctx: DeviceContext) raises:
+def test_gather_nd_eg2(ctx: DeviceContext) raises:
     # Example 2
     comptime batch_dims = 0
     comptime data_type = DType.int8
@@ -200,7 +200,7 @@ fn test_gather_nd_eg2(ctx: DeviceContext) raises:
     )
 
 
-fn test_gather_nd_eg3(ctx: DeviceContext) raises:
+def test_gather_nd_eg3(ctx: DeviceContext) raises:
     # Example 3
     comptime batch_dims = 0
     comptime data_type = DType.float32
@@ -272,7 +272,7 @@ fn test_gather_nd_eg3(ctx: DeviceContext) raises:
     )
 
 
-fn test_gather_nd_eg4(ctx: DeviceContext) raises:
+def test_gather_nd_eg4(ctx: DeviceContext) raises:
     # Example 4
     comptime batch_dims = 0
     comptime data_type = DType.int8
@@ -344,7 +344,7 @@ fn test_gather_nd_eg4(ctx: DeviceContext) raises:
     )
 
 
-fn test_gather_nd_eg5(ctx: DeviceContext) raises:
+def test_gather_nd_eg5(ctx: DeviceContext) raises:
     # Example 5
     comptime batch_dims = 1
     comptime data_type = DType.int32
@@ -414,7 +414,7 @@ fn test_gather_nd_eg5(ctx: DeviceContext) raises:
     )
 
 
-fn test_gather_nd_eg6(ctx: DeviceContext) raises:
+def test_gather_nd_eg6(ctx: DeviceContext) raises:
     # Example 6
     comptime batch_dims = 2
     comptime data_type = DType.int8
@@ -506,7 +506,7 @@ fn test_gather_nd_eg6(ctx: DeviceContext) raises:
     )
 
 
-fn test_gather_nd_eg7(ctx: DeviceContext) raises:
+def test_gather_nd_eg7(ctx: DeviceContext) raises:
     # Example 7
     comptime batch_dims = 0
     comptime data_type = DType.int8
@@ -580,7 +580,7 @@ fn test_gather_nd_eg7(ctx: DeviceContext) raises:
     )
 
 
-fn test_gather_nd_eg8(ctx: DeviceContext) raises:
+def test_gather_nd_eg8(ctx: DeviceContext) raises:
     # Example 8
     comptime batch_dims = 0
     comptime data_type = DType.int8

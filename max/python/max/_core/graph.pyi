@@ -41,7 +41,7 @@ def _buffer_from_constant_attr(
     shape: Sequence[int],
     device: max._core.driver.Device,
 ) -> max._core.driver.Buffer:
-    """Create a Buffer from an MLIR constant attribute"""
+    """Creates a Buffer from an MLIR constant attribute."""
 
 def next_operation(arg: max._mlir.ir.Operation, /) -> max._mlir.ir.Operation:
     """Returns the next operation in the parent block, or None."""

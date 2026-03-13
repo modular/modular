@@ -31,7 +31,7 @@ from std.testing import assert_equal
 
 # Kernel developer can modify the dispatch accordingly.
 # You can design your own dispatch queries based on available data and parameters.
-fn dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
+def dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
     print("Dispatch for m=", m, "/N=", static_n, "/K=", static_k, sep="")
 
     # First, check on exact value of M
@@ -39,7 +39,7 @@ fn dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
 
     @parameter
     @always_inline
-    fn rule_eq_nk(x: TuningConfigAMD) -> Bool:
+    def rule_eq_nk(x: TuningConfigAMD) -> Bool:
         return x.k == static_k and x.n == static_n
 
     # First, filter by static params N and K
@@ -55,7 +55,7 @@ fn dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
     # Note: this is faster if numerically close values of M are placed close together in the list.
     @parameter
     @always_inline
-    fn get_m(x: TuningConfigAMD) -> Int:
+    def get_m(x: TuningConfigAMD) -> Int:
         return x.m
 
     comptime m_values = TuningTableAMD.query_values[Int, get_m, nk_idx_list]()
@@ -69,7 +69,7 @@ fn dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
 
         @parameter
         @always_inline
-        fn rule_m(x: TuningConfigAMD) -> Bool:
+        def rule_m(x: TuningConfigAMD) -> Bool:
             return x.m == materialize[m_values[i]]()
 
         if materialize[m_values[i - 1]]() < m <= materialize[m_values[i]]():
@@ -95,7 +95,7 @@ fn dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
                 # return
 
 
-fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
+def dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
     print("Dispatch for m=", m, "/N=", static_n, "/K=", static_k, sep="")
 
     # First, check on exact value of M
@@ -103,7 +103,7 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
 
     @parameter
     @always_inline
-    fn rule_eq_nk(x: TuningConfigNvidia) -> Bool:
+    def rule_eq_nk(x: TuningConfigNvidia) -> Bool:
         return x.N == static_k and x.N == static_n
 
     # First, filter by static params N and K
@@ -121,7 +121,7 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
     # Note: this is faster if numerically close values of M are placed close together in the list.
     @parameter
     @always_inline
-    fn get_m(x: TuningConfigNvidia) -> Int:
+    def get_m(x: TuningConfigNvidia) -> Int:
         return x.M
 
     comptime m_values = TuningTableNvidia.query_values[
@@ -148,7 +148,7 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
 
         @parameter
         @always_inline
-        fn rule_m(x: TuningConfigNvidia) -> Bool:
+        def rule_m(x: TuningConfigNvidia) -> Bool:
             return x.M == materialize[m_values[i]]()
 
         if materialize[m_values[i - 1]]() < m <= materialize[m_values[i]]():

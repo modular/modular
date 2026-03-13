@@ -20,11 +20,15 @@ from typing import Literal
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams
+from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.llama3.model_config import Llama3Config
-from max.pipelines.lib import KVCacheConfig, PipelineConfig, parse_float8_config
+from max.pipelines.lib import (
+    KVCacheConfig,
+    PipelineConfig,
+    parse_quant_config,
+)
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
@@ -79,8 +83,8 @@ class VisionConfig:
     spatial_merge_size: int
     """Spatial merge size for the vision encoder."""
 
-    float8_config: Float8Config | None = None
-    """Float8 quantization configuration for the vision encoder."""
+    quant_config: QuantConfig | None = None
+    """Scaled quantization configuration for the vision encoder."""
 
     @classmethod
     def initialize_from_config(
@@ -125,7 +129,7 @@ class VisionConfig:
     ) -> None:
         """Finalize VisionConfig with state_dict dependent fields."""
         # Parse (if present) a float8 configuration for the vision path.
-        v_float8 = parse_float8_config(
+        v_float8 = parse_quant_config(
             huggingface_config,
             vision_state_dict,
             vision_dtype,
@@ -135,7 +139,7 @@ class VisionConfig:
 
         self.dtype = vision_dtype
         self.llm_dtype = llm_dtype
-        self.float8_config = v_float8
+        self.quant_config = v_float8
 
 
 @dataclass(kw_only=True)

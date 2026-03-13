@@ -21,7 +21,7 @@ from linalg.matmul.vendor.blas import Backend, Handle, matmul
 from internal_utils._utils import ValOrDim, dynamic, static
 from _cublas.cublaslt import cublasLtGetVersion, cublasLtMatmulMatrixScale_t
 from std.collections import OptionalReg
-from layout import Layout, LayoutTensor, IntTuple, RuntimeLayout, UNKNOWN_VALUE
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
 from std.sys import argv
@@ -38,7 +38,7 @@ from linalg.fp4_quantization import naive_block_scaled_matmul
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-fn test_scaled_mxfp8_cublaslt[
+def test_scaled_mxfp8_cublaslt[
     input_type: DType,
     output_type: DType,
     transpose_b: Bool,
@@ -295,7 +295,7 @@ fn test_scaled_mxfp8_cublaslt[
     _ = b_scales
 
 
-fn main() raises:
+def main() raises:
     with DeviceContext() as ctx:
         test_scaled_mxfp8_cublaslt[
             DType.float8_e4m3fn,

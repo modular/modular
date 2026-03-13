@@ -21,7 +21,6 @@ from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.attention.attention_with_rope import _compute_shard_range
-from max.nn.float8_config import Float8Config
 from max.nn.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
@@ -34,6 +33,7 @@ from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
+from max.nn.quant_config import QuantConfig
 
 from .text_rotary import Qwen3VLTextRotaryEmbedding
 
@@ -57,7 +57,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
         scale: float | None = None,
         has_bias: bool = True,
         rms_norm_eps: float = 1e-6,
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
     ) -> None:
         super().__init__()
 
@@ -75,7 +75,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
 
         self.devices = devices or [DeviceRef.CPU()]
         self._sharding_strategy: ShardingStrategy | None = None
-        self.float8_config = float8_config
+        self.quant_config = quant_config
 
         q_weight_dim = self.kv_params.head_dim * num_attention_heads
         kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
@@ -86,7 +86,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=has_bias,
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
         self.k_proj = linear_cls(
             in_dim=hidden_size,
@@ -94,7 +94,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=has_bias,
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
         self.v_proj = linear_cls(
             in_dim=hidden_size,
@@ -102,7 +102,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=has_bias,
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
         self.o_proj = linear_cls(
             in_dim=q_weight_dim,
@@ -110,7 +110,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=has_bias,
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
 
         # Per-head RMSNorm for Q and K.
@@ -196,21 +196,21 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
         )
 
         # Project QKV using FP8 or BF16 path
-        if self.float8_config and self.q_proj.weight.dtype.is_float8():
+        if self.quant_config and self.q_proj.weight.dtype.is_float8():
             # FP8 path: dynamically quantize input and use FP8 fused kernel
             weight_scale = self.wqkv_scale
             assert weight_scale is not None
 
             # Get K block size for dynamic quantization (matches DeepSeek pattern)
-            weight_block_size = self.float8_config.weight_scale.block_size
+            weight_block_size = self.quant_config.weight_scale.block_size
             k_block_size = (
                 weight_block_size[1] if weight_block_size is not None else -1
             )
 
             x_fp8, x_scales = quantize_dynamic_scaled_float8(
                 x_in,
-                self.float8_config.input_scale,
-                self.float8_config.weight_scale,
+                self.quant_config.input_scale,
+                self.quant_config.weight_scale,
                 scales_type=weight_scale.dtype,
                 group_size_or_per_token=k_block_size,
                 out_type=self.q_proj.weight.dtype,
@@ -227,7 +227,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
                 n_heads=self.n_heads,
                 input_scale=x_scales.to(x_fp8.device),
                 weight_scale=weight_scale.to(x_fp8.device),
-                float8_config=self.float8_config,
+                quant_config=self.quant_config,
             )
         else:
             # BF16 path: regular fused QKV matmul
@@ -393,7 +393,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
                 scale=self.scale,
                 has_bias=self.has_bias,
                 rms_norm_eps=self.rms_norm_eps,
-                float8_config=self.float8_config,
+                quant_config=self.quant_config,
             )
 
             sharded.q_proj = q_proj_shards[shard_idx]

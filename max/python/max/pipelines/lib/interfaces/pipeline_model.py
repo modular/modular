@@ -146,7 +146,7 @@ class ModelOutputs:
     ``logits[logit_offsets[i]:logit_offsets[i + 1], :]``.
     """
 
-    hidden_states: Buffer | list[Buffer] | None = None
+    hidden_states: Buffer | None = None
     """Optional hidden states for text generation.
 
     Single-device shape is ``[T_h, H]`` where:
@@ -154,8 +154,7 @@ class ModelOutputs:
     - last-token mode: ``T_h = B``
     - all-token mode: ``T_h = total_input_tokens``
 
-    For data parallel models, this can be a list of Buffers where each Buffer
-    has shape ``[T_h_device, H]`` for the sequences assigned to that device.
+    For data parallel models, the hs will be on the first gpu since it is replicated.
     """
 
 

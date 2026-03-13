@@ -17,14 +17,14 @@ from std.gpu.host import DeviceContext
 from std.testing import TestSuite
 
 
-fn run_func[
+def run_func[
     dtype: DType,
     kernel_fn: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
 ](ctx: DeviceContext, val: Scalar[dtype] = 0) raises:
     @parameter
-    fn kernel(
+    def kernel(
         output: UnsafePointer[Scalar[dtype], MutAnyOrigin], input: Scalar[dtype]
     ):
         output[0] = kernel_fn(input)
@@ -36,55 +36,55 @@ fn run_func[
     _ = out
 
 
-fn hypot_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
+def hypot_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return hypot(val, val)
 
 
-fn remainder_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
+def remainder_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return remainder(val, val)
 
 
-fn scalb_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
+def scalb_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return scalb(val, val)
 
 
-fn gcd_fn(val: SIMD) -> type_of(val):
+def gcd_fn(val: SIMD) -> type_of(val):
     return type_of(val)(gcd(Int(val), Int(val)))
 
 
-fn lcm_fn(val: SIMD) -> type_of(val):
+def lcm_fn(val: SIMD) -> type_of(val):
     return type_of(val)(lcm(Int(val), Int(val)))
 
 
-fn sqrt_fn(val: SIMD) -> type_of(val):
+def sqrt_fn(val: SIMD) -> type_of(val):
     return sqrt(val)
 
 
-fn ldexp_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
+def ldexp_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return ldexp(val, 1)
 
 
-fn frexp_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
+def frexp_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return frexp(val)[0]
 
 
-fn floor_fn(val: SIMD) -> type_of(val):
+def floor_fn(val: SIMD) -> type_of(val):
     return floor(val)
 
 
-fn ceil_fn(val: SIMD) -> type_of(val):
+def ceil_fn(val: SIMD) -> type_of(val):
     return floor(val)
 
 
-fn pow_fn(val: SIMD) -> type_of(val):
+def pow_fn(val: SIMD) -> type_of(val):
     return val**val
 
 
-fn powi_fn(val: SIMD) -> type_of(val):
+def powi_fn(val: SIMD) -> type_of(val):
     return val**9
 
 
-fn powf_fn(val: SIMD) -> type_of(val):
+def powf_fn(val: SIMD) -> type_of(val):
     return val**3.2
 
 
@@ -92,7 +92,7 @@ def test_math() raises:
     with DeviceContext() as ctx:
 
         @parameter
-        fn test[
+        def test[
             *kernel_fns: fn[dtype: DType, width: Int](
                 SIMD[dtype, width]
             ) -> SIMD[dtype, width]

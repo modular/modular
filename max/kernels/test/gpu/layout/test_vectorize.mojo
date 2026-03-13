@@ -17,7 +17,7 @@ from layout.layout_tensor import *
 from std.testing import assert_equal
 
 
-fn test_vectorize_2() raises:
+def test_vectorize_2() raises:
     var tensor = LayoutTensor[
         DType.float32,
         Layout(IntTuple(IntTuple(16, 32), 4), IntTuple(IntTuple(32, 1), 512)),

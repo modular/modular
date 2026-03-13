@@ -44,7 +44,7 @@ import .warp
 
 
 @always_inline
-fn _block_reduce_with_padding[
+def _block_reduce_with_padding[
     dtype: DType,
     //,
     *,
@@ -66,7 +66,7 @@ fn _block_reduce_with_padding[
     var warp_result = warp_reduce_fn(val)
 
     @always_inline
-    fn compute_offset(offset: Int) -> Int:
+    def compute_offset(offset: Int) -> Int:
         """Computes the offset with the padding if needed."""
 
         comptime if padding > 0:
@@ -109,7 +109,7 @@ fn _block_reduce_with_padding[
 
 
 @always_inline
-fn _block_reduce[
+def _block_reduce[
     dtype: DType,
     //,
     block_dim_x: Int,
@@ -203,7 +203,7 @@ fn _block_reduce[
 
 
 @always_inline
-fn sum[
+def sum[
     dtype: DType, width: Int, //, *, block_size: Int, broadcast: Bool = True
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the sum of values across all threads in a block.
@@ -233,7 +233,7 @@ fn sum[
 
 
 @always_inline
-fn sum[
+def sum[
     dtype: DType,
     width: Int,
     //,
@@ -281,7 +281,7 @@ fn sum[
 
 
 @always_inline
-fn max[
+def max[
     dtype: DType, width: Int, //, *, block_size: Int, broadcast: Bool = True
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the maximum value across all threads in a block.
@@ -313,7 +313,7 @@ fn max[
 
 
 @always_inline
-fn max[
+def max[
     dtype: DType,
     width: Int,
     //,
@@ -363,7 +363,7 @@ fn max[
 
 
 @always_inline
-fn min[
+def min[
     dtype: DType, width: Int, //, *, block_size: Int, broadcast: Bool = True
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the minimum value across all threads in a block.
@@ -394,7 +394,7 @@ fn min[
 
 
 @always_inline
-fn min[
+def min[
     dtype: DType,
     width: Int,
     //,
@@ -443,7 +443,7 @@ fn min[
 
 
 @always_inline
-fn broadcast[
+def broadcast[
     dtype: DType, width: Int, //, *, block_size: Int
 ](val: SIMD[dtype, width], src_thread: UInt = 0) -> SIMD[dtype, width]:
     """Broadcasts a value from a source thread to all threads in a block.
@@ -492,7 +492,7 @@ fn broadcast[
 
 
 @always_inline
-fn broadcast[
+def broadcast[
     dtype: DType,
     width: Int,
     //,
@@ -556,7 +556,7 @@ fn broadcast[
 
 
 @always_inline
-fn _prefix_sum[
+def _prefix_sum[
     dtype: DType,
     //,
     *,
@@ -609,7 +609,7 @@ fn _prefix_sum[
 
 
 @always_inline
-fn prefix_sum[
+def prefix_sum[
     dtype: DType,
     //,
     *,
@@ -640,7 +640,7 @@ fn prefix_sum[
 
 
 @always_inline
-fn prefix_sum[
+def prefix_sum[
     dtype: DType,
     //,
     *,

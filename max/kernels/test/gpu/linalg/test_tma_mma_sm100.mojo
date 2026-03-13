@@ -29,10 +29,9 @@ from std.gpu import (
 from std.gpu.memory import external_memory
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
-from layout import Layout, LayoutTensor
+from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import IntTuple
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
@@ -52,7 +51,7 @@ from std.utils.numerics import get_accum_type, max_finite, min_finite
 from std.utils.static_tuple import StaticTuple
 
 
-fn cpu_matmul_naive[
+def cpu_matmul_naive[
     *, transpose_a: Bool, transpose_b: Bool
 ](C: LayoutTensor[mut=True, ...], A: LayoutTensor, B: LayoutTensor):
     comptime M = C.layout[0].size()
@@ -98,7 +97,7 @@ fn cpu_matmul_naive[
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-fn tma_umma_kernel_ss[
+def tma_umma_kernel_ss[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -374,7 +373,7 @@ fn tma_umma_kernel_ss[
 
 
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-fn tma_umma_kernel_ts[
+def tma_umma_kernel_ts[
     a_type: DType,
     b_type: DType,
     c_type: DType,

@@ -24,7 +24,7 @@ from std.testing import (
 
 
 # Simple kernel for testing stream execution
-fn simple_kernel(
+def simple_kernel(
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,

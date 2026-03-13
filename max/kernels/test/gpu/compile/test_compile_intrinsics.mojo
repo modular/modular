@@ -18,7 +18,7 @@ from std.gpu.host.info import A100, MetalM4
 from std.gpu.intrinsics import *
 
 
-fn kernel[
+def kernel[
     dtype: DType, memory: Bool = True
 ](
     output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -76,7 +76,7 @@ def test_compile_code() raises:
     )
 
     # https://godbolt.org/z/j9ecfjjP1
-    fn exp_op(output: UnsafePointer[Float32, MutAnyOrigin], max_scaled: Int32):
+    def exp_op(output: UnsafePointer[Float32, MutAnyOrigin], max_scaled: Int32):
         output[] = exp2(
             output[] * 1.44269504088896340736 - max_scaled.cast[DType.float32]()
         )

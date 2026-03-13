@@ -764,6 +764,22 @@ logit_verification_pipelines:
     kl_div_threshold: 1.6e-1
     timeout: 1200
 
+  nvidia/Kimi-K2.5-NVFP4:
+    pre_submit_agents: []
+    post_submit_agents: [*b200_8x]
+    pipeline: "nvidia/Kimi-K2.5-NVFP4"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [nvidia-multi, 8xb200]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/vllm_kimik2_5_nvfp4_golden/1/0b26362d7cc605bcc3925fa3d6aff4aeef4ed12fe0ed2f1684f3c8cfbf285822/vllm_kimik2_5_nvfp4_golden.tar.gz"
+      json_file: "vllm_kimik2_5_nvfp4_golden.json"
+    # TODO: (MODELS-1159) investigate logit differences from vision model
+    absolute_tolerance: 1.5e+01
+    relative_tolerance: 9.6e-01
+    cos_dist_threshold: 4.5e-03
+    kl_div_threshold: 1.2e+01
+
   nvidia/DeepSeek-R1-0528-NVFP4-v2:
     pre_submit_agents: []
     post_submit_agents: [*b200_8x]

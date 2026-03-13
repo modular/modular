@@ -19,7 +19,7 @@ from buffer import DimList
 comptime simd_width = 8
 
 
-fn strsv[
+def strsv[
     size: Int
 ](
     L: NDBuffer[rank=1, DType.float32, _, _],
@@ -72,7 +72,7 @@ fn strsv[
 
 
 # Fill the lower triangle matrix.
-fn fill_L[size: Int](L: NDBuffer[mut=True, rank=1, DType.float32, _, _]):
+def fill_L[size: Int](L: NDBuffer[mut=True, rank=1, DType.float32, _, _]):
     for j in range(size):
         for i in range(size):
             if i == j:
@@ -82,12 +82,12 @@ fn fill_L[size: Int](L: NDBuffer[mut=True, rank=1, DType.float32, _, _]):
 
 
 # Fill the rhs, which is also used to save the solution vector.
-fn fill_x[size: Int](x: NDBuffer[mut=True, rank=1, DType.float32, _, _]):
+def fill_x[size: Int](x: NDBuffer[mut=True, rank=1, DType.float32, _, _]):
     for i in range(size):
         x[i] = 1.0
 
 
-fn naive_strsv[
+def naive_strsv[
     size: Int
 ](
     L: NDBuffer[rank=1, DType.float32, _, _],

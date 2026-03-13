@@ -37,7 +37,7 @@ Layout:
 """
 
 from std.collections import Optional, OptionalReg
-from std.math import ceildiv
+from std.math import ceildiv, nan
 from std.random import randn, seed
 from std.sys import has_nvidia_gpu_accelerator, size_of
 
@@ -76,7 +76,7 @@ comptime KV_NUM_HEADS = 1  # MLA has 1 KV head
 # ===-----------------------------------------------------------------------===#
 
 
-fn create_interleaved_q_data(
+def create_interleaved_q_data(
     q_host_fp8: UnsafePointer[mut=True, Scalar[DType.float8_e4m3fn], _],
     q_ref_bf16: UnsafePointer[mut=True, BFloat16, _],
     total_q_tokens: Int,
@@ -125,7 +125,7 @@ fn create_interleaved_q_data(
     rope_bf16.free()
 
 
-fn create_interleaved_kv_block_data(
+def create_interleaved_kv_block_data(
     blocks_host: UnsafePointer[mut=True, Scalar[DType.float8_e4m3fn], _],
     block_elems: Int,
     total_pages: Int,
@@ -172,7 +172,7 @@ fn create_interleaved_kv_block_data(
     rope_bf16.free()
 
 
-fn extract_bf16_kv_from_block(
+def extract_bf16_kv_from_block(
     blocks_host: UnsafePointer[mut=False, Scalar[DType.float8_e4m3fn], _],
     k_bf16_out: UnsafePointer[mut=True, Scalar[DType.bfloat16], _],
     physical_page: Int,
@@ -211,7 +211,7 @@ fn extract_bf16_kv_from_block(
 # ===-----------------------------------------------------------------------===#
 
 
-fn run_test[
+def run_test[
     num_heads: Int,
 ](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
     comptime fp8_type = DType.float8_e4m3fn
@@ -299,11 +299,13 @@ fn run_test[
             cur_page += 1
 
     # -------------------------------------------------------------------
-    # Step 1b: Create per-token KV scales tensor (all 1.0)
+    # Step 1b: Create per-token KV scales tensor
     # -------------------------------------------------------------------
     # With per_token_scale_rope_aware, the kernel always has
     # has_per_token_scales=True and loads KV scales from the cache.
-    # Even when we want "no scaling", we must provide a tensor of 1.0s.
+    # Valid tokens get 1.0; unused/padding slots get NaN to
+    # deterministically catch OOB scale reads in the kernel.
+    # (The kernel must sanitize with max(scale, 0) to handle this.)
     comptime head_dim_gran = 1  # ceildiv(PHYSICAL_DIM, PHYSICAL_DIM)
     var scales_shape = IndexList[6](
         total_pages,
@@ -322,8 +324,32 @@ fn run_test[
         * head_dim_gran
     )
     var scales_host = alloc[Scalar[DType.float32]](scales_elems)
+    # Initialize ALL scale slots to NaN (poison unused slots)
     for i in range(scales_elems):
-        scales_host[i] = Scalar[DType.float32](1.0)
+        scales_host[i] = nan[DType.float32]()
+    # Then set valid token scales to 1.0
+    var _scale_page_stride = (
+        kv_dim2
+        * NUM_LAYERS
+        * PAGE_SIZE
+        * Int(kv_params.num_heads)
+        * head_dim_gran
+    )
+    var _cur_page_s = 0
+    for bi in range(batch_size):
+        var num_keys_i = cache_lengths[bi] + q_max_seq_len
+        var num_pages_i = ceildiv(num_keys_i, PAGE_SIZE)
+        for pg in range(num_pages_i):
+            var valid_toks = num_keys_i - pg * PAGE_SIZE
+            if valid_toks > PAGE_SIZE:
+                valid_toks = PAGE_SIZE
+            for tok_in_page in range(valid_toks):
+                var offset = (
+                    _cur_page_s * _scale_page_stride
+                    + tok_in_page * Int(kv_params.num_heads) * head_dim_gran
+                )
+                scales_host[offset] = Scalar[DType.float32](1.0)
+            _cur_page_s += 1
 
     # -------------------------------------------------------------------
     # Step 1c: Create per-Q-token scales (all 1.0)
@@ -747,7 +773,7 @@ fn run_test[
 # ===-----------------------------------------------------------------------===#
 
 
-fn _scale_palette(index: Int) -> Float32:
+def _scale_palette(index: Int) -> Float32:
     """Pick a non-trivial scale from a palette by index (wrapping).
 
     Uses power-of-2 values to avoid additional quantization noise in the
@@ -768,7 +794,7 @@ fn _scale_palette(index: Int) -> Float32:
     return 4.0
 
 
-fn run_test_with_scales[
+def run_test_with_scales[
     num_heads: Int,
 ](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
     """Test MLA decode with non-trivial per-token scales.
@@ -892,7 +918,12 @@ fn run_test_with_scales[
     )
     var scales_host = alloc[Scalar[DType.float32]](scales_elems)
 
-    # Fill with non-trivial per-token scales.
+    # Initialize ALL scale slots to NaN (poison unused slots to
+    # deterministically catch OOB scale reads in the kernel).
+    for i in range(scales_elems):
+        scales_host[i] = nan[DType.float32]()
+
+    # Fill valid token slots with non-trivial per-token scales.
     # scale(token) = palette[(page * PAGE_SIZE + tok_in_page) * 3]
     var scale_page_stride = (
         kv_dim2
@@ -909,19 +940,15 @@ fn run_test_with_scales[
             var valid_toks = num_keys_i - pg * PAGE_SIZE
             if valid_toks > PAGE_SIZE:
                 valid_toks = PAGE_SIZE
-            for tok_in_page in range(PAGE_SIZE):
+            for tok_in_page in range(valid_toks):
                 var offset = (
                     cur_page * scale_page_stride
                     + tok_in_page * Int(kv_params.num_heads) * head_dim_gran
                 )
-                if tok_in_page < valid_toks:
-                    var global_tok = pg * PAGE_SIZE + tok_in_page
-                    scales_host[offset] = _scale_palette(
-                        (bi * 1000 + global_tok) * 3
-                    )
-                else:
-                    # Neutral scale for unused slots
-                    scales_host[offset] = 1.0
+                var global_tok = pg * PAGE_SIZE + tok_in_page
+                scales_host[offset] = _scale_palette(
+                    (bi * 1000 + global_tok) * 3
+                )
             cur_page += 1
 
     # -------------------------------------------------------------------

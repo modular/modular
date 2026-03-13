@@ -26,7 +26,13 @@ from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
 from max.profiler import traced
 
 from ..sampling import SamplerInputs, apply_logits_processors
-from .base import SpeculativeDecodingPipelineBase, compute_max_num_draft_steps
+from .base import SpeculativeDecodingPipelineBase
+from .utils import (
+    ModelInputsWithTokensAndOffsets,
+    build_response,
+    compute_max_num_draft_steps,
+    update_contexts_and_compute_metrics_standalone,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -143,11 +149,11 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
             # Sample next_token
             new_tokens, new_generated_tokens, new_generated_logits = (
-                self.sample_draft_logits(
-                    model_outputs,
-                    generated_tokens,
-                    generated_logits,
-                    sampler_inputs,
+                self._sampler.sample_logits_with_prev(
+                    logits=model_outputs.logits,
+                    prev_tokens=generated_tokens,
+                    prev_logits=generated_logits,
+                    sampler_inputs=sampler_inputs,
                 )
             )
             generated_tokens = new_generated_tokens
@@ -275,10 +281,11 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         )
 
         # Merge draft tokens with target tokens
-        merged_tokens, merged_offsets = self._ragged_token_merger(
-            model_inputs.tokens,  # type: ignore
-            model_inputs.input_row_offsets,  # type: ignore
-            draft_tokens,
+        assert isinstance(model_inputs, ModelInputsWithTokensAndOffsets)
+        merged_tokens, merged_offsets = self._ragged_token_merger.run(
+            tokens=model_inputs.tokens,
+            input_row_offsets=model_inputs.input_row_offsets,
+            draft_tokens=draft_tokens,
         )
 
         assert isinstance(merged_tokens, Buffer)
@@ -298,7 +305,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             )
         )
 
-        self.update_contexts(
+        metrics = update_contexts_and_compute_metrics_standalone(
             context_batch=context_batch,
             first_rejected_tokens=first_rejected_tokens.to_numpy(),
             recovered_tokens=recovered_tokens.to_numpy(),
@@ -308,8 +315,11 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             draft_tokens=draft_tokens.to_numpy(),
             num_draft_tokens_generated=num_draft_tokens_generated,
         )
+        self.metrics.update(metrics)
 
-        res = self.build_response(context_batch=context_batch)
+        res = build_response(
+            context_batch=context_batch, max_seq_len=self._max_seq_len
+        )
 
         # Maybe commit blocks into prefix cache
         self._target_kv_manager.step([context_batch])

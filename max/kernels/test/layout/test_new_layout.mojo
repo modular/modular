@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout.tile_layout import (
-    Layout,
-    ZippedDivideLayout,
-    BlockedProductLayout,
-    col_major,
-    blocked_product,
-)
 from layout import (
     ComptimeInt,
     Coord,
     Idx,
+    IntTuple,
     RuntimeInt,
     TileTensor,
+    col_major,
     row_major,
 )
-from layout.int_tuple import IntTuple
+from layout.tile_layout import (
+    Layout,
+    ZippedDivideLayout,
+    BlockedProductLayout,
+    blocked_product,
+)
 from std.testing import assert_equal, assert_true, TestSuite
 
 
@@ -34,7 +34,7 @@ def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
-fn test_size_cosize() raises:
+def test_size_cosize() raises:
     # Row-major 3x4: last element (2,3) -> 11, cosize = 12
     var layout1 = Layout(
         shape=(Idx[3](), Idx[4]()),
@@ -51,7 +51,7 @@ fn test_size_cosize() raises:
     assert_equal(layout2.cosize(), 12)
 
 
-fn test_crd2idx() raises:
+def test_crd2idx() raises:
     var layout = Layout(
         shape=(Idx[4](), Idx[2]()),
         stride=(Idx[1](), Idx[4]()),

@@ -156,11 +156,35 @@ try:
     _TORCH_TO_DTYPE = {v: k for k, v in _DTYPE_TO_TORCH.items()}
 
     def _to_torch(dtype: DType, _error: Exception | None = None) -> torch.dtype:
+        """Converts this ``DType`` to the corresponding torch dtype.
+
+        Args:
+            dtype: The DType to convert.
+
+        Returns:
+            The corresponding torch dtype object.
+
+        Raises:
+            ValueError: If the dtype is not supported.
+            ImportError: If ``torch`` isn't installed.
+        """
         return _DTYPE_TO_TORCH[dtype]
 
     def _from_torch(
         dtype: torch.dtype, _error: Exception | None = None
     ) -> DType:
+        """Converts a torch dtype to the corresponding DType.
+
+        Args:
+            dtype: The torch dtype to convert.
+
+        Returns:
+            The corresponding DType enum value.
+
+        Raises:
+            ValueError: If the input dtype is not supported.
+            ImportError: If ``torch`` isn't installed.
+        """
         return _TORCH_TO_DTYPE[dtype]
 
 except Exception as e:
@@ -168,11 +192,35 @@ except Exception as e:
     # installation.
 
     def _to_torch(dtype: DType, _error: Exception | None = e) -> torch.dtype:
+        """Converts this ``DType`` to the corresponding torch dtype.
+
+        Args:
+            dtype: The DType to convert.
+
+        Returns:
+            The corresponding torch dtype object.
+
+        Raises:
+            ValueError: If the dtype is not supported.
+            ImportError: If ``torch`` isn't installed.
+        """
         raise RuntimeError(
             f"torch integration unavailable: {_error}"
         ) from _error
 
     def _from_torch(dtype: torch.dtype, _error: Exception | None = e) -> DType:
+        """Converts a torch dtype to the corresponding DType.
+
+        Args:
+            dtype: The torch dtype to convert.
+
+        Returns:
+            The corresponding DType enum value.
+
+        Raises:
+            ValueError: If the input dtype is not supported.
+            ImportError: If ``torch`` isn't installed.
+        """
         raise RuntimeError(
             f"torch integration unavailable: {_error}"
         ) from _error
@@ -184,4 +232,4 @@ DType._mlir = property(_mlir)  # type: ignore[assignment]
 DType.to_numpy = _to_numpy  # type: ignore[method-assign]
 DType.from_numpy = _from_numpy  # type: ignore[method-assign]
 DType.to_torch = _to_torch  # type: ignore[method-assign]
-DType.from_torch = _from_torch  # type: ignore[assignment]
+DType.from_torch = _from_torch  # type: ignore[method-assign]

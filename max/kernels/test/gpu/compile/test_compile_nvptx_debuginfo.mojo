@@ -15,9 +15,9 @@ from std.gpu.host import get_gpu_target
 from std.gpu.host.compile import _compile_code
 
 
-fn outer[y: Int]():
+def outer[y: Int]():
     @parameter
-    fn param[x: Int](y: SIMD[DType.float32, y], /):
+    def param[x: Int](y: SIMD[DType.float32, y], /):
         pass
 
     print(
@@ -28,6 +28,6 @@ fn outer[y: Int]():
     )
 
 
-fn main():
+def main():
     # CHECK: .debug_
     outer[2]()

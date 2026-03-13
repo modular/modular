@@ -72,15 +72,13 @@ class Olmo2(Transformer):
 
         # Select linear layer class.
         linear_cls: Callable[..., Linear]
-        linear_cls = functools.partial(
-            Linear, float8_config=config.float8_config
-        )
-        if config.stacked_mlp and config.float8_config:
+        linear_cls = functools.partial(Linear, quant_config=config.quant_config)
+        if config.stacked_mlp and config.quant_config:
             raise ValueError("StackedMLP and float8 are not compatible")
         mlp_cls = (
             StackedMLP
             if config.stacked_mlp
-            else functools.partial(MLP, float8_config=config.float8_config)
+            else functools.partial(MLP, quant_config=config.quant_config)
         )
         attention_cls: Callable[..., Olmo2Attention]
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
@@ -139,8 +137,8 @@ class Olmo2(Transformer):
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             embedding_output_dtype = DType.bfloat16
             embedding_output_quantization = None
-        if config.float8_config and config.float8_config.embedding_output_dtype:
-            embedding_output_dtype = config.float8_config.embedding_output_dtype
+        if config.quant_config and config.quant_config.embedding_output_dtype:
+            embedding_output_dtype = config.quant_config.embedding_output_dtype
         embedding_layer = Embedding(
             config.vocab_size,
             config.hidden_size,

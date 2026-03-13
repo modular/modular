@@ -17,7 +17,7 @@
 
 
 # CHECK-LABEL: test_fail
-fn main():
+def main():
     print("== test_fail")
     # CHECK: formatted failure message: 2, 4
     debug_assert(False, "formatted failure message: ", 2, ", ", UInt8(4))

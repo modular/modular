@@ -10,10 +10,6 @@ mojo_test(
         "test_allreduce.mojo",
         "test_multimem_allreduce.mojo",
     ],
-    env = {
-        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
-        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT": "80",
-    },
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -53,10 +49,6 @@ DISABLE_ASSERTIONS_TESTS = []
         # NOTE: test_allgather.mojo tests deprecated functionality.
         copts = ["-Wno-error"] if src == "test_allgather.mojo" else [],
         enable_assertions = src not in DISABLE_ASSERTIONS_TESTS,
-        env = {
-            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
-            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT": "80",
-        },
         exec_properties = {
             "test.resources:gpu-memory": "20" if src in HIGH_GPU_MEMORY_TESTS else "4",
         },

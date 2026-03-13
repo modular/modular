@@ -55,7 +55,6 @@ class FluxModelInputs(PixelModelInputs):
     guidance_scale: float = 3.5
     num_inference_steps: int = 50
     num_images_per_prompt: int = 1
-    step_cache: bool = False
     rdt: float = 0.05
 
     @property
@@ -109,6 +108,10 @@ class FluxPipeline(DiffusionPipeline):
         self._cached_guidance: dict[str, Tensor] = {}
         self._cached_text_ids: dict[str, Tensor] = {}
         self._cached_sigmas: dict[str, Tensor] = {}
+
+        enable_fbc = self.pipeline_config.runtime.enable_fbc
+        self.transformer.compile_model(enable_fbc)
+        self._enable_fbc = enable_fbc
 
     def prepare_inputs(
         self, context: PixelGenerationContext
@@ -454,7 +457,7 @@ class FluxPipeline(DiffusionPipeline):
             self.transformer.devices[0]
         )
         # Step-cache runtime control.
-        step_cache_enabled = bool(model_inputs.step_cache)
+        step_cache_enabled = self._enable_fbc
         prev_residual = None
         prev_output = None
         prev_neg_residual = None
@@ -470,16 +473,6 @@ class FluxPipeline(DiffusionPipeline):
             * (cfg.out_channels or cfg.in_channels)
         )
         if step_cache_enabled:
-            self.transformer.use_step_cache_model()
-        else:
-            self.transformer.use_standard_model()
-        if step_cache_enabled:
-            step_cache_flag = Tensor.full(
-                [1],
-                True,
-                dtype=DType.bool,
-                device=dev,
-            )
             rdt_tensor = Tensor.full(
                 [1],
                 model_inputs.rdt,
@@ -526,7 +519,6 @@ class FluxPipeline(DiffusionPipeline):
                     guidance,
                     prev_residual,
                     prev_output,
-                    step_cache_flag,
                     rdt_tensor,
                 )
             else:
@@ -558,7 +550,6 @@ class FluxPipeline(DiffusionPipeline):
                         guidance,
                         prev_neg_residual,
                         prev_neg_output,
-                        step_cache_flag,
                         rdt_tensor,
                     )
                 else:

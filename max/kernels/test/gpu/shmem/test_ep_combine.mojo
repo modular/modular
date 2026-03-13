@@ -27,8 +27,7 @@ from std.sys import align_of, argv, simd_width_of, size_of
 from std.sys.defines import get_defined_string
 
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor
-from layout.runtime_layout import RuntimeLayout
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from std.memory import UnsafePointer
 from shmem import *
 from shmem._mpi import MPI_Finalize
@@ -45,14 +44,14 @@ from std.testing import assert_equal
 from std.utils import IndexList
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark":
             return True
     return False
 
 
-fn is_pressure_test() -> Bool:
+def is_pressure_test() -> Bool:
     for arg in argv():
         if arg == "--pressure-test":
             return True
@@ -60,7 +59,7 @@ fn is_pressure_test() -> Bool:
 
 
 @always_inline
-fn welford_update(
+def welford_update(
     mut mean: Float64, mut m2: Float64, count: Int, new_value: Float64
 ):
     var delta: Float64
@@ -71,7 +70,7 @@ fn welford_update(
     m2 += delta * delta2
 
 
-fn legalize_topk_ids[
+def legalize_topk_ids[
     n_experts: Int, top_k: Int
 ](topk_ids: UnsafePointer[mut=True, Int32, _], n_tokens: Int):
     for tok_id in range(n_tokens):
@@ -79,7 +78,7 @@ fn legalize_topk_ids[
 
         # The top-k ids for a token should be unique. If not, we will assign a
         # random id to the duplicate id.
-        fn is_duplicate() -> Int:
+        def is_duplicate() -> Int:
             for i in range(top_k):
                 for j in range(i + 1, top_k):
                     if topk_ids_for_token[i] == topk_ids_for_token[j]:
@@ -92,7 +91,7 @@ fn legalize_topk_ids[
             duplicate_idx = is_duplicate()
 
 
-fn test_combine[
+def test_combine[
     hidden_size: Int,
     top_k: Int,
     n_experts: Int,
@@ -309,7 +308,7 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn run_full_dispatch(ctx: DeviceContext) raises:
+    def run_full_dispatch(ctx: DeviceContext) raises:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
         var recv_buf_ptrs = InlineArray[UnsafePointer[UInt8, MutAnyOrigin], 1](
             fill={}
@@ -352,7 +351,7 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn run_combine_async(ctx: DeviceContext) raises:
+    def run_combine_async(ctx: DeviceContext) raises:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
         var combine_recv_buf_ptrs = InlineArray[
             UnsafePointer[UInt8, MutAnyOrigin], 1
@@ -381,7 +380,7 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn run_combine_async_wait(ctx: DeviceContext) raises:
+    def run_combine_async_wait(ctx: DeviceContext) raises:
         ctx.enqueue_function(
             func_combine_async_wait,
             output_2_tensor,
@@ -395,7 +394,7 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn run_e2e(ctx: DeviceContext) raises:
+    def run_e2e(ctx: DeviceContext) raises:
         run_combine_async(ctx)
         run_combine_async_wait(ctx)
 

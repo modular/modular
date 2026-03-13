@@ -29,7 +29,7 @@ Example:
 ```mojo
 from std.compile import compile_info
 
-fn my_func(x: Int) -> Int:
+def my_func(x: Int) -> Int:
     return x
 
 # Get assembly for the function
@@ -133,7 +133,7 @@ struct CompiledFunctionInfo[
     """
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the assembly/IR to a writer.
 
         Args:
@@ -142,7 +142,7 @@ struct CompiledFunctionInfo[
         return writer.write(self.asm)
 
     @no_inline
-    fn write_text[path_like: PathLike](self, path: path_like) raises:
+    def write_text[path_like: PathLike](self, path: path_like) raises:
         """Writes the assembly/IR to a file.
 
         Parameters:
@@ -158,7 +158,7 @@ struct CompiledFunctionInfo[
         Path(path.__fspath__()).write_text(String(self))
 
     @no_inline
-    fn __contains__(self, content: String) -> Bool:
+    def __contains__(self, content: String) -> Bool:
         """Checks if content exists in the assembly/IR.
 
         Args:
@@ -178,7 +178,7 @@ comptime _EMISSION_KIND_LLVM_BITCODE = 4
 comptime _EMISSION_KIND_LLVM_OPT_BITCODE = 5
 
 
-fn _get_emission_kind_id[emission_kind: StaticString]() -> Int:
+def _get_emission_kind_id[emission_kind: StaticString]() -> Int:
     comptime assert emission_kind in [
         "asm",
         "llvm",
@@ -207,7 +207,7 @@ fn _get_emission_kind_id[emission_kind: StaticString]() -> Int:
 
 
 @always_inline
-fn compile_info[
+def compile_info[
     func_type: __TypeOfAllTypes,
     //,
     func: func_type,
@@ -253,7 +253,7 @@ fn compile_info[
         ```mojo
         from std.compile import compile_info
 
-        fn my_func(x: Int) -> Int:
+        def my_func(x: Int) -> Int:
             return x
 
         info = compile_info[my_func]()

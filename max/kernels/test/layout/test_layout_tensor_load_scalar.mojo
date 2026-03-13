@@ -17,9 +17,14 @@ from tensors, addressing the issue where __getitem__ returns SIMD[dtype, element
 which can be surprising in generic contexts when element_size > 1.
 """
 
-from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
 from layout._fillers import arange
-from layout.int_tuple import UNKNOWN_VALUE
 from std.testing import TestSuite, assert_equal
 
 
@@ -27,7 +32,7 @@ def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
-fn test_load_scalar_static_layout() raises:
+def test_load_scalar_static_layout() raises:
     """Test load_scalar with a static 2x3 row-major layout."""
     comptime layout = Layout.row_major(2, 3)
     var storage: InlineArray[Float32, 6] = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
@@ -54,7 +59,7 @@ fn test_load_scalar_static_layout() raises:
     assert_equal(v12, 5.0)
 
 
-fn test_load_scalar_dynamic_layout() raises:
+def test_load_scalar_dynamic_layout() raises:
     """Test load_scalar with a dynamic runtime layout."""
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
@@ -87,7 +92,7 @@ fn test_load_scalar_dynamic_layout() raises:
     assert_equal(v23, 11.0)  # row 2, col 3 = 2*4 + 3 = 11
 
 
-fn test_load_scalar_with_runtime_tuple() raises:
+def test_load_scalar_with_runtime_tuple() raises:
     """Test load_scalar using RuntimeTuple coordinates."""
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
@@ -115,7 +120,7 @@ fn test_load_scalar_with_runtime_tuple() raises:
     assert_equal(val, 11.0)  # row 2, col 3 = 2*4 + 3 = 11
 
 
-fn test_load_scalar_matches_getitem_lane0() raises:
+def test_load_scalar_matches_getitem_lane0() raises:
     """Test that load_scalar returns the same value as __getitem__[0]."""
     comptime layout = Layout.row_major(4, 4)
     var storage = InlineArray[Float32, 16](uninitialized=True)
@@ -132,7 +137,7 @@ fn test_load_scalar_matches_getitem_lane0() raises:
             assert_equal(scalar_val, simd_val[0])
 
 
-fn test_load_scalar_vectorized_element_size_gt_1() raises:
+def test_load_scalar_vectorized_element_size_gt_1() raises:
     """Test load_scalar with a vectorized tensor where element_size > 1.
 
     This is the primary use case for load_scalar: when element_layout.size() > 1,

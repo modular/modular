@@ -18,7 +18,7 @@ from tensor import OutputTensor
 @compiler.register("fails_to_elaborate")
 struct FailsToElaborate:
     @staticmethod
-    fn execute(
+    def execute(
         output: OutputTensor[dtype=DType.int32, rank=1, ...],
     ):
         comptime assert False, "oops"

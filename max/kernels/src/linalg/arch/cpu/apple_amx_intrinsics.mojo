@@ -34,7 +34,7 @@ from std.memory import (
 
 
 @always_inline
-fn _no_op_imms[op: Int32, imm: Int32]():
+def _no_op_imms[op: Int32, imm: Int32]():
     # In Apple's Accelerate, instruction 17 is apparently always prefixed by
     # three nops.
     inlined_assembly[
@@ -46,7 +46,7 @@ fn _no_op_imms[op: Int32, imm: Int32]():
 
 
 @always_inline
-fn _op_gpr[op: Int32](gpr: Int64):
+def _op_gpr[op: Int32](gpr: Int64):
     inlined_assembly[
         ".word (0x201000 + ($0 << 5) + 0$1 - ((0$1 >> 4) * 6))",
         NoneType,
@@ -58,57 +58,57 @@ fn _op_gpr[op: Int32](gpr: Int64):
 # The `set` and `clr` take no non-constant operands, and so we pass them as
 # immediate values via meta parameters.
 @always_inline
-fn _set():
+def _set():
     _no_op_imms[17, 0]()
 
 
 @always_inline
-fn _clr():
+def _clr():
     _no_op_imms[17, 1]()
 
 
 @always_inline
-fn ldx(gpr: Int):
+def ldx(gpr: Int):
     _op_gpr[0](Int64(gpr))
 
 
 @always_inline
-fn ldy(gpr: Int):
+def ldy(gpr: Int):
     _op_gpr[1](Int64(gpr))
 
 
 @always_inline
-fn stx(gpr: Int):
+def stx(gpr: Int):
     _op_gpr[2](Int64(gpr))
 
 
 @always_inline
-fn sty(gpr: Int):
+def sty(gpr: Int):
     _op_gpr[3](Int64(gpr))
 
 
 @always_inline
-fn ldz(gpr: Int):
+def ldz(gpr: Int):
     _op_gpr[4](Int64(gpr))
 
 
 @always_inline
-fn stz(gpr: Int):
+def stz(gpr: Int):
     _op_gpr[5](Int64(gpr))
 
 
 @always_inline
-fn ldzi(gpr: Int):
+def ldzi(gpr: Int):
     _op_gpr[6](Int64(gpr))
 
 
 @always_inline
-fn stzi(gpr: Int):
+def stzi(gpr: Int):
     _op_gpr[7](Int64(gpr))
 
 
 @always_inline
-fn extrx(gpr: Int):
+def extrx(gpr: Int):
     """
     Extracts a row or moves it to x, result in amx0.
     """
@@ -116,7 +116,7 @@ fn extrx(gpr: Int):
 
 
 @always_inline
-fn extry(gpr: Int):
+def extry(gpr: Int):
     """
     Extracts a row or moves it to y, result in amx0.
     """
@@ -124,7 +124,7 @@ fn extry(gpr: Int):
 
 
 @always_inline
-fn fma64(gpr: Int):
+def fma64(gpr: Int):
     """
     Float64 matrix multiply and add.
     """
@@ -132,7 +132,7 @@ fn fma64(gpr: Int):
 
 
 @always_inline
-fn fsm64(gpr: Int):
+def fsm64(gpr: Int):
     """
     Float64 matrix multiply and subtract.
     """
@@ -140,7 +140,7 @@ fn fsm64(gpr: Int):
 
 
 @always_inline
-fn fma32(gpr: Int):
+def fma32(gpr: Int):
     """
     Float32 matrix multiply and add.
     """
@@ -148,7 +148,7 @@ fn fma32(gpr: Int):
 
 
 @always_inline
-fn fsm32(gpr: Int):
+def fsm32(gpr: Int):
     """
     Float32 matrix multiply and subtract.
     """
@@ -156,7 +156,7 @@ fn fsm32(gpr: Int):
 
 
 @always_inline
-fn mac16(gpr: Int):
+def mac16(gpr: Int):
     """
     SI16 matrix multiply and add.
     """
@@ -164,7 +164,7 @@ fn mac16(gpr: Int):
 
 
 @always_inline
-fn fma16(gpr: Int):
+def fma16(gpr: Int):
     """
     Float16 matrix multiply and subtract.
     """
@@ -172,7 +172,7 @@ fn fma16(gpr: Int):
 
 
 @always_inline
-fn fms16(gpr: Int):
+def fms16(gpr: Int):
     """
     Float16 matrix multiply and add.
     """
@@ -180,7 +180,7 @@ fn fms16(gpr: Int):
 
 
 @always_inline
-fn vec_int__(gpr: Int):
+def vec_int__(gpr: Int):
     """
     Horizontal ui16 multiply `z0[i] += x0[i] + y0[i]`.
     """
@@ -188,7 +188,7 @@ fn vec_int__(gpr: Int):
 
 
 @always_inline
-fn vecfp(gpr: Int):
+def vecfp(gpr: Int):
     """
     Horizontal float16 multiply `z0[i] += x0[i] + y0[i]`.
     """
@@ -196,7 +196,7 @@ fn vecfp(gpr: Int):
 
 
 @always_inline
-fn max_int__(gpr: Int):
+def max_int__(gpr: Int):
     """
     UI16 matrix multiply.
     """
@@ -204,7 +204,7 @@ fn max_int__(gpr: Int):
 
 
 @always_inline
-fn matfp(gpr: Int):
+def matfp(gpr: Int):
     """
     Float16 matrix multiply.
     """
@@ -212,7 +212,7 @@ fn matfp(gpr: Int):
 
 
 @always_inline
-fn genlut(gpr: Int):
+def genlut(gpr: Int):
     _op_gpr[22](Int64(gpr))
 
 
@@ -241,7 +241,7 @@ fn genlut(gpr: Int):
 
 
 @always_inline
-fn _encode_load_store[
+def _encode_load_store[
     row_count: Int, dtype: DType
 ](src: UnsafePointer[Scalar[dtype], _], start_index: Int) -> Int:
     """
@@ -255,49 +255,49 @@ fn _encode_load_store[
 
 
 @always_inline
-fn store_x[
+def store_x[
     row_count: Int, dtype: DType
 ](src: UnsafePointer[Scalar[dtype], _], start_index: Int):
     ldx(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
-fn store_y[
+def store_y[
     row_count: Int, dtype: DType
 ](src: UnsafePointer[Scalar[dtype], _], start_index: Int):
     ldy(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
-fn store_z[
+def store_z[
     row_count: Int, dtype: DType
 ](src: UnsafePointer[Scalar[dtype], _], start_index: Int):
     ldz(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
-fn read_x[
+def read_x[
     row_count: Int, dtype: DType
 ](src: UnsafePointer[mut=True, Scalar[dtype], _], start_index: Int):
     stx(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
-fn read_y[
+def read_y[
     row_count: Int, dtype: DType
 ](src: UnsafePointer[mut=True, Scalar[dtype], _], start_index: Int):
     sty(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
-fn load_z[
+def load_z[
     row_count: Int, dtype: DType
 ](src: UnsafePointer[mut=True, Scalar[dtype], _], start_index: Int):
     stz(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
-fn transpose_z_to_x_or_y[
+def transpose_z_to_x_or_y[
     destination: StaticString, dtype: DType
 ](z_col_index: Int, xy_row_index: Int, z_row_suboffset: Int):
     # transpose_z_to_x_or_y is a thin wrapper around the fp32 transpose mode of
@@ -350,7 +350,7 @@ fn transpose_z_to_x_or_y[
 
 
 @always_inline
-fn fma[
+def fma[
     mode: StaticString, dtype: DType
 ](z_row_index: Int, x_row_index: Int, y_row_index: Int, clear_z: Bool):
     # Apple.amx.fma abstracts the fma operation on the amx hardware. Two modes of
@@ -388,7 +388,7 @@ fn fma[
 
 
 @always_inline
-fn dot_at_b_impl(
+def dot_at_b_impl(
     c: LayoutTensor[DType.float32, Layout.row_major(16, 16), MutAnyOrigin],
     a: LayoutTensor[DType.float32, Layout.row_major(16, 16), ImmutAnyOrigin],
     b: LayoutTensor[DType.float32, Layout.row_major(16, 16), ImmutAnyOrigin],
@@ -437,7 +437,7 @@ fn dot_at_b_impl(
 
 
 @always_inline
-fn dot_at_b_impl(
+def dot_at_b_impl(
     c: LayoutTensor[DType.float16, Layout.row_major(32, 32), MutAnyOrigin],
     a: LayoutTensor[DType.float16, Layout.row_major(32, 32), ImmutAnyOrigin],
     b: LayoutTensor[DType.float16, Layout.row_major(32, 32), ImmutAnyOrigin],
@@ -476,7 +476,7 @@ fn dot_at_b_impl(
 
 
 @always_inline
-fn dot_at_b(c: LayoutTensor[mut=True, ...], a: type_of(c), b: type_of(c)):
+def dot_at_b(c: LayoutTensor[mut=True, ...], a: type_of(c), b: type_of(c)):
     comptime assert (
         c.dtype == DType.float32 or c.dtype == DType.float16
     ), "the buffer dtype must be float32 or float16"

@@ -27,7 +27,7 @@ from std.compile import get_type_name
 # ===-----------------------------------------------------------------------===#
 
 
-fn _static_tuple_construction_checks[size: Int]():
+def _static_tuple_construction_checks[size: Int]():
     """Checks if the properties in `StaticTuple` are valid.
 
     Validity right now is just ensuring the number of elements is > 0.
@@ -59,11 +59,11 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
     var _mlir_value: Self._mlir_type
     """The underlying storage for the static tuple."""
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """Get the human-readable type name for this `StaticTuple`.
 
         Returns:
@@ -78,13 +78,13 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         )
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Constructs an empty (undefined) tuple."""
         _static_tuple_construction_checks[Self.size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline
-    fn __init__(out self, *, mlir_value: Self._mlir_type):
+    def __init__(out self, *, mlir_value: Self._mlir_type):
         """Constructs from an array type.
 
         Args:
@@ -93,7 +93,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         self._mlir_value = mlir_value
 
     @always_inline
-    fn __init__(out self, *, fill: Self.element_type):
+    def __init__(out self, *, fill: Self.element_type):
         """Constructs a static tuple given a fill value.
 
         Args:
@@ -111,7 +111,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         ](fill)
 
     @always_inline
-    fn __init__(out self, *elems: Self.element_type):
+    def __init__(out self, *elems: Self.element_type):
         """Constructs a static tuple given a set of arguments.
 
         Args:
@@ -121,7 +121,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         self = Self(values=elems)
 
     @always_inline
-    fn __init__[*values: Self.element_type](out self):
+    def __init__[*values: Self.element_type](out self):
         """Creates a tuple constant using the specified values.
 
         Parameters:
@@ -141,7 +141,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
             self.__setitem__[idx](values[idx])
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self, values: VariadicList[Self.element_type, is_owned=False]
     ):
         """Creates a tuple constant using the specified values.
@@ -160,7 +160,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
             self.__setitem__[idx](values[idx])
 
     @always_inline("nodebug")
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Returns the length of the array. This is a known constant value.
 
         Returns:
@@ -169,7 +169,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         return Self.size
 
     @always_inline("nodebug")
-    fn __getitem__[index: Int](self) -> Self.element_type:
+    def __getitem__[index: Int](self) -> Self.element_type:
         """Returns the value of the tuple at the given index.
 
         Parameters:
@@ -186,7 +186,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         return val
 
     @always_inline("nodebug")
-    fn __getitem__[I: Indexer, //](self, idx: I) -> Self.element_type:
+    def __getitem__[I: Indexer, //](self, idx: I) -> Self.element_type:
         """Returns the value of the tuple at the given dynamic index.
 
         Parameters:
@@ -202,7 +202,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         return self._unsafe_ref(index(idx))
 
     @always_inline("nodebug")
-    fn __setitem__[I: Indexer, //](mut self, idx: I, val: Self.element_type):
+    def __setitem__[I: Indexer, //](mut self, idx: I, val: Self.element_type):
         """Stores a single value into the tuple at the specified dynamic index.
 
         Parameters:
@@ -216,7 +216,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         self._unsafe_ref(index(idx)) = val
 
     @always_inline("nodebug")
-    fn __setitem__[idx: Int](mut self, val: Self.element_type):
+    def __setitem__[idx: Int](mut self, val: Self.element_type):
         """Stores a single value into the tuple at the specified index.
 
         Parameters:
@@ -230,14 +230,14 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         self._unsafe_ref(idx) = val
 
     @always_inline("nodebug")
-    fn _unsafe_ref(ref self, idx: Int) -> ref[self] Self.element_type:
+    def _unsafe_ref(ref self, idx: Int) -> ref[self] Self.element_type:
         var ptr = __mlir_op.`pop.array.gep`(
             UnsafePointer(to=self._mlir_value).address, idx._mlir_value
         )
         return UnsafePointer[origin=origin_of(self)](ptr)[]
 
     @always_inline("nodebug")
-    fn _replace[idx: Int](self, val: Self.element_type) -> Self:
+    def _replace[idx: Int](self, val: Self.element_type) -> Self:
         """Replaces the value at the specified index.
 
         Parameters:
@@ -265,7 +265,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         return Self(mlir_value=array)
 
     @always_inline
-    fn __eq__[
+    def __eq__[
         _E: Equatable & TrivialRegisterPassable, //
     ](
         self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
@@ -288,7 +288,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         return True
 
     @always_inline
-    fn __ne__[
+    def __ne__[
         _E: Equatable & TrivialRegisterPassable, //
     ](
         self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
@@ -308,7 +308,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         return not (self == other)
 
     @always_inline
-    fn __lt__[
+    def __lt__[
         _E: Comparable & TrivialRegisterPassable, //
     ](
         self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
@@ -333,7 +333,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         return False
 
     @always_inline
-    fn __le__[
+    def __le__[
         _E: Comparable & TrivialRegisterPassable, //
     ](
         self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
@@ -354,7 +354,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         return not (other < self)
 
     @always_inline
-    fn __gt__[
+    def __gt__[
         _E: Comparable & TrivialRegisterPassable, //
     ](
         self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
@@ -374,7 +374,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         return other < self
 
     @always_inline
-    fn __ge__[
+    def __ge__[
         _E: Comparable & TrivialRegisterPassable, //
     ](
         self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
