@@ -42,7 +42,7 @@ from transformers.configuration_utils import PretrainedConfig
 # Language model rename map
 # ---------------------------------------------------------------------------
 
-DEEPSEEK_SAFETENSOR_MAP: dict[str, str] = {
+KIMI_SAFETENSOR_MAP: dict[str, str] = {
     "language_model.model.": "language_model.",
     "gate.weight": "gate.gate_score.weight",
     "weight_scale_inv": "weight_scale",
@@ -124,7 +124,7 @@ def _convert_merged_state_dict(
     Vision keys (``vision_tower.*``, ``mm_projector.*``,
     ``multi_modal_projector.*``) are renamed and cast to bfloat16.
     Language-model keys (``language_model.*``) are renamed via
-    :data:`DEEPSEEK_SAFETENSOR_MAP` with MTP-layer pruning.
+    :data:`KIMI_SAFETENSOR_MAP` with MTP-layer pruning.
     All other checkpoint keys are silently ignored.
 
     Args:
@@ -158,7 +158,7 @@ def _convert_merged_state_dict(
             continue
 
         name = checkpoint_name
-        for before, after in DEEPSEEK_SAFETENSOR_MAP.items():
+        for before, after in KIMI_SAFETENSOR_MAP.items():
             name = name.replace(before, after)
 
         # TODO(E2EOPT-673): Support MTP.  Prune the speculative MTP layer.
