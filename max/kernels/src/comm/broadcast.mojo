@@ -35,6 +35,8 @@ from std.sys import align_of, is_amd_gpu, simd_width_of, size_of
 from buffer import NDBuffer
 from std.gpu.memory import Consistency, multimem_st
 from std.gpu.intrinsics import Scope
+from layout import Coord, RuntimeInt, TensorLayout, TileTensor, row_major
+
 from .sync import (
     MAX_GPUS,
     MAX_NUM_BLOCKS_UPPER_BOUND,
@@ -45,7 +47,7 @@ from .sync import (
 )
 from .device_query import _dispatch_max_num_blocks, get_sm_version
 
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 
 # On AMD Systems, loads from GLOBAL addressspace give better performance.
 comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
@@ -56,14 +58,14 @@ comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else Addres
 )
 def broadcast_multimem_kernel[
     dtype: DType,
-    rank: Int,
+    Layout: TensorLayout,
     BLOCK_SIZE: Int,
     ngpus: Int,
     simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
-    input_buffer: NDBuffer[rank=rank, dtype, ImmutAnyOrigin],
+    output: TileTensor[dtype, Layout, MutAnyOrigin],
+    input: TileTensor[dtype, Layout, ImmutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
     root: Int,
@@ -88,22 +90,16 @@ def broadcast_multimem_kernel[
 
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
-    var num_elements = output_buffer.num_elements()
+    var num_elements = input.num_elements()
     var num_simd_vectors = num_elements // simd_width
 
     # Only root GPU performs the multicast store
     if my_rank == root:
         comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
-        # Get multicast output pointer
-        var out_ptr = output_buffer.data.address_space_cast[
-            AddressSpace.GLOBAL
-        ]()
-
-        # Use raw pointer with invariant loads for better codegen.
-        var in_ptr = input_buffer.data.address_space_cast[
-            _target_address_space
-        ]()
+        # Get multicast output pointer and input pointer
+        var out_ptr = output.ptr.address_space_cast[AddressSpace.GLOBAL]()
+        var in_ptr = input.ptr.address_space_cast[_target_address_space]()
 
         # Grid-strided loop to cover all elements (vectorized)
         for idx in range(global_tid, num_simd_vectors, stride):
@@ -165,14 +161,14 @@ def broadcast_multimem_kernel[
 )
 def broadcast_pull_1stage_kernel[
     dtype: DType,
-    rank: Int,
+    Layout: TensorLayout,
     BLOCK_SIZE: Int,
     ngpus: Int,
     simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
-    input_buffer: NDBuffer[rank=rank, dtype, ImmutAnyOrigin],
+    output: TileTensor[dtype, Layout, MutAnyOrigin],
+    input: TileTensor[dtype, Layout, ImmutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
 ):
@@ -183,8 +179,6 @@ def broadcast_pull_1stage_kernel[
     # Stride equals total threads in grid dimension for grid-strided loops.
     var stride = Int(grid_dim.x) * BLOCK_SIZE
 
-    comptime alignment = align_of[SIMD[dtype, simd_width]]()
-
     comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
         launch_dependent_grids()
 
@@ -193,13 +187,12 @@ def broadcast_pull_1stage_kernel[
 
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
-    var num_elements = output_buffer.num_elements()
-    var num_simd_vectors = num_elements // simd_width
+    comptime alignment = align_of[SIMD[dtype, simd_width]]()
+    var in_ptr = input.ptr.address_space_cast[_target_address_space]()
+    var out_ptr = output.ptr.address_space_cast[_target_address_space]()
 
-    # Use raw pointers with invariant loads and explicit alignment for
-    # better codegen (matching the 2-stage kernel's approach).
-    var in_ptr = input_buffer.data.address_space_cast[_target_address_space]()
-    var out_ptr = output_buffer.data.address_space_cast[_target_address_space]()
+    var num_elements = input.num_elements()
+    var num_simd_vectors = num_elements // simd_width
 
     # Grid-strided loop to cover all elements (vectorized).
     for idx in range(global_tid, num_simd_vectors, stride):
@@ -225,13 +218,13 @@ def broadcast_pull_1stage_kernel[
 )
 def broadcast_pull_2stage_kernel[
     dtype: DType,
-    rank: Int,
+    OutputLayout: TensorLayout,
     ngpus: Int,
     *,
     BLOCK_SIZE: Int,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    result: NDBuffer[rank=rank, dtype, MutAnyOrigin],
+    result: TileTensor[dtype, OutputLayout, MutAnyOrigin],
     root_input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int,
@@ -251,13 +244,13 @@ def broadcast_pull_2stage_kernel[
 
     Parameters:
         dtype: Data dtype of tensor elements.
-        rank: Number of dimensions in tensors.
+        OutputLayout: Layout of the output TileTensor.
         ngpus: Number of GPUs participating.
         BLOCK_SIZE: Number of threads per block.
         pdl_level: Control PDL behavior for the kernel.
 
     Args:
-        result: Output buffer for broadcast result.
+        result: Output TileTensor for broadcast result.
         root_input_ptr: Pointer to root's input data (all GPUs read from this).
         rank_sigs: Signal pointers for synchronization.
             IMPORTANT: Signal pointers have trailing buffers for communication.
@@ -301,6 +294,7 @@ def broadcast_pull_2stage_kernel[
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
     var is_root = my_rank == root
+    var result_ptr = result.ptr.address_space_cast[_target_address_space]()
 
     # Each GPU reads its chunk from root's input and writes to payload
     var my_chunk_start = my_rank * part_size
@@ -324,9 +318,7 @@ def broadcast_pull_2stage_kernel[
         my_payload.address_space_cast[_target_address_space]().store[
             alignment=alignment
         ](idx - my_chunk_start, data)
-        result.store[width=simd_width, alignment=alignment](
-            result.get_nd_index(idx), data
-        )
+        result_ptr.store[alignment=alignment](idx, data)
 
     # Handle tail elements (spread across threads)
     var tail_idx = aligned_chunk_end + global_tid
@@ -337,7 +329,7 @@ def broadcast_pull_2stage_kernel[
         my_payload.address_space_cast[_target_address_space]().store(
             tail_idx - my_chunk_start, data
         )
-        result.store[width=1](result.get_nd_index(tail_idx), data)
+        result_ptr.store(tail_idx, data)
 
     # Barrier with memory fence to ensure scatter is complete
     _multi_gpu_barrier[ngpus, is_start=False, need_fence=True](
@@ -374,8 +366,8 @@ def broadcast_pull_2stage_kernel[
                         _target_address_space
                     ]().load[width=simd_width, alignment=alignment](idx)
                     # Write to final position in result
-                    result.store[width=simd_width, alignment=alignment](
-                        result.get_nd_index(chunk_start + idx), data
+                    result_ptr.store[alignment=alignment](
+                        chunk_start + idx, data
                     )
 
         # Handle tail elements from last GPU's chunk (thread 0 only)
@@ -391,15 +383,12 @@ def broadcast_pull_2stage_kernel[
                 var data = last_payload.address_space_cast[
                     _target_address_space
                 ]().load[width=1](i)
-                result.store[width=1](
-                    result.get_nd_index(last_chunk_start + i), data
-                )
+                result_ptr.store(last_chunk_start + i, data)
 
     # Root: copy all elements from input to result (after Stage 2)
     # Skip if in-place (input and result point to same memory)
     var is_inplace = (
-        root_input_ptr.address_space_cast[_target_address_space]()
-        == result.data.address_space_cast[_target_address_space]()
+        root_input_ptr.address_space_cast[_target_address_space]() == result_ptr
     )
     if is_root and not is_inplace:
         var num_simd_vectors = num_elements // simd_width
@@ -410,9 +399,7 @@ def broadcast_pull_2stage_kernel[
             ]().load[width=simd_width, alignment=alignment, invariant=True](
                 elem_idx
             )
-            result.store[width=simd_width, alignment=alignment](
-                result.get_nd_index(elem_idx), data
-            )
+            result_ptr.store[alignment=alignment](elem_idx, data)
 
         # Handle tail elements (spread across threads)
         var root_tail_idx = tail_start + global_tid
@@ -420,7 +407,7 @@ def broadcast_pull_2stage_kernel[
             var data = root_input_ptr.address_space_cast[
                 _target_address_space
             ]().load[width=1, invariant=True](root_tail_idx)
-            result.store[width=1](result.get_nd_index(root_tail_idx), data)
+            result_ptr.store(root_tail_idx, data)
 
     # Final barrier to ensure all GPUs complete before returning
     _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
@@ -493,18 +480,28 @@ def broadcast[
         ceildiv(ceildiv(num_elements, simd_width), BLOCK_SIZE),
     )
 
+    var input_tile = TileTensor(
+        input_buffer.data,
+        row_major(Coord(RuntimeInt[DType.int64](Int64(num_elements)))),
+    )
+    var output_tile = TileTensor(
+        output_buffer.data,
+        row_major(Coord(RuntimeInt[DType.int64](Int64(num_elements)))),
+    )
+    comptime TileLayout = type_of(input_tile).LayoutType
+
     comptime if use_multimem:
         comptime bcast_kernel = broadcast_multimem_kernel[
             dtype,
-            rank,
+            TileLayout,
             BLOCK_SIZE,
             ngpus,
             pdl_level=pdl_level,
         ]
 
         ctx.enqueue_function[bcast_kernel, bcast_kernel](
-            output_buffer,
-            input_buffer,
+            output_tile,
+            input_tile,
             rank_sigs,
             my_rank,
             root,
@@ -530,15 +527,15 @@ def broadcast[
         else:
             comptime bcast_kernel = broadcast_pull_1stage_kernel[
                 dtype,
-                rank,
+                TileLayout,
                 BLOCK_SIZE,
                 ngpus,
                 pdl_level=pdl_level,
             ]
 
             ctx.enqueue_function[bcast_kernel, bcast_kernel](
-                output_buffer,
-                input_buffer,
+                output_tile,
+                input_tile,
                 rank_sigs,
                 my_rank,
                 grid_dim=grid_size,
@@ -617,16 +614,22 @@ def broadcast_2stage[
         ceildiv(ceildiv(num_elements, simd_width * ngpus), BLOCK_SIZE),
     )
 
+    var output_tile = TileTensor(
+        output_buffer.data,
+        row_major(Coord(RuntimeInt[DType.int64](Int64(num_elements)))),
+    )
+    comptime OutLayout = type_of(output_tile).LayoutType
+
     comptime kernel = broadcast_pull_2stage_kernel[
         dtype,
-        rank,
+        OutLayout,
         ngpus,
         BLOCK_SIZE=BLOCK_SIZE,
         pdl_level=pdl_level,
     ]
 
     ctx.enqueue_function[kernel, kernel](
-        output_buffer,
+        output_tile,
         input_buffer.data,
         rank_sigs,
         num_elements,
