@@ -1552,15 +1552,14 @@ def mogg_async_error(
 ):
     """Indicates to the C++ runtime that the kernel has failed.
 
-    When source_notes is non-empty it is prepended to the error message as a
-    Python stack trace so users can locate the failing op in their code.
+    When source_notes is non-empty it is prepended to the error message.
+    The "Source Traceback:" header is included by the compiler only when
+    actual Python tracebacks are present (see buildNotesString in MOGGOps.cpp).
     See GEX-2678.
     """
     var error_message = String(err)
     if source_notes:
-        error_message = (
-            "\nSource Traceback:\n" + source_notes + "\n\n" + error_message
-        )
+        error_message = "\n" + source_notes + "\n\n" + error_message
     external_call["MGP_RT_AsyncRT_CreateAsync_Error", NoneType](
         async_ptr,
         error_message.as_c_string_slice().unsafe_ptr(),
