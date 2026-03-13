@@ -4,6 +4,7 @@ package(default_visibility = ["//max:consumers"])
 
 _EXTRA_CONSTRAINTS = {
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
+    "test_miopen_conv.mojo": ["//:amd_gpu"],
     "test_conv2d_sm100.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],

@@ -31,6 +31,7 @@ _MAX_PACKAGES = {
     "_curand": "kernels/src/_curand",
     "_cudnn": "kernels/src/_cudnn",
     "_rocblas": "kernels/src/_rocblas",
+    "_miopen": "kernels/src/_miopen",
 }
 
 # Packages that are marked testonly and cannot be used by production targets

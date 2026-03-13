@@ -10,6 +10,7 @@ MOJO_DEPS = [
     "//max:_cublas",
     "//max:_cudnn",
     "//max:_cufft",
+    "//max:_miopen",
     "//max:_rocblas",
     "//max:buffer",
     "//max:comm",
