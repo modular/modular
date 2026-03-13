@@ -37,7 +37,6 @@ class ModelInputsWithTokensAndOffsets(Protocol):
 
     tokens: Buffer
     input_row_offsets: Buffer
-    saved_draft_tokens: Buffer | None
 
 
 @dataclass
