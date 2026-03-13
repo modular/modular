@@ -2402,6 +2402,7 @@ def _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         .replace("mi250x", "gfx90a")
         .replace("mi300x", "gfx942")
         .replace("mi355x", "gfx950")
+        .replace("gfx90", "gfx90a")
         .replace("amdgpu:", "")
         # Apple normalization
         .replace("metal:", "apple-m")
