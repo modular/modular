@@ -827,8 +827,8 @@ def POP_SIMDRoundAttr : POP_SIMDUnaryAttr<"Round"> {
 // SIMD Binary Operation Attributes
 //===----------------------------------------------------------------------===//
 
-class POP_SIMDBinaryAttr<string name>
-      : POP_ExprAttr<"SIMD" # name, "simd_" # !tolower(name)> {
+class POP_SIMDBinaryAttr<string name, list<Trait> traits = []>
+      : POP_ExprAttr<"SIMD" # name, "simd_" # !tolower(name), traits> {
   let summary = !strconcat("SIMD ", name, ".");
   let description = !strconcat(
     "The `#pop.simd_", !tolower(name), "` attribute performs a SIMD ", name,
@@ -882,7 +882,9 @@ def POP_SIMDAddAttr : POP_SIMDBinaryAttr<"Add">;
 def POP_SIMDSubAttr : POP_SIMDBinaryAttr<"Sub">;
 def POP_SIMDMulAttr : POP_SIMDBinaryAttr<"Mul">;
 def POP_SIMDDivAttr : POP_SIMDBinaryAttr<"Div">;
-def POP_SIMDFloorDivAttr : POP_SIMDBinaryAttr<"FloorDiv">;
+def POP_SIMDFloorDivAttr : POP_SIMDBinaryAttr<"FloorDiv",
+    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                 ["evaluateWithContext"]>]>;
 
 //===----------------------------------------------------------------------===//
 // SIMD Shift Operation Attributes

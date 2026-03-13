@@ -86,8 +86,7 @@ FoldValue foldSIMDAbs(FoldValues operands, TargetInfoAttr target = {});
 OpFoldResult foldSIMDRound(Attribute val, TargetInfoAttr targetInfo);
 
 /// Fold a SIMD floordiv operation.
-OpFoldResult foldSIMDFloorDiv(Attribute lhs, Attribute rhs,
-                              TargetInfoAttr targetInfo);
+FoldValue foldSIMDFloorDiv(FoldValues operands, TargetInfoAttr target = {});
 
 //===----------------------------------------------------------------------===//
 // SIMD Folder Helpers
