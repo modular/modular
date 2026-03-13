@@ -1044,14 +1044,14 @@ def KGEN_StructFieldTypeByNameAttr : KGEN_ExprAttr<"StructFieldTypeByName",
     Example:
 
     ```mlir
-    #kgen.struct_field_type_by_name<#MyStruct, "x"> : !kgen.type
+    #kgen.struct_field_type_by_name<#MyStruct, "x"> : !AnyType
     ```
   }];
 
   let parameters = (ins
     "TypedAttr":$typeValue,
     "TypedAttr":$fieldName,
-    AttributeSelfTypeParameter<"", "TypeType">:$type
+    AttributeSelfTypeParameter<"", "Type">:$type
   );
 
   let assemblyFormat = "`<` custom<TypeParamValue>($typeValue) `,` $fieldName `>`";

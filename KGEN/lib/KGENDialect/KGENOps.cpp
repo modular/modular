@@ -681,7 +681,7 @@ std::optional<size_t> StructGeneratorOp::findFieldIndex(StringRef name) {
   return std::nullopt;
 }
 
-TypedAttr StructGeneratorOp::getFieldType(StringRef name) {
+TypedAttr StructGeneratorOp::getFieldType(StringRef name, Type metaType) {
   auto structType = cast<StructInstanceType>(getValueDomainType());
   for (StructDefFieldAttr field : structType.getFields())
     if (field.getName().getValue() == name)
@@ -695,7 +695,8 @@ void StructGeneratorOp::getFieldNames(SmallVectorImpl<StringAttr> &names) {
     names.push_back(field.getName());
 }
 
-void StructGeneratorOp::getFieldTypes(SmallVectorImpl<TypedAttr> &types) {
+void StructGeneratorOp::getFieldTypes(SmallVectorImpl<TypedAttr> &types,
+                                      Type metaType) {
   auto structType = cast<StructInstanceType>(getValueDomainType());
   for (StructDefFieldAttr field : structType.getFields())
     types.push_back(field.getTypeValue());

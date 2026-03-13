@@ -101,7 +101,7 @@ def StructDeclInterface : OpInterface<"StructDeclInterface"> {
     >,
     InterfaceMethod<
       "Get a field's type by name. Returns nullptr if not found.",
-      "TypedAttr", "getFieldType", (ins "StringRef":$name)
+      "TypedAttr", "getFieldType", (ins "StringRef":$name, "Type": $metaType)
     >,
     InterfaceMethod<
       "Get all field names.",
@@ -111,7 +111,7 @@ def StructDeclInterface : OpInterface<"StructDeclInterface"> {
     InterfaceMethod<
       "Get all field types.",
       "void", "getFieldTypes",
-      (ins "SmallVectorImpl<TypedAttr> &":$types)
+      (ins "SmallVectorImpl<TypedAttr> &":$types, "Type": $metaType)
     >,
     InterfaceMethod<
       "Get the input parameter declarations for this struct.",

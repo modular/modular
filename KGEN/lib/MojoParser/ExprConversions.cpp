@@ -1470,14 +1470,6 @@ PValue IREmitter::bindNonStructTypeToTrait(ASTExprAnd<CValue> value,
   return TypeParamAttr::get(boundWrapper, mlirType, trait);
 }
 
-static bool isAnyTypeTraitType(TraitType trait, SharedState &shared,
-                               ASTDecl *scope) {
-  return cast<TraitDeclOp>(
-             shared.lookupBuiltinTrait("AnyType", scope, scope->getLoc())
-                 ->getIfOperation())
-             .bindReference() == trait;
-}
-
 // Returns true/false to indicate that whether a type value can be upcast to a
 // trait.
 // Returns failure when it is an non-applicable cases (i.e., `fromType` is not a
@@ -1507,23 +1499,6 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
       // AnyTraitType (the type of all traits) conforms to traits with only a
       // destructor (e.g. AnyType) since all traits have that.
       result = checkMLIRTypeConformance(shared, loc, trait);
-    } else if (sugarIsa<TypeType>(fromType)) {
-      // Allowing TypeType to imply AnyType conformance.
-      //
-      // FIXME: this is WRONG, but a lot of places in the compiler (e.g.,
-      // reflection APIs) are abusing kgen.type for AnyType. It allows the
-      // following code to be compiled:
-      //
-      // fn test[T: AnyType]():
-      //     pass
-      //
-      // fn foo[T: __TypeOfAllTypes]():
-      //     test[T]()
-      //
-      // fn main():
-      //     foo[type_of(AnyType)]()
-      //
-      result = isAnyTypeTraitType(trait, shared, scope);
     } else if (sugarIsaAndNonNull<StructMetaMetaType>(fromType.getMetaType()) ||
                sugarIsaAndNonNull<AnyTraitType>(fromType.getMetaType())) {
       if (ASTType(fromType).getDecl(shared)) {
@@ -1810,12 +1785,6 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
       if (sugarIsa<NonStructTypeType>(fromType)) {
         // Conversions from MLIR types.
         return bindNonStructTypeToTrait(valueExpr, trait);
-      }
-
-      if (sugarIsa<TypeType>(fromType) &&
-          isAnyTypeTraitType(trait, shared, &getDeclScope())) {
-        PValue typeValue = valueExpr.ir.getIfPValue();
-        return PValue(TypeParamAttr::get(typeValue.getIfTypeValue(), trait));
       }
 
       if (sugarIsaAndNonNull<StructMetaMetaType>(fromType.getMetaType()) ||

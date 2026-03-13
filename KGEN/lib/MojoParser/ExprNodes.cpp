@@ -4435,17 +4435,30 @@ MagicFunctionNode::getValidatedStructTypeArg(IREmitter &emitter,
   return typeArg;
 }
 
+static TraitType getAnyTypeTraitType(IREmitter &emitter, SMLoc loc) {
+  TraitType anyType = emitter.shared.lookupBuiltinTraitType(
+      "AnyType", &emitter.getDeclScope(), loc);
+  if (!anyType) {
+    emitter.emitError(loc, "can not locate 'AnyType'");
+    return {};
+  }
+  return anyType;
+}
+
 AnyValue MagicFunctionNode::emitStructFieldTypes(ValueDest &dest,
                                                  IREmitter &emitter) const {
   auto typeArg = getValidatedStructTypeArg(emitter, "struct_field_types");
   if (!typeArg)
     return {};
 
+  TraitType anyTypeTraitType = getAnyTypeTraitType(emitter, getLoc());
+  if (!anyTypeTraitType)
+    return {};
+
   // Create the struct_field_types attribute. It will be evaluated during
   // elaboration to return the actual field types.
   MLIRContext *ctx = emitter.getContext();
-  // FIXME: use AnyType as the bound.
-  auto variadicType = VariadicType::get(TypeType::get(ctx));
+  auto variadicType = VariadicType::get(anyTypeTraitType);
   auto attr =
       emitter.shared.getEvaluationContext().getAndFold<StructFieldTypesAttr>(
           ctx, typeArg->get(), variadicType);
@@ -4505,9 +4518,13 @@ MagicFunctionNode::emitStructFieldTypeAtIndex(ValueDest &dest,
     return {};
   }
 
+  TraitType anyTypeTraitType = getAnyTypeTraitType(emitter, getLoc());
+  if (!anyTypeTraitType)
+    return {};
+
   // Create StructFieldTypesAttr: wrap the inner type with TypeParamAttr
-  auto variadicType = VariadicType::get(TypeType::get(ctx));
-  TypedAttr structTypeAttr = TypeParamAttr::get(innerType, TypeType::get(ctx));
+  auto variadicType = VariadicType::get(anyTypeTraitType);
+  TypedAttr structTypeAttr = TypeParamAttr::get(innerType, anyTypeTraitType);
   auto fieldTypesAttr =
       emitter.shared.getEvaluationContext().getAndFold<StructFieldTypesAttr>(
           ctx, structTypeAttr, variadicType);
@@ -4528,6 +4545,10 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ValueDest &dest,
     emitter.emitErrorForDynamicValueInParameter(this);
     return {};
   }
+
+  TraitType anyTypeTraitType = getAnyTypeTraitType(emitter, getLoc());
+  if (!anyTypeTraitType)
+    return {};
 
   // First argument: compile-time index
   CValue indexCValue = emitter.emitIndex(subExprs[0], EC_MLIRMagic);
@@ -4624,16 +4645,13 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ValueDest &dest,
     // as VariadicGet(StructFieldTypes(T), index). The origin is the container's
     // origin (not field-sensitive until canonicalization to field name access).
     RefType containerRefType = cast<RefType>(structRef.getType().mlirType);
-
-    // Create a TypedAttr representing the struct type for StructFieldTypesAttr
-    // If structType is null (parametric case), use the element type directly
-    auto variadicType = VariadicType::get(TypeType::get(ctx));
+    auto variadicType = VariadicType::get(anyTypeTraitType);
     TypedAttr structTypeAttr;
     if (structType) {
-      structTypeAttr = TypeParamAttr::get(structType, TypeType::get(ctx));
+      structTypeAttr = TypeParamAttr::get(structType, anyTypeTraitType);
     } else {
       // For parametric types, wrap the element type as a type attribute
-      structTypeAttr = TypeParamAttr::get(elementType, TypeType::get(ctx));
+      structTypeAttr = TypeParamAttr::get(elementType, anyTypeTraitType);
     }
     auto fieldTypesAttr =
         emitter.shared.getEvaluationContext().getAndFold<StructFieldTypesAttr>(
