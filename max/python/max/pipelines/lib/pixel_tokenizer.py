@@ -378,11 +378,11 @@ class PixelGenerationTokenizer(
             in (PipelineClassName.FLUX2, PipelineClassName.FLUX2_KLEIN)
             and self._vae_mode == "tiny"
         ):
-            shape = (
+            base_shape = (
                 batch_size,
-                num_channels_latents * 4,
-                latent_height // 2,
-                latent_width // 2,
+                num_channels_latents,
+                latent_height,
+                latent_width,
             )
         else:
             shape = (
@@ -392,7 +392,29 @@ class PixelGenerationTokenizer(
                 latent_width,
             )
 
-        latents = self._randn_tensor(shape, seed)
+        latents = self._randn_tensor(
+            base_shape if "base_shape" in locals() else shape, seed
+        )
+        if (
+            self._pipeline_class_name
+            in (PipelineClassName.FLUX2, PipelineClassName.FLUX2_KLEIN)
+            and self._vae_mode == "tiny"
+        ):
+            latents = latents.reshape(
+                batch_size,
+                num_channels_latents,
+                latent_height // 2,
+                2,
+                latent_width // 2,
+                2,
+            )
+            latents = latents.transpose(0, 1, 3, 5, 2, 4)
+            latents = latents.reshape(
+                batch_size,
+                num_channels_latents * 4,
+                latent_height // 2,
+                latent_width // 2,
+            )
         latent_image_ids = self._prepare_latent_image_ids(
             latent_height // 2, latent_width // 2, batch_size
         )

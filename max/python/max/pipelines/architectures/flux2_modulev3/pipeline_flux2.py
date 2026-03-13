@@ -671,25 +671,16 @@ class Flux2Pipeline(DiffusionPipeline):
             uint8 NumPy array of shape (B, H, W, C) with values in [0, 255].
         """
         if self.vae_mode != "kl":
-            latents_cpu = np.from_dlpack(
-                F.transfer_to(F.cast(latents, DType.float32), CPU())
-            )
-            latent_ids_cpu = np.from_dlpack(
-                F.transfer_to(latent_image_ids, CPU())
-            )
-            unpacked = []
-            for data, pos in zip(latents_cpu, latent_ids_cpu, strict=False):
-                h_ids = pos[:, 1].astype(np.int64)
-                w_ids = pos[:, 2].astype(np.int64)
-                h = int(h_ids.max()) + 1
-                w = int(w_ids.max()) + 1
-                flat_ids = h_ids * w + w_ids
-                out = np.zeros((h * w, data.shape[1]), dtype=data.dtype)
-                out[flat_ids] = data
-                unpacked.append(out.reshape(h, w, data.shape[1]).transpose(2, 0, 1))
-
-            latents = Tensor.from_dlpack(np.ascontiguousarray(np.stack(unpacked)))
+            batch = latents.shape[0]
+            channels = latents.shape[2]
+            height = h_carrier.shape[0]
+            width = w_carrier.shape[0]
+            latents = F.rebind(latents, [batch, height * width, channels])
+            latents = F.reshape(latents, (batch, height, width, channels))
+            latents = F.permute(latents, (0, 3, 1, 2))
             latents = latents.to(self.vae.devices[0]).cast(self.vae.config.dtype)
+            if hasattr(self.vae, "decode_to_numpy"):
+                return self.vae.decode_to_numpy(latents)
             decoded = self.vae.decode(latents)
             decoded = F.permute(decoded, (0, 2, 3, 1))
             decoded = decoded * 0.5 + 0.5

@@ -17,7 +17,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn import ConvTranspose1d, WeightNormConvTranspose1d
+from max.nn import ConvTranspose1d, ConvTranspose2d, WeightNormConvTranspose1d
 from test_common.numerics import pytorch_disable_tf32_dtype
 
 ACCURACY_RTOL = 1e-4
@@ -207,6 +207,87 @@ def test_conv_transpose1d_bias() -> None:
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
 
     max_conv_result = compiled.execute(input_sequence)[0]
+    assert isinstance(max_conv_result, Buffer)
+
+    np.testing.assert_allclose(
+        max_conv_result.to_numpy(),
+        torch_conv_result.detach().cpu().numpy(),
+        equal_nan=True,
+        rtol=ACCURACY_RTOL,
+        atol=ACCURACY_ATOL,
+    )
+
+
+@pytorch_disable_tf32_dtype
+def test_conv_transpose2d_bias() -> None:
+    batch_size = 1
+    in_channels = 128
+    height = 32
+    width = 32
+    out_channels = 32
+    kernel_size = 4
+    stride = 2
+    padding = 1
+    dilation = 1
+    output_padding = 0
+
+    torch_dtype = torch.float32
+    torch_device = torch.device("cuda")
+    max_dtype = DType.float32
+    max_device = DeviceRef.GPU()
+
+    input_tensor = torch.rand(
+        size=(batch_size, in_channels, height, width),
+        dtype=torch_dtype,
+        device=torch_device,
+    )
+
+    torch_conv = nn.ConvTranspose2d(
+        in_channels=in_channels,
+        out_channels=out_channels,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        output_padding=output_padding,
+        bias=True,
+        device=torch_device,
+    )
+
+    max_conv = ConvTranspose2d(
+        kernel_size=kernel_size,
+        in_channels=in_channels,
+        out_channels=out_channels,
+        dtype=max_dtype,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        output_padding=output_padding,
+        permute=True,
+        has_bias=True,
+        device=max_device,
+    )
+
+    state_dict = {
+        "weight": torch_conv.weight.data.detach().cpu(),
+        "bias": torch_conv.bias.data.detach().cpu(),
+    }
+    max_conv.load_state_dict(state_dict)
+
+    with torch.no_grad():
+        torch_conv_result = torch_conv(input_tensor)
+
+    session = InferenceSession(devices=[Accelerator()])
+    graph = Graph(
+        "conv_transpose2d",
+        max_conv,
+        input_types=(
+            TensorType(max_dtype, input_tensor.shape, device=max_device),
+        ),
+    )
+
+    compiled = session.load(graph, weights_registry=max_conv.state_dict())
+    max_conv_result = compiled.execute(input_tensor)[0]
     assert isinstance(max_conv_result, Buffer)
 
     np.testing.assert_allclose(

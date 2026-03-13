@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -70,5 +70,58 @@ modular_py_test(
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
         requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_binary(
+    name = "tiny_vae_parity_harness",
+    testonly = True,
+    srcs = [
+        "tiny_vae_parity_harness.py",
+    ],
+    imports = ["."],
+    deps = [
+        requirement("numpy"),
+        requirement("pillow"),
+    ],
+)
+
+modular_py_binary(
+    name = "tiny_vae_component_harness",
+    testonly = True,
+    srcs = [
+        "tiny_vae_component_harness.py",
+    ],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
+        requirement("huggingface-hub"),
+        requirement("safetensors"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_binary(
+    name = "tiny_vae_convtranspose_harness",
+    testonly = True,
+    srcs = [
+        "tiny_vae_convtranspose_harness.py",
+    ],
+    imports = ["."],
+    tags = [
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
+        requirement("huggingface-hub"),
+        requirement("safetensors"),
+        requirement("torch"),
     ],
 )
