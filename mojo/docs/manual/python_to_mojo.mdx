@@ -131,7 +131,7 @@ var x = 10 # 10
 x = 20     # 20, with a warning that x's previous assignment
             # to 10 was never used
 
-fn foo(value: Int):
+def foo(value: Int):
     value += 1 # Error, expression must be mutable
 
 var y = 20
@@ -143,7 +143,7 @@ optimize. Using the `mut` keyword in the argument declaration makes
 it mutable.
 
 ```mojo
-fn foo(mut value: Int):
+def foo(mut value: Int):
     value += 1 # This works
 ```
 
@@ -187,7 +187,7 @@ typically 64 bits on a 64-bit system. You can always check:
 ```mojo
 from std.sys import size_of
 
-fn main():
+def main():
     var a: Int = 5
     var bytes = size_of[Int]()
     print(bytes)  # 8 on a 64-bit system
@@ -412,7 +412,7 @@ def add(a, b):
 **Mojo**
 
 ```mojo
-fn add(a: Int, b: Int) -> Int:
+def add(a: Int, b: Int) -> Int:
     return a + b
 ```
 
@@ -453,7 +453,7 @@ directly in your `except` clause:
 struct MyCustomError(Writable):
     var message: String
 
-fn test_typed_error() raises MyCustomError: # Typed error
+def test_typed_error() raises MyCustomError: # Typed error
     raise MyCustomError("custom error occurred")
 
 try:
@@ -467,13 +467,13 @@ delegate error handling to their caller. You must declare these
 functions with the `raises` keyword:
 
 ```mojo
-fn another_raising_function() raises:
+def another_raising_function() raises:
     raise Error("Message")     # Error raised here
 
-fn raising_function() raises:
+def raising_function() raises:
     another_raising_function() # Error continues to pass
 
-fn handles_errors():
+def handles_errors():
     try:
         raising_function()     # Error handled in this non-raising function
     except e:
@@ -514,13 +514,13 @@ struct Point:
     var x: Int
     var y: Int
 
-    fn __init__(out self, x: Int, y: Int):
+    def __init__(out self, x: Int, y: Int):
         self.x = x
         self.y = y
 
 ...
 
-fn main():
+def main():
     var point = Point(5, 3)
     print(point.x, point.y) # 5, 3
 ```
@@ -587,10 +587,10 @@ def sketch(shape):
 
 ```mojo
 trait Drawable:
-    fn draw(self):
+    def draw(self):
         ... # required method
 
-fn sketch[T: Drawable](shape: T):
+def sketch[T: Drawable](shape: T):
     shape.draw()  # Compiler guarantees shape has `draw()`
 ```
 

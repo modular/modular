@@ -192,7 +192,7 @@ Add the following code to your `vector_addition.mojo` file:
 ```mojo title="vector_addition.mojo"
 from std.gpu import block_idx, thread_idx
 
-fn print_threads():
+def print_threads():
     """Print thread IDs."""
 
     print("Block index: [",
@@ -202,17 +202,6 @@ fn print_threads():
         "]"
     )
 ```
-
-:::note
-
-We're using `fn` here without the `raises` keyword because a kernel function is
-not allowed to raise an error condition. In contrast, when you define a Mojo
-function with `def`, the compiler always assumes that the function *can* raise
-an error condition. See the [Functions](/mojo/manual/functions) section of the
-Mojo Manual for more information on the difference between using `fn` and `def`
-to define functions in Mojo.
-
-:::
 
 ## 4. Compile and run the kernel
 
@@ -231,7 +220,7 @@ from std.gpu.host import DeviceContext
 from std.gpu import block_idx, thread_idx
 
 
-fn print_threads():
+def print_threads():
     """Print thread IDs."""
 
     print("Block index: [",
@@ -418,7 +407,7 @@ modify our `print_threads()` kernel function to print the `x`, `y`, and `z`
 components of the thread block and thread indices for each thread.
 
 ```mojo title="vector_addition.mojo"
-fn print_threads():
+def print_threads():
     """Print thread IDs."""
 
     print("Block index: [",
@@ -701,7 +690,7 @@ comptime block_size = 256
 comptime num_blocks = ceildiv(vector_size, block_size)
 
 
-fn vector_addition(
+def vector_addition(
     lhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
     rhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
     out_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
@@ -805,7 +794,7 @@ comptime block_size = 256
 comptime num_blocks = ceildiv(vector_size, block_size)
 
 
-fn vector_addition(
+def vector_addition(
     lhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
     rhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
     out_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],

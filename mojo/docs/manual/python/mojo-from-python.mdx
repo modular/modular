@@ -40,7 +40,7 @@ For example, let's say we want a Mojo function to take a Python value as an
 argument:
 
 ```mojo title="mojo_module.mojo"
-fn factorial(py_obj: PythonObject) raises -> Python
+def factorial(py_obj: PythonObject) raises -> Python
     var n = Int(py=py_obj)
     return math.factorial(n)
 ```
@@ -71,7 +71,7 @@ import std.math
 from std.os import abort
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     try:
         var m = PythonModuleBuilder("mojo_module")
         m.def_function[factorial]("factorial", docstring="Compute n!")
@@ -79,7 +79,7 @@ fn PyInit_mojo_module() -> PythonObject:
     except e:
         abort(String("error creating Python Mojo module:", e))
 
-fn factorial(py_obj: PythonObject) raises -> PythonObject:
+def factorial(py_obj: PythonObject) raises -> PythonObject:
     # Raises an exception if `py_obj` is not convertible to a Mojo `Int`.
     var n = Int(py=py_obj)
 
@@ -162,7 +162,7 @@ struct Person(Movable, Writable):
     var age: Int
 
 @export
-fn PyInit_person_module() -> PythonObject:
+def PyInit_person_module() -> PythonObject:
     try:
         var mb = PythonModuleBuilder("person_module")
         var person_type = mb.add_type[Person]("Person")
@@ -208,7 +208,7 @@ you add the type to your module. For example:
 
 ```mojo
 @export
-fn PyInit_person_module() -> PythonObject:
+def PyInit_person_module() -> PythonObject:
     try:
         var mb = PythonModuleBuilder("person_module")
         # highlight-start
@@ -225,7 +225,7 @@ struct Person(Movable, Writable):
 
     # highlight-start
     @staticmethod
-    fn py_init(
+    def py_init(
         out self: Person, args: PythonObject, kwargs: PythonObject
     ) raises:
         # Validate argument count
@@ -286,7 +286,7 @@ possible by using the `PythonObject(alloc=<value>)` constructor.
 An example of this looks like:
 
 ```mojo
-fn create_person() -> PythonObject:
+def create_person() -> PythonObject:
     var person = Person("Sarah", 32)
     return PythonObject(alloc=person^)
 ```
@@ -324,7 +324,7 @@ the [`ConvertibleFromPython`][ConvertibleFromPython] trait:
 
 ```mojo
 # Given a person, clone them and give them a different name.
-fn create_person(
+def create_person(
     name_obj: PythonObject,
     age_obj: PythonObject
 ) raises -> PythonObject:
@@ -352,7 +352,7 @@ person = mojo_module.create_person(42)
 Downcasting from `PythonObject` values to the inner Mojo value:
 
 ```mojo
-fn print_age(person_obj: PythonObject) raises:
+def print_age(person_obj: PythonObject) raises:
     # Raises if `obj` does not contain an instance of the Mojo `Person` type.
     var person = person_obj.downcast_value_ptr[Person]()
 
@@ -364,7 +364,7 @@ that this mutable pointer does not alias any other pointers to the same object
 within Mojo:
 
 ```mojo
-fn birthday(person_obj: PythonObject):
+def birthday(person_obj: PythonObject):
     var person = person_obj.downcast_value_ptr[Person]()
 
     person[].age += 1
@@ -373,7 +373,7 @@ fn birthday(person_obj: PythonObject):
 Entirely unchecked downcasting—which does no type checking—can be done using:
 
 ```mojo
-fn get_person(person_obj: PythonObject):
+def get_person(person_obj: PythonObject):
     var person = person_obj.unchecked_downcast_value_ptr[Person]()
 ```
 
@@ -402,7 +402,7 @@ from std.python.bindings import PythonModuleBuilder
 from std.os import abort
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     try:
         var mb = PythonModuleBuilder("mojo_module")
         # highlight-start
@@ -420,19 +420,19 @@ struct Person(Writable):
 
     # highlight-start
     @staticmethod
-    fn get_name(py_self: PythonObject) raises -> PythonObject:
+    def get_name(py_self: PythonObject) raises -> PythonObject:
         var self_ptr = py_self.downcast_value_ptr[Self]()
         return self_ptr[].name
 
     @staticmethod
-    fn set_age(
+    def set_age(
         self_ptr: UnsafePointer[mut=True, Self],
         new_age: PythonObject,
     ) raises:
         self_ptr[].age = Int(new_age)
     # highlight-end
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         t"Person({self.name}, {self.age})".write_to(writer)
 ```
 
@@ -450,7 +450,7 @@ from std.python.bindings import PythonModuleBuilder
 from std.os import abort
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     try:
         var mb = PythonModuleBuilder("mojo_module")
         # highlight-start
@@ -467,12 +467,12 @@ struct Person(Writable):
 
     # highlight-start
     @staticmethod
-    fn is_valid_age(age_obj: PythonObject) raises -> PythonObject:
+    def is_valid_age(age_obj: PythonObject) raises -> PythonObject:
         var age = Int(age_obj)
         return 0 <= age <= 130
     # highlight-end
 
-    fn write_to(self, mut writer: Some[Writable]):
+    def write_to(self, mut writer: Some[Writable]):
         t"Person({self.name}, {self.age})".write_to(writer)
 ```
 
@@ -489,10 +489,10 @@ print(Person.is_valid_age(-1)) # Prints 'False'
 
 [Keyword arguments in Mojo](/mojo/manual/functions/#keyword-arguments) come in two forms:
 
-1. Keyword-only arguments: `fn foo(*, x: Int)`
+1. Keyword-only arguments: `def foo(*, x: Int)`
     This is not currently supported in Python Mojo bindings.
-2. [Variadic keyword arguments](/manual/functions/#variadic-keyword-arguments): `fn foo(**kwargs: Int)`
-    This is supported in Python Mojo bindings when used in the unsugared form: `fn foo(kwargs: OwnedKwargsDict)`. (The `**kwargs` syntax limitation will be removed in the future.)
+2. [Variadic keyword arguments](/manual/functions/#variadic-keyword-arguments): `def foo(**kwargs: Int)`
+    This is supported in Python Mojo bindings when used in the unsugared form: `def foo(kwargs: OwnedKwargsDict)`. (The `**kwargs` syntax limitation will be removed in the future.)
 
 You can define Mojo functions that accept variadic keyword arguments using [`OwnedKwargsDict[PythonObject]`](/mojo/std/collections/dict/OwnedKwargsDict) as the last argument. A simple example looks like:
 
@@ -546,7 +546,7 @@ Keyword arguments are supported when bindings top-level functions, methods, and 
 Python and Mojo variadic arguments are normally written using the following syntax:
 
 ```mojo
-fn foo(*args: Int):
+def foo(*args: Int):
     ...
 ```
 
@@ -562,23 +562,23 @@ provided:
 
 ```mojo
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     try:
         var b = PythonModuleBuilder("mojo_module")
         b.def_py_function[count_args]("count_args")
         b.def_py_function[sum_args]("sum_args")
         b.def_py_function[lookup]("lookup")
 
-fn count_args(py_self: PythonObject, args_tuple: PythonObject) raises:
+def count_args(py_self: PythonObject, args_tuple: PythonObject) raises:
     return len(args_tuple)
 
-fn sum_args(py_self: PythonObject, args_tuple: PythonObject) raises:
+def sum_args(py_self: PythonObject, args_tuple: PythonObject) raises:
     var total = args_tuple[0]
     for i in range(1, len(args_tuple)):
         total += args_tuple[i]
     return total
 
-fn lookup(py_self: PythonObject, args_tuple: PythonObject) raises:
+def lookup(py_self: PythonObject, args_tuple: PythonObject) raises:
     if len(args_tuple) != 2 and len(args_tuple) != 3:
         raise Error("lookup() expects 2 or 3 arguments")
 
@@ -616,7 +616,7 @@ Rule of thumb: Any Python builtin function should be accessible in Mojo using
 `Python.<builtin>()`.
 
 ```mojo
-fn foo(x: PythonObject, y: PythonObject, z: PythonObject) -> PythonObject:
+def foo(x: PythonObject, y: PythonObject, z: PythonObject) -> PythonObject:
     x[y] = Python.int(z)
     x = y + z
 ```
@@ -652,7 +652,7 @@ be lifted over time.
 - **Functions taking more than 6 arguments.**
   Currently `PyTypeBuilder.add_function()` and related
   function bindings only support Mojo functions that take up to 6 `PythonObject`
-  arguments: `fn(PythonObject, PythonObject, PythonObject, PythonObject, PythonObject, PythonObject)`.
+  arguments: `def(PythonObject, PythonObject, PythonObject, PythonObject, PythonObject, PythonObject)`.
 
 - **Keyword arguments syntax.**
   Currently, Mojo functions called from Python only accept keyword arguments

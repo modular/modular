@@ -166,7 +166,7 @@ that the `z` variable is first declared with just a type, and the value is
 assigned later:
 
 ```mojo
-fn my_function(x: Int):
+def my_function(x: Int):
     var z: Float32
     if x != 0:
         z = 1.0
@@ -174,7 +174,7 @@ fn my_function(x: Int):
         z = foo()
     print(z)
 
-fn foo() -> Float32:
+def foo() -> Float32:
     return 3.14
 ```
 
@@ -242,10 +242,10 @@ because `Float64` includes an implicit conversion constructor that takes an
 `Int`:
 
 ```mojo
-fn take_float(value: Float64):
+def take_float(value: Float64):
     print(value)
 
-fn pass_integer():
+def pass_integer():
     var value: Int = 1
     take_float(value)
 ```

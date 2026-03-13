@@ -51,7 +51,7 @@ from std.sys import align_of
 struct CacheAligned:
     var data: Int
 
-fn main():
+def main():
     print(align_of[CacheAligned]())  # Prints 64
 ```
 
@@ -75,7 +75,7 @@ from sys import align_of
 struct TryToReduce:
     var x: Int  # Int has 8-byte natural alignment
 
-fn main():
+def main():
     print(align_of[TryToReduce]())  # Prints 8
 ```
 
@@ -92,7 +92,7 @@ struct Container:
     var aligned: CacheAligned
     var other: Int
 
-fn main():
+def main():
     print(align_of[Container]())  # Prints 64
 ```
 
@@ -109,7 +109,7 @@ from sys import align_of
 struct CacheAligned:
     var data: Int
 
-fn use_aligned():
+def use_aligned():
     # Stack allocation
     var stack_value = CacheAligned(42)
 
@@ -136,7 +136,7 @@ from sys import size_of, align_of
 struct CacheAligned:
     var data: Int  # 8 bytes
 
-fn demonstrate_array_stride():
+def demonstrate_array_stride():
     var arr = UnsafePointer[CacheAligned].alloc(4)
 
     print(align_of[CacheAligned]())  # 64
@@ -166,7 +166,7 @@ from sys import align_of
 struct AlignedGeneric[T: Copyable & ImplicitlyDestructible]:
     var value: Self.T
 
-fn main():
+def main():
     print(align_of[AlignedGeneric[Int8]]())   # 128
     print(align_of[AlignedGeneric[Int64]]())  # 128
 ```
@@ -183,7 +183,7 @@ from sys import align_of
 struct AlignedGeneric[T: Copyable & ImplicitlyDestructible]:
     var value: Self.T
 
-fn main():
+def main():
     print(align_of[AlignedGeneric[Int8]]())   # 4
     print(align_of[AlignedGeneric[Int64]]())  # 8
 ```
@@ -200,7 +200,7 @@ from sys import align_of, size_of
 struct AlignedTrivial(RegisterPassable):
     var value: Int
 
-fn main():
+def main():
     print(align_of[AlignedTrivial]())  # 32
     print(size_of[AlignedTrivial]())  # 8
 ```
@@ -255,7 +255,7 @@ from sys import align_of
 struct MinimalAlign:
     var x: Int
 
-fn main():
+def main():
     print(align_of[MinimalAlign]())  # Prints 8
 ```
 
@@ -302,7 +302,7 @@ from std.sys import align_of
 struct AlignedBuffer[alignment: Int]:
     var data: Int
 
-fn main():
+def main():
     print(align_of[AlignedBuffer[64]]())   # Prints 64
     print(align_of[AlignedBuffer[128]]())  # Prints 128
 ```

@@ -571,9 +571,7 @@ comptime divider1 = "=" * 40
 comptime symbol = "#"
 comptime divider2 = symbol * 40
 
-# You must define the following function using `fn` because a comptime
-# initializer cannot call a function that can potentially raise an error.
-fn generate_divider(char: String, repeat: Int) -> String:
+def generate_divider(char: String, repeat: Int) -> String:
     return char * repeat
 
 comptime divider3 = generate_divider("~", 40)  # Evaluated at compile-time
@@ -1025,17 +1023,6 @@ the table below.
 | `>` greater than | `__gt__()` |
 | `>=` greater than or equal | `__ge__()` |
 
-:::note
-
-The `Comparable` and `Equatable` traits don't allow the comparison
-dunder methods to raise errors. Because using `def` to define a method implies
-that it can raise an error, you must use `fn` to implement the comparison
-methods declared by these traits. See [Functions](/mojo/manual/functions) for
-more information on the differences between defining functions with `def` and
-`fn`.
-
-:::
-
 As an example, consider implementing support for all of the comparison operator
 dunder methods for a custom `MyInt` struct by relying on the default
 implementations provided by the `Comparable` (and transitively the
@@ -1046,10 +1033,10 @@ implementations provided by the `Comparable` (and transitively the
 struct MyInt(Comparable):
     var value: Int
 
-    fn __eq__(self, rhs: MyInt) -> Bool:
+    def __eq__(self, rhs: MyInt) -> Bool:
         return self.value == rhs.value
 
-    fn __lt__(self, rhs: MyInt) -> Bool:
+    def __lt__(self, rhs: MyInt) -> Bool:
         return self.value < rhs.value
 
     # `__ne__`, `__le__`, `__gt__`, and `__ge__` have default implementations.
@@ -1092,10 +1079,10 @@ In the simple case of a one-dimensional sequence, the `__getitem__()` and
 
 ```mojo
 struct MySeq[type: Copyable]:
-    fn __getitem__(self, idx: Int) -> type:
+    def __getitem__(self, idx: Int) -> type:
         # Return element at the given index
         ...
-    fn __setitem__(mut self, idx: Int, value: type):
+    def __setitem__(mut self, idx: Int, value: type):
         # Assign the element at the given index the provided value
 ```
 
@@ -1107,10 +1094,10 @@ arbitrary—dimension collections.
 ```mojo
 struct MySeq[type: Copyable]:
     # 2-dimension support
-    fn __getitem__(self, x_idx: Int, y_idx: Int) -> type:
+    def __getitem__(self, x_idx: Int, y_idx: Int) -> type:
         ...
     # Arbitrary-dimension support
-    fn __getitem__(self, *indices: Int) -> type:
+    def __getitem__(self, *indices: Int) -> type:
         ...
 ```
 
@@ -1126,7 +1113,7 @@ the case of a multi-dimensional collection).
 ```mojo
 struct MySeq[type: Copyable]:
     # Return a new MySeq with a subset of elements
-    fn __getitem__(self, span: Slice) -> Self:
+    def __getitem__(self, span: Slice) -> Self:
         ...
 ```
 
@@ -1150,7 +1137,7 @@ struct MySeq[type: Copyable]:
     var size: Int
 
     # Return a new MySeq with a subset of elements
-    fn __getitem__(self, span: Slice) -> Self:
+    def __getitem__(self, span: Slice) -> Self:
         var start: Int
         var end: Int
         var step: Int
@@ -1208,7 +1195,7 @@ To allow you to construct a `Complex` instance with just the real
 component, add a convenience initializer:
 
 ```mojo
-fn __init__(out self, re: Float64):
+def __init__(out self, re: Float64):
     self.re = re
     self.im = 0.0
 ```
@@ -1235,7 +1222,7 @@ struct Complex(
 ):
     # ...
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("(", self.re)
         if self.im < 0:
             writer.write(" - ", -self.im)
@@ -1243,16 +1230,6 @@ struct Complex(
             writer.write(" + ", self.im)
         writer.write("i)")
 ```
-
-:::note
-
-The `Writable` trait doesn't allow the `write_to()` method to raise an error.
-Because defining a method with `def` implies that it can raise an error, we
-instead have to define these methods with `fn`. See
-[Functions](/mojo/manual/functions) for more information on the differences
-between defining functions with `def` and `fn`.
-
-:::
 
 Now we can print a `Complex` value directly, and we can explicitly generate a
 `String` representation by passing a `Complex` value to `String()` which
@@ -1583,22 +1560,12 @@ struct Complex(
     Equatable,
 ):
     # ...
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self.re == other.re and self.im == other.im
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self.re != other.re or self.im != other.im
 ```
-
-:::note
-
-The `Equatable` trait doesn't allow the `__eq__()` and `__ne__()`
-methods to raise errors. Because defining a method with `def` implies that it
-can raise an error, we instead have to define these methods with `fn`. See
-[Functions](/mojo/manual/functions) for more information on the differences
-between defining functions with `def` and `fn`.
-
-:::
 
 And now to try them out.
 

@@ -24,8 +24,6 @@ This page covers:
   or never raise.
 - [**Parametric raises**](#parametric-raises) — Write generic functions that
   propagate error types from their arguments.
-- [**`fn` vs `def` for error handling**](#fn-vs-def-for-error-handling) — How
-  the two function forms differ in their error handling capabilities.
 - [**Typed and `Error` interaction**](#typed-errors-and-error-interaction) —
   Work with code that uses both error styles.
 - [**Stack traces**](#enable-stack-trace-generation-for-errors) — Enable stack
@@ -62,22 +60,10 @@ raise "file not found"
 The string literal form is a convenience—the compiler automatically wraps it in
 an `Error`.
 
-A `def` function is raising by default and always uses the built-in `Error` type.
-You **don't** include `raises` in the signature (doing so results in a
-compiler error):
+By declaring `raises`, you tell Mojo that a function may raise an error:
 
 ```mojo
-def read_file(path: String) raises -> String:
-    if not path:
-        raise "path cannot be empty"
-    return "contents of " + path
-```
-
-An `fn` function can also raise `Error` by using bare `raises` without
-a type:
-
-```mojo
-fn read_file_fn(path: String) raises -> String:
+def read_file_fn(path: String) raises -> String:
     if not path:
         raise "path cannot be empty"
     return "contents of " + path
@@ -138,7 +124,7 @@ function raises `Error` for different conditions, and the caller loops over
 a list of IDs to exercise each clause:
 
 ```mojo title="handle_error.mojo"
-fn process_record(id: Int) raises -> String:
+def process_record(id: Int) raises -> String:
     if id < 0:
         raise Error("invalid record ID: must be non-negative")
     if id > 999:
@@ -237,7 +223,7 @@ struct ValidationError(Copyable, Writable):
     var field: String
     var reason: String
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("ValidationError(", self.field, "): ", self.reason)
 ```
 
@@ -260,7 +246,7 @@ To declare that a function can raise a typed error, add `raises YourErrorType`
 to its signature:
 
 ```mojo
-fn validate_username(username: String) raises ValidationError -> String:
+def validate_username(username: String) raises ValidationError -> String:
     if len(username) == 0:
         raise ValidationError(field="username", reason="cannot be empty")
     if len(username) < 3:
@@ -270,31 +256,22 @@ fn validate_username(username: String) raises ValidationError -> String:
     return username
 ```
 
-A function defined with `fn` is non-raising by default. Including `raises`
-(with or without a type) makes it a raising function. Each `fn` function can
-declare at most one error type. The compiler enforces this—if any `raise`
-statement in the function body doesn't match the declared type, the program
-won't compile.
+Mojo functions are non-raising by default. Including `raises` (with or
+without a type) makes it a raising function. Each function can declare
+at most one error type. The compiler enforces this—if any `raise`
+statement in the function body doesn't match the declared type, the
+program won't compile.
 
-:::note
-
-A `def` function is raising by default, but it can raise only the built-in
-[`Error`](/mojo/std/builtin/error/Error) type. To raise a typed error, use
-`fn`. See [`fn` vs `def` for error handling](#fn-vs-def-for-error-handling) for
-details.
-
-:::
-
-If a non-raising `fn` calls a raising function, it must handle the error
+If a non-raising function calls a raising function, it must handle the error
 locally:
 
 ```mojo
 # This doesn't compile — validate_username() can raise
-fn process_name(name: String):
+def process_name(name: String):
     print(validate_username(name))
 
 # This compiles — the error is handled
-fn process_name_safe(name: String):
+def process_name_safe(name: String):
     try:
         print(validate_username(name))
     except e:
@@ -364,7 +341,7 @@ ValidationError(username): cannot be empty
 
 ## Representing multiple error conditions
 
-Each `fn` function can declare only one error type in its `raises` clause. When
+Each function can declare only one error type in its `raises` clause. When
 a function can fail in multiple distinct ways, you need to represent those
 conditions within a single type. Mojo offers two approaches:
 
@@ -393,7 +370,7 @@ struct FileError(Equatable, ImplicitlyCopyable, Writable):
     comptime permission_denied = FileError(_variant=2)
     comptime already_exists = FileError(_variant=3)
 
-    fn variant_name(self) -> String:
+    def variant_name(self) -> String:
         if self._variant == 1:
             return "not_found"
         elif self._variant == 2:
@@ -402,7 +379,7 @@ struct FileError(Equatable, ImplicitlyCopyable, Writable):
             return "already_exists"
         return "unknown"
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("FileError.", self.variant_name())
 ```
 
@@ -411,7 +388,7 @@ Because `FileError` has a single `Int` field and conforms to
 auto-synthesizes `__eq__()`, so you can compare variants directly:
 
 ```mojo
-fn open_file(path: String) raises FileError -> String:
+def open_file(path: String) raises FileError -> String:
     if not path:
         raise FileError.not_found
     if path == "/secret":
@@ -452,7 +429,7 @@ from std.utils import Variant
 struct NotFoundError(Copyable, Writable):
     var path: String
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("file not found: ", self.path)
 
 
@@ -461,7 +438,7 @@ struct PermissionError(Copyable, Writable):
     var path: String
     var required_role: String
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "permission denied on ",
             self.path,
@@ -477,7 +454,7 @@ comptime FileError = Variant[NotFoundError, PermissionError]
 Construct a `Variant` by wrapping the inner error in the `Variant` type:
 
 ```mojo
-fn open_file(path: String) raises FileError -> String:
+def open_file(path: String) raises FileError -> String:
     if not path:
         raise FileError(NotFoundError(""))
     if path == "/secret":
@@ -527,10 +504,10 @@ function in place of a return value:
 
 ```mojo
 # Always raises, never returns
-fn panic(msg: String) raises -> Never:
+def panic(msg: String) raises -> Never:
     raise Error(msg)
 
-fn get_value_or_panic(maybe: Optional[Int]) raises -> Int:
+def get_value_or_panic(maybe: Optional[Int]) raises -> Int:
     if maybe:
         return maybe.value()
     # Never substitutes for Int in this branch
@@ -544,10 +521,10 @@ This is equivalent to writing a plain non-raising function:
 
 ```mojo
 # These two signatures are equivalent:
-fn safe_add(a: Int, b: Int) raises Never -> Int:
+def safe_add(a: Int, b: Int) raises Never -> Int:
     return a + b
 
-fn safe_add(a: Int, b: Int) -> Int:
+def safe_add(a: Int, b: Int) -> Int:
     return a + b
 ```
 
@@ -563,9 +540,9 @@ propagate the error type from a function argument to the caller. This uses a
 compile-time parameter for the error type:
 
 ```mojo
-fn run_action[
+def run_action[
     ErrorType: AnyType
-](action: fn() raises ErrorType -> Int) raises ErrorType -> Int:
+](action: def() raises ErrorType -> Int) raises ErrorType -> Int:
     return action()
 ```
 
@@ -574,10 +551,10 @@ function raises `NetworkError`, then `run_action` raises `NetworkError`. If the
 function raises `ParseError`, then `run_action` raises `ParseError`:
 
 ```mojo
-fn fetch_data() raises NetworkError -> Int:
+def fetch_data() raises NetworkError -> Int:
     raise NetworkError(code=404)
 
-fn parse_config() raises ParseError -> Int:
+def parse_config() raises ParseError -> Int:
     raise ParseError(position=42)
 
 # ...
@@ -600,7 +577,7 @@ the error type. This means `run_action` itself becomes non-raising, and no `try`
 block is needed:
 
 ```mojo
-fn get_value() -> Int:
+def get_value() -> Int:
     return 99
 
 # ...
@@ -616,93 +593,15 @@ Which produces this output:
 Got value: 99
 ```
 
-## `fn` vs `def` for error handling
-
-Mojo has two function forms — `def` and `fn` — that differ in how they handle
-errors:
-
-- `def` — Implicitly raising. Always uses the built-in `Error` type. You can't
-  specify a typed error.
-- `fn` with bare `raises` — Explicitly raising. Uses the built-in `Error` type,
-  same as `def`.
-- `fn` with `raises YourErrorType` — Explicitly raising with a typed error. This is
-  the only way to raise typed errors.
-
-### `def` functions
-
-A `def` function can raise the built-in `Error` type without declaring it in the
-signature:
-
-```mojo
-def validate_def(value: Int) raises -> Int:
-    if value < 0:
-        raise "value cannot be negative"
-    return value
-```
-
-Because `def` already implies `raises`, you can't add a typed error annotation.
-The following produces a compiler error:
-
-```mojo
-# Compiler error: function effect 'raises' was already specified
-def validate_def(value: Int) raises ValidationError -> Int:
-    ...
-```
-
-### `fn` functions
-
-An `fn` function is non-raising by default. To make it raise, add `raises`
-(for `Error`) or `raises YourErrorType` (for a typed error):
-
-```mojo
-# fn with typed error — caller gets full access to error fields
-fn validate_fn(value: Int) raises ValidationError -> Int:
-    if value < 0:
-        raise ValidationError(field="value", reason="cannot be negative")
-    return value
-```
-
-### Wrapping `def` in `fn` for typed errors
-
-If you have existing `def` functions that you want to expose with typed
-errors, write an `fn` wrapper that catches the `Error` and converts it:
-
-```mojo
-fn validated_operation(value: Int) raises ValidationError -> Int:
-    try:
-        return validate_def(value)
-    except e:
-        raise ValidationError(field="value", reason=String(e))
-```
-
-The wrapper calls the `def` function inside a `try` block, catches any
-`Error`, and re-raises it as a typed error. This pattern lets you add type
-safety at API boundaries without rewriting internal code:
-
-```mojo
-try:
-    _ = validated_operation(-1)
-except e:
-    print(e.field)   # prints: value
-    print(e.reason)  # prints: value cannot be negative
-```
-
-:::note
-
-For a complete working example of all three function forms, see
-[`fn_vs_def_errors.mojo`](https://github.com/modular/modular/blob/main/mojo/docs/code/manual/errors/fn_vs_def_errors.mojo).
-
-:::
-
 ## Typed errors and `Error` interaction
 
-Most codebases contain a mix of `def` functions (which use `Error`) and
-`fn` functions with typed errors. This section covers how the two styles
-interact and how to work with them effectively.
+Most codebases contain a mix of functions that raise, don't raise, or
+raise typed errors. This section covers how the styles interact and how
+to work with them effectively.
 
 ### Wrap `Error` at API boundaries
 
-When calling `def` functions or other `Error`-raising code from a function that
+When calling raising functions or other `Error`-raising code from a function that
 uses typed errors, catch the `Error` and convert it:
 
 ```mojo
@@ -711,26 +610,22 @@ def validate_with_error(value: Int) raises -> Int:
         raise "value cannot be negative"
     return value
 
-fn wrapped_validate(value: Int) raises ValidationError -> Int:
+def wrapped_validate(value: Int) raises ValidationError -> Int:
     try:
         return validate_with_error(value)
     except e:
         raise ValidationError(field="value", reason=String(e))
 ```
 
-This is the same wrapping pattern described in
-[`fn` vs `def` for error handling](#fn-vs-def-for-error-handling), and it's
-the recommended way to integrate `Error`-based code into typed error APIs.
-
 ### Avoid bare `raises` with typed errors
 
-Using bare `raises` (without a type) on an `fn` that calls typed-error
+Using bare `raises` (without a type) on an function that calls typed-error
 functions causes *type erasure*—the compiler forgets the specific error type,
 even though the runtime preserves the error's identity:
 
 ```mojo
 # Anti-pattern: bare raises erases type info at compile time
-fn validate_bare_raises(value: Int) raises -> Int:
+def validate_bare_raises(value: Int) raises -> Int:
     return validate_typed(value)
 ```
 
@@ -755,9 +650,9 @@ the original error's [`Writable`](/mojo/std/format/Writable) output. But the
 compiler sees only `Error`, so you lose access to structured fields. Always use
 `raises YourErrorType` to maintain type safety.
 
-### `def` functions can catch typed errors
+### Functions can catch typed errors
 
-A `def` function can call a function that raises a typed error and catch it
+A function can call a function that raises a typed error and catch it
 with full field access:
 
 ```mojo
@@ -775,7 +670,7 @@ Executing this function produces this output:
 Field: value Reason: cannot be negative
 ```
 
-However, if a `def` function calls code that raises a typed error without
+However, if a function calls code that raises a typed error without
 catching it, the typed error is subject to type erasure as described in
 [Avoid bare `raises` with typed errors](#avoid-bare-raises-with-typed-errors).
 
@@ -788,11 +683,11 @@ block. The compiler rejects the mismatch:
 def error_func() raises -> Int:
     raise "something went wrong"
 
-fn typed_func() raises ValidationError -> Int:
+def typed_func() raises ValidationError -> Int:
     raise ValidationError(field="x", reason="invalid")
 
 # This doesn't compile
-fn mixed() raises ValidationError:
+def mixed() raises ValidationError:
     try:
         _ = error_func()   # raises Error
         _ = typed_func()    # raises ValidationError
@@ -815,12 +710,8 @@ function as shown in
 
 When working with both `Error` and typed errors:
 
-- **Wrap at boundaries** — Use `fn` wrappers to convert `Error` to typed
-  errors at module boundaries, rather than rewriting all internal code at once.
-- **Use `raises YourErrorType`** — Always specify the error type in `fn`
+- **Use `raises YourErrorType`** — Always specify the error type in function
   signatures. Bare `raises` discards type information.
-- **Keep `def` for prototyping** — `def` is convenient for quick prototyping,
-  but convert to `fn` with typed errors for production APIs.
 - **Use separate `try` blocks** — When calling functions with different error
   types, use nested or sequential `try` blocks to handle each type
   independently.
@@ -1124,14 +1015,14 @@ import std.time
 struct Timer(ImplicitlyCopyable):
     var start_time: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.start_time = 0
 
-    fn __enter__(mut self) -> Self:
+    def __enter__(mut self) -> Self:
         self.start_time = Int(time.perf_counter_ns())
         return self
 
-    fn __exit__(mut self):
+    def __exit__(mut self):
         end_time = time.perf_counter_ns()
         elapsed_time_ms = round(
             Float64(end_time - UInt(self.start_time)) / 1e6, 3
@@ -1179,7 +1070,7 @@ implementing an overloaded version that is invoked instead when an `Error`
 occurs in the `with` code block:
 
 ```mojo
-fn __exit__(self, error: Error) raises -> Bool
+def __exit__(self, error: Error) raises -> Bool
 ```
 
 Given the `Error` that occurred as an argument, the method can do any of the
@@ -1199,21 +1090,21 @@ import std.time
 struct ConditionalTimer(ImplicitlyCopyable):
     var start_time: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.start_time = 0
 
-    fn __enter__(mut self) -> Self:
+    def __enter__(mut self) -> Self:
         self.start_time = Int(time.perf_counter_ns())
         return self
 
-    fn __exit__(mut self):
+    def __exit__(mut self):
         end_time = time.perf_counter_ns()
         elapsed_time_ms = round(
             Float64(end_time - UInt(self.start_time)) / 1e6, 3
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
-    fn __exit__(mut self, e: Error) raises -> Bool:
+    def __exit__(mut self, e: Error) raises -> Bool:
         if String(e) == "just a warning":
             print("Suppressing error:", e)
             self.__exit__()
@@ -1283,7 +1174,7 @@ To handle typed errors, implement a generic `__exit__()` method with a
 compile-time error type parameter:
 
 ```mojo
-fn __exit__[ErrType: AnyType](self, err: ErrType) -> Bool
+def __exit__[ErrType: AnyType](self, err: ErrType) -> Bool
 ```
 
 This method receives the typed error directly, preserving its full type
@@ -1306,7 +1197,7 @@ from std.reflection import *
 struct ConnectionError(Copyable, Writable):
     var message: String
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("ConnectionError: ", self.message)
 
 
@@ -1314,18 +1205,18 @@ struct ResourceGuard(ImplicitlyCopyable):
     var name: String
     var suppress_errors: Bool
 
-    fn __init__(out self, name: String, suppress_errors: Bool = False):
+    def __init__(out self, name: String, suppress_errors: Bool = False):
         self.name = name
         self.suppress_errors = suppress_errors
 
-    fn __enter__(self) -> Self:
+    def __enter__(self) -> Self:
         print("Acquiring:", self.name)
         return self
 
-    fn __exit__(self):
+    def __exit__(self):
         print("Releasing:", self.name, "(no error)")
 
-    fn __exit__[ErrType: AnyType](self, err: ErrType) -> Bool:
+    def __exit__[ErrType: AnyType](self, err: ErrType) -> Bool:
         comptime type_name = get_type_name[ErrType]()
         print("Releasing:", self.name)
         print("  Error type:", type_name)

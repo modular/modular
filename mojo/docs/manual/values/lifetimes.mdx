@@ -181,10 +181,10 @@ from std.memory import OwnedPointer, Pointer
 struct BoxedString:
     var o_ptr: OwnedPointer[String]
 
-    fn __init__(out self, value: String):
+    def __init__(out self, value: String):
         self.o_ptr = OwnedPointer(value)
 
-    fn as_ptr(mut self) -> Pointer[String, origin_of(self.o_ptr)]:
+    def as_ptr(mut self) -> Pointer[String, origin_of(self.o_ptr)]:
         return Pointer(to=self.o_ptr[])
 ```
 
@@ -430,7 +430,7 @@ mutable reference. The method still works if you have an immutable reference
 to the `NameList`, but it returns an immutable reference:
 
 ```mojo
-fn pass_immutable_list(list: NameList) raises:
+def pass_immutable_list(list: NameList) raises:
     print(list[2])
     # list[2] += "?" # Error, this list is immutable
 
