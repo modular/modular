@@ -2126,19 +2126,18 @@ TypedAttr SIMDFloorDivAttr::get(MLIRContext *ctx, TypedAttr lhs,
 //===----------------------------------------------------------------------===//
 
 TypedAttr SIMDCmpAttr::get(MLIRContext *ctx, NormalizedCmpPredicate cc,
-                           TypedAttr lhs, TypedAttr rhs, Type outTypeS) {
-  auto outType = cast<SIMDType>(outTypeS);
+                           TypedAttr lhs, TypedAttr rhs, SIMDType outType) {
+  Attribute operands[] = {lhs, rhs};
+  if (TypedAttr fold =
+          tryFoldAttr(operands, [&](FoldValues ops, TargetInfoAttr target) {
+            return foldSIMDCmp(toCmpPredicate(cc), ops, target);
+          }))
+    return fold;
+
   // Fold if possible; we must know the DTypes to do this.
   if (auto outDType = outType.getResolvedDType(),
       inDType = cast<SIMDType>(lhs.getType()).getResolvedDType();
       outDType && inDType && outDType->isBool()) {
-    Attribute operands[] = {lhs, rhs};
-    if (TypedAttr fold =
-            tryFoldAttr(operands, [&](FoldValues ops, TargetInfoAttr target) {
-              return foldSIMDCmp(toCmpPredicate(cc), ops, outType, target);
-            }))
-      return fold;
-
     // If either input is a cast_from_builtin, then the width is 1 and we can
     // perform this as a ParameterOperatorAttr comparison to crush the
     // conversions away.
@@ -2175,7 +2174,7 @@ TypedAttr SIMDCmpAttr::get(MLIRContext *ctx, NormalizedCmpPredicate cc,
 TypedAttr SIMDCmpAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
                                   MLIRContext *context,
                                   NormalizedCmpPredicate cc, TypedAttr lhs,
-                                  TypedAttr rhs, Type outType) {
+                                  TypedAttr rhs, SIMDType outType) {
   if (failed(verify(emitError, cc, lhs, rhs, outType)))
     return {};
   return SIMDCmpAttr::get(context, cc, lhs, rhs, outType);
@@ -2185,7 +2184,7 @@ bool SIMDCmpAttr::isConstant() const { return false; }
 
 LogicalResult SIMDCmpAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                   NormalizedCmpPredicate cc, TypedAttr lhs,
-                                  TypedAttr rhs, Type outType) {
+                                  TypedAttr rhs, SIMDType outType) {
   if (lhs.getType() != rhs.getType())
     return emitError() << diagMsg(
                Diag::DiagID::err_requires_two_equally_typed_simd);

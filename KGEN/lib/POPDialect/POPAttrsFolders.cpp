@@ -24,12 +24,11 @@ using namespace POP;
 
 FailureOr<TypedAttr>
 SIMDCmpAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
-  auto outType = cast<SIMDType>(getType());
   auto pred = toCmpPredicate(getCc());
   Attribute operands[] = {getLhs(), getRhs()};
   return foldAttrWithTarget(context, operands,
                             [&](FoldValues ops, TargetInfoAttr target) {
-                              return foldSIMDCmp(pred, ops, outType, target);
+                              return foldSIMDCmp(pred, ops, target);
                             });
 }
 

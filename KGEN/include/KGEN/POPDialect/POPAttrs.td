@@ -986,7 +986,7 @@ def POP_SIMDCmpAttr : POP_ExprAttr<"SIMDCmp", "simd_cmp",
 
   let parameters = (ins "NormalizedCmpPredicate":$cc,
                         "TypedAttr":$lhs, "TypedAttr":$rhs,
-                        AttributeSelfTypeParameter<"", "Type">:$type);
+                        AttributeSelfTypeParameter<"", "SIMDType">:$type);
 
   let assemblyFormat = " `<` $cc `,` $lhs `,` $rhs `>` ";
 
@@ -996,12 +996,12 @@ def POP_SIMDCmpAttr : POP_ExprAttr<"SIMDCmp", "simd_cmp",
     // Override the default builder used by the generated parser because this
     // may not return a SIMDAndAttr.
     AttrBuilder<(ins "NormalizedCmpPredicate":$cc, "TypedAttr":$lhs, "TypedAttr":$rhs,
-                     "Type":$type),
+                     "SIMDType":$type),
                 "", "TypedAttr">,
 
     AttrBuilderWithInferredContext<(
         ins "NormalizedCmpPredicate":$cc, "TypedAttr":$lhs, "TypedAttr":$rhs,
-            "Type":$type), [{
+            "SIMDType":$type), [{
       return get(lhs.getContext(), cc, lhs, rhs, type);
     }], "TypedAttr">
   ];

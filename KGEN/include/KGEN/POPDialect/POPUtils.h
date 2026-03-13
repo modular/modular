@@ -70,7 +70,7 @@ inline CmpPredicate toCmpPredicate(NormalizedCmpPredicate cc) {
 /// Fold a SIMD comparison operation. Handles constant folding, bool identity
 /// folds (eq(true, x) -> x), and unsigned comparisons with zero. Returns null
 /// if no fold applies.
-FoldValue foldSIMDCmp(CmpPredicate cc, FoldValues operands, SIMDType resultType,
+FoldValue foldSIMDCmp(CmpPredicate cc, FoldValues operands,
                       TargetInfoAttr target = {});
 
 /// Fold a SIMD left-shift operation.

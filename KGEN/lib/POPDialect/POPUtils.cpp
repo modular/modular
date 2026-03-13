@@ -343,38 +343,33 @@ static bool compareConstants(CmpPredicate pred, T lhs, T rhs) {
 }
 
 FoldValue POP::foldSIMDCmp(CmpPredicate cc, FoldValues operands,
-                           SIMDType resultType, TargetInfoAttr target) {
+                           TargetInfoAttr target) {
   std::optional<int64_t> indexBitWidth;
   if (target)
     indexBitWidth = target.resolveIndexBitWidth();
   assert(operands.size() == 2 && "expected binary compare operands");
-  auto outDType = resultType.getResolvedDType();
-  if (!outDType || !outDType->isBool())
-    return {};
 
-  auto size = resultType.getResolvedSize();
+  std::optional<int64_t> size =
+      cast<SIMDType>(operands[0].getType()).getResolvedSize();
 
-  auto getInputDType =
-      [&](const FoldValue &operand) -> std::optional<KGENDType> {
-    auto simdType = dyn_cast<SIMDType>(operand.getType());
-    if (!simdType)
-      return std::nullopt;
-    return simdType.getResolvedDType();
-  };
+  std::optional<KGENDType> inDType =
+      cast<SIMDType>(operands[0].getType()).getResolvedDType();
+  if (!inDType)
+    inDType = cast<SIMDType>(operands[1].getType()).getResolvedDType();
 
   // Fold cmp(x, x) for int-like types (NaN prevents this for floats).
-  if (operands[0] == operands[1] && size) {
-    if (auto inDT = getInputDType(operands[0]); inDT && inDT->isIntLike()) {
-      bool isTrue = llvm::is_contained(
-          {CmpPredicate::EQ, CmpPredicate::LE, CmpPredicate::GE}, cc);
-      SmallVector<DTypeValue> vals(*size, {isTrue, KGENDType::kBool});
-      return FoldValue(SIMDAttr::get(vals, resultType));
-    }
+  if (operands[0] == operands[1] && size && inDType && inDType->isIntLike()) {
+    bool isTrue = llvm::is_contained(
+        {CmpPredicate::EQ, CmpPredicate::LE, CmpPredicate::GE}, cc);
+    SmallVector<DTypeValue> vals(*size, {isTrue, KGENDType::kBool});
+    MLIRContext *ctx = operands[0].getType().getContext();
+    return FoldValue(
+        SIMDAttr::get(vals, SIMDType::get(ctx, *size, KGENDType::kBool)));
   }
 
   // Constant fold when both operands are SIMDAttr constants.
   if (auto fold = foldSIMDOpResult<kOtherResult>(
-          operands.getAttrs(), *outDType, indexBitWidth,
+          operands.getAttrs(), KGENDType::kBool, indexBitWidth,
           [&](APSInt l, APSInt r) { return compareConstants(cc, l, r); },
           [&](APFloat l, APFloat r) { return compareConstants(cc, l, r); },
           [&](bool l, bool r) { return compareConstants(cc, l, r); }))
@@ -382,12 +377,9 @@ FoldValue POP::foldSIMDCmp(CmpPredicate cc, FoldValues operands,
 
   auto lhsAttr = operands.getAttr<SIMDAttr>(0);
   auto rhsAttr = operands.getAttr<SIMDAttr>(1);
-  std::optional<KGENDType> inDType = getInputDType(operands[0]);
-  if (!inDType)
-    inDType = getInputDType(operands[1]);
 
   // Fold `eq(true, x) -> x` and `ne(false, x) -> x`.
-  if (inDType && *inDType == DType::kBool &&
+  if (inDType && *inDType == KGENDType::kBool &&
       llvm::is_contained({CmpPredicate::EQ, CmpPredicate::NE}, cc)) {
     SIMDAttr constAttr = lhsAttr ? lhsAttr : rhsAttr;
     FoldValue otherValue = lhsAttr ? operands[1] : operands[0];
@@ -413,7 +405,9 @@ FoldValue POP::foldSIMDCmp(CmpPredicate cc, FoldValues operands,
           zeroCandidate.getValues()[0].getData().isZero()) {
         SmallVector<DTypeValue> values(
             *size, DTypeValue(cc == foldTrue, KGENDType::kBool));
-        return SIMDAttr::get(values, resultType);
+        MLIRContext *ctx = operands[0].getType().getContext();
+        return SIMDAttr::get(values,
+                             SIMDType::get(ctx, *size, KGENDType::kBool));
       }
       return {};
     };
