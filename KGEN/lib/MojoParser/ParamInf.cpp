@@ -90,18 +90,11 @@ ParamInf::ParamInf(
     PogListAttr declaredParamPogs, bool allowImplicitConversions,
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
     ASTDecl *declIfDirect)
-    : paramBindings(paramBinding), declIfKnown(declIfDirect),
-      getDiag(std::move(getDiag)),
-      evaluator(paramBinding.shared.getParameterEvaluator()),
-      declaredParamTypes(declaredParamTypes),
-      declaredParamPogs(declaredParamPogs),
+    : InferenceState(paramBinding.declScope, paramBinding.shared,
+                     declaredParamTypes, declaredParamPogs, getDiag),
+      paramBindings(paramBinding), declIfKnown(declIfDirect),
       explicitlyUnboundParams(declaredParamTypes.size(), false),
-      allowImplicitConversions(allowImplicitConversions) {
-
-  // Fills in with nullptr.
-  for (size_t i = 0, e = declaredParamTypes.size(); i != e; ++i)
-    evaluator.appendIndexBinding(TypedAttr());
-}
+      allowImplicitConversions(allowImplicitConversions) {}
 
 void ParamInf::dump() const {
   auto &os = llvm::errs() << "ParamInf:\n";
@@ -855,39 +848,6 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
        << bindingVal.getType() << binding.expr->getRange();
 
   return failure();
-}
-
-// A simple wrapper around `overwriteIndexBinding` to ensure sugar is aligned
-// before overwriting parameter value.
-// Notable, this method does not check there is no existing parameter inferred
-// and unconditional overwrite everything.
-LogicalResult ParamInf::setInferredValue(size_t paramIdx, TypedAttr paramVal) {
-  paramVal = evaluator.getReboundAttribute(paramVal);
-  ASTType targetType = evaluator.getReboundType(declaredParamTypes[paramIdx]);
-  // Type must be equal
-  assert(targetType.isEqualCanon(paramVal.getType()));
-
-  // now align sugar
-  if (paramVal.getType() != targetType)
-    paramVal = ParamOperatorAttr::getRebind(paramVal, targetType);
-
-  evaluator.overwriteIndexBinding(paramIdx, paramVal);
-
-  if (isa<UnboundAttr>(paramVal))
-    return success();
-
-  ArrayRef<ConstraintAttr> constraints =
-      declaredParamPogs.getPogs()[paramIdx].getConstraints();
-  if (constraints.empty())
-    return success();
-
-  // Verify all constraints are satisfied, collecting unprovable constraints.
-  ConstraintResult result = checkConstraints(
-      getDeclScope(), declaredParamPogs, constraints, /*origConstraints=*/{},
-      getDiag, &unprovableConstraints, &evaluator);
-
-  // TODO: how about we just emitting unprovable error here right away?
-  return success(result == ConstraintResult::Satisfied);
 }
 
 /// Infer all of the parameters we can from 'givenBindings'.

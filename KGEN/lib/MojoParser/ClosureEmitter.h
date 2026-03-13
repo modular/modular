@@ -22,12 +22,12 @@ namespace M::KGEN::LIT {
 class TypeCheckedFnSignature;
 class TypeCheckedParamList;
 struct AuxiliaryParameters;
-struct AdapteeValue {
-  bool isConcrete() const;
-  TypedAttr aliasValue;
-  size_t index;
+using AliasSubstitutions = llvm::MapVector<mlir::StringAttr, TypedAttr>;
+struct AdapteeParts {
+  AliasSubstitutions aliasSubstitutions;
+  DenseMap<StringAttr, TypedAttr> adapteeTypeMap;
+  SmallVector<TypedAttr> fnLevelBindings;
 };
-using AliasSubstitutions = llvm::MapVector<mlir::StringAttr, AdapteeValue>;
 
 /// Top level types are the types of the Closure Wrapper function pointer
 /// fields.
@@ -165,10 +165,11 @@ private:
   /// Synthesize an adaptor function that rebinds the closure wrapper's
   /// __call__ from auxiliary parameters to trait aliases, then add the
   /// conformance witness table.
-  void buildCallAdaptorAndAddWitness(
-      StructDeclOp structDeclOp, ASTDecl &structDecl, TraitDeclOp traitDeclOp,
-      FnOp traitCallFn, FnOp structCallFn, const AuxiliaryParameters &auxCtx,
-      const AliasSubstitutions &aliasSubstitutions);
+  void buildCallAdaptorAndAddWitness(StructDeclOp structDeclOp,
+                                     ASTDecl &structDecl,
+                                     TraitDeclOp traitDeclOp, FnOp traitCallFn,
+                                     FnOp structCallFn,
+                                     const AdapteeParts &adapteeParts);
 
 public:
   /// If the wrapper conforms to a trait that is compatible with the desired

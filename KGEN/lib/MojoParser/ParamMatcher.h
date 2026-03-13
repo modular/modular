@@ -12,7 +12,7 @@
 #ifndef KGEN_MOJOPARSER_PARAMMATCHER_H
 #define KGEN_MOJOPARSER_PARAMMATCHER_H
 
-#include "ParamInf.h"
+#include "InferenceState.h"
 
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/MojoParser/ASTType.h"
@@ -21,7 +21,6 @@
 namespace M::KGEN::LIT {
 
 class ExprNode;
-class ParamInf;
 class SharedState;
 
 //===----------------------------------------------------------------------===//
@@ -116,7 +115,7 @@ private:
 /// allows the Int addition to fold.
 class ParamMatcher {
 public:
-  ParamMatcher(const ExprNode *expr, ParamInf &state,
+  ParamMatcher(const ExprNode *expr, InferenceState &state,
                bool allowImplicitConversion);
   ~ParamMatcher() {}
 
@@ -182,7 +181,7 @@ private:
 
   /// This is the expression we're inferring within.
   const ExprNode *const expr;
-  ParamInf &state;
+  InferenceState &state;
   SharedState &shared;
 
   // Whether we allow implicit conversion when matching, e.g., function type

@@ -1,0 +1,50 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+//
+// Specialization inference helpers for closure conformance.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef KGEN_MOJOPARSER_SPECIALIZEINFERENCE_H
+#define KGEN_MOJOPARSER_SPECIALIZEINFERENCE_H
+
+#include "CallEmission.h"
+#include "InferenceState.h"
+
+namespace M::KGEN::LIT {
+
+class ExprNode;
+
+class SpecializeInf : public InferenceState {
+public:
+  SpecializeInf(
+      ASTDecl &declScope, SharedState &shared, const ExprNode *expr,
+      ArrayRef<Type> declaredParamTypes, PogListAttr declaredParamPogs,
+      llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag);
+
+  LogicalResult setInitialInferredValue(size_t paramIdx, TypedAttr paramVal) {
+    return setInferredValue(paramIdx, paramVal);
+  }
+
+  FailureOr<SmallVector<TypedAttr>>
+  inferSpecialization(FnTypeGeneratorType target, FnOp actualFn);
+
+private:
+  bool isExplicitlyUnbound(size_t) const override { return false; }
+
+  LogicalResult matchArgument(Type actualType, ArgConvention actualConvention,
+                              size_t argIdx, ASTType expectedType,
+                              ArgConvention expectedConvention,
+                              PogListAttr argPogs);
+  LogicalResult matchValueType(ASTType actualType, size_t argIdx,
+                               ASTType expectedType, PogListAttr argPogs);
+
+  const ExprNode *expr;
+};
+
+} // namespace M::KGEN::LIT
+
+#endif // KGEN_MOJOPARSER_SPECIALIZEINFERENCE_H

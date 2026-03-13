@@ -14,8 +14,10 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "MojoUtils.h"
+#include "ParamBindings.h"
 #include "ParserEvaluationContext.h"
 #include "Signatures.h"
+#include "SpecializeInf.h"
 #include "Traits.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
@@ -33,6 +35,7 @@
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/SourceMgr.h"
 
@@ -2848,46 +2851,21 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
 /// value is consistent with the existing binding. Returns false if
 /// inconsistent.
 static bool tryRecordSubstitution(AliasSubstitutions &substitutions,
-                                  StringAttr aliasName, TypedAttr newValue,
-                                  size_t index = -1) {
+                                  StringAttr aliasName, TypedAttr newValue) {
   if (!newValue)
     return false;
   auto it = substitutions.find(aliasName);
   if (it != substitutions.end()) {
-    Type existingType = it->second.aliasValue.getType();
+    Type existingType = it->second.getType();
     Type newType = newValue.getType();
-    if (auto existingParam = dyn_cast<TypeParamAttr>(it->second.aliasValue))
+    if (auto existingParam = dyn_cast<TypeParamAttr>(it->second))
       existingType = existingParam.getTypeValue();
     if (auto newParam = dyn_cast<TypeParamAttr>(newValue))
       newType = newParam.getTypeValue();
     return isEqualCanon(existingType, newType);
   }
-  substitutions[aliasName] = AdapteeValue{newValue, index};
+  substitutions[aliasName] = newValue;
   return true;
-}
-
-/// Check if a concrete type can satisfy a trait alias constraint.
-static bool canTypeConformToAliasConstraint(Type actualType,
-                                            Type constraintType,
-                                            StringAttr aliasName,
-                                            SharedState &shared,
-                                            AliasSubstitutions &substitutions) {
-
-  // If the constraint is a trait type, check conformance
-  if (auto traitType = sugarDynCast<TraitType>(constraintType)) {
-    ASTType astActualType(actualType);
-    if (astActualType.checkConformance(traitType, shared, nullptr) !=
-        ConformanceResult::Yes)
-      return false;
-    TypedAttr typeValue = TypeParamAttr::get(actualType, traitType);
-    return tryRecordSubstitution(substitutions, aliasName, typeValue);
-  }
-
-  // For non-trait constraints, types must match exactly
-  if (!isEqualCanon(actualType, constraintType))
-    return false;
-  TypedAttr typeValue = PValue(actualType).get();
-  return tryRecordSubstitution(substitutions, aliasName, typeValue);
 }
 
 namespace M::KGEN::LIT {
@@ -2899,24 +2877,16 @@ struct AuxiliaryParameters {
   SmallVector<TypedAttr> structAliases;
   SmallVector<StringAttr> traitAliases;
 
-  ParamDeclAttr getAdaptorAuxiliaryParameter(ParamIndexRefAttr indexRef) {
-    return get<ParamDeclAttr>(indexRef, traitAuxiliaryParameters);
-  }
-  StringAttr getTraitAliasName(ParamIndexRefAttr indexRef) {
-    return get<StringAttr>(indexRef, traitAliases);
-  }
-  TypedAttr getAliasRef(ParamIndexRefAttr indexRef) {
-    return get<TypedAttr>(indexRef, structAliases);
+  TypedAttr getAliasRef(size_t index) {
+    return get<TypedAttr>(index, structAliases);
   }
 
 private:
   template <typename Result>
-  Result get(ParamIndexRefAttr indexRef, SmallVector<Result> &container) {
-    if (indexRef.getDepth() != 0)
+  Result get(size_t index, SmallVector<Result> &container) {
+    if (index < startingIndex)
       return Result{};
-    if (indexRef.getIndex() < startingIndex)
-      return Result{};
-    size_t auxIdx = indexRef.getIndex() - startingIndex;
+    size_t auxIdx = index - startingIndex;
     if (auxIdx >= container.size())
       return Result{};
     return container[auxIdx];
@@ -2927,335 +2897,239 @@ private:
 
 namespace {
 
-static bool canArgTypeMatchTraitArgType(Type actualType, Type expectedType,
-                                        AuxiliaryParameters &ctx,
-                                        SharedState &shared,
-                                        AliasSubstitutions &substitutions);
+static TypedAttr getUnderlyingParamRef(TypedAttr attr) {
+  if (auto upcast = dyn_cast<UpcastAttr>(attr))
+    return getUnderlyingParamRef(upcast.getInputTypeValue());
 
-struct AliasConstraintInfo {
-  Type constraintType;
-  StringAttr traitAliasName;
+  if (auto typeParam = dyn_cast<TypeParamAttr>(attr)) {
+    if (auto paramType = dyn_cast<ParamType>(typeParam.getTypeValue()))
+      return getUnderlyingParamRef(paramType.getParam());
+  }
+
+  if (isa<ParamDeclRefAttr, ParamIndexRefAttr>(attr))
+    return attr;
+
+  return {};
+}
+
+// Given a type parameter that wraps a strong type than its type, convert it to
+// an upcast, which explicitly communicates the relationship between the
+// underlying parameter and the expected type.
+static TypedAttr makeExplicitUpcastBinding(TypedAttr binding) {
+  if (auto typeParam = dyn_cast<TypeParamAttr>(binding)) {
+    if (auto paramType = dyn_cast<ParamType>(typeParam.getTypeValue())) {
+      if (auto paramRef = dyn_cast<ParamDeclRefAttr>(paramType.getParam())) {
+        if (!isEqualCanon(paramRef.getType(), typeParam.getType()))
+          return UpcastAttr::get(typeParam.getType(), paramRef);
+      }
+    }
+  }
+  return binding;
+}
+struct ConformanceTableEntryMapper {
+  struct Result {
+    // the conformance table entry
+    TypedAttr binding;
+    // The name of the parameter that violates no escaping parameter rule. Used
+    // for error messages.
+    StringAttr escapedParamName;
+  };
+
+  // Maps bindings inferred against the actual struct method into the trait
+  // conformance table's auxiliary parameter space.
+  //
+  // For example, suppose we have:
+  //
+  //   struct X:
+  //     alias A: Coord
+  //     fn __call__[_A: Coord](self, x: Cartesian, z: _A):
+  //         pass
+  //
+  // and:
+  //
+  //   trait Y:
+  //     alias T: Coord
+  //     alias R: Coord
+  //     fn __call__[_T: Coord, _R: Coord](self, y: _T, z: _R):
+  //         ...
+  //
+  // Specialization inference produces bindings in the actual method's
+  // parameter space, here {Cartesian, _A}. To populate the conformance table,
+  // those bindings must be rewritten into the trait/struct alias space,
+  // yielding {Cartesian, Self.A} for {T, R}.
+  ConformanceTableEntryMapper(FnOp actualFn, AuxiliaryParameters &ctx) {
+    StructDeclOp structDeclOp = actualFn->getParentOfType<StructDeclOp>();
+    for (ParamDeclAttr structParam : structDeclOp.getInputParams())
+      allowedConformanceScopeParams.insert(structParam.getName());
+
+    FnTypeGeneratorType actualSig = actualFn.getFuncTypeGenerator();
+    ArrayRef<ParamDeclAttr> actualParams = actualFn.getInputParams().drop_back(
+        actualSig.getNumImplicitOriginDecls());
+    assert(actualParams.size() >= ctx.numStructAuxiliaryParams &&
+           "struct auxiliary params should be present in function signature");
+    ArrayRef<ParamDeclAttr> actualAuxiliaryParams =
+        actualParams.take_back(ctx.numStructAuxiliaryParams);
+    for (auto [offset, auxiliaryParam] :
+         llvm::enumerate(actualAuxiliaryParams)) {
+      TypedAttr aliasValue = ctx.getAliasRef(ctx.startingIndex + offset);
+      if (aliasValue)
+        auxiliaryBindingsByName[auxiliaryParam.getName()] = aliasValue;
+    }
+
+    walker.addReplacement([&](ParamDeclRefAttr paramRef) -> TypedAttr {
+      if (allowedConformanceScopeParams.contains(paramRef.getName()))
+        return paramRef;
+
+      auto it = auxiliaryBindingsByName.find(paramRef.getName());
+      if (it == auxiliaryBindingsByName.end()) {
+        pendingEscapedParamName = paramRef.getName();
+        return paramRef;
+      }
+      return it->second;
+    });
+  }
+
+  Result map(TypedAttr binding) {
+    pendingEscapedParamName = {};
+    TypedAttr mappedBinding = cast<TypedAttr>(walker.replace(binding));
+    return {mappedBinding, pendingEscapedParamName};
+  }
+  // The only parameter references allowed to remain in a conformance table
+  // entry are parameters from the enclosing closure struct itself. For closure
+  // structs this is typically "impl" or "origin_set"; for top-level closure
+  // structs it may also be "symbol".
+  bool isAllowedConformanceScopeRef(TypedAttr attr) const {
+    TypedAttr paramRef = getUnderlyingParamRef(attr);
+    auto declRef = dyn_cast_if_present<ParamDeclRefAttr>(paramRef);
+    return declRef && allowedConformanceScopeParams.contains(declRef.getName());
+  }
+
+private:
+  DenseMap<StringAttr, TypedAttr> auxiliaryBindingsByName;
+  DenseSet<StringAttr> allowedConformanceScopeParams;
+  mlir::AttrTypeReplacer walker;
+  StringAttr pendingEscapedParamName;
 };
 
-static std::optional<AliasConstraintInfo>
-getAliasConstraintForExpectedIndexRef(ParamIndexRefAttr expectedIndexRef,
-                                      AuxiliaryParameters &ctx) {
-  ParamDeclAttr auxiliaryParameter =
-      ctx.getAdaptorAuxiliaryParameter(expectedIndexRef);
-  if (!auxiliaryParameter)
-    return std::nullopt;
-  StringAttr traitAliasName = ctx.getTraitAliasName(expectedIndexRef);
-  if (!traitAliasName)
-    return std::nullopt;
-  return AliasConstraintInfo{
-      .constraintType = auxiliaryParameter.getType(),
-      .traitAliasName = traitAliasName,
-  };
-}
-
-static bool
-tryRecordAliasFromActualIndexRef(ParamIndexRefAttr actualIndexRef,
-                                 Type constraintType, StringAttr traitAliasName,
-                                 AuxiliaryParameters &ctx, SharedState &shared,
-                                 AliasSubstitutions &substitutions) {
-  Type actualConstraint = actualIndexRef.getType();
-  TypedAttr aliasRef = ctx.getAliasRef(actualIndexRef);
-  size_t index = actualIndexRef.getIndex();
-  if (!aliasRef)
+static bool canFunctionSignatureMatchTraitParamInf(FnOp actualFn,
+                                                   FnTypeGeneratorType target,
+                                                   AuxiliaryParameters &ctx,
+                                                   SharedState &shared,
+                                                   AdapteeParts &adapteeParts) {
+  FnTypeGeneratorType actualSig = actualFn.getFuncTypeGenerator();
+  if (actualSig.hasMemoryOnlyResult() != target.hasMemoryOnlyResult())
     return false;
-  if (isEqualCanon(actualConstraint, constraintType))
-    return tryRecordSubstitution(substitutions, traitAliasName, aliasRef,
-                                 index);
-
-  // Handle the case where the expected type is a superset of the actual type.
-  if (auto actualTrait = sugarDynCast<TraitType>(actualConstraint)) {
-    if (auto expectedTrait = sugarDynCast<TraitType>(constraintType)) {
-      if (ASTType(actualTrait)
-              .checkConformance(expectedTrait, shared, nullptr) ==
-          ConformanceResult::No)
-        return false;
-      TypedAttr upcastValue = UpcastAttr::get(expectedTrait, aliasRef);
-      return tryRecordSubstitution(substitutions, traitAliasName, upcastValue,
-                                   index);
-    }
-  }
-  return false;
-}
-
-/// Check if a concrete value can satisfy an alias constraint type.
-static bool
-canValueConformToAliasConstraint(TypedAttr actualValue, Type constraintType,
-                                 StringAttr aliasName, SharedState &shared,
-                                 AliasSubstitutions &substitutions) {
-  if (sugarIsa<TraitType>(constraintType)) {
-    // A TypeParamAttr wraps a concrete type with a trait constraint as its MLIR
-    // type. Unwrap to get the concrete type for conformance checking.
-    Type actualType = actualValue.getType();
-    if (auto typeParam = dyn_cast<TypeParamAttr>(actualValue))
-      actualType = typeParam.getTypeValue();
-    return canTypeConformToAliasConstraint(actualType, constraintType,
-                                           aliasName, shared, substitutions);
-  }
-  if (!isEqualCanon(actualValue.getType(), constraintType))
+  if (actualSig.getFnEffects() != target.getFnEffects())
     return false;
-  return tryRecordSubstitution(substitutions, aliasName, actualValue);
-}
 
-/// Match two parameter values, allowing expected values to reference auxiliary
-/// alias parameters and recording substitutions.
-static bool canParamValueMatchTraitParamValue(
-    TypedAttr actualParam, TypedAttr expectedParam, AuxiliaryParameters &ctx,
-    SharedState &shared, AliasSubstitutions &substitutions) {
-  if (isEqualCanon(actualParam, expectedParam))
-    return true;
-
-  if (auto actualTypeParam = dyn_cast<TypeParamAttr>(actualParam)) {
-    if (auto expectedTypeParam = dyn_cast<TypeParamAttr>(expectedParam))
-      return canArgTypeMatchTraitArgType(actualTypeParam.getTypeValue(),
-                                         expectedTypeParam.getTypeValue(), ctx,
-                                         shared, substitutions);
-  }
-
-  if (auto expectedIndexRef = sugarDynCast<ParamIndexRefAttr>(expectedParam)) {
-    std::optional<AliasConstraintInfo> aliasConstraint =
-        getAliasConstraintForExpectedIndexRef(expectedIndexRef, ctx);
-    if (!aliasConstraint)
-      return false;
-
-    auto actualIndexRef = sugarDynCast<ParamIndexRefAttr>(actualParam);
-    if (!actualIndexRef)
-      return canValueConformToAliasConstraint(
-          actualParam, aliasConstraint->constraintType,
-          aliasConstraint->traitAliasName, shared, substitutions);
-    return tryRecordAliasFromActualIndexRef(
-        actualIndexRef, aliasConstraint->constraintType,
-        aliasConstraint->traitAliasName, ctx, shared, substitutions);
-  }
-
-  // Recursively match composite parameter values whose sub-elements may
-  // contain auxiliary parameter references.
-  if (auto actualVariadic = dyn_cast<VariadicAttr>(actualParam)) {
-    auto expectedVariadic = dyn_cast<VariadicAttr>(expectedParam);
-    if (!expectedVariadic)
-      return false;
-    ArrayRef<TypedAttr> actualVals = actualVariadic.getValues();
-    ArrayRef<TypedAttr> expectedVals = expectedVariadic.getValues();
-    if (actualVals.size() != expectedVals.size())
-      return false;
-    for (auto [a, e] : llvm::zip(actualVals, expectedVals)) {
-      if (!canParamValueMatchTraitParamValue(a, e, ctx, shared, substitutions))
-        return false;
-    }
-    return true;
-  }
-
-  if (auto actualSymbol = dyn_cast<SymbolConstantAttr>(actualParam)) {
-    auto expectedSymbol = dyn_cast<SymbolConstantAttr>(expectedParam);
-    if (!expectedSymbol)
-      return false;
-    if (actualSymbol.getSymbol() != expectedSymbol.getSymbol())
-      return false;
-    ArrayRef<TypedAttr> actualVals = actualSymbol.getParamValues();
-    ArrayRef<TypedAttr> expectedVals = expectedSymbol.getParamValues();
-    if (actualVals.size() != expectedVals.size())
-      return false;
-    for (auto [a, e] : llvm::zip(actualVals, expectedVals)) {
-      if (!canParamValueMatchTraitParamValue(a, e, ctx, shared, substitutions))
-        return false;
-    }
-    return true;
-  }
-
-  if (auto actualExpr = dyn_cast<ParamOperatorAttr>(actualParam)) {
-    auto expectedExpr = dyn_cast<ParamOperatorAttr>(expectedParam);
-    if (!expectedExpr)
-      return false;
-    if (actualExpr.getOpcode() != expectedExpr.getOpcode())
-      return false;
-    ArrayRef<TypedAttr> actualOps = actualExpr.getOperands();
-    ArrayRef<TypedAttr> expectedOps = expectedExpr.getOperands();
-    if (actualOps.size() != expectedOps.size())
-      return false;
-    for (auto [a, e] : llvm::zip(actualOps, expectedOps)) {
-      if (!canParamValueMatchTraitParamValue(a, e, ctx, shared, substitutions))
-        return false;
-    }
-    return true;
-  }
-
-  if (auto actualLitStruct = dyn_cast<LITStructAttr>(actualParam)) {
-    auto expectedLitStruct = dyn_cast<LITStructAttr>(expectedParam);
-    if (!expectedLitStruct)
-      return false;
-    auto actualVals = actualLitStruct.getValues();
-    auto expectedVals = expectedLitStruct.getValues();
-    if (actualVals.size() != expectedVals.size())
-      return false;
-    for (auto [a, e] : llvm::zip(actualVals, expectedVals)) {
-      auto &[aName, aVal] = a;
-      auto &[eName, eVal] = e;
-      if (aName != eName)
-        return false;
-      if (!canParamValueMatchTraitParamValue(aVal, eVal, ctx, shared,
-                                             substitutions))
-        return false;
-    }
-    return true;
-  }
-
-  return false;
-}
-
-/// Check if one function signature can implement another.
-static bool canFunctionSignatureMatchTrait(FnTypeGeneratorType actualSig,
-                                           FnTypeGeneratorType expectedSig,
-                                           AuxiliaryParameters &ctx,
-                                           SharedState &shared,
-                                           AliasSubstitutions &substitutions) {
-  if (actualSig.hasMemoryOnlyResult() != expectedSig.hasMemoryOnlyResult())
-    return false;
-  ArrayRef<Type> actualParams =
+  ArrayRef<Type> actualExplicitParams =
       actualSig.getInputParamTypes().drop_back(ctx.numStructAuxiliaryParams);
-  ArrayRef<Type> targetParams = expectedSig.getInputParamTypes().drop_back(
+  ArrayRef<Type> targetExplicitParams = target.getInputParamTypes().drop_back(
       ctx.traitAuxiliaryParameters.size());
-  if (actualParams.size() != targetParams.size())
-    return false;
+  SMLoc loc = shared.getTopLevelDecl().getLoc();
+  SyntheticNode syntheticExpr(loc);
 
-  for (auto [thisParam, thatParam] : llvm::zip(actualParams, targetParams)) {
-    if (!canArgTypeMatchTraitArgType(thisParam, thatParam, ctx, shared,
-                                     substitutions))
+  std::optional<MojoInflightDiag> diag;
+  auto getDiag = [&](std::optional<SMLoc> diagLoc) -> MojoInflightDiag & {
+    diag = shared.emitError(diagLoc.value_or(loc));
+    return *diag;
+  };
+  auto abandonDiag = llvm::scope_exit([&] {
+    if (diag)
+      diag->abandon();
+  });
+
+  SpecializeInf inference(shared.getTopLevelDecl(), shared, &syntheticExpr,
+                          target.getInputParamTypes(),
+                          target.getParamListAttrs(), getDiag);
+  if (actualExplicitParams.size() != targetExplicitParams.size())
+    return false;
+  ParamRefRemapper remapper(actualFn.getInputParams());
+  for (auto [index, actualParamType, targetParam] :
+       llvm::enumerate(actualExplicitParams, targetExplicitParams)) {
+    Type actualParam = remapper.replace(actualParamType);
+    if (!isEqualCanon(actualParam, targetParam))
+      return false;
+
+    StringAttr actualParamName = actualFn.getInputParams()[index].getName();
+    if (failed(inference.setInitialInferredValue(
+            index, ParamDeclRefAttr::get(actualParamName, actualParam))))
       return false;
   }
-
-  ArrayRef<Type> actualArgs = actualSig.getArguments();
-  ArrayRef<Type> expectedArgs = expectedSig.getArguments();
-  if (actualArgs.size() != expectedArgs.size())
+  FailureOr<SmallVector<TypedAttr>> specialization =
+      inference.inferSpecialization(target, actualFn);
+  if (failed(specialization))
     return false;
 
-  for (auto [actualArg, expectedArg] : llvm::zip(actualArgs, expectedArgs)) {
-    if (!canArgTypeMatchTraitArgType(actualArg, expectedArg, ctx, shared,
-                                     substitutions))
-      return false;
+  // Create conformance table entries and adaptor pieces from bindings.
+  ConformanceTableEntryMapper createConformanceTableEntry(actualFn, ctx);
+  DenseMap<Attribute, TypedAttr> structBindingToFnLevel;
+  adapteeParts.fnLevelBindings.reserve(actualExplicitParams.size() +
+                                       ctx.traitAuxiliaryParameters.size());
+  for (auto [index, explicitParamType] :
+       llvm::enumerate(targetExplicitParams)) {
+    StringAttr explicitParamName = target.getParamName(index);
+    adapteeParts.fnLevelBindings.push_back(
+        ParamDeclRefAttr::get(explicitParamName, explicitParamType));
   }
+  unsigned targetAuxStart = ctx.startingIndex;
+  for (auto [offset, aliasAndParam] : llvm::enumerate(
+           llvm::zip(ctx.traitAliases, ctx.traitAuxiliaryParameters))) {
+    auto [aliasName, auxiliaryParameter] = aliasAndParam;
+    TypedAttr rawBinding = (*specialization)[targetAuxStart + offset];
+    if (!rawBinding || isa<UnboundAttr>(rawBinding))
+      return false;
 
-  if (!canArgTypeMatchTraitArgType(actualSig.getUserResultType(),
-                                   expectedSig.getUserResultType(), ctx, shared,
-                                   substitutions))
-    return false;
+    rawBinding = makeExplicitUpcastBinding(rawBinding);
+    auto mappedBinding = createConformanceTableEntry.map(rawBinding);
+    if (mappedBinding.escapedParamName) {
+      auto &error = getDiag(loc);
+      error << "closure conformance alias '" << aliasName
+            << "' cannot reference parameter "
+            << mappedBinding.escapedParamName;
+      abandonDiag.release();
+      return false;
+    }
 
-  // TODO: handle throws/async transformations
-  if (actualSig.getFnEffects() != expectedSig.getFnEffects())
-    return false;
+    if (!tryRecordSubstitution(adapteeParts.aliasSubstitutions, aliasName,
+                               mappedBinding.binding))
+      return false;
+
+    TypedAttr underlyingBinding = getUnderlyingParamRef(rawBinding);
+    // If the binding is concrete, record as is and keep going. No function
+    // level binding needed.
+    if (!underlyingBinding) {
+      adapteeParts.adapteeTypeMap[auxiliaryParameter.getName()] = rawBinding;
+      continue;
+    }
+    // We have already encountered this binding. No need to add to function
+    // bindings.
+    auto it = structBindingToFnLevel.find(underlyingBinding);
+    if (it != structBindingToFnLevel.end()) {
+      adapteeParts.adapteeTypeMap[auxiliaryParameter.getName()] = it->second;
+      continue;
+    }
+    // We have a new binding. Add it and remember the mapping in the type.
+    TypedAttr fnLevelBinding = ParamDeclRefAttr::get(auxiliaryParameter);
+    if (auto upcast = dyn_cast<UpcastAttr>(rawBinding))
+      fnLevelBinding = DowncastAttr::get(upcast.getInputTypeValue().getType(),
+                                         fnLevelBinding);
+    structBindingToFnLevel[underlyingBinding] = fnLevelBinding;
+    adapteeParts.fnLevelBindings.push_back(fnLevelBinding);
+    if (!isEqualCanon(fnLevelBinding,
+                      ParamDeclRefAttr::get(auxiliaryParameter)))
+      adapteeParts.adapteeTypeMap[auxiliaryParameter.getName()] =
+          fnLevelBinding;
+  }
 
   return true;
-}
-
-/// Check if an actual argument type matches an expected argument type, handling
-/// auxiliary parameter references.
-static bool canArgTypeMatchTraitArgType(Type actualType, Type expectedType,
-                                        AuxiliaryParameters &ctx,
-                                        SharedState &shared,
-                                        AliasSubstitutions &substitutions) {
-
-  // unwrap references
-  if (auto actualRef = dyn_cast<RefType>(actualType)) {
-    if (auto expectedRef = dyn_cast<RefType>(expectedType)) {
-      if (actualRef.getOriginType().isMutableKnown(true) &&
-          !expectedRef.getOriginType().isMutableKnown(true))
-        return false;
-      return canArgTypeMatchTraitArgType(actualRef.getElementType(),
-                                         expectedRef.getElementType(), ctx,
-                                         shared, substitutions);
-    }
-  }
-
-  auto expectedParamType = dyn_cast<ParamType>(expectedType);
-  if (!expectedParamType) {
-    // The actual type and the expected type are concrete types but may contain
-    // references to parameters.
-    if (auto actual = dyn_cast<LIT::StructType>(actualType)) {
-      if (auto expected = dyn_cast<LIT::StructType>(expectedType)) {
-        if (actual.getParamValues().size() != expected.getParamValues().size())
-          return false;
-        if (actual.getParamValues().size() == 0)
-          return isEqualCanon(actualType, expectedType);
-        if (actual.getSymbol() != expected.getSymbol())
-          return false;
-        for (auto [actualParam, expectedParam] :
-             llvm::zip(actual.getParamValues(), expected.getParamValues())) {
-          if (!canParamValueMatchTraitParamValue(actualParam, expectedParam,
-                                                 ctx, shared, substitutions))
-            return false;
-        }
-        // if all parameters are matchable and symbol is the same then they are
-        // the same.
-        return true;
-      }
-      // actual is struct type but expected is something else: not param nor
-      // struct. Fail
-      return false;
-    }
-    // The actual type and the expected type are generator types but may contain
-    // references to parameters.
-    if (auto actualFnSym = dyn_cast<FnTypeGeneratorType>(actualType)) {
-      if (auto expectedFnSym = dyn_cast<FnTypeGeneratorType>(expectedType)) {
-        return canFunctionSignatureMatchTrait(actualFnSym, expectedFnSym, ctx,
-                                              shared, substitutions);
-      }
-    }
-    return isEqualCanon(actualType, expectedType);
-  }
-
-  TypedAttr expectedParam = expectedParamType.getParam();
-  auto expectedIndexRef = sugarDynCast<ParamIndexRefAttr>(expectedParam);
-  // If the expected is not a ParamIndexRefAttr then it is referencing a call
-  // parameter in which case the actual must have been an exact match.
-  if (!expectedIndexRef)
-    return isEqualCanon(actualType, expectedType);
-
-  // Check if this is an auxiliary parameter (alias reference).
-  std::optional<AliasConstraintInfo> aliasConstraint =
-      getAliasConstraintForExpectedIndexRef(expectedIndexRef, ctx);
-  if (!aliasConstraint)
-    return isEqualCanon(actualType, expectedType);
-
-  auto actualParamType = dyn_cast<ParamType>(actualType);
-  // Record a concrete type.
-  if (!actualParamType)
-    return canTypeConformToAliasConstraint(
-        actualType, aliasConstraint->constraintType,
-        aliasConstraint->traitAliasName, shared, substitutions);
-
-  TypedAttr actualParam = actualParamType.getParam();
-  auto actualIndexRef = sugarDynCast<ParamIndexRefAttr>(actualParam);
-  if (!actualIndexRef)
-    return false;
-  assert(ctx.getAliasRef(actualIndexRef) &&
-         "If expected references an auxiliary parameter and actual is "
-         "non-concrete, actual must also reference an auxiliary parameter");
-  return tryRecordAliasFromActualIndexRef(
-      actualIndexRef, aliasConstraint->constraintType,
-      aliasConstraint->traitAliasName, ctx, shared, substitutions);
 }
 
 } // namespace
 
-bool AdapteeValue::isConcrete() const {
-  if (!aliasValue)
-    return false;
-  if (isa<ParamDeclRefAttr, ParamIndexRefAttr, GetWitnessAttr>(aliasValue))
-    return false;
-  if (auto upcast = dyn_cast<UpcastAttr>(aliasValue)) {
-    return !isa<ParamDeclRefAttr, ParamIndexRefAttr, GetWitnessAttr>(
-        upcast.getInputTypeValue());
-  }
-  return true;
-}
-
 void ClosureEmitter::buildCallAdaptorAndAddWitness(
     StructDeclOp structDeclOp, ASTDecl &structDecl, TraitDeclOp traitDeclOp,
-    FnOp traitCallFn, FnOp structCallFn, const AuxiliaryParameters &auxCtx,
-    const AliasSubstitutions &aliasSubstitutions) {
+    FnOp traitCallFn, FnOp structCallFn, const AdapteeParts &adapteeParts) {
   SharedState &shared = structDecl.getShared();
   MLIRContext *ctx = shared.getContext();
   // The struct wrapper always has an impl parameter and may also have an
@@ -3272,44 +3146,10 @@ void ClosureEmitter::buildCallAdaptorAndAddWitness(
       StringAttr::get(ctx, "__call__$" + getFlattenedSymbolName(traitSymbol));
   auto [adaptorFnOp, adaptorParams, adaptorResult] =
       pushBackTraitFunctionImpl(traitCallFn, structDecl, true, adaptorNameAttr);
-  // Bind the impl call symbol using the struct's alias substitutions
-  // Ignore concrete types and record do not bind adaptor parameters that map to
-  // other adaptor parameters.
-  SmallVector<TypedAttr> fnLevelParams;
-  DenseMap<StringAttr, TypedAttr> auxiliaryToConcrete;
-  for (auto nonAuxiliary :
-       adaptorFnOp.getInputParams()
-           .drop_back(
-               adaptorFnOp.getFuncTypeGenerator().getNumImplicitOriginDecls())
-           .take_front(auxCtx.startingIndex))
-    fnLevelParams.push_back(ParamDeclRefAttr::get(nonAuxiliary));
-  for (auto [aliasName, auxiliaryParameter] :
-       llvm::zip(auxCtx.traitAliases, auxCtx.traitAuxiliaryParameters)) {
-    auto it = aliasSubstitutions.find(aliasName);
-    if (it != aliasSubstitutions.end()) {
-      TypedAttr auxiliaryValue = it->second.aliasValue;
-      if (!it->second.isConcrete()) {
-        unsigned aliasIndex = it->second.index;
-        if (aliasIndex < fnLevelParams.size()) {
-          auxiliaryToConcrete[auxiliaryParameter.getName()] =
-              fnLevelParams[aliasIndex];
-          continue;
-        }
-        TypedAttr ref = ParamDeclRefAttr::get(auxiliaryParameter);
-        if (auto upcast = dyn_cast<UpcastAttr>(auxiliaryValue)) {
-          ref = DowncastAttr::get(upcast.getInputTypeValue().getType(), ref);
-          auxiliaryToConcrete[auxiliaryParameter.getName()] = ref;
-        }
-        fnLevelParams.push_back(ref);
-      } else {
-        auxiliaryToConcrete[auxiliaryParameter.getName()] = auxiliaryValue;
-      }
-    }
-  }
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement([&](ParamDeclRefAttr ref) -> TypedAttr {
-    auto ptr = auxiliaryToConcrete.find(ref.getName());
-    if (ptr == auxiliaryToConcrete.end())
+    auto ptr = adapteeParts.adapteeTypeMap.find(ref.getName());
+    if (ptr == adapteeParts.adapteeTypeMap.end())
       return ref;
     return ptr->second;
   });
@@ -3319,8 +3159,12 @@ void ClosureEmitter::buildCallAdaptorAndAddWitness(
   SmallVector<Value> callOperands;
   SmallVector<TypedAttr> origins;
   Block &adaptorBlock = adaptorFnOp.getBodyRegion().front();
-  for (auto [i, arg] : llvm::enumerate(adaptorBlock.getArguments())) {
-    Type targetType = replacer.replace(arg.getType());
+  SmallVector<Type> expectedTypes;
+  expectedTypes.reserve(adaptorBlock.getNumArguments());
+  for (BlockArgument arg : adaptorBlock.getArguments())
+    expectedTypes.push_back(replacer.replace(arg.getType()));
+  for (auto [arg, targetType] :
+       llvm::zip(adaptorBlock.getArguments(), expectedTypes)) {
     if (targetType != arg.getType())
       callOperands.push_back(RebindOp::create(b, targetType, arg));
     else
@@ -3329,8 +3173,9 @@ void ClosureEmitter::buildCallAdaptorAndAddWitness(
       origins.push_back(refType.getOrigin());
   }
 
-  auto symbol = buildSymbolWithBindings(structCallFn, structParams[0],
-                                        originSetParam, fnLevelParams);
+  auto symbol =
+      buildSymbolWithBindings(structCallFn, structParams[0], originSetParam,
+                              adapteeParts.fnLevelBindings);
   auto symbolSigGen = cast<FnTypeGeneratorType>(symbol.getType());
   auto callOp = LIT::CallOp::create(b, symbolSigGen.getResultType(), symbol,
                                     origins, callOperands);
@@ -3345,8 +3190,8 @@ void ClosureEmitter::buildCallAdaptorAndAddWitness(
       buildSymbol(adaptorFnOp, structParams[0], originSetParam);
   SmallVector<std::pair<StringRef, TypedAttr>> witnesses;
   witnesses.emplace_back(traitCallFn.getSymNameAttr(), adaptorSymbol);
-  for (auto &[aliasName, aliasValue] : aliasSubstitutions)
-    witnesses.emplace_back(aliasName.getValue(), aliasValue.aliasValue);
+  for (auto &[aliasName, aliasValue] : adapteeParts.aliasSubstitutions)
+    witnesses.emplace_back(aliasName.getValue(), aliasValue);
 
   ASTDecl &fileModule = *structDecl.getNearestDeclOfType<FileModuleOp>();
   addConformanceTable(structDecl,
@@ -3473,14 +3318,12 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
                                                      structDecl.getLoc())))
       continue;
 
-    AliasSubstitutions aliasSubstitutions;
-    FnTypeGeneratorType structCallSig = structCallFn.getFuncTypeGenerator();
-    if (canFunctionSignatureMatchTrait(structCallSig, traitSignature, auxCtx,
-                                       shared, aliasSubstitutions)) {
+    AdapteeParts adapteeParts;
+    if (canFunctionSignatureMatchTraitParamInf(structCallFn, traitSignature,
+                                               auxCtx, shared, adapteeParts)) {
       if (rebind)
         buildCallAdaptorAndAddWitness(structDeclOp, structDecl, traitDeclOp,
-                                      callFunction, structCallFn, auxCtx,
-                                      aliasSubstitutions);
+                                      callFunction, structCallFn, adapteeParts);
       return success();
     }
   }
