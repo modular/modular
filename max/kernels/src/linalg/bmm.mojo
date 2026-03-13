@@ -927,20 +927,48 @@ def _batched_matmul_gpu[
 
                     elementwise_epilogue(batch_coords, val)
 
+                # TODO(KERN-2219): Replace _to_ndbuffer() roundtrip with a
+                # pure TileTensor batch-to-2D reshape.
                 _matmul_gpu[
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_epilogue_fn_wrapper,
                 ](
-                    _reshape_nd_buffer_with_batch_to_2d(c_buf._to_ndbuffer()),
-                    _reshape_nd_buffer_with_batch_to_2d(a_buf._to_ndbuffer()),
-                    _reshape_nd_buffer_with_batch_to_2d(b_buf._to_ndbuffer()),
+                    TileTensor(
+                        _reshape_nd_buffer_with_batch_to_2d(
+                            c_buf._to_ndbuffer()
+                        )
+                    ),
+                    TileTensor(
+                        _reshape_nd_buffer_with_batch_to_2d(
+                            a_buf._to_ndbuffer()
+                        )
+                    ),
+                    TileTensor(
+                        _reshape_nd_buffer_with_batch_to_2d(
+                            b_buf._to_ndbuffer()
+                        )
+                    ),
                     ctx=ctx,
                 )
             else:
+                # TODO(KERN-2219): Replace _to_ndbuffer() roundtrip with a
+                # pure TileTensor batch-to-2D reshape.
                 _matmul_gpu[transpose_b=transpose_b](
-                    _reshape_nd_buffer_with_batch_to_2d(c_buf._to_ndbuffer()),
-                    _reshape_nd_buffer_with_batch_to_2d(a_buf._to_ndbuffer()),
-                    _reshape_nd_buffer_with_batch_to_2d(b_buf._to_ndbuffer()),
+                    TileTensor(
+                        _reshape_nd_buffer_with_batch_to_2d(
+                            c_buf._to_ndbuffer()
+                        )
+                    ),
+                    TileTensor(
+                        _reshape_nd_buffer_with_batch_to_2d(
+                            a_buf._to_ndbuffer()
+                        )
+                    ),
+                    TileTensor(
+                        _reshape_nd_buffer_with_batch_to_2d(
+                            b_buf._to_ndbuffer()
+                        )
+                    ),
                     ctx=ctx,
                 )
 

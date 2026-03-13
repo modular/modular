@@ -384,41 +384,6 @@ def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
 
 @always_inline
 def _matmul_gpu[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    //,
-    use_tensor_core: Bool = False,
-    transpose_b: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    pdl_level: PDLLevel = PDLLevel(),
-    register_based_epilogue: Bool = True,
-](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[mut=False, rank=2, a_type, _, _],
-    b: NDBuffer[mut=False, rank=2, b_type, _, _],
-    ctx: DeviceContext,
-) raises:
-    """NDBuffer compatibility shim — converts to TileTensor and delegates.
-
-    TODO(KERN-2219): Remove once bmm.mojo (the sole remaining caller)
-    is migrated to pass TileTensor directly.
-    """
-    _matmul_gpu[
-        use_tensor_core=use_tensor_core,
-        transpose_b=transpose_b,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        pdl_level=pdl_level,
-        register_based_epilogue=register_based_epilogue,
-    ](TileTensor(c), TileTensor(a), TileTensor(b), ctx)
-
-
-@always_inline
-def _matmul_gpu[
     *,
     use_tensor_core: Bool = False,
     transpose_b: Bool = False,
@@ -434,8 +399,8 @@ def _matmul_gpu[
     b: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
-    """TileTensor overload of `_matmul_gpu`. Contains all matmul dispatch
-    logic. The NDBuffer overload delegates here via TileTensor(ndbuf).
+    """GPU matmul dispatch entry point. Routes to the appropriate kernel
+    based on hardware capabilities and tensor properties.
     """
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
