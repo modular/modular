@@ -178,7 +178,7 @@ struct RuntimeTuple[
             return Scalar[Self.element_type](self.value[0])
 
     @always_inline
-    def __getitem__[
+    def __getitem_param__[
         i: Int
     ](self, out res: RuntimeTuple[Self.S[i], element_type=Self.element_type]):
         """Retrieves the element at the specified index in the tuple.

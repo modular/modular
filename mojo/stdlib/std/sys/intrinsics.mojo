@@ -785,7 +785,7 @@ struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
     var _mlir_value: Self._mlir_type
 
     @always_inline("nodebug")
-    def __getitem__[i: Int](self) -> Self.a[i]:
+    def __getitem_param__[i: Int](self) -> Self.a[i]:
         """Get the element.
 
         Parameters:

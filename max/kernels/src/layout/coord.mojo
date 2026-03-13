@@ -506,7 +506,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         self._storage = rebind[_RegTuple[*Self.element_types]](t)
 
     @always_inline("nodebug")
-    def __getitem__[
+    def __getitem_param__[
         idx: Int
     ](ref self) -> ref[self._storage] Self.element_types[idx]:
         """Get a reference to an element in the tuple.
@@ -1875,7 +1875,9 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
         return Self.__len__()
 
     @always_inline("nodebug")
-    def __getitem__[idx: Int](ref self) -> ref[self] Self.element_types[idx]:
+    def __getitem_param__[
+        idx: Int
+    ](ref self) -> ref[self] Self.element_types[idx]:
         """Get a reference to an element in the tuple.
 
         Parameters:

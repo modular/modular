@@ -1093,7 +1093,7 @@ struct VariadicPack[
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    def __getitem__[
+    def __getitem_param__[
         index: Int
     ](self) -> ref[Self.origin] Self.element_types[index]:
         """Return a reference to an element of the pack.

@@ -67,7 +67,7 @@ struct Complex(
     # Indexing
     # ===-------------------------------------------------------------------===#
 
-    def __getitem__[idx: Int](ref self) -> ref[self] Float64:
+    def __getitem_param__[idx: Int](ref self) -> ref[self] Float64:
         comptime assert idx in (0, 1), "idx must be 0 or 1"
 
         comptime if idx == 0:

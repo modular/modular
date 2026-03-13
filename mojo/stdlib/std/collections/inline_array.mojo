@@ -501,7 +501,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         return self.unsafe_get(normalized_index)
 
     @always_inline
-    def __getitem__[
+    def __getitem_param__[
         I: Indexer, //, idx: I
     ](ref self) -> ref[self] Self.ElementType:
         """Gets a reference to the element at the given index with compile-time

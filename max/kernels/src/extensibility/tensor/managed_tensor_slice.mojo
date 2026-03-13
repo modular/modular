@@ -1212,7 +1212,7 @@ struct StaticTensorSpecList[
     with heterogenous specs.
     """
 
-    def __getitem__[
+    def __getitem_param__[
         index: Int
     ](
         self,
@@ -1274,7 +1274,7 @@ struct VariadicTensors[
         """
         return Self.size
 
-    def __getitem__[
+    def __getitem_param__[
         index: Int
     ](
         self,
