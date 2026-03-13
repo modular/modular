@@ -83,6 +83,58 @@ class TestCanExecute:
         finally:
             MOInterpreter._COMPILATION_REQUIRED_OP_NAMES = orig
 
+    def test_can_execute_max_ops_within_limit(self) -> None:
+        """Test can_execute respects max_ops when graph is within limit."""
+        with Graph("small", input_types=[]) as graph:
+            a = ops.constant([1.0, 2.0], dtype=DType.float32, device=CPU())
+            b = ops.constant([3.0, 4.0], dtype=DType.float32, device=CPU())
+            c = ops.add(a, b)
+            graph.output(c)
+
+        interp = MOInterpreter()
+        # 3 dispatchable ops (2 constants + 1 add), limit at 5 -> ok
+        assert interp.can_execute(graph, max_ops=5) is True
+
+    def test_can_execute_max_ops_exceeds_limit(self) -> None:
+        """Test can_execute returns False when graph exceeds max_ops."""
+        with Graph("big", input_types=[]) as graph:
+            a = ops.constant([1.0, 2.0], dtype=DType.float32, device=CPU())
+            b = ops.constant([3.0, 4.0], dtype=DType.float32, device=CPU())
+            c = ops.add(a, b)
+            d = ops.mul(a, b)
+            e = ops.sub(c, d)
+            graph.output(e)
+
+        interp = MOInterpreter()
+        # 5 dispatchable ops (2 constants + add + mul + sub), limit at 2 -> too many
+        assert interp.can_execute(graph, max_ops=2) is False
+
+    def test_can_execute_no_limit(self) -> None:
+        """Test can_execute with max_ops=None imposes no limit."""
+        with Graph("unlimited", input_types=[]) as graph:
+            a = ops.constant([1.0, 2.0], dtype=DType.float32, device=CPU())
+            b = ops.constant([3.0, 4.0], dtype=DType.float32, device=CPU())
+            c = ops.add(a, b)
+            d = ops.mul(c, b)
+            e = ops.sub(d, a)
+            graph.output(e)
+
+        interp = MOInterpreter()
+        assert interp.can_execute(graph, max_ops=None) is True
+
+    def test_can_execute_returns_false_for_unhandled_op(self) -> None:
+        """Test can_execute returns False when an op has no registered handler."""
+        with Graph("unsupported", input_types=[]) as graph:
+            a = ops.constant(
+                [[1.0, 2.0], [3.0, 4.0]], dtype=DType.float32, device=CPU()
+            )
+            # tile has no interpreter handler
+            result = ops.tile(a, [2, 3])
+            graph.output(result)
+
+        interp = MOInterpreter()
+        assert interp.can_execute(graph) is False
+
 
 class TestOpHandlerRegistry:
     """Tests for op handler registration."""
@@ -236,43 +288,148 @@ class TestGraphExecution:
 class TestRealizationContextIntegration:
     """Tests for interpreter integration with EagerRealizationContext."""
 
-    def test_default_does_not_use_interpreter(self, monkeypatch: Any) -> None:
-        """Test that interpreter is disabled by default when env var not set."""
-
-        # Ensure env var is not set
+    def test_default_uses_interpreter(self, monkeypatch: Any) -> None:
+        """Test that interpreter is enabled by default."""
         monkeypatch.delenv("MAX_USE_EAGER_INTERPRETER", raising=False)
 
-        # Just test the attribute without creating operations
-        # to avoid cleanup issues with graph state
         ctx = EagerRealizationContext()
-        assert ctx._use_interpreter is False
-        # Note: We don't enter/exit the context here since we're just
-        # testing the constructor attribute. The context holds a Graph
-        # that has its own lifecycle.
+        assert ctx._use_interpreter is True
 
     def test_can_enable_interpreter(self) -> None:
-        """Test that interpreter can be enabled."""
+        """Test that interpreter can be enabled explicitly."""
 
         ctx = EagerRealizationContext(use_interpreter=True)
         assert ctx._use_interpreter is True
 
-    def test_env_var_enables_interpreter(self, monkeypatch: Any) -> None:
-        """Test that MAX_USE_EAGER_INTERPRETER=1 enables interpreter by default."""
+    def test_env_var_disables_interpreter(self, monkeypatch: Any) -> None:
+        """Test that MAX_USE_EAGER_INTERPRETER=0 disables interpreter."""
+        monkeypatch.setenv("MAX_USE_EAGER_INTERPRETER", "0")
+
+        ctx = EagerRealizationContext()
+        assert ctx._use_interpreter is False
+
+    def test_env_var_false_disables_interpreter(self, monkeypatch: Any) -> None:
+        """Test that MAX_USE_EAGER_INTERPRETER=false disables interpreter."""
+        monkeypatch.setenv("MAX_USE_EAGER_INTERPRETER", "false")
+
+        ctx = EagerRealizationContext()
+        assert ctx._use_interpreter is False
+
+    def test_env_var_1_keeps_interpreter_enabled(
+        self, monkeypatch: Any
+    ) -> None:
+        """Test that MAX_USE_EAGER_INTERPRETER=1 keeps interpreter enabled."""
         monkeypatch.setenv("MAX_USE_EAGER_INTERPRETER", "1")
 
         ctx = EagerRealizationContext()
         assert ctx._use_interpreter is True
 
-    def test_env_var_true_enables_interpreter(self, monkeypatch: Any) -> None:
-        """Test that MAX_USE_EAGER_INTERPRETER=true enables interpreter by default."""
-        monkeypatch.setenv("MAX_USE_EAGER_INTERPRETER", "true")
-
-        ctx = EagerRealizationContext()
-        assert ctx._use_interpreter is True
-
-    def test_explicit_false_overrides_env_var(self, monkeypatch: Any) -> None:
-        """Test that explicit use_interpreter=False overrides env var."""
-        monkeypatch.setenv("MAX_USE_EAGER_INTERPRETER", "1")
+    def test_explicit_false_overrides_default(self) -> None:
+        """Test that explicit use_interpreter=False overrides the default."""
 
         ctx = EagerRealizationContext(use_interpreter=False)
         assert ctx._use_interpreter is False
+
+
+class TestRuntimeFallback:
+    """Tests for interpreter runtime fallback to the graph compiler.
+
+    These tests verify the control flow in realize_all(): when the
+    interpreter raises at runtime (e.g. unsupported dtype), auto-mode
+    falls back to the compiler, while explicit mode surfaces the error.
+    """
+
+    def test_auto_mode_falls_back_on_execute_error(self) -> None:
+        """When auto-selected, a runtime error in execute() sets
+        use_interpreter=False so the compiler path runs instead."""
+        import max.experimental.realization_context as rc
+
+        ctx = EagerRealizationContext()
+        assert ctx._use_interpreter is True
+        assert ctx._auto_interpreter is True
+
+        interp = MOInterpreter()
+
+        with Graph(
+            "add",
+            input_types=[TensorType(DType.float32, [3], device=CPU())],
+        ) as graph:
+            (a,) = graph.inputs
+            graph.output(ops.add(a, a))
+
+        assert interp.can_execute(graph)
+
+        call_log: list[str] = []
+
+        original_execute = MOInterpreter.execute
+
+        def _failing_execute(self: Any, graph: Any, inputs: Any) -> Any:
+            call_log.append("interpreter_called")
+            raise RuntimeError("simulated unsupported dtype")
+
+        MOInterpreter.execute = _failing_execute  # type: ignore[method-assign]
+        try:
+            max_ops = rc._interpreter_max_ops()
+            use_interpreter = True
+            if not interp.can_execute(graph, max_ops=max_ops):
+                use_interpreter = False
+
+            assert use_interpreter is True
+
+            if use_interpreter and ctx._auto_interpreter:
+                inp = Buffer(shape=[3], dtype=DType.float32, device=CPU())
+                try:
+                    interp.execute(graph, [inp])
+                except Exception:
+                    use_interpreter = False
+
+            assert use_interpreter is False
+            assert "interpreter_called" in call_log
+        finally:
+            MOInterpreter.execute = original_execute  # type: ignore[method-assign]
+
+    def test_explicit_interpreter_does_not_swallow_error(
+        self, monkeypatch: Any
+    ) -> None:
+        """When the interpreter is explicitly requested, runtime errors
+        must propagate instead of silently falling back."""
+        ctx_auto = EagerRealizationContext()
+        assert ctx_auto._auto_interpreter is True
+
+        ctx_explicit = EagerRealizationContext(use_interpreter=True)
+        assert ctx_explicit._auto_interpreter is False
+
+        ctx_explicit_off = EagerRealizationContext(use_interpreter=False)
+        assert ctx_explicit_off._auto_interpreter is False
+
+
+class TestInterpreterMaxOps:
+    """Tests for the MAX_INTERPRETER_MAX_OPS threshold."""
+
+    def test_default_max_ops(self, monkeypatch: Any) -> None:
+        """Test that the default max_ops is 30."""
+        monkeypatch.delenv("MAX_INTERPRETER_MAX_OPS", raising=False)
+        from max.experimental.realization_context import _interpreter_max_ops
+
+        assert _interpreter_max_ops() == 30
+
+    def test_env_var_overrides_max_ops(self, monkeypatch: Any) -> None:
+        """Test that MAX_INTERPRETER_MAX_OPS env var overrides the default."""
+        monkeypatch.setenv("MAX_INTERPRETER_MAX_OPS", "5")
+        from max.experimental.realization_context import _interpreter_max_ops
+
+        assert _interpreter_max_ops() == 5
+
+    def test_env_var_max_ops_2(self, monkeypatch: Any) -> None:
+        """Test setting the threshold to 2."""
+        monkeypatch.setenv("MAX_INTERPRETER_MAX_OPS", "2")
+        from max.experimental.realization_context import _interpreter_max_ops
+
+        assert _interpreter_max_ops() == 2
+
+    def test_invalid_env_var_uses_default(self, monkeypatch: Any) -> None:
+        """Test that non-numeric env var falls back to default."""
+        monkeypatch.setenv("MAX_INTERPRETER_MAX_OPS", "abc")
+        from max.experimental.realization_context import _interpreter_max_ops
+
+        assert _interpreter_max_ops() == 30
