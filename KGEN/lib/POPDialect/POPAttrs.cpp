@@ -2131,13 +2131,9 @@ TypedAttr SIMDRoundAttr::get(MLIRContext *ctx, TypedAttr operand) {
 
 TypedAttr SIMDFloorDivAttr::get(MLIRContext *ctx, TypedAttr lhs,
                                 TypedAttr rhs) {
-  // Fold if possible. For integers, division by zero is undefined behavior,
-  // so we don't fold. For floats, IEEE 754 defines the result (inf or NaN).
-  if (auto fold = POP::foldSIMDFloorDiv(lhs, rhs,
-                                        /*targetInfo=*/{})) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-      return ret;
-  }
+  Attribute operands[] = {lhs, rhs};
+  if (TypedAttr folded = tryFoldAttr(operands, foldSIMDFloorDiv))
+    return folded;
   return Base::get(ctx, lhs, rhs);
 }
 

@@ -436,37 +436,21 @@ RemOp::parametric_interpret(ArrayRef<Attribute> operands,
 }
 
 OpFoldResult FloorDivOp::fold(FoldAdaptor adaptor) {
-  if (auto fold = foldSIMDFloorDiv(adaptor.getLhs(), adaptor.getRhs(),
-                                   lookupTargetInfo(*this))) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-      return ret;
-  }
-  return {};
+  return foldOpWithTarget(FoldValues(adaptor.getOperands(), getOperands()),
+                          lookupTargetInfo(*this), foldSIMDFloorDiv);
 }
 
 ErrorTreeOrSuccess FloorDivOp::interpret(ArrayRef<Attribute> operands,
                                          InterpreterState &state) {
-  if (auto fold =
-          foldSIMDFloorDiv(operands[0], operands[1], state.getTarget())) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold))) {
-      state.mapResults(ret);
-      return success();
-    }
-  }
-  return ErrorTree(getLoc(), "failed to interpret POP::FloorDivOp");
+  return interpretOpWithFold(getLoc(), getOperation()->getName().getStringRef(),
+                             operands, state, foldSIMDFloorDiv);
 }
 
 ErrorTreeOrSuccess
 FloorDivOp::parametric_interpret(ArrayRef<Attribute> operands,
                                  ParametricInterpreterState &state) {
-  if (auto fold =
-          foldSIMDFloorDiv(operands[0], operands[1], state.getTarget())) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold))) {
-      state.mapResults(ret);
-      return success();
-    }
-  }
-  return ErrorTree(getLoc(), "failed to interpret POP::FloorDivOp");
+  return interpretOpWithFold(getLoc(), getOperation()->getName().getStringRef(),
+                             operands, state, foldSIMDFloorDiv);
 }
 
 template <typename OpT>
