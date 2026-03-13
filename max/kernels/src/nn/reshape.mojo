@@ -22,7 +22,7 @@ from std.utils.index import IndexList
 # Reshape assumes inputs are contiguous. It should always be fused last and
 # a non-contiguous tensor cannot be fused *into* this as input.
 @always_inline
-fn reshape[
+def reshape[
     dtype: DType,
     //,
     output_rank: Int,
@@ -57,7 +57,7 @@ fn reshape[
 
 @register_internal("layout_tensor_reshape")
 @always_inline
-fn layout_tensor_reshape[
+def layout_tensor_reshape[
     output_rank: Int,
     dtype: DType,
     single_thread_blocking_override: Bool,
@@ -80,7 +80,7 @@ fn layout_tensor_reshape[
 
 
 @always_inline
-fn reshape_shape[
+def reshape_shape[
     output_rank: Int,
     input_type: DType,
     target_shape_type: DType,

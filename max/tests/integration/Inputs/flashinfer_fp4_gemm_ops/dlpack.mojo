@@ -78,7 +78,7 @@ struct DLDataType(ImplicitlyCopyable, Movable):
     var lanes: UInt16
 
     @staticmethod
-    fn from_dtype[dtype: DType](lanes: UInt16 = 1) -> Self:
+    def from_dtype[dtype: DType](lanes: UInt16 = 1) -> Self:
         comptime assert [dtype in Self.CODE_MAP]
         comptime code: UInt8 = Self.CODE_MAP.get(dtype, 0)
         return Self(code, UInt8(bit_width_of[dtype]()), lanes)
@@ -106,7 +106,9 @@ struct DLDevice(ImplicitlyCopyable, Movable):
     var device_type: Int32
     var device_id: Int32
 
-    fn __init__(out self, device_type: Int32 = Self.CUDA, device_id: Int32 = 0):
+    def __init__(
+        out self, device_type: Int32 = Self.CUDA, device_id: Int32 = 0
+    ):
         self.device_type = device_type
         self.device_id = device_id
 
@@ -129,7 +131,7 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
     var shape: IndexList[Self.rank]
     var strides: IndexList[Self.rank]
 
-    fn __init__(
+    def __init__(
         out self,
         tensor: ManagedTensorSlice[dtype=Self.dtype, rank=Self.rank, ...],
     ):
@@ -152,12 +154,12 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
             self._strides_ptr = UnsafePointer(to=self.strides).bitcast[Int64]()
 
     @staticmethod
-    fn _is_row_major(
+    def _is_row_major(
         shape: IndexList[Self.rank], strides: IndexList[Self.rank]
     ) -> Bool:
         return shape.get_row_major_strides() == strides
 
-    fn __copyinit__(out self, copy: Self):
+    def __copyinit__(out self, copy: Self):
         self.data = copy.data
         self.device = copy.device
         self._rank = copy._rank

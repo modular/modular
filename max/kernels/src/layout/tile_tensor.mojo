@@ -189,11 +189,11 @@ struct TileTensor[
     comptime device_type = Self
     """Device-side type for GPU kernel parameter passing."""
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """
         Gets the name of the host type (the one implementing this trait).
 
@@ -226,7 +226,7 @@ struct TileTensor[
     HostBuffer, which all produce GENERIC address space tensors.
     """
 
-    fn __init__(
+    def __init__(
         out self: Self.GenericType,
         var span: Span[Scalar[Self.dtype], Self.origin],
         var layout: Self.LayoutType,
@@ -241,7 +241,7 @@ struct TileTensor[
         self.layout = layout
 
     @always_inline("nodebug")
-    fn __init__(
+    def __init__(
         buffer: NDBuffer[...],
         out self: TileTensor[
             buffer.dtype,
@@ -282,7 +282,7 @@ struct TileTensor[
         self.layout = Layout(shape, stride)
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self: Self.GenericType,
         ref[Self.origin] device_buffer: DeviceBuffer[Self.dtype],
         var layout: Self.LayoutType,
@@ -339,7 +339,7 @@ struct TileTensor[
         )
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self: Self.GenericType,
         ref[Self.origin] host_buffer: HostBuffer[Self.dtype],
         var layout: Self.LayoutType,
@@ -379,7 +379,7 @@ struct TileTensor[
 
     @always_inline("builtin")
     @implicit
-    fn __init__(
+    def __init__(
         other: TileTensor,
         out self: TileTensor[
             other.dtype,
@@ -399,7 +399,7 @@ struct TileTensor[
         self.layout = other.layout
 
     @always_inline("nodebug")
-    fn __getitem__(
+    def __getitem__(
         self, coord: Coord
     ) -> Self.ElementType where coord.flat_rank == Self.flat_rank:
         """Retrieve a single element from the tensor at the specified coordinates.
@@ -415,7 +415,7 @@ struct TileTensor[
         return self.load(coord)
 
     @always_inline("nodebug")
-    fn __getitem__[
+    def __getitem__[
         *IndexTypes: Indexer & Copyable
     ](self, *items: *IndexTypes) -> Self.ElementType where (
         Variadic.size(IndexTypes) == Self.flat_rank
@@ -454,7 +454,7 @@ struct TileTensor[
         )
 
     @always_inline("nodebug")
-    fn __setitem__(
+    def __setitem__(
         self, coord: Coord, value: Self.ElementType
     ) where coord.flat_rank == Self.flat_rank and Self.mut:
         """Set a single element in the tensor at the specified coordinates.
@@ -468,7 +468,7 @@ struct TileTensor[
         self.store(coord, value)
 
     @always_inline("nodebug")
-    fn __setitem__[
+    def __setitem__[
         *IndexTypes: Indexer & Copyable
     ](self, *items: *IndexTypes, value: Self.ElementType) where (
         Variadic.size(IndexTypes) == Self.flat_rank
@@ -506,7 +506,7 @@ struct TileTensor[
         )
 
     @always_inline("nodebug")
-    fn load[
+    def load[
         width: Int = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]](),
         invariant: Bool = False,
@@ -535,7 +535,7 @@ struct TileTensor[
         ](self.layout[linear_idx_type=Self.linear_idx_type](coord))
 
     @always_inline("nodebug")
-    fn store[
+    def store[
         width: Int = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]](),
     ](self, coord: Coord, value: SIMD[Self.dtype, width]) where (
@@ -559,7 +559,7 @@ struct TileTensor[
         )
 
     @always_inline("nodebug")
-    fn _linear_offset(
+    def _linear_offset(
         self, idx: IndexList[_, ...]
     ) -> Scalar[Self.linear_idx_type]:
         """Compute a linear memory offset from an IndexList using the layout
@@ -590,7 +590,7 @@ struct TileTensor[
         return offset
 
     @always_inline("nodebug")
-    fn load_linear[
+    def load_linear[
         width: Int = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]](),
         invariant: Bool = False,
@@ -616,7 +616,7 @@ struct TileTensor[
         ](self._linear_offset(idx))
 
     @always_inline("nodebug")
-    fn store_linear[
+    def store_linear[
         width: Int = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]](),
     ](
@@ -640,7 +640,7 @@ struct TileTensor[
         self.ptr.store[alignment=alignment](self._linear_offset(idx), value)
 
     @always_inline
-    fn ptr_at_offset(
+    def ptr_at_offset(
         self, coords: Coord[...]
     ) -> UnsafePointer[
         Scalar[Self.dtype], Self.origin, address_space=Self.address_space
@@ -659,7 +659,7 @@ struct TileTensor[
         )
 
     @always_inline
-    fn prefetch(self, coords: Coord[...]) where coords.rank == Self.rank:
+    def prefetch(self, coords: Coord[...]) where coords.rank == Self.rank:
         """Prefetch tensor data at the specified coordinates into cache.
 
         Issues a software prefetch hint to the processor to load the data at
@@ -690,7 +690,7 @@ struct TileTensor[
             self.ptr_at_offset(coords)
         )
 
-    fn num_elements(self) -> Int:
+    def num_elements(self) -> Int:
         """Returns the total number of elements in the tensor.
 
         Computes the product of all shape dimensions.
@@ -704,7 +704,7 @@ struct TileTensor[
             result *= self.layout.shape[i]().value()
         return result
 
-    fn write_to(self, mut w: Some[Writer]):
+    def write_to(self, mut w: Some[Writer]):
         """Format and write the tensor's contents to a writer.
 
         This method formats the tensor's contents and writes them to the
@@ -764,7 +764,7 @@ struct TileTensor[
                 return
 
     @always_inline("nodebug")
-    fn tile[
+    def tile[
         *tile_sizes: Int
     ](self, coordinates: Coord) -> TileTensor[
         dtype=Self.dtype,
@@ -791,7 +791,7 @@ struct TileTensor[
         return _tile(self, coord[*tile_sizes](), coordinates)
 
     @always_inline("nodebug")
-    fn tile[
+    def tile[
         *tile_sizes: Int, stride_layout: TensorLayout
     ](self, coordinates: Coord) -> TileTensor[
         dtype=Self.dtype,
@@ -828,7 +828,7 @@ struct TileTensor[
         )
 
     @always_inline("nodebug")
-    fn tile_with_offset[
+    def tile_with_offset[
         *tile_sizes: Int
     ](self, coordinates: Coord) -> Tuple[
         TileTensor[
@@ -858,7 +858,7 @@ struct TileTensor[
         return _tile_with_offset(self, coord[*tile_sizes](), coordinates)
 
     @always_inline("nodebug")
-    fn tile_with_offset[
+    def tile_with_offset[
         *tile_sizes: Int, stride_layout: TensorLayout
     ](self, coordinates: Coord) -> Tuple[
         TileTensor[
@@ -911,7 +911,7 @@ struct TileTensor[
     """
 
     @always_inline("nodebug")
-    fn reshape[
+    def reshape[
         new_layout: TensorLayout,
     ](self, layout_val: new_layout) -> Self.ViewType[new_layout]:
         """Create a view of the tensor with a different layout.
@@ -932,7 +932,7 @@ struct TileTensor[
         return {self.ptr, layout_val}
 
     @always_inline("nodebug")
-    fn transpose(
+    def transpose(
         self,
     ) -> TileTensor[
         dtype=Self.dtype,
@@ -961,7 +961,7 @@ struct TileTensor[
     # function, type_of(tensor).LayoutType resolves correctly.
 
     @always_inline("nodebug")
-    fn tile[
+    def tile[
         *tile_sizes: Int
     ](self, *tile_coords: Int) -> TileTensor[
         dtype=Self.dtype,
@@ -1015,7 +1015,7 @@ struct TileTensor[
         return _tile(self, coord[*tile_sizes](), coordinates)
 
     @always_inline("nodebug")
-    fn distribute[
+    def distribute[
         thread_layout: Layout,
         swizzle: Optional[Swizzle] = None,
     ](self, thread_id: Int) -> TileTensor[
@@ -1057,7 +1057,7 @@ struct TileTensor[
         return _distribute[thread_layout, swizzle](self, thread_id)
 
     @always_inline("nodebug")
-    fn distribute_with_offset[
+    def distribute_with_offset[
         thread_layout: Layout,
         swizzle: Optional[Swizzle] = None,
     ](self, thread_id: Int) -> Tuple[
@@ -1093,7 +1093,7 @@ struct TileTensor[
         return _distribute_with_offset[thread_layout, swizzle](self, thread_id)
 
     @always_inline
-    fn fill[
+    def fill[
         *,
         use_runtime_layout: Bool = (
             not Self.all_dims_known
@@ -1176,7 +1176,7 @@ struct TileTensor[
         return self
 
     @always_inline("nodebug")
-    fn dim[i: Int](self) -> Scalar[Self.linear_idx_type]:
+    def dim[i: Int](self) -> Scalar[Self.linear_idx_type]:
         """Returns the size of dimension i.
 
         Parameters:
@@ -1188,7 +1188,7 @@ struct TileTensor[
         return Scalar[Self.linear_idx_type](self.layout.shape[i]().value())
 
     @always_inline("nodebug")
-    fn dim[
+    def dim[
         IndexType: Indexer
     ](self, index: IndexType) -> Scalar[Self.linear_idx_type]:
         """Returns the size of the specified dimension.
@@ -1213,7 +1213,7 @@ struct TileTensor[
         abort("attempt to dynamically index out of bounds")
 
     @always_inline("nodebug")
-    fn dynamic_stride[
+    def dynamic_stride[
         IndexType: Indexer
     ](self, index: IndexType) -> Scalar[Self.linear_idx_type]:
         """Returns the stride of the specified dimension.
@@ -1238,7 +1238,7 @@ struct TileTensor[
         abort("attempt to dynamically index out of bounds")
 
     @always_inline
-    fn slice[
+    def slice[
         *slices: ContiguousSlice
     ](self) -> TileTensor[
         Self.dtype,
@@ -1343,7 +1343,7 @@ struct TileTensor[
         ](self.ptr + offset, new_layout)
 
     @always_inline
-    fn slice(
+    def slice(
         self,
         *slices: Tuple[Int, Int],
     ) -> TileTensor[
@@ -1444,7 +1444,7 @@ struct TileTensor[
     """Result type for SIMD-width vectorization."""
 
     @always_inline("nodebug")
-    fn vectorize[
+    def vectorize[
         *vector_shape: Int
     ](self) -> Self.VectorizedType[*vector_shape] where Self.all_dims_known:
         """Reshape a tensor into a vectorized form for efficient SIMD operations.
@@ -1487,7 +1487,7 @@ struct TileTensor[
         return _vectorize(self, coord[*vector_shape]())
 
     @always_inline("nodebug")
-    fn vectorize(self) -> Self.SIMDVectorizedType where Self.all_dims_known:
+    def vectorize(self) -> Self.SIMDVectorizedType where Self.all_dims_known:
         """Return a SIMD-width vectorized view of this tensor.
 
         This is a convenience method that vectorizes along the last dimension
@@ -1550,7 +1550,7 @@ struct TileTensor[
     """
 
     @always_inline("nodebug")
-    fn reshape[
+    def reshape[
         *new_shape: Int
     ](self) -> Self.ReshapedType[*_IntToComptimeInt[*new_shape]] where (
         Self.all_dims_known
@@ -1610,7 +1610,7 @@ struct TileTensor[
         return Self.ReshapedType[*NewShapeTypes](self.ptr, new_layout)
 
     @always_inline("nodebug")
-    fn reshape[
+    def reshape[
         *new_shape_types: CoordLike
     ](self, new_shape: Coord[*new_shape_types]) -> Self.ReshapedType[
         *new_shape_types
@@ -1670,7 +1670,7 @@ struct TileTensor[
         return Self.ReshapedType[*new_shape_types](self.ptr, new_layout)
 
     @always_inline("nodebug")
-    fn coalesce(
+    def coalesce(
         self,
     ) -> Self.CoalescedType where Self.all_dims_known and Self.is_row_major:
         """Creates a rank-1 tensor by flattening all dimensions.
@@ -1730,7 +1730,7 @@ struct TileTensor[
     """
 
     @always_inline("nodebug")
-    fn make_dynamic[dyn_dtype: DType](self) -> Self.DynamicType[dyn_dtype]:
+    def make_dynamic[dyn_dtype: DType](self) -> Self.DynamicType[dyn_dtype]:
         """Convert all elements in shape and stride to RuntimeInt[dyn_dtype].
 
         Parameters:
@@ -1758,7 +1758,7 @@ struct TileTensor[
         )
 
     @always_inline("nodebug")
-    fn to_layout_tensor(
+    def to_layout_tensor(
         self,
         out result: LayoutTensor[
             Self.dtype,
@@ -1788,7 +1788,7 @@ struct TileTensor[
         }
 
     @always_inline("nodebug")
-    fn _to_ndbuffer(
+    def _to_ndbuffer(
         self,
         out result: NDBuffer[
             rank=Self.rank,
@@ -1838,7 +1838,7 @@ struct TileTensor[
     """
 
     @always_inline("nodebug")
-    fn as_any_origin(self) -> Self.OriginCastType[AnyOrigin[mut=Self.mut]]:
+    def as_any_origin(self) -> Self.OriginCastType[AnyOrigin[mut=Self.mut]]:
         """Casts the origin of the mutable `LayoutTensor` to `MutAnyOrigin`.
 
         Returns:
@@ -1855,7 +1855,7 @@ struct TileTensor[
         return {self.ptr.as_any_origin(), self.layout}
 
     @always_inline
-    fn as_immut(
+    def as_immut(
         self,
     ) -> Self.OriginCastType[ImmutOrigin(Self.origin)]:
         """
@@ -1880,7 +1880,7 @@ struct TileTensor[
     """
 
     @always_inline
-    fn address_space_cast[
+    def address_space_cast[
         target_address_space: AddressSpace
     ](self,) -> Self.AddressSpaceCastType[target_address_space]:
         """Return a version of this tensor cast to a new address space.
@@ -1897,7 +1897,7 @@ struct TileTensor[
         }
 
     @always_inline
-    fn to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
+    def to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
         """Convert the tensor to a `DeviceBuffer`.
 
         Args:
@@ -1918,7 +1918,7 @@ struct TileTensor[
 
 
 @always_inline("nodebug")
-fn stack_allocation[
+def stack_allocation[
     LayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -1965,7 +1965,7 @@ fn stack_allocation[
 
 
 @always_inline
-fn _pretty_print_2d_tensor[
+def _pretty_print_2d_tensor[
     W: Writer
 ](tensor: TileTensor, mut writer: W) where tensor.flat_rank == 2:
     # Provide evidence to the constraint system
@@ -1980,7 +1980,7 @@ fn _pretty_print_2d_tensor[
 
 
 @always_inline("nodebug")
-fn _distribute[
+def _distribute[
     thread_layout: Layout,
     swizzle: Optional[Swizzle] = None,
 ](
@@ -2081,7 +2081,7 @@ fn _distribute[
 
 
 @always_inline("nodebug")
-fn _distribute_with_offset[
+def _distribute_with_offset[
     thread_layout: Layout,
     swizzle: Optional[Swizzle] = None,
 ](
@@ -2184,7 +2184,7 @@ fn _distribute_with_offset[
 
 
 @always_inline("nodebug")
-fn _tile[
+def _tile[
     dtype: DType,
     coord_types: Variadic.TypesOfTrait[CoordLike],
     tile_shape_types: Variadic.TypesOfTrait[CoordLike],
@@ -2266,7 +2266,7 @@ fn _tile[
 
 
 @always_inline("nodebug")
-fn _tile_with_offset[
+def _tile_with_offset[
     dtype: DType,
     coord_types: Variadic.TypesOfTrait[CoordLike],
     tile_shape_types: Variadic.TypesOfTrait[CoordLike],
@@ -2336,7 +2336,7 @@ fn _tile_with_offset[
 
 
 @always_inline("nodebug")
-fn _tile[
+def _tile[
     dtype: DType,
     coord_types: Variadic.TypesOfTrait[CoordLike],
     tile_shape_types: Variadic.TypesOfTrait[CoordLike],
@@ -2398,7 +2398,7 @@ fn _tile[
 
 
 @always_inline("nodebug")
-fn _tile_with_offset[
+def _tile_with_offset[
     dtype: DType,
     coord_types: Variadic.TypesOfTrait[CoordLike],
     tile_shape_types: Variadic.TypesOfTrait[CoordLike],
@@ -2464,7 +2464,7 @@ fn _tile_with_offset[
 
 
 @always_inline("nodebug")
-fn _vectorize[
+def _vectorize[
     dtype: DType,
     vector_shape_types: Variadic.TypesOfTrait[CoordLike],
     //,
@@ -2540,7 +2540,7 @@ fn _vectorize[
     ](data_layout_tensor.ptr, new_layout)
 
 
-fn _get_index_type[
+def _get_index_type[
     LayoutType: TensorLayout
 ](address_space: AddressSpace) -> DType:
     """Returns int32 for shared/constant GPU memory or small known layouts,
@@ -2661,7 +2661,7 @@ its original static/dynamic type.
 
 
 @always_inline("nodebug")
-fn flatten_leading[
+def flatten_leading[
     dtype: DType,
     layout: TensorLayout,
     //,
@@ -2716,7 +2716,7 @@ from .layout_tensor import LayoutTensor as _LayoutTensor
 
 
 @parameter
-fn _int_to_dim(value: Int) -> Dim:
+def _int_to_dim(value: Int) -> Dim:
     """Convert an IntTuple value to a Dim.
 
     UNKNOWN_VALUE becomes Dim() (dynamic), anything else becomes Dim(N)
@@ -2755,7 +2755,7 @@ Parameters:
 
 
 @always_inline
-fn lt_to_tt[
+def lt_to_tt[
     dtype: DType,
     lt_layout: _LegacyLayout,
     //,

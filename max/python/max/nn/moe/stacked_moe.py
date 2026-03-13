@@ -29,7 +29,6 @@ from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.support.math import ceildiv
 from typing_extensions import Self
 
-from ..float8_config import Float8Config
 from ..kernels import (
     grouped_dynamic_scaled_fp8_matmul,
     grouped_matmul_ragged,
@@ -39,6 +38,7 @@ from ..kernels import (
 )
 from ..layer import Module, Shardable
 from ..linear import MLP
+from ..quant_config import QuantConfig
 from .moe import MoEGate
 
 
@@ -258,7 +258,7 @@ class StackedMoE(Module, Shardable):
             num_experts_per_token=2,
             moe_dim=14336,
             gate_cls=MyGate,
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
 
         # GptOss style with interleaved format and bias
@@ -294,7 +294,7 @@ class StackedMoE(Module, Shardable):
             ``False``.
         shared_experts_dim: The dimension of the shared experts. Defaults to
             ``0``.
-        float8_config: The configuration for FP8 quantization. Defaults to
+        quant_config: The configuration for scaled quantization. Defaults to
             ``None``.
         apply_router_weight_first: Whether to apply router weights before
             expert computation. Defaults to ``False``.
@@ -321,7 +321,7 @@ class StackedMoE(Module, Shardable):
         has_bias: bool = False,
         has_shared_experts: bool = False,
         shared_experts_dim: int = 0,
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
         apply_router_weight_first: bool = False,
         is_sharding: bool = False,
     ) -> None:
@@ -338,7 +338,7 @@ class StackedMoE(Module, Shardable):
         self.has_bias = has_bias
         self.has_shared_experts = has_shared_experts
         self.shared_experts_dim = shared_experts_dim
-        self.float8_config = float8_config
+        self.quant_config = quant_config
         self.apply_router_weight_first = apply_router_weight_first
         self.tp_size = 1
 
@@ -360,7 +360,7 @@ class StackedMoE(Module, Shardable):
                 hidden_dim=hidden_dim,
                 feed_forward_length=shared_experts_dim,
                 devices=devices,
-                float8_config=float8_config,
+                quant_config=quant_config,
             )
 
         if not is_sharding:
@@ -368,7 +368,7 @@ class StackedMoE(Module, Shardable):
 
     def _init_weights(self) -> None:
         """Initializes stacked weight tensors for all experts."""
-        if self.float8_config and self.float8_config.is_mxfp4:
+        if self.quant_config and self.quant_config.is_mxfp4:
             self._init_mxfp4_weights()
         else:
             self._gate_up_weight = Weight(
@@ -401,8 +401,8 @@ class StackedMoE(Module, Shardable):
             )
 
         # FP8 scales (only for non-MXFP4 float8)
-        if self.float8_config and not self.float8_config.is_mxfp4:
-            block_size = self.float8_config.weight_scale.block_size
+        if self.quant_config and not self.quant_config.is_mxfp4:
+            block_size = self.quant_config.weight_scale.block_size
             assert block_size is not None, "FP8 MoE requires block scaling"
 
             gate_up_scale_shape = [
@@ -419,13 +419,13 @@ class StackedMoE(Module, Shardable):
             self._gate_up_scale = Weight(
                 name="experts.gate_up_proj_scale",
                 shape=gate_up_scale_shape,
-                dtype=self.float8_config.weight_scale.dtype,
+                dtype=self.quant_config.weight_scale.dtype,
                 device=self.devices[0],
             )
             self._down_scale = Weight(
                 name="experts.down_proj_scale",
                 shape=down_scale_shape,
-                dtype=self.float8_config.weight_scale.dtype,
+                dtype=self.quant_config.weight_scale.dtype,
                 device=self.devices[0],
             )
 
@@ -435,7 +435,7 @@ class StackedMoE(Module, Shardable):
         MXFP4 weights are stored as [E, out_features, in_features//2] uint8
         with scales [E, out_features, in_features//32] float8_e8m0fnu.
         """
-        assert self.float8_config is not None
+        assert self.quant_config is not None
         # gate_up: maps hidden_dim -> 2*moe_dim
         self._gate_up_weight = Weight(
             name="experts.gate_up_proj",
@@ -460,7 +460,7 @@ class StackedMoE(Module, Shardable):
         )
 
         # MXFP4 scales: [E, out_features, in_features//32]
-        scale_dtype = self.float8_config.weight_scale.dtype
+        scale_dtype = self.quant_config.weight_scale.dtype
         self._gate_up_scale = Weight(
             name="experts.gate_up_proj_scale",
             shape=[
@@ -634,9 +634,9 @@ class StackedMoE(Module, Shardable):
             ).cast(x.dtype)
 
         # Run expert computation (MXFP4, FP8, or BF16 path)
-        if self.float8_config and self.float8_config.is_mxfp4:
+        if self.quant_config and self.quant_config.is_mxfp4:
             down_projs = self._forward_mxfp4(permuted_states, routing)
-        elif self.float8_config:
+        elif self.quant_config:
             down_projs = self._forward_fp8(permuted_states, routing)
         else:
             down_projs = self._forward_bf16(permuted_states, routing)
@@ -794,20 +794,20 @@ class StackedMoE(Module, Shardable):
         Raises:
             ValueError: If ``permuted_states`` is not BF16.
         """
-        assert self.float8_config is not None
-        assert self.float8_config.input_scale.block_size is not None
-        input_block_size = self.float8_config.input_scale.block_size[1]
+        assert self.quant_config is not None
+        assert self.quant_config.input_scale.block_size is not None
+        input_block_size = self.quant_config.input_scale.block_size[1]
 
         if permuted_states.dtype != DType.bfloat16:
             raise ValueError("Input must be BF16 for dynamic FP8 quantization")
 
         input_fp8, input_scales = quantize_dynamic_scaled_float8(
             permuted_states,
-            self.float8_config.input_scale,
-            self.float8_config.weight_scale,
+            self.quant_config.input_scale,
+            self.quant_config.weight_scale,
             group_size_or_per_token=input_block_size,
             out_type=self.dtype,
-            scales_type=self.float8_config.weight_scale.dtype,
+            scales_type=self.quant_config.weight_scale.dtype,
         )
 
         gate_up_output = grouped_dynamic_scaled_fp8_matmul(
@@ -818,19 +818,19 @@ class StackedMoE(Module, Shardable):
             routing.expert_start_indices,
             routing.expert_ids,
             routing.expert_usage_stats.to(DeviceRef.CPU()),
-            self.float8_config.input_scale,
-            self.float8_config.weight_scale,
+            self.quant_config.input_scale,
+            self.quant_config.weight_scale,
         )
 
         gated_output = self._apply_gated_activation(gate_up_output, routing)
 
         gated_output_fp8, gated_output_scales = quantize_dynamic_scaled_float8(
             gated_output,
-            self.float8_config.input_scale,
-            self.float8_config.weight_scale,
+            self.quant_config.input_scale,
+            self.quant_config.weight_scale,
             group_size_or_per_token=input_block_size,
             out_type=self.dtype,
-            scales_type=self.float8_config.weight_scale.dtype,
+            scales_type=self.quant_config.weight_scale.dtype,
         )
 
         down_output = grouped_dynamic_scaled_fp8_matmul(
@@ -841,8 +841,8 @@ class StackedMoE(Module, Shardable):
             routing.expert_start_indices,
             routing.expert_ids,
             routing.expert_usage_stats.to(DeviceRef.CPU()),
-            self.float8_config.input_scale,
-            self.float8_config.weight_scale,
+            self.quant_config.input_scale,
+            self.quant_config.weight_scale,
         )
 
         if self.has_bias:
@@ -886,7 +886,7 @@ class StackedMoE(Module, Shardable):
             self.shared_experts.sharding_strategy = strategy
         if self.has_bias:
             self._set_bias_sharding(strategy)
-        if self.float8_config:
+        if self.quant_config:
             self._set_scale_sharding(strategy)
 
     def _set_gate_sharding(self, strategy: ShardingStrategy) -> None:
@@ -902,7 +902,7 @@ class StackedMoE(Module, Shardable):
                 "Only tensor parallel sharding strategy is supported for StackedMoE"
             )
 
-        if self.float8_config and self.float8_config.is_mxfp4:
+        if self.quant_config and self.quant_config.is_mxfp4:
             # MXFP4 weights are [E, out_features, in_features//2] (transposed
             # vs BF16's [E, in_features, out_features]).  TP splits moe_dim:
             # gate_up shards output dim axis=1 (2*moe_dim), down shards
@@ -960,11 +960,11 @@ class StackedMoE(Module, Shardable):
                 "Only tensor parallel sharding strategy is supported for StackedMoE"
             )
 
-        assert self.float8_config is not None
-        block_size = self.float8_config.weight_scale.block_size
+        assert self.quant_config is not None
+        block_size = self.quant_config.weight_scale.block_size
         assert block_size is not None
 
-        if self.float8_config.is_mxfp4:
+        if self.quant_config.is_mxfp4:
             # MXFP4 scale sharding mirrors the weight sharding axes.
             # Weights are [E, out_features, in_features//2] so scales are
             # [E, out_features, ceildiv(in_features, 32)]:
@@ -1030,7 +1030,7 @@ class StackedMoE(Module, Shardable):
             has_bias=self.has_bias,
             has_shared_experts=self.has_shared_experts,
             shared_experts_dim=sharded_shared_dim,
-            float8_config=self.float8_config,
+            quant_config=self.quant_config,
             apply_router_weight_first=self.apply_router_weight_first,
             is_sharding=True,
         )
@@ -1063,7 +1063,7 @@ class StackedMoE(Module, Shardable):
             gate_up_bias_shards = self._gate_up_bias.shard(devices)
             down_bias_shards = self._down_bias.shard(devices)
 
-        if self.float8_config:
+        if self.quant_config:
             gate_up_scale_shards = self._gate_up_scale.shard(devices)
             down_scale_shards = self._down_scale.shard(devices)
 
@@ -1089,7 +1089,7 @@ class StackedMoE(Module, Shardable):
                 sharded._gate_up_bias = gate_up_bias_shards[shard_idx]
                 sharded._down_bias = down_bias_shards[shard_idx]
 
-            if self.float8_config:
+            if self.quant_config:
                 sharded._gate_up_scale = gate_up_scale_shards[shard_idx]
                 sharded._down_scale = down_scale_shards[shard_idx]
 

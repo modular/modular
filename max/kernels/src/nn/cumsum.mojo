@@ -18,7 +18,7 @@ from std.utils.numerics import get_accum_type
 
 
 @always_inline
-fn cumsum[
+def cumsum[
     dtype: DType,
     exclusive: Bool,
     reverse: Bool,

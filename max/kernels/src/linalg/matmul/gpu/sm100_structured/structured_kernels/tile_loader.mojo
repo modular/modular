@@ -83,7 +83,7 @@ struct TileLoaderTMA[
     var multicast_mask: UInt16
 
     @always_inline
-    fn __init__(out self, tma_op: Self.TmaOpPtr, multicast_mask: UInt16):
+    def __init__(out self, tma_op: Self.TmaOpPtr, multicast_mask: UInt16):
         """Initialize the TMA tile loader.
 
         Args:
@@ -94,7 +94,7 @@ struct TileLoaderTMA[
         self.multicast_mask = multicast_mask
 
     @always_inline
-    fn load[
+    def load[
         tile_layout: Layout,
         /,
         alignment: Int = 128,
@@ -121,7 +121,7 @@ struct TileLoaderTMA[
         )
 
     @always_inline
-    fn load[
+    def load[
         dim0: Int,
         dim1: Int,
         /,
@@ -150,7 +150,7 @@ struct TileLoaderTMA[
         )
 
     @always_inline
-    fn load[
+    def load[
         LayoutType: TensorLayout
     ](
         self,
@@ -207,7 +207,7 @@ struct TileLoader[
     var multicast_mask: UInt16
 
     @always_inline
-    fn __init__[
+    def __init__[
         tma_op_type: AnyType
     ](
         out self,
@@ -219,7 +219,7 @@ struct TileLoader[
         self.multicast_mask = multicast_mask
 
     @always_inline
-    fn load[
+    def load[
         LayoutType: TensorLayout
     ](
         self,
@@ -266,14 +266,14 @@ struct ScalesLoader[
     var tma_op: Self.TmaOpPtr
 
     @always_inline
-    fn __init__[
+    def __init__[
         tma_op_type: AnyType
     ](out self, tma_op: Pointer[tma_op_type, Self.tma_origin]):
         """Accepts any TMA pointer. Rebinds to the loader's derived type."""
         self.tma_op = rebind[Self.TmaOpPtr](tma_op)
 
     @always_inline
-    fn load[
+    def load[
         LayoutType: TensorLayout
     ](
         self,

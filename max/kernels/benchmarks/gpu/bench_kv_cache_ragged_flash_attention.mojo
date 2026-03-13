@@ -39,7 +39,7 @@ from nn.mha_mask import CausalMask
 from std.utils import IndexList
 
 
-fn _get_run_name[
+def _get_run_name[
     dtype: DType,
     num_q_heads: Int,
     num_kv_heads: Int,
@@ -296,10 +296,10 @@ def execute_kv_cache_ragged_flash_attention[
         input_row_offsets_tensor,
     )
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             flash_attention[ragged=True](
                 output_device_tensor.as_any_origin(),
                 q_tensor,

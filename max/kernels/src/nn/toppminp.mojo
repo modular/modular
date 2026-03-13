@@ -22,7 +22,7 @@ from std.utils import IndexList
 
 
 @always_inline
-fn top_p_sampling[
+def top_p_sampling[
     dtype: DType,
     out_idx_type: DType,
     //,
@@ -46,7 +46,7 @@ fn top_p_sampling[
 
 
 @always_inline
-fn min_p_sampling[
+def min_p_sampling[
     dtype: DType,
     out_idx_type: DType,
     //,
@@ -68,7 +68,7 @@ fn min_p_sampling[
 
 
 @always_inline
-fn _topp_minp_sampling[
+def _topp_minp_sampling[
     dtype: DType,
     out_idx_type: DType,
     //,
@@ -137,7 +137,7 @@ fn _topp_minp_sampling[
 
     @parameter
     @__copy_capture(input_logits)
-    fn apply_temperature[
+    def apply_temperature[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
         var i = input_logits.layout(Coord(coords))
@@ -205,7 +205,7 @@ fn _topp_minp_sampling[
 
 
 @always_inline
-fn sort_buf_descending[
+def sort_buf_descending[
     dtype: DType, out_idx_type: DType
 ](
     mut buf_keys: TileTensor[mut=True, dtype, ...],
@@ -223,7 +223,7 @@ fn sort_buf_descending[
         merge_sort_recursive(buf_keys, buf_ids, start, end)
 
 
-fn merge_sort_recursive[
+def merge_sort_recursive[
     dtype: DType,
     out_idx_type: DType,
 ](
@@ -241,7 +241,7 @@ fn merge_sort_recursive[
 
 
 @always_inline
-fn merge[
+def merge[
     dtype: DType, out_idx_type: DType
 ](
     mut buf_keys: TileTensor[mut=True, dtype, ...],

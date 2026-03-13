@@ -48,7 +48,7 @@ from .fp4_utils import (
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(512))
 )
-fn _dequant_mxfp4_to_fp8_kernel[
+def _dequant_mxfp4_to_fp8_kernel[
     out_dtype: DType,
     scales_dtype: DType,
     in_dtype: DType,
@@ -121,7 +121,7 @@ fn _dequant_mxfp4_to_fp8_kernel[
 
 
 @always_inline
-fn dequant_mxfp4[
+def dequant_mxfp4[
     *, SF_VECTOR_SIZE: Int = 32
 ](
     ctx: DeviceContext,

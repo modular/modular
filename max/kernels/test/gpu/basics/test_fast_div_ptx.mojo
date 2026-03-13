@@ -47,7 +47,7 @@ def contains_power_of_2_sequence(asm: String) raises -> Bool:
     return shift_result is not PythonObject(None)
 
 
-fn fast_div_kernel[
+def fast_div_kernel[
     dtype: DType,
     layout: Layout,
     divisor: Int,

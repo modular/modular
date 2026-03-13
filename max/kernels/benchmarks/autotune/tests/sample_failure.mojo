@@ -22,15 +22,15 @@ from std.time import sleep
 from internal_utils import arg_parse, update_bench_config_args
 
 
-fn bench_func(mut m: Bench, pe_rank: Int, sleep_secs: Float64) raises:
+def bench_func(mut m: Bench, pe_rank: Int, sleep_secs: Float64) raises:
     @parameter
     @__copy_capture(sleep_secs)
     @always_inline
-    fn bench_iter(mut b: Bencher):
+    def bench_iter(mut b: Bencher):
         @parameter
         @__copy_capture(sleep_secs)
         @always_inline
-        fn call_fn():
+        def call_fn():
             sleep(sleep_secs)
 
         b.iter[call_fn]()

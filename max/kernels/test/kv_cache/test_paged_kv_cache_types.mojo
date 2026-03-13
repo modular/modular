@@ -132,7 +132,7 @@ def do_test[
     lookup_table_ptr.free()
 
 
-fn test_paged_kv_cache_stride_is_unknown() raises:
+def test_paged_kv_cache_stride_is_unknown() raises:
     """Test that PagedKVCache has UNKNOWN stride[0] for view tensor correctness.
 
     PagedKVCache is a 4D view of a 6D parent tensor. The outer stride depends
@@ -185,7 +185,7 @@ fn test_paged_kv_cache_stride_is_unknown() raises:
     )
 
 
-fn test_paged_kv_cache_offset_correctness() raises:
+def test_paged_kv_cache_offset_correctness() raises:
     """Test that PagedKVCache offset calculations use correct runtime strides.
 
     This test verifies that when accessing elements through a PagedKVCache view,
@@ -327,7 +327,7 @@ fn test_paged_kv_cache_offset_correctness() raises:
     lookup_table_ptr.free()
 
 
-fn test_paged_kv_cache_quantization() raises:
+def test_paged_kv_cache_quantization() raises:
     comptime CacheType = PagedKVCache[
         DType.float32, kv_params, 16, DType.float8_e4m3fn, 256
     ]

@@ -25,6 +25,10 @@ _EXTRA_CONSTRAINTS = {
     "test_dual_gemm.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_gemm_kernel.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_gemm_kernel_new.mojo": ["//:nvidia_gpu"],  # Requires 32-thread warps
+    "test_gemv.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: GEX-3155 — "Metal not supported" in device_context
     "test_gemv2.mojo": select({
         "//:h100_gpu": ["@platforms//:incompatible"],
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: PRDT-506

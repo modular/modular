@@ -143,7 +143,7 @@ class ConfigLoader:
             residual_multiplier=1.0,
             devices=[DeviceRef.GPU()],
             clip_qkv=None,
-            float8_config=None,
+            quant_config=None,
         )
 
     def create_internvl_config(

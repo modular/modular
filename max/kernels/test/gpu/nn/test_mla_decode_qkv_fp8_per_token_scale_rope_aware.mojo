@@ -76,7 +76,7 @@ comptime KV_NUM_HEADS = 1  # MLA has 1 KV head
 # ===-----------------------------------------------------------------------===#
 
 
-fn create_interleaved_q_data(
+def create_interleaved_q_data(
     q_host_fp8: UnsafePointer[mut=True, Scalar[DType.float8_e4m3fn], _],
     q_ref_bf16: UnsafePointer[mut=True, BFloat16, _],
     total_q_tokens: Int,
@@ -125,7 +125,7 @@ fn create_interleaved_q_data(
     rope_bf16.free()
 
 
-fn create_interleaved_kv_block_data(
+def create_interleaved_kv_block_data(
     blocks_host: UnsafePointer[mut=True, Scalar[DType.float8_e4m3fn], _],
     block_elems: Int,
     total_pages: Int,
@@ -172,7 +172,7 @@ fn create_interleaved_kv_block_data(
     rope_bf16.free()
 
 
-fn extract_bf16_kv_from_block(
+def extract_bf16_kv_from_block(
     blocks_host: UnsafePointer[mut=False, Scalar[DType.float8_e4m3fn], _],
     k_bf16_out: UnsafePointer[mut=True, Scalar[DType.bfloat16], _],
     physical_page: Int,
@@ -211,7 +211,7 @@ fn extract_bf16_kv_from_block(
 # ===-----------------------------------------------------------------------===#
 
 
-fn run_test[
+def run_test[
     num_heads: Int,
 ](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
     comptime fp8_type = DType.float8_e4m3fn
@@ -773,7 +773,7 @@ fn run_test[
 # ===-----------------------------------------------------------------------===#
 
 
-fn _scale_palette(index: Int) -> Float32:
+def _scale_palette(index: Int) -> Float32:
     """Pick a non-trivial scale from a palette by index (wrapping).
 
     Uses power-of-2 values to avoid additional quantization noise in the
@@ -794,7 +794,7 @@ fn _scale_palette(index: Int) -> Float32:
     return 4.0
 
 
-fn run_test_with_scales[
+def run_test_with_scales[
     num_heads: Int,
 ](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
     """Test MLA decode with non-trivial per-token scales.

@@ -69,13 +69,13 @@ comptime DEFAULT_NUM_PARTITIONS = NUM_PARTITIONS.get(len(NUM_PARTITIONS) - 1, 0)
 
 
 @always_inline
-fn _get_partition_bucket[i: Int]() -> Int:
+def _get_partition_bucket[i: Int]() -> Int:
     """Return the i-th partition bucket value."""
     comptime res = NUM_PARTITIONS.get(i, DEFAULT_NUM_PARTITIONS)
     return res
 
 
-fn _bucket_num_partitions(num_partitions: Int) -> Int:
+def _bucket_num_partitions(num_partitions: Int) -> Int:
     """Map num_partitions to the smallest bucket value >= num_partitions."""
     comptime for kv in NUM_PARTITIONS.items():
         comptime v = kv.value
@@ -105,7 +105,7 @@ from nn.mla_decode_sm100_combine import mla_decode_combine_partial_outputs
 # ------------------------------------------------------------------------------
 # Compute num_partitions heuristic (shared by dispatch and pre-compute op)
 # ------------------------------------------------------------------------------
-fn _compute_num_partitions[
+def _compute_num_partitions[
     num_heads: Int,
     is_fp8_kv: Bool = False,
 ](
@@ -280,7 +280,7 @@ fn _compute_num_partitions[
 # ------------------------------------------------------------------------------
 # Public pre-compute function for MOGG ops
 # ------------------------------------------------------------------------------
-fn compute_mla_dispatch_scalars[
+def compute_mla_dispatch_scalars[
     num_heads: Int,
     _is_cache_length_accurate: Bool = False,
     is_fp8_kv: Bool = False,
@@ -343,7 +343,7 @@ struct MLADispatchScalarArgs[
     var batch_size: Int
     var q_max_seq_len: Int
 
-    fn __init__(
+    def __init__(
         out self,
         batch_size: Int,
         max_cache_len: Int,
@@ -373,7 +373,7 @@ struct MLADispatchScalarArgs[
             UnsafePointer(to=host_args).bitcast[Scalar[DType.int64]]()
         )
 
-    fn gpu_layout_tensor(
+    def gpu_layout_tensor(
         self,
     ) -> Self.MLAScalarArgsLT:
         return Self.MLAScalarArgsLT(
@@ -386,7 +386,7 @@ struct MLADispatchScalarArgs[
 # ------------------------------------------------------------------------------
 # MLA decoding implementation for SM100
 # ------------------------------------------------------------------------------
-fn mla_decode_sm100_dispatch[
+def mla_decode_sm100_dispatch[
     q_type: DType,
     q_layout: Layout,
     k_t: MHAOperand,
@@ -459,7 +459,7 @@ fn mla_decode_sm100_dispatch[
     # =========================================================================
     @parameter
     @always_inline
-    fn launch_impl[split_page_size_param: Int]() raises:
+    def launch_impl[split_page_size_param: Int]() raises:
         _mla_decode_sm100_dispatch_impl[
             q_type=q_type,
             q_layout=q_layout,
@@ -503,7 +503,7 @@ fn mla_decode_sm100_dispatch[
 # ------------------------------------------------------------------------------
 # Inner dispatch implementation parameterized on split_page_size
 # ------------------------------------------------------------------------------
-fn _mla_decode_sm100_dispatch_impl[
+def _mla_decode_sm100_dispatch_impl[
     q_type: DType,
     q_layout: Layout,
     k_t: MHAOperand,
@@ -650,7 +650,7 @@ fn _mla_decode_sm100_dispatch_impl[
         # Dispatch to specialized kernel based on num_partitions for compile-time unrolling.
         # Supports up to MAX_NUM_SPLITS splits to allow higher SM utilization on B200.
         @parameter
-        fn launch_combine[n_splits: Int, wph: Int]() raises:
+        def launch_combine[n_splits: Int, wph: Int]() raises:
             mla_decode_combine_partial_outputs[
                 output_type=output_type,
                 accum_type=AccumType,
@@ -670,7 +670,7 @@ fn _mla_decode_sm100_dispatch_impl[
             )
 
         @parameter
-        fn dispatch_combine[wph: Int]() raises:
+        def dispatch_combine[wph: Int]() raises:
             """Dispatch the combine kernel with the given warps_per_head,
             matching num_partitions to the correct compile-time bucket."""
             comptime for _b in range(len(NUM_PARTITIONS)):
@@ -811,7 +811,7 @@ fn _mla_decode_sm100_dispatch_impl[
         )
 
 
-fn mla_decode_sm100_sink_split_k[
+def mla_decode_sm100_sink_split_k[
     q_type: DType,
     q_layout: Layout,
     k_t: MHAOperand,
@@ -1195,7 +1195,7 @@ fn mla_decode_sm100_sink_split_k[
 
 
 @always_inline
-fn launch_mla_sm100_decode_enqueue_kernel[
+def launch_mla_sm100_decode_enqueue_kernel[
     q_type: DType,
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -1363,7 +1363,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
 
 
 @always_inline
-fn launch_mla_sm100_decode_native_fp8[
+def launch_mla_sm100_decode_native_fp8[
     q_type: DType,
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -1455,7 +1455,7 @@ fn launch_mla_sm100_decode_native_fp8[
 
 
 @always_inline
-fn launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
+def launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
     q_type: DType,
     KVLUTType: MHAOperand,
     output_type: DType,

@@ -34,7 +34,7 @@ def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
-fn run_selective_scan_gpu[
+def run_selective_scan_gpu[
     dtype: DType,
     DSTATE: Int,
     has_D: Bool = True,
@@ -467,7 +467,7 @@ fn run_selective_scan_gpu[
     delta_bias_h.free()
 
 
-fn run_selective_scan_update_gpu[
+def run_selective_scan_update_gpu[
     dtype: DType,
     DSTATE: Int,
     has_D: Bool = True,
@@ -859,7 +859,7 @@ fn run_selective_scan_update_gpu[
 # =============================================================================
 
 
-fn test_selective_scan_gpu_basic() raises:
+def test_selective_scan_gpu_basic() raises:
     """Test basic selective scan GPU kernel."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -874,7 +874,7 @@ fn test_selective_scan_gpu_basic() raises:
     ](batch=1, dim=2, seqlen=4, n_groups=1, ctx=ctx)
 
 
-fn test_selective_scan_gpu_without_D() raises:
+def test_selective_scan_gpu_without_D() raises:
     """Test selective scan GPU without D tensor."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -889,7 +889,7 @@ fn test_selective_scan_gpu_without_D() raises:
     ](batch=1, dim=2, seqlen=4, n_groups=1, ctx=ctx)
 
 
-fn test_selective_scan_gpu_without_z() raises:
+def test_selective_scan_gpu_without_z() raises:
     """Test selective scan GPU without z tensor."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -904,7 +904,7 @@ fn test_selective_scan_gpu_without_z() raises:
     ](batch=1, dim=2, seqlen=4, n_groups=1, ctx=ctx)
 
 
-fn test_selective_scan_gpu_with_delta_softplus() raises:
+def test_selective_scan_gpu_with_delta_softplus() raises:
     """Test selective scan GPU with delta softplus activation."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -919,7 +919,7 @@ fn test_selective_scan_gpu_with_delta_softplus() raises:
     ](batch=1, dim=2, seqlen=4, n_groups=1, ctx=ctx)
 
 
-fn test_selective_scan_gpu_longer_sequence() raises:
+def test_selective_scan_gpu_longer_sequence() raises:
     """Test selective scan GPU with longer sequence."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -934,7 +934,7 @@ fn test_selective_scan_gpu_longer_sequence() raises:
     ](batch=1, dim=4, seqlen=16, n_groups=1, ctx=ctx)
 
 
-fn test_selective_scan_gpu_edge_case_seqlen() raises:
+def test_selective_scan_gpu_edge_case_seqlen() raises:
     """Test selective scan GPU with edge case sequence lengths."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -951,7 +951,7 @@ fn test_selective_scan_gpu_edge_case_seqlen() raises:
         ](batch=1, dim=2, seqlen=seqlen, n_groups=1, ctx=ctx)
 
 
-fn test_selective_scan_gpu_realistic_dimensions() raises:
+def test_selective_scan_gpu_realistic_dimensions() raises:
     """Test selective scan GPU with realistic dimensions."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -971,7 +971,7 @@ fn test_selective_scan_gpu_realistic_dimensions() raises:
 # =============================================================================
 
 
-fn test_selective_scan_update_gpu_basic() raises:
+def test_selective_scan_update_gpu_basic() raises:
     """Test basic selective scan update GPU kernel."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -986,7 +986,7 @@ fn test_selective_scan_update_gpu_basic() raises:
     ](batch=1, dim=2, n_groups=1, ctx=ctx)
 
 
-fn test_selective_scan_update_gpu_without_D() raises:
+def test_selective_scan_update_gpu_without_D() raises:
     """Test selective scan update GPU without D tensor."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1001,7 +1001,7 @@ fn test_selective_scan_update_gpu_without_D() raises:
     ](batch=1, dim=2, n_groups=1, ctx=ctx)
 
 
-fn test_selective_scan_update_gpu_without_z() raises:
+def test_selective_scan_update_gpu_without_z() raises:
     """Test selective scan update GPU without z tensor."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1016,7 +1016,7 @@ fn test_selective_scan_update_gpu_without_z() raises:
     ](batch=1, dim=2, n_groups=1, ctx=ctx)
 
 
-fn test_selective_scan_update_gpu_with_delta_softplus() raises:
+def test_selective_scan_update_gpu_with_delta_softplus() raises:
     """Test selective scan update GPU with delta softplus activation."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1031,7 +1031,7 @@ fn test_selective_scan_update_gpu_with_delta_softplus() raises:
     ](batch=1, dim=2, n_groups=1, ctx=ctx)
 
 
-fn test_selective_scan_update_gpu_larger_dimensions() raises:
+def test_selective_scan_update_gpu_larger_dimensions() raises:
     """Test selective scan update GPU with larger dimensions."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():

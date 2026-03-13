@@ -20,7 +20,7 @@ from std.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_almost_equal, assert_true
 
 
-fn p2p_copy_kernel(
+def p2p_copy_kernel(
     dst: UnsafePointer[Float32, MutAnyOrigin],
     src: UnsafePointer[Float32, ImmutAnyOrigin],
     num_elements: Int,
@@ -30,7 +30,7 @@ fn p2p_copy_kernel(
         dst[tid] = src[tid]
 
 
-fn launch_p2p_copy_kernel(
+def launch_p2p_copy_kernel(
     ctx1: DeviceContext,
     dst_buf: DeviceBuffer[DType.float32],
     src_buf: DeviceBuffer[DType.float32],

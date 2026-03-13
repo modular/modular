@@ -23,7 +23,7 @@ from linalg.utils_gpu import MatmulConfig, _bk_base
 from std.utils.index import Index, IndexList
 
 
-fn bench_dual_gemm_gpu[
+def bench_dual_gemm_gpu[
     dtype: DType, M: Int, N: Int, K: Int
 ](ctx: DeviceContext, mut b: Bench) raises:
     comptime transpose_b = True
@@ -60,10 +60,10 @@ fn bench_dual_gemm_gpu[
     @always_inline
     @__copy_capture(a_ptr, b0_ptr, b1_ptr, c_ptr)
     @parameter
-    fn bench_fn(mut b: Bencher) raises:
+    def bench_fn(mut b: Bencher) raises:
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             var a_buf = NDBuffer[
                 rank=2, dtype, MutAnyOrigin, DimList[Dim(), K]()
             ](a_ptr, Index(M, K))

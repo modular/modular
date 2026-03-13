@@ -47,7 +47,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
     var value: Int
     """The underlying value of the file descriptor."""
 
-    fn __init__(out self, value: Int = 1):
+    def __init__(out self, value: Int = 1):
         """Constructs the file descriptor from an integer.
 
         Args:
@@ -55,7 +55,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         """
         self.value = value
 
-    fn __init__(out self, f: FileHandle):
+    def __init__(out self, f: FileHandle):
         """Constructs the file descriptor from a file handle.
 
         Args:
@@ -64,7 +64,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         self.value = f._get_raw_fd()
 
     @always_inline
-    fn write_bytes(mut self, bytes: Span[Byte, _]):
+    def write_bytes(mut self, bytes: Span[Byte, _]):
         """
         Write a span of bytes to the file.
 
@@ -76,7 +76,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         )
         assert written == len(bytes), "expected amount of bytes not written"
 
-    fn write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSlice):
         """
         Write a `StringSlice` to this `FileDescriptor`.
 
@@ -88,7 +88,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         self.write_bytes(string.as_bytes())
 
     @always_inline
-    fn read_bytes(mut self, buffer: Span[mut=True, Byte, _]) raises -> UInt:
+    def read_bytes(mut self, buffer: Span[mut=True, Byte, _]) raises -> UInt:
         """Read a number of bytes from the file into a buffer.
 
         Args:
@@ -118,7 +118,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
             raise Error("Failed to read bytes.")
         return UInt(read)
 
-    fn isatty(self) -> Bool:
+    def isatty(self) -> Bool:
         """Checks whether a file descriptor refers to a terminal.
 
         Returns `True` if the file descriptor is open and connected to a

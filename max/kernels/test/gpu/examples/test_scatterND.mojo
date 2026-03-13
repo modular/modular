@@ -28,7 +28,7 @@ comptime MAX_THREADS_PER_BLOCK = 256
 
 
 # TODO: Follow-up: Eliminate offsets calculations and use NDBuffers directly.
-fn scatter_nd_gpu[
+def scatter_nd_gpu[
     dtype: DType,
     indices_type: DType,
 ](
@@ -91,7 +91,7 @@ fn scatter_nd_gpu[
 
 
 # TODO: Extend for using reduce function if needed.
-fn scatter_nd[
+def scatter_nd[
     dtype: DType,
     indices_type: DType,
     data_rank: Int,
@@ -255,7 +255,7 @@ fn scatter_nd[
     ptr.free()
 
 
-fn linear_fill[
+def linear_fill[
     dtype: DType
 ](buf: NDBuffer[rank=_, dtype, MutAnyOrigin, ...], elems: Span[Scalar[dtype]],):
     assert buf.num_elements() == len(elems), "must fill all elements of tensor"
@@ -264,7 +264,7 @@ fn linear_fill[
         buf[i] = elems[i]
 
 
-fn test_case[
+def test_case[
     dtype: DType,
     input_shape: DimList,
     indices_shape: DimList,
@@ -312,8 +312,8 @@ fn test_case[
             assert_false(True)
 
 
-fn main():
-    fn test_scatternd_gpu():
+def main():
+    def test_scatternd_gpu():
         print("== test_scatternd_gpu")
         var data: List[Float32] = [
             # fmt: off

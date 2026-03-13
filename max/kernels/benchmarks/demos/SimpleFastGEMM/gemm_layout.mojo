@@ -28,7 +28,7 @@ comptime simd_size = simd_width_of[dtype]()
 comptime alignment = align_of[SIMD[dtype, simd_size]]()
 
 
-fn gemm_naive[
+def gemm_naive[
     layout_b: Layout, origin: Origin
 ](
     c: NDBuffer[rank=2, dtype],  # M x N
@@ -45,7 +45,7 @@ fn gemm_naive[
                 c[(mm, nn)] += a[mm, kk] * b[kk, nn]
 
 
-fn kernel[
+def kernel[
     layout_c: Layout,
     layout_a: Layout,
     layout_b: Layout,
@@ -84,7 +84,7 @@ fn kernel[
         c.store[NR](m, 0, c_cache.load[NR](m, 0))
 
 
-fn pack_b[
+def pack_b[
     layout_b: Layout,
     layout_packed: Layout,
 ](
@@ -105,7 +105,7 @@ fn pack_b[
                     packed_tile[0, n] = b_tile[k, n]
 
 
-fn gemm[
+def gemm[
     N: Int,
     K: Int,
     layout_b: Layout,
@@ -120,7 +120,7 @@ fn gemm[
         var b_tile = b_packed.tile[1, K * NR](jc, 0)
 
         # @parameter
-        # fn process_row(ir: Int):
+        # def process_row(ir: Int):
         for ir in range(M // MR):
             var a_tile = TensorBuilder[MR, K, dtype].Wrap(a.data + K * MR * ir)
 
@@ -142,7 +142,7 @@ fn gemm[
 
 # kgen --emit=asm max/kernels/benchmarks/demos/SimpleFastGEMM/gemm_layout.mojo >out.S
 @export(ABI="C")
-fn gemm_export_dynamic(
+def gemm_export_dynamic(
     a_ptr: UnsafePointer[Scalar[dtype], _],
     b_packed_ptr: UnsafePointer[Scalar[dtype], _],
     c_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
@@ -156,7 +156,7 @@ fn gemm_export_dynamic(
     gemm[N, K](c, a, b_packed)
 
 
-fn main():
+def main():
     comptime M = align_up(1024, MR)
     comptime N = align_up(1024, NR)
     comptime K: Int = 1024
@@ -217,7 +217,7 @@ fn main():
     print(" errors")
 
     @parameter
-    fn bench_gemm():
+    def bench_gemm():
         gemm[N, K](c2, a, b_packed)
 
     var num_warmup: Int = 1

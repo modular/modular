@@ -46,7 +46,7 @@ from std.random import rand
 from std.utils.index import IndexList
 
 
-fn compute_conv_flops(
+def compute_conv_flops(
     batch: Int,
     out_height: Int,
     out_width: Int,
@@ -69,7 +69,7 @@ fn compute_conv_flops(
     )
 
 
-fn bench_conv2d[
+def bench_conv2d[
     dtype: DType,
     batch: Int,
     in_height: Int,
@@ -242,7 +242,7 @@ fn bench_conv2d[
     # ==================== Benchmark SM100 implicit im2col ====================
     @parameter
     @__copy_capture(input_nd, filter_nd, output_sm100_nd)
-    fn sm100_implicit_kernel() raises:
+    def sm100_implicit_kernel() raises:
         conv2d_fprop(output_sm100_nd, input_nd, filter_nd, problem, ctx)
 
     var sm100_time_ns = ctx.execution_time[sm100_implicit_kernel](num_iters)
@@ -254,7 +254,7 @@ fn bench_conv2d[
     @__copy_capture(
         input_dev_tensor, filter_nchw_dev_tensor, output_cudnn_dev_tensor
     )
-    fn cudnn_kernel() raises:
+    def cudnn_kernel() raises:
         conv_cudnn[dtype, dtype, dtype](
             input_dev_tensor,
             filter_nchw_dev_tensor,
@@ -329,7 +329,7 @@ fn bench_conv2d[
     _ = output_cudnn_dev^
 
 
-fn bench_all_configs[
+def bench_all_configs[
     dtype: DType,
     batch: Int,
     in_height: Int,
@@ -494,7 +494,7 @@ fn bench_all_configs[
     # Benchmark 1-SM
     @parameter
     @__copy_capture(input_nd, filter_nd, output_1sm_nd)
-    fn kernel_1sm() raises:
+    def kernel_1sm() raises:
         conv2d_fprop[config=config_1sm](
             output_1sm_nd, input_nd, filter_nd, problem, ctx
         )
@@ -506,7 +506,7 @@ fn bench_all_configs[
     # Benchmark 2-SM
     @parameter
     @__copy_capture(input_nd, filter_nd, output_2sm_nd)
-    fn kernel_2sm() raises:
+    def kernel_2sm() raises:
         conv2d_fprop[config=config_2sm](
             output_2sm_nd, input_nd, filter_nd, problem, ctx
         )
@@ -520,7 +520,7 @@ fn bench_all_configs[
     @__copy_capture(
         input_dev_tensor, filter_nchw_dev_tensor, output_cudnn_dev_tensor
     )
-    fn cudnn_kernel() raises:
+    def cudnn_kernel() raises:
         conv_cudnn[dtype, dtype, dtype](
             input_dev_tensor,
             filter_nchw_dev_tensor,
@@ -579,7 +579,7 @@ fn bench_all_configs[
     _ = output_cudnn_dev^
 
 
-fn bench_residual[
+def bench_residual[
     dtype: DType,
     batch: Int,
     in_height: Int,
@@ -701,7 +701,7 @@ fn bench_residual[
     # Benchmark conv2d only
     @parameter
     @__copy_capture(input_nd, filter_nd, output_nd)
-    fn kernel_conv() raises:
+    def kernel_conv() raises:
         conv2d_fprop[config=config_1sm](
             output_nd, input_nd, filter_nd, problem, ctx
         )
@@ -713,7 +713,7 @@ fn bench_residual[
     # Benchmark conv2d + fused residual
     @parameter
     @__copy_capture(input_nd, filter_nd, output_res_nd, source_nd)
-    fn kernel_residual() raises:
+    def kernel_residual() raises:
         conv2d_fprop_with_residual[config=config_1sm, has_residual=True](
             output_res_nd,
             input_nd,

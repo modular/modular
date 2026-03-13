@@ -98,11 +98,11 @@ struct WarpRole(Equatable, TrivialRegisterPassable):
     comptime Empty = Self(6)
 
     @always_inline
-    fn __eq__(self, other: Int) -> Bool:
+    def __eq__(self, other: Int) -> Bool:
         return self == Self(Int32(other))
 
 
-fn warp_idx_to_role(warp_idx: UInt32) -> WarpRole:
+def warp_idx_to_role(warp_idx: UInt32) -> WarpRole:
     var wg_idx = warp_idx // 4
     if wg_idx == 0:
         return WarpRole.Softmax0
@@ -154,7 +154,7 @@ __extension SM100MLA:
         )
     )
     @__llvm_metadata(`nvvm.minctasm`=Int(1))
-    fn mla_prefill_kernel_blockscale[
+    def mla_prefill_kernel_blockscale[
         blockwise_scale: Int = 0,
     ](
         q_tma_op: QTMATile[
@@ -465,7 +465,7 @@ __extension SM100MLA:
 
     @staticmethod
     @always_inline
-    fn load(
+    def load(
         mbars: Self.MiscMBarsType,
         mut tma_to_cvt_pipeline: TMAtoCvtPipeline,
         score_row: UInt32,
@@ -695,7 +695,7 @@ __extension SM100MLA:
 
     @staticmethod
     @always_inline
-    fn convert_fp8_to_bf16(
+    def convert_fp8_to_bf16(
         mut iter_count: UInt32,
         mut tma_to_cvt_pipeline: TMAtoCvtPipeline,
         mut cvt_to_mma_pipeline: CvtToMMAPipline,
@@ -781,7 +781,7 @@ __extension SM100MLA:
 
     @staticmethod
     @always_inline
-    fn mma(
+    def mma(
         tmem_addr: UInt32,
         mbars: Self.MiscMBarsType,
         mut cvt_to_mma_pipeline: CvtToMMAPipline,
@@ -916,7 +916,7 @@ __extension SM100MLA:
 
 
 @always_inline
-fn mla_sm100_prefill_blockscale[
+def mla_sm100_prefill_blockscale[
     output_type: DType,
     q_type: DType,
     KVType: MHAOperand,
@@ -1026,7 +1026,7 @@ fn mla_sm100_prefill_blockscale[
 
 
 @always_inline
-fn _mla_prefill_sm100_valid_length_dispatch[
+def _mla_prefill_sm100_valid_length_dispatch[
     KVType: MHAOperand,
     output_type: DType,
     q_type: DType,

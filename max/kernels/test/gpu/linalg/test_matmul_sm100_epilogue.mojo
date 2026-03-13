@@ -144,7 +144,7 @@ def test_matmul_sm100_epilogue[
     @parameter
     @always_inline
     @__copy_capture(c_tensor)
-    fn test_lambda_add_coords_summ[
+    def test_lambda_add_coords_summ[
         _dtype: DType,
         width: Int,
         *,
@@ -220,7 +220,7 @@ def test_matmul_sm100_epilogue[
     @parameter
     @always_inline
     @__copy_capture(c_tensor_host)
-    fn test_lambda_add_coords_summ_local[
+    def test_lambda_add_coords_summ_local[
         _dtype: DType,
         width: Int,
         *,
@@ -306,7 +306,7 @@ def main() raises:
 
                     # Helper to run test with varying cluster/k_group/sizes
                     @parameter
-                    fn run[
+                    def run[
                         cluster_m: Int,
                         cluster_n: Int,
                         k_group: Int = 1,

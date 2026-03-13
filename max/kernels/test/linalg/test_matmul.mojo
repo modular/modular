@@ -34,7 +34,7 @@ from std.utils.index import Index, IndexList
 comptime alignment = 64
 
 
-fn gemm_naive[](
+def gemm_naive[](
     a: NDBuffer,
     b: NDBuffer,
     c: NDBuffer[mut=True, ...],
@@ -223,7 +223,7 @@ def test_shapes[
     mixed_kernels: Bool,
 ]() raises:
     @parameter
-    fn test_shapes_helper(m: Int, n: Int, k: Int) raises:
+    def test_shapes_helper(m: Int, n: Int, k: Int) raises:
         test_matmul[
             a_type=a_type,
             b_type=b_type,

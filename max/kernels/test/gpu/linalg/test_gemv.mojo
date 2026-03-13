@@ -73,7 +73,7 @@ def run_matvec[
 
     @always_inline
     @parameter
-    fn run_func_gemv(ctx: DeviceContext) raises:
+    def run_func_gemv(ctx: DeviceContext) raises:
         comptime kernel = gemv_kernel[c_type, a_type, b_type]
 
         ctx.enqueue_function_experimental[kernel](
@@ -89,7 +89,7 @@ def run_matvec[
 
     @always_inline
     @parameter
-    fn run_func_gevm(ctx: DeviceContext) raises:
+    def run_func_gevm(ctx: DeviceContext) raises:
         comptime kernel = gevm_kernel[
             c_type,
             a_type,
@@ -195,7 +195,7 @@ def run_matvec[
     _ = c_host_blas
 
 
-fn run_matvec_with_epilogue_fn(
+def run_matvec_with_epilogue_fn(
     M: Int, N: Int, K: Int, *, ctx: DeviceContext
 ) raises:
     comptime c_stride = 5
@@ -235,7 +235,7 @@ fn run_matvec_with_epilogue_fn(
     @parameter
     @always_inline
     @__copy_capture(c_device_nd, const_val)
-    fn epilogue_fn[
+    def epilogue_fn[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         c_device_nd.store[width=width](
@@ -249,7 +249,7 @@ fn run_matvec_with_epilogue_fn(
 
     @always_inline
     @parameter
-    fn run_func_gemv(ctx: DeviceContext) raises:
+    def run_func_gemv(ctx: DeviceContext) raises:
         comptime kernel = gemv_kernel[
             DType.float32,
             DType.float32,
@@ -271,7 +271,7 @@ fn run_matvec_with_epilogue_fn(
 
     @always_inline
     @parameter
-    fn run_func_gevm(ctx: DeviceContext) raises:
+    def run_func_gevm(ctx: DeviceContext) raises:
         comptime kernel = gevm_kernel[
             DType.float32,
             DType.float32,
@@ -326,7 +326,7 @@ fn run_matvec_with_epilogue_fn(
 
     @always_inline
     @parameter
-    fn run_func_naive(ctx: DeviceContext) raises:
+    def run_func_naive(ctx: DeviceContext) raises:
         comptime kernel = matmul_kernel[
             DType.float32,
             DType.float32,

@@ -66,12 +66,12 @@ from .utils import load_b, load_b_tr, copy_dram_to_sram_lds
 
 
 @always_inline
-fn set_priority[priority: Int]():
+def set_priority[priority: Int]():
     llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](Int16(priority))
 
 
 @always_inline
-fn scheduling_hints_qk[group: Int]():
+def scheduling_hints_qk[group: Int]():
     comptime for i in range(4):
         schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, Int32(group))
 
@@ -87,7 +87,7 @@ fn scheduling_hints_qk[group: Int]():
 
 
 @always_inline
-fn scheduling_hints_pv[group: Int]():
+def scheduling_hints_pv[group: Int]():
     comptime for i in range(12):
         schedule_group_barrier(AMDScheduleBarrierMask.VALU, 4, Int32(group))
         schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, Int32(group))
@@ -104,7 +104,7 @@ fn scheduling_hints_pv[group: Int]():
 
 
 @always_inline
-fn barrier[
+def barrier[
     *, schedule_barrier_before: Bool = True, schedule_barrier_after: Bool = True
 ]():
     comptime if schedule_barrier_before:
@@ -117,7 +117,7 @@ fn barrier[
 
 
 @always_inline
-fn block_sync_lds[
+def block_sync_lds[
     *,
     lgkmcnt: UInt32 = 0,
 ]():
@@ -129,7 +129,7 @@ fn block_sync_lds[
 
 
 @always_inline
-fn block_sync_lds_direct_load[
+def block_sync_lds_direct_load[
     *,
     vmcnt: UInt32 = 0,
 ]():
@@ -153,7 +153,7 @@ struct KVCacheIterator[
     var kv_head_idx: Int
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         cache: Self.cache_t,
         batch_idx: Int,
@@ -167,7 +167,7 @@ struct KVCacheIterator[
         self.kv_head_idx = kv_head_idx
 
     @always_inline
-    fn next_unsafe(
+    def next_unsafe(
         mut self,
         out result: LayoutTensor[
             Self.cache_t.dtype,
@@ -200,7 +200,7 @@ struct KVCacheIterator[
         return out
 
     @always_inline
-    fn increment(mut self):
+    def increment(mut self):
         self.tile_start_row += Self.tile_size
 
 
@@ -274,7 +274,7 @@ struct KVBuffer[
     var warp_id: UInt32
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         k_cache: Self.kv_t,
         batch_idx: UInt,
@@ -313,7 +313,7 @@ struct KVBuffer[
             )
 
     @always_inline
-    fn load_from_dram[buffer_idx: Int](mut self):
+    def load_from_dram[buffer_idx: Int](mut self):
         var global_tile = self.kv_cache_iter.next_unsafe()
 
         var smem_tile = Self.SharedTileType(
@@ -352,7 +352,7 @@ struct KVBuffer[
                 )
 
     @always_inline
-    fn get_mma_tile[
+    def get_mma_tile[
         k_mma_tile_idx: Int,
         bk_tile_idx: Int,
     ](self) -> Self.MMATileType.SplitElementType[
@@ -363,18 +363,18 @@ struct KVBuffer[
         ]()[k_mma_tile_idx]
 
     @always_inline
-    fn copy_to_shared(
+    def copy_to_shared(
         self,
     ):
         ...
 
     @always_inline
-    fn load_from_shared(self, buffer: UInt):
+    def load_from_shared(self, buffer: UInt):
         comptime for bk_tile in range(Self.num_k_tiles):
             self.load_from_shared[bk_tile](buffer)
 
     @always_inline
-    fn load_from_shared[bk_tile: Int](self, buffer: UInt):
+    def load_from_shared[bk_tile: Int](self, buffer: UInt):
         comptime if Self.transpose:
             comptime num_warps_n = Self.BN // Self.WN
             var warp_col = get_warp_id() % UInt(num_warps_n)
@@ -445,7 +445,7 @@ struct KVBuffer[
 
 __extension Attention:
     @always_inline
-    fn get_num_rows(self) -> UInt32:
+    def get_num_rows(self) -> UInt32:
         var end = min(
             self.kv_start_row + UInt32(Self.BN), UInt32(self.num_keys)
         )
@@ -455,14 +455,14 @@ __extension Attention:
         return UInt32(num_rows)
 
     @always_inline
-    fn apply_mask[stage: Int](mut self, not_last_iter: Bool = False):
+    def apply_mask[stage: Int](mut self, not_last_iter: Bool = False):
         self.scale_p_reg[stage]()
         var num_rows = self.get_num_rows()
         self.mask_apply[stage](self.kv_start_row, num_rows, not_last_iter)
         self.kv_start_row += UInt32(Self.BN)
 
     @always_inline
-    fn online_softmax_step_0[stage: Int, mask: Bool = True](mut self):
+    def online_softmax_step_0[stage: Int, mask: Bool = True](mut self):
         comptime if mask:
             self.apply_mask[stage]()
         var warp_scratch = self.warp_scratch_tensor.tile[
@@ -473,7 +473,7 @@ __extension Attention:
         self.softmax.exp[start=0, stride=2](score_reg_tile)
 
     @always_inline
-    fn online_softmax_step_1[stage: Int](mut self):
+    def online_softmax_step_1[stage: Int](mut self):
         var warp_scratch = self.warp_scratch_tensor.tile[
             2 * Int(Self.num_warps_n), Int(Self.WM)
         ](0, 0)
@@ -485,12 +485,12 @@ __extension Attention:
         self.softmax.update_sum()
 
     @always_inline
-    fn online_softmax_update_output(mut self):
+    def online_softmax_update_output(mut self):
         var output_reg_tile = self.out_reg_buffer.vectorize()
         self.softmax.update_output(output_reg_tile)
 
     @always_inline
-    fn online_softmax_full[stage: Int](mut self):
+    def online_softmax_full[stage: Int](mut self):
         self.apply_mask[stage]()
         var warp_scratch = self.warp_scratch_tensor.tile[
             2 * Int(Self.num_warps_n), Int(Self.WM)
@@ -509,7 +509,7 @@ __extension Attention:
         self.softmax.update_output(output_reg_tile)
 
     @always_inline
-    fn mha_prefill_experimental(mut self):
+    def mha_prefill_experimental(mut self):
         comptime assert Self.BK == 32, "BK must be 32"
         comptime assert Self.depth == 128, "depth must be 128"
 
@@ -564,7 +564,7 @@ __extension Attention:
 
         @always_inline
         @parameter
-        fn mma_qk[stage: Int]():
+        def mma_qk[stage: Int]():
             comptime tensor_core_mma = TiledTensorCore[
                 accum_type,
                 q_type,
@@ -589,7 +589,7 @@ __extension Attention:
 
         @always_inline
         @parameter
-        fn mma_pv[stage: Int]():
+        def mma_pv[stage: Int]():
             comptime tensor_core_mma = TiledTensorCore[
                 accum_type,
                 q_type,
@@ -641,7 +641,7 @@ __extension Attention:
 
         @always_inline
         @parameter
-        fn loop_over_kvcache[tile_size: Int](end: UInt32):
+        def loop_over_kvcache[tile_size: Int](end: UInt32):
             # barrier()
             # TODO: enable skipping this for other masks, this is not required for the causal mask but will help with other masks
             # if self.mask_skip_and_advance(self.kv_tile_start_row):

@@ -64,7 +64,7 @@ comptime logger = Logger()
 
 
 @always_inline
-fn matmul_dispatch_sm100[
+def matmul_dispatch_sm100[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -244,7 +244,7 @@ fn matmul_dispatch_sm100[
 
 # NOTE:
 # 1. SM100 matmul supports compute lambdas so we should just use normal and compute lambdas.
-fn matmul_dispatch_sm100_fp8[
+def matmul_dispatch_sm100_fp8[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -278,7 +278,7 @@ fn matmul_dispatch_sm100_fp8[
 
     @parameter
     @always_inline("nodebug")
-    fn _dispatch[entry: TuningConfigSM100]() raises:
+    def _dispatch[entry: TuningConfigSM100]() raises:
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             mma_shape=entry.mma_shape,
             cluster_shape=entry.cluster_shape,
@@ -295,13 +295,13 @@ fn matmul_dispatch_sm100_fp8[
 
     @parameter
     @always_inline("nodebug")
-    fn _search[
+    def _search[
         T: Table[TuningConfigSM100],
         domain: List[Int] = List[Int](),
     ]() raises -> Int:
         @parameter
         @always_inline
-        fn get_m(x: TuningConfigSM100) -> Int:
+        def get_m(x: TuningConfigSM100) -> Int:
             return x.M
 
         comptime m_values = T.query_values[Int, get_m, domain]()
@@ -310,7 +310,7 @@ fn matmul_dispatch_sm100_fp8[
 
             @parameter
             @always_inline
-            fn rule_eq_m(x: TuningConfigSM100) -> Bool:
+            def rule_eq_m(x: TuningConfigSM100) -> Bool:
                 return x.M == static_m
 
             if m <= static_m:
@@ -331,7 +331,7 @@ fn matmul_dispatch_sm100_fp8[
 
     @parameter
     @always_inline
-    fn rule_eq_nk(x: TuningConfigSM100) -> Bool:
+    def rule_eq_nk(x: TuningConfigSM100) -> Bool:
         return x.K == static_K and x.N == static_N
 
     comptime nk_idx_list = tuning_table.query_index[rule_eq_nk]()
@@ -1337,7 +1337,7 @@ fn matmul_dispatch_sm100_fp8[
     return DISPATCH_MISS
 
 
-fn heuristic_and_outliers_dispatch[
+def heuristic_and_outliers_dispatch[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1374,7 +1374,7 @@ fn heuristic_and_outliers_dispatch[
 
     @parameter
     @always_inline
-    fn rule(x: TuningConfigSM100) -> Bool:
+    def rule(x: TuningConfigSM100) -> Bool:
         return x.K == static_K and x.N == static_N
 
     comptime outlier_configs = outliers.find[rule]()
@@ -1437,7 +1437,7 @@ fn heuristic_and_outliers_dispatch[
 
 # NOTE:
 # 1. SM100 matmul supports compute lambdas so we should just use normal and compute lambdas.
-fn matmul_dispatch_sm100_bf16[
+def matmul_dispatch_sm100_bf16[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1568,7 +1568,7 @@ fn matmul_dispatch_sm100_bf16[
 # NOTE: vendor blas, naive matmul, and multistage gemm dosen't support compute lambdas so we need to wrap them in a lambda function.
 # if there is no compute lambda, then this wrapper will be a simple element wise lambda.
 @always_inline
-fn _vendor_blas_matmul_sm100[
+def _vendor_blas_matmul_sm100[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1651,7 +1651,7 @@ fn _vendor_blas_matmul_sm100[
         return
 
 
-fn _matmul_dispatch_sm100[
+def _matmul_dispatch_sm100[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1709,7 +1709,7 @@ fn _matmul_dispatch_sm100[
 
         @parameter
         @__copy_capture(c)
-        fn epilogue_wrapper[
+        def epilogue_wrapper[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])
@@ -1763,7 +1763,7 @@ fn _matmul_dispatch_sm100[
 
 
 @always_inline
-fn batched_matmul_dispatch_sm100_bf16[
+def batched_matmul_dispatch_sm100_bf16[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1799,7 +1799,7 @@ fn batched_matmul_dispatch_sm100_bf16[
     ](c, a, b, ctx)
 
 
-fn sm100_heuristic_and_outliers_dispatch[
+def sm100_heuristic_and_outliers_dispatch[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1836,7 +1836,7 @@ fn sm100_heuristic_and_outliers_dispatch[
 
     @parameter
     @always_inline
-    fn rule(x: TuningConfigSM100) -> Bool:
+    def rule(x: TuningConfigSM100) -> Bool:
         return x.K == static_K and x.N == static_N
 
     var c_tensor = TileTensor(c)

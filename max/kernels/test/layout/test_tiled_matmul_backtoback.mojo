@@ -27,7 +27,7 @@ from std.testing import assert_false
 from std.utils import StaticTuple
 
 
-fn matmul_naive[
+def matmul_naive[
     layoutC: Layout, layoutA: Layout, layoutB: Layout, elt: DType
 ](
     C: LayoutTensor[elt, layoutC, MutAnyOrigin],
@@ -63,7 +63,7 @@ comptime cacheline_size: Int = 64
 # really need this, though.
 # Also: cacheline_size of 64 is currently hard coded.
 @always_inline
-fn stride[elt: DType](nrw: Int) -> Int:
+def stride[elt: DType](nrw: Int) -> Int:
     if nrw * size_of[elt]() >= cacheline_size:
         return cacheline_size // size_of[elt]()
     else:
@@ -71,7 +71,7 @@ fn stride[elt: DType](nrw: Int) -> Int:
 
 
 @always_inline
-fn getKr[mode: IntTuple]() -> Int:
+def getKr[mode: IntTuple]() -> Int:
     if mode.is_value() or len(mode) == 1:
         return 1
     else:
@@ -80,7 +80,7 @@ fn getKr[mode: IntTuple]() -> Int:
 
 # Assumes that we have packed `A` and `B`, `C` also uses a packed layout.
 # @always_inline
-fn matmul_ukern[
+def matmul_ukern[
     elt: DType, width: Int, mr: Int, nr: Int, kr: Int, kf: Int
 ](
     C: UnsafePointer[mut=True, Scalar[elt], _],
@@ -171,7 +171,7 @@ fn matmul_ukern[
 # B's shape is (Kc*size_of(elt)/64, 64/size_of(elt), K/Kc), (nr,Nc/nr,N/Nc)
 # B's strides are ((nr*64/size_of(elt), 1, Nc*Kc), (64/size_of(elt), nr*Kc, Nc*K)
 #
-fn matmul[
+def matmul[
     elt: DType,
     M: Int,
     N: Int,
@@ -292,7 +292,7 @@ fn matmul[
         pa = pak
 
 
-fn alloc_tensor[
+def alloc_tensor[
     elt: DType, layout: Layout
 ]() -> LayoutTensor[elt, layout, MutAnyOrigin]:
     return LayoutTensor[elt, layout, MutAnyOrigin](
@@ -300,7 +300,7 @@ fn alloc_tensor[
     )
 
 
-fn alloc_tensor[
+def alloc_tensor[
     elt: DType, layout: Layout
 ](rtlayout: RuntimeLayout[layout, ...]) -> LayoutTensor[
     elt, layout, MutAnyOrigin
@@ -311,7 +311,7 @@ fn alloc_tensor[
     )
 
 
-fn max_min_idx_positive(x: List[Int], y: List[Int]) -> Int:
+def max_min_idx_positive(x: List[Int], y: List[Int]) -> Int:
     # this could be implemented more generically, e.g.
     # mapreduce-style?
     # Use `Buffer` for SIMD?
@@ -327,7 +327,7 @@ fn max_min_idx_positive(x: List[Int], y: List[Int]) -> Int:
     return argmax
 
 
-fn delete_idx(arg: List[Int], idx: Int) -> List[Int]:
+def delete_idx(arg: List[Int], idx: Int) -> List[Int]:
     var res = List[Int]()
     res.reserve(len(arg) - 1)
     for i in range(len(arg)):
@@ -337,7 +337,7 @@ fn delete_idx(arg: List[Int], idx: Int) -> List[Int]:
 
 
 @always_inline
-fn strided_load[
+def strided_load[
     elt: DType, //, W: Int, X: Int
 ](p: UnsafePointer[Scalar[elt], _], i: Int) -> SIMD[elt, W]:
     comptime if X == 1:
@@ -347,7 +347,7 @@ fn strided_load[
 
 
 @always_inline
-fn strided_store[
+def strided_store[
     elt: DType, W: Int, //, X: Int
 ](p: UnsafePointer[mut=True, Scalar[elt], _], i: Int, x: SIMD[elt, W]):
     comptime if X == 1:
@@ -357,7 +357,7 @@ fn strided_store[
 
 
 @always_inline
-fn vectorize_flat[
+def vectorize_flat[
     elt_a: DType,
     elt_b: DType,
     //,
@@ -381,7 +381,7 @@ fn vectorize_flat[
 
         @always_inline
         @parameter
-        fn vf[width: Int](i: Int):
+        def vf[width: Int](i: Int):
             f[width, int_stride_a, int_stride_b](a, b, i)
 
         vectorize[
@@ -406,7 +406,7 @@ fn vectorize_flat[
             ](a + i * stride_a[max_idx], b + i * stride_b[max_idx])
 
 
-fn tolist(x: IntTuple) -> List[Int]:
+def tolist(x: IntTuple) -> List[Int]:
     var list = List[Int]()
     var flat = flatten(x)
     for y in flat:
@@ -414,7 +414,7 @@ fn tolist(x: IntTuple) -> List[Int]:
     return list
 
 
-fn vectorize_layout_tensor[
+def vectorize_layout_tensor[
     elt_a: DType,
     layout_a: Layout,
     elt_b: DType,
@@ -440,7 +440,7 @@ fn vectorize_layout_tensor[
     )
 
 
-fn copy_to[
+def copy_to[
     elt_dst: DType,
     layout_dst: Layout,
     elt_src: DType,
@@ -454,7 +454,7 @@ fn copy_to[
 ):
     @always_inline
     @parameter
-    fn copy[
+    def copy[
         width: Int, stride_a: Int, stride_b: Int
     ](
         dstp: UnsafePointer[Scalar[elt_dst], _],
@@ -467,7 +467,7 @@ fn copy_to[
     vectorize_layout_tensor[copy, simd_width, unroll_factor](dst, src)
 
 
-fn check_approx_equal[
+def check_approx_equal[
     elt_dst: DType,
     layout_dst: Layout,
     elt_src: DType,
@@ -488,7 +488,7 @@ fn check_approx_equal[
 
     @always_inline
     @parameter
-    fn check[
+    def check[
         width: Int, stride_a: Int, stride_b: Int
     ](
         pa: UnsafePointer[Scalar[elt_dst], _],
@@ -505,7 +505,7 @@ fn check_approx_equal[
 
 
 # Kc == Nc, so don't need to specify both
-fn matmulb2b[
+def matmulb2b[
     elt: DType,
     M: Int,
     N: Int,
@@ -759,7 +759,7 @@ fn matmulb2b[
 
 
 @always_inline
-fn bench_b2b[
+def bench_b2b[
     elt: DType,
     M: Int,
     N: Int,
@@ -884,7 +884,7 @@ fn bench_b2b[
 
     @always_inline
     @parameter
-    fn test_tile_fn():
+    def test_tile_fn():
         matmul[elt, M, L, K, W, Mc, Nc, Kc, Mr, Nr, Kr](ABtile, Atile, Btile)
         matmul[elt, M, N, L, W, Mc, Nc, Kc, Mr, Nr, Kr](Dtile, ABtile, Ctile)
 
@@ -901,7 +901,7 @@ fn bench_b2b[
 
     @always_inline
     @parameter
-    fn test_tile_b2b_fn():
+    def test_tile_b2b_fn():
         matmulb2b[elt, M, N, K, L, W, Mc, Nc, Mr, Nr, Kr](
             Dtile, Atile, Btile, Ctileb2b
         )
@@ -929,14 +929,14 @@ fn bench_b2b[
     ABrm64.ptr.free()
 
 
-fn getMr() -> Int:
+def getMr() -> Int:
     if CompilationTarget.is_x86():
         if CompilationTarget.has_avx512f():
             return 9
     return 6
 
 
-fn getNr() -> Int:
+def getNr() -> Int:
     if CompilationTarget.is_x86():
         if CompilationTarget.has_avx512f():
             return 3
@@ -945,7 +945,7 @@ fn getNr() -> Int:
     return 4
 
 
-fn main() raises -> None:
+def main() raises -> None:
     comptime elt = DType.float32
     comptime W = simd_width_of[elt]()
     comptime Mr = getMr()

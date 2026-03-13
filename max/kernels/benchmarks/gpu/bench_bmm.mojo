@@ -46,7 +46,7 @@ from std.utils import Index, IndexList
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
 
-fn _get_run_name[
+def _get_run_name[
     dtype: DType,
     *,
     transpose_b: Bool,
@@ -91,7 +91,7 @@ comptime epilogue_func_type = fn[
 
 @always_inline
 @parameter
-fn elementwise_epilogue_fn[
+def elementwise_epilogue_fn[
     dtype: DType,
     width: Int,
     *,
@@ -100,7 +100,7 @@ fn elementwise_epilogue_fn[
     return val + 2
 
 
-fn bench_bmm[
+def bench_bmm[
     dtype: DType,
     /,
     *,
@@ -193,7 +193,7 @@ fn bench_bmm[
     @parameter
     @always_inline
     @__copy_capture(c_device)
-    fn epilogue_fn[
+    def epilogue_fn[
         dtype: DType,
         width: Int,
         rank: Int,
@@ -211,7 +211,7 @@ fn bench_bmm[
     @always_inline
     @__copy_capture(c_device, b, m, n)
     @parameter
-    fn func[
+    def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[3]](idx0)
@@ -227,10 +227,10 @@ fn bench_bmm[
     @parameter
     @__copy_capture(a_device, b_device, c_device)
     @always_inline
-    fn bench_func(mut bench: Bencher):
+    def bench_func(mut bench: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             comptime if use_vendor_blas:
                 comptime if has_amd_gpu_accelerator():
                     var c_buffer = NDBuffer[rank=2, dtype, _, static_c_shape](
@@ -334,7 +334,7 @@ fn bench_bmm[
     _ = c_device_buffer^
 
 
-fn create_bmm_bench[
+def create_bmm_bench[
     dtype: DType,
     *,
     transpose_b: Bool,

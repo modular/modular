@@ -25,7 +25,7 @@ from layout import TileTensor, Idx, row_major
 
 
 @no_inline
-fn test_vec_init[
+def test_vec_init[
     dtype: DType, block_dim: Int = 256
 ](length: Int, init_type: InitializationType, context: DeviceContext) raises:
     var timer = Timer()

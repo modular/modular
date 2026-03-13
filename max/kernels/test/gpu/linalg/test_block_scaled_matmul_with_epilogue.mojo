@@ -27,7 +27,7 @@ from linalg.fp4_utils import (
 from std.utils.index import IndexList
 
 
-fn test_block_scaled_matmul_zero_rows(ctx: DeviceContext) raises:
+def test_block_scaled_matmul_zero_rows(ctx: DeviceContext) raises:
     """Test that block_scaled_matmul_with_epilogue handles zero-row inputs."""
     var m = 0
     var n = 128

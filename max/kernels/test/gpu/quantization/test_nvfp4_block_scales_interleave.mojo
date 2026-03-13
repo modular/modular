@@ -30,7 +30,7 @@ from std.math import ceildiv, align_up
 from std.utils import IndexList
 
 
-fn test_block_scales_interleave_fp4[
+def test_block_scales_interleave_fp4[
     scales_dtype: DType,
     SF_VECTOR_SIZE: Int,
     M: Optional[Int],

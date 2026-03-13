@@ -30,14 +30,14 @@ from linalg.matmul.gpu import matmul_kernel_naive
 from std.testing import assert_almost_equal
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
     return False
 
 
-fn sgemm_double_buffer[
+def sgemm_double_buffer[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -306,7 +306,7 @@ fn sgemm_double_buffer[
     )
 
 
-fn test(ctx: DeviceContext) raises:
+def test(ctx: DeviceContext) raises:
     comptime NUM_THREADS = 256
     comptime M = 8192
     comptime N = 8192
@@ -369,7 +369,7 @@ fn test(ctx: DeviceContext) raises:
 
         @always_inline
         @parameter
-        fn run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises:
             ctx.enqueue_function_experimental[gemm](
                 c_tensor,
                 a_tensor,

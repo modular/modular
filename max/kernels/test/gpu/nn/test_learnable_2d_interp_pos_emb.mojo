@@ -28,7 +28,7 @@ from nn.learnable_2d_interp_pos_emb import learnable_2d_interp_pos_emb
 from std.testing import assert_almost_equal
 
 
-fn test_no_interp_no_temporal[dtype: DType](ctx: DeviceContext) raises:
+def test_no_interp_no_temporal[dtype: DType](ctx: DeviceContext) raises:
     """When h==H, w==W, t=1: output = x + weight.flatten()."""
     comptime H = 4
     comptime W = 4
@@ -122,7 +122,7 @@ fn test_no_interp_no_temporal[dtype: DType](ctx: DeviceContext) raises:
     out_ptr.free()
 
 
-fn test_no_interp_with_temporal[dtype: DType](ctx: DeviceContext) raises:
+def test_no_interp_with_temporal[dtype: DType](ctx: DeviceContext) raises:
     """When h==H, w==W, t>1: temporal sincos embedding is added."""
     comptime H = 4
     comptime W = 4
@@ -219,7 +219,7 @@ fn test_no_interp_with_temporal[dtype: DType](ctx: DeviceContext) raises:
     out_ptr.free()
 
 
-fn test_bicubic_constant_field[dtype: DType](ctx: DeviceContext) raises:
+def test_bicubic_constant_field[dtype: DType](ctx: DeviceContext) raises:
     """Bicubic interpolation of a constant field preserves the constant."""
     comptime H = 4
     comptime W = 4
@@ -306,7 +306,7 @@ fn test_bicubic_constant_field[dtype: DType](ctx: DeviceContext) raises:
 
 
 @always_inline
-fn _cubic_weight(x: Float32) -> Float32:
+def _cubic_weight(x: Float32) -> Float32:
     """Catmull-Rom cubic weight for host-side reference computation."""
     var a: Float32 = -0.75
     var ax = abs(x)
@@ -320,7 +320,7 @@ fn _cubic_weight(x: Float32) -> Float32:
         return 0
 
 
-fn test_multi_video[dtype: DType](ctx: DeviceContext) raises:
+def test_multi_video[dtype: DType](ctx: DeviceContext) raises:
     """Multiple videos with mixed shapes: GPU matches host reference."""
     comptime H = 4
     comptime W = 4
@@ -472,7 +472,7 @@ fn test_multi_video[dtype: DType](ctx: DeviceContext) raises:
     exp_ptr.free()
 
 
-fn test_sincos_embed(ctx: DeviceContext) raises:
+def test_sincos_embed(ctx: DeviceContext) raises:
     """Verify sincos positional embedding values."""
     comptime dim = 4
     comptime num_frames = 2

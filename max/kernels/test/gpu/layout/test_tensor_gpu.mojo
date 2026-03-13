@@ -32,7 +32,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext) raises:
 
     var check_state = True
 
-    fn copy_to_sram_test_kernel[
+    def copy_to_sram_test_kernel[
         layout: Layout,
     ](
         dram_tensor: LayoutTensor[DType.float32, layout, ImmutAnyOrigin],

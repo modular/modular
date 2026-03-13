@@ -47,7 +47,7 @@ comptime MaxHardwareBarriers = 16
 
 
 @always_inline("nodebug")
-fn named_barrier[
+def named_barrier[
     num_threads: Int32,
 ](id: Int32 = 0):
     """Performs a named synchronization barrier at the block level.
@@ -85,7 +85,7 @@ fn named_barrier[
 
 
 @always_inline("nodebug")
-fn named_barrier_arrive[
+def named_barrier_arrive[
     num_threads: Int32,
 ](id: Int32 = 0):
     """Arrives at a named synchronization barrier at the block level.
@@ -114,7 +114,7 @@ fn named_barrier_arrive[
 
 
 @always_inline("nodebug")
-fn barrier():
+def barrier():
     """Performs a synchronization barrier at the block level.
 
     This is equivalent to __syncthreads() in CUDA. All threads in a thread block must
@@ -191,7 +191,7 @@ struct AMDScheduleBarrierMask(
     comptime TRANS = Self(1 << 10)
     """Allows reordering of transcendental instructions (sin, cos, exp, etc)."""
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         """Initializes an `AMDScheduleBarrierMask` from an integer value.
 
         This implicit constructor allows creating a barrier mask directly from an integer,
@@ -202,7 +202,7 @@ struct AMDScheduleBarrierMask(
         """
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Compares two `AMDScheduleBarrierMask` instances for equality.
 
         Args:
@@ -213,7 +213,7 @@ struct AMDScheduleBarrierMask(
         """
         return self._value == other._value
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the `AMDScheduleBarrierMask`.
 
         Converts the mask to a human-readable string based on its value.
@@ -248,7 +248,7 @@ struct AMDScheduleBarrierMask(
         else:
             abort("invalid AMDScheduleBarrierMask value")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         """Converts the `AMDScheduleBarrierMask` to an integer.
 
         Returns:
@@ -258,7 +258,7 @@ struct AMDScheduleBarrierMask(
 
 
 @always_inline("nodebug")
-fn schedule_barrier(
+def schedule_barrier(
     mask: AMDScheduleBarrierMask = AMDScheduleBarrierMask.NONE,
 ):
     """Controls instruction scheduling across a barrier point in AMD GPU code.
@@ -285,7 +285,7 @@ fn schedule_barrier(
 
 
 @always_inline("nodebug")
-fn schedule_group_barrier(
+def schedule_group_barrier(
     mask: AMDScheduleBarrierMask, size: Int32, sync_id: Int32
 ):
     """Controls instruction scheduling across a barrier point in AMD GPU code by creating schedule groups.
@@ -332,7 +332,7 @@ struct _WaitCountArg:
     comptime MAX_LGKM_CNT: UInt32 = 0b1111
 
     @staticmethod
-    fn from_vmcnt(cnt: UInt32) -> UInt32:
+    def from_vmcnt(cnt: UInt32) -> UInt32:
         comptime assert (
             _is_amd_cdna()
         ), "from_vmcnt is only supported on AMD CDNA GPUs"
@@ -342,7 +342,7 @@ struct _WaitCountArg:
         return Self.MAX & ((cnt & 0b1111) | ((cnt & 0b110000) << 10))
 
     @staticmethod
-    fn from_expcnt(cnt: UInt32) -> UInt32:
+    def from_expcnt(cnt: UInt32) -> UInt32:
         comptime assert (
             _is_amd_cdna()
         ), "from_expcnt is only supported on AMD CDNA GPUs"
@@ -352,7 +352,7 @@ struct _WaitCountArg:
         return Self.MAX & (cnt << 4)
 
     @staticmethod
-    fn from_lgkmcnt(cnt: UInt32) -> UInt32:
+    def from_lgkmcnt(cnt: UInt32) -> UInt32:
         comptime assert (
             _is_amd_cdna()
         ), "from_lgkmcnt is only supported on AMD CDNA GPUs"
@@ -363,7 +363,7 @@ struct _WaitCountArg:
 
 
 @always_inline
-fn s_waitcnt[
+def s_waitcnt[
     *,
     vmcnt: UInt32 = _WaitCountArg.MAX_VM_CNT,
     expcnt: UInt32 = _WaitCountArg.MAX_EXP_CNT,
@@ -400,7 +400,7 @@ fn s_waitcnt[
 
 
 @always_inline
-fn s_waitcnt_barrier[
+def s_waitcnt_barrier[
     *,
     vmcnt: UInt32 = _WaitCountArg.MAX_VM_CNT,
     expcnt: UInt32 = _WaitCountArg.MAX_EXP_CNT,
@@ -435,7 +435,7 @@ fn s_waitcnt_barrier[
 
 
 @always_inline("nodebug")
-fn syncwarp(mask: Int = -1):
+def syncwarp(mask: Int = -1):
     """Synchronizes threads within a warp using a barrier.
 
     This function creates a synchronization point where threads in a warp must wait until all
@@ -484,7 +484,7 @@ fn syncwarp(mask: Int = -1):
 
 
 @always_inline("nodebug")
-fn _mbarrier_impl[
+def _mbarrier_impl[
     type: AnyType, address_space: AddressSpace
 ](address: UnsafePointer[mut=True, type, _, address_space=address_space]):
     """Internal implementation for making a memory barrier track async operations.
@@ -512,7 +512,7 @@ fn _mbarrier_impl[
 
 
 @always_inline("nodebug")
-fn async_copy_arrive[
+def async_copy_arrive[
     type: AnyType, address_space: AddressSpace
 ](address: UnsafePointer[mut=True, type, _, address_space=address_space]):
     """Makes a memory barrier track all prior async copy operations from this thread.
@@ -539,7 +539,7 @@ fn async_copy_arrive[
 
 
 @always_inline("nodebug")
-fn mbarrier_init[
+def mbarrier_init[
     type: AnyType
 ](
     shared_mem: UnsafePointer[
@@ -572,7 +572,7 @@ fn mbarrier_init[
 
 
 @always_inline("nodebug")
-fn mbarrier_arrive[
+def mbarrier_arrive[
     type: AnyType
 ](
     shared_mem: UnsafePointer[
@@ -606,7 +606,7 @@ fn mbarrier_arrive[
 
 
 @always_inline("nodebug")
-fn mbarrier_test_wait[
+def mbarrier_test_wait[
     type: AnyType
 ](
     shared_mem: UnsafePointer[
@@ -642,7 +642,7 @@ fn mbarrier_test_wait[
 
 
 @always_inline("nodebug")
-fn mbarrier_arrive_expect_tx_shared[
+def mbarrier_arrive_expect_tx_shared[
     type: AnyType  # The type of the memory barrier
 ](
     addr: UnsafePointer[mut=True, type, _, address_space=AddressSpace.SHARED],
@@ -673,7 +673,7 @@ fn mbarrier_arrive_expect_tx_shared[
 
 
 @always_inline("nodebug")
-fn mbarrier_arrive_expect_tx_relaxed[
+def mbarrier_arrive_expect_tx_relaxed[
     type: AnyType,  # The type of the memory barrier
     scope: Scope = Scope.BLOCK,
     space: Scope = Scope.BLOCK,
@@ -737,7 +737,7 @@ fn mbarrier_arrive_expect_tx_relaxed[
 
 
 @always_inline("nodebug")
-fn mbarrier_try_wait_parity_shared[
+def mbarrier_try_wait_parity_shared[
     type: AnyType  # The type of the memory barrier
 ](
     addr: UnsafePointer[mut=True, type, _, address_space=AddressSpace.SHARED],
@@ -770,7 +770,7 @@ fn mbarrier_try_wait_parity_shared[
 
 
 @always_inline("nodebug")
-fn umma_arrive_leader_cta[
+def umma_arrive_leader_cta[
     type: AnyType
 ](
     mbar_ptr: UnsafePointer[
@@ -798,7 +798,7 @@ fn umma_arrive_leader_cta[
 
 
 @always_inline
-fn cp_async_bulk_commit_group():
+def cp_async_bulk_commit_group():
     """Commits all prior initiated but uncommitted cp.async.bulk instructions into a cp.async.bulk-group.
 
     This function commits all previously initiated but uncommitted cp.async.bulk instructions into a
@@ -823,7 +823,7 @@ fn cp_async_bulk_commit_group():
 
 
 @always_inline
-fn cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
+def cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
     """Waits for completion of asynchronous bulk memory transfer groups.
 
     This function causes the executing thread to wait until a specified number of the most recent
@@ -853,7 +853,7 @@ fn cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
     """
 
     @parameter
-    fn get_asm() -> String:
+    def get_asm() -> String:
         comptime base = "llvm.nvvm.cp.async.bulk.wait.group"
         if read:
             return base + ".read"

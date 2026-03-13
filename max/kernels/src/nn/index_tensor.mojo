@@ -25,7 +25,7 @@ from std.utils import IndexList
 
 
 @always_inline
-fn index_tensor_shape[
+def index_tensor_shape[
     output_rank: Int,
     input_type: DType,
     indices_type: DType,
@@ -138,7 +138,7 @@ fn index_tensor_shape[
 # We intend to merge `index_tensor` with the `gather_nd` operations in the future.
 
 
-fn index_tensor[
+def index_tensor[
     dtype: DType,
     indices_type: DType,
     batch_dims: Int,
@@ -189,7 +189,7 @@ fn index_tensor[
 # Note: this is an extremely specialized version of the kernel that only handles
 # the [:, :, x, y] case where x and y are 1D tensors.
 # Batch dims refer to the number of sliced dimensions at the beginning
-fn _index_tensor_1d[
+def _index_tensor_1d[
     dtype: DType,
     indices_type: DType,
     //,
@@ -248,7 +248,7 @@ fn _index_tensor_1d[
 
     @__copy_capture(work_per_thread, batch_volume, last_index_dim)
     @parameter
-    fn calc_batch_dim(task_id: Int):
+    def calc_batch_dim(task_id: Int):
         # each thread gets a chunk of output embedding vectors to avoid inter-thread reduction
         var work_start = task_id * work_per_thread
         var work_end = min((task_id + 1) * work_per_thread, batch_volume)
@@ -269,7 +269,7 @@ fn _index_tensor_1d[
     sync_parallelize[calc_batch_dim](num_tasks)
 
 
-fn _index_tensor_impl[
+def _index_tensor_impl[
     dtype: DType,
     indices_type: DType,
     //,
@@ -289,7 +289,7 @@ fn _index_tensor_impl[
     # This is modeled as an elementwise function mapping an index in the
     # output to an index in the input
     @parameter
-    fn index_tensor_elementwise_fn[
+    def index_tensor_elementwise_fn[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](output_idx_arg: IndexList[rank]) capturing -> None:
         var output_idx = rebind[IndexList[output.rank]](output_idx_arg)
@@ -387,7 +387,7 @@ fn _index_tensor_impl[
 # Advanced Indexing
 # ===-----------------------------------------------------------------------===#
 @always_inline
-fn _advanced_indexing_use_simd[
+def _advanced_indexing_use_simd[
     start_axis: Int, num_index_tensors: Int, input_rank: Int
 ](read_strides: IndexList, write_strides: IndexList) -> Bool:
     """Return whether we can use vectorized loads/stores for advanced indexing
@@ -417,7 +417,7 @@ fn _advanced_indexing_use_simd[
 
 
 @always_inline
-fn advanced_indexing_getitem[
+def advanced_indexing_getitem[
     input_rank: Int,
     index_rank: Int,
     input_type: DType,
@@ -500,7 +500,7 @@ fn advanced_indexing_getitem[
 
     @parameter
     @always_inline
-    fn elementwise_fn_wrapper[
+    def elementwise_fn_wrapper[
         width: Int,
         out_tensor_rank: Int,
         alignment: Int = 1,
@@ -565,7 +565,7 @@ fn advanced_indexing_getitem[
 
 
 @always_inline
-fn advanced_indexing_getitem_shape[
+def advanced_indexing_getitem_shape[
     input_rank: Int,
     index_rank: Int,
     //,
@@ -604,7 +604,7 @@ fn advanced_indexing_getitem_shape[
 
 
 @always_inline
-fn advanced_indexing_setitem_inplace[
+def advanced_indexing_setitem_inplace[
     index_rank: Int,
     updates_rank: Int,
     input_type: DType,
@@ -721,7 +721,7 @@ fn advanced_indexing_setitem_inplace[
 
     @parameter
     @always_inline
-    fn elementwise_fn_wrapper[
+    def elementwise_fn_wrapper[
         width: Int, iteration_rank: Int, alignment: Int = 1
     ](iteration_indices: IndexList[iteration_rank]) capturing:
         var index_tensor_indices = IndexList[index_rank]()

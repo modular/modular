@@ -22,7 +22,7 @@ from std.testing import assert_almost_equal
 
 
 # A is a general matrix, B is a non-unit upper triangular matrix
-fn trmm[
+def trmm[
     dtype: DType,
     element_layout: Layout,
 ](
@@ -45,7 +45,7 @@ fn trmm[
                 C[i, j] += A[i, p] * B[p, j]
 
 
-fn a_mul_bt[
+def a_mul_bt[
     dtype: DType,
     element_layout: Layout,
 ](
@@ -84,7 +84,7 @@ def all_almost_id[
             assert_almost_equal(A[i, j], reference, atol=atol, rtol=rtol)
 
 
-fn create_vector[
+def create_vector[
     dtype: DType, layout: Layout
 ](
     m: Int,
@@ -98,7 +98,7 @@ fn create_vector[
     return {ptr, dynamic_layout}
 
 
-fn create_tensor[
+def create_tensor[
     dtype: DType, layout: Layout
 ](
     m: Int,

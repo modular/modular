@@ -730,14 +730,15 @@ a = a + b
 a += b
 ```
 
-However there is a subtle difference between the two. In the first example, the
-expression `a + b` produces a new value, which is then assigned to `a`. In
-contrast, the second example does an in-place modification of the value
-currently assigned to `a`. For register-passable types, the compiled results
-might be equivalent at run-time. But for a memory-only type, the first example
-allocates storage for the result of `a + b` and then assigns the value to the
-variable, whereas the second example can do an in-place modification of the
-existing value.
+However there is a subtle difference between the two. In the first
+example, the expression `a + b` produces a new value, which is then
+assigned to `a`. In contrast, the second example does an in-place
+modification of the value currently assigned to `a`. For
+[register-passable types](/mojo/manual/traits#register-passable), the
+compiled results might be equivalent at run-time. But for a memory-only
+type, the first example allocates storage for the result of `a + b` and
+then assigns the value to the variable, whereas the second example can
+do an in-place modification of the existing value.
 
 :::note
 
@@ -1199,64 +1200,41 @@ will not be based on the `ComplexSIMD` struct or be compatible with it.
 
 ### Implement lifecycle methods
 
-Our `Complex` struct is an example of a simple value type consisting of trivial
-numeric fields and requiring no special constructor or destructor behaviors.
-This means we can use the
-[`@register_passable("trivial")`](/mojo/manual/decorators/register-passable/#register_passabletrivial)
-decorator, which declares that the type can be trivially copied, moved, and
-destroyed—and doesn't need a copy constructor, move constructor, or destructor.
-(This decorator is now deprecated, conform to the `TrivialRegisterPassable` trait
-instead.)
-
-For the time being, we'll also use the
-[`@fieldwise_init`](/mojo/manual/decorators/fieldwise-init) decorator to
-automatically implement a field-wise initializer (a constructor with arguments
-for each field).
+The `Complex` struct is a simple value type with register passable
+numeric fields. It requires no special constructor or destructor
+behaviors. Conforming it to
+[RegisterPassable](/mojo/manual/traits#register-passable) and
+adopting `Copyable` lets you assign the value:
 
 ```mojo
 @fieldwise_init
-struct Complex(TrivialRegisterPassable):
+struct Complex(RegisterPassable):
     var re: Float64
     var im: Float64
 ```
 
-This definition is enough for us to create `Complex` instances and access their
-real and imaginary fields.
+This definition allows you to construct and use an instance without
+building an initializer:
 
 ```mojo
-c1 = Complex(-1.2, 6.5)
-print("c1: Real: {}; Imaginary: {}".format(c1.re, c1.im))
+var c1 = Complex(-1.2, 6.5)
+print(t"c1: Real: {c1.re}; Imaginary: {c1.im}") # c1: Real: -1.2; Imaginary: 6.5
 ```
 
-```output
-c1: Real: -1.2; Imaginary: 6.5
-```
-
-As a convenience, let's add an explicit constructor to handle the case of
-creating a `Complex` instance with an imaginary component of 0.
+To allow you to construct a `Complex` instance with just the real
+component, add a convenience initializer:
 
 ```mojo
-struct Complex(TrivialRegisterPassable):
-    var re: Float64
-    var im: Float64
-
-    fn __init__(out self, re: Float64, im: Float64 = 0.0):
-        self.re = re
-        self.im = im
+fn __init__(out self, re: Float64):
+    self.re = re
+    self.im = 0.0
 ```
 
-Since this constructor also handles creating a `Complex` instance with both real
-and imaginary components, we don't need the `@fieldwise_init` decorator anymore.
-
-Now we can create a `Complex` instance and provide just a real component.
+Now you can create a `Complex` instance with just a real component:
 
 ```mojo
-c2 = Complex(3.14159)
-print("c2: Real: {}; Imaginary: {}".format(c2.re, c2.im))
-```
-
-```output
-c2: Real: 3.1415899999999999; Imaginary: 0.0
+var c2 = Complex(-1.2)
+print(t"c2: Real: {c2.re}; Imaginary: {c2.im}") # c2: Real: -1.2; Imaginary: 0.0
 ```
 
 ### Implement the `Writable` trait

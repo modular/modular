@@ -20,11 +20,11 @@ from std.utils import IndexList
 
 
 @always_inline
-fn _assert_error[T: Writable](msg: T, loc: SourceLocation) -> Error:
+def _assert_error[T: Writable](msg: T, loc: SourceLocation) -> Error:
     return Error(loc.prefix(String("AssertionError: ", msg)))
 
 
-fn _assert_equal_error(
+def _assert_equal_error(
     lhs: String, rhs: String, msg: String, loc: SourceLocation
 ) -> Error:
     var err = (
@@ -44,18 +44,18 @@ struct PrintChecker(Movable):
     var call_location: SourceLocation
 
     @always_inline
-    fn __init__(out self) raises:
+    def __init__(out self) raises:
         self.tmp = NamedTemporaryFile("rw")
         self.call_location = call_location()
         self.cursor = 0
 
-    fn __enter__(var self) -> Self:
+    def __enter__(var self) -> Self:
         return self^
 
-    fn stream(self) -> FileDescriptor:
+    def stream(self) -> FileDescriptor:
         return FileDescriptor(self.tmp._file_handle._get_raw_fd())
 
-    fn check_line(mut self, expected: String, msg: String = "") raises:
+    def check_line(mut self, expected: String, msg: String = "") raises:
         print(end="", file=self.stream(), flush=True)
         _ = self.tmp.seek(self.cursor)
         var result = self.tmp.read()[:-1]
@@ -65,7 +65,7 @@ struct PrintChecker(Movable):
             )
         self.cursor += UInt64(len(result) + 1)
 
-    fn check_line_starts_with(
+    def check_line_starts_with(
         mut self, prefix: String, msg: String = ""
     ) raises:
         print(end="", file=self.stream(), flush=True)

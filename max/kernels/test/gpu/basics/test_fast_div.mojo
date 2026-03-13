@@ -68,7 +68,7 @@ def run_elementwise[type: DType](ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(out_divisors_buffer, out_remainders_buffer)
     @parameter
-    fn func[
+    def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         comptime fast_div = FastDiv[DType.uint32](4)

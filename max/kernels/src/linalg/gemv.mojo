@@ -82,29 +82,29 @@ struct GEMVAlgorithm(ImplicitlyCopyable, Writable):
     comptime GEVM_KERNEL = Self(4)
     comptime MATMUL_NAIVE = Self(5)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
+    def __isnot__(self, other: Self) -> Bool:
         return self != other
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(String(self))
 
 
 @always_inline
-fn reverse_idx[transpose: Bool](x: Int, y: Int) -> IndexList[2]:
+def reverse_idx[transpose: Bool](x: Int, y: Int) -> IndexList[2]:
     return Index(y, x) if transpose else Index(x, y)
 
 
 # Matrix-Column Vector Multiplication using scalar arithmetic
-fn gemv_kernel[
+def gemv_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -159,7 +159,7 @@ fn gemv_kernel[
 
 
 # Matrix-Column Vector Multiplication using vectorized instructions
-fn gemv_kernel_vector[
+def gemv_kernel_vector[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -233,7 +233,7 @@ fn gemv_kernel_vector[
 
 
 @always_inline
-fn _dot_accum[
+def _dot_accum[
     in_type: DType,
     accum_type: DType,
     width: Int,
@@ -302,7 +302,7 @@ fn _dot_accum[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-fn gemv_split_k[
+def gemv_split_k[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -369,7 +369,7 @@ fn gemv_split_k[
     # Each thread sums local data in K.
     @parameter
     @always_inline
-    fn _k_iter_body():
+    def _k_iter_body():
         """Single K-iteration: load weights, load activations, accumulate."""
         var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
         var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
@@ -478,7 +478,7 @@ fn gemv_split_k[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(tile_size))
 )
-fn gevm_kernel[
+def gevm_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -538,7 +538,7 @@ fn gevm_kernel[
         launch_dependent_grids()
 
 
-fn _amd_gemv_config[
+def _amd_gemv_config[
     simd_width: Int,
     max_thread_block_size: Int,
     static_K: Int,
@@ -613,7 +613,7 @@ fn _amd_gemv_config[
     return IndexList[3](num_threads, tile_n, unroll)
 
 
-fn _nvidia_gemv_config[
+def _nvidia_gemv_config[
     simd_width: Int,
     static_K: Int,
     has_N: Bool,
@@ -687,7 +687,7 @@ fn _nvidia_gemv_config[
 
 
 @always_inline
-fn gemv_gpu_dispatch[
+def gemv_gpu_dispatch[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
@@ -719,7 +719,7 @@ fn gemv_gpu_dispatch[
         comptime tile_m = 1
 
         @parameter
-        fn _gemv_split_k_dispatch[
+        def _gemv_split_k_dispatch[
             num_threads: Int,
             tile_n: Int,
             unroll_factor: Int = 2,
@@ -987,7 +987,7 @@ fn gemv_gpu_dispatch[
         )
 
 
-fn log_shape[
+def log_shape[
     has_mode_1: Bool, has_mode_2: Bool, name: String
 ](mode_1: Int, mode_2: Int,) -> None:
     logger.info(
@@ -1004,7 +1004,7 @@ fn log_shape[
 
 
 @always_inline
-fn gemv_gpu[
+def gemv_gpu[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
@@ -1074,7 +1074,7 @@ fn gemv_gpu[
 
 
 @always_inline
-fn gemv[
+def gemv[
     c_size: DimList,
     c_type: DType,
     a_shape: DimList,
@@ -1096,7 +1096,7 @@ fn gemv[
 
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[dtype, width]:
         return (
@@ -1106,7 +1106,7 @@ fn gemv[
 
     @always_inline
     @parameter
-    fn output_fn[
+    def output_fn[
         out_type: DType, width: Int, rank: Int
     ](idx: IndexList[rank], value: SIMD[out_type, width]):
         comptime if elementwise_lambda_fn:
@@ -1119,7 +1119,7 @@ fn gemv[
 
     @always_inline
     @parameter
-    fn reduce_impl[
+    def reduce_impl[
         ty: DType, width: Int
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 + v2
@@ -1136,7 +1136,7 @@ fn gemv[
     )
 
 
-fn naive_gemv[
+def naive_gemv[
     dtype: DType
 ](
     c_buf: NDBuffer[mut=True, rank=1, dtype, _, _],

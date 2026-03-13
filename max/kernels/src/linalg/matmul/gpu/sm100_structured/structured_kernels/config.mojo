@@ -82,7 +82,7 @@ struct OutputPipelineConfig(Copyable, Equatable, TrivialRegisterPassable):
 # ============================================================================
 
 
-fn _compute_block_tile_shape[
+def _compute_block_tile_shape[
     a_type: DType
 ](mma_shape: IndexList[3], cta_group: Int) -> IndexList[3]:
     """Compute block tile shape from MMA shape and CTA group."""
@@ -93,7 +93,7 @@ fn _compute_block_tile_shape[
     )
 
 
-fn _compute_output_tile_shape(
+def _compute_output_tile_shape(
     c_type: DType, mma_shape: IndexList[3], cta_group: Int, AB_swapped: Bool
 ) -> IndexList[2]:
     """Compute output tile shape based on MMA config."""
@@ -123,7 +123,7 @@ fn _compute_output_tile_shape(
         )
 
 
-fn _compute_swizzle_modes(
+def _compute_swizzle_modes(
     c_type: DType,
     output_tile_shape: IndexList[2],
     AB_swapped: Bool,
@@ -152,7 +152,7 @@ fn _compute_swizzle_modes(
     return (a_swizzle, b_swizzle, c_swizzle)
 
 
-fn _maximize_pipeline_stages[
+def _maximize_pipeline_stages[
     a_type: DType, b_type: DType, c_type: DType
 ](
     block_tile_shape: IndexList[3],
@@ -197,7 +197,7 @@ fn _maximize_pipeline_stages[
     ) // AB_smem_per_stage
 
 
-fn _write_common_config[
+def _write_common_config[
     W: Writer,
     a_type: DType,
     c_type: DType,
@@ -283,7 +283,7 @@ struct MatmulConfig[
 
     var k_group_size: Int
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         cta_group: Int = 2,
@@ -347,7 +347,7 @@ struct MatmulConfig[
             self.num_pipeline_stages, self.k_group_size
         )
 
-    fn swap_AB_type(
+    def swap_AB_type(
         self,
     ) -> MatmulConfig[Self.b_type, Self.a_type, Self.c_type, Self.transpose_b]:
         return MatmulConfig[
@@ -366,7 +366,7 @@ struct MatmulConfig[
             num_split_k=self.num_split_k,
         )
 
-    fn write_to[W: Writer](self, mut writer: W):
+    def write_to[W: Writer](self, mut writer: W):
         writer.write("kernel_")
         _write_common_config[W, Self.a_type, Self.c_type, Self.transpose_b](
             writer,
@@ -388,11 +388,11 @@ struct MatmulConfig[
             self.num_split_k,
         )
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         self.write_to(writer)
 
 
-fn choose_config[
+def choose_config[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -439,7 +439,7 @@ fn choose_config[
 
         @parameter
         @always_inline
-        fn select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
+        def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
             N_alignby16 = align_up(N, 16)
             max_mma_n = min(N_alignby16, 256)
             # In pratice 64x16 mma creates too many ctas and increase L2
@@ -522,7 +522,7 @@ fn choose_config[
     )
 
 
-fn build_configs[
+def build_configs[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -586,7 +586,7 @@ struct BlockScaledMatmulConfig[
     var vec_sf_size: Int
     var num_sf_k_tiles: Int
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         scaling_kind: UMMAKind,
@@ -690,7 +690,7 @@ struct BlockScaledMatmulConfig[
             self.num_pipeline_stages, self.k_group_size
         )
 
-    fn swap_AB_type(
+    def swap_AB_type(
         self,
     ) -> BlockScaledMatmulConfig[
         Self.b_type,
@@ -722,7 +722,7 @@ struct BlockScaledMatmulConfig[
             scaling_kind=self.scaling_kind,
         )
 
-    fn write_to[W: Writer](self, mut writer: W):
+    def write_to[W: Writer](self, mut writer: W):
         writer.write("kernel_")
         writer.write(self.scaling_kind, "_")
         writer.write("A_vec", self.vec_sf_size, "_")
@@ -749,11 +749,11 @@ struct BlockScaledMatmulConfig[
             self.num_split_k,
         )
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         self.write_to(writer)
 
 
-fn choose_block_scaled_config[
+def choose_block_scaled_config[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -807,7 +807,7 @@ fn choose_block_scaled_config[
 
         @parameter
         @always_inline
-        fn select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
+        def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
             N_alignby64 = align_up(N, 64)
             max_mma_n = min(N_alignby64, 256)
             # In pratice 64x16 mma creates too many ctas and increase L2
@@ -900,7 +900,7 @@ fn choose_block_scaled_config[
     )
 
 
-fn build_block_scaled_configs[
+def build_block_scaled_configs[
     a_type: DType,
     b_type: DType,
     c_type: DType,

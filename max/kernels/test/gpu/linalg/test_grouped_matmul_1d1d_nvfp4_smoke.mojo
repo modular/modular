@@ -41,7 +41,7 @@ from linalg.fp4_utils import (
 )
 
 
-fn test_grouped_1d1d_nvfp4[
+def test_grouped_1d1d_nvfp4[
     num_experts: Int,
     N: Int,
     K: Int,

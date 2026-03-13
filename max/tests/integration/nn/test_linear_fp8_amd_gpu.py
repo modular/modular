@@ -21,13 +21,13 @@ from max.experimental import random
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, Graph
 from max.nn import (
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
+    InputScaleSpec,
     Linear,
+    QuantConfig,
+    ScaleGranularity,
+    ScaleOrigin,
 )
-from max.nn.float8_config import Float8WeightScaleSpec
+from max.nn.quant_config import WeightScaleSpec
 
 
 def test_linear_fp8_amd_conversion_static_scale(
@@ -35,18 +35,18 @@ def test_linear_fp8_amd_conversion_static_scale(
 ) -> None:
     """Test Linear layer applies AMD FP8 conversion when needed."""
 
-    float8_config = Float8Config(
-        input_scale=Float8InputScaleSpec(
+    quant_config = QuantConfig(
+        input_scale=InputScaleSpec(
             dtype=DType.float32,
-            granularity=Float8ScaleGranularity.TENSOR,
-            origin=Float8ScaleOrigin.STATIC,
+            granularity=ScaleGranularity.TENSOR,
+            origin=ScaleOrigin.STATIC,
         ),
-        weight_scale=Float8WeightScaleSpec(
+        weight_scale=WeightScaleSpec(
             dtype=DType.float32,
-            granularity=Float8ScaleGranularity.TENSOR,
+            granularity=ScaleGranularity.TENSOR,
         ),
-        mlp_in_float8=set(),
-        attn_qkv_in_float8=set(),
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
     )
 
     weights = [1.0, 2.0, -1.0, 0.0, -0.0]
@@ -60,7 +60,7 @@ def test_linear_fp8_amd_conversion_static_scale(
             out_dim=1,
             dtype=DType.float8_e4m3fn,
             device=DeviceRef.GPU(),
-            float8_config=float8_config,
+            quant_config=quant_config,
         ),
         input_types=[input.type],
     )
@@ -121,18 +121,18 @@ def test_linear_fp8_amd_conversion_dynamic_scale(
 ) -> None:
     """Test Linear layer applies AMD FP8 conversion with dynamic scaling."""
 
-    float8_config = Float8Config(
-        input_scale=Float8InputScaleSpec(
+    quant_config = QuantConfig(
+        input_scale=InputScaleSpec(
             dtype=DType.float32,
-            granularity=Float8ScaleGranularity.COLWISE,
-            origin=Float8ScaleOrigin.DYNAMIC,
+            granularity=ScaleGranularity.COLWISE,
+            origin=ScaleOrigin.DYNAMIC,
         ),
-        weight_scale=Float8WeightScaleSpec(
+        weight_scale=WeightScaleSpec(
             dtype=DType.float32,
-            granularity=Float8ScaleGranularity.ROWWISE,
+            granularity=ScaleGranularity.ROWWISE,
         ),
-        mlp_in_float8=set(),
-        attn_qkv_in_float8=set(),
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
     )
 
     weight_scale = Tensor([1.0], dtype=DType.float8_e4m3fn)
@@ -151,7 +151,7 @@ def test_linear_fp8_amd_conversion_dynamic_scale(
             out_dim=16,
             dtype=DType.float8_e4m3fn,
             device=DeviceRef.GPU(),
-            float8_config=float8_config,
+            quant_config=quant_config,
         ),
         input_types=[inputs.type],
     )

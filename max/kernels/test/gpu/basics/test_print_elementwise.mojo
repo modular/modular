@@ -21,7 +21,7 @@ from layout._utils import ManagedLayoutTensor
 from std.utils.index import IndexList
 
 
-fn test_elementwise_print[
+def test_elementwise_print[
     c_type: DType,
     c_layout: Layout,
 ](c01: LayoutTensor[c_type, c_layout, ...], ctx: DeviceContext) raises:
@@ -34,7 +34,7 @@ fn test_elementwise_print[
     @always_inline
     @__copy_capture(c01, N)
     @parameter
-    fn binary[
+    def binary[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var m: Int = idx0[0]
@@ -49,7 +49,7 @@ fn test_elementwise_print[
     print("finished elementwise")
 
 
-fn runtime_row_major[
+def runtime_row_major[
     cols: Int
 ](
     rows: Int,
@@ -60,7 +60,7 @@ fn runtime_row_major[
     return type_of(res).row_major(IndexList[2]((rows, cols)))
 
 
-fn test_dual_matmul[
+def test_dual_matmul[
     N: Int = 512, K: Int = 512
 ](ctx: DeviceContext, M: Int = 512) raises:
     comptime dst_type = DType.float32

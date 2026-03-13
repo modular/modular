@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Float8 configuration parsing utilities for Hugging Face models."""
+"""Scaled quantization configuration parsing utilities for Hugging Face models."""
 
 from __future__ import annotations
 
@@ -24,14 +24,14 @@ from typing import Any
 import huggingface_hub
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn.float8_config import (
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
-    Float8WeightScaleSpec,
-)
 from max.nn.float8_scale_stacking import can_use_fused_mlp
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+)
 from transformers import AutoConfig
 
 
@@ -52,8 +52,8 @@ def _quantized_layers_and_embedding_dtype(
         num_hidden_layers = huggingface_config.text_config.num_hidden_layers
     else:
         num_hidden_layers = huggingface_config.num_hidden_layers
-    mlp_in_float8: set[int] = set()
-    attn_qkv_in_float8: set[int] = set()
+    mlp_quantized_layers: set[int] = set()
+    attn_quantized_layers: set[int] = set()
 
     for i in range(num_hidden_layers):
         # Check MLP components (gate_proj, up_proj, down_proj).
@@ -63,7 +63,7 @@ def _quantized_layers_and_embedding_dtype(
         ]
         is_mlp_not_converted = any(not_converted_mlp_modules)
         if not is_mlp_not_converted:
-            mlp_in_float8.add(i)
+            mlp_quantized_layers.add(i)
         elif not all(not_converted_mlp_modules):
             raise ValueError(
                 "float8 quantization currently assumes uniform quantization for MLPs"
@@ -77,7 +77,7 @@ def _quantized_layers_and_embedding_dtype(
         ]
         is_attn_qkv_not_converted = any(not_converted_attn_qkv_modules)
         if not is_attn_qkv_not_converted:
-            attn_qkv_in_float8.add(i)
+            attn_quantized_layers.add(i)
         elif not all(not_converted_attn_qkv_modules):
             raise ValueError(
                 "float8 quantization currently assumes uniform quantization for attention QKV and output projections"
@@ -104,17 +104,17 @@ def _quantized_layers_and_embedding_dtype(
         # Default to `lm_head` being quantized to float8.
         embedding_output_dtype = DType.float8_e4m3fn
 
-    return mlp_in_float8, attn_qkv_in_float8, embedding_output_dtype
+    return mlp_quantized_layers, attn_quantized_layers, embedding_output_dtype
 
 
-def _parse_compressed_tensors_float8_config(
+def _parse_compressed_tensors_fp8_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
     dtype: DType,
     state_dict_name_prefix: str = "",
     ignored_modules_prefix: str = "model.",
-) -> Float8Config:
-    """Parses a Float8Config in the compressed-tensors format."""
+) -> QuantConfig:
+    """Parses a QuantConfig in the compressed-tensors format."""
     # This function specifically handles "compressed-tensors" style.
     # It assumes hf_quant_config and its structure are present.
 
@@ -134,17 +134,17 @@ def _parse_compressed_tensors_float8_config(
 
     # Parse input scaling spec.
     input_origin = (
-        Float8ScaleOrigin.DYNAMIC
+        ScaleOrigin.DYNAMIC
         if input_act_config["dynamic"]
-        else Float8ScaleOrigin.STATIC
+        else ScaleOrigin.STATIC
     )
     input_strategy_str = input_act_config["strategy"]
     if input_strategy_str == "tensor":
-        input_granularity = Float8ScaleGranularity.TENSOR
+        input_granularity = ScaleGranularity.TENSOR
     elif input_strategy_str == "channel":
-        input_granularity = Float8ScaleGranularity.ROWWISE
+        input_granularity = ScaleGranularity.ROWWISE
     elif input_strategy_str == "token":
-        input_granularity = Float8ScaleGranularity.COLWISE
+        input_granularity = ScaleGranularity.COLWISE
     else:
         raise ValueError(
             f"unsupported FP8 input activation strategy: {input_strategy_str}"
@@ -154,7 +154,7 @@ def _parse_compressed_tensors_float8_config(
         f"{state_dict_name_prefix}layers.0.mlp.down_proj.input_scale"
     )
     has_input_scale = input_scale_name in state_dict
-    input_spec = Float8InputScaleSpec(
+    input_spec = InputScaleSpec(
         granularity=input_granularity,
         origin=input_origin,
         # Set reasonable defaults if the static input scale isn't present.
@@ -165,11 +165,11 @@ def _parse_compressed_tensors_float8_config(
     # Parse weight spec.
     weight_strategy_str = weight_config["strategy"]
     if weight_strategy_str == "tensor":
-        weight_granularity = Float8ScaleGranularity.TENSOR
+        weight_granularity = ScaleGranularity.TENSOR
     elif weight_strategy_str == "channel":
-        weight_granularity = Float8ScaleGranularity.ROWWISE
+        weight_granularity = ScaleGranularity.ROWWISE
     elif weight_strategy_str == "token":
-        weight_granularity = Float8ScaleGranularity.COLWISE
+        weight_granularity = ScaleGranularity.COLWISE
     else:
         raise ValueError(
             f"unsupported FP8 weight strategy: {weight_strategy_str}"
@@ -185,14 +185,14 @@ def _parse_compressed_tensors_float8_config(
     weight_scale = state_dict[
         f"{state_dict_name_prefix}layers.0.mlp.down_proj.weight_scale"
     ]
-    weight_spec = Float8WeightScaleSpec(
+    weight_spec = WeightScaleSpec(
         granularity=weight_granularity, dtype=weight_scale.dtype
     )
 
     # Determine which layers have MLP and QKV in float8.
     # Modules listed in `ignore` are not converted to float8.
     ignore_modules = set(hf_quant_config.get("ignore", []))
-    mlp_in_float8, attn_qkv_in_float8, embedding_output_dtype = (
+    mlp_quantized_layers, attn_quantized_layers, embedding_output_dtype = (
         _quantized_layers_and_embedding_dtype(
             huggingface_config,
             ignore_modules,
@@ -204,11 +204,11 @@ def _parse_compressed_tensors_float8_config(
 
     bias_dtype = _bias_dtype(state_dict)
 
-    return Float8Config(
+    return QuantConfig(
         input_scale=input_spec,
         weight_scale=weight_spec,
-        mlp_in_float8=mlp_in_float8,
-        attn_qkv_in_float8=attn_qkv_in_float8,
+        mlp_quantized_layers=mlp_quantized_layers,
+        attn_quantized_layers=attn_quantized_layers,
         embedding_output_dtype=embedding_output_dtype,
         bias_dtype=bias_dtype,
         quant_method="compressed-tensors",
@@ -271,16 +271,14 @@ def _bias_dtype(state_dict: Mapping[str, WeightData]) -> DType | None:
     return bias_dtype
 
 
-def _parse_fbgemm_float8_config(
+def _parse_fbgemm_fp8_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
     dtype: DType,
-) -> Float8Config:
-    """Parses a Float8Config in the FBGEMM FP8 format."""
+) -> QuantConfig:
+    """Parses a QuantConfig in the FBGEMM FP8 format."""
     if dtype != DType.float8_e4m3fn:
-        raise TypeError(
-            "`_parse_fbgemm_float8_config` only supports float8 dtype"
-        )
+        raise TypeError("`_parse_fbgemm_fp8_config` only supports float8 dtype")
 
     hf_quant_config = getattr(huggingface_config, "quantization_config", None)
     assert (
@@ -295,22 +293,22 @@ def _parse_fbgemm_float8_config(
     activation_scale_ub = hf_quant_config.get("activation_scale_ub")
 
     # For fbgemm_fp8, assume input is dynamic and column-wise.
-    input_spec = Float8InputScaleSpec(
-        granularity=Float8ScaleGranularity.COLWISE,
-        origin=Float8ScaleOrigin.DYNAMIC,
+    input_spec = InputScaleSpec(
+        granularity=ScaleGranularity.COLWISE,
+        origin=ScaleOrigin.DYNAMIC,
         dtype=dtype,
         activation_scale_ub=activation_scale_ub,
     )
 
     # For fbgemm_fp8, weight is static, row-wise.
-    weight_spec = Float8WeightScaleSpec(
-        granularity=Float8ScaleGranularity.ROWWISE,
+    weight_spec = WeightScaleSpec(
+        granularity=ScaleGranularity.ROWWISE,
         dtype=_weight_scale_dtype(state_dict),
     )
 
     # Determine which layers have MLP and QKV in float8.
     # Modules listed in `modules_to_not_convert` are not converted to float8.
-    mlp_in_float8, attn_qkv_in_float8, embedding_output_dtype = (
+    mlp_quantized_layers, attn_quantized_layers, embedding_output_dtype = (
         _quantized_layers_and_embedding_dtype(
             huggingface_config, modules_to_not_convert_hf, state_dict
         )
@@ -318,25 +316,27 @@ def _parse_fbgemm_float8_config(
 
     bias_dtype = _bias_dtype(state_dict)
 
-    return Float8Config(
+    return QuantConfig(
         input_scale=input_spec,
         weight_scale=weight_spec,
-        mlp_in_float8=mlp_in_float8,
-        attn_qkv_in_float8=attn_qkv_in_float8,
+        mlp_quantized_layers=mlp_quantized_layers,
+        attn_quantized_layers=attn_quantized_layers,
         embedding_output_dtype=embedding_output_dtype,
         bias_dtype=bias_dtype,
         quant_method=quant_method,
     )
 
 
-def _parse_fp8_float8_config(
+def _parse_blockscaled_fp8_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
     dtype: DType,
-) -> Float8Config:
-    """Parses a Float8Config when quant_method="fp8"."""
+) -> QuantConfig:
+    """Parses a QuantConfig when quant_method="fp8"."""
     if dtype != DType.float8_e4m3fn:
-        raise TypeError("`_parse_fp8_float8_config` only supports float8 dtype")
+        raise TypeError(
+            "`_parse_blockscaled_fp8_config` only supports float8 dtype"
+        )
 
     hf_quant_config = getattr(huggingface_config, "quantization_config", None)
 
@@ -364,14 +364,14 @@ def _parse_fp8_float8_config(
             "could not find weight scale dtype for FP8 quantized weights"
         )
 
-    input_spec = Float8InputScaleSpec(
-        granularity=Float8ScaleGranularity.BLOCK,
-        origin=Float8ScaleOrigin.DYNAMIC,
+    input_spec = InputScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        origin=ScaleOrigin.DYNAMIC,
         dtype=weight_scale_dtype,
         block_size=(1, 128),
     )
-    weight_spec = Float8WeightScaleSpec(
-        granularity=Float8ScaleGranularity.BLOCK,
+    weight_spec = WeightScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
         dtype=weight_scale_dtype,
         block_size=(128, 128),
     )
@@ -386,25 +386,25 @@ def _parse_fp8_float8_config(
         num_hidden_layers = huggingface_config.num_hidden_layers
     all_layers = set(range(num_hidden_layers))
 
-    return Float8Config(
+    return QuantConfig(
         input_scale=input_spec,
         weight_scale=weight_spec,
-        mlp_in_float8=all_layers,
-        attn_qkv_in_float8=all_layers,
+        mlp_quantized_layers=all_layers,
+        attn_quantized_layers=all_layers,
         embedding_output_dtype=DType.bfloat16,
         bias_dtype=bias_dtype,
         quant_method=quant_method,
     )
 
 
-def _parse_float8_config(
+def _parse_fp8_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
     dtype: DType,
     state_dict_name_prefix: str = "",
     ignored_modules_prefix: str = "model.",
-) -> Float8Config | None:
-    """Parses Float8Config from Hugging Face config (if exists) by dispatching to format-specific parsers.
+) -> QuantConfig | None:
+    """Parses QuantConfig from Hugging Face config (if exists) by dispatching to format-specific parsers.
 
     Dispatches to the appropriate format-specific parser based on the
     quantization method in the Hugging Face config. Returns None if the dtype is not float8_e4m3fn.
@@ -422,7 +422,7 @@ def _parse_float8_config(
     quant_method = hf_quant_config.get("quant_method")
 
     if quant_method == "compressed-tensors":
-        return _parse_compressed_tensors_float8_config(
+        return _parse_compressed_tensors_fp8_config(
             huggingface_config,
             state_dict,
             dtype,
@@ -430,11 +430,11 @@ def _parse_float8_config(
             ignored_modules_prefix=ignored_modules_prefix,
         )
     elif quant_method == "fbgemm_fp8":
-        return _parse_fbgemm_float8_config(
+        return _parse_fbgemm_fp8_config(huggingface_config, state_dict, dtype)
+    elif quant_method == "fp8":  # DeepSeekV3
+        return _parse_blockscaled_fp8_config(
             huggingface_config, state_dict, dtype
         )
-    elif quant_method == "fp8":  # DeepSeekV3
-        return _parse_fp8_float8_config(huggingface_config, state_dict, dtype)
 
     raise ValueError(
         "FP8 dtype specified, but an unsupported or incompatible 'quantization_config' "
@@ -540,7 +540,7 @@ def _parse_modelopt_float4_config(
     *,
     quant_method_override: str | None = None,
     quant_algo_override: str | None = None,
-) -> Float8Config | None:
+) -> QuantConfig | None:
     hf_quant_config = getattr(huggingface_config, "quantization_config", None)
     quant_method = quant_method_override
     quant_algo = quant_algo_override
@@ -550,14 +550,14 @@ def _parse_modelopt_float4_config(
     if not quant_method or not quant_algo:
         return None
 
-    input_spec = Float8InputScaleSpec(
-        granularity=Float8ScaleGranularity.BLOCK,
-        origin=Float8ScaleOrigin.STATIC,
+    input_spec = InputScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        origin=ScaleOrigin.STATIC,
         dtype=DType.float32,
         block_size=(1, 16),
     )
-    weight_spec = Float8WeightScaleSpec(
-        granularity=Float8ScaleGranularity.BLOCK,
+    weight_spec = WeightScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
         dtype=DType.float8_e4m3fn,
         block_size=(1, 16 // 2),
     )
@@ -567,11 +567,11 @@ def _parse_modelopt_float4_config(
     # All layers use float4 in modelopt NVFP4 checkpoints.
     all_layers = set(range(huggingface_config.num_hidden_layers))
 
-    return Float8Config(
+    return QuantConfig(
         input_scale=input_spec,
         weight_scale=weight_spec,
-        mlp_in_float8=all_layers,
-        attn_qkv_in_float8=all_layers,
+        mlp_quantized_layers=all_layers,
+        attn_quantized_layers=all_layers,
         embedding_output_dtype=DType.bfloat16,
         bias_dtype=bias_dtype,
         quant_method=quant_method,
@@ -586,8 +586,8 @@ def _parse_mxfp4_config(
     *,
     quant_method_override: str | None = None,
     quant_algo_override: str | None = None,
-) -> Float8Config | None:
-    """Parses a Float8Config for MXFP4 quantization.
+) -> QuantConfig | None:
+    """Parses a QuantConfig for MXFP4 quantization.
 
     MXFP4 uses float8_e8m0fnu scales (one per 32 elements) with packed uint8 weights.
     No input scale is needed; activations stay in bfloat16 and are cast to FP8 on-the-fly.
@@ -602,14 +602,14 @@ def _parse_mxfp4_config(
         return None
 
     # MXFP4: block-scaled with 32-element blocks, E8M0 scales
-    input_spec = Float8InputScaleSpec(
-        granularity=Float8ScaleGranularity.BLOCK,
-        origin=Float8ScaleOrigin.DYNAMIC,
+    input_spec = InputScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        origin=ScaleOrigin.DYNAMIC,
         dtype=DType.float32,
         block_size=(1, 32),
     )
-    weight_spec = Float8WeightScaleSpec(
-        granularity=Float8ScaleGranularity.BLOCK,
+    weight_spec = WeightScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
         dtype=DType.float8_e8m0fnu,
         block_size=(1, 32),
     )
@@ -624,14 +624,14 @@ def _parse_mxfp4_config(
     all_layers = set(range(num_hidden_layers))
 
     # MXFP4 only quantizes MoE expert weights; attention stays BF16.
-    # `mlp_in_float8` is a legacy name that really just controls which
-    # layers carry a Float8Config (StackedMoE checks it for the MXFP4 path).
+    # `mlp_quantized_layers` controls which layers carry a QuantConfig
+    # (StackedMoE checks it for the MXFP4 path).
     # Fused MLP is disabled since only MoE experts are quantized.
-    return Float8Config(
+    return QuantConfig(
         input_scale=input_spec,
         weight_scale=weight_spec,
-        mlp_in_float8=all_layers,
-        attn_qkv_in_float8=set(),
+        mlp_quantized_layers=all_layers,
+        attn_quantized_layers=set(),
         embedding_output_dtype=DType.bfloat16,
         bias_dtype=bias_dtype,
         quant_method=quant_method,
@@ -646,7 +646,7 @@ def _parse_float4_config(
     dtype: DType,
     state_dict_name_prefix: str = "",
     ignored_modules_prefix: str = "model.",
-) -> Float8Config | None:
+) -> QuantConfig | None:
     # Accept both uint8 (fp4-e2m1fnX2 format) and float4_e2m1fn
     if dtype not in _FP4_DTYPES:
         return None
@@ -672,14 +672,14 @@ def _parse_float4_config(
     return None
 
 
-def parse_float8_config(  # TODO: rename to generic
+def parse_quant_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
     dtype: DType,
     state_dict_name_prefix: str = "",
     ignored_modules_prefix: str = "model.",
-) -> Float8Config | None:
-    """Parses Float8 or Float4 config from HuggingFace config and state dict.
+) -> QuantConfig | None:
+    """Parses scaled quantization config from HuggingFace config and state dict.
 
     Args:
         huggingface_config: HuggingFace model configuration.
@@ -689,7 +689,7 @@ def parse_float8_config(  # TODO: rename to generic
         ignored_modules_prefix: Prefix of modules to ignore when parsing.
 
     Returns:
-        Float8Config or Float4 config if supported, otherwise None.
+        QuantConfig if supported, otherwise None.
     """
     # Check for MXFP4 quantization (can appear with bfloat16 model dtype
     # since only MoE weights are quantized; attention/embedding stay bf16).
@@ -718,7 +718,7 @@ def parse_float8_config(  # TODO: rename to generic
             ignored_modules_prefix,
         )
     elif dtype == DType.float8_e4m3fn:
-        config = _parse_float8_config(
+        config = _parse_fp8_config(
             huggingface_config,
             state_dict,
             dtype,

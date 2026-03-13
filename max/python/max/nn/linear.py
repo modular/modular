@@ -30,12 +30,12 @@ from max.graph import (
     ops,
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.nn.float8_config import (
-    Float8Config,
-    Float8ScaleGranularity,
+from max.nn.quant_config import (
+    QuantConfig,
+    ScaleGranularity,
     nvfp4_packed_k,
 )
-from max.nn.float8_ops import matmul_float4, matmul_float8
+from max.nn.quant_ops import matmul_float4, matmul_float8
 from max.support.math import ceildiv
 
 from .activation import activation_function_from_name
@@ -99,7 +99,7 @@ class Linear(Module, Shardable):
         device: DeviceRef,
         has_bias: bool = False,
         quantization_encoding: QuantizationEncoding | None = None,
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
         name: str | None = None,
         clip_weight: float | None = None,
         is_sharding: bool = False,
@@ -117,7 +117,7 @@ class Linear(Module, Shardable):
             has_bias: When ``True``, adds a bias vector to the layer.
                 Defaults to ``False``.
             quantization_encoding: :class:`~max.graph.quantization.QuantizationEncoding` for the weights.
-            float8_config: :class:`~max.nn.float8_config.Float8Config` for float8 quantization.
+            quant_config: :class:`~max.nn.quant_config.QuantConfig` for scaled quantization.
             clip_weight: Optional weight clipping threshold.
             is_sharding: Disable child layer creation during sharding.
         """
@@ -125,21 +125,21 @@ class Linear(Module, Shardable):
 
         self.device = device
         self.clip_weight = clip_weight
-        self.float8_config = float8_config
+        self.quant_config = quant_config
 
         if not is_sharding:
             self.weight = Weight(
                 name=f"{name}.weight" if name else "weight",
                 dtype=dtype,
-                shape=(out_dim, nvfp4_packed_k(in_dim, float8_config)),
+                shape=(out_dim, nvfp4_packed_k(in_dim, quant_config)),
                 device=device,
                 quantization_encoding=quantization_encoding,
             )
 
         if has_bias:
             bias_dtype = dtype
-            if float8_config and float8_config.bias_dtype:
-                bias_dtype = float8_config.bias_dtype
+            if quant_config and quant_config.bias_dtype:
+                bias_dtype = quant_config.bias_dtype
 
             if not is_sharding:
                 self.bias = Weight(
@@ -155,28 +155,28 @@ class Linear(Module, Shardable):
                         f"Bias is on device {self.bias.device} while weight is on {self.weight.device}."
                     )
 
-        if float8_config and not is_sharding:
-            if float8_config.is_static:
+        if quant_config and not is_sharding:
+            if quant_config.is_static:
                 self.input_scale = Weight(
                     name=f"{name}.input_scale" if name else "input_scale",
-                    dtype=float8_config.input_scale.dtype,
+                    dtype=quant_config.input_scale.dtype,
                     shape=(),
                     device=DeviceRef.CPU(),
                     quantization_encoding=quantization_encoding,
                 )
 
-            if float8_config.input_scale.granularity not in (
-                Float8ScaleGranularity.TENSOR,
-                Float8ScaleGranularity.COLWISE,
-                Float8ScaleGranularity.BLOCK,
+            if quant_config.input_scale.granularity not in (
+                ScaleGranularity.TENSOR,
+                ScaleGranularity.COLWISE,
+                ScaleGranularity.BLOCK,
             ):
                 raise ValueError(
-                    f"unsupported input scale granularity {float8_config.input_scale.granularity}. "
+                    f"unsupported input scale granularity {quant_config.input_scale.granularity}. "
                     "Only TENSOR, COLWISE and BLOCK granularities are supported, currently"
                 )
 
-            weight_scale = float8_config.weight_scale
-            weight_scale_shape = self._infer_weight_scale_shape(float8_config)
+            weight_scale = quant_config.weight_scale
+            weight_scale_shape = self._infer_weight_scale_shape(quant_config)
 
             self.weight_scale = Weight(
                 name=f"{name}.weight_scale" if name else "weight_scale",
@@ -187,34 +187,34 @@ class Linear(Module, Shardable):
                 device=DeviceRef.CPU(),
                 quantization_encoding=quantization_encoding,
             )
-            if float8_config.is_nvfp4:
+            if quant_config.is_nvfp4:
                 self.weight_scale_2 = Weight(
                     name=f"{name}.weight_scale_2" if name else "weight_scale_2",
-                    dtype=float8_config.input_scale.dtype,
+                    dtype=quant_config.input_scale.dtype,
                     shape=(),
                     device=DeviceRef.CPU(),
                     quantization_encoding=quantization_encoding,
                 )
 
     def _infer_weight_scale_shape(
-        self, float8_config: Float8Config
+        self, quant_config: QuantConfig
     ) -> tuple[int, ...]:
         weight_scale_shape: tuple[int, ...]
-        weight_scale = float8_config.weight_scale
+        weight_scale = quant_config.weight_scale
         if weight_scale.is_rowwise:
             weight_scale_shape = (int(self.weight.shape[0]), 1)
         elif weight_scale.is_tensor:
             weight_scale_shape = ()
         elif weight_scale.is_block:
-            assert float8_config.weight_scale.block_size is not None
+            assert quant_config.weight_scale.block_size is not None
             weight_scale_shape = (
                 ceildiv(
                     int(self.weight.shape[0]),
-                    float8_config.weight_scale.block_size[0],
+                    quant_config.weight_scale.block_size[0],
                 ),
                 ceildiv(
                     int(self.weight.shape[1]),
-                    float8_config.weight_scale.block_size[1],
+                    quant_config.weight_scale.block_size[1],
                 ),
             )
         else:
@@ -239,17 +239,17 @@ class Linear(Module, Shardable):
         self.weight.sharding_strategy = strategy
 
         if self.weight_scale:
-            # Weight scale should only be added when a float8 config is passed.
-            assert self.float8_config
+            # Weight scale should only be added when a quant config is passed.
+            assert self.quant_config
 
             # Determine weight scale sharding strategy based on weight scale type
             # and weight sharding strategy.
-            if self.float8_config.weight_scale.is_tensor:
+            if self.quant_config.weight_scale.is_tensor:
                 # Tensor scaling: always replicate
                 self.weight_scale.sharding_strategy = (
                     ShardingStrategy.replicate(strategy.num_devices)
                 )
-            elif self.float8_config.weight_scale.is_rowwise:
+            elif self.quant_config.weight_scale.is_rowwise:
                 if strategy.is_colwise or strategy.is_head_aware_colwise:
                     # Rowwise scale + columnwise weight: replicate to avoid shape mismatch
                     self.weight_scale.sharding_strategy = (
@@ -258,7 +258,7 @@ class Linear(Module, Shardable):
                 else:
                     # Rowwise scale + rowwise weight: shard along same dimension
                     self.weight_scale.sharding_strategy = strategy
-            elif self.float8_config.weight_scale.is_block:
+            elif self.quant_config.weight_scale.is_block:
                 # Block scaling: blocks correspond to regions in the weight matrix.
                 # For rowwise weight sharding, shard scale's first dim (N blocks).
                 # For columnwise weight sharding, shard scale's second dim (K blocks).
@@ -292,11 +292,11 @@ class Linear(Module, Shardable):
                         head_dim = strategy.shard.keywords["head_dim"]
                         # block_size is guaranteed non-None when is_block is True
                         assert (
-                            self.float8_config.weight_scale.block_size
+                            self.quant_config.weight_scale.block_size
                             is not None
                         )
                         block_size_k = (
-                            self.float8_config.weight_scale.block_size[1]
+                            self.quant_config.weight_scale.block_size[1]
                         )
 
                         # Check if head boundaries align with block boundaries
@@ -376,7 +376,7 @@ class Linear(Module, Shardable):
             sharded_biases = self.bias.shard(devices)
 
         if (
-            self.float8_config
+            self.quant_config
             and self.weight_scale is not None
             and len(self.weight_scale.shape) > 0
         ):
@@ -393,7 +393,7 @@ class Linear(Module, Shardable):
                 dtype=self.weight.dtype,
                 device=device,
                 has_bias=self.bias is not None,
-                float8_config=self.float8_config,
+                quant_config=self.quant_config,
                 clip_weight=self.clip_weight,
                 is_sharding=True,
             )
@@ -415,7 +415,7 @@ class Linear(Module, Shardable):
                     sharded.bias = sharded_biases[shard_idx]
 
             # Handle float8 scales.
-            if self.float8_config:
+            if self.quant_config:
                 if self.input_scale is not None:
                     # Input scale is always shared (scalar), which should be
                     # checked upstream.
@@ -432,8 +432,8 @@ class Linear(Module, Shardable):
                         else sharded_weight_scales[shard_idx]
                     )
                 if (
-                    self.float8_config is not None
-                    and self.float8_config.is_nvfp4
+                    self.quant_config is not None
+                    and self.quant_config.is_nvfp4
                     and hasattr(self, "weight_scale_2")
                 ):
                     sharded.weight_scale_2 = self.weight_scale_2
@@ -465,7 +465,7 @@ class Linear(Module, Shardable):
             x,
             weight,
             self.weight.quantization_encoding,
-            self.float8_config,
+            self.quant_config,
             self.input_scale,
             self.weight_scale,
             self.weight_scale_2,
@@ -480,7 +480,7 @@ def linear(
     x: TensorValue,
     weight: TensorValue,
     quantization_encoding: QuantizationEncoding | None = None,
-    float8_config: Float8Config | None = None,
+    quant_config: QuantConfig | None = None,
     input_scale: TensorValue | None = None,
     weight_scale: TensorValue | None = None,
     weight_scale_2: TensorValue | None = None,
@@ -488,9 +488,9 @@ def linear(
     """Computes x @ weight.T with quantization support."""
     if quantization_encoding is not None:
         return ops.qmatmul(quantization_encoding, None, x, weight)
-    elif float8_config:
+    elif quant_config:
         assert weight_scale is not None
-        if float8_config.is_nvfp4:
+        if quant_config.is_nvfp4:
             assert input_scale is not None
             assert weight_scale_2 is not None
             return matmul_float4(
@@ -499,7 +499,7 @@ def linear(
                 weight_scale,
                 input_scale,
                 weight_scale_2,
-                float8_config,
+                quant_config,
             )
         else:
             return matmul_float8(
@@ -507,7 +507,7 @@ def linear(
                 weight,
                 weight_scale,
                 input_scale,
-                float8_config,
+                quant_config,
             )
     else:
         return x @ weight.T
@@ -591,7 +591,7 @@ class ColumnParallelLinear(Linear):
             )
 
         if tied_weight and (
-            kwargs.get("float8_config") is not None
+            kwargs.get("quant_config") is not None
             or kwargs.get("has_bias", False)
         ):
             raise ValueError(
@@ -653,7 +653,7 @@ class GPTQLinear(Linear):
         has_bias: bool = False,
         quantization_encoding: QuantizationEncoding | None = None,
         quantization_config: QuantizationConfig | None = None,
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
     ) -> None:
         """Initializes the linear layer with weights and optional bias with GPTQ quantization.
 
@@ -669,13 +669,15 @@ class GPTQLinear(Linear):
                 Defaults to ``False``.
             quantization_encoding: The :class:`~max.graph.quantization.QuantizationEncoding` of the weights.
             quantization_config: Extra :class:`~max.graph.quantization.QuantizationConfig` for the weight quantization.
-            float8_config: :class:`~max.nn.float8_config.Float8Config` for float8 quantization (not supported).
+            quant_config: :class:`~max.nn.quant_config.QuantConfig` for scaled quantization (not supported).
         """
         del out_dim, dtype  # Unused.
         if has_bias:
             raise ValueError("has_bias=True is not supported in GPTQLinear.")
-        if float8_config:
-            raise ValueError("Float8 is not supported in GPTQLinear.")
+        if quant_config:
+            raise ValueError(
+                "Scaled quantization is not supported in GPTQLinear."
+            )
 
         # Skip Linear initialization.
         Module.__init__(self)
@@ -772,7 +774,7 @@ class MLP(Module, Shardable):
         linear_cls: Callable[..., Linear] = Linear,
         has_bias: bool = False,
         activation_function: str = "silu",
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
         is_sharding: bool = False,
     ) -> None:
         """Initializes the MLP layer.
@@ -795,7 +797,7 @@ class MLP(Module, Shardable):
                 - ``tanh``
                 - ``sigmoid``
 
-            float8_config: :class:`~max.nn.float8_config.Float8Config` for float8 quantization.
+            quant_config: :class:`~max.nn.quant_config.QuantConfig` for scaled quantization.
             is_sharding: Disable child layer creation during sharding.
         """
         super().__init__()
@@ -812,7 +814,7 @@ class MLP(Module, Shardable):
                 device=devices[0],
                 quantization_encoding=quantization_encoding,
                 has_bias=has_bias,
-                float8_config=float8_config,
+                quant_config=quant_config,
             )
             self.down_proj = linear_cls(
                 in_dim=feed_forward_length,
@@ -821,7 +823,7 @@ class MLP(Module, Shardable):
                 device=devices[0],
                 quantization_encoding=quantization_encoding,
                 has_bias=has_bias,
-                float8_config=float8_config,
+                quant_config=quant_config,
             )
             self.up_proj = linear_cls(
                 in_dim=hidden_dim,
@@ -830,11 +832,11 @@ class MLP(Module, Shardable):
                 device=devices[0],
                 quantization_encoding=quantization_encoding,
                 has_bias=has_bias,
-                float8_config=float8_config,
+                quant_config=quant_config,
             )
 
         self.quantization_encoding = quantization_encoding
-        self.float8_config = float8_config
+        self.quant_config = quant_config
         self._activation_function_name = activation_function
         self.activation_function = activation_function_from_name(
             activation_function
@@ -900,9 +902,9 @@ class MLP(Module, Shardable):
         """Checks if the gate/up matmuls can be fused."""
         if self.quantization_encoding:
             return False
-        if self.float8_config is None:
+        if self.quant_config is None:
             return True
-        return self.float8_config.can_use_fused_mlp
+        return self.quant_config.can_use_fused_mlp
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
         """Applies the MLP transformation to the input.
@@ -925,7 +927,7 @@ class MLP(Module, Shardable):
                 TensorValue(x),
                 self._concat_or_max_gate_up_weights(),
                 self.quantization_encoding,
-                self.float8_config,
+                self.quant_config,
                 input_scale=self._concat_or_max_gate_up_input_scale(),
                 weight_scale=self._concat_or_max_gate_up_scales(),
                 weight_scale_2=self._concat_or_max_gate_up_weight_scale_2(),
@@ -1010,7 +1012,7 @@ class MLP(Module, Shardable):
                 devices=[device],
                 has_bias=self.gate_proj.bias is not None,
                 activation_function=self._activation_function_name,
-                float8_config=self.float8_config,
+                quant_config=self.quant_config,
                 is_sharding=True,
             )
 

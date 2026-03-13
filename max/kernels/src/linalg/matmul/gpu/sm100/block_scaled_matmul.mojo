@@ -220,7 +220,7 @@ struct B200BlockScaledMatmulSmem[
 
 
 @always_inline
-fn load_AB_SFA_SFB[
+def load_AB_SFA_SFB[
     a_type: DType,
     b_type: DType,
     sfa_dtype: DType,
@@ -403,7 +403,7 @@ fn load_AB_SFA_SFB[
 
 
 @always_inline
-fn consumer_main_loop[
+def consumer_main_loop[
     accum_type: DType,
     c_type: DType,
     a_type: DType,
@@ -519,7 +519,7 @@ fn consumer_main_loop[
 
 
 @always_inline
-fn consumer_main_loop[
+def consumer_main_loop[
     accum_type: DType,
     c_type: DType,
     a_type: DType,
@@ -629,7 +629,7 @@ fn consumer_main_loop[
 
 
 @always_inline
-fn multi_stage_store_C[
+def multi_stage_store_C[
     c_type: DType,
     c_smem_layout: Layout,
     c_rank: Int,
@@ -722,7 +722,7 @@ fn multi_stage_store_C[
 
 
 @always_inline
-fn copy_accum_to_gmem[
+def copy_accum_to_gmem[
     c_type: DType,
     c_rank: Int,
     c_tile_shape: IndexList[c_rank],
@@ -1172,7 +1172,7 @@ fn copy_accum_to_gmem[
 
 
 @parameter
-fn _reshape_to_3d[layout: Layout]() -> Layout:
+def _reshape_to_3d[layout: Layout]() -> Layout:
     comptime rank = len(layout.shape)
 
     comptime if rank == 3:
@@ -1185,7 +1185,7 @@ fn _reshape_to_3d[layout: Layout]() -> Layout:
         )
 
 
-fn _convert_input_to_batched_tensor[
+def _convert_input_to_batched_tensor[
     dtype: DType,
     layout: Layout,
     reshape_layout: Layout = _reshape_to_3d[layout](),
@@ -1220,7 +1220,7 @@ fn _convert_input_to_batched_tensor[
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
-fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
+def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -1909,7 +1909,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 # =============================================================================
 
 
-fn _create_tma_and_launch[
+def _create_tma_and_launch[
     transpose_b: Bool,
     *,
     K: Int,
@@ -2154,7 +2154,7 @@ fn _create_tma_and_launch[
         ].dump_workspace_as_csv(ctx, workspace, "profile")
 
 
-fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     sfa_dtype: DType,
     sfa_layout: Layout,
     sfb_dtype: DType,
@@ -2355,7 +2355,7 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         )
 
 
-fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     sfa_dtype: DType,
     sfa_layout: Layout,
     sfb_dtype: DType,

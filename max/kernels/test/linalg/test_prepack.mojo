@@ -21,7 +21,7 @@ from std.utils.index import IndexList
 
 
 # CHECK-LABEL: test_prepack
-fn test_prepack():
+def test_prepack():
     print("== test_prepack")
 
     comptime k = 10
@@ -272,5 +272,5 @@ fn test_prepack():
             print(dst_buf[IndexList[2](i, j)])
 
 
-fn main():
+def main():
     test_prepack()

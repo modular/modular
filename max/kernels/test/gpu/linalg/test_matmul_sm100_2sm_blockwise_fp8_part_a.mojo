@@ -38,14 +38,14 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 
-fn simple_init() -> Bool:
+def simple_init() -> Bool:
     for arg in argv():
         if arg == "--simple-init":
             return True
     return False
 
 
-fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
+def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     a_type: DType,
     b_type: DType,
     c_type: DType,

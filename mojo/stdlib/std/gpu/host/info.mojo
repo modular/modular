@@ -388,7 +388,7 @@ Add a new function that returns the MLIR target configuration.
 Example for NVIDIA GPU:
 
 ```mojo
-fn _get_your_gpu_target() -> _TargetType:
+def _get_your_gpu_target() -> _TargetType:
     \"\"\"Creates an MLIR target configuration for Your GPU.
 
     Returns:
@@ -467,7 +467,7 @@ changed to support multiple GPUs per target_arch in the future.
 Add the target mapping in the `target()` method of the `GPUInfo` struct:
 
 ```mojo
-fn target(self) -> _TargetType:
+def target(self) -> _TargetType:
     \"\"\"Gets the MLIR target configuration for this GPU.
 
     Returns:
@@ -758,7 +758,7 @@ struct Vendor(Equatable, TrivialRegisterPassable, Writable):
     comptime APPLE_GPU = Self(3)
     """Represents Apple GPU vendor."""
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Checks if two `Vendor` instances are equal.
 
         Args:
@@ -769,7 +769,7 @@ struct Vendor(Equatable, TrivialRegisterPassable, Writable):
         """
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Checks if two `Vendor` instances are not equal.
 
         Args:
@@ -781,7 +781,7 @@ struct Vendor(Equatable, TrivialRegisterPassable, Writable):
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes vendor information to a writer.
 
         Args:
@@ -808,7 +808,7 @@ struct Vendor(Equatable, TrivialRegisterPassable, Writable):
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_empty_target() -> _TargetType:
+def _get_empty_target() -> _TargetType:
     """Creates an empty target configuration for when no GPU is available.
 
     Returns:
@@ -845,7 +845,7 @@ comptime NoGPU = GPUInfo(
 # ===-----------------------------------------------------------------------===#
 # Apple Silicon
 # ===-----------------------------------------------------------------------===#
-fn _get_metal_m1_target() -> _TargetType:
+def _get_metal_m1_target() -> _TargetType:
     """Creates an MLIR target configuration for M1 Metal GPU.
 
     Returns:
@@ -861,7 +861,7 @@ fn _get_metal_m1_target() -> _TargetType:
     ]
 
 
-fn _get_metal_m2_target() -> _TargetType:
+def _get_metal_m2_target() -> _TargetType:
     """Creates an MLIR target configuration for M2 Metal GPU.
 
     Returns:
@@ -877,7 +877,7 @@ fn _get_metal_m2_target() -> _TargetType:
     ]
 
 
-fn _get_metal_m3_target() -> _TargetType:
+def _get_metal_m3_target() -> _TargetType:
     """Creates an MLIR target configuration for M3 Metal GPU.
 
     Returns:
@@ -893,7 +893,7 @@ fn _get_metal_m3_target() -> _TargetType:
     ]
 
 
-fn _get_metal_m4_target() -> _TargetType:
+def _get_metal_m4_target() -> _TargetType:
     """Creates an MLIR target configuration for M4 Metal GPU.
 
     Returns:
@@ -909,7 +909,7 @@ fn _get_metal_m4_target() -> _TargetType:
     ]
 
 
-fn _get_metal_m5_target() -> _TargetType:
+def _get_metal_m5_target() -> _TargetType:
     """Creates an MLIR target configuration for M5 Metal GPU.
 
     Returns:
@@ -998,7 +998,7 @@ comptime MetalM5 = GPUInfo.from_family(
 # https://developer.nvidia.com/cuda-toolkit-archive.
 
 
-fn _get_a100_target() -> _TargetType:
+def _get_a100_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA A100 GPU.
 
     Returns:
@@ -1033,7 +1033,7 @@ comptime A100 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_a10_target() -> _TargetType:
+def _get_a10_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA A10 GPU.
 
     Returns:
@@ -1068,7 +1068,7 @@ comptime A10 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_orin_nano_target() -> _TargetType:
+def _get_orin_nano_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA Jetson Orin Nano GPU.
 
     Returns:
@@ -1103,7 +1103,7 @@ comptime OrinNano = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_jetson_thor_target() -> _TargetType:
+def _get_jetson_thor_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA Jetson Thor.
 
     Returns:
@@ -1139,7 +1139,7 @@ comptime JetsonThor = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_dgx_spark_target() -> _TargetType:
+def _get_dgx_spark_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA DGX Spark.
 
     Returns:
@@ -1174,7 +1174,7 @@ comptime DGXSpark = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_l4_target() -> _TargetType:
+def _get_l4_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA L4 GPU.
 
     Returns:
@@ -1209,7 +1209,7 @@ comptime L4 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_rtx4090m_target() -> _TargetType:
+def _get_rtx4090m_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA RTX 4090 Mobile GPU.
 
     Returns:
@@ -1244,7 +1244,7 @@ comptime RTX4090m = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_rtx4090_target() -> _TargetType:
+def _get_rtx4090_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA RTX 4090.
 
     Returns:
@@ -1280,7 +1280,7 @@ comptime RTX4090 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_h100_target() -> _TargetType:
+def _get_h100_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA H100 GPU.
 
     Returns:
@@ -1316,7 +1316,7 @@ comptime H100 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_b100_target() -> _TargetType:
+def _get_b100_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA B100 GPU.
 
     Returns:
@@ -1365,7 +1365,7 @@ comptime B200 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_rtx5090_target() -> _TargetType:
+def _get_rtx5090_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA RTX5090 GPU.
 
     Returns:
@@ -1402,7 +1402,7 @@ comptime RTX5090 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_rtx3090_target() -> _TargetType:
+def _get_rtx3090_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA GeForce RTX 3090.
 
     Returns:
@@ -1439,7 +1439,7 @@ comptime RTX3090 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_gtx1080ti_target() -> _TargetType:
+def _get_gtx1080ti_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA GTX 1080 Ti GPU.
 
     Returns:
@@ -1473,7 +1473,7 @@ comptime GTX1080Ti = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_gtx1060_target() -> _TargetType:
+def _get_gtx1060_target() -> _TargetType:
     """
     Creates an MLIR target configuration for NVIDIA GTX 1060 GPU.
 
@@ -1511,7 +1511,7 @@ comptime GTX1060 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_gtx970_target() -> _TargetType:
+def _get_gtx970_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA GTX 970 GPU.
 
     Returns:
@@ -1545,7 +1545,7 @@ comptime GTX970 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_teslap100_target() -> _TargetType:
+def _get_teslap100_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA Tesla P100 GPU.
 
     Returns:
@@ -1581,7 +1581,7 @@ comptime TeslaP100 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_rtx2060_target() -> _TargetType:
+def _get_rtx2060_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA RTX 2060 GPU.
 
     Returns:
@@ -1617,7 +1617,7 @@ comptime RTX2060 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_mi300x_target() -> _TargetType:
+def _get_mi300x_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD MI300X GPU.
 
     Returns:
@@ -1652,7 +1652,7 @@ comptime MI300X = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_mi355x_target() -> _TargetType:
+def _get_mi355x_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD MI355X GPU.
 
     Returns:
@@ -1687,7 +1687,7 @@ comptime MI355X = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_9070_target() -> _TargetType:
+def _get_9070_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 9070 GPU.
 
     Returns:
@@ -1704,7 +1704,7 @@ fn _get_9070_target() -> _TargetType:
     ]
 
 
-fn _get_9060_target() -> _TargetType:
+def _get_9060_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 9060 GPU.
 
     Returns:
@@ -1721,7 +1721,7 @@ fn _get_9060_target() -> _TargetType:
     ]
 
 
-fn _get_7900_target() -> _TargetType:
+def _get_7900_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 7900 GPU.
 
     Returns:
@@ -1738,7 +1738,7 @@ fn _get_7900_target() -> _TargetType:
     ]
 
 
-fn _get_7800_target() -> _TargetType:
+def _get_7800_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 7800/7700 GPU.
 
     Returns:
@@ -1755,7 +1755,7 @@ fn _get_7800_target() -> _TargetType:
     ]
 
 
-fn _get_7600_target() -> _TargetType:
+def _get_7600_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 7600 GPU.
 
     Returns:
@@ -1772,7 +1772,7 @@ fn _get_7600_target() -> _TargetType:
     ]
 
 
-fn _get_6900_target() -> _TargetType:
+def _get_6900_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 6900 GPU.
 
     Returns:
@@ -1789,7 +1789,7 @@ fn _get_6900_target() -> _TargetType:
     ]
 
 
-fn _get_780m_target() -> _TargetType:
+def _get_780m_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 780m GPU.
 
     Returns:
@@ -1806,7 +1806,7 @@ fn _get_780m_target() -> _TargetType:
     ]
 
 
-fn _get_880m_target() -> _TargetType:
+def _get_880m_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 880M GPU.
 
     Returns:
@@ -1823,7 +1823,7 @@ fn _get_880m_target() -> _TargetType:
     ]
 
 
-fn _get_8060s_target() -> _TargetType:
+def _get_8060s_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 8060S GPU.
 
     Returns:
@@ -1840,7 +1840,7 @@ fn _get_8060s_target() -> _TargetType:
     ]
 
 
-fn _get_860m_target() -> _TargetType:
+def _get_860m_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 860M GPU.
 
     Returns:
@@ -2029,7 +2029,7 @@ struct GPUInfo(Equatable, RegisterPassable, Writable):
     var max_thread_block_size: Int
     """Maximum number of threads allowed in a thread block."""
 
-    fn target(self) -> _TargetType:
+    def target(self) -> _TargetType:
         """Gets the MLIR target configuration for this GPU.
 
         Returns:
@@ -2107,7 +2107,7 @@ struct GPUInfo(Equatable, RegisterPassable, Writable):
         return _get_a100_target()
 
     @staticmethod
-    fn from_target[target: _TargetType]() -> Self:
+    def from_target[target: _TargetType]() -> Self:
         """Creates a `GPUInfo` instance from an MLIR target.
 
         Parameters:
@@ -2119,7 +2119,7 @@ struct GPUInfo(Equatable, RegisterPassable, Writable):
         return _get_info_from_target[CompilationTarget[target]._arch()]()
 
     @staticmethod
-    fn from_name[name: StaticString]() -> Self:
+    def from_name[name: StaticString]() -> Self:
         """Creates a `GPUInfo` instance from a GPU architecture name.
 
         Parameters:
@@ -2131,7 +2131,7 @@ struct GPUInfo(Equatable, RegisterPassable, Writable):
         return _get_info_from_target[name]()
 
     @staticmethod
-    fn from_family(
+    def from_family(
         family: AcceleratorArchitectureFamily,
         name: StaticString,
         vendor: Vendor,
@@ -2175,7 +2175,7 @@ struct GPUInfo(Equatable, RegisterPassable, Writable):
             max_thread_block_size=family.max_thread_block_size,
         )
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Checks if two `GPUInfo` instances represent the same GPU model.
 
         Args:
@@ -2187,7 +2187,7 @@ struct GPUInfo(Equatable, RegisterPassable, Writable):
         return self.name == other.name
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes GPU information to a writer.
 
         Outputs all GPU specifications and capabilities to the provided writer
@@ -2227,7 +2227,7 @@ struct GPUInfo(Equatable, RegisterPassable, Writable):
 # ===-----------------------------------------------------------------------===#
 
 
-fn _build_unsupported_arch_error[target_arch: StaticString]() -> String:
+def _build_unsupported_arch_error[target_arch: StaticString]() -> String:
     """Builds a helpful error message for unsupported GPU architectures.
 
     Provides a comprehensive list of all supported GPU architectures across
@@ -2327,7 +2327,7 @@ comptime _all_targets = (
 
 
 @always_inline
-fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
+def _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
     """Gets `GPUInfo` for a specific target architecture.
 
     Maps target architecture strings to corresponding `GPUInfo` instances.
@@ -2441,7 +2441,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
 # ===-----------------------------------------------------------------------===#
 
 
-fn is_gpu[target: StringSlice]() -> Bool:
+def is_gpu[target: StringSlice]() -> Bool:
     """Checks if the target is a GPU (compile-time version).
 
     Parameters:
@@ -2453,7 +2453,7 @@ fn is_gpu[target: StringSlice]() -> Bool:
     return is_gpu(target)
 
 
-fn is_gpu(target: StringSlice) -> Bool:
+def is_gpu(target: StringSlice) -> Bool:
     """Checks if the target is a GPU (runtime version).
 
     Args:
@@ -2465,7 +2465,7 @@ fn is_gpu(target: StringSlice) -> Bool:
     return target == "gpu"
 
 
-fn is_cpu[target: StringSlice]() -> Bool:
+def is_cpu[target: StringSlice]() -> Bool:
     """Checks if the target is a CPU (compile-time version).
 
     Parameters:
@@ -2477,7 +2477,7 @@ fn is_cpu[target: StringSlice]() -> Bool:
     return is_cpu(target)
 
 
-fn is_cpu(target: StringSlice) -> Bool:
+def is_cpu(target: StringSlice) -> Bool:
     """Checks if the target is a CPU (runtime version).
 
     Args:
@@ -2489,7 +2489,7 @@ fn is_cpu(target: StringSlice) -> Bool:
     return target == "cpu"
 
 
-fn is_valid_target[target: StringSlice]() -> Bool:
+def is_valid_target[target: StringSlice]() -> Bool:
     """Checks if the target is valid (compile-time version).
 
     Parameters:
@@ -2501,7 +2501,7 @@ fn is_valid_target[target: StringSlice]() -> Bool:
     return is_valid_target(target)
 
 
-fn is_valid_target(target: StringSlice) -> Bool:
+def is_valid_target(target: StringSlice) -> Bool:
     """Checks if the target is valid (runtime version).
 
     Args:

@@ -40,7 +40,7 @@ from .matmul import warp_specialize_gemm_with_multicasting
 from ...vendor.blas import matmul as vendor_matmul
 
 
-fn test_matmul_sm90_swapAB_comparison[
+def test_matmul_sm90_swapAB_comparison[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -371,7 +371,7 @@ fn test_matmul_sm90_swapAB_comparison[
     _ = c_swapAB_dev_buffer^
 
 
-fn test_matmul_sm90_swapAB_comparison_v2[
+def test_matmul_sm90_swapAB_comparison_v2[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -674,7 +674,7 @@ fn test_matmul_sm90_swapAB_comparison_v2[
     @parameter
     @always_inline
     @__copy_capture(c_normal_device)
-    fn epilogue_fn_normal[
+    def epilogue_fn_normal[
         _dtype: DType,
         width: Int,
         *,
@@ -687,7 +687,7 @@ fn test_matmul_sm90_swapAB_comparison_v2[
     @parameter
     @always_inline
     @__copy_capture(c_swapAB_device)
-    fn epilogue_fn_swapAB[
+    def epilogue_fn_swapAB[
         _dtype: DType,
         width: Int,
         *,

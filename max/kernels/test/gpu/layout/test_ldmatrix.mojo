@@ -27,7 +27,7 @@ from std.testing import assert_almost_equal
 from std.utils.numerics import get_accum_type
 
 
-fn test_ldmatrix_fp32(
+def test_ldmatrix_fp32(
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     a_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
     b_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
@@ -75,7 +75,7 @@ fn test_ldmatrix_fp32(
     store_matrix_d[Int(mma_m), Int(mma_n), Int(mma_k)](c_ptr, d_reg, 0, 0, n)
 
 
-fn test_ldmatrix_transposed[
+def test_ldmatrix_transposed[
     input_type: DType, output_type: DType
 ](
     c_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -131,7 +131,7 @@ fn test_ldmatrix_transposed[
     )
 
 
-fn check_ldmatrix_transposed_bf16[
+def check_ldmatrix_transposed_bf16[
     input_type: DType,
     output_type: DType,
 ](ctx: DeviceContext) raises:
@@ -245,7 +245,7 @@ fn check_ldmatrix_transposed_bf16[
     _ = c_host_ref
 
 
-fn check_ldmatrix(
+def check_ldmatrix(
     M: Int, N: Int, K: Int, rand_min: Int64, rand_max: Int64, ctx: DeviceContext
 ) raises:
     print("== test ldmatrix instruction")

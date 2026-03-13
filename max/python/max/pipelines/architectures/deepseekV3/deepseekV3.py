@@ -140,17 +140,17 @@ class DeepseekV3DecoderLayer(Module):
         )
 
         nvfp4_enabled = (
-            config.float8_config is not None and config.float8_config.is_nvfp4
+            config.quant_config is not None and config.quant_config.is_nvfp4
         )
-        use_fp8_mla = config.float8_config is not None and not nvfp4_enabled
+        use_fp8_mla = config.quant_config is not None and not nvfp4_enabled
 
         if (
-            config.float8_config is not None
+            config.quant_config is not None
             and nvfp4_enabled
             and config.n_routed_experts
             != 384  # nvidia/KimiK2.5-NVFP4 out projections are not quantized
         ):
-            mla_kwargs["o_proj_float8_config"] = config.float8_config
+            mla_kwargs["o_proj_quant_config"] = config.quant_config
             mla_kwargs["o_proj_dtype"] = config.dtype
 
         mla_cls: (
@@ -158,7 +158,7 @@ class DeepseekV3DecoderLayer(Module):
             | type[DataParallelLatentAttentionWithRopeFp8]
         )
         if use_fp8_mla:
-            mla_kwargs["float8_config"] = config.float8_config
+            mla_kwargs["quant_config"] = config.quant_config
             mla_cls = DataParallelLatentAttentionWithRopeFp8
         else:
             mla_kwargs["dtype"] = DType.bfloat16
@@ -245,11 +245,11 @@ class DeepseekV3DecoderLayer(Module):
                 ep_size=ep_size,
                 apply_router_weight_first=False,
                 ep_batch_manager=self.ep_manager,
-                float8_config=config.float8_config,
+                quant_config=config.quant_config,
             )
 
             moe: MoE
-            if config.float8_config is not None:
+            if config.quant_config is not None:
                 moe = MoEQuantized(**moe_kwargs)
             else:
                 moe = MoE(**moe_kwargs)
@@ -267,7 +267,7 @@ class DeepseekV3DecoderLayer(Module):
                 hidden_dim=config.hidden_size,
                 feed_forward_length=config.intermediate_size,
                 devices=config.devices,
-                float8_config=config.float8_config,
+                quant_config=config.quant_config,
             )
             mlp.sharding_strategy = ShardingStrategy.replicate(
                 len(config.devices)
@@ -381,8 +381,8 @@ class DeepseekV3(Module):
         embedding_output_dtype = config.dtype
         if embedding_output_dtype == DType.uint8:
             embedding_output_dtype = DType.bfloat16
-        if config.float8_config and config.float8_config.embedding_output_dtype:
-            embedding_output_dtype = config.float8_config.embedding_output_dtype
+        if config.quant_config and config.quant_config.embedding_output_dtype:
+            embedding_output_dtype = config.quant_config.embedding_output_dtype
         self.embed_tokens = VocabParallelEmbedding(
             config.vocab_size,
             config.hidden_size,

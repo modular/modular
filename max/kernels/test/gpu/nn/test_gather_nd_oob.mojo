@@ -100,7 +100,7 @@ def execute_gather_nd_test[
     _ = actual_output_device^
 
 
-fn test_gather_nd_oob(ctx: DeviceContext) raises:
+def test_gather_nd_oob(ctx: DeviceContext) raises:
     # Example 1
     comptime batch_dims = 0
     comptime data_rank = 2

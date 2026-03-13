@@ -27,7 +27,7 @@ struct Table[type: TuningConfig](Writable):
     var name: String
     var num_configs: UInt
 
-    fn __init__(out self, configs: List[Self.type], name: String):
+    def __init__(out self, configs: List[Self.type], name: String):
         self.configs = configs.copy()
         self.name = name
         self.num_configs = UInt(len(configs))
@@ -36,7 +36,7 @@ struct Table[type: TuningConfig](Writable):
             abort(t"Failed to Compile Table: [{self.name}]")
 
     # Method to check there are no redundancies in table (based on __str__).
-    fn check(self) -> Bool:
+    def check(self) -> Bool:
         var keys = List[String]()
         var is_valid = True
 
@@ -58,7 +58,7 @@ struct Table[type: TuningConfig](Writable):
             keys.append(res)
         return is_valid
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the table as a string.
 
         Args:
@@ -75,7 +75,7 @@ struct Table[type: TuningConfig](Writable):
     #   - `domain` is a list of indices to narrow down the search.
     #     These indices are marked valid in the flag and may not represent the entire domain.
     #   - Returns a list of matching indices, not the entire domain.
-    fn query_index[
+    def query_index[
         rule: fn(Self.type) capturing -> Bool, domain: List[Int] = List[Int]()
     ](self) -> List[Int]:
         var flag: List[Bool]
@@ -97,7 +97,7 @@ struct Table[type: TuningConfig](Writable):
         return result_idx_list^
 
     # Apply rule on all configs in the table and return list of all the unique results.
-    fn query_values[
+    def query_values[
         ret_type: Comparable & ImplicitlyCopyable,
         rule: fn(Self.type) capturing -> ret_type,
         domain: List[Int] = List[Int](),
@@ -106,7 +106,7 @@ struct Table[type: TuningConfig](Writable):
 
         @always_inline
         @parameter
-        fn _get_search_domain() -> List[Int]:
+        def _get_search_domain() -> List[Int]:
             if len(materialize[domain]()):
                 return materialize[domain]()
             else:
@@ -120,13 +120,13 @@ struct Table[type: TuningConfig](Writable):
                 result.append(value)
 
         @parameter
-        fn _cmp(lsh: ret_type, rhs: ret_type) -> Bool:
+        def _cmp(lsh: ret_type, rhs: ret_type) -> Bool:
             return lsh < rhs
 
         _quicksort[_cmp](result)
         return result^
 
-    fn find[
+    def find[
         rule: fn(Self.type) capturing -> Bool,
     ](self) -> List[Self.type]:
         var result = List[Self.type]()

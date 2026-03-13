@@ -47,7 +47,7 @@ from std.builtin.simd import _convert_f32_to_float8_ue8m0
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-fn simple_init() -> Bool:
+def simple_init() -> Bool:
     for arg in argv():
         if arg == "--simple-init":
             return True

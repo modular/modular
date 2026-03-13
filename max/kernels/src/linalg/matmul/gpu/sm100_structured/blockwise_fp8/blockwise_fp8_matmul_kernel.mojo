@@ -455,7 +455,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
     @staticmethod
     @always_inline
-    fn load_input_tiles[
+    def load_input_tiles[
         a_tma_origin: ImmutOrigin,
         b_tma_origin: ImmutOrigin,
         a_scales_tma_origin: ImmutOrigin,
@@ -564,7 +564,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
     @staticmethod
     @always_inline
-    fn mma[
+    def mma[
         tiles_origin: MutOrigin,
         //,
     ](
@@ -610,7 +610,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     # ========== Compile-Time Validation ==========
 
     @staticmethod
-    fn validate_config():
+    def validate_config():
         """Validate configuration constraints at compile time."""
         comptime assert Self.transpose_b, "Only support transposed B"
         comptime assert (
@@ -626,7 +626,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
     @staticmethod
     @always_inline
-    fn init_barriers(
+    def init_barriers(
         ctx: Self.Context,
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
@@ -693,7 +693,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
-    fn run(
+    def run(
         # TMA descriptors -- types derived from loader's legacy layout computation
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,

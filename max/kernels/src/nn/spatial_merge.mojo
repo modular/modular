@@ -18,7 +18,7 @@ from layout.tile_layout import Layout
 from std.utils.index import Index, IndexList
 
 
-fn spatial_merge_kernel[
+def spatial_merge_kernel[
     dtype: DType,
     InputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,
@@ -158,7 +158,7 @@ fn spatial_merge_kernel[
         output_tensor[t, ho, wo, c_out] = input_tensor[ho, dh, wo, dw, c]
 
 
-fn spatial_merge[
+def spatial_merge[
     dtype: DType,
 ](
     output: TileTensor[

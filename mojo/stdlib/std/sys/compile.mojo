@@ -21,7 +21,7 @@ from std.collections.string.string_slice import _get_kgen_string
 
 
 @always_inline("nodebug")
-fn codegen_unreachable[cond: Bool, msg: StaticString, *extra: StaticString]():
+def codegen_unreachable[cond: Bool, msg: StaticString, *extra: StaticString]():
     """Compilation fails if cond is True and the caller of the function
     is being generated as runtime code.
 
@@ -56,7 +56,7 @@ struct _OptimizationLevel(ImplicitlyCopyable, Intable, Writable):
 
     comptime level = get_defined_int["__OPTIMIZATION_LEVEL", 4]()
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         """Returns the integer value of the optimization level.
 
         Returns:
@@ -65,7 +65,7 @@ struct _OptimizationLevel(ImplicitlyCopyable, Intable, Writable):
         return Self.level
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the optimization level to a writer."""
         writer.write(Self.level)
 
@@ -92,7 +92,7 @@ struct _DebugLevel(ImplicitlyCopyable, Writable):
     comptime level = get_defined_string["__DEBUG_LEVEL", "none"]()
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the optimization level to a writer."""
         writer.write(Self.level)
 

@@ -24,11 +24,11 @@ struct PadHandling(TrivialRegisterPassable):
     comptime INCLUDE_PAD = PadHandling(2)  # Count padding.
 
     @always_inline("nodebug")
-    fn __eq__(self, rhs: PadHandling) -> Bool:
+    def __eq__(self, rhs: PadHandling) -> Bool:
         return self.value == rhs.value
 
     @always_inline("nodebug")
-    fn __ne__(self, rhs: PadHandling) -> Bool:
+    def __ne__(self, rhs: PadHandling) -> Bool:
         return self.value != rhs.value
 
 
@@ -45,11 +45,11 @@ struct Image2DLayout(TrivialRegisterPassable):
     comptime FRSCf = Image2DLayout(3)  # packed filter, adopted from oneDNN
 
     @always_inline("nodebug")
-    fn __eq__(self, rhs: Image2DLayout) -> Bool:
+    def __eq__(self, rhs: Image2DLayout) -> Bool:
         return self.value == rhs.value
 
     @always_inline("nodebug")
-    fn __ne__(self, rhs: Image2DLayout) -> Bool:
+    def __ne__(self, rhs: Image2DLayout) -> Bool:
         return self.value != rhs.value
 
 
@@ -66,7 +66,7 @@ struct ImageData[
     var data: TileTensor[Self.dtype, Self.LayoutType, Self.origin]
     var dynamic_image_layout: Image2DLayout
 
-    fn __init__(
+    def __init__(
         out self,
         data: TileTensor[Self.dtype, Self.LayoutType, Self.origin],
         _layout: Image2DLayout,
@@ -81,7 +81,7 @@ struct ImageData[
         self.data = data
         self.dynamic_image_layout = _layout
 
-    fn __init__(
+    def __init__(
         out self,
         data: TileTensor[Self.dtype, Self.LayoutType, Self.origin],
     ):
@@ -89,7 +89,7 @@ struct ImageData[
         self.data = data
         self.dynamic_image_layout = Self.static_image_layout
 
-    fn to_static_layout[
+    def to_static_layout[
         new_static_image_layout: Image2DLayout
     ](self) -> ImageData[
         LayoutType=Self.LayoutType,
@@ -110,7 +110,7 @@ struct ImageData[
             new_static_image_layout,
         ](self.data)
 
-    fn get_image_layout(self) -> Image2DLayout:
+    def get_image_layout(self) -> Image2DLayout:
         """The getter function of the underlying data layout, resolving from
         either statically or dynamically provided information.
 
@@ -121,7 +121,7 @@ struct ImageData[
             return self.dynamic_image_layout
         return Self.static_image_layout
 
-    fn _get_index(self, n: Int, c: Int, h: Int, w: Int) -> Int:
+    def _get_index(self, n: Int, c: Int, h: Int, w: Int) -> Int:
         """Converts the general index to the actual index into the underlying
         data based on the tensor layout.
 
@@ -142,7 +142,7 @@ struct ImageData[
             return Int(self.data.layout(coord[DType.int64]((h, w, c, n))))
         return Int(self.data.layout(coord[DType.int64]((n, h, w, c))))
 
-    fn get_flat_index(self, n: Int, c: Int, h: Int, w: Int) -> Int:
+    def get_flat_index(self, n: Int, c: Int, h: Int, w: Int) -> Int:
         """Converts the dimension index to the flat index of the underlying
         data based on the tensor layout.
 
@@ -162,7 +162,7 @@ struct ImageData[
         @always_inline
         @__copy_capture(image_shape)
         @parameter
-        fn _compute_index_nchw() -> Int:
+        def _compute_index_nchw() -> Int:
             # Index [N,C,H,W]
             var idx = n
             idx = idx * image_shape.C + c
@@ -173,7 +173,7 @@ struct ImageData[
         @always_inline
         @__copy_capture(image_shape)
         @parameter
-        fn _compute_index_nhwc() -> Int:
+        def _compute_index_nhwc() -> Int:
             # Index [N,H,W,C]
             var idx = n
             idx = idx * image_shape.H + h
@@ -189,7 +189,7 @@ struct ImageData[
         assert False, "Invalid layout"
         return 0
 
-    fn get_tuple_index(self, idx: Int) -> IndexList[4]:
+    def get_tuple_index(self, idx: Int) -> IndexList[4]:
         """Converts the flat index to the dimension index of the underlying
         data based on the tensor layout.
 
@@ -205,7 +205,7 @@ struct ImageData[
         @always_inline
         @__copy_capture(image_shape)
         @parameter
-        fn _compute_index_nchw() -> IndexList[4]:
+        def _compute_index_nchw() -> IndexList[4]:
             # Index [N,C,H,W]
             var lidx = idx
             var w_idx = lidx % image_shape.W
@@ -220,7 +220,7 @@ struct ImageData[
         @always_inline
         @__copy_capture(image_shape)
         @parameter
-        fn _compute_index_nhwc() -> IndexList[4]:
+        def _compute_index_nhwc() -> IndexList[4]:
             # Index [N,H,W,C]
             var lidx = idx
             var c_idx = lidx % image_shape.C
@@ -240,7 +240,7 @@ struct ImageData[
         assert False, "Invalid layout"
         return IndexList[4](0)
 
-    fn __getitem__(self, n: Int, c: Int, h: Int, w: Int) -> Scalar[Self.dtype]:
+    def __getitem__(self, n: Int, c: Int, h: Int, w: Int) -> Scalar[Self.dtype]:
         """Reads the underlying data buffer based on the tensor index and under-
         lying data layout.
 
@@ -255,7 +255,7 @@ struct ImageData[
         """
         return self.data.ptr[self._get_index(n, c, h, w)]
 
-    fn __setitem__(
+    def __setitem__(
         self, n: Int, c: Int, h: Int, w: Int, value: Scalar[Self.dtype]
     ):
         """Writes the underlying data buffer based on the tensor index and under-
@@ -270,7 +270,7 @@ struct ImageData[
         """
         self.data.ptr[self._get_index(n, c, h, w)] = value
 
-    fn num_elements(self) -> Int:
+    def num_elements(self) -> Int:
         return self.data.num_elements()
 
 
@@ -282,7 +282,7 @@ struct ImageShape(TrivialRegisterPassable):
     var H: Int
     var W: Int
 
-    fn __init__[
+    def __init__[
         dtype: DType,
         image_layout: Image2DLayout,
     ](out self, image_data: ImageData[dtype, image_layout, ...]):

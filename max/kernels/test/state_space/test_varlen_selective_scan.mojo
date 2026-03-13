@@ -32,7 +32,7 @@ comptime MAX_DSTATE = 256
 
 
 @always_inline
-fn softplus_ref(val: Float32) -> Float32:
+def softplus_ref(val: Float32) -> Float32:
     """Reference softplus implementation: log(1 + exp(x))."""
     if val > 20.0:
         return val
@@ -42,7 +42,7 @@ fn softplus_ref(val: Float32) -> Float32:
 
 
 @always_inline
-fn sigmoid_ref(val: Float32) -> Float32:
+def sigmoid_ref(val: Float32) -> Float32:
     """Reference sigmoid implementation."""
     if val < -20.0:
         return 0.0
@@ -51,7 +51,7 @@ fn sigmoid_ref(val: Float32) -> Float32:
 
 
 @always_inline
-fn silu_ref(val: Float32) -> Float32:
+def silu_ref(val: Float32) -> Float32:
     """Reference SiLU implementation."""
     if val < -20.0:
         return 0.0
@@ -59,7 +59,7 @@ fn silu_ref(val: Float32) -> Float32:
     return val / (1.0 + exp_neg)
 
 
-fn run_varlen_selective_scan_fwd[
+def run_varlen_selective_scan_fwd[
     dtype: DType,
     DSTATE: Int,
     has_D: Bool = True,
@@ -326,7 +326,7 @@ fn run_varlen_selective_scan_fwd[
     has_initial_state_heap.free()
 
 
-fn run_varlen_selective_state_update[
+def run_varlen_selective_state_update[
     dtype: DType,
     DSTATE: Int,
     has_D: Bool = True,
@@ -571,7 +571,7 @@ fn run_varlen_selective_state_update[
 # =============================================================================
 
 
-fn test_varlen_selective_scan_fwd_equal_lengths() raises:
+def test_varlen_selective_scan_fwd_equal_lengths() raises:
     """Test varlen selective scan forward with equal-length sequences."""
     run_varlen_selective_scan_fwd[
         DType.float32,
@@ -583,7 +583,7 @@ fn test_varlen_selective_scan_fwd_equal_lengths() raises:
     ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8))
 
 
-fn test_varlen_selective_scan_fwd_variable_lengths() raises:
+def test_varlen_selective_scan_fwd_variable_lengths() raises:
     """Test varlen selective scan forward with variable-length sequences."""
     run_varlen_selective_scan_fwd[
         DType.float32,
@@ -595,7 +595,7 @@ fn test_varlen_selective_scan_fwd_variable_lengths() raises:
     ](batch=3, dim=4, ngroups=1, seq_lengths=Index(10, 6, 1))
 
 
-fn test_varlen_selective_scan_fwd_without_D() raises:
+def test_varlen_selective_scan_fwd_without_D() raises:
     """Test varlen selective scan forward without D tensor."""
     run_varlen_selective_scan_fwd[
         DType.float32,
@@ -607,7 +607,7 @@ fn test_varlen_selective_scan_fwd_without_D() raises:
     ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8))
 
 
-fn test_varlen_selective_scan_fwd_without_z() raises:
+def test_varlen_selective_scan_fwd_without_z() raises:
     """Test varlen selective scan forward without z tensor."""
     run_varlen_selective_scan_fwd[
         DType.float32,
@@ -619,7 +619,7 @@ fn test_varlen_selective_scan_fwd_without_z() raises:
     ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8))
 
 
-fn test_varlen_selective_scan_fwd_with_delta_softplus() raises:
+def test_varlen_selective_scan_fwd_with_delta_softplus() raises:
     """Test varlen selective scan forward with delta softplus activation."""
     run_varlen_selective_scan_fwd[
         DType.float32,
@@ -636,7 +636,7 @@ fn test_varlen_selective_scan_fwd_with_delta_softplus() raises:
 # =============================================================================
 
 
-fn test_varlen_selective_state_update_basic() raises:
+def test_varlen_selective_state_update_basic() raises:
     """Test basic varlen selective state update."""
     run_varlen_selective_state_update[
         DType.float32,
@@ -648,7 +648,7 @@ fn test_varlen_selective_state_update_basic() raises:
     ](batch=2, nheads=2, dim=4, ngroups=1)
 
 
-fn test_varlen_selective_state_update_without_D() raises:
+def test_varlen_selective_state_update_without_D() raises:
     """Test varlen selective state update without D tensor."""
     run_varlen_selective_state_update[
         DType.float32,
@@ -660,7 +660,7 @@ fn test_varlen_selective_state_update_without_D() raises:
     ](batch=2, nheads=2, dim=4, ngroups=1)
 
 
-fn test_varlen_selective_state_update_without_z() raises:
+def test_varlen_selective_state_update_without_z() raises:
     """Test varlen selective state update without z tensor."""
     run_varlen_selective_state_update[
         DType.float32,
@@ -672,7 +672,7 @@ fn test_varlen_selective_state_update_without_z() raises:
     ](batch=2, nheads=2, dim=4, ngroups=1)
 
 
-fn test_varlen_selective_state_update_with_dt_softplus() raises:
+def test_varlen_selective_state_update_with_dt_softplus() raises:
     """Test varlen selective state update with dt softplus activation."""
     run_varlen_selective_state_update[
         DType.float32,

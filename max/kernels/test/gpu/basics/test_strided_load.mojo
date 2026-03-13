@@ -17,7 +17,7 @@ from std.gpu.host.compile import _compile_code
 from std.testing import assert_true
 
 
-fn strided_load_kernel[
+def strided_load_kernel[
     *, dtype: DType = DType.uint32, width: Int = 1
 ](
     output: UnsafePointer[SIMD[dtype, width], MutAnyOrigin],

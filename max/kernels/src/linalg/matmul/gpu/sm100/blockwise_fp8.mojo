@@ -57,7 +57,7 @@ comptime _3D_layout[layout: Layout, rank: Int] = Layout.row_major(
 )
 
 
-fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
+def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -476,7 +476,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
-fn matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
+def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -557,7 +557,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     )
 
 
-fn matmul_sm100_blockwise_scaled_fp8[
+def matmul_sm100_blockwise_scaled_fp8[
     a_layout: Layout,
     b_layout: Layout,
     c_layout: Layout,

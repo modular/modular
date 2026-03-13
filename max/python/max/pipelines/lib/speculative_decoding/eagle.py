@@ -106,8 +106,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         device_refs = [DeviceRef.from_device(dev) for dev in self.devices]
         hf_config = self._target_model.huggingface_config
         hidden_dim = _get_hidden_dim(hf_config)
+        # hidden_states is now a single tensor on device 0, so only build
+        # the gather graph for one device.
         self._hs_gather_model = self._session.load(
-            build_gather_graph(device_refs, DType.bfloat16, hidden_dim)
+            build_gather_graph(device_refs[:1], DType.bfloat16, hidden_dim)
         )
 
     def _prepare_draft_batch(

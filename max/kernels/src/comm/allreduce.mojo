@@ -138,7 +138,7 @@ comptime elementwise_epilogue_type = fn[
 ](IndexList[rank], SIMD[dtype, size=width]) capturing -> None
 
 
-fn _naive_reduce_kernel[
+def _naive_reduce_kernel[
     dtype: DType
 ](
     dst_buf: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -166,7 +166,7 @@ fn _naive_reduce_kernel[
         dst_buf[i] += src_buf[i]
 
 
-fn _naive_reduce_kernel_with_lambda[
+def _naive_reduce_kernel_with_lambda[
     dtype: DType,
     rank: Int,
     *,
@@ -192,7 +192,7 @@ fn _naive_reduce_kernel_with_lambda[
 
 
 @always_inline
-fn _allreduce_naive_single[
+def _allreduce_naive_single[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -330,7 +330,7 @@ fn _allreduce_naive_single[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-fn _allreduce_2stage_kernel[
+def _allreduce_2stage_kernel[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -433,7 +433,7 @@ fn _allreduce_2stage_kernel[
     @always_inline
     @parameter
     @__copy_capture(tmp_buff)
-    fn rs_output_lambda[
+    def rs_output_lambda[
         _dtype: DType,
         _width: Int,
         *,
@@ -505,7 +505,7 @@ fn _allreduce_2stage_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-fn _allreduce_1stage_kernel[
+def _allreduce_1stage_kernel[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -588,7 +588,7 @@ fn _allreduce_1stage_kernel[
 
 
 @always_inline
-fn _allreduce_p2p[
+def _allreduce_p2p[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -710,7 +710,7 @@ fn _allreduce_p2p[
 
 
 @parameter
-fn allreduce[
+def allreduce[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -786,7 +786,7 @@ fn allreduce[
     @always_inline
     @parameter
     @__copy_capture(output_buffer)
-    fn default_output_lambda[
+    def default_output_lambda[
         _dtype: DType,
         _rank: Int,
         _width: Int,

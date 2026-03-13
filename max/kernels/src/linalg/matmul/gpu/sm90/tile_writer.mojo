@@ -78,7 +78,7 @@ struct ThreadInfo(TrivialRegisterPassable):
     var lane_row: UInt32
     var lane_col: UInt32
 
-    fn __init__(
+    def __init__(
         out self,
         warp_id: Int,
         lane_id: Int,
@@ -92,7 +92,7 @@ struct ThreadInfo(TrivialRegisterPassable):
 
     @always_inline
     @staticmethod
-    fn from_warp_group_idx(warp_group_thread_idx: Int) -> ThreadInfo:
+    def from_warp_group_idx(warp_group_thread_idx: Int) -> ThreadInfo:
         """Create ThreadInfo from a warp group thread index.
 
         Args:
@@ -118,7 +118,7 @@ struct TileCoordinates(TrivialRegisterPassable):
     var split: IndexList[2]
 
     @always_inline
-    fn __init__(out self, corner: IndexList[2], split: IndexList[2]):
+    def __init__(out self, corner: IndexList[2], split: IndexList[2]):
         """Initialize tile coordinates.
 
         Args:
@@ -129,7 +129,7 @@ struct TileCoordinates(TrivialRegisterPassable):
         self.split = split
 
     @always_inline
-    fn adjust(self, base_coords: IndexList[2]) -> IndexList[2]:
+    def adjust(self, base_coords: IndexList[2]) -> IndexList[2]:
         """Add corner and split offsets to base coordinates.
 
         Args:
@@ -154,7 +154,7 @@ trait SMemTileWriter(TrivialRegisterPassable):
     comptime _dtype: DType
 
     @always_inline
-    fn write_tile(
+    def write_tile(
         self,
         src: SMemTile[Self._dtype, _, alignment=128, ...],
         coords: Tuple[Int, Int],
@@ -200,7 +200,7 @@ struct TileWriterTMA[
     var tma_op: Self.TMATensorTilePtr
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         tma_op: Self.TMATensorTilePtr,
     ):
@@ -212,7 +212,7 @@ struct TileWriterTMA[
         self.tma_op = tma_op
 
     @always_inline
-    fn write_tile(
+    def write_tile(
         self,
         src: SMemTile[Self._dtype, _, alignment=128, ...],
         coords: Tuple[Int, Int],
@@ -272,7 +272,7 @@ struct TileWriterThreadwise[
     var thread_idx: Int
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         dst: Self.DstType,
         thread_idx: Int,
@@ -287,7 +287,7 @@ struct TileWriterThreadwise[
         self.thread_idx = thread_idx
 
     @always_inline
-    fn write_tile(
+    def write_tile(
         self,
         src: SMemTile[Self._dtype, _, alignment=128, ...],
         coords: Tuple[Int, Int],
@@ -404,7 +404,7 @@ trait RegTileWriter(TrivialRegisterPassable):
     """
 
     @always_inline
-    fn write_tile(
+    def write_tile(
         self,
         c_reg_tile: RegTile,
         coords: Tuple[Int, Int],
@@ -479,7 +479,7 @@ struct FragmentToSMemWriter[
     var st_matrix_rt_layout: Self.st_matrix_rt_layout_type
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         c_tile: SMemTile[Self.c_type, Self.c_tile_layout, alignment=128],
         warp_group_thread_idx: Int,
@@ -498,7 +498,7 @@ struct FragmentToSMemWriter[
         self.st_matrix_rt_layout = Self.st_matrix_rt_layout_type()
 
     @always_inline
-    fn _compute_swizzled_offset[n_frag: Int, m_frag: Int](self) -> Int32:
+    def _compute_swizzled_offset[n_frag: Int, m_frag: Int](self) -> Int32:
         """Compute swizzled offset for st.matrix to avoid bank conflicts.
 
         Parameters:
@@ -523,7 +523,7 @@ struct FragmentToSMemWriter[
         return self.st_matrix_swizzle(linear_idx)
 
     @always_inline
-    fn _store_fragment[
+    def _store_fragment[
         elements_per_op: Int,  # 8 for normal mode, 4 for x2 mode
         m_frag: Int,
         n_frag: Int,
@@ -557,7 +557,7 @@ struct FragmentToSMemWriter[
         )
 
     @always_inline
-    fn write_tile(
+    def write_tile(
         self,
         c_reg_tile: RegTile,
         coords: Tuple[Int, Int],
@@ -697,7 +697,7 @@ struct RegisterToGMemWriter[
     var max_row: OptionalReg[UInt32]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         dst: Self.DstType,
         warp_group_thread_idx: Int,
@@ -728,7 +728,7 @@ struct RegisterToGMemWriter[
         self.thread_info = ThreadInfo.from_warp_group_idx(warp_group_thread_idx)
 
     @always_inline
-    fn _get_mma_id(self, m_mma: Int, n_mma: Int) -> Int:
+    def _get_mma_id(self, m_mma: Int, n_mma: Int) -> Int:
         """Calculate MMA tile ID from M and N indices.
 
         Args:
@@ -741,7 +741,7 @@ struct RegisterToGMemWriter[
         return n_mma * self.num_m_mmas + m_mma
 
     @always_inline
-    fn write_tile(
+    def write_tile(
         self,
         c_reg_tile: RegTile,
         coords: Tuple[Int, Int],
@@ -767,7 +767,7 @@ struct RegisterToGMemWriter[
             self._write_direct_vectorized(c_reg_tile, m_mma, n_mma, mma_id)
 
     @always_inline
-    fn _write_direct_vectorized(
+    def _write_direct_vectorized(
         self,
         c_reg_tile: RegTile,
         m_mma: Int,
@@ -790,7 +790,7 @@ struct RegisterToGMemWriter[
         )
 
     @always_inline
-    fn _write_with_transform(
+    def _write_with_transform(
         self,
         c_reg_tile: RegTile,
         m_mma: Int,
@@ -841,7 +841,7 @@ struct RegisterToGMemWriter[
                 )
 
     @always_inline
-    fn _apply_transform_and_store[
+    def _apply_transform_and_store[
         frag_idx: Int
     ](
         self,
@@ -871,7 +871,7 @@ struct RegisterToGMemWriter[
             gmem_frag[frag_idx, 0] = rebind[gmem_frag.element_type](reg_val)
 
     @always_inline
-    fn _write_with_runtime_bounds(
+    def _write_with_runtime_bounds(
         self,
         c_reg_tile: RegTile,
         m_mma: Int,
@@ -946,7 +946,7 @@ struct RegisterToGMemWriter[
                     ]()
 
                     @parameter
-                    fn epilogue_coordinates() -> Tuple[Int, Int]:
+                    def epilogue_coordinates() -> Tuple[Int, Int]:
                         comptime if Self.swapAB:
                             # In swapAB mode, coordinates are transposed
                             return (

@@ -30,21 +30,21 @@ from .types import (
 from .utils import _get_dylib_function
 
 
-fn rocblas_create_handle(handle: UnsafePointer[Handle, _]) raises -> Status:
+def rocblas_create_handle(handle: UnsafePointer[Handle, _]) raises -> Status:
     return _get_dylib_function[
         "rocblas_create_handle",
         fn(type_of(handle)) -> Status,
     ]()(handle)
 
 
-fn rocblas_destroy_handle(handle: Handle) raises -> Status:
+def rocblas_destroy_handle(handle: Handle) raises -> Status:
     return _get_dylib_function[
         "rocblas_destroy_handle",
         fn(Handle) -> Status,
     ]()(handle)
 
 
-fn rocblas_ctpsv_64(
+def rocblas_ctpsv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -69,7 +69,7 @@ fn rocblas_ctpsv_64(
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx)
 
 
-fn rocblas_ctbsv_strided_batched(
+def rocblas_ctbsv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -118,7 +118,7 @@ fn rocblas_ctbsv_strided_batched(
     )
 
 
-fn rocblas_sdgmm_strided_batched(
+def rocblas_sdgmm_strided_batched(
     handle: Handle,
     side: Side,
     m: Int32,
@@ -228,7 +228,7 @@ fn rocblas_sdgmm_strided_batched(
     )
 
 
-fn rocblas_dtbsv_strided_batched(
+def rocblas_dtbsv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -277,7 +277,7 @@ fn rocblas_dtbsv_strided_batched(
     )
 
 
-fn rocblas_chbmv(
+def rocblas_chbmv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -383,7 +383,7 @@ fn rocblas_chbmv(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_ctpmv_batched(
+def rocblas_ctpmv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -410,7 +410,7 @@ fn rocblas_ctpmv_batched(
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx, batch_count)
 
 
-fn rocblas_ctrtri_strided_batched(
+def rocblas_ctrtri_strided_batched(
     handle: Handle,
     uplo: Fill,
     diag: Diagonal,
@@ -453,7 +453,7 @@ fn rocblas_ctrtri_strided_batched(
     )
 
 
-fn rocblas_cher_batched(
+def rocblas_cher_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -529,7 +529,7 @@ fn rocblas_cher_batched(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
-fn rocblas_bfdot_64(
+def rocblas_bfdot_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[BFloat16, _],
@@ -552,7 +552,7 @@ fn rocblas_bfdot_64(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn rocblas_tstgemv_batched(
+def rocblas_tstgemv_batched(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -589,7 +589,7 @@ fn rocblas_tstgemv_batched(
     )
 
 
-fn rocblas_sdot(
+def rocblas_sdot(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float32, _],
@@ -646,7 +646,7 @@ fn rocblas_sdot(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn rocblas_zgbmv_64(
+def rocblas_zgbmv_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -683,7 +683,7 @@ fn rocblas_zgbmv_64(
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_sscal_strided_batched(
+def rocblas_sscal_strided_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float32, _],
@@ -738,7 +738,7 @@ fn rocblas_sscal_strided_batched(
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
-fn rocblas_srotm_strided_batched(
+def rocblas_srotm_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float32, _],
@@ -836,7 +836,7 @@ fn rocblas_srotm_strided_batched(
     )
 
 
-fn rocblas_csyr2k_batched(
+def rocblas_csyr2k_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -888,7 +888,7 @@ fn rocblas_csyr2k_batched(
     )
 
 
-fn rocblas_scopy_batched_64(
+def rocblas_scopy_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -911,7 +911,7 @@ fn rocblas_scopy_batched_64(
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
-fn rocblas_dsyr_batched_64(
+def rocblas_dsyr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -938,7 +938,7 @@ fn rocblas_dsyr_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
-fn rocblas_stbmv_strided_batched_64(
+def rocblas_stbmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -987,7 +987,7 @@ fn rocblas_stbmv_strided_batched_64(
     )
 
 
-fn rocblas_dsyr2_strided_batched_64(
+def rocblas_dsyr2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -1039,7 +1039,7 @@ fn rocblas_dsyr2_strided_batched_64(
     )
 
 
-fn rocblas_ssyr_64(
+def rocblas_ssyr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -1064,7 +1064,7 @@ fn rocblas_ssyr_64(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
-fn rocblas_zdotu(
+def rocblas_zdotu(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -1087,7 +1087,7 @@ fn rocblas_zdotu(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn rocblas_nrm2_batched_ex(
+def rocblas_nrm2_batched_ex(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -1175,7 +1175,7 @@ fn rocblas_nrm2_batched_ex(
     )
 
 
-fn rocblas_cdgmm_batched(
+def rocblas_cdgmm_batched(
     handle: Handle,
     side: Side,
     m: Int32,
@@ -1206,7 +1206,7 @@ fn rocblas_cdgmm_batched(
     ]()(handle, side, m, n, _a, lda, x, incx, _c, ldc, batch_count)
 
 
-fn rocblas_dotc_ex(
+def rocblas_dotc_ex(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -1249,7 +1249,7 @@ fn rocblas_dotc_ex(
     )
 
 
-fn rocblas_csyr2k_strided_batched(
+def rocblas_csyr2k_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -1310,7 +1310,7 @@ fn rocblas_csyr2k_strided_batched(
     )
 
 
-fn rocblas_hdot_strided_batched_64(
+def rocblas_hdot_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float16, _],
@@ -1339,7 +1339,7 @@ fn rocblas_hdot_strided_batched_64(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
-fn rocblas_zrot_batched_64(
+def rocblas_zrot_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -1366,7 +1366,7 @@ fn rocblas_zrot_batched_64(
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
-fn rocblas_srotmg_batched_64(
+def rocblas_srotmg_batched_64(
     handle: Handle,
     d1: OpaquePointer[_],
     d2: OpaquePointer[_],
@@ -1389,7 +1389,7 @@ fn rocblas_srotmg_batched_64(
     ]()(handle, d1, d2, x1, y1, param, batch_count)
 
 
-fn rocblas_strsm_64(
+def rocblas_strsm_64(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -1422,7 +1422,7 @@ fn rocblas_strsm_64(
     ]()(handle, side, uplo, trans_a, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
-fn rocblas_dzasum_batched_64(
+def rocblas_dzasum_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -1443,7 +1443,7 @@ fn rocblas_dzasum_batched_64(
     ]()(handle, n, x, incx, batch_count, results)
 
 
-fn rocblas_snrm2(
+def rocblas_snrm2(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float32, _],
@@ -1482,7 +1482,7 @@ fn rocblas_snrm2(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_dsyrk_strided_batched(
+def rocblas_dsyrk_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -1534,7 +1534,7 @@ fn rocblas_dsyrk_strided_batched(
     )
 
 
-fn rocblas_dtrsm_batched_64(
+def rocblas_dtrsm_batched_64(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -1583,7 +1583,7 @@ fn rocblas_dtrsm_batched_64(
     )
 
 
-fn rocblas_zscal_strided_batched_64(
+def rocblas_zscal_strided_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[ComplexFloat64, _],
@@ -1606,7 +1606,7 @@ fn rocblas_zscal_strided_batched_64(
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
-fn rocblas_cher_64(
+def rocblas_cher_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -1631,7 +1631,7 @@ fn rocblas_cher_64(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
-fn rocblas_cdotu(
+def rocblas_cdotu(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -1654,7 +1654,7 @@ fn rocblas_cdotu(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn rocblas_sasum_batched(
+def rocblas_sasum_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -1703,7 +1703,7 @@ fn rocblas_sasum_batched(
     ]()(handle, n, x, incx, batch_count, results)
 
 
-fn rocblas_dtpmv_batched_64(
+def rocblas_dtpmv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -1730,7 +1730,7 @@ fn rocblas_dtpmv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx, batch_count)
 
 
-fn rocblas_dtbmv_strided_batched(
+def rocblas_dtbmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -1779,7 +1779,7 @@ fn rocblas_dtbmv_strided_batched(
     )
 
 
-fn rocblas_sspr_batched(
+def rocblas_sspr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -1868,7 +1868,7 @@ fn rocblas_sspr_batched(
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
-fn rocblas_ztbsv_strided_batched_64(
+def rocblas_ztbsv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -1917,7 +1917,7 @@ fn rocblas_ztbsv_strided_batched_64(
     )
 
 
-fn rocblas_cher2_strided_batched(
+def rocblas_cher2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -2032,7 +2032,7 @@ fn rocblas_cher2_strided_batched(
     )
 
 
-fn rocblas_srot_strided_batched_64(
+def rocblas_srot_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -2063,7 +2063,7 @@ fn rocblas_srot_strided_batched_64(
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
-fn rocblas_ctrsm_batched(
+def rocblas_ctrsm_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -2112,7 +2112,7 @@ fn rocblas_ctrsm_batched(
     )
 
 
-fn rocblas_sscal(
+def rocblas_sscal(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float32, _],
@@ -2148,7 +2148,7 @@ fn rocblas_sscal(
     ]()(handle, n, alpha, x, incx)
 
 
-fn rocblas_ztbmv_strided_batched(
+def rocblas_ztbmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -2197,7 +2197,7 @@ fn rocblas_ztbmv_strided_batched(
     )
 
 
-fn rocblas_dswap_strided_batched(
+def rocblas_dswap_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float64, _],
@@ -2224,7 +2224,7 @@ fn rocblas_dswap_strided_batched(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_dsymv(
+def rocblas_dsymv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -2255,7 +2255,7 @@ fn rocblas_dsymv(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_dnrm2_64(
+def rocblas_dnrm2_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -2268,7 +2268,7 @@ fn rocblas_dnrm2_64(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_ssyrk(
+def rocblas_ssyrk(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -2370,7 +2370,7 @@ fn rocblas_ssyrk(
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
-fn rocblas_strtri_strided_batched(
+def rocblas_strtri_strided_batched(
     handle: Handle,
     uplo: Fill,
     diag: Diagonal,
@@ -2462,7 +2462,7 @@ fn rocblas_strtri_strided_batched(
     )
 
 
-fn rocblas_chpr_strided_batched_64(
+def rocblas_chpr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -2491,7 +2491,7 @@ fn rocblas_chpr_strided_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
-fn rocblas_izamax_strided_batched(
+def rocblas_izamax_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -2514,7 +2514,7 @@ fn rocblas_izamax_strided_batched(
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
-fn rocblas_ztpsv_batched_64(
+def rocblas_ztpsv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -2541,7 +2541,7 @@ fn rocblas_ztpsv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx, batch_count)
 
 
-fn rocblas_zhbmv_strided_batched(
+def rocblas_zhbmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -2599,7 +2599,7 @@ fn rocblas_zhbmv_strided_batched(
     )
 
 
-fn rocblas_dspr(
+def rocblas_dspr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -2622,7 +2622,7 @@ fn rocblas_dspr(
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
-fn rocblas_zspr_batched_64(
+def rocblas_zspr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -2647,7 +2647,7 @@ fn rocblas_zspr_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
-fn rocblas_ssyrk_batched(
+def rocblas_ssyrk_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -2754,7 +2754,7 @@ fn rocblas_ssyrk_batched(
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc, batch_count)
 
 
-fn rocblas_zherk_batched(
+def rocblas_zherk_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -2787,7 +2787,7 @@ fn rocblas_zherk_batched(
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc, batch_count)
 
 
-fn rocblas_dspr_batched(
+def rocblas_dspr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -2812,7 +2812,7 @@ fn rocblas_dspr_batched(
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
-fn rocblas_dtbmv_batched_64(
+def rocblas_dtbmv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -2843,7 +2843,7 @@ fn rocblas_dtbmv_batched_64(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_dzasum(
+def rocblas_dzasum(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -2862,7 +2862,7 @@ fn rocblas_dzasum(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_crotg_batched_64(
+def rocblas_crotg_batched_64(
     handle: Handle,
     a: OpaquePointer[_],
     b: OpaquePointer[_],
@@ -2883,7 +2883,7 @@ fn rocblas_crotg_batched_64(
     ]()(handle, a, b, c, s, batch_count)
 
 
-fn rocblas_cgemm_batched(
+def rocblas_cgemm_batched(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -2938,7 +2938,7 @@ fn rocblas_cgemm_batched(
     )
 
 
-fn rocblas_ztbmv_batched(
+def rocblas_ztbmv_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -2969,7 +2969,7 @@ fn rocblas_ztbmv_batched(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_srotmg_strided_batched(
+def rocblas_srotmg_strided_batched(
     handle: Handle,
     d1: UnsafePointer[Float32, _],
     stride_d1: Int64,
@@ -3074,7 +3074,7 @@ fn rocblas_srotmg_strided_batched(
     )
 
 
-fn rocblas_zaxpy_64(
+def rocblas_zaxpy_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[ComplexFloat64, _],
@@ -3097,7 +3097,7 @@ fn rocblas_zaxpy_64(
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
-fn rocblas_ctrmv_batched_64(
+def rocblas_ctrmv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -3126,7 +3126,7 @@ fn rocblas_ctrmv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_zgeru_strided_batched_64(
+def rocblas_zgeru_strided_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
@@ -3178,7 +3178,7 @@ fn rocblas_zgeru_strided_batched_64(
     )
 
 
-fn rocblas_rot_batched_ex_64(
+def rocblas_rot_batched_ex_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -3227,7 +3227,7 @@ fn rocblas_rot_batched_ex_64(
     )
 
 
-fn rocblas_zsyrk_strided_batched(
+def rocblas_zsyrk_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -3279,7 +3279,7 @@ fn rocblas_zsyrk_strided_batched(
     )
 
 
-fn rocblas_sdgmm_batched(
+def rocblas_sdgmm_batched(
     handle: Handle,
     side: Side,
     m: Int32,
@@ -3359,7 +3359,7 @@ fn rocblas_sdgmm_batched(
     ]()(handle, side, m, n, _a, lda, x, incx, _c, ldc, batch_count)
 
 
-fn rocblas_chemv_batched(
+def rocblas_chemv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -3448,7 +3448,7 @@ fn rocblas_chemv_batched(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_ztbmv(
+def rocblas_ztbmv(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -3477,7 +3477,7 @@ fn rocblas_ztbmv(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
-fn rocblas_ztrsv(
+def rocblas_ztrsv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -3504,7 +3504,7 @@ fn rocblas_ztrsv(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
-fn rocblas_zsymv_64(
+def rocblas_zsymv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -3535,7 +3535,7 @@ fn rocblas_zsymv_64(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_dtrsv(
+def rocblas_dtrsv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -3562,7 +3562,7 @@ fn rocblas_dtrsv(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
-fn rocblas_zdgmm_batched(
+def rocblas_zdgmm_batched(
     handle: Handle,
     side: Side,
     m: Int32,
@@ -3593,7 +3593,7 @@ fn rocblas_zdgmm_batched(
     ]()(handle, side, m, n, _a, lda, x, incx, _c, ldc, batch_count)
 
 
-fn rocblas_stpmv_batched(
+def rocblas_stpmv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -3672,7 +3672,7 @@ fn rocblas_stpmv_batched(
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx, batch_count)
 
 
-fn rocblas_icamax_strided_batched_64(
+def rocblas_icamax_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -3695,7 +3695,7 @@ fn rocblas_icamax_strided_batched_64(
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
-fn rocblas_dgeam_batched(
+def rocblas_dgeam_batched(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -3747,7 +3747,7 @@ fn rocblas_dgeam_batched(
     )
 
 
-fn rocblas_zsyr(
+def rocblas_zsyr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -3772,7 +3772,7 @@ fn rocblas_zsyr(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
-fn rocblas_cdotc_strided_batched(
+def rocblas_cdotc_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -3801,7 +3801,7 @@ fn rocblas_cdotc_strided_batched(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
-fn rocblas_dzasum_strided_batched_64(
+def rocblas_dzasum_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -3824,7 +3824,7 @@ fn rocblas_dzasum_strided_batched_64(
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
-fn rocblas_cher_strided_batched_64(
+def rocblas_cher_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -3867,7 +3867,7 @@ fn rocblas_cher_strided_batched_64(
     )
 
 
-fn rocblas_zhpmv_64(
+def rocblas_zhpmv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -3896,7 +3896,7 @@ fn rocblas_zhpmv_64(
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
-fn rocblas_zhbmv_64(
+def rocblas_zhbmv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -3929,7 +3929,7 @@ fn rocblas_zhbmv_64(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_rot_ex(
+def rocblas_rot_ex(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -4041,7 +4041,7 @@ fn rocblas_rot_ex(
     )
 
 
-fn rocblas_zgemm_batched(
+def rocblas_zgemm_batched(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -4096,7 +4096,7 @@ fn rocblas_zgemm_batched(
     )
 
 
-fn rocblas_ctbsv_batched(
+def rocblas_ctbsv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -4127,7 +4127,7 @@ fn rocblas_ctbsv_batched(
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_cher2k_strided_batched(
+def rocblas_cher2k_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -4283,7 +4283,7 @@ fn rocblas_cher2k_strided_batched(
     )
 
 
-fn rocblas_sscal_strided_batched_64(
+def rocblas_sscal_strided_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float32, _],
@@ -4306,7 +4306,7 @@ fn rocblas_sscal_strided_batched_64(
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
-fn rocblas_zherk_strided_batched(
+def rocblas_zherk_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -4358,7 +4358,7 @@ fn rocblas_zherk_strided_batched(
     )
 
 
-fn rocblas_scal_ex(
+def rocblas_scal_ex(
     handle: Handle,
     n: Int32,
     alpha: OpaquePointer[_],
@@ -4433,7 +4433,7 @@ fn rocblas_scal_ex(
     ]()(handle, n, alpha, alpha_type, x, x_type, incx, execution_type)
 
 
-fn rocblas_dtrsm(
+def rocblas_dtrsm(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -4466,7 +4466,7 @@ fn rocblas_dtrsm(
     ]()(handle, side, uplo, trans_a, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
-fn rocblas_isamax_strided_batched(
+def rocblas_isamax_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float32, _],
@@ -4518,7 +4518,7 @@ fn rocblas_isamax_strided_batched(
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
-fn rocblas_caxpy_batched(
+def rocblas_caxpy_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[ComplexFloat32, _],
@@ -4543,7 +4543,7 @@ fn rocblas_caxpy_batched(
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
-fn rocblas_dgemv_batched_64(
+def rocblas_dgemv_batched_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -4580,7 +4580,7 @@ fn rocblas_dgemv_batched_64(
     )
 
 
-fn rocblas_zhpr2(
+def rocblas_zhpr2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -4607,7 +4607,7 @@ fn rocblas_zhpr2(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
-fn rocblas_hgemm_batched(
+def rocblas_hgemm_batched(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -4662,7 +4662,7 @@ fn rocblas_hgemm_batched(
     )
 
 
-fn rocblas_strsm(
+def rocblas_strsm(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -4785,7 +4785,7 @@ fn rocblas_strsm(
     ]()(handle, side, uplo, trans_a, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
-fn rocblas_stpsv_strided_batched(
+def rocblas_stpsv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -4889,7 +4889,7 @@ fn rocblas_stpsv_strided_batched(
     )
 
 
-fn rocblas_dtrsv_strided_batched_64(
+def rocblas_dtrsv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -4935,7 +4935,7 @@ fn rocblas_dtrsv_strided_batched_64(
     )
 
 
-fn rocblas_zcopy_strided_batched(
+def rocblas_zcopy_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -4962,7 +4962,7 @@ fn rocblas_zcopy_strided_batched(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_crotg_strided_batched_64(
+def rocblas_crotg_strided_batched_64(
     handle: Handle,
     a: UnsafePointer[ComplexFloat32, _],
     stride_a: Int64,
@@ -4991,7 +4991,7 @@ fn rocblas_crotg_strided_batched_64(
     ]()(handle, a, stride_a, b, stride_b, c, stride_c, s, stride_s, batch_count)
 
 
-fn rocblas_zgbmv_batched(
+def rocblas_zgbmv_batched(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -5046,7 +5046,7 @@ fn rocblas_zgbmv_batched(
     )
 
 
-fn rocblas_dcopy_strided_batched(
+def rocblas_dcopy_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float64, _],
@@ -5073,7 +5073,7 @@ fn rocblas_dcopy_strided_batched(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_zrotg_64(
+def rocblas_zrotg_64(
     handle: Handle,
     a: UnsafePointer[ComplexFloat64, _],
     b: UnsafePointer[ComplexFloat64, _],
@@ -5092,7 +5092,7 @@ fn rocblas_zrotg_64(
     ]()(handle, a, b, c, s)
 
 
-fn rocblas_cdotu_batched(
+def rocblas_cdotu_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -5117,7 +5117,7 @@ fn rocblas_cdotu_batched(
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
-fn rocblas_saxpy_64(
+def rocblas_saxpy_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float32, _],
@@ -5140,7 +5140,7 @@ fn rocblas_saxpy_64(
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
-fn rocblas_chpmv_batched(
+def rocblas_chpmv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -5242,7 +5242,7 @@ fn rocblas_chpmv_batched(
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_srotmg_batched(
+def rocblas_srotmg_batched(
     handle: Handle,
     d1: OpaquePointer[_],
     d2: OpaquePointer[_],
@@ -5310,7 +5310,7 @@ fn rocblas_srotmg_batched(
     ]()(handle, d1, d2, x1, y1, param, batch_count)
 
 
-fn rocblas_ssymv_batched_64(
+def rocblas_ssymv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -5343,7 +5343,7 @@ fn rocblas_ssymv_batched_64(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_drotmg(
+def rocblas_drotmg(
     handle: Handle,
     d1: UnsafePointer[Float64, _],
     d2: UnsafePointer[Float64, _],
@@ -5364,7 +5364,7 @@ fn rocblas_drotmg(
     ]()(handle, d1, d2, x1, y1, param)
 
 
-fn rocblas_daxpy_strided_batched_64(
+def rocblas_daxpy_strided_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float64, _],
@@ -5393,7 +5393,7 @@ fn rocblas_daxpy_strided_batched_64(
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_scal_strided_batched_ex_64(
+def rocblas_scal_strided_batched_ex_64(
     handle: Handle,
     n: Int64,
     alpha: OpaquePointer[_],
@@ -5433,7 +5433,7 @@ fn rocblas_scal_strided_batched_ex_64(
     )
 
 
-fn rocblas_dotc_strided_batched_ex_64(
+def rocblas_dotc_strided_batched_ex_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -5485,7 +5485,7 @@ fn rocblas_dotc_strided_batched_ex_64(
     )
 
 
-fn rocblas_caxpy_64(
+def rocblas_caxpy_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[ComplexFloat32, _],
@@ -5508,7 +5508,7 @@ fn rocblas_caxpy_64(
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
-fn rocblas_dgemm_strided_batched(
+def rocblas_dgemm_strided_batched(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -5572,7 +5572,7 @@ fn rocblas_dgemm_strided_batched(
     )
 
 
-fn rocblas_cdotu_strided_batched(
+def rocblas_cdotu_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -5601,7 +5601,7 @@ fn rocblas_cdotu_strided_batched(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
-fn rocblas_ctpsv_batched(
+def rocblas_ctpsv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -5628,7 +5628,7 @@ fn rocblas_ctpsv_batched(
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx, batch_count)
 
 
-fn rocblas_zherkx_batched(
+def rocblas_zherkx_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -5680,7 +5680,7 @@ fn rocblas_zherkx_batched(
     )
 
 
-fn rocblas_haxpy(
+def rocblas_haxpy(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float16, _],
@@ -5731,7 +5731,7 @@ fn rocblas_haxpy(
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
-fn rocblas_dsyr2(
+def rocblas_dsyr2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -5760,7 +5760,7 @@ fn rocblas_dsyr2(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_dtpmv(
+def rocblas_dtpmv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -5785,7 +5785,7 @@ fn rocblas_dtpmv(
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx)
 
 
-fn rocblas_nrm2_batched_ex_64(
+def rocblas_nrm2_batched_ex_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -5822,7 +5822,7 @@ fn rocblas_nrm2_batched_ex_64(
     )
 
 
-fn rocblas_zdotc_strided_batched(
+def rocblas_zdotc_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -5851,7 +5851,7 @@ fn rocblas_zdotc_strided_batched(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
-fn rocblas_ssyr_strided_batched_64(
+def rocblas_ssyr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -5884,7 +5884,7 @@ fn rocblas_ssyr_strided_batched_64(
     )
 
 
-fn rocblas_idamax_strided_batched(
+def rocblas_idamax_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float64, _],
@@ -5907,7 +5907,7 @@ fn rocblas_idamax_strided_batched(
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
-fn rocblas_ztrmm(
+def rocblas_ztrmm(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -5959,7 +5959,7 @@ fn rocblas_ztrmm(
     )
 
 
-fn rocblas_csyrk_strided_batched(
+def rocblas_csyrk_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -6011,7 +6011,7 @@ fn rocblas_csyrk_strided_batched(
     )
 
 
-fn rocblas_csrot_64(
+def rocblas_csrot_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -6036,7 +6036,7 @@ fn rocblas_csrot_64(
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
-fn rocblas_dtrsm_batched(
+def rocblas_dtrsm_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -6085,7 +6085,7 @@ fn rocblas_dtrsm_batched(
     )
 
 
-fn rocblas_hdot_batched_64(
+def rocblas_hdot_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -6110,7 +6110,7 @@ fn rocblas_hdot_batched_64(
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
-fn rocblas_ssbmv(
+def rocblas_ssbmv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -6188,7 +6188,7 @@ fn rocblas_ssbmv(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_drotm(
+def rocblas_drotm(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float64, _],
@@ -6211,7 +6211,7 @@ fn rocblas_drotm(
     ]()(handle, n, x, incx, y, incy, param)
 
 
-fn rocblas_chemv_batched_64(
+def rocblas_chemv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -6244,7 +6244,7 @@ fn rocblas_chemv_batched_64(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_zgerc_strided_batched_64(
+def rocblas_zgerc_strided_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
@@ -6296,7 +6296,7 @@ fn rocblas_zgerc_strided_batched_64(
     )
 
 
-fn rocblas_strmv_strided_batched_64(
+def rocblas_strmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -6342,7 +6342,7 @@ fn rocblas_strmv_strided_batched_64(
     )
 
 
-fn rocblas_cspr_strided_batched_64(
+def rocblas_cspr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -6371,7 +6371,7 @@ fn rocblas_cspr_strided_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
-fn rocblas_sgemv_64(
+def rocblas_sgemv_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -6404,7 +6404,7 @@ fn rocblas_sgemv_64(
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_csscal_batched_64(
+def rocblas_csscal_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float32, _],
@@ -6425,7 +6425,7 @@ fn rocblas_csscal_batched_64(
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
-fn rocblas_dsbmv_strided_batched_64(
+def rocblas_dsbmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -6483,7 +6483,7 @@ fn rocblas_dsbmv_strided_batched_64(
     )
 
 
-fn rocblas_sdgmm(
+def rocblas_sdgmm(
     handle: Handle,
     side: Side,
     m: Int32,
@@ -6555,7 +6555,7 @@ fn rocblas_sdgmm(
     ]()(handle, side, m, n, _a, lda, x, incx, _c, ldc)
 
 
-fn rocblas_dtbsv_strided_batched_64(
+def rocblas_dtbsv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -6604,7 +6604,7 @@ fn rocblas_dtbsv_strided_batched_64(
     )
 
 
-fn rocblas_chpr_batched_64(
+def rocblas_chpr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -6629,7 +6629,7 @@ fn rocblas_chpr_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
-fn rocblas_cgbmv(
+def rocblas_cgbmv(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -6666,7 +6666,7 @@ fn rocblas_cgbmv(
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_cdotu_batched_64(
+def rocblas_cdotu_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -6691,7 +6691,7 @@ fn rocblas_cdotu_batched_64(
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
-fn rocblas_srotm_batched(
+def rocblas_srotm_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -6761,7 +6761,7 @@ fn rocblas_srotm_batched(
     ]()(handle, n, x, incx, y, incy, param, batch_count)
 
 
-fn rocblas_zgeam(
+def rocblas_zgeam(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -6796,7 +6796,7 @@ fn rocblas_zgeam(
     ]()(handle, trans_a, trans_b, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
-fn rocblas_ctrsv(
+def rocblas_ctrsv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -6823,7 +6823,7 @@ fn rocblas_ctrsv(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
-fn rocblas_zgemv_strided_batched_64(
+def rocblas_zgemv_strided_batched_64(
     handle: Handle,
     trans_a: Operation,
     m: Int64,
@@ -6881,7 +6881,7 @@ fn rocblas_zgemv_strided_batched_64(
     )
 
 
-fn rocblas_zhbmv_batched_64(
+def rocblas_zhbmv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -6916,7 +6916,7 @@ fn rocblas_zhbmv_batched_64(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_zgemm(
+def rocblas_zgemm(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -6968,7 +6968,7 @@ fn rocblas_zgemm(
     )
 
 
-fn rocblas_cspr_batched(
+def rocblas_cspr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -6993,7 +6993,7 @@ fn rocblas_cspr_batched(
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
-fn rocblas_zhemv_batched_64(
+def rocblas_zhemv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -7026,7 +7026,7 @@ fn rocblas_zhemv_batched_64(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_cgemv_64(
+def rocblas_cgemv_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -7059,7 +7059,7 @@ fn rocblas_cgemv_64(
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_dtrmv_strided_batched(
+def rocblas_dtrmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -7105,7 +7105,7 @@ fn rocblas_dtrmv_strided_batched(
     )
 
 
-fn rocblas_drotmg_strided_batched(
+def rocblas_drotmg_strided_batched(
     handle: Handle,
     d1: UnsafePointer[Float64, _],
     stride_d1: Int64,
@@ -7151,7 +7151,7 @@ fn rocblas_drotmg_strided_batched(
     )
 
 
-fn rocblas_zgeru_batched(
+def rocblas_zgeru_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
@@ -7182,7 +7182,7 @@ fn rocblas_zgeru_batched(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_daxpy_strided_batched(
+def rocblas_daxpy_strided_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float64, _],
@@ -7211,7 +7211,7 @@ fn rocblas_daxpy_strided_batched(
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_crot(
+def rocblas_crot(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -7236,7 +7236,7 @@ fn rocblas_crot(
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
-fn rocblas_zhpr2_64(
+def rocblas_zhpr2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -7263,7 +7263,7 @@ fn rocblas_zhpr2_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
-fn rocblas_initialize() raises:
+def rocblas_initialize() raises:
     """
     Initialize rocBLAS on the current HIP device, to avoid costly startup
     time at the first call on that device.
@@ -7275,7 +7275,7 @@ fn rocblas_initialize() raises:
     _get_dylib_function["rocblas_initialize", fn() -> NoneType]()()
 
 
-fn rocblas_drotm_strided_batched(
+def rocblas_drotm_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float64, _],
@@ -7318,7 +7318,7 @@ fn rocblas_drotm_strided_batched(
     )
 
 
-fn rocblas_sgemmt_strided_batched(
+def rocblas_sgemmt_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -7458,7 +7458,7 @@ fn rocblas_sgemmt_strided_batched(
     )
 
 
-fn rocblas_dtpmv_batched(
+def rocblas_dtpmv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -7485,7 +7485,7 @@ fn rocblas_dtpmv_batched(
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx, batch_count)
 
 
-fn rocblas_dasum(
+def rocblas_dasum(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float64, _],
@@ -7498,7 +7498,7 @@ fn rocblas_dasum(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_csyr_64(
+def rocblas_csyr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -7523,7 +7523,7 @@ fn rocblas_csyr_64(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
-fn rocblas_dasum_batched(
+def rocblas_dasum_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -7544,7 +7544,7 @@ fn rocblas_dasum_batched(
     ]()(handle, n, x, incx, batch_count, results)
 
 
-fn rocblas_sswap_strided_batched_64(
+def rocblas_sswap_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -7571,7 +7571,7 @@ fn rocblas_sswap_strided_batched_64(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_zherkx(
+def rocblas_zherkx(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -7606,7 +7606,7 @@ fn rocblas_zherkx(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn rocblas_cgeru_batched(
+def rocblas_cgeru_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
@@ -7637,7 +7637,7 @@ fn rocblas_cgeru_batched(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_strmv_64(
+def rocblas_strmv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -7664,7 +7664,7 @@ fn rocblas_strmv_64(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
-fn rocblas_haxpy_batched(
+def rocblas_haxpy_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float16, _],
@@ -7718,7 +7718,7 @@ fn rocblas_haxpy_batched(
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
-fn rocblas_idamin_batched_64(
+def rocblas_idamin_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -7739,7 +7739,7 @@ fn rocblas_idamin_batched_64(
     ]()(handle, n, x, incx, batch_count, result)
 
 
-fn rocblas_tssgemv_strided_batched_64(
+def rocblas_tssgemv_strided_batched_64(
     handle: Handle,
     trans_a: Operation,
     m: Int64,
@@ -7797,7 +7797,7 @@ fn rocblas_tssgemv_strided_batched_64(
     )
 
 
-fn rocblas_chpmv_strided_batched(
+def rocblas_chpmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -7929,7 +7929,7 @@ fn rocblas_chpmv_strided_batched(
     )
 
 
-fn rocblas_zsyr2k(
+def rocblas_zsyr2k(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -7964,7 +7964,7 @@ fn rocblas_zsyr2k(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn rocblas_gemm_strided_batched_ex(
+def rocblas_gemm_strided_batched_ex(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -8193,7 +8193,7 @@ fn rocblas_gemm_strided_batched_ex(
     )
 
 
-fn rocblas_ztrtri(
+def rocblas_ztrtri(
     handle: Handle,
     uplo: Fill,
     diag: Diagonal,
@@ -8218,7 +8218,7 @@ fn rocblas_ztrtri(
     ]()(handle, uplo, diag, n, _a, lda, inv_a, ldinv_a)
 
 
-fn rocblas_ctrmv(
+def rocblas_ctrmv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -8245,7 +8245,7 @@ fn rocblas_ctrmv(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
-fn rocblas_dtrmv_batched_64(
+def rocblas_dtrmv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -8274,7 +8274,7 @@ fn rocblas_dtrmv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_sger_strided_batched_64(
+def rocblas_sger_strided_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
@@ -8326,7 +8326,7 @@ fn rocblas_sger_strided_batched_64(
     )
 
 
-fn rocblas_dtpsv_batched_64(
+def rocblas_dtpsv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -8353,7 +8353,7 @@ fn rocblas_dtpsv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx, batch_count)
 
 
-fn rocblas_sdot_batched_64(
+def rocblas_sdot_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -8378,7 +8378,7 @@ fn rocblas_sdot_batched_64(
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
-fn rocblas_dznrm2_batched(
+def rocblas_dznrm2_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -8399,7 +8399,7 @@ fn rocblas_dznrm2_batched(
     ]()(handle, n, x, incx, batch_count, results)
 
 
-fn rocblas_ddgmm_batched(
+def rocblas_ddgmm_batched(
     handle: Handle,
     side: Side,
     m: Int32,
@@ -8430,7 +8430,7 @@ fn rocblas_ddgmm_batched(
     ]()(handle, side, m, n, _a, lda, x, incx, _c, ldc, batch_count)
 
 
-fn rocblas_srotg_strided_batched_64(
+def rocblas_srotg_strided_batched_64(
     handle: Handle,
     a: UnsafePointer[Float32, _],
     stride_a: Int64,
@@ -8459,7 +8459,7 @@ fn rocblas_srotg_strided_batched_64(
     ]()(handle, a, stride_a, b, stride_b, c, stride_c, s, stride_s, batch_count)
 
 
-fn rocblas_dgbmv_64(
+def rocblas_dgbmv_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -8496,7 +8496,7 @@ fn rocblas_dgbmv_64(
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_sasum_batched_64(
+def rocblas_sasum_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -8517,7 +8517,7 @@ fn rocblas_sasum_batched_64(
     ]()(handle, n, x, incx, batch_count, results)
 
 
-fn rocblas_dspmv_strided_batched(
+def rocblas_dspmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -8569,7 +8569,7 @@ fn rocblas_dspmv_strided_batched(
     )
 
 
-fn rocblas_chbmv_strided_batched_64(
+def rocblas_chbmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -8627,7 +8627,7 @@ fn rocblas_chbmv_strided_batched_64(
     )
 
 
-fn rocblas_zswap_batched_64(
+def rocblas_zswap_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -8650,7 +8650,7 @@ fn rocblas_zswap_batched_64(
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
-fn rocblas_sgemv_strided_batched(
+def rocblas_sgemv_strided_batched(
     handle: Handle,
     trans_a: Operation,
     m: Int32,
@@ -8770,7 +8770,7 @@ fn rocblas_sgemv_strided_batched(
     )
 
 
-fn rocblas_csrot_batched_64(
+def rocblas_csrot_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -8797,7 +8797,7 @@ fn rocblas_csrot_batched_64(
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
-fn rocblas_idamin_batched(
+def rocblas_idamin_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -8818,7 +8818,7 @@ fn rocblas_idamin_batched(
     ]()(handle, n, x, incx, batch_count, result)
 
 
-fn rocblas_zswap_64(
+def rocblas_zswap_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -8839,7 +8839,7 @@ fn rocblas_zswap_64(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn rocblas_strsv_batched(
+def rocblas_strsv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -8926,7 +8926,7 @@ fn rocblas_strsv_batched(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_zhbmv(
+def rocblas_zhbmv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -8959,7 +8959,7 @@ fn rocblas_zhbmv(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_zrot_strided_batched_64(
+def rocblas_zrot_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -8990,7 +8990,7 @@ fn rocblas_zrot_strided_batched_64(
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
-fn rocblas_zher_strided_batched_64(
+def rocblas_zher_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -9033,7 +9033,7 @@ fn rocblas_zher_strided_batched_64(
     )
 
 
-fn rocblas_ztrsv_batched(
+def rocblas_ztrsv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -9062,7 +9062,7 @@ fn rocblas_ztrsv_batched(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_dtrmv_64(
+def rocblas_dtrmv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -9089,7 +9089,7 @@ fn rocblas_dtrmv_64(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
-fn rocblas_crotg(
+def rocblas_crotg(
     handle: Handle,
     a: UnsafePointer[ComplexFloat32, _],
     b: UnsafePointer[ComplexFloat32, _],
@@ -9108,7 +9108,7 @@ fn rocblas_crotg(
     ]()(handle, a, b, c, s)
 
 
-fn rocblas_dtbsv_batched(
+def rocblas_dtbsv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -9139,7 +9139,7 @@ fn rocblas_dtbsv_batched(
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_cswap_batched(
+def rocblas_cswap_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -9162,7 +9162,7 @@ fn rocblas_cswap_batched(
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
-fn rocblas_zsyr2_batched(
+def rocblas_zsyr2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -9193,7 +9193,7 @@ fn rocblas_zsyr2_batched(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_caxpy_strided_batched(
+def rocblas_caxpy_strided_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[ComplexFloat32, _],
@@ -9222,7 +9222,7 @@ fn rocblas_caxpy_strided_batched(
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_izamin_batched(
+def rocblas_izamin_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -9243,7 +9243,7 @@ fn rocblas_izamin_batched(
     ]()(handle, n, x, incx, batch_count, result)
 
 
-fn rocblas_dtpsv_batched(
+def rocblas_dtpsv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -9270,7 +9270,7 @@ fn rocblas_dtpsv_batched(
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx, batch_count)
 
 
-fn rocblas_ssyr2_batched_64(
+def rocblas_ssyr2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -9301,7 +9301,7 @@ fn rocblas_ssyr2_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_cdotc(
+def rocblas_cdotc(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -9324,7 +9324,7 @@ fn rocblas_cdotc(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn rocblas_sspr_batched_64(
+def rocblas_sspr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -9349,7 +9349,7 @@ fn rocblas_sspr_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
-fn rocblas_csrot_strided_batched(
+def rocblas_csrot_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -9380,7 +9380,7 @@ fn rocblas_csrot_strided_batched(
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
-fn rocblas_zher2_batched(
+def rocblas_zher2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -9411,7 +9411,7 @@ fn rocblas_zher2_batched(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_zcopy_batched_64(
+def rocblas_zcopy_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -9434,7 +9434,7 @@ fn rocblas_zcopy_batched_64(
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
-fn rocblas_zsymv_batched(
+def rocblas_zsymv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -9467,7 +9467,7 @@ fn rocblas_zsymv_batched(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_sasum_strided_batched_64(
+def rocblas_sasum_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -9490,7 +9490,7 @@ fn rocblas_sasum_strided_batched_64(
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
-fn rocblas_isamin_64(
+def rocblas_isamin_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -9503,7 +9503,7 @@ fn rocblas_isamin_64(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_dsyr(
+def rocblas_dsyr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -9528,7 +9528,7 @@ fn rocblas_dsyr(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
-fn rocblas_sgemv_batched(
+def rocblas_sgemv_batched(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -9614,7 +9614,7 @@ fn rocblas_sgemv_batched(
     )
 
 
-fn rocblas_ctpmv_batched_64(
+def rocblas_ctpmv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -9641,7 +9641,7 @@ fn rocblas_ctpmv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx, batch_count)
 
 
-fn rocblas_device_malloc_ptr(
+def rocblas_device_malloc_ptr(
     ptr: UnsafePointer[MallocBase, _],
     res: UnsafePointer[OpaquePointer[MutAnyOrigin], _],
 ) raises -> Status:
@@ -9654,7 +9654,7 @@ fn rocblas_device_malloc_ptr(
     ]()(ptr, res)
 
 
-fn rocblas_sger_strided_batched(
+def rocblas_sger_strided_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
@@ -9763,7 +9763,7 @@ fn rocblas_sger_strided_batched(
     )
 
 
-fn rocblas_daxpy(
+def rocblas_daxpy(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float64, _],
@@ -9786,7 +9786,7 @@ fn rocblas_daxpy(
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
-fn rocblas_icamin_batched_64(
+def rocblas_icamin_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -9807,7 +9807,7 @@ fn rocblas_icamin_batched_64(
     ]()(handle, n, x, incx, batch_count, result)
 
 
-fn rocblas_ssyr2_strided_batched(
+def rocblas_ssyr2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -9912,7 +9912,7 @@ fn rocblas_ssyr2_strided_batched(
     )
 
 
-fn rocblas_hssgemv_strided_batched(
+def rocblas_hssgemv_strided_batched(
     handle: Handle,
     trans_a: Operation,
     m: Int32,
@@ -9970,7 +9970,7 @@ fn rocblas_hssgemv_strided_batched(
     )
 
 
-fn rocblas_cgeru_batched_64(
+def rocblas_cgeru_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
@@ -10001,7 +10001,7 @@ fn rocblas_cgeru_batched_64(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_ctrmv_strided_batched_64(
+def rocblas_ctrmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -10047,7 +10047,7 @@ fn rocblas_ctrmv_strided_batched_64(
     )
 
 
-fn rocblas_chpmv_64(
+def rocblas_chpmv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -10076,7 +10076,7 @@ fn rocblas_chpmv_64(
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
-fn rocblas_dotc_batched_ex(
+def rocblas_dotc_batched_ex(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -10122,7 +10122,7 @@ fn rocblas_dotc_batched_ex(
     )
 
 
-fn rocblas_dgeam_strided_batched(
+def rocblas_dgeam_strided_batched(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -10183,7 +10183,7 @@ fn rocblas_dgeam_strided_batched(
     )
 
 
-fn rocblas_dgbmv_strided_batched(
+def rocblas_dgbmv_strided_batched(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -10247,7 +10247,7 @@ fn rocblas_dgbmv_strided_batched(
     )
 
 
-fn rocblas_ssymv(
+def rocblas_ssymv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -10323,7 +10323,7 @@ fn rocblas_ssymv(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_ssbmv_strided_batched_64(
+def rocblas_ssbmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -10381,7 +10381,7 @@ fn rocblas_ssbmv_strided_batched_64(
     )
 
 
-fn rocblas_sger_batched(
+def rocblas_sger_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
@@ -10456,7 +10456,7 @@ fn rocblas_sger_batched(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_izamax_batched(
+def rocblas_izamax_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -10477,7 +10477,7 @@ fn rocblas_izamax_batched(
     ]()(handle, n, x, incx, batch_count, result)
 
 
-fn rocblas_cgbmv_strided_batched_64(
+def rocblas_cgbmv_strided_batched_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -10541,7 +10541,7 @@ fn rocblas_cgbmv_strided_batched_64(
     )
 
 
-fn rocblas_csscal_strided_batched(
+def rocblas_csscal_strided_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float32, _],
@@ -10564,7 +10564,7 @@ fn rocblas_csscal_strided_batched(
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
-fn rocblas_cgerc_batched(
+def rocblas_cgerc_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
@@ -10595,7 +10595,7 @@ fn rocblas_cgerc_batched(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_dspr2(
+def rocblas_dspr2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -10622,7 +10622,7 @@ fn rocblas_dspr2(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
-fn rocblas_zspr_strided_batched_64(
+def rocblas_zspr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -10651,7 +10651,7 @@ fn rocblas_zspr_strided_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
-fn rocblas_scnrm2_strided_batched(
+def rocblas_scnrm2_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -10674,7 +10674,7 @@ fn rocblas_scnrm2_strided_batched(
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
-fn rocblas_zgemmt_batched(
+def rocblas_zgemmt_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -10729,7 +10729,7 @@ fn rocblas_zgemmt_batched(
     )
 
 
-fn rocblas_csymm_strided_batched(
+def rocblas_csymm_strided_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -10790,7 +10790,7 @@ fn rocblas_csymm_strided_batched(
     )
 
 
-fn rocblas_csyr_batched(
+def rocblas_csyr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -10817,7 +10817,7 @@ fn rocblas_csyr_batched(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
-fn rocblas_zsyrk_batched(
+def rocblas_zsyrk_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -10850,7 +10850,7 @@ fn rocblas_zsyrk_batched(
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc, batch_count)
 
 
-fn rocblas_sgeam(
+def rocblas_sgeam(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -10938,7 +10938,7 @@ fn rocblas_sgeam(
     ]()(handle, trans_a, trans_b, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
-fn rocblas_dznrm2_strided_batched_64(
+def rocblas_dznrm2_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -10961,7 +10961,7 @@ fn rocblas_dznrm2_strided_batched_64(
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
-fn rocblas_zhpmv_batched_64(
+def rocblas_zhpmv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -10992,7 +10992,7 @@ fn rocblas_zhpmv_batched_64(
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_strsm_strided_batched_64(
+def rocblas_strsm_strided_batched_64(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -11047,7 +11047,7 @@ fn rocblas_strsm_strided_batched_64(
     )
 
 
-fn rocblas_ztbsv_batched(
+def rocblas_ztbsv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -11078,7 +11078,7 @@ fn rocblas_ztbsv_batched(
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_csyrk(
+def rocblas_csyrk(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -11109,7 +11109,7 @@ fn rocblas_csyrk(
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
-fn rocblas_axpy_ex(
+def rocblas_axpy_ex(
     handle: Handle,
     n: Int32,
     alpha: OpaquePointer[_],
@@ -11208,7 +11208,7 @@ fn rocblas_axpy_ex(
     )
 
 
-fn rocblas_zrotg_batched(
+def rocblas_zrotg_batched(
     handle: Handle,
     a: OpaquePointer[_],
     b: OpaquePointer[_],
@@ -11229,7 +11229,7 @@ fn rocblas_zrotg_batched(
     ]()(handle, a, b, c, s, batch_count)
 
 
-fn rocblas_get_version_string(
+def rocblas_get_version_string(
     buf: UnsafePointer[Int8, _], len: Int
 ) raises -> Status:
     """\\brief   Loads char* buf with the rocblas library version. size_t len
@@ -11250,7 +11250,7 @@ fn rocblas_get_version_string(
     ]()(buf, len)
 
 
-fn rocblas_csyr2_strided_batched_64(
+def rocblas_csyr2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -11302,7 +11302,7 @@ fn rocblas_csyr2_strided_batched_64(
     )
 
 
-fn rocblas_dsyr_strided_batched(
+def rocblas_dsyr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -11335,7 +11335,7 @@ fn rocblas_dsyr_strided_batched(
     )
 
 
-fn rocblas_ssymm_strided_batched(
+def rocblas_ssymm_strided_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -11483,7 +11483,7 @@ fn rocblas_ssymm_strided_batched(
     )
 
 
-fn rocblas_idamax_strided_batched_64(
+def rocblas_idamax_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -11506,7 +11506,7 @@ fn rocblas_idamax_strided_batched_64(
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
-fn rocblas_rot_strided_batched_ex_64(
+def rocblas_rot_strided_batched_ex_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -11561,7 +11561,7 @@ fn rocblas_rot_strided_batched_ex_64(
     )
 
 
-fn rocblas_sswap_batched_64(
+def rocblas_sswap_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -11584,7 +11584,7 @@ fn rocblas_sswap_batched_64(
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
-fn rocblas_chbmv_batched_64(
+def rocblas_chbmv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -11619,7 +11619,7 @@ fn rocblas_chbmv_batched_64(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_sdot_batched(
+def rocblas_sdot_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -11683,7 +11683,7 @@ fn rocblas_sdot_batched(
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
-fn rocblas_dtrsm_strided_batched_64(
+def rocblas_dtrsm_strided_batched_64(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -11738,7 +11738,7 @@ fn rocblas_dtrsm_strided_batched_64(
     )
 
 
-fn rocblas_isamin_strided_batched(
+def rocblas_isamin_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float32, _],
@@ -11790,7 +11790,7 @@ fn rocblas_isamin_strided_batched(
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
-fn rocblas_cgeam_strided_batched(
+def rocblas_cgeam_strided_batched(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -11851,7 +11851,7 @@ fn rocblas_cgeam_strided_batched(
     )
 
 
-fn rocblas_ccopy_batched(
+def rocblas_ccopy_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -11874,7 +11874,7 @@ fn rocblas_ccopy_batched(
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
-fn rocblas_sgbmv_64(
+def rocblas_sgbmv_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -11911,7 +11911,7 @@ fn rocblas_sgbmv_64(
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_device_malloc_success(
+def rocblas_device_malloc_success(
     ptr: UnsafePointer[MallocBase, _],
 ) raises -> Bool:
     return _get_dylib_function[
@@ -11920,7 +11920,7 @@ fn rocblas_device_malloc_success(
     ]()(ptr)
 
 
-fn rocblas_chpr_64(
+def rocblas_chpr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -11943,7 +11943,7 @@ fn rocblas_chpr_64(
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
-fn rocblas_stpsv(
+def rocblas_stpsv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -12018,7 +12018,7 @@ fn rocblas_stpsv(
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx)
 
 
-fn rocblas_csyrkx_strided_batched(
+def rocblas_csyrkx_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -12079,7 +12079,7 @@ fn rocblas_csyrkx_strided_batched(
     )
 
 
-fn rocblas_dger_strided_batched_64(
+def rocblas_dger_strided_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
@@ -12131,7 +12131,7 @@ fn rocblas_dger_strided_batched_64(
     )
 
 
-fn rocblas_ctrmv_strided_batched(
+def rocblas_ctrmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -12177,7 +12177,7 @@ fn rocblas_ctrmv_strided_batched(
     )
 
 
-fn rocblas_zrot_strided_batched(
+def rocblas_zrot_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -12208,7 +12208,7 @@ fn rocblas_zrot_strided_batched(
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
-fn rocblas_hgemm_kernel_name(
+def rocblas_hgemm_kernel_name(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -12272,7 +12272,7 @@ fn rocblas_hgemm_kernel_name(
     )
 
 
-fn rocblas_scopy_strided_batched_64(
+def rocblas_scopy_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -12299,7 +12299,7 @@ fn rocblas_scopy_strided_batched_64(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_icamax_strided_batched(
+def rocblas_icamax_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -12322,7 +12322,7 @@ fn rocblas_icamax_strided_batched(
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
-fn rocblas_zhpr_strided_batched_64(
+def rocblas_zhpr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -12351,7 +12351,7 @@ fn rocblas_zhpr_strided_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
-fn rocblas_ztrsm_64(
+def rocblas_ztrsm_64(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -12384,7 +12384,7 @@ fn rocblas_ztrsm_64(
     ]()(handle, side, uplo, trans_a, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
-fn rocblas_stpsv_strided_batched_64(
+def rocblas_stpsv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -12427,7 +12427,7 @@ fn rocblas_stpsv_strided_batched_64(
     )
 
 
-fn rocblas_csyr_batched_64(
+def rocblas_csyr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -12454,7 +12454,7 @@ fn rocblas_csyr_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
-fn rocblas_ctpmv_64(
+def rocblas_ctpmv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -12479,7 +12479,7 @@ fn rocblas_ctpmv_64(
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx)
 
 
-fn rocblas_strmm_batched(
+def rocblas_strmm_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -12661,7 +12661,7 @@ fn rocblas_strmm_batched(
     )
 
 
-fn rocblas_ztrsm(
+def rocblas_ztrsm(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -12694,7 +12694,7 @@ fn rocblas_ztrsm(
     ]()(handle, side, uplo, trans_a, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
-fn rocblas_zdgmm_strided_batched(
+def rocblas_zdgmm_strided_batched(
     handle: Handle,
     side: Side,
     m: Int32,
@@ -12746,7 +12746,7 @@ fn rocblas_zdgmm_strided_batched(
     )
 
 
-fn rocblas_icamin_64(
+def rocblas_icamin_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -12765,7 +12765,7 @@ fn rocblas_icamin_64(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_dsyr2k(
+def rocblas_dsyr2k(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -12800,7 +12800,7 @@ fn rocblas_dsyr2k(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn rocblas_zrotg_batched_64(
+def rocblas_zrotg_batched_64(
     handle: Handle,
     a: OpaquePointer[_],
     b: OpaquePointer[_],
@@ -12821,7 +12821,7 @@ fn rocblas_zrotg_batched_64(
     ]()(handle, a, b, c, s, batch_count)
 
 
-fn rocblas_dtrmm_strided_batched(
+def rocblas_dtrmm_strided_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -12885,7 +12885,7 @@ fn rocblas_dtrmm_strided_batched(
     )
 
 
-fn rocblas_drot_batched(
+def rocblas_drot_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -12912,7 +12912,7 @@ fn rocblas_drot_batched(
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
-fn rocblas_zgemv_strided_batched(
+def rocblas_zgemv_strided_batched(
     handle: Handle,
     trans_a: Operation,
     m: Int32,
@@ -12970,7 +12970,7 @@ fn rocblas_zgemv_strided_batched(
     )
 
 
-fn rocblas_dtrtri_batched(
+def rocblas_dtrtri_batched(
     handle: Handle,
     uplo: Fill,
     diag: Diagonal,
@@ -12997,7 +12997,7 @@ fn rocblas_dtrtri_batched(
     ]()(handle, uplo, diag, n, _a, lda, inv_a, ldinv_a, batch_count)
 
 
-fn rocblas_cgemv_batched_64(
+def rocblas_cgemv_batched_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -13034,7 +13034,7 @@ fn rocblas_cgemv_batched_64(
     )
 
 
-fn rocblas_strmv_strided_batched(
+def rocblas_strmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -13146,7 +13146,7 @@ fn rocblas_strmv_strided_batched(
     )
 
 
-fn rocblas_dznrm2_64(
+def rocblas_dznrm2_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -13165,7 +13165,7 @@ fn rocblas_dznrm2_64(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_zdscal_strided_batched(
+def rocblas_zdscal_strided_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float64, _],
@@ -13188,7 +13188,7 @@ fn rocblas_zdscal_strided_batched(
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
-fn rocblas_daxpy_batched_64(
+def rocblas_daxpy_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float64, _],
@@ -13213,7 +13213,7 @@ fn rocblas_daxpy_batched_64(
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
-fn rocblas_chpr_batched(
+def rocblas_chpr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -13302,7 +13302,7 @@ fn rocblas_chpr_batched(
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
-fn rocblas_dcopy_strided_batched_64(
+def rocblas_dcopy_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -13329,7 +13329,7 @@ fn rocblas_dcopy_strided_batched_64(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_zcopy_strided_batched_64(
+def rocblas_zcopy_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -13356,7 +13356,7 @@ fn rocblas_zcopy_strided_batched_64(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_ssyr2k(
+def rocblas_ssyr2k(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -13472,7 +13472,7 @@ fn rocblas_ssyr2k(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn rocblas_dswap_batched(
+def rocblas_dswap_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -13495,7 +13495,7 @@ fn rocblas_dswap_batched(
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
-fn rocblas_scopy_batched(
+def rocblas_scopy_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -13549,7 +13549,7 @@ fn rocblas_scopy_batched(
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
-fn rocblas_izamin(
+def rocblas_izamin(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -13568,7 +13568,7 @@ fn rocblas_izamin(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_sspr_strided_batched_64(
+def rocblas_sspr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -13597,7 +13597,7 @@ fn rocblas_sspr_strided_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
-fn rocblas_dzasum_strided_batched(
+def rocblas_dzasum_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -13620,7 +13620,7 @@ fn rocblas_dzasum_strided_batched(
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
-fn rocblas_icamax(
+def rocblas_icamax(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -13639,7 +13639,7 @@ fn rocblas_icamax(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_dsyr2_batched_64(
+def rocblas_dsyr2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -13670,7 +13670,7 @@ fn rocblas_dsyr2_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_strsm_batched(
+def rocblas_strsm_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -13799,7 +13799,7 @@ fn rocblas_strsm_batched(
     )
 
 
-fn rocblas_zhpmv_strided_batched(
+def rocblas_zhpmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -13851,7 +13851,7 @@ fn rocblas_zhpmv_strided_batched(
     )
 
 
-fn rocblas_dspr_64(
+def rocblas_dspr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -13874,7 +13874,7 @@ fn rocblas_dspr_64(
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
-fn rocblas_ssyr2k_strided_batched(
+def rocblas_ssyr2k_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -14032,7 +14032,7 @@ fn rocblas_ssyr2k_strided_batched(
     )
 
 
-fn rocblas_stpsv_64(
+def rocblas_stpsv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -14057,7 +14057,7 @@ fn rocblas_stpsv_64(
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx)
 
 
-fn rocblas_scasum_batched(
+def rocblas_scasum_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -14078,7 +14078,7 @@ fn rocblas_scasum_batched(
     ]()(handle, n, x, incx, batch_count, results)
 
 
-fn rocblas_ztpsv_strided_batched_64(
+def rocblas_ztpsv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -14121,7 +14121,7 @@ fn rocblas_ztpsv_strided_batched_64(
     )
 
 
-fn rocblas_zswap(
+def rocblas_zswap(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -14142,7 +14142,7 @@ fn rocblas_zswap(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn rocblas_scnrm2_64(
+def rocblas_scnrm2_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -14161,7 +14161,7 @@ fn rocblas_scnrm2_64(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_strsv_strided_batched_64(
+def rocblas_strsv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -14207,7 +14207,7 @@ fn rocblas_strsv_strided_batched_64(
     )
 
 
-fn rocblas_dcopy(
+def rocblas_dcopy(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float64, _],
@@ -14228,7 +14228,7 @@ fn rocblas_dcopy(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn rocblas_zdotu_batched_64(
+def rocblas_zdotu_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -14253,7 +14253,7 @@ fn rocblas_zdotu_batched_64(
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
-fn rocblas_bfdot_batched(
+def rocblas_bfdot_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -14278,7 +14278,7 @@ fn rocblas_bfdot_batched(
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
-fn rocblas_stbmv_64(
+def rocblas_stbmv_64(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -14307,7 +14307,7 @@ fn rocblas_stbmv_64(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
-fn rocblas_saxpy_batched(
+def rocblas_saxpy_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float32, _],
@@ -14332,7 +14332,7 @@ fn rocblas_saxpy_batched(
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
-fn rocblas_zher_batched_64(
+def rocblas_zher_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -14359,7 +14359,7 @@ fn rocblas_zher_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
-fn rocblas_icamin_batched(
+def rocblas_icamin_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -14380,7 +14380,7 @@ fn rocblas_icamin_batched(
     ]()(handle, n, x, incx, batch_count, result)
 
 
-fn rocblas_ztrmv(
+def rocblas_ztrmv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -14407,7 +14407,7 @@ fn rocblas_ztrmv(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
-fn rocblas_cher2k(
+def rocblas_cher2k(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -14521,7 +14521,7 @@ fn rocblas_cher2k(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn rocblas_zspr_64(
+def rocblas_zspr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -14544,7 +14544,7 @@ fn rocblas_zspr_64(
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
-fn rocblas_cgeru_64(
+def rocblas_cgeru_64(
     handle: Handle,
     m: Int64,
     n: Int64,
@@ -14573,7 +14573,7 @@ fn rocblas_cgeru_64(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_zhpr2_batched_64(
+def rocblas_zhpr2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -14602,7 +14602,7 @@ fn rocblas_zhpr2_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap, batch_count)
 
 
-fn rocblas_caxpy_batched_64(
+def rocblas_caxpy_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[ComplexFloat32, _],
@@ -14627,7 +14627,7 @@ fn rocblas_caxpy_batched_64(
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
-fn rocblas_zsyrkx(
+def rocblas_zsyrkx(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -14662,7 +14662,7 @@ fn rocblas_zsyrkx(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn rocblas_ddgmm(
+def rocblas_ddgmm(
     handle: Handle,
     side: Side,
     m: Int32,
@@ -14691,7 +14691,7 @@ fn rocblas_ddgmm(
     ]()(handle, side, m, n, _a, lda, x, incx, _c, ldc)
 
 
-fn rocblas_cgemmt_batched(
+def rocblas_cgemmt_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -14746,7 +14746,7 @@ fn rocblas_cgemmt_batched(
     )
 
 
-fn rocblas_sspmv(
+def rocblas_sspmv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -14814,7 +14814,7 @@ fn rocblas_sspmv(
     ]()(handle, uplo, n, alpha, _a, x, incx, beta, y, incy)
 
 
-fn rocblas_ctbmv_strided_batched(
+def rocblas_ctbmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -14863,7 +14863,7 @@ fn rocblas_ctbmv_strided_batched(
     )
 
 
-fn rocblas_chemm_strided_batched(
+def rocblas_chemm_strided_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -15016,7 +15016,7 @@ fn rocblas_chemm_strided_batched(
     )
 
 
-fn rocblas_dtbsv_64(
+def rocblas_dtbsv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -15045,7 +15045,7 @@ fn rocblas_dtbsv_64(
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx)
 
 
-fn rocblas_ztbmv_64(
+def rocblas_ztbmv_64(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -15074,7 +15074,7 @@ fn rocblas_ztbmv_64(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
-fn rocblas_chemv_strided_batched(
+def rocblas_chemv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -15194,7 +15194,7 @@ fn rocblas_chemv_strided_batched(
     )
 
 
-fn rocblas_zgemv_batched_64(
+def rocblas_zgemv_batched_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -15231,7 +15231,7 @@ fn rocblas_zgemv_batched_64(
     )
 
 
-fn rocblas_zgemmt(
+def rocblas_zgemmt(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -15283,7 +15283,7 @@ fn rocblas_zgemmt(
     )
 
 
-fn rocblas_idamin(
+def rocblas_idamin(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float64, _],
@@ -15296,7 +15296,7 @@ fn rocblas_idamin(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_drotm_64(
+def rocblas_drotm_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -15319,7 +15319,7 @@ fn rocblas_drotm_64(
     ]()(handle, n, x, incx, y, incy, param)
 
 
-fn rocblas_cscal_strided_batched_64(
+def rocblas_cscal_strided_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[ComplexFloat32, _],
@@ -15342,7 +15342,7 @@ fn rocblas_cscal_strided_batched_64(
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
-fn rocblas_zsyrk(
+def rocblas_zsyrk(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -15373,7 +15373,7 @@ fn rocblas_zsyrk(
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
-fn rocblas_dspr2_64(
+def rocblas_dspr2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -15400,7 +15400,7 @@ fn rocblas_dspr2_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
-fn rocblas_icamin_strided_batched(
+def rocblas_icamin_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -15423,7 +15423,7 @@ fn rocblas_icamin_strided_batched(
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
-fn rocblas_dsyr2_64(
+def rocblas_dsyr2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -15452,7 +15452,7 @@ fn rocblas_dsyr2_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_cgerc(
+def rocblas_cgerc(
     handle: Handle,
     m: Int32,
     n: Int32,
@@ -15481,7 +15481,7 @@ fn rocblas_cgerc(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_zsyrkx_strided_batched(
+def rocblas_zsyrkx_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -15542,7 +15542,7 @@ fn rocblas_zsyrkx_strided_batched(
     )
 
 
-fn rocblas_cgemmt_strided_batched(
+def rocblas_cgemmt_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -15606,7 +15606,7 @@ fn rocblas_cgemmt_strided_batched(
     )
 
 
-fn rocblas_dtrmv_strided_batched_64(
+def rocblas_dtrmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -15652,7 +15652,7 @@ fn rocblas_dtrmv_strided_batched_64(
     )
 
 
-fn rocblas_cgbmv_batched(
+def rocblas_cgbmv_batched(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -15707,7 +15707,7 @@ fn rocblas_cgbmv_batched(
     )
 
 
-fn rocblas_sspr2_64(
+def rocblas_sspr2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -15734,7 +15734,7 @@ fn rocblas_sspr2_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
-fn rocblas_zher2_64(
+def rocblas_zher2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -15763,7 +15763,7 @@ fn rocblas_zher2_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_dsymv_batched(
+def rocblas_dsymv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -15796,7 +15796,7 @@ fn rocblas_dsymv_batched(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_cher2k_batched(
+def rocblas_cher2k_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -15928,7 +15928,7 @@ fn rocblas_cher2k_batched(
     )
 
 
-fn rocblas_ztrtri_batched(
+def rocblas_ztrtri_batched(
     handle: Handle,
     uplo: Fill,
     diag: Diagonal,
@@ -15955,7 +15955,7 @@ fn rocblas_ztrtri_batched(
     ]()(handle, uplo, diag, n, _a, lda, inv_a, ldinv_a, batch_count)
 
 
-fn rocblas_ztpmv_strided_batched_64(
+def rocblas_ztpmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -15998,7 +15998,7 @@ fn rocblas_ztpmv_strided_batched_64(
     )
 
 
-fn rocblas_zsyr2_strided_batched(
+def rocblas_zsyr2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -16050,7 +16050,7 @@ fn rocblas_zsyr2_strided_batched(
     )
 
 
-fn rocblas_zsyr2_64(
+def rocblas_zsyr2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -16079,7 +16079,7 @@ fn rocblas_zsyr2_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_device_malloc_free(
+def rocblas_device_malloc_free(
     ptr: UnsafePointer[MallocBase, _],
 ) raises -> Status:
     return _get_dylib_function[
@@ -16088,7 +16088,7 @@ fn rocblas_device_malloc_free(
     ]()(ptr)
 
 
-fn rocblas_zhpr2_strided_batched_64(
+def rocblas_zhpr2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -16137,7 +16137,7 @@ fn rocblas_zhpr2_strided_batched_64(
     )
 
 
-fn rocblas_icamin_strided_batched_64(
+def rocblas_icamin_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -16160,7 +16160,7 @@ fn rocblas_icamin_strided_batched_64(
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
-fn rocblas_idamax(
+def rocblas_idamax(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float64, _],
@@ -16173,7 +16173,7 @@ fn rocblas_idamax(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_ctrsv_batched(
+def rocblas_ctrsv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -16202,7 +16202,7 @@ fn rocblas_ctrsv_batched(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_zaxpy_strided_batched(
+def rocblas_zaxpy_strided_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[ComplexFloat64, _],
@@ -16231,7 +16231,7 @@ fn rocblas_zaxpy_strided_batched(
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_cgemm(
+def rocblas_cgemm(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -16283,7 +16283,7 @@ fn rocblas_cgemm(
     )
 
 
-fn rocblas_crotg_64(
+def rocblas_crotg_64(
     handle: Handle,
     a: UnsafePointer[ComplexFloat32, _],
     b: UnsafePointer[ComplexFloat32, _],
@@ -16302,7 +16302,7 @@ fn rocblas_crotg_64(
     ]()(handle, a, b, c, s)
 
 
-fn rocblas_srot_strided_batched(
+def rocblas_srot_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float32, _],
@@ -16371,7 +16371,7 @@ fn rocblas_srot_strided_batched(
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
-fn rocblas_srot(
+def rocblas_srot(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float32, _],
@@ -16425,7 +16425,7 @@ fn rocblas_srot(
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
-fn rocblas_zdotc_strided_batched_64(
+def rocblas_zdotc_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -16454,7 +16454,7 @@ fn rocblas_zdotc_strided_batched_64(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
-fn rocblas_scal_strided_batched_ex(
+def rocblas_scal_strided_batched_ex(
     handle: Handle,
     n: Int32,
     alpha: OpaquePointer[_],
@@ -16554,7 +16554,7 @@ fn rocblas_scal_strided_batched_ex(
     )
 
 
-fn rocblas_cscal_strided_batched(
+def rocblas_cscal_strided_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[ComplexFloat32, _],
@@ -16577,7 +16577,7 @@ fn rocblas_cscal_strided_batched(
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
-fn rocblas_dspr2_strided_batched(
+def rocblas_dspr2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -16626,7 +16626,7 @@ fn rocblas_dspr2_strided_batched(
     )
 
 
-fn rocblas_dnrm2_batched(
+def rocblas_dnrm2_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -16647,7 +16647,7 @@ fn rocblas_dnrm2_batched(
     ]()(handle, n, x, incx, batch_count, results)
 
 
-fn rocblas_ddot_batched(
+def rocblas_ddot_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -16672,7 +16672,7 @@ fn rocblas_ddot_batched(
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
-fn rocblas_idamax_64(
+def rocblas_idamax_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -16685,7 +16685,7 @@ fn rocblas_idamax_64(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_csyr2_strided_batched(
+def rocblas_csyr2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -16737,7 +16737,7 @@ fn rocblas_csyr2_strided_batched(
     )
 
 
-fn rocblas_cdotu_strided_batched_64(
+def rocblas_cdotu_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -16766,7 +16766,7 @@ fn rocblas_cdotu_strided_batched_64(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
-fn rocblas_hgemm_strided_batched(
+def rocblas_hgemm_strided_batched(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -16830,7 +16830,7 @@ fn rocblas_hgemm_strided_batched(
     )
 
 
-fn rocblas_dot_strided_batched_ex(
+def rocblas_dot_strided_batched_ex(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -16955,7 +16955,7 @@ fn rocblas_dot_strided_batched_ex(
     )
 
 
-fn rocblas_ssbmv_strided_batched(
+def rocblas_ssbmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -17077,7 +17077,7 @@ fn rocblas_ssbmv_strided_batched(
     )
 
 
-fn rocblas_zsymm(
+def rocblas_zsymm(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -17112,7 +17112,7 @@ fn rocblas_zsymm(
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn rocblas_dtpmv_strided_batched(
+def rocblas_dtpmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -17155,7 +17155,7 @@ fn rocblas_dtpmv_strided_batched(
     )
 
 
-fn rocblas_zdscal_batched_64(
+def rocblas_zdscal_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float64, _],
@@ -17176,7 +17176,7 @@ fn rocblas_zdscal_batched_64(
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
-fn rocblas_izamax_batched_64(
+def rocblas_izamax_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -17197,7 +17197,7 @@ fn rocblas_izamax_batched_64(
     ]()(handle, n, x, incx, batch_count, result)
 
 
-fn rocblas_tssgemv_batched_64(
+def rocblas_tssgemv_batched_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -17234,7 +17234,7 @@ fn rocblas_tssgemv_batched_64(
     )
 
 
-fn rocblas_cgerc_strided_batched(
+def rocblas_cgerc_strided_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
@@ -17286,7 +17286,7 @@ fn rocblas_cgerc_strided_batched(
     )
 
 
-fn rocblas_dgemv_strided_batched_64(
+def rocblas_dgemv_strided_batched_64(
     handle: Handle,
     trans_a: Operation,
     m: Int64,
@@ -17344,7 +17344,7 @@ fn rocblas_dgemv_strided_batched_64(
     )
 
 
-fn rocblas_dgemm(
+def rocblas_dgemm(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -17396,7 +17396,7 @@ fn rocblas_dgemm(
     )
 
 
-fn rocblas_zscal_64(
+def rocblas_zscal_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[ComplexFloat64, _],
@@ -17415,7 +17415,7 @@ fn rocblas_zscal_64(
     ]()(handle, n, alpha, x, incx)
 
 
-fn rocblas_csyr(
+def rocblas_csyr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -17440,7 +17440,7 @@ fn rocblas_csyr(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
-fn rocblas_ztrsm_strided_batched_64(
+def rocblas_ztrsm_strided_batched_64(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -17495,7 +17495,7 @@ fn rocblas_ztrsm_strided_batched_64(
     )
 
 
-fn rocblas_dsbmv(
+def rocblas_dsbmv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -17528,7 +17528,7 @@ fn rocblas_dsbmv(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_dger_64(
+def rocblas_dger_64(
     handle: Handle,
     m: Int64,
     n: Int64,
@@ -17557,7 +17557,7 @@ fn rocblas_dger_64(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_ssymm_batched(
+def rocblas_ssymm_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -17687,7 +17687,7 @@ fn rocblas_ssymm_batched(
     )
 
 
-fn rocblas_cdotc_64(
+def rocblas_cdotc_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -17710,7 +17710,7 @@ fn rocblas_cdotc_64(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn rocblas_stbsv_batched_64(
+def rocblas_stbsv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -17741,7 +17741,7 @@ fn rocblas_stbsv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_start_device_memory_size_query(handle: Handle) raises -> Status:
+def rocblas_start_device_memory_size_query(handle: Handle) raises -> Status:
     """\\brief
     \\details
     Indicates that subsequent rocBLAS kernel calls should collect the optimal device memory size in bytes for their given kernel arguments
@@ -17757,7 +17757,7 @@ fn rocblas_start_device_memory_size_query(handle: Handle) raises -> Status:
     ]()(handle)
 
 
-fn rocblas_zher2(
+def rocblas_zher2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -17786,7 +17786,7 @@ fn rocblas_zher2(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_dswap_64(
+def rocblas_dswap_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -17807,7 +17807,7 @@ fn rocblas_dswap_64(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn rocblas_dsyrk(
+def rocblas_dsyrk(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -17838,7 +17838,7 @@ fn rocblas_dsyrk(
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
-fn rocblas_csrot_strided_batched_64(
+def rocblas_csrot_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -17869,7 +17869,7 @@ fn rocblas_csrot_strided_batched_64(
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
-fn rocblas_sswap_64(
+def rocblas_sswap_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -17890,7 +17890,7 @@ fn rocblas_sswap_64(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn rocblas_saxpy_strided_batched_64(
+def rocblas_saxpy_strided_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float32, _],
@@ -17919,7 +17919,7 @@ fn rocblas_saxpy_strided_batched_64(
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_sswap_batched(
+def rocblas_sswap_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -17972,7 +17972,7 @@ fn rocblas_sswap_batched(
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
-fn rocblas_ctbsv(
+def rocblas_ctbsv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -18001,7 +18001,7 @@ fn rocblas_ctbsv(
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx)
 
 
-fn rocblas_stop_device_memory_size_query(
+def rocblas_stop_device_memory_size_query(
     handle: Handle, size: UnsafePointer[Int, _]
 ) raises -> Status:
     """\\brief
@@ -18021,7 +18021,7 @@ fn rocblas_stop_device_memory_size_query(
     ]()(handle, size)
 
 
-fn rocblas_zgerc_batched(
+def rocblas_zgerc_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
@@ -18052,7 +18052,7 @@ fn rocblas_zgerc_batched(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_daxpy_batched(
+def rocblas_daxpy_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float64, _],
@@ -18077,7 +18077,7 @@ fn rocblas_daxpy_batched(
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
-fn rocblas_dswap(
+def rocblas_dswap(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float64, _],
@@ -18098,7 +18098,7 @@ fn rocblas_dswap(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn rocblas_chemm_batched(
+def rocblas_chemm_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -18229,7 +18229,7 @@ fn rocblas_chemm_batched(
     )
 
 
-fn rocblas_stpmv_strided_batched_64(
+def rocblas_stpmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -18272,7 +18272,7 @@ fn rocblas_stpmv_strided_batched_64(
     )
 
 
-fn rocblas_ztrtri_strided_batched(
+def rocblas_ztrtri_strided_batched(
     handle: Handle,
     uplo: Fill,
     diag: Diagonal,
@@ -18315,7 +18315,7 @@ fn rocblas_ztrtri_strided_batched(
     )
 
 
-fn rocblas_dspr_batched_64(
+def rocblas_dspr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -18340,7 +18340,7 @@ fn rocblas_dspr_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
-fn rocblas_idamin_64(
+def rocblas_idamin_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -18353,7 +18353,7 @@ fn rocblas_idamin_64(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_scal_ex_64(
+def rocblas_scal_ex_64(
     handle: Handle,
     n: Int64,
     alpha: OpaquePointer[_],
@@ -18378,7 +18378,7 @@ fn rocblas_scal_ex_64(
     ]()(handle, n, alpha, alpha_type, x, x_type, incx, execution_type)
 
 
-fn rocblas_ztbsv_64(
+def rocblas_ztbsv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -18407,7 +18407,7 @@ fn rocblas_ztbsv_64(
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx)
 
 
-fn rocblas_axpy_strided_batched_ex(
+def rocblas_axpy_strided_batched_ex(
     handle: Handle,
     n: Int32,
     alpha: OpaquePointer[_],
@@ -18529,7 +18529,7 @@ fn rocblas_axpy_strided_batched_ex(
     )
 
 
-fn rocblas_cspr(
+def rocblas_cspr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -18552,7 +18552,7 @@ fn rocblas_cspr(
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
-fn rocblas_ztrsv_64(
+def rocblas_ztrsv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -18579,7 +18579,7 @@ fn rocblas_ztrsv_64(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
-fn rocblas_chpmv_strided_batched_64(
+def rocblas_chpmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -18631,7 +18631,7 @@ fn rocblas_chpmv_strided_batched_64(
     )
 
 
-fn rocblas_chpr2_strided_batched(
+def rocblas_chpr2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -18758,7 +18758,7 @@ fn rocblas_chpr2_strided_batched(
     )
 
 
-fn rocblas_dsbmv_64(
+def rocblas_dsbmv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -18791,7 +18791,7 @@ fn rocblas_dsbmv_64(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_dasum_batched_64(
+def rocblas_dasum_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -18812,7 +18812,7 @@ fn rocblas_dasum_batched_64(
     ]()(handle, n, x, incx, batch_count, results)
 
 
-fn rocblas_zscal(
+def rocblas_zscal(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[ComplexFloat64, _],
@@ -18831,7 +18831,7 @@ fn rocblas_zscal(
     ]()(handle, n, alpha, x, incx)
 
 
-fn rocblas_ztpsv(
+def rocblas_ztpsv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -18856,7 +18856,7 @@ fn rocblas_ztpsv(
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx)
 
 
-fn rocblas_chpr2_batched(
+def rocblas_chpr2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -18954,7 +18954,7 @@ fn rocblas_chpr2_batched(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap, batch_count)
 
 
-fn rocblas_csyr2_batched_64(
+def rocblas_csyr2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -18985,7 +18985,7 @@ fn rocblas_csyr2_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_ctrmv_64(
+def rocblas_ctrmv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -19012,7 +19012,7 @@ fn rocblas_ctrmv_64(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
-fn rocblas_zhbmv_strided_batched_64(
+def rocblas_zhbmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -19070,7 +19070,7 @@ fn rocblas_zhbmv_strided_batched_64(
     )
 
 
-fn rocblas_csyr2k(
+def rocblas_csyr2k(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -19105,7 +19105,7 @@ fn rocblas_csyr2k(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn rocblas_izamin_strided_batched_64(
+def rocblas_izamin_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -19128,7 +19128,7 @@ fn rocblas_izamin_strided_batched_64(
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
-fn rocblas_ctrsv_strided_batched(
+def rocblas_ctrsv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -19174,7 +19174,7 @@ fn rocblas_ctrsv_strided_batched(
     )
 
 
-fn rocblas_ssyr_batched_64(
+def rocblas_ssyr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -19201,7 +19201,7 @@ fn rocblas_ssyr_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
-fn rocblas_zsyr2(
+def rocblas_zsyr2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -19230,7 +19230,7 @@ fn rocblas_zsyr2(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_dtbmv_64(
+def rocblas_dtbmv_64(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -19259,7 +19259,7 @@ fn rocblas_dtbmv_64(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
-fn rocblas_sgbmv(
+def rocblas_sgbmv(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -19364,7 +19364,7 @@ fn rocblas_sgbmv(
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_ctrtri(
+def rocblas_ctrtri(
     handle: Handle,
     uplo: Fill,
     diag: Diagonal,
@@ -19389,7 +19389,7 @@ fn rocblas_ctrtri(
     ]()(handle, uplo, diag, n, _a, lda, inv_a, ldinv_a)
 
 
-fn rocblas_scnrm2_batched(
+def rocblas_scnrm2_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -19410,7 +19410,7 @@ fn rocblas_scnrm2_batched(
     ]()(handle, n, x, incx, batch_count, results)
 
 
-fn rocblas_sgbmv_batched_64(
+def rocblas_sgbmv_batched_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -19465,7 +19465,7 @@ fn rocblas_sgbmv_batched_64(
     )
 
 
-fn rocblas_stbmv_batched_64(
+def rocblas_stbmv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -19496,7 +19496,7 @@ fn rocblas_stbmv_batched_64(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_cscal_64(
+def rocblas_cscal_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[ComplexFloat32, _],
@@ -19515,7 +19515,7 @@ fn rocblas_cscal_64(
     ]()(handle, n, alpha, x, incx)
 
 
-fn rocblas_cswap_strided_batched(
+def rocblas_cswap_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -19542,7 +19542,7 @@ fn rocblas_cswap_strided_batched(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_cher2_strided_batched_64(
+def rocblas_cher2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -19594,7 +19594,7 @@ fn rocblas_cher2_strided_batched_64(
     )
 
 
-fn rocblas_axpy_batched_ex(
+def rocblas_axpy_batched_ex(
     handle: Handle,
     n: Int32,
     alpha: OpaquePointer[_],
@@ -19700,7 +19700,7 @@ fn rocblas_axpy_batched_ex(
     )
 
 
-fn rocblas_ztrmv_strided_batched_64(
+def rocblas_ztrmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -19746,7 +19746,7 @@ fn rocblas_ztrmv_strided_batched_64(
     )
 
 
-fn rocblas_ztpmv_batched(
+def rocblas_ztpmv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -19773,7 +19773,7 @@ fn rocblas_ztpmv_batched(
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx, batch_count)
 
 
-fn rocblas_dspmv_batched(
+def rocblas_dspmv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -19804,7 +19804,7 @@ fn rocblas_dspmv_batched(
     ]()(handle, uplo, n, alpha, _a, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_strmm(
+def rocblas_strmm(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -19980,7 +19980,7 @@ fn rocblas_strmm(
     )
 
 
-fn rocblas_isamin_batched_64(
+def rocblas_isamin_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -20001,7 +20001,7 @@ fn rocblas_isamin_batched_64(
     ]()(handle, n, x, incx, batch_count, result)
 
 
-fn rocblas_hshgemv_batched(
+def rocblas_hshgemv_batched(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -20038,7 +20038,7 @@ fn rocblas_hshgemv_batched(
     )
 
 
-fn rocblas_scasum_64(
+def rocblas_scasum_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -20057,7 +20057,7 @@ fn rocblas_scasum_64(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_dsyrk_batched(
+def rocblas_dsyrk_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -20090,7 +20090,7 @@ fn rocblas_dsyrk_batched(
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc, batch_count)
 
 
-fn rocblas_ssyrk_strided_batched(
+def rocblas_ssyrk_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -20225,7 +20225,7 @@ fn rocblas_ssyrk_strided_batched(
     )
 
 
-fn rocblas_dscal_strided_batched_64(
+def rocblas_dscal_strided_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float64, _],
@@ -20248,7 +20248,7 @@ fn rocblas_dscal_strided_batched_64(
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
-fn rocblas_dsymv_strided_batched_64(
+def rocblas_dsymv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -20303,7 +20303,7 @@ fn rocblas_dsymv_strided_batched_64(
     )
 
 
-fn rocblas_dgemv_batched(
+def rocblas_dgemv_batched(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -20340,7 +20340,7 @@ fn rocblas_dgemv_batched(
     )
 
 
-fn rocblas_crotg_strided_batched(
+def rocblas_crotg_strided_batched(
     handle: Handle,
     a: UnsafePointer[ComplexFloat32, _],
     stride_a: Int64,
@@ -20369,7 +20369,7 @@ fn rocblas_crotg_strided_batched(
     ]()(handle, a, stride_a, b, stride_b, c, stride_c, s, stride_s, batch_count)
 
 
-fn rocblas_trsm_batched_ex(
+def rocblas_trsm_batched_ex(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -20555,7 +20555,7 @@ fn rocblas_trsm_batched_ex(
     )
 
 
-fn rocblas_dswap_strided_batched_64(
+def rocblas_dswap_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -20582,7 +20582,7 @@ fn rocblas_dswap_strided_batched_64(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_zrot_64(
+def rocblas_zrot_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -20607,7 +20607,7 @@ fn rocblas_zrot_64(
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
-fn rocblas_scnrm2(
+def rocblas_scnrm2(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -20626,7 +20626,7 @@ fn rocblas_scnrm2(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_zdotc_batched(
+def rocblas_zdotc_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -20651,7 +20651,7 @@ fn rocblas_zdotc_batched(
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
-fn rocblas_csscal_64(
+def rocblas_csscal_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float32, _],
@@ -20670,7 +20670,7 @@ fn rocblas_csscal_64(
     ]()(handle, n, alpha, x, incx)
 
 
-fn rocblas_sswap(
+def rocblas_sswap(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float32, _],
@@ -20718,7 +20718,7 @@ fn rocblas_sswap(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn rocblas_dtpsv_64(
+def rocblas_dtpsv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -20743,7 +20743,7 @@ fn rocblas_dtpsv_64(
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx)
 
 
-fn rocblas_icamax_64(
+def rocblas_icamax_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -20762,7 +20762,7 @@ fn rocblas_icamax_64(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_sgemv_batched_64(
+def rocblas_sgemv_batched_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -20799,7 +20799,7 @@ fn rocblas_sgemv_batched_64(
     )
 
 
-fn rocblas_sdot_strided_batched(
+def rocblas_sdot_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float32, _],
@@ -20873,7 +20873,7 @@ fn rocblas_sdot_strided_batched(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
-fn rocblas_dgbmv(
+def rocblas_dgbmv(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -20910,7 +20910,7 @@ fn rocblas_dgbmv(
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_stpmv_strided_batched(
+def rocblas_stpmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -21014,7 +21014,7 @@ fn rocblas_stpmv_strided_batched(
     )
 
 
-fn rocblas_dsymv_strided_batched(
+def rocblas_dsymv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -21069,7 +21069,7 @@ fn rocblas_dsymv_strided_batched(
     )
 
 
-fn rocblas_dotc_batched_ex_64(
+def rocblas_dotc_batched_ex_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -21115,7 +21115,7 @@ fn rocblas_dotc_batched_ex_64(
     )
 
 
-fn rocblas_cdgmm(
+def rocblas_cdgmm(
     handle: Handle,
     side: Side,
     m: Int32,
@@ -21144,7 +21144,7 @@ fn rocblas_cdgmm(
     ]()(handle, side, m, n, _a, lda, x, incx, _c, ldc)
 
 
-fn rocblas_haxpy_batched_64(
+def rocblas_haxpy_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float16, _],
@@ -21169,7 +21169,7 @@ fn rocblas_haxpy_batched_64(
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
-fn rocblas_dgbmv_strided_batched_64(
+def rocblas_dgbmv_strided_batched_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -21233,7 +21233,7 @@ fn rocblas_dgbmv_strided_batched_64(
     )
 
 
-fn rocblas_zsyr_batched_64(
+def rocblas_zsyr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -21260,7 +21260,7 @@ fn rocblas_zsyr_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
-fn rocblas_sdot_64(
+def rocblas_sdot_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -21283,7 +21283,7 @@ fn rocblas_sdot_64(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn rocblas_rot_batched_ex(
+def rocblas_rot_batched_ex(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -21401,7 +21401,7 @@ fn rocblas_rot_batched_ex(
     )
 
 
-fn rocblas_tstgemv_strided_batched_64(
+def rocblas_tstgemv_strided_batched_64(
     handle: Handle,
     trans_a: Operation,
     m: Int64,
@@ -21459,7 +21459,7 @@ fn rocblas_tstgemv_strided_batched_64(
     )
 
 
-fn rocblas_srotm_strided_batched_64(
+def rocblas_srotm_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -21502,7 +21502,7 @@ fn rocblas_srotm_strided_batched_64(
     )
 
 
-fn rocblas_zswap_batched(
+def rocblas_zswap_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -21525,7 +21525,7 @@ fn rocblas_zswap_batched(
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
-fn rocblas_dsyrkx(
+def rocblas_dsyrkx(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -21560,7 +21560,7 @@ fn rocblas_dsyrkx(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn rocblas_zswap_strided_batched_64(
+def rocblas_zswap_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -21587,7 +21587,7 @@ fn rocblas_zswap_strided_batched_64(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_axpy_strided_batched_ex_64(
+def rocblas_axpy_strided_batched_ex_64(
     handle: Handle,
     n: Int64,
     alpha: OpaquePointer[_],
@@ -21639,7 +21639,7 @@ fn rocblas_axpy_strided_batched_ex_64(
     )
 
 
-fn rocblas_cgeru_strided_batched_64(
+def rocblas_cgeru_strided_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
@@ -21691,7 +21691,7 @@ fn rocblas_cgeru_strided_batched_64(
     )
 
 
-fn rocblas_zdgmm(
+def rocblas_zdgmm(
     handle: Handle,
     side: Side,
     m: Int32,
@@ -21720,7 +21720,7 @@ fn rocblas_zdgmm(
     ]()(handle, side, m, n, _a, lda, x, incx, _c, ldc)
 
 
-fn rocblas_ssyrkx_batched(
+def rocblas_ssyrkx_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -21860,7 +21860,7 @@ fn rocblas_ssyrkx_batched(
     )
 
 
-fn rocblas_chemv(
+def rocblas_chemv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -21944,7 +21944,7 @@ fn rocblas_chemv(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_ztrsv_strided_batched_64(
+def rocblas_ztrsv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -21990,7 +21990,7 @@ fn rocblas_ztrsv_strided_batched_64(
     )
 
 
-fn rocblas_ssyr2k_batched(
+def rocblas_ssyr2k_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -22122,7 +22122,7 @@ fn rocblas_ssyr2k_batched(
     )
 
 
-fn rocblas_srotg_64(
+def rocblas_srotg_64(
     handle: Handle,
     a: UnsafePointer[Float32, _],
     b: UnsafePointer[Float32, _],
@@ -22141,7 +22141,7 @@ fn rocblas_srotg_64(
     ]()(handle, a, b, c, s)
 
 
-fn rocblas_snrm2_strided_batched_64(
+def rocblas_snrm2_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -22164,7 +22164,7 @@ fn rocblas_snrm2_strided_batched_64(
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
-fn rocblas_snrm2_batched(
+def rocblas_snrm2_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -22214,7 +22214,7 @@ fn rocblas_snrm2_batched(
     ]()(handle, n, x, incx, batch_count, results)
 
 
-fn rocblas_zhpr_strided_batched(
+def rocblas_zhpr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -22243,7 +22243,7 @@ fn rocblas_zhpr_strided_batched(
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
-fn rocblas_caxpy_strided_batched_64(
+def rocblas_caxpy_strided_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[ComplexFloat32, _],
@@ -22272,7 +22272,7 @@ fn rocblas_caxpy_strided_batched_64(
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_srotm(
+def rocblas_srotm(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float32, _],
@@ -22337,7 +22337,7 @@ fn rocblas_srotm(
     ]()(handle, n, x, incx, y, incy, param)
 
 
-fn rocblas_dgbmv_batched_64(
+def rocblas_dgbmv_batched_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -22392,7 +22392,7 @@ fn rocblas_dgbmv_batched_64(
     )
 
 
-fn rocblas_ddot_strided_batched_64(
+def rocblas_ddot_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -22421,7 +22421,7 @@ fn rocblas_ddot_strided_batched_64(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
-fn rocblas_zhemv_batched(
+def rocblas_zhemv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -22454,7 +22454,7 @@ fn rocblas_zhemv_batched(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_dger(
+def rocblas_dger(
     handle: Handle,
     m: Int32,
     n: Int32,
@@ -22483,7 +22483,7 @@ fn rocblas_dger(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_chpr2_batched_64(
+def rocblas_chpr2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -22512,7 +22512,7 @@ fn rocblas_chpr2_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap, batch_count)
 
 
-fn rocblas_zaxpy_batched_64(
+def rocblas_zaxpy_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[ComplexFloat64, _],
@@ -22537,7 +22537,7 @@ fn rocblas_zaxpy_batched_64(
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
-fn rocblas_ztrmv_batched_64(
+def rocblas_ztrmv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -22566,7 +22566,7 @@ fn rocblas_ztrmv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_sscal_64(
+def rocblas_sscal_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float32, _],
@@ -22579,7 +22579,7 @@ fn rocblas_sscal_64(
     ]()(handle, n, alpha, x, incx)
 
 
-fn rocblas_zgeam_batched(
+def rocblas_zgeam_batched(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -22631,7 +22631,7 @@ fn rocblas_zgeam_batched(
     )
 
 
-fn rocblas_ctrsv_batched_64(
+def rocblas_ctrsv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -22660,7 +22660,7 @@ fn rocblas_ctrsv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_csyrk_batched(
+def rocblas_csyrk_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -22693,7 +22693,7 @@ fn rocblas_csyrk_batched(
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc, batch_count)
 
 
-fn rocblas_zhpr2_batched(
+def rocblas_zhpr2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -22722,7 +22722,7 @@ fn rocblas_zhpr2_batched(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap, batch_count)
 
 
-fn rocblas_saxpy_batched_64(
+def rocblas_saxpy_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float32, _],
@@ -22747,7 +22747,7 @@ fn rocblas_saxpy_batched_64(
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
-fn rocblas_ssymv_batched(
+def rocblas_ssymv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -22829,7 +22829,7 @@ fn rocblas_ssymv_batched(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_dtbmv_strided_batched_64(
+def rocblas_dtbmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -22878,7 +22878,7 @@ fn rocblas_dtbmv_strided_batched_64(
     )
 
 
-fn rocblas_dgemv(
+def rocblas_dgemv(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -22911,7 +22911,7 @@ fn rocblas_dgemv(
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_chpmv(
+def rocblas_chpmv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -23007,7 +23007,7 @@ fn rocblas_chpmv(
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
-fn rocblas_dgeam(
+def rocblas_dgeam(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -23042,7 +23042,7 @@ fn rocblas_dgeam(
     ]()(handle, trans_a, trans_b, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
-fn rocblas_zhemv_64(
+def rocblas_zhemv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -23073,7 +23073,7 @@ fn rocblas_zhemv_64(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_sspr2_strided_batched_64(
+def rocblas_sspr2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -23122,7 +23122,7 @@ fn rocblas_sspr2_strided_batched_64(
     )
 
 
-fn rocblas_srotmg_64(
+def rocblas_srotmg_64(
     handle: Handle,
     d1: UnsafePointer[Float32, _],
     d2: UnsafePointer[Float32, _],
@@ -23143,7 +23143,7 @@ fn rocblas_srotmg_64(
     ]()(handle, d1, d2, x1, y1, param)
 
 
-fn rocblas_zsyr2_strided_batched_64(
+def rocblas_zsyr2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -23195,7 +23195,7 @@ fn rocblas_zsyr2_strided_batched_64(
     )
 
 
-fn rocblas_zgerc_strided_batched(
+def rocblas_zgerc_strided_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
@@ -23247,7 +23247,7 @@ fn rocblas_zgerc_strided_batched(
     )
 
 
-fn rocblas_izamin_strided_batched(
+def rocblas_izamin_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -23270,7 +23270,7 @@ fn rocblas_izamin_strided_batched(
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
-fn rocblas_bfdot(
+def rocblas_bfdot(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[BFloat16, _],
@@ -23293,7 +23293,7 @@ fn rocblas_bfdot(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn rocblas_drotg_batched_64(
+def rocblas_drotg_batched_64(
     handle: Handle,
     a: OpaquePointer[_],
     b: OpaquePointer[_],
@@ -23314,7 +23314,7 @@ fn rocblas_drotg_batched_64(
     ]()(handle, a, b, c, s, batch_count)
 
 
-fn rocblas_ssyrkx_strided_batched(
+def rocblas_ssyrkx_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -23475,7 +23475,7 @@ fn rocblas_ssyrkx_strided_batched(
     )
 
 
-fn rocblas_stpmv(
+def rocblas_stpmv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -23563,7 +23563,7 @@ fn rocblas_stpmv(
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx)
 
 
-fn rocblas_cgeru(
+def rocblas_cgeru(
     handle: Handle,
     m: Int32,
     n: Int32,
@@ -23592,7 +23592,7 @@ fn rocblas_cgeru(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_dtrsm_strided_batched(
+def rocblas_dtrsm_strided_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -23647,7 +23647,7 @@ fn rocblas_dtrsm_strided_batched(
     )
 
 
-fn rocblas_ddot_batched_64(
+def rocblas_ddot_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -23672,7 +23672,7 @@ fn rocblas_ddot_batched_64(
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
-fn rocblas_zdrot_64(
+def rocblas_zdrot_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -23697,7 +23697,7 @@ fn rocblas_zdrot_64(
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
-fn rocblas_ztpsv_strided_batched(
+def rocblas_ztpsv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -23740,7 +23740,7 @@ fn rocblas_ztpsv_strided_batched(
     )
 
 
-fn rocblas_cspr_64(
+def rocblas_cspr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -23763,7 +23763,7 @@ fn rocblas_cspr_64(
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
-fn rocblas_dtrsm_64(
+def rocblas_dtrsm_64(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -23796,7 +23796,7 @@ fn rocblas_dtrsm_64(
     ]()(handle, side, uplo, trans_a, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
-fn rocblas_dgemv_strided_batched(
+def rocblas_dgemv_strided_batched(
     handle: Handle,
     trans_a: Operation,
     m: Int32,
@@ -23854,7 +23854,7 @@ fn rocblas_dgemv_strided_batched(
     )
 
 
-fn rocblas_izamax_64(
+def rocblas_izamax_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -23873,7 +23873,7 @@ fn rocblas_izamax_64(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_sspr2_strided_batched(
+def rocblas_sspr2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -24000,7 +24000,7 @@ fn rocblas_sspr2_strided_batched(
     )
 
 
-fn rocblas_zdrot(
+def rocblas_zdrot(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -24025,7 +24025,7 @@ fn rocblas_zdrot(
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
-fn rocblas_zdscal(
+def rocblas_zdscal(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float64, _],
@@ -24044,7 +24044,7 @@ fn rocblas_zdscal(
     ]()(handle, n, alpha, x, incx)
 
 
-fn rocblas_sgemm_batched(
+def rocblas_sgemm_batched(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -24161,7 +24161,7 @@ fn rocblas_sgemm_batched(
     )
 
 
-fn rocblas_stbmv_batched(
+def rocblas_stbmv_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -24273,7 +24273,7 @@ fn rocblas_stbmv_batched(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_csyr_strided_batched(
+def rocblas_csyr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -24306,7 +24306,7 @@ fn rocblas_csyr_strided_batched(
     )
 
 
-fn rocblas_dsyr2k_strided_batched(
+def rocblas_dsyr2k_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -24367,7 +24367,7 @@ fn rocblas_dsyr2k_strided_batched(
     )
 
 
-fn rocblas_dtpmv_64(
+def rocblas_dtpmv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -24392,7 +24392,7 @@ fn rocblas_dtpmv_64(
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx)
 
 
-fn rocblas_dgemmt_strided_batched(
+def rocblas_dgemmt_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -24456,7 +24456,7 @@ fn rocblas_dgemmt_strided_batched(
     )
 
 
-fn rocblas_dtpmv_strided_batched_64(
+def rocblas_dtpmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -24499,7 +24499,7 @@ fn rocblas_dtpmv_strided_batched_64(
     )
 
 
-fn rocblas_sspmv_strided_batched_64(
+def rocblas_sspmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -24551,7 +24551,7 @@ fn rocblas_sspmv_strided_batched_64(
     )
 
 
-fn rocblas_dgemv_64(
+def rocblas_dgemv_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -24584,7 +24584,7 @@ fn rocblas_dgemv_64(
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_zher2_strided_batched_64(
+def rocblas_zher2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -24636,7 +24636,7 @@ fn rocblas_zher2_strided_batched_64(
     )
 
 
-fn rocblas_strsv(
+def rocblas_strsv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -24717,7 +24717,7 @@ fn rocblas_strsv(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
-fn rocblas_hdot_strided_batched(
+def rocblas_hdot_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float16, _],
@@ -24746,7 +24746,7 @@ fn rocblas_hdot_strided_batched(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
-fn rocblas_ctpsv_strided_batched_64(
+def rocblas_ctpsv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -24789,7 +24789,7 @@ fn rocblas_ctpsv_strided_batched_64(
     )
 
 
-fn rocblas_daxpy_64(
+def rocblas_daxpy_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float64, _],
@@ -24812,7 +24812,7 @@ fn rocblas_daxpy_64(
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
-fn rocblas_dcopy_64(
+def rocblas_dcopy_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -24833,7 +24833,7 @@ fn rocblas_dcopy_64(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn rocblas_ccopy_batched_64(
+def rocblas_ccopy_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -24856,7 +24856,7 @@ fn rocblas_ccopy_batched_64(
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
-fn rocblas_zrotg_strided_batched_64(
+def rocblas_zrotg_strided_batched_64(
     handle: Handle,
     a: UnsafePointer[ComplexFloat64, _],
     stride_a: Int64,
@@ -24885,7 +24885,7 @@ fn rocblas_zrotg_strided_batched_64(
     ]()(handle, a, stride_a, b, stride_b, c, stride_c, s, stride_s, batch_count)
 
 
-fn rocblas_dznrm2_batched_64(
+def rocblas_dznrm2_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -24906,7 +24906,7 @@ fn rocblas_dznrm2_batched_64(
     ]()(handle, n, x, incx, batch_count, results)
 
 
-fn rocblas_dzasum_batched(
+def rocblas_dzasum_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -24927,7 +24927,7 @@ fn rocblas_dzasum_batched(
     ]()(handle, n, x, incx, batch_count, results)
 
 
-fn rocblas_ztpsv_batched(
+def rocblas_ztpsv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -24954,7 +24954,7 @@ fn rocblas_ztpsv_batched(
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx, batch_count)
 
 
-fn rocblas_sspmv_64(
+def rocblas_sspmv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -24983,7 +24983,7 @@ fn rocblas_sspmv_64(
     ]()(handle, uplo, n, alpha, _a, x, incx, beta, y, incy)
 
 
-fn rocblas_dgemm_kernel_name(
+def rocblas_dgemm_kernel_name(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -25047,7 +25047,7 @@ fn rocblas_dgemm_kernel_name(
     )
 
 
-fn rocblas_tssgemv_batched(
+def rocblas_tssgemv_batched(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -25084,7 +25084,7 @@ fn rocblas_tssgemv_batched(
     )
 
 
-fn rocblas_rot_strided_batched_ex(
+def rocblas_rot_strided_batched_ex(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -25214,7 +25214,7 @@ fn rocblas_rot_strided_batched_ex(
     )
 
 
-fn rocblas_csyrkx_batched(
+def rocblas_csyrkx_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -25266,7 +25266,7 @@ fn rocblas_csyrkx_batched(
     )
 
 
-fn rocblas_zhemm(
+def rocblas_zhemm(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -25301,7 +25301,7 @@ fn rocblas_zhemm(
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn rocblas_csyr2_batched(
+def rocblas_csyr2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -25332,7 +25332,7 @@ fn rocblas_csyr2_batched(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_zsymm_strided_batched(
+def rocblas_zsymm_strided_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -25393,7 +25393,7 @@ fn rocblas_zsymm_strided_batched(
     )
 
 
-fn rocblas_stbsv_strided_batched(
+def rocblas_stbsv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -25513,7 +25513,7 @@ fn rocblas_stbsv_strided_batched(
     )
 
 
-fn rocblas_stpsv_batched(
+def rocblas_stpsv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -25594,7 +25594,7 @@ fn rocblas_stpsv_batched(
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx, batch_count)
 
 
-fn rocblas_dasum_strided_batched_64(
+def rocblas_dasum_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -25617,7 +25617,7 @@ fn rocblas_dasum_strided_batched_64(
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
-fn rocblas_sgbmv_strided_batched(
+def rocblas_sgbmv_strided_batched(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -25763,7 +25763,7 @@ fn rocblas_sgbmv_strided_batched(
     )
 
 
-fn rocblas_cdotc_batched(
+def rocblas_cdotc_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -25788,7 +25788,7 @@ fn rocblas_cdotc_batched(
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
-fn rocblas_chpr2_64(
+def rocblas_chpr2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -25815,7 +25815,7 @@ fn rocblas_chpr2_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
-fn rocblas_drot_batched_64(
+def rocblas_drot_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -25842,7 +25842,7 @@ fn rocblas_drot_batched_64(
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
-fn rocblas_dtpsv_strided_batched_64(
+def rocblas_dtpsv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -25885,7 +25885,7 @@ fn rocblas_dtpsv_strided_batched_64(
     )
 
 
-fn rocblas_strtri(
+def rocblas_strtri(
     handle: Handle,
     uplo: Fill,
     diag: Diagonal,
@@ -25952,7 +25952,7 @@ fn rocblas_strtri(
     ]()(handle, uplo, diag, n, _a, lda, inv_a, ldinv_a)
 
 
-fn rocblas_dot_batched_ex(
+def rocblas_dot_batched_ex(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -26065,7 +26065,9 @@ fn rocblas_dot_batched_ex(
     )
 
 
-fn rocblas_get_version_string_size(len: UnsafePointer[Int, _]) raises -> Status:
+def rocblas_get_version_string_size(
+    len: UnsafePointer[Int, _]
+) raises -> Status:
     """\\brief   Queries the minimum buffer size for a successful call to
     \\ref rocblas_get_version_string.
 
@@ -26081,7 +26083,7 @@ fn rocblas_get_version_string_size(len: UnsafePointer[Int, _]) raises -> Status:
     ]()(len)
 
 
-fn rocblas_dnrm2(
+def rocblas_dnrm2(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float64, _],
@@ -26094,7 +26096,7 @@ fn rocblas_dnrm2(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_dscal_64(
+def rocblas_dscal_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float64, _],
@@ -26107,7 +26109,7 @@ fn rocblas_dscal_64(
     ]()(handle, n, alpha, x, incx)
 
 
-fn rocblas_ctpsv_batched_64(
+def rocblas_ctpsv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -26134,7 +26136,7 @@ fn rocblas_ctpsv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx, batch_count)
 
 
-fn rocblas_isamax_batched_64(
+def rocblas_isamax_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -26155,7 +26157,7 @@ fn rocblas_isamax_batched_64(
     ]()(handle, n, x, incx, batch_count, result)
 
 
-fn rocblas_csyr2_64(
+def rocblas_csyr2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -26184,7 +26186,7 @@ fn rocblas_csyr2_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_zdrot_batched_64(
+def rocblas_zdrot_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -26211,7 +26213,7 @@ fn rocblas_zdrot_batched_64(
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
-fn rocblas_dot_ex_64(
+def rocblas_dot_ex_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -26254,7 +26256,7 @@ fn rocblas_dot_ex_64(
     )
 
 
-fn rocblas_cgerc_64(
+def rocblas_cgerc_64(
     handle: Handle,
     m: Int64,
     n: Int64,
@@ -26283,7 +26285,7 @@ fn rocblas_cgerc_64(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_tstgemv_strided_batched(
+def rocblas_tstgemv_strided_batched(
     handle: Handle,
     trans_a: Operation,
     m: Int32,
@@ -26341,7 +26343,7 @@ fn rocblas_tstgemv_strided_batched(
     )
 
 
-fn rocblas_dspmv_strided_batched_64(
+def rocblas_dspmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -26393,7 +26395,7 @@ fn rocblas_dspmv_strided_batched_64(
     )
 
 
-fn rocblas_drotm_strided_batched_64(
+def rocblas_drotm_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -26436,7 +26438,7 @@ fn rocblas_drotm_strided_batched_64(
     )
 
 
-fn rocblas_ztrsv_strided_batched(
+def rocblas_ztrsv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -26482,7 +26484,7 @@ fn rocblas_ztrsv_strided_batched(
     )
 
 
-fn rocblas_ssymv_strided_batched(
+def rocblas_ssymv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -26599,7 +26601,7 @@ fn rocblas_ssymv_strided_batched(
     )
 
 
-fn rocblas_axpy_ex_64(
+def rocblas_axpy_ex_64(
     handle: Handle,
     n: Int64,
     alpha: OpaquePointer[_],
@@ -26642,7 +26644,7 @@ fn rocblas_axpy_ex_64(
     )
 
 
-fn rocblas_drotmg_64(
+def rocblas_drotmg_64(
     handle: Handle,
     d1: UnsafePointer[Float64, _],
     d2: UnsafePointer[Float64, _],
@@ -26663,7 +26665,7 @@ fn rocblas_drotmg_64(
     ]()(handle, d1, d2, x1, y1, param)
 
 
-fn rocblas_csyr_strided_batched_64(
+def rocblas_csyr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -26696,7 +26698,7 @@ fn rocblas_csyr_strided_batched_64(
     )
 
 
-fn rocblas_dsyrkx_batched(
+def rocblas_dsyrkx_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -26748,7 +26750,7 @@ fn rocblas_dsyrkx_batched(
     )
 
 
-fn rocblas_zhemv_strided_batched_64(
+def rocblas_zhemv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -26803,7 +26805,7 @@ fn rocblas_zhemv_strided_batched_64(
     )
 
 
-fn rocblas_ctrsm_batched_64(
+def rocblas_ctrsm_batched_64(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -26852,7 +26854,7 @@ fn rocblas_ctrsm_batched_64(
     )
 
 
-fn rocblas_dtrsv_batched_64(
+def rocblas_dtrsv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -26881,7 +26883,7 @@ fn rocblas_dtrsv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_hdot(
+def rocblas_hdot(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float16, _],
@@ -26904,7 +26906,7 @@ fn rocblas_hdot(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn rocblas_srot_batched(
+def rocblas_srot_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -26963,7 +26965,7 @@ fn rocblas_srot_batched(
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
-fn rocblas_zher2_strided_batched(
+def rocblas_zher2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -27015,7 +27017,7 @@ fn rocblas_zher2_strided_batched(
     )
 
 
-fn rocblas_zsymv_batched_64(
+def rocblas_zsymv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -27048,7 +27050,7 @@ fn rocblas_zsymv_batched_64(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_dsbmv_batched(
+def rocblas_dsbmv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -27083,7 +27085,7 @@ fn rocblas_dsbmv_batched(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_sgemv_strided_batched_64(
+def rocblas_sgemv_strided_batched_64(
     handle: Handle,
     trans_a: Operation,
     m: Int64,
@@ -27141,7 +27143,7 @@ fn rocblas_sgemv_strided_batched_64(
     )
 
 
-fn rocblas_scopy(
+def rocblas_scopy(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float32, _],
@@ -27188,7 +27190,7 @@ fn rocblas_scopy(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn rocblas_ctrsv_64(
+def rocblas_ctrsv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -27215,7 +27217,7 @@ fn rocblas_ctrsv_64(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
-fn rocblas_zdotc_64(
+def rocblas_zdotc_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -27238,7 +27240,7 @@ fn rocblas_zdotc_64(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn rocblas_drot_64(
+def rocblas_drot_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -27263,7 +27265,7 @@ fn rocblas_drot_64(
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
-fn rocblas_zgemmt_strided_batched(
+def rocblas_zgemmt_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -27327,7 +27329,7 @@ fn rocblas_zgemmt_strided_batched(
     )
 
 
-fn rocblas_drot_strided_batched_64(
+def rocblas_drot_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -27358,7 +27360,7 @@ fn rocblas_drot_strided_batched_64(
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
-fn rocblas_cher2(
+def rocblas_cher2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -27438,7 +27440,7 @@ fn rocblas_cher2(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_ctbsv_64(
+def rocblas_ctbsv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -27467,7 +27469,7 @@ fn rocblas_ctbsv_64(
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx)
 
 
-fn rocblas_dspr2_strided_batched_64(
+def rocblas_dspr2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -27516,7 +27518,7 @@ fn rocblas_dspr2_strided_batched_64(
     )
 
 
-fn rocblas_cswap_strided_batched_64(
+def rocblas_cswap_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -27543,7 +27545,7 @@ fn rocblas_cswap_strided_batched_64(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_chemv_strided_batched_64(
+def rocblas_chemv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -27598,7 +27600,7 @@ fn rocblas_chemv_strided_batched_64(
     )
 
 
-fn rocblas_zgerc_batched_64(
+def rocblas_zgerc_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
@@ -27629,7 +27631,7 @@ fn rocblas_zgerc_batched_64(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_zsyr2k_strided_batched(
+def rocblas_zsyr2k_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -27690,7 +27692,7 @@ fn rocblas_zsyr2k_strided_batched(
     )
 
 
-fn rocblas_zher_64(
+def rocblas_zher_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -27715,7 +27717,7 @@ fn rocblas_zher_64(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
-fn rocblas_icamin(
+def rocblas_icamin(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -27734,7 +27736,7 @@ fn rocblas_icamin(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_sasum(
+def rocblas_sasum(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float32, _],
@@ -27771,7 +27773,7 @@ fn rocblas_sasum(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_dgemmt(
+def rocblas_dgemmt(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -27823,7 +27825,7 @@ fn rocblas_dgemmt(
     )
 
 
-fn rocblas_isamin_batched(
+def rocblas_isamin_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -27870,7 +27872,7 @@ fn rocblas_isamin_batched(
     ]()(handle, n, x, incx, batch_count, result)
 
 
-fn rocblas_drotmg_strided_batched_64(
+def rocblas_drotmg_strided_batched_64(
     handle: Handle,
     d1: UnsafePointer[Float64, _],
     stride_d1: Int64,
@@ -27916,7 +27918,7 @@ fn rocblas_drotmg_strided_batched_64(
     )
 
 
-fn rocblas_ztrsm_strided_batched(
+def rocblas_ztrsm_strided_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -27971,7 +27973,7 @@ fn rocblas_ztrsm_strided_batched(
     )
 
 
-fn rocblas_dasum_strided_batched(
+def rocblas_dasum_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float64, _],
@@ -27994,7 +27996,7 @@ fn rocblas_dasum_strided_batched(
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
-fn rocblas_hshgemv_strided_batched_64(
+def rocblas_hshgemv_strided_batched_64(
     handle: Handle,
     trans_a: Operation,
     m: Int64,
@@ -28052,7 +28054,7 @@ fn rocblas_hshgemv_strided_batched_64(
     )
 
 
-fn rocblas_zher2_batched_64(
+def rocblas_zher2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -28083,7 +28085,7 @@ fn rocblas_zher2_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_srot_64(
+def rocblas_srot_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -28108,7 +28110,7 @@ fn rocblas_srot_64(
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
-fn rocblas_hshgemv_strided_batched(
+def rocblas_hshgemv_strided_batched(
     handle: Handle,
     trans_a: Operation,
     m: Int32,
@@ -28166,7 +28168,7 @@ fn rocblas_hshgemv_strided_batched(
     )
 
 
-fn rocblas_ddot_strided_batched(
+def rocblas_ddot_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float64, _],
@@ -28195,7 +28197,7 @@ fn rocblas_ddot_strided_batched(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
-fn rocblas_izamax_strided_batched_64(
+def rocblas_izamax_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -28218,7 +28220,7 @@ fn rocblas_izamax_strided_batched_64(
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
-fn rocblas_crot_strided_batched_64(
+def rocblas_crot_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -28249,7 +28251,7 @@ fn rocblas_crot_strided_batched_64(
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
-fn rocblas_ztpmv_batched_64(
+def rocblas_ztpmv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -28276,7 +28278,7 @@ fn rocblas_ztpmv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx, batch_count)
 
 
-fn rocblas_dsyr_64(
+def rocblas_dsyr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -28301,7 +28303,7 @@ fn rocblas_dsyr_64(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
-fn rocblas_sspmv_batched(
+def rocblas_sspmv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -28377,7 +28379,7 @@ fn rocblas_sspmv_batched(
     ]()(handle, uplo, n, alpha, _a, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_ssyr(
+def rocblas_ssyr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -28439,7 +28441,7 @@ fn rocblas_ssyr(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
-fn rocblas_drotg(
+def rocblas_drotg(
     handle: Handle,
     a: UnsafePointer[Float64, _],
     b: UnsafePointer[Float64, _],
@@ -28458,7 +28460,7 @@ fn rocblas_drotg(
     ]()(handle, a, b, c, s)
 
 
-fn rocblas_device_malloc_alloc(
+def rocblas_device_malloc_alloc(
     handle: Handle,
     res: UnsafePointer[UnsafePointer[MallocBase, MutAnyOrigin], _],
     count: Int,
@@ -28473,7 +28475,7 @@ fn rocblas_device_malloc_alloc(
     ]()(handle, res, count)
 
 
-fn rocblas_ztrmv_batched(
+def rocblas_ztrmv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -28502,7 +28504,7 @@ fn rocblas_ztrmv_batched(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_zgerc_64(
+def rocblas_zgerc_64(
     handle: Handle,
     m: Int64,
     n: Int64,
@@ -28531,7 +28533,7 @@ fn rocblas_zgerc_64(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_csymm(
+def rocblas_csymm(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -28566,7 +28568,7 @@ fn rocblas_csymm(
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn rocblas_rot_ex_64(
+def rocblas_rot_ex_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -28612,11 +28614,11 @@ fn rocblas_rot_ex_64(
     )
 
 
-fn rocblas_abort() raises:
+def rocblas_abort() raises:
     _get_dylib_function["rocblas_abort", fn() -> NoneType]()()
 
 
-fn rocblas_dtrmv(
+def rocblas_dtrmv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -28643,7 +28645,7 @@ fn rocblas_dtrmv(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
-fn rocblas_hssgemv_strided_batched_64(
+def rocblas_hssgemv_strided_batched_64(
     handle: Handle,
     trans_a: Operation,
     m: Int64,
@@ -28701,7 +28703,7 @@ fn rocblas_hssgemv_strided_batched_64(
     )
 
 
-fn rocblas_cherkx_batched(
+def rocblas_cherkx_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -28838,7 +28840,7 @@ fn rocblas_cherkx_batched(
     )
 
 
-fn rocblas_cdotc_strided_batched_64(
+def rocblas_cdotc_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -28867,7 +28869,7 @@ fn rocblas_cdotc_strided_batched_64(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
-fn rocblas_sswap_strided_batched(
+def rocblas_sswap_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float32, _],
@@ -28934,7 +28936,7 @@ fn rocblas_sswap_strided_batched(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_dsymm_strided_batched(
+def rocblas_dsymm_strided_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -28995,7 +28997,7 @@ fn rocblas_dsymm_strided_batched(
     )
 
 
-fn rocblas_scasum_strided_batched(
+def rocblas_scasum_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -29018,7 +29020,7 @@ fn rocblas_scasum_strided_batched(
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
-fn rocblas_ssyr_batched(
+def rocblas_ssyr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -29084,7 +29086,7 @@ fn rocblas_ssyr_batched(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
-fn rocblas_dtbmv_batched(
+def rocblas_dtbmv_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -29115,7 +29117,7 @@ fn rocblas_dtbmv_batched(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_ctrmm_strided_batched(
+def rocblas_ctrmm_strided_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -29179,7 +29181,7 @@ fn rocblas_ctrmm_strided_batched(
     )
 
 
-fn rocblas_cdotc_batched_64(
+def rocblas_cdotc_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -29204,7 +29206,7 @@ fn rocblas_cdotc_batched_64(
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
-fn rocblas_zgeam_strided_batched(
+def rocblas_zgeam_strided_batched(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -29265,7 +29267,7 @@ fn rocblas_zgeam_strided_batched(
     )
 
 
-fn rocblas_ccopy_strided_batched(
+def rocblas_ccopy_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -29292,7 +29294,7 @@ fn rocblas_ccopy_strided_batched(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_ztrmv_strided_batched(
+def rocblas_ztrmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -29338,7 +29340,7 @@ fn rocblas_ztrmv_strided_batched(
     )
 
 
-fn rocblas_dtrtri_strided_batched(
+def rocblas_dtrtri_strided_batched(
     handle: Handle,
     uplo: Fill,
     diag: Diagonal,
@@ -29381,7 +29383,7 @@ fn rocblas_dtrtri_strided_batched(
     )
 
 
-fn rocblas_geam_ex(
+def rocblas_geam_ex(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -29556,7 +29558,7 @@ fn rocblas_geam_ex(
     )
 
 
-fn rocblas_ctbmv(
+def rocblas_ctbmv(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -29585,7 +29587,7 @@ fn rocblas_ctbmv(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
-fn rocblas_is_user_managing_device_memory(handle: Handle) raises -> Bool:
+def rocblas_is_user_managing_device_memory(handle: Handle) raises -> Bool:
     """\\brief
     \\details
     Returns true when device memory in handle is managed by the user
@@ -29598,7 +29600,7 @@ fn rocblas_is_user_managing_device_memory(handle: Handle) raises -> Bool:
     ]()(handle)
 
 
-fn rocblas_dtrsv_batched(
+def rocblas_dtrsv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -29627,7 +29629,7 @@ fn rocblas_dtrsv_batched(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_cswap_batched_64(
+def rocblas_cswap_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -29650,7 +29652,7 @@ fn rocblas_cswap_batched_64(
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
-fn rocblas_dnrm2_strided_batched(
+def rocblas_dnrm2_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float64, _],
@@ -29673,7 +29675,7 @@ fn rocblas_dnrm2_strided_batched(
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
-fn rocblas_axpy_batched_ex_64(
+def rocblas_axpy_batched_ex_64(
     handle: Handle,
     n: Int64,
     alpha: OpaquePointer[_],
@@ -29719,7 +29721,7 @@ fn rocblas_axpy_batched_ex_64(
     )
 
 
-fn rocblas_csymv_strided_batched_64(
+def rocblas_csymv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -29774,7 +29776,7 @@ fn rocblas_csymv_strided_batched_64(
     )
 
 
-fn rocblas_dtrmm(
+def rocblas_dtrmm(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -29826,7 +29828,7 @@ fn rocblas_dtrmm(
     )
 
 
-fn rocblas_chpr_strided_batched(
+def rocblas_chpr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -29925,7 +29927,7 @@ fn rocblas_chpr_strided_batched(
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
-fn rocblas_strmv_batched_64(
+def rocblas_strmv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -29954,7 +29956,7 @@ fn rocblas_strmv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_csymv_batched_64(
+def rocblas_csymv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -29987,7 +29989,7 @@ fn rocblas_csymv_batched_64(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_chemm(
+def rocblas_chemm(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -30097,7 +30099,7 @@ fn rocblas_chemm(
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn rocblas_izamin_64(
+def rocblas_izamin_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -30116,7 +30118,7 @@ fn rocblas_izamin_64(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_chpr2_strided_batched_64(
+def rocblas_chpr2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -30165,7 +30167,7 @@ fn rocblas_chpr2_strided_batched_64(
     )
 
 
-fn rocblas_ctpmv_strided_batched(
+def rocblas_ctpmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -30208,7 +30210,7 @@ fn rocblas_ctpmv_strided_batched(
     )
 
 
-fn rocblas_srotg(
+def rocblas_srotg(
     handle: Handle,
     a: UnsafePointer[Float32, _],
     b: UnsafePointer[Float32, _],
@@ -30266,7 +30268,7 @@ fn rocblas_srotg(
     ]()(handle, a, b, c, s)
 
 
-fn rocblas_strsm_strided_batched(
+def rocblas_strsm_strided_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -30407,7 +30409,7 @@ fn rocblas_strsm_strided_batched(
     )
 
 
-fn rocblas_sgemm_kernel_name(
+def rocblas_sgemm_kernel_name(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -30471,7 +30473,7 @@ fn rocblas_sgemm_kernel_name(
     )
 
 
-fn rocblas_zherkx_strided_batched(
+def rocblas_zherkx_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -30532,7 +30534,7 @@ fn rocblas_zherkx_strided_batched(
     )
 
 
-fn rocblas_ccopy(
+def rocblas_ccopy(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -30553,7 +30555,7 @@ fn rocblas_ccopy(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn rocblas_cgerc_strided_batched_64(
+def rocblas_cgerc_strided_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
@@ -30605,7 +30607,7 @@ fn rocblas_cgerc_strided_batched_64(
     )
 
 
-fn rocblas_sspr2_batched(
+def rocblas_sspr2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -30703,7 +30705,7 @@ fn rocblas_sspr2_batched(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap, batch_count)
 
 
-fn rocblas_ccopy_strided_batched_64(
+def rocblas_ccopy_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -30730,7 +30732,7 @@ fn rocblas_ccopy_strided_batched_64(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_zherk(
+def rocblas_zherk(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -30761,7 +30763,7 @@ fn rocblas_zherk(
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
-fn rocblas_strmm_strided_batched(
+def rocblas_strmm_strided_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -30966,7 +30968,7 @@ fn rocblas_strmm_strided_batched(
     )
 
 
-fn rocblas_ssyr2_strided_batched_64(
+def rocblas_ssyr2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -31018,7 +31020,7 @@ fn rocblas_ssyr2_strided_batched_64(
     )
 
 
-fn rocblas_zaxpy_strided_batched_64(
+def rocblas_zaxpy_strided_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[ComplexFloat64, _],
@@ -31047,7 +31049,7 @@ fn rocblas_zaxpy_strided_batched_64(
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_dtrmm_batched(
+def rocblas_dtrmm_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -31102,7 +31104,7 @@ fn rocblas_dtrmm_batched(
     )
 
 
-fn rocblas_zgbmv(
+def rocblas_zgbmv(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -31139,7 +31141,7 @@ fn rocblas_zgbmv(
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_gemm_batched_ex(
+def rocblas_gemm_batched_ex(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -31339,7 +31341,7 @@ fn rocblas_gemm_batched_ex(
     )
 
 
-fn rocblas_bfdot_batched_64(
+def rocblas_bfdot_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -31364,7 +31366,7 @@ fn rocblas_bfdot_batched_64(
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
-fn rocblas_sdot_strided_batched_64(
+def rocblas_sdot_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -31393,7 +31395,7 @@ fn rocblas_sdot_strided_batched_64(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
-fn rocblas_cscal_batched(
+def rocblas_cscal_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[ComplexFloat32, _],
@@ -31414,7 +31416,7 @@ fn rocblas_cscal_batched(
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
-fn rocblas_strtri_batched(
+def rocblas_strtri_batched(
     handle: Handle,
     uplo: Fill,
     diag: Diagonal,
@@ -31482,7 +31484,7 @@ fn rocblas_strtri_batched(
     ]()(handle, uplo, diag, n, _a, lda, inv_a, ldinv_a, batch_count)
 
 
-fn rocblas_zher(
+def rocblas_zher(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -31507,7 +31509,7 @@ fn rocblas_zher(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
-fn rocblas_zher2k(
+def rocblas_zher2k(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -31542,7 +31544,7 @@ fn rocblas_zher2k(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn rocblas_hssgemv_batched(
+def rocblas_hssgemv_batched(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -31579,7 +31581,7 @@ fn rocblas_hssgemv_batched(
     )
 
 
-fn rocblas_trsm_ex(
+def rocblas_trsm_ex(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -31760,7 +31762,7 @@ fn rocblas_trsm_ex(
     )
 
 
-fn rocblas_zgeru_batched_64(
+def rocblas_zgeru_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
@@ -31791,7 +31793,7 @@ fn rocblas_zgeru_batched_64(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_snrm2_batched_64(
+def rocblas_snrm2_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -31812,7 +31814,7 @@ fn rocblas_snrm2_batched_64(
     ]()(handle, n, x, incx, batch_count, results)
 
 
-fn rocblas_chemv_64(
+def rocblas_chemv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -31843,7 +31845,7 @@ fn rocblas_chemv_64(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_ctrsm_64(
+def rocblas_ctrsm_64(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -31876,7 +31878,7 @@ fn rocblas_ctrsm_64(
     ]()(handle, side, uplo, trans_a, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
-fn rocblas_zsyr_batched(
+def rocblas_zsyr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -31903,7 +31905,7 @@ fn rocblas_zsyr_batched(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
-fn rocblas_cgbmv_64(
+def rocblas_cgbmv_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -31940,7 +31942,7 @@ fn rocblas_cgbmv_64(
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_cherkx(
+def rocblas_cherkx(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -32055,7 +32057,7 @@ fn rocblas_cherkx(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn rocblas_zdotu_64(
+def rocblas_zdotu_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -32078,7 +32080,7 @@ fn rocblas_zdotu_64(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn rocblas_zsyr_strided_batched(
+def rocblas_zsyr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -32111,7 +32113,7 @@ fn rocblas_zsyr_strided_batched(
     )
 
 
-fn rocblas_dger_batched(
+def rocblas_dger_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
@@ -32142,7 +32144,7 @@ fn rocblas_dger_batched(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_csyr2(
+def rocblas_csyr2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -32171,7 +32173,7 @@ fn rocblas_csyr2(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_dsbmv_strided_batched(
+def rocblas_dsbmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -32229,7 +32231,7 @@ fn rocblas_dsbmv_strided_batched(
     )
 
 
-fn rocblas_zhbmv_batched(
+def rocblas_zhbmv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -32264,7 +32266,7 @@ fn rocblas_zhbmv_batched(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_zscal_batched(
+def rocblas_zscal_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[ComplexFloat64, _],
@@ -32285,7 +32287,7 @@ fn rocblas_zscal_batched(
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
-fn rocblas_icamax_batched_64(
+def rocblas_icamax_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -32306,7 +32308,7 @@ fn rocblas_icamax_batched_64(
     ]()(handle, n, x, incx, batch_count, result)
 
 
-fn rocblas_idamin_strided_batched(
+def rocblas_idamin_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float64, _],
@@ -32329,7 +32331,7 @@ fn rocblas_idamin_strided_batched(
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
-fn rocblas_zsyr2k_batched(
+def rocblas_zsyr2k_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -32381,7 +32383,7 @@ fn rocblas_zsyr2k_batched(
     )
 
 
-fn rocblas_haxpy_strided_batched(
+def rocblas_haxpy_strided_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float16, _],
@@ -32445,7 +32447,7 @@ fn rocblas_haxpy_strided_batched(
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_zdrot_batched(
+def rocblas_zdrot_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -32472,7 +32474,7 @@ fn rocblas_zdrot_batched(
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
-fn rocblas_sgemmt_batched(
+def rocblas_sgemmt_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -32594,7 +32596,7 @@ fn rocblas_sgemmt_batched(
     )
 
 
-fn rocblas_scasum_strided_batched_64(
+def rocblas_scasum_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -32617,7 +32619,7 @@ fn rocblas_scasum_strided_batched_64(
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
-fn rocblas_cgemm_strided_batched(
+def rocblas_cgemm_strided_batched(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -32681,7 +32683,7 @@ fn rocblas_cgemm_strided_batched(
     )
 
 
-fn rocblas_dscal_batched_64(
+def rocblas_dscal_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float64, _],
@@ -32702,7 +32704,7 @@ fn rocblas_dscal_batched_64(
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
-fn rocblas_dgbmv_batched(
+def rocblas_dgbmv_batched(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -32757,7 +32759,7 @@ fn rocblas_dgbmv_batched(
     )
 
 
-fn rocblas_strsv_strided_batched(
+def rocblas_strsv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -32868,7 +32870,7 @@ fn rocblas_strsv_strided_batched(
     )
 
 
-fn rocblas_ztbmv_strided_batched_64(
+def rocblas_ztbmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -32917,7 +32919,7 @@ fn rocblas_ztbmv_strided_batched_64(
     )
 
 
-fn rocblas_cgbmv_batched_64(
+def rocblas_cgbmv_batched_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -32972,7 +32974,7 @@ fn rocblas_cgbmv_batched_64(
     )
 
 
-fn rocblas_sspr2_batched_64(
+def rocblas_sspr2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -33001,7 +33003,7 @@ fn rocblas_sspr2_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap, batch_count)
 
 
-fn rocblas_zhemv_strided_batched(
+def rocblas_zhemv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -33056,7 +33058,7 @@ fn rocblas_zhemv_strided_batched(
     )
 
 
-fn rocblas_sscal_batched(
+def rocblas_sscal_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float32, _],
@@ -33104,7 +33106,7 @@ fn rocblas_sscal_batched(
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
-fn rocblas_sasum_strided_batched(
+def rocblas_sasum_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float32, _],
@@ -33160,7 +33162,7 @@ fn rocblas_sasum_strided_batched(
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
-fn rocblas_dtbmv(
+def rocblas_dtbmv(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -33189,7 +33191,7 @@ fn rocblas_dtbmv(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
-fn rocblas_ctbmv_64(
+def rocblas_ctbmv_64(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -33218,7 +33220,7 @@ fn rocblas_ctbmv_64(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
-fn rocblas_dznrm2_strided_batched(
+def rocblas_dznrm2_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -33241,7 +33243,7 @@ fn rocblas_dznrm2_strided_batched(
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
-fn rocblas_chpmv_batched_64(
+def rocblas_chpmv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -33272,7 +33274,7 @@ fn rocblas_chpmv_batched_64(
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_ssyr2(
+def rocblas_ssyr2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -33343,7 +33345,7 @@ fn rocblas_ssyr2(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_zsyr_64(
+def rocblas_zsyr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -33368,7 +33370,7 @@ fn rocblas_zsyr_64(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
-fn rocblas_ctrsm_strided_batched_64(
+def rocblas_ctrsm_strided_batched_64(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -33423,7 +33425,7 @@ fn rocblas_ctrsm_strided_batched_64(
     )
 
 
-fn rocblas_sgeam_strided_batched(
+def rocblas_sgeam_strided_batched(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -33569,7 +33571,7 @@ fn rocblas_sgeam_strided_batched(
     )
 
 
-fn rocblas_ztrmm_strided_batched(
+def rocblas_ztrmm_strided_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -33633,7 +33635,7 @@ fn rocblas_ztrmm_strided_batched(
     )
 
 
-fn rocblas_set_optimal_device_memory_size_impl(
+def rocblas_set_optimal_device_memory_size_impl(
     handle: Handle, count: Int
 ) raises -> Status:
     return _get_dylib_function[
@@ -33642,7 +33644,7 @@ fn rocblas_set_optimal_device_memory_size_impl(
     ]()(handle, count)
 
 
-fn rocblas_zdotc(
+def rocblas_zdotc(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -33665,7 +33667,7 @@ fn rocblas_zdotc(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn rocblas_dsyr_batched(
+def rocblas_dsyr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -33692,7 +33694,7 @@ fn rocblas_dsyr_batched(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
-fn rocblas_ctbmv_batched_64(
+def rocblas_ctbmv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -33723,7 +33725,7 @@ fn rocblas_ctbmv_batched_64(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_dotc_strided_batched_ex(
+def rocblas_dotc_strided_batched_ex(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -33775,7 +33777,7 @@ fn rocblas_dotc_strided_batched_ex(
     )
 
 
-fn rocblas_cswap(
+def rocblas_cswap(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -33796,7 +33798,7 @@ fn rocblas_cswap(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn rocblas_dot_ex(
+def rocblas_dot_ex(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -33900,7 +33902,7 @@ fn rocblas_dot_ex(
     )
 
 
-fn rocblas_cspr_batched_64(
+def rocblas_cspr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -33925,7 +33927,7 @@ fn rocblas_cspr_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
-fn rocblas_dswap_batched_64(
+def rocblas_dswap_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -33948,7 +33950,7 @@ fn rocblas_dswap_batched_64(
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
-fn rocblas_crot_64(
+def rocblas_crot_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -33973,7 +33975,7 @@ fn rocblas_crot_64(
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
-fn rocblas_isamax_batched(
+def rocblas_isamax_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -34020,7 +34022,7 @@ fn rocblas_isamax_batched(
     ]()(handle, n, x, incx, batch_count, result)
 
 
-fn rocblas_drotg_64(
+def rocblas_drotg_64(
     handle: Handle,
     a: UnsafePointer[Float64, _],
     b: UnsafePointer[Float64, _],
@@ -34039,7 +34041,7 @@ fn rocblas_drotg_64(
     ]()(handle, a, b, c, s)
 
 
-fn rocblas_zaxpy_batched(
+def rocblas_zaxpy_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[ComplexFloat64, _],
@@ -34064,7 +34066,7 @@ fn rocblas_zaxpy_batched(
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
-fn rocblas_cgeam(
+def rocblas_cgeam(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -34099,7 +34101,7 @@ fn rocblas_cgeam(
     ]()(handle, trans_a, trans_b, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
-fn rocblas_ztbsv_batched_64(
+def rocblas_ztbsv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -34130,7 +34132,7 @@ fn rocblas_ztbsv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_dot_strided_batched_ex_64(
+def rocblas_dot_strided_batched_ex_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -34182,7 +34184,7 @@ fn rocblas_dot_strided_batched_ex_64(
     )
 
 
-fn rocblas_stbmv(
+def rocblas_stbmv(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -34288,7 +34290,7 @@ fn rocblas_stbmv(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
-fn rocblas_set_workspace(
+def rocblas_set_workspace(
     handle: Handle, addr: OpaquePointer[_], size: Int
 ) raises -> Status:
     """\\brief
@@ -34313,7 +34315,7 @@ fn rocblas_set_workspace(
     ]()(handle, addr, size)
 
 
-fn rocblas_dscal_strided_batched(
+def rocblas_dscal_strided_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float64, _],
@@ -34336,7 +34338,7 @@ fn rocblas_dscal_strided_batched(
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
-fn rocblas_dsyr2k_batched(
+def rocblas_dsyr2k_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -34388,7 +34390,7 @@ fn rocblas_dsyr2k_batched(
     )
 
 
-fn rocblas_cher_strided_batched(
+def rocblas_cher_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -34486,7 +34488,7 @@ fn rocblas_cher_strided_batched(
     )
 
 
-fn rocblas_zsymm_batched(
+def rocblas_zsymm_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -34538,7 +34540,7 @@ fn rocblas_zsymm_batched(
     )
 
 
-fn rocblas_dasum_64(
+def rocblas_dasum_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -34551,7 +34553,7 @@ fn rocblas_dasum_64(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_strmv_batched(
+def rocblas_strmv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -34636,7 +34638,7 @@ fn rocblas_strmv_batched(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_ssymv_64(
+def rocblas_ssymv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -34667,7 +34669,7 @@ fn rocblas_ssymv_64(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_zgerc(
+def rocblas_zgerc(
     handle: Handle,
     m: Int32,
     n: Int32,
@@ -34696,7 +34698,7 @@ fn rocblas_zgerc(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_drotg_strided_batched(
+def rocblas_drotg_strided_batched(
     handle: Handle,
     a: UnsafePointer[Float64, _],
     stride_a: Int64,
@@ -34725,7 +34727,7 @@ fn rocblas_drotg_strided_batched(
     ]()(handle, a, stride_a, b, stride_b, c, stride_c, s, stride_s, batch_count)
 
 
-fn rocblas_stbsv_strided_batched_64(
+def rocblas_stbsv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -34774,7 +34776,7 @@ fn rocblas_stbsv_strided_batched_64(
     )
 
 
-fn rocblas_zsyrkx_batched(
+def rocblas_zsyrkx_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -34826,7 +34828,7 @@ fn rocblas_zsyrkx_batched(
     )
 
 
-fn rocblas_dtpsv(
+def rocblas_dtpsv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -34851,7 +34853,7 @@ fn rocblas_dtpsv(
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx)
 
 
-fn rocblas_zgemv(
+def rocblas_zgemv(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -34884,7 +34886,7 @@ fn rocblas_zgemv(
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_sspr_strided_batched(
+def rocblas_sspr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -34983,7 +34985,7 @@ fn rocblas_sspr_strided_batched(
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
-fn rocblas_zscal_strided_batched(
+def rocblas_zscal_strided_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[ComplexFloat64, _],
@@ -35006,7 +35008,7 @@ fn rocblas_zscal_strided_batched(
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
-fn rocblas_dtbsv(
+def rocblas_dtbsv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -35035,7 +35037,7 @@ fn rocblas_dtbsv(
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx)
 
 
-fn rocblas_drotmg_batched_64(
+def rocblas_drotmg_batched_64(
     handle: Handle,
     d1: OpaquePointer[_],
     d2: OpaquePointer[_],
@@ -35058,7 +35060,7 @@ fn rocblas_drotmg_batched_64(
     ]()(handle, d1, d2, x1, y1, param, batch_count)
 
 
-fn rocblas_icamax_batched(
+def rocblas_icamax_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -35079,7 +35081,7 @@ fn rocblas_icamax_batched(
     ]()(handle, n, x, incx, batch_count, result)
 
 
-fn rocblas_sger_64(
+def rocblas_sger_64(
     handle: Handle,
     m: Int64,
     n: Int64,
@@ -35108,7 +35110,7 @@ fn rocblas_sger_64(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_izamax(
+def rocblas_izamax(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -35127,7 +35129,7 @@ fn rocblas_izamax(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_zhpr(
+def rocblas_zhpr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -35150,7 +35152,7 @@ fn rocblas_zhpr(
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
-fn rocblas_dsymm_batched(
+def rocblas_dsymm_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -35202,7 +35204,7 @@ fn rocblas_dsymm_batched(
     )
 
 
-fn rocblas_cgemv(
+def rocblas_cgemv(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -35235,7 +35237,7 @@ fn rocblas_cgemv(
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_zrot_batched(
+def rocblas_zrot_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -35262,7 +35264,7 @@ fn rocblas_zrot_batched(
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
-fn rocblas_sgemm(
+def rocblas_sgemm(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -35373,7 +35375,7 @@ fn rocblas_sgemm(
     )
 
 
-fn rocblas_dot_batched_ex_64(
+def rocblas_dot_batched_ex_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -35419,7 +35421,7 @@ fn rocblas_dot_batched_ex_64(
     )
 
 
-fn rocblas_strsv_64(
+def rocblas_strsv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -35446,7 +35448,7 @@ fn rocblas_strsv_64(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
-fn rocblas_dspr2_batched_64(
+def rocblas_dspr2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -35475,7 +35477,7 @@ fn rocblas_dspr2_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap, batch_count)
 
 
-fn rocblas_dzasum_64(
+def rocblas_dzasum_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -35494,7 +35496,7 @@ fn rocblas_dzasum_64(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_ddot(
+def rocblas_ddot(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float64, _],
@@ -35517,7 +35519,7 @@ fn rocblas_ddot(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn rocblas_cher2_64(
+def rocblas_cher2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -35546,7 +35548,7 @@ fn rocblas_cher2_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_csscal_strided_batched_64(
+def rocblas_csscal_strided_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float32, _],
@@ -35569,7 +35571,7 @@ fn rocblas_csscal_strided_batched_64(
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
-fn rocblas_cgerc_batched_64(
+def rocblas_cgerc_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
@@ -35600,7 +35602,7 @@ fn rocblas_cgerc_batched_64(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_tstgemv_batched_64(
+def rocblas_tstgemv_batched_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -35637,7 +35639,7 @@ fn rocblas_tstgemv_batched_64(
     )
 
 
-fn rocblas_hdot_64(
+def rocblas_hdot_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float16, _],
@@ -35660,7 +35662,7 @@ fn rocblas_hdot_64(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn rocblas_sgeam_batched(
+def rocblas_sgeam_batched(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -35773,7 +35775,7 @@ fn rocblas_sgeam_batched(
     )
 
 
-fn rocblas_zdscal_batched(
+def rocblas_zdscal_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float64, _],
@@ -35794,7 +35796,7 @@ fn rocblas_zdscal_batched(
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
-fn rocblas_ctrmv_batched(
+def rocblas_ctrmv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -35823,7 +35825,7 @@ fn rocblas_ctrmv_batched(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_cherk_strided_batched(
+def rocblas_cherk_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -35956,7 +35958,7 @@ fn rocblas_cherk_strided_batched(
     )
 
 
-fn rocblas_hgemm(
+def rocblas_hgemm(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -36008,7 +36010,7 @@ fn rocblas_hgemm(
     )
 
 
-fn rocblas_zrotg(
+def rocblas_zrotg(
     handle: Handle,
     a: UnsafePointer[ComplexFloat64, _],
     b: UnsafePointer[ComplexFloat64, _],
@@ -36027,7 +36029,7 @@ fn rocblas_zrotg(
     ]()(handle, a, b, c, s)
 
 
-fn rocblas_cspr_strided_batched(
+def rocblas_cspr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -36056,7 +36058,7 @@ fn rocblas_cspr_strided_batched(
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
-fn rocblas_stpsv_batched_64(
+def rocblas_stpsv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -36083,7 +36085,7 @@ fn rocblas_stpsv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx, batch_count)
 
 
-fn rocblas_ddot_64(
+def rocblas_ddot_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -36106,7 +36108,7 @@ fn rocblas_ddot_64(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn rocblas_idamax_batched_64(
+def rocblas_idamax_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -36127,7 +36129,7 @@ fn rocblas_idamax_batched_64(
     ]()(handle, n, x, incx, batch_count, result)
 
 
-fn rocblas_dotc_ex_64(
+def rocblas_dotc_ex_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -36170,7 +36172,7 @@ fn rocblas_dotc_ex_64(
     )
 
 
-fn rocblas_dger_strided_batched(
+def rocblas_dger_strided_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
@@ -36222,7 +36224,7 @@ fn rocblas_dger_strided_batched(
     )
 
 
-fn rocblas_ztrmv_64(
+def rocblas_ztrmv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -36249,7 +36251,7 @@ fn rocblas_ztrmv_64(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
-fn rocblas_ctrmm(
+def rocblas_ctrmm(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -36301,7 +36303,7 @@ fn rocblas_ctrmm(
     )
 
 
-fn rocblas_chpr2(
+def rocblas_chpr2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -36394,7 +36396,7 @@ fn rocblas_chpr2(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
-fn rocblas_zcopy_64(
+def rocblas_zcopy_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -36415,7 +36417,7 @@ fn rocblas_zcopy_64(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn rocblas_scopy_strided_batched(
+def rocblas_scopy_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float32, _],
@@ -36484,7 +36486,7 @@ fn rocblas_scopy_strided_batched(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_sasum_64(
+def rocblas_sasum_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -36497,7 +36499,7 @@ fn rocblas_sasum_64(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_cgemv_strided_batched(
+def rocblas_cgemv_strided_batched(
     handle: Handle,
     trans_a: Operation,
     m: Int32,
@@ -36555,7 +36557,7 @@ fn rocblas_cgemv_strided_batched(
     )
 
 
-fn rocblas_zgbmv_strided_batched_64(
+def rocblas_zgbmv_strided_batched_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -36619,7 +36621,7 @@ fn rocblas_zgbmv_strided_batched_64(
     )
 
 
-fn rocblas_srotmg(
+def rocblas_srotmg(
     handle: Handle,
     d1: UnsafePointer[Float32, _],
     d2: UnsafePointer[Float32, _],
@@ -36678,7 +36680,7 @@ fn rocblas_srotmg(
     ]()(handle, d1, d2, x1, y1, param)
 
 
-fn rocblas_zher2k_strided_batched(
+def rocblas_zher2k_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -36739,7 +36741,7 @@ fn rocblas_zher2k_strided_batched(
     )
 
 
-fn rocblas_sspr(
+def rocblas_sspr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -36823,7 +36825,7 @@ fn rocblas_sspr(
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
-fn rocblas_zgbmv_batched_64(
+def rocblas_zgbmv_batched_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -36878,7 +36880,7 @@ fn rocblas_zgbmv_batched_64(
     )
 
 
-fn rocblas_idamax_batched(
+def rocblas_idamax_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -36899,7 +36901,7 @@ fn rocblas_idamax_batched(
     ]()(handle, n, x, incx, batch_count, result)
 
 
-fn rocblas_zhemv(
+def rocblas_zhemv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -36930,7 +36932,7 @@ fn rocblas_zhemv(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_csymv_64(
+def rocblas_csymv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -36961,7 +36963,7 @@ fn rocblas_csymv_64(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_dcopy_batched(
+def rocblas_dcopy_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -36984,7 +36986,7 @@ fn rocblas_dcopy_batched(
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
-fn rocblas_snrm2_64(
+def rocblas_snrm2_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -36997,7 +36999,7 @@ fn rocblas_snrm2_64(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_zdscal_64(
+def rocblas_zdscal_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float64, _],
@@ -37016,7 +37018,7 @@ fn rocblas_zdscal_64(
     ]()(handle, n, alpha, x, incx)
 
 
-fn rocblas_hssgemv_batched_64(
+def rocblas_hssgemv_batched_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -37053,7 +37055,7 @@ fn rocblas_hssgemv_batched_64(
     )
 
 
-fn rocblas_zscal_batched_64(
+def rocblas_zscal_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[ComplexFloat64, _],
@@ -37074,7 +37076,7 @@ fn rocblas_zscal_batched_64(
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
-fn rocblas_zhpr_batched_64(
+def rocblas_zhpr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -37099,7 +37101,7 @@ fn rocblas_zhpr_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
-fn rocblas_dcopy_batched_64(
+def rocblas_dcopy_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -37122,7 +37124,7 @@ fn rocblas_dcopy_batched_64(
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
-fn rocblas_sgemmt(
+def rocblas_sgemmt(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -37235,7 +37237,7 @@ fn rocblas_sgemmt(
     )
 
 
-fn rocblas_zhpmv(
+def rocblas_zhpmv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -37264,7 +37266,7 @@ fn rocblas_zhpmv(
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
-fn rocblas_drotmg_batched(
+def rocblas_drotmg_batched(
     handle: Handle,
     d1: OpaquePointer[_],
     d2: OpaquePointer[_],
@@ -37287,7 +37289,7 @@ fn rocblas_drotmg_batched(
     ]()(handle, d1, d2, x1, y1, param, batch_count)
 
 
-fn rocblas_ctbsv_strided_batched_64(
+def rocblas_ctbsv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -37336,7 +37338,7 @@ fn rocblas_ctbsv_strided_batched_64(
     )
 
 
-fn rocblas_zgeru_strided_batched(
+def rocblas_zgeru_strided_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
@@ -37388,7 +37390,7 @@ fn rocblas_zgeru_strided_batched(
     )
 
 
-fn rocblas_strsm_batched_64(
+def rocblas_strsm_batched_64(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -37437,7 +37439,7 @@ fn rocblas_strsm_batched_64(
     )
 
 
-fn rocblas_zdscal_strided_batched_64(
+def rocblas_zdscal_strided_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float64, _],
@@ -37460,7 +37462,7 @@ fn rocblas_zdscal_strided_batched_64(
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
-fn rocblas_cherk(
+def rocblas_cherk(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -37559,7 +37561,7 @@ fn rocblas_cherk(
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
-fn rocblas_dsyr2_strided_batched(
+def rocblas_dsyr2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -37611,7 +37613,7 @@ fn rocblas_dsyr2_strided_batched(
     )
 
 
-fn rocblas_dtbsv_batched_64(
+def rocblas_dtbsv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -37642,7 +37644,7 @@ fn rocblas_dtbsv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_cgbmv_strided_batched(
+def rocblas_cgbmv_strided_batched(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -37706,7 +37708,7 @@ fn rocblas_cgbmv_strided_batched(
     )
 
 
-fn rocblas_chbmv_batched(
+def rocblas_chbmv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -37817,7 +37819,7 @@ fn rocblas_chbmv_batched(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_dspmv_64(
+def rocblas_dspmv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -37846,7 +37848,7 @@ fn rocblas_dspmv_64(
     ]()(handle, uplo, n, alpha, _a, x, incx, beta, y, incy)
 
 
-fn rocblas_ztrsm_batched_64(
+def rocblas_ztrsm_batched_64(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -37895,7 +37897,7 @@ fn rocblas_ztrsm_batched_64(
     )
 
 
-fn rocblas_snrm2_strided_batched(
+def rocblas_snrm2_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float32, _],
@@ -37952,7 +37954,7 @@ fn rocblas_snrm2_strided_batched(
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
-fn rocblas_stbsv_batched(
+def rocblas_stbsv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -38049,7 +38051,7 @@ fn rocblas_stbsv_batched(
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_ccopy_64(
+def rocblas_ccopy_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -38070,7 +38072,7 @@ fn rocblas_ccopy_64(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn rocblas_sger_batched_64(
+def rocblas_sger_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
@@ -38101,7 +38103,7 @@ fn rocblas_sger_batched_64(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_ctpmv(
+def rocblas_ctpmv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -38126,7 +38128,7 @@ fn rocblas_ctpmv(
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx)
 
 
-fn rocblas_drot_strided_batched(
+def rocblas_drot_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float64, _],
@@ -38157,7 +38159,7 @@ fn rocblas_drot_strided_batched(
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
-fn rocblas_cher2_batched_64(
+def rocblas_cher2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -38188,7 +38190,7 @@ fn rocblas_cher2_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_isamax_64(
+def rocblas_isamax_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -38201,7 +38203,7 @@ fn rocblas_isamax_64(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_zsyr_strided_batched_64(
+def rocblas_zsyr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -38234,7 +38236,7 @@ fn rocblas_zsyr_strided_batched_64(
     )
 
 
-fn rocblas_cgemv_batched(
+def rocblas_cgemv_batched(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -38271,7 +38273,7 @@ fn rocblas_cgemv_batched(
     )
 
 
-fn rocblas_scasum_batched_64(
+def rocblas_scasum_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -38292,7 +38294,7 @@ fn rocblas_scasum_batched_64(
     ]()(handle, n, x, incx, batch_count, results)
 
 
-fn rocblas_dsyr2_batched(
+def rocblas_dsyr2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -38323,7 +38325,7 @@ fn rocblas_dsyr2_batched(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_ssyr_strided_batched(
+def rocblas_ssyr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -38401,7 +38403,7 @@ fn rocblas_ssyr_strided_batched(
     )
 
 
-fn rocblas_sgbmv_batched(
+def rocblas_sgbmv_batched(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -38529,7 +38531,7 @@ fn rocblas_sgbmv_batched(
     )
 
 
-fn rocblas_ztpsv_64(
+def rocblas_ztpsv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -38554,7 +38556,7 @@ fn rocblas_ztpsv_64(
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx)
 
 
-fn rocblas_zspr(
+def rocblas_zspr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -38577,7 +38579,7 @@ fn rocblas_zspr(
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
-fn rocblas_sgemv(
+def rocblas_sgemv(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -38655,7 +38657,7 @@ fn rocblas_sgemv(
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_dtrsv_64(
+def rocblas_dtrsv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -38682,7 +38684,7 @@ fn rocblas_dtrsv_64(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
-fn rocblas_zcopy_batched(
+def rocblas_zcopy_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -38705,7 +38707,7 @@ fn rocblas_zcopy_batched(
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
-fn rocblas_ssymv_strided_batched_64(
+def rocblas_ssymv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -38760,7 +38762,7 @@ fn rocblas_ssymv_strided_batched_64(
     )
 
 
-fn rocblas_dsbmv_batched_64(
+def rocblas_dsbmv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -38795,7 +38797,7 @@ fn rocblas_dsbmv_batched_64(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_ztpmv_strided_batched(
+def rocblas_ztpmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -38838,7 +38840,7 @@ fn rocblas_ztpmv_strided_batched(
     )
 
 
-fn rocblas_dgemm_batched(
+def rocblas_dgemm_batched(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -38893,7 +38895,7 @@ fn rocblas_dgemm_batched(
     )
 
 
-fn rocblas_cscal(
+def rocblas_cscal(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[ComplexFloat32, _],
@@ -38912,7 +38914,7 @@ fn rocblas_cscal(
     ]()(handle, n, alpha, x, incx)
 
 
-fn rocblas_cherkx_strided_batched(
+def rocblas_cherkx_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -39070,7 +39072,7 @@ fn rocblas_cherkx_strided_batched(
     )
 
 
-fn rocblas_drotm_batched_64(
+def rocblas_drotm_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -39095,7 +39097,7 @@ fn rocblas_drotm_batched_64(
     ]()(handle, n, x, incx, y, incy, param, batch_count)
 
 
-fn rocblas_zgbmv_strided_batched(
+def rocblas_zgbmv_strided_batched(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -39159,7 +39161,7 @@ fn rocblas_zgbmv_strided_batched(
     )
 
 
-fn rocblas_csscal_batched(
+def rocblas_csscal_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float32, _],
@@ -39180,7 +39182,7 @@ fn rocblas_csscal_batched(
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
-fn rocblas_crot_batched_64(
+def rocblas_crot_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -39207,7 +39209,7 @@ fn rocblas_crot_batched_64(
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
-fn rocblas_dsyr_strided_batched_64(
+def rocblas_dsyr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -39240,7 +39242,7 @@ fn rocblas_dsyr_strided_batched_64(
     )
 
 
-fn rocblas_csymm_batched(
+def rocblas_csymm_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -39292,7 +39294,7 @@ fn rocblas_csymm_batched(
     )
 
 
-fn rocblas_zspr_strided_batched(
+def rocblas_zspr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -39321,7 +39323,7 @@ fn rocblas_zspr_strided_batched(
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
-fn rocblas_ztbsv(
+def rocblas_ztbsv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -39350,7 +39352,7 @@ fn rocblas_ztbsv(
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx)
 
 
-fn rocblas_isamin(
+def rocblas_isamin(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float32, _],
@@ -39386,7 +39388,7 @@ fn rocblas_isamin(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_dtrtri(
+def rocblas_dtrtri(
     handle: Handle,
     uplo: Fill,
     diag: Diagonal,
@@ -39411,7 +39413,7 @@ fn rocblas_dtrtri(
     ]()(handle, uplo, diag, n, _a, lda, inv_a, ldinv_a)
 
 
-fn rocblas_cher(
+def rocblas_cher(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -39482,7 +39484,7 @@ fn rocblas_cher(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
-fn rocblas_zhpmv_strided_batched_64(
+def rocblas_zhpmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -39534,7 +39536,7 @@ fn rocblas_zhpmv_strided_batched_64(
     )
 
 
-fn rocblas_srotm_64(
+def rocblas_srotm_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -39557,7 +39559,7 @@ fn rocblas_srotm_64(
     ]()(handle, n, x, incx, y, incy, param)
 
 
-fn rocblas_dscal(
+def rocblas_dscal(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float64, _],
@@ -39570,7 +39572,7 @@ fn rocblas_dscal(
     ]()(handle, n, alpha, x, incx)
 
 
-fn rocblas_zhpr_batched(
+def rocblas_zhpr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -39595,7 +39597,7 @@ fn rocblas_zhpr_batched(
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
-fn rocblas_csymv_strided_batched(
+def rocblas_csymv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -39650,7 +39652,7 @@ fn rocblas_csymv_strided_batched(
     )
 
 
-fn rocblas_ctpsv(
+def rocblas_ctpsv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -39675,7 +39677,7 @@ fn rocblas_ctpsv(
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx)
 
 
-fn rocblas_srotg_strided_batched(
+def rocblas_srotg_strided_batched(
     handle: Handle,
     a: UnsafePointer[Float32, _],
     stride_a: Int64,
@@ -39739,7 +39741,7 @@ fn rocblas_srotg_strided_batched(
     ]()(handle, a, stride_a, b, stride_b, c, stride_c, s, stride_s, batch_count)
 
 
-fn rocblas_ssbmv_64(
+def rocblas_ssbmv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -39772,7 +39774,7 @@ fn rocblas_ssbmv_64(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_sscal_batched_64(
+def rocblas_sscal_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float32, _],
@@ -39793,7 +39795,7 @@ fn rocblas_sscal_batched_64(
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
-fn rocblas_stbsv(
+def rocblas_stbsv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -39882,7 +39884,7 @@ fn rocblas_stbsv(
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx)
 
 
-fn rocblas_ddgmm_strided_batched(
+def rocblas_ddgmm_strided_batched(
     handle: Handle,
     side: Side,
     m: Int32,
@@ -39934,7 +39936,7 @@ fn rocblas_ddgmm_strided_batched(
     )
 
 
-fn rocblas_dspmv(
+def rocblas_dspmv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -39963,7 +39965,7 @@ fn rocblas_dspmv(
     ]()(handle, uplo, n, alpha, _a, x, incx, beta, y, incy)
 
 
-fn rocblas_sspmv_batched_64(
+def rocblas_sspmv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -39994,7 +39996,7 @@ fn rocblas_sspmv_batched_64(
     ]()(handle, uplo, n, alpha, _a, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_zher2k_batched(
+def rocblas_zher2k_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -40046,7 +40048,7 @@ fn rocblas_zher2k_batched(
     )
 
 
-fn rocblas_csyrkx(
+def rocblas_csyrkx(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -40081,7 +40083,7 @@ fn rocblas_csyrkx(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn rocblas_strmv(
+def rocblas_strmv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -40158,7 +40160,7 @@ fn rocblas_strmv(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
-fn rocblas_zher_batched(
+def rocblas_zher_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -40185,7 +40187,7 @@ fn rocblas_zher_batched(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
-fn rocblas_csrot_batched(
+def rocblas_csrot_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -40212,7 +40214,7 @@ fn rocblas_csrot_batched(
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
-fn rocblas_cgeru_strided_batched(
+def rocblas_cgeru_strided_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
@@ -40264,7 +40266,7 @@ fn rocblas_cgeru_strided_batched(
     )
 
 
-fn rocblas_zhemm_batched(
+def rocblas_zhemm_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -40316,7 +40318,7 @@ fn rocblas_zhemm_batched(
     )
 
 
-fn rocblas_nrm2_strided_batched_ex_64(
+def rocblas_nrm2_strided_batched_ex_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -40356,7 +40358,7 @@ fn rocblas_nrm2_strided_batched_ex_64(
     )
 
 
-fn rocblas_is_managing_device_memory(handle: Handle) raises -> Bool:
+def rocblas_is_managing_device_memory(handle: Handle) raises -> Bool:
     """\\brief
     \\details
     Returns true when device memory in handle is managed by rocBLAS
@@ -40369,7 +40371,7 @@ fn rocblas_is_managing_device_memory(handle: Handle) raises -> Bool:
     ]()(handle)
 
 
-fn rocblas_set_device_memory_size(handle: Handle, size: Int) raises -> Status:
+def rocblas_set_device_memory_size(handle: Handle, size: Int) raises -> Status:
     """\\brief
     \\details
     Changes the size of allocated device memory at runtime.
@@ -40390,7 +40392,7 @@ fn rocblas_set_device_memory_size(handle: Handle, size: Int) raises -> Status:
     ]()(handle, size)
 
 
-fn rocblas_cdgmm_strided_batched(
+def rocblas_cdgmm_strided_batched(
     handle: Handle,
     side: Side,
     m: Int32,
@@ -40442,7 +40444,7 @@ fn rocblas_cdgmm_strided_batched(
     )
 
 
-fn rocblas_chpr(
+def rocblas_chpr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -40526,7 +40528,7 @@ fn rocblas_chpr(
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
-fn rocblas_stbmv_strided_batched(
+def rocblas_stbmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -40662,7 +40664,7 @@ fn rocblas_stbmv_strided_batched(
     )
 
 
-fn rocblas_crot_strided_batched(
+def rocblas_crot_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -40693,7 +40695,7 @@ fn rocblas_crot_strided_batched(
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
-fn rocblas_ztpmv(
+def rocblas_ztpmv(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -40718,7 +40720,7 @@ fn rocblas_ztpmv(
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx)
 
 
-fn rocblas_trsm_strided_batched_ex(
+def rocblas_trsm_strided_batched_ex(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -40926,7 +40928,7 @@ fn rocblas_trsm_strided_batched_ex(
     )
 
 
-fn rocblas_ctbsv_batched_64(
+def rocblas_ctbsv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -40957,7 +40959,7 @@ fn rocblas_ctbsv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_dspr2_batched(
+def rocblas_dspr2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -40986,7 +40988,7 @@ fn rocblas_dspr2_batched(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap, batch_count)
 
 
-fn rocblas_zsymv_strided_batched_64(
+def rocblas_zsymv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -41041,7 +41043,7 @@ fn rocblas_zsymv_strided_batched_64(
     )
 
 
-fn rocblas_dsymv_batched_64(
+def rocblas_dsymv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -41074,7 +41076,7 @@ fn rocblas_dsymv_batched_64(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_isamin_strided_batched_64(
+def rocblas_isamin_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -41097,7 +41099,7 @@ fn rocblas_isamin_strided_batched_64(
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
-fn rocblas_zdotc_batched_64(
+def rocblas_zdotc_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -41122,7 +41124,7 @@ fn rocblas_zdotc_batched_64(
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
-fn rocblas_ssyr2_64(
+def rocblas_ssyr2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -41151,7 +41153,7 @@ fn rocblas_ssyr2_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_dtrsv_strided_batched(
+def rocblas_dtrsv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -41197,7 +41199,7 @@ fn rocblas_dtrsv_strided_batched(
     )
 
 
-fn rocblas_drotm_batched(
+def rocblas_drotm_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -41222,7 +41224,7 @@ fn rocblas_drotm_batched(
     ]()(handle, n, x, incx, y, incy, param, batch_count)
 
 
-fn rocblas_sgbmv_strided_batched_64(
+def rocblas_sgbmv_strided_batched_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -41286,7 +41288,7 @@ fn rocblas_sgbmv_strided_batched_64(
     )
 
 
-fn rocblas_hdot_batched(
+def rocblas_hdot_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -41311,7 +41313,7 @@ fn rocblas_hdot_batched(
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
-fn rocblas_chbmv_64(
+def rocblas_chbmv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -41344,7 +41346,7 @@ fn rocblas_chbmv_64(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_srotg_batched_64(
+def rocblas_srotg_batched_64(
     handle: Handle,
     a: OpaquePointer[_],
     b: OpaquePointer[_],
@@ -41365,7 +41367,7 @@ fn rocblas_srotg_batched_64(
     ]()(handle, a, b, c, s, batch_count)
 
 
-fn rocblas_stpmv_batched_64(
+def rocblas_stpmv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -41392,7 +41394,7 @@ fn rocblas_stpmv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx, batch_count)
 
 
-fn rocblas_cdotu_64(
+def rocblas_cdotu_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -41415,7 +41417,7 @@ fn rocblas_cdotu_64(
     ]()(handle, n, x, incx, y, incy, result)
 
 
-fn rocblas_dspr_strided_batched(
+def rocblas_dspr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -41444,7 +41446,7 @@ fn rocblas_dspr_strided_batched(
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
-fn rocblas_scnrm2_strided_batched_64(
+def rocblas_scnrm2_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -41467,7 +41469,7 @@ fn rocblas_scnrm2_strided_batched_64(
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
-fn rocblas_csrot(
+def rocblas_csrot(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -41492,7 +41494,7 @@ fn rocblas_csrot(
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
-fn rocblas_dgemmt_batched(
+def rocblas_dgemmt_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -41547,13 +41549,13 @@ fn rocblas_dgemmt_batched(
     )
 
 
-fn rocblas_device_malloc_set_default_memory_size(size: Int) raises:
+def rocblas_device_malloc_set_default_memory_size(size: Int) raises:
     _get_dylib_function[
         "rocblas_device_malloc_set_default_memory_size", fn(Int) -> NoneType
     ]()(size)
 
 
-fn rocblas_zswap_strided_batched(
+def rocblas_zswap_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -41580,7 +41582,7 @@ fn rocblas_zswap_strided_batched(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_hshgemv_batched_64(
+def rocblas_hshgemv_batched_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -41617,7 +41619,7 @@ fn rocblas_hshgemv_batched_64(
     )
 
 
-fn rocblas_ssbmv_batched_64(
+def rocblas_ssbmv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -41652,7 +41654,7 @@ fn rocblas_ssbmv_batched_64(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_ztbmv_batched_64(
+def rocblas_ztbmv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -41683,7 +41685,7 @@ fn rocblas_ztbmv_batched_64(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_zgeru_64(
+def rocblas_zgeru_64(
     handle: Handle,
     m: Int64,
     n: Int64,
@@ -41712,7 +41714,7 @@ fn rocblas_zgeru_64(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_ctpmv_strided_batched_64(
+def rocblas_ctpmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -41755,7 +41757,7 @@ fn rocblas_ctpmv_strided_batched_64(
     )
 
 
-fn rocblas_caxpy(
+def rocblas_caxpy(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[ComplexFloat32, _],
@@ -41778,7 +41780,7 @@ fn rocblas_caxpy(
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
-fn rocblas_zgemv_64(
+def rocblas_zgemv_64(
     handle: Handle,
     trans: Operation,
     m: Int64,
@@ -41811,7 +41813,7 @@ fn rocblas_zgemv_64(
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_drotg_batched(
+def rocblas_drotg_batched(
     handle: Handle,
     a: OpaquePointer[_],
     b: OpaquePointer[_],
@@ -41832,7 +41834,7 @@ fn rocblas_drotg_batched(
     ]()(handle, a, b, c, s, batch_count)
 
 
-fn rocblas_ztrsm_batched(
+def rocblas_ztrsm_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -41881,7 +41883,7 @@ fn rocblas_ztrsm_batched(
     )
 
 
-fn rocblas_cgemmt(
+def rocblas_cgemmt(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -41933,7 +41935,7 @@ fn rocblas_cgemmt(
     )
 
 
-fn rocblas_izamin_batched_64(
+def rocblas_izamin_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -41954,7 +41956,7 @@ fn rocblas_izamin_batched_64(
     ]()(handle, n, x, incx, batch_count, result)
 
 
-fn rocblas_status_to_string(
+def rocblas_status_to_string(
     status: Status,
 ) raises -> UnsafePointer[Int8, MutAnyOrigin]:
     """BLAS Auxiliary API.
@@ -41975,7 +41977,7 @@ fn rocblas_status_to_string(
     ]()(status)
 
 
-fn rocblas_saxpy(
+def rocblas_saxpy(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float32, _],
@@ -41998,7 +42000,7 @@ fn rocblas_saxpy(
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
-fn rocblas_cher2_batched(
+def rocblas_cher2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -42083,7 +42085,7 @@ fn rocblas_cher2_batched(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_ztpmv_64(
+def rocblas_ztpmv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -42108,7 +42110,7 @@ fn rocblas_ztpmv_64(
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx)
 
 
-fn rocblas_sspmv_strided_batched(
+def rocblas_sspmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -42218,7 +42220,7 @@ fn rocblas_sspmv_strided_batched(
     )
 
 
-fn rocblas_drot(
+def rocblas_drot(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float64, _],
@@ -42243,7 +42245,7 @@ fn rocblas_drot(
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
-fn rocblas_zsymv(
+def rocblas_zsymv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -42274,7 +42276,7 @@ fn rocblas_zsymv(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_csscal(
+def rocblas_csscal(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float32, _],
@@ -42293,7 +42295,7 @@ fn rocblas_csscal(
     ]()(handle, n, alpha, x, incx)
 
 
-fn rocblas_zrot(
+def rocblas_zrot(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -42318,7 +42320,7 @@ fn rocblas_zrot(
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
-fn rocblas_zgemm_strided_batched(
+def rocblas_zgemm_strided_batched(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -42382,7 +42384,7 @@ fn rocblas_zgemm_strided_batched(
     )
 
 
-fn rocblas_zdrot_strided_batched(
+def rocblas_zdrot_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -42413,7 +42415,7 @@ fn rocblas_zdrot_strided_batched(
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
-fn rocblas_ctrsm(
+def rocblas_ctrsm(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -42446,7 +42448,7 @@ fn rocblas_ctrsm(
     ]()(handle, side, uplo, trans_a, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
-fn rocblas_ctrsv_strided_batched_64(
+def rocblas_ctrsv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -42492,7 +42494,7 @@ fn rocblas_ctrsv_strided_batched_64(
     )
 
 
-fn rocblas_isamax(
+def rocblas_isamax(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[Float32, _],
@@ -42528,7 +42530,7 @@ fn rocblas_isamax(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_ztrsv_batched_64(
+def rocblas_ztrsv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -42557,7 +42559,7 @@ fn rocblas_ztrsv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_ssymm(
+def rocblas_ssymm(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -42666,7 +42668,7 @@ fn rocblas_ssymm(
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn rocblas_dspmv_batched_64(
+def rocblas_dspmv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -42697,7 +42699,7 @@ fn rocblas_dspmv_batched_64(
     ]()(handle, uplo, n, alpha, _a, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_sger(
+def rocblas_sger(
     handle: Handle,
     m: Int32,
     n: Int32,
@@ -42766,7 +42768,7 @@ fn rocblas_sger(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_crotg_batched(
+def rocblas_crotg_batched(
     handle: Handle,
     a: OpaquePointer[_],
     b: OpaquePointer[_],
@@ -42787,7 +42789,7 @@ fn rocblas_crotg_batched(
     ]()(handle, a, b, c, s, batch_count)
 
 
-fn rocblas_srotmg_strided_batched_64(
+def rocblas_srotmg_strided_batched_64(
     handle: Handle,
     d1: UnsafePointer[Float32, _],
     stride_d1: Int64,
@@ -42833,7 +42835,7 @@ fn rocblas_srotmg_strided_batched_64(
     )
 
 
-fn rocblas_device_malloc_get(
+def rocblas_device_malloc_get(
     ptr: UnsafePointer[MallocBase, _],
     index: Int,
     res: UnsafePointer[OpaquePointer[MutAnyOrigin], _],
@@ -42848,7 +42850,7 @@ fn rocblas_device_malloc_get(
     ]()(ptr, index, res)
 
 
-fn rocblas_cherk_batched(
+def rocblas_cherk_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -42952,7 +42954,7 @@ fn rocblas_cherk_batched(
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc, batch_count)
 
 
-fn rocblas_crot_batched(
+def rocblas_crot_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -42979,7 +42981,7 @@ fn rocblas_crot_batched(
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
-fn rocblas_zaxpy(
+def rocblas_zaxpy(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[ComplexFloat64, _],
@@ -43002,7 +43004,7 @@ fn rocblas_zaxpy(
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
-fn rocblas_dnrm2_strided_batched_64(
+def rocblas_dnrm2_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -43025,7 +43027,7 @@ fn rocblas_dnrm2_strided_batched_64(
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
-fn rocblas_ssyr2_batched(
+def rocblas_ssyr2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -43100,7 +43102,7 @@ fn rocblas_ssyr2_batched(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_nrm2_strided_batched_ex(
+def rocblas_nrm2_strided_batched_ex(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -43196,7 +43198,7 @@ fn rocblas_nrm2_strided_batched_ex(
     )
 
 
-fn rocblas_cswap_64(
+def rocblas_cswap_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -43217,7 +43219,7 @@ fn rocblas_cswap_64(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn rocblas_csymv_batched(
+def rocblas_csymv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -43250,7 +43252,7 @@ fn rocblas_csymv_batched(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_nrm2_ex_64(
+def rocblas_nrm2_ex_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -43275,7 +43277,7 @@ fn rocblas_nrm2_ex_64(
     ]()(handle, n, x, x_type, incx, results, result_type, execution_type)
 
 
-fn rocblas_scal_batched_ex(
+def rocblas_scal_batched_ex(
     handle: Handle,
     n: Int32,
     alpha: OpaquePointer[_],
@@ -43365,7 +43367,7 @@ fn rocblas_scal_batched_ex(
     )
 
 
-fn rocblas_zdotu_strided_batched_64(
+def rocblas_zdotu_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -43394,7 +43396,7 @@ fn rocblas_zdotu_strided_batched_64(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
-fn rocblas_scopy_64(
+def rocblas_scopy_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -43415,7 +43417,7 @@ fn rocblas_scopy_64(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn rocblas_idamin_strided_batched_64(
+def rocblas_idamin_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float64, _],
@@ -43438,7 +43440,7 @@ fn rocblas_idamin_strided_batched_64(
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
-fn rocblas_haxpy_64(
+def rocblas_haxpy_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float16, _],
@@ -43461,7 +43463,7 @@ fn rocblas_haxpy_64(
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
-fn rocblas_nrm2_ex(
+def rocblas_nrm2_ex(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -43534,7 +43536,7 @@ fn rocblas_nrm2_ex(
     ]()(handle, n, x, x_type, incx, results, result_type, execution_type)
 
 
-fn rocblas_ztrmm_batched(
+def rocblas_ztrmm_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -43589,7 +43591,7 @@ fn rocblas_ztrmm_batched(
     )
 
 
-fn rocblas_sspr_64(
+def rocblas_sspr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -43612,7 +43614,7 @@ fn rocblas_sspr_64(
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
-fn rocblas_zhpr_64(
+def rocblas_zhpr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -43635,7 +43637,7 @@ fn rocblas_zhpr_64(
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
-fn rocblas_dsymv_64(
+def rocblas_dsymv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -43666,7 +43668,7 @@ fn rocblas_dsymv_64(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_cgeam_batched(
+def rocblas_cgeam_batched(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -43718,7 +43720,7 @@ fn rocblas_cgeam_batched(
     )
 
 
-fn rocblas_sspr2(
+def rocblas_sspr2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -43811,7 +43813,7 @@ fn rocblas_sspr2(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
-fn rocblas_zsyr2_batched_64(
+def rocblas_zsyr2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -43842,7 +43844,7 @@ fn rocblas_zsyr2_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_ctrtri_batched(
+def rocblas_ctrtri_batched(
     handle: Handle,
     uplo: Fill,
     diag: Diagonal,
@@ -43869,7 +43871,7 @@ fn rocblas_ctrtri_batched(
     ]()(handle, uplo, diag, n, _a, lda, inv_a, ldinv_a, batch_count)
 
 
-fn rocblas_cher_batched_64(
+def rocblas_cher_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -43896,7 +43898,7 @@ fn rocblas_cher_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
-fn rocblas_get_device_memory_size(
+def rocblas_get_device_memory_size(
     handle: Handle, size: UnsafePointer[Int, _]
 ) raises -> Status:
     """\\brief
@@ -43915,7 +43917,7 @@ fn rocblas_get_device_memory_size(
     ]()(handle, size)
 
 
-fn rocblas_dger_batched_64(
+def rocblas_dger_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
@@ -43946,7 +43948,7 @@ fn rocblas_dger_batched_64(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
-fn rocblas_zhpr2_strided_batched(
+def rocblas_zhpr2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -43995,7 +43997,7 @@ fn rocblas_zhpr2_strided_batched(
     )
 
 
-fn rocblas_zspr_batched(
+def rocblas_zspr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -44020,7 +44022,7 @@ fn rocblas_zspr_batched(
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
-fn rocblas_csymv(
+def rocblas_csymv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -44051,7 +44053,7 @@ fn rocblas_csymv(
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
-fn rocblas_dscal_batched(
+def rocblas_dscal_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float64, _],
@@ -44072,7 +44074,7 @@ fn rocblas_dscal_batched(
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
-fn rocblas_cgemv_strided_batched_64(
+def rocblas_cgemv_strided_batched_64(
     handle: Handle,
     trans_a: Operation,
     m: Int64,
@@ -44130,7 +44132,7 @@ fn rocblas_cgemv_strided_batched_64(
     )
 
 
-fn rocblas_stbsv_64(
+def rocblas_stbsv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -44159,7 +44161,7 @@ fn rocblas_stbsv_64(
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx)
 
 
-fn rocblas_zhemm_strided_batched(
+def rocblas_zhemm_strided_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -44220,7 +44222,7 @@ fn rocblas_zhemm_strided_batched(
     )
 
 
-fn rocblas_dnrm2_batched_64(
+def rocblas_dnrm2_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -44241,7 +44243,7 @@ fn rocblas_dnrm2_batched_64(
     ]()(handle, n, x, incx, batch_count, results)
 
 
-fn rocblas_zgeru(
+def rocblas_zgeru(
     handle: Handle,
     m: Int32,
     n: Int32,
@@ -44270,7 +44272,7 @@ fn rocblas_zgeru(
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
-fn rocblas_zcopy(
+def rocblas_zcopy(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -44291,7 +44293,7 @@ fn rocblas_zcopy(
     ]()(handle, n, x, incx, y, incy)
 
 
-fn rocblas_ssyrkx(
+def rocblas_ssyrkx(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -44410,7 +44412,7 @@ fn rocblas_ssyrkx(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn rocblas_zdotu_batched(
+def rocblas_zdotu_batched(
     handle: Handle,
     n: Int32,
     x: OpaquePointer[_],
@@ -44435,7 +44437,7 @@ fn rocblas_zdotu_batched(
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
-fn rocblas_ctpsv_strided_batched(
+def rocblas_ctpsv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -44478,7 +44480,7 @@ fn rocblas_ctpsv_strided_batched(
     )
 
 
-fn rocblas_zher_strided_batched(
+def rocblas_zher_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -44521,7 +44523,7 @@ fn rocblas_zher_strided_batched(
     )
 
 
-fn rocblas_srotm_batched_64(
+def rocblas_srotm_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -44546,7 +44548,7 @@ fn rocblas_srotm_batched_64(
     ]()(handle, n, x, incx, y, incy, param, batch_count)
 
 
-fn rocblas_tssgemv_strided_batched(
+def rocblas_tssgemv_strided_batched(
     handle: Handle,
     trans_a: Operation,
     m: Int32,
@@ -44604,7 +44606,7 @@ fn rocblas_tssgemv_strided_batched(
     )
 
 
-fn rocblas_isamax_strided_batched_64(
+def rocblas_isamax_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[Float32, _],
@@ -44627,7 +44629,7 @@ fn rocblas_isamax_strided_batched_64(
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
-fn rocblas_drotg_strided_batched_64(
+def rocblas_drotg_strided_batched_64(
     handle: Handle,
     a: UnsafePointer[Float64, _],
     stride_a: Int64,
@@ -44656,7 +44658,7 @@ fn rocblas_drotg_strided_batched_64(
     ]()(handle, a, stride_a, b, stride_b, c, stride_c, s, stride_s, batch_count)
 
 
-fn rocblas_scnrm2_batched_64(
+def rocblas_scnrm2_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -44677,7 +44679,7 @@ fn rocblas_scnrm2_batched_64(
     ]()(handle, n, x, incx, batch_count, results)
 
 
-fn rocblas_zdrot_strided_batched_64(
+def rocblas_zdrot_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -44708,7 +44710,7 @@ fn rocblas_zdrot_strided_batched_64(
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
-fn rocblas_ctbmv_batched(
+def rocblas_ctbmv_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -44739,7 +44741,7 @@ fn rocblas_ctbmv_batched(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_bfdot_strided_batched(
+def rocblas_bfdot_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[BFloat16, _],
@@ -44768,7 +44770,7 @@ fn rocblas_bfdot_strided_batched(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
-fn rocblas_zgemv_batched(
+def rocblas_zgemv_batched(
     handle: Handle,
     trans: Operation,
     m: Int32,
@@ -44805,7 +44807,7 @@ fn rocblas_zgemv_batched(
     )
 
 
-fn rocblas_stpmv_64(
+def rocblas_stpmv_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -44830,7 +44832,7 @@ fn rocblas_stpmv_64(
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx)
 
 
-fn rocblas_srotg_batched(
+def rocblas_srotg_batched(
     handle: Handle,
     a: OpaquePointer[_],
     b: OpaquePointer[_],
@@ -44875,7 +44877,7 @@ fn rocblas_srotg_batched(
     ]()(handle, a, b, c, s, batch_count)
 
 
-fn rocblas_dznrm2(
+def rocblas_dznrm2(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -44894,7 +44896,7 @@ fn rocblas_dznrm2(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_ctbmv_strided_batched_64(
+def rocblas_ctbmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -44943,7 +44945,7 @@ fn rocblas_ctbmv_strided_batched_64(
     )
 
 
-fn rocblas_ztbsv_strided_batched(
+def rocblas_ztbsv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -44992,7 +44994,7 @@ fn rocblas_ztbsv_strided_batched(
     )
 
 
-fn rocblas_zhpmv_batched(
+def rocblas_zhpmv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -45023,7 +45025,7 @@ fn rocblas_zhpmv_batched(
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_dtrmv_batched(
+def rocblas_dtrmv_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -45052,7 +45054,7 @@ fn rocblas_dtrmv_batched(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_dtpsv_strided_batched(
+def rocblas_dtpsv_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -45095,7 +45097,7 @@ fn rocblas_dtpsv_strided_batched(
     )
 
 
-fn rocblas_zsymv_strided_batched(
+def rocblas_zsymv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -45150,7 +45152,7 @@ fn rocblas_zsymv_strided_batched(
     )
 
 
-fn rocblas_strsv_batched_64(
+def rocblas_strsv_batched_64(
     handle: Handle,
     uplo: Fill,
     trans_a: Operation,
@@ -45179,7 +45181,7 @@ fn rocblas_strsv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_dsyrkx_strided_batched(
+def rocblas_dsyrkx_strided_batched(
     handle: Handle,
     uplo: Fill,
     trans: Operation,
@@ -45240,7 +45242,7 @@ fn rocblas_dsyrkx_strided_batched(
     )
 
 
-fn rocblas_haxpy_strided_batched_64(
+def rocblas_haxpy_strided_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[Float16, _],
@@ -45269,7 +45271,7 @@ fn rocblas_haxpy_strided_batched_64(
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_zrotg_strided_batched(
+def rocblas_zrotg_strided_batched(
     handle: Handle,
     a: UnsafePointer[ComplexFloat64, _],
     stride_a: Int64,
@@ -45298,7 +45300,7 @@ fn rocblas_zrotg_strided_batched(
     ]()(handle, a, stride_a, b, stride_b, c, stride_c, s, stride_s, batch_count)
 
 
-fn rocblas_srot_batched_64(
+def rocblas_srot_batched_64(
     handle: Handle,
     n: Int64,
     x: OpaquePointer[_],
@@ -45325,13 +45327,13 @@ fn rocblas_srot_batched_64(
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
-fn rocblas_is_device_memory_size_query(handle: Handle) raises -> Bool:
+def rocblas_is_device_memory_size_query(handle: Handle) raises -> Bool:
     return _get_dylib_function[
         "rocblas_is_device_memory_size_query", fn(Handle) -> Bool
     ]()(handle)
 
 
-fn rocblas_sgemm_strided_batched(
+def rocblas_sgemm_strided_batched(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -45466,7 +45468,7 @@ fn rocblas_sgemm_strided_batched(
     )
 
 
-fn rocblas_saxpy_strided_batched(
+def rocblas_saxpy_strided_batched(
     handle: Handle,
     n: Int32,
     alpha: UnsafePointer[Float32, _],
@@ -45495,7 +45497,7 @@ fn rocblas_saxpy_strided_batched(
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
-fn rocblas_chbmv_strided_batched(
+def rocblas_chbmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -45638,7 +45640,7 @@ fn rocblas_chbmv_strided_batched(
     )
 
 
-fn rocblas_dspr_strided_batched_64(
+def rocblas_dspr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
@@ -45667,7 +45669,7 @@ fn rocblas_dspr_strided_batched_64(
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
-fn rocblas_scasum(
+def rocblas_scasum(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat32, _],
@@ -45686,7 +45688,7 @@ fn rocblas_scasum(
     ]()(handle, n, x, incx, result)
 
 
-fn rocblas_ssbmv_batched(
+def rocblas_ssbmv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
@@ -45772,7 +45774,7 @@ fn rocblas_ssbmv_batched(
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
-fn rocblas_bfdot_strided_batched_64(
+def rocblas_bfdot_strided_batched_64(
     handle: Handle,
     n: Int64,
     x: UnsafePointer[BFloat16, _],
@@ -45801,7 +45803,7 @@ fn rocblas_bfdot_strided_batched_64(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
-fn rocblas_zdotu_strided_batched(
+def rocblas_zdotu_strided_batched(
     handle: Handle,
     n: Int32,
     x: UnsafePointer[ComplexFloat64, _],
@@ -45830,7 +45832,7 @@ fn rocblas_zdotu_strided_batched(
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
-fn rocblas_ctrmm_batched(
+def rocblas_ctrmm_batched(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -45885,7 +45887,7 @@ fn rocblas_ctrmm_batched(
     )
 
 
-fn rocblas_scal_batched_ex_64(
+def rocblas_scal_batched_ex_64(
     handle: Handle,
     n: Int64,
     alpha: OpaquePointer[_],
@@ -45922,7 +45924,7 @@ fn rocblas_scal_batched_ex_64(
     )
 
 
-fn rocblas_dsymm(
+def rocblas_dsymm(
     handle: Handle,
     side: Side,
     uplo: Fill,
@@ -45957,7 +45959,7 @@ fn rocblas_dsymm(
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
-fn rocblas_cscal_batched_64(
+def rocblas_cscal_batched_64(
     handle: Handle,
     n: Int64,
     alpha: UnsafePointer[ComplexFloat32, _],
@@ -45978,7 +45980,7 @@ fn rocblas_cscal_batched_64(
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
-fn rocblas_gemm_ex(
+def rocblas_gemm_ex(
     handle: Handle,
     trans_a: Operation,
     trans_b: Operation,
@@ -46178,7 +46180,7 @@ fn rocblas_gemm_ex(
     )
 
 
-fn rocblas_set_stream(handle: Handle, stream: hipStream_t) raises -> Status:
+def rocblas_set_stream(handle: Handle, stream: hipStream_t) raises -> Status:
     return _get_dylib_function[
         "rocblas_set_stream", fn(Handle, hipStream_t) -> Status
     ]()(handle, stream)

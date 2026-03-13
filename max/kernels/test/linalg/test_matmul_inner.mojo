@@ -41,7 +41,7 @@ comptime N: Int = 64
 comptime K: Int = 256
 
 
-fn _matmul_inner_loop[
+def _matmul_inner_loop[
     kernel_rows: Int,
     kernel_cols: Int,
     simd_size: Int,
@@ -109,7 +109,7 @@ fn _matmul_inner_loop[
         comptime assert False, "no _run_inner_loop implementation"
 
 
-fn matmul_inner_loop[
+def matmul_inner_loop[
     config: KernelConfig,
 ](
     c: LayoutTensor[mut=True, ...],
@@ -137,7 +137,7 @@ fn matmul_inner_loop[
     )
 
 
-fn test_micro_kernel[
+def test_micro_kernel[
     a_type: DType, b_type: DType, c_type: DType, saturated_vnni: Bool = False
 ](m: Int, n: Int, k: Int) raises:
     print("== test_micro_kernel")
@@ -196,7 +196,7 @@ fn test_micro_kernel[
 
 
 @export(ABI="C")
-fn kernel_export_dynamic(m: Int, n: Int, k: Int) raises:
+def kernel_export_dynamic(m: Int, n: Int, k: Int) raises:
     test_micro_kernel[DType.float32, DType.float32, DType.float32](m, n, k)
 
 

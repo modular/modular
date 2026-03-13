@@ -37,7 +37,7 @@ struct IndexSmemStorage[
     var scratch: InlineArray[Scalar[DType.float32], Self.BN * 8]
 
 
-fn fp8_index_kernel[
+def fp8_index_kernel[
     dtype: DType,
     output_layout: Layout,
     q_layout: Layout,
@@ -261,7 +261,7 @@ fn fp8_index_kernel[
 
 
 @always_inline
-fn fp8_index[
+def fp8_index[
     dtype: DType,
     output_layout: Layout,
     q_layout: Layout,
@@ -386,7 +386,7 @@ fn fp8_index[
     )
 
 
-fn _index_matmul_max[
+def _index_matmul_max[
     dtype: DType,
     output_layout: Layout,
     q_layout: Layout,
@@ -455,7 +455,7 @@ fn _index_matmul_max[
     o_batch[seq_idx, key_idx, head_idx] = accum
 
 
-fn _reduce_logits[
+def _reduce_logits[
     logits_layout: Layout,
     output_layout: Layout,
     ks_layout: Layout,
@@ -514,7 +514,7 @@ fn _reduce_logits[
 
 
 @always_inline
-fn fp8_index_naive[
+def fp8_index_naive[
     dtype: DType,
     output_layout: Layout,
     q_layout: Layout,

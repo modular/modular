@@ -41,14 +41,14 @@ comptime _PYTHON_GLOBAL = _Global[
 struct _PythonGlobal(Defaultable, Movable):
     var cpython: CPython
 
-    fn __init__(out self):
+    def __init__(out self):
         self.cpython = {}
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         self.cpython.destroy()
 
 
-fn _get_python_interface() raises -> (
+def _get_python_interface() raises -> (
     UnsafePointer[CPython, StaticConstantOrigin]
 ):
     """Returns an immutable static pointer to the CPython global.
@@ -76,14 +76,14 @@ struct Python(Defaultable, ImplicitlyCopyable):
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__(out self):
+    def __init__(out self):
         """Construct a new `Python` instance."""
         try:
             self._impl = _get_python_interface()
         except e:
             abort[prefix="ERROR:"](String(e))
 
-    fn __init__(out self, ref[StaticConstantOrigin] cpython: CPython):
+    def __init__(out self, ref[StaticConstantOrigin] cpython: CPython):
         """Construct a `Python` instance from an existing reference
         to the lower-level singleton `CPython` instance.
 
@@ -95,7 +95,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         ).unsafe_origin_cast[StaticConstantOrigin]()
 
     @always_inline
-    fn cpython(self) -> ref[StaticConstantOrigin] CPython:
+    def cpython(self) -> ref[StaticConstantOrigin] CPython:
         """Handle to the low-level C API of the CPython interpreter present in
         the current process.
 
@@ -104,7 +104,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         """
         return self._impl[]
 
-    fn eval(self, var code: String) -> Bool:
+    def eval(self, var code: String) -> Bool:
         """Executes the given Python code.
 
         Args:
@@ -119,7 +119,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return cpy.PyRun_SimpleString(code^) == 0
 
     @staticmethod
-    fn evaluate(
+    def evaluate(
         var expr: String,
         file: Bool = False,
         name: StaticString = "__main__",
@@ -179,7 +179,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             return PythonObject(from_owned=res_ptr)
 
     @staticmethod
-    fn add_to_path(dir_path: StringSlice) raises:
+    def add_to_path(dir_path: StringSlice) raises:
         """Adds a directory to the Python path.
 
         This might be necessary to import a Python module via `import_module()`.
@@ -209,7 +209,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    fn import_module(var module: String) raises -> PythonObject:
+    def import_module(var module: String) raises -> PythonObject:
         """Imports a Python module.
 
         This provides you with a module object you can use just like you would
@@ -244,7 +244,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return PythonObject(from_owned=mod_ptr)
 
     @staticmethod
-    fn create_module(name: StaticString) raises -> PythonObject:
+    def create_module(name: StaticString) raises -> PythonObject:
         """Creates a Python module using the provided name.
 
         Inspired by https://github.com/pybind/pybind11/blob/a1d00916b26b187e583f3bce39cd59c3b0652c32/include/pybind11/pybind11.h#L1227
@@ -270,7 +270,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return PythonObject(from_owned=mod_ptr)
 
     @staticmethod
-    fn add_functions(
+    def add_functions(
         module: PythonObject,
         var functions: List[PyMethodDef],
     ) raises:
@@ -291,7 +291,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return Self._unsafe_add_functions(module, functions.steal_data())
 
     @staticmethod
-    fn _unsafe_add_functions(
+    def _unsafe_add_functions(
         module: PythonObject,
         functions: UnsafePointer[PyMethodDef, MutAnyOrigin],
     ) raises:
@@ -319,7 +319,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             raise cpy.unsafe_get_error()
 
     @staticmethod
-    fn add_object(
+    def add_object(
         module: PythonObject,
         var name: String,
         value: PythonObject,
@@ -355,7 +355,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
     @doc_private
     @staticmethod
-    fn _dict[
+    def _dict[
         V: ConvertibleToPython & Copyable = PythonObject
     ](kwargs: OwnedKwargsDict[V]) raises -> PyObjectPtr:
         """Construct a Python dictionary from keyword arguments.
@@ -377,7 +377,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return dict_ptr
 
     @staticmethod
-    fn dict[
+    def dict[
         V: ConvertibleToPython & Copyable = PythonObject
     ](**kwargs: V) raises -> PythonObject:
         """Construct an Python dictionary from keyword arguments.
@@ -399,7 +399,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return PythonObject(from_owned=Self._dict(kwargs))
 
     @staticmethod
-    fn dict[
+    def dict[
         K: ConvertibleToPython & Copyable = PythonObject,
         V: ConvertibleToPython & Copyable = PythonObject,
     ](tuples: Span[Tuple[K, V], _]) raises -> PythonObject:
@@ -435,7 +435,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return PythonObject(from_owned=dict_ptr)
 
     @staticmethod
-    fn list[
+    def list[
         T: ConvertibleToPython & Copyable
     ](values: Span[T, _]) raises -> PythonObject:
         """Initialize the object from a list of values.
@@ -460,7 +460,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return PythonObject(from_owned=list_ptr)
 
     @staticmethod
-    fn _list[
+    def _list[
         *Ts: ConvertibleToPython & Copyable
     ](
         values: VariadicPack[True, ConvertibleToPython & Copyable, *Ts]
@@ -486,7 +486,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
     @always_inline
     @staticmethod
-    fn list[
+    def list[
         *Ts: ConvertibleToPython & Copyable
     ](var *values: *Ts) raises -> PythonObject:
         """Construct an Python list of objects.
@@ -506,7 +506,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return Self._list(values)
 
     @staticmethod
-    fn _tuple[
+    def _tuple[
         *Ts: ConvertibleToPython & Copyable
     ](
         values: VariadicPack[True, ConvertibleToPython & Copyable, *Ts]
@@ -532,7 +532,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
     @always_inline
     @staticmethod
-    fn tuple[
+    def tuple[
         *Ts: ConvertibleToPython & Copyable
     ](var *values: *Ts) raises -> PythonObject:
         """Construct an Python tuple of objects.
@@ -552,7 +552,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return Self._tuple(values)
 
     @no_inline
-    fn as_string_slice(self, obj: PythonObject) -> StringSlice[ImmutAnyOrigin]:
+    def as_string_slice(self, obj: PythonObject) -> StringSlice[ImmutAnyOrigin]:
         """Return a string representing the given Python object.
 
         Args:
@@ -565,7 +565,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return cpy.PyUnicode_AsUTF8AndSize(obj._obj_ptr)
 
     @staticmethod
-    fn type(obj: PythonObject) -> PythonObject:
+    def type(obj: PythonObject) -> PythonObject:
         """Return Type of this PythonObject.
 
         Args:
@@ -578,7 +578,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return PythonObject(from_owned=cpy.PyObject_Type(obj._obj_ptr))
 
     @staticmethod
-    fn none() -> PythonObject:
+    def none() -> PythonObject:
         """Get a `PythonObject` representing `None`.
 
         Returns:
@@ -587,7 +587,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return PythonObject(None)
 
     @staticmethod
-    fn str(obj: PythonObject) raises -> PythonObject:
+    def str(obj: PythonObject) raises -> PythonObject:
         """Convert a PythonObject to a Python `str`.
 
         Args:
@@ -606,7 +606,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return PythonObject(from_owned=str_ptr)
 
     @staticmethod
-    fn int(obj: PythonObject) raises -> PythonObject:
+    def int(obj: PythonObject) raises -> PythonObject:
         """Convert a PythonObject to a Python `int` (i.e. arbitrary precision
         integer).
 
@@ -626,7 +626,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return PythonObject(from_owned=int_ptr)
 
     @staticmethod
-    fn float(obj: PythonObject) raises -> PythonObject:
+    def float(obj: PythonObject) raises -> PythonObject:
         """Convert a PythonObject to a Python `float` object.
 
         Args:
@@ -649,7 +649,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    fn py_long_as_ssize_t(obj: PythonObject) raises -> Py_ssize_t:
+    def py_long_as_ssize_t(obj: PythonObject) raises -> Py_ssize_t:
         """Get the value of a Python `long` object.
 
         Args:
@@ -671,7 +671,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return num
 
     @staticmethod
-    fn is_true(obj: PythonObject) raises -> Bool:
+    def is_true(obj: PythonObject) raises -> Bool:
         """Check if the PythonObject is truthy.
 
         Args:

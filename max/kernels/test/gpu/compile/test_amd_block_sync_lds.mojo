@@ -24,7 +24,7 @@ comptime MI300X_TARGET = MI300X.target()
 def test_barrier() raises:
     print("== test_barrier")
 
-    fn barrier_kernel():
+    def barrier_kernel():
         barrier()
 
     # CHECK: fence syncscope("workgroup") release

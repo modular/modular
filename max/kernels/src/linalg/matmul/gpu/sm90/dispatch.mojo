@@ -48,7 +48,7 @@ comptime DISPATCH_HIT = 1
 comptime logger = Logger()
 
 
-fn matmul_dispatch_sm90[
+def matmul_dispatch_sm90[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -94,7 +94,7 @@ fn matmul_dispatch_sm90[
     @always_inline
     @parameter
     @__copy_capture(c, a, b)
-    fn _dispatch() raises -> Int:
+    def _dispatch() raises -> Int:
         # General constraints for H100 matmul
         # fmt: off
         comptime if not (
@@ -493,7 +493,7 @@ comptime llama_8b_fp8_list = [
 comptime llama_8b_fp8_table = Table(llama_8b_fp8_list, "llama_8b_fp8")
 
 
-fn matmul_dispatch_sm90_fp8[
+def matmul_dispatch_sm90_fp8[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -561,7 +561,7 @@ fn matmul_dispatch_sm90_fp8[
 
     @parameter
     @always_inline("nodebug")
-    fn _dispatch[entry: TuningConfigSM90]() raises:
+    def _dispatch[entry: TuningConfigSM90]() raises:
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             block_tile_shape=entry.block_tile_shape,
             mma_shape=entry.mma_shape,
@@ -587,12 +587,12 @@ fn matmul_dispatch_sm90_fp8[
 
     @parameter
     @always_inline("nodebug")
-    fn _search[
+    def _search[
         T: Table[TuningConfigSM90], domain: List[Int] = List[Int]()
     ]() raises -> Int:
         @parameter
         @always_inline
-        fn get_m(x: TuningConfigSM90) -> Int:
+        def get_m(x: TuningConfigSM90) -> Int:
             return x.M
 
         comptime m_values = T.query_values[Int, get_m, domain]()
@@ -601,7 +601,7 @@ fn matmul_dispatch_sm90_fp8[
 
             @parameter
             @always_inline
-            fn rule_eq_m(x: TuningConfigSM90) -> Bool:
+            def rule_eq_m(x: TuningConfigSM90) -> Bool:
                 return x.M == static_m
 
             if m <= static_m:
@@ -627,7 +627,7 @@ fn matmul_dispatch_sm90_fp8[
 
         @parameter
         @always_inline
-        fn rule_eq_nk(x: TuningConfigSM90) -> Bool:
+        def rule_eq_nk(x: TuningConfigSM90) -> Bool:
             return x.K == static_K and x.N == static_N
 
         # First, filter by static params N and K
@@ -743,7 +743,7 @@ fn matmul_dispatch_sm90_fp8[
 # ===----------------------------------------------------------------------=== #
 
 
-fn _get_miscellaneous_list[
+def _get_miscellaneous_list[
     size_factor: Int, mma_k: Int, BK: Int
 ]() -> List[TuningConfigSM90]:
     return [
@@ -788,7 +788,7 @@ fn _get_miscellaneous_list[
     ]
 
 
-fn _get_internvl_list[
+def _get_internvl_list[
     size_factor: Int, mma_k: Int, BK: Int
 ]() -> List[TuningConfigSM90]:
     return [
@@ -1288,7 +1288,7 @@ fn _get_internvl_list[
 # shapes for llama3.3.70b
 
 
-fn _get_llama_3_3_70b_list[
+def _get_llama_3_3_70b_list[
     size_factor: Int, mma_k: Int, BK: Int
 ]() -> List[TuningConfigSM90]:
     return [
@@ -1363,7 +1363,7 @@ fn _get_llama_3_3_70b_list[
 # shapes for gemma.3.27b
 
 
-fn _get_gemma_3_27b_list[
+def _get_gemma_3_27b_list[
     size_factor: Int, mma_k: Int, BK: Int
 ]() -> List[TuningConfigSM90]:
     return [
@@ -2140,7 +2140,7 @@ fn _get_gemma_3_27b_list[
     ]
 
 
-fn matmul_dispatch_sm90_bf16_fp32[
+def matmul_dispatch_sm90_bf16_fp32[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -2338,7 +2338,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
 
     @parameter
     @always_inline("nodebug")
-    fn _dispatch[entry: TuningConfigSM90]() raises:
+    def _dispatch[entry: TuningConfigSM90]() raises:
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             block_tile_shape=entry.block_tile_shape,
             mma_shape=entry.mma_shape,
@@ -2382,13 +2382,13 @@ fn matmul_dispatch_sm90_bf16_fp32[
 
     @parameter
     @always_inline("nodebug")
-    fn _search[
+    def _search[
         T: Table[TuningConfigSM90],
         domain: List[Int] = List[Int](),
     ]() raises -> Int:
         @parameter
         @always_inline
-        fn get_m(x: TuningConfigSM90) -> Int:
+        def get_m(x: TuningConfigSM90) -> Int:
             return x.M
 
         comptime m_values = T.query_values[Int, get_m, domain]()
@@ -2397,7 +2397,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
 
             @parameter
             @always_inline
-            fn rule_eq_m(x: TuningConfigSM90) -> Bool:
+            def rule_eq_m(x: TuningConfigSM90) -> Bool:
                 return x.M == static_m
 
             if m <= static_m:
@@ -2415,7 +2415,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
 
     @parameter
     @always_inline
-    fn rule_eq_nk(x: TuningConfigSM90) -> Bool:
+    def rule_eq_nk(x: TuningConfigSM90) -> Bool:
         return x.K == static_K and x.N == static_N
 
     # First check the new tuning table before falling back on any old results
@@ -2475,7 +2475,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 )
 
                 @parameter
-                fn config_fn(
+                def config_fn(
                     m: Int,
                 ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
                     return swapAB_smallM[
@@ -3267,7 +3267,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 ](m, pdl_level)
 
                 @parameter
-                fn config_fn_small(
+                def config_fn_small(
                     m_val: Int,
                 ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
                     return swapAB_smallM_ceildiv[
@@ -3312,7 +3312,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 ](m, pdl_level)
 
                 @parameter
-                fn config_fn_mid(
+                def config_fn_mid(
                     m_val: Int,
                 ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
                     return swapAB_midM_linear[
@@ -3354,7 +3354,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 ](m, pdl_level)
 
                 @parameter
-                fn config_fn_large(
+                def config_fn_large(
                     m_val: Int,
                 ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
                     return swapAB_largeM_clustered[
@@ -3390,14 +3390,14 @@ fn matmul_dispatch_sm90_bf16_fp32[
                         return DISPATCH_HIT
 
         @parameter
-        fn get_k_groups[N: Int]() -> Optional[Int]:
+        def get_k_groups[N: Int]() -> Optional[Int]:
             comptime if N == 1536:
                 return None
             else:
                 return 1
 
         @parameter
-        fn get_consumer_groups[N: Int]() -> Optional[Int]:
+        def get_consumer_groups[N: Int]() -> Optional[Int]:
             comptime if N == 1536:
                 return 1
             else:
@@ -3483,11 +3483,11 @@ fn matmul_dispatch_sm90_bf16_fp32[
     return DISPATCH_MISS
 
 
-fn _find_largest_bn_for_sm90_matmul[dtype: DType, N: Int]() -> Int:
+def _find_largest_bn_for_sm90_matmul[dtype: DType, N: Int]() -> Int:
     comptime if N % 8 != 0:
         return -1
 
-    fn _get_max_bn() capturing -> Int:
+    def _get_max_bn() capturing -> Int:
         # For float8_e4m3fn maximum BN that will not result in register spilling is 160
         var BN = 160 if dtype == DType.float8_e4m3fn else 256
         while BN >= 8:

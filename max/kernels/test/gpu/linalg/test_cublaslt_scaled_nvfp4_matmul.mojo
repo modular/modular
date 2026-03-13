@@ -39,7 +39,7 @@ from linalg.fp4_quantization import naive_block_scaled_matmul
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-fn test_block_scaled_nvfp4_cublaslt[
+def test_block_scaled_nvfp4_cublaslt[
     out_dtype: DType,
     in_dtype: DType,
     transpose_b: Bool,
@@ -262,7 +262,7 @@ fn test_block_scaled_nvfp4_cublaslt[
     _ = b_scales
 
 
-fn main() raises:
+def main() raises:
     with DeviceContext() as ctx:
         test_block_scaled_nvfp4_cublaslt[
             DType.bfloat16,

@@ -27,7 +27,7 @@ from tensor import InputTensor, OutputTensor, StaticTensorSpec
 # ------------------------------------------------------------------------------
 
 
-fn tpool_patch_merger_kernel[
+def tpool_patch_merger_kernel[
     dtype: DType,
     XLayout: TensorLayout,
     x_origin: ImmutOrigin,
@@ -138,7 +138,7 @@ fn tpool_patch_merger_kernel[
 # ------------------------------------------------------------------------------
 
 
-fn tpool_patch_merger[
+def tpool_patch_merger[
     dtype: DType,
     output_layout: TensorLayout,
     x_layout: TensorLayout,

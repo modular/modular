@@ -14,7 +14,7 @@
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
 
-fn test_mut_cast_fails_if_mutabilities_do_not_match[
+def test_mut_cast_fails_if_mutabilities_do_not_match[
     T: AnyType
 ](p: UnsafePointer[T, ...]):
     # CHECK: constraint failed: Cannot safely cast an immutable pointer to mutable
