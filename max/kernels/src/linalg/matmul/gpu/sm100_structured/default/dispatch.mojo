@@ -41,6 +41,7 @@ from ..structured_kernels.config import (
     MatmulConfig,
     build_configs,
     choose_config,
+    default_matmul_config_bf16_fp8,
 )
 from ... import matmul_kernel_naive, gemv_gpu, multistage_gemm
 from ....vendor.matmul import matmul as matmul_vendor
@@ -196,7 +197,7 @@ def matmul_dispatch_sm100[
     # 1. `N * size_of(c_type) % 16B == 0` for output buffer (TMA requirement)
     # 2. `c_type == DType.bfloat16` SM100 kernel only supports bfloat16 for output buffer
     comptime if (
-        c_type == DType.bfloat16
+        c_type in (DType.bfloat16, DType.float8_e4m3fn)
         and static_N * size_of[c_type]() % 16 == 0
         and static_K * size_of[a_type]() % 16 == 0
         and transpose_b
@@ -1467,6 +1468,20 @@ def heuristic_and_outliers_dispatch[
             ](c, a, b, ctx)
             return DISPATCH_HIT
 
+    # For float8_e4m3fn output, we should never fail dispatching, use the default config.
+    comptime if c_type == DType.float8_e4m3fn:
+        comptime default_config = default_matmul_config_bf16_fp8[
+            a_type, b_type, c_type, transpose_b
+        ]()
+        _matmul_dispatch_sm100[
+            transpose_b=transpose_b,
+            config=default_config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
+        return DISPATCH_HIT
+
     return DISPATCH_MISS
 
 
@@ -1924,5 +1939,19 @@ def sm100_heuristic_and_outliers_dispatch[
                 pdl_level=pdl_level,
             ](c, a, b, ctx)
             return DISPATCH_HIT
+
+    # For float8_e4m3fn output, we should never fail dispatching, use the default config.
+    comptime if c_type == DType.float8_e4m3fn:
+        comptime default_config = default_matmul_config_bf16_fp8[
+            a_type, b_type, c_type, transpose_b
+        ]()
+        blackwell_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b,
+            config=default_config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
+        return DISPATCH_HIT
 
     return DISPATCH_MISS
