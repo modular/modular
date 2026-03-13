@@ -21,12 +21,12 @@ from std.gpu.host.compile import _compile_code
 from std.testing import *
 
 
-fn check_sm9x() -> Bool:
+def check_sm9x() -> Bool:
     comptime v = _is_sm_9x()
     return v
 
 
-fn check_sm9x_or_newer() -> Bool:
+def check_sm9x_or_newer() -> Bool:
     comptime v = _is_sm_9x_or_newer()
     return v
 

@@ -34,6 +34,10 @@ from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.speculative_decoding import (
     StandaloneSpeculativeDecodingPipeline,
 )
+from max.pipelines.lib.speculative_decoding.utils import (
+    ModelInputsWithTokensAndOffsets,
+    update_contexts_and_compute_metrics_standalone,
+)
 
 
 @dataclass
@@ -166,7 +170,7 @@ def test_speculative_decoding_no_rejection(
     )
 
     # Merge draft tokens with target tokens
-    merged_tokens, merged_offsets = pipeline._ragged_token_merger(
+    merged_tokens, merged_offsets = pipeline._ragged_token_merger.run(
         model_inputs.tokens,  # type: ignore[attr-defined]
         model_inputs.input_row_offsets,  # type: ignore[attr-defined]
         draft_tokens,
@@ -192,7 +196,7 @@ def test_speculative_decoding_no_rejection(
     # If the draft and target models are the same then no tokens are rejected.
     assert np.all(first_rejected_tokens.to_numpy() == num_steps)
 
-    pipeline.update_contexts(
+    update_contexts_and_compute_metrics_standalone(
         context_batch=context_batch,
         first_rejected_tokens=first_rejected_tokens.to_numpy(),
         recovered_tokens=recovered_tokens.to_numpy(),
@@ -242,9 +246,10 @@ def test_speculative_decoding_partial_rejection(
     )
 
     # Merge draft tokens with target tokens
-    merged_tokens, merged_offsets = pipeline._ragged_token_merger(
-        model_inputs.tokens,  # type: ignore[attr-defined]
-        model_inputs.input_row_offsets,  # type: ignore[attr-defined]
+    assert isinstance(model_inputs, ModelInputsWithTokensAndOffsets)
+    merged_tokens, merged_offsets = pipeline._ragged_token_merger.run(
+        model_inputs.tokens,
+        model_inputs.input_row_offsets,
         draft_tokens,
     )
 
@@ -292,7 +297,7 @@ def test_speculative_decoding_partial_rejection(
 
     draft_tokens_host = draft_tokens.to_numpy()
 
-    pipeline.update_contexts(
+    update_contexts_and_compute_metrics_standalone(
         context_batch=context_batch,
         first_rejected_tokens=first_rejected_tokens_host,
         recovered_tokens=recovered_tokens.to_numpy(),

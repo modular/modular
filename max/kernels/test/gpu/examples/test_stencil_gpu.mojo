@@ -31,9 +31,9 @@ comptime load_fn_type = fn[dtype: DType, rank: Int, simd_width: Int](
 ) capturing -> SIMD[dtype, simd_width]
 
 
-fn fill_buffer[
+def fill_buffer[
     dtype: DType, rank: Int, shape: DimList
-](buf: NDBuffer[mut=True, dtype, rank, _, shape]):
+](buf: NDBuffer[mut=True, rank=rank, dtype, _, shape]):
     var s: Int = 1
     for i in range(buf.get_rank()):
         s *= buf.dim(i)
@@ -42,18 +42,18 @@ fn fill_buffer[
         buf.flatten()[j] = Scalar[dtype](j) + 1
 
 
-fn assert_allclose[
+def assert_allclose[
     dtype: DType, rank: Int, shape: DimList
 ](
-    h_output_ref: NDBuffer[dtype, rank, _, shape],
-    h_output_gpu: NDBuffer[dtype, rank, _, shape],
+    h_output_ref: NDBuffer[rank=rank, dtype, _, shape],
+    h_output_gpu: NDBuffer[rank=rank, dtype, _, shape],
 ) raises:
     var shape_ = h_output_ref.get_shape()
     for i in range(shape_.flattened_length()):
         assert_almost_equal(h_output_ref.data[i], h_output_gpu.data[i])
 
 
-fn test_stencil_avg_pool(ctx: DeviceContext) raises:
+def test_stencil_avg_pool(ctx: DeviceContext) raises:
     print("== test_stencil_avg_pool")
     comptime rank = 4
     comptime stencil_rank = 2
@@ -68,11 +68,11 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
     comptime pool_window_w = 3
     comptime dilation = 1
 
-    comptime input_shape = DimList(1, input_height, input_width, 1)
+    comptime input_shape = DimList[1, input_height, input_width, 1]()
     var input_shape_dyn = IndexList[4](1, input_height, input_width, 1)
     comptime output_height = input_height - pool_window_h + 1
     comptime output_width = input_width - pool_window_w + 1
-    comptime output_shape = DimList(1, output_height, output_width, 1)
+    comptime output_shape = DimList[1, output_height, output_width, 1]()
     var output_shape_dyn = IndexList[4](1, output_height, output_width, 1)
 
     var d_input_managed = ManagedLayoutTensor[
@@ -82,29 +82,29 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
         dtype, Layout.row_major(1, output_height, output_width, 1)
     ](ctx)
 
-    var h_input = NDBuffer[dtype, rank, MutAnyOrigin, input_shape](
+    var h_input = NDBuffer[rank=rank, dtype, MutAnyOrigin, input_shape](
         d_input_managed.tensor[update=False]().ptr, input_shape_dyn
     )
-    var h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+    var h_output = NDBuffer[rank=rank, dtype, MutAnyOrigin, output_shape](
         d_output_managed.tensor[update=False]().ptr, output_shape_dyn
     )
     var h_output_ref = NDBuffer[
-        dtype, rank, MutAnyOrigin, output_shape
+        rank=rank, dtype, MutAnyOrigin, output_shape
     ].stack_allocation()
 
     fill_buffer(h_input)
     h_output.fill(0)
     h_output_ref.fill(0)
 
-    var d_input = NDBuffer[dtype, rank](
+    var d_input = NDBuffer[rank=rank, dtype](
         d_input_managed.device_tensor().ptr, input_shape_dyn
     )
-    var d_output = NDBuffer[dtype, rank](
+    var d_output = NDBuffer[rank=rank, dtype](
         d_output_managed.device_tensor().ptr, output_shape_dyn
     )
 
     @parameter
-    fn map_fn[
+    def map_fn[
         rank: Int
     ](point: IndexList[stencil_rank, ...]) -> Tuple[
         IndexList[stencil_rank],
@@ -119,7 +119,7 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(d_input)
     @parameter
-    fn load_fn_gpu[
+    def load_fn_gpu[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
@@ -128,12 +128,12 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
 
     @always_inline
     @parameter
-    fn avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
+    def avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
     @always_inline
     @parameter
-    fn avg_pool_compute[
+    def avg_pool_compute[
         simd_width: Int
     ](
         point: IndexList[rank, ...],
@@ -144,13 +144,13 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
 
     @always_inline
     @parameter
-    fn dilation_fn(dim: Int) -> Int:
+    def dilation_fn(dim: Int) -> Int:
         return 1
 
     @always_inline
     @__copy_capture(d_output)
     @parameter
-    fn avg_pool_compute_finalize_gpu[
+    def avg_pool_compute_finalize_gpu[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
@@ -172,7 +172,7 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
     ](ctx, d_output.get_shape(), d_input.get_shape())
 
     # Refresh host view; tensor() handles device-to-host transfer and sync.
-    h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+    h_output = NDBuffer[rank=rank, dtype, MutAnyOrigin, output_shape](
         d_output_managed.tensor().ptr, output_shape_dyn
     )
 
@@ -180,7 +180,7 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(h_input)
     @parameter
-    fn load_fn_ref[
+    def load_fn_ref[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
@@ -190,7 +190,7 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(h_output_ref)
     @parameter
-    fn avg_pool_compute_finalize_ref[
+    def avg_pool_compute_finalize_ref[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
@@ -218,7 +218,7 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
         print("")
 
 
-fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
+def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     print("== test_stencil_avg_pool_padded")
     comptime rank = 4
     comptime stencil_rank = 2
@@ -235,11 +235,11 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     comptime pad_h = 2
     comptime pad_w = 2
 
-    comptime input_shape = DimList(1, input_height, input_width, 1)
+    comptime input_shape = DimList[1, input_height, input_width, 1]()
     var input_shape_dyn = IndexList[4](1, input_height, input_width, 1)
     comptime output_height = input_height - pool_window_h + pad_h * 2 + 1
     comptime output_width = input_width - pool_window_w + pad_w * 2 + 1
-    comptime output_shape = DimList(1, output_height, output_width, 1)
+    comptime output_shape = DimList[1, output_height, output_width, 1]()
     var output_shape_dyn = IndexList[4](1, output_height, output_width, 1)
 
     var d_input_managed = ManagedLayoutTensor[
@@ -249,29 +249,29 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
         dtype, Layout.row_major(1, output_height, output_width, 1)
     ](ctx)
 
-    var h_input = NDBuffer[dtype, rank, MutAnyOrigin, input_shape](
+    var h_input = NDBuffer[rank=rank, dtype, MutAnyOrigin, input_shape](
         d_input_managed.tensor[update=False]().ptr, input_shape_dyn
     )
-    var h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+    var h_output = NDBuffer[rank=rank, dtype, MutAnyOrigin, output_shape](
         d_output_managed.tensor[update=False]().ptr, output_shape_dyn
     )
     var h_output_ref = NDBuffer[
-        dtype, rank, MutAnyOrigin, output_shape
+        rank=rank, dtype, MutAnyOrigin, output_shape
     ].stack_allocation()
     h_output_ref.fill(0)
 
     fill_buffer(h_input)
     h_output.fill(0)
 
-    var d_input = NDBuffer[dtype, rank](
+    var d_input = NDBuffer[rank=rank, dtype](
         d_input_managed.device_tensor().ptr, input_shape_dyn
     )
-    var d_output = NDBuffer[dtype, rank](
+    var d_output = NDBuffer[rank=rank, dtype](
         d_output_managed.device_tensor().ptr, output_shape_dyn
     )
 
     @parameter
-    fn map_fn[
+    def map_fn[
         rank: Int
     ](point: IndexList[stencil_rank, ...]) -> Tuple[
         IndexList[stencil_rank],
@@ -288,7 +288,7 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(d_input)
     @parameter
-    fn load_fn_gpu[
+    def load_fn_gpu[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
@@ -297,12 +297,12 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
 
     @always_inline
     @parameter
-    fn avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
+    def avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
     @always_inline
     @parameter
-    fn avg_pool_compute[
+    def avg_pool_compute[
         simd_width: Int
     ](
         point: IndexList[rank, ...],
@@ -313,13 +313,13 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
 
     @always_inline
     @parameter
-    fn dilation_fn(dim: Int) -> Int:
+    def dilation_fn(dim: Int) -> Int:
         return 1
 
     @always_inline
     @__copy_capture(d_output)
     @parameter
-    fn avg_pool_compute_finalize_gpu[
+    def avg_pool_compute_finalize_gpu[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
@@ -341,7 +341,7 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     ](ctx, d_output.get_shape(), d_input.get_shape())
 
     # Refresh host view; tensor() handles device-to-host transfer and sync.
-    h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+    h_output = NDBuffer[rank=rank, dtype, MutAnyOrigin, output_shape](
         d_output_managed.tensor().ptr, output_shape_dyn
     )
 
@@ -349,7 +349,7 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(h_input)
     @parameter
-    fn load_fn_ref[
+    def load_fn_ref[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
@@ -359,7 +359,7 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(h_output_ref)
     @parameter
-    fn avg_pool_compute_finalize_ref[
+    def avg_pool_compute_finalize_ref[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
@@ -388,7 +388,7 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
         print("")
 
 
-fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
+def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     print("== test_stencil_avg_pool_stride_2")
     comptime rank = 4
     comptime stencil_rank = 2
@@ -403,11 +403,11 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     comptime pool_window_w = 3
     comptime dilation = 1
 
-    comptime input_shape = DimList(1, input_height, input_width, 1)
+    comptime input_shape = DimList[1, input_height, input_width, 1]()
     var input_shape_dyn = IndexList[4](1, input_height, input_width, 1)
     comptime output_height = (input_height - pool_window_h) // stride + 1
     comptime output_width = (input_width - pool_window_w) // stride + 1
-    comptime output_shape = DimList(1, output_height, output_width, 1)
+    comptime output_shape = DimList[1, output_height, output_width, 1]()
     var output_shape_dyn = IndexList[4](1, output_height, output_width, 1)
 
     var d_input_managed = ManagedLayoutTensor[
@@ -417,29 +417,29 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
         dtype, Layout.row_major(1, output_height, output_width, 1)
     ](ctx)
 
-    var h_input = NDBuffer[dtype, rank, MutAnyOrigin, input_shape](
+    var h_input = NDBuffer[rank=rank, dtype, MutAnyOrigin, input_shape](
         d_input_managed.tensor[update=False]().ptr, input_shape_dyn
     )
-    var h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+    var h_output = NDBuffer[rank=rank, dtype, MutAnyOrigin, output_shape](
         d_output_managed.tensor[update=False]().ptr, output_shape_dyn
     )
     var h_output_ref = NDBuffer[
-        dtype, rank, MutAnyOrigin, output_shape
+        rank=rank, dtype, MutAnyOrigin, output_shape
     ].stack_allocation()
     h_output_ref.fill(0)
 
     fill_buffer(h_input)
     h_output.fill(0)
 
-    var d_input = NDBuffer[dtype, rank](
+    var d_input = NDBuffer[rank=rank, dtype](
         d_input_managed.device_tensor().ptr, input_shape_dyn
     )
-    var d_output = NDBuffer[dtype, rank](
+    var d_output = NDBuffer[rank=rank, dtype](
         d_output_managed.device_tensor().ptr, output_shape_dyn
     )
 
     @parameter
-    fn map_fn[
+    def map_fn[
         rank: Int
     ](point: IndexList[stencil_rank, ...]) -> Tuple[
         IndexList[stencil_rank],
@@ -457,7 +457,7 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(d_input)
     @parameter
-    fn load_fn_gpu[
+    def load_fn_gpu[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
@@ -466,12 +466,12 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
 
     @always_inline
     @parameter
-    fn avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
+    def avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
     @always_inline
     @parameter
-    fn avg_pool_compute[
+    def avg_pool_compute[
         simd_width: Int
     ](
         point: IndexList[rank, ...],
@@ -482,13 +482,13 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
 
     @always_inline
     @parameter
-    fn dilation_fn(dim: Int) -> Int:
+    def dilation_fn(dim: Int) -> Int:
         return 1
 
     @always_inline
     @__copy_capture(d_output)
     @parameter
-    fn avg_pool_compute_finalize_gpu[
+    def avg_pool_compute_finalize_gpu[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
@@ -510,7 +510,7 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     ](ctx, d_output.get_shape(), d_input.get_shape())
 
     # Refresh host view; tensor() handles device-to-host transfer and sync.
-    h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+    h_output = NDBuffer[rank=rank, dtype, MutAnyOrigin, output_shape](
         d_output_managed.tensor().ptr, output_shape_dyn
     )
 
@@ -518,7 +518,7 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(h_input)
     @parameter
-    fn load_fn_ref[
+    def load_fn_ref[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
@@ -528,7 +528,7 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(h_output_ref)
     @parameter
-    fn avg_pool_compute_finalize_ref[
+    def avg_pool_compute_finalize_ref[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
@@ -557,7 +557,7 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
         print("")
 
 
-fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
+def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     print("== test_stencil_gpu_max_pool")
     comptime rank = 4
     comptime stencil_rank = 2
@@ -572,7 +572,7 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     comptime pool_window_w = 3
     comptime dilation = 1
 
-    comptime input_shape = DimList(1, input_height, input_width, 1)
+    comptime input_shape = DimList[1, input_height, input_width, 1]()
     var input_shape_dyn = IndexList[4](1, input_height, input_width, 1)
     comptime output_height = (
         input_height - pool_window_h - (pool_window_h - 1) * (dilation - 1)
@@ -581,7 +581,7 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
         input_width - pool_window_w - (pool_window_w - 1) * (dilation - 1)
     ) // stride + 1
 
-    comptime output_shape = DimList(1, output_height, output_width, 1)
+    comptime output_shape = DimList[1, output_height, output_width, 1]()
     var output_shape_dyn = IndexList[4](1, output_height, output_width, 1)
 
     var pad_value = 0
@@ -593,29 +593,29 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
         dtype, Layout.row_major(1, output_height, output_width, 1)
     ](ctx)
 
-    var h_input = NDBuffer[dtype, rank, MutAnyOrigin, input_shape](
+    var h_input = NDBuffer[rank=rank, dtype, MutAnyOrigin, input_shape](
         d_input_managed.tensor[update=False]().ptr, input_shape_dyn
     )
-    var h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+    var h_output = NDBuffer[rank=rank, dtype, MutAnyOrigin, output_shape](
         d_output_managed.tensor[update=False]().ptr, output_shape_dyn
     )
     var h_output_ref = NDBuffer[
-        dtype, rank, MutAnyOrigin, output_shape
+        rank=rank, dtype, MutAnyOrigin, output_shape
     ].stack_allocation()
     h_output_ref.fill(0)
 
     fill_buffer(h_input)
     h_output.fill(0)
 
-    var d_input = NDBuffer[dtype, rank](
+    var d_input = NDBuffer[rank=rank, dtype](
         d_input_managed.device_tensor().ptr, input_shape_dyn
     )
-    var d_output = NDBuffer[dtype, rank](
+    var d_output = NDBuffer[rank=rank, dtype](
         d_output_managed.device_tensor().ptr, output_shape_dyn
     )
 
     @parameter
-    fn map_fn[
+    def map_fn[
         rank: Int
     ](point: IndexList[stencil_rank, ...]) -> Tuple[
         IndexList[stencil_rank],
@@ -633,7 +633,7 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(d_input)
     @parameter
-    fn load_fn_gpu[
+    def load_fn_gpu[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
@@ -642,12 +642,12 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
 
     @always_inline
     @parameter
-    fn max_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
+    def max_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
         return min_or_neg_inf[dtype]()
 
     @always_inline
     @parameter
-    fn max_pool_compute[
+    def max_pool_compute[
         simd_width: Int
     ](
         point: IndexList[rank, ...],
@@ -659,14 +659,14 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(d_output)
     @parameter
-    fn max_pool_compute_finalize[
+    def max_pool_compute_finalize[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
         d_output.store(point, val)
 
     @always_inline
     @parameter
-    fn dilation_fn(dim: Int) -> Int:
+    def dilation_fn(dim: Int) -> Int:
         return dilation
 
     comptime stencil_axis = IndexList[stencil_rank](1, 2)
@@ -685,7 +685,7 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     ](ctx, d_output.get_shape(), d_input.get_shape())
 
     # Refresh host view; tensor() handles device-to-host transfer and sync.
-    h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+    h_output = NDBuffer[rank=rank, dtype, MutAnyOrigin, output_shape](
         d_output_managed.tensor().ptr, output_shape_dyn
     )
     # ctx.enqueue_copy(h_input.data, d_input_buf)
@@ -694,7 +694,7 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(h_input)
     @parameter
-    fn load_fn_ref[
+    def load_fn_ref[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
@@ -704,7 +704,7 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(h_output_ref)
     @parameter
-    fn max_pool_compute_finalize_ref[
+    def max_pool_compute_finalize_ref[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
         h_output_ref.store(point, val)

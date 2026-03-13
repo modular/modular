@@ -47,7 +47,7 @@ from std.sys import get_defined_int, size_of
 from std.utils import IndexList
 
 
-fn consumer_kernel[
+def consumer_kernel[
     dtype: DType,
 ](
     input: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -71,7 +71,7 @@ fn consumer_kernel[
         output[i] = input[i]
 
 
-fn run_pdl_race_test[
+def run_pdl_race_test[
     dtype: DType,
     M: Int,
     N: Int,
@@ -118,17 +118,17 @@ fn run_pdl_race_test[
     ctx.enqueue_copy(b_device, b_host)
 
     # Create NDBuffers for matmul
-    comptime a_static_shape = DimList(Dim(), Dim(K))
-    comptime b_static_shape = DimList(Dim(N), Dim(K))
-    comptime c_static_shape = DimList(Dim(), Dim(N))
+    comptime a_static_shape = DimList[Dim(), Dim(K)]()
+    comptime b_static_shape = DimList[Dim(N), Dim(K)]()
+    comptime c_static_shape = DimList[Dim(), Dim(N)]()
 
-    var a_buf = NDBuffer[dtype, 2, MutAnyOrigin, a_static_shape](
+    var a_buf = NDBuffer[rank=2, dtype, MutAnyOrigin, a_static_shape](
         a_device.unsafe_ptr(), IndexList[2](M, K)
     )
-    var b_buf = NDBuffer[dtype, 2, MutAnyOrigin, b_static_shape](
+    var b_buf = NDBuffer[rank=2, dtype, MutAnyOrigin, b_static_shape](
         b_device.unsafe_ptr(), IndexList[2](N, K)
     )
-    var c_buf = NDBuffer[dtype, 2, MutAnyOrigin, c_static_shape](
+    var c_buf = NDBuffer[rank=2, dtype, MutAnyOrigin, c_static_shape](
         c_device.unsafe_ptr(), IndexList[2](M, N)
     )
 

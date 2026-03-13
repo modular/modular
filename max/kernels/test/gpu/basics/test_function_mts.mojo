@@ -34,7 +34,7 @@ comptime gray_spec = StaticTensorSpec[int_dtype, 2, ...].get_unknown()
 comptime gray_layout = gray_spec.to_layout()
 
 
-fn color_to_grayscale(
+def color_to_grayscale(
     rgb_tensor: LayoutTensor[int_dtype, rgb_layout, MutAnyOrigin],
     gray_tensor: LayoutTensor[int_dtype, gray_layout, MutAnyOrigin],
 ):

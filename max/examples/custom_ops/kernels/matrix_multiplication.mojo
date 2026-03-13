@@ -52,7 +52,7 @@ comptime OPTIMIZED_BLOCK_SIZE = 16 if has_amd_gpu_accelerator() else 32
 # ===-----------------------------------------------------------------------=== #
 
 
-fn naive_matrix_multiplication_cpu(
+def naive_matrix_multiplication_cpu(
     output: ManagedTensorSlice,
     a: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
     b: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
@@ -75,7 +75,7 @@ fn naive_matrix_multiplication_cpu(
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn naive_matrix_multiplication[
+def naive_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -145,7 +145,7 @@ fn naive_matrix_multiplication[
         Int32(OPTIMIZED_NUM_THREADS)
     )
 )
-fn coalescing_matrix_multiplication[
+def coalescing_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -215,7 +215,7 @@ fn coalescing_matrix_multiplication[
         Int32(OPTIMIZED_NUM_THREADS)
     )
 )
-fn tiled_matrix_multiplication[
+def tiled_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -258,8 +258,7 @@ fn tiled_matrix_multiplication[
     number of rows in B.
     """
     # Calculate the column and row indices for each thread
-    var col = thread_idx.x % UInt(BN)
-    var row = thread_idx.x // UInt(BN)
+    var row, col = divmod(thread_idx.x, UInt(BN))
 
     # Get the tile of the output matrix C that this thread block is responsible for
     var dst = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
@@ -319,7 +318,7 @@ fn tiled_matrix_multiplication[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn tiled_register_matrix_multiplication[
+def tiled_register_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -365,8 +364,7 @@ fn tiled_register_matrix_multiplication[
     of rows in B.
     """
     # Calculate the column and row indices for each thread.
-    var col = thread_idx.x % UInt(BN)
-    var row = thread_idx.x // UInt(BN)
+    var row, col = divmod(thread_idx.x, UInt(BN))
 
     # Get the tile of the output matrix C that this thread is
     # responsible for computing.
@@ -441,7 +439,7 @@ fn tiled_register_matrix_multiplication[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn block_tiled_matrix_multiplication[
+def block_tiled_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -490,8 +488,9 @@ fn block_tiled_matrix_multiplication[
     matrix multiplication, i.e., the number of columns in A equals the number
     of rows in B.
     """
-    var partition_col = Int(thread_idx.x % UInt(BN // TN))
-    var partition_row = Int(thread_idx.x // UInt(BN // TN))
+    var _partition_row, _partition_col = divmod(thread_idx.x, UInt(BN // TN))
+    var partition_col = Int(_partition_col)
+    var partition_row = Int(_partition_row)
 
     var dst = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[TM, TN](
         partition_row, partition_col
@@ -561,7 +560,7 @@ fn block_tiled_matrix_multiplication[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn block_tiled_vectorized_matrix_multiplication[
+def block_tiled_vectorized_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -614,8 +613,9 @@ fn block_tiled_vectorized_matrix_multiplication[
     """
 
     comptime simd_width = simd_width_of[dtype]()
-    var partition_col = Int(thread_idx.x % UInt(BN // TN))
-    var partition_row = Int(thread_idx.x // UInt(BN // TN))
+    var _partition_row, _partition_col = divmod(thread_idx.x, UInt(BN // TN))
+    var partition_col = Int(_partition_col)
+    var partition_row = Int(_partition_row)
 
     # Get the tile of the output matrix C that this thread is responsible
     # for computing.
@@ -707,7 +707,7 @@ fn block_tiled_vectorized_matrix_multiplication[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn tensor_core_matrix_multiplication[
+def tensor_core_matrix_multiplication[
     dtype: DType,
     layout_a: Layout,
     layout_b: Layout,
@@ -763,8 +763,7 @@ fn tensor_core_matrix_multiplication[
     comptime K = A.shape[1]()  # Number of columns in matrix A
 
     # Calculate warp tile coordinates within the block
-    warp_y = warp_id() // UInt(BN // WN)
-    warp_x = warp_id() % UInt(BN // WN)
+    warp_y, warp_x = divmod(warp_id(), UInt(BN // WN))
 
     # Get the warp tile of the output matrix C
     C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
@@ -876,7 +875,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         # The kind of device this will be run on: "cpu" or "gpu"
         target: StaticString,
     ](

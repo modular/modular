@@ -55,7 +55,7 @@ from linalg.utils import elementwise_compute_lambda_type
 from std.utils import IndexList
 
 
-fn _verify_buffers_gpu[
+def _verify_buffers_gpu[
     c_type: DType, BLOCK_SIZE: Int
 ](
     output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
@@ -113,7 +113,7 @@ fn _verify_buffers_gpu[
         result[base + 4] = ref_nz
 
 
-fn verify_matmul[
+def verify_matmul[
     dtype: DType,
     static_c_shape: DimList,
     static_a_shape: DimList,
@@ -135,19 +135,19 @@ fn verify_matmul[
     var b_size = dynamic_b_shape[0] * dynamic_b_shape[1]
 
     var a_device = ctx.enqueue_create_buffer[dtype](a_size)
-    var a_device_nd = NDBuffer[dtype, 2, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=2, dtype, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
     )
     var b_device = ctx.enqueue_create_buffer[dtype](b_size)
-    var b_device_nd = NDBuffer[dtype, 2, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=2, dtype, _, static_b_shape](
         b_device.unsafe_ptr(), dynamic_b_shape
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
     )
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
@@ -155,10 +155,10 @@ fn verify_matmul[
     comptime if not init_on_gpu:
         var a_host_ptr = alloc[Scalar[dtype]](a_size)
         var b_host_ptr = alloc[Scalar[dtype]](b_size)
-        var a_host = NDBuffer[dtype, 2, _, static_a_shape](
+        var a_host = NDBuffer[rank=2, dtype, _, static_a_shape](
             a_host_ptr, dynamic_a_shape
         )
-        var b_host = NDBuffer[dtype, 2, _, static_b_shape](
+        var b_host = NDBuffer[rank=2, dtype, _, static_b_shape](
             b_host_ptr, dynamic_b_shape
         )
 
@@ -293,7 +293,7 @@ fn verify_matmul[
     print("\n=== TEST PASSED ===\n")
 
 
-fn _get_run_name[
+def _get_run_name[
     dtype: DType,
     shape_c: DimList,
     shape_a: DimList,
@@ -341,7 +341,7 @@ fn _get_run_name[
     )
 
 
-fn bench_matmul[
+def bench_matmul[
     dtype: DType,
     shape_c: DimList,
     shape_a: DimList,
@@ -366,7 +366,7 @@ fn bench_matmul[
     # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
     # update: using 512 to be 2x the infinity cache on MI300x
     @always_inline
-    fn get_size(shape: IndexList[2]) -> Int:
+    def get_size(shape: IndexList[2]) -> Int:
         return shape[0] * shape[1]
 
     comptime simd_size = 4
@@ -381,8 +381,8 @@ fn bench_matmul[
     comptime if not init_on_gpu:
         var a_host_ptr = alloc[Scalar[dtype]](cb_a.alloc_size())
         var b_host_ptr = alloc[Scalar[dtype]](cb_b.alloc_size())
-        var a_host = NDBuffer[dtype, 1](a_host_ptr, cb_a.alloc_size())
-        var b_host = NDBuffer[dtype, 1](b_host_ptr, cb_b.alloc_size())
+        var a_host = NDBuffer[rank=1, dtype](a_host_ptr, cb_a.alloc_size())
+        var b_host = NDBuffer[rank=1, dtype](b_host_ptr, cb_b.alloc_size())
 
         comptime if dtype.is_float8():
             rand(a_host.data, a_host.num_elements())
@@ -413,11 +413,11 @@ fn bench_matmul[
         cb_b.init_on_device(init_type, ctx)
 
     # Helper to run vendor BLAS matmul - used by both benchmark and verification
-    fn run_vendor_blas(
+    def run_vendor_blas(
         ctx: DeviceContext,
-        tensor_a: NDBuffer[dtype, 2, MutAnyOrigin, shape_a],
-        tensor_b: NDBuffer[dtype, 2, MutAnyOrigin, shape_b],
-        tensor_c: NDBuffer[DType.bfloat16, 2, MutAnyOrigin, shape_c],
+        tensor_a: NDBuffer[rank=2, dtype, MutAnyOrigin, shape_a],
+        tensor_b: NDBuffer[rank=2, dtype, MutAnyOrigin, shape_b],
+        tensor_c: NDBuffer[rank=2, DType.bfloat16, MutAnyOrigin, shape_c],
     ) raises:
         vendor_blas.matmul[use_tf32=True](
             ctx,
@@ -435,21 +435,21 @@ fn bench_matmul[
     )
     @parameter
     @always_inline
-    fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-        var tensor_a = NDBuffer[dtype, 2, MutAnyOrigin, shape_a](
+    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        var tensor_a = NDBuffer[rank=2, dtype, MutAnyOrigin, shape_a](
             cb_a.offset_ptr(iteration), shape_a_dim
         )
-        var tensor_b = NDBuffer[dtype, 2, MutAnyOrigin, shape_b](
+        var tensor_b = NDBuffer[rank=2, dtype, MutAnyOrigin, shape_b](
             cb_b.offset_ptr(iteration), shape_b_dim
         )
-        var tensor_c = NDBuffer[DType.bfloat16, 2, MutAnyOrigin, shape_c](
+        var tensor_c = NDBuffer[rank=2, DType.bfloat16, MutAnyOrigin, shape_c](
             cb_c.offset_ptr(iteration), shape_c_dim
         )
 
         @parameter
         @always_inline
         @__copy_capture(tensor_c)
-        fn test_lambda_add_coords_prod[
+        def test_lambda_add_coords_prod[
             _dtype: DType,
             width: Int,
             *,
@@ -477,7 +477,7 @@ fn bench_matmul[
 
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher) raises:
+    def bench_func(mut b: Bencher) raises:
         b.iter_custom[kernel_launch](ctx)
 
     var flops = ThroughputMeasure(
@@ -524,7 +524,7 @@ fn bench_matmul[
     _ = cb_c^
 
 
-fn create_matmul_bench[
+def create_matmul_bench[
     dtype: DType,
     *,
     transpose_b: Bool,
@@ -542,9 +542,9 @@ fn create_matmul_bench[
     verify: Bool,
     run_benchmark: Bool,
 ) raises:
-    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
+    comptime static_b_shape = DimList[
+        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
+    ]()
     var dynamic_b_shape = (n.value, k.value) if transpose_b else (
         k.value,
         n.value,
@@ -552,8 +552,8 @@ fn create_matmul_bench[
 
     bench_matmul[
         dtype,
-        DimList(m.dim, n.dim),
-        DimList(m.dim, k.dim),
+        DimList[m.dim, n.dim](),
+        DimList[m.dim, k.dim](),
         static_b_shape,
         transpose_b=transpose_b,
         cache_busting=cache_busting,

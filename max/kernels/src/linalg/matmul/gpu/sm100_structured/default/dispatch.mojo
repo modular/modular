@@ -26,7 +26,7 @@ from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from std.logger import Logger
 
 from std.utils.index import Index, IndexList
@@ -64,7 +64,7 @@ comptime logger = Logger()
 
 
 @always_inline
-fn matmul_dispatch_sm100[
+def matmul_dispatch_sm100[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -77,9 +77,9 @@ fn matmul_dispatch_sm100[
     register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[mut=False, a_type, 2, _, _],
-    b: NDBuffer[mut=False, b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[mut=False, rank=2, a_type, _, _],
+    b: NDBuffer[mut=False, rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises:
     comptime assert a_type == b_type, "a_type and b_type must be the same"
@@ -131,6 +131,19 @@ fn matmul_dispatch_sm100[
             register_based_epilogue=register_based_epilogue,
         ](c_tensor, a_tensor, b_tensor, ctx)
 
+    # M=1 (or N=1): use GEMV split-K for both BF16 and FP8.
+    # static_N=1 is not supported on SM100 due to TMA requirements
+    # (N * size_of(c_type) % 16 == 0).
+    comptime if a_type in (DType.bfloat16, DType.float8_e4m3fn):
+        if static_N == 1 or m == 1:
+            logger.info("------ Executing GEMV Matmul------")
+            gemv_gpu[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_wrapper,
+                pdl_level=pdl_level,
+            ](c, a, b, ctx)
+            return
+
     comptime if _vendor_blas_fallback_disabled():
         comptime if (
             c_type == DType.bfloat16
@@ -179,19 +192,6 @@ fn matmul_dispatch_sm100[
     # default matmul config for sm100
     comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
-
-    # 1. for m==1 our gemv matmul is faster than cublas for skinny bfloat16 matmuls
-    # 2. Our GEMV matmul dosen't support float8 yet.
-    # 3. static_N=1 is not supported on SM100 due to the output buffer TMA requirements. (`N * size_of(c_type) % 16 == 0`).
-    comptime if a_type == DType.bfloat16:
-        if static_N == 1 or m == 1:
-            logger.info("------ Executing GEMV Matmul------")
-            gemv_gpu[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return
 
     # SM100 kernel requirements:
     # 1. `N * size_of(c_type) % 16B == 0` for output buffer (TMA requirement)
@@ -244,7 +244,7 @@ fn matmul_dispatch_sm100[
 
 # NOTE:
 # 1. SM100 matmul supports compute lambdas so we should just use normal and compute lambdas.
-fn matmul_dispatch_sm100_fp8[
+def matmul_dispatch_sm100_fp8[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -256,9 +256,9 @@ fn matmul_dispatch_sm100_fp8[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[rank=2, a_type, _, _],
+    b: NDBuffer[rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
     comptime static_N = c.shape.get[1]()
@@ -278,7 +278,7 @@ fn matmul_dispatch_sm100_fp8[
 
     @parameter
     @always_inline("nodebug")
-    fn _dispatch[entry: TuningConfigSM100]() raises:
+    def _dispatch[entry: TuningConfigSM100]() raises:
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             mma_shape=entry.mma_shape,
             cluster_shape=entry.cluster_shape,
@@ -295,13 +295,13 @@ fn matmul_dispatch_sm100_fp8[
 
     @parameter
     @always_inline("nodebug")
-    fn _search[
+    def _search[
         T: Table[TuningConfigSM100],
         domain: List[Int] = List[Int](),
     ]() raises -> Int:
         @parameter
         @always_inline
-        fn get_m(x: TuningConfigSM100) -> Int:
+        def get_m(x: TuningConfigSM100) -> Int:
             return x.M
 
         comptime m_values = T.query_values[Int, get_m, domain]()
@@ -310,7 +310,7 @@ fn matmul_dispatch_sm100_fp8[
 
             @parameter
             @always_inline
-            fn rule_eq_m(x: TuningConfigSM100) -> Bool:
+            def rule_eq_m(x: TuningConfigSM100) -> Bool:
                 return x.M == static_m
 
             if m <= static_m:
@@ -331,7 +331,7 @@ fn matmul_dispatch_sm100_fp8[
 
     @parameter
     @always_inline
-    fn rule_eq_nk(x: TuningConfigSM100) -> Bool:
+    def rule_eq_nk(x: TuningConfigSM100) -> Bool:
         return x.K == static_K and x.N == static_N
 
     comptime nk_idx_list = tuning_table.query_index[rule_eq_nk]()
@@ -1337,7 +1337,7 @@ fn matmul_dispatch_sm100_fp8[
     return DISPATCH_MISS
 
 
-fn heuristic_and_outliers_dispatch[
+def heuristic_and_outliers_dispatch[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1349,9 +1349,9 @@ fn heuristic_and_outliers_dispatch[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[rank=2, a_type, _, _],
+    b: NDBuffer[rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
     var m = c.dim[0]()
@@ -1374,7 +1374,7 @@ fn heuristic_and_outliers_dispatch[
 
     @parameter
     @always_inline
-    fn rule(x: TuningConfigSM100) -> Bool:
+    def rule(x: TuningConfigSM100) -> Bool:
         return x.K == static_K and x.N == static_N
 
     comptime outlier_configs = outliers.find[rule]()
@@ -1437,7 +1437,7 @@ fn heuristic_and_outliers_dispatch[
 
 # NOTE:
 # 1. SM100 matmul supports compute lambdas so we should just use normal and compute lambdas.
-fn matmul_dispatch_sm100_bf16[
+def matmul_dispatch_sm100_bf16[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1449,9 +1449,9 @@ fn matmul_dispatch_sm100_bf16[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[rank=2, a_type, _, _],
+    b: NDBuffer[rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
     var m = c.dim[0]()
@@ -1568,7 +1568,7 @@ fn matmul_dispatch_sm100_bf16[
 # NOTE: vendor blas, naive matmul, and multistage gemm dosen't support compute lambdas so we need to wrap them in a lambda function.
 # if there is no compute lambda, then this wrapper will be a simple element wise lambda.
 @always_inline
-fn _vendor_blas_matmul_sm100[
+def _vendor_blas_matmul_sm100[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1576,9 +1576,9 @@ fn _vendor_blas_matmul_sm100[
     elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[mut=False, a_type, 2, _, _],
-    b: NDBuffer[mut=False, b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[mut=False, rank=2, a_type, _, _],
+    b: NDBuffer[mut=False, rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises:
     comptime K = a.shape.get[1]()
@@ -1612,9 +1612,9 @@ fn _vendor_blas_matmul_sm100[
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                 config,
                 ctx,
             )
@@ -1651,7 +1651,7 @@ fn _vendor_blas_matmul_sm100[
         return
 
 
-fn _matmul_dispatch_sm100[
+def _matmul_dispatch_sm100[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1664,9 +1664,9 @@ fn _matmul_dispatch_sm100[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[rank=2, a_type, _, _],
+    b: NDBuffer[rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises:
     """Our sm100 matmul kernel still does not support fusion of elementwise
@@ -1709,7 +1709,7 @@ fn _matmul_dispatch_sm100[
 
         @parameter
         @__copy_capture(c)
-        fn epilogue_wrapper[
+        def epilogue_wrapper[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])
@@ -1744,7 +1744,7 @@ fn _matmul_dispatch_sm100[
         )
 
         # Construct a new buffer with external origin pointing to the temporary storage.
-        var c_tmp = NDBuffer[c.type, 2, MutExternalOrigin](
+        var c_tmp = NDBuffer[rank=2, c.type, MutExternalOrigin](
             rebind[UnsafePointer[Scalar[c.type], MutExternalOrigin]](
                 tmp_device_buffer.unsafe_ptr()
             ),
@@ -1763,7 +1763,7 @@ fn _matmul_dispatch_sm100[
 
 
 @always_inline
-fn batched_matmul_dispatch_sm100_bf16[
+def batched_matmul_dispatch_sm100_bf16[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1799,7 +1799,7 @@ fn batched_matmul_dispatch_sm100_bf16[
     ](c, a, b, ctx)
 
 
-fn sm100_heuristic_and_outliers_dispatch[
+def sm100_heuristic_and_outliers_dispatch[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1811,9 +1811,9 @@ fn sm100_heuristic_and_outliers_dispatch[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[rank=2, a_type, _, _],
+    b: NDBuffer[rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
     var m = c.dim[0]()
@@ -1836,7 +1836,7 @@ fn sm100_heuristic_and_outliers_dispatch[
 
     @parameter
     @always_inline
-    fn rule(x: TuningConfigSM100) -> Bool:
+    def rule(x: TuningConfigSM100) -> Bool:
         return x.K == static_K and x.N == static_N
 
     var c_tensor = TileTensor(c)

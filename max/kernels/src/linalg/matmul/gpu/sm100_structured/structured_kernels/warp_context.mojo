@@ -82,7 +82,7 @@ struct MmaWarpContext[
     var dealloc_barrier: Self.Dealloc
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         tmem: Self.Tmem,
         output_pipeline: Self.Pipeline,
@@ -94,7 +94,7 @@ struct MmaWarpContext[
 
     @staticmethod
     @always_inline
-    fn create(
+    def create(
         tmem_addr_storage: Self.Tmem.SmemAddrStorage,
         accum_barriers_ptr: MbarPtr,
         dealloc_mbar: Self.Dealloc.BarrierStorage,
@@ -120,16 +120,16 @@ struct MmaWarpContext[
         return Self(tmem, output_pipeline, Self.Dealloc(dealloc_mbar))
 
     @always_inline
-    fn __enter__(self) -> Self:
+    def __enter__(self) -> Self:
         Self.Sync.arrive()
         return self
 
     @always_inline
-    fn __exit__(self):
+    def __exit__(self):
         self.dealloc_barrier.complete_dealloc(self.tmem)
 
     @always_inline
-    fn per_k_stage(
+    def per_k_stage(
         mut self,
     ) -> MmaKStage[origin_of(self.output_pipeline), Self.opc]:
         """Get per-K stage for blockwise FP8 MMA loop.
@@ -175,7 +175,7 @@ struct EpilogueWarpContext[
     var dealloc_barrier: Self.Dealloc
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         tmem: Self.Tmem,
         output_pipeline: Self.Pipeline,
@@ -187,7 +187,7 @@ struct EpilogueWarpContext[
 
     @staticmethod
     @always_inline
-    fn create(
+    def create(
         tmem_addr_storage: Self.Tmem.SmemAddrStorage,
         accum_barriers_ptr: MbarPtr,
         dealloc_mbar: Self.Dealloc.BarrierStorage,
@@ -215,15 +215,15 @@ struct EpilogueWarpContext[
         return Self(tmem, output_pipeline, Self.Dealloc(dealloc_mbar))
 
     @always_inline
-    fn __enter__(self) -> Self:
+    def __enter__(self) -> Self:
         return self
 
     @always_inline
-    fn __exit__(self):
+    def __exit__(self):
         self.dealloc_barrier.signal_complete()
 
     @always_inline
-    fn per_k_stage[
+    def per_k_stage[
         input_origin: MutOrigin,
         Payload: TilePayload,
         num_group_stages: Int,
@@ -315,7 +315,7 @@ struct MmaWarp[
     var dealloc_barrier: Self.Dealloc
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         tmem: Self.Tmem,
         output_pipeline: Self.Pipeline,
@@ -327,7 +327,7 @@ struct MmaWarp[
 
     @staticmethod
     @always_inline
-    fn create(
+    def create(
         tmem_addr_storage: Self.Tmem.SmemAddrStorage,
         accum_barriers_ptr: MbarPtr,
         dealloc_mbar: Self.Dealloc.BarrierStorage,
@@ -354,7 +354,7 @@ struct MmaWarp[
         return Self(tmem, output_pipeline, Self.Dealloc(dealloc_mbar))
 
     @always_inline
-    fn per_k_stage(
+    def per_k_stage(
         mut self,
     ) -> MmaKStage[origin_of(self.output_pipeline), Self.opc]:
         """Get per-K stage context manager (for compatibility).
@@ -364,7 +364,7 @@ struct MmaWarp[
         return self.output_pipeline.per_k().produce()
 
     @always_inline
-    fn acquire_k_stage_linear(
+    def acquire_k_stage_linear(
         mut self,
     ) -> MmaStage[origin_of(self.output_pipeline), Self.opc]:
         """Acquire a per-K stage using linear types.
@@ -380,7 +380,7 @@ struct MmaWarp[
         return self.output_pipeline.acquire_mma_linear()
 
     @always_inline
-    fn release(deinit self):
+    def release(deinit self):
         """Wait for epilogue and deallocate TMEM.
 
         This is the only way to destroy this linear type.
@@ -424,7 +424,7 @@ struct EpilogueWarp[
     var dealloc_barrier: Self.Dealloc
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         tmem: Self.Tmem,
         output_pipeline: Self.Pipeline,
@@ -436,7 +436,7 @@ struct EpilogueWarp[
 
     @staticmethod
     @always_inline
-    fn create(
+    def create(
         tmem_addr_storage: Self.Tmem.SmemAddrStorage,
         accum_barriers_ptr: MbarPtr,
         dealloc_mbar: Self.Dealloc.BarrierStorage,
@@ -463,7 +463,7 @@ struct EpilogueWarp[
         return Self(tmem, output_pipeline, Self.Dealloc(dealloc_mbar))
 
     @always_inline
-    fn per_k_stage[
+    def per_k_stage[
         input_origin: MutOrigin,
         Payload: TilePayload,
         num_group_stages: Int,
@@ -486,7 +486,7 @@ struct EpilogueWarp[
         return self.output_pipeline.per_k_epilogue(input_pipeline.pipeline)
 
     @always_inline
-    fn acquire_k_stage_linear(
+    def acquire_k_stage_linear(
         mut self,
     ) -> EpilogueStage[origin_of(self.output_pipeline), Self.opc]:
         """Acquire a per-K stage using linear types.
@@ -501,7 +501,7 @@ struct EpilogueWarp[
         return self.output_pipeline.acquire_epilogue_linear()
 
     @always_inline
-    fn release(deinit self):
+    def release(deinit self):
         """Signal epilogue completion.
 
         This is the only way to destroy this linear type.

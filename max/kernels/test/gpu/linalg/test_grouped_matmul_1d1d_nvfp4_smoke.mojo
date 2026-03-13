@@ -23,13 +23,7 @@ from buffer.dimlist import DimList, Dim
 from std.gpu.host import DeviceContext
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from internal_utils._utils import InitializationType, init_vector_launch
-from layout import (
-    Coord,
-    Idx,
-    RuntimeInt,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
 from std.utils.index import Index, IndexList
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
@@ -47,7 +41,7 @@ from linalg.fp4_utils import (
 )
 
 
-fn test_grouped_1d1d_nvfp4[
+def test_grouped_1d1d_nvfp4[
     num_experts: Int,
     N: Int,
     K: Int,
@@ -153,25 +147,25 @@ fn test_grouped_1d1d_nvfp4[
     # _DimsToCoordLike type derivation path that MOGG's to_tile_tensor uses.
     # This catches enqueue_function type identity mismatches that wouldn't
     # appear if we hand-constructed TileTensors with GMEMLayout1D.
-    var a_nd = NDBuffer[a_type, 2, _, DimList(Dim(), packed_K)](
+    var a_nd = NDBuffer[rank=2, a_type, _, DimList[Dim(), packed_K]()](
         a_buf.unsafe_ptr(), IndexList[2](total_tokens, packed_K)
     )
-    var b_nd = NDBuffer[b_type, 3, _, DimList(num_experts, N, packed_K)](
+    var b_nd = NDBuffer[rank=3, b_type, _, DimList[num_experts, N, packed_K]()](
         b_buf.unsafe_ptr(), IndexList[3](num_experts, N, packed_K)
     )
-    var c_nd = NDBuffer[c_type, 2, _, DimList(Dim(), N)](
+    var c_nd = NDBuffer[rank=2, c_type, _, DimList[Dim(), N]()](
         c_buf.unsafe_ptr(), IndexList[2](total_tokens, N)
     )
-    var a_off_nd = NDBuffer[DType.uint32, 1](
+    var a_off_nd = NDBuffer[rank=1, DType.uint32](
         a_off_buf.unsafe_ptr(), IndexList[1](num_active_experts + 1)
     )
-    var a_soff_nd = NDBuffer[DType.uint32, 1](
+    var a_soff_nd = NDBuffer[rank=1, DType.uint32](
         a_soff_buf.unsafe_ptr(), IndexList[1](num_active_experts)
     )
-    var eid_nd = NDBuffer[DType.int32, 1](
+    var eid_nd = NDBuffer[rank=1, DType.int32](
         eid_buf.unsafe_ptr(), IndexList[1](num_active_experts)
     )
-    var es_nd = NDBuffer[DType.float32, 1](
+    var es_nd = NDBuffer[rank=1, DType.float32](
         es_buf.unsafe_ptr(), IndexList[1](num_experts)
     )
 

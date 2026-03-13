@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for TPOT computation in calculate_metrics."""
+"""Tests for TPOT computation and request timestamps in calculate_metrics."""
 
 from __future__ import annotations
 
@@ -428,3 +428,73 @@ def test_calculate_pixel_generation_metrics() -> None:
     assert math.isclose(metrics.request_throughput, 0.4, rel_tol=1e-6)
     assert metrics.total_generated_outputs == 3
     assert math.isclose(metrics.latency_ms.mean, 1500.0, rel_tol=1e-6)
+
+
+def test_request_submit_time_defaults_to_none() -> None:
+    """request_submit_time field defaults to None."""
+    output = RequestFuncOutput()
+    assert output.request_submit_time is None
+    assert output.request_complete_time is None
+
+
+def test_request_submit_time_set_on_output() -> None:
+    """request_submit_time can be set and is preserved through metrics."""
+    output = RequestFuncOutput(
+        success=True,
+        latency=1.0,
+        ttft=0.1,
+        prompt_len=10,
+        generated_text="hello",
+        itl=[0.1],
+        tpot=[0.1],
+        request_submit_time=100.5,
+    )
+
+    assert output.request_submit_time == 100.5
+
+    tokenizer = _make_mock_tokenizer({"hello": 2})
+    metrics, _ = calculate_metrics(
+        outputs=[output],
+        dur_s=1.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics={},
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        collect_gpu_stats=False,
+    )
+    # Metrics are computed normally regardless of submit time
+    assert metrics.completed == 1
+
+
+def test_request_complete_time_property() -> None:
+    """request_complete_time property = submit_time + latency."""
+    outputs = [
+        RequestFuncOutput(
+            success=True,
+            latency=1.5,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="a",
+            request_submit_time=100.0,
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=2.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="b",
+            request_submit_time=101.0,
+        ),
+    ]
+
+    assert outputs[0].request_complete_time is not None
+    assert outputs[1].request_complete_time is not None
+    assert math.isclose(outputs[0].request_complete_time, 101.5)
+    assert math.isclose(outputs[1].request_complete_time, 103.0)
+
+    # Arrays stay index-aligned (same length as submit_times)
+    submit_times = [o.request_submit_time for o in outputs]
+    complete_times = [o.request_complete_time for o in outputs]
+    assert len(submit_times) == len(complete_times)

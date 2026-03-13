@@ -20,8 +20,14 @@ from std.gpu import lane_id
 from std.gpu.memory import fence_async_view_proxy
 from std.gpu.compute.mma import st_matrix
 from std.gpu.sync import named_barrier
-from layout import IntTuple, Layout, LayoutTensor
-from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout, RuntimeTuple
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle
 from layout.tensor_core_async import st_matrix_n_layout
 from layout.tma_async import TMATensorTile
@@ -103,20 +109,20 @@ struct MatmulTileWriter[
     # Instance fields
     var tensor: Self.CTensorType
     var smem_tile: SMemTile[Self.dtype, Self.smem_tile_layout, alignment=128]
-    var warp_group_thread_idx: UInt
-    var local_warp_group_idx: UInt
-    var local_thread_idx: UInt
+    var warp_group_thread_idx: Int
+    var local_warp_group_idx: Int
+    var local_thread_idx: Int
     var block_y: Int
     var block_x: Int
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         tensor: Self.CTensorType,
         smem_tile: SMemTile[Self.dtype, Self.smem_tile_layout, alignment=128],
-        warp_group_thread_idx: UInt,
-        local_warp_group_idx: UInt,
-        local_thread_idx: UInt,
+        warp_group_thread_idx: Int,
+        local_warp_group_idx: Int,
+        local_thread_idx: Int,
         block_y: Int,
         block_x: Int,
     ):
@@ -129,7 +135,7 @@ struct MatmulTileWriter[
         self.block_x = block_x
 
     @always_inline
-    fn _calculate_output_bounds(self) -> Tuple[UInt32, UInt32]:
+    def _calculate_output_bounds(self) -> Tuple[UInt32, UInt32]:
         """Calculate valid output bounds for the current block's tile."""
         var rows = self.tensor.dim[0]()
         var max_row: UInt32
@@ -147,7 +153,7 @@ struct MatmulTileWriter[
         return max_row, max_col
 
     @always_inline
-    fn _apply_epilogue[
+    def _apply_epilogue[
         epilogue_fn: Self.lambda_type
     ](
         self,
@@ -183,8 +189,7 @@ struct MatmulTileWriter[
         comptime for i in range(num_elements_per_thread):
             comptime smem_idx = shared_fragment.layout(i)
             comptime output_idx = output_fragment.layout(i)
-            comptime row_offset = output_idx // Self.N
-            comptime col_offset = output_idx % Self.N
+            comptime row_offset, col_offset = divmod(output_idx, Self.N)
             var row = UInt32(row_coord + row_offset)
             var col = UInt32(col_coord + col_offset)
 
@@ -195,7 +200,7 @@ struct MatmulTileWriter[
                 )
 
     @always_inline
-    fn _write_tile_to_gmem[
+    def _write_tile_to_gmem[
         accum_type: DType,
         reg_tile_layout: Layout,
         //,
@@ -223,8 +228,8 @@ struct MatmulTileWriter[
         comptime tile_slice_m = tile_slice_m_regular if not Self.swapAB else tile_slice_m_swapAB
         comptime tile_slice_n = tile_slice_n_regular if not Self.swapAB else tile_slice_n_swapAB
 
-        var coord_m = Int(self.local_warp_group_idx) if not Self.swapAB else 0
-        var coord_n = 0 if not Self.swapAB else Int(self.local_warp_group_idx)
+        var coord_m = self.local_warp_group_idx if not Self.swapAB else 0
+        var coord_n = 0 if not Self.swapAB else self.local_warp_group_idx
 
         var consumer_tile, consumer_coords, _ = output_tile.tile_with_offset[
             tile_slice_m, tile_slice_n
@@ -259,16 +264,16 @@ struct MatmulTileWriter[
             max_row,
         )
 
-        comptime for row_tile, col_tile in itertools.product(
+        comptime for row_tile, col_tile in std.itertools.product(
             range(Self.num_m_mmas), range(Self.num_n_mmas)
         ):
             reg_writer.write_tile(
                 reg_tile,
-                (UInt(row_tile), UInt(col_tile)),
+                (row_tile, col_tile),
             )
 
     @always_inline
-    fn _write_tile_stmatrix[
+    def _write_tile_stmatrix[
         tma_rank: Int,
         tma_tile_shape: IndexList[tma_rank],
         tma_desc_shape: IndexList[tma_rank],
@@ -345,7 +350,7 @@ struct MatmulTileWriter[
             comptime for tma_chunk in range(
                 (Self.WG_BN if not Self.swapAB else Self.WG_BM) // TMA_BN
             ):
-                fragment_writer.write_tile(reg_tile, (UInt(0), UInt(tma_chunk)))
+                fragment_writer.write_tile(reg_tile, (0, tma_chunk))
 
             named_barrier[Int32(Self.num_consumer_threads)](10)
 
@@ -365,7 +370,7 @@ struct MatmulTileWriter[
             )
 
             @parameter
-            fn apply_epilogue[lambda_fn: Self.lambda_type]():
+            def apply_epilogue[lambda_fn: Self.lambda_type]():
                 self._apply_epilogue[lambda_fn](
                     workgroup_tile,
                     global_coords[0],
@@ -378,7 +383,7 @@ struct MatmulTileWriter[
                 comptime compute_fn = Self.elementwise_compute_lambda_fn.value()
 
                 @parameter
-                fn _compute[
+                def _compute[
                     dtype: DType, width: Int, *, alignment: Int = 1
                 ](
                     index: IndexList[2], mut val: SIMD[dtype, width]
@@ -392,7 +397,7 @@ struct MatmulTileWriter[
                 comptime epilogue_fn = Self.elementwise_lambda_fn.value()
 
                 @parameter
-                fn _epilogue[
+                def _epilogue[
                     dtype: DType, width: Int, *, alignment: Int = 1
                 ](
                     index: IndexList[2], mut val: SIMD[dtype, width]
@@ -404,9 +409,9 @@ struct MatmulTileWriter[
                 comptime if Self.use_tma_store and not is_partial_tile:
                     var tma_writer = TileWriterTMA(Pointer(to=tma_op))
 
-                    if self.local_thread_idx < UInt(Self.WG_BN // TMA_BN):
+                    if self.local_thread_idx < (Self.WG_BN // TMA_BN):
                         var smem_offset = self.smem_tile.ptr + (
-                            Self.WG_BM * TMA_BN * Int(self.local_thread_idx)
+                            Self.WG_BM * TMA_BN * self.local_thread_idx
                         )
                         comptime tma_smem_layout = Layout.row_major(
                             tma_tile_shape[0], tma_tile_shape[1]
@@ -416,12 +421,10 @@ struct MatmulTileWriter[
                         ](smem_offset)
 
                         var tma_coords = (
-                            UInt(
-                                self.block_x * Self.BN
-                                + tile_idx * Self.WG_BN
-                                + Int(self.local_thread_idx * UInt(TMA_BN))
-                            ),
-                            UInt(self.block_y * Self.BM),
+                            self.block_x * Self.BN
+                            + tile_idx * Self.WG_BN
+                            + self.local_thread_idx * TMA_BN,
+                            self.block_y * Self.BM,
                         )
 
                         tma_writer.write_tile(tma_tile, tma_coords)
@@ -439,14 +442,12 @@ struct MatmulTileWriter[
                         swapAB=Self.swapAB,
                     ](workgroup_tile, self.local_thread_idx)
 
-                    threadwise_writer.write_tile(
-                        self.smem_tile, (UInt(0), UInt(0))
-                    )
+                    threadwise_writer.write_tile(self.smem_tile, (0, 0))
 
             named_barrier[Int32(Self.num_consumer_threads)](10)
 
     @always_inline
-    fn write_tile[
+    def write_tile[
         tma_rank: Int,
         tma_tile_shape: IndexList[tma_rank],
         tma_desc_shape: IndexList[tma_rank],

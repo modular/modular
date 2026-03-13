@@ -12,20 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from layout import (
-    Coord,
-    Layout,
-    RuntimeLayout,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, Layout, RuntimeLayout, TileTensor, row_major
 from layout._utils import ManagedLayoutTensor
 from nn.slice import sliced_add
 
 from std.utils import IndexList
 
 
-fn test_sliced_add[
+def test_sliced_add[
     dtype: DType,
     rows: Int,
     cols: Int,
@@ -115,7 +109,7 @@ fn test_sliced_add[
                 )
 
 
-fn test_sliced_add_boundary_cases(ctx: DeviceContext) raises:
+def test_sliced_add_boundary_cases(ctx: DeviceContext) raises:
     # Test case 1: batch_end_idx = 0 (no addition, all copy)
     test_sliced_add[DType.float32, 4, 8, 0](ctx)
 
@@ -132,7 +126,7 @@ fn test_sliced_add_boundary_cases(ctx: DeviceContext) raises:
     test_sliced_add[DType.float32, 128, 64, 64](ctx)
 
 
-fn test_sliced_add_dtypes(ctx: DeviceContext) raises:
+def test_sliced_add_dtypes(ctx: DeviceContext) raises:
     test_sliced_add[DType.float32, 16, 32, 8](ctx)
     test_sliced_add[DType.float16, 16, 32, 8](ctx)
     test_sliced_add[DType.bfloat16, 16, 32, 8](ctx)

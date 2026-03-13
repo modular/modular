@@ -43,8 +43,8 @@ from linalg.fp4_utils import (
 from std.random import random_ui64
 from std.builtin.simd import _convert_f32_to_float8_ue8m0
 from layout import (
-    LayoutTensor,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -52,7 +52,7 @@ from layout import (
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-fn simple_init() -> Bool:
+def simple_init() -> Bool:
     for arg in argv():
         if arg == "--simple-init":
             return True
@@ -77,6 +77,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     swapAB: Bool = False,
     k_group_size: Int = 1,
     SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
+    num_accum_pipeline_stages: Int = 0,
+    num_clc_pipeline_stages: Int = 2,
 ](
     ctx: DeviceContext,
     m: ValOrDim,
@@ -96,9 +98,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE} alpha={alpha}"
     )
 
-    comptime static_a_shape = DimList(m.dim, k.dim // 2)
-    comptime static_b_shape = DimList(n.dim, k.dim // 2)
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList[m.dim, k.dim // 2]()
+    comptime static_b_shape = DimList[n.dim, k.dim // 2]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
     var dynamic_a_shape = IndexList[2](m.value, k.value // 2)
     var dynamic_b_shape = IndexList[2](n.value, k.value // 2)
     var dynamic_c_shape = IndexList[2](m.value, n.value)
@@ -108,53 +110,53 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var c_size = m.value * n.value
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var a_host = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_host = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var b_host = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_host = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
     var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
     var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
     )
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_device.unsafe_ptr(), dynamic_b_shape
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
     )
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList[
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
+    ]()
 
     var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
@@ -187,25 +189,25 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
 
     var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
-    var a_scales_host = NDBuffer[scales_dtype, 5, _, static_a_scales_shape](
-        a_scales_host_ptr, dynamic_a_scales_shape
-    )
+    var a_scales_host = NDBuffer[
+        rank=5, scales_dtype, _, static_a_scales_shape
+    ](a_scales_host_ptr, dynamic_a_scales_shape)
     var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
-    var b_scales_host = NDBuffer[scales_dtype, 5, _, static_b_scales_shape](
-        b_scales_host_ptr, dynamic_b_scales_shape
-    )
+    var b_scales_host = NDBuffer[
+        rank=5, scales_dtype, _, static_b_scales_shape
+    ](b_scales_host_ptr, dynamic_b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
     var a_scales_device_nd = NDBuffer[
-        scales_dtype, 5, _, static_a_scales_shape
+        rank=5, scales_dtype, _, static_a_scales_shape
     ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
     var b_scales_device_nd = NDBuffer[
-        scales_dtype, 5, _, static_b_scales_shape
+        rank=5, scales_dtype, _, static_b_scales_shape
     ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
     var a_lt = from_ndbuffer_row_major(a_device_nd)
@@ -308,7 +310,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         cta_group=cta_group,
         AB_swapped=swapAB,
         k_group_size=k_group_size,
-        num_accum_pipeline_stages=1 if mma_shape[1] in (192, 256) else 2,
+        num_accum_pipeline_stages=num_accum_pipeline_stages if num_accum_pipeline_stages
+        > 0 else (1 if mma_shape[1] in (192, 256) else 2),
+        num_clc_pipeline_stages=num_clc_pipeline_stages,
     )
 
     comptime K_phys = k.dim.get()
@@ -514,3 +518,83 @@ def main() raises:
                         static[2560](),
                         static[8192](),
                     )
+
+        # Llama 3.1 405B TP8 shape tests (matching tuning configs)
+        # Uses M=128 because swapAB with M=1 causes TMA descriptor errors
+        # (effective N after swap is too small for TMA box dimensions).
+        comptime llama_bts = Index(128, 32, BK)
+        comptime llama_mma = Index(256, 64, MMA_K)
+
+        # cluster(4,1,1), accum_stages=1, K=16384
+        comptime for n_val in [2304, 6656, 13312]:
+            test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                dtype,
+                dtype,
+                out_dtype,
+                scales_dtype,
+                llama_bts,
+                llama_mma,
+                cluster_shape=StaticTuple[Int32, 3](4, 1, 1),
+                cta_group=2,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=0,
+                swapAB=True,
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                num_accum_pipeline_stages=1,
+                num_clc_pipeline_stages=0,
+            ](
+                ctx,
+                dynamic(128),
+                static[n_val](),
+                static[16384](),
+            )
+
+        # cluster(2,1,1), accum_stages=2, N=7168, K=16384
+        test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+            dtype,
+            dtype,
+            out_dtype,
+            scales_dtype,
+            llama_bts,
+            llama_mma,
+            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cta_group=2,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=0,
+            swapAB=True,
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=0,
+        ](
+            ctx,
+            dynamic(128),
+            static[7168](),
+            static[16384](),
+        )
+
+        # cluster(2,1,1), accum_stages=4, N=16384
+        comptime for k_val in [2048, 6656]:
+            test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                dtype,
+                dtype,
+                out_dtype,
+                scales_dtype,
+                llama_bts,
+                llama_mma,
+                cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+                cta_group=2,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=0,
+                swapAB=True,
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                num_accum_pipeline_stages=4,
+                num_clc_pipeline_stages=0,
+            ](
+                ctx,
+                dynamic(128),
+                static[16384](),
+                static[k_val](),
+            )

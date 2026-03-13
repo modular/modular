@@ -19,7 +19,7 @@ comptime b_type = DType.float32
 
 
 # CHECK-LABEL: test_partition
-fn test_partition():
+def test_partition():
     print("== test_partition")
     # Matmul dimensions
     var M = 4
@@ -95,5 +95,5 @@ fn test_partition():
     print(config.shape)
 
 
-fn main():
+def main():
     test_partition()

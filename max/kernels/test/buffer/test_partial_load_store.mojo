@@ -31,13 +31,13 @@ def test_partial_load_store() raises:
         uninitialized=True
     )
 
-    var read_buffer = NDBuffer[DType.int, 1, _, total_buffer_size](
-        read_data.unsafe_ptr()
-    )
+    var read_buffer = NDBuffer[
+        rank=1, DType.int, _, DimList[total_buffer_size]()
+    ](read_data.unsafe_ptr())
 
-    var write_buffer = NDBuffer[DType.int, 1, _, total_buffer_size](
-        write_data.unsafe_ptr()
-    )
+    var write_buffer = NDBuffer[
+        rank=1, DType.int, _, DimList[total_buffer_size]()
+    ](write_data.unsafe_ptr())
 
     for idx in range(total_buffer_size):
         # Fill read_buffer with 0->15
@@ -67,11 +67,11 @@ def test_partial_load_store() raises:
     print(partial_store_data)
 
     # Test NDBuffer partial load store
-    var read_nd_buffer = NDBuffer[DType.int, 2, _, DimList(8, 4)](
+    var read_nd_buffer = NDBuffer[rank=2, DType.int, _, DimList[8, 4]()](
         read_data.unsafe_ptr()
     )
 
-    var write_nd_buffer = NDBuffer[DType.int, 2, _, DimList(8, 4)](
+    var write_nd_buffer = NDBuffer[rank=2, DType.int, _, DimList[8, 4]()](
         write_data.unsafe_ptr()
     )
 

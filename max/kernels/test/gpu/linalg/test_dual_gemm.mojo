@@ -20,11 +20,8 @@ from std.sys import align_of, argv, simd_width_of
 import std.benchmark
 from std.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from layout import Layout
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import UNKNOWN_VALUE, IntTuple
-from layout.layout_tensor import LayoutTensor
-from layout.runtime_layout import RuntimeLayout
 from linalg.dual_gemm import binary_fn_type, multistage_dual_gemm
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils import elementwise_epilogue_type
@@ -36,13 +33,13 @@ from std.utils.index import Index, IndexList
 from std.utils.numerics import FPUtils
 
 
-fn binary_sub[
+def binary_sub[
     dtype: DType, width: Int
 ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return x - y
 
 
-fn multistage_gemm_simple[
+def multistage_gemm_simple[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -95,7 +92,7 @@ fn multistage_gemm_simple[
     )
 
 
-fn naive_dual_gemm[
+def naive_dual_gemm[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -131,7 +128,7 @@ fn naive_dual_gemm[
         @always_inline
         @__copy_capture(c01, N)
         @parameter
-        fn binary[
+        def binary[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx0: IndexList[rank]):
             var m: Int = idx0[0]
@@ -150,7 +147,7 @@ fn naive_dual_gemm[
         abort(String(e))
 
 
-fn runtime_row_major[
+def runtime_row_major[
     cols: Int
 ](
     rows: Int,
@@ -163,7 +160,7 @@ fn runtime_row_major[
     )
 
 
-fn test_dual_matmul[
+def test_dual_matmul[
     transpose_b: Bool, N: Int = 512, K: Int = 512
 ](ctx: DeviceContext, M: Int = 512, do_benchmark: Bool = False) raises:
     comptime dst_type = DType.float32
@@ -218,7 +215,7 @@ fn test_dual_matmul[
 
     @always_inline
     @parameter
-    fn run_dual_gemm() raises:
+    def run_dual_gemm() raises:
         if M <= 128:
             multistage_dual_gemm[
                 transpose_b=transpose_b,
@@ -258,7 +255,7 @@ fn test_dual_matmul[
 
     var dual_gemm_time: Float64 = 0.0
     if do_benchmark:
-        dual_gemm_time = benchmark.run[func3=run_dual_gemm](
+        dual_gemm_time = std.benchmark.run[func3=run_dual_gemm](
             max_runtime_secs=5.0
         ).mean()
         print(
@@ -316,7 +313,7 @@ fn test_dual_matmul[
 
     @always_inline
     @parameter
-    fn run_naive_dual_gemm() raises:
+    def run_naive_dual_gemm() raises:
         if M <= 128:
             naive_dual_gemm[
                 transpose_b=transpose_b,
@@ -352,7 +349,7 @@ fn test_dual_matmul[
             )
 
     if do_benchmark:
-        var dgs = benchmark.run[func3=run_naive_dual_gemm](
+        var dgs = std.benchmark.run[func3=run_naive_dual_gemm](
             max_runtime_secs=5.0
         ).mean()
         print(
@@ -377,17 +374,13 @@ fn test_dual_matmul[
     _ = mat_b01^
 
     comptime cbrt_eps = exp2(Float64(FPUtils[dst_type].mantissa_width()) / -3)
-    comptime dst_simd_width = simd_width_of[dst_type]()
-    # elementwise
+    # Compare element-by-element to avoid vectorize on split tensor
+    # (split preserves original stride, which confuses vectorized bounds checks)
     for m in range(M):
-        for n in range(N // dst_simd_width):
+        for n in range(N):
             assert_almost_equal(
-                rebind[SIMD[dst_type, dst_simd_width]](
-                    mat_c_tensor.vectorize[1, dst_simd_width]()[m, n]
-                ),
-                rebind[SIMD[dst_type, dst_simd_width]](
-                    mat_c_ref.vectorize[1, dst_simd_width]()[m, n]
-                ),
+                mat_c_tensor[m, n],
+                mat_c_ref[m, n],
                 atol=cbrt_eps,
                 rtol=cbrt_eps,
             )

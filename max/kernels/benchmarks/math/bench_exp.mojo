@@ -18,6 +18,7 @@ from std.ffi import external_call
 from std.sys import llvm_intrinsic, simd_width_of, size_of
 from std.sys.arg import argv
 from std.utils import IndexList
+from buffer import DimList
 
 from std.algorithm.functional import vectorize
 from std.benchmark import (
@@ -34,13 +35,16 @@ from std.compile import compile_info
 from std.memory import bitcast
 
 
-fn apply[
+def apply[
     func: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
     dtype: DType,
-](input: NDBuffer[dtype, 1, ...], output: NDBuffer[mut=True, dtype, 1, ...]):
-    fn _func[width: Int](idx: Int) unified {mut}:
+](
+    input: NDBuffer[rank=1, dtype, ...],
+    output: NDBuffer[mut=True, rank=1, dtype, ...],
+):
+    def _func[width: Int](idx: Int) unified {mut}:
         output.store((idx,), func(input.load[width=width](idx)))
 
     vectorize[simd_width_of[dtype]()](len(input), _func)
@@ -72,12 +76,12 @@ def bench_unary[
         input_ptr[i] = f
 
     @parameter
-    fn bench(mut b: Bencher, size: Int) raises:
+    def bench(mut b: Bencher, size: Int) raises:
         @parameter
-        fn iter_fn():
+        def iter_fn():
             apply[func](
-                NDBuffer[dtype, 1](input_ptr, IndexList[1](size)),
-                NDBuffer[dtype, 1](output_ptr, IndexList[1](size)),
+                NDBuffer[rank=1, dtype](input_ptr, IndexList[1](size)),
+                NDBuffer[rank=1, dtype](output_ptr, IndexList[1](size)),
             )
             keep(output_ptr)
 
@@ -97,7 +101,7 @@ def bench_unary[
     output_ptr.free()
 
 
-fn ldexp2kf_opt[
+def ldexp2kf_opt[
     dtype: DType, simd_width: Int
 ](x_in: SIMD[dtype, simd_width], q_in: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
@@ -124,7 +128,7 @@ fn ldexp2kf_opt[
     return x * xu.cast[dtype]()
 
 
-fn pow2if[
+def pow2if[
     simd_width: Int
 ](q: SIMD[DType.int32, simd_width]) -> SIMD[DType.float32, simd_width]:
     var x = (
@@ -133,7 +137,7 @@ fn pow2if[
     return bitcast[DType.float32, simd_width](x)
 
 
-fn ldexp2kf[
+def ldexp2kf[
     dtype: DType, simd_width: Int
 ](d: SIMD[dtype, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
@@ -157,7 +161,7 @@ fn ldexp2kf[
 
 
 @always_inline
-fn exp_libm[
+def exp_libm[
     dtype: DType, simd_width: Int
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     var res = SIMD[dtype, simd_width]()
@@ -168,7 +172,7 @@ fn exp_libm[
 
 
 @always_inline
-fn ldexp_libm[
+def ldexp_libm[
     dtype: DType, simd_width: Int
 ](arg: SIMD[dtype, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
@@ -180,7 +184,7 @@ fn ldexp_libm[
     return res
 
 
-fn exp_sleef[
+def exp_sleef[
     dtype: DType, simd_width: Int
 ](d: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime inv_lg2 = SIMD[dtype, simd_width](1.4426950408889634)
@@ -207,7 +211,7 @@ fn exp_sleef[
 
 
 @always_inline
-fn _exp_taylor0[
+def _exp_taylor0[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime coefficients: List[Scalar[dtype]] = [
@@ -224,7 +228,7 @@ fn _exp_taylor0[
 
 
 @always_inline
-fn exp_mojo_opt[
+def exp_mojo_opt[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
@@ -252,7 +256,7 @@ fn exp_mojo_opt[
 
 
 @always_inline
-fn exp_mojo_opt2[
+def exp_mojo_opt2[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
@@ -277,7 +281,7 @@ fn exp_mojo_opt2[
 
 
 @always_inline
-fn _exp_taylor3[
+def _exp_taylor3[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime coefficients: List[Scalar[dtype]] = [
@@ -292,7 +296,7 @@ fn _exp_taylor3[
 
 
 @always_inline
-fn exp_mojo_opt3[
+def exp_mojo_opt3[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
@@ -316,7 +320,7 @@ fn exp_mojo_opt3[
 
 
 @always_inline
-fn _exp_taylor_mlas[
+def _exp_taylor_mlas[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     return polynomial_evaluate[
@@ -333,7 +337,7 @@ fn _exp_taylor_mlas[
 
 
 @always_inline
-fn exp_mlas[
+def exp_mlas[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
@@ -354,7 +358,7 @@ fn exp_mlas[
 
 
 @always_inline
-fn llvm_ldexp[
+def llvm_ldexp[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width], exp: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
@@ -363,7 +367,7 @@ fn llvm_ldexp[
 
 
 @always_inline
-fn mlas_llvm_ldexp[
+def mlas_llvm_ldexp[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
@@ -389,7 +393,7 @@ def accuracy_test() raises:
     comptime delta_range = delta_max - delta_min + 1
 
     var deltas = NDBuffer[
-        DType.int32, 1, MutAnyOrigin, delta_range
+        rank=1, DType.int32, MutAnyOrigin, DimList[delta_range]()
     ].stack_allocation()
     deltas.zero()
 

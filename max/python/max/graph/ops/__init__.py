@@ -71,6 +71,7 @@ from .matmul import matmul
 from .nonzero import nonzero
 from .outer import outer
 from .pad import pad
+from .parallel import parallel
 from .permute import permute
 from .pooling import avg_pool2d, max_pool2d
 from .quantized import dequantize, qmatmul

@@ -16,10 +16,7 @@ from std.sys.info import simd_width_of
 
 from std.gpu import block_idx, thread_idx_int as thread_idx
 from std.gpu.host import DeviceContext
-from layout.coord import Coord, Idx, coord
-from layout import row_major
-from layout.tile_layout import TensorLayout
-from layout.tile_tensor import TileTensor
+from layout import Coord, Idx, TensorLayout, TileTensor, coord, row_major
 from std.memory import UnsafePointer
 from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor, StaticTensorSpec
@@ -30,7 +27,7 @@ from tensor import InputTensor, OutputTensor, StaticTensorSpec
 # ------------------------------------------------------------------------------
 
 
-fn tpool_patch_merger_kernel[
+def tpool_patch_merger_kernel[
     dtype: DType,
     XLayout: TensorLayout,
     x_origin: ImmutOrigin,
@@ -141,7 +138,7 @@ fn tpool_patch_merger_kernel[
 # ------------------------------------------------------------------------------
 
 
-fn tpool_patch_merger[
+def tpool_patch_merger[
     dtype: DType,
     output_layout: TensorLayout,
     x_layout: TensorLayout,

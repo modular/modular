@@ -37,6 +37,7 @@ from max.interfaces import RequestID, TextGenerationInputs, TokenBuffer
 from max.nn import KVCacheInputs, kernels
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.core import TextContext
+from max.pipelines.core.context import FUTURE_TOKEN
 from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
@@ -533,3 +534,38 @@ def test_overlap_execution(
         # Don't check this for the other trials since we need to warmup the kernels.
         # if trial == num_trials - 1:
         #     assert error < 1.0
+
+
+def test_overlap_execution_with_preemption(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch_weight_and_kvcache_loading(monkeypatch)
+    prime_host_buffer_cache()
+
+    pipeline = create_overlap_pipeline(enable_overlap_scheduler=True)
+    context = create_context(isl=17, offset=100)
+    req_id = context.request_id
+
+    def create_inputs(
+        context: TextContext,
+    ) -> TextGenerationInputs[TextContext]:
+        return TextGenerationInputs(batches=[[context]], num_steps=1)
+
+    out = pipeline.execute(create_inputs(context))
+    assert req_id not in out
+    out = pipeline.execute(create_inputs(context))
+    assert out[req_id].tokens == [117]
+    out = pipeline.execute(create_inputs(context))
+    assert out[req_id].tokens == [118]
+
+    context.reset()  # simulate a preemption
+
+    out = pipeline.execute(create_inputs(context))
+    assert req_id not in out
+    out = pipeline.execute(create_inputs(context))
+    assert out[req_id].tokens == [119]
+
+    # Expected tokens are [100, 101, ..., 118, 119, FUTURE_TOKEN]
+    assert context.tokens.all.tolist() == (
+        list(range(100, 120)) + [FUTURE_TOKEN]
+    )

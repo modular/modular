@@ -15,8 +15,7 @@
 
 from std.sys import simd_width_of
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import TileTensor, Coord, Idx, row_major
 from nn.conv import conv1d_update_wo_tile
 from nn.conv_utils import ConvShape
 from std.testing import assert_equal
@@ -51,13 +50,13 @@ comptime WO = (
 ) // stride_w + 1
 comptime num_micro_tile = F // micro_kernel_f_size
 
-comptime output_shape = DimList(N, WO, F)
-comptime input_shape = DimList(N, W, C)
-comptime filter_shape = DimList(num_micro_tile, S, C, micro_kernel_f_size)
+comptime output_shape = row_major[N, WO, F]()
+comptime input_shape = row_major[N, W, C]()
+comptime filter_shape = row_major[num_micro_tile, S, C, micro_kernel_f_size]()
 
 
 @export(ABI="C")
-fn conv1d_register_tiling(
+def conv1d_register_tiling(
     output: UnsafePointer[Scalar[type], MutAnyOrigin],
     input: UnsafePointer[Scalar[type], MutAnyOrigin],
     filter: UnsafePointer[Scalar[type], MutAnyOrigin],
@@ -103,23 +102,23 @@ fn conv1d_register_tiling(
     )
 
 
-fn test_conv1d_register_tiling() raises:
+def test_conv1d_register_tiling() raises:
     var output_stack = InlineArray[Scalar[type], Int(output_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[type, 3, _, output_shape](output_stack.unsafe_ptr())
+    var output = TileTensor(output_stack, output_shape)
     var input_stack = InlineArray[Scalar[type], Int(input_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[type, 3, _, input_shape](input_stack.unsafe_ptr())
+    var input = TileTensor(input_stack, input_shape)
     var filter_stack = InlineArray[Scalar[type], Int(filter_shape.product())](
         uninitialized=True
     )
-    var filter = NDBuffer[type, 4, _, filter_shape](filter_stack.unsafe_ptr())
+    var filter = TileTensor(filter_stack, filter_shape)
 
-    output.fill(0.0)
-    input.fill(1.0)
-    filter.fill(1.0)
+    _ = output.fill(0.0)
+    _ = input.fill(1.0)
+    _ = filter.fill(1.0)
 
     var c_tile_offset = 0
     var c_tile_size = C
@@ -129,10 +128,10 @@ fn test_conv1d_register_tiling() raises:
     var w = wo * stride_w - pad_left
 
     # FRSCf
-    var filter_ptr = filter.data + f_tile_offset * R * S * C
+    var filter_ptr = filter.ptr + f_tile_offset * R * S * C
     # NHWC
-    var input_ptr = input.data + c_tile_offset + C * w
-    var output_ptr = output.data + f_tile_offset + F * (wo)
+    var input_ptr = input.ptr + c_tile_offset + C * w
+    var output_ptr = output.ptr + f_tile_offset + F * (wo)
 
     conv1d_register_tiling(
         output_ptr,
@@ -144,18 +143,20 @@ fn test_conv1d_register_tiling() raises:
         wo,
     )
 
-    var actual = output.load[width=simd_size](Index(0, wo, f_tile_size))
+    var actual = output.load[width=simd_size](
+        (Idx(0), Idx(wo), Idx(f_tile_size))
+    )
     var expect = SIMD[type, simd_size](R * S * c_tile_size)
     assert_equal(expect, actual)
 
     actual = output.load[width=simd_size](
-        Index(0, wo + micro_kernel_height - 1, f_tile_size)
+        (Idx(0), Idx(wo + micro_kernel_height - 1), Idx(f_tile_size))
     )
 
     assert_equal(expect, actual)
 
     actual = output.load[width=simd_size](
-        Index(0, wo + micro_kernel_height, f_tile_size)
+        (Idx(0), Idx(wo + micro_kernel_height), Idx(f_tile_size))
     )
 
     assert_equal(SIMD[type, simd_size](0), actual)

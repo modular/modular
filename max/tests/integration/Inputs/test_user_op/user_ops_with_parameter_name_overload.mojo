@@ -16,7 +16,7 @@ import compiler_internal as compiler
 
 
 # This function has the same name as the parameter for the kernel registration.
-fn top_k():
+def top_k():
     pass
 
 
@@ -24,7 +24,7 @@ fn top_k():
 struct ParameterNameOverload:
     # The top_k parameter matches the name of the top_k function defined above.
     @staticmethod
-    fn execute[
+    def execute[
         top_k: Int
     ](result: OutputTensor, input: InputTensor,) -> None:
         print("Success!")

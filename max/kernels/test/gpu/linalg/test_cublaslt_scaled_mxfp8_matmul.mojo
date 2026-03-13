@@ -21,7 +21,7 @@ from linalg.matmul.vendor.blas import Backend, Handle, matmul
 from internal_utils._utils import ValOrDim, dynamic, static
 from _cublas.cublaslt import cublasLtGetVersion, cublasLtMatmulMatrixScale_t
 from std.collections import OptionalReg
-from layout import Layout, LayoutTensor, IntTuple, RuntimeLayout, UNKNOWN_VALUE
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
 from std.sys import argv
@@ -38,7 +38,7 @@ from linalg.fp4_quantization import naive_block_scaled_matmul
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-fn test_scaled_mxfp8_cublaslt[
+def test_scaled_mxfp8_cublaslt[
     input_type: DType,
     output_type: DType,
     transpose_b: Bool,
@@ -67,27 +67,27 @@ fn test_scaled_mxfp8_cublaslt[
         t" shape=({M}, {N}, {K}) "
     )
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(n.dim, k.dim)
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList[m.dim, k.dim]()
+    comptime static_b_shape = DimList[n.dim, k.dim]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
     var dynamic_a_shape = IndexList[2](m.value, k.value)
     var dynamic_b_shape = IndexList[2](n.value, k.value)
     var dynamic_c_shape = IndexList[2](m.value, n.value)
 
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList[
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
+    ]()
 
     var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
@@ -120,33 +120,33 @@ fn test_scaled_mxfp8_cublaslt[
     )
 
     var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_size)
-    var a_scales_host = NDBuffer[scales_type, 5, _, static_a_scales_shape](
+    var a_scales_host = NDBuffer[rank=5, scales_type, _, static_a_scales_shape](
         a_scales_host_ptr, dynamic_a_scales_shape
     )
     var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_size)
-    var b_scales_host = NDBuffer[scales_type, 5, _, static_b_scales_shape](
+    var b_scales_host = NDBuffer[rank=5, scales_type, _, static_b_scales_shape](
         b_scales_host_ptr, dynamic_b_scales_shape
     )
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_type](a_scales_size)
-    var a_scales_device_nd = NDBuffer[scales_type, 5, _, static_a_scales_shape](
-        a_scales_device.unsafe_ptr(), dynamic_a_scales_shape
-    )
+    var a_scales_device_nd = NDBuffer[
+        rank=5, scales_type, _, static_a_scales_shape
+    ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_type](b_scales_size)
-    var b_scales_device_nd = NDBuffer[scales_type, 5, _, static_b_scales_shape](
-        b_scales_device.unsafe_ptr(), dynamic_b_scales_shape
-    )
+    var b_scales_device_nd = NDBuffer[
+        rank=5, scales_type, _, static_b_scales_shape
+    ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
     var a_size = m.value * k.value
     var b_size = n.value * k.value
     var c_size = m.value * n.value
 
     var a_host_ptr = alloc[Scalar[input_type]](a_size)
-    var a_host = NDBuffer[input_type, 2, _, static_a_shape](
+    var a_host = NDBuffer[rank=2, input_type, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
     var b_host_ptr = alloc[Scalar[input_type]](b_size)
-    var b_host = NDBuffer[input_type, 2, _, static_b_shape](
+    var b_host = NDBuffer[rank=2, input_type, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
     var c_host_managed = ManagedLayoutTensor[
@@ -155,7 +155,7 @@ fn test_scaled_mxfp8_cublaslt[
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
         ctx,
     )
-    var c_host = NDBuffer[output_type, 2, _, static_c_shape](
+    var c_host = NDBuffer[rank=2, output_type, _, static_c_shape](
         c_host_managed.tensor[update=False]().ptr, dynamic_c_shape
     )
     var c_host_ref_managed = ManagedLayoutTensor[
@@ -164,24 +164,24 @@ fn test_scaled_mxfp8_cublaslt[
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
         ctx,
     )
-    var c_host_ref = NDBuffer[output_type, 2, _, static_c_shape](
+    var c_host_ref = NDBuffer[rank=2, output_type, _, static_c_shape](
         c_host_ref_managed.tensor[update=False]().ptr, dynamic_c_shape
     )
 
     var a_device = ctx.enqueue_create_buffer[input_type](a_size)
-    var a_device_nd = NDBuffer[input_type, 2, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=2, input_type, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
     )
     var b_device = ctx.enqueue_create_buffer[input_type](b_size)
-    var b_device_nd = NDBuffer[input_type, 2, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=2, input_type, _, static_b_shape](
         b_device.unsafe_ptr(), dynamic_b_shape
     )
     var c_device = ctx.enqueue_create_buffer[output_type](c_size)
-    var c_device_nd = NDBuffer[output_type, 2, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=2, output_type, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
     )
     var c_device_ref = ctx.enqueue_create_buffer[output_type](c_size)
-    var c_device_ref_nd = NDBuffer[output_type, 2, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=2, output_type, _, static_c_shape](
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
@@ -295,7 +295,7 @@ fn test_scaled_mxfp8_cublaslt[
     _ = b_scales
 
 
-fn main() raises:
+def main() raises:
     with DeviceContext() as ctx:
         test_scaled_mxfp8_cublaslt[
             DType.float8_e4m3fn,

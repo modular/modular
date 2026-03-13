@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple, UNKNOWN_VALUE
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.fp4_quantization import quantize_dynamic_scaled_fp4fp8
 from std.testing import assert_equal, assert_almost_equal
@@ -32,7 +32,7 @@ from std.utils import IndexList
 from std.memory import bitcast
 
 
-fn test_dynamic_fp4_quant[
+def test_dynamic_fp4_quant[
     in_dtype: DType,
     scales_dtype: DType,
     SF_VECTOR_SIZE: Int,

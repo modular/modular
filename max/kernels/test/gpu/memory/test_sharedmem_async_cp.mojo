@@ -18,7 +18,7 @@ from std.gpu.host import DeviceContext
 from std.memory import stack_allocation
 
 
-fn copy_via_shared(
+def copy_via_shared(
     src: UnsafePointer[Float32, ImmutAnyOrigin],
     dst: UnsafePointer[Float32, MutAnyOrigin],
 ):
@@ -43,14 +43,14 @@ fn copy_via_shared(
     var state = sync.mbarrier_arrive(m_barrier)
     var not_wait = False
     while not not_wait:
-        time.sleep(100 * 1e-6)
+        std.time.sleep(100 * 1e-6)
         not_wait = sync.mbarrier_test_wait(m_barrier, state)
 
     dst[thread_id] = mem_buff[thread_id]
 
 
 # CHECK-LABEL: run_copy_via_shared
-fn run_copy_via_shared(ctx: DeviceContext) raises:
+def run_copy_via_shared(ctx: DeviceContext) raises:
     print("== run_copy_via_shared")
     var in_data = alloc[Float32](16)
     var out_data = alloc[Float32](16)

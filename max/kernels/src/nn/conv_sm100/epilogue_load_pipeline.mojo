@@ -131,7 +131,7 @@ struct EpiLoadPipeline[num_stages: Int]:
     var pipeline: ProducerConsumerPipeline[Self.num_stages]
 
     @always_inline
-    fn __init__(out self, ptr: MbarPtr):
+    def __init__(out self, ptr: MbarPtr):
         """Initialize the epilogue load pipeline.
 
         Args:
@@ -141,7 +141,7 @@ struct EpiLoadPipeline[num_stages: Int]:
         self.pipeline = ProducerConsumerPipeline[Self.num_stages](ptr)
 
     @always_inline
-    fn init_barriers(
+    def init_barriers(
         self,
         producer_arv_count: Int32 = 1,
         consumer_arv_count: Int32 = 128,
@@ -163,7 +163,7 @@ struct EpiLoadPipeline[num_stages: Int]:
     # =========================================================================
 
     @always_inline
-    fn produce[
+    def produce[
         origin: MutOrigin, //
     ](ref[origin] self) -> type_of(self.pipeline.produce()):
         """Produce one pipeline stage with encapsulated barriers.
@@ -179,7 +179,7 @@ struct EpiLoadPipeline[num_stages: Int]:
         return self.pipeline.produce()
 
     @always_inline
-    fn acquire_producer[
+    def acquire_producer[
         origin: MutOrigin, //
     ](ref[origin] self,) -> type_of(self.pipeline.acquire_producer()):
         """Acquire a producer stage handle.
@@ -190,12 +190,12 @@ struct EpiLoadPipeline[num_stages: Int]:
         return self.pipeline.acquire_producer()
 
     @always_inline
-    fn wait_consumer(self):
+    def wait_consumer(self):
         """Wait for consumer to free the current stage."""
         self.pipeline.wait_consumer()
 
     @always_inline
-    fn producer_mbar(self) -> MbarPtr:
+    def producer_mbar(self) -> MbarPtr:
         """Get the producer barrier for the current stage.
 
         Returns:
@@ -204,7 +204,7 @@ struct EpiLoadPipeline[num_stages: Int]:
         return self.pipeline.producer_mbar(self.pipeline.producer_stage())
 
     @always_inline
-    fn producer_step(mut self):
+    def producer_step(mut self):
         """Advance producer to next stage."""
         self.pipeline.producer_step()
 
@@ -213,7 +213,7 @@ struct EpiLoadPipeline[num_stages: Int]:
     # =========================================================================
 
     @always_inline
-    fn consume[
+    def consume[
         origin: MutOrigin, //
     ](ref[origin] self) -> type_of(self.pipeline.consume()):
         """Consume one pipeline stage with encapsulated barriers.
@@ -230,7 +230,7 @@ struct EpiLoadPipeline[num_stages: Int]:
         return self.pipeline.consume()
 
     @always_inline
-    fn consume_explicit[
+    def consume_explicit[
         origin: MutOrigin, //
     ](ref[origin] self,) -> type_of(self.pipeline.consume_explicit()):
         """Consume with explicit barrier arrive.
@@ -243,7 +243,7 @@ struct EpiLoadPipeline[num_stages: Int]:
         return self.pipeline.consume_explicit()
 
     @always_inline
-    fn acquire_consumer[
+    def acquire_consumer[
         origin: MutOrigin, //
     ](ref[origin] self,) -> type_of(self.pipeline.acquire_consumer()):
         """Acquire a consumer stage handle.
@@ -254,17 +254,17 @@ struct EpiLoadPipeline[num_stages: Int]:
         return self.pipeline.acquire_consumer()
 
     @always_inline
-    fn wait_producer(self):
+    def wait_producer(self):
         """Wait for producer to fill the current stage."""
         self.pipeline.wait_producer()
 
     @always_inline
-    fn consumer_stage(self) -> UInt32:
+    def consumer_stage(self) -> UInt32:
         """Get the current consumer stage index."""
         return self.pipeline.consumer_stage()
 
     @always_inline
-    fn consumer_step(mut self):
+    def consumer_step(mut self):
         """Advance consumer to next stage."""
         self.pipeline.consumer_step()
 
@@ -299,7 +299,7 @@ struct LoadOrderBarrier:
     var phase: UInt32
 
     @always_inline
-    fn __init__(out self, ptr: MbarPtr, initial_phase: UInt32 = 0):
+    def __init__(out self, ptr: MbarPtr, initial_phase: UInt32 = 0):
         """Initialize the load order barrier.
 
         Args:
@@ -310,7 +310,7 @@ struct LoadOrderBarrier:
         self.phase = initial_phase
 
     @always_inline
-    fn init(self, arrive_count: Int32 = 1):
+    def init(self, arrive_count: Int32 = 1):
         """Initialize the barrier.
 
         Should be called by a single thread (elect_one_thread) during
@@ -323,7 +323,7 @@ struct LoadOrderBarrier:
         self.barrier[0].init(arrive_count)
 
     @always_inline
-    fn arrive(self):
+    def arrive(self):
         """Signal that mainloop prologue loads are complete.
 
         Called by the mainloop load warp after issuing prologue TMA loads.
@@ -331,7 +331,7 @@ struct LoadOrderBarrier:
         _ = self.barrier[0].arrive()
 
     @always_inline
-    fn wait(self):
+    def wait(self):
         """Wait for mainloop to signal prologue completion.
 
         Called by the epilogue load warp before starting C loads.
@@ -339,7 +339,7 @@ struct LoadOrderBarrier:
         self.barrier[0].wait(self.phase)
 
     @always_inline
-    fn step(mut self):
+    def step(mut self):
         """Toggle phase for next tile iteration.
 
         Called after both arrive and wait have completed to prepare
@@ -348,7 +348,7 @@ struct LoadOrderBarrier:
         self.phase ^= 1
 
     @always_inline
-    fn arrive_and_step(mut self):
+    def arrive_and_step(mut self):
         """Arrive and advance phase in one call.
 
         Convenience method for mainloop load warp:
@@ -360,7 +360,7 @@ struct LoadOrderBarrier:
         self.step()
 
     @always_inline
-    fn wait_and_step(mut self):
+    def wait_and_step(mut self):
         """Wait and advance phase in one call.
 
         Convenience method for epilogue load warp:

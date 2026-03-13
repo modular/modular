@@ -24,7 +24,7 @@ from std.gpu import (
     barrier,
     block_idx,
     grid_dim,
-    lane_id,
+    lane_id_int as lane_id,
     thread_idx,
 )
 from std.gpu.host import DeviceContext, FuncAttribute
@@ -34,19 +34,15 @@ from std.gpu.memory import (
     async_copy_wait_group,
     external_memory,
 )
-from layout import Layout
+from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple, TileTensor
 from layout.layout_tensor import (
-    LayoutTensor,
     LayoutTensorIter,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_shared,
     copy_sram_to_dram,
 )
-from layout.runtime_layout import RuntimeLayout
-from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
-from layout.tile_tensor import TileTensor
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from std.memory import memset_zero, stack_allocation
 from register import register_internal
@@ -62,7 +58,7 @@ from .utils_gpu import MatmulConfig, MatmulKernels, _bk_base, block_swizzle
 
 
 @always_inline
-fn multistage_dual_mma[
+def multistage_dual_mma[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -140,8 +136,7 @@ fn multistage_dual_mma[
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
-    var warp_x = warp_id % UInt32(num_warps_n)
-    var warp_y = warp_id // UInt32(num_warps_n)
+    var warp_y, warp_x = divmod(warp_id, UInt32(num_warps_n))
 
     var a_iter = a_iter_arg
     var b0_iter = b0_iter_arg
@@ -160,7 +155,7 @@ fn multistage_dual_mma[
 
     @always_inline
     @parameter
-    fn _mask_tensor_row(
+    def _mask_tensor_row(
         tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
     ):
         return {
@@ -178,7 +173,7 @@ fn multistage_dual_mma[
 
     @always_inline
     @parameter
-    fn _copy_single_tensor_to_sram(
+    def _copy_single_tensor_to_sram(
         dst: LayoutTensor[mut=True, ...], src: LayoutTensor
     ):
         copy_dram_to_sram_async[
@@ -191,7 +186,7 @@ fn multistage_dual_mma[
 
     @always_inline
     @parameter
-    fn _copy_dual_tensor_to_sram(
+    def _copy_dual_tensor_to_sram(
         b0_dst: LayoutTensor[mut=True, ...],
         b1_dst: LayoutTensor[mut=True, ...],
         b0_src: LayoutTensor,
@@ -471,7 +466,7 @@ comptime binary_fn_type = fn[type: DType, width: Int](
         Int32(config.num_threads())
     )
 )
-fn multistage_dual_gemm_kernel[
+def multistage_dual_gemm_kernel[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -694,10 +689,10 @@ fn multistage_dual_gemm_kernel[
             )
             var c_gmem_frag = c_gmem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](thread_idx.x)
+            ]().distribute[warp_layout](Int(thread_idx.x))
             var c_smem_frag = accum_smem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](thread_idx.x)
+            ]().distribute[warp_layout](Int(thread_idx.x))
             var thread_offset = c_gmem_frag.distance(c.ptr)
             comptime num_stores_per_thread = type_of(c_gmem_frag).layout.size()
 
@@ -722,8 +717,7 @@ fn multistage_dual_gemm_kernel[
                 else:
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
-                var m = (Int(thread_offset) + dst_idx) // Int(N)
-                var n = (Int(thread_offset) + dst_idx) % Int(N)
+                var m, n = divmod(Int(thread_offset) + dst_idx, Int(N))
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
                 if m < Int(M) and n < Int(N):
                     epilogue[alignment=alignment](
@@ -764,8 +758,7 @@ fn multistage_dual_gemm_kernel[
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
                 comptime alignment = align_of[SIMD[c_type, 2]]()
-                var m = (Int(thread_offset) + dst_idx) // Int(N)
-                var n = (Int(thread_offset) + dst_idx) % Int(N)
+                var m, n = divmod(Int(thread_offset) + dst_idx, Int(N))
                 if m < Int(M) and n < Int(N):
                     var vec = (c_reg_frag.ptr + src_idx).load[
                         width=2, alignment=align_of[SIMD[c_type, 2]]()
@@ -779,7 +772,7 @@ fn multistage_dual_gemm_kernel[
             )
 
 
-fn swilu[
+def swilu[
     dtype: DType, width: Int
 ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[
     dtype, width
@@ -788,7 +781,7 @@ fn swilu[
 
 
 @always_inline
-fn multistage_dual_gemm[
+def multistage_dual_gemm[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -848,7 +841,7 @@ fn multistage_dual_gemm[
     ctx.synchronize()
 
 
-fn multistage_dual_gemm[
+def multistage_dual_gemm[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -863,10 +856,10 @@ fn multistage_dual_gemm[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     num_k_partitions: Int = 1,
 ](
-    c: NDBuffer[c_type, 2, _, c_shape],
-    a: NDBuffer[a_type, 2, _, a_shape],
-    b0: NDBuffer[b_type, 2, _, b_shape],
-    b1: NDBuffer[b_type, 2, _, b_shape],
+    c: NDBuffer[rank=2, c_type, _, c_shape],
+    a: NDBuffer[rank=2, a_type, _, a_shape],
+    b0: NDBuffer[rank=2, b_type, _, b_shape],
+    b1: NDBuffer[rank=2, b_type, _, b_shape],
     ctx: DeviceContext,
 ) raises:
     var tensor_c = TileTensor(c).to_layout_tensor()
@@ -880,7 +873,7 @@ fn multistage_dual_gemm[
     ](tensor_c, tensor_a, tensor_b0, tensor_b1, ctx)
 
 
-fn config_in_smem[
+def config_in_smem[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -936,7 +929,7 @@ fn config_in_smem[
     return c
 
 
-fn dual_gemm[
+def dual_gemm[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -950,10 +943,10 @@ fn dual_gemm[
     config: Optional[MatmulConfig[a_type, b_type, c_type, transpose_b]] = None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
+    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
+    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
+    b0: NDBuffer[rank=2, b_type, ImmutAnyOrigin, b_shape],
+    b1: NDBuffer[rank=2, b_type, ImmutAnyOrigin, b_shape],
     ctx: DeviceContext,
 ) raises:
     # TODO: Autotune. Currently, these are a copy+paste of `_matmul_gpu`.
@@ -970,9 +963,11 @@ fn dual_gemm[
     var N = 2 * shape.N
     var K = shape.K
     var multi_gemm_cond = M > 1 and N % 128 == 0 and K % 32 == 0 and K >= 128
-    comptime multistage_gemm_supported_shape = b_shape.all_known[
-        2
-    ]() and a_shape.has_value[1]() and c_shape.has_value[1]()
+    comptime multistage_gemm_supported_shape = b_shape.all_known() and a_shape.has_value[
+        1
+    ]() and c_shape.has_value[
+        1
+    ]()
     comptime matmul_supported_format = (
         a_type in (DType.float32, DType.bfloat16, DType.float16)
         and b_type in (DType.float32, DType.bfloat16, DType.float16)
@@ -995,10 +990,10 @@ fn dual_gemm[
                 config=kernels.tuning_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](b0),
+                rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](b1),
                 ctx,
             )
             return
@@ -1010,10 +1005,10 @@ fn dual_gemm[
                 config=config.value(),
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](b0),
+                rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](b1),
                 ctx,
             )
             return
@@ -1045,10 +1040,14 @@ fn dual_gemm[
                         config=M128_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                        rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                        rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                        rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](
+                            b0
+                        ),
+                        rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](
+                            b1
+                        ),
                         ctx,
                     )
                     return
@@ -1068,10 +1067,14 @@ fn dual_gemm[
                         config=M256_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                        rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                        rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                        rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](
+                            b0
+                        ),
+                        rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](
+                            b1
+                        ),
                         ctx,
                     )
                     return
@@ -1091,10 +1094,14 @@ fn dual_gemm[
                         config=M512_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                        rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                        rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                        rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](
+                            b0
+                        ),
+                        rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](
+                            b1
+                        ),
                         ctx,
                     )
                     return
@@ -1114,10 +1121,14 @@ fn dual_gemm[
                         config=M1606_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                        rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                        rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                        rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](
+                            b0
+                        ),
+                        rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](
+                            b1
+                        ),
                         ctx,
                     )
                     return
@@ -1137,10 +1148,14 @@ fn dual_gemm[
                         config=M2048_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                        rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                        rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                        rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](
+                            b0
+                        ),
+                        rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](
+                            b1
+                        ),
                         ctx,
                     )
                     return
@@ -1152,10 +1167,10 @@ fn dual_gemm[
             ),
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](
-            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-            rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-            rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+            rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+            rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+            rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](b0),
+            rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](b1),
             ctx,
         )
         return
@@ -1178,7 +1193,7 @@ fn dual_gemm[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-fn dual_gemv_kernel[
+def dual_gemv_kernel[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -1193,10 +1208,10 @@ fn dual_gemv_kernel[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
+    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
+    a: NDBuffer[rank=2, a_type, MutAnyOrigin, a_shape],
+    b0: NDBuffer[rank=2, b_type, MutAnyOrigin, b_shape],
+    b1: NDBuffer[rank=2, b_type, MutAnyOrigin, b_shape],
 ):
     var m = UInt(c.dim(0))
     var n = UInt(b0.dim(0))
@@ -1285,8 +1300,7 @@ fn dual_gemv_kernel[
 
     # Sum across warps' results in shared memory and apply the binary op.
     for ii in range(tid, tile_m * tile_n_per_B, num_threads):
-        var mid = ii // tile_n_per_B
-        var nid = ii % tile_n_per_B
+        var mid, nid = divmod(ii, tile_n_per_B)
         var val0 = Scalar[s_type]()
         var val1 = Scalar[s_type]()
 
@@ -1307,7 +1321,7 @@ fn dual_gemv_kernel[
             c.data.store(output_idx + mid * n + nid, val0.cast[c_type]())
 
 
-fn dual_gemv[
+def dual_gemv[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -1319,10 +1333,10 @@ fn dual_gemv[
     binary_lambda_fn: binary_fn_type = swilu,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
+    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
+    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
+    b0: NDBuffer[rank=2, b_type, ImmutAnyOrigin, b_shape],
+    b1: NDBuffer[rank=2, b_type, ImmutAnyOrigin, b_shape],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim(0)
@@ -1365,13 +1379,13 @@ fn dual_gemv[
 
 @register_internal("swishGLU")
 @always_inline
-fn swishGLU[
+def swishGLU[
     target: StaticString = "cpu",
 ](
-    a: NDBuffer[_, 2, ImmutAnyOrigin, _],
-    b0: NDBuffer[_, 2, ImmutAnyOrigin, _],
-    b1: NDBuffer[_, 2, ImmutAnyOrigin, _],
-    c: NDBuffer[_, 2, MutAnyOrigin, _],
+    a: NDBuffer[rank=2, _, ImmutAnyOrigin, _],
+    b0: NDBuffer[rank=2, _, ImmutAnyOrigin, _],
+    b1: NDBuffer[rank=2, _, ImmutAnyOrigin, _],
+    c: NDBuffer[rank=2, _, MutAnyOrigin, _],
     ctx: DeviceContextPtr,
 ) raises:
     """
@@ -1387,7 +1401,7 @@ fn swishGLU[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         var shape = GemmShape.get[True](c, a, b0)
         return ";".join(
             Span(

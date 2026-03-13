@@ -38,14 +38,7 @@ from std.sys import size_of
 from std.gpu.host import DeviceContext, Dim, FuncAttribute
 from std.gpu.host.info import B200
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import (
-    Coord,
-    Idx,
-    RuntimeInt,
-    RuntimeLayout,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, Idx, RuntimeInt, RuntimeLayout, TileTensor, row_major
 from layout.tile_layout import Layout as TileLayout
 from structured_kernels.tile_types import create_tma_tile
 
@@ -65,7 +58,7 @@ from ..structured_kernels.config import BlockScaledMatmulConfig
 from .grouped_1d1d_matmul_kernel import Grouped1D1DMatmulKernel
 
 
-fn grouped_matmul_1d1d_nvfp4[
+def grouped_matmul_1d1d_nvfp4[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -77,15 +70,15 @@ fn grouped_matmul_1d1d_nvfp4[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ],
 ](
-    c_device: TileTensor,
-    a_device: TileTensor,
-    a_offsets: TileTensor,
-    a_scale_offsets: TileTensor,
-    _b_device: TileTensor,
-    expert_ids: TileTensor,
-    a_scales: TileTensor,
-    _b_scales: TileTensor,
-    expert_scales: TileTensor,
+    c_device: TileTensor[...],
+    a_device: TileTensor[...],
+    a_offsets: TileTensor[...],
+    a_scale_offsets: TileTensor[...],
+    _b_device: TileTensor[...],
+    expert_ids: TileTensor[...],
+    a_scales: TileTensor[...],
+    _b_scales: TileTensor[...],
+    expert_scales: TileTensor[...],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -279,9 +272,11 @@ fn grouped_matmul_1d1d_nvfp4[
     from std.memory import UnsafePointer as Ptr
     from structured_kernels.tile_types import GMEMLayout1D
 
-    fn _to_1d[
+    def _to_1d[
         target_type: DType,
-    ](t: TileTensor) -> TileTensor[target_type, GMEMLayout1D, MutAnyOrigin]:
+    ](t: TileTensor[...]) -> TileTensor[
+        target_type, GMEMLayout1D, MutAnyOrigin
+    ]:
         var shape = Coord(
             RuntimeInt[DType.int64](
                 Scalar[DType.int64](t.layout.shape[0]().value())
@@ -415,19 +410,19 @@ fn grouped_matmul_1d1d_nvfp4[
         )
 
 
-fn grouped_matmul_dynamic_scaled_nvfp4[
+def grouped_matmul_dynamic_scaled_nvfp4[
     transpose_b: Bool = True,
     target: StaticString = "cpu",
 ](
-    c: TileTensor,
-    a: TileTensor,
-    b: TileTensor,
-    a_scales: TileTensor,
-    b_scales: TileTensor,
-    a_offsets: TileTensor,
-    a_scale_offsets: TileTensor,
-    expert_ids: TileTensor,
-    expert_scales: TileTensor,
+    c: TileTensor[...],
+    a: TileTensor[...],
+    b: TileTensor[...],
+    a_scales: TileTensor[...],
+    b_scales: TileTensor[...],
+    a_offsets: TileTensor[...],
+    a_scale_offsets: TileTensor[...],
+    expert_ids: TileTensor[...],
+    expert_scales: TileTensor[...],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:

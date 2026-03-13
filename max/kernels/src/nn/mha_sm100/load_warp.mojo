@@ -14,7 +14,7 @@
 
 from std.sys import size_of
 from std.gpu.memory import CacheEviction
-from layout.layout import Layout
+from layout import Layout
 from layout.tma_async import SharedMemBarrier
 from nn.fa4_config import FA4Config, EnableForcedOrdering
 from nn.sm100_attention_utils import (
@@ -42,7 +42,7 @@ from std.utils.static_tuple import StaticTuple
 
 
 @always_inline
-fn fa4_load[
+def fa4_load[
     KVLUTType: MHAOperand,
     MaskType: MHAMask,
     config: FA4Config,

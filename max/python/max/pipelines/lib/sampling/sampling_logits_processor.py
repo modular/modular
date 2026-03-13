@@ -155,15 +155,16 @@ class FusedSamplingProcessor:
         self.repetition_penalty: Buffer | None = None
 
         self.penalty_inputs: PenaltyInputs | None = None
-        needs_penalties = any(
-            context.sampling_params.needs_penalties for context in context_batch
-        )
-        if needs_penalties:
-            if pipeline_config.sampling.enable_penalties:
-                self.penalty_inputs = PenaltyInputs.create(
-                    context_batch, device, num_steps
-                )
-            else:
+        if pipeline_config.sampling.enable_penalties:
+            self.penalty_inputs = PenaltyInputs.create(
+                context_batch, device, num_steps
+            )
+        else:
+            needs_penalties = any(
+                context.sampling_params.needs_penalties
+                for context in context_batch
+            )
+            if needs_penalties:
                 logger.warning(
                     "Penalties are provided in the request, but the model was not configured with enable_penalties=True, ignoring"
                 )

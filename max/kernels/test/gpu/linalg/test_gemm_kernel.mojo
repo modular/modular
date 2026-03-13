@@ -20,9 +20,7 @@ from std.gpu.host import DeviceContext
 from std.gpu import block_idx, thread_idx, warp_id
 from std.gpu.memory import async_copy_wait_all
 from std.gpu.sync import barrier
-from layout import Layout, LayoutTensor, TileTensor
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx
+from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
 from layout._ndbuffer_stub import (
     copy_from_nd_buffer,
     copy_to_nd_buffer,
@@ -40,14 +38,14 @@ from std.testing import assert_almost_equal
 from std.utils import Index
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
     return False
 
 
-fn gemm_kernel[
+def gemm_kernel[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -159,7 +157,7 @@ fn gemm_kernel[
     copy_local_to_dram[dst_thread_layout=warp_layout](c_warp_tile, c_reg)
 
 
-fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
+def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     comptime NUM_THREADS = 256
     comptime BM = 64
     comptime BN = 64
@@ -192,13 +190,13 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var mat_a = NDBuffer[DType.float32, 2, MutAnyOrigin, DimList(M, K)](
+    var mat_a = NDBuffer[rank=2, DType.float32, MutAnyOrigin, DimList[M, K]()](
         a_device.unsafe_ptr(), dynamic_shape=Index(M, K)
     )
-    var mat_b = NDBuffer[DType.float32, 2, MutAnyOrigin, DimList(K, M)](
+    var mat_b = NDBuffer[rank=2, DType.float32, MutAnyOrigin, DimList[K, M]()](
         b_device.unsafe_ptr(), dynamic_shape=Index(K, M)
     )
-    var mat_c = NDBuffer[DType.float32, 2, MutAnyOrigin, DimList(M, N)](
+    var mat_c = NDBuffer[rank=2, DType.float32, MutAnyOrigin, DimList[M, N]()](
         c_device.unsafe_ptr(), dynamic_shape=Index(M, N)
     )
 
@@ -292,7 +290,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
         @always_inline
         @parameter
-        fn run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises:
             ctx.enqueue_function_experimental[kernel](
                 c_tensor,
                 a_tensor,

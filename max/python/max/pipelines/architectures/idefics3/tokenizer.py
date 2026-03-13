@@ -98,7 +98,9 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         # Force skip_special_tokens=True to filter out tokens like <end_of_utterance>
         kwargs_with_special_filter = kwargs.copy()
         kwargs_with_special_filter["skip_special_tokens"] = True
-        return self.delegate.decode(encoded, **kwargs_with_special_filter)
+        return self.delegate.decode(
+            encoded.tolist(), **kwargs_with_special_filter
+        )
 
     def apply_chat_template(
         self, messages: list[TextGenerationRequestMessage]

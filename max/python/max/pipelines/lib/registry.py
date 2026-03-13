@@ -59,6 +59,7 @@ from .pipeline_variants.text_generation import TextGenerationPipeline
 from .speculative_decoding import (
     EAGLESpeculativeDecodingPipeline,
     StandaloneSpeculativeDecodingPipeline,
+    UnifiedEAGLEPipeline,
 )
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import TextTokenizer
@@ -104,6 +105,7 @@ def get_pipeline_for_task(
     | type[AudioGeneratorPipeline]
     | type[PixelGenerationPipeline[Any]]
     | type[StandaloneSpeculativeDecodingPipeline]
+    | type[UnifiedEAGLEPipeline]
     | type[SpeechTokenGenerationPipeline]
     | type[EAGLESpeculativeDecodingPipeline]
     | type[OverlapTextGenerationPipeline[TextContext]]
@@ -128,6 +130,13 @@ def get_pipeline_for_task(
                 "Overlap scheduler is not supported with speculative decoding yet."
             )
 
+        # TODO: delete this temporary env var once things are less hacky
+        if os.getenv("MODULAR_USE_UNIFIED_EAGLE_PIPELINE"):
+            logger.warning(
+                "Using highly experimental UnifiedEAGLEPipeline. We really don't recommend using this."
+            )
+            return UnifiedEAGLEPipeline
+
         if pipeline_config.speculative.is_standalone():
             return StandaloneSpeculativeDecodingPipeline
         elif (
@@ -138,15 +147,18 @@ def get_pipeline_for_task(
         else:
             raise ValueError(f"Unsupported speculative method: {spec_method}")
     elif pipeline_config.runtime.enable_overlap_scheduler:
-        role = pipeline_config.runtime.pipeline_role
-        if (
-            task == PipelineTask.TEXT_GENERATION
-            and role == "prefill_and_decode"
-        ):
+        if task == PipelineTask.TEXT_GENERATION:
+            # TODO: Enable overlap pipeline for prefill_only workers
+            # once the prefill overlap pipeline is implemented.
+            if pipeline_config.runtime.pipeline_role == "prefill_only":
+                raise ValueError(
+                    "Overlap scheduling is not yet supported for "
+                    "prefill_only workers (WIP)."
+                )
             return OverlapTextGenerationPipeline[TextContext]
         raise ValueError(
-            "Overlap scheduler is only supported for TEXT_GENERATION task "
-            f"and PrefillAndDecode pipeline role, got {task} and {role}"
+            f"Overlap scheduler requires the TEXT_GENERATION pipeline task, "
+            f"got task={task}."
         )
     elif task == PipelineTask.TEXT_GENERATION:
         return TextGenerationPipeline[TextContext]
@@ -741,6 +753,9 @@ class PipelineRegistry:
                 f"No architecture found for {pipeline_config.model.huggingface_model_repo.repo_id}"
             )
 
+        arch_config = arch.config.initialize(pipeline_config)
+        max_length = arch_config.get_max_seq_len()
+
         # For pixel generation (diffusion models), we don't need HuggingFace transformers config
         if task == PipelineTask.PIXEL_GENERATION:
             # Pixel generation pipelines use a different tokenizer with subfolder parameters
@@ -752,22 +767,25 @@ class PipelineRegistry:
                     "tokenizer_2" in diffusers_config["components"]
                 )
 
-            # Standard max_length for CLIP tokenizer (primary)
-            # and T5 tokenizer (secondary, if present)
             tokenizer_kwargs = {
                 "model_path": pipeline_config.model.model_path,
                 "pipeline_config": pipeline_config,
                 "subfolder": "tokenizer",
-                "max_length": 77,  # Standard for CLIP
+                "max_length": max_length,
                 "revision": pipeline_config.model.huggingface_model_revision,
                 "trust_remote_code": pipeline_config.model.trust_remote_code,
             }
 
             if has_tokenizer_2:
                 tokenizer_kwargs["subfolder_2"] = "tokenizer_2"
-                tokenizer_kwargs["secondary_max_length"] = (
-                    512  # Standard for T5
+                secondary_max_length = getattr(
+                    arch_config, "secondary_max_seq_len", None
                 )
+                if secondary_max_length is None:
+                    raise ValueError(
+                        "secondary_max_seq_len must be set in ArchConfig if tokenizer_2 is present"
+                    )
+                tokenizer_kwargs["secondary_max_length"] = secondary_max_length
 
             # Pass per-architecture default for num_inference_steps
             # when the pipeline class declares one.
@@ -807,9 +825,6 @@ class PipelineRegistry:
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-
-        arch_config = arch.config.initialize(pipeline_config)
-        max_length = arch_config.get_max_seq_len()
 
         # Old Mistral model like Mistral-7B-Instruct-v0.3 uses LlamaTokenizer
         # and suffers from the whitespace decoding bug. So, we enable the fix
@@ -976,3 +991,22 @@ class PipelineRegistry:
 
 
 PIPELINE_REGISTRY = PipelineRegistry([])
+"""Global registry of supported model architectures and their pipelines.
+
+This singleton is automatically populated with all built-in architectures
+when you import :mod:`max.pipelines`.
+
+Use ``PIPELINE_REGISTRY`` to:
+
+- **Register custom architectures**: Call :meth:`~PipelineRegistry.register()`
+  to add a new model architecture.
+- **Query supported models**: Call
+  :meth:`~PipelineRegistry.retrieve_architecture()` to check whether a
+  Hugging Face model repository is supported.
+- **Access cached configs**: Use
+  :meth:`~PipelineRegistry.get_active_huggingface_config()` and
+  :meth:`~PipelineRegistry.get_active_tokenizer()` for cached access to model
+  configurations and tokenizers.
+
+See :class:`PipelineRegistry` for the full API.
+"""

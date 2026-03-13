@@ -484,13 +484,13 @@ def test_dict_update_empty_new() raises:
 struct DummyKey(KeyElement):
     var value: Int
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
+    def __hash__[H: Hasher](self, mut hasher: H):
         return hasher.update(self.value)
 
-    fn __eq__(self, other: DummyKey) -> Bool:
+    def __eq__(self, other: DummyKey) -> Bool:
         return self.value == other.value
 
-    fn __ne__(self, other: DummyKey) -> Bool:
+    def __ne__(self, other: DummyKey) -> Bool:
         return self.value != other.value
 
 
@@ -604,7 +604,7 @@ def test_pop_string_values() raises:
         _ = dict.pop("absent")
 
 
-fn test_clear() raises:
+def test_clear() raises:
     var some_dict: Dict[String, Int] = {}
     some_dict["key"] = 1
     some_dict.clear()
@@ -637,7 +637,7 @@ def test_init_initial_capacity() raises:
     assert_equal(w._reserved(), 16)
 
 
-fn test_dict_setdefault() raises:
+def test_dict_setdefault() raises:
     var some_dict: Dict[String, Int] = {}
     some_dict["key1"] = 1
     some_dict["key2"] = 2
@@ -662,7 +662,7 @@ fn test_dict_setdefault() raises:
 def test_compile_time_dict() raises:
     comptime N = 10
 
-    fn _get_dict() -> Dict[String, Int32, default_comp_time_hasher]:
+    def _get_dict() -> Dict[String, Int32, default_comp_time_hasher]:
         var res = Dict[String, Int32, default_comp_time_hasher]()
         for i in range(N):
             res[String(i)] = Int32(i)
@@ -675,21 +675,9 @@ def test_compile_time_dict() raises:
         assert_equal(val, Int32(i))
 
 
-# FIXME: Dictionaries should be equatable when their keys/values are.
-def is_equal[
-    K: KeyElement, V: Equatable & Copyable
-](a: Dict[K, V], b: Dict[K, V]) raises -> Bool:
-    if len(a) != len(b):
-        return False
-    for k in a.keys():
-        if a[k] != b[k]:
-            return False
-    return True
-
-
 def test_dict_comprehension() raises:
     var d1 = {x: x * x for x in range(10) if x & 1}
-    assert_true(is_equal(d1, {1: 1, 3: 9, 5: 25, 7: 49, 9: 81}))
+    assert_equal(d1, {1: 1, 3: 9, 5: 25, 7: 49, 9: 81})
 
     var s2 = {a * b: b for a in ["foo", "bar"] for b in [1, 2]}
     var d1reference = {
@@ -698,7 +686,7 @@ def test_dict_comprehension() raises:
         "foofoo": 2,
         "barbar": 2,
     }
-    assert_true(is_equal(s2, d1reference))
+    assert_equal(s2, d1reference)
 
 
 def test_dict_repr_wrap() raises:
@@ -1087,7 +1075,7 @@ def test_inplace_rehash_all_deleted() raises:
 def test_compile_time_dict_with_rehash() raises:
     """Compile-time dict that triggers in-place rehash."""
 
-    fn _build_dict() -> Dict[String, Int32, default_comp_time_hasher]:
+    def _build_dict() -> Dict[String, Int32, default_comp_time_hasher]:
         var capacity = 16
         var max_load = capacity * 7 // 8  # 14
         var keep = 4
@@ -1144,14 +1132,62 @@ def test_inplace_rehash_via_update() raises:
         assert_equal(d[200 + i], 200 + i)
 
 
+def test_dict_eq() raises:
+    # Equal dicts
+    assert_equal(Dict[String, Int](), Dict[String, Int]())
+    assert_equal({"a": 1, "b": 2}, {"a": 1, "b": 2})
+
+    # Different insertion order, same content
+    var d1 = Dict[String, Int]()
+    d1["b"] = 2
+    d1["a"] = 1
+    var d2 = Dict[String, Int]()
+    d2["a"] = 1
+    d2["b"] = 2
+    assert_equal(d1, d2)
+
+    # Different lengths
+    assert_true({"a": 1} != {"a": 1, "b": 2})
+    assert_true({"a": 1, "b": 2} != {"a": 1})
+
+    # Different values
+    assert_true({"a": 1} != {"a": 2})
+
+    # Different keys
+    assert_true({"a": 1} != {"b": 1})
+
+
+def test_dict_hash() raises:
+    # Same content, same hash
+    assert_equal(hash({"a": 1, "b": 2}), hash({"a": 1, "b": 2}))
+
+    # Different insertion order, same hash
+    var d1 = Dict[String, Int]()
+    d1["b"] = 2
+    d1["a"] = 1
+    var d2 = Dict[String, Int]()
+    d2["a"] = 1
+    d2["b"] = 2
+    assert_equal(hash(d1), hash(d2))
+
+    # Different content, different hash (probabilistic but extremely unlikely
+    # to collide for these simple values)
+    assert_true(hash({"a": 1}) != hash({"a": 2}))
+    assert_true(hash({"a": 1}) != hash({"b": 1}))
+
+    # Empty dicts
+    assert_equal(hash(Dict[String, Int]()), hash(Dict[String, Int]()))
+
+
+struct NonWritable(Copyable, ImplicitlyDestructible):
+    pass
+
+
 def test_dict_conditional_conformances() raises:
     assert_true(conforms_to(Dict[Int, Int], Writable))
-    # TODO(MOCO-3413): The `conforms_to` builtin does not evaluate the
-    # `where` clause on conditional conformances — it sees that `Dict` has a
-    # conformance for `Writable` and returns True without checking whether
-    # the condition holds for the concrete types. The type checker at call
-    # sites *does* enforce the condition correctly.
-    # assert_false(conforms_to(Dict[Int, NoneType], Writable))
+    assert_true(conforms_to(Dict[Int, Int], Equatable))
+    assert_true(conforms_to(Dict[Int, Int], Hashable))
+    assert_false(conforms_to(Dict[Int, NonWritable], Writable))
 
 
 def main() raises:

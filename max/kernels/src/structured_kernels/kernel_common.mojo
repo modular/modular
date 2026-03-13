@@ -29,10 +29,15 @@ from std.gpu.primitives.cluster import (
     elect_one_sync_with_mask,
 )
 from layout.tma_async import SharedMemBarrier
-from layout import row_major
-from layout.tile_layout import RowMajorLayout, TensorLayout
-from layout.coord import ComptimeInt, Coord, Idx
-from layout.tile_tensor import TileTensor
+from layout import (
+    ComptimeInt,
+    Coord,
+    Idx,
+    RowMajorLayout,
+    TensorLayout,
+    TileTensor,
+    row_major,
+)
 
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
@@ -219,9 +224,12 @@ struct KernelContext[
         self.rank_n = block_id_in_cluster.y
 
         # Peer CTA coordinate: (peer_id, mma_coord_m, mma_coord_n)
+        var cta_quotient, cta_remainder = divmod(
+            self.rank_m, UInt(Self.cta_group)
+        )
         self.peer_cta_coord = (
-            self.rank_m % UInt(Self.cta_group),
-            self.rank_m // UInt(Self.cta_group),
+            cta_remainder,
+            cta_quotient,
             self.rank_n,
         )
 

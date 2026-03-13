@@ -23,8 +23,8 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn.sampling import MinPSampler
 from max.pipelines.lib.sampling import (
-    greedy_acceptance_sampler,
-    typical_acceptance_sampler,
+    build_greedy_acceptance_sampler_graph,
+    build_stochastic_acceptance_sampler_graph,
 )
 
 
@@ -110,9 +110,11 @@ def test_min_p_known_inputs_outputs(session: InferenceSession) -> None:
 
 
 def test_greedy_acceptance_sampler(session: InferenceSession) -> None:
-    """Tests TypicalAcceptanceSampler in greedy mode (accept iff draft == argmax)."""
+    """Tests greedy_acceptance_sampler (accept iff draft == argmax)."""
     device = session.devices[0]
-    graph = greedy_acceptance_sampler(device=DeviceRef.from_device(device))
+    graph = build_greedy_acceptance_sampler_graph(
+        device=DeviceRef.from_device(device)
+    )
     model = session.load(graph)
 
     batch_size = 2
@@ -130,14 +132,10 @@ def test_greedy_acceptance_sampler(session: InferenceSession) -> None:
             target_logits[b * (num_steps + 1) + s, target_argmax[b][s]] = 10.0
 
     draft_tokens_np = np.array([[1, 1, 0, 0], [2, 4, 4, 5]], dtype=np.int64)
-    offsets = np.arange(
-        0, (batch_size + 1) * (num_steps + 1), num_steps + 1, dtype=np.int64
-    )
 
     first_rejected, target_tokens, bonus_tokens = model.execute(
         Buffer.from_numpy(draft_tokens_np).to(device),
         Buffer.from_numpy(target_logits).to(device),
-        Buffer.from_numpy(offsets).to(device),
     )
     first_rejected_np = cast(Buffer, first_rejected).to_numpy()
     target_tokens_np = cast(Buffer, target_tokens).to_numpy()
@@ -154,9 +152,11 @@ def test_greedy_acceptance_sampler(session: InferenceSession) -> None:
 
 
 def test_typical_acceptance_sampler(session: InferenceSession) -> None:
-    """Tests TypicalAcceptanceSampler in stochastic mode (accept with prob p_target)."""
+    """Tests stochastic mode (accept with prob p_target)."""
     device = session.devices[0]
-    graph = typical_acceptance_sampler(device=DeviceRef.from_device(device))
+    graph = build_stochastic_acceptance_sampler_graph(
+        device=DeviceRef.from_device(device)
+    )
     model = session.load(graph)
 
     def _make_inputs(
@@ -172,7 +172,6 @@ def test_typical_acceptance_sampler(session: InferenceSession) -> None:
         return [
             Buffer.from_numpy(draft_tokens_np).to(device),
             Buffer.from_numpy(logits).to(device),
-            Buffer.from_numpy(offsets).to(device),
             Buffer.from_numpy(np.ones(batch_size, dtype=np.float32)).to(device),
             Buffer.from_numpy(
                 np.full(batch_size, vocab_size, dtype=np.int64)

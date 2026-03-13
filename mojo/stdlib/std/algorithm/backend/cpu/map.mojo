@@ -19,7 +19,7 @@
 
 
 @always_inline
-fn map[
+def map[
     origins: OriginSet, //, func: fn(Int) capturing[origins] -> None
 ](size: Int):
     """Maps a function over the integer range [0, size).
@@ -40,11 +40,11 @@ fn map[
 
     def main() raises:
         # Create list with initial values to act on
-        var list = List[Float32](1.0, 2.0, 3.0, 4.0, 5.0)
+        var list: List[Float32] = [1.0, 2.0, 3.0, 4.0, 5.0]
 
         # Function applied to the value at each index
         @parameter
-        fn exponent_2(idx: Int):
+        def exponent_2(idx: Int):
             list[idx] = 2.0 ** list[idx]
 
         # Apply the mapped function across the index range

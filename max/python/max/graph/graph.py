@@ -163,7 +163,7 @@ class KernelLibrary:
         """Returns the list of kernel library paths.
 
         Returns:
-            A list of :obj:`Path` objects representing the currently loaded
+            A list of :class:`pathlib.Path` objects representing the currently loaded
             kernel library paths.
         """
         return self._analysis.library_paths
@@ -172,7 +172,7 @@ class KernelLibrary:
         """Adds a kernel library path to the analysis.
 
         Args:
-            path: The :obj:`Path` to the kernel library to be added to the
+            path: The :class:`pathlib.Path` to the kernel library to be added to the
                 current analysis.
         """
         self._analysis.add_path(path)
@@ -509,7 +509,7 @@ class Graph:
         if self._has_chain_input:
             chain_count = 1 + len(self.device_chains)
         if body_args and chain_count:
-            body_args = body_args[:-chain_count]
+            body_args = body_args[:-chain_count]  # type: ignore
 
         return tuple(
             Value.from_mlir(_Value._from_cmlir(arg)) for arg in body_args
@@ -529,7 +529,7 @@ class Graph:
 
         A subgraph is the graph equivalent of a function: you define a block of
         ops once and call it from the parent graph as many times as you need.
-        Use a subgraph when a block of computation repeats—for example, a
+        Use a subgraph when a block of computation repeats, for example, a
         transformer layer that appears 62 times in a model. Wrapping it in a
         subgraph lets the compiler process the definition once instead of once
         per repetition, which can cut compile time by 50x or more.
@@ -941,11 +941,16 @@ class Graph:
         with self._block(block), _location():
             expected_output_types = expected_output_types or []
 
-            results = block_fn() or []
+            results = block_fn()
+            if results is None:
+                results = []
 
             results = (
                 list(results) if isinstance(results, Iterable) else [results]
             )
+            results = [
+                r if isinstance(r, Value) else TensorValue(r) for r in results
+            ]
             result_types = [result.type for result in results]
             if result_types != expected_output_types:
                 raise TypeError(
@@ -986,7 +991,7 @@ class Graph:
 
         Args:
             outputs: The output values of the graph. Each value may be a
-                :class:`Value` or any :obj:`TensorValueLike`.
+                :class:`Value` or any :class:`~max.graph.TensorValueLike`.
         """
         outputs = tuple(
             o if isinstance(o, Value) else TensorValue(o) for o in outputs
@@ -1120,7 +1125,7 @@ class Graph:
                 external constants.
 
         Returns:
-            A :obj:`TensorValue` that contains this weight.
+            A :class:`~max.graph.TensorValue` that contains this weight.
 
         Raises:
             ValueError: If a weight with the same name already exists in the graph.

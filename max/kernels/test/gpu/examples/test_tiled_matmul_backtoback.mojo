@@ -14,6 +14,7 @@
 from std.collections import Optional
 from std.io.io import _printf
 from std.math import ceildiv
+from std.math.uutils import udivmod, ufloordiv
 from std.os import abort
 from std.sys import size_of
 from std.sys.info import align_of, simd_width_of
@@ -23,16 +24,15 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_idx,
+    block_idx_int as block_idx,
     grid_dim,
-    lane_id,
-    thread_idx,
+    lane_id_int as lane_id,
+    thread_idx_int as thread_idx,
 )
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.memory import external_memory
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import size
 from layout.layout_tensor import (
     LayoutTensorIter,
@@ -71,16 +71,16 @@ struct BackToBackMatmulConfig[
 
     var num_pipeline_stages: UInt
 
-    fn num_warps_m(self) -> UInt:
-        return UInt(self.block_tile_shape[0] // self.warp_tile_shape[0])
+    def num_warps_m(self) -> Int:
+        return self.block_tile_shape[0] // self.warp_tile_shape[0]
 
-    fn num_warps_n(self) -> UInt:
-        return UInt(self.block_tile_shape[1] // self.warp_tile_shape[1])
+    def num_warps_n(self) -> Int:
+        return self.block_tile_shape[1] // self.warp_tile_shape[1]
 
-    fn num_threads(self) -> UInt:
-        return self.num_warps_m() * self.num_warps_n() * UInt(WARP_SIZE)
+    def num_threads(self) -> Int:
+        return self.num_warps_m() * self.num_warps_n() * WARP_SIZE
 
-    fn shared_mem_usage(self, K: Int) -> Int:
+    def shared_mem_usage(self, K: Int) -> Int:
         return (
             self.block_tile_shape[0] * K
             + Int(
@@ -90,13 +90,13 @@ struct BackToBackMatmulConfig[
             )
         ) * size_of[Self.src_type]()
 
-    fn grid_dim(self, M: UInt) -> IndexList[3]:
+    def grid_dim(self, M: UInt) -> IndexList[3]:
         return Index(1, Int(ceildiv(M, UInt(self.block_tile_shape[0]))), 1)
 
-    fn block_dim(self) -> IndexList[3]:
-        return Index(Int(self.num_threads()), 1, 1)
+    def block_dim(self) -> IndexList[3]:
+        return Index(self.num_threads(), 1, 1)
 
-    fn __init__(
+    def __init__(
         out self,
         block_tile_shape: IndexList[3, element_type=DType.uint64],
         warp_tile_shape: IndexList[3, element_type=DType.uint64],
@@ -139,7 +139,7 @@ struct BackToBackMatmulConfig[
         Int32(config.num_threads())
     )
 )
-fn b2b_gemm[
+def b2b_gemm[
     d_type: DType,
     in_type: DType,
     d_layout: Layout,
@@ -212,7 +212,7 @@ fn b2b_gemm[
 
     var tid = thread_idx.x
     # var ln_id = lane_id()
-    var warp_id = tid // UInt(WARP_SIZE)
+    var warp_id = ufloordiv(tid, WARP_SIZE)
 
     # Only apply block swizzling for half precision types.
     comptime swizzle_block = in_type.is_half_float()
@@ -220,12 +220,12 @@ fn b2b_gemm[
     # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
     # for solving mismatches in some shapes
     var block_idx = block_swizzle(
-        (Int(block_idx.x), Int(block_idx.y)),
+        (block_idx.x, block_idx.y),
         (Int(grid_dim.x), Int(grid_dim.y)),
-    ) if swizzle_block else Index(Int(block_idx.x), Int(block_idx.y))
+    ) if swizzle_block else Index(block_idx.x, block_idx.y)
 
     # Coordinates of the current warp.
-    warp_y, warp_x = divmod(warp_id, num_warps_n)
+    warp_y, warp_x = udivmod(warp_id, num_warps_n)
 
     # Prepare shared memory buffers for A, B, and C.
     # We load our entire local `A` block into shared
@@ -333,7 +333,7 @@ fn b2b_gemm[
                 BK,
                 WM,
                 WN,
-                Int(num_threads),
+                num_threads,
                 num_pipeline_stages,
                 transpose_b,
                 b_next_smem_layout=c_smem_layout,
@@ -359,7 +359,7 @@ fn b2b_gemm[
                 BK,
                 WM,
                 WN,
-                Int(num_threads),
+                num_threads,
                 num_pipeline_stages,
                 transpose_b,
                 b_next_smem_layout=c_smem_layout,
@@ -389,7 +389,7 @@ fn b2b_gemm[
         # Thus, if `ab_reg_tile.dtype != in_type` (e.g., if accumulate
         # `Float16` to `Float32), the downcasting should happen in
         # `multistage_mma`.
-        # FIXME: need an elementwise fn to apply to A*B!
+        # FIXME: need an elementwise def to apply to A*B!
         #
         # Also, we have
         # var a_reg_tiles = tb[a_type]().row_major[
@@ -412,7 +412,7 @@ fn b2b_gemm[
             BK,
             WM,
             WN,
-            Int(num_threads),
+            num_threads,
             num_pipeline_stages,
             transpose_c,
             next_op_b_iter_masked=False,
@@ -432,7 +432,7 @@ fn b2b_gemm[
     # Map global memory tile down to thread.
     # we should have block_idx[0] == 0
     var d_gmem_tile = D.tile[BM, BN](block_idx[1], 0)
-    var d_gmem_warp_tile = d_gmem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
+    var d_gmem_warp_tile = d_gmem_tile.tile[WM, WN](warp_y, warp_x)
 
     var ln_id = lane_id()
     # d_reg_tile = ab_reg_tile
@@ -451,7 +451,7 @@ fn b2b_gemm[
             Layout.row_major(WM, WN),
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
-        ](a_smem.bitcast[Scalar[accum_type]]() + warp_id * UInt(WM) * UInt(WN))
+        ](a_smem.bitcast[Scalar[accum_type]]() + warp_id * WM * WN)
 
         copy_local_to_shared[
             thread_layout=Layout.row_major(8, 4),
@@ -583,7 +583,7 @@ fn b2b_gemm[
             )
 
 
-fn multistage_b2b_gemm[
+def multistage_b2b_gemm[
     dst_type: DType,
     src_type: DType,
     transpose_b: Bool,
@@ -637,7 +637,7 @@ fn multistage_b2b_gemm[
         abort(String(e))
 
 
-fn matmul_naive(
+def matmul_naive(
     C: LayoutTensor[mut=True, ...],
     A: LayoutTensor,
     B: LayoutTensor,
@@ -664,7 +664,7 @@ fn matmul_naive(
                 # C[m, n] += rebind[Scalar[C.dtype]](A[m, k].cast[C.dtype]()) * B[k, n].cast[C.dtype]()
 
 
-fn test_b2b_matmul(ctx: DeviceContext) raises:
+def test_b2b_matmul(ctx: DeviceContext) raises:
     # alias M = 32
     comptime M = 640
     comptime N = 64

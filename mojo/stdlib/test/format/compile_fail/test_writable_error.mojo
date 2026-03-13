@@ -29,10 +29,12 @@ def main() raises:
     var string = String()
 
     comptime if get_defined_int["test"]() == 1:
-        # CHECK_1: constraint failed: {{.*}}ArcPointer{{.*}}(Writable) conformance requires {{.*}}NotWritable{{.*}} conformance, which is not satisfied.
+        # CHECK_1: error: no matching method in call to 'write'
+        # CHECK_1: could not convert{{.*}}'ArcPointer[NotWritable]' to expected type 'Writable'
         var ptr = ArcPointer[NotWritable](NotWritable())
         string.write(ptr)
     elif get_defined_int["test"]() == 2:
-        # CHECK_2: constraint failed: {{.*}}OwnedPointer{{.*}}(Writable) conformance requires {{.*}}NotWritable{{.*}} conformance, which is not satisfied.
+        # CHECK_2: error: no matching method in call to 'write'
+        # CHECK_2: could not convert{{.*}}'OwnedPointer[NotWritable]' to expected type 'Writable'
         var ptr = OwnedPointer[NotWritable](NotWritable())
         string.write(ptr)

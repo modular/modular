@@ -26,11 +26,10 @@ from std.gpu.host.info import B200
 from std.utils import IndexList
 from std.utils.index import Index
 import std.itertools
-from layout import IntTuple, Layout, TileTensor
-from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
+from layout import IntTuple, Layout, RuntimeLayout, TileTensor, UNKNOWN_VALUE
 
 
-fn shrink_qkv_permute_3mn_sm100[
+def shrink_qkv_permute_3mn_sm100[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -38,11 +37,11 @@ fn shrink_qkv_permute_3mn_sm100[
     b_type: DType,
     b_shape: DimList,
 ](
-    c_lora: NDBuffer[c_type, 3, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
-    b: NDBuffer[b_type, 3, ImmutAnyOrigin, b_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
-    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
+    c_lora: NDBuffer[rank=3, c_type, MutAnyOrigin, c_shape],
+    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
+    b: NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape],
+    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
+    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -91,10 +90,10 @@ fn shrink_qkv_permute_3mn_sm100[
     # final C output must happen exclusively via the epilogue function.
     var c = NDBuffer[
         mut=True,
+        rank=2,
         c_type,
-        2,
         MutAnyOrigin,
-        shape=DimList(Dim(), Dim(N_Total)),
+        shape=DimList[Dim(), Dim(N_Total)](),
         strides=DimList.create_unknown[2](),
     ]()  # data=null, shape/stride zeroed
 
@@ -104,7 +103,7 @@ fn shrink_qkv_permute_3mn_sm100[
     @always_inline
     @__copy_capture(c_tensor_lora, M)
     @parameter
-    fn permute_dim_lora_bmn[
+    def permute_dim_lora_bmn[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         """Epilogue: permute flat (M, 3N) columns to planar (3, M, N) tiles.

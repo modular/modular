@@ -32,7 +32,7 @@ from std.utils import Index, IndexList
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
 
-fn test[
+def test[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -48,11 +48,12 @@ fn test[
 
     print(m, "x", n, "x", k)
 
-    comptime static_a_shape = DimList(to_dim[M], to_dim[K])
-    comptime static_b_shape = DimList(
-        to_dim[N], to_dim[K]
-    ) if transpose_b else DimList(to_dim[K], to_dim[N])
-    comptime static_c_shape = DimList(to_dim[M], to_dim[N])
+    comptime static_a_shape = DimList[to_dim[M], to_dim[K]]()
+    comptime static_b_shape = DimList[
+        to_dim[N] if transpose_b else to_dim[K],
+        to_dim[K] if transpose_b else to_dim[N],
+    ]()
+    comptime static_c_shape = DimList[to_dim[M], to_dim[N]]()
 
     var dynamic_a_shape = IndexList[2](M.or_else(m), K.or_else(k))
     var dynamic_b_shape = IndexList[2](
@@ -76,19 +77,19 @@ fn test[
     var c_device_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_ref_buffer = ctx.enqueue_create_buffer[c_type](c_size)
 
-    var a_device = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_device = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_device_buffer.unsafe_ptr(),
         IndexList[2](m, k),
     )
-    var b_device = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_device = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_device_buffer.unsafe_ptr(),
         IndexList[2](n, k) if transpose_b else IndexList[2](k, n),
     )
-    var c_device = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_buffer.unsafe_ptr(),
         IndexList[2](m, n),
     )
-    var c_device_ref = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_ref_buffer.unsafe_ptr(),
         IndexList[2](m, n),
     )
@@ -148,7 +149,7 @@ fn test[
     _ = c_device_ref_buffer^
 
 
-fn test[
+def test[
     in_type: DType,
     out_type: DType,
     transpose_b: Bool,
@@ -161,7 +162,7 @@ fn test[
     )
 
 
-fn test[
+def test[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -245,6 +246,13 @@ def test_bf16(ctx: DeviceContext) raises:
         N=Int(284),
         K=Int(256),
     ](ctx, 256, 284, 256)
+    test[
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
+        transpose_b=True,
+        N=Int(260),
+        K=Int(1024),
+    ](ctx, 259, 260, 1024)
 
 
 def test_float8[in_type: DType](ctx: DeviceContext) raises:

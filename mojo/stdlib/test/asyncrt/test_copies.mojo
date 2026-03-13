@@ -16,7 +16,7 @@ from std.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import TestSuite, assert_equal
 
 
-fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
+def _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
     print("-")
     print("_run_memcpy(", length, ")")
 
@@ -52,7 +52,7 @@ fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
         )
 
 
-fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
+def _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
     print("-")
     print("_run_sub_memcpy(", length, ")")
 
@@ -102,7 +102,9 @@ fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
         )
 
 
-fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
+def _run_fake_memcpy(
+    ctx: DeviceContext, length: Int, use_take_ptr: Bool
+) raises:
     print("-")
     print("_run_fake_memcpy(", length, ", take_ptr = ", use_take_ptr, ")")
 
@@ -162,7 +164,7 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
         )
 
 
-fn _run_cpu_ctx_memcpy_async(
+def _run_cpu_ctx_memcpy_async(
     ctx: DeviceContext, cpu_ctx: DeviceContext, length: Int
 ) raises:
     print("-")

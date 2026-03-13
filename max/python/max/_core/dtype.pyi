@@ -183,12 +183,12 @@ class DType(enum.Enum):
         """
 
     @staticmethod
-    def from_torch(tensor) -> DType:
+    def from_torch(dtype) -> DType:
         """
         Converts a torch dtype to the corresponding DType.
 
         Args:
-            dtype (np.dtype): The torch dtype to convert.
+            dtype: The torch dtype to convert.
 
         Returns:
             DType: The corresponding DType enum value.

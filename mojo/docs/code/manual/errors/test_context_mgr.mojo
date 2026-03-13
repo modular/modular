@@ -19,7 +19,7 @@ from std.testing import assert_raises, TestSuite
 def test_timer_no_error() raises:
     with Timer():
         print("Beginning no-error execution")
-        time.sleep(0.1)
+        std.time.sleep(0.1)
         print("Ending no-error execution")
 
 
@@ -27,7 +27,7 @@ def test_timer_error() raises:
     with assert_raises(contains="simulated error"):
         with Timer():
             print("Beginning error execution")
-            time.sleep(0.1)
+            std.time.sleep(0.1)
             raise "simulated error"
             # We should not reach this line
 

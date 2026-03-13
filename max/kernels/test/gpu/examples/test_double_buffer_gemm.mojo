@@ -18,13 +18,9 @@ from std.sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
 from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import async_copy_wait_all
-from layout import TileTensor
-from layout.int_tuple import IntTuple
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx
+from layout import Coord, Idx, IntTuple, LayoutTensor, TileTensor, row_major
 from layout.layout import *
 from layout.layout_tensor import (
-    LayoutTensor,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_sram_to_local,
@@ -34,14 +30,14 @@ from linalg.matmul.gpu import matmul_kernel_naive
 from std.testing import assert_almost_equal
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
     return False
 
 
-fn sgemm_double_buffer[
+def sgemm_double_buffer[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -74,12 +70,10 @@ fn sgemm_double_buffer[
     comptime num_warps_n = (BN // WN)
 
     var tid = thread_idx.x
-    var warp_id = tid // UInt(WARP_SIZE)
-    var lane_id = tid % UInt(WARP_SIZE)
+    var warp_id, lane_id = divmod(tid, UInt(WARP_SIZE))
 
     # Coordinates of the current warp.
-    var warp_x = warp_id % UInt(num_warps_n)
-    var warp_y = warp_id // UInt(num_warps_n)
+    var warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
 
     # Warp shape in 2D.
     comptime warp_dim_x = WN // TN
@@ -312,7 +306,7 @@ fn sgemm_double_buffer[
     )
 
 
-fn test(ctx: DeviceContext) raises:
+def test(ctx: DeviceContext) raises:
     comptime NUM_THREADS = 256
     comptime M = 8192
     comptime N = 8192
@@ -375,7 +369,7 @@ fn test(ctx: DeviceContext) raises:
 
         @always_inline
         @parameter
-        fn run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises:
             ctx.enqueue_function_experimental[gemm](
                 c_tensor,
                 a_tensor,

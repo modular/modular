@@ -98,10 +98,14 @@ modular_py_binary(
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
     deps = [
+        "//max/tests/integration/tools:transformers_v4",
+        "//max/tests/integration/tools:huggingface_hub_v0",
+        # Don't sort the above deps, see generate_llm_logits
         ":verify",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/accuracy/logit_verification:logit_verification_config",
         "//max/tests/integration/tools:generate_llm_logits",
+        "//max/tests/integration/tools:tag_filters",
         requirement("click"),
         "//max/tests/integration/test_common:evaluate",
         "//max/tests/integration/test_common:numpy_encoder",
@@ -130,7 +134,8 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "80",
     },
-    #gpu_constraints = ["//:has_gpu"],
+    #gpu_constraints = ["//:has_4_gpus"],
+    gpu_constraints = ["//:has_gpu"],
     main = "test_verify_pipelines.py",
     tags = [
         "gpu",
@@ -139,6 +144,56 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
+        #":verify",
+        #"//max/tests/integration/test_common:storage",
+        #"//max/python/max/pipelines/lib",
+        #"//max/tests/integration/test_common:evaluate",
+        #"//max/tests/integration/test_common:process_isolation",
+        #"//max/tests/integration/accuracy/logit_verification:logit_verification_config",
+        #"//max/tests/integration/test_common:numpy_encoder",
+        #"//max/tests/integration/tools:generate_llm_logits",
+        ":verify_pipelines",
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16",
+    size = "enormous",
+    srcs = ["test_verify_pipelines.py"],
+    args = [
+        "--no-aws",
+        "--pipeline=mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16",
+        "--devices=gpu",
+    ],
+    data = [
+        "//max/tests/integration/architectures/llama3/testdata",
+        "@nvshmem_prebuilt//:host",
+    ],
+    env = {
+        # PIPELINES_TESTDATA is required by the Llama3 scripts.
+        "PIPELINES_TESTDATA": (
+            "max/tests/integration/architectures/llama3/testdata"
+        ),
+        # required by models that use Expert Parallelism.
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "80",
+    },
+    #gpu_constraints = ["//:has_4_gpus"],
+    gpu_constraints = ["//:has_gpu"],
+    main = "test_verify_pipelines.py",
+    tags = [
+        "gpu",
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/tests/integration/tools:transformers_v4",
+        "//max/tests/integration/tools:huggingface_hub_v0",
+        # Don't sort the above deps, see generate_llm_logits
         #":verify",
         #"//max/tests/integration/test_common:storage",
         #"//max/python/max/pipelines/lib",
@@ -173,7 +228,7 @@ modular_py_test(
 
 modular_py_test(
     name = "test_verify",
-    size = "medium",
+    size = "large",
     srcs = ["test_verify.py"],
     deps = [
         ":verify",

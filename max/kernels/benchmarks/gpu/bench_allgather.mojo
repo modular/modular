@@ -40,12 +40,12 @@ from std.testing import assert_true
 
 @always_inline
 @parameter
-fn _per_gpu_value[dtype: DType](gpu_rank: Int, j: Int) -> Scalar[dtype]:
+def _per_gpu_value[dtype: DType](gpu_rank: Int, j: Int) -> Scalar[dtype]:
     # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
     return Scalar[dtype](Scalar[dtype](gpu_rank + 1) + Scalar[dtype](j % 251))
 
 
-fn _compute_lengths[
+def _compute_lengths[
     ngpus: Int, length_mode: StaticString
 ](num_bytes: Int, elem_size: Int) -> InlineArray[Int, ngpus]:
     """Compute per-GPU element counts based on the length distribution mode.
@@ -82,7 +82,7 @@ fn _compute_lengths[
     return lengths^
 
 
-fn _get_test_str[
+def _get_test_str[
     dtype: DType,
     cache_busting: Bool,
     length_mode: StaticString,
@@ -104,7 +104,7 @@ fn _get_test_str[
     )
 
 
-fn bench_allgather[
+def bench_allgather[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -199,20 +199,20 @@ fn bench_allgather[
         )
 
     # Build NDBuffer wrappers for allgather API.
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus](
-        fill={}
-    )
+    var in_bufs = InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
+    ](fill={})
     var out_bufs = InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
+        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
     ](fill={})
 
     for gpu_idx in range(ngpus):
-        in_bufs[gpu_idx] = NDBuffer[dtype, rank](
+        in_bufs[gpu_idx] = NDBuffer[rank=rank, dtype](
             cb_inputs[gpu_idx].unsafe_ptr(), IndexList[rank](lengths[gpu_idx])
         )
         for src_idx in range(ngpus):
             var flat_idx = gpu_idx * ngpus + src_idx
-            out_bufs[flat_idx] = NDBuffer[dtype, rank](
+            out_bufs[flat_idx] = NDBuffer[rank=rank, dtype](
                 out_bufs_list[flat_idx].unsafe_ptr(),
                 IndexList[rank](lengths[src_idx]),
             )
@@ -220,15 +220,15 @@ fn bench_allgather[
 
     @parameter
     @always_inline
-    fn bench_iter(
+    def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
         @parameter
         @always_inline
-        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             # Update input pointers to the cache-busted offset.
             comptime for i in range(ngpus):
-                in_bufs[i] = NDBuffer[dtype, rank](
+                in_bufs[i] = NDBuffer[rank=rank, dtype](
                     cb_inputs[i].offset_ptr(cache_iter),
                     IndexList[rank](lengths[i]),
                 )

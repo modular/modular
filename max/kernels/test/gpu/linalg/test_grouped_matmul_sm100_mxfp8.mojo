@@ -61,7 +61,7 @@ from layout import (
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-fn simple_init() -> Bool:
+def simple_init() -> Bool:
     for arg in argv():
         if arg == "--simple-init":
             return True
@@ -112,11 +112,11 @@ def _test_kernel_impl[
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
 
-    comptime static_a_shape = DimList(Dim(), expert_shape[1])
-    comptime static_b_shape = DimList(
+    comptime static_a_shape = DimList[Dim(), expert_shape[1]]()
+    comptime static_b_shape = DimList[
         num_experts, expert_shape[0], expert_shape[1]
-    )
-    comptime static_c_shape = DimList(Dim(), expert_shape[0])
+    ]()
+    comptime static_c_shape = DimList[Dim(), expert_shape[0]]()
     var dynamic_a_shape = IndexList[2](total_num_tokens, K)
     var dynamic_b_shape = IndexList[3](
         num_experts, expert_shape[0], expert_shape[1]
@@ -128,60 +128,60 @@ def _test_kernel_impl[
     var c_size = total_num_tokens * expert_shape[0]
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var a_host = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_host = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var b_host = NDBuffer[b_type, 3, _, static_b_shape](
+    var b_host = NDBuffer[rank=3, b_type, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
     var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
     var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
     )
     var a_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         num_active_experts + 1
     )
-    var a_offsets_device_nd = NDBuffer[DType.uint32, 1](
+    var a_offsets_device_nd = NDBuffer[rank=1, DType.uint32](
         a_offsets_device.unsafe_ptr(), num_active_experts + 1
     )
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[b_type, 3, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=3, b_type, _, static_b_shape](
         b_device.unsafe_ptr(), dynamic_b_shape
     )
     var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](
         num_active_experts
     )
-    var expert_ids_device_nd = NDBuffer[DType.int32, 1](
+    var expert_ids_device_nd = NDBuffer[rank=1, DType.int32](
         expert_ids_device.unsafe_ptr(), num_active_experts
     )
     var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         num_active_experts
     )
-    var a_scale_offsets_device_nd = NDBuffer[DType.uint32, 1](
+    var a_scale_offsets_device_nd = NDBuffer[rank=1, DType.uint32](
         a_scale_offsets_device.unsafe_ptr(), num_active_experts
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
     )
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
     var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
         num_experts
     )
-    var expert_scales_device_nd = NDBuffer[DType.float32, 1](
+    var expert_scales_device_nd = NDBuffer[rank=1, DType.float32](
         expert_scales_device.unsafe_ptr(), num_experts
     )
 
@@ -204,22 +204,22 @@ def _test_kernel_impl[
         a_scale_dim0 += ceildiv(local_m, SF_MN_GROUP_SIZE)
         expert_ids_host_ptr[i] = Int32(expert_ids[i])
 
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList[
         # ceildiv(total_num_tokens, SF_MN_GROUP_SIZE),
         Dim(),
         ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         num_experts,
         ceildiv(expert_shape[0], SF_MN_GROUP_SIZE),
         ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
+    ]()
 
     var dynamic_a_scales_shape = IndexList[5](
         a_scale_dim0,
@@ -254,25 +254,25 @@ def _test_kernel_impl[
     )
 
     var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
-    var a_scales_host = NDBuffer[scales_dtype, 5, _, static_a_scales_shape](
-        a_scales_host_ptr, dynamic_a_scales_shape
-    )
+    var a_scales_host = NDBuffer[
+        rank=5, scales_dtype, _, static_a_scales_shape
+    ](a_scales_host_ptr, dynamic_a_scales_shape)
     var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
-    var b_scales_host = NDBuffer[scales_dtype, 6, _, static_b_scales_shape](
-        b_scales_host_ptr, dynamic_b_scales_shape
-    )
+    var b_scales_host = NDBuffer[
+        rank=6, scales_dtype, _, static_b_scales_shape
+    ](b_scales_host_ptr, dynamic_b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
     var a_scales_device_nd = NDBuffer[
-        scales_dtype, 5, _, static_a_scales_shape
+        rank=5, scales_dtype, _, static_a_scales_shape
     ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
     var b_scales_device_nd = NDBuffer[
-        scales_dtype, 6, _, static_b_scales_shape
+        rank=6, scales_dtype, _, static_b_scales_shape
     ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
     var a_tensor = from_ndbuffer_row_major(a_device_nd)

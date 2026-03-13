@@ -22,8 +22,8 @@ from std.testing import TestSuite, assert_equal, assert_false, assert_true
 def test_dim_list() raises:
     print("== test_dim_list")
 
-    comptime lst0 = DimList(1, 2, 3, 4)
-    comptime lst1 = DimList(Dim(), 2, 3, 4)
+    comptime lst0 = DimList[1, 2, 3, 4]()
+    comptime lst1 = DimList[Dim(), 2, 3, 4]()
 
     # CHECK: [1, 2, 3, 4]
     print(lst0)
@@ -34,10 +34,10 @@ def test_dim_list() raises:
     assert_equal(lst0.product[3, 4](), 4)
 
     # CHECK: True
-    print(lst0.all_known[4]())
+    print(lst0.all_known())
 
     # CHECK: False
-    print(lst1.all_known[4]())
+    print(lst1.all_known())
 
     # CHECK: True
     print(lst1.all_known[1, 4]())
@@ -79,52 +79,57 @@ def test_dim() raises:
 def test_dim_to_string() raises:
     assert_equal(String(Dim()), "?")
     assert_equal(String(Dim(33)), "33")
-    assert_equal(String(comptime (DimList(2, Dim(), 3))), "[2, ?, 3]")
+    assert_equal(String(comptime (DimList[2, Dim(), 3]())), "[2, ?, 3]")
     assert_equal(
         String(comptime (DimList.create_unknown[5]())), "[?, ?, ?, ?, ?]"
     )
 
 
 def test_dimlist_repr() raises:
-    assert_equal(comptime (repr(DimList(2, Dim(), 3))), "DimList([2, ?, 3])")
     assert_equal(
-        comptime (repr(DimList.create_unknown[5]())), "DimList([?, ?, ?, ?, ?])"
+        comptime (repr(DimList[2, Dim(), 3]())), "DimList[[2, ?, 3]]()"
+    )
+    assert_equal(
+        comptime (repr(DimList.create_unknown[5]())),
+        "DimList[[?, ?, ?, ?, ?]]()",
     )
 
 
 def test_dimlist_eq() raises:
     assert_true(
-        comptime (DimList(Dim(), 42, Dim()) == DimList(Dim(), 42, Dim()))
+        comptime (DimList[Dim(), 42, Dim()]() == DimList[Dim(), 42, Dim()]())
     )
-    assert_true(comptime (DimList(Dim(), Dim()) == DimList(Dim(), Dim())))
-    assert_true(comptime (DimList() == DimList()))
-    assert_true(comptime (DimList(1, 2, 3) == DimList(1, 2, 3)))
+    assert_true(comptime (DimList[Dim(), Dim()]() == DimList[Dim(), Dim()]()))
+    assert_true(comptime (DimList[]() == DimList[]()))
+    assert_true(comptime (DimList[1, 2, 3]() == DimList[1, 2, 3]()))
 
-    assert_false(comptime (DimList(Dim(), 42, 41) == DimList(Dim(), 42, Dim())))
-    assert_false(comptime (DimList(Dim()) == DimList()))
-    assert_false(comptime (DimList(1, 2, Dim()) == DimList(1, 2, 3)))
+    assert_false(
+        comptime (DimList[Dim(), 42, 41]() == DimList[Dim(), 42, Dim()]())
+    )
+    assert_false(comptime (DimList[Dim()]() == DimList[]()))
+    assert_false(comptime (DimList[1, 2, Dim()]() == DimList[1, 2, 3]()))
     assert_false(
         comptime (
-            DimList(1, 2, Dim())
-            == DimList(
+            DimList[1, 2, Dim()]()
+            == DimList[
                 1,
                 2,
-            )
+            ]()
         )
     )
     assert_false(
         comptime (
-            DimList(
+            DimList[
                 1,
                 2,
-            )
-            == DimList(1, 2, Dim())
+            ]()
+            == DimList[1, 2, Dim()]()
         )
     )
 
 
-fn test_dim_ceildiv() raises:
-    fn test_dim_ceildiv(m: ValOrDim) -> Dim:
+def test_dim_ceildiv() raises:
+    def test_dim_ceildiv(m: ValOrDim) -> Dim:
         comptime BLOCK_SCALE_M = 128
         return ceildiv(m.dim, BLOCK_SCALE_M)
 

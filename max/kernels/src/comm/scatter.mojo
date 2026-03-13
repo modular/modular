@@ -57,7 +57,7 @@ from .sync import (
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-fn scatter_pull_kernel[
+def scatter_pull_kernel[
     dtype: DType,
     BLOCK_SIZE: Int,
     ngpus: Int,
@@ -121,7 +121,7 @@ fn scatter_pull_kernel[
 
 
 @parameter
-fn scatter[
+def scatter[
     dtype: DType,
     rank: Int,
     //,
@@ -129,8 +129,10 @@ fn scatter[
     dp_size: Int,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], dp_size],
-    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
+    input_buffers: InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], dp_size
+    ],
+    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
 ) raises:

@@ -32,8 +32,7 @@ from std.gpu import (
     warp_id,
 )
 from std.gpu.compute.mma import mma as _mma_intrinsic
-from layout.tile_layout import TensorLayout
-from layout.tile_tensor import TileTensor
+from layout import TensorLayout, TileTensor
 from std.memory import stack_allocation
 from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type
@@ -61,7 +60,7 @@ comptime AB_FRAG_SIZE = 16
 comptime CD_FRAG_SIZE = 8
 
 
-fn gemm_kernel_rdna[
+def gemm_kernel_rdna[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -118,7 +117,7 @@ fn gemm_kernel_rdna[
         ](c, a, b, m, n, k)
 
 
-fn _naive_matmul_kernel[
+def _naive_matmul_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -153,8 +152,7 @@ fn _naive_matmul_kernel[
     # 128 threads handle 64*64 = 4096 elements → 32 elements per thread
     comptime for elem in range(32):
         var linear = tid * 32 + elem
-        var local_row = linear // BLOCK_N
-        var local_col = linear % BLOCK_N
+        var local_row, local_col = divmod(linear, BLOCK_N)
         var global_row = block_m_offset + local_row
         var global_col = block_n_offset + local_col
 
@@ -182,7 +180,7 @@ fn _naive_matmul_kernel[
                 c[global_row, global_col] = accum.cast[c_type]()
 
 
-fn _wmma_matmul_kernel[
+def _wmma_matmul_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -223,8 +221,7 @@ fn _wmma_matmul_kernel[
     var lid = Int(lane_id())
 
     # Warp position in the 2x2 layout
-    var warp_m = wid // WARPS_N  # 0 or 1
-    var warp_n = wid % WARPS_N  # 0 or 1
+    var warp_m, warp_n = divmod(wid, WARPS_N)  # each 0 or 1
 
     # Effective lane for RDNA WMMA (lanes 0-15 and 16-31 hold same data)
     var effective_lane = lid % 16
@@ -253,8 +250,7 @@ fn _wmma_matmul_kernel[
         # Each thread loads 1024 / 128 = 8 elements
         comptime for i in range(8):
             var elem_idx = tid * 8 + i
-            var row = elem_idx // BLOCK_K
-            var col = elem_idx % BLOCK_K
+            var row, col = divmod(elem_idx, BLOCK_K)
             var global_row = block_m_offset + row
             var global_col = k_block + col
 
@@ -266,8 +262,7 @@ fn _wmma_matmul_kernel[
         # --- Cooperative load of B tile to shared memory ---
         comptime for i in range(8):
             var elem_idx = tid * 8 + i
-            var row = elem_idx // BLOCK_K
-            var col = elem_idx % BLOCK_K
+            var row, col = divmod(elem_idx, BLOCK_K)
             var global_row = block_n_offset + row
             var global_col = k_block + col
 
@@ -322,8 +317,9 @@ fn _wmma_matmul_kernel[
 
     # --- Store C results to global memory ---
     # WMMA output mapping: lane l, element v -> C[row=v*2+l//16, col=l%16]
-    var lane_col = lid % 16
-    var lane_row_offset = lid // 16  # 0 for lanes 0-15, 1 for lanes 16-31
+    var lane_row_offset, lane_col = divmod(
+        lid, 16
+    )  # lane_row_offset: 0 for lanes 0-15, 1 for lanes 16-31
 
     comptime for m_mma in range(NUM_M_MMAS):
         comptime for n_mma in range(NUM_N_MMAS):

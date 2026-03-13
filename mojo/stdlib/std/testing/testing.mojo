@@ -32,6 +32,7 @@ def main() raises:
 """
 
 from std.math import isclose
+from std.reflection.traits import AllWritable
 
 from std.reflection import call_location, SourceLocation
 from std.memory import memcmp
@@ -44,12 +45,12 @@ from std.utils._ansi import Color, Text
 
 
 @always_inline
-fn _assert_error[T: Writable](msg: T, loc: SourceLocation) -> Error:
+def _assert_error[T: Writable](msg: T, loc: SourceLocation) -> Error:
     return Error(loc.prefix(t"AssertionError: {msg}"))
 
 
 @always_inline
-fn assert_true[
+def assert_true[
     T: Boolable, //
 ](
     val: T,
@@ -75,7 +76,7 @@ fn assert_true[
 
 
 @always_inline
-fn assert_false[
+def assert_false[
     T: Boolable, //
 ](
     val: T,
@@ -101,7 +102,7 @@ fn assert_false[
 
 
 @always_inline
-fn assert_equal[
+def assert_equal[
     T: Equatable & Writable,
     //,
 ](
@@ -144,7 +145,7 @@ fn assert_equal[
 #   StringSlice such that string slices with different origin types can be
 #   compared, then drop this overload.
 @always_inline
-fn assert_equal[
+def assert_equal[
     O1: ImmutOrigin, O2: ImmutOrigin
 ](
     lhs: List[StringSlice[O1]],
@@ -183,7 +184,7 @@ fn assert_equal[
 
 
 @always_inline
-fn assert_equal(
+def assert_equal(
     lhs: StringSlice[mut=False, _],
     rhs: StringSlice[mut=False, _],
     msg: String = "",
@@ -211,7 +212,7 @@ fn assert_equal(
 
 
 @always_inline
-fn assert_equal[
+def assert_equal[
     lhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
     rhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
 ](
@@ -220,7 +221,7 @@ fn assert_equal[
     msg: String = "",
     *,
     location: Optional[SourceLocation] = None,
-) raises:
+) raises where (AllWritable[*lhs_types] and AllWritable[*rhs_types]):
     """Asserts that two tuples are equal. If not, an Error is raised.
 
     Parameters:
@@ -246,7 +247,7 @@ fn assert_equal[
 
 
 @always_inline
-fn assert_equal_pyobj[
+def assert_equal_pyobj[
     LHS: ConvertibleToPython & Copyable, RHS: ConvertibleToPython & Copyable
 ](
     lhs: LHS,
@@ -284,7 +285,7 @@ fn assert_equal_pyobj[
 
 
 @always_inline
-fn assert_not_equal[
+def assert_not_equal[
     lhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
     rhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
 ](
@@ -293,7 +294,7 @@ fn assert_not_equal[
     msg: String = "",
     *,
     location: Optional[SourceLocation] = None,
-) raises:
+) raises where (AllWritable[*lhs_types] and AllWritable[*rhs_types]):
     """Asserts that two tuples are not equal. If they are, an Error is raised.
 
     Parameters:
@@ -319,7 +320,7 @@ fn assert_not_equal[
 
 
 @always_inline
-fn assert_not_equal[
+def assert_not_equal[
     T: Equatable & Writable,
     //,
 ](
@@ -354,7 +355,7 @@ fn assert_not_equal[
 
 
 @always_inline
-fn assert_almost_equal[
+def assert_almost_equal[
     dtype: DType, size: Int
 ](
     lhs: SIMD[dtype, size],
@@ -414,7 +415,7 @@ fn assert_almost_equal[
 
 
 @always_inline
-fn assert_is[
+def assert_is[
     T: Identifiable & Writable, //
 ](
     lhs: T,
@@ -427,7 +428,7 @@ fn assert_is[
     then an Error is raised.
 
     Parameters:
-        T: A Stringable and Identifiable type.
+        T: A Writable and Identifiable type.
 
     Args:
         lhs: The lhs of the `is` statement.
@@ -448,7 +449,7 @@ fn assert_is[
 
 
 @always_inline
-fn assert_is_not[
+def assert_is_not[
     T: Identifiable & Writable, //
 ](
     lhs: T,
@@ -461,7 +462,7 @@ fn assert_is_not[
     then an Error is raised.
 
     Parameters:
-        T: A Stringable and Identifiable type.
+        T: A Writable and Identifiable type.
 
     Args:
         lhs: The lhs of the `is not` statement.
@@ -481,7 +482,7 @@ fn assert_is_not[
         )
 
 
-fn _colorize_diff_string[color: Color](s: String, other: String) -> String:
+def _colorize_diff_string[color: Color](s: String, other: String) -> String:
     """Colorizes a string by highlighting codepoints that differ from another string.
 
     Parameters:
@@ -507,7 +508,7 @@ fn _colorize_diff_string[color: Color](s: String, other: String) -> String:
     return result
 
 
-fn _create_colored_diff(lhs: String, rhs: String) -> String:
+def _create_colored_diff(lhs: String, rhs: String) -> String:
     """Creates a colored character-by-character diff of two strings.
 
     Highlights differences in red for the left string and green for the right string.
@@ -527,7 +528,7 @@ fn _create_colored_diff(lhs: String, rhs: String) -> String:
     )
 
 
-fn _assert_cmp_error[
+def _assert_cmp_error[
     cmp: String
 ](lhs: String, rhs: String, *, msg: String, loc: SourceLocation) -> Error:
     var err = cmp + " failed:"
@@ -574,7 +575,7 @@ struct assert_raises:
     """Assigned the value returned by call_locations() at Self.__init__."""
 
     @always_inline
-    fn __init__(out self, *, location: Optional[SourceLocation] = None):
+    def __init__(out self, *, location: Optional[SourceLocation] = None):
         """Construct a context manager with no message pattern.
 
         Args:
@@ -584,7 +585,7 @@ struct assert_raises:
         self.call_location = location.or_else(call_location())
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         *,
         contains: String,
@@ -600,11 +601,11 @@ struct assert_raises:
         self.message_contains = contains
         self.call_location = location.or_else(call_location())
 
-    fn __enter__(self):
+    def __enter__(self):
         """Enter the context manager."""
         pass
 
-    fn __exit__(self) raises:
+    def __exit__(self) raises:
         """Exit the context manager with no error.
 
         Raises:
@@ -612,7 +613,7 @@ struct assert_raises:
         """
         raise Error("AssertionError: Didn't raise at ", self.call_location)
 
-    fn __exit__(self, error: Error) raises -> Bool:
+    def __exit__(self, error: Error) raises -> Bool:
         """Exit the context manager with an error.
 
         Args:

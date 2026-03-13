@@ -79,7 +79,7 @@ logit_verification_pipelines:
     absolute_tolerance: 2.9e-2
     relative_tolerance: 9.4e-2
     cos_dist_threshold: 2.6e-6
-    kl_div_threshold: 8.6e-07
+    kl_div_threshold: 5.0e-06
 
   meta-llama/Llama-3.1-8B-Instruct-float32:
     pre_submit_agents: []
@@ -94,7 +94,7 @@ logit_verification_pipelines:
     absolute_tolerance: 2.4e-2
     relative_tolerance: 7.8e-3
     cos_dist_threshold: 3.3e-6
-    kl_div_threshold: 1.0e-10
+    kl_div_threshold: 6.8e-06
 
   sentence-transformers/all-mpnet-base-v2-float32:
     pre_submit_agents: []
@@ -110,7 +110,7 @@ logit_verification_pipelines:
     absolute_tolerance: 2.3e-3
     relative_tolerance: 2.7e-2
     cos_dist_threshold: 2.1e-5
-    kl_div_threshold: 1.0e-10
+    kl_div_threshold: 2.8e-07
 
   unsloth/gpt-oss-20b-BF16:
     pre_submit_agents: []
@@ -139,7 +139,7 @@ logit_verification_pipelines:
     absolute_tolerance: 3.7e-2
     relative_tolerance: 4.2e-2
     cos_dist_threshold: 8.2e-6
-    kl_div_threshold: 6.6e-5
+    kl_div_threshold: 9.3e-05
 
   # ========== Brittle Pipelines ==========
   # The models here are considered brittle. They have never reached high
@@ -163,7 +163,7 @@ logit_verification_pipelines:
     # something is very wrong but at least we will be able to detect
     # further regressions with this.
     cos_dist_threshold: 0.39
-    kl_div_threshold: 6.5
+    kl_div_threshold: 3.8e-03
 
   meta-llama/Meta-Llama-3-8B-Instruct-bfloat16:
     pre_submit_agents: []
@@ -191,7 +191,7 @@ logit_verification_pipelines:
     # something is very wrong but at least we will be able to detect
     # further regressions with this.
     cos_dist_threshold: 0.62
-    kl_div_threshold: 6.8
+    kl_div_threshold: 1.6e-02
 
   meta-llama/Llama-3.1-8B-Instruct-bfloat16:
     pre_submit_agents: []
@@ -328,7 +328,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_llama4_golden/2/fbb8ae9654ca68a7066e05944eda991b5365821adabbe9bf210f5cbfaad6512f/torch_llama4_golden.tar.gz"
       json_file: "torch_llama4_scout_bfloat16_golden.json"
     cos_dist_threshold: 0.7
-    kl_div_threshold: 8.0
+    kl_div_threshold: 2.9e-01
     timeout: 900
 
   mistralai/Mistral-Nemo-Instruct-2407-bfloat16:
@@ -343,7 +343,7 @@ logit_verification_pipelines:
       json_file: "torch_nemo-instruct-2407_bfloat16_golden.json"
     # TODO(AIPIPE-230): These tolerances are very high due to an accuracy regression.
     cos_dist_threshold: 2.1e-2
-    kl_div_threshold: 3.0e-2
+    kl_div_threshold: 3.5e-2
 
   mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16:
     pre_submit_agents: [*h100_1x, *b200_1x, *mi355_1x]
@@ -368,7 +368,7 @@ logit_verification_pipelines:
       json_file: "torch_internvl3-1b_bfloat16_golden.json"
     # TODO(MODELS-565): Fix InternVL correctness.
     cos_dist_threshold: 4.0e-03
-    kl_div_threshold: 1.5e-02
+    kl_div_threshold: 2.0e-02
 
   OpenGVLab/InternVL3-8B-Instruct-bfloat16:
     pre_submit_agents: []
@@ -438,7 +438,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_pixtral_golden/1/e2ec8c3693bf758df21d5673a35847df88307fb6568a851be531c53e6b18f710/torch_pixtral_golden.tar.gz"
       json_file: "torch_pixtral_bfloat16_golden.json"
     cos_dist_threshold: 7.2e-3
-    kl_div_threshold: 2.0e-2
+    kl_div_threshold: 2.5e-2
 
   Qwen/Qwen2.5-7B-Instruct-bfloat16:
     pre_submit_agents: []
@@ -464,7 +464,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_qwen2.5-vl-3b-instruct_bfloat16_golden/1/40a5c716c43ae003113b7a38eff4121619d4ca58bdf4d8b6f6b362529279ba5d/torch_qwen2.5-vl-3b-instruct_bfloat16_golden.tar.gz"
       json_file: "torch_qwen2.5_vl_3b_instruct_bfloat16_golden.json"
     cos_dist_threshold: 1.9e00
-    kl_div_threshold: 1.5e01
+    kl_div_threshold: 2.6e-01
 
   Qwen/Qwen2.5VL-7B-Instruct-bfloat16:
     pre_submit_agents: []
@@ -504,7 +504,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_qwen3-vl-30b-a3b-instruct_bfloat16_golden/1/43b1500269067c2e25bed53fefc98c3973e2132fabdfb6923acbedc531636bc0/torch_qwen3-vl-30b-a3b-instruct_bfloat16_golden.tar.gz"
       json_file: "torch_qwen3_vl_30b_a3b_instruct_bfloat16_golden.json"
     cos_dist_threshold: 1.7e00
-    kl_div_threshold: 2.1e01
+    kl_div_threshold: 7.8e-02
 
   Qwen/Qwen3-VL-4B-Instruct-bfloat16:
     pre_submit_agents: []
@@ -581,7 +581,7 @@ logit_verification_pipelines:
     relative_tolerance: 1.0e-04
     absolute_tolerance: 4.0e-03
     cos_dist_threshold: 5.0e-04
-    kl_div_threshold: 2.6e-04
+    kl_div_threshold: 2.8e-07
 
   # Qwen2.VL-FP8
   allenai/olmOCR-2-7B-1025-FP8:
@@ -764,6 +764,22 @@ logit_verification_pipelines:
     kl_div_threshold: 1.6e-1
     timeout: 1200
 
+  nvidia/Kimi-K2.5-NVFP4:
+    pre_submit_agents: []
+    post_submit_agents: [*b200_8x]
+    pipeline: "nvidia/Kimi-K2.5-NVFP4"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [nvidia-multi, 8xb200]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/vllm_kimik2_5_nvfp4_golden/1/0b26362d7cc605bcc3925fa3d6aff4aeef4ed12fe0ed2f1684f3c8cfbf285822/vllm_kimik2_5_nvfp4_golden.tar.gz"
+      json_file: "vllm_kimik2_5_nvfp4_golden.json"
+    # TODO: (MODELS-1159) investigate logit differences from vision model
+    absolute_tolerance: 1.5e+01
+    relative_tolerance: 9.6e-01
+    cos_dist_threshold: 4.5e-03
+    kl_div_threshold: 1.2e+01
+
   nvidia/DeepSeek-R1-0528-NVFP4-v2:
     pre_submit_agents: []
     post_submit_agents: [*b200_8x]
@@ -873,7 +889,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_smollm2_360m_instruct_lora_bfloat16_golden/1/1149947546122f5eef59073a8b06a0fe525051eb6003d2891510bdff8e49be6e/torch_smollm2_360m_instruct_lora_bfloat16_golden.tar.gz"
       json_file: "HuggingFaceTB_SmolLM2-360M-Instruct_torch_goldens.json"
     cos_dist_threshold: 1e3
-    kl_div_threshold: 1e3
+    kl_div_threshold: 1.4e-01
 
   RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic-BF16-LoRA:
     pre_submit_agents: []

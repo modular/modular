@@ -16,7 +16,7 @@ from std.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import TestSuite
 
 
-fn _run_badbuf(ctx: DeviceContext) raises:
+def _run_badbuf(ctx: DeviceContext) raises:
     print("-")
     print("_run_badbuf()")
 

@@ -26,7 +26,7 @@ from std.utils import IndexList
 from std.utils.index import Index
 
 
-fn gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, ...]):
+def gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, ...]):
     var m = c.get_shape()[0]
     var n = c.get_shape()[1]
     var k = a.get_shape()[1]
@@ -40,12 +40,12 @@ fn gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, ...]):
                 c[i, j] += a_val * b_val
 
 
-fn verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
+def verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
     var m = c.get_shape()[0]
     var n = c.get_shape()[1]
 
     var c_ref_ptr = alloc[Scalar[c.type]](m * n)
-    var c_ref = NDBuffer[c.type, c.rank](c_ref_ptr, c.get_shape())
+    var c_ref = NDBuffer[rank=c.rank, c.type](c_ref_ptr, c.get_shape())
     gemm_naive(a, b, c_ref)
 
     for i in range(m):
@@ -57,7 +57,7 @@ fn verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
     c_ref_ptr.free()
 
 
-fn bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:
+def bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:
     # disatch to bench_matmul with concrete spec type
     m.bench_with_input[
         MatmulSpec[spec.static_info], bench_matmul[spec.static_info]
@@ -69,7 +69,7 @@ fn bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:
     )
 
 
-fn bench_matmul[
+def bench_matmul[
     static: MatmulSpecStatic
 ](mut bencher: Bencher, spec: MatmulSpec[static]) raises capturing:
     comptime a_type = spec.static_info.a_type
@@ -80,9 +80,9 @@ fn bench_matmul[
     var a_ptr = alloc[Scalar[a_type],](spec.m * spec.k, alignment=alignment)
     var b_ptr = alloc[Scalar[b_type],](spec.k * spec.n, alignment=alignment)
     var c_ptr = alloc[Scalar[c_type],](spec.m * spec.n, alignment=alignment)
-    var a = NDBuffer[a_type, 2](a_ptr, Index(spec.m, spec.k))
-    var b = NDBuffer[b_type, 2](b_ptr, Index(spec.k, spec.n))
-    var c = NDBuffer[c_type, 2](c_ptr, Index(spec.m, spec.n))
+    var a = NDBuffer[rank=2, a_type](a_ptr, Index(spec.m, spec.k))
+    var b = NDBuffer[rank=2, b_type](b_ptr, Index(spec.k, spec.n))
+    var c = NDBuffer[rank=2, c_type](c_ptr, Index(spec.m, spec.n))
     rand[a_type](a_ptr, len(a))
     rand[b_type](b_ptr, len(b))
     c.zero()
@@ -102,7 +102,7 @@ fn bench_matmul[
     var bp_ptr = alloc[Scalar[b_type],](
         padded_k * padded_n, alignment=alignment
     )
-    var bp = NDBuffer[b_type, 2](bp_ptr, Index(padded_k, padded_n))
+    var bp = NDBuffer[rank=2, b_type](bp_ptr, Index(padded_k, padded_n))
 
     if b_packed:
         pack_b_ndbuffer[
@@ -114,7 +114,7 @@ fn bench_matmul[
 
     @always_inline
     @parameter
-    fn bench_fn() raises:
+    def bench_fn() raises:
         matmul[
             transpose_b=False,
             b_packed=b_packed,
@@ -145,12 +145,7 @@ struct MatmulSpec[static_info: MatmulSpecStatic](ImplicitlyCopyable, Writable):
     var n: Int
     var k: Int
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the matmul spec.
 
         Args:
@@ -173,7 +168,7 @@ struct MatmulSpec[static_info: MatmulSpecStatic](ImplicitlyCopyable, Writable):
             Self.static_info.c_type,
         )
 
-    fn flops(self) -> Int:
+    def flops(self) -> Int:
         return 2 * self.m * self.n * self.k
 
 

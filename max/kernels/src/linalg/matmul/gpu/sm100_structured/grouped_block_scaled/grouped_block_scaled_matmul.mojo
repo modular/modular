@@ -76,7 +76,7 @@ from .grouped_block_scaled_smem import GroupedBlockScaledSmem
 # =============================================================================
 
 
-fn validate_grouped_gemm_constraints[
+def validate_grouped_gemm_constraints[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -129,7 +129,7 @@ fn validate_grouped_gemm_constraints[
 # =============================================================================
 
 
-fn grouped_block_scaled_matmul[
+def grouped_block_scaled_matmul[
     transpose_b: Bool,
     max_groups: Int,
     *,
@@ -482,7 +482,7 @@ fn grouped_block_scaled_matmul[
 # =============================================================================
 
 
-fn grouped_smem_size[
+def grouped_smem_size[
     a_type: DType,
     b_type: DType,
     c_type: DType,

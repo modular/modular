@@ -11,9 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, warp_id, lane_id
+from std.gpu import barrier, thread_idx, warp_id, lane_id_int as lane_id
 from std.gpu.host import DeviceContext
-from std.gpu import thread_idx, warp_id, lane_id
 from std.gpu.compute.mma import (
     WGMMADescriptor,
     wgmma_async,
@@ -36,7 +35,7 @@ from std.memory import bitcast
 # We have a hard code 2D path in `arange` and it's row-major.
 # Add the col-major version as a work-around. Generalizing the above
 # may touch too many places.
-fn _arange_2d_col_major_tensor(t: LayoutTensor[mut=True, ...]):
+def _arange_2d_col_major_tensor(t: LayoutTensor[mut=True, ...]):
     var layout = materialize[t.layout]()
     var size = layout.size()
 
@@ -45,7 +44,7 @@ fn _arange_2d_col_major_tensor(t: LayoutTensor[mut=True, ...]):
         t.ptr[idx] = Scalar[t.dtype](i)
 
 
-fn wgmma_tf32_tf32_f32_kernel[
+def wgmma_tf32_tf32_f32_kernel[
     M: Int,
     N: Int,
     K: Int,
@@ -344,7 +343,7 @@ def wgmma_tf32_tf32_f32_64x8x8_inst_64x8x16(ctx: DeviceContext) raises:
     _ = res^
 
 
-fn wgmma_bf16_bf16_f32_kernel[
+def wgmma_bf16_bf16_f32_kernel[
     M: Int,
     N: Int,
     K: Int,
@@ -636,7 +635,7 @@ def wgmma_bf16_bf16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext) raises:
     _ = res^
 
 
-fn wgmma_f16_f16_f32_kernel[
+def wgmma_f16_f16_f32_kernel[
     M: Int,
     N: Int,
     K: Int,
@@ -928,7 +927,7 @@ def wgmma_f16_f16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext) raises:
     _ = res^
 
 
-fn wgmma_f16_f16_f16_kernel[
+def wgmma_f16_f16_f16_kernel[
     M: Int,
     N: Int,
     K: Int,
@@ -1224,7 +1223,7 @@ def wgmma_f16_f16_f16_64x8x16_inst_64x8x32(ctx: DeviceContext) raises:
     _ = res^
 
 
-fn wgmma_kernel[
+def wgmma_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,

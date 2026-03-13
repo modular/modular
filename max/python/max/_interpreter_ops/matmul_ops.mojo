@@ -660,8 +660,8 @@ fn batch_matmul_op[
     if not ctx:
         # TODO(MXF-108): Remove single_thread_blocking_override
         BatchMatmulKernel.execute[
-            lambdas_have_fusion=False,
             rank=3,
+            lambdas_have_fusion=False,
             transpose_b=False,
             target="cpu",
             single_thread_blocking_override=True,
@@ -671,8 +671,8 @@ fn batch_matmul_op[
             comptime if _is_gpu_allowed_matmul_dtype[dtype]():
                 var device_ctx = DeviceContextPtr(ctx)
                 BatchMatmulKernel.execute[
-                    lambdas_have_fusion=False,
                     rank=3,
+                    lambdas_have_fusion=False,
                     transpose_b=False,
                     target="gpu",
                 ](c, a, b, device_ctx)

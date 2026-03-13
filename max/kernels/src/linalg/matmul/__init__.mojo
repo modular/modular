@@ -41,7 +41,7 @@ from .gpu import _matmul_gpu
 
 
 @always_inline
-fn matmul[
+def matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
     b_packed: Bool = False,
@@ -71,37 +71,37 @@ fn matmul[
         target=target,
     ](
         NDBuffer[
+            rank=2,
             c.dtype,
-            2,
             c.origin,
-            DimList(
+            DimList[
                 _to_value_or_dim(Int(c.layout.shape[0])),
                 _to_value_or_dim(Int(c.layout.shape[1])),
-            ),
+            ](),
         ](
             c.ptr,
             rebind[IndexList[2]](c.runtime_layout.shape.value.canonicalize()),
         ),
         NDBuffer[
+            rank=2,
             a.dtype,
-            2,
             a.origin,
-            DimList(
+            DimList[
                 _to_value_or_dim(Int(a.layout.shape[0])),
                 _to_value_or_dim(Int(a.layout.shape[1])),
-            ),
+            ](),
         ](
             a.ptr,
             rebind[IndexList[2]](a.runtime_layout.shape.value.canonicalize()),
         ),
         NDBuffer[
+            rank=2,
             b.dtype,
-            2,
             b.origin,
-            DimList(
+            DimList[
                 _to_value_or_dim(Int(b.layout.shape[0])),
                 _to_value_or_dim(Int(b.layout.shape[1])),
-            ),
+            ](),
         ](
             b.ptr,
             rebind[IndexList[2]](b.runtime_layout.shape.value.canonicalize()),
@@ -111,7 +111,7 @@ fn matmul[
 
 
 @always_inline
-fn matmul[
+def matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
     b_packed: Bool = False,
@@ -124,9 +124,9 @@ fn matmul[
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
 ](
-    c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[mut=False, _, 2, _, _],
-    b: NDBuffer[mut=False, _, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, _, _, _],
+    a: NDBuffer[mut=False, rank=2, _, _, _],
+    b: NDBuffer[mut=False, rank=2, _, _, _],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     var cuda_ctx = Optional[DeviceContext]() if is_cpu[
@@ -147,7 +147,7 @@ fn matmul[
 
 
 @always_inline
-fn matmul[
+def matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
     b_packed: Bool = False,
@@ -160,9 +160,9 @@ fn matmul[
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
 ](
-    c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[mut=False, _, 2, _, _],
-    b: NDBuffer[mut=False, _, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, _, _, _],
+    a: NDBuffer[mut=False, rank=2, _, _, _],
+    b: NDBuffer[mut=False, rank=2, _, _, _],
     ctx: Optional[DeviceContext],
 ) raises:
     comptime assert is_valid_target[target](), "unsupported target"
@@ -177,7 +177,7 @@ fn matmul[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         var shape = GemmShape.get[transpose_b](c, a, b)
         # fmt: off
         return String(
@@ -211,7 +211,7 @@ fn matmul[
             # We wrap it around an epilogue lambda instead.
             @parameter
             @always_inline
-            fn compute_lambda_wrapper[
+            def compute_lambda_wrapper[
                 _type: DType, _width: Int, *, alignment: Int = 1
             ](coords: IndexList[2], val: SIMD[_type, _width]):
                 comptime if elementwise_compute_lambda_fn:
@@ -244,7 +244,7 @@ fn matmul[
             ](c, a, b, ctx.value())
 
 
-fn _to_value_or_dim(value: Int) -> Dim:
+def _to_value_or_dim(value: Int) -> Dim:
     if value != UNKNOWN_VALUE:
         return Dim(value)
     else:

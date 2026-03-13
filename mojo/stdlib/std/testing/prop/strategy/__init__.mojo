@@ -24,12 +24,10 @@ trait Strategy(ImplicitlyDestructible, Movable):
     produce the random input values for the properties being tested.
     """
 
-    # TODO: `Value` should require `Representable/Stringable` once conditional
-    # conformance is supported.
     comptime Value: Copyable
     """The type the strategy produces."""
 
-    fn value(mut self, mut rng: Rng) raises -> Self.Value:
+    def value(mut self, mut rng: Rng) raises -> Self.Value:
         """Produces a random value using this strategy.
 
         Args:

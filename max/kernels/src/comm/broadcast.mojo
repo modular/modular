@@ -40,6 +40,7 @@ from .sync import (
     MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
+    circular_add,
     is_p2p_enabled,
 )
 from .device_query import _dispatch_max_num_blocks, get_sm_version
@@ -53,7 +54,7 @@ comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else Addres
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-fn broadcast_multimem_kernel[
+def broadcast_multimem_kernel[
     dtype: DType,
     rank: Int,
     BLOCK_SIZE: Int,
@@ -61,8 +62,8 @@ fn broadcast_multimem_kernel[
     simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
-    input_buffer: NDBuffer[dtype, rank, ImmutAnyOrigin],
+    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
+    input_buffer: NDBuffer[rank=rank, dtype, ImmutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
     root: Int,
@@ -162,7 +163,7 @@ fn broadcast_multimem_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-fn broadcast_pull_1stage_kernel[
+def broadcast_pull_1stage_kernel[
     dtype: DType,
     rank: Int,
     BLOCK_SIZE: Int,
@@ -170,8 +171,8 @@ fn broadcast_pull_1stage_kernel[
     simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
-    input_buffer: NDBuffer[dtype, rank, ImmutAnyOrigin],
+    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
+    input_buffer: NDBuffer[rank=rank, dtype, ImmutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
 ):
@@ -222,7 +223,7 @@ fn broadcast_pull_1stage_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-fn broadcast_pull_2stage_kernel[
+def broadcast_pull_2stage_kernel[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -230,7 +231,7 @@ fn broadcast_pull_2stage_kernel[
     BLOCK_SIZE: Int,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    result: NDBuffer[dtype, rank, MutAnyOrigin],
+    result: NDBuffer[rank=rank, dtype, MutAnyOrigin],
     root_input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int,
@@ -357,7 +358,7 @@ fn broadcast_pull_2stage_kernel[
         for idx in range(thr_local_start, max_aligned_chunk_size, elem_stride):
             comptime for offset in range(1, ngpus):
                 # Round-robin: each GPU gathers from other peers
-                var src_rank = (my_rank + offset) % ngpus
+                var src_rank = circular_add[ngpus](my_rank, offset)
 
                 var chunk_start = src_rank * part_size
                 # Use aligned size for last chunk, full size for others
@@ -425,7 +426,7 @@ fn broadcast_pull_2stage_kernel[
     _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
 
-fn _should_use_2stage[ngpus: Int](num_bytes: Int) -> Bool:
+def _should_use_2stage[ngpus: Int](num_bytes: Int) -> Bool:
     """Determine if 2-stage broadcast should be used based on GPU count and size.
 
     Crossover points determined empirically:
@@ -446,7 +447,7 @@ fn _should_use_2stage[ngpus: Int](num_bytes: Int) -> Bool:
 
 
 @parameter
-fn broadcast[
+def broadcast[
     dtype: DType,
     rank: Int,
     //,
@@ -454,8 +455,8 @@ fn broadcast[
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
-    input_buffer: NDBuffer[dtype, rank, ImmutAnyOrigin],
-    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
+    input_buffer: NDBuffer[rank=rank, dtype, ImmutAnyOrigin],
+    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,
@@ -547,15 +548,15 @@ fn broadcast[
 
 
 @parameter
-fn broadcast_2stage[
+def broadcast_2stage[
     dtype: DType,
     rank: Int,
     //,
     ngpus: Int,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    input_buffer: NDBuffer[dtype, rank, ImmutAnyOrigin],
-    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
+    input_buffer: NDBuffer[rank=rank, dtype, ImmutAnyOrigin],
+    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,

@@ -25,7 +25,7 @@ from std.reflection.type_info import _unqualified_type_name
 
 @deprecated("Use `comptime assert` instead")
 @always_inline("nodebug")
-fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
+def constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
     """Asserts that the condition must be true at compile time.
 
     The `constrained()` function introduces a compile-time constraint on the
@@ -40,7 +40,7 @@ fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
     Example:
 
     ```mojo
-    fn half[dtype: DType](a: Scalar[dtype]) -> Scalar[dtype]:
+    def half[dtype: DType](a: Scalar[dtype]) -> Scalar[dtype]:
         comptime assert dtype.is_numeric(), "dtype must be numeric."
         return a / 2
 
@@ -58,13 +58,13 @@ fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
     """
     __mlir_op.`kgen.param.assert`[
         cond=cond.__mlir_i1__(),
-        message=_get_kgen_string[msg, extra](),
+        message=_get_kgen_string[msg, *extra](),
     ]()
 
 
 @deprecated("Use `comptime assert` instead")
 @always_inline("nodebug")
-fn constrained[cond: Bool]():
+def constrained[cond: Bool]():
     """Asserts that the condition must be true at compile time.
 
     The `constrained()` function introduces a compile-time constraint on the
@@ -86,7 +86,7 @@ fn constrained[cond: Bool]():
 
 
 @always_inline("nodebug")
-fn _constrained_conforms_to[
+def _constrained_conforms_to[
     cond: Bool,
     *,
     Parent: AnyType,
@@ -119,7 +119,7 @@ fn _constrained_conforms_to[
 
 
 @always_inline("nodebug")
-fn _constrained_field_conforms_to[
+def _constrained_field_conforms_to[
     cond: Bool,
     *,
     Parent: AnyType,

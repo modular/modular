@@ -6,13 +6,12 @@ load(":mojo_test_environment.bzl", "mojo_test_environment")
 
 def _sphinx_docs_impl(ctx):
     sources = set()
-    outputs = []
+
+    # Collect source directories for copying
     for src in ctx.attr.srcs:
         root = src.label.package
         for file in src.files.to_list():
             base_path = file.path.removeprefix(root + "/")
-            output_name = base_path.removesuffix("rst") + "md"
-            outputs.append(ctx.actions.declare_file("output/" + output_name))
 
             # This will be the input to `cp -r`, so we just need the first file/dir under the package prefix
             sources.add(root + "/" + base_path.split("/")[0])
@@ -27,6 +26,10 @@ def _sphinx_docs_impl(ctx):
             else:
                 sources.add(file.dirname)
 
+    # Use a directory output to capture all generated files (including autosummary)
+    # Use target name to avoid conflicts between multiple sphinx_docs targets
+    output_dir = ctx.actions.declare_directory(ctx.label.name + "_output")
+
     command = """
     set -euo pipefail
 
@@ -39,12 +42,19 @@ def _sphinx_docs_impl(ctx):
         /bin/cp -r $s sphinx_doc_inputs/
     done
 
+    # Copy templates to config directory (where Sphinx expects them)
+    if [ -d sphinx_doc_inputs/_templates ]; then
+        /bin/cp -r sphinx_doc_inputs/_templates ./_templates
+    fi
+
     # Create outputs
     /bin/mkdir -p {output_dir}
+    DOCTREE_DIR=$(mktemp -d)
     {sphinx} \\
         -q \\
         -b {builder} \\
         -c . \\
+        -d "$DOCTREE_DIR" \\
         -W \\
         ./sphinx_doc_inputs \\
         {output_dir}
@@ -53,7 +63,7 @@ def _sphinx_docs_impl(ctx):
         sphinx = ctx.executable._sphinx.path,
         builder = ctx.attr.builder,
         sources = " ".join(sorted(sources)),
-        output_dir = ctx.bin_dir.path + "/" + ctx.label.package + "/output",
+        output_dir = output_dir.path,
     )
 
     mojo_variables = ctx.attr.exec_test_environment[platform_common.TemplateVariableInfo].variables
@@ -79,7 +89,7 @@ def _sphinx_docs_impl(ctx):
 
     ctx.actions.run_shell(
         inputs = [ctx.file.config_file] + ctx.files.srcs + ctx.files.data + ctx.attr._sphinx[DefaultInfo].default_runfiles.files.to_list(),
-        outputs = outputs,
+        outputs = [output_dir],
         command = command,
         tools = [ctx.executable._sphinx],
         env = expanded_env,
@@ -88,7 +98,7 @@ def _sphinx_docs_impl(ctx):
 
     return [
         DefaultInfo(
-            files = depset(outputs),
+            files = depset([output_dir]),
         ),
     ]
 

@@ -26,14 +26,14 @@ The TileLoader struct abstracts these loading mechanisms to provide a unified
 interface for the matmul kernel's producer threads.
 """
 from layout.tma_async import TMATensorTile, _idx_product
-from layout.layout_tensor import LayoutTensor
+from layout import LayoutTensor
 from std.gpu.memory import (
     AddressSpace,
     async_copy,
 )
 from ....structuring import SharedMemBarrier, SMemBarrier, SMemTile
 from layout.swizzle import make_swizzle
-from std.gpu import thread_idx
+from std.gpu import thread_idx_int as thread_idx
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.sync import async_copy_arrive
 from structured_kernels.pipeline import (
@@ -55,11 +55,11 @@ trait TileLoader(TrivialRegisterPassable):
     comptime _dtype: DType
 
     @always_inline
-    fn load_tile(
+    def load_tile(
         self,
         dst: SMemTile[Self._dtype, _, alignment=128, ...],
         mem_barrier: SMemBarrier,
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
     ):
         """Load a tile from global memory to shared memory.
 
@@ -83,7 +83,7 @@ trait BarrierHandler(TrivialRegisterPassable):
     """
 
     @always_inline
-    fn prepare_stage(self, mem_barrier: SMemBarrier):
+    def prepare_stage(self, mem_barrier: SMemBarrier):
         """Prepare barrier for incoming transfers.
 
         For TMA: sets expected transaction bytes.
@@ -95,7 +95,7 @@ trait BarrierHandler(TrivialRegisterPassable):
         ...
 
     @always_inline
-    fn complete_stage(self, mem_barrier: SMemBarrier):
+    def complete_stage(self, mem_barrier: SMemBarrier):
         """Signal that all transfers for this stage are done.
 
         For TMA: noop (hardware auto-signals).
@@ -116,7 +116,7 @@ struct TMABarrierHandler[expected_bytes: Int](BarrierHandler):
         expected_bytes: Total bytes expected per stage across all loaders.
     """
 
-    fn __init__[
+    def __init__[
         num_stages: Int
     ](
         out self,
@@ -132,11 +132,11 @@ struct TMABarrierHandler[expected_bytes: Int](BarrierHandler):
             )
 
     @always_inline
-    fn prepare_stage(self, mem_barrier: SMemBarrier):
+    def prepare_stage(self, mem_barrier: SMemBarrier):
         mem_barrier[].expect_bytes(Int32(Self.expected_bytes))
 
     @always_inline
-    fn complete_stage(self, mem_barrier: SMemBarrier):
+    def complete_stage(self, mem_barrier: SMemBarrier):
         pass
 
 
@@ -146,7 +146,7 @@ struct CPAsyncBarrierHandler(BarrierHandler):
     Initializes the pipeline on construction (phase=0, barrier counts).
     """
 
-    fn __init__[
+    def __init__[
         num_stages: Int
     ](
         out self,
@@ -162,11 +162,11 @@ struct CPAsyncBarrierHandler(BarrierHandler):
             )
 
     @always_inline
-    fn prepare_stage(self, mem_barrier: SMemBarrier):
+    def prepare_stage(self, mem_barrier: SMemBarrier):
         pass
 
     @always_inline
-    fn complete_stage(self, mem_barrier: SMemBarrier):
+    def complete_stage(self, mem_barrier: SMemBarrier):
         async_copy_arrive(mem_barrier)
         _ = mem_barrier[].arrive()
 
@@ -179,7 +179,7 @@ struct TileLoaderTMA[
     desc_shape: IndexList[tma_rank],
     /,
     *,
-    BK: UInt,
+    BK: Int,
     cluster_size: Int32,
     use_partitioned_multicast: Bool,
 ](TileLoader):
@@ -209,14 +209,14 @@ struct TileLoaderTMA[
         Self.tma_origin,
     ]
     var tma_op: Self.TMATensorTilePtr
-    var rank: UInt
+    var rank: Int
     var multicast_mask: UInt16
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         tma_op: Self.TMATensorTilePtr,
-        rank: UInt,
+        rank: Int,
         multicast_mask: UInt16,
     ):
         """Initialize the TMA tile loader.
@@ -231,11 +231,11 @@ struct TileLoaderTMA[
         self.multicast_mask = multicast_mask
 
     @always_inline
-    fn load_tile(
+    def load_tile(
         self,
         dst: SMemTile[Self._dtype, _, alignment=128, ...],
         mem_barrier: SMemBarrier,
-        _coords: Tuple[UInt, UInt],
+        _coords: Tuple[Int, Int],
     ):
         """Load a tile using TMA hardware acceleration.
 
@@ -253,8 +253,8 @@ struct TileLoaderTMA[
         """
         # Switch coordinates to k-minor and multiply k by BK to match the CPAsync API.
         var coords = (
-            Int(_coords[1] * Self.BK),
-            Int(_coords[0]),
+            _coords[1] * Self.BK,
+            _coords[0],
         )  # (m/n, k) -> (k, m/n)
 
         comptime tma_load_size = _idx_product[Self.tma_rank, Self.desc_shape]()
@@ -327,7 +327,7 @@ struct TileLoaderCPAsync[
     ]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         src: LayoutTensor[
             Self.dtype,
@@ -343,11 +343,11 @@ struct TileLoaderCPAsync[
         """
         self.src = src
 
-    fn load_tile(
+    def load_tile(
         self,
         dst: SMemTile[Self._dtype, _, alignment=128, ...],
         mem_barrier: SMemBarrier,
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
     ):
         """Load a tile using cp.async instructions.
 
@@ -370,8 +370,8 @@ struct TileLoaderCPAsync[
 
         # Extract the requested tile from global memory and vectorize it
         var a_gmem_tile = self.src.tile[BM, BN](
-            Int(coords[0]),
-            Int(coords[1]),
+            coords[0],
+            coords[1],
         ).vectorize[1, Self.vector_size]()
 
         # Perform the async copy with bounds checking and swizzling
@@ -382,7 +382,7 @@ struct TileLoaderCPAsync[
 
 
 @always_inline
-fn async_copy_with_bound_check[
+def async_copy_with_bound_check[
     dtype: DType,
     src_layout: Layout,
     dst_layout: Layout,
@@ -487,8 +487,9 @@ fn async_copy_with_bound_check[
 
         # Calculate the 2D coordinates for this element
         # TODO: we should be able to use idx2crd for this.
-        comptime dst_shifted_coord0 = dst_idx // dst_stride0
-        comptime dst_shifted_coord1 = dst_idx % dst_stride0
+        comptime dst_shifted_coord0, dst_shifted_coord1 = divmod(
+            dst_idx, dst_stride0
+        )
         var dst_coord0 = Int32(dst_shifted_coord0) + dst_frag_base_coord0
         var dst_coord1 = Int32(dst_shifted_coord1) + dst_frag_base_coord1
 

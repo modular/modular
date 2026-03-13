@@ -150,7 +150,7 @@ fn create_i1_async(
 @register_internal("builtin.create_buffer_ref_async")
 @no_inline
 fn create_buffer_ref_async(
-    buffer: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
     async_ptr: OpaquePointer[MutAnyOrigin],
     call_ctx: DeviceContextPtr,
 ):
@@ -162,7 +162,7 @@ fn create_buffer_ref_async(
 @register_internal("builtin.create_non_tracked_buffer_ref_async")
 @no_inline
 fn create_non_tracked_buffer_ref_async(
-    buffer: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
     async_ptr: OpaquePointer[MutAnyOrigin],
 ):
     external_call["MGP_RT_CreateAsyncNonTrackedBufferRef", NoneType](
@@ -177,7 +177,7 @@ fn create_non_tracked_tensor_async[
     buffer_rank: Int,
     dtype: DType,
 ](
-    buffer: NDBuffer[dtype, buffer_rank, MutAnyOrigin],
+    buffer: NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin],
     async_ptr: OpaquePointer[MutAnyOrigin],
 ):
     comptime assert tensor_rank == buffer_rank or (
@@ -198,7 +198,7 @@ fn create_non_tracked_tensor_async[
 fn create_buffer_ref_with_borrow_async[
     borrowee_type: Int,
 ](
-    buffer: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
     async_to_borrow: OpaquePointer[MutAnyOrigin],
     output_async: OpaquePointer[MutAnyOrigin],
 ):
@@ -237,7 +237,7 @@ fn create_tensor_async[
     dtype: DType,
     borrowee_type: Int,
 ](
-    buffer: NDBuffer[dtype, buffer_rank, MutAnyOrigin],
+    buffer: NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin],
     async_to_borrow: OpaquePointer[MutAnyOrigin],
     output_async: OpaquePointer[MutAnyOrigin],
 ):
@@ -322,18 +322,6 @@ fn create_python_mojo_value_async(
     )
 
 
-@register_internal("builtin.transfer_async")
-@no_inline
-fn transfer_async(
-    async_src: OpaquePointer[MutAnyOrigin],
-    async_dst: OpaquePointer[MutAnyOrigin],
-):
-    external_call[
-        "MGP_RT_TransferAsyncRef",
-        NoneType,
-    ](async_src, async_dst)
-
-
 @register_internal("builtin.unpack_async")
 @no_inline
 fn unpack_async(
@@ -362,14 +350,14 @@ fn unpack_device_ctx(
 @no_inline
 fn unpack_buffer_ref(
     async_ptr: OpaquePointer[MutAnyOrigin],
-) -> NDBuffer[DType.int8, 1, MutAnyOrigin]:
+) -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
     var size: UInt64 = 0
     var data_ptr = external_call[
         "MGP_RT_GetDataFromBuffer",
         OpaquePointer[MutAnyOrigin],
     ](async_ptr, UnsafePointer(to=size))
     var shape = IndexList[1](Int(size))
-    return NDBuffer[DType.int8, 1](data_ptr.bitcast[Int8](), shape)
+    return NDBuffer[rank=1, DType.int8](data_ptr.bitcast[Int8](), shape)
 
 
 @register_internal("builtin.unpack_tensor")
@@ -379,7 +367,7 @@ fn unpack_tensor[
     tensor_rank: Int,
     dtype: DType,
 ](tensor_async_ptr: OpaquePointer[MutAnyOrigin]) -> NDBuffer[
-    dtype, buffer_rank, MutAnyOrigin
+    rank=buffer_rank, dtype, MutAnyOrigin
 ]:
     # Tensor and the underlying buffer must have the same rank, unless it is a
     # scalar tensor stored with a NDBuffer<[1]>
@@ -398,7 +386,7 @@ fn unpack_tensor[
     comptime if tensor_rank == 0:
         shapes[0] = 1
 
-    return NDBuffer[dtype, buffer_rank](
+    return NDBuffer[rank=buffer_rank, dtype](
         buffer_ptr.bitcast[Scalar[dtype]](), shapes
     )
 
@@ -438,7 +426,7 @@ fn unpack_context(
 @register_internal("builtin.get_buffer_data")
 @always_inline
 fn get_buffer_data(
-    buffer: NDBuffer[DType.int8, 1, MutAnyOrigin]
+    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin]
 ) -> UnsafePointer[Int8, MutAnyOrigin]:
     return buffer.data
 
@@ -455,19 +443,19 @@ fn mgp_tensor_create[
     buffer_rank: Int,
     dtype: DType,
 ](
-    buffer: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
     spec: IndexList[spec_rank],
-) -> NDBuffer[dtype, buffer_rank, MutAnyOrigin]:
+) -> NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin]:
     comptime if spec_rank == 0:
         # We promote scalar tensor to tensor<[1]>
         comptime assert buffer_rank == 1
-        return NDBuffer[dtype, buffer_rank](
+        return NDBuffer[rank=buffer_rank, dtype](
             buffer.data.bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](IndexList[1](1)),
         )
     else:
         comptime assert spec_rank == buffer_rank
-        return NDBuffer[dtype, buffer_rank](
+        return NDBuffer[rank=buffer_rank, dtype](
             buffer.data.bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](spec),
         )
@@ -479,7 +467,7 @@ fn mgp_tensor_extract_tensor_spec[
     tensor_rank: Int,
     buffer_rank: Int,
     dtype: DType,
-](buffer: NDBuffer[dtype, buffer_rank, ImmutAnyOrigin]) -> IndexList[
+](buffer: NDBuffer[rank=buffer_rank, dtype, ImmutAnyOrigin]) -> IndexList[
     tensor_rank
 ]:
     comptime if tensor_rank == 0:
@@ -497,11 +485,11 @@ fn mgp_tensor_extract_tensor_spec[
 fn mgp_tensor_extract_buffer[
     buffer_rank: Int,
     dtype: DType,
-](buffer: NDBuffer[dtype, buffer_rank, MutAnyOrigin]) -> NDBuffer[
-    DType.int8, 1, MutAnyOrigin
+](buffer: NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin]) -> NDBuffer[
+    rank=1, DType.int8, MutAnyOrigin
 ]:
     # Unwrap the tensor into a size-less buffer pointer.
-    return NDBuffer[DType.int8, 1](
+    return NDBuffer[rank=1, DType.int8](
         buffer.data.bitcast[Int8](), IndexList[1](buffer.bytecount())
     )
 
@@ -515,14 +503,14 @@ fn mgp_tensor_extract_buffer[
 @no_inline
 fn mgp_buffer_alloc(
     byte_size: Int, dev_context: DeviceContextPtr
-) raises -> NDBuffer[DType.int8, 1, MutAnyOrigin]:
+) raises -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
     # Default to alignment of 0 which means kPreferredMemoryAlignment if cRawAlign is kUnknownSize (SizeUtils.h).
     # alias alignment = 0 if bRawAlign == UInt64.MAX else Int(bRawAlign)
 
     # This primitive has a byte-size input, so always assume a byte format
     var shape = IndexList[1](byte_size)
     var buf = dev_context[].enqueue_create_buffer[DType.int8](byte_size)
-    return NDBuffer[DType.int8, 1](buf^.take_ptr(), shape)
+    return NDBuffer[rank=1, DType.int8](buf^.take_ptr(), shape)
 
 
 @register_internal("mgp.buffer.constant")
@@ -530,10 +518,10 @@ fn mgp_buffer_alloc(
 fn mgp_buffer_constant(
     resource_ptr: OpaquePointer[MutAnyOrigin],
     resource_bytecount: Int,
-) -> NDBuffer[DType.int8, 1, MutAnyOrigin]:
+) -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
     # Should we keep the alignment? It seems that the static alignment is
     # dropped in the kernels anyway.
-    return NDBuffer[DType.int8, 1](
+    return NDBuffer[rank=1, DType.int8](
         resource_ptr.bitcast[Int8](), IndexList[1](resource_bytecount)
     )
 
@@ -545,7 +533,7 @@ fn mgp_buffer_constant_external(
     name_len: UInt,
     size: UInt64,
     align: UInt64,
-) raises -> NDBuffer[DType.int8, 1, MutAnyOrigin]:
+) raises -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
     assert align > 0, "align must be a positive integer value"
 
     if not weights:
@@ -562,7 +550,7 @@ fn mgp_buffer_constant_external(
             align,
         )
 
-    return NDBuffer[DType.int8, 1](
+    return NDBuffer[rank=1, DType.int8](
         weight_ptr.bitcast[Int8](), IndexList[1](Int(size))
     )
 
@@ -571,7 +559,7 @@ fn mgp_buffer_constant_external(
 fn fill_buffer[
     dtype: DType
 ](
-    buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
     vals: VariadicList[Int, is_owned=False],
 ):
     var ptr = buf.data.bitcast[Scalar[dtype]]()
@@ -585,7 +573,7 @@ fn fill_buffer[
 @no_inline
 fn mgp_buffer_set_with_index[
     bDevice: StaticString
-](buffer: NDBuffer[DType.int8, 1, MutAnyOrigin], *vals: Int) raises:
+](buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin], *vals: Int) raises:
     assert is_cpu[bDevice](), "set_with_index can only work on cpu buffers"
     var bufSize = buffer.num_elements()
     var numArgs = len(vals)
@@ -606,7 +594,7 @@ fn mgp_buffer_set_with_index[
 @no_inline
 fn mgp_buffer_to_bool[
     bDevice: StaticString
-](buffer: NDBuffer[DType.int8, 1, ImmutAnyOrigin]) -> Bool:
+](buffer: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin]) -> Bool:
     assert is_cpu[bDevice](), "to_bool can only work on cpu buffers"
     var bufSize = buffer.num_elements()
     assert bufSize == 1, "buffer size must be a size of 1"
@@ -616,7 +604,7 @@ fn mgp_buffer_to_bool[
 @register_internal("mgp.buffer.to_index")
 @no_inline
 fn mgp_buffer_to_index(
-    buffer: NDBuffer[DType.int8, 1, ImmutAnyOrigin]
+    buffer: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin]
 ) raises -> Int:
     var bufSize = buffer.num_elements()
     if bufSize == 4:
@@ -632,9 +620,9 @@ fn mgp_buffer_to_index(
 @register_internal("mgp.buffer.slice")
 @no_inline
 fn mgp_buffer_slice(
-    buffer: NDBuffer[DType.int8, 1, MutAnyOrigin], offset: Int, size: Int
-) -> NDBuffer[DType.int8, 1, MutAnyOrigin]:
-    return NDBuffer[DType.int8, 1](buffer.data + offset, Index(size))
+    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin], offset: Int, size: Int
+) -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
+    return NDBuffer[rank=1, DType.int8](buffer.data + offset, Index(size))
 
 
 @register_internal("mgp.buffer.concat")
@@ -642,8 +630,8 @@ fn mgp_buffer_slice(
 fn mgp_buffer_concat[
     bDevice: StaticString
 ](
-    output: NDBuffer[DType.int8, 1, MutAnyOrigin],
-    inputs: StaticTuple[NDBuffer[DType.int8, 1, MutAnyOrigin], ...],
+    output: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    inputs: StaticTuple[NDBuffer[rank=1, DType.int8, MutAnyOrigin], ...],
     call_ctx: DeviceContextPtr,
 ) raises:
     var output_lt = TileTensor(
@@ -679,8 +667,8 @@ fn mgp_buffer_device_to_host[
     cOtherDevice: StaticString,
     dHostDevice: StaticString,
 ](
-    dev_buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
-    host_buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    dev_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    host_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
     dev_ctx: DeviceContextPtr,
 ) raises:
     comptime if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
@@ -703,8 +691,8 @@ fn mgp_buffer_device_to_device[
     cSrcDevice: StaticString,
     dDstDevice: StaticString,
 ](
-    src_buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
-    dst_buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    src_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    dst_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
     src_dev_ctx: DeviceContextPtr,
     dst_dev_ctx: DeviceContextPtr,
 ) raises:
@@ -738,8 +726,8 @@ fn mgp_buffer_host_to_device[
     cHostDevice: StaticString,
     dOtherDevice: StaticString,
 ](
-    host_buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
-    dev_buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    host_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    dev_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
     dev_ctx: DeviceContextPtr,
 ) raises:
     comptime if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
@@ -762,7 +750,7 @@ fn mgp_buffer_get_cached(
     ctx: StateContext,
     buffer_slot: UInt,
     storage_ref_addr: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
-) raises -> NDBuffer[DType.int8, 1, MutAnyOrigin]:
+) raises -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
     var buffer_size: UInt64 = 0
     var buffer_data: OpaquePointer[MutAnyOrigin] = external_call[
         "MGP_RT_GetCachedBuffer", OpaquePointer[MutAnyOrigin]
@@ -773,7 +761,7 @@ fn mgp_buffer_get_cached(
         storage_ref_addr,
     )
 
-    return NDBuffer[DType.int8, 1](
+    return NDBuffer[rank=1, DType.int8](
         buffer_data.bitcast[Int8](), Index(buffer_size)
     )
 
@@ -788,7 +776,9 @@ fn mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: UInt64):
 
 @register_internal("mgp.buffer.get_size")
 @no_inline
-fn mgp_buffer_get_size(buf: NDBuffer[DType.int8, 1, ImmutAnyOrigin]) -> Int:
+fn mgp_buffer_get_size(
+    buf: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin]
+) -> Int:
     return buf.num_elements()
 
 
@@ -874,7 +864,7 @@ fn mgp_debug_tensor_print[
     spec_rank: Int,
     dtype: DType,
 ](
-    buffer: NDBuffer[DType.int8, 1, ImmutAnyOrigin],
+    buffer: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin],
     shape: IndexList[spec_rank],
     label_ptr: UnsafePointer[Byte, ImmutAnyOrigin],
     label_len: Int,
@@ -1398,12 +1388,12 @@ struct MoggAsyncPackHelper:
 
     fn __init__(
         out self,
-        data: NDBuffer[DType.int8, 1, MutAnyOrigin],
+        data: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
         device_ctx_ptr: DeviceContextPtr,
         async_ptr: AnyAsyncValueRefPtr,
     ):
         """
-        Packs a buffer reference instance (modeled by NDBuffer[DType.int8, 1, MutAnyOrigin] for now) into the asynchronous context. Calls create_buffer_ref_async to handle the packing.
+        Packs a buffer reference instance (modeled by NDBuffer[rank=1, DType.int8, MutAnyOrigin] for now) into the asynchronous context. Calls create_buffer_ref_async to handle the packing.
         """
         create_buffer_ref_async(data, async_ptr, device_ctx_ptr)
 
@@ -1460,7 +1450,7 @@ fn mogg_async_pack_borrow[
     is_tensor: Bool,
 ](
     borrower: AnyAsyncValueRefPtr,
-    buffer: NDBuffer[dtype, buffer_rank, MutAnyOrigin],
+    buffer: NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin],
     mem: TensorBufferRefPtr,
 ):
     """
@@ -1610,7 +1600,7 @@ fn tmp_reshape_contiguous_buffer[
 fn tmp_mgp_buffer_get_cached(
     ctx: StateContextRef,
     buffer_slot: Int,
-) -> Tuple[NDBuffer[DType.int8, 1, MutAnyOrigin], TensorBufferRefPtr]:
+) -> Tuple[NDBuffer[rank=1, DType.int8, MutAnyOrigin], TensorBufferRefPtr]:
     """
     Get a reference to the cached tensor.
     """
@@ -1626,12 +1616,12 @@ fn tmp_mgp_buffer_get_cached(
         UnsafePointer(to=buffer_data),
     )
 
-    var buffer = NDBuffer[DType.int8, 1](
+    var buffer = NDBuffer[rank=1, DType.int8](
         buffer_data.bitcast[Int8](), Index(buffer_size)
     )
-    var res = Tuple[NDBuffer[DType.int8, 1, MutAnyOrigin], TensorBufferRefPtr](
-        buffer, buffer_ref
-    )
+    var res = Tuple[
+        NDBuffer[rank=1, DType.int8, MutAnyOrigin], TensorBufferRefPtr
+    ](buffer, buffer_ref)
 
     return res
 

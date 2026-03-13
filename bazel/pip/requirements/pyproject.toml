@@ -73,6 +73,7 @@ dependencies = [
   "pytest-xdist",
   "pytest>=7.2",
   "python-json-logger",
+  "PyGithub>=2.1.0",
   "PyYAML",
   "pyzmq",
   "plotext",
@@ -207,7 +208,7 @@ nvidia = [
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "compressed-tensors==0.13.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "vllm==0.14.1; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
+  "vllm==0.16.0; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
 
   "accelerate",
   "flashinfer-cubin",
@@ -247,6 +248,11 @@ override-dependencies = [
   "numpy>=2.2.0",
   # Override vllm's `transformers` constraint (TODO: update to >=5)
   "transformers==4.57.1",
+  # Pin packages to avoid duplicates after vllm 0.16.0 update
+  "aiohttp==3.13.3",
+  "apache-tvm-ffi==0.1.9",
+  "flashinfer-python==0.6.3",
+  "nvidia-cutlass-dsl==4.4.1",
 ]
 
 [tool.uv.sources]

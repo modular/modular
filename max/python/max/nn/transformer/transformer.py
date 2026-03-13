@@ -13,18 +13,76 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from enum import Enum
 from typing import TypeVar
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
+from max.graph import BufferValue, DeviceRef, TensorValue, TensorValueLike, ops
 
 from ..embedding import Embedding
 from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import Layer, LayerList, Module
 from ..linear import Linear
 from ..rotary_embedding import RotaryEmbedding
+
+
+def forward_sharded_layers(
+    layers: Sequence[Callable[[TensorValue], TensorValue]],
+    xs: Sequence[TensorValue],
+) -> list[TensorValue]:
+    """Forward pass through sharded layers.
+
+    Args:
+        layers: Sequence of callable layers that return TensorValue
+        xs: Input tensors, one per layer
+
+    Returns:
+        List of output tensors from each layer
+
+    Raises:
+        AssertionError: If the number of layers and input tensors don't match
+    """
+    assert len(xs) == len(layers), (
+        f"Number of layers ({len(layers)}) must match number of inputs ({len(xs)})"
+    )
+    return [layer(x) for layer, x in zip(layers, xs, strict=True)]
+
+
+def extract_hs(
+    return_hidden_states: ReturnHiddenStates,
+    last_token_hs_distributed: Sequence[TensorValue],
+    all_hs_distributed: Sequence[TensorValue],
+    normalizer: Sequence[Callable[[TensorValue], TensorValue]],
+    signal_buffers: Sequence[BufferValue] | None = None,
+) -> tuple[TensorValue, ...]:
+    """Extract hidden states from the model.
+
+    Args:
+        return_hidden_states: Which hidden states to return.
+        last_token_hs_distributed: Hidden states from the last token.
+        all_hs_distributed: Hidden states from all tokens.
+        normalizer: Normalization function.
+        signal_buffers: Signal buffers for allgather.
+
+    Returns:
+        Either an empty tuple or a tuple containing a single hs on gpu0.
+    """
+    if return_hidden_states == ReturnHiddenStates.LAST:
+        # Each entry in last_token_hs_distributed is identical.
+        # Just return the first one.
+        return (last_token_hs_distributed[0],)
+    elif return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
+        norm_hs = forward_sharded_layers(normalizer, all_hs_distributed)
+        # Each entry in all_hs_distributed will contain different hs when we
+        # use data parallelism. As such, we need to allgather the hs.
+        if len(norm_hs) > 1:
+            assert signal_buffers is not None
+            norm_hs = ops.allgather(norm_hs, signal_buffers)
+        norm_h = norm_hs[0]
+        return (norm_h,)
+    else:
+        return tuple()
 
 
 class TransformerBlock(Module):
@@ -84,8 +142,6 @@ class ReturnLogits(str, Enum):
 class ReturnHiddenStates(str, Enum):
     NONE = "none"
     LAST = "last"
-    ALL = "all"
-    LAST_NORMALIZED = "last_normalized"
     ALL_NORMALIZED = "all_normalized"
 
 
@@ -159,14 +215,12 @@ def logits_postprocess(
         assert logits is not None
         ret_val += (logits, offsets)
 
-    if return_hidden_states == ReturnHiddenStates.ALL:
-        ret_val += (h,)
-    elif return_hidden_states == ReturnHiddenStates.LAST:
-        ret_val += (last_h,)
-    elif return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
-        ret_val += (norm(h),)
-    elif return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
-        ret_val += (norm(last_h),)
+    ret_val += extract_hs(
+        return_hidden_states=return_hidden_states,
+        last_token_hs_distributed=[last_h],
+        all_hs_distributed=[h],
+        normalizer=[norm],
+    )
 
     return ret_val
 

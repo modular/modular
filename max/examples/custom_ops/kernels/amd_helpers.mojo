@@ -20,10 +20,10 @@ from std.sys.info import simd_width_of
 from std.gpu import (
     barrier,
     block_dim,
-    block_idx,
+    block_idx_int as block_idx,
     global_idx,
-    lane_id,
-    thread_idx,
+    lane_id_int as lane_id,
+    thread_idx_int as thread_idx,
 )
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.memory import AddressSpace
@@ -47,7 +47,7 @@ from std.utils.index import IndexList
 # Function to handle AMD-specific scheduling
 @always_inline
 # @parameter
-fn amd_scheduling_hints[
+def amd_scheduling_hints[
     input_type: DType,
     output_type: DType,
     BM: Int,
@@ -131,7 +131,7 @@ fn amd_scheduling_hints[
 
 
 @always_inline("nodebug")
-fn copy_local_to_dram_32_32_8[
+def copy_local_to_dram_32_32_8[
     dst_thread_layout: Layout,
     thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](dst: LayoutTensor, src: LayoutTensor, dst_base: LayoutTensor):
@@ -237,7 +237,7 @@ struct AMD_MMA[
 
 
 @always_inline
-fn mma[
+def mma[
     k_tile_idx: Int,
     swap_a_b: Bool,
     MMAType: type_of(AMD_MMA),
@@ -325,7 +325,7 @@ struct MMATileBuffers[
     var tensor: Pointer[Self.tensor_type, Self.tensor_origin]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         ref[Self.tensor_origin] tensor: Self.tensor_type,
         warp_idx: Int,
@@ -358,7 +358,7 @@ struct MMATileBuffers[
         )
 
     @always_inline
-    fn copy_to_shared(self):
+    def copy_to_shared(self):
         """Copy data from thread-local memory to shared memory.
 
         Uses structured thread cooperation to efficiently transfer data.
@@ -374,7 +374,7 @@ struct MMATileBuffers[
         )
 
     @always_inline
-    fn load_from_dram(mut self) -> None:
+    def load_from_dram(mut self) -> None:
         """Load data from global memory (DRAM) to thread-local memory."""
         copy_dram_to_local[
             src_thread_layout=Self.thread_layout,
@@ -390,7 +390,7 @@ struct MMATileBuffers[
         self.gmem_iter._incr()
 
     @always_inline
-    fn get_reg_tile[
+    def get_reg_tile[
         k_tile_idx: Int
     ](self) -> Self.MMARegTileType.SplitElementType[Self.mma_type.num_k_tiles]:
         """Get a specific K-dimension tile from the register buffer.
@@ -404,7 +404,7 @@ struct MMATileBuffers[
         return self.mma_reg_tile[k_tile_idx]
 
     @always_inline
-    fn load_tile_from_shared[k_tile_idx: Int, is_a: Bool](self):
+    def load_tile_from_shared[k_tile_idx: Int, is_a: Bool](self):
         comptime if is_a:
             Self.mma_type.tensor_core_mma.mma_op.load_a[
                 swizzle=Self.mma_type.swizzle
@@ -428,7 +428,7 @@ struct MMATileBuffers[
 
 
 @always_inline
-fn compute_relative_error_kernel[
+def compute_relative_error_kernel[
     dtype: DType,
     layout: Layout,
 ](
@@ -484,7 +484,7 @@ fn compute_relative_error_kernel[
 
 
 @always_inline
-fn max_reduce_kernel[
+def max_reduce_kernel[
     dtype: DType,
     layout: Layout,
 ](
@@ -511,20 +511,20 @@ fn max_reduce_kernel[
     var tid = thread_idx.x
     var bid = block_idx.x
 
-    var local_relative_error = relative_error.ptr[offset * elements * Int(bid)]
+    var local_relative_error = relative_error.ptr[offset * elements * bid]
 
     # Parallel reduction loop: for(int i = elements >> 1; i > 0; i = i >> 1)
     var i = elements >> 1
     while i > 0:
         # Check bounds: threadIdx.x < i && offset * (elements * blockIdx.x + threadIdx.x + i) < maxIdx
-        var current_idx = offset * (elements * Int(bid) + Int(tid) + i)
+        var current_idx = offset * (elements * bid + tid + i)
 
-        if Int(tid) < i and current_idx < max_idx:
+        if tid < i and current_idx < max_idx:
             var max_val = max(
-                local_relative_error[offset * Int(tid)],
-                local_relative_error[offset * Int(tid) + i],
+                local_relative_error[offset * tid],
+                local_relative_error[offset * tid + i],
             )
-            local_relative_error[Int(tid)] = max_val
+            local_relative_error[tid] = max_val
 
         barrier()
 
@@ -532,7 +532,7 @@ fn max_reduce_kernel[
         i = i >> 1
 
 
-fn compare_equal[
+def compare_equal[
     dtype: DType,
     layout: Layout,
 ](

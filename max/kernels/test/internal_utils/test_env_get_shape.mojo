@@ -15,7 +15,7 @@ from internal_utils import get_defined_shape, parse_shape
 from std.testing import assert_true
 
 
-fn print_static_shape[x: List[Int]]():
+def print_static_shape[x: List[Int]]():
     comptime for i in range(len(x)):
         comptime xi = x[i]
         print("dim", i, "=", xi)

@@ -16,7 +16,13 @@ from std.sys import size_of
 
 from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    print_layout,
+)
+from layout.layout import blocked_product, zipped_divide
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from layout.tma_async import SharedMemBarrier
@@ -25,8 +31,7 @@ from std.memory.pointer import _GPUAddressSpace
 from std.testing import assert_equal
 
 from std.utils.index import Index, IndexList
-from layout.int_tuple import IntTuple, product, depth, to_index_list
-from layout.layout import zipped_divide, blocked_product, print_layout
+from layout.int_tuple import product, depth, to_index_list
 
 from std.random import random_si64
 from linalg.arch.sm100._tma import (
@@ -46,7 +51,7 @@ from linalg.arch.sm100.mma import max_contiguous_tile_shape, Major
 # functionally equivalent to idx2crd
 # but avoids runtime_*
 # converts linear index to column-major coordinates
-fn calculate_coordinate[
+def calculate_coordinate[
     global_layout: Layout, tile_shape: IntTuple
 ](linear_index: Int) -> UInt32Indices[global_layout.rank()]:
     comptime coalesced_tile = tile_shape.product_flatten()
@@ -75,14 +80,15 @@ fn calculate_coordinate[
     comptime tile_dims = to_index_list[rank, DType.uint32](coalesced_tile)
 
     comptime for index in range(rank):
-        indices[index] = current_coordinate // elements_per_dimension[index]
-        current_coordinate = current_coordinate % elements_per_dimension[index]
+        indices[index], current_coordinate = divmod(
+            current_coordinate, elements_per_dimension[index]
+        )
 
     return indices * tile_dims
 
 
 @always_inline
-fn shared_to_global_2D[
+def shared_to_global_2D[
     OOB_access: Bool
 ](
     smem_tile: LayoutTensor,
@@ -124,7 +130,7 @@ fn shared_to_global_2D[
 
 
 @always_inline
-fn shared_to_global_3D[
+def shared_to_global_3D[
     OOB_access: Bool
 ](
     smem_tile: LayoutTensor,
@@ -174,7 +180,7 @@ fn shared_to_global_3D[
 
 # Test loading a single 2d tile.
 @__llvm_arg_metadata(load_policy, `nvvm.grid_constant`)
-fn test_tma_load_kernel[
+def test_tma_load_kernel[
     dtype: DType,
     global_layout: Layout,
     smem_layout: Layout,
@@ -267,8 +273,7 @@ def test_2D_swizzle[
                 for jj in range(load_shape_n):
                     offset = swizzle(ii * load_shape_n + jj)
 
-                    m_offset = offset // load_shape_n
-                    n_offset = offset % load_shape_n
+                    m_offset, n_offset = divmod(offset, load_shape_n)
 
                     if reference_tile[ii, jj] != rebind[
                         SIMD[
@@ -317,11 +322,11 @@ def test_3D_swizzle[
                                 + (ii * load_shape_n + jj)
                             )
 
-                            b_offset = offset // (load_shape_m * load_shape_n)
-                            offset = offset % (load_shape_m * load_shape_n)
+                            b_offset, offset = divmod(
+                                offset, load_shape_m * load_shape_n
+                            )
 
-                            m_offset = offset // load_shape_n
-                            n_offset = offset % load_shape_n
+                            m_offset, n_offset = divmod(offset, load_shape_n)
 
                             if reference_tile[bb, ii, jj] != rebind[
                                 SIMD[

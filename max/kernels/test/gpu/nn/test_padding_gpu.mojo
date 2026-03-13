@@ -22,7 +22,7 @@ from std.utils.index import IndexList
 
 
 @no_inline
-fn test_pad_constant_gpu[
+def test_pad_constant_gpu[
     dtype: DType, rank: Int
 ](
     input_shape: IndexList[rank],
@@ -115,7 +115,7 @@ fn test_pad_constant_gpu[
         print(output_cpu)
 
     # Compare GPU and CPU results
-    for i in range(output.numel()):
+    for i in range(output.num_elements()):
         var idx = output.layout(Idx(i))
         assert_equal(output.ptr[idx], output_cpu.ptr[idx])
 

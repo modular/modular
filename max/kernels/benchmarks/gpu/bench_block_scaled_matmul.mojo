@@ -72,14 +72,14 @@ from std.gpu.host.info import B200
 # float8_e8m0fnu: exponent-only format, value = 2^(stored_value - 127).
 # Random exponents 127 + (0,1,2,3) -> scale values of 1, 2, 4, 8.
 # Each thread processes 4 elements for better memory throughput.
-fn _init_block_scaled_scales_gpu[
+def _init_block_scaled_scales_gpu[
     dtype: DType
 ](x: UnsafePointer[Scalar[dtype], MutAnyOrigin], len: Int):
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
 
     @parameter
-    fn apply(values: SIMD[dtype, 4]):
+    def apply(values: SIMD[dtype, 4]):
         comptime for i in range(4):
             comptime if i == 3:
                 if tid >= UInt(len):
@@ -103,7 +103,7 @@ fn _init_block_scaled_scales_gpu[
         apply(values)
 
 
-fn _init_block_scaled_scales_launch[
+def _init_block_scaled_scales_launch[
     dtype: DType, block_dim: Int = 256
 ](out_device: DeviceBuffer[dtype], length: Int, context: DeviceContext,) raises:
     var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
@@ -118,7 +118,7 @@ fn _init_block_scaled_scales_launch[
     )
 
 
-fn _get_run_name[
+def _get_run_name[
     dtype: DType,
     shape_c: DimList,
     shape_a: DimList,
@@ -163,7 +163,7 @@ fn _get_run_name[
     )
 
 
-fn bench_matmul[
+def bench_matmul[
     dtype: DType,
     shape_c: DimList,
     shape_a: DimList,
@@ -188,7 +188,7 @@ fn bench_matmul[
     # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
     # update: using 512 to be 2x the infinity cache on MI300x
     @always_inline
-    fn get_size(shape: IndexList[2]) -> Int:
+    def get_size(shape: IndexList[2]) -> Int:
         return shape[0] * shape[1]
 
     comptime simd_size = 4
@@ -211,20 +211,20 @@ fn bench_matmul[
     ]() * 2 if micro_scaling_mode == "nvfp4" else shape_a.at[1]()
 
     # Calculate scale buffer shapes - 5D tensors for MXFP8 format
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList[
         ceildiv(shape_a.at[0](), SF_MN_GROUP_SIZE),
         ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         ceildiv(shape_b.at[0](), SF_MN_GROUP_SIZE),
         ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
+    ]()
 
     var dynamic_a_scales_shape = IndexList[5](
         ceildiv(M, SF_MN_GROUP_SIZE),
@@ -274,8 +274,8 @@ fn bench_matmul[
     comptime init_on_gpu = True
 
     comptime if not init_on_gpu:
-        var a_host = NDBuffer[dtype, 1](a_host_ptr, cb_a.alloc_size())
-        var b_host = NDBuffer[dtype, 1](b_host_ptr, cb_b.alloc_size())
+        var a_host = NDBuffer[rank=1, dtype](a_host_ptr, cb_a.alloc_size())
+        var b_host = NDBuffer[rank=1, dtype](b_host_ptr, cb_b.alloc_size())
 
         comptime if dtype.is_float8():
             rand(a_host.data, a_host.num_elements())
@@ -306,17 +306,17 @@ fn bench_matmul[
     # Helper to run vendor BLAS matmul - used by both benchmark and verification
     @parameter
     @__copy_capture(dynamic_a_scales_shape, dynamic_b_scales_shape)
-    fn run_vendor_blas(
+    def run_vendor_blas(
         ctx: DeviceContext,
-        tensor_a: NDBuffer[dtype, 2, MutAnyOrigin, shape_a],
-        tensor_b: NDBuffer[dtype, 2, MutAnyOrigin, shape_b],
-        tensor_c: NDBuffer[DType.bfloat16, 2, MutAnyOrigin, shape_c],
+        tensor_a: NDBuffer[rank=2, dtype, MutAnyOrigin, shape_a],
+        tensor_b: NDBuffer[rank=2, dtype, MutAnyOrigin, shape_b],
+        tensor_c: NDBuffer[rank=2, DType.bfloat16, MutAnyOrigin, shape_c],
     ) raises:
         var a_scales_nd = NDBuffer[
-            scales_type, 5, MutAnyOrigin, static_a_scales_shape
+            rank=5, scales_type, MutAnyOrigin, static_a_scales_shape
         ](buffer_a_scales.unsafe_ptr(), dynamic_a_scales_shape)
         var b_scales_nd = NDBuffer[
-            scales_type, 5, MutAnyOrigin, static_b_scales_shape
+            rank=5, scales_type, MutAnyOrigin, static_b_scales_shape
         ](buffer_b_scales.unsafe_ptr(), dynamic_b_scales_shape)
 
         var a_tensor = from_ndbuffer_row_major(tensor_a)
@@ -347,31 +347,31 @@ fn bench_matmul[
         dynamic_b_scales_shape,
     )
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            var tensor_a = NDBuffer[dtype, 2, MutAnyOrigin, shape_a](
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            var tensor_a = NDBuffer[rank=2, dtype, MutAnyOrigin, shape_a](
                 cb_a.offset_ptr(iteration), shape_a_dim
             )
-            var tensor_b = NDBuffer[dtype, 2, MutAnyOrigin, shape_b](
+            var tensor_b = NDBuffer[rank=2, dtype, MutAnyOrigin, shape_b](
                 cb_b.offset_ptr(iteration), shape_b_dim
             )
-            var tensor_c = NDBuffer[DType.bfloat16, 2, MutAnyOrigin, shape_c](
-                cb_c.offset_ptr(iteration), shape_c_dim
-            )
+            var tensor_c = NDBuffer[
+                rank=2, DType.bfloat16, MutAnyOrigin, shape_c
+            ](cb_c.offset_ptr(iteration), shape_c_dim)
 
             var a_scales_nd = NDBuffer[
-                scales_type, 5, MutAnyOrigin, static_a_scales_shape
+                rank=5, scales_type, MutAnyOrigin, static_a_scales_shape
             ](buffer_a_scales.unsafe_ptr(), dynamic_a_scales_shape)
             var b_scales_nd = NDBuffer[
-                scales_type, 5, MutAnyOrigin, static_b_scales_shape
+                rank=5, scales_type, MutAnyOrigin, static_b_scales_shape
             ](buffer_b_scales.unsafe_ptr(), dynamic_b_scales_shape)
 
             @parameter
             @always_inline
             @__copy_capture(tensor_c)
-            fn test_lambda_add_coords_prod[
+            def test_lambda_add_coords_prod[
                 _dtype: DType,
                 width: Int,
                 *,
@@ -434,14 +434,14 @@ fn bench_matmul[
     comptime if not use_vendor_blas and not epilogue:
         if verify:
             # Create tensors at offset 0 for verification
-            var tensor_a = NDBuffer[dtype, 2, MutAnyOrigin, shape_a](
+            var tensor_a = NDBuffer[rank=2, dtype, MutAnyOrigin, shape_a](
                 cb_a.unsafe_ptr(), shape_a_dim
             )
-            var tensor_b = NDBuffer[dtype, 2, MutAnyOrigin, shape_b](
+            var tensor_b = NDBuffer[rank=2, dtype, MutAnyOrigin, shape_b](
                 cb_b.unsafe_ptr(), shape_b_dim
             )
             var tensor_c_ref = NDBuffer[
-                DType.bfloat16, 2, MutAnyOrigin, shape_c
+                rank=2, DType.bfloat16, MutAnyOrigin, shape_c
             ](buffer_c_ref.unsafe_ptr(), shape_c_dim)
 
             # Run vendor BLAS to get reference output
@@ -464,7 +464,7 @@ fn bench_matmul[
             ctx.synchronize()
 
             # Sanity check: verify outputs match expected zero/non-zero state
-            fn is_all_zeros(
+            def is_all_zeros(
                 ptr: UnsafePointer[Scalar[DType.bfloat16], _], size: Int
             ) -> Bool:
                 for i in range(size):
@@ -531,7 +531,7 @@ fn bench_matmul[
     _ = buffer_b_scales^
 
 
-fn create_matmul_bench[
+def create_matmul_bench[
     dtype: DType,
     *,
     transpose_b: Bool,
@@ -549,9 +549,9 @@ fn create_matmul_bench[
     init_type: InitializationType,
     verify: Bool,
 ) raises:
-    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
+    comptime static_b_shape = DimList[
+        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
+    ]()
     var dynamic_b_shape = (n.value, k.value) if transpose_b else (
         k.value,
         n.value,
@@ -559,8 +559,8 @@ fn create_matmul_bench[
 
     bench_matmul[
         dtype,
-        DimList(m.dim, n.dim),
-        DimList(m.dim, k.dim),
+        DimList[m.dim, n.dim](),
+        DimList[m.dim, k.dim](),
         static_b_shape,
         transpose_b=transpose_b,
         cache_busting=cache_busting,
@@ -579,7 +579,7 @@ fn create_matmul_bench[
     )
 
 
-fn get_dtype[micro_scaling_mode: StaticString]() -> DType:
+def get_dtype[micro_scaling_mode: StaticString]() -> DType:
     comptime assert (
         micro_scaling_mode == "mxfp8" or micro_scaling_mode == "nvfp4"
     ), "invalid micro_scaling_mode"

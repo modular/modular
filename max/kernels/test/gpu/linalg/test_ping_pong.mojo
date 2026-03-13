@@ -108,11 +108,12 @@ def test_ping_pong_kernel_amd[
             ) if in_dtype == DType.float8_e4m3fn else Float32(0.0)
             if diff > tol and host_c[i] != host_c_ref[i]:
                 if printed < 10:
+                    var row, col = divmod(i, N)
                     print(
                         "Mismatch at (",
-                        i // N,
+                        row,
                         ",",
-                        i % N,
+                        col,
                         ") ",
                         host_c[i],
                         " vs ",

@@ -47,14 +47,14 @@ from .warp import broadcast
 # TODO: Some day we should use typed string literals or 'requires' clauses to
 #       enforce this at the type system level.
 # https://github.com/modular/modular/issues/1278
-fn _verify_xyz[dim: StaticString]():
+def _verify_xyz[dim: StaticString]():
     comptime assert (
         dim == "x" or dim == "y" or dim == "z"
     ), "the dimension must be x, y, or z"
 
 
 @always_inline
-fn _get_gcn_idx[offset: Int, dtype: DType]() -> UInt:
+def _get_gcn_idx[offset: Int, dtype: DType]() -> Int:
     var ptr = llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
         UnsafePointer[
@@ -64,7 +64,7 @@ fn _get_gcn_idx[offset: Int, dtype: DType]() -> UInt:
         ],
         has_side_effect=False,
     ]()
-    return UInt(ptr.load[alignment=4](offset))
+    return Int(ptr.load[alignment=4](offset))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -72,13 +72,23 @@ fn _get_gcn_idx[offset: Int, dtype: DType]() -> UInt:
 # ===-----------------------------------------------------------------------===#
 
 
+comptime lane_id_int = lane_id[Int]
+"""Returns the lane ID of the current thread within its warp.
+
+See `lane_id()`.
+"""
+
+
 @always_inline("nodebug")
-fn lane_id() -> UInt:
+def lane_id[ResultType: _FromInt = UInt]() -> ResultType:
     """Returns the lane ID of the current thread within its warp.
 
     The lane ID is a unique identifier for each thread within a warp, ranging from 0 to
     WARP_SIZE-1. This ID is commonly used for warp-level programming and thread
     synchronization within a warp.
+
+    Parameters:
+        ResultType: Type of index accessors, typically `Int` or `UInt` (default).
 
     Returns:
         The lane ID (0 to WARP_SIZE-1) of the current thread.
@@ -86,15 +96,12 @@ fn lane_id() -> UInt:
     comptime assert is_gpu(), "This function only applies to GPUs."
 
     comptime if is_nvidia_gpu():
-        return UInt(
-            Int(
-                llvm_intrinsic[
-                    "llvm.nvvm.read.ptx.sreg.laneid",
-                    Int32,
-                    has_side_effect=False,
-                ]().cast[DType.uint32]()
-            )
-        )
+        var i = llvm_intrinsic[
+            "llvm.nvvm.read.ptx.sreg.laneid",
+            Int32,
+            has_side_effect=False,
+        ]().cast[DType.uint32]()
+        return ResultType(from_int=Int(i))
 
     elif is_amd_gpu():
         comptime none = Int32(-1)
@@ -102,24 +109,18 @@ fn lane_id() -> UInt:
         var t = llvm_intrinsic[
             "llvm.amdgcn.mbcnt.lo", Int32, has_side_effect=False
         ](none, zero)
-        return UInt(
-            Int(
-                llvm_intrinsic[
-                    "llvm.amdgcn.mbcnt.hi", Int32, has_side_effect=False
-                ](none, t).cast[DType.uint32]()
-            )
-        )
+        var i = llvm_intrinsic[
+            "llvm.amdgcn.mbcnt.hi", Int32, has_side_effect=False
+        ](none, t).cast[DType.uint32]()
+        return ResultType(from_int=Int(i))
 
     elif is_apple_gpu():
-        return UInt(
-            Int(
-                llvm_intrinsic[
-                    "llvm.air.thread_index_in_simdgroup",
-                    Int32,
-                    has_side_effect=False,
-                ]().cast[DType.uint32]()
-            )
-        )
+        var i = llvm_intrinsic[
+            "llvm.air.thread_index_in_simdgroup",
+            Int32,
+            has_side_effect=False,
+        ]().cast[DType.uint32]()
+        return ResultType(from_int=Int(i))
 
     else:
         CompilationTarget.unsupported_target_error[
@@ -133,7 +134,7 @@ fn lane_id() -> UInt:
 
 
 @always_inline("nodebug")
-fn warp_id() -> UInt:
+def warp_id() -> UInt:
     """Returns the warp ID of the current thread within its block.
     The warp ID is a unique identifier for each warp within a block, ranging
     from 0 to BLOCK_SIZE/WARP_SIZE-1. This ID is commonly used for warp-level
@@ -152,7 +153,7 @@ fn warp_id() -> UInt:
 
 
 @always_inline("nodebug")
-fn sm_id() -> UInt:
+def sm_id() -> UInt:
     """Returns the Streaming Multiprocessor (SM) ID of the current thread.
 
     The SM ID uniquely identifies which physical streaming multiprocessor the thread is
@@ -202,12 +203,12 @@ struct _ThreadIdx[ResultType: _FromInt = UInt](
     """
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         return
 
     @always_inline("nodebug")
     @staticmethod
-    fn _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
+    def _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
         comptime if is_nvidia_gpu():
             return "llvm.nvvm.read.ptx.sreg.tid." + dim
         elif is_amd_gpu():
@@ -220,7 +221,7 @@ struct _ThreadIdx[ResultType: _FromInt = UInt](
             ]()
 
     @always_inline("nodebug")
-    fn __getattr__[dim: StringLiteral](self) -> Self.ResultType:
+    def __getattr__[dim: StringLiteral](self) -> Self.ResultType:
         """Gets the `x`, `y`, or `z` coordinates of a thread within a block.
 
         Returns:
@@ -256,12 +257,12 @@ struct _BlockIdx[ResultType: _FromInt = UInt](
     """
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         return
 
     @always_inline("nodebug")
     @staticmethod
-    fn _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
+    def _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
         comptime if is_nvidia_gpu():
             return "llvm.nvvm.read.ptx.sreg.ctaid." + dim
         elif is_amd_gpu():
@@ -274,7 +275,7 @@ struct _BlockIdx[ResultType: _FromInt = UInt](
             ]()
 
     @always_inline("nodebug")
-    fn __getattr__[dim: StringLiteral](self) -> Self.ResultType:
+    def __getattr__[dim: StringLiteral](self) -> Self.ResultType:
         """Gets the `x`, `y`, or `z` coordinates of a block within a grid.
 
         Returns:
@@ -298,16 +299,18 @@ comptime block_idx_int = _BlockIdx[Int]()
 # ===-----------------------------------------------------------------------===#
 
 
-struct _BlockDim(Defaultable, TrivialRegisterPassable):
+struct _BlockDim[ResultType: _FromInt = UInt](
+    Defaultable, TrivialRegisterPassable
+):
     """Provides accessors for getting the `x`, `y`, and `z` dimensions of a
     block."""
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         return
 
     @always_inline("nodebug")
-    fn __getattr__[dim: StaticString](self) -> UInt:
+    def __getattr__[dim: StaticString](self) -> Self.ResultType:
         """Gets the `x`, `y`, or `z` dimension of the block.
 
         Returns:
@@ -317,27 +320,21 @@ struct _BlockDim(Defaultable, TrivialRegisterPassable):
 
         comptime if is_nvidia_gpu():
             comptime intrinsic_name = "llvm.nvvm.read.ptx.sreg.ntid." + dim
-            return UInt(
-                Int(
-                    llvm_intrinsic[
-                        intrinsic_name, Int32, has_side_effect=False
-                    ]()
-                )
-            )
+            var i = llvm_intrinsic[
+                intrinsic_name, Int32, has_side_effect=False
+            ]()
+            return Self.ResultType(from_int=Int(i))
         elif is_apple_gpu():
-            return UInt(
-                Int(
-                    llvm_intrinsic[
-                        "llvm.air.threads_per_threadgroup." + dim,
-                        Int32,
-                        has_side_effect=False,
-                    ]()
-                )
-            )
+            var i = llvm_intrinsic[
+                "llvm.air.threads_per_threadgroup." + dim,
+                Int32,
+                has_side_effect=False,
+            ]()
+            return Self.ResultType(from_int=Int(i))
         elif is_amd_gpu():
 
             @parameter
-            fn _get_offset() -> Int:
+            def _get_offset() -> Int:
                 comptime if dim == "x":
                     return 6
                 elif dim == "y":
@@ -346,7 +343,9 @@ struct _BlockDim(Defaultable, TrivialRegisterPassable):
                     comptime assert dim == "z"
                     return 8
 
-            return _get_gcn_idx[_get_offset(), DType.uint16]()
+            return Self.ResultType(
+                from_int=_get_gcn_idx[_get_offset(), DType.uint16]()
+            )
 
         else:
             CompilationTarget.unsupported_target_error[
@@ -355,6 +354,11 @@ struct _BlockDim(Defaultable, TrivialRegisterPassable):
 
 
 comptime block_dim = _BlockDim()
+"""Contains the dimensions of the block as `x`, `y`, and `z` values.
+
+For example: `block_dim.y`."""
+
+comptime block_dim_int = _BlockDim[Int]()
 """Contains the dimensions of the block as `x`, `y`, and `z` values.
 
 For example: `block_dim.y`."""
@@ -370,11 +374,11 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
     grid."""
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         return
 
     @always_inline("nodebug")
-    fn __getattr__[dim: StaticString](self) -> UInt:
+    def __getattr__[dim: StaticString](self) -> UInt:
         """Gets the `x`, `y`, or `z` dimension of the grid.
 
         Returns:
@@ -394,7 +398,7 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
         elif is_amd_gpu():
 
             @parameter
-            fn _get_offset() -> Int:
+            def _get_offset() -> Int:
                 comptime if dim == "x":
                     return 0
                 elif dim == "y":
@@ -403,7 +407,7 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
                     comptime assert dim == "z"
                     return 2
 
-            return _get_gcn_idx[_get_offset(), DType.uint32]()
+            return UInt(_get_gcn_idx[_get_offset(), DType.uint32]())
         elif is_apple_gpu():
             comptime intrinsic_name = "llvm.air.threads_per_grid." + dim
             var gridDim = UInt(
@@ -438,11 +442,11 @@ struct _GlobalIdx(Defaultable, TrivialRegisterPassable):
     the kernel launch."""
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         return
 
     @always_inline("nodebug")
-    fn __getattr__[dim: StringLiteral](self) -> UInt:
+    def __getattr__[dim: StringLiteral](self) -> UInt:
         """Gets the `x`, `y`, or `z` dimension of the program.
 
         Returns:
@@ -453,7 +457,7 @@ struct _GlobalIdx(Defaultable, TrivialRegisterPassable):
         var b_idx = block_idx.__getattr__[dim]()
         var b_dim = block_dim.__getattr__[dim]()
 
-        return math.fma(b_idx, b_dim, t_idx)
+        return std.math.fma(b_idx, b_dim, t_idx)
 
 
 comptime global_idx = _GlobalIdx()
@@ -471,11 +475,11 @@ struct _ClusterDim(Defaultable, TrivialRegisterPassable):
     cluster."""
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         return
 
     @always_inline("nodebug")
-    fn __getattr__[dim: StaticString](self) -> UInt:
+    def __getattr__[dim: StaticString](self) -> UInt:
         """Gets the `x`, `y`, or `z` dimension of the cluster.
 
         Returns:
@@ -506,16 +510,16 @@ struct _ClusterIdx(Defaultable, TrivialRegisterPassable):
     a cluster within a grid."""
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         return
 
     @always_inline("nodebug")
     @staticmethod
-    fn _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
+    def _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
         return "llvm.nvvm.read.ptx.sreg.clusterid." + dim
 
     @always_inline("nodebug")
-    fn __getattr__[dim: StringLiteral](self) -> UInt:
+    def __getattr__[dim: StringLiteral](self) -> UInt:
         """Gets the `x`, `y`, or `z` coordinates of a cluster within a grid.
 
         Returns:
@@ -545,16 +549,16 @@ struct _ClusterBlockIdx(Defaultable, TrivialRegisterPassable):
     a threadblock within a cluster."""
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         return
 
     @always_inline("nodebug")
     @staticmethod
-    fn _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
+    def _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
         return "llvm.nvvm.read.ptx.sreg.cluster.ctaid." + dim
 
     @always_inline("nodebug")
-    fn __getattr__[dim: StringLiteral](self) -> UInt:
+    def __getattr__[dim: StringLiteral](self) -> UInt:
         """Gets the `x`, `y`, or `z` coordinates of a threadblock within a cluster.
 
         Returns:

@@ -18,7 +18,7 @@ from std.gpu.host import DeviceContext
 from std.gpu.host.info import GPUInfo
 
 
-fn api() -> String:
+def api() -> String:
     comptime if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
         comptime api = get_defined_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
 
@@ -28,7 +28,7 @@ fn api() -> String:
     return "default"
 
 
-fn create_test_device_context(*, device_id: Int = 0) raises -> DeviceContext:
+def create_test_device_context(*, device_id: Int = 0) raises -> DeviceContext:
     # Create an instance of the DeviceContext
     var test_ctx: DeviceContext
 

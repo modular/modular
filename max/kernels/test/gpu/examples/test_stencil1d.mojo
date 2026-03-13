@@ -23,7 +23,7 @@ from std.utils.index import Index
 comptime BLOCK_DIM = 8
 
 
-fn stencil1d(
+def stencil1d(
     a_ptr: UnsafePointer[Float32, MutAnyOrigin],
     b_ptr: UnsafePointer[Float32, MutAnyOrigin],
     arr_size: Int,
@@ -33,8 +33,8 @@ fn stencil1d(
 ):
     var tid = Int(global_idx.x)
 
-    var a = NDBuffer[DType.float32, 1](a_ptr, Index(arr_size))
-    var b = NDBuffer[DType.float32, 1](b_ptr, Index(arr_size))
+    var a = NDBuffer[rank=1, DType.float32](a_ptr, Index(arr_size))
+    var b = NDBuffer[rank=1, DType.float32](b_ptr, Index(arr_size))
 
     if 0 < tid < arr_size - 1:
         b[tid] = (
@@ -44,7 +44,7 @@ fn stencil1d(
         )
 
 
-fn stencil1d_smem(
+def stencil1d_smem(
     a_ptr: UnsafePointer[Float32, MutAnyOrigin],
     b_ptr: UnsafePointer[Float32, MutAnyOrigin],
     arr_size: Int,
@@ -55,8 +55,8 @@ fn stencil1d_smem(
     var tid = Int(global_idx.x)
     var lindex = thread_idx.x + 1
 
-    var a = NDBuffer[DType.float32, 1](a_ptr, Index(arr_size))
-    var b = NDBuffer[DType.float32, 1](b_ptr, Index(arr_size))
+    var a = NDBuffer[rank=1, DType.float32](a_ptr, Index(arr_size))
+    var b = NDBuffer[rank=1, DType.float32](b_ptr, Index(arr_size))
 
     var a_shared = stack_allocation[
         BLOCK_DIM + 2, DType.float32, address_space=AddressSpace.SHARED
@@ -80,7 +80,7 @@ fn stencil1d_smem(
 
 
 # CHECK-LABEL: run_stencil1d
-fn run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
+def run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
     print("== run_stencil1d")
 
     comptime m = 64

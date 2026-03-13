@@ -17,9 +17,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu import Semaphore, block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import TileTensor
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.memory import alloc
 from std.testing import assert_almost_equal
@@ -27,7 +25,7 @@ from std.testing import assert_almost_equal
 from std.utils import Index, IndexList
 
 
-fn swizzle_tile(
+def swizzle_tile(
     tile_id: Int,
     M: Int,
     N: Int,
@@ -40,14 +38,14 @@ fn swizzle_tile(
     var grid_m = (M + BLOCK_M - 1) // BLOCK_M
     var grid_n = (N + BLOCK_N - 1) // BLOCK_N
     var width = GROUP_M * grid_n
-    var group_id = tile_id // width
+    var group_id, tile_id_rem = divmod(tile_id, width)
     var group_size = min(grid_m - group_id * GROUP_M, GROUP_M)
     var pid_m = group_id * GROUP_M + (tile_id % group_size)
-    var pid_n = (tile_id % width) // group_size
+    var pid_n = tile_id_rem // group_size
     return IndexList[2](pid_m, pid_n)
 
 
-fn linear_tile(
+def linear_tile(
     tile_id: Int,
     M: Int,
     N: Int,
@@ -57,12 +55,11 @@ fn linear_tile(
     BLOCK_K: Int,
     GROUP_M: Int,
 ) -> IndexList[2]:
-    var pid_m = tile_id // ((N + BLOCK_N - 1) // BLOCK_N)
-    var pid_n = tile_id % ((N + BLOCK_N - 1) // BLOCK_N)
+    var pid_m, pid_n = divmod(tile_id, ((N + BLOCK_N - 1) // BLOCK_N))
     return IndexList[2](pid_m, pid_n)
 
 
-fn mac_loop[
+def mac_loop[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -136,7 +133,7 @@ fn mac_loop[
     sema.release(Int32(start_iter))
 
 
-fn first_wave_kernel[
+def first_wave_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -206,7 +203,7 @@ fn first_wave_kernel[
         start_iter = end_iter
 
 
-fn full_tiles_kernel[
+def full_tiles_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -287,7 +284,7 @@ fn full_tiles_kernel[
 #        +-----------+
 
 
-fn matmul_stream_k[
+def matmul_stream_k[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -298,9 +295,9 @@ fn matmul_stream_k[
     *,
     total_programs_streamk: Int,
 ](
-    c: NDBuffer[c_type, 2, _, c_shape],
-    a: NDBuffer[a_type, 2, _, a_shape],
-    b: NDBuffer[b_type, 2, _, b_shape],
+    c: NDBuffer[rank=2, c_type, _, c_shape],
+    a: NDBuffer[rank=2, a_type, _, a_shape],
+    b: NDBuffer[rank=2, b_type, _, b_shape],
     M: Int,
     N: Int,
     K: Int,
@@ -319,12 +316,15 @@ fn matmul_stream_k[
     var total_tiles_streamk = total_tiles % total_programs_streamk
     var total_blocking_tiles = total_tiles - total_tiles_streamk
     var total_iters_streamk = total_tiles_streamk * iters_per_tile
-    var total_full_tiles_streamk = 0 if (total_iters_streamk == 0) else (
-        total_iters_streamk // total_programs_streamk
-    )
-    var total_partial_tiles_streamk = 0 if (total_iters_streamk == 0) else (
-        total_iters_streamk % total_programs_streamk
-    )
+    var total_full_tiles_streamk: Int
+    var total_partial_tiles_streamk: Int
+    if total_iters_streamk == 0:
+        total_full_tiles_streamk = 0
+        total_partial_tiles_streamk = 0
+    else:
+        total_full_tiles_streamk, total_partial_tiles_streamk = divmod(
+            total_iters_streamk, total_programs_streamk
+        )
 
     var locks_data = ctx.enqueue_create_buffer[DType.int32](total_tiles_streamk)
     ctx.enqueue_memset(locks_data, 0)
@@ -424,7 +424,7 @@ fn matmul_stream_k[
     return
 
 
-fn run_matmul_stream_k[
+def run_matmul_stream_k[
     dtype: DType,
     M: Int,
     N: Int,
@@ -454,20 +454,20 @@ fn run_matmul_stream_k[
         c_host[i] = val.cast[dtype]()
         c_host_n[i] = c_host[i]
 
-    comptime a_shape = DimList(M, K)
-    comptime b_shape = DimList(K, N)
-    comptime c_shape = DimList(M, N)
+    comptime a_shape = DimList[M, K]()
+    comptime b_shape = DimList[K, N]()
+    comptime c_shape = DimList[M, N]()
 
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](K * N)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var a_buf = NDBuffer[dtype, 2, _, a_shape](
+    var a_buf = NDBuffer[rank=2, dtype, _, a_shape](
         a_device.unsafe_ptr(), Index(M, K)
     )
-    var b_buf = NDBuffer[dtype, 2, _, b_shape](
+    var b_buf = NDBuffer[rank=2, dtype, _, b_shape](
         b_device.unsafe_ptr(), Index(K, N)
     )
-    var c_buf = NDBuffer[dtype, 2, _, c_shape](
+    var c_buf = NDBuffer[rank=2, dtype, _, c_shape](
         c_device.unsafe_ptr(), Index(M, N)
     )
 
@@ -479,9 +479,9 @@ fn run_matmul_stream_k[
     comptime sm_count = ctx.default_device_info.sm_count
 
     matmul_stream_k[total_programs_streamk=sm_count](
-        rebind[NDBuffer[dtype, 2, c_buf.origin, c_shape]](c_buf),
-        rebind[NDBuffer[dtype, 2, a_buf.origin, a_shape]](a_buf),
-        rebind[NDBuffer[dtype, 2, b_buf.origin, b_shape]](b_buf),
+        rebind[NDBuffer[rank=2, dtype, c_buf.origin, c_shape]](c_buf),
+        rebind[NDBuffer[rank=2, dtype, a_buf.origin, a_shape]](a_buf),
+        rebind[NDBuffer[rank=2, dtype, b_buf.origin, b_shape]](b_buf),
         M,
         N,
         K,

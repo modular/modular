@@ -56,7 +56,7 @@ comptime test_dtypes = (DType.bfloat16, DType.float32)
 comptime test_gpu_counts = (2, 4, 8)
 
 
-fn allreduce_test[
+def allreduce_test[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -106,7 +106,7 @@ fn allreduce_test[
         host_buffers.append(host_buffer)
 
         # Initialize host buffer with values (i + 1).0
-        var host_nd_buf = NDBuffer[dtype, rank](
+        var host_nd_buf = NDBuffer[rank=rank, dtype](
             host_buffer, IndexList[rank](length)
         )
         host_nd_buf.fill(Scalar[dtype](i + 1))
@@ -126,9 +126,9 @@ fn allreduce_test[
 
     # Create and initialize input and output buffers.
     var in_bufs = InlineArray[
-        NDBuffer[dtype, rank, ImmutAnyOrigin], num_buffers
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], num_buffers
     ](fill={})
-    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
+    var out_bufs = InlineArray[NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus](
         fill={}
     )
 
@@ -140,18 +140,18 @@ fn allreduce_test[
             var unicast_buf = multicast_buf.unicast_buffer_for(list_of_ctx[i])
             list_of_ctx[i].enqueue_copy(unicast_buf, host_buffers[i])
         # All GPUs use the same multicast pointer
-        in_bufs[0] = NDBuffer[dtype, rank](
+        in_bufs[0] = NDBuffer[rank=rank, dtype](
             multicast_buf.multicast_buffer_for(list_of_ctx[0]).unsafe_ptr(),
             IndexList[rank](length),
         )
     else:
         for i in range(ngpus):
-            in_bufs[i] = NDBuffer[dtype, rank](
+            in_bufs[i] = NDBuffer[rank=rank, dtype](
                 in_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
             )
 
     for i in range(ngpus):
-        out_bufs[i] = NDBuffer[dtype, rank](
+        out_bufs[i] = NDBuffer[rank=rank, dtype](
             out_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
         )
 
@@ -160,11 +160,11 @@ fn allreduce_test[
 
     # Copy-capture in registers since the lambda will be used on GPU.
     var out_bufs_capture = StaticTuple[
-        NDBuffer[dtype, rank, MutAnyOrigin], ngpus
-    ](NDBuffer[dtype, rank, MutAnyOrigin]())
+        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus
+    ](NDBuffer[rank=rank, dtype, MutAnyOrigin]())
 
     for i in range(ngpus):
-        out_bufs_capture[i] = NDBuffer[dtype, rank](
+        out_bufs_capture[i] = NDBuffer[rank=rank, dtype](
             out_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
         )
 
@@ -172,7 +172,7 @@ fn allreduce_test[
     @always_inline
     @parameter
     @__copy_capture(out_bufs_capture)
-    fn outputs_lambda[
+    def outputs_lambda[
         input_index: Int,
         _dtype: DType,
         _rank: Int,
@@ -213,13 +213,13 @@ fn allreduce_test[
             # Prepare distinct outputs for vendor path to avoid aliasing.
             var out_dev_vendor = List[DeviceBuffer[dtype]](capacity=ngpus)
             var out_bufs_vendor = InlineArray[
-                NDBuffer[dtype, rank, MutAnyOrigin], ngpus
+                NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus
             ](fill={})
             for i in range(ngpus):
                 out_dev_vendor.append(
                     list_of_ctx[i].enqueue_create_buffer[dtype](length)
                 )
-                out_bufs_vendor[i] = NDBuffer[dtype, rank](
+                out_bufs_vendor[i] = NDBuffer[rank=rank, dtype](
                     out_dev_vendor[i].unsafe_ptr(), IndexList[rank](length)
                 )
 
@@ -271,7 +271,7 @@ fn allreduce_test[
         host_buffers[i].free()
 
 
-fn _get_test_str[
+def _get_test_str[
     dtype: DType,
     use_multimem: Bool,
     use_custom_epilogue: Bool = False,
@@ -313,39 +313,39 @@ def allreduce_naive_test() raises -> None:
         out_dev.append(ctxs[i].enqueue_create_buffer[DType.float32](length))
         var h = alloc[Float32](length)
         host_ptrs.append(h)
-        var h_nd = NDBuffer[DType.float32, 1](h, IndexList[1](length))
+        var h_nd = NDBuffer[rank=1, DType.float32](h, IndexList[1](length))
         h_nd.fill(Float32(i + 1))
         ctxs[i].enqueue_copy(in_dev[i], host_ptrs[i])
 
     # Wrap as NDBuffers for the kernel API
-    var in_bufs = InlineArray[NDBuffer[DType.float32, 1, MutAnyOrigin], ngpus](
-        fill={}
-    )
-    var out_bufs = InlineArray[NDBuffer[DType.float32, 1, MutAnyOrigin], ngpus](
-        fill={}
-    )
+    var in_bufs = InlineArray[
+        NDBuffer[rank=1, DType.float32, MutAnyOrigin], ngpus
+    ](fill={})
+    var out_bufs = InlineArray[
+        NDBuffer[rank=1, DType.float32, MutAnyOrigin], ngpus
+    ](fill={})
 
     for i in range(ngpus):
-        in_bufs[i] = NDBuffer[DType.float32, 1](
+        in_bufs[i] = NDBuffer[rank=1, DType.float32](
             in_dev[i].unsafe_ptr(), IndexList[1](length)
         )
-        out_bufs[i] = NDBuffer[DType.float32, 1](
+        out_bufs[i] = NDBuffer[rank=1, DType.float32](
             out_dev[i].unsafe_ptr(), IndexList[1](length)
         )
 
     # Prepare an output lambda that writes into the correct device's out buffer.
     var out_bufs_capture = StaticTuple[
-        NDBuffer[DType.float32, 1, MutAnyOrigin], ngpus
-    ](NDBuffer[DType.float32, 1, MutAnyOrigin]())
+        NDBuffer[rank=1, DType.float32, MutAnyOrigin], ngpus
+    ](NDBuffer[rank=1, DType.float32, MutAnyOrigin]())
     for i in range(ngpus):
-        out_bufs_capture[i] = NDBuffer[DType.float32, 1](
+        out_bufs_capture[i] = NDBuffer[rank=1, DType.float32](
             out_dev[i].unsafe_ptr(), IndexList[1](length)
         )
 
     @always_inline
     @parameter
     @__copy_capture(out_bufs_capture)
-    fn outputs_lambda[
+    def outputs_lambda[
         input_index: Int,
         _dtype: DType,
         _rank: Int,
@@ -385,7 +385,7 @@ def allreduce_naive_test() raises -> None:
 
 
 @parameter
-fn run_allreduce_sweep[use_multimem: Bool]() raises:
+def run_allreduce_sweep[use_multimem: Bool]() raises:
     # Run tests for each configuration.
     comptime for gpu_idx, dtype_idx, length_idx, epilogue_idx in product(
         range(len(test_gpu_counts)),

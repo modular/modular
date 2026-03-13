@@ -64,7 +64,7 @@ comptime NUM_LAYERS = 1  # Single layer for testing
 comptime KV_NUM_HEADS = 1  # MLA has 1 KV head
 
 
-fn _palette_scale(index: Int) -> Float32:
+def _palette_scale(index: Int) -> Float32:
     """Pick a scale from the palette by index (wrapping)."""
     if index % 9 == 0:
         return 0.25
@@ -90,7 +90,7 @@ fn _palette_scale(index: Int) -> Float32:
 # ===-----------------------------------------------------------------------===#
 
 
-fn run_test_blockwise_fp8[
+def run_test_blockwise_fp8[
     q_type: DType,
     kv_type: DType,
     num_heads: Int,
@@ -509,8 +509,7 @@ fn run_test_blockwise_fp8[
             page_base_b += ceildiv(cache_lengths[bi] + q_max_seq_len, page_size)
 
         for tok in range(ref_num_keys):
-            var page_idx = tok // page_size
-            var tok_in_page = tok % page_size
+            var page_idx, tok_in_page = divmod(tok, page_size)
             var physical_page = page_base_b + page_idx
 
             for h in range(KV_NUM_HEADS):
@@ -665,7 +664,7 @@ fn run_test_blockwise_fp8[
 # ===-----------------------------------------------------------------------===#
 
 
-fn run_bench_blockwise_fp8[
+def run_bench_blockwise_fp8[
     q_type: DType,
     kv_type: DType,
     num_heads: Int,
@@ -947,7 +946,7 @@ fn run_bench_blockwise_fp8[
         row_offsets_lt,
         scalar_args_buf_lt,
     )
-    fn kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(ctx: DeviceContext) raises:
         flare_mla_decoding[rank=3, ragged=True](
             out_lt,
             q_lt,
@@ -996,14 +995,14 @@ fn run_bench_blockwise_fp8[
 # ===-----------------------------------------------------------------------===#
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
     return False
 
 
-fn make_uniform(count: Int, value: Int) -> List[Int]:
+def make_uniform(count: Int, value: Int) -> List[Int]:
     """Create a list of `count` identical cache lengths."""
     var result = List[Int]()
     for _ in range(count):
@@ -1011,7 +1010,7 @@ fn make_uniform(count: Int, value: Int) -> List[Int]:
     return result^
 
 
-fn run_bench_uniform[
+def run_bench_uniform[
     num_heads: Int,
     page_size: Int,
     quant_granularity: Int,

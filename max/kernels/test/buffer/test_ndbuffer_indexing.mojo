@@ -30,9 +30,9 @@ def test_ndbuffer_indexing() raises:
 
     # Fill data with increasing order, so that the value of each element in
     #  the test buffer is equal to it's linear index.:
-    var fillBufferView = NDBuffer[DType.int, 1, _, total_buffer_size](
-        _data.unsafe_ptr()
-    )
+    var fillBufferView = NDBuffer[
+        rank=1, DType.int, _, DimList[total_buffer_size]()
+    ](_data.unsafe_ptr())
 
     for fillIdx in range(total_buffer_size):
         fillBufferView[fillIdx] = Scalar[DType.int](fillIdx)
@@ -41,7 +41,9 @@ def test_ndbuffer_indexing() raises:
     # Test 1DBuffer:
     # ===------------------------------------------------------------------=== #
 
-    var bufferView1D = NDBuffer[DType.int, 1, _, DimList(6)](_data.unsafe_ptr())
+    var bufferView1D = NDBuffer[rank=1, DType.int, _, DimList[6]()](
+        _data.unsafe_ptr()
+    )
 
     # Try to access element[5]
     # CHECK: 5
@@ -51,7 +53,7 @@ def test_ndbuffer_indexing() raises:
     # Test 2DBuffer:
     # ===------------------------------------------------------------------=== #
 
-    var bufferView2D = NDBuffer[DType.int, 2, _, DimList(5, 6)](
+    var bufferView2D = NDBuffer[rank=2, DType.int, _, DimList[5, 6]()](
         _data.unsafe_ptr()
     )
 
@@ -64,7 +66,7 @@ def test_ndbuffer_indexing() raises:
     # Test 3DBuffer:
     # ===------------------------------------------------------------------=== #
 
-    var bufferView3D = NDBuffer[DType.int, 3, _, DimList(4, 5, 6)](
+    var bufferView3D = NDBuffer[rank=3, DType.int, _, DimList[4, 5, 6]()](
         _data.unsafe_ptr()
     )
 
@@ -77,7 +79,7 @@ def test_ndbuffer_indexing() raises:
     # Test 4DBuffer:
     # ===------------------------------------------------------------------=== #
 
-    var bufferView4D = NDBuffer[DType.int, 4, _, DimList(3, 4, 5, 6)](
+    var bufferView4D = NDBuffer[rank=4, DType.int, _, DimList[3, 4, 5, 6]()](
         _data.unsafe_ptr()
     )
 
@@ -90,7 +92,7 @@ def test_ndbuffer_indexing() raises:
     # Test 5DBuffer:
     # ===------------------------------------------------------------------=== #
 
-    var bufferView5D = NDBuffer[DType.int, 5, _, DimList(2, 3, 4, 5, 6)](
+    var bufferView5D = NDBuffer[rank=5, DType.int, _, DimList[2, 3, 4, 5, 6]()](
         _data.unsafe_ptr()
     )
 

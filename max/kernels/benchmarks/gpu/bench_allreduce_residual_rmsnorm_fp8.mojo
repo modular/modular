@@ -61,23 +61,23 @@ from std.utils.numerics import max_finite
 
 
 @always_inline
-fn _repoint_input_bufs[
+def _repoint_input_bufs[
     in_dtype: DType,
     ngpus: Int,
     num_cols: Int,
 ](
-    mut in_bufs: InlineArray[NDBuffer[in_dtype, 2, ImmutAnyOrigin], ngpus],
+    mut in_bufs: InlineArray[NDBuffer[rank=2, in_dtype, ImmutAnyOrigin], ngpus],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
     iteration: Int,
     num_rows: Int,
 ):
     comptime for i in range(ngpus):
-        in_bufs[i] = NDBuffer[in_dtype, 2](
+        in_bufs[i] = NDBuffer[rank=2, in_dtype](
             cb_inputs[i].offset_ptr(iteration), IndexList[2](num_rows, num_cols)
         )
 
 
-fn _verify_results[
+def _verify_results[
     in_dtype: DType,
     out_dtype: DType,
     ngpus: Int,
@@ -86,9 +86,9 @@ fn _verify_results[
     num_rows: Int,
     list_of_ctx: List[DeviceContext],
     signal_buffers: List[DeviceBuffer[DType.uint8]],
-    mut in_bufs: InlineArray[NDBuffer[in_dtype, 2, ImmutAnyOrigin], ngpus],
+    mut in_bufs: InlineArray[NDBuffer[rank=2, in_dtype, ImmutAnyOrigin], ngpus],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
-    ar_out_bufs: InlineArray[NDBuffer[in_dtype, 2, MutAnyOrigin], ngpus],
+    ar_out_bufs: InlineArray[NDBuffer[rank=2, in_dtype, MutAnyOrigin], ngpus],
     ar_out_dev: List[DeviceBuffer[in_dtype]],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
@@ -138,17 +138,17 @@ fn _verify_results[
     @__copy_capture(ar_ptr_v)
     @always_inline
     @parameter
-    fn v_fused_in[
+    def v_fused_in[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
         var li = idx[0] * num_cols + idx[1]
         return ar_ptr_v.load[width=width, alignment=width](li)
 
-    var v_fused_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
+    var v_fused_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
         v_fused_fp8_dev.unsafe_ptr(), Index(num_rows, num_cols)
     )
     var v_fused_scale_shape = IndexList[2](num_rows, 1)
-    var v_fused_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
+    var v_fused_scales_ndbuf = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
         v_fused_scales_dev.unsafe_ptr(), v_fused_scale_shape
     )
     var shape = IndexList[2](num_rows, num_cols)
@@ -176,10 +176,10 @@ fn _verify_results[
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
-    var v_ff_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
+    var v_ff_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
         v_ff_fp8_dev.unsafe_ptr(), IndexList[2](num_rows, num_cols)
     )
-    var v_ff_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
+    var v_ff_scales_ndbuf = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
         v_ff_scales_dev.unsafe_ptr(), IndexList[2](num_rows, 1)
     )
 
@@ -295,7 +295,7 @@ fn _verify_results[
     print("Verification PASSED")
 
 
-fn _verify_add_results[
+def _verify_add_results[
     in_dtype: DType,
     out_dtype: DType,
     ngpus: Int,
@@ -304,9 +304,9 @@ fn _verify_add_results[
     num_rows: Int,
     list_of_ctx: List[DeviceContext],
     signal_buffers: List[DeviceBuffer[DType.uint8]],
-    mut in_bufs: InlineArray[NDBuffer[in_dtype, 2, ImmutAnyOrigin], ngpus],
+    mut in_bufs: InlineArray[NDBuffer[rank=2, in_dtype, ImmutAnyOrigin], ngpus],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
-    ar_out_bufs: InlineArray[NDBuffer[in_dtype, 2, MutAnyOrigin], ngpus],
+    ar_out_bufs: InlineArray[NDBuffer[rank=2, in_dtype, MutAnyOrigin], ngpus],
     ar_out_dev: List[DeviceBuffer[in_dtype]],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
@@ -350,7 +350,7 @@ fn _verify_add_results[
         @__copy_capture(ar_ptr_i, residual_ptr)
         @always_inline
         @parameter
-        fn add_epilogue_v[
+        def add_epilogue_v[
             _dtype: DType,
             _rank: Int,
             _width: Int,
@@ -382,16 +382,16 @@ fn _verify_add_results[
     @__copy_capture(ar_ptr_v)
     @always_inline
     @parameter
-    fn v_ep_fused_in[
+    def v_ep_fused_in[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
         var li = idx[0] * num_cols + idx[1]
         return ar_ptr_v.load[width=width, alignment=width](li)
 
-    var v_ep_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
+    var v_ep_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
         v_ep_fp8_dev.unsafe_ptr(), Index(num_rows, num_cols)
     )
-    var v_ep_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
+    var v_ep_scales_ndbuf = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
         v_ep_scales_dev.unsafe_ptr(), IndexList[2](num_rows, 1)
     )
     var shape = IndexList[2](num_rows, num_cols)
@@ -418,16 +418,16 @@ fn _verify_add_results[
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
-    var v_ff_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
+    var v_ff_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
         v_ff_fp8_dev.unsafe_ptr(), IndexList[2](num_rows, num_cols)
     )
-    var v_ff_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
+    var v_ff_scales_ndbuf = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
         v_ff_scales_dev.unsafe_ptr(), IndexList[2](num_rows, 1)
     )
-    var v_res_ndbuf = NDBuffer[in_dtype, 2, MutAnyOrigin](
+    var v_res_ndbuf = NDBuffer[rank=2, in_dtype, MutAnyOrigin](
         residual_dev.unsafe_ptr(), IndexList[2](num_rows, num_cols)
     )
-    var v_res_out_ndbuf = NDBuffer[in_dtype, 2, MutAnyOrigin](
+    var v_res_out_ndbuf = NDBuffer[rank=2, in_dtype, MutAnyOrigin](
         v_res_out_dev.unsafe_ptr(), IndexList[2](num_rows, num_cols)
     )
 
@@ -541,7 +541,7 @@ fn _verify_add_results[
     print("Add-path verification PASSED")
 
 
-fn bench_allreduce_rmsnorm_fp8[
+def bench_allreduce_rmsnorm_fp8[
     in_dtype: DType,
     out_dtype: DType,
     ngpus: Int,
@@ -593,17 +593,17 @@ fn bench_allreduce_rmsnorm_fp8[
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
     # NDBuffer views for allreduce.
-    var in_bufs = InlineArray[NDBuffer[in_dtype, 2, ImmutAnyOrigin], ngpus](
-        fill={}
-    )
-    var ar_out_bufs = InlineArray[NDBuffer[in_dtype, 2, MutAnyOrigin], ngpus](
-        fill={}
-    )
+    var in_bufs = InlineArray[
+        NDBuffer[rank=2, in_dtype, ImmutAnyOrigin], ngpus
+    ](fill={})
+    var ar_out_bufs = InlineArray[
+        NDBuffer[rank=2, in_dtype, MutAnyOrigin], ngpus
+    ](fill={})
     for i in range(ngpus):
-        in_bufs[i] = NDBuffer[in_dtype, 2](
+        in_bufs[i] = NDBuffer[rank=2, in_dtype](
             cb_inputs[i].unsafe_ptr(), IndexList[2](num_rows, num_cols)
         )
-        ar_out_bufs[i] = NDBuffer[in_dtype, 2](
+        ar_out_bufs[i] = NDBuffer[rank=2, in_dtype](
             ar_out_dev[i].unsafe_ptr(), IndexList[2](num_rows, num_cols)
         )
     for i in range(ngpus):
@@ -724,12 +724,12 @@ fn bench_allreduce_rmsnorm_fp8[
 
     @parameter
     @always_inline
-    fn bench_allreduce_iter(
+    def bench_allreduce_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
         @parameter
         @always_inline
-        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             _repoint_input_bufs[num_cols=num_cols](
                 in_bufs, cb_inputs, cache_iter, num_rows
             )
@@ -749,12 +749,12 @@ fn bench_allreduce_rmsnorm_fp8[
 
     @parameter
     @always_inline
-    fn bench_ar_fused_iter(
+    def bench_ar_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
         @parameter
         @always_inline
-        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             _repoint_input_bufs[num_cols=num_cols](
                 in_bufs, cb_inputs, cache_iter, num_rows
             )
@@ -770,20 +770,20 @@ fn bench_allreduce_rmsnorm_fp8[
             @__copy_capture(ar_ptr)
             @always_inline
             @parameter
-            fn fused_in[
+            def fused_in[
                 width: Int, _rank: Int
             ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
                 var li = idx[0] * num_cols + idx[1]
                 return ar_ptr.load[width=width, alignment=width](li)
 
             var shape = IndexList[2](num_rows, num_cols)
-            var fused_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
+            var fused_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
                 fused_fp8_out_ptrs[ctx_idx], IndexList[2](num_rows, num_cols)
             )
             var fused_scale_shape = IndexList[2](num_rows, 1)
-            var fused_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
-                fused_scales_ptrs[ctx_idx], fused_scale_shape
-            )
+            var fused_scales_ndbuf = NDBuffer[
+                rank=2, DType.float32, MutAnyOrigin
+            ](fused_scales_ptrs[ctx_idx], fused_scale_shape)
 
             rms_norm_fused_fp8[
                 in_dtype,
@@ -817,21 +817,21 @@ fn bench_allreduce_rmsnorm_fp8[
 
     @parameter
     @always_inline
-    fn bench_fully_fused_iter(
+    def bench_fully_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
         @parameter
         @always_inline
-        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             _repoint_input_bufs[num_cols=num_cols](
                 in_bufs, cb_inputs, cache_iter, num_rows
             )
 
-            var ff_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
+            var ff_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
                 fully_fused_fp8_out_ptrs[ctx_idx],
                 IndexList[2](num_rows, num_cols),
             )
-            var ff_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
+            var ff_scales_ndbuf = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
                 fully_fused_scales_ptrs[ctx_idx], IndexList[2](num_rows, 1)
             )
 
@@ -861,12 +861,12 @@ fn bench_allreduce_rmsnorm_fp8[
 
     @parameter
     @always_inline
-    fn bench_ar_add_fused_iter(
+    def bench_ar_add_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
         @parameter
         @always_inline
-        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             _repoint_input_bufs[num_cols=num_cols](
                 in_bufs, cb_inputs, cache_iter, num_rows
             )
@@ -877,7 +877,7 @@ fn bench_allreduce_rmsnorm_fp8[
             @__copy_capture(ar_ptr, residual_ptr_base)
             @always_inline
             @parameter
-            fn add_epilogue[
+            def add_epilogue[
                 _dtype: DType,
                 _rank: Int,
                 _width: Int,
@@ -908,18 +908,18 @@ fn bench_allreduce_rmsnorm_fp8[
             @__copy_capture(ar_ptr)
             @always_inline
             @parameter
-            fn add_fused_in[
+            def add_fused_in[
                 width: Int, _rank: Int
             ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
                 var li = idx[0] * num_cols + idx[1]
                 return ar_ptr.load[width=width, alignment=width](li)
 
             var shape = IndexList[2](num_rows, num_cols)
-            var ea_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
+            var ea_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
                 fused_add_fp8_out_ptrs[ctx_idx],
                 IndexList[2](num_rows, num_cols),
             )
-            var ea_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
+            var ea_scales_ndbuf = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
                 fused_add_scales_ptrs[ctx_idx], IndexList[2](num_rows, 1)
             )
 
@@ -955,27 +955,27 @@ fn bench_allreduce_rmsnorm_fp8[
 
     @parameter
     @always_inline
-    fn bench_fused_add_iter(
+    def bench_fused_add_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
         @parameter
         @always_inline
-        fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             _repoint_input_bufs[num_cols=num_cols](
                 in_bufs, cb_inputs, cache_iter, num_rows
             )
 
-            var fa_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
+            var fa_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
                 fused_add_fp8_out_ptrs[ctx_idx],
                 IndexList[2](num_rows, num_cols),
             )
-            var fa_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
+            var fa_scales_ndbuf = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
                 fused_add_scales_ptrs[ctx_idx], IndexList[2](num_rows, 1)
             )
-            var res_ndbuf = NDBuffer[in_dtype, 2, MutAnyOrigin](
+            var res_ndbuf = NDBuffer[rank=2, in_dtype, MutAnyOrigin](
                 residual_ptr_base, IndexList[2](num_rows, num_cols)
             )
-            var res_out_ndbuf = NDBuffer[in_dtype, 2, MutAnyOrigin](
+            var res_out_ndbuf = NDBuffer[rank=2, in_dtype, MutAnyOrigin](
                 residual_output_ptrs[ctx_idx], IndexList[2](num_rows, num_cols)
             )
 

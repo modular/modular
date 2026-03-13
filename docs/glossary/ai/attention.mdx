@@ -3,36 +3,55 @@ title: Attention
 meta_title: What is attention?
 ---
 
-A mechanism used in AI models such as [transformers](transformer.mdx) that
-enables the model to selectively focus on different parts of the input sequence
-when making predictions.
-
-Unlike traditional model architectures that process all input data with equal
-importance, models with attention assign different importance levels to
-different tokens (such as words or pixels). This allows the model to better
-understand the complete meaning of the input, especially when an accurate
-meaning depends on relationships between tokens that are far apart (such as
-between words that occur far apart in a sentence).
-
-Attention is crucial for large language models (LLMs) so they can capture
-long-range dependencies and contextual relationships in the given text. It
-allows LLMs to handle complex and nuanced language, enabling them to generate
-coherent and contextually relevant output even when the input text includes
-nuanced references to other parts of the text.
+Attention is a mechanism used in AI models such as
+[transformers](transformer.mdx) that enables the model to assign different
+levels of importance to different tokens (such as words or pixels) in an input
+sequence. Unlike traditional architectures that treat all input data equally,
+attention allows the model to capture relationships between tokens that may be
+far apart in a sequence. This enables large language models (LLMs) to generate
+coherent, contextually relevant output.
 
 Attention was introduced and refined in the papers [Neural Machine Translation
 by Jointly Learning to Align and Translate](https://arxiv.org/abs/1409.0473)
 (Bahdanau et al., 2014) and [Effective Approaches to Attention-based Neural
-Machine Translation ](https://arxiv.org/abs/1508.04025) (Luong et al., 2015).
+Machine Translation](https://arxiv.org/abs/1508.04025) (Luong et al., 2015).
 
-The most well-known form of attention is [self-attention](self-attention.mdx),
-in which each token gets its own attention score for every other token (each
-token "attends to" all other tokens), in order to determine the relative
-importance of each other token in that context.
+## How attention works
 
-## Implementation details
+Attention operates on three vectors: a **query** (Q), a **key** (K), and a
+**value** (V). The query comes from the token (or sequence) that is looking for
+information, while the keys and values come from the tokens being looked at.
+These two sources can be different: for example, in machine translation, a
+decoder token might query the keys and values of an encoder's output to decide
+which input words are most relevant. This is sometimes called cross-attention.
 
-The classic attention operation follows this general structure:
+Regardless of where the queries, keys, and values originate, the attention
+operation follows the same steps: it compares each query against every key to
+produce a matrix of raw attention scores, normalizes the scores (via softmax)
+into a probability distribution, and uses those probabilities to compute a
+weighted combination of the value vectors. The result is a new
+[embedding](embedding.mdx) for each query token that encodes the information it
+gathered from the tokens it attended to.
+
+## Self-attention
+
+The most well-known form of attention is self-attention, used in
+[transformer](transformer.mdx) models. In self-attention, the queries, keys,
+and values all come from the same sequence, which means every token attends to every other
+token **in its own input**. This allows the model to build a rich understanding of
+context by evaluating how each token relates to all others, regardless of their
+distance in the sequence.
+
+Because self-attention recomputes scores for every token in the sequence, doing
+so from scratch at each generation step would be expensive. To avoid this, the
+model saves the calculated keys and values into the [KV cache](kv-cache.mdx)
+so they can be reused during the next [autoregression](autoregression.mdx)
+cycle.
+
+## Scaled dot-product attention
+
+The diagram below shows scaled dot-product attention, which is the standard
+implementation of the attention operation used in transformer models:
 
 <figure>
   <img src={require('../images/attention.png').default}
@@ -41,20 +60,24 @@ The classic attention operation follows this general structure:
        className="dark" alt="" width="280" />
 </figure>
 
-It consists of the following operations (`bmm` is short for batched matrix
-multiplication):
+The Q, K, and V matrices each have shape `[batchSize, numHeads, S, d]`, where:
 
-* `bmm`: `Q x Transpose(K)`
-    where `Q`, `K` both have shape `[batchSize, numHeads, S, d]`
-    and `Q x K^t` has the shape `[batchSize, numHeads, S, S]`
-* `softmax`
-* `bmm`: `softmax(Q x K^t) x V`
-    where V has the shape `[batchSize, numHeads, S, d]`
+- `S` is the sequence length (which can be as large as `O(10^3) - O(10^4)`)
 
-`S` denotes the sequence length. Depending on the model, it can be as large as
-`O(10^3) - O(10^4)`. `d` is the size per head in multi-head attention. It’s
-usually a power of 2 like 64, 128, etc, and smaller than `S`.
+- `d` is the size per attention head in multi-head attention (usually a power
+of 2 like 64 or 128, and smaller than `S`).
 
-A limitation of the classic implementation is that it materializes an
-intermediate matrix of shape `[batchSize, numHeads, S, S]`. This introduces
-`O(S^2)` memory allocation and traffic.
+These matrices go through the following operations:
+
+1. `Q x Transpose(K)`: Batched matrix multiplication (`bmm`) that produces a
+matrix of raw attention scores, one for every pair of tokens.
+
+2. `softmax`: Conversion of the raw scores into a probability distribution so
+they sum to 1 for each token.
+
+3. `softmax(Q x K^t) x V`: Another `bmm` that uses the normalized scores to
+blend every token's value vector into a single output embedding per token.
+
+A limitation of this implementation is that it materializes an intermediate
+matrix of shape `[batchSize, numHeads, S, S]`, introducing `O(S^2)` memory
+allocation and traffic.

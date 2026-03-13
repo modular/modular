@@ -24,7 +24,7 @@ from std.utils.index import IndexList
 
 
 @always_inline
-fn arg_nonzero[
+def arg_nonzero[
     dtype: DType,
     output_type: DType,
 ](
@@ -47,7 +47,7 @@ fn arg_nonzero[
     ), "output_buffer must be of rank 2"
 
     with Trace[TraceLevel.OP, target=StaticString("cpu")]("arg_nonzero"):
-        var numel = input_buffer.numel()
+        var numel = input_buffer.num_elements()
         if numel == 0:
             return
 
@@ -76,7 +76,7 @@ fn arg_nonzero[
 
 # Where has the shape 2D shape [NumNonZeros, InputRank]
 @always_inline
-fn arg_nonzero_shape[
+def arg_nonzero_shape[
     dtype: DType,
     single_thread_blocking_override: Bool,
 ](input_buffer: TileTensor[dtype, ...]) -> IndexList[2]:
@@ -97,7 +97,7 @@ fn arg_nonzero_shape[
     var shape = IndexList[2]()
     shape[1] = input_buffer.rank
 
-    var numel = input_buffer.numel()
+    var numel = input_buffer.num_elements()
 
     var j: Int = 0
     for i in range(numel):

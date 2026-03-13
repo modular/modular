@@ -18,7 +18,7 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx_int as block_idx,
-    lane_id,
+    lane_id_int as lane_id,
     thread_idx_int as thread_idx,
     grid_dim,
 )
@@ -44,7 +44,7 @@ from std.collections import OptionalReg
 
 from ....structuring import SMemTile, RegTile, eval
 from ....utils import elementwise_epilogue_type
-from layout import Layout, LayoutTensor, IntTuple, RuntimeLayout
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from layout.swizzle import Swizzle
 from layout._utils import make_amd_buffer_resource, idx2crd
 from .matmul import write_output_fragments
@@ -79,7 +79,7 @@ from .matmul import write_output_fragments
 # =============================================================================
 
 
-fn make_mma_swizzle[dtype: DType, MMA_M: Int, MMA_K: Int]() -> Swizzle:
+def make_mma_swizzle[dtype: DType, MMA_M: Int, MMA_K: Int]() -> Swizzle:
     """Create swizzle pattern for MMA LDS access.
 
     AMD MI355X have 64 LDS banks × 4 bytes each. Without swizzling,
@@ -199,7 +199,7 @@ struct TileLoaderLDS[
     comptime stride = Self.src_layout.shape[1].value()
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         src: LayoutTensor,
         warp_id: Int,
@@ -240,7 +240,7 @@ struct TileLoaderLDS[
         self.thread_col = warp_col * Self.subtile_cols + subtile_col
 
     @always_inline
-    fn load_tile[
+    def load_tile[
         dst_layout: Layout,
         //,
     ](
@@ -283,7 +283,7 @@ struct TileLoaderLDS[
 
 
 @always_inline
-fn _load_from_lds[
+def _load_from_lds[
     dtype: DType,
     //,
     width: Int = 1,
@@ -409,7 +409,7 @@ fn _load_from_lds[
 
 
 @always_inline
-fn load_lds_fragment[
+def load_lds_fragment[
     dtype: DType,
     smem_layout: Layout,
     smem_element_layout: Layout,
@@ -498,7 +498,7 @@ fn load_lds_fragment[
 
     # =========================================================================
 
-    var lane = Int(lane_id())
+    var lane = lane_id()
     # RuntimeLayout wraps compile-time layout for efficient evaluation
     var lane_offset = Int(RuntimeLayout[mma_access_layout]()(lane))
     var frag_ptr = reg_frag.ptr.bitcast[FragElement]()
@@ -555,7 +555,7 @@ struct KernelConfig(ImplicitlyCopyable, Movable, Writable):
     var warp_shape: IndexList[3]
     var mma_shape: IndexList[3]
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         block_shape: IndexList[3],
@@ -567,7 +567,7 @@ struct KernelConfig(ImplicitlyCopyable, Movable, Writable):
         self.mma_shape = mma_shape
 
     @staticmethod
-    fn _write_index_list(
+    def _write_index_list(
         mut writer: Some[Writer], list: IndexList, sep: StaticString
     ):
         comptime for i in range(list.size):
@@ -576,11 +576,11 @@ struct KernelConfig(ImplicitlyCopyable, Movable, Writable):
             writer.write(list[i])
 
     @always_inline
-    fn num_threads(self) -> Int:
+    def num_threads(self) -> Int:
         var num_warps = self.block_shape // self.warp_shape
         return num_warps.flattened_length() * WARP_SIZE
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("config_")
         Self._write_index_list(writer, self.block_shape, "x")
         writer.write("_")
@@ -588,13 +588,8 @@ struct KernelConfig(ImplicitlyCopyable, Movable, Writable):
         writer.write("_")
         Self._write_index_list(writer, self.mma_shape, "x")
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        return String.write(self)
+    def write_repr_to(self, mut writer: Some[Writer]):
+        self.write_to(writer)
 
 
 struct MmaOp[
@@ -747,7 +742,7 @@ struct MmaOp[
     var out_reg_tile: Self.OutRegTile
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize MMA operation with register tiles."""
         comptime assert Self.WM % Self.MMA_M == 0
         comptime assert Self.WN % Self.MMA_N == 0
@@ -761,12 +756,12 @@ struct MmaOp[
         self.out_reg_tile = Self.OutRegTile.stack_allocation().fill(0)
 
     @always_inline
-    fn reset_accumulator(self):
+    def reset_accumulator(self):
         """Reset output register tile to zero."""
         _ = self.out_reg_tile.fill(0)
 
     @always_inline
-    fn load_a[which: Int](self, smem_tile: SMemTile[Self.in_type, ...]):
+    def load_a[which: Int](self, smem_tile: SMemTile[Self.in_type, ...]):
         """Load A[which] from LDS → registers.
 
         Accepts SMemTile with matching dtype - layout compatibility validated
@@ -787,7 +782,7 @@ struct MmaOp[
         ](smem_frag, reg_frag)
 
     @always_inline
-    fn load_b[which: Int](self, smem_tile: SMemTile[Self.in_type, ...]):
+    def load_b[which: Int](self, smem_tile: SMemTile[Self.in_type, ...]):
         """Load B[which] from LDS → registers.
 
         Accepts SMemTile with matching dtype - layout compatibility validated
@@ -808,7 +803,7 @@ struct MmaOp[
         ](smem_frag, reg_frag)
 
     @always_inline
-    fn mma[which_a: Int, which_b: Int](self):
+    def mma[which_a: Int, which_b: Int](self):
         """Execute MMA operations for a quadrant of the output tile.
 
         Accesses quadrant via .tile[] view into the contiguous out_reg_tile.
@@ -1028,7 +1023,7 @@ struct TileBuffers[
     var warp_shift_rows: Int
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         a: LayoutTensor[Self.in_type, Self.a_layout, ...],
         b: LayoutTensor[_, Self.b_layout, ...],
@@ -1133,7 +1128,7 @@ struct TileBuffers[
     # =========================================================================
 
     @always_inline
-    fn load_a[stage: Int, which: Int](self, *, k: Int):
+    def load_a[stage: Int, which: Int](self, *, k: Int):
         """Load A[stage][which] from global to LDS using all 8 warps."""
         self.loader_a.load_tile(
             self.a_load_tiles[stage][which],
@@ -1142,7 +1137,7 @@ struct TileBuffers[
         )
 
     @always_inline
-    fn load_b[stage: Int, which: Int](self, *, k: Int):
+    def load_b[stage: Int, which: Int](self, *, k: Int):
         """Load B[stage][which] from global to LDS using all 8 warps."""
         self.loader_b.load_tile(
             self.b_load_tiles[stage][which],
@@ -1155,7 +1150,7 @@ struct TileBuffers[
     # =========================================================================
 
     @always_inline
-    fn _load_tile_4warp[
+    def _load_tile_4warp[
         half_data_rows: Int,
         which: Int,
     ](
@@ -1208,7 +1203,7 @@ struct TileBuffers[
     # =========================================================================
 
     @always_inline
-    fn load_a_as_group[
+    def load_a_as_group[
         stage: Int,
         target_group: Int,
     ](self, caller_group: Int, *, k: Int):
@@ -1220,7 +1215,7 @@ struct TileBuffers[
         )
 
     @always_inline
-    fn load_b_as_group[
+    def load_b_as_group[
         stage: Int,
         which: Int,
     ](self, caller_group: Int, loading_group: Int, *, k: Int):
@@ -1330,7 +1325,7 @@ struct AMDPingPongMatmul[
     ) // Self.rows_per_iter_4warp  # 4
 
     @staticmethod
-    fn validate_config():
+    def validate_config():
         """Validate the kernel configuration."""
         comptime assert (
             Self.BM % Self.WM == 0
@@ -1363,7 +1358,7 @@ struct AMDPingPongMatmul[
         )
     )
     @staticmethod
-    fn matmul_ping_pong(
+    def matmul_ping_pong(
         a: LayoutTensor[
             Self.a_type,
             Self.a_layout,
@@ -1435,7 +1430,7 @@ struct AMDPingPongMatmul[
 
         # Thread and warp identification
         var thread_id = thread_idx.x
-        var lane_id = Int(lane_id())
+        var lane_id = lane_id()
         var warp_id = readfirstlane(Int(warp_id()))
 
         # Block coordinates from block indices
@@ -1485,11 +1480,11 @@ struct AMDPingPongMatmul[
         )
 
         @always_inline
-        fn s_barrier():
+        def s_barrier():
             llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
 
         @always_inline
-        fn s_setprio[priority: Int16]():
+        def s_setprio[priority: Int16]():
             llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](priority)
 
         # ================================================================
@@ -1519,7 +1514,7 @@ struct AMDPingPongMatmul[
         # Helper to extract compute logic (used by both groups)
         @parameter
         @always_inline
-        fn compute_stage[stage: Int]():
+        def compute_stage[stage: Int]():
             """Execute MMA operations for a given stage with fine-grained lgkmcnt.
 
             Dependencies:
@@ -2103,7 +2098,7 @@ struct AMDPingPongMatmul[
         # Create global memory fragment distributed across threads
         var c_gmem_fragment = c_warp_tile.vectorize[
             1, accum_width
-        ]().distribute[output_thread_layout](UInt(lane_id))
+        ]().distribute[output_thread_layout](lane_id)
 
         # Use shared write_output_fragments function
         write_output_fragments[
@@ -2123,7 +2118,7 @@ struct AMDPingPongMatmul[
 
 
 @always_inline
-fn ping_pong_matmul[
+def ping_pong_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -2155,7 +2150,7 @@ fn ping_pong_matmul[
 
     @always_inline
     @parameter
-    fn run_kernel[config: KernelConfig]() raises:
+    def run_kernel[config: KernelConfig]() raises:
         comptime kernel = AMDPingPongMatmul[
             a_type,
             b_type,

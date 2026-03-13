@@ -17,7 +17,6 @@ from std.sys import argv
 from std.sys.info import simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
-from buffer import NDBuffer
 from std.gpu import WARP_SIZE, lane_id
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
@@ -39,9 +38,11 @@ from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
+from layout import TileTensor, Coord, Idx, row_major
+
 
 @always_inline
-fn block_reduce[
+def block_reduce[
     dtype: DType, max_warps_per_block: Int = 32
 ](val: Scalar[dtype]) -> Scalar[dtype]:
     var m2_shared = stack_allocation[
@@ -79,7 +80,7 @@ fn block_reduce[
     return m2_broadcast[0]
 
 
-fn global_reduction_kernel[
+def global_reduction_kernel[
     dtype: DType,
     accum_type: DType,
     simd_width: Int,
@@ -109,7 +110,7 @@ fn global_reduction_kernel[
 
 
 @__llvm_arg_metadata(descriptor, `nvvm.grid_constant`)
-fn tma_reduction_kernel[
+def tma_reduction_kernel[
     dtype: DType,
     accum_type: DType,
     simd_width: Int,
@@ -191,7 +192,7 @@ def test_tma_block_reduce[
     # Define the kernel launch function for benchmarking
     @parameter
     @always_inline
-    fn kernel_launch(ctx: DeviceContext) raises -> None:
+    def kernel_launch(ctx: DeviceContext) raises -> None:
         comptime if use_tma:
             var tma_desc = create_tma_descriptor[dtype, 2](
                 d_data,
@@ -215,17 +216,18 @@ def test_tma_block_reduce[
                 shared_mem_bytes=shared_mem_bytes,
             )
         else:
-            var shape = Index(rows, cols)
-            var data_buf = NDBuffer[dtype, 2](d_data.unsafe_ptr(), shape)
+            var data_buf = TileTensor(d_data, row_major((Idx(rows), Idx(cols))))
 
             # Change the input function to match RMS norm pattern
             @__copy_capture(data_buf)
             @always_inline
             @parameter
-            fn input_fn_2d[
+            def input_fn_2d[
                 width: Int, _rank: Int
             ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
-                return data_buf.load[width=width](rebind[IndexList[2]](idx))
+                var coord = Coord(idx)
+                comptime assert coord.flat_rank == 2
+                return data_buf.load[width=width](coord)
 
             comptime kernel = global_reduction_kernel[
                 dtype,

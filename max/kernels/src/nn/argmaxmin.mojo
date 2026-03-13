@@ -25,7 +25,7 @@ from std.math.math import min as _min
 from layout import TileTensor
 
 
-fn _argn[
+def _argn[
     is_max: Bool
 ](input: TileTensor, axis: Int, output: TileTensor[mut=True, ...]) raises:
     """
@@ -69,8 +69,8 @@ fn _argn[
     var parallel_size = 1
 
     comptime if rank == 1:
-        input_stride = input.numel()
-        output_stride = output.numel()
+        input_stride = input.num_elements()
+        output_stride = output.num_elements()
         chunk_size = 1
     else:
         input_stride = Int(input.dynamic_stride(canonical_axis - 1))
@@ -81,7 +81,7 @@ fn _argn[
 
         # don't over-schedule if parallel_size < _get_num_workers output
         var num_workers = _min(
-            _get_num_workers(input.numel()),
+            _get_num_workers(input.num_elements()),
             parallel_size,
         )
         chunk_size = ceildiv(parallel_size, num_workers)
@@ -90,10 +90,10 @@ fn _argn[
         axis_size, chunk_size, output_stride, input_stride, parallel_size
     )
     @parameter
-    fn task_func(task_id: Int):
+    def task_func(task_id: Int):
         @parameter
         @always_inline
-        fn cmpeq[
+        def cmpeq[
             dtype: DType, simd_width: Int
         ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
@@ -105,7 +105,7 @@ fn _argn[
 
         @parameter
         @always_inline
-        fn cmp[
+        def cmp[
             dtype: DType, simd_width: Int
         ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
@@ -182,7 +182,7 @@ fn _argn[
 # ===-----------------------------------------------------------------------===#
 
 
-fn argmax(
+def argmax(
     input: TileTensor,
     axis: Int,
     output: TileTensor[mut=True, ...],
@@ -199,7 +199,7 @@ fn argmax(
     _argn[is_max=True](input, axis, output)
 
 
-fn argmax(
+def argmax(
     input: TileTensor,
     axis_buf: TileTensor,
     output: TileTensor[mut=True, ...],
@@ -221,7 +221,7 @@ fn argmax(
 # ===-----------------------------------------------------------------------===#
 
 
-fn argmin(
+def argmin(
     input: TileTensor,
     axis: Int,
     output: TileTensor[mut=True, ...],
@@ -238,7 +238,7 @@ fn argmin(
     _argn[is_max=False](input, axis, output)
 
 
-fn argmin(
+def argmin(
     input: TileTensor,
     axis_buf: TileTensor,
     output: TileTensor[mut=True, ...],

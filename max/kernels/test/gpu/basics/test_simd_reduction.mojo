@@ -45,7 +45,7 @@ def test_simd_reduction(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(input_buffer, input_host)
 
-    fn kernel(
+    def kernel(
         output: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
         input: UnsafePointer[Scalar[DType.int], ImmutAnyOrigin],
     ):

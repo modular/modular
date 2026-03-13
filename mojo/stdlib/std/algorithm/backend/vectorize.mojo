@@ -22,7 +22,7 @@ from std.math import align_down
 
 
 @always_inline
-fn vectorize[
+def vectorize[
     func: fn[width: Int](idx: Int) unified -> None,
     //,
     simd_width: Int,
@@ -56,10 +56,10 @@ fn vectorize[
     # How many Dtype.int32 elements fit into the SIMD register (4 on 128bit)
     comptime simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
 
-    fn main():
+    def main():
         var p = alloc[Int32](size)
 
-        fn closure[width: Int](i: Int) unified {mut}:
+        def closure[width: Int](i: Int) unified {mut}:
             print("storing", width, "els at pos", i)
             p.store[width=width](i, i)
 
@@ -126,7 +126,7 @@ fn vectorize[
 
 
 @always_inline
-fn vectorize[
+def vectorize[
     func: fn[width: Int](idx: Int, evl: Int) unified -> None,
     //,
     simd_width: Int,
@@ -170,10 +170,10 @@ fn vectorize[
     comptime size = 10
     comptime simd_width = simd_width_of[DType.int32]()  # assumed 4 in this example
 
-    fn main():
+    def main():
         var p = alloc[Int32](size)
 
-        fn closure[width: Int](i: Int, evl: Int) unified {mut}:
+        def closure[width: Int](i: Int, evl: Int) unified {mut}:
             print("storing", evl, "of", width, "els at pos", i)
             var val = SIMD[DType.int32, width](i)
 
@@ -252,14 +252,14 @@ fn vectorize[
 
 
 @always_inline
-fn vectorize[
+def vectorize[
     func: fn[width: Int](idx: Int) unified -> None,
     //,
     simd_width: Int,
     /,
     *,
     size: Int,
-    unroll_factor: Int = size if sys.is_gpu() else 1,
+    unroll_factor: Int = size if std.sys.is_gpu() else 1,
 ](closure: func):
     """Simplifies SIMD optimized loops by mapping a function across a range from
     0 to `size`, incrementing by `simd_width` at each step. The remainder of
@@ -288,11 +288,11 @@ fn vectorize[
     # How many Dtype.int32 elements fit into the SIMD register (4 on 128bit)
     comptime simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
 
-    fn main():
+    def main():
         var p = UnsafePointer[Int32].alloc(size)
 
         # The closure can capture the `p` pointer with unified {mut}
-        fn closure[width: Int](i: Int) unified {mut}:
+        def closure[width: Int](i: Int) unified {mut}:
             print("storing", width, "els at pos", i)
             p.store[width=width](i, i)
 

@@ -13,7 +13,6 @@
 
 from std.sys import size_of
 
-from buffer import DimList, NDBuffer
 from std.gpu import barrier, block_dim, block_idx, thread_idx
 from std.gpu.primitives.cluster import (
     cluster_sync,
@@ -35,9 +34,11 @@ from std.testing import assert_almost_equal
 
 from std.utils.static_tuple import StaticTuple
 
+from layout import TileTensor, row_major
+
 
 # Derived from https://docs.nvidia.com/cuda/cuda-c-programming-guide/#kernel-example-vector-scalar-multiplication
-fn cluster_launch_control(data: UnsafePointer[Float32, MutAnyOrigin], n: Int):
+def cluster_launch_control(data: UnsafePointer[Float32, MutAnyOrigin], n: Int):
     result = stack_allocation[
         1,
         UInt128,
@@ -100,7 +101,7 @@ fn cluster_launch_control(data: UnsafePointer[Float32, MutAnyOrigin], n: Int):
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
-fn pipeline_test_kernel[
+def pipeline_test_kernel[
     num_stages: Int, cluster_shape: StaticTuple[Int32, 3]
 ]():
     var clc_response = stack_allocation[
@@ -192,7 +193,7 @@ fn pipeline_test_kernel[
     cluster_sync()
 
 
-fn test_cluster_launch_control(ctx: DeviceContext) raises:
+def test_cluster_launch_control(ctx: DeviceContext) raises:
     comptime n = 4000
 
     data = ctx.enqueue_create_buffer[DType.float32](n)
@@ -206,7 +207,7 @@ fn test_cluster_launch_control(ctx: DeviceContext) raises:
     )
 
     var data_host_ptr = alloc[Float32](n)
-    var data_host = NDBuffer[DType.float32, 1, _, DimList(n)](data_host_ptr)
+    var data_host = TileTensor(data_host_ptr, row_major[n]())
 
     ctx.enqueue_copy(data_host_ptr, data)
     ctx.synchronize()
@@ -214,11 +215,8 @@ fn test_cluster_launch_control(ctx: DeviceContext) raises:
     for i in range(n):
         assert_almost_equal(data_host[i], Float32(i % 1024))
 
-    _ = data
-    _ = data_host
 
-
-fn test_cluster_pipeline(ctx: DeviceContext) raises:
+def test_cluster_pipeline(ctx: DeviceContext) raises:
     comptime kernel = pipeline_test_kernel[1, StaticTuple[Int32, 3](2, 2, 1)]
     ctx.enqueue_function[kernel, kernel](
         # Use more blocks than SMs to ensure cancel happens.

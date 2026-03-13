@@ -24,7 +24,6 @@ from std.sys import (
     bit_width_of,
     is_amd_gpu,
     is_apple_gpu,
-    is_run_in_comptime_interpreter,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
@@ -53,7 +52,7 @@ from .polynomial import polynomial_evaluate
 
 
 @always_inline
-fn floor[T: Floorable, //](value: T) -> T:
+def floor[T: Floorable, //](value: T) -> T:
     """Get the floor value of the given object.
 
     Parameters:
@@ -74,7 +73,7 @@ fn floor[T: Floorable, //](value: T) -> T:
 
 
 @always_inline
-fn ceil[T: Ceilable, //](value: T) -> T:
+def ceil[T: Ceilable, //](value: T) -> T:
     """Get the ceiling value of the given object.
 
     Parameters:
@@ -95,7 +94,7 @@ fn ceil[T: Ceilable, //](value: T) -> T:
 
 
 @always_inline
-fn ceildiv[T: CeilDivable, //](numerator: T, denominator: T) -> T:
+def ceildiv[T: CeilDivable, //](numerator: T, denominator: T) -> T:
     """Return the rounded-up result of dividing numerator by denominator.
 
     Parameters:
@@ -112,7 +111,9 @@ fn ceildiv[T: CeilDivable, //](numerator: T, denominator: T) -> T:
 
 
 @always_inline
-fn ceildiv[T: CeilDivableRaising, //](numerator: T, denominator: T) raises -> T:
+def ceildiv[
+    T: CeilDivableRaising, //
+](numerator: T, denominator: T) raises -> T:
     """Return the rounded-up result of dividing numerator by denominator, potentially raising.
 
     Parameters:
@@ -134,7 +135,7 @@ fn ceildiv[T: CeilDivableRaising, //](numerator: T, denominator: T) raises -> T:
 # NOTE: this overload is needed because IntLiteral promotes to a runtime type
 # before overload resolution.
 @always_inline("builtin")
-fn ceildiv(
+def ceildiv(
     numerator: IntLiteral, denominator: IntLiteral
 ) -> type_of(numerator.__ceildiv__(denominator)):
     """Return the rounded-up result of dividing numerator by denominator.
@@ -155,7 +156,7 @@ fn ceildiv(
 
 
 @always_inline
-fn trunc[T: Truncable, //](value: T) -> T:
+def trunc[T: Truncable, //](value: T) -> T:
     """Get the truncated value of the given object.
 
     Parameters:
@@ -176,7 +177,7 @@ fn trunc[T: Truncable, //](value: T) -> T:
 
 
 @always_inline
-fn sqrt(x: Int) -> Int:
+def sqrt(x: Int) -> Int:
     """Performs square root on an integer.
 
     Args:
@@ -201,7 +202,7 @@ fn sqrt(x: Int) -> Int:
 
 
 @always_inline
-fn _sqrt_nvvm(x: SIMD, out res: type_of(x)):
+def _sqrt_nvvm(x: SIMD, out res: type_of(x)):
     comptime assert x.dtype in (
         DType.float32,
         DType.float64,
@@ -214,7 +215,7 @@ fn _sqrt_nvvm(x: SIMD, out res: type_of(x)):
 
 
 @always_inline
-fn sqrt[
+def sqrt[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Performs elementwise square root on the elements of a SIMD vector.
@@ -257,7 +258,7 @@ fn sqrt[
 
 
 @always_inline
-fn _rsqrt_nvvm(x: SIMD, out res: type_of(x)):
+def _rsqrt_nvvm(x: SIMD, out res: type_of(x)):
     comptime assert x.dtype in (
         DType.float32,
         DType.float64,
@@ -271,7 +272,7 @@ fn _rsqrt_nvvm(x: SIMD, out res: type_of(x)):
 
 
 @always_inline
-fn rsqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+def rsqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Performs elementwise reciprocal square root on a SIMD vector.
 
     Parameters:
@@ -312,7 +313,7 @@ fn rsqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 
 
 @always_inline
-fn _recip_nvvm(x: SIMD, out res: type_of(x)):
+def _recip_nvvm(x: SIMD, out res: type_of(x)):
     comptime assert x.dtype in (
         DType.float32,
         DType.float64,
@@ -326,7 +327,7 @@ fn _recip_nvvm(x: SIMD, out res: type_of(x)):
 
 
 @always_inline
-fn recip[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+def recip[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Performs elementwise reciprocal on a SIMD vector.
 
     Parameters:
@@ -365,7 +366,7 @@ fn recip[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 
 
 @always_inline
-fn exp2[
+def exp2[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Computes elementwise 2 raised to the power of n, where n is an element
@@ -425,7 +426,7 @@ fn exp2[
 
 
 @always_inline
-fn _exp2_float32(x: SIMD[DType.float32, _]) -> type_of(x):
+def _exp2_float32(x: SIMD[DType.float32, _]) -> type_of(x):
     comptime u32 = DType.uint32
     var xc = x.clamp(-126, 126)
     var m = xc.cast[DType.int32]()
@@ -458,7 +459,7 @@ fn _exp2_float32(x: SIMD[DType.float32, _]) -> type_of(x):
 
 
 @always_inline
-fn _ldexp_impl[
+def _ldexp_impl[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width], exp: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes elementwise ldexp function.
@@ -520,9 +521,11 @@ fn _ldexp_impl[
 
 
 @always_inline
-fn ldexp[
+def ldexp[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width], exp: SIMD[DType.int32, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width], exp: SIMD[DType.int32, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     """Computes elementwise ldexp function.
 
     The ldexp function multiplies a floating point value x by the number 2
@@ -540,10 +543,6 @@ fn ldexp[
     Returns:
         Vector containing elementwise result of ldexp on x and exp.
     """
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
-
     return _ldexp_impl(x, exp.cast[dtype]())
 
 
@@ -555,7 +554,7 @@ fn ldexp[
 trait _Expable:
     """Trait for types that support the exp function."""
 
-    fn __exp__(self) -> Self:
+    def __exp__(self) -> Self:
         """Computes the exponential of the input value.
 
         Returns:
@@ -565,7 +564,7 @@ trait _Expable:
 
 
 @always_inline
-fn _exp_taylor[
+def _exp_taylor[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     comptime coefficients = [
@@ -589,7 +588,7 @@ fn _exp_taylor[
 
 
 @always_inline
-fn exp[
+def exp[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Calculates elementwise exponential of the input vector.
@@ -639,7 +638,7 @@ fn exp[
 
 
 @always_inline
-fn exp[T: _Expable](x: T) -> T:
+def exp[T: _Expable](x: T) -> T:
     """Computes the exponential of the input value.
 
     Parameters:
@@ -655,7 +654,7 @@ fn exp[T: _Expable](x: T) -> T:
 
 
 @always_inline
-fn _exp2_approx_f32[
+def _exp2_approx_f32[
     W: Int
 ](x: SIMD[DType.float32, W]) -> SIMD[DType.float32, W]:
     """Computes a fast approximation of 2^x using a fused analytic (FA-4)
@@ -749,7 +748,7 @@ fn _exp2_approx_f32[
 
 # ---------- e^x helpers ----------
 @always_inline
-fn exp_approx_f32[W: Int](x: SIMD[DType.float32, W]) -> SIMD[DType.float32, W]:
+def exp_approx_f32[W: Int](x: SIMD[DType.float32, W]) -> SIMD[DType.float32, W]:
     """Computes a fast approximate e^x for SIMD vectors of 32-bit floats
     using the base-2 approximation as a backend.
 
@@ -780,7 +779,7 @@ fn exp_approx_f32[W: Int](x: SIMD[DType.float32, W]) -> SIMD[DType.float32, W]:
 
 
 @always_inline
-fn _frexp_mask1[
+def _frexp_mask1[
     dtype: DType, width: Int
 ]() -> SIMD[_integral_type_of[dtype](), width]:
     comptime if dtype == DType.float16:
@@ -795,7 +794,7 @@ fn _frexp_mask1[
 
 
 @always_inline
-fn _frexp_mask2[
+def _frexp_mask2[
     dtype: DType, width: Int
 ]() -> SIMD[_integral_type_of[dtype](), width]:
     comptime if dtype == DType.float16:
@@ -810,9 +809,11 @@ fn _frexp_mask2[
 
 
 @always_inline
-fn frexp[
+def frexp[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width]) -> StaticTuple[SIMD[dtype, width], 2]:
+](x: SIMD[dtype, width]) -> StaticTuple[
+    SIMD[dtype, width], 2
+] where dtype.is_floating_point():
     """Breaks floating point values into a fractional part and an exponent part.
     This follows C and Python in increasing the exponent by 1 and normalizing the
     fraction from 0.5 to 1.0 instead of 1.0 to 2.0.
@@ -832,7 +833,6 @@ fn frexp[
         of the input floating point values.
     """
     # Based on the implementation in boost/simd/arch/common/simd/function/ifrexp.hpp
-    comptime assert dtype.is_floating_point(), "must be a floating point value"
 
     comptime T = SIMD[dtype, width]
     comptime zero = T(0)
@@ -860,9 +860,9 @@ fn frexp[
 
 
 @always_inline
-fn _log_base[
+def _log_base[
     dtype: DType, width: Int, //, base: Int
-](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Performs elementwise log of a SIMD vector with a specific base.
 
     Parameters:
@@ -918,7 +918,7 @@ fn _log_base[
 
 
 @always_inline
-fn log[
+def log[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Performs elementwise natural log (base E) of a SIMD vector.
@@ -937,7 +937,7 @@ fn log[
     comptime if size_of[dtype]() < size_of[DType.float32]():
         return log(x.cast[DType.float32]()).cast[dtype]()
 
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         return _log_base[27](x)
 
     comptime if is_nvidia_gpu() and dtype == DType.float32:
@@ -958,7 +958,7 @@ fn log[
 
 
 @always_inline
-fn log2[
+def log2[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Performs elementwise log (base 2) of a SIMD vector.
@@ -974,7 +974,7 @@ fn log2[
         Vector containing result of performing log base 2 on x.
     """
 
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         comptime if size_of[dtype]() < size_of[DType.float32]():
             return log2(x.cast[DType.float32]()).cast[dtype]()
 
@@ -1000,7 +1000,7 @@ fn log2[
 
 
 @always_inline
-fn copysign[
+def copysign[
     dtype: DType, width: Int, //
 ](magnitude: SIMD[dtype, width], sign: SIMD[dtype, width]) -> SIMD[
     dtype, width
@@ -1040,7 +1040,7 @@ fn copysign[
 
 
 @always_inline
-fn erf[
+def erf[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Performs the elementwise Erf on a SIMD vector.
@@ -1096,7 +1096,7 @@ fn erf[
 
 
 @always_inline
-fn tanh[
+def tanh[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Performs elementwise evaluation of the tanh function.
@@ -1186,7 +1186,7 @@ fn tanh[
 
 
 @always_inline
-fn isclose[
+def isclose[
     dtype: DType,
     width: Int,
     *,
@@ -1257,7 +1257,7 @@ fn isclose[
 
 
 @always_inline
-fn iota[
+def iota[
     dtype: DType, width: Int
 ](offset: Scalar[dtype] = 0) -> SIMD[dtype, width]:
     """Creates a SIMD vector containing an increasing sequence, starting from
@@ -1279,7 +1279,7 @@ fn iota[
 
     comptime step_dtype = dtype if dtype.is_integral() else DType.int
     var step: SIMD[step_dtype, width]
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         step = 0
 
         comptime for i in range(width):
@@ -1291,7 +1291,7 @@ fn iota[
     return step.cast[dtype]() + offset
 
 
-fn iota[
+def iota[
     dtype: DType, //
 ](
     buff: UnsafePointer[mut=True, Scalar[dtype], _, address_space=_],
@@ -1313,13 +1313,13 @@ fn iota[
     """
 
     @always_inline
-    fn fill[width: Int](i: Int) unified {var offset, var buff}:
+    def fill[width: Int](i: Int) unified {var offset, var buff}:
         buff.store(i, iota[dtype, width](Scalar[dtype](offset + i)))
 
     vectorize[simd_width_of[dtype]()](len, fill)
 
 
-fn iota[dtype: DType, //](mut v: List[Scalar[dtype], ...], offset: Int = 0):
+def iota[dtype: DType, //](mut v: List[Scalar[dtype], ...], offset: Int = 0):
     """Fill a list with consecutive numbers starting from the specified offset.
 
     Parameters:
@@ -1332,7 +1332,7 @@ fn iota[dtype: DType, //](mut v: List[Scalar[dtype], ...], offset: Int = 0):
     iota(v.unsafe_ptr(), len(v), offset)
 
 
-fn iota(mut v: List[Int, ...], offset: Int = 0):
+def iota(mut v: List[Int, ...], offset: Int = 0):
     """Fill a list with consecutive numbers starting from the specified offset.
 
     Args:
@@ -1349,7 +1349,7 @@ fn iota(mut v: List[Int, ...], offset: Int = 0):
 
 
 @always_inline
-fn fma(a: Int, b: Int, c: Int) -> Int:
+def fma(a: Int, b: Int, c: Int) -> Int:
     """Performs `fma` (fused multiply-add) on the inputs.
 
     The result is `(a * b) + c`.
@@ -1366,7 +1366,7 @@ fn fma(a: Int, b: Int, c: Int) -> Int:
 
 
 @always_inline("nodebug")
-fn fma[
+def fma[
     dtype: DType, width: Int, //
 ](
     a: SIMD[dtype, width],
@@ -1401,7 +1401,7 @@ fn fma[
 
 
 @always_inline
-fn align_down(value: Int, alignment: Int) -> Int:
+def align_down(value: Int, alignment: Int) -> Int:
     """Returns the closest multiple of alignment that is less than or equal to
     value.
 
@@ -1418,7 +1418,7 @@ fn align_down(value: Int, alignment: Int) -> Int:
 
 
 @always_inline
-fn align_down(value: UInt, alignment: UInt) -> UInt:
+def align_down(value: UInt, alignment: UInt) -> UInt:
     """Returns the closest multiple of alignment that is less than or equal to
     value.
 
@@ -1440,7 +1440,7 @@ fn align_down(value: UInt, alignment: UInt) -> UInt:
 
 
 @always_inline
-fn align_up(value: Int, alignment: Int) -> Int:
+def align_up(value: Int, alignment: Int) -> Int:
     """Returns the closest multiple of alignment that is greater than or equal
     to value.
 
@@ -1457,7 +1457,7 @@ fn align_up(value: Int, alignment: Int) -> Int:
 
 
 @always_inline
-fn align_up(value: UInt, alignment: UInt) -> UInt:
+def align_up(value: UInt, alignment: UInt) -> UInt:
     """Returns the closest multiple of alignment that is greater than or equal
     to value.
 
@@ -1478,7 +1478,7 @@ fn align_up(value: UInt, alignment: UInt) -> UInt:
 # ===----------------------------------------------------------------------=== #
 
 
-fn acos[
+def acos[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `acos` of the inputs.
@@ -1555,7 +1555,7 @@ fn acos[
 # ===----------------------------------------------------------------------=== #
 
 
-fn asin[
+def asin[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `asin` of the inputs.
@@ -1626,7 +1626,7 @@ fn asin[
 # ===----------------------------------------------------------------------=== #
 
 
-fn atan[
+def atan[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `atan` of the inputs.
@@ -1653,7 +1653,7 @@ fn atan[
 # ===----------------------------------------------------------------------=== #
 
 
-fn atan2[
+def atan2[
     dtype: DType, width: Int, //
 ](y: SIMD[dtype, width], x: SIMD[dtype, width]) -> SIMD[
     dtype, width
@@ -1677,14 +1677,14 @@ fn atan2[
 
     @always_inline("nodebug")
     @parameter
-    fn _float32_dispatch[
+    def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["atan2f", Scalar[result_type]](arg0, arg1)
 
     @always_inline("nodebug")
     @parameter
-    fn _float64_dispatch[
+    def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["atan2", Scalar[result_type]](arg0, arg1)
@@ -1700,7 +1700,7 @@ fn atan2[
 # ===----------------------------------------------------------------------=== #
 
 
-fn cos[
+def cos[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Computes the `cos` of the inputs.
@@ -1722,7 +1722,7 @@ fn cos[
     comptime if size_of[dtype]() < size_of[DType.float32]():
         return cos(x.cast[DType.float32]()).cast[dtype]()
 
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         return _llvm_unary_fn["llvm.cos"](x)
 
     comptime if is_nvidia_gpu() and dtype == DType.float32:
@@ -1743,7 +1743,7 @@ fn cos[
 # ===----------------------------------------------------------------------=== #
 
 
-fn sin[
+def sin[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Computes the `sin` of the inputs.
@@ -1765,7 +1765,7 @@ fn sin[
     comptime if size_of[dtype]() < size_of[DType.float32]():
         return sin(x.cast[DType.float32]()).cast[dtype]()
 
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         return _llvm_unary_fn["llvm.sin"](x)
 
     comptime if is_nvidia_gpu() and dtype == DType.float32:
@@ -1786,7 +1786,7 @@ fn sin[
 # ===----------------------------------------------------------------------=== #
 
 
-fn tan[
+def tan[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `tan` of the inputs.
@@ -1813,7 +1813,7 @@ fn tan[
 # ===----------------------------------------------------------------------=== #
 
 
-fn acosh[
+def acosh[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `acosh` of the inputs.
@@ -1840,7 +1840,7 @@ fn acosh[
 # ===----------------------------------------------------------------------=== #
 
 
-fn asinh[
+def asinh[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `asinh` of the inputs.
@@ -1867,7 +1867,7 @@ fn asinh[
 # ===----------------------------------------------------------------------=== #
 
 
-fn _atanh_float32(x: SIMD) -> type_of(x) where x.dtype.is_floating_point():
+def _atanh_float32(x: SIMD) -> type_of(x) where x.dtype.is_floating_point():
     """This computes the `atanh` of the inputs for float32. It uses the same
     approximation used by Eigen library."""
 
@@ -1911,7 +1911,7 @@ fn _atanh_float32(x: SIMD) -> type_of(x) where x.dtype.is_floating_point():
 
 
 @always_inline
-fn atanh[
+def atanh[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `atanh` of the inputs.
@@ -1947,7 +1947,7 @@ fn atanh[
 # ===----------------------------------------------------------------------=== #
 
 
-fn cosh[
+def cosh[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `cosh` of the inputs.
@@ -1981,7 +1981,7 @@ fn cosh[
 # ===----------------------------------------------------------------------=== #
 
 
-fn sinh[
+def sinh[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `sinh` of the inputs.
@@ -2026,7 +2026,7 @@ fn sinh[
 
 
 @always_inline
-fn _expm1_float32[width: Int, //](d: SIMD[DType.float32, width]) -> type_of(d):
+def _expm1_float32[width: Int, //](d: SIMD[DType.float32, width]) -> type_of(d):
     # Constants for range reduction
     # R_LN2f = 1/ln(2) for converting to base-2 exponent
     comptime R_LN2f = 1.442695040888963407359924681  # 1/ln(2)
@@ -2077,7 +2077,7 @@ fn _expm1_float32[width: Int, //](d: SIMD[DType.float32, width]) -> type_of(d):
 
 
 @always_inline
-fn expm1[
+def expm1[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `expm1` of the inputs.
@@ -2110,7 +2110,7 @@ fn expm1[
 # ===----------------------------------------------------------------------=== #
 
 
-fn log10[
+def log10[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `log10` of the inputs.
@@ -2155,7 +2155,7 @@ fn log10[
 
 
 @always_inline
-fn _log1p_f64[width: Int, //](x: SIMD[DType.float64, width]) -> type_of(x):
+def _log1p_f64[width: Int, //](x: SIMD[DType.float64, width]) -> type_of(x):
     # This uses the approximation from cephes to compute log1p via the approximation
     # log(1+x) = x - x**2/2 + x**3 P(x)/Q(x)
     # in the domain 1/sqrt(2) <= x < sqrt(2)
@@ -2198,7 +2198,7 @@ fn _log1p_f64[width: Int, //](x: SIMD[DType.float64, width]) -> type_of(x):
     return in_domain_mask.select(log1x, x + z)
 
 
-fn log1p[
+def log1p[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `log1p` of the inputs.
@@ -2227,7 +2227,7 @@ fn log1p[
 # ===----------------------------------------------------------------------=== #
 
 
-fn logb[
+def logb[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `logb` of the inputs.
@@ -2254,7 +2254,7 @@ fn logb[
 # ===----------------------------------------------------------------------=== #
 
 
-fn _ilogb[
+def _ilogb[
     width: Int
 ](x: SIMD[DType.float32, width]) -> SIMD[DType.int32, width]:
     """Extract binary exponent from floating-point number.
@@ -2267,7 +2267,7 @@ fn _ilogb[
     """
 
     @always_inline
-    fn extract(x: SIMD[DType.float32, width]) -> SIMD[DType.int32, width]:
+    def extract(x: SIMD[DType.float32, width]) -> SIMD[DType.int32, width]:
         """Internal helper function to extract binary exponent from float.
 
         Args:
@@ -2325,7 +2325,7 @@ fn _ilogb[
     return e
 
 
-fn _cbrtf(x: Float32) -> Float32:
+def _cbrtf(x: Float32) -> Float32:
     """Compute the cube root of a 32-bit floating-point number.
 
     This function implements an efficient algorithm for computing the cube root (∛x)
@@ -2415,7 +2415,7 @@ fn _cbrtf(x: Float32) -> Float32:
     return y
 
 
-fn cbrt[
+def cbrt[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `cbrt` of the inputs.
@@ -2453,9 +2453,11 @@ fn cbrt[
 
 
 # TODO: implement for variadic inputs as Python.
-fn hypot[
+def hypot[
     dtype: DType, width: Int, //
-](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     """Computes the `hypot` of the inputs.
 
     Constraints:
@@ -2472,27 +2474,20 @@ fn hypot[
     Returns:
         The `hypot` of the inputs.
     """
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @always_inline("nodebug")
     @parameter
-    fn _float32_dispatch[
+    def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["hypotf", Scalar[result_type]](arg0, arg1)
 
     @always_inline("nodebug")
     @parameter
-    fn _float64_dispatch[
+    def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["hypot", Scalar[result_type]](arg0, arg1)
-
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     comptime if dtype == DType.float64:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](arg0, arg1)
@@ -2504,7 +2499,7 @@ fn hypot[
 # ===----------------------------------------------------------------------=== #
 
 
-fn _erfcf(x: Float32) -> Float32:
+def _erfcf(x: Float32) -> Float32:
     """Fast single-precision complementary error function (erfc) approximation.
 
     The complementary error function is defined as:
@@ -2628,7 +2623,7 @@ fn _erfcf(x: Float32) -> Float32:
     return result
 
 
-fn erfc[
+def erfc[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `erfc` of the inputs.
@@ -2665,7 +2660,9 @@ fn erfc[
 # ===----------------------------------------------------------------------=== #
 
 
-fn lgamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+def lgamma[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `lgamma` of the inputs.
 
     Constraints:
@@ -2681,9 +2678,6 @@ fn lgamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `lgamma` of the input.
     """
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     return _call_libm["lgamma"](x)
 
@@ -2693,7 +2687,9 @@ fn lgamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn gamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+def gamma[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the Gamma of the input.
 
     For details, see https://en.wikipedia.org/wiki/Gamma_function.
@@ -2711,9 +2707,6 @@ fn gamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The Gamma function evaluated at the input.
     """
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     return _call_libm["tgamma"](x)
 
@@ -2723,9 +2716,11 @@ fn gamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn remainder[
+def remainder[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     """Computes the `remainder` of the inputs.
 
     Constraints:
@@ -2743,13 +2738,9 @@ fn remainder[
         The `remainder` of the inputs.
     """
 
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
-
     @always_inline("nodebug")
     @parameter
-    fn _float32_dispatch[
+    def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["remainderf", Scalar[result_type]](
@@ -2758,16 +2749,12 @@ fn remainder[
 
     @always_inline("nodebug")
     @parameter
-    fn _float64_dispatch[
+    def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["remainder", Scalar[result_type]](
             arg0, arg1
         )
-
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     comptime if dtype == DType.float64:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](x, y)
@@ -2779,7 +2766,7 @@ fn remainder[
 # ===----------------------------------------------------------------------=== #
 
 
-fn j0[
+def j0[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the Bessel function of the first kind of order 0 for each input
@@ -2807,7 +2794,7 @@ fn j0[
 # ===----------------------------------------------------------------------=== #
 
 
-fn j1[
+def j1[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the Bessel function of the first kind of order 1 for each input
@@ -2835,7 +2822,7 @@ fn j1[
 # ===----------------------------------------------------------------------=== #
 
 
-fn y0[
+def y0[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the Bessel function of the second kind of order 0 for each input
@@ -2863,7 +2850,7 @@ fn y0[
 # ===----------------------------------------------------------------------=== #
 
 
-fn y1[
+def y1[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the Bessel function of the second kind of order 1 for each input
@@ -2891,9 +2878,11 @@ fn y1[
 # ===----------------------------------------------------------------------=== #
 
 
-fn scalb[
+def scalb[
     dtype: DType, width: Int, //
-](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     """Computes the `scalb` of the inputs.
 
     Constraints:
@@ -2910,27 +2899,20 @@ fn scalb[
     Returns:
         The `scalb` of the inputs.
     """
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @always_inline("nodebug")
     @parameter
-    fn _float32_dispatch[
+    def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["scalbf", Scalar[result_type]](arg0, arg1)
 
     @always_inline("nodebug")
     @parameter
-    fn _float64_dispatch[
+    def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["scalb", Scalar[result_type]](arg0, arg1)
-
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     comptime if dtype == DType.float64:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](arg0, arg1)
@@ -2942,7 +2924,7 @@ fn scalb[
 # ===----------------------------------------------------------------------=== #
 
 
-fn gcd(m: Int, n: Int, /) -> Int:
+def gcd(m: Int, n: Int, /) -> Int:
     """Compute the greatest common divisor of two integers.
 
     Args:
@@ -2973,7 +2955,7 @@ fn gcd(m: Int, n: Int, /) -> Int:
     return u << shift
 
 
-fn gcd(s: Span[Int, _], /) -> Int:
+def gcd(s: Span[Int, _], /) -> Int:
     """Computes the greatest common divisor of a span of integers.
 
     Args:
@@ -2993,7 +2975,7 @@ fn gcd(s: Span[Int, _], /) -> Int:
 
 
 @always_inline
-fn gcd(l: List[Int, ...], /) -> Int:
+def gcd(l: List[Int, ...], /) -> Int:
     """Computes the greatest common divisor of a list of integers.
 
     Args:
@@ -3005,7 +2987,7 @@ fn gcd(l: List[Int, ...], /) -> Int:
     return gcd(Span(l))
 
 
-fn gcd(*values: Int) -> Int:
+def gcd(*values: Int) -> Int:
     """Computes the greatest common divisor of a variadic number of integers.
 
     Args:
@@ -3030,7 +3012,7 @@ fn gcd(*values: Int) -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn lcm(m: Int, n: Int, /) -> Int:
+def lcm(m: Int, n: Int, /) -> Int:
     """Computes the least common multiple of two integers.
 
     Args:
@@ -3045,7 +3027,7 @@ fn lcm(m: Int, n: Int, /) -> Int:
     return 0
 
 
-fn lcm(s: Span[Int, _], /) -> Int:
+def lcm(s: Span[Int, _], /) -> Int:
     """Computes the least common multiple of a span of integers.
 
     Args:
@@ -3064,7 +3046,7 @@ fn lcm(s: Span[Int, _], /) -> Int:
 
 
 @always_inline
-fn lcm(l: List[Int, ...], /) -> Int:
+def lcm(l: List[Int, ...], /) -> Int:
     """Computes the least common multiple of a list of integers.
 
     Args:
@@ -3076,7 +3058,7 @@ fn lcm(l: List[Int, ...], /) -> Int:
     return lcm(Span(l))
 
 
-fn lcm(*values: Int) -> Int:
+def lcm(*values: Int) -> Int:
     """Computes the least common multiple of a variadic list of integers.
 
     Args:
@@ -3100,7 +3082,7 @@ fn lcm(*values: Int) -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn modf[
+def modf[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> Tuple[type_of(x), type_of(x)]:
     """Computes the integral and fractional part of the value.
@@ -3124,9 +3106,9 @@ fn modf[
 
 
 @always_inline
-fn ulp[
+def ulp[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Computes the ULP (units of last place) or (units of least precision) of
     the number.
 
@@ -3143,8 +3125,6 @@ fn ulp[
     Returns:
         The ULP of x.
     """
-
-    comptime assert dtype.is_floating_point(), "the type must be floating point"
 
     var nan_mask = isnan(x)
     var xabs = abs(x)
@@ -3169,7 +3149,7 @@ fn ulp[
 
 # TODO: implement for IntLiteral
 @always_inline
-fn factorial(n: Int) -> Int:
+def factorial(n: Int) -> Int:
     """Computes the factorial of the integer.
 
     Args:
@@ -3207,12 +3187,90 @@ fn factorial(n: Int) -> Int:
     return table[n]
 
 
+def comb(n: Int, k: Int) -> Int:
+    """Computes the number of ways to choose `k` items from `n` items without
+    repetition and without order (binomial coefficient).
+
+    Equivalent to Python's `math.comb(n, k)`.
+
+    Args:
+        n: The total number of items. Must be non-negative.
+        k: The number of items to choose. Must be non-negative.
+
+    Returns:
+        The binomial coefficient C(n, k). Returns 0 if `k > n`. Asserts if
+        either argument is negative.
+
+    Examples:
+
+    ```mojo
+    from std.math import comb
+    print(comb(5, 2))  # 10
+    print(comb(10, 0)) # 1
+    print(comb(3, 5))  # 0
+    ```
+    """
+    assert n >= 0, "n must be non-negative"
+    assert k >= 0, "k must be non-negative"
+    if k > n:
+        return 0
+    # Use the smaller of k and n-k to minimise the number of iterations.
+    var k2 = k if k <= n - k else n - k
+    var result = 1
+    for i in range(k2):
+        # Reduce (n-i) and (i+1) by their gcd before multiplying to avoid
+        # intermediate overflow when the final result fits in Int.
+        var num = n - i
+        var den = i + 1
+        var g = gcd(num, den)
+        num //= g
+        den //= g
+        # After removing gcd(num, den), the remaining den divides result
+        # exactly (since C(n, i+1) is always an integer).
+        result = (result // den) * num
+    return result
+
+
+def perm(n: Int, k: Int = -1) -> Int:
+    """Computes the number of ways to arrange `k` items from `n` items without
+    repetition (permutations).
+
+    Equivalent to Python's `math.perm(n, k)`.
+
+    Args:
+        n: The total number of items. Must be non-negative.
+        k: The number of items to arrange. Must be non-negative and at most `n`.
+           If omitted (default), returns `n!` via `factorial(n)`.
+
+    Returns:
+        The number of permutations P(n, k) = n! / (n-k)!. Asserts if `n` is
+        negative, `k` is negative, or `k > n`.
+
+    Examples:
+
+    ```mojo
+    from std.math import perm
+    print(perm(5, 2))  # 20
+    print(perm(5))     # 120  (same as factorial(5))
+    print(perm(5, 0))  # 1
+    ```
+    """
+    assert n >= 0, "n must be non-negative"
+    if k == -1:
+        return factorial(n)
+    assert 0 <= k <= n, "k must be between 0 and n"
+    var result = 1
+    for i in range(k):
+        result *= n - i
+    return result
+
+
 # ===----------------------------------------------------------------------=== #
 # clamp
 # ===----------------------------------------------------------------------=== #
 
 
-fn clamp(
+def clamp(
     val: Int, lower_bound: type_of(val), upper_bound: type_of(val)
 ) -> type_of(val):
     """Clamps the integer value vector to be in a certain range.
@@ -3228,7 +3286,7 @@ fn clamp(
     return max(min(val, upper_bound), lower_bound)
 
 
-fn clamp(
+def clamp(
     val: UInt, lower_bound: type_of(val), upper_bound: type_of(val)
 ) -> type_of(val):
     """Clamps the integer value vector to be in a certain range.
@@ -3244,7 +3302,7 @@ fn clamp(
     return max(min(val, upper_bound), lower_bound)
 
 
-fn clamp[
+def clamp[
     dtype: DType, width: Int, //
 ](
     val: SIMD[dtype, width],
@@ -3279,7 +3337,7 @@ fn clamp[
 
 
 @always_inline("nodebug")
-fn _llvm_unary_fn[
+def _llvm_unary_fn[
     dtype: DType,
     width: Int,
     //,
@@ -3289,15 +3347,14 @@ fn _llvm_unary_fn[
 
 
 @always_inline("nodebug")
-fn _call_libm[
+def _call_libm[
     dtype: DType,
     width: Int,
     //,
     func_name: StaticString,
-](arg: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    comptime assert (
-        dtype.is_floating_point()
-    ), "argument type must be floating point"
+](arg: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     comptime assert (
         not is_gpu()
     ), "libm operations are only available on CPU targets"
@@ -3315,7 +3372,7 @@ fn _call_libm[
     return res
 
 
-fn _call_ptx_intrinsic_scalar[
+def _call_ptx_intrinsic_scalar[
     dtype: DType,
     //,
     *,
@@ -3330,7 +3387,7 @@ fn _call_ptx_intrinsic_scalar[
     ](arg)
 
 
-fn _call_ptx_intrinsic_scalar[
+def _call_ptx_intrinsic_scalar[
     dtype: DType,
     //,
     *,
@@ -3345,7 +3402,7 @@ fn _call_ptx_intrinsic_scalar[
     ](arg0, arg1)
 
 
-fn _call_ptx_intrinsic[
+def _call_ptx_intrinsic[
     dtype: DType,
     width: Int,
     //,
@@ -3367,7 +3424,7 @@ fn _call_ptx_intrinsic[
     return res
 
 
-fn _call_ptx_intrinsic[
+def _call_ptx_intrinsic[
     dtype: DType,
     width: Int,
     //,
@@ -3397,7 +3454,7 @@ fn _call_ptx_intrinsic[
     return res
 
 
-fn _call_ptx_intrinsic[
+def _call_ptx_intrinsic[
     dtype: DType,
     width: Int,
     //,
@@ -3428,7 +3485,7 @@ fn _call_ptx_intrinsic[
 
 
 @always_inline
-fn _call_amdgcn_intrinsic[intrin: StaticString](x: SIMD, out res: type_of(x)):
+def _call_amdgcn_intrinsic[intrin: StaticString](x: SIMD, out res: type_of(x)):
     res = {}
 
     comptime for i in range(x.size):
@@ -3436,7 +3493,7 @@ fn _call_amdgcn_intrinsic[intrin: StaticString](x: SIMD, out res: type_of(x)):
 
 
 @always_inline
-fn _get_amdgcn_type_suffix[dtype: DType]() -> StaticString:
+def _get_amdgcn_type_suffix[dtype: DType]() -> StaticString:
     comptime if dtype == DType.float16:
         return "f16"
     elif dtype == DType.float32:
@@ -3468,14 +3525,14 @@ trait Ceilable:
         var re: Float64
         var im: Float64
 
-        fn __ceil__(self) -> Self:
+        def __ceil__(self) -> Self:
             return Self(ceil(self.re), ceil(self.im))
     ```
     """
 
     # TODO(MOCO-333): Reconsider the signature when we have parametric traits or
     # associated types.
-    fn __ceil__(self) -> Self:
+    def __ceil__(self) -> Self:
         """Return the ceiling of the Int value, which is itself.
 
         Returns:
@@ -3505,14 +3562,14 @@ trait Floorable:
         var re: Float64
         var im: Float64
 
-        fn __floor__(self) -> Self:
+        def __floor__(self) -> Self:
             return Self(floor(self.re), floor(self.im))
     ```
     """
 
     # TODO(MOCO-333): Reconsider the signature when we have parametric traits or
     # associated types.
-    fn __floor__(self) -> Self:
+    def __floor__(self) -> Self:
         """Return the floor of the Int value, which is itself.
 
         Returns:
@@ -3542,12 +3599,12 @@ trait CeilDivable:
     struct Foo(CeilDivable, ImplicitlyCopyable):
         var x: Float64
 
-        fn __ceildiv__(self, denominator: Self) -> Self:
+        def __ceildiv__(self, denominator: Self) -> Self:
             return Self(self.x // denominator.x)
     ```
     """
 
-    fn __ceildiv__(self, denominator: Self) -> Self:
+    def __ceildiv__(self, denominator: Self) -> Self:
         """Return the rounded-up result of dividing self by denominator.
 
         Args:
@@ -3575,12 +3632,12 @@ trait CeilDivableRaising:
     struct Foo(CeilDivableRaising, ImplicitlyCopyable):
         var x: Float64
 
-        fn __ceildiv__(self, denominator: Self) raises -> Self:
+        def __ceildiv__(self, denominator: Self) raises -> Self:
             return Self(self.x // denominator.x)
     ```
     """
 
-    fn __ceildiv__(self, denominator: Self) raises -> Self:
+    def __ceildiv__(self, denominator: Self) raises -> Self:
         """Return the rounded-up result of dividing self by denominator.
 
         Args:
@@ -3617,14 +3674,14 @@ trait Truncable:
         var re: Float64
         var im: Float64
 
-        fn __trunc__(self) -> Self:
+        def __trunc__(self) -> Self:
             return Self(trunc(self.re), trunc(self.im))
     ```
     """
 
     # TODO(MOCO-333): Reconsider the signature when we have parametric traits or
     # associated types.
-    fn __trunc__(self) -> Self:
+    def __trunc__(self) -> Self:
         """Return the truncated Int value, which is itself.
 
         Returns:
@@ -3652,14 +3709,14 @@ trait Absable:
         var x: Float64
         var y: Float64
 
-        fn __abs__(self) -> Self:
+        def __abs__(self) -> Self:
             return sqrt(self.x * self.x + self.y * self.y)
     ```
     """
 
     # TODO(MOCO-333): Reconsider the signature when we have parametric traits or
     # associated types.
-    fn __abs__(self) -> Self:
+    def __abs__(self) -> Self:
         """Get the absolute value of this instance.
 
         Returns:
@@ -3669,7 +3726,7 @@ trait Absable:
 
 
 @always_inline
-fn abs[T: Absable](value: T) -> T:
+def abs[T: Absable](value: T) -> T:
     """Get the absolute value of the given object.
 
     Parameters:
@@ -3703,14 +3760,14 @@ trait DivModable(ImplicitlyCopyable):
     struct Bytes(DivModable):
         var size: Int
 
-        fn __divmod__(self, other: Self) -> Tuple[Self, Self]:
+        def __divmod__(self, other: Self) -> Tuple[Self, Self]:
             var quotient_int = self.size // other.size
             var remainder_int = self.size % other.size
             return (Bytes(quotient_int), Bytes(remainder_int))
     ```
     """
 
-    fn __divmod__(self, denominator: Self) -> Tuple[Self, Self]:
+    def __divmod__(self, denominator: Self) -> Tuple[Self, Self]:
         """Performs division and returns the quotient and the remainder.
 
         Args:
@@ -3722,7 +3779,7 @@ trait DivModable(ImplicitlyCopyable):
         ...
 
 
-fn divmod[T: DivModable](numerator: T, denominator: T) -> Tuple[T, T]:
+def divmod[T: DivModable](numerator: T, denominator: T) -> Tuple[T, T]:
     """Performs division and returns the quotient and the remainder.
 
     Parameters:
@@ -3744,7 +3801,7 @@ fn divmod[T: DivModable](numerator: T, denominator: T) -> Tuple[T, T]:
 
 
 @always_inline("nodebug")
-fn max(x: Int, y: Int, /) -> Int:
+def max(x: Int, y: Int, /) -> Int:
     """Gets the maximum of two integers.
 
     Args:
@@ -3758,7 +3815,7 @@ fn max(x: Int, y: Int, /) -> Int:
 
 
 @always_inline("nodebug")
-fn max[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
+def max[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
     """Performs elementwise maximum of x and y.
 
     An element of the result SIMD vector will be the maximum of the
@@ -3786,7 +3843,7 @@ fn max[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
 
 
 @always_inline
-fn max[T: Copyable & Comparable](x: T, *ys: T) -> T:
+def max[T: Copyable & Comparable](x: T, *ys: T) -> T:
     """Gets the maximum value from a sequence of values.
 
     Parameters:
@@ -3812,7 +3869,7 @@ fn max[T: Copyable & Comparable](x: T, *ys: T) -> T:
 
 
 @always_inline("nodebug")
-fn min(x: Int, y: Int, /) -> Int:
+def min(x: Int, y: Int, /) -> Int:
     """Gets the minimum of two integers.
 
     Args:
@@ -3826,7 +3883,7 @@ fn min(x: Int, y: Int, /) -> Int:
 
 
 @always_inline("nodebug")
-fn min[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
+def min[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
     """Gets the elementwise minimum of x and y.
 
     An element of the result SIMD vector will be the minimum of the
@@ -3854,7 +3911,7 @@ fn min[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
 
 
 @always_inline
-fn min[T: Copyable & Comparable](x: T, *ys: T) -> T:
+def min[T: Copyable & Comparable](x: T, *ys: T) -> T:
     """Gets the minimum value from a sequence of values.
 
     Parameters:
@@ -3893,11 +3950,11 @@ trait Powable:
         var numerator: Float64
         var denominator: Float64
 
-        fn __init__(out self, numerator: Float64, denominator: Float64):
+        def __init__(out self, numerator: Float64, denominator: Float64):
             self.numerator = numerator
             self.denominator = denominator
 
-        fn __pow__(self, exp: Self)  -> Self:
+        def __pow__(self, exp: Self)  -> Self:
             var exp_value = exp.numerator / exp.denominator
             return Self(pow(self.numerator, exp_value), pow(self.denominator, exp_value))
     ```
@@ -3906,7 +3963,7 @@ trait Powable:
     inside generic functions:
 
     ```mojo
-    fn exponentiate[T: Powable](base: T, exp: T) -> T:
+    def exponentiate[T: Powable](base: T, exp: T) -> T:
         return base ** exp
 
     var base = Rational(Float64(3.0), 5.0)
@@ -3921,7 +3978,7 @@ trait Powable:
 
     # TODO(MOCO-333): Reconsider the signature when we have parametric traits or
     # associated types.
-    fn __pow__(self, exp: Self) -> Self:
+    def __pow__(self, exp: Self) -> Self:
         """Return the value raised to the power of the given exponent.
 
         Args:
@@ -3933,7 +3990,7 @@ trait Powable:
         ...
 
 
-fn pow[T: Powable](base: T, exp: T) -> T:
+def pow[T: Powable](base: T, exp: T) -> T:
     """Computes the `base` raised to the power of the `exp`.
 
     Parameters:
@@ -3949,7 +4006,7 @@ fn pow[T: Powable](base: T, exp: T) -> T:
     return base.__pow__(exp)
 
 
-fn pow(base: SIMD, exp: Int) -> type_of(base):
+def pow(base: SIMD, exp: Int) -> type_of(base):
     """Computes elementwise value of a SIMD vector raised to the power of the
     given integer.
 
@@ -3982,17 +4039,17 @@ trait Roundable:
         var re: Float64
         var im: Float64
 
-        fn __round__(self) -> Self:
+        def __round__(self) -> Self:
             return Self(round(self.re), round(self.im))
 
-        fn __round__(self, ndigits: Int) -> Self:
+        def __round__(self, ndigits: Int) -> Self:
             return Self(round(self.re, ndigits), round(self.im, ndigits))
     ```
     """
 
     # TODO(MOCO-333): Reconsider the signature when we have parametric traits or
     # associated types.
-    fn __round__(self) -> Self:
+    def __round__(self) -> Self:
         """Get a rounded value for the type.
 
         Returns:
@@ -4000,7 +4057,7 @@ trait Roundable:
         """
         ...
 
-    fn __round__(self, ndigits: Int) -> Self:
+    def __round__(self, ndigits: Int) -> Self:
         """Get a rounded value for the type.
 
         Args:
@@ -4013,7 +4070,7 @@ trait Roundable:
 
 
 @always_inline
-fn round[T: Roundable, //](number: T) -> T:
+def round[T: Roundable, //](number: T) -> T:
     """Get the rounded value of the given object.
 
     Parameters:
@@ -4029,7 +4086,7 @@ fn round[T: Roundable, //](number: T) -> T:
 
 
 @always_inline
-fn round[T: Roundable, //](number: T, ndigits: Int) -> T:
+def round[T: Roundable, //](number: T, ndigits: Int) -> T:
     """Get the value of this object, rounded to a specified number of
     digits after the decimal point.
 

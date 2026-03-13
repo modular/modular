@@ -33,7 +33,7 @@ comptime epilogue_func_type = fn[
 
 @always_inline
 @parameter
-fn elementwise_epilogue_fn[
+def elementwise_epilogue_fn[
     dtype: DType,
     width: Int,
     *,
@@ -42,7 +42,7 @@ fn elementwise_epilogue_fn[
     return val + 2
 
 
-fn run_bmm_and_check_result[
+def run_bmm_and_check_result[
     dtype: DType,
     //,
     transpose_b: Bool,
@@ -58,9 +58,9 @@ fn run_bmm_and_check_result[
 ) raises:
     comptime assert c_host.flat_rank == 3, "c_device must have rank 3"
     comptime assert c_host_ref.flat_rank == 3, "c_device_ref must have rank 3"
-    var a_size = a_host.numel()
-    var b_size = b_host.numel()
-    var c_size = c_host.numel()
+    var a_size = a_host.num_elements()
+    var b_size = b_host.num_elements()
+    var c_size = c_host.num_elements()
 
     # allocate device buffers
     var a_device_buffer = ctx.enqueue_create_buffer[dtype](a_size)
@@ -86,7 +86,7 @@ fn run_bmm_and_check_result[
     @parameter
     @always_inline
     @__copy_capture(c_device)
-    fn epilogue_fn[
+    def epilogue_fn[
         dtype: DType,
         width: Int,
         rank: Int,
@@ -147,9 +147,9 @@ fn run_bmm_and_check_result[
             var b_shape = IndexList[2](n, k) if transpose_b else IndexList[2](
                 k, n
             )
-            var c_buffer = NDBuffer[dtype, 2](c_ptr, {m, n})
-            var a_buffer = NDBuffer[dtype, 2](a_ptr, {m, k})
-            var b_buffer = NDBuffer[dtype, 2](b_ptr, b_shape)
+            var c_buffer = NDBuffer[rank=2, dtype](c_ptr, {m, n})
+            var a_buffer = NDBuffer[rank=2, dtype](a_ptr, {m, k})
+            var b_buffer = NDBuffer[rank=2, dtype](b_ptr, b_shape)
 
             vendor_blas.matmul(
                 ctx,
@@ -165,7 +165,7 @@ fn run_bmm_and_check_result[
     @always_inline
     @__copy_capture(c_device_ref)
     @parameter
-    fn func[
+    def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[3]](idx0)
@@ -198,7 +198,7 @@ fn run_bmm_and_check_result[
                 assert_almost_equal(actual, expect, rtol=rtol)
 
 
-fn test_dynamic_shapes[
+def test_dynamic_shapes[
     dtype: DType,
     /,
     *,
@@ -249,7 +249,7 @@ fn test_dynamic_shapes[
     c_host_ref_ptr.free()
 
 
-fn test_static_NK[
+def test_static_NK[
     dtype: DType,
     /,
     *,
@@ -305,7 +305,7 @@ fn test_static_NK[
     c_host_ref_ptr.free()
 
 
-fn test_non_row_major_layout[
+def test_non_row_major_layout[
     dtype: DType,
     /,
     *,

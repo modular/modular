@@ -20,7 +20,6 @@ from std.os import Atomic
 """
 
 from std.collections.string.string_slice import _get_kgen_string
-from std.sys import is_run_in_comptime_interpreter
 from std.sys.info import is_nvidia_gpu
 
 from std.builtin.dtype import _integral_type_of, _unsigned_integral_type_of
@@ -73,7 +72,7 @@ struct Consistency(
     """Sequentially consistent."""
 
     @always_inline
-    fn __init__(out self, value: UInt8):
+    def __init__(out self, value: UInt8):
         """Constructs a new Consistency object.
 
         Args:
@@ -82,7 +81,7 @@ struct Consistency(
         self._value = value
 
     @always_inline("builtin")
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Compares two Consistency objects for equality.
 
         Args:
@@ -94,7 +93,7 @@ struct Consistency(
         return self._value == other._value
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Compares two Consistency objects for inequality.
 
         Args:
@@ -105,27 +104,7 @@ struct Consistency(
         """
         return self._value != other._value
 
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        """Returns a string representation of a `Consistency`.
-
-        Returns:
-            A string representation of this consistency.
-        """
-        return self.as_string_slice()
-
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Returns a string representation of a `Consistency`.
-
-        Returns:
-            A string representation of this consistency.
-        """
-
-        comptime prefix_len = len("Consistency.")
-        return self.as_string_slice()[prefix_len:]
-
-    fn as_string_slice(self) -> StaticString:
+    def as_string_slice(self) -> StaticString:
         """Returns a string slice representation of a `Consistency`.
 
         Returns:
@@ -149,7 +128,7 @@ struct Consistency(
 
         return "Consistency.UNKNOWN"
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write the string representation of this `Consistency` to a writer.
 
         Args:
@@ -158,7 +137,7 @@ struct Consistency(
         comptime prefix_len = len("Consistency.")
         writer.write_string(self.as_string_slice()[prefix_len:])
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this `Consistency` to a writer.
 
         Args:
@@ -167,7 +146,7 @@ struct Consistency(
         writer.write_string(self.as_string_slice())
 
     @always_inline("nodebug")
-    fn __mlir_attr(self) -> __mlir_type.`!kgen.deferred`:
+    def __mlir_attr(self) -> __mlir_type.`!kgen.deferred`:
         """Returns the MLIR attribute representation of the Consistency object.
 
         Returns:
@@ -197,7 +176,7 @@ struct Consistency(
 
 
 @always_inline("nodebug")
-fn fence[
+def fence[
     ordering: Consistency = Consistency.SEQUENTIAL, *, scope: StaticString = ""
 ]():
     """Creates an atomic fence.
@@ -212,7 +191,7 @@ fn fence[
     operations around it as specified by the ordering parameter.
     """
 
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         return
 
     __mlir_op.`pop.fence`[
@@ -245,7 +224,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     """
 
     @always_inline
-    fn __init__(out self, value: Scalar[Self.dtype]):
+    def __init__(out self, value: Scalar[Self.dtype]):
         """Constructs a new atomic value.
 
         Args:
@@ -255,7 +234,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @staticmethod
     @always_inline("nodebug")
-    fn load[
+    def load[
         *,
         ordering: Consistency = Consistency.SEQUENTIAL,
     ](ptr: UnsafePointer[mut=False, Scalar[Self.dtype], ...]) -> Scalar[
@@ -273,7 +252,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             The current value of the atomic.
         """
 
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             return ptr[]
 
         return __mlir_op.`pop.load`[
@@ -282,7 +261,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         ](ptr.address)
 
     @always_inline
-    fn load[
+    def load[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](self) -> Scalar[Self.dtype]:
         """Loads the current value from the atomic.
@@ -297,7 +276,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @staticmethod
     @always_inline("nodebug")
-    fn fetch_add[
+    def fetch_add[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
@@ -322,7 +301,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             The original value before addition.
         """
         # Comptime interpreter doesn't support these operations.
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             var res = ptr[]
             ptr[] += rhs
             return res
@@ -340,7 +319,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @staticmethod
     @always_inline
-    fn _xchg[
+    def _xchg[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
@@ -362,7 +341,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             The value of the value before the operation.
         """
         # Comptime interpreter doesn't support these operations.
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             var res = ptr[]
             ptr[] = value
             return res
@@ -379,7 +358,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @staticmethod
     @always_inline
-    fn store[
+    def store[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
@@ -398,7 +377,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             value: The value to store.
         """
         # Comptime interpreter doesn't support these operations.
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             ptr[] = value
             return
 
@@ -412,7 +391,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         )
 
     @always_inline
-    fn fetch_add[
+    def fetch_add[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](mut self, rhs: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
         """Performs atomic in-place add.
@@ -436,7 +415,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         return Self.fetch_add[ordering=ordering](value_addr, rhs)
 
     @always_inline
-    fn __iadd__(mut self, rhs: Scalar[Self.dtype]):
+    def __iadd__(mut self, rhs: Scalar[Self.dtype]):
         """Performs atomic in-place add.
 
         Atomically replaces the current value with the result of arithmetic
@@ -451,7 +430,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         _ = self.fetch_add(rhs)
 
     @always_inline
-    fn fetch_sub[
+    def fetch_sub[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](mut self, rhs: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
         """Performs atomic in-place sub.
@@ -472,7 +451,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             The original value before subtraction.
         """
         # Comptime interpreter doesn't support these operations.
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             var res = self.value
             self.value -= rhs
             return res
@@ -487,7 +466,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         return Scalar[Self.dtype](mlir_value=res)
 
     @always_inline
-    fn __isub__(mut self, rhs: Scalar[Self.dtype]):
+    def __isub__(mut self, rhs: Scalar[Self.dtype]):
         """Performs atomic in-place sub.
 
         Atomically replaces the current value with the result of arithmetic
@@ -503,7 +482,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @staticmethod
     @always_inline("nodebug")
-    fn compare_exchange[
+    def compare_exchange[
         *,
         failure_ordering: Consistency = Consistency.SEQUENTIAL,
         success_ordering: Consistency = Consistency.SEQUENTIAL,
@@ -533,7 +512,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             Self.dtype.is_numeric()
         ), "the input type must be arithmetic"
 
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             if ptr[] == expected:
                 # Safety: This is at compile-time so data races will not happen.
                 ptr[] = desired
@@ -567,7 +546,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         ](atomic_integral_ptr, expected_integral_ptr, desired_integral)
 
     @always_inline("nodebug")
-    fn compare_exchange[
+    def compare_exchange[
         *,
         failure_ordering: Consistency = Consistency.SEQUENTIAL,
         success_ordering: Consistency = Consistency.SEQUENTIAL,
@@ -598,7 +577,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @staticmethod
     @always_inline
-    fn max[
+    def max[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
@@ -628,7 +607,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         _max_impl[scope=Self.scope, ordering=ordering](ptr, rhs)
 
     @always_inline
-    fn max[
+    def max[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](mut self, rhs: Scalar[Self.dtype]):
         """Performs atomic in-place max.
@@ -654,7 +633,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @staticmethod
     @always_inline
-    fn min[
+    def min[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
@@ -684,7 +663,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         _min_impl[scope=Self.scope, ordering=ordering](ptr, rhs)
 
     @always_inline
-    fn min[
+    def min[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](mut self, rhs: Scalar[Self.dtype]):
         """Performs atomic in-place min.
@@ -717,7 +696,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
 
 @always_inline
-fn _compare_exchange_integral_impl[
+def _compare_exchange_integral_impl[
     dtype: DType,
     //,
     *,
@@ -759,7 +738,7 @@ fn _compare_exchange_integral_impl[
 
 
 @always_inline
-fn _max_impl_base[
+def _max_impl_base[
     dtype: DType, //, *, scope: StaticString, ordering: Consistency
 ](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
     var value_addr = ptr.bitcast[Scalar[dtype]._mlir_type]()
@@ -772,7 +751,7 @@ fn _max_impl_base[
 
 
 @always_inline
-fn _min_impl_base[
+def _min_impl_base[
     dtype: DType, //, *, scope: StaticString, ordering: Consistency
 ](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
     var value_addr = ptr.bitcast[Scalar[dtype]._mlir_type]()
@@ -785,7 +764,7 @@ fn _min_impl_base[
 
 
 @always_inline
-fn _max_impl[
+def _max_impl[
     dtype: DType,
     //,
     *,
@@ -811,7 +790,7 @@ fn _max_impl[
 
 
 @always_inline
-fn _min_impl[
+def _min_impl[
     dtype: DType,
     //,
     *,

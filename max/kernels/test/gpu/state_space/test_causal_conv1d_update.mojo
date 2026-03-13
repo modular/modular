@@ -17,11 +17,11 @@ from std.sys.info import simd_width_of
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 from std.gpu.host import DeviceContext
 from layout import (
-    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
-    RuntimeTuple,
     RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
 )
 from std.random import rand
 from layout.int_tuple import fill_like
@@ -42,7 +42,7 @@ def main() raises:
 
 
 @always_inline
-fn silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
+def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     """Reference SiLU implementation: x * sigmoid(x) = x / (1 + exp(-x))."""
     var x_f32 = x.cast[DType.float32]()
     var neg_x = -x_f32
@@ -52,7 +52,7 @@ fn silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     return (x_f32 * sigmoid_x).cast[dtype]()
 
 
-fn run_causal_conv1d_update_gpu[
+def run_causal_conv1d_update_gpu[
     dtype: DType,
     has_bias: Bool,
     activation: StaticString,
@@ -416,7 +416,7 @@ fn run_causal_conv1d_update_gpu[
     result_cpu_heap.free()
 
 
-fn test_gpu_causal_conv1d_update_basic() raises:
+def test_gpu_causal_conv1d_update_basic() raises:
     """Test basic GPU causal conv1d update with bias."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -426,7 +426,7 @@ fn test_gpu_causal_conv1d_update_basic() raises:
     )
 
 
-fn test_gpu_causal_conv1d_update_with_silu() raises:
+def test_gpu_causal_conv1d_update_with_silu() raises:
     """Test GPU causal conv1d update with SiLU activation."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -436,7 +436,7 @@ fn test_gpu_causal_conv1d_update_with_silu() raises:
     )
 
 
-fn test_gpu_causal_conv1d_update_without_bias() raises:
+def test_gpu_causal_conv1d_update_without_bias() raises:
     """Test GPU causal conv1d update without bias."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -446,7 +446,7 @@ fn test_gpu_causal_conv1d_update_without_bias() raises:
     )
 
 
-fn test_gpu_causal_conv1d_update_seqlen_greater_than_one() raises:
+def test_gpu_causal_conv1d_update_seqlen_greater_than_one() raises:
     """Test GPU causal conv1d update with seqlen > 1."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -456,7 +456,7 @@ fn test_gpu_causal_conv1d_update_seqlen_greater_than_one() raises:
     )
 
 
-fn test_gpu_causal_conv1d_update_various_widths() raises:
+def test_gpu_causal_conv1d_update_various_widths() raises:
     """Test GPU causal conv1d update with various kernel widths."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():

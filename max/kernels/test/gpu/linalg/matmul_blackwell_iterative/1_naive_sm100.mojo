@@ -26,14 +26,14 @@ from std.testing import assert_almost_equal
 from std.utils.index import IndexList
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark":
             return True
     return False
 
 
-fn kernel_1[
+def kernel_1[
     M: Int,
     N: Int,
     K: Int,
@@ -121,7 +121,7 @@ def test_kernel_1[
 
         @always_inline
         @parameter
-        fn run_kernel(ctx: DeviceContext) raises:
+        def run_kernel(ctx: DeviceContext) raises:
             ctx.enqueue_function[kernel, kernel](
                 c.device_tensor[update=False](),
                 a.device_tensor[update=False](),

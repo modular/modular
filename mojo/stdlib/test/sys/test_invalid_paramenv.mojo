@@ -16,5 +16,5 @@ from std.sys import get_defined_bool
 
 
 # CHECK-FAIL: constraint failed: the boolean define value of `my_false` with value `blah` is not recognized
-fn main():
+def main():
     _ = get_defined_bool["my_false"]()

@@ -21,7 +21,7 @@ from std.memory import memcpy
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_rightmost_broadcast_axis[
+def _get_rightmost_broadcast_axis[
     dtype: DType,
 ](
     input: TileTensor[dtype, ...],
@@ -50,7 +50,7 @@ fn _get_rightmost_broadcast_axis[
 # ===-----------------------------------------------------------------------===#
 
 
-fn broadcast[
+def broadcast[
     dtype: DType,
 ](
     output: TileTensor[
@@ -69,7 +69,7 @@ fn broadcast[
     """
     # short-circuit if any dimension of the output is 0, this way we don't need
     # to worry about such cases in the kernel implementation.
-    if output.numel() == 0:
+    if output.num_elements() == 0:
         return
 
     var rightmost_broadcast_axis: Int = _get_rightmost_broadcast_axis[dtype](
@@ -80,13 +80,13 @@ fn broadcast[
     if input_output_have_same_shape:
         var src_ptr = input.ptr
         var dst_ptr = output.ptr
-        memcpy(dest=dst_ptr, src=src_ptr, count=input.numel())
+        memcpy(dest=dst_ptr, src=src_ptr, count=input.num_elements())
         return
 
     comptime init_axis = 0
     # imaginary axis before 0
-    var init_input_prev_axis_stride = input.numel()
-    var init_output_prev_axis_stride = output.numel()
+    var init_input_prev_axis_stride = input.num_elements()
+    var init_output_prev_axis_stride = output.num_elements()
     broadcast_impl[dtype](
         init_axis,
         output,
@@ -99,7 +99,7 @@ fn broadcast[
     )
 
 
-fn broadcast_impl[
+def broadcast_impl[
     dtype: DType,
 ](
     axis: Int,
@@ -175,7 +175,7 @@ fn broadcast_impl[
         )
 
 
-fn _tile_1d[
+def _tile_1d[
     dtype: DType,
 ](
     init_dst_ptr: UnsafePointer[

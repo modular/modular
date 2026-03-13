@@ -38,7 +38,7 @@ from std.sys.intrinsics import _type_is_eq
 # ===----------------------------------------------------------------------=== #
 
 
-fn _all_types_unique[*Ts: AnyType]() -> Bool:
+def _all_types_unique[*Ts: AnyType]() -> Bool:
     """Check if all types in the variadic pack are unique.
 
     Returns True if no type appears more than once, False otherwise.
@@ -51,7 +51,7 @@ fn _all_types_unique[*Ts: AnyType]() -> Bool:
     return True
 
 
-fn _all_trivial_del[*Ts: AnyType]() -> Bool:
+def _all_trivial_del[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial destructors."""
 
     comptime for i in range(Variadic.size(Ts)):
@@ -63,7 +63,7 @@ fn _all_trivial_del[*Ts: AnyType]() -> Bool:
     return True
 
 
-fn _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
+def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial copy constructors."""
 
     comptime for i in range(Variadic.size(Ts)):
@@ -75,7 +75,7 @@ fn _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
     return True
 
 
-fn _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
+def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial move constructors."""
 
     comptime for i in range(Variadic.size(Ts)):
@@ -88,7 +88,7 @@ fn _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
 
 
 @always_inline("nodebug")
-fn _check_union_types[*Ts: AnyType]():
+def _check_union_types[*Ts: AnyType]():
     """Compile-time check that union types are valid.
 
     This function enforces the constraints:
@@ -158,7 +158,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # Matches C: union { int32_t i; float f; }
     comptime CUnion = UnsafeUnion[Int32, Float32]
 
-    fn call_c_function(u: CUnion):
+    def call_c_function(u: CUnion):
         # Pass to C code expecting union type
         ...
     ```
@@ -189,7 +189,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__(out self, *, unsafe_uninitialized: ()):
+    def __init__(out self, *, unsafe_uninitialized: ()):
         """Unsafely create an uninitialized `UnsafeUnion`.
 
         The storage contains garbage data. You must call `unsafe_set` before
@@ -202,7 +202,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         _check_union_types[*Self.Ts]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
-    fn __init__[T: Movable](out self, var value: T):
+    def __init__[T: Movable](out self, var value: T):
         """Create a union initialized with the given value.
 
         Parameters:
@@ -224,7 +224,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         ](), "type is not a union element type"
         self._get_ptr[T]().init_pointee_move(value^)
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Creates a bitwise copy of the union.
 
         Args:
@@ -234,7 +234,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         self._storage = copy._storage
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         """Move initializer for the union.
 
         Args:
@@ -253,7 +253,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn _get_ptr[T: AnyType](ref[_] self) -> UnsafePointer[T, origin_of(self)]:
+    def _get_ptr[T: AnyType](ref[_] self) -> UnsafePointer[T, origin_of(self)]:
         """Get a pointer to the storage interpreted as type T."""
         comptime assert Self._is_element[
             T
@@ -269,7 +269,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn unsafe_get[T: AnyType](ref self) -> ref[self] T:
+    def unsafe_get[T: AnyType](ref self) -> ref[self] T:
         """Get a reference to the stored value as type T.
 
         Parameters:
@@ -292,7 +292,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         """
         return self._get_ptr[T]()[]
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes a representation of the union to the writer.
 
         Since `UnsafeUnion` is untagged and doesn't track the stored type,
@@ -316,7 +316,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
             Named("align", align_of[Self._union_type]()),
         )
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Writes the repr representation of the union to the writer.
 
         Args:
@@ -329,7 +329,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn unsafe_take[T: Movable](mut self) -> T:
+    def unsafe_take[T: Movable](mut self) -> T:
         """Move the stored value out of the union.
 
         This takes ownership of the stored value, leaving the union in an
@@ -361,7 +361,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         return self._get_ptr[T]().take_pointee()
 
     @always_inline("nodebug")
-    fn unsafe_set[T: Movable](mut self, var value: T):
+    def unsafe_set[T: Movable](mut self, var value: T):
         """Set the union to hold the given value.
 
         This overwrites whatever was previously stored. Since all union element
@@ -387,7 +387,9 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         self._get_ptr[T]().init_pointee_move(value^)
 
     @always_inline("nodebug")
-    fn unsafe_ptr[T: AnyType](ref[_] self) -> UnsafePointer[T, origin_of(self)]:
+    def unsafe_ptr[
+        T: AnyType
+    ](ref[_] self) -> UnsafePointer[T, origin_of(self)]:
         """Get a pointer to the storage interpreted as type T.
 
         This allows direct manipulation of the union's storage. Useful for
@@ -418,7 +420,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    fn _is_element[T: AnyType]() -> Bool:
+    def _is_element[T: AnyType]() -> Bool:
         """Check if T is one of the union's element types.
 
         Returns True if found, False otherwise.

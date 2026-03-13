@@ -75,7 +75,7 @@ struct FusedAttention:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         //,  # Forces the previous two params to be inferred from the args
@@ -114,7 +114,7 @@ struct FusedAttention:
 @register("fused_attention_custom")
 struct FusedAttentionAlias:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         //,  # Forces the previous two params to be inferred from the args
@@ -134,7 +134,7 @@ struct FusedAttentionAlias:
 
 
 @always_inline
-fn matmul_b_transpose(
+def matmul_b_transpose(
     lhs: LayoutTensor,
     rhs: LayoutTensor,
     out res: LayoutTensor[
@@ -174,7 +174,7 @@ fn matmul_b_transpose(
 
 
 @always_inline
-fn fused_attention_cpu[
+def fused_attention_cpu[
     BN: Int, BD: Int
 ](
     Q: LayoutTensor,
@@ -228,7 +228,7 @@ fn fused_attention_cpu[
 
 
 @always_inline
-fn matmul[
+def matmul[
     target: StaticString,
     transpose_b: Bool = False,
 ](
@@ -295,7 +295,7 @@ fn matmul[
         res.copy_from(out_sram)
 
 
-fn fused_attention_kernel[
+def fused_attention_kernel[
     q_dtype: DType,
     q_layout: Layout,
     k_dtype: DType,

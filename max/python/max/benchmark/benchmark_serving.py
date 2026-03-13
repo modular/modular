@@ -1104,7 +1104,9 @@ async def chat_session_driver(
             benchmark_should_end_time is not None
             and time.perf_counter_ns() >= benchmark_should_end_time
         ):
-            response = RequestFuncOutput(cancelled=True)
+            response = RequestFuncOutput(
+                cancelled=True, request_submit_time=time.perf_counter()
+            )
         else:
             raw_response = await request_driver.request(request_func_input)
             if not isinstance(raw_response, RequestFuncOutput):
@@ -1174,7 +1176,9 @@ async def run_single_turn_benchmark(
                 benchmark_should_end_time is not None
                 and time.perf_counter_ns() >= benchmark_should_end_time
             ):
-                return request_func_input.get_output_type()(cancelled=True)
+                return request_func_input.get_output_type()(
+                    cancelled=True, request_submit_time=time.perf_counter()
+                )
             return await request_driver.request(request_func_input)
 
     tasks: list[asyncio.Task[BaseRequestFuncOutput]] = []
@@ -1714,6 +1718,12 @@ async def benchmark(
                 for output in pixel_generation_outputs
             ],
             "errors": [output.error for output in pixel_generation_outputs],
+            "request_submit_times": [
+                output.request_submit_time for output in pixel_generation_outputs
+            ],
+            "request_complete_times": [
+                output.request_complete_time for output in pixel_generation_outputs
+            ],
             "peak_gpu_memory_mib": pixel_metrics.peak_gpu_memory_mib,
             "available_gpu_memory_mib": pixel_metrics.available_gpu_memory_mib,
             "gpu_utilization": pixel_metrics.gpu_utilization,
@@ -1806,6 +1816,12 @@ async def benchmark(
         "itls": [output.itl for output in text_outputs],
         "generated_texts": [output.generated_text for output in text_outputs],
         "errors": [output.error for output in text_outputs],
+        "request_submit_times": [
+            output.request_submit_time for output in text_outputs
+        ],
+        "request_complete_times": [
+            output.request_complete_time for output in text_outputs
+        ],
         "peak_gpu_memory_mib": text_metrics.peak_gpu_memory_mib,
         "available_gpu_memory_mib": text_metrics.available_gpu_memory_mib,
         "gpu_utilization": text_metrics.gpu_utilization,

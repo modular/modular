@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal, cast
 
+import msgspec
 from max.driver import DeviceSpec, scan_available_devices
 
 logger = logging.getLogger("max.pipelines")
@@ -146,6 +147,12 @@ def coerce_device_specs_input(
     if isinstance(value, list):
         if all(isinstance(part, DeviceSpec) for part in value):
             return value
+        try:
+            # Handle list of dicts, as you'd get if you serialize a
+            # list[DeviceSpec] to JSON.  (Needed for round-tripping.)
+            return msgspec.convert(value, type=list[DeviceSpec])
+        except (ValueError, TypeError, msgspec.ValidationError):
+            pass
         if all(isinstance(part, int) for part in value):
             return [DeviceSpec.accelerator(id=gpu_id) for gpu_id in value]
         # Handle list of strings from CLI parsers (e.g. cyclopts) which may

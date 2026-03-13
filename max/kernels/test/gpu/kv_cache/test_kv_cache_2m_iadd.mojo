@@ -25,7 +25,7 @@ from nn.kv_cache_ragged import kv_cache_2m_iadd_dispatch
 from std.utils import IndexList
 
 
-fn _create_kv_collection_from_host[
+def _create_kv_collection_from_host[
     dtype: DType,
     num_heads: Int,
     head_dim: Int,
@@ -62,7 +62,7 @@ fn _create_kv_collection_from_host[
     )
 
 
-fn _verify_kv_cache[
+def _verify_kv_cache[
     dtype: DType,
     num_heads: Int,
     head_dim: Int,
@@ -186,7 +186,7 @@ fn _verify_kv_cache[
             slice_row_offset += 1
 
 
-fn test_kv_cache_2m_iadd_gpu[
+def test_kv_cache_2m_iadd_gpu[
     dtype: DType,
     num_heads: Int,
     head_dim: Int,
@@ -219,7 +219,7 @@ fn test_kv_cache_2m_iadd_gpu[
         ),
         ctx,
     )
-    var cache_lengths_host = NDBuffer[DType.uint32, 1](
+    var cache_lengths_host = NDBuffer[rank=1, DType.uint32](
         cache_lengths.tensor[update=False]().ptr, IndexList[1](batch_size)
     )
 
@@ -260,13 +260,13 @@ fn test_kv_cache_2m_iadd_gpu[
     )
 
     var lora_end_idx_host_ptr = alloc[Scalar[DType.int64]](1)
-    var lora_end_idx_host = NDBuffer[DType.int64, 1](
+    var lora_end_idx_host = NDBuffer[rank=1, DType.int64](
         lora_end_idx_host_ptr, IndexList[1](1)
     )
     lora_end_idx_host[0] = Int64(total_slice_length)
 
     var batch_seq_len_host_ptr = alloc[Scalar[DType.int64]](1)
-    var batch_seq_len_host = NDBuffer[DType.int64, 1](
+    var batch_seq_len_host = NDBuffer[rank=1, DType.int64](
         batch_seq_len_host_ptr, IndexList[1](1)
     )
     batch_seq_len_host[0] = Int64(total_length)
@@ -283,7 +283,7 @@ fn test_kv_cache_2m_iadd_gpu[
         RuntimeLayout[Layout.row_major[6]()].row_major(kv_block_paged_shape),
         ctx,
     )
-    var kv_block_paged_host = NDBuffer[dtype, 6](
+    var kv_block_paged_host = NDBuffer[rank=6, dtype](
         kv_block_paged.tensor[update=False]().ptr, kv_block_paged_shape
     )
     kv_block_paged_host.fill(1)
@@ -293,7 +293,7 @@ fn test_kv_cache_2m_iadd_gpu[
     var paged_lut = ManagedLayoutTensor[DType.uint32, Layout.row_major[2]()](
         RuntimeLayout[Layout.row_major[2]()].row_major(paged_lut_shape), ctx
     )
-    var paged_lut_host = NDBuffer[DType.uint32, 2](
+    var paged_lut_host = NDBuffer[rank=2, DType.uint32](
         paged_lut.tensor[update=False]().ptr, paged_lut_shape
     )
     paged_lut_set = Set[Int]()
@@ -334,9 +334,9 @@ fn test_kv_cache_2m_iadd_gpu[
         ].row_major(a_shape),
         ctx,
     )
-    var a_host = NDBuffer[dtype, 2, _, DimList(Dim(), num_heads * head_dim)](
-        a.tensor[update=False]().ptr, a_shape
-    )
+    var a_host = NDBuffer[
+        rank=2, dtype, _, DimList[Dim(), num_heads * head_dim]()
+    ](a.tensor[update=False]().ptr, a_shape)
     for i in range(a_host.num_elements()):
         a_host.data[i] = Scalar[dtype](i)
 
@@ -365,7 +365,7 @@ fn test_kv_cache_2m_iadd_gpu[
         UInt32(layer_idx),
         Optional(ctx),
     )
-    kv_block_paged_host = NDBuffer[dtype, 6](
+    kv_block_paged_host = NDBuffer[rank=6, dtype](
         kv_block_paged.tensor().ptr, kv_block_paged_shape
     )
     var cache_lengths_host_tensor = LayoutTensor[
@@ -399,7 +399,7 @@ fn test_kv_cache_2m_iadd_gpu[
     batch_seq_len_host_ptr.free()
 
 
-fn test_kv_cache_2m_iadd_cpu[
+def test_kv_cache_2m_iadd_cpu[
     dtype: DType,
     num_heads: Int,
     head_dim: Int,
@@ -415,18 +415,18 @@ fn test_kv_cache_2m_iadd_cpu[
         num_active_loras <= batch_size
     ), "num_active_loras must be less than or equal to batch_size"
     var input_row_offsets_host_ptr = alloc[Scalar[DType.uint32]](batch_size + 1)
-    var input_row_offsets_host = NDBuffer[DType.uint32, 1](
+    var input_row_offsets_host = NDBuffer[rank=1, DType.uint32](
         input_row_offsets_host_ptr, IndexList[1](batch_size + 1)
     )
     var cache_lengths_host_ptr = alloc[Scalar[DType.uint32]](batch_size)
-    var cache_lengths_host = NDBuffer[DType.uint32, 1](
+    var cache_lengths_host = NDBuffer[rank=1, DType.uint32](
         cache_lengths_host_ptr, IndexList[1](batch_size)
     )
 
     var input_row_offsets_slice_host_ptr = alloc[Scalar[DType.uint32]](
         num_active_loras + 1
     )
-    var input_row_offsets_slice_host = NDBuffer[DType.uint32, 1](
+    var input_row_offsets_slice_host = NDBuffer[rank=1, DType.uint32](
         input_row_offsets_slice_host_ptr, IndexList[1](num_active_loras + 1)
     )
     var total_length = 0
@@ -455,13 +455,13 @@ fn test_kv_cache_2m_iadd_cpu[
     )
 
     var lora_end_idx_host_ptr = alloc[Scalar[DType.int64]](1)
-    var lora_end_idx_host = NDBuffer[DType.int64, 1](
+    var lora_end_idx_host = NDBuffer[rank=1, DType.int64](
         lora_end_idx_host_ptr, IndexList[1](1)
     )
     lora_end_idx_host[0] = Int64(total_slice_length)
 
     var batch_seq_len_host_ptr = alloc[Scalar[DType.int64]](1)
-    var batch_seq_len_host = NDBuffer[DType.int64, 1](
+    var batch_seq_len_host = NDBuffer[rank=1, DType.int64](
         batch_seq_len_host_ptr, IndexList[1](1)
     )
     batch_seq_len_host[0] = Int64(total_length)
@@ -478,7 +478,7 @@ fn test_kv_cache_2m_iadd_cpu[
         num_paged_blocks * 2 * num_layers * page_size * num_heads * head_dim
     )
     var kv_block_paged_host_ptr = alloc[Scalar[dtype]](kv_block_paged_size)
-    var kv_block_paged_host = NDBuffer[dtype, 6](
+    var kv_block_paged_host = NDBuffer[rank=6, dtype](
         kv_block_paged_host_ptr, kv_block_paged_shape
     )
     kv_block_paged_host.fill(1)
@@ -489,7 +489,7 @@ fn test_kv_cache_2m_iadd_cpu[
         max_full_context_length, page_size
     )
     var paged_lut_host_ptr = alloc[Scalar[DType.uint32]](paged_lut_size)
-    var paged_lut_host = NDBuffer[DType.uint32, 2](
+    var paged_lut_host = NDBuffer[rank=2, DType.uint32](
         paged_lut_host_ptr, paged_lut_shape
     )
     paged_lut_set = Set[Int]()
@@ -530,9 +530,9 @@ fn test_kv_cache_2m_iadd_cpu[
     var a_shape = IndexList[2](2 * total_slice_length, num_heads * head_dim)
     var a_size = 2 * total_slice_length * num_heads * head_dim
     var a_host_ptr = alloc[Scalar[dtype]](a_size)
-    var a_host = NDBuffer[dtype, 2, _, DimList(Dim(), num_heads * head_dim)](
-        a_host_ptr, a_shape
-    )
+    var a_host = NDBuffer[
+        rank=2, dtype, _, DimList[Dim(), num_heads * head_dim]()
+    ](a_host_ptr, a_shape)
     for i in range(a_host.num_elements()):
         a_host.data[i] = Scalar[dtype](i)
 

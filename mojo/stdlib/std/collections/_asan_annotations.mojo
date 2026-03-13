@@ -10,12 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.sys.compile import SanitizeAddress, is_run_in_comptime_interpreter
+from std.sys.compile import SanitizeAddress
 from std.ffi import external_call
 
 
 @always_inline
-fn __sanitizer_annotate_contiguous_container(
+def __sanitizer_annotate_contiguous_container(
     beg: UnsafePointer[NoneType, _],
     end: UnsafePointer[NoneType, _],
     old_mid: UnsafePointer[NoneType, _],
@@ -24,7 +24,7 @@ fn __sanitizer_annotate_contiguous_container(
     # follows __annotate_contiguous_container from __debug_utils
     # https://github.com/llvm/llvm-project/blob/main/libcxx/include/__debug_utils/sanitizers.h
     comptime if SanitizeAddress:
-        if not is_run_in_comptime_interpreter() and beg:
+        if not __is_run_in_comptime_interpreter and beg:
             external_call[
                 "__sanitizer_annotate_contiguous_container", NoneType
             ](beg, end, old_mid, new_mid)

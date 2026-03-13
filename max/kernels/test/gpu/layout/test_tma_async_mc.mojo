@@ -35,7 +35,7 @@ from std.utils.index import Index, IndexList
 
 # Test loading a single 2d tile.
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
-fn test_tma_mcast_load_kernel[
+def test_tma_mcast_load_kernel[
     dtype: DType,
     layout: Layout,
     tile_rank: Int,
@@ -56,8 +56,7 @@ fn test_tma_mcast_load_kernel[
     var block_rank = block_rank_in_cluster()
     comptime CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
 
-    var rank_m = block_rank // CLUSTER_N
-    var rank_n = block_rank % CLUSTER_N
+    var rank_m, rank_n = divmod(block_rank, CLUSTER_N)
 
     var tma_multicast_mask = (1 << CLUSTER_N) - 1
 
@@ -177,7 +176,7 @@ def test_tma_multicast_load_row_major[
 
 # Test loading a single 2d tile.
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
-fn test_tma_sliced_multicast_load_kernel[
+def test_tma_sliced_multicast_load_kernel[
     dtype: DType,
     layout: Layout,
     tile_layout: Layout,
@@ -197,8 +196,7 @@ fn test_tma_sliced_multicast_load_kernel[
     var block_rank = block_rank_in_cluster()
     comptime CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
 
-    var rank_m = block_rank // CLUSTER_N
-    var rank_n = block_rank % CLUSTER_N
+    var rank_m, rank_n = divmod(block_rank, CLUSTER_N)
 
     var tma_multicast_mask = (1 << CLUSTER_N) - 1
 

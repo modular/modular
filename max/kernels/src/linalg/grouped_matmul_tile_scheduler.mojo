@@ -28,11 +28,11 @@ struct RasterOrder(TrivialRegisterPassable):
     comptime AlongM = Self(1)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
 
@@ -46,7 +46,7 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
     var terminate: Bool
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
     ):
         self.m = 0
@@ -55,20 +55,15 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
         self.terminate = False
 
     @always_inline
-    fn is_valid(self) -> Bool:
+    def is_valid(self) -> Bool:
         return self.is_valid_tile
 
     @always_inline
-    fn is_done(self) -> Bool:
+    def is_done(self) -> Bool:
         return self.terminate
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "(",
             self.m,
@@ -126,7 +121,7 @@ struct TileScheduler[
     comptime kNum1DBlocksPerGroup: UInt32 = 16
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         num_active_experts: Int,
         group_offsets: LayoutTensor[
@@ -167,7 +162,7 @@ struct TileScheduler[
         self.block_idx_start = 0
 
     @always_inline
-    fn fetch_next_work(mut self) -> WorkInfo:
+    def fetch_next_work(mut self) -> WorkInfo:
         self.current_iter += 1
         var next_block_idx = UInt32(self.current_iter) * UInt32(
             grid_dim.x
@@ -241,7 +236,7 @@ struct TileScheduler[
         )
 
     @always_inline
-    fn _get_swizzled_block_idx(
+    def _get_swizzled_block_idx(
         self,
         num_n_blocks: UInt32,
         _block_idx: UInt32,

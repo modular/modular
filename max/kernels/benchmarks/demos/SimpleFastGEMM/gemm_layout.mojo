@@ -28,11 +28,11 @@ comptime simd_size = simd_width_of[dtype]()
 comptime alignment = align_of[SIMD[dtype, simd_size]]()
 
 
-fn gemm_naive[
+def gemm_naive[
     layout_b: Layout, origin: Origin
 ](
-    c: NDBuffer[dtype, 2],  # M x N
-    a: NDBuffer[dtype, 2],  # M x K
+    c: NDBuffer[rank=2, dtype],  # M x N
+    a: NDBuffer[rank=2, dtype],  # M x K
     b: LayoutTensor[dtype, layout_b, MutAnyOrigin],  # N x K
 ):
     var M = c.dim(0)
@@ -45,7 +45,7 @@ fn gemm_naive[
                 c[(mm, nn)] += a[mm, kk] * b[kk, nn]
 
 
-fn kernel[
+def kernel[
     layout_c: Layout,
     layout_a: Layout,
     layout_b: Layout,
@@ -84,7 +84,7 @@ fn kernel[
         c.store[NR](m, 0, c_cache.load[NR](m, 0))
 
 
-fn pack_b[
+def pack_b[
     layout_b: Layout,
     layout_packed: Layout,
 ](
@@ -105,13 +105,13 @@ fn pack_b[
                     packed_tile[0, n] = b_tile[k, n]
 
 
-fn gemm[
+def gemm[
     N: Int,
     K: Int,
     layout_b: Layout,
 ](
-    c: NDBuffer[dtype, 2],  # M x N
-    a: NDBuffer[dtype, 2],  # M x K
+    c: NDBuffer[rank=2, dtype],  # M x N
+    a: NDBuffer[rank=2, dtype],  # M x K
     b_packed: LayoutTensor[layout_b, dtype],  # (N // NR) x (K * NR)
 ):
     var M = c.dim(0)
@@ -120,7 +120,7 @@ fn gemm[
         var b_tile = b_packed.tile[1, K * NR](jc, 0)
 
         # @parameter
-        # fn process_row(ir: Int):
+        # def process_row(ir: Int):
         for ir in range(M // MR):
             var a_tile = TensorBuilder[MR, K, dtype].Wrap(a.data + K * MR * ir)
 
@@ -142,7 +142,7 @@ fn gemm[
 
 # kgen --emit=asm max/kernels/benchmarks/demos/SimpleFastGEMM/gemm_layout.mojo >out.S
 @export(ABI="C")
-fn gemm_export_dynamic(
+def gemm_export_dynamic(
     a_ptr: UnsafePointer[Scalar[dtype], _],
     b_packed_ptr: UnsafePointer[Scalar[dtype], _],
     c_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
@@ -150,13 +150,13 @@ fn gemm_export_dynamic(
 ):
     comptime N = 1024
     comptime K = 1024
-    var a = NDBuffer[dtype, 2](a_ptr, (M, N))
+    var a = NDBuffer[rank=2, dtype](a_ptr, (M, N))
     var b_packed = TensorBuilder[N // NR, K * NR, dtype].Wrap(b_packed_ptr)
-    var c = NDBuffer[dtype, 2](c_ptr, (M, N))
+    var c = NDBuffer[rank=2, dtype](c_ptr, (M, N))
     gemm[N, K](c, a, b_packed)
 
 
-fn main():
+def main():
     comptime M = align_up(1024, MR)
     comptime N = align_up(1024, NR)
     comptime K: Int = 1024
@@ -181,13 +181,13 @@ fn main():
     var c_ptr = alloc[Float32](M * N, alignment=alignment)
     var c2_ptr = alloc[Float32](M * N, alignment=alignment)
 
-    var a = NDBuffer[dtype, 2](a_ptr, (M, K))
+    var a = NDBuffer[rank=2, dtype](a_ptr, (M, K))
 
     var b = TensorBuilder[K, N, dtype].Wrap(b_ptr)
     var b_packed = TensorBuilder[N // NR, K * NR, dtype].Wrap(b_packed_ptr)
 
-    var c = NDBuffer[dtype, 2](c_ptr, (M, N))
-    var c2 = NDBuffer[dtype, 2](c2_ptr, (M, N))
+    var c = NDBuffer[rank=2, dtype](c_ptr, (M, N))
+    var c2 = NDBuffer[rank=2, dtype](c2_ptr, (M, N))
 
     for j in range(M):
         for i in range(K):
@@ -217,11 +217,11 @@ fn main():
     print(" errors")
 
     @parameter
-    fn bench_gemm():
+    def bench_gemm():
         gemm[N, K](c2, a, b_packed)
 
     var num_warmup: Int = 1
-    var time = benchmark.run[func3=bench_gemm](num_warmup).mean()
+    var time = std.benchmark.run[func3=bench_gemm](num_warmup).mean()
     var flops = 2.0 * M * N * K / time / 1e9
     print(time, end="")
     print(" seconds")

@@ -21,7 +21,7 @@ from std.utils.index import IndexList
 
 
 # CHECK-LABEL: test_prepack
-fn test_prepack():
+def test_prepack():
     print("== test_prepack")
 
     comptime k = 10
@@ -41,18 +41,18 @@ fn test_prepack():
     comptime dst_shape_static = IndexList[2](k_padded, n_padded)
 
     var src_storage = NDBuffer[
-        type, 1, MutAnyOrigin, Dim(n * k)
+        rank=1, type, MutAnyOrigin, DimList[n * k]()
     ].stack_allocation[alignment=64]()
     src_storage.fill(0)
     var dst_storage = NDBuffer[
-        type, 1, MutAnyOrigin, Dim(n_padded * k_padded)
+        rank=1, type, MutAnyOrigin, DimList[n_padded * k_padded]()
     ].stack_allocation[alignment=64]()
     dst_storage.fill(0)
 
-    var src_buf = NDBuffer[type, 2, MutAnyOrigin, src_shape_dyn](
+    var src_buf = NDBuffer[rank=2, type, MutAnyOrigin, src_shape_dyn](
         src_storage.data, src_shape_static
     )
-    var dst_buf = NDBuffer[type, 2, MutAnyOrigin, dst_shape_dyn](
+    var dst_buf = NDBuffer[rank=2, type, MutAnyOrigin, dst_shape_dyn](
         dst_storage.data, dst_shape_static
     )
 
@@ -272,5 +272,5 @@ fn test_prepack():
             print(dst_buf[IndexList[2](i, j)])
 
 
-fn main():
+def main():
     test_prepack()

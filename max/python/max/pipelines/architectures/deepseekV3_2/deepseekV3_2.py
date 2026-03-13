@@ -52,8 +52,9 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.transformer import ReturnLogits
 from max.nn.transformer.distributed_transformer import (
+    extract_hs,
     forward_sharded_layers,
 )
 
@@ -147,9 +148,9 @@ class DeepseekV3_2DecoderLayer(Module):
         self.mlp_shards: list[DeepseekV3_2MLP | DeepseekV3_2MoE | Module]
 
         nvfp4_enabled = (
-            config.float8_config is not None and config.float8_config.is_nvfp4
+            config.quant_config is not None and config.quant_config.is_nvfp4
         )
-        use_fp8_mla = config.float8_config is not None and not nvfp4_enabled
+        use_fp8_mla = config.quant_config is not None and not nvfp4_enabled
 
         if not use_fp8_mla:
             raise ValueError(
@@ -173,7 +174,7 @@ class DeepseekV3_2DecoderLayer(Module):
             graph_mode=config.graph_mode,
             buffer_size=config.max_batch_context_length,
             norm_dtype=DType.float32,
-            float8_config=config.float8_config,
+            quant_config=config.quant_config,
         )
 
         # Create MLP or MoE layer
@@ -256,7 +257,7 @@ class DeepseekV3_2DecoderLayer(Module):
                 ep_size=ep_size,
                 apply_router_weight_first=False,
                 ep_batch_manager=self.ep_manager,
-                float8_config=config.float8_config,
+                quant_config=config.quant_config,
             )
 
             num_devices = len(config.devices)
@@ -272,7 +273,7 @@ class DeepseekV3_2DecoderLayer(Module):
                 hidden_dim=config.hidden_size,
                 feed_forward_length=config.intermediate_size,
                 devices=config.devices,
-                float8_config=config.float8_config,
+                quant_config=config.quant_config,
             )
             mlp.sharding_strategy = ShardingStrategy.replicate(
                 len(config.devices)
@@ -396,8 +397,8 @@ class DeepseekV3_2(Module):
         embedding_output_dtype = config.dtype
         if embedding_output_dtype == DType.uint8:
             embedding_output_dtype = DType.bfloat16
-        if config.float8_config and config.float8_config.embedding_output_dtype:
-            embedding_output_dtype = config.float8_config.embedding_output_dtype
+        if config.quant_config and config.quant_config.embedding_output_dtype:
+            embedding_output_dtype = config.quant_config.embedding_output_dtype
         self.embed_tokens = VocabParallelEmbedding(
             config.vocab_size,
             config.hidden_size,
@@ -746,16 +747,13 @@ class DeepseekV3_2(Module):
         if logits is not None and offsets is not None:
             ret_val += (logits, offsets)
 
-        if self.return_hidden_states == ReturnHiddenStates.ALL:
-            hidden_states = h[0] if isinstance(h, list) else h
-            ret_val += (hidden_states,)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST:
-            ret_val += (last_token_distributed[0],)
-        elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
-            norm_h = forward_sharded_layers(self.norm_shards, h)[0]
-            ret_val += (norm_h,)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
-            ret_val += (norm_last_token[0],)
+        ret_val += extract_hs(
+            return_hidden_states=self.return_hidden_states,
+            last_token_hs_distributed=last_token_distributed,
+            all_hs_distributed=h,
+            normalizer=self.norm_shards,
+            signal_buffers=signal_buffers,
+        )
 
         return ret_val
 

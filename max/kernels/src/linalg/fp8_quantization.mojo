@@ -15,7 +15,7 @@ from std.collections.string.string_slice import get_static_string
 from std.math import ceildiv
 from std.sys import simd_width_of, has_nvidia_gpu_accelerator
 from std.sys import align_of, size_of
-import std.gpu.primitives.block
+import std.gpu.primitives.block as block
 from std.algorithm.functional import _elementwise_impl_gpu
 from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
@@ -67,7 +67,7 @@ comptime logger = Logger()
 
 
 @always_inline
-fn quantize_static_scaled_fp8[
+def quantize_static_scaled_fp8[
     out_dtype: DType,
     in_dtype: DType,
     scale_is_inverted: Bool = True,
@@ -93,7 +93,7 @@ fn quantize_static_scaled_fp8[
     @always_inline
     @parameter
     @__copy_capture(out_tensor, in_tensor, scale)
-    fn scaled_fp8_quant[
+    def scaled_fp8_quant[
         width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         comptime assert rank == 2, "rank should be equal to 2"
@@ -123,7 +123,7 @@ fn quantize_static_scaled_fp8[
 
 
 @always_inline
-fn quantize_dynamic_scaled_fp8[
+def quantize_dynamic_scaled_fp8[
     out_dtype: DType,
     in_dtype: DType,
     scales_dtype: DType,
@@ -135,8 +135,8 @@ fn quantize_dynamic_scaled_fp8[
     num_cols: Int,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    scaled_output: NDBuffer[mut=True, out_dtype, 2, _],
-    scales: NDBuffer[mut=True, scales_dtype, 2, _],
+    scaled_output: NDBuffer[mut=True, rank=2, out_dtype, _],
+    scales: NDBuffer[mut=True, rank=2, scales_dtype, _],
     scale_ub: Float32,
     ctx: DeviceContext,
     num_rows: Int,
@@ -198,7 +198,7 @@ fn quantize_dynamic_scaled_fp8[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-fn quantize_fp8_kernel[
+def quantize_fp8_kernel[
     out_type: DType,
     scales_type: DType,
     in_type: DType,
@@ -209,8 +209,8 @@ fn quantize_fp8_kernel[
     group_size: Int,
     simd_width: Int,
 ](
-    output: NDBuffer[mut=True, out_type, 2, MutAnyOrigin],
-    scales: NDBuffer[mut=True, scales_type, 2, MutAnyOrigin],
+    output: NDBuffer[mut=True, rank=2, out_type, MutAnyOrigin],
+    scales: NDBuffer[mut=True, rank=2, scales_type, MutAnyOrigin],
     scale_ub: Scalar[scales_type],
 ):
     comptime use_warp_tiling = group_size <= num_threads * simd_width
@@ -277,7 +277,7 @@ fn quantize_fp8_kernel[
 
 
 @always_inline
-fn batched_quantize_dynamic_scaled_fp8[
+def batched_quantize_dynamic_scaled_fp8[
     out_dtype: DType,
     in_dtype: DType,
     scales_dtype: DType,
@@ -289,8 +289,8 @@ fn batched_quantize_dynamic_scaled_fp8[
     num_cols: Int,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    scaled_output: NDBuffer[mut=True, out_dtype, 3, _],
-    scales: NDBuffer[mut=True, scales_dtype, 3, _],
+    scaled_output: NDBuffer[mut=True, rank=3, out_dtype, _],
+    scales: NDBuffer[mut=True, rank=3, scales_dtype, _],
     scale_ub: Float32,
     ctx: DeviceContext,
     num_rows: Int,
@@ -344,7 +344,7 @@ fn batched_quantize_dynamic_scaled_fp8[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-fn batched_quantize_fp8_kernel[
+def batched_quantize_fp8_kernel[
     out_type: DType,
     scales_type: DType,
     in_type: DType,
@@ -355,8 +355,8 @@ fn batched_quantize_fp8_kernel[
     group_size: Int,
     simd_width: Int,
 ](
-    output: NDBuffer[mut=True, out_type, 3, MutAnyOrigin],
-    scales: NDBuffer[mut=True, scales_type, 3, MutAnyOrigin],
+    output: NDBuffer[mut=True, rank=3, out_type, MutAnyOrigin],
+    scales: NDBuffer[mut=True, rank=3, scales_type, MutAnyOrigin],
     scale_ub: Scalar[scales_type],
 ):
     comptime use_warp_tiling = group_size <= num_threads * simd_width
@@ -411,7 +411,7 @@ fn batched_quantize_fp8_kernel[
 
 
 @always_inline
-fn matmul_dynamic_scaled_fp8[
+def matmul_dynamic_scaled_fp8[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -444,41 +444,41 @@ fn matmul_dynamic_scaled_fp8[
     comptime assert b_scales.rank == 2
     comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
 
-    comptime c_shape = DimList(dim[c.static_shape[0]], dim[c.static_shape[1]])
-    comptime c_stride = DimList(
+    comptime c_shape = DimList[dim[c.static_shape[0]], dim[c.static_shape[1]]]()
+    comptime c_stride = DimList[
         dim[c.static_stride[0]], dim[c.static_stride[1]]
-    )
-    var c_buf = NDBuffer[c_type, 2, _, c_shape, c_stride](
+    ]()
+    var c_buf = NDBuffer[rank=2, c_type, _, c_shape, c_stride](
         c.ptr,
         rebind[IndexList[2]](coord_to_index_list(c.layout.shape_coord())),
         rebind[IndexList[2]](coord_to_index_list(c.layout.stride_coord())),
     )
-    comptime a_shape = DimList(dim[a.static_shape[0]], dim[a.static_shape[1]])
-    comptime a_stride = DimList(
+    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
+    comptime a_stride = DimList[
         dim[a.static_stride[0]], dim[a.static_stride[1]]
-    )
-    var a_buf = NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape, a_stride](
+    ]()
+    var a_buf = NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape, a_stride](
         a.ptr,
         rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
         rebind[IndexList[2]](coord_to_index_list(a.layout.stride_coord())),
     )
-    comptime b_shape = DimList(dim[b.static_shape[0]], dim[b.static_shape[1]])
-    comptime b_stride = DimList(
+    comptime b_shape = DimList[dim[b.static_shape[0]], dim[b.static_shape[1]]]()
+    comptime b_stride = DimList[
         dim[b.static_stride[0]], dim[b.static_stride[1]]
-    )
-    var b_buf = NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape, b_stride](
+    ]()
+    var b_buf = NDBuffer[rank=2, b_type, ImmutAnyOrigin, b_shape, b_stride](
         b.ptr,
         rebind[IndexList[2]](coord_to_index_list(b.layout.shape_coord())),
         rebind[IndexList[2]](coord_to_index_list(b.layout.stride_coord())),
     )
-    comptime a_scales_shape = DimList(
+    comptime a_scales_shape = DimList[
         dim[a_scales.static_shape[0]], dim[a_scales.static_shape[1]]
-    )
-    comptime a_scales_stride = DimList(
+    ]()
+    comptime a_scales_stride = DimList[
         dim[a_scales.static_stride[0]], dim[a_scales.static_stride[1]]
-    )
+    ]()
     var a_scales_buf = NDBuffer[
-        a_scales_type, 2, _, a_scales_shape, a_scales_stride
+        rank=2, a_scales_type, _, a_scales_shape, a_scales_stride
     ](
         a_scales.ptr,
         rebind[IndexList[2]](
@@ -488,14 +488,14 @@ fn matmul_dynamic_scaled_fp8[
             coord_to_index_list(a_scales.layout.stride_coord())
         ),
     )
-    comptime b_scales_shape = DimList(
+    comptime b_scales_shape = DimList[
         dim[b_scales.static_shape[0]], dim[b_scales.static_shape[1]]
-    )
-    comptime b_scales_stride = DimList(
+    ]()
+    comptime b_scales_stride = DimList[
         dim[b_scales.static_stride[0]], dim[b_scales.static_stride[1]]
-    )
+    ]()
     var b_scales_buf = NDBuffer[
-        b_scales_type, 2, _, b_scales_shape, b_scales_stride
+        rank=2, b_scales_type, _, b_scales_shape, b_scales_stride
     ](
         b_scales.ptr,
         rebind[IndexList[2]](
@@ -525,7 +525,7 @@ fn matmul_dynamic_scaled_fp8[
 
 
 @always_inline
-fn matmul_dynamic_scaled_fp8[
+def matmul_dynamic_scaled_fp8[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -540,11 +540,11 @@ fn matmul_dynamic_scaled_fp8[
     transpose_b: Bool = False,
     target: StaticString = "cpu",
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _, _],
-    a: NDBuffer[mut=False, a_type, 2, _, _],
-    b: NDBuffer[mut=False, b_type, 2, _, _],
-    a_scales: NDBuffer[a_scales_type, 2, _, _, _],
-    b_scales: NDBuffer[b_scales_type, 2, _, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _, _],
+    a: NDBuffer[mut=False, rank=2, a_type, _, _],
+    b: NDBuffer[mut=False, rank=2, b_type, _, _],
+    a_scales: NDBuffer[rank=2, a_scales_type, _, _, _],
+    b_scales: NDBuffer[rank=2, b_scales_type, _, _, _],
     ctx: DeviceContext,
 ) raises:
     comptime assert a_type == b_type, "input A and B dtype should be the same"
@@ -611,7 +611,7 @@ fn matmul_dynamic_scaled_fp8[
             @parameter
             @always_inline
             @__copy_capture(a_scales, b_scales)
-            fn scale_compute_lambda_fn[
+            def scale_compute_lambda_fn[
                 _dtype: DType,
                 width: Int,
                 *,
@@ -647,7 +647,7 @@ fn matmul_dynamic_scaled_fp8[
             # create a dummy buffer to instruct the matmul kernel to output values
             # in the correct dtype
             var c_dummy = NDBuffer[
-                DType.float32, 2, MutAnyOrigin, DimList(Dim(), N)
+                rank=2, DType.float32, MutAnyOrigin, DimList[Dim(), N]()
             ](
                 UnsafePointer[Scalar[DType.float32], MutExternalOrigin](),
                 IndexList[2](M, N),
@@ -656,7 +656,7 @@ fn matmul_dynamic_scaled_fp8[
             @parameter
             @__copy_capture(c, a, b, a_scales, b_scales)
             @always_inline
-            fn scaled_output_fn[
+            def scaled_output_fn[
                 dtype: DType, width: Int, *, alignment: Int = 1
             ](idx: IndexList[2], val: SIMD[dtype, width]):
                 var a_scale = a_scales.load[width=1](0, idx[0]).cast[dtype]()
@@ -712,7 +712,7 @@ fn matmul_dynamic_scaled_fp8[
         )
 
 
-fn naive_blockwise_scaled_fp8_matmul[
+def naive_blockwise_scaled_fp8_matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -821,7 +821,7 @@ fn naive_blockwise_scaled_fp8_matmul[
     )
 
 
-fn naive_blockwise_scaled_fp8_matmul[
+def naive_blockwise_scaled_fp8_matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -840,11 +840,11 @@ fn naive_blockwise_scaled_fp8_matmul[
     accum_type: DType = get_accum_type[c_type](),
     scales_granularity_mnk: Optional[IndexList[3]] = None,
 ](
-    c_device: NDBuffer[c_type, 2, _, c_shape],
-    a_device: NDBuffer[a_type, 2, _, a_shape],
-    b_device: NDBuffer[b_type, 2, _, b_shape],
-    a_scales_device: NDBuffer[a_scales_type, 2, _, a_scale_shape],
-    b_scales_device: NDBuffer[b_scales_type, 2, _, b_scale_shape],
+    c_device: NDBuffer[rank=2, c_type, _, c_shape],
+    a_device: NDBuffer[rank=2, a_type, _, a_shape],
+    b_device: NDBuffer[rank=2, b_type, _, b_shape],
+    a_scales_device: NDBuffer[rank=2, a_scales_type, _, a_scale_shape],
+    b_scales_device: NDBuffer[rank=2, b_scales_type, _, b_scale_shape],
     ctx: DeviceContext,
 ) raises:
     comptime assert a_type == b_type == DType.float8_e4m3fn, (
@@ -937,7 +937,7 @@ fn naive_blockwise_scaled_fp8_matmul[
     )
 
 
-fn naive_blockwise_scaled_fp8_matmul_kernel[
+def naive_blockwise_scaled_fp8_matmul_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1058,7 +1058,7 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
         c[x, y] = accum.cast[c_type]()
 
 
-fn naive_blockwise_scaled_fp8_grouped_matmul[
+def naive_blockwise_scaled_fp8_grouped_matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1158,7 +1158,7 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
     )
 
 
-fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
+def naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     c_layout: Layout,
     a_layout: Layout,
     b_layout: Layout,
@@ -1271,7 +1271,7 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
 
 
 @always_inline
-fn convert_e4m3fn_to_e4m3fnuz(
+def convert_e4m3fn_to_e4m3fnuz(
     input_buffer: TileTensor[dtype=DType.float8_e4m3fn, ...],
     output_buffer: TileTensor[mut=True, dtype=DType.float8_e4m3fnuz, ...],
     context: DeviceContext,
@@ -1297,7 +1297,7 @@ fn convert_e4m3fn_to_e4m3fnuz(
     @always_inline
     @parameter
     @__copy_capture(input_buffer, output_buffer)
-    fn convert_kernel[
+    def convert_kernel[
         width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         comptime assert rank == 2, "rank should be equal to 2"
@@ -1330,7 +1330,7 @@ fn convert_e4m3fn_to_e4m3fnuz(
 ########################################################
 
 
-fn blockwise_scaled_fp8_with_epilogue[
+def blockwise_scaled_fp8_with_epilogue[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1406,7 +1406,7 @@ fn blockwise_scaled_fp8_with_epilogue[
 
             @parameter
             @__copy_capture(c)
-            fn epilogue_wrapper[
+            def epilogue_wrapper[
                 simd_width: Int, rank: Int, alignment: Int = 1
             ](idx: IndexList[rank]):
                 var c_coord = Index(idx[0], idx[1])
@@ -1456,20 +1456,20 @@ fn blockwise_scaled_fp8_with_epilogue[
         # For non B200 GPUs, we use the naive blockwise scaled fp8 matmul
         # which supports normal epilogue natively. Construct NDBuffers for
         # the NDBuffer overload.
-        var c_ndbuf = NDBuffer[c_type, 2](
+        var c_ndbuf = NDBuffer[rank=2, c_type](
             c.ptr, IndexList[2](Int(c.dim[0]()), Int(c.dim[1]()))
         )
-        var a_ndbuf = NDBuffer[a_type, 2](
+        var a_ndbuf = NDBuffer[rank=2, a_type](
             a.ptr, IndexList[2](Int(a.dim[0]()), Int(a.dim[1]()))
         )
-        var b_ndbuf = NDBuffer[b_type, 2](
+        var b_ndbuf = NDBuffer[rank=2, b_type](
             b.ptr, IndexList[2](Int(b.dim[0]()), Int(b.dim[1]()))
         )
-        var a_scales_ndbuf = NDBuffer[a_scales_type, 2](
+        var a_scales_ndbuf = NDBuffer[rank=2, a_scales_type](
             a_scales.ptr,
             IndexList[2](Int(a_scales.dim[0]()), Int(a_scales.dim[1]())),
         )
-        var b_scales_ndbuf = NDBuffer[b_scales_type, 2](
+        var b_scales_ndbuf = NDBuffer[rank=2, b_scales_type](
             b_scales.ptr,
             IndexList[2](Int(b_scales.dim[0]()), Int(b_scales.dim[1]())),
         )
