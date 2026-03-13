@@ -9,7 +9,7 @@
 # Test edge cases and corner cases for t-strings
 
 # CHECK-LABEL: lit.fn @"test_edge_cases()"
-fn test_edge_cases():
+def test_edge_cases():
     # Test 1: Multiple consecutive escaped braces
     # CHECK: lit.call @{{.*}}__make_tstring{{.*}}:string "{{[{][{][{][{][}][}][}][}]}}"
     var s1 = t"{{{{}}}}"

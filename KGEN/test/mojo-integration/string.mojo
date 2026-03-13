@@ -11,32 +11,32 @@ from std.collections.string.string_slice import StaticString, get_static_string
 
 @fieldwise_init
 struct StringParam[value: String]:
-    fn print_it(self):
+    def print_it(self):
         print(Self.value)
 
 
 # ELABORATE: kgen.func @{{.*}}stringInputParam[[FUNC:.*]]()
 # ELABORATE-NOT: kgen.func {{.*}}stringInputParam
 @no_inline
-fn stringInputParam[value: String]():
+def stringInputParam[value: String]():
     print(value)
 
 
 @always_inline
-fn stringInputParamInline[value: String]():
+def stringInputParamInline[value: String]():
     print(value)
 
 
-fn instantiateElsewhere():
+def instantiateElsewhere():
     # ELABORATE: kgen.call {{.*}}stringInputParam[[FUNC]]()
     stringInputParam["thrice"]()
 
 
-fn test_literal_from_comptime_string[s: String]() -> StaticString:
+def test_literal_from_comptime_string[s: String]() -> StaticString:
     return get_static_string[s, "-", s]()
 
 
-fn test_parameter_string():
+def test_parameter_string():
     # CHECK: hello world
     StringParam["hello" + " " + "world"]().print_it()
 
@@ -61,13 +61,13 @@ fn test_parameter_string():
     print(get_static_string[String(Int64(42))]())
 
 
-fn test_string_global_constant():
+def test_string_global_constant():
     comptime A = String(11.1)
 
     # CHECK: alias is 11.1
     print("alias is ", A)
 
 
-fn main():
+def main():
     test_parameter_string()
     test_string_global_constant()

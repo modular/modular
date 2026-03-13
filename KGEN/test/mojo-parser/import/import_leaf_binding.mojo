@@ -14,7 +14,7 @@
 
 import test_package.module
 
-fn test_leaf_import():
+def test_leaf_import():
     # expected-error @below {{use of unknown declaration 'module'}}
     module.function()
     # should not emit a diagnostic
@@ -26,12 +26,12 @@ fn test_leaf_import():
 
 import test_package.module as mod
 
-fn test_as_import():
+def test_as_import():
     mod.function()
 
 # 'from' import: should NOT warn
 
 from test_package import module as mod2
 
-fn test_from_import():
+def test_from_import():
     mod2.function()

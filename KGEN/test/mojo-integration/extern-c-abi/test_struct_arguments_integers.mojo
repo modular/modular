@@ -19,7 +19,7 @@ struct Struct1(TrivialRegisterPassable):
     var a: UInt8
 
 
-fn test_1byte():
+def test_1byte():
     var s = Struct1(10)
     var result = external_call["c_func_1byte", Struct1](s)
     print("1byte:", Int(result.a))
@@ -37,7 +37,7 @@ struct Struct2(TrivialRegisterPassable):
     var b: UInt8
 
 
-fn test_2byte():
+def test_2byte():
     var s = Struct2(10, 20)
     var result = external_call["c_func_2byte", Struct2](s)
     print("2byte:", Int(result.a), Int(result.b))
@@ -57,7 +57,7 @@ struct Struct4(TrivialRegisterPassable):
     var d: UInt8
 
 
-fn test_4byte():
+def test_4byte():
     var s = Struct4(18, 52, 86, 120)
     var result = external_call["c_func_4byte", Struct4](s)
     print(
@@ -80,7 +80,7 @@ struct Struct8(TrivialRegisterPassable):
     var a: UInt64
 
 
-fn test_8byte():
+def test_8byte():
     var s = Struct8(1000)
     var result = external_call["c_func_8byte", Struct8](s)
     print("8byte:", Int(result.a))
@@ -98,7 +98,7 @@ struct Struct9(TrivialRegisterPassable):
     var b: UInt8
 
 
-fn test_9byte():
+def test_9byte():
     var s = Struct9(100, 200)
     var result = external_call["c_func_9byte", Struct9](s)
     print("9byte:", Int(result.a), Int(result.b))
@@ -117,7 +117,7 @@ struct Struct12(TrivialRegisterPassable):
     var c: UInt32
 
 
-fn test_12byte():
+def test_12byte():
     var s = Struct12(100, 200, 300)
     var result = external_call["c_func_12byte", Struct12](s)
     print("12byte:", Int(result.a), Int(result.b), Int(result.c))
@@ -135,7 +135,7 @@ struct Struct16(TrivialRegisterPassable):
     var b: UInt64
 
 
-fn test_16byte():
+def test_16byte():
     var s = Struct16(1000, 2000)
     var result = external_call["c_func_16byte", Struct16](s)
     print("16byte:", Int(result.a), Int(result.b))
@@ -154,7 +154,7 @@ struct Struct17(TrivialRegisterPassable):
     var c: UInt8
 
 
-fn test_17byte():
+def test_17byte():
     var s = Struct17(10, 20, 30)
     var result = external_call["c_func_17byte", Struct17](s)
     print("17byte:", Int(result.a), Int(result.b), Int(result.c))
@@ -176,7 +176,7 @@ struct Struct31(TrivialRegisterPassable):
     var f: UInt8
 
 
-fn test_31byte():
+def test_31byte():
     var s = Struct31(10, 20, 30, 40, 50, 60)
     var result = external_call["c_func_31byte", Struct31](s)
     print(
@@ -205,7 +205,7 @@ struct Struct33(TrivialRegisterPassable):
     var e: UInt8
 
 
-fn test_33byte():
+def test_33byte():
     var s = Struct33(100, 200, 300, 400, 5)
     var result = external_call["c_func_33byte", Struct33](s)
     print(
@@ -224,7 +224,7 @@ fn test_33byte():
 # ============================================================================
 # Main - run all tests
 # ============================================================================
-fn main():
+def main():
     # Passing tests
     test_1byte()
     test_2byte()  # INTEGER class coercion - Phase 1

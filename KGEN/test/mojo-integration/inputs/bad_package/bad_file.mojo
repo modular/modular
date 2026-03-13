@@ -3,6 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-fn foo(x: Int) -> Int:
+def foo(x: Int) -> Int:
     break
     return x

@@ -6,5 +6,5 @@
 
 from local_import import import_me
 
-fn main():
+def main():
     var x = import_me()

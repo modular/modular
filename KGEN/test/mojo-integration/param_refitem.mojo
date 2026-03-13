@@ -11,7 +11,7 @@ from std.utils import Variant
 
 # CHECK-LABEL: func export @param_refitem
 @export
-fn param_refitem() -> Int:
+def param_refitem() -> Int:
     comptime vec = Variant[Int](42)
     comptime value = vec[Int]
     # CHECK-NEXT: constant = <42>

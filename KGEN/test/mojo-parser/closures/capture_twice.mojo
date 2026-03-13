@@ -12,9 +12,9 @@
 
 
 # CHECK-LABEL: lit.fn @"foo
-fn foo():
+def foo():
     var w = 5
 
-    fn bar() -> Int:
+    def bar() -> Int:
         var x = w + w
         return x

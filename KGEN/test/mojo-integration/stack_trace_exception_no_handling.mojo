@@ -12,21 +12,21 @@
 
 
 @no_inline
-fn nested_func() raises:
+def nested_func() raises:
     foo1()
 
 
 @no_inline
-fn foo1() raises:
+def foo1() raises:
     foo2()
 
 
 @no_inline
-fn foo2() raises:
+def foo2() raises:
     raise Error("nested gotcha!")
 
 
-fn main() raises:
+def main() raises:
     nested_func()
 
 

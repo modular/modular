@@ -19,7 +19,7 @@ struct FloatStruct4(TrivialRegisterPassable):
 
 
 # CHECK: variadic_float_4byte: 11.5
-fn test_variadic_float_4byte():
+def test_variadic_float_4byte():
     var s = FloatStruct4(10.5)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_float_4byte".value,
@@ -37,7 +37,7 @@ struct FloatStruct8(TrivialRegisterPassable):
 
 
 # CHECK: variadic_float_8byte: 11.5 21.5
-fn test_variadic_float_8byte():
+def test_variadic_float_8byte():
     var s = FloatStruct8(10.5, 20.5)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_float_8byte".value,
@@ -54,7 +54,7 @@ struct DoubleStruct8(TrivialRegisterPassable):
 
 
 # CHECK: variadic_double_8byte: 101.5
-fn test_variadic_double_8byte():
+def test_variadic_double_8byte():
     var s = DoubleStruct8(100.5)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_double_8byte".value,
@@ -74,7 +74,7 @@ struct FloatStruct16(TrivialRegisterPassable):
 
 
 # CHECK: variadic_float_16byte: 11.5 21.5 31.5 41.5
-fn test_variadic_float_16byte():
+def test_variadic_float_16byte():
     var s = FloatStruct16(10.5, 20.5, 30.5, 40.5)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_float_16byte".value,
@@ -92,7 +92,7 @@ struct DoubleStruct16(TrivialRegisterPassable):
 
 
 # CHECK: variadic_double_16byte: 101.5 201.5
-fn test_variadic_double_16byte():
+def test_variadic_double_16byte():
     var s = DoubleStruct16(100.5, 200.5)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_double_16byte".value,
@@ -113,7 +113,7 @@ struct FloatStruct17(TrivialRegisterPassable):
 
 
 # CHECK: variadic_float_17byte: 11.5 21.5 31.5 41.5 6
-fn test_variadic_float_17byte():
+def test_variadic_float_17byte():
     var s = FloatStruct17(10.5, 20.5, 30.5, 40.5, 5)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_float_17byte".value,
@@ -130,7 +130,7 @@ fn test_variadic_float_17byte():
     )
 
 
-fn main():
+def main():
     test_variadic_float_4byte()
     test_variadic_float_8byte()
     test_variadic_double_8byte()

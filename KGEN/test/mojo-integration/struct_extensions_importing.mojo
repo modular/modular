@@ -12,7 +12,7 @@ from struct_and_extension_package import MyType, ZInt
 
 
 # CHECK-LABEL: kgen.generator @"struct_extensions_importing::test
-fn test():
+def test():
     # Call constructor from the struct
     var obj1 = MyType()
     # CHECK: kgen.call @"struct_and_extension_package::my_type::MyType::__init__()

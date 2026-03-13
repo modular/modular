@@ -12,7 +12,7 @@
 
 @fieldwise_init
 struct MemType(ImplicitlyCopyable):
-    fn __add__(self, rhs: MemType) -> MemType:
+    def __add__(self, rhs: MemType) -> MemType:
         return MemType()
 
 
@@ -24,9 +24,9 @@ struct MemType(ImplicitlyCopyable):
 # CHECK-NEXT: [[V3:%.*]] = kgen.param.constant: none
 # CHECK-NEXT: lit.return [[V3]]
 # CHECK-NEXT: lit.end_fn
-fn makes_escaping_closure(m: MemType):
-    fn myclosure(n: MemType) -> MemType:
-        fn nested_nested(k: MemType, l: MemType) -> MemType:
+def makes_escaping_closure(m: MemType):
+    def myclosure(n: MemType) -> MemType:
+        def nested_nested(k: MemType, l: MemType) -> MemType:
             return n + k
 
         return n + m

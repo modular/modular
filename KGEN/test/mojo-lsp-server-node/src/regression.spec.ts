@@ -11,7 +11,7 @@ describe('MOTO-1127', function() {
     });
 
     let doc = new Document(server, "test:///test.mojo", `
-fn main():
+def main():
   """
   This is a docstring.
 

@@ -8,7 +8,7 @@
 # tests itself.
 
 # Don't move things around in this file, or else location info will break.
-fn imported_fn():
+def imported_fn():
     return
 
 @fieldwise_init
@@ -18,5 +18,5 @@ struct VeryUniqueStruct(TrivialRegisterPassable):
     # C-3PO is a short and very unique argument name. We use it to make
     # FileCheck matching easier.
     @staticmethod
-    fn very_unique_func(`C-3PO`: __mlir_type.index) -> VeryUniqueStruct:
+    def very_unique_func(`C-3PO`: __mlir_type.index) -> VeryUniqueStruct:
         return Self(`C-3PO`)

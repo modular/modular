@@ -7,7 +7,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-fn main():
+def main():
     comptime lst = [1, 2, 3]
     var dyn_lst = materialize[lst]()
     # CHECK: 1

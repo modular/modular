@@ -20,7 +20,7 @@ struct MixedIntFloat8(TrivialRegisterPassable):
 
 
 # CHECK: variadic_mixed_if_8byte: 11 11.5
-fn test_variadic_mixed_if_8byte():
+def test_variadic_mixed_if_8byte():
     var s = MixedIntFloat8(10, 10.5)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_mixed_if_8byte".value,
@@ -38,7 +38,7 @@ struct MixedDoubleInt16(TrivialRegisterPassable):
 
 
 # CHECK: variadic_mixed_di_16byte: 101.5 11
-fn test_variadic_mixed_di_16byte():
+def test_variadic_mixed_di_16byte():
     var s = MixedDoubleInt16(100.5, 10)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_mixed_di_16byte".value,
@@ -48,6 +48,6 @@ fn test_variadic_mixed_di_16byte():
     print("variadic_mixed_di_16byte:", result.d, result.i)
 
 
-fn main():
+def main():
     test_variadic_mixed_if_8byte()
     test_variadic_mixed_di_16byte()

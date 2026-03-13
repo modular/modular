@@ -23,7 +23,7 @@ struct MixedIntFloat8(TrivialRegisterPassable):
     var f: Float32
 
 
-fn test_mixed_if_8byte():
+def test_mixed_if_8byte():
     var s = MixedIntFloat8(10, 10.5)
     var result = external_call["c_func_mixed_if_8byte", MixedIntFloat8](s)
     print("mixed_if_8byte:", result.i, result.f)
@@ -43,7 +43,7 @@ struct MixedIntDouble12(TrivialRegisterPassable):
     var d: Float64
 
 
-fn test_mixed_id_12byte():
+def test_mixed_id_12byte():
     var s = MixedIntDouble12(10, 100.5)
     var result = external_call["c_func_mixed_id_12byte", MixedIntDouble12](s)
     print("mixed_id_12byte:", result.i, result.d)
@@ -62,7 +62,7 @@ struct MixedIntDouble16(TrivialRegisterPassable):
     var d: Float64
 
 
-fn test_mixed_id_16byte():
+def test_mixed_id_16byte():
     var s = MixedIntDouble16(10, 100.5)
     var result = external_call["c_func_mixed_id_16byte", MixedIntDouble16](s)
     print("mixed_id_16byte:", result.i, result.d)
@@ -81,7 +81,7 @@ struct MixedDoubleInt16(TrivialRegisterPassable):
     var i: Int64
 
 
-fn test_mixed_di_16byte():
+def test_mixed_di_16byte():
     var s = MixedDoubleInt16(100.5, 10)
     var result = external_call["c_func_mixed_di_16byte", MixedDoubleInt16](s)
     print("mixed_di_16byte:", result.d, result.i)
@@ -103,7 +103,7 @@ struct MixedComplex24(TrivialRegisterPassable):
     var i2: Int32
 
 
-fn test_mixed_complex_24byte():
+def test_mixed_complex_24byte():
     var s = MixedComplex24(10, 10.5, 20.5, 30)
     var result = external_call["c_func_mixed_complex_24byte", MixedComplex24](s)
     print("mixed_complex_24byte:", result.i1, result.f, result.d, result.i2)
@@ -115,7 +115,7 @@ fn test_mixed_complex_24byte():
 # ============================================================================
 # Main - run all tests
 # ============================================================================
-fn main():
+def main():
     test_mixed_if_8byte()
     test_mixed_id_12byte()
     test_mixed_id_16byte()

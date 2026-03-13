@@ -13,27 +13,27 @@
 @fieldwise_init
 struct Thing(TrivialRegisterPassable):
     @implicit
-    fn __init__(out self, x: NMType):
+    def __init__(out self, x: NMType):
         return
 
-    fn foo(self):
+    def foo(self):
         pass
 
     @staticmethod
-    fn bar():
+    def bar():
         pass
 
 
 # COM: Test various things related to interfacing with generic types.
-fn anytype[T: TrivialRegisterPassable]():
+def anytype[T: TrivialRegisterPassable]():
     pass
 
 
-fn anytype_arg[T: TrivialRegisterPassable](x: T):
+def anytype_arg[T: TrivialRegisterPassable](x: T):
     pass
 
 
-fn anytype_result[T: TrivialRegisterPassable]() -> T:
+def anytype_result[T: TrivialRegisterPassable]() -> T:
     pass
 
 
@@ -44,7 +44,7 @@ struct NMType(ImplicitlyCopyable, RegisterPassable):
 
 
 # CHECK-LABEL: lit.fn @"metatypes()"
-fn metatypes():
+def metatypes():
     # COM: Test that a local alias can retain type properties.
     # CHECK: lit.alias.decl [[T:\*"T.*]]: !mt_Thing = <!Thing>
     comptime T = Thing
@@ -81,18 +81,18 @@ fn metatypes():
 @fieldwise_init
 struct StefStressTest[x: Int]:
     @staticmethod
-    fn increment() -> type_of(StefStressTest[Self.x + 1]):
+    def increment() -> type_of(StefStressTest[Self.x + 1]):
         while True:
             pass
         # return StefStressTest[x+1]  # Doesn't work yet.
 
 
-fn use_int(a: Int):
+def use_int(a: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"access_param_from_metatype()"
-fn access_param_from_metatype():
+def access_param_from_metatype():
     # CHECK-NEXT: lit.alias.decl *"f1`": meta<!lit.struct<#StefStressTest <:!Int {1}>>>
     comptime f1 = StefStressTest[0].increment()
     # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <{1}>
@@ -108,10 +108,10 @@ fn access_param_from_metatype():
 
 # COM: we should handle mt_Int : mt_mt_Int -> copyable : any_trait<Copyable>
 # correctly, since Int is a Copyable
-fn meta_type_to_trait[T: type_of(Copyable), //, W: T](t: W):
+def meta_type_to_trait[T: type_of(Copyable), //, W: T](t: W):
     pass
 
 
-fn meta_type_to_trait_driver():
+def meta_type_to_trait_driver():
     # CHECK: lit.call @metatypes::@"meta_type_to_trait[{{.*}}]<:!lit.anytrait<!Copyable> !mt_Int, :!mt_Int !Int>(%1)
     meta_type_to_trait[Int](1)

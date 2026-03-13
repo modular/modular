@@ -10,7 +10,7 @@
 from std.compile import compile_info
 
 
-fn param_fn[x: Int, y: Int]() -> Int:
+def param_fn[x: Int, y: Int]() -> Int:
     return x + y
 
 

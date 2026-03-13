@@ -12,7 +12,7 @@ from imported_module import *
 
 
 # CHECK-LABEL: lit.fn @"foo
-fn foo():
+def foo():
     imported_fn()
 
 

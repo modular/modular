@@ -30,7 +30,7 @@ from test_std_mock import (
 )
 
 
-fn main():
+def main():
     # Just using these to trigger the imports.
     # The warnings should be emitted during parsing of test_std_mock,
     # not during use here.

@@ -19,5 +19,5 @@
 # RUN: test -x default_output_name_2
 
 
-fn main():
+def main():
     pass

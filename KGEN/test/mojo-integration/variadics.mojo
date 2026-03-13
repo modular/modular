@@ -12,14 +12,14 @@ struct TalkativeMem(Writable):
     var state: Int
 
     @implicit
-    fn __init__(out self, state: Int):
+    def __init__(out self, state: Int):
         self.state = state
         print("initializing", state)
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         print("destroying", self.state)
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("talkative ", self.state)
 
 
@@ -28,14 +28,14 @@ struct TalkativeReg(RegisterPassable, Writable):
     var state: Int
 
     @implicit
-    fn __init__(out self, state: Int):
+    def __init__(out self, state: Int):
         self.state = state
         print("initializing", state)
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         print("destroying", self.state)
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("talkative ", self.state)
 
 
@@ -44,18 +44,18 @@ struct TalkativeCopableReg(ImplicitlyCopyable, RegisterPassable, Writable):
     var state: Int
 
     @implicit
-    fn __init__(out self, state: Int):
+    def __init__(out self, state: Int):
         self.state = state
         print("initializing", state)
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.state = copy.state
         print("copying", self.state)
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         print("destroying", self.state)
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("talkative ", self.state)
 
 
@@ -64,22 +64,22 @@ struct TalkativeCopableMovableMem(ImplicitlyCopyable, Writable):
     var state: Int
 
     @implicit
-    fn __init__(out self, state: Int):
+    def __init__(out self, state: Int):
         self.state = state
         print("initializing", state)
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.state = copy.state
         print("copying", self.state)
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         self.state = take.state
         print("moving", self.state)
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         print("destroying", self.state)
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("talkative ", self.state)
 
 
@@ -88,14 +88,14 @@ struct TalkativeCopableMovableMem(ImplicitlyCopyable, Writable):
 # ===----------------------------------------------------------------------=== #
 
 
-fn test_inout_varargs():
+def test_inout_varargs():
     # CHECK: -- Testing mut varargs
     print("-- Testing mut varargs")
     var s1: String = "hello"
     var s2: String = "konnichiwa"
     var s3: String = "bonjour"
 
-    fn make_worldly(mut *strs: String):
+    def make_worldly(mut *strs: String):
         for i in range(len(strs)):
             strs[i] += " world"
 
@@ -109,7 +109,7 @@ fn test_inout_varargs():
     var v1 = TalkativeMem(1)  # CHECK-NEXT: initializing 1
     var v2 = TalkativeMem(2)  # CHECK-NEXT: initializing 2
 
-    fn double(mut *tm: TalkativeMem):
+    def double(mut *tm: TalkativeMem):
         for i in range(len(tm)):
             tm[i].state *= 2
 
@@ -123,7 +123,7 @@ fn test_inout_varargs():
 # ===----------------------------------------------------------------------=== #
 
 
-fn test_owned_varargs():
+def test_owned_varargs():
     # CHECK: -- testing owned mem varargs
     print("\n-- testing owned mem varargs")
 
@@ -131,7 +131,7 @@ fn test_owned_varargs():
     var v2 = TalkativeMem(2)  # CHECK-NEXT: initializing 2
     var v3 = TalkativeMem(3)  # CHECK-NEXT: initializing 3
 
-    fn handle_owned_mem(var *strs: TalkativeMem):
+    def handle_owned_mem(var *strs: TalkativeMem):
         # owned arguments are mutable and live as long as they are used.
         for i in range(len(strs)):
             strs[i].state *= 2
@@ -150,7 +150,7 @@ fn test_owned_varargs():
     print("after call")
 
 
-fn test_owned_reg_varargs():
+def test_owned_reg_varargs():
     # CHECK: -- testing owned reg varargs
     print("\n-- testing owned reg varargs")
 
@@ -158,7 +158,7 @@ fn test_owned_reg_varargs():
     var v2 = TalkativeReg(2)  # CHECK-NEXT: initializing 2
     var v3 = TalkativeReg(3)  # CHECK-NEXT: initializing 3
 
-    fn handle_owned_reg(var *strs: TalkativeReg):
+    def handle_owned_reg(var *strs: TalkativeReg):
         # owned arguments are mutable and live as long as they are used.
         for ref s in strs:
             s.state *= 2
@@ -177,11 +177,11 @@ fn test_owned_reg_varargs():
     print("after call")
 
 
-fn test_non_trivial_reg_varargs():
+def test_non_trivial_reg_varargs():
     # CHECK: -- test_non_trivial_reg_varargs
     print("\n-- test_non_trivial_reg_varargs")
 
-    fn callee(*args: TalkativeCopableReg):
+    def callee(*args: TalkativeCopableReg):
         var arg: TalkativeCopableReg
 
         if len(args) == 1:
@@ -215,7 +215,7 @@ fn test_non_trivial_reg_varargs():
 # ===----------------------------------------------------------------------=== #
 
 
-fn owned_variadic_pack[*Ts: Writable](var *pack: *Ts):
+def owned_variadic_pack[*Ts: Writable](var *pack: *Ts):
     print("-- testing owned variadic pack with", len(pack), "elements")
 
     # TODO: Test mutation of the value not just reading of the value.
@@ -225,7 +225,7 @@ fn owned_variadic_pack[*Ts: Writable](var *pack: *Ts):
     print("owned_variadic_pack done")
 
 
-fn test_owned_variadic_pack():
+def test_owned_variadic_pack():
     # CHECK: -- testing owned variadic pack with 0 elements
     owned_variadic_pack()
     # CHECK-NEXT: owned_variadic_pack done
@@ -257,7 +257,7 @@ fn test_owned_variadic_pack():
     print("done three")
 
 
-fn inout_variadic_pack[*Ts: Writable](mut *pack: *Ts):
+def inout_variadic_pack[*Ts: Writable](mut *pack: *Ts):
     print("-- testing mut variadic pack with", len(pack), "elements")
 
     # TODO: Test mutation of the value not just reading of the value.
@@ -265,7 +265,7 @@ fn inout_variadic_pack[*Ts: Writable](mut *pack: *Ts):
         print("hello", pack[i])
 
 
-fn test_inout_variadic_pack():
+def test_inout_variadic_pack():
     # CHECK: -- testing mut variadic pack with 2 elements
     # CHECK: hello foo
     # CHECK: hello 42
@@ -290,14 +290,14 @@ fn test_inout_variadic_pack():
     print("")
 
 
-fn borrowed_variadic_pack[*Ts: Writable](*pack: *Ts):
+def borrowed_variadic_pack[*Ts: Writable](*pack: *Ts):
     print("-- testing read-only variadic pack with", len(pack), "elements")
 
     comptime for i in range(pack.__len__()):
         print("hello", pack[i])
 
 
-fn test_borrowed_variadic_pack():
+def test_borrowed_variadic_pack():
     # CHECK: -- testing read-only variadic pack with 2 elements
     # CHECK: hello foo
     # CHECK: hello 42
@@ -320,7 +320,7 @@ fn test_borrowed_variadic_pack():
 
 
 # Sum all the specified values together.
-fn sum_intable[*Ts: Intable](*pack: *Ts) -> Int:
+def sum_intable[*Ts: Intable](*pack: *Ts) -> Int:
     var result = 0
 
     comptime for i in range(pack.__len__()):
@@ -330,7 +330,7 @@ fn sum_intable[*Ts: Intable](*pack: *Ts) -> Int:
 
 
 # Check to see if we can do packs at comptime.
-fn test_comptime_pack():
+def test_comptime_pack():
     # CHECK-LABEL: test_comptime_pack
     print("test_comptime_pack")
 
@@ -342,11 +342,11 @@ fn test_comptime_pack():
     # CHECK: 16
 
 
-fn use_value[T: AnyType](value: T):
+def use_value[T: AnyType](value: T):
     pass
 
 
-fn test_tuple():
+def test_tuple():
     # CHECK-LABEL: -- test_tuple
     print("-- test_tuple")
 
@@ -390,7 +390,7 @@ fn test_tuple():
     print("test_tuple done!")
 
 
-fn main():
+def main():
     test_inout_varargs()
     test_owned_varargs()
     test_owned_reg_varargs()

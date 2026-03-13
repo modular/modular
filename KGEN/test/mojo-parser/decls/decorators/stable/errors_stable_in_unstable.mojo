@@ -21,14 +21,14 @@ from test_std_mock import *
 # To trigger the trait error, we need to implement the unstable trait.
 # This forces resolution of the trait's method signatures.
 struct ImplementsUnstableTrait(UnstableTraitWithStableMember):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn stable_method_in_unstable_trait(self):
+    def stable_method_in_unstable_trait(self):
         pass
 
 
-fn main():
+def main():
     # Force use of the types and methods to ensure they're fully resolved.
     var x = UnstableStructWithStableMember()
     x.stable_method_in_unstable()

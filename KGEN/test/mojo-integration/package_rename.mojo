@@ -17,6 +17,6 @@
 from `renamed-package`.module import identity
 
 
-fn main():
+def main():
     # CHECK: hi
     print(identity("hi"))

@@ -36,7 +36,7 @@
 from bitcode_package import double_add, extern_add, extern_multiply
 
 
-fn main():
+def main():
     # COM: Test a method that directly uses extern functions
     var doubled = double_add(5, 3)
     # COM: Should compute: extern_add(extern_add(5, 3), extern_add(5, 3)) = extern_add(8, 8) = 16

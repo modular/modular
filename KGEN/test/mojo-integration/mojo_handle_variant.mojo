@@ -13,22 +13,22 @@ struct S:
     var v: Int
 
     @implicit
-    fn __init__(out self, x: Int):
+    def __init__(out self, x: Int):
         print("init", x)
         self.v = x
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         print("destroy", self.v)
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.v = copy.v
 
 
-fn mightThrow() raises:
+def mightThrow() raises:
     return
 
 
-fn foo(c: Bool):
+def foo(c: Bool):
     var s = S(len("1234"))
     try:
         if c:
@@ -38,13 +38,13 @@ fn foo(c: Bool):
         pass
 
 
-fn fail(str: StringSlice) raises -> S:
+def fail(str: StringSlice) raises -> S:
     if len(str) > 5:
         raise Error(str)
     return S(len(str))
 
 
-fn main():
+def main():
     # CHECK: init 4
     # CHECK: destroy 4
     foo(True)

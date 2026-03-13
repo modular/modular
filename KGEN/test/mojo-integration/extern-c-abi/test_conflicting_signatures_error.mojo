@@ -17,15 +17,15 @@
 from std.ffi import external_call
 
 
-fn call_with_int32():
+def call_with_int32():
     external_call["c_takes_int64", NoneType](Int32(1))
 
 
-fn call_with_uint64():
+def call_with_uint64():
     # CHECK: existing function with conflicting signature
     external_call["c_takes_int64", NoneType](UInt64(2))
 
 
-fn main():
+def main():
     call_with_int32()
     call_with_uint64()

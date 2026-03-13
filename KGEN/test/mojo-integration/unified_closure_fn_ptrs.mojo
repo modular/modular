@@ -8,11 +8,11 @@
 from std.sys import argv
 
 
-fn top_level(x: Int) -> Int:
+def top_level(x: Int) -> Int:
     return x
 
 
-fn takeIt[T: fn(Int) unified -> Int](cb: T, x: Int):
+def takeIt[T: def(Int) unified -> Int](cb: T, x: Int):
     print(cb(x))
 
 

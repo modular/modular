@@ -41,7 +41,7 @@ struct DiamondMissingExplicitBase[T: Movable](
 ):
     var data: Self.T
 
-    fn __init__(out self, var data: Self.T):
+    def __init__(out self, var data: Self.T):
         self.data = data^
 
 
@@ -71,7 +71,7 @@ struct DerivedDoesNotImplyAncestor[T: Movable](
 ):
     var data: Self.T
 
-    fn __init__(out self, var data: Self.T):
+    def __init__(out self, var data: Self.T):
         self.data = data^
 
 
@@ -102,7 +102,7 @@ struct UnconditionalDerivedConditionalAncestor[T: Movable](
 ):
     var data: Self.T
 
-    fn __init__(out self, var data: Self.T):
+    def __init__(out self, var data: Self.T):
         self.data = data^
 
 
@@ -120,7 +120,7 @@ struct ConditionalTrivialRegPassable[T: Movable](
 ):
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
 struct ConditionalRegPassable[T: Movable](
@@ -130,7 +130,7 @@ struct ConditionalRegPassable[T: Movable](
 ):
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
 
@@ -147,7 +147,7 @@ struct ConditionalImplicitlyDestructible[T: Movable](
 ):
     var data: Self.T
 
-    fn __init__(out self, var data: Self.T):
+    def __init__(out self, var data: Self.T):
         self.data = data^
 
 
@@ -163,7 +163,7 @@ struct ConditionalImplicitlyDestructible[T: Movable](
 # expected-note @below {{trait 'UnconditionalConformanceTrait' declared here}}
 trait UnconditionalConformanceTrait:
     # expected-note @below {{required by trait method here}}
-    fn do_something(self):
+    def do_something(self):
         ...
 
 
@@ -172,7 +172,7 @@ struct UnconditionalWithConditionalMethod[x: Int](
     Movable, UnconditionalConformanceTrait
 ):
     # expected-note @below {{method 'do_something' has constraints that cannot be proven or disproven from conformance constraint}}
-    fn do_something(self) where Self.x > 10:
+    def do_something(self) where Self.x > 10:
         pass
 
 
@@ -188,7 +188,7 @@ struct UnconditionalWithConditionalMethod[x: Int](
 # expected-note @below {{trait 'MismatchedConstraintTrait' declared here}}
 trait MismatchedConstraintTrait:
     # expected-note @below {{required by trait method here}}
-    fn process(self):
+    def process(self):
         ...
 
 
@@ -198,7 +198,7 @@ struct MismatchedConstraints[T: Movable](
 ):
     # This method requires Copyable, but conformance only guarantees Intable
     # expected-note @below {{method 'process' has constraints that cannot be proven or disproven from conformance constraint}}
-    fn process(self) where conforms_to(Self.T, Copyable):
+    def process(self) where conforms_to(Self.T, Copyable):
         pass
 
 
@@ -213,7 +213,7 @@ struct MismatchedConstraints[T: Movable](
 # expected-note @below {{trait 'WeakerConformanceTrait' declared here}}
 trait WeakerConformanceTrait:
     # expected-note @below {{required by trait method here}}
-    fn execute(self):
+    def execute(self):
         ...
 
 
@@ -224,7 +224,7 @@ struct WeakerConformanceStrongerMethod[T: Movable](
 ):
     # This method requires BOTH Copyable AND Intable, but conformance only guarantees Copyable
     # expected-note @below {{method 'execute' has constraints that cannot be proven or disproven from conformance constraint}}
-    fn execute(
+    def execute(
         self,
     ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Intable):
         pass
@@ -242,7 +242,7 @@ struct WeakerConformanceStrongerMethod[T: Movable](
 # expected-note @below {{trait 'AmbiguousMethodTrait' declared here}}
 trait AmbiguousMethodTrait:
     # expected-note @below {{ambiguous use of 'perform'}}
-    fn perform(self):
+    def perform(self):
         ...
 
 
@@ -253,12 +253,12 @@ struct AmbiguousUnconditionalAndConditional[T: Movable](
 ):
     # Unconditional method - always valid
     # expected-note @below {{candidate declared here}}
-    fn perform(self):
+    def perform(self):
         pass
 
     # Conditional method - also valid because conformance implies T: Copyable
     # expected-note @below {{candidate declared here}}
-    fn perform(self) where conforms_to(Self.T, Copyable):
+    def perform(self) where conforms_to(Self.T, Copyable):
         pass
 
 
@@ -274,7 +274,7 @@ struct AmbiguousUnconditionalAndConditional[T: Movable](
 # expected-note @below {{trait 'MultipleConditionsTrait' declared here}}
 trait MultipleConditionsTrait:
     # expected-note @below {{ambiguous use of 'run'}}
-    fn run(self):
+    def run(self):
         ...
 
 
@@ -287,12 +287,12 @@ struct AmbiguousBothConditional[T: Movable](
 ):
     # Method requiring Copyable - implied by conformance
     # expected-note @below {{candidate declared here}}
-    fn run(self) where conforms_to(Self.T, Copyable):
+    def run(self) where conforms_to(Self.T, Copyable):
         pass
 
     # Method requiring Intable - also implied by conformance
     # expected-note @below {{candidate declared here}}
-    fn run(self) where conforms_to(Self.T, Intable):
+    def run(self) where conforms_to(Self.T, Intable):
         pass
 
 
@@ -312,7 +312,7 @@ struct AmbiguousBothConditional[T: Movable](
 # expected-note @below {{trait 'UnprovableCandidateTrait' declared here}}
 trait UnprovableCandidateTrait:
     # expected-note @below {{required by trait method here}}
-    fn handle(self):
+    def handle(self):
         ...
 
 
@@ -323,12 +323,12 @@ struct UnprovableWithValidCandidate[T: Movable](
 ):
     # Unprovable: Intable is unrelated to Copyable - can't prove or disprove.
     # expected-note @below {{method 'handle' has constraints that cannot be proven or disproven from conformance constraint}}
-    fn handle(self) where conforms_to(Self.T, Intable):
+    def handle(self) where conforms_to(Self.T, Intable):
         pass
 
     # Provable: Copyable matches the conformance constraint.
     # But we still error because we can't rule out the above candidate.
-    fn handle(self) where conforms_to(Self.T, Copyable):
+    def handle(self) where conforms_to(Self.T, Copyable):
         pass
 
 
@@ -347,7 +347,7 @@ struct UnprovableWithValidCandidate[T: Movable](
 # expected-note @below {{trait 'ContradictingConstraintTrait' declared here}}
 trait ContradictingConstraintTrait:
     # expected-note @below {{no 'apply' candidates have type}}
-    fn apply(self):
+    def apply(self):
         ...
 
 
@@ -357,7 +357,7 @@ struct DisprovedWithWhereNot[T: Movable](
     Movable,
 ):
     # Disproved: `not conforms_to(T, Copyable)` contradicts conformance.
-    fn apply(self) where not conforms_to(Self.T, Copyable):
+    def apply(self) where not conforms_to(Self.T, Copyable):
         pass
 
 
@@ -373,7 +373,7 @@ struct DisprovedWithWhereNot[T: Movable](
 trait DefaultMethodTrait:
     # expected-note @below {{cannot prove constraint for candidate}}
     # expected-note @below {{generated function with type}}
-    fn custom_default(self) -> Int:
+    def custom_default(self) -> Int:
         return 42
 
 
@@ -382,12 +382,12 @@ struct ConditionalDefaultMethod[T: Movable](
     DefaultMethodTrait where conforms_to(T, Copyable),
     Movable,
 ):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
 
-fn call_default_externally[T: Movable](x: ConditionalDefaultMethod[T]):
+def call_default_externally[T: Movable](x: ConditionalDefaultMethod[T]):
     # expected-error @below {{lacking evidence to prove correctness}}
     # expected-note @below {{provide evidence for the constraint}}
     var a = x.custom_default()
@@ -398,14 +398,14 @@ fn call_default_externally[T: Movable](x: ConditionalDefaultMethod[T]):
 # ===========================================================================
 # A zero-field struct with conditional conformance. The compiler auto-
 # synthesizes an empty copy/move init whose body trivially succeeds, so
-# the conformance constraint on the FnOp is the only thing preventing
+# the conformance constraint on the defOp is the only thing preventing
 # misuse.
 
 
 trait ZeroFieldTrait:
     # expected-note @below {{cannot prove constraint for candidate}}
     # expected-note @below {{generated function with type}}
-    fn zero_field_method(self) -> Int:
+    def zero_field_method(self) -> Int:
         return 0
 
 
@@ -414,12 +414,12 @@ struct ZeroFieldConditional[T: Movable](
     ZeroFieldTrait where conforms_to(T, Copyable),
     Movable,
 ):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
 
-fn call_on_zero_field[T: Movable](x: ZeroFieldConditional[T]):
+def call_on_zero_field[T: Movable](x: ZeroFieldConditional[T]):
     # expected-error @below {{lacking evidence to prove correctness}}
     # expected-note @below {{provide evidence for the constraint}}
     var a = x.zero_field_method()
@@ -442,7 +442,7 @@ struct CopySynthFailsWithOR[T: ImplicitlyDestructible & Movable](
     # expected-error @below {{cannot synthesize copy constructor because field 'value' has non-copyable type}}
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
 
@@ -467,6 +467,6 @@ struct CopySynthFailsMultiField[
     # expected-error @below {{cannot synthesize copy constructor because field 'second' has non-copyable type}}
     var second: Self.U
 
-    fn __init__(out self, var first: Self.T, var second: Self.U):
+    def __init__(out self, var first: Self.T, var second: Self.U):
         self.first = first^
         self.second = second^

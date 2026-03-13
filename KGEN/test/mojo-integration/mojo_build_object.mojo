@@ -16,5 +16,5 @@
 # CHECK: output.o: {{(Mach-O 64-bit object|ELF 64-bit LSB relocatable)}}
 
 
-fn main():
+def main():
     pass

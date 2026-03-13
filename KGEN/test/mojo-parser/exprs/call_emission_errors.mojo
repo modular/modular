@@ -8,11 +8,11 @@
 
 
 # expected-note @+1 {{function declared here}}
-fn takes_pos_only_arg(a: Int, b: Int, /):
+def takes_pos_only_arg(a: Int, b: Int, /):
     pass
 
 
-fn test_pos_only_arg_passed_by_kw(x: Int):
+def test_pos_only_arg_passed_by_kw(x: Int):
     # expected-error @+1 {{positional-only argument passed as keyword operand: 'b'}}
     takes_pos_only_arg(x, b=x)
 
@@ -21,11 +21,11 @@ fn test_pos_only_arg_passed_by_kw(x: Int):
 
 
 # expected-note @+1 {{function declared here}}
-fn takes_kw_only_arg(*, a: Int, b: Int, c: Int = 7):
+def takes_kw_only_arg(*, a: Int, b: Int, c: Int = 7):
     pass
 
 
-fn test_missing_kw_only_arg(x: Int):
+def test_missing_kw_only_arg(x: Int):
     # COM: missing kw-only error takes precedence over unknown keyword
     # expected-error @+1 {{missing 1 required keyword-only argument: 'b'}}
     takes_kw_only_arg(a=x, d=x)
@@ -35,21 +35,21 @@ fn test_missing_kw_only_arg(x: Int):
 
 
 # expected-note @+1 {{function declared here}}
-fn takes_pos_or_kw_arg(i: Int, j: Int):
+def takes_pos_or_kw_arg(i: Int, j: Int):
     pass
 
 
 # expected-note @+1 {{function declared here}}
-fn var_arg_func(*args: Int):
+def var_arg_func(*args: Int):
     pass
 
 
 # expected-note @+1 {{declared here}}
-fn pack_func[*Ts: AnyType](*args: *Ts):
+def pack_func[*Ts: AnyType](*args: *Ts):
     pass
 
 
-fn test_unknown_kw_arg(x: Int):
+def test_unknown_kw_arg(x: Int):
     # expected-error @+1 {{unknown keyword argument: 'c'}}
     takes_pos_or_kw_arg(x, c=x, j=x)
     # expected-error @+1 {{unknown keyword arguments: 'd', 'c'}}
@@ -60,7 +60,7 @@ fn test_unknown_kw_arg(x: Int):
     pack_func(args=x)
 
 
-fn test_passed_by_pos_and_kw_arg(x: Int):
+def test_passed_by_pos_and_kw_arg(x: Int):
     # expected-error @+1 {{argument passed both as positional and keyword operand: 'i'}}
     takes_pos_or_kw_arg(x, i=x)
 
@@ -69,11 +69,11 @@ fn test_passed_by_pos_and_kw_arg(x: Int):
 
 
 # expected-note @+1 {{declared here}}
-fn takes_pos_or_kw_param[i: Int, j: Int]():
+def takes_pos_or_kw_param[i: Int, j: Int]():
     pass
 
 
-fn test_unknown_kw_param[x: Int]():
+def test_unknown_kw_param[x: Int]():
     # expected-error @+1 {{unknown keyword parameter: 'c'}}
     takes_pos_or_kw_param[x, c=x, j=x]
     # expected-error @+1 {{unknown keyword parameters: 'd', 'c'}}
@@ -83,11 +83,11 @@ fn test_unknown_kw_param[x: Int]():
 
 
 # expected-note @+1 {{function declared here}}
-fn takes_pos_only_param[a: Int, b: Int, /]():
+def takes_pos_only_param[a: Int, b: Int, /]():
     pass
 
 
-fn test_pos_only_param_passed_by_kw[x: Int]():
+def test_pos_only_param_passed_by_kw[x: Int]():
     # expected-error @+1 {{positional-only parameter passed as keyword operand: 'b'}}
     takes_pos_only_param[x, b=x]()
 
@@ -96,11 +96,11 @@ fn test_pos_only_param_passed_by_kw[x: Int]():
 
 
 # expected-note @+1 {{function declared here}}
-fn takes_kw_only_param[*, a: Int, b: Int, c: Int = 7]():
+def takes_kw_only_param[*, a: Int, b: Int, c: Int = 7]():
     pass
 
 
-fn test_missing_kw_only_param[x: Int]():
+def test_missing_kw_only_param[x: Int]():
     # expected-error @+1 {{unknown keyword parameter: 'd'}}
     takes_kw_only_param[a=x, d=x]()
 
@@ -109,55 +109,55 @@ fn test_missing_kw_only_param[x: Int]():
 
 
 # expected-note @below {{declared here}}
-fn missing_keyword_only_params_tricky[a: Int, /, *, b: Int, c: Int = 3]():
+def missing_keyword_only_params_tricky[a: Int, /, *, b: Int, c: Int = 3]():
     pass
 
 
-fn test_missing_keyword_only_params_tricky[x: Int]():
+def test_missing_keyword_only_params_tricky[x: Int]():
     # expected-error @below {{'missing_keyword_only_params_tricky' expects 1 positional parameter, but 3 were specified}}
     missing_keyword_only_params_tricky[x, x, x]
 
 
 # expected-note @+1 {{function declared here}}
-fn takes_kw_only_args(a: Int, b: Int, *args: Int, c: Int, d: Int = 2):
+def takes_kw_only_args(a: Int, b: Int, *args: Int, c: Int, d: Int = 2):
     pass
 
 
-fn test_missing_positional_arg_with_vararg_keyword(x: Int):
+def test_missing_positional_arg_with_vararg_keyword(x: Int):
     # expected-error @+1 {{missing 1 required positional argument: 'b'}}
     takes_kw_only_args(x, c=2)
 
 
-fn test_missing_keyword_arg_with_vararg_keyword(x: Int):
+def test_missing_keyword_arg_with_vararg_keyword(x: Int):
     takes_kw_only_args(x, x, c=2)
 
 
 struct MemExample(ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
 
 struct MemExampleTriviallyCopyable(ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
-fn mutateMem(mut a: MemExample):
+def mutateMem(mut a: MemExample):
     pass
 
 
-fn mutateMemTC(mut a: MemExampleTriviallyCopyable):
+def mutateMemTC(mut a: MemExampleTriviallyCopyable):
     pass
 
 
-fn mutateInt(mut a: Int):
+def mutateInt(mut a: Int):
     pass
 
 
-fn initialize_in_addrspace(
+def initialize_in_addrspace(
     memptr: UnsafePointer[
         MemExample, AnyOrigin[mut=True], address_space=AddressSpace(1)
     ],
@@ -171,7 +171,7 @@ fn initialize_in_addrspace(
     regptr[] = Int()
 
 
-fn mutate_in_addrspace(
+def mutate_in_addrspace(
     memptr: UnsafePointer[
         MemExample, AnyOrigin[mut=True], address_space=AddressSpace(1)
     ],
@@ -192,7 +192,7 @@ fn mutate_in_addrspace(
     mutateInt(regptr[])
 
 
-fn variadic_addr_space(
+def variadic_addr_space(
     memptr: UnsafePointer[
         MemExample, AnyOrigin[mut=True], address_space=AddressSpace(1)
     ],
@@ -207,20 +207,20 @@ fn variadic_addr_space(
 
 
 struct ParametricMutability:
-    fn take_inout(mut self):  # expected-note {{function declared here}}
+    def take_inout(mut self):  # expected-note {{function declared here}}
         # This is ok
         self.take_parametric()
 
-    fn take_parametric(ref self):
+    def take_parametric(ref self):
         # expected-error @+1 {{invalid call to 'take_inout': invalid use of mutating method on rvalue of type 'ParametricMutability'}}
         self.take_inout()
 
 
-fn test_ref[mut: Bool, //, origin: Origin[mut=mut]](ref[origin] arg: String):
+def test_ref[mut: Bool, //, origin: Origin[mut=mut]](ref[origin] arg: String):
     pass
 
 
-fn call_test_ref(mut s: String):
+def call_test_ref(mut s: String):
     # expected-error @+1 {{cannot use parameterized function of type 'fn[mut: Bool, _, +, origin: Origin[mut=mut]](ref[_mlir_origin] arg: String) -> None' without binding all its parameters}}
     var f1 = test_ref
 
@@ -235,7 +235,7 @@ struct MyMutSpan[origin: Origin[mut=True]]:
     pass
 
 
-fn take_two_spans(a: MyMutSpan[_], b: MyMutSpan[_]):
+def take_two_spans(a: MyMutSpan[_], b: MyMutSpan[_]):
     # This is totally fine, can take two different mutable spans.
     pass
 
@@ -246,7 +246,7 @@ struct MyStruct(ImplicitlyCopyable):
     var b: Int
 
 
-fn exclusivity[
+def exclusivity[
     spanlife: Origin[mut=True]
 ](mut x: MyStruct, span: MyMutSpan[spanlife]):
     # Compiler injects a temporary to make this ok.
@@ -260,33 +260,33 @@ fn exclusivity[
     take_two_spans(span, span)
 
 
-fn mutate_two[A: AnyType, B: AnyType](mut a: A, mut b: B):
+def mutate_two[A: AnyType, B: AnyType](mut a: A, mut b: B):
     pass
 
 
-fn take_two_owned[A: AnyType, B: AnyType](var a: A, var b: B):
+def take_two_owned[A: AnyType, B: AnyType](var a: A, var b: B):
     pass
 
 
-fn mutate_one_read_one[A: AnyType, B: AnyType](mut a: A, b: B):
+def mutate_one_read_one[A: AnyType, B: AnyType](mut a: A, b: B):
     pass
 
 
-fn mutate_two_AnyLifetime(
+def mutate_two_AnyLifetime(
     ref[AnyOrigin[mut=True]] a: Int, ref[AnyOrigin[mut=True]] b: Int
 ):
     pass
 
 
-fn mutate_variadic_any[T: AnyType](mut *values: T):
+def mutate_variadic_any[T: AnyType](mut *values: T):
     pass
 
 
-fn mutate_pack[*Ts: AnyType](mut *strs: *Ts):
+def mutate_pack[*Ts: AnyType](mut *strs: *Ts):
     pass
 
 
-fn inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
+def inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
     # This is ok.
     mutate_two(a, b)
 
@@ -356,9 +356,9 @@ fn inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
     mutate_pack(s, s)
 
 
-fn capture_exclusivity(var x: MemExample):
+def capture_exclusivity(var x: MemExample):
     @parameter
-    fn capture_and_read(y: MemExample):
+    def capture_and_read(y: MemExample):
         _ = x^
 
     # FIXME(MOCO-3241): Re-enable this.
@@ -368,11 +368,11 @@ fn capture_exclusivity(var x: MemExample):
 
 
 # expected-note @below {{function declared here}}
-fn param_inference_unrelated_error[T: AnyType](x: T, y: FloatLiteral[_]):
+def param_inference_unrelated_error[T: AnyType](x: T, y: FloatLiteral[_]):
     pass
 
 
-fn call_param_inference_unrelated_error():
+def call_param_inference_unrelated_error():
     comptime x = "hello"
     comptime y = "world"
     # expected-error @below {{value passed to 'y' cannot be converted from 'StringLiteral["world"]' to 'FloatLiteral[y.value]', it depends on an unresolved parameter 'y.value'}}
@@ -383,7 +383,7 @@ fn call_param_inference_unrelated_error():
 struct MyRPStruct(RegisterPassable):
     var a: Int
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 
@@ -391,25 +391,25 @@ struct MyRPStruct(RegisterPassable):
 struct MyRPStruct2(RegisterPassable):
     var b: MyRPStruct
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 
-fn take_owned_and_mutate_rp(var a: MyRPStruct2, mut b: MyRPStruct2):
+def take_owned_and_mutate_rp(var a: MyRPStruct2, mut b: MyRPStruct2):
     pass
 
 
-fn rp_exclusivity(mut x: MyRPStruct2):
+def rp_exclusivity(mut x: MyRPStruct2):
     # expected-error @below {{argument of 'take_owned_and_mutate_rp' call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'x' value is passed through aliasing 'mut' argument}}
     take_owned_and_mutate_rp(x^, x)
 
 
-fn take_and_mutate_rp(a: MyRPStruct, mut b: MyRPStruct2):
+def take_and_mutate_rp(a: MyRPStruct, mut b: MyRPStruct2):
     pass
 
 
-fn rp_exclusivity2(mut x: MyRPStruct2):
+def rp_exclusivity2(mut x: MyRPStruct2):
     # expected-error @below {{argument of 'take_and_mutate_rp' call allows writing a memory location previously readable through another aliased argument}}
     # expected-note @below {{'x' value is passed through aliasing 'mut' argument}}
     take_and_mutate_rp(x.b, x)
@@ -419,16 +419,16 @@ fn rp_exclusivity2(mut x: MyRPStruct2):
 
 
 # expected-note @below {{function declared here}}
-fn my_print_variadic[*Ts: MyWritable](x: Int, *args: *Ts):
+def my_print_variadic[*Ts: MyWritable](x: Int, *args: *Ts):
     pass
 
 
 # expected-note @below {{function declared here}}
-fn my_print_single[T: MyWritable](value: T):
+def my_print_single[T: MyWritable](value: T):
     pass
 
 
-fn test_print_errors(s: MyStruct):
+def test_print_errors(s: MyStruct):
     # expected-error @below {{invalid call to 'my_print_variadic': could not convert element of 'args' with type 'MyStruct' to expected type 'MyWritable'}}
     my_print_variadic(1, s)
 
@@ -437,31 +437,31 @@ fn test_print_errors(s: MyStruct):
 
 
 trait MyWritable:
-    fn method(self):
+    def method(self):
         pass
 
 
 # Issue #4499: https://github.com/modular/modular/issues/4499
 # Traits with ref self cause issues when used as parameter
 trait MyTrait4499:
-    fn method(ref self):
+    def method(ref self):
         ...
 
 
 struct MyStruct4499(MyTrait4499):
-    fn method(ref self):
+    def method(ref self):
         pass
 
 
 struct Owner4499[T: MyTrait4499]:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
-fn my_func4499(arg0: Owner4499, arg1: Owner4499):
+def my_func4499(arg0: Owner4499, arg1: Owner4499):
     pass
 
 
-fn test_4499_exclusivity():
+def test_4499_exclusivity():
     # Should be ok.
     my_func4499(Owner4499[MyStruct4499](), Owner4499[MyStruct4499]())

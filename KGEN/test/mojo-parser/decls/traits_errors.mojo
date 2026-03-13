@@ -10,32 +10,32 @@
 # expected-note @below {{trait 'MyMovable' declared here}}
 trait MyMovable:
     # expected-note @below {{required function '__init__' is not implemented}}
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         ...
 
 
 trait ErroneousTrait:
     # expected-error @+1 {{'self' argument must have type 'Self' in trait method declaration, but actually has type 'Int'}}
-    fn add(self: Int):
+    def add(self: Int):
         ...
 
 
 trait FooTrait:
-    fn foo(self):
+    def foo(self):
         ...
 
 
 struct ParamType[x: Int](FooTrait):
-    fn foo(self):
+    def foo(self):
         pass
 
 
-fn invalid_trait_bind():
+def invalid_trait_bind():
     # expected-error @below {{'ParamType[?]' is not concrete, uses '[]' to bind missing parameters}}
     comptime Bound: FooTrait = ParamType
 
 
-fn different_trait_types[
+def different_trait_types[
     T: ImplicitlyCopyable, U: ImplicitlyCopyable
 ](x: T) -> U:
     # expected-error @below {{cannot implicitly convert 'T' value to 'U'}}
@@ -46,18 +46,18 @@ fn different_trait_types[
 trait SimpleTrait:
     # expected-note @below {{required function 'some_method' is not implemented}}
     # expected-note @below {{no 'some_method' candidates have type 'fn(self: ParamDoesNotConform[x]) -> None'}}
-    fn some_method(self):
+    def some_method(self):
         ...
 
 
 # expected-error @below {{'TraitStruct' does not implement all requirements for 'MyMovable'}}
 struct TraitStruct(MyMovable, SimpleTrait):
-    fn some_method(self):
+    def some_method(self):
         pass
 
 
 # expected-note @+1 {{function declared here}}
-fn test_many_things_of_specified_trait[
+def test_many_things_of_specified_trait[
     element_type: type_of(AnyType), *element_types: element_type
 ]():
     pass
@@ -71,11 +71,11 @@ struct DoesNotConform(SimpleTrait):
 # expected-error @below {{'ParamDoesNotConform[x]' does not implement all requirements for 'SimpleTrait'}}
 struct ParamDoesNotConform[x: Int](SimpleTrait):
     # expected-note @below {{candidate declared here with type 'fn(self: ParamDoesNotConform[x], y: Int) -> None' (specialized from 'fn[x: Int, +](self: ParamDoesNotConform[x], y: Int) -> None')}}
-    fn some_method(self, y: Int):
+    def some_method(self, y: Int):
         pass
 
 
-fn call_many_things_of_specified_trait(a: TraitStruct):
+def call_many_things_of_specified_trait(a: TraitStruct):
     # This is ok!
     test_many_things_of_specified_trait[AnyType, TraitStruct, Int]()
 
@@ -93,18 +93,18 @@ fn call_many_things_of_specified_trait(a: TraitStruct):
 # expected-note@+1 {{trait 'TrivialTrait' declared here}}
 trait TrivialTrait(TrivialRegisterPassable):
     # expected-note@+1 {{required function 'doSomething' is not implemented}}
-    fn doSomething(self):
+    def doSomething(self):
         ...
 
 
 # expected-note@+1 {{inherited through 'MemTraitViolation' here}}
 trait MemTraitViolation(TrivialTrait):
-    fn bar(self):
+    def bar(self):
         ...
 
 
 trait NonTrivialRGTrait(RegisterPassable):
-    fn bar(self):
+    def bar(self):
         ...
 
 
@@ -115,13 +115,13 @@ struct StructViolation2(TrivialTrait):
 
 # expected-error @+1 {{does not implement all requirements for}}
 struct StructViolation3(MemTraitViolation):
-    fn bar(self):
+    def bar(self):
         pass
 
 
 @explicit_destroy
 trait TFoo:
-    fn foo(self):
+    def foo(self):
         ...
 
 
@@ -130,12 +130,12 @@ struct Bar[T: TFoo]:  # expected-note {{'Bar' declared here}}
     pass
 
 
-fn bindAnyTraitToTrait():
+def bindAnyTraitToTrait():
     # expected-error @+1 {{'Bar' parameter 'T' has 'TFoo' type, but value has type 'AnyTrait[TFoo]'}}
     var _list = Bar[TFoo]()
 
 
-fn anytrait_assignment():
+def anytrait_assignment():
     # expected-error @below {{cannot implicitly convert 'AnyTrait[ImplicitlyCopyable]' value to 'AnyTrait[FooTrait]' in comptime initializer}}
     comptime t: type_of(FooTrait) = ImplicitlyCopyable
 
@@ -150,11 +150,11 @@ struct TakeInt[A: Int]:
 
 
 # expected-note @below {{function declared here}}
-fn take_two_inferred_params[Size: Int](x: TakeInt[Size], y: TakeInt[Size]):
+def take_two_inferred_params[Size: Int](x: TakeInt[Size], y: TakeInt[Size]):
     pass
 
 
-fn call_take_two_inferred_params[T: SomeTrait](x: T):
+def call_take_two_inferred_params[T: SomeTrait](x: T):
     # expected-error @below {{invalid call to 'take_two_inferred_params': value passed to 'y' cannot be converted from 'TakeInt[1]' to 'TakeInt[T.A]'}}
     take_two_inferred_params(TakeInt[T.A](), TakeInt[1]())
 
@@ -165,13 +165,13 @@ trait TBar:
     # expected-error @+4 {{trait method has results but default implementation returns no value; did you mean '...'?}}
     # expected-note @below {{in 'bar', declared here}}
     # expected-note @below {{original default implementation from trait 'TBar' here}}
-    fn bar(self) -> Int:
+    def bar(self) -> Int:
         pass
 
 
 trait TBarSub(TBar):
     # expected-note @below {{conflicting implementation from trait 'TBarSub' here}}
-    fn bar(self) -> Int:
+    def bar(self) -> Int:
         return 0
 
 
@@ -182,13 +182,13 @@ struct TBarActual(TBarSub):
 
 trait WhereClauseOnTraitMethod:
     # expected-error @+1 {{'where' clauses on trait methods are not supported}}
-    fn guarded_method(self) where Self.x > 10:
+    def guarded_method(self) where Self.x > 10:
         pass
 
 
 trait ConflictTraitName:
     # expected-note @+1 {{trait method declared here}}
-    fn test[a: Int](self):
+    def test[a: Int](self):
         pass
 
 

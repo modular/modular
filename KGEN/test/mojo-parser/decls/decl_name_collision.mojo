@@ -10,11 +10,11 @@
 # MOCO-2327
 struct Foo(TrivialRegisterPassable):
     # CHECK: lit.fn @"__init__(a:::Int)"
-    fn __init__(out self, *, a: Int):
+    def __init__(out self, *, a: Int):
         pass
 
     # CHECK: lit.fn @"__init__(b:::Int)"
-    fn __init__(out self, *, b: Int):
+    def __init__(out self, *, b: Int):
         pass
 
 

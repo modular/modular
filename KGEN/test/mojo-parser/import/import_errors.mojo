@@ -69,7 +69,7 @@ from test_package.unknown_nested_module import bar
 
 import test_package
 
-fn assignPackageModule():
+def assignPackageModule():
   # expected-error @below {{cannot use package name 'test_package' as a runtime value}}
   test_package = test_package
 
@@ -82,7 +82,7 @@ fn assignPackageModule():
 import module_in_package
 
 # Check that we don't crash on an invalid use of the missing imported decl.
-fn test():
+def test():
   _ = module_in_package
 
 # // -----
@@ -92,7 +92,7 @@ import imported_module.does_not_exist
 
 from imported_module import *
 
-fn test_import():
+def test_import():
   imported_fn()
 
   # expected-error @below {{use of unknown declaration '_ignored_wildcard_fn'}}
@@ -107,7 +107,7 @@ from imported_module import (
 from there_cant_be_a_module_named_this import there_cant_be_another_decl_named_this
 
 # expected-note @below {{previous definition here}}
-fn already_defined_fn():
+def already_defined_fn():
   return
 
 # expected-error @below {{invalid redefinition of 'already_defined_fn'}}
@@ -118,7 +118,7 @@ from imported_module import imported_fn as already_defined_fn
 import imported_module
 import test_package
 
-fn baz():
+def baz():
     # expected-error @below {{'imported_module' does not implement the '__call__' method}}
     imported_module()
     # expected-error @below {{'imported_module' is not subscriptable, it does not implement the `__getitem__`/`__setitem__` methods}}
@@ -147,7 +147,7 @@ struct StructWithFromImport:
     # expected-error @below {{import statements are only supported at module or function scope}}
     from std.collections import Dict
 
-    fn method(self):
+    def method(self):
         pass
 
 # // -----
@@ -156,7 +156,7 @@ struct StructWithImport:
     # expected-error @below {{import statements are only supported at module or function scope}}
     import std.collections
 
-    fn method(self):
+    def method(self):
         pass
 
 # // -----
@@ -165,7 +165,7 @@ trait TraitWithFromImport:
     # expected-error @below {{import statements are only supported at module or function scope}}
     from std.collections import Dict
 
-    fn method(self):
+    def method(self):
         pass
 
 # // -----
@@ -174,7 +174,7 @@ trait TraitWithImport:
     # expected-error @below {{import statements are only supported at module or function scope}}
     import std.collections
 
-    fn method(self):
+    def method(self):
         pass
 
 # // -----
@@ -186,7 +186,7 @@ __extension Foo:
     # expected-error @below {{import statements are only supported at module or function scope}}
     from std.collections import Dict
 
-    fn method(self):
+    def method(self):
         pass
 
 # // -----
@@ -198,21 +198,21 @@ __extension Bar:
     # expected-error @below {{import statements are only supported at module or function scope}}
     import std.collections
 
-    fn method(self):
+    def method(self):
         pass
 
 # // -----
 
 # Imports inside runtime control flow (if/while) within a function are rejected.
 
-fn importInIf(x: Int):
+def importInIf(x: Int):
     if x > 0:
         # expected-error @below {{import statements are only supported at module or function scope}}
         from std.collections import Dict
 
 # // -----
 
-fn importInWhile():
+def importInWhile():
     while True:
         # expected-error @below {{import statements are only supported at module or function scope}}
         from std.collections import Dict
@@ -222,13 +222,13 @@ fn importInWhile():
 # Imports inside comptime control flow are allowed: branches are folded
 # immediately so the import lands directly in the function body block.
 
-fn importInComptimeIf():
+def importInComptimeIf():
     comptime if True:
         from std.collections import Dict
 
 # // -----
 
-fn importInComptimeIfFalse():
+def importInComptimeIfFalse():
     comptime if False:
         from std.collections import Dict
 
@@ -239,11 +239,11 @@ fn importInComptimeIfFalse():
 @fieldwise_init
 struct _Range(TrivialRegisterPassable, Iterator):
     comptime Element = Int
-    fn __iter__(self) -> Self: return self
-    fn __next__(mut self) raises StopIteration -> Int: raise StopIteration()
-    fn __len__(self) -> Int: return 0
+    def __iter__(self) -> Self: return self
+    def __next__(mut self) raises StopIteration -> Int: raise StopIteration()
+    def __len__(self) -> Int: return 0
 
-fn importInFor():
+def importInFor():
     for _ in _Range():
         # expected-error @below {{import statements are only supported at module or function scope}}
         from std.collections import Dict
@@ -255,21 +255,21 @@ fn importInFor():
 @fieldwise_init
 struct _CRange(TrivialRegisterPassable, Iterator):
     comptime Element = Int
-    fn __iter__(self) -> Self: return self
-    fn __next__(mut self) raises StopIteration -> Int: raise StopIteration()
-    fn __len__(self) -> Int: return 0
+    def __iter__(self) -> Self: return self
+    def __next__(mut self) raises StopIteration -> Int: raise StopIteration()
+    def __len__(self) -> Int: return 0
 
-fn importInComptimeFor():
+def importInComptimeFor():
     comptime for _ in _CRange():
         from std.collections import Dict
 
 # // -----
 
-# Imports inside a nested function (closure) are allowed: the nested fn
+# Imports inside a nested function (closure) are allowed: the nested def
 # body is its own function scope.
 
-fn importInNestedFn():
-    fn inner():
+def importInNestedFn():
+    def inner():
         from std.collections import Dict
     inner()
 

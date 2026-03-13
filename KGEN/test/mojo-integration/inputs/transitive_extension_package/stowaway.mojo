@@ -9,7 +9,7 @@ from .base import MyStruct
 
 # User will import this directly, not the extension.
 struct IntConfig:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
@@ -17,5 +17,5 @@ struct IntConfig:
 # (like IntConfig) to make itself known to anybody who deals with anyone in
 # this file.
 __extension MyStruct:
-    fn intermediate_method(self):
+    def intermediate_method(self):
         print("intermediate_method from extension")

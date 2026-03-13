@@ -6,15 +6,15 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-fn use[x: Int]():
+def use[x: Int]():
     pass
 
 
-fn param[x: Int]():
+def param[x: Int]():
     # CHECK: lit.fn *"param_closure
     @parameter
-    fn param_closure[y: Int]():
+    def param_closure[y: Int]():
 
         # CHECK: !lit.ref<!lit.struct<#escaping0 <:!Int y>
-        fn closure() escaping:
+        def closure() escaping:
             use[y]()

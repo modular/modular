@@ -14,7 +14,7 @@
 from test_std_mock import stable_fn_using_unstable
 
 
-fn test_stable_wrapper():
+def test_stable_wrapper():
     # Calling a stable function that internally uses unstable APIs should NOT
     # warn. The user is calling the stable API; they don't need to know about
     # or be warned about the internal implementation details.

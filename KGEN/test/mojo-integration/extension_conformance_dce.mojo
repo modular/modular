@@ -14,12 +14,12 @@
 from struct_and_conforming_extension_package import MyStruct, Convertible
 
 
-fn use_convertible[T: Convertible](x: T) -> Int:
+def use_convertible[T: Convertible](x: T) -> Int:
     return x.convert()
 
 
 # CHECK-LABEL: kgen.generator @"extension_conformance_dce::test
-fn test() -> Int:
+def test() -> Int:
     var s = MyStruct(42)
 
     # This uses the alias defined in the extension, which requires the

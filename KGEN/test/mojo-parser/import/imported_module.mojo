@@ -8,14 +8,14 @@
 # and does not include any useful testing by itself.
 
 
-fn imported_fn():
+def imported_fn():
     return
 
 
-fn _ignored_wildcard_fn():
+def _ignored_wildcard_fn():
     return
 
 
 # Intentionally the same name as the package.
-fn imported_module():
+def imported_module():
     pass

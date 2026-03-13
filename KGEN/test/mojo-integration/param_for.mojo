@@ -7,7 +7,7 @@
 # RUN: %mojo %s
 
 
-fn test_for_list():
+def test_for_list():
     cnt = 0
 
     comptime for i in [1, 2, 3]:
@@ -31,7 +31,7 @@ fn test_for_list():
 
 
 # derived from https://github.com/modular/modular/issues/4566
-fn test_critical_edge():
+def test_critical_edge():
     var a = 0
 
     comptime for i in range(10):
@@ -40,7 +40,7 @@ fn test_critical_edge():
 
 
 # derived from https://github.com/modular/modular/issues/4836
-fn test_else_block():
+def test_else_block():
     var a: Int  # Init not required because always assigned in else.
 
     comptime for i in range(10):
@@ -56,7 +56,7 @@ fn test_else_block():
         assert False  # This should NOT execute.
 
 
-fn test_tuple_unpack():
+def test_tuple_unpack():
     comptime lst0 = [1, 4]
     comptime lst1 = [1, 4]
     comptime lst2 = [(2, 3), (5, 6)]
@@ -73,7 +73,7 @@ fn test_tuple_unpack():
     assert ret == 123456
 
 
-fn main():
+def main():
     test_for_list()
     test_critical_edge()
     test_else_block()

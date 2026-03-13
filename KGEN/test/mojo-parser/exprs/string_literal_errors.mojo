@@ -8,7 +8,7 @@
 
 
 # The octal escape sequence in string literals \ooo can have variable length.
-fn testOctal():
+def testOctal():
     comptime x = "A\0"
     comptime y = "A\01"
     comptime z = "A\012"
@@ -17,6 +17,6 @@ fn testOctal():
 # // -----
 
 
-fn testTripleQuote():
+def testTripleQuote():
     # expected-error @below {{invalid escape sequence}}
     var x = """$\s$"""

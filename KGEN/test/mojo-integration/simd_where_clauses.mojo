@@ -15,212 +15,212 @@ comptime SIMDInt = Scalar[DType.int32]
 
 
 @always_inline("builtin")
-fn simd_where_clause_bool_default_init() -> Int where SIMDInt():
+def simd_where_clause_bool_default_init() -> Int where SIMDInt():
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_bool_default_init() -> Int where not SIMDInt():
+def simd_where_clause_bool_default_init() -> Int where not SIMDInt():
     return 0
 
 
 @always_inline("builtin")
-fn simd_where_clause_bool_int_init[x: Int]() -> Int where SIMDInt(x):
+def simd_where_clause_bool_int_init[x: Int]() -> Int where SIMDInt(x):
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_bool_int_init[x: Int]() -> Int where not SIMDInt(x):
+def simd_where_clause_bool_int_init[x: Int]() -> Int where not SIMDInt(x):
     return 0
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_eq[x: Int]() -> Int where SIMDInt(x) == SIMDInt(4):
+def simd_where_clause_int_eq[x: Int]() -> Int where SIMDInt(x) == SIMDInt(4):
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_eq[x: Int]() -> Int where SIMDInt(x) != SIMDInt(4):
+def simd_where_clause_int_eq[x: Int]() -> Int where SIMDInt(x) != SIMDInt(4):
     return 0
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_gt[x: Int]() -> Int where SIMDInt(x) > SIMDInt(4):
+def simd_where_clause_int_gt[x: Int]() -> Int where SIMDInt(x) > SIMDInt(4):
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_gt[x: Int]() -> Int where SIMDInt(x) <= SIMDInt(4):
+def simd_where_clause_int_gt[x: Int]() -> Int where SIMDInt(x) <= SIMDInt(4):
     return 0
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_ge[x: Int]() -> Int where SIMDInt(x) >= SIMDInt(4):
+def simd_where_clause_int_ge[x: Int]() -> Int where SIMDInt(x) >= SIMDInt(4):
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_ge[x: Int]() -> Int where SIMDInt(x) < SIMDInt(4):
+def simd_where_clause_int_ge[x: Int]() -> Int where SIMDInt(x) < SIMDInt(4):
     return 0
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_lt[x: Int]() -> Int where SIMDInt(x) < SIMDInt(4):
+def simd_where_clause_int_lt[x: Int]() -> Int where SIMDInt(x) < SIMDInt(4):
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_lt[x: Int]() -> Int where SIMDInt(x) >= SIMDInt(4):
+def simd_where_clause_int_lt[x: Int]() -> Int where SIMDInt(x) >= SIMDInt(4):
     return 0
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_le[x: Int]() -> Int where SIMDInt(x) <= SIMDInt(4):
+def simd_where_clause_int_le[x: Int]() -> Int where SIMDInt(x) <= SIMDInt(4):
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_le[x: Int]() -> Int where SIMDInt(x) > SIMDInt(4):
+def simd_where_clause_int_le[x: Int]() -> Int where SIMDInt(x) > SIMDInt(4):
     return 0
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_add[
+def simd_where_clause_int_add[
     x: Int, y: Int
 ]() -> Int where SIMDInt(x) + SIMDInt(y):
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_add[
+def simd_where_clause_int_add[
     x: Int, y: Int
 ]() -> Int where not (SIMDInt(x) + SIMDInt(y)):
     return 0
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_sub[
+def simd_where_clause_int_sub[
     x: Int, y: Int
 ]() -> Int where SIMDInt(x) - SIMDInt(y):
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_sub[
+def simd_where_clause_int_sub[
     x: Int, y: Int
 ]() -> Int where not (SIMDInt(x) - SIMDInt(y)):
     return 0
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_mul[
+def simd_where_clause_int_mul[
     x: Int, y: Int
 ]() -> Int where SIMDInt(x) * SIMDInt(y):
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_mul[
+def simd_where_clause_int_mul[
     x: Int, y: Int
 ]() -> Int where not (SIMDInt(x) * SIMDInt(y)):
     return 0
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_and[
+def simd_where_clause_int_and[
     x: Int, y: Int
 ]() -> Int where SIMDInt(x) & SIMDInt(y):
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_and[
+def simd_where_clause_int_and[
     x: Int, y: Int
 ]() -> Int where not (SIMDInt(x) & SIMDInt(y)):
     return 0
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_xor[
+def simd_where_clause_int_xor[
     x: Int, y: Int
 ]() -> Int where SIMDInt(x) ^ SIMDInt(y):
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_xor[
+def simd_where_clause_int_xor[
     x: Int, y: Int
 ]() -> Int where not (SIMDInt(x) ^ SIMDInt(y)):
     return 0
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_or[
+def simd_where_clause_int_or[
     x: Int, y: Int
 ]() -> Int where SIMDInt(x) | SIMDInt(y):
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_or[
+def simd_where_clause_int_or[
     x: Int, y: Int
 ]() -> Int where not (SIMDInt(x) | SIMDInt(y)):
     return 0
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_pos[x: Int]() -> Int where +SIMDInt(x):
+def simd_where_clause_int_pos[x: Int]() -> Int where +SIMDInt(x):
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_pos[x: Int]() -> Int where not (+SIMDInt(x)):
+def simd_where_clause_int_pos[x: Int]() -> Int where not (+SIMDInt(x)):
     return 0
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_neg[x: Int]() -> Int where -SIMDInt(x):
+def simd_where_clause_int_neg[x: Int]() -> Int where -SIMDInt(x):
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_neg[x: Int]() -> Int where not (-SIMDInt(x)):
+def simd_where_clause_int_neg[x: Int]() -> Int where not (-SIMDInt(x)):
     return 0
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_invert[x: Int]() -> Int where ~SIMDInt(x):
+def simd_where_clause_int_invert[x: Int]() -> Int where ~SIMDInt(x):
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_invert[x: Int]() -> Int where not (~SIMDInt(x)):
+def simd_where_clause_int_invert[x: Int]() -> Int where not (~SIMDInt(x)):
     return 0
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_shl[
+def simd_where_clause_int_shl[
     x: Int
 ]() -> Int where SIMDInt(x) << SIMDInt(1) == SIMDInt(4):
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_shl[
+def simd_where_clause_int_shl[
     x: Int
 ]() -> Int where SIMDInt(x) << SIMDInt(1) != SIMDInt(4):
     return 0
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_shr[
+def simd_where_clause_int_shr[
     x: Int
 ]() -> Int where SIMDInt(x) >> SIMDInt(1) == SIMDInt(3):
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_shr[
+def simd_where_clause_int_shr[
     x: Int
 ]() -> Int where SIMDInt(x) >> SIMDInt(1) != SIMDInt(3):
     return 0
@@ -229,31 +229,31 @@ fn simd_where_clause_int_shr[
 # Note we can't test abs(SIMDInt(x)) here because the Absable trait's 'abs'
 # method isn't marked "builtin".
 @always_inline("builtin")
-fn simd_where_clause_int_abs[
+def simd_where_clause_int_abs[
     x: Int
 ]() -> Int where SIMDInt.__abs__(x) == SIMDInt(7):
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_abs[
+def simd_where_clause_int_abs[
     x: Int
 ]() -> Int where SIMDInt.__abs__(x) != SIMDInt(7):
     return 0
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_pow2[x: Int]() -> Int where x.is_power_of_two():
+def simd_where_clause_int_pow2[x: Int]() -> Int where x.is_power_of_two():
     return 1
 
 
 @always_inline("builtin")
-fn simd_where_clause_int_pow2[x: Int]() -> Int where not x.is_power_of_two():
+def simd_where_clause_int_pow2[x: Int]() -> Int where not x.is_power_of_two():
     return 0
 
 
 # CHECK-LABEL: lit.fn @"use_them
-fn use_them():
+def use_them():
     # CHECK: lit.alias.decl *"x`": !Int = <{0}>
     comptime x = simd_where_clause_bool_default_init()
 

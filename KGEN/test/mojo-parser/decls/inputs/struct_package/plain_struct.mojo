@@ -7,8 +7,8 @@
 struct PlainStruct:
     var location: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.location = 0
 
-    fn set_location(mut self, new_location: Int):
+    def set_location(mut self, new_location: Int):
         self.location = new_location

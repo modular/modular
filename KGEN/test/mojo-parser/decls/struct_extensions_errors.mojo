@@ -20,7 +20,7 @@ __extension Spaceship[T: AnyType]:
 
 
 # @expected-note @below {{conflicts with this previous declaration}}
-fn Spaceship():
+def Spaceship():
     pass
 
 
@@ -58,7 +58,7 @@ __extension Spaceship:
     pass
 
 
-fn foo(ship: Spaceship) -> Int:  # shouldn't crash here
+def foo(ship: Spaceship) -> Int:  # shouldn't crash here
     return ship.fuel  # shouldn't crash here either
 
 
@@ -77,12 +77,12 @@ struct PlainStruct:
 # CHECK-SAME: targetStruct = @struct_extensions::@PlainStruct
 __extension PlainStruct:
     # CHECK-LABEL: lit.fn @"__init__
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
 # CHECK-LABEL: lit.fn @"zork
-fn zork():
+def zork():
     # CHECK: lit.call {{.*}}@"__init__
     var z = PlainStruct()
 
@@ -100,11 +100,11 @@ struct BaseStruct:
 
 __extension BaseStruct:
     # expected-error @below {{invalid redefinition of 'colliding'}}
-    fn colliding(self) -> Int:
+    def colliding(self) -> Int:
         return self.colliding
 
 
-fn test_collisions(s: BaseStruct):
+def test_collisions(s: BaseStruct):
     var result = s.colliding()
 
 
@@ -121,11 +121,11 @@ struct BaseStruct:
 
 __extension BaseStruct:
     # expected-error @below {{invalid redefinition of 'colliding'}}
-    fn colliding(self) -> Int:
+    def colliding(self) -> Int:
         return self.colliding
 
 
-fn test_collisions(s: BaseStruct):
+def test_collisions(s: BaseStruct):
     var result = s.colliding()
 
 
@@ -145,7 +145,7 @@ __extension BaseStruct:
     comptime colliding: Int = 43
 
 
-fn test_collisions(s: BaseStruct):
+def test_collisions(s: BaseStruct):
     var result = s.colliding
 
 

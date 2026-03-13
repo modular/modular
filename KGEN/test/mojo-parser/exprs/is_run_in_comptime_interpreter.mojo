@@ -13,14 +13,14 @@
 
 
 # CHECK-LABEL: lit.fn @"test_basic
-fn test_basic():
+def test_basic():
     # CHECK: kgen.is_run_in_comptime_interpreter : i1
     var x = __is_run_in_comptime_interpreter
     _ = x
 
 
 # CHECK-LABEL: lit.fn @"test_in_runtime_if
-fn test_in_runtime_if():
+def test_in_runtime_if():
     # CHECK: kgen.is_run_in_comptime_interpreter : i1
     if __is_run_in_comptime_interpreter:
         pass

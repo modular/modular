@@ -20,7 +20,7 @@ struct MyRP[A: Int](TrivialRegisterPassable):
     var b: Int
 
     @implicit
-    fn __init__(out self, b: Int):
+    def __init__(out self, b: Int):
         self.a = Self.A
         self.b = b
 
@@ -33,12 +33,12 @@ struct MyData[A: Int, B: MyRP[3], C: TrivialRegisterPassable]:
     var c: Self.C
 
     @implicit
-    fn __init__(out self, c: Self.C):
+    def __init__(out self, c: Self.C):
         self.a = Self.A
         self.b = Self.B
         self.c = c
 
 
-fn entry():
+def entry():
     comptime rp = MyRP[3](4)
     var data = MyData[7, rp, MyRP[3]](rp)

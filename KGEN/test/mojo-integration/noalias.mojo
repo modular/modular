@@ -9,7 +9,7 @@
 # CHECK: ; Function Attrs: {{.*}}memory(argmem: readwrite)
 # CHECK-LABEL: @mayalias(
 @export
-fn mayalias(
+def mayalias(
     a: UnsafePointer[Float32, ImmutAnyOrigin],
     b: UnsafePointer[Float32, MutAnyOrigin],
 ) -> Float32:
@@ -22,7 +22,7 @@ fn mayalias(
 
 # CHECK-LABEL: @noalias(
 @export
-fn noalias(
+def noalias(
     a0: UnsafePointer[Float32, ImmutAnyOrigin],
     b: UnsafePointer[Float32, MutAnyOrigin],
 ) -> Float32:
@@ -39,7 +39,7 @@ fn noalias(
 # CHECK-SAME: ptr noalias noundef nonnull readnone captures(none) %0,
 # CHECK-SAME: ptr noalias noundef nonnull readnone captures(none) %1)
 @export
-fn any_life(ref[MutAnyOrigin] r: Int, mut x: Int):
+def any_life(ref[MutAnyOrigin] r: Int, mut x: Int):
     pass
 
 
@@ -47,5 +47,5 @@ fn any_life(ref[MutAnyOrigin] r: Int, mut x: Int):
 # CHECK-SAME: ptr noundef nonnull readnone captures(none) %0,
 # CHECK-SAME: ptr noalias noundef nonnull readnone captures(none) %1)
 @export
-fn imm_life(ref[ImmutAnyOrigin] r: Int, mut x: Int):
+def imm_life(ref[ImmutAnyOrigin] r: Int, mut x: Int):
     pass

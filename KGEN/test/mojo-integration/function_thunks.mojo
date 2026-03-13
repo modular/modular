@@ -21,19 +21,19 @@ from func_package_bar.module import bar
 # CHECK-LABEL: lit.file_module @function_thunks
 
 
-fn thunk[T: AnyType](x: T):
+def thunk[T: AnyType](x: T):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_fn
-fn test_fn():
+def test_fn():
     # CHECK: lit.call {{.*}}foo
     _ = foo()
     # CHECK: lit.call {{.*}}bar
     _ = bar()
 
     # CHECK: kgen.create_closure{{.*}}@"fn(::Int, /) -> None|fn(x: ::Int) -> None|{{.*}}[fn(x: ::Int) -> None](::Int)"
-    var f: fn(Int) -> None = thunk[Int]
+    var f: def(Int) -> None = thunk[Int]
 
 
 # Checking for 'postParseModule' ensures it was loaded from bytecode.

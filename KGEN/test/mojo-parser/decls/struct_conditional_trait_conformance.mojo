@@ -25,7 +25,7 @@
 struct UnconditionalMovable[T: Movable](Movable):
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
 
@@ -41,13 +41,13 @@ struct ConditionalCopyable[T: Movable](
 ):
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         self.value = take.value^
 
-    fn __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
+    def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
         self.value = rebind_var[Self.T](trait_downcast[Copyable](copy.value).copy())
 
 
@@ -67,16 +67,16 @@ struct MultipleConditionalConformances[T: Movable](
 ):
     var inner: Self.T
 
-    fn __init__(out self, var inner: Self.T):
+    def __init__(out self, var inner: Self.T):
         self.inner = inner^
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         self.inner = take.inner^
 
-    fn __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
+    def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
         self.inner = rebind_var[Self.T](trait_downcast[Copyable](copy.inner).copy())
 
-    fn __int__(self) -> Int where conforms_to(Self.T, Intable):
+    def __int__(self) -> Int where conforms_to(Self.T, Intable):
         return 0
 
 
@@ -93,7 +93,7 @@ struct MultipleConditionalConformances[T: Movable](
 
 
 trait WhereNotTestTrait:
-    fn where_not_method(self):
+    def where_not_method(self):
         ...
 
 
@@ -103,17 +103,17 @@ struct DisprovedWithProvableAlternative[T: Movable](
 ):
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
     # This method is "disproved" - its constraint contradicts the conformance.
     # The conformance requires T: Copyable, but this method requires NOT that.
-    fn where_not_method(self) where not conforms_to(Self.T, Copyable):
+    def where_not_method(self) where not conforms_to(Self.T, Copyable):
         pass
 
     # This method is "provable" - its constraint matches the conformance.
     # It will be selected as the witness table entry.
-    fn where_not_method(self) where conforms_to(Self.T, Copyable):
+    def where_not_method(self) where conforms_to(Self.T, Copyable):
         pass
 
 
@@ -134,7 +134,7 @@ struct DisprovedWithProvableAlternative[T: Movable](
 # CHECK: lit.struct.decl @WitnessSelectionWithWhereNot<T: !Movable>
 
 trait Greeter:
-    fn greet(self): ...
+    def greet(self): ...
 
 struct WitnessSelectionWithWhereNot[T: Movable](
     Greeter where conforms_to(T, Copyable),
@@ -142,18 +142,18 @@ struct WitnessSelectionWithWhereNot[T: Movable](
 ):
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
     # Overload 1: Provable - constraint matches the conformance.
     # This is selected as the witness for the Greeter trait.
-    fn greet(self) where conforms_to(Self.T, Copyable):
+    def greet(self) where conforms_to(Self.T, Copyable):
         pass
 
     # Overload 2: Disproved - constraint directly contradicts the conformance.
     # The conformance guarantees T: Copyable, so `not conforms_to(T, Copyable)`
     # is definitively false. This overload is skipped.
-    fn greet(self) where not conforms_to(Self.T, Copyable):
+    def greet(self) where not conforms_to(Self.T, Copyable):
         pass
 
 
@@ -170,7 +170,7 @@ struct WitnessSelectionWithWhereNot[T: Movable](
 # CHECK: lit.struct.decl @CompoundConformanceWithWhereNot<T: !Movable>
 
 trait Formatter:
-    fn format(self): ...
+    def format(self): ...
 
 struct CompoundConformanceWithWhereNot[T: Movable](
     Formatter where conforms_to(T, Copyable) and conforms_to(T, Intable),
@@ -178,17 +178,17 @@ struct CompoundConformanceWithWhereNot[T: Movable](
 ):
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
     # Overload 1: Provable - conformance implies both Copyable AND Intable,
     # so it certainly implies just Intable.
-    fn format(self) where conforms_to(Self.T, Intable):
+    def format(self) where conforms_to(Self.T, Intable):
         pass
 
     # Overload 2: Disproved - conformance implies Intable, so
     # `not conforms_to(T, Intable)` contradicts it.
-    fn format(self) where not conforms_to(Self.T, Intable):
+    def format(self) where not conforms_to(Self.T, Intable):
         pass
 
 
@@ -206,7 +206,7 @@ struct CompoundConformanceWithWhereNot[T: Movable](
 # CHECK: lit.struct.decl @CompoundMethodConstraint<T: !Movable>
 
 trait Processor:
-    fn process(self): ...
+    def process(self): ...
 
 struct CompoundMethodConstraint[T: Movable](
     Processor where conforms_to(T, Copyable),
@@ -214,19 +214,19 @@ struct CompoundMethodConstraint[T: Movable](
 ):
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
     # Overload 1: Provable - constraint matches the conformance.
     # This is selected as the witness.
-    fn process(self) where conforms_to(Self.T, Copyable):
+    def process(self) where conforms_to(Self.T, Copyable):
         pass
 
     # Overload 2: Disproved - the `not conforms_to(T, Copyable)` part
     # contradicts the conformance. Even though there's an extra
     # `and conforms_to(T, Intable)` condition, the contradiction on the
     # first part makes the whole AND false.
-    fn process(self)
+    def process(self)
         where not conforms_to(Self.T, Copyable) and conforms_to(Self.T, Intable):
         pass
 
@@ -244,10 +244,10 @@ struct CompoundMethodConstraint[T: Movable](
 # CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::AnyType", "std::builtin::stubs::Copyable", "std::builtin::stubs::Movable"])
 
 trait CompTraitA:
-    fn comp_a_method(self): ...
+    def comp_a_method(self): ...
 
 trait CompTraitB:
-    fn comp_b_method(self): ...
+    def comp_b_method(self): ...
 
 struct CompositionConditional[T: Movable](
     CompTraitA & CompTraitB where conforms_to(T, Copyable),
@@ -255,13 +255,13 @@ struct CompositionConditional[T: Movable](
 ):
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
-    fn comp_a_method(self) where conforms_to(Self.T, Copyable):
+    def comp_a_method(self) where conforms_to(Self.T, Copyable):
         pass
 
-    fn comp_b_method(self) where conforms_to(Self.T, Copyable):
+    def comp_b_method(self) where conforms_to(Self.T, Copyable):
         pass
 
 
@@ -275,7 +275,7 @@ struct CompositionConditional[T: Movable](
 # CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::AnyType", "std::builtin::stubs::Copyable", "std::builtin::stubs::Movable"])
 
 trait DupSameTrait:
-    fn dup_method(self): ...
+    def dup_method(self): ...
 
 struct DuplicateSameConstraint[T: Movable](
     DupSameTrait where conforms_to(T, Copyable),
@@ -284,10 +284,10 @@ struct DuplicateSameConstraint[T: Movable](
 ):
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
-    fn dup_method(self) where conforms_to(Self.T, Copyable):
+    def dup_method(self) where conforms_to(Self.T, Copyable):
         pass
 
 
@@ -304,10 +304,10 @@ struct DuplicateSameConstraint[T: Movable](
 # CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::AnyType", "std::builtin::stubs::Copyable", "std::builtin::stubs::Movable"])
 
 trait CSTraitA:
-    fn cs_a_method(self): ...
+    def cs_a_method(self): ...
 
 trait CSTraitB:
-    fn cs_b_method(self): ...
+    def cs_b_method(self): ...
 
 struct CompositionStandaloneSameConstraint[T: Movable](
     CSTraitA & CSTraitB where conforms_to(T, Copyable),
@@ -316,13 +316,13 @@ struct CompositionStandaloneSameConstraint[T: Movable](
 ):
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
-    fn cs_a_method(self) where conforms_to(Self.T, Copyable):
+    def cs_a_method(self) where conforms_to(Self.T, Copyable):
         pass
 
-    fn cs_b_method(self) where conforms_to(Self.T, Copyable):
+    def cs_b_method(self) where conforms_to(Self.T, Copyable):
         pass
 
 # ===========================================================================
@@ -373,7 +373,7 @@ struct CompositeImpliesSplit[T: Movable](
 struct Node[ElementType: ImplicitlyCopyable](Movable):
     var value: MyOptional[Self.ElementType]
     # CHECK-LABEL: lit.fn @"__init__
-    fn __init__(out self, value: MyOptional[Self.ElementType] = None):
+    def __init__(out self, value: MyOptional[Self.ElementType] = None):
         # `MyOptional[Self.ElementType]` is implicitly copyable.
 
         # CHECK: lit.memcpy %value, %0

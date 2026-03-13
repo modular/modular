@@ -15,25 +15,25 @@
 
 # expected-error @+2{{function instantiation failed}}
 @export
-fn entry_method0():
+def entry_method0():
     foo()  # expected-note {{call expansion failed}}
 
 
 # expected-error @+3{{function instantiation failed}}
 # expected-note @+2{{too many errors emitted, stopping now}}
 @export
-fn entry_method1():
+def entry_method1():
     bar()  # expected-note {{call expansion failed}}
 
 
 @export
-fn entry_method2():
+def entry_method2():
     baz()
 
 
 # expected-note @+2{{function instantiation failed}}
 @no_inline
-fn foo():
+def foo():
     __mlir_op.`kgen.param.assert`[
         cond=__mlir_attr.`false`, message="oops".value
     ]()  # expected-note {{constraint failed}}
@@ -43,7 +43,7 @@ fn foo():
 # CHECK-PARAM: constraint failed
 # expected-note @+2 {{function instantiation failed}}
 @no_inline
-fn bar():
+def bar():
     __mlir_op.`kgen.param.assert`[
         cond=__mlir_attr.`false`, message="oops".value
     ]()  # expected-note {{constraint failed}}
@@ -52,7 +52,7 @@ fn bar():
 # CHECK-PARAM: function instantiation failed
 # CHECK-PARAM: constraint failed
 @no_inline
-fn baz():
+def baz():
     __mlir_op.`kgen.param.assert`[
         cond=__mlir_attr.`false`, message="oops".value
     ]()

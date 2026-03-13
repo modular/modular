@@ -15,5 +15,5 @@ from test_package.module import `use()weird[]`
 # CHECK: lit.fn @"use()weird[]()"
 
 
-fn weird_struct():
+def weird_struct():
     _ = `use()weird[]`()

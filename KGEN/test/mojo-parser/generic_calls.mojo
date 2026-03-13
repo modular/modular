@@ -19,16 +19,16 @@ struct MemOnly(ImplicitlyCopyable):
     pass
 
 
-fn owned_generic[T: AnyType](var x: T):
+def owned_generic[T: AnyType](var x: T):
     pass
 
 
-fn borrowed_generic[T: AnyType](x: T):
+def borrowed_generic[T: AnyType](x: T):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_owned{{.*}}(%x: !lit.ref<!RegPassable, mut *"x`"> owned_in_mem, %y: !lit.ref<!MemOnly, mut *"y`1"> owned_in_mem)
-fn test_owned(var x: RegPassable, var y: MemOnly):
+def test_owned(var x: RegPassable, var y: MemOnly):
     # CHECK: [[XIMUT:%.*]] = lit.ref.immut %x : <!RegPassable, mut *"x`">
     # CHECK: lit.call {{.*}}::@"borrowed_generic{{.*}}<{{.*}}>([[XIMUT]])
     borrowed_generic(x)
@@ -56,7 +56,7 @@ fn test_owned(var x: RegPassable, var y: MemOnly):
 
 
 # CHECK-LABEL: lit.fn @"test_borrowed{{.*}}(%x: !lit.ref<!RegPassable, imm *"x`"> read_mem, %y: !lit.ref<!MemOnly, imm *"y`1"> read_mem)
-fn test_borrowed(x: RegPassable, y: MemOnly):
+def test_borrowed(x: RegPassable, y: MemOnly):
     # CHECK-NEXT: lit.call {{.*}}::@"borrowed_generic{{.*}}<{{.*}}>(%x)
     borrowed_generic(x)
 
@@ -75,6 +75,6 @@ fn test_borrowed(x: RegPassable, y: MemOnly):
 
 
 # CHECK-LABEL: lit.fn @"function_reference
-fn function_reference():
+def function_reference():
     # CHECK: create_closure[{{.*}}@"function_reference
     borrowed_generic(function_reference)

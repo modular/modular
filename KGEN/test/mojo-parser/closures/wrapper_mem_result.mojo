@@ -77,5 +77,5 @@ struct MemType(ImplicitlyCopyable):
 # CHECK-NEXT:     lit.ownership.mark_destroyed %take
 
 
-fn thing(x: fn () escaping -> MemType):
+def thing(x: def () escaping -> MemType):
     pass

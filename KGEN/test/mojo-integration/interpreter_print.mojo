@@ -8,7 +8,7 @@
 
 
 @no_inline
-fn compTime(x: Int, w: String) -> Int:
+def compTime(x: Int, w: String) -> Int:
     var y = x * x
     # CHECK: 16
     print(y)
@@ -17,7 +17,7 @@ fn compTime(x: Int, w: String) -> Int:
     return y
 
 
-fn main():
+def main():
     comptime x = compTime(4, "hello")
     # CHECK: 20
     print(x + 4)

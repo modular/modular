@@ -48,11 +48,11 @@
 # - !DILocalVariable: Describes local variables (present with full debug info)
 # - !DILocation: Describes specific source locations (file:line:column)
 
-fn test_function(x: Int, y: Int) -> Int:
+def test_function(x: Int, y: Int) -> Int:
     var local_var = x + y
     var another_var = local_var * 2
     return another_var
 
-fn main():
+def main():
     var result = test_function(5, 10)
     print("Result:", result)

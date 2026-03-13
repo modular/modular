@@ -12,25 +12,25 @@
 from test_std_mock import StableStruct, UnstableStruct, stable_fn, unstable_fn
 
 
-fn test_stable_struct():
+def test_stable_struct():
     # Using a stable struct should not trigger a warning.
     var x: StableStruct
     pass
 
 
-fn test_unstable_struct():
+def test_unstable_struct():
     # Using an unstable struct should trigger a warning.
     # CHECK: warning: use of unstable API 'UnstableStruct'
     var y: UnstableStruct
     pass
 
 
-fn test_stable_fn():
+def test_stable_fn():
     # Calling a stable function should not trigger a warning.
     stable_fn()
 
 
-fn test_unstable_fn():
+def test_unstable_fn():
     # Calling an unstable function should trigger a warning.
     # CHECK: warning: use of unstable API 'unstable_fn'
     unstable_fn()

@@ -18,19 +18,19 @@ struct NonRP:
 
 
 trait Foo:
-    fn rp(self) -> RP:
+    def rp(self) -> RP:
         return RP()
 
-    fn non_rp(self) -> NonRP:
+    def non_rp(self) -> NonRP:
         return NonRP()
 
     @no_inline
-    fn no_inline(self, x: RP) -> RP:
+    def no_inline(self, x: RP) -> RP:
         return RP()
 
     @always_inline
     @staticmethod
-    fn always_inline(x: RP) -> RP:
+    def always_inline(x: RP) -> RP:
         return RP()
 
 
@@ -64,7 +64,7 @@ struct Zork(TrivialRegisterPassable):
 trait AA1:
     comptime X: ImplicitlyCopyable
 
-    fn zork(self, x: Self.X) -> Self.X:
+    def zork(self, x: Self.X) -> Self.X:
         return x
 
 
@@ -87,17 +87,17 @@ struct ParamRPType[x: Int, y: Int](TrivialRegisterPassable):
 
 
 trait Barable:
-    fn bar(self):
+    def bar(self):
         ...
 
 
 trait ParamInputTrait:
     @staticmethod
-    fn process_parameterized[T: Barable](item: T) -> Int:
+    def process_parameterized[T: Barable](item: T) -> Int:
         item.bar()
         return 100
 
-    fn return_parameterized[x: Int, y: Int](self) -> ParamRPType[x, y]:
+    def return_parameterized[x: Int, y: Int](self) -> ParamRPType[x, y]:
         return ParamRPType[x, y](x * y)
 
 
@@ -144,25 +144,25 @@ struct ParamTestStruct[T1: Int, x1: Bool](ParamInputTrait):
 
 @fieldwise_init
 struct BarableStruct(Barable):
-    fn bar(self):
+    def bar(self):
         pass
 
 
 # COM: Test that visiting the same struct twice during default-trait-method
 # synthesis doesn't crash.
 trait FooA:
-    fn foo(self) -> RP:
+    def foo(self) -> RP:
         return RP()
 
-    fn bar(self) -> RP:
+    def bar(self) -> RP:
         return RP()
 
 
 trait FooB(FooA):
-    fn foo(self) -> RP:
+    def foo(self) -> RP:
         return RP()
 
-    fn bar(self) -> RP:
+    def bar(self) -> RP:
         return RP()
 
 
@@ -174,10 +174,10 @@ struct FooA_FooB_Struct(FooB):
     # CHECK-NOT: lit.fn @"bar(default_trait_methods::FooA_FooB_Struct)FooB"[
     # CHECK-NOT: lit.fn @"foo(default_trait_methods::FooA_FooB_Struct)FooB"[
     # CHECK-NOT: lit.fn @"bar(default_trait_methods::FooA_FooB_Struct)FooA"[
-    fn foo(self) -> RP:
+    def foo(self) -> RP:
         return RP()
 
-    fn bar(self) -> RP:
+    def bar(self) -> RP:
         return RP()
 
 
@@ -196,7 +196,7 @@ struct FooA_FooB_Struct(FooB):
 # COM: The wrapper forwards the pack argument directly (as a BlockArgument) rather
 # COM: than constructing it via RefPackCreateOp, which origin tracking must handle.
 trait DefaultWithVariadicPack:
-    fn variadic_method[*Ts: AnyType](self, *args: *Ts):
+    def variadic_method[*Ts: AnyType](self, *args: *Ts):
         pass
 
 

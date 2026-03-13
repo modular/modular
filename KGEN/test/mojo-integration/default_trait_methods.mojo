@@ -8,41 +8,41 @@
 
 
 trait Barable:
-    fn bar(self):
+    def bar(self):
         ...
 
 
 trait Foo:
-    fn rp_return_params[T: Int](self) -> Int:
+    def rp_return_params[T: Int](self) -> Int:
         ...
 
     @staticmethod
-    fn rp_return_static_multis(x: Int, y: Int) -> Int:
+    def rp_return_static_multis(x: Int, y: Int) -> Int:
         ...
 
-    fn rp_return_multi_params[T: Int, T2: Int](self, x: Int) -> Int:
+    def rp_return_multi_params[T: Int, T2: Int](self, x: Int) -> Int:
         ...
 
-    fn ref_return(self) -> String:
+    def ref_return(self) -> String:
         ...
 
-    fn ref_return_params[T: Int](self, name: String) -> String:
+    def ref_return_params[T: Int](self, name: String) -> String:
         ...
 
-    fn rp_return_raises(self) raises -> Int:
+    def rp_return_raises(self) raises -> Int:
         ...
 
-    fn ref_return_raises(self) raises -> String:
+    def ref_return_raises(self) raises -> String:
         ...
 
-    fn parametric_ref_args(self, ref x: Int, ref y: Int) -> Int:
+    def parametric_ref_args(self, ref x: Int, ref y: Int) -> Int:
         ...
 
 
 trait FooActual(Absable, Foo, Intable):
     comptime P: Int
 
-    fn rp_return_params[T: Int](self) -> Int:
+    def rp_return_params[T: Int](self) -> Int:
         var res = (
             Int(self.__abs__())
             + T
@@ -52,18 +52,18 @@ trait FooActual(Absable, Foo, Intable):
         return res
 
     @staticmethod
-    fn rp_return_static_multis(x: Int, y: Int) -> Int:
+    def rp_return_static_multis(x: Int, y: Int) -> Int:
         return x + y + Self.P
 
-    fn rp_return_multi_params[T: Int, T2: Int](self, x: Int) -> Int:
+    def rp_return_multi_params[T: Int, T2: Int](self, x: Int) -> Int:
         print("In FooActual.rp_return_multi_params")
         var res = Int(self.__abs__()) + T + Self.P + T2 + x
         return res
 
-    fn ref_return(self) -> String:
+    def ref_return(self) -> String:
         return "FooActual ref_return value: " + String(Int(self.__abs__()))
 
-    fn ref_return_params[T: Int](self, name: String) -> String:
+    def ref_return_params[T: Int](self, name: String) -> String:
         return (
             "FooActual ref_return_params: Hello "
             + name
@@ -73,7 +73,7 @@ trait FooActual(Absable, Foo, Intable):
             + String(Self.P)
         )
 
-    fn rp_return_raises(self) raises -> Int:
+    def rp_return_raises(self) raises -> Int:
         var val = Int(self.__abs__())
         if val <= 0:
             raise Error(
@@ -81,7 +81,7 @@ trait FooActual(Absable, Foo, Intable):
             )
         return val
 
-    fn ref_return_raises(self) raises -> String:
+    def ref_return_raises(self) raises -> String:
         var val = Int(self.__abs__())
         if val == 0:
             raise Error(
@@ -94,7 +94,7 @@ trait FooActual(Absable, Foo, Intable):
         else:
             return "ref_return_raises: Positive value: " + String(val)
 
-    fn parametric_ref_args(self, ref x: Int, ref y: Int) -> Int:
+    def parametric_ref_args(self, ref x: Int, ref y: Int) -> Int:
         return x + y
 
 
@@ -103,22 +103,22 @@ struct Bar(Barable, FooActual):
     var x: Int
     comptime P: Int = 10
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return self.x
 
-    fn __abs__(self) -> Self:
+    def __abs__(self) -> Self:
         return Self(abs(self.x))
 
-    fn bar(self):
+    def bar(self):
         print("In Bar implementation, called bar()")
 
-    fn rp_return_multi_params[T: Int, T2: Int](self, x: Int) -> Int:
+    def rp_return_multi_params[T: Int, T2: Int](self, x: Int) -> Int:
         print("In Bar.rp_return_multi_params")
         var res = Int(self.__abs__()) + T + Self.P - T2 - x
         return res
 
 
-fn generic_trait_caller[T: Foo](x: T):
+def generic_trait_caller[T: Foo](x: T):
     print("In generic_trait_caller[T: Foo](x: T) -> Int")
     print(
         "x.rp_return_multi_params[20, 10](10) =",
@@ -129,7 +129,7 @@ fn generic_trait_caller[T: Foo](x: T):
 trait AATrait1:
     comptime X: ImplicitlyCopyable
 
-    fn zork(self, x: Self.X) -> Self.X:
+    def zork(self, x: Self.X) -> Self.X:
         print("In AATrait1.zork")
         return x
 
@@ -137,7 +137,7 @@ trait AATrait1:
 trait AATrait2:
     comptime X: ImplicitlyCopyable
 
-    fn zork(self, x: Self.X) -> Self.X:
+    def zork(self, x: Self.X) -> Self.X:
         print("In AATrait2.zork")
         return x
 
@@ -146,7 +146,7 @@ trait AATrait2:
 struct AAStruct(AATrait1, AATrait2):
     comptime X = Int
 
-    fn zork(self, x: Self.X) -> Self.X:
+    def zork(self, x: Self.X) -> Self.X:
         print("In Foo.zork")
         return x
 
@@ -158,11 +158,11 @@ struct ParamRP[x: Int, y: Int](TrivialRegisterPassable):
 
 trait ParamTraitWithParameterizedInputs:
     @staticmethod
-    fn process_parameterized[T: Barable](item: T) -> Int:
+    def process_parameterized[T: Barable](item: T) -> Int:
         item.bar()
         return 42
 
-    fn return_parameterized[x: Int, y: Int](self) -> ParamRP[x, y]:
+    def return_parameterized[x: Int, y: Int](self) -> ParamRP[x, y]:
         return ParamRP[x, y](x + y)
 
 
@@ -177,7 +177,7 @@ struct Bag[x: Int]:
 
 
 trait NonRPParamDefaultTrait:
-    fn sum_bag[x: Int](self, bag: Bag[x]) -> Int:
+    def sum_bag[x: Int](self, bag: Bag[x]) -> Int:
         return bag.v + x
 
 
@@ -188,7 +188,7 @@ struct NonRPStruct(NonRPParamDefaultTrait):
 
 # MOCO-2540: Test variadic packs in default trait methods.
 trait VariadicPackTrait:
-    fn variadic_method[*Ts: AnyType](self, *args: *Ts):
+    def variadic_method[*Ts: AnyType](self, *args: *Ts):
         print("variadic default called with", args.__len__(), "args")
 
 

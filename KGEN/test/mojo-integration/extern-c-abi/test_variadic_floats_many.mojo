@@ -13,7 +13,7 @@
 # pop.external_call to generate correct LLVM IR with isVarArg=true.
 
 
-fn main():
+def main():
     # Test: Pass 12 float values to stress SSE register exhaustion
     # On x86_64: first 8 in xmm0-xmm7, remaining 4 on stack
     # C function: sum = sum_of(val + count) for each val, returns sum + count

@@ -28,7 +28,7 @@ struct Outer(TrivialRegisterPassable):
     var z: Float32
 
 
-fn test_nested_float_12byte():
+def test_nested_float_12byte():
     var s = Outer(Inner(1.0, 2.0), 3.0)
     var result = external_call["c_func_nested_float_12byte", Outer](s)
     print("nested_float_12byte:", result.inner.x, result.inner.y, result.z)
@@ -37,5 +37,5 @@ fn test_nested_float_12byte():
 # CHECK: nested_float_12byte: 2.0 3.0 4.0
 
 
-fn main():
+def main():
     test_nested_float_12byte()

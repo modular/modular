@@ -8,17 +8,17 @@
 
 
 trait Trait1:
-    fn f1(self):
+    def f1(self):
         ...
 
 
 trait Trait2:
-    fn f2(self):
+    def f2(self):
         ...
 
 
 trait Trait3:
-    fn f3(self):
+    def f3(self):
         ...
 
 
@@ -28,35 +28,35 @@ comptime Traits123 = Trait1 & Trait2 & Trait3
 
 @fieldwise_init
 struct Struct123(ImplicitlyCopyable, Trait3, Traits12):
-    fn f1(self):
+    def f1(self):
         print("f1")
 
-    fn f2(self):
+    def f2(self):
         print("f2")
 
-    fn f3(self):
+    def f3(self):
         print("f3")
 
 
-fn use1[T: Trait1](x: T):
+def use1[T: Trait1](x: T):
     x.f1()
 
 
-fn use2[T: Trait2](x: T):
+def use2[T: Trait2](x: T):
     x.f2()
 
 
-fn use12[T: Traits12](x: T):
+def use12[T: Traits12](x: T):
     use1(x)
     use2(x)
 
 
-fn use23[T: Trait2 & Trait3](x: T):
+def use23[T: Trait2 & Trait3](x: T):
     x.f2()
     x.f3()
 
 
-fn use123[T: Traits123](x: T):
+def use123[T: Traits123](x: T):
     x.f1()
     use23(x)
 
@@ -64,11 +64,11 @@ fn use123[T: Traits123](x: T):
 # conditional method
 @fieldwise_init
 struct Wrapper[T: AnyType](ImplicitlyCopyable):
-    fn cond1[Trait: Trait1](self: Wrapper[Trait], other: Wrapper[Trait]):
+    def cond1[Trait: Trait1](self: Wrapper[Trait], other: Wrapper[Trait]):
         print("cond")
 
 
-fn useCond1[
+def useCond1[
     ElementType: Traits12
 ](p1: Wrapper[ElementType], p2: Wrapper[ElementType]):
     p1.cond1(p2)
@@ -76,25 +76,25 @@ fn useCond1[
 
 # constructor overloading
 trait IntConstructable:
-    fn __init__(out self, x: Int):
+    def __init__(out self, x: Int):
         ...
 
 
-fn useIntConstructable[T: Defaultable & IntConstructable]() -> T:
+def useIntConstructable[T: Defaultable & IntConstructable]() -> T:
     return T(33)
 
 
 struct MyStruct(Defaultable, IntConstructable, TrivialRegisterPassable):
     var x: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.x = 42
 
-    fn __init__(out self, x: Int):
+    def __init__(out self, x: Int):
         self.x = x
 
 
-fn main():
+def main():
     s123 = Struct123()
 
     # CHECK: f1

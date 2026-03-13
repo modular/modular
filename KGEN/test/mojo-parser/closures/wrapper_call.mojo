@@ -28,17 +28,17 @@
 
 @fieldwise_init
 struct MemType(ImplicitlyCopyable):
-    fn __add__(self, rhs: MemType) -> MemType:
+    def __add__(self, rhs: MemType) -> MemType:
         return MemType()
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         return 0
 
 
 # CHECK-LABEL: lit.fn @"makes_escaping_closure
-fn makes_escaping_closure(m: MemType):
-    fn myclosure(n: MemType) -> MemType:
+def makes_escaping_closure(m: MemType):
+    def myclosure(n: MemType) -> MemType:
         return n + m
 
-    fn myclosure2(n: MemType, j: Int) -> Int:
+    def myclosure2(n: MemType, j: Int) -> Int:
         return m.__len__()

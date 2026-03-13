@@ -21,7 +21,7 @@
 from std.ffi import external_call
 
 
-fn test_string_literal():
+def test_string_literal():
     # StringLiteral is always null-terminated; its data pointer is a valid const char*.
     var n = external_call["strlen", Int]("hello")
     print("string_literal:", n)
@@ -30,7 +30,7 @@ fn test_string_literal():
 # CHECK: string_literal: 5
 
 
-fn test_string_literal_empty():
+def test_string_literal_empty():
     var n = external_call["strlen", Int]("")
     print("string_literal_empty:", n)
 
@@ -38,7 +38,7 @@ fn test_string_literal_empty():
 # CHECK: string_literal_empty: 0
 
 
-fn test_string():
+def test_string():
     # String constructed from a literal has FLAG_HAS_NUL_TERMINATOR set.
     var s = String("hello")
     var n = external_call["strlen", Int](s)
@@ -48,7 +48,7 @@ fn test_string():
 # CHECK: string: 5
 
 
-fn test_string_empty():
+def test_string_empty():
     var s = String("")
     var n = external_call["strlen", Int](s)
     print("string_empty:", n)
@@ -57,7 +57,7 @@ fn test_string_empty():
 # CHECK: string_empty: 0
 
 
-fn main():
+def main():
     test_string_literal()
     test_string_literal_empty()
     test_string()

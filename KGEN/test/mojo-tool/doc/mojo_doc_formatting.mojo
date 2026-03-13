@@ -28,7 +28,7 @@ With multiple lines!"""
 # CHECK:   "description": "This is some kind of description.\n\nNotes:\n\n- This is a note.\n\nExample:\n\n```mojo\nprint(\"Example\")\n```\n",
 
 
-fn fn_with_good_format() -> Int:
+def fn_with_good_format() -> Int:
     """Docstring with properly formatted notes and examples.
 
     This is some kind of description.
@@ -53,7 +53,7 @@ fn fn_with_good_format() -> Int:
 # CHECK:      "description": "This is some kind of description.\n\nNotes:\n\n- This is a note.\n\nExample:\n\n```mojo\nprint(\"Example\")\n```\n"
 
 
-fn fn_with_bad_format() -> Int:
+def fn_with_bad_format() -> Int:
     """Docstring with improperly formatted notes and examples.
 
     This is some kind of description.
@@ -84,7 +84,7 @@ fn fn_with_bad_format() -> Int:
 # CHECK:        "name": "param1"
 
 
-fn multiline_param_arg_docstrings[param1: Int](arg1: Int):
+def multiline_param_arg_docstrings[param1: Int](arg1: Int):
     """Docstring for the function.
 
     This is some kind of description.

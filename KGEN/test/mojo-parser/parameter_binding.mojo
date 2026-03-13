@@ -14,7 +14,7 @@ struct ParamType[a: Int]:
 
 struct SomeStruct[a: Int, b: Int, c: Int = 2]:
     @staticmethod
-    fn foo(arg: ParamType[Self.b]) -> Int:
+    def foo(arg: ParamType[Self.b]) -> Int:
         return Self.b
 
 
@@ -34,11 +34,11 @@ comptime c1 = SomeStruct[1, _, _]
 comptime c2 = SomeStruct[1, _][3]
 
 
-fn foo[a: Int, b: Int, c: Int, d: Int](x: SomeStruct[a, b, c]):
+def foo[a: Int, b: Int, c: Int, d: Int](x: SomeStruct[a, b, c]):
     pass
 
 
-fn test(x: SomeStruct[1, 2, 3]):
+def test(x: SomeStruct[1, 2, 3]):
     # Make sure we handle call binding correctly without requiring:
     # foo[d=1, ...] or foo[_, _, _, d=1]
 
@@ -57,6 +57,6 @@ fn test(x: SomeStruct[1, 2, 3]):
     var _ = SomeStruct[1].foo(ParamType[4]())
 
 
-fn foo[T: fn[a: Int, b: Int](ParamType[b]) -> Int](param: ParamType[1]):
+def foo[T: def[a: Int, b: Int](ParamType[b]) -> Int](param: ParamType[1]):
     # CHECK: lit.call tail{{.*}}bind_params(:{{.*}} T, :!Int {2}, :!Int {1})]
     T[2](param)

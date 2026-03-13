@@ -29,21 +29,21 @@ struct MyCtxtMgr:
     var handle: Bool
 
     @implicit
-    fn __init__(out self, handle: Bool = True):
+    def __init__(out self, handle: Bool = True):
         self.handle = handle
 
-    fn __enter__(self):
+    def __enter__(self):
         pass
 
-    fn __exit__(self):
+    def __exit__(self):
         print("exit!")
 
-    fn __exit__(self, err: Error) -> Bool:
+    def __exit__(self, err: Error) -> Bool:
         print("exit error!")
         return self.handle
 
 
-fn with_no_throw() -> Int:
+def with_no_throw() -> Int:
     with MyCtxtMgr():
         return 1
 
@@ -62,11 +62,11 @@ def with_it_err(handle: Bool) raises -> Int:
 
 @fieldwise_init
 struct MemoryType(ImplicitlyCopyable):
-    fn __del__(deinit self):
+    def __del__(deinit self):
         print("delete")
 
 
-fn chris_origin_example(a: Bool, b: Bool):
+def chris_origin_example(a: Bool, b: Bool):
     print("start")
     var x: MemoryType
     try:
@@ -83,15 +83,15 @@ fn chris_origin_example(a: Bool, b: Bool):
     print("normal")
 
 
-fn raise_fn() raises:
+def raise_fn() raises:
     raise Error("in raise_fn")
 
 
-fn raise_cond() -> Bool:
+def raise_cond() -> Bool:
     return False
 
 
-fn raising_finally():
+def raising_finally():
     try:
         try:
             if raise_cond():
@@ -116,13 +116,13 @@ struct MoveMe(Copyable):
     pass
 
 
-fn moved(var x: MoveMe):
+def moved(var x: MoveMe):
     print("moved called")
     pass
 
 
 # We should not report `use of uninitialized value 'x'`
-fn raising_finally_no_use_of_uninit():
+def raising_finally_no_use_of_uninit():
     var x = MoveMe()
 
     try:
@@ -197,7 +197,7 @@ def main() raises:
     # CHECK-NEXT: except outer
     raising_finally()
 
-    # Should only call `fn moved` once.
+    # Should only call `def moved` once.
     # CHECK-NEXT: moved called
     # CHECK-NOT: moved called
     raising_finally_no_use_of_uninit()

@@ -8,7 +8,7 @@
 
 # Note: in REPL mode, expressions are delimited by empty lines.
 
-fn foo():
+def foo():
     var value = 10
     _ = value^
 # CHECK: ] warning:

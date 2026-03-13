@@ -7,14 +7,14 @@
 
 
 # CHECK-LABEL: lit.fn @"closure_kw
-fn closure_kw(a: Int):
-    fn has_kw(b: Int) escaping -> Int:
+def closure_kw(a: Int):
+    def has_kw(b: Int) escaping -> Int:
         return a + b
 
     var has_kw_ref = has_kw
 
     # CHECK: kgen.rebind %{{.*}} : !lit.ref<![[INT:.*]], mut {{.*}}> to !lit.ref<![[INT1:.*]], mut {{.*}}>
-    var unbound: fn (Int) escaping -> Int = has_kw
+    var unbound: def (Int) escaping -> Int = has_kw
     # CHECK: kgen.rebind %{{.*}} : !lit.ref<![[INT]], mut *"[[LT:.*]]"> to
     # CHECK-SAME: !lit.ref<![[INT1]], mut *"[[LT]]">
-    var unbound_ref: fn (Int) escaping -> Int = has_kw_ref
+    var unbound_ref: def (Int) escaping -> Int = has_kw_ref

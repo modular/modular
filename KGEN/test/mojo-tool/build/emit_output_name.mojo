@@ -27,5 +27,5 @@
 # RUN: test -e %S/emit_output_name.s
 
 
-fn main():
+def main():
     pass

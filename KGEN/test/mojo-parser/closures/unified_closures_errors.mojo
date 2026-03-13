@@ -8,12 +8,12 @@
 from std.builtin.device_passable import DevicePassable
 
 trait MyInterface:
-    fn thing(self):
+    def thing(self):
         ...
 
 
-fn make_closure(x: Int) -> Int:
-    fn parametric[T: MyInterface](a: T) unified {}:
+def make_closure(x: Int) -> Int:
+    def parametric[T: MyInterface](a: T) unified {}:
         # expected-error @below {{use of unknown declaration 'A'}}
         comptime X = A
         pass
@@ -23,34 +23,34 @@ fn make_closure(x: Int) -> Int:
 struct Mem(ImplicitlyCopyable):
     pass
 
-fn use(a:Mem):
+def use(a:Mem):
     pass
 
 
-fn foo(a: Mem):
+def foo(a: Mem):
     # expected-error @below {{cannot capture a by copy or move because it is not register passable and your closure is marked as register passable}}
-    fn closure() unified register_passable {var}:
+    def closure() unified register_passable {var}:
         use(a)
 
 
-fn bar(a: Mem):
+def bar(a: Mem):
     # expected-error @below {{a function cannot be register passable unless it is unified}}
-    fn closure() register_passable {var}:
+    def closure() register_passable {var}:
         use(a)
 
 # COM: ambiguous captures
 
-fn aThing(x: Int) -> Int:
+def aThing(x: Int) -> Int:
     return x
 
 
-fn aThing() -> Int:
+def aThing() -> Int:
     return 5
 
 
-fn definesClosure():
+def definesClosure():
     # expected-error @below {{ambiguous captured value: 'aThing'}}
-    fn aClosure() unified {var aThing}:
+    def aClosure() unified {var aThing}:
         pass
 
 
@@ -58,18 +58,18 @@ struct Bar(ImplicitlyCopyable, RegisterPassable):
     var x: Int
     var y: Int
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
 # expected-note @+1 {{function declared here}}
-fn takeDevicePassable[T: DevicePassable](impl: T):
+def takeDevicePassable[T: DevicePassable](impl: T):
     pass
 
 
 def foo(bar: Bar) raises:
     # COM: This should fail because Bar is not trivial.
 
-    fn closure(number: Int) unified register_passable {var bar} -> Int:
+    def closure(number: Int) unified register_passable {var bar} -> Int:
         return bar.x
 
     # TODO: Rename Wrappers (MOCO-2541)
@@ -80,12 +80,12 @@ def foo(bar: Bar) raises:
 # COM: Test that a register_passable closure capturing a non trivial
 # COM: register_passable type does NOT conform to TrivialRegisterPassable.
 # expected-note @below {{function declared here}}
-fn takeTrivialRegisterPassable[T: TrivialRegisterPassable](impl: T):
+def takeTrivialRegisterPassable[T: TrivialRegisterPassable](impl: T):
     pass
 
 
 def testNonTrivialClosureNotTrivialRegisterPassable(bar: Bar) raises:
-    fn closure() unified register_passable {var bar} -> Int:
+    def closure() unified register_passable {var bar} -> Int:
         return bar.x
 
     # expected-error-re @below {{'{{.*}}' does not conform to trait 'TrivialRegisterPassable'}}
@@ -93,29 +93,29 @@ def testNonTrivialClosureNotTrivialRegisterPassable(bar: Bar) raises:
 
 
 # expected-note @below {{function declared here}}
-fn changeIt(mut aString: String):
+def changeIt(mut aString: String):
     pass
 
 
 def nestedCaptureAll(mut aString: String) raises:
-    fn aFinalThing(x:Int) unified {read}:
+    def aFinalThing(x:Int) unified {read}:
         # expected-error @below {{invalid call to 'changeIt': value passed to mutable argument 'aString' must be mutable}}
         changeIt(aString)
 
-        fn aChildThing(x:Int) unified {var}:
+        def aChildThing(x:Int) unified {var}:
             changeIt(aString)
 
 
 
-fn topLevel(x: String) -> String:
+def topLevel(x: String) -> String:
     return x
 
 # expected-note @+1 {{function declared here}}
-fn takesClosure[T: fn(Int) unified -> Int](cb: T, x: Int) -> Int:
+def takesClosure[T: def(Int) unified -> Int](cb: T, x: Int) -> Int:
     return cb(x)
 
 
-fn useTopLevelClosure():
+def useTopLevelClosure():
     # expected-error @below {{invalid call to 'takesClosure': 'takesClosure' parameter 'T' has 'fn(Int) -> Int' type, but value has type 'fn(x: String) -> String'}}
     takesClosure[topLevel](topLevel, 1)
 
@@ -125,7 +125,7 @@ fn useTopLevelClosure():
 # ===----------------------------------------------------------------------=== #
 
 trait Animal:
-    fn speak(self):
+    def speak(self):
         ...
 
 
@@ -133,22 +133,22 @@ trait Mammal(Animal):
     pass
 
 struct Dog(Mammal):
-    fn speak(self):
+    def speak(self):
         pass
 
 # expected-note @below {{function declared here}}
-fn takeClosureMammalParam[W: Mammal, C: fn (x: W) unified -> None](impl: C):
+def takeClosureMammalParam[W: Mammal, C: def (x: W) unified -> None](impl: C):
     pass
 
 
-fn traitConstraintMismatch[Q: Animal]():
-    fn closure(x: Q) unified {var}:
+def traitConstraintMismatch[Q: Animal]():
+    def closure(x: Q) unified {var}:
         x.speak()
 
     # expected-error @below {{does not conform to trait 'fn(x: W) -> None'}}
     takeClosureMammalParam(closure)
 
-    fn closureWrongConvention(mut x: Dog) unified {var}:
+    def closureWrongConvention(mut x: Dog) unified {var}:
         x.speak()
 
     # expected-error-re @below {{'takeClosureMammalParam' parameter 'C' has 'fn(x: W) -> None' type, but value has type 'AnyStruct[fn(mut x: Dog) -> None_Mova_Impl_Copy_Impl[__mlir_type.`!kgen.closure<@"unified_closures_errors::traitConstraintMismatch[unified_closures_errors::Animal]()", "closureWrongConvention" nonescaping>`, {}]]'}}
@@ -173,12 +173,12 @@ struct Sphere(Coord):
 
 # expected-note @below {{constraint declared here evaluated to False}}
 # expected-note @below {{function declared here}}
-fn takeClosure[T: Coord, C:fn() unified -> T](impl: C) -> T:
+def takeClosure[T: Coord, C:def() unified -> T](impl: C) -> T:
    _ = impl()
 
 
-fn makeClosure[B:Int](something: Cartesian):
-   fn closureImpl() unified {var} -> Cartesian:
+def makeClosure[B:Int](something: Cartesian):
+   def closureImpl() unified {var} -> Cartesian:
       return something
    # expected-error @below {{invalid call to 'takeClosure': violated constraint}}
    takeClosure[Sphere, type_of(closureImpl)](closureImpl)
@@ -188,12 +188,12 @@ fn makeClosure[B:Int](something: Cartesian):
 # Non-compatible parameter signatures disqualify conformance
 # ===----------------------------------------------------------------------=== #
 
-fn _print(x: Int):
+def _print(x: Int):
     pass
 
 # expected-note @below {{function declared here}}
-fn callee_no_params[
-    func: fn() unified -> None,
+def callee_no_params[
+    func: def() unified -> None,
     //,
 ](closure: func):
     closure()
@@ -203,7 +203,7 @@ def incompatible_param_signature() raises:
     var x = 42
 
     @always_inline
-    fn my_func[param_only: Int]() unified {read x}:
+    def my_func[param_only: Int]() unified {read x}:
         _print(x)
 
     # expected-error @below {{does not conform to trait 'fn() -> None'}}

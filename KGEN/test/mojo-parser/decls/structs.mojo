@@ -42,7 +42,7 @@ struct DtorExample2(TrivialRegisterPassable, AnyType):
 struct DtorExample3(AnyType, RegisterPassable):
     var a: Int
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 
@@ -84,7 +84,7 @@ struct IntPairWrapper(ImplicitlyCopyable):
 
 
 # CHECK-LABEL: lit.fn @"testCopyMoveSynth
-fn testCopyMoveSynth(var a: IntPair, var b: IntPairWrapper):
+def testCopyMoveSynth(var a: IntPair, var b: IntPairWrapper):
     # CHECK: lit.memcpy %a, %aCopy
     var aCopy = a
 
@@ -115,7 +115,7 @@ struct IntPairWrapperNT(ImplicitlyCopyable):
 
 
 # CHECK-LABEL: lit.fn @"testCopyMoveSynthNonTrivial
-fn testCopyMoveSynthNonTrivial(var a: IntPairNT, var b: IntPairWrapperNT):
+def testCopyMoveSynthNonTrivial(var a: IntPairNT, var b: IntPairWrapperNT):
     # CHECK: lit.call {{.*}}IntPairNT::@"__init__{{.*}}"{{.*}}({{.*}}, %aCopy){{.*}}*, "copy"
     var aCopy = a
 
@@ -165,7 +165,7 @@ struct FieldwiseInitExample2:
 
 # CHECK-LABEL: lit.fn @"testFieldwiseInitExample2
 # CHECK: FieldwiseInitExample2::@"__init__{{.*}}(%a, %b)
-fn testFieldwiseInitExample2(a: Int):
+def testFieldwiseInitExample2(a: Int):
     var b: FieldwiseInitExample2 = a
 
 
@@ -194,13 +194,13 @@ trait TraitWithPAlias:
 # CHECK-SAME: m1: !lit.struct<#MyParam <:!Int *"[[P1]]">>, m2: !lit.struct<#MyParam <:!Int *"[[P2]]">>
 struct MyStruct[p: Int, m1: MyParam[_], m2: MyParam[_]]:
     # CHECK: lit.fn @"__init__()"[
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
 # CHECK-LABEL: lit.struct.decl @MyStructWithPVar
 struct MyStructWithPVar[m1: MyParam[_]]:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     # COM: Ensure there's no conflict with this var.
@@ -209,7 +209,7 @@ struct MyStructWithPVar[m1: MyParam[_]]:
 
 # CHECK-LABEL: lit.struct.decl @MyStructWithPAlias
 struct MyStructWithPAlias[m1: MyParam[_]]:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     # COM: Ensure there's no conflict with this alias.
@@ -219,30 +219,30 @@ struct MyStructWithPAlias[m1: MyParam[_]]:
 # CHECK-LABEL: lit.struct.decl @MyStructWithTraitWithPAlias
 struct MyStructWithTraitWithPAlias[m1: MyParam[_]](TraitWithPAlias):
     # COM: Ensure there's no conflict with the inherited alias.
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
 # CHECK-LABEL: lit.struct.decl @MyStructWithPFunc
 struct MyStructWithPFunc[m1: MyParam[_]]:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     # COM: Ensure there's no conflict with this method (single definition).
-    fn p(self, x: Int):
+    def p(self, x: Int):
         pass
 
 
 # CHECK-LABEL: lit.struct.decl @MyStructWith2PFuncs
 struct MyStructWith2PFuncs[m1: MyParam[_]]:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     # COM: Ensure there's no conflict with this method (multiple definitions).
-    fn p(self):
+    def p(self):
         pass
 
-    fn p(self, x: Int):
+    def p(self, x: Int):
         pass
 
 # ===----------------------------------------------------------------------=== #
@@ -256,10 +256,10 @@ struct NmTarget(TrivialRegisterPassable):
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, nms: NmStruct):
+    def __init__(out self, nms: NmStruct):
         self.x = True if (nms.x == 77) else False
 
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         return self.x
 
 
@@ -269,11 +269,11 @@ struct NmStruct(TrivialRegisterPassable):
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, x: Int):
+    def __init__(out self, x: Int):
         self.x = x
 
     @always_inline("builtin")
-    fn __add__(self, rhs: Self) -> Self:
+    def __add__(self, rhs: Self) -> Self:
         return NmStruct(self.x + rhs.x)
 
 
@@ -283,20 +283,20 @@ comptime notMaterializedAlias = NmStruct(77)
 comptime notMaterializedButConverted: NmTarget = NmStruct(76)
 
 
-fn tail_types[T: AnyType, *U: AnyType](a: T, *b: *U):
+def tail_types[T: AnyType, *U: AnyType](a: T, *b: *U):
     pass
 
 
-fn nmTargetNoop(x: NmTarget):
+def nmTargetNoop(x: NmTarget):
     pass
 
 
-fn nmResult() -> NmStruct:
+def nmResult() -> NmStruct:
     pass
 
 
 # CHECK-LABEL: lit.fn @"useNonmaterializable
-fn useNonmaterializable(p: Bool):
+def useNonmaterializable(p: Bool):
     # CHECK: lit.var.decl "gotConverted1" var : !lit.ref<!NmTarget
     # CHECK: kgen.param.constant: !NmTarget {{.*}}{:i1 1}
     var gotConverted1 = NmStruct(76) + NmStruct(1)

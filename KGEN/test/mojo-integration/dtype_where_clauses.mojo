@@ -12,93 +12,93 @@
 
 
 @always_inline("builtin")
-fn dtype_where_clause_eq_ne[d: DType]() -> Int where d == DType.int32:
+def dtype_where_clause_eq_ne[d: DType]() -> Int where d == DType.int32:
     return 42
 
 
 @always_inline("builtin")
-fn dtype_where_clause_eq_ne[d: DType]() -> Int where d != DType.int32:
+def dtype_where_clause_eq_ne[d: DType]() -> Int where d != DType.int32:
     return 0
 
 
 @always_inline("builtin")
-fn dtype_where_clause_is_signed[d: DType]() -> Int where d.is_signed():
+def dtype_where_clause_is_signed[d: DType]() -> Int where d.is_signed():
     return 1
 
 
 @always_inline("builtin")
-fn dtype_where_clause_is_signed[d: DType]() -> Int where not d.is_signed():
+def dtype_where_clause_is_signed[d: DType]() -> Int where not d.is_signed():
     return 0
 
 
 @always_inline("builtin")
-fn dtype_where_clause_is_unsigned[d: DType]() -> Int where d.is_unsigned():
+def dtype_where_clause_is_unsigned[d: DType]() -> Int where d.is_unsigned():
     return 1
 
 
 @always_inline("builtin")
-fn dtype_where_clause_is_unsigned[d: DType]() -> Int where not d.is_unsigned():
+def dtype_where_clause_is_unsigned[d: DType]() -> Int where not d.is_unsigned():
     return 0
 
 
 @always_inline("builtin")
-fn dtype_where_clause_is_integral[d: DType]() -> Int where d.is_integral():
+def dtype_where_clause_is_integral[d: DType]() -> Int where d.is_integral():
     return 1
 
 
 @always_inline("builtin")
-fn dtype_where_clause_is_integral[d: DType]() -> Int where not d.is_integral():
+def dtype_where_clause_is_integral[d: DType]() -> Int where not d.is_integral():
     return 0
 
 
 @always_inline("builtin")
-fn dtype_where_clause_is_floating_point[
+def dtype_where_clause_is_floating_point[
     d: DType
 ]() -> Int where d.is_floating_point():
     return 1
 
 
 @always_inline("builtin")
-fn dtype_where_clause_is_floating_point[
+def dtype_where_clause_is_floating_point[
     d: DType
 ]() -> Int where not d.is_floating_point():
     return 0
 
 
 @always_inline("builtin")
-fn dtype_where_clause_is_half_float[d: DType]() -> Int where d.is_half_float():
+def dtype_where_clause_is_half_float[d: DType]() -> Int where d.is_half_float():
     return 1
 
 
 @always_inline("builtin")
-fn dtype_where_clause_is_half_float[
+def dtype_where_clause_is_half_float[
     d: DType
 ]() -> Int where not d.is_half_float():
     return 0
 
 
 @always_inline("builtin")
-fn dtype_where_clause_is_float8[d: DType]() -> Int where d.is_float8():
+def dtype_where_clause_is_float8[d: DType]() -> Int where d.is_float8():
     return 1
 
 
 @always_inline("builtin")
-fn dtype_where_clause_is_float8[d: DType]() -> Int where not d.is_float8():
+def dtype_where_clause_is_float8[d: DType]() -> Int where not d.is_float8():
     return 0
 
 
 @always_inline("builtin")
-fn dtype_where_clause_is_numeric[d: DType]() -> Int where d.is_numeric():
+def dtype_where_clause_is_numeric[d: DType]() -> Int where d.is_numeric():
     return 1
 
 
 @always_inline("builtin")
-fn dtype_where_clause_is_numeric[d: DType]() -> Int where not d.is_numeric():
+def dtype_where_clause_is_numeric[d: DType]() -> Int where not d.is_numeric():
     return 0
 
 
 # CHECK-LABEL: lit.fn @"foo
-fn foo():
+def foo():
     # CHECK: lit.alias.decl *"x`": !Int = <{42}>
     comptime x = dtype_where_clause_eq_ne[DType.int32]()
     # CHECK: lit.alias.decl *"y`1": !Int = <{0}>

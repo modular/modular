@@ -10,5 +10,5 @@
 
 
 # CHECK: ok
-fn main() -> None:
+def main() -> None:
     print("ok")

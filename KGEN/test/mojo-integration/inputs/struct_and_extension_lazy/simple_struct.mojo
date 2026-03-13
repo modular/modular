@@ -8,8 +8,8 @@
 struct BaseType:
     var value: Int
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.value = value
 
-    fn __init__(out self):
+    def __init__(out self):
         self.value = 42

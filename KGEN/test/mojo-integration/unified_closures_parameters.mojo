@@ -8,15 +8,15 @@
 from std.sys import argv
 
 
-fn takeItParams[
-    UU: Trait, T: fn[U: Trait](impl: U) unified -> Int, //
+def takeItParams[
+    UU: Trait, T: def[U: Trait](impl: U) unified -> Int, //
 ](state: T, x: UU):
     var product2 = state.__call__[UU](x)
     print(product2)
 
 
 trait Trait(ImplicitlyCopyable):
-    fn get(self) -> Int:
+    def get(self) -> Int:
         ...
 
 
@@ -24,7 +24,7 @@ trait Trait(ImplicitlyCopyable):
 struct Impl(Trait):
     var x: Int
 
-    fn get(self) -> Int:
+    def get(self) -> Int:
         return self.x
 
 
@@ -32,13 +32,13 @@ struct Impl(Trait):
 struct Impl2(Trait):
     var x: String
 
-    fn get(self) -> Int:
+    def get(self) -> Int:
         return self.x.__len__()
 
 
 # COM: Ensure parametric closures are supported
-fn captureParams[X: Trait, Y: Trait](impl2: X, mut impl3: Y):
-    fn hasParams[U: Trait](impl: U) unified {read} -> Int:
+def captureParams[X: Trait, Y: Trait](impl2: X, mut impl3: Y):
+    def hasParams[U: Trait](impl: U) unified {read} -> Int:
         return impl.get() + impl2.get() + impl3.get()
 
     takeItParams(hasParams, impl2)
@@ -48,17 +48,17 @@ fn captureParams[X: Trait, Y: Trait](impl2: X, mut impl3: Y):
 struct Parameter[*, base: ImplicitlyCopyable & Writable](Copyable):
     var impl: Self.base
 
-    fn useIt(self):
+    def useIt(self):
         print(self.impl)
 
 
-fn takeIt[f: fn() unified -> None](impl: f):
+def takeIt[f: def() unified -> None](impl: f):
     impl()
 
 
-fn captureIt(p: Parameter[...]):
+def captureIt(p: Parameter[...]):
     @no_inline
-    fn closure() unified {read p}:
+    def closure() unified {read p}:
         p.useIt()
 
     takeIt(closure)

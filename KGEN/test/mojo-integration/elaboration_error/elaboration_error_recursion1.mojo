@@ -15,7 +15,7 @@ from std.sys import get_defined_bool
 # expected-note @below {{remaining errors after}}
 # expected-note-re @below {{error recurses {{[0-9]+}} times}}
 # expected-note-re @below {{elaborator expansion is {{[0-9]+}} levels deep - infinite recursion?}}
-fn self_recursion[i: Int]() -> Int:
+def self_recursion[i: Int]() -> Int:
     # expected-note @below {{call expansion failed}}
     # expected-warning @below {{self recursive call will cause an infinite loop}}
     var x = self_recursion[i + 1]()
@@ -23,7 +23,7 @@ fn self_recursion[i: Int]() -> Int:
 
 
 # expected-error @below {{function instantiation failed}}
-fn main():
+def main():
     # expected-note @below {{call expansion failed}}
     _ = self_recursion[1]()
 

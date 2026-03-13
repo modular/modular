@@ -8,71 +8,71 @@
 
 
 struct PCall:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __call__[x: Int](ref self, y: Int) -> Int:
+    def __call__[x: Int](ref self, y: Int) -> Int:
         return x + y
 
 
 struct PCallWithGetItem:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     # expected-warning @below {{parametric '__call__' method cannot be called directly because 'PCallWithGetItem' defines '__getitem__', '__setitem__', or '__getattr__'; consider using a different name for this method}}
-    fn __call__[x: Int](ref self, y: Int) -> Int:
+    def __call__[x: Int](ref self, y: Int) -> Int:
         return x + y
 
     # expected-note @below {{__getitem__ defined here}}
-    fn __getitem__(ref self, y: Int) -> Int:
+    def __getitem__(ref self, y: Int) -> Int:
         return y
 
     # expected-note @below {{__getitem__ defined here}}
-    fn __getitem__(ref self, y: StringLiteral) -> Int:
+    def __getitem__(ref self, y: StringLiteral) -> Int:
         return 2
 
 
 struct PCallWithSetItem:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     # expected-warning @below {{parametric '__call__' method cannot be called directly because 'PCallWithSetItem' defines '__getitem__', '__setitem__', or '__getattr__'; consider using a different name for this method}}
-    fn __call__[x: Int](ref self, y: Int) -> Int:
+    def __call__[x: Int](ref self, y: Int) -> Int:
         return x + y
 
     # expected-note @below {{__setitem__ defined here}}
-    fn __setitem__(mut self, x: Int, y: Int):
+    def __setitem__(mut self, x: Int, y: Int):
         return
 
 
 struct PCallWithGetAttr:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     # expected-warning @below {{parametric '__call__' method cannot be called directly because 'PCallWithGetAttr' defines '__getitem__', '__setitem__', or '__getattr__'; consider using a different name for this method}}
-    fn __call__[_x: StringLiteral](ref self):
+    def __call__[_x: StringLiteral](ref self):
         pass
 
     # expected-note @below {{__getattr__ defined here}}
-    fn __getattr__[x: StringLiteral](self) -> Int:
+    def __getattr__[x: StringLiteral](self) -> Int:
         return 2
 
 
 # Note: Test heuristic fix for MOCO-2833
 struct PCallWithGetItemAndInferredParameters:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     # This does *not* produce a warning, because the parameters are all
     # inferred.
-    fn __call__[T: Movable, //](ref self, var y: T) -> T:
+    def __call__[T: Movable, //](ref self, var y: T) -> T:
         return y^
 
-    fn __getitem__(ref self, y: Int) -> Int:
+    def __getitem__(ref self, y: Int) -> Int:
         return y
 
 
-fn main():
+def main():
     var pc = PCall()
     _ = pc[1](2)
 

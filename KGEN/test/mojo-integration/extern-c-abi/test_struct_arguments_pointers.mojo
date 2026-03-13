@@ -22,7 +22,7 @@ struct PtrInt32Struct(TrivialRegisterPassable):
     var i: Int32
 
 
-fn test_ptr_int32():
+def test_ptr_int32():
     var p = alloc[Int32](1)
     p[] = 999
     var s = PtrInt32Struct(p, Int32(200))
@@ -48,7 +48,7 @@ struct ThreePtrStruct(TrivialRegisterPassable):
     var c: UnsafePointer[Int32, MutAnyOrigin]
 
 
-fn test_three_ptr():
+def test_three_ptr():
     var pa = alloc[Int32](1)
     var pb = alloc[Int32](1)
     var pc = alloc[Int32](1)
@@ -70,7 +70,7 @@ fn test_three_ptr():
 # ============================================================================
 # Main - run all tests
 # ============================================================================
-fn main():
+def main():
     test_ptr_int32()
 
     test_three_ptr()

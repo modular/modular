@@ -15,7 +15,7 @@ from struct_package import PlainStruct
 __extension PlainStruct:
     # CHECK-LABEL: lit.fn @"sparklebark
     # CHECK-SAME: %self: !lit.ref<!PlainStruct, imm *"{{.*}}">
-    fn sparklebark(self: PlainStruct):
+    def sparklebark(self: PlainStruct):
         pass
 
 
@@ -33,7 +33,7 @@ from struct_package import PlainStruct
 __extension PlainStruct:
     # CHECK-LABEL: lit.fn @"sparklebark
     # CHECK-SAME: %self: !lit.ref<!PlainStruct, imm *"{{.*}}">
-    fn sparklebark(self: PlainStruct):
+    def sparklebark(self: PlainStruct):
         pass
 
 
@@ -43,7 +43,7 @@ from struct_package import PlainStruct
 
 
 trait Flying:
-    fn fly_to(mut self, new_location: Int):
+    def fly_to(mut self, new_location: Int):
         ...
 
 
@@ -54,18 +54,18 @@ __extension PlainStruct(Flying):
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!PlainStruct, mut *"{{.*}}">
     # CHECK-SAME: %new_location: !Int
-    fn fly_to(mut self: PlainStruct, new_location: Int):
+    def fly_to(mut self: PlainStruct, new_location: Int):
         self.set_location(new_location)
 
     # CHECK: kgen.conformance @"struct_extensions_importing::Flying" {
 
 
-fn launch_flying[F: Flying](mut flying: F):
+def launch_flying[F: Flying](mut flying: F):
     flying.fly_to(2)
 
 
 # CHECK-LABEL: lit.fn @"launch_ship
-fn launch_ship(mut ship: PlainStruct):
+def launch_ship(mut ship: PlainStruct):
     # CHECK: lit.call tail @struct_extensions_importing::@"launch_flying[struct_extensions_importing::Flying]
     # CHECK-SAME: <:!Flying !PlainStruct>
     launch_flying(ship)
@@ -79,10 +79,10 @@ from trait_package import Flying as ImportedFlying
 struct Spaceship:
     var location: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.location = 0
 
-    fn set_location(mut self, new_location: Int):
+    def set_location(mut self, new_location: Int):
         self.location = new_location
 
 
@@ -93,18 +93,18 @@ __extension Spaceship(ImportedFlying):
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
     # CHECK-SAME: %new_location: !Int
-    fn fly_to(mut self: Spaceship, new_location: Int):
+    def fly_to(mut self: Spaceship, new_location: Int):
         self.set_location(new_location)
 
     # CHECK: kgen.conformance @"trait_package::plain_trait::Flying" {
 
 
-fn launch_flying2[F: ImportedFlying](mut flying: F):
+def launch_flying2[F: ImportedFlying](mut flying: F):
     flying.fly_to(2)
 
 
 # CHECK-LABEL: lit.fn @"launch_ship2
-fn launch_ship2(mut ship: Spaceship):
+def launch_ship2(mut ship: Spaceship):
     # CHECK: lit.call {{.*}}@"launch_flying2[trait_package::plain_trait::Flying]
     # CHECK-SAME: <:!Flying !Spaceship>
     launch_flying2(ship)
@@ -128,6 +128,6 @@ fn launch_ship2(mut ship: Spaceship):
 from struct_and_extension_package import MyStruct
 
 
-fn use_struct():
+def use_struct():
     var s = MyStruct(2)
     s.extended_method()

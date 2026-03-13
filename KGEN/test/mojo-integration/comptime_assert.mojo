@@ -7,10 +7,10 @@
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
 
-fn use_positive_int[x: Int]():
+def use_positive_int[x: Int]():
     comptime assert x > 0, "expected positive number, got " + String(x)
 
 
-fn main():
+def main():
     # CHECK: expected positive number, got -2
     use_positive_int[-2]()

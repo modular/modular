@@ -53,7 +53,7 @@ comptime MyDepGetAlias1 = MyDep[Int].hello
 comptime MyDepGetAlias2 = MyDep[Int, 2].hello
 
 
-fn test_variable_type_parameterization():
+def test_variable_type_parameterization():
     # Store an unparameterized struct type in a variable...
     # expected-error @below {{dynamic type values not permitted yet; try creating an `alias` instead of a `var`}}
     var struct_type = Dep

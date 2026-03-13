@@ -6,10 +6,10 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
-fn use(a: Int): pass
-fn use(a: StaticString): pass
+def use(a: Int): pass
+def use(a: StaticString): pass
 
-fn test():
+def test():
     # True dead code - check for warnings
     # expected-warning @+1 {{unreachable code on right side of 'False and ...'}}
     use(0 and 0)

@@ -10,7 +10,7 @@
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
 
-fn main():
+def main():
     # These would trap if assertions were enabled, but they should be no-ops.
     assert False
     assert False, "this should be a no-op"

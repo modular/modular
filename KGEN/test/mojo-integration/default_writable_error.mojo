@@ -23,7 +23,7 @@ struct HasBadField(Writable):
     var field: NotWritable
 
 
-fn main():
+def main():
     var value = HasBadField(NotWritable(1))
     var string = String()
 

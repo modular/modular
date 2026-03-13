@@ -14,5 +14,5 @@
 # CHECK: kgen.generator @{{.*}}::compute_unusedPre{{.*}}_REMOVED_ARG"(%arg0: !pop.scalar<ui8>) -> !pop.scalar<ui8>
 
 
-fn main():
+def main():
     pass

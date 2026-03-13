@@ -8,27 +8,27 @@
 
 
 struct WeirdArray:
-    fn __getitem__(self, x: Int) -> Int:
+    def __getitem__(self, x: Int) -> Int:
         return x
 
-    fn __getitem__(self, x: Int, y: Int) -> Int:
+    def __getitem__(self, x: Int, y: Int) -> Int:
         return x
 
-    fn __getitem__(self, x: Int, y: Int, z: Int) -> Int:
+    def __getitem__(self, x: Int, y: Int, z: Int) -> Int:
         return x
 
-    fn __getitem__(self, x: float, *ints: Int) -> Int:
+    def __getitem__(self, x: float, *ints: Int) -> Int:
         return 1
 
-    fn __setitem__(self, x: Int, y: Int, value: Int):
+    def __setitem__(self, x: Int, y: Int, value: Int):
         pass
 
-    fn __getitem__(self, s: Slice) -> Int:
+    def __getitem__(self, s: Slice) -> Int:
         return 2
 
 
 # CHECK-LABEL: lit.fn @"test_getitem
-fn test_getitem(a: WeirdArray, idx: Int, f: float):
+def test_getitem(a: WeirdArray, idx: Int, f: float):
     # CHECK: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx)
     _ = a[idx]
 
@@ -43,7 +43,7 @@ fn test_getitem(a: WeirdArray, idx: Int, f: float):
     _ = a[f, idx, idx, idx, idx]
 
 
-fn test_getitem_kw(a: WeirdArray, idx: Int, idx2: Int, idx3: Int):
+def test_getitem_kw(a: WeirdArray, idx: Int, idx2: Int, idx3: Int):
     # CHECK: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx)
     _ = a[x=idx]
 
@@ -58,14 +58,14 @@ fn test_getitem_kw(a: WeirdArray, idx: Int, idx2: Int, idx3: Int):
 
 
 # CHECK-LABEL: lit.fn @"test_setitem
-fn test_setitem[x: Int](a: WeirdArray, idx: Int):
+def test_setitem[x: Int](a: WeirdArray, idx: Int):
     # CHECK: %[[X:.*]] = kgen.param.constant: !Int = <x>
     # CHECK: lit.call {{.*}}__setitem__{{.*}}(%a, %idx, %idx, %[[X]])
     a[idx, idx] = x
 
 
 # CHECK-LABEL: lit.fn @"test_getitem_slice
-fn test_getitem_slice(a: WeirdArray, i: Int, j: Int, k: Int):
+def test_getitem_slice(a: WeirdArray, i: Int, j: Int, k: Int):
     # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:!TrivialRegisterPassable #type_value
     # CHECK-SAME: :!TrivialRegisterPassable #type_value, :!TrivialRegisterPassable #type_value>(%none{{.*}}, %none{{.*}}, %none{{.*}}) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
@@ -93,27 +93,27 @@ fn test_getitem_slice(a: WeirdArray, i: Int, j: Int, k: Int):
 
 
 struct IndexArray:
-    fn __getitem__(mut self, x: Int) -> Int:
+    def __getitem__(mut self, x: Int) -> Int:
         pass
 
-    fn __setitem__(mut self, x: Int, value: Int):
+    def __setitem__(mut self, x: Int, value: Int):
         pass
 
 
 struct IndexArrayArray:
-    fn __getitem__(mut self, x: Int) -> IndexArray:
+    def __getitem__(mut self, x: Int) -> IndexArray:
         pass
 
-    fn __setitem__(mut self, x: Int, var value: IndexArray):
+    def __setitem__(mut self, x: Int, var value: IndexArray):
         pass
 
 
-fn takes_inout_int(mut a: Int):
+def takes_inout_int(mut a: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_writeback1
-fn test_writeback1[x: Int, y: Int](mut a: IndexArray, mut b: IndexArrayArray):
+def test_writeback1[x: Int, y: Int](mut a: IndexArray, mut b: IndexArrayArray):
     # CHECK: %[[V0:.*]] = kgen.param.constant: !Int = <x>
     # CHECK-NEXT: %[[V1:.*]] = lit.call {{.*}}__getitem__{{.*}}(%a, %[[V0]])
     # CHECK-NEXT: %[[LT:.*]] = lit.var.decl "anonymous*" synth
@@ -126,7 +126,7 @@ fn test_writeback1[x: Int, y: Int](mut a: IndexArray, mut b: IndexArrayArray):
 
 
 # CHECK-LABEL: lit.fn @"test_writeback2
-fn test_writeback2[x: Int, y: Int](mut a: IndexArray, mut b: IndexArrayArray):
+def test_writeback2[x: Int, y: Int](mut a: IndexArray, mut b: IndexArrayArray):
     # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant: !Int = <x>
     # CHECK-NEXT: %[[LT2:.*]] = lit.var.decl {{.*}}!IndexArray
     # CHECK-NEXT: %[[V4:.*]] = {{.*}}__getitem__{{.*}}(%b, %[[C1]], %[[LT2]])
@@ -151,21 +151,21 @@ fn test_writeback2[x: Int, y: Int](mut a: IndexArray, mut b: IndexArrayArray):
 
 
 struct RegWeirdArray(RegisterPassable):
-    fn __getitem__(self, idx: Int) -> Int:
+    def __getitem__(self, idx: Int) -> Int:
         return idx
 
-    fn __setitem__(self, idx: Int, value: Int):
+    def __setitem__(self, idx: Int, value: Int):
         pass
 
 
 # CHECK-LABEL: lit.fn @"test_dlvalue_to_pvalue
-fn test_dlvalue_to_pvalue[arr: RegWeirdArray, y: Int]():
+def test_dlvalue_to_pvalue[arr: RegWeirdArray, y: Int]():
     # CHECK-NEXT: lit.alias.decl *"x{{.*}}": !Int = <apply({{.*}}@RegWeirdArray::@"__getitem__{{.*}}"), store_to_mem(arr), y)>
     comptime x = arr[y]
 
 
 struct XYZ:
-    fn __getattr_param__[name: StringLiteral](self) -> Int:
+    def __getattr_param__[name: StringLiteral](self) -> Int:
         comptime if name == "x":
             return 4
         elif name == "y":
@@ -176,12 +176,12 @@ struct XYZ:
 
 
 struct ParamIndex:
-    fn __getitem_param__[a: Int, b: Int](self) -> Int:
+    def __getitem_param__[a: Int, b: Int](self) -> Int:
         return 42
 
 
 # CHECK-LABEL: lit.fn @"test_param_indexing
-fn test_param_indexing(a: XYZ, b: ParamIndex) -> Int:
+def test_param_indexing(a: XYZ, b: ParamIndex) -> Int:
     # Issue #35662: Support parameter input to getattr
     # CHECK: lit.call {{.*}}__getattr_param__{{.*}}!lit.struct<#StringLiteral <:string "x">> *?>(%a)
     _ = a.x
@@ -192,10 +192,10 @@ fn test_param_indexing(a: XYZ, b: ParamIndex) -> Int:
 
 
 struct TestCompTime[wa: WeirdArray, value: Int = wa[4]]:
-    fn test1[a: Int](self):
+    def test1[a: Int](self):
         var b: TestCompTime[Self.wa]
 
-    fn test2(self):
+    def test2(self):
         self.test1[Self.wa[1]]()
         self.test1[Self.value]()
 
@@ -206,16 +206,16 @@ struct TestCompTime[wa: WeirdArray, value: Int = wa[4]]:
 
 @fieldwise_init
 struct VariadicIndexList:
-    fn __getitem__(mut self, *indices: Int) -> Int:
+    def __getitem__(mut self, *indices: Int) -> Int:
         pass
 
-    fn __setitem__(mut self, *indices: Int, val: Int):
+    def __setitem__(mut self, *indices: Int, val: Int):
         pass
 
 
 # CHECK-LABEL: lit.fn @"testVariadicIndexList
 # MOCO-696: Support variadic length keys in __setitem__
-fn testVariadicIndexList(mut foo: VariadicIndexList, i: Int, the_value: Int):
+def testVariadicIndexList(mut foo: VariadicIndexList, i: Int, the_value: Int):
     # Getter is straight-forward.
     # CHECK: [[VARIADIC:%.*]] = pop.variadic.create [{{.*}}]
     # CHECK: lit.call {{.*}}VariadicIndexList::@"__getitem__{{.*}}(%foo, [[VARIADIC]])
@@ -233,15 +233,15 @@ fn testVariadicIndexList(mut foo: VariadicIndexList, i: Int, the_value: Int):
 struct RefResultInOverloaded:
     var x: String
 
-    fn __getitem__(self) raises -> ref[self.x] String:
+    def __getitem__(self) raises -> ref[self.x] String:
         return self.x
 
-    fn __setitem__(mut self, var x: String):
+    def __setitem__(mut self, var x: String):
         pass
 
 
 # CHECK-LABEL: lit.fn @"testRefResultInOverloaded
-fn testRefResultInOverloaded(
+def testRefResultInOverloaded(
     mut rrio: RefResultInOverloaded, var str: String
 ) raises:
     # CHECK: lit.call {{.*}}__getitem__
@@ -260,19 +260,19 @@ fn testRefResultInOverloaded(
 struct MinimalDict:
     var state: Int
 
-    fn __getitem__(self, key: Int) raises -> ref[self.state] Int:
+    def __getitem__(self, key: Int) raises -> ref[self.state] Int:
         return self.state
 
-    fn __setitem__(mut self, key: Int, value: Int):
+    def __setitem__(mut self, key: Int, value: Int):
         self.state = value
 
 
-fn take_ref(ref x: Int):
+def take_ref(ref x: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_ref_subscript_binding
-fn test_ref_subscript_binding(mut d: MinimalDict) raises -> ref[d[0]] Int:
+def test_ref_subscript_binding(mut d: MinimalDict) raises -> ref[d[0]] Int:
     # Check that a ref returned by the getitem is directly passed.
 
     # CHECK-NEXT: [[DIMM:%.*]] = lit.ref.immut %d
@@ -294,12 +294,12 @@ fn test_ref_subscript_binding(mut d: MinimalDict) raises -> ref[d[0]] Int:
 
 
 trait FromInt:
-    fn __init__(out self, *, from_int: Int):
+    def __init__(out self, *, from_int: Int):
         ...
 
 
 struct MyInt(FromInt):
-    fn __init__(out self, *, from_int: Int):
+    def __init__(out self, *, from_int: Int):
         pass
 
 
@@ -307,7 +307,7 @@ struct MyInt(FromInt):
 struct Test[T: FromInt](ImplicitlyCopyable):
     # CHECK:       lit.fn @"__getattr_param__
     # CHECK-SAME:  byref_result
-    fn __getattr_param__[dim: StringLiteral](self) -> Self.T:
+    def __getattr_param__[dim: StringLiteral](self) -> Self.T:
         return Self.T(from_int=42)
 
 

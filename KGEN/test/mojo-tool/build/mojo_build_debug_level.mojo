@@ -47,5 +47,5 @@
 # - !DISubprogram: Function debug info  
 # - !DIFile: Source file debug info
 
-fn main():
+def main():
     print("testing debug levels")

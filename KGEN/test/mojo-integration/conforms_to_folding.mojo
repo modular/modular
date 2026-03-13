@@ -14,7 +14,7 @@ struct ConditionalArraySize[T: AnyType]:
     comptime Size: Int = 0 if conforms_to(Self.T, ImplicitlyCopyable) else 1
     var array: InlineArray[Int, Self.Size]
 
-    fn __init__(out self):
+    def __init__(out self):
         self.array = {fill = 0}
 
 
@@ -32,7 +32,7 @@ struct ConditionalValueType[T: AnyType]:
 
     var value: Self.Type
 
-    fn __init__(out self):
+    def __init__(out self):
         self.value = {}
 
 

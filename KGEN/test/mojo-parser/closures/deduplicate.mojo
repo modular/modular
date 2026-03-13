@@ -11,13 +11,13 @@
 # CHECK-COUNT-1: lit.struct.decl @"fn(
 
 
-fn use(a: Int):
+def use(a: Int):
     pass
 
 
-fn makes_escaping_closure(a: Int):
-    fn dummy(n: Int):
+def makes_escaping_closure(a: Int):
+    def dummy(n: Int):
         use(a)
 
-    fn duplicate(n: Int):
+    def duplicate(n: Int):
         use(a)

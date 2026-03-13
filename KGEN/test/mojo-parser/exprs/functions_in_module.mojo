@@ -12,9 +12,9 @@
 # CHECK-DAG: [[TYPE4:#.*]] = #kgen.type<{{.*}}#MLIRType <:non_struct_type !lit.generator<[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>>{{.*}} : !AnyType
 # CHECK-DAG: [[TYPE5:#.*]] = #kgen.type<{{.*}}#MLIRType <:non_struct_type !lit.generator<<"func_type": !AnyType, +, "func": !kgen.param<:!AnyType *(0,0)>>() -> !kgen.none>>{{.*}} : !AnyType
 
-fn foo(): pass
+def foo(): pass
 
-fn bar(x: Int): pass
+def bar(x: Int): pass
 
 # NOTE: this is intentionally in the middle here, to ensure that the intrinsic
 # correctly resolves signatures that are declared after the call.
@@ -24,7 +24,7 @@ fn bar(x: Int): pass
 comptime funcs = __functions_in_module()
 
 # CHECK-LABEL: lit.fn @"main
-fn main():
+def main():
     # CHECK-NEXT: lit.call {{.*}}@"take[::AnyType,$0]()"<:!AnyType [[TYPE1]],
     take[funcs[0]]()
     # CHECK-NEXT: lit.call {{.*}}@"take[::AnyType,$0]()"<:!AnyType [[TYPE2]],
@@ -36,9 +36,9 @@ fn main():
     # CHECK-NEXT: lit.call {{.*}}@"take[::AnyType,$0]()"<:!AnyType [[TYPE5]],
     take[funcs[4]]()
 
-fn bar(y: Int, z: Int): pass
+def bar(y: Int, z: Int): pass
 
-fn baz() raises: pass
+def baz() raises: pass
 
-fn take[func_type: AnyType, //, func: func_type]():
+def take[func_type: AnyType, //, func: func_type]():
     pass

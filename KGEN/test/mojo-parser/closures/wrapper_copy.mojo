@@ -57,10 +57,10 @@
 
 @fieldwise_init
 struct MemType(ImplicitlyCopyable):
-    fn __add__(self, rhs: MemType) -> MemType:
+    def __add__(self, rhs: MemType) -> MemType:
         return MemType()
 
 
-fn materialize_escaping_closure(m: MemType):
-    fn unique(n: MemType) -> MemType:
+def materialize_escaping_closure(m: MemType):
+    def unique(n: MemType) -> MemType:
         return m + n

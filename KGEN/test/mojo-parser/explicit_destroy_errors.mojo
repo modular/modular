@@ -12,14 +12,14 @@ from std.builtin.coroutine import Coroutine, RaisingCoroutine, AnyCoroutine
 
 @explicit_destroy("Must use consume!")
 struct EmptyExplicit:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn consume(deinit self):
+    def consume(deinit self):
         pass
 
 
-fn errorExample():
+def errorExample():
     # expected-error @below {{Must use consume!}}
     _ = EmptyExplicit()
 
@@ -28,25 +28,25 @@ fn errorExample():
 struct ImplicitlyDestructibleContainerOfExplicitWithAutoDel:
     var m: EmptyExplicit
 
-    fn __init__(out self):
+    def __init__(out self):
         self.m = EmptyExplicit()
 
 
 struct ImplicitlyDestructibleContainerOfExplicitWithIncompleteDel:
     var m: EmptyExplicit
 
-    fn __init__(out self):
+    def __init__(out self):
         self.m = EmptyExplicit()
 
     # expected-error @below {{Must use consume!}}
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 
 # CHECK-LABEL: @"test_any_type_error
 # expected-error @below {{unhandled explicitly destroyed type 'AnyType'}}
 # expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
-fn test_any_type_error[T: AnyType](var x: T):
+def test_any_type_error[T: AnyType](var x: T):
     pass
 
 
@@ -60,30 +60,30 @@ fn test_any_type_error[T: AnyType](var x: T):
 
 # # C_HECK-LABEL: @"receiveLinearCopyable
 # # e_xpected-error @below {{Unhandled explicit_destroy type LinearCopyable}}
-# fn receiveLinearCopyable[T: LinearCopyable](var x: T):
+# def receiveLinearCopyable[T: LinearCopyable](var x: T):
 #     pass
 
 
 # @explicit_destroy
 # struct LinearCopyableStruct(LinearCopyable):
-#     fn __init__(out self, *, copy: Self):
+#     def __init__(out self, *, copy: Self):
 #         pass
 
 
 # # C_HECK-LABEL: @"upcastLinearCopyable
-# fn upcastLinearCopyable(var x: LinearCopyableStruct):
+# def upcastLinearCopyable(var x: LinearCopyableStruct):
 #     receiveLinearCopyable(x)
 
 
 # CHECK-LABEL: lit.fn @"callsWith
-fn callsWith():
+def callsWith():
     # expected-error @below {{Unhandled explicit_destroy type Coroutine}}
     _ = testAsyncVoid()
     # CHECK-NOT: lit.call {{.*}}__del__
 
 
 # CHECK-LABEL: lit.fn @"testAsyncVoid
-async fn testAsyncVoid():
+async def testAsyncVoid():
     pass
 
 
@@ -93,18 +93,18 @@ async fn testAsyncVoid():
 # MOCO-2787 - Linear types do not error if they contain an explicit del
 @explicit_destroy("must use __del__() explicitly")
 struct ExplicitWithDel:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     # Presence of a del shouldn't override @explicit_destroy.
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
-    fn method(self):
+    def method(self):
         pass
 
 
-fn testExplicitWithDel():
+def testExplicitWithDel():
     a = ExplicitWithDel()
     a.method()
     a^.__del__()  # ok
@@ -124,39 +124,39 @@ fn testExplicitWithDel():
 
 # Trait without @explicit_destroy and without ImplicitlyDestructible
 trait PlainTrait:
-    fn do_something(self):
+    def do_something(self):
         ...
 
 
 @explicit_destroy
 trait ExplicitDestroyNoMessage:
-    fn destroy_no_msg(deinit self):
+    def destroy_no_msg(deinit self):
         ...
 
 
 @explicit_destroy("Use `destroy()` method.")
 trait ExplicitDestroyWithMessage:
-    fn destroy(deinit self):
+    def destroy(deinit self):
         ...
 
 
 # Test: Plain trait without @explicit_destroy
 # expected-error @below {{unhandled explicitly destroyed type 'PlainTrait'}}
 # expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
-fn take_plain_trait[T: PlainTrait](var value: T):
+def take_plain_trait[T: PlainTrait](var value: T):
     pass
 
 # Test: Trait with @explicit_destroy but no custom message
 # expected-error @below {{Unhandled explicit_destroy type ExplicitDestroyNoMessage}}
 # expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
-fn take_generic_linear_no_message[T: ExplicitDestroyNoMessage](var value: T):
+def take_generic_linear_no_message[T: ExplicitDestroyNoMessage](var value: T):
     pass
 
 
 # Test: Trait with @explicit_destroy("...") custom message
 # expected-error @below {{Use `destroy()` method.}}
 # expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
-fn take_generic_linear_with_message[T: ExplicitDestroyWithMessage](var value: T):
+def take_generic_linear_with_message[T: ExplicitDestroyWithMessage](var value: T):
     pass
 
 
@@ -167,20 +167,20 @@ fn take_generic_linear_with_message[T: ExplicitDestroyWithMessage](var value: T)
 
 @explicit_destroy("Use custom_foo_destroy().")
 trait LinearFoo:
-    fn custom_foo_destroy(deinit self):
+    def custom_foo_destroy(deinit self):
         ...
 
 
 @explicit_destroy("Use custom_bar_destroy().")
 trait LinearBar:
-    fn custom_bar_destroy(deinit self):
+    def custom_bar_destroy(deinit self):
         ...
 
 
 # Test: First trait has custom message - uses that message
 # expected-error @below {{Use custom_foo_destroy().}}
 # expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
-fn take_foo_and_bar[T: LinearFoo & LinearBar](var value: T):
+def take_foo_and_bar[T: LinearFoo & LinearBar](var value: T):
     pass
 
 
@@ -188,7 +188,7 @@ fn take_foo_and_bar[T: LinearFoo & LinearBar](var value: T):
 # (Documents current behavior where iteration order matters)
 # expected-error @below {{Unhandled explicit_destroy type ExplicitDestroyNoMessage}}
 # expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
-fn take_no_msg_first[T: ExplicitDestroyNoMessage & LinearBar](var value: T):
+def take_no_msg_first[T: ExplicitDestroyNoMessage & LinearBar](var value: T):
     pass
 
 
@@ -200,11 +200,11 @@ fn take_no_msg_first[T: ExplicitDestroyNoMessage & LinearBar](var value: T):
 # ImplicitlyDestructible). The empty message will be used as the error.
 @explicit_destroy("")
 trait LinearWithEmptyMessage:
-    fn consume(deinit self):
+    def consume(deinit self):
         ...
 
 
 # expected-error @below {{abandoned without being explicitly destroyed: }}
 # expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
-fn take_linear_empty_message[T: LinearWithEmptyMessage](var value: T):
+def take_linear_empty_message[T: LinearWithEmptyMessage](var value: T):
     pass

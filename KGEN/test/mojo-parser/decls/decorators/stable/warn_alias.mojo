@@ -19,7 +19,7 @@ from test_std_mock import (
 )
 
 
-fn test_stable_alias_to_unstable():
+def test_stable_alias_to_unstable():
     # Using a stable alias that wraps an unstable struct should NOT warn.
     # The user is using the stable alias, not the underlying unstable type.
     # CHECK-NOT: warning{{.*}}StableAliasToUnstable
@@ -27,7 +27,7 @@ fn test_stable_alias_to_unstable():
     pass
 
 
-fn test_unstable_alias():
+def test_unstable_alias():
     # Using an unstable alias should trigger a warning, even though it wraps
     # a stable struct.
     # Note: Alias names include a hex suffix (e.g., 'UnstableAlias`0x1'). See MOCO-3108.
@@ -36,14 +36,14 @@ fn test_unstable_alias():
     pass
 
 
-fn test_stable_constant():
+def test_stable_constant():
     # Using a stable constant alias should NOT warn.
     # CHECK-NOT: warning{{.*}}STABLE_CONSTANT
     var a = STABLE_CONSTANT
     _ = a
 
 
-fn test_unstable_constant():
+def test_unstable_constant():
     # Using an unstable constant alias should trigger a warning.
     # Note: Alias names include a hex suffix (e.g., 'UNSTABLE_CONSTANT`0x3'). See MOCO-3108.
     # CHECK: warning: use of unstable API 'UNSTABLE_CONSTANT{{.*}}'

@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn jitbp():
+def jitbp():
     print("hello\n")
     return
 
 
-fn main():
+def main():
     jitbp()
     return

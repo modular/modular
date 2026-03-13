@@ -16,12 +16,12 @@ struct Y_T(ImplicitlyCopyable):
 
 
 struct X_N(ImplicitlyCopyable):
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 
 struct X_T_U(ImplicitlyCopyable):
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
     # User marked __del__as trivial
@@ -75,13 +75,13 @@ struct StructMLIRTypeOnly(ImplicitlyCopyable):
 # MOCO-2396:
 # CHECK-LABEL: lit.struct.decl @NotTrivial
 struct NotTrivial(Copyable):
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         pass
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
     # CHECK-DAG: lit.alias.decl __del__is_trivial: !Bool = <{:i1 0}>

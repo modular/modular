@@ -7,6 +7,6 @@
 # RUN: %mojo -g %s | FileCheck %s
 
 
-fn main():
+def main():
     # CHECK: 2.0
     print(Float32(1.0) + 1.0)

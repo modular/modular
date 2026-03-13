@@ -14,23 +14,23 @@
 struct MyList[T: ImplicitlyCopyable]:
     var data: UnsafePointer[Self.T, AnyOrigin[mut=True]]
 
-    fn __init__(out self):
+    def __init__(out self):
         self.data = UnsafePointer[Self.T, AnyOrigin[mut=True]]()
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
-    fn mutate(mut self):
+    def mutate(mut self):
         pass
 
-    fn __getitem__(
+    def __getitem__(
         ref self, idx: Int
     ) -> ref [self.data.get_unique_item_ref(idx)] Self.T:
         return self.data.get_unique_item_ref(idx)
 
 
 # CHECK-LABEL: lit.fn @"test0
-fn test0():
+def test0():
     # CHECK: lit.call {{.*}}MyList::@"__init__
     var list = MyList[Int]()
 

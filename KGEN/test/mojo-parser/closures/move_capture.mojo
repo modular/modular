@@ -15,13 +15,13 @@ struct Thing(ImplicitlyCopyable):
     pass
 
 
-fn use(u: Thing):
+def use(u: Thing):
     pass
 
 
 # CHECK-LABEL: lit.fn @"outer
-fn outer(var x: Thing):
+def outer(var x: Thing):
     # CHECK: lit.call {{.*}}__init__{{.*}}(%x, %{{.*}}){{.*}}owned_in_mem
     @__move_capture(x)
-    fn nested() escaping:
+    def nested() escaping:
         use(x)

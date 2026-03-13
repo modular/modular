@@ -8,5 +8,5 @@
 # INVALID_OUTPUT_DIR: error: unable to write file. The path '{{.*}}' does not exist.
 
 
-fn main():
+def main():
     return

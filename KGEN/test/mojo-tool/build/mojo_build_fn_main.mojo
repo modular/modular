@@ -10,7 +10,7 @@
 from std.sys import argv
 
 
-fn main():
+def main():
     # CHECK: This was called inside of `fn` main
     print("This was called inside of `fn` main")
 

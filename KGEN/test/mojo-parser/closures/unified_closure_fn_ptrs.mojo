@@ -26,15 +26,15 @@
 # CHECK: %0 = lit.call {{.*}}:@"fn(x: Int) -> Int_PtrWrapper"::@"__init__()"
 # CHECK: %1 = lit.ref.immut %wrappedFnPtr
 
-fn top_level(x: Int) -> Int:
+def top_level(x: Int) -> Int:
     return x
 
 
-fn use_closure[Impl: fn(x: Int) unified -> Int](cb: Impl) -> Int:
+def use_closure[Impl: def(x: Int) unified -> Int](cb: Impl) -> Int:
     return cb(1)
 
 
-fn wrap_fn() -> Int:
+def wrap_fn() -> Int:
     return use_closure[top_level](top_level)
 
 # // -----
@@ -43,18 +43,18 @@ fn wrap_fn() -> Int:
 
 # CHECK-COUNT-1: lit.struct.decl @"fn(x: Int) -> Int_PtrWrapper"
 
-fn a(x: Int) -> Int:
+def a(x: Int) -> Int:
     return x
 
-fn b(x: Int) -> Int:
+def b(x: Int) -> Int:
     return x * x
 
 
-fn use_closure[Impl: fn(x: Int) unified -> Int](cb: Impl) -> Int:
+def use_closure[Impl: def(x: Int) unified -> Int](cb: Impl) -> Int:
     return cb(1)
 
 
-fn wrap_fn() -> Int:
+def wrap_fn() -> Int:
     return use_closure[a](a) + use_closure[b](b)
 
 # // -----
@@ -64,14 +64,14 @@ fn wrap_fn() -> Int:
 # CHECK: kgen.conformance @"fn(x: Int) -> Int"
 # CHECK: kgen.conformance @"fn(Int) -> Int"
 
-fn top_level(x: Int) -> Int:
+def top_level(x: Int) -> Int:
     return x
 
 
 # COM: Note the lack of an argument name in the signature.
-fn use_closure[Impl: fn(Int) unified -> Int](cb: Impl) -> Int:
+def use_closure[Impl: def(Int) unified -> Int](cb: Impl) -> Int:
     return cb(1)
 
 
-fn wrap_fn() -> Int:
+def wrap_fn() -> Int:
     return use_closure[top_level](top_level)

@@ -13,7 +13,7 @@
 # CHECK-SAME: hasStableDecorator
 # CHECK-SAME: stableSinceVersion = "1.0"
 @stable(since="1.0")
-fn fn_since_version():
+def fn_since_version():
     pass
 
 
@@ -21,7 +21,7 @@ fn fn_since_version():
 # CHECK-SAME: hasStableDecorator
 # CHECK-SAME: stableSinceVersion = "2.1.3rc1"
 @stable(since="2.1.3rc1")
-fn fn_since_relaxed_semver():
+def fn_since_relaxed_semver():
     pass
 
 
@@ -30,7 +30,7 @@ fn fn_since_relaxed_semver():
 # CHECK-SAME: hasStableDecorator
 # CHECK-NOT: stableSinceVersion
 @stable
-fn fn_bare_stable():
+def fn_bare_stable():
     pass
 
 
@@ -44,5 +44,5 @@ struct StableStruct:
     # CHECK-SAME: hasStableDecorator
     # CHECK-SAME: stableSinceVersion = "1.1"
     @stable(since="1.1")
-    fn method(self):
+    def method(self):
         pass

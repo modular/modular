@@ -6,5 +6,5 @@
 
 
 @export
-fn bar():
+def bar():
     return

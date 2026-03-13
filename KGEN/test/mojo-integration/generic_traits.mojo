@@ -10,21 +10,21 @@ comptime Index = __mlir_type.index
 
 trait SimpleTrait:
     @staticmethod
-    fn bar() -> Index:
+    def bar() -> Index:
         ...
 
 
 struct MemType(SimpleTrait):
     @staticmethod
     @always_inline
-    fn bar() -> Index:
+    def bar() -> Index:
         return __mlir_attr.`1:index`
 
 
 struct RegType(RegisterPassable, SimpleTrait):
     @staticmethod
     @always_inline
-    fn bar() -> Index:
+    def bar() -> Index:
         return __mlir_attr.`2:index`
 
 
@@ -33,11 +33,11 @@ struct RegTypeTrivial(SimpleTrait, TrivialRegisterPassable):
 
     @staticmethod
     @always_inline
-    fn bar() -> Index:
+    def bar() -> Index:
         return __mlir_attr.`3:index`
 
 
-fn generic_arg[T: SimpleTrait](x: T) -> Index:
+def generic_arg[T: SimpleTrait](x: T) -> Index:
     return T.bar()
 
 
@@ -55,38 +55,38 @@ fn generic_arg[T: SimpleTrait](x: T) -> Index:
 
 
 @export
-fn top(a: MemType, b: RegType, c: RegTypeTrivial):
+def top(a: MemType, b: RegType, c: RegTypeTrivial):
     _ = generic_arg(a)
     _ = generic_arg(b)
     _ = generic_arg(c)
 
 
 trait GrandFather:
-    fn bar(self):
+    def bar(self):
         ...
 
 
 trait Father(GrandFather):
-    fn baz(self):
+    def baz(self):
         ...
 
 
 struct Son(Father):
-    fn bar(self):
+    def bar(self):
         pass
 
-    fn baz(self):
+    def baz(self):
         pass
 
 
 # CHECK: kgen.func [[TAKE_GRAND_FATHER:@.*take_grand_father.*]](%arg0
-fn take_grand_father[T: GrandFather](value: T):
+def take_grand_father[T: GrandFather](value: T):
     # CHECK: kgen.call {{.*}}Son::bar
     value.bar()
 
 
 # CHECK: kgen.func [[TAKE_FATHER:@.*take_father.*]](%arg0
-fn take_father[T: Father](value: T):
+def take_father[T: Father](value: T):
     # CHECK: kgen.call {{.*}}Son::baz
     value.baz()
     # CHECK: kgen.call tail [[TAKE_GRAND_FATHER]]
@@ -95,23 +95,23 @@ fn take_father[T: Father](value: T):
 
 # CHECK: kgen.func export @like_father_like
 @export
-fn like_father_like(value: Son):
+def like_father_like(value: Son):
     # CHECK: kgen.call tail [[TAKE_FATHER]]
     take_father(value)
 
 
 struct SomeType(ImplicitlyCopyable, RegisterPassable):
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 
 # CHECK-LABEL: kgen.func {{.*}}drop_copy
-fn drop_copy[T: ImplicitlyCopyable](value: T):
+def drop_copy[T: ImplicitlyCopyable](value: T):
     # CHECK: [[V0:%.*]] = kgen.param.constant: struct<()> = <{ }>
     # CHECK: kgen.call {{.*}}SomeType::__del__{{.*}}([[V0]])
     var _unused = value
 
 
 @export
-fn copy_destroy(x: SomeType):
+def copy_destroy(x: SomeType):
     drop_copy(x)

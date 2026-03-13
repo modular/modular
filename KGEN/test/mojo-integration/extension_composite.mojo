@@ -13,11 +13,11 @@ from trait_and_extension_package import MyTrait
 from simple_struct_package import MyStruct
 
 
-fn use_trait[T: MyTrait & Copyable](value: T):
+def use_trait[T: MyTrait & Copyable](value: T):
     pass
 
 
 # CHECK-LABEL: kgen.generator @"extension_composite::test
-fn test(var s: MyStruct):
+def test(var s: MyStruct):
     # CHECK: kgen.call tail @"extension_composite::use_trait
     use_trait(s^)

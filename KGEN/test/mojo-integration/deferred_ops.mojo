@@ -15,7 +15,7 @@ def test0(a: Int, b: Int) raises -> Bool:
 
 
 def test1[cmp: Bool](a: Int, b: Int) raises -> Bool:
-    fn select_pred[cmp: Bool]() -> __mlir_type.`!kgen.deferred`:
+    def select_pred[cmp: Bool]() -> __mlir_type.`!kgen.deferred`:
         comptime if cmp:
             return __mlir_attr.`#index<cmp_predicate sle>`
         else:
@@ -28,7 +28,7 @@ def test1[cmp: Bool](a: Int, b: Int) raises -> Bool:
 
 
 @always_inline("nodebug")
-fn to_string[
+def to_string[
     string: StaticString, *extra: StaticString
 ]() -> __mlir_type.`!kgen.string`:
     return __mlir_attr[
@@ -40,8 +40,8 @@ fn to_string[
     ]
 
 
-fn test2[pred: StaticString](x: Int, y: Int) -> Bool:
-    fn get_pred[pred: StaticString]() -> __mlir_type.`!kgen.deferred`:
+def test2[pred: StaticString](x: Int, y: Int) -> Bool:
+    def get_pred[pred: StaticString]() -> __mlir_type.`!kgen.deferred`:
         return __mlir_deferred_attr[
             `#index<cmp_predicate `, +to_string[pred](), `>`
         ]
@@ -59,7 +59,7 @@ comptime dtype_to_llvm_type_i32[
 # Helper function to convert a SIMD to a kgen struct
 # It's intentionally marked with @no_inline to make sure elaborator correctly handles callsite
 @no_inline
-fn simd_to_kgen_struct[
+def simd_to_kgen_struct[
     n: Int, dtype: DType
 ](simd: SIMD[dtype, n]) -> __mlir_type[
     `!kgen.struct<(`,
@@ -123,7 +123,7 @@ fn simd_to_kgen_struct[
 # Helper function to convert a kgen struct to a SIMD
 # It's intentionally marked with @no_inline to make sure elaborator correctly handles callsite
 @no_inline
-fn kgen_struct_to_simd_reverse[
+def kgen_struct_to_simd_reverse[
     n: Int, dtype: DType
 ](
     st: __mlir_type[
@@ -150,7 +150,7 @@ fn kgen_struct_to_simd_reverse[
     return simd
 
 
-fn test3[n: Int, dtype: DType](vec: SIMD[dtype, n]) -> SIMD[dtype, n]:
+def test3[n: Int, dtype: DType](vec: SIMD[dtype, n]) -> SIMD[dtype, n]:
     var st = simd_to_kgen_struct[n, dtype](vec)
     var simd = kgen_struct_to_simd_reverse[n, dtype](st)
 

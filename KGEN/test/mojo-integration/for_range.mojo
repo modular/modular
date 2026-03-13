@@ -7,7 +7,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-fn main():
+def main():
     # CHECK: 0
     # CHECK: 1
     # CHECK: 2

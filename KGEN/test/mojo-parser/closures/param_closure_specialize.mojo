@@ -11,13 +11,13 @@ struct Thing[x: Int](RegisterPassable):
 
 
 # CHECK-LABEL: lit.fn @"pass_param_closure
-fn pass_param_closure():
-    fn closure(x: Thing[2]) escaping:
+def pass_param_closure():
+    def closure(x: Thing[2]) escaping:
         pass
 
     # CHECK: rebind %{{.*}} : !lit.ref<!None, mut {{.*}}> to !lit.ref<{{.*}}<:!Int {2}>
     take_param_closure[2](closure)
 
 
-fn take_param_closure[dt: Int](cls: fn (Thing[dt]) escaping -> None):
+def take_param_closure[dt: Int](cls: def (Thing[dt]) escaping -> None):
     pass

@@ -7,7 +7,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-fn takes_int_variadic_kwargs(**kwargs: Int) raises:
+def takes_int_variadic_kwargs(**kwargs: Int) raises:
     var key = "stuff"
     # CHECK: stuff 8
     print(key, kwargs[key])
@@ -22,10 +22,10 @@ fn takes_int_variadic_kwargs(**kwargs: Int) raises:
 
 
 trait Resettable(ImplicitlyCopyable):
-    fn reset(mut self):
+    def reset(mut self):
         ...
 
-    fn get(self) -> Int:
+    def get(self) -> Int:
         ...
 
 
@@ -33,14 +33,14 @@ trait Resettable(ImplicitlyCopyable):
 struct MemOnly(Resettable):
     var value: Int
 
-    fn get(self) -> Int:
+    def get(self) -> Int:
         return self.value
 
-    fn reset(mut self):
+    def reset(mut self):
         self.value = 0
 
 
-fn takes_mem_only_variadic_kwargs[T: Resettable](var **kwargs: T) raises:
+def takes_mem_only_variadic_kwargs[T: Resettable](var **kwargs: T) raises:
     var key = "fizzbuzz"
     # CHECK: fizzbuzz 13
     print(key, kwargs[key].get())
@@ -58,7 +58,7 @@ fn takes_mem_only_variadic_kwargs[T: Resettable](var **kwargs: T) raises:
     print(key, "now", kwargs[key].get())
 
 
-fn main() raises:
+def main() raises:
     takes_int_variadic_kwargs(x=9, stuff=8)
 
     var m = MemOnly(42)

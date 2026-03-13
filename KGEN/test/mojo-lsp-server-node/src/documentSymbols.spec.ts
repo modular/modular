@@ -25,22 +25,22 @@ import .test
       `
 alias Value = 10
 
-fn foo(a: UnsafePointer[mut=True, Float32, MutAnyOrigin]) -> Float32:
+def foo(a: UnsafePointer[mut=True, Float32, MutAnyOrigin]) -> Float32:
   var variable = 15
-  fn inner_fn():
+  def inner_fn():
     return
-  fn inner_closure(arg: Int, arg2: type_of(arg)) -> Float32:
+  def inner_closure(arg: Int, arg2: type_of(arg)) -> Float32:
     return a.load[width=1](arg)
   return inner_fn(variable)
 
 struct struct_name:
-  fn struct_fn():
+  def struct_fn():
     return
 
   var field: Int
 
 trait trait_name:
-    fn trait_fn(self):
+    def trait_fn(self):
         ...
 `
     );

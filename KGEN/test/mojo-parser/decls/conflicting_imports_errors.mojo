@@ -29,7 +29,7 @@ from struct_a import Foo
 from struct_b import Foo
 
 # After the import error the first struct is still usable.
-fn use_it[x: Foo]():
+def use_it[x: Foo]():
     pass
 
 # // -----
@@ -42,7 +42,7 @@ from comptime_a import Foo
 # @expected-error @below {{import of 'Foo' is ambiguous}}
 from comptime_b import Foo
 
-fn use_alias[x: Foo]():
+def use_alias[x: Foo]():
     pass
 
 # // -----
@@ -55,7 +55,7 @@ from fn_a import Foo
 from fn_b import Foo
 
 # Foo() unambiguously calls fn_a.Foo (no args); fn_b.Foo requires an i1 arg.
-fn call_it():
+def call_it():
     Foo()
 
 # // -----
@@ -68,7 +68,7 @@ from mlirtype_a import Foo
 # @expected-error @below {{import of 'Foo' is ambiguous}}
 from mlirtype_b import Foo
 
-fn use_mlirtype[x: Foo]():
+def use_mlirtype[x: Foo]():
     pass
 
 # // -----
@@ -104,5 +104,5 @@ from struct_d import Foo
 from struct_dup import Foo
 from struct_dup import Foo  # no error
 
-fn use_dup[x: Foo]():
+def use_dup[x: Foo]():
     pass

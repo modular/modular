@@ -6,7 +6,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 
-fn unsafe_factorial(next: Int, thusFar: Int) -> Int:
+def unsafe_factorial(next: Int, thusFar: Int) -> Int:
     if next > 1:
         return unsafe_factorial(next - 1, thusFar * next)
     if next <= 1:
@@ -14,7 +14,7 @@ fn unsafe_factorial(next: Int, thusFar: Int) -> Int:
     return 1
 
 
-fn another_unsafe_factorial(next: Int, thusFar: Int) -> Int:
+def another_unsafe_factorial(next: Int, thusFar: Int) -> Int:
     """This checks to make sure we can properly handle recursive chains."""
     if next > 1:
         return yet_another_unsafe_factorial(next - 1, thusFar * next)
@@ -23,11 +23,11 @@ fn another_unsafe_factorial(next: Int, thusFar: Int) -> Int:
     return 1
 
 
-fn yet_another_unsafe_factorial(next: Int, thusFar: Int) -> Int:
+def yet_another_unsafe_factorial(next: Int, thusFar: Int) -> Int:
     return another_unsafe_factorial(next, thusFar)
 
 
-fn main():
+def main():
     var x = unsafe_factorial(3, 1)
     var y = another_unsafe_factorial(3, 1)
     # CHECK: 6

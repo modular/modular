@@ -9,11 +9,11 @@
 
 struct WeirdArray:
     # expected-note @+1 {{function declared here}}
-    fn __getitem__(self, x: Int) -> Int:
+    def __getitem__(self, x: Int) -> Int:
         return x
 
 
-fn test_getitem(var a: WeirdArray, f: float, x: Int):
+def test_getitem(var a: WeirdArray, f: float, x: Int):
     # expected-error @+2 {{invalid call to '__getitem__': value passed to 'x' cannot be converted from 'float' to 'Int'}}
     # expected-note @+1 {{'float' is aka '__mlir_type.`!pop.scalar<f64>`'}}
     _ = a[f]
@@ -26,15 +26,15 @@ fn test_getitem(var a: WeirdArray, f: float, x: Int):
 
 
 struct Settable:
-    fn __setitem__(self, x: Int, y: Int): pass
+    def __setitem__(self, x: Int, y: Int): pass
 
 struct NotSettable:
-    fn __getitem__(self) -> Int: pass
+    def __getitem__(self) -> Int: pass
     # expected-error @+1 {{__setitem__ must take at least one argument for the value to set}}
-    fn __setitem__(self): pass
+    def __setitem__(self): pass
 
 
-fn test_setitem_kwargs(c: Settable, ns: NotSettable, x: Int):
+def test_setitem_kwargs(c: Settable, ns: NotSettable, x: Int):
     # Issue #22580: Allow keyword arguments in __setitem__ calls
     # weird but ok, value is passed as 'y'.
     c[x=x] = x
@@ -46,30 +46,30 @@ fn test_setitem_kwargs(c: Settable, ns: NotSettable, x: Int):
 
 struct MultiSetItem:
     # expected-note @+1 {{candidate declared here}}
-    fn __setitem__(self, x: Int, y: Int):
+    def __setitem__(self, x: Int, y: Int):
         pass
 
     # expected-note @+1 {{candidate declared here}}
-    fn __setitem__(self, x: Int, y: float):
+    def __setitem__(self, x: Int, y: float):
         pass
 
 
-fn test_setitem_overload(b: MultiSetItem, x: Int):
+def test_setitem_overload(b: MultiSetItem, x: Int):
     # expected-error @+1 {{'MultiSetItem' has overloaded __setitem__ implementations, which isn't supported}}
     b[x] = x
 
 
 @fieldwise_init
 struct VariadicIndexList:
-    fn __getitem__(mut self, *indices: Int) -> Int:
+    def __getitem__(mut self, *indices: Int) -> Int:
         pass
 
-    fn __setitem__(mut self, *indices: Int, val: Int):
+    def __setitem__(mut self, *indices: Int, val: Int):
         pass
 
 # CHECK-LABEL: lit.fn @"testVariadicIndexList
 # MOCO-696: Support variadic length keys in __setitem__
-fn testVariadicIndexList(mut foo: VariadicIndexList, i: Int, the_value: Int):
+def testVariadicIndexList(mut foo: VariadicIndexList, i: Int, the_value: Int):
     # Getter is straight-forward.
     _ = foo[i, i]
 

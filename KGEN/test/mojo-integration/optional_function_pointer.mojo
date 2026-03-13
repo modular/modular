@@ -10,13 +10,13 @@
 from std.collections import Optional
 
 
-fn print_second_string(first: String, second: String) -> None:
+def print_second_string(first: String, second: String) -> None:
     print("Received", second)
 
 
-fn main():
+def main():
     var optional_func: Optional[
-        fn(flags: String, args: String) -> None
+        def(flags: String, args: String) -> None
     ] = print_second_string
     # CHECK: Received second
     optional_func.value()("first", "second")

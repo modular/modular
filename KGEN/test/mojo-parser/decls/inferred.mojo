@@ -28,37 +28,37 @@ struct DependentParam[x: Int, y: ParamType[x]](TrivialRegisterPassable):
     pass
 
 
-fn inferred_param_from_arg[x: Int, //](y: ParamType[x]):
+def inferred_param_from_arg[x: Int, //](y: ParamType[x]):
     pass
 
 
-fn inferred_param_from_param[x: Int, //, y: ParamType[x]]():
+def inferred_param_from_param[x: Int, //, y: ParamType[x]]():
     pass
 
 
-fn inferred_param_variadic[x: Int, //, *y: ParamType[x]]():
+def inferred_param_variadic[x: Int, //, *y: ParamType[x]]():
     pass
 
 
-fn inferred_with_default[x: Int, //, y: ParamType[x], z: Int = 1]():
+def inferred_with_default[x: Int, //, y: ParamType[x], z: Int = 1]():
     pass
 
 
-fn inferred_trait[T: SomeTrait, //, y: T]():
+def inferred_trait[T: SomeTrait, //, y: T]():
     pass
 
 
-fn inferred_dependent_param[
+def inferred_dependent_param[
     x: Int, y: ParamType[x], //, z: DependentParam[x, y]
 ]():
     pass
 
 
-fn inferred_partial[x: Int, //, y: Int](z: ParamType[x]):
+def inferred_partial[x: Int, //, y: Int](z: ParamType[x]):
     pass
 
 
-fn inferred_partial_dependent[x: Int, //, y: Int, z: ParamType[x]]():
+def inferred_partial_dependent[x: Int, //, y: Int, z: ParamType[x]]():
     pass
 
 
@@ -73,7 +73,7 @@ struct InferredStructConversion[
 
 
 # CHECK-LABEL: lit.fn @"test_inferred_params
-fn test_inferred_params[x: Int, y: ParamType[x], z: DependentParam[x, y]]():
+def test_inferred_params[x: Int, y: ParamType[x], z: DependentParam[x, y]]():
     # CHECK: inferred_param_from_arg{{.*}}<:!Int x>(%0)
     inferred_param_from_arg(y)
     # CHECK: inferred_param_from_param{{.*}}<:!Int x, :!lit.struct<#ParamType <:!Int x>> y>
@@ -115,11 +115,11 @@ fn test_inferred_params[x: Int, y: ParamType[x], z: DependentParam[x, y]]():
 
 
 # Multiply should work even though it is @always_inline("builtin")
-fn mul2_caller[n: Int, t: TakesIntParam[n * 2]]():
+def mul2_caller[n: Int, t: TakesIntParam[n * 2]]():
     return mul2_callee[t]()
 
 
-fn mul2_callee[n: Int, //, some_t: TakesIntParam[n * 2]]():
+def mul2_callee[n: Int, //, some_t: TakesIntParam[n * 2]]():
     pass
 
 
@@ -129,28 +129,28 @@ fn mul2_callee[n: Int, //, some_t: TakesIntParam[n * 2]]():
 
 
 trait FancyTrait(ImplicitlyCopyable):
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         ...
 
 
 struct MyFancyStruct(FancyTrait):
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return False
 
 
 @fieldwise_init
 struct MyOptional[T: ImplicitlyCopyable]:
-    fn __eq__[U: FancyTrait](self: MyOptional[U], rhs: MyOptional[U]) -> Bool:
+    def __eq__[U: FancyTrait](self: MyOptional[U], rhs: MyOptional[U]) -> Bool:
         pass
 
     # CHECK-LABEL: lit.fn @"__ne__
-    fn __ne__[U: FancyTrait](self: MyOptional[U], rhs: MyOptional[U]) -> Bool:
+    def __ne__[U: FancyTrait](self: MyOptional[U], rhs: MyOptional[U]) -> Bool:
         # CHECK-NEXT: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%self, %rhs)
         return not (self == rhs)
 
 
 # CHECK-LABEL: lit.fn @"testMyOptional
-fn testMyOptional(a: MyOptional[MyFancyStruct]):
+def testMyOptional(a: MyOptional[MyFancyStruct]):
     # CHECK-NEXT: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%a, %a)
     _ = a.__eq__(a)
     # CHECK: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%a, %a)
@@ -171,14 +171,14 @@ struct DefBoxInferenceIter[
     origin: Origin[],
 ]:
     @implicit
-    fn __init__(out self, regex: Pointer[DefBoxInference, Self.origin]):
+    def __init__(out self, regex: Pointer[DefBoxInference, Self.origin]):
         pass
 
 
 # MOCO-3326: Improve inference of Origin type from !lit.origin.
 # This fails if we can't map "origin_of(list) in the ctor below to Self.origin
 # the Origin value.
-fn test_origin_inference[
+def test_origin_inference[
     xis_mutable: Bool,
     //,
     xorigin: Origin[mut=xis_mutable],
@@ -191,7 +191,7 @@ struct MyOriginTaking[
     //,
     origin: Origin[mut=mut],
 ]:
-    fn __init__(
+    def __init__(
         ref[Self.origin] list: String, out self: MyOriginTaking[origin_of(list)]
     ):
         pass

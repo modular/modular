@@ -12,7 +12,7 @@ struct Foo:
     pass
 
 
-fn trait_downcast_concrete_type(x: Foo):
+def trait_downcast_concrete_type(x: Foo):
     # COM: mis-uses of downcast on a concrete type should be detected during
     # parsing time.
 

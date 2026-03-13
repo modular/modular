@@ -12,19 +12,19 @@
 
 trait Foo1:
     # expected-note @+1 {{original default implementation from trait 'Foo1' here}}
-    fn foo(self) -> Int:
+    def foo(self) -> Int:
         return 1
 
 
 trait Foo2(Foo1):
     # expected-note @+1 {{conflicting implementation from trait 'Foo2' here}}
-    fn foo(self) -> Int:
+    def foo(self) -> Int:
         return 2
 
 
 trait Foo3(Foo1):
     # expected-note @+1 {{conflicting implementation from trait 'Foo3' here}}
-    fn foo(self) -> Int:
+    def foo(self) -> Int:
         return 3
 
 
@@ -39,7 +39,7 @@ trait AA1:
     comptime X: ImplicitlyCopyable
 
     # expected-note @+1 {{original default implementation from trait 'AA1' here}}
-    fn zork(self, x: Self.X) -> Self.X:
+    def zork(self, x: Self.X) -> Self.X:
         return x
 
 
@@ -47,7 +47,7 @@ trait AA2:
     comptime X: ImplicitlyCopyable
 
     # expected-note @+1 {{conflicting implementation from trait 'AA2' here}}
-    fn zork(self, x: Self.X) -> Self.X:
+    def zork(self, x: Self.X) -> Self.X:
         return x
 
 
@@ -59,7 +59,7 @@ struct Bar(AA1, AA2):
 
 trait WithAsyncMethod:
     # expected-error @+1 {{async defaulted trait methods are not supported yet}}
-    async fn async_default_method(self) -> Int:
+    async def async_default_method(self) -> Int:
         return 42
 
 
@@ -71,19 +71,19 @@ struct RP(TrivialRegisterPassable):
 
 trait FooC:
     # expected-note @+1 {{conflicting implementation from trait 'FooC' here}}
-    fn foo(self) -> RP:
+    def foo(self) -> RP:
         return RP()
 
-    fn bar(self) -> RP:
+    def bar(self) -> RP:
         return RP()
 
 
 trait FooB(FooC):
     # expected-note @+1 {{original default implementation from trait 'FooB' here}}
-    fn foo(self) -> RP:
+    def foo(self) -> RP:
         return RP()
 
-    fn bar(self) -> RP:
+    def bar(self) -> RP:
         return RP()
 
 

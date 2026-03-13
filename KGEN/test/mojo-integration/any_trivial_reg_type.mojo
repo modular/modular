@@ -11,7 +11,7 @@ from std.sys import argv
 
 
 trait Position(TrivialRegisterPassable):
-    fn foo(self) -> Self:
+    def foo(self) -> Self:
         ...
 
 
@@ -19,17 +19,17 @@ struct PositionImpl(Position, TrivialRegisterPassable):
     var x: Int
     var y: Int
 
-    fn __init__(out self, x: Int, y: Int):
+    def __init__(out self, x: Int, y: Int):
         self.x = x
         self.y = y
 
     @no_inline
-    fn foo(self) -> Self:
+    def foo(self) -> Self:
         print(self.x, self.y)
         return self
 
 
-fn foo[position_t: Position](x: position_t) -> OptionalReg[position_t]:
+def foo[position_t: Position](x: position_t) -> OptionalReg[position_t]:
     var xx = OptionalReg[position_t](x)
     _ = xx.value().foo()
     return xx

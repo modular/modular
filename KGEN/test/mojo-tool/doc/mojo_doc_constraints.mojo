@@ -17,15 +17,15 @@
 ##===----------------------------------------------------------------------===##
 
 
-fn is_positive(x: Int) -> Bool:
+def is_positive(x: Int) -> Bool:
     return x > 0
 
 
-fn is_even(x: Int) -> Bool:
+def is_even(x: Int) -> Bool:
     return x % 2 == 0
 
 
-fn complex_pred(a: Int, b: Int) -> Bool:
+def complex_pred(a: Int, b: Int) -> Bool:
     return a + b > 0
 
 
@@ -36,7 +36,7 @@ fn complex_pred(a: Int, b: Int) -> Bool:
 
 # CHECK-LABEL: "name": "fn_with_single_where_clause",
 # CHECK: "signature": "fn_with_single_where_clause[N: Int]() where is_positive(N)"
-fn fn_with_single_where_clause[N: Int]() where is_positive(N):
+def fn_with_single_where_clause[N: Int]() where is_positive(N):
     """Function with a single where clause constraint.
 
     Parameters:
@@ -47,7 +47,7 @@ fn fn_with_single_where_clause[N: Int]() where is_positive(N):
 
 # CHECK-LABEL: "name": "fn_with_compound_where_clause",
 # CHECK: "signature": "fn_with_compound_where_clause[N: Int, M: Int]() where is_positive(N) and is_even(M)"
-fn fn_with_compound_where_clause[
+def fn_with_compound_where_clause[
     N: Int, M: Int
 ]() where is_positive(N) and is_even(M):
     """Function with compound where clause using 'and'.
@@ -61,7 +61,7 @@ fn fn_with_compound_where_clause[
 
 # CHECK-LABEL: "name": "fn_with_where_and_args",
 # CHECK: "signature": "fn_with_where_and_args[N: Int](value: Int) where is_positive(N)"
-fn fn_with_where_and_args[N: Int](value: Int) where is_positive(N):
+def fn_with_where_and_args[N: Int](value: Int) where is_positive(N):
     """Function with where clause and regular arguments.
 
     Parameters:
@@ -75,7 +75,7 @@ fn fn_with_where_and_args[N: Int](value: Int) where is_positive(N):
 
 # CHECK-LABEL: "name": "fn_with_where_and_return",
 # CHECK: "signature": "fn_with_where_and_return[N: Int]() -> Int where is_positive(N)"
-fn fn_with_where_and_return[N: Int]() -> Int where is_positive(N):
+def fn_with_where_and_return[N: Int]() -> Int where is_positive(N):
     """Function with where clause and return type.
 
     Parameters:
@@ -96,7 +96,7 @@ fn fn_with_where_and_return[N: Int]() -> Int where is_positive(N):
 # CHECK: "constraints": " where is_positive(N)"
 # CHECK: "name": "N",
 # CHECK: "signature": "fn_with_parameter_constraint[N: Int where is_positive(N)]()"
-fn fn_with_parameter_constraint[N: Int where is_positive(N)]():
+def fn_with_parameter_constraint[N: Int where is_positive(N)]():
     """Function with parameter-level constraint.
 
     Parameters:
@@ -111,7 +111,7 @@ fn fn_with_parameter_constraint[N: Int where is_positive(N)]():
 # CHECK: "constraints": " where is_even(B)"
 # CHECK: "name": "B",
 # CHECK: "signature": "fn_with_multiple_param_constraints[A: Int where is_positive(A), B: Int where is_even(B)]()"
-fn fn_with_multiple_param_constraints[
+def fn_with_multiple_param_constraints[
     A: Int where is_positive(A), B: Int where is_even(B)
 ]():
     """Function with multiple parameter-level constraints.
@@ -130,7 +130,7 @@ fn fn_with_multiple_param_constraints[
 
 # CHECK-LABEL: "name": "fn_with_multi_param_pred",
 # CHECK: "signature": "fn_with_multi_param_pred[A: Int, B: Int]() where complex_pred(A, B)"
-fn fn_with_multi_param_pred[A: Int, B: Int]() where complex_pred(A, B):
+def fn_with_multi_param_pred[A: Int, B: Int]() where complex_pred(A, B):
     """Function with a constraint that uses multiple parameters.
 
     Parameters:
@@ -142,7 +142,7 @@ fn fn_with_multi_param_pred[A: Int, B: Int]() where complex_pred(A, B):
 
 # CHECK-LABEL: "name": "fn_with_or_constraint",
 # CHECK: "signature": "fn_with_or_constraint[N: Int]() where is_positive(N) or is_even(N)"
-fn fn_with_or_constraint[N: Int]() where is_positive(N) or is_even(N):
+def fn_with_or_constraint[N: Int]() where is_positive(N) or is_even(N):
     """Function with an 'or' constraint.
 
     Parameters:
@@ -160,7 +160,7 @@ fn fn_with_or_constraint[N: Int]() where is_positive(N) or is_even(N):
 
 # CHECK-LABEL: "name": "fn_with_ternary_if_constraint",
 # CHECK: "signature": "fn_with_ternary_if_constraint[N: Int, M: Int]() where is_even(M) if is_positive(N) else is_even(N)"
-fn fn_with_ternary_if_constraint[
+def fn_with_ternary_if_constraint[
     N: Int, M: Int
 ]() where is_even(M) if is_positive(N) else is_even(N):
     """Function with a genuine ternary 'if' in the where clause.
@@ -177,7 +177,7 @@ fn fn_with_ternary_if_constraint[
 
 # CHECK-LABEL: "name": "fn_with_recovered_and",
 # CHECK: "signature": "fn_with_recovered_and[N: Int, M: Int]() where is_positive(N) and is_even(M)"
-fn fn_with_recovered_and[N: Int, M: Int]() where is_positive(N) and is_even(M):
+def fn_with_recovered_and[N: Int, M: Int]() where is_positive(N) and is_even(M):
     """Function whose 'and' is lowered to a ternary by the compiler.
 
     The doc printer must reconstruct 'and' from the lowered form.
@@ -198,7 +198,7 @@ fn fn_with_recovered_and[N: Int, M: Int]() where is_positive(N) and is_even(M):
 # CHECK: "default": "10",
 # CHECK: "name": "N",
 # CHECK: "signature": "fn_with_default_and_constraint[N: Int = 10]() where is_positive(N)"
-fn fn_with_default_and_constraint[N: Int = 10]() where is_positive(N):
+def fn_with_default_and_constraint[N: Int = 10]() where is_positive(N):
     """Function with default parameter value and where clause.
 
     Parameters:
@@ -212,7 +212,7 @@ fn fn_with_default_and_constraint[N: Int = 10]() where is_positive(N):
 # CHECK: "default": "4",
 # CHECK: "name": "M",
 # CHECK: "signature": "fn_with_default_and_param_constraint[M: Int where is_even(M) = 4]()"
-fn fn_with_default_and_param_constraint[M: Int where is_even(M) = 4]():
+def fn_with_default_and_param_constraint[M: Int where is_even(M) = 4]():
     """Function with default value and parameter-level constraint.
 
     Parameters:
@@ -230,7 +230,7 @@ fn fn_with_default_and_param_constraint[M: Int where is_even(M) = 4]():
 
 # CHECK-LABEL: "name": "fn_with_eq_constraint",
 # CHECK: "signature": "fn_with_eq_constraint[N: Int]() where (N == 0)"
-fn fn_with_eq_constraint[N: Int]() where N == 0:
+def fn_with_eq_constraint[N: Int]() where N == 0:
     """Function with an equality constraint.
 
     Parameters:
@@ -241,7 +241,7 @@ fn fn_with_eq_constraint[N: Int]() where N == 0:
 
 # CHECK-LABEL: "name": "fn_with_ne_constraint",
 # CHECK: "signature": "fn_with_ne_constraint[N: Int]() where (N != 0)"
-fn fn_with_ne_constraint[N: Int]() where N != 0:
+def fn_with_ne_constraint[N: Int]() where N != 0:
     """Function with an inequality constraint.
 
     Parameters:
@@ -252,7 +252,7 @@ fn fn_with_ne_constraint[N: Int]() where N != 0:
 
 # CHECK-LABEL: "name": "fn_with_lt_constraint",
 # CHECK: "signature": "fn_with_lt_constraint[N: Int]() where (N < 10)"
-fn fn_with_lt_constraint[N: Int]() where N < 10:
+def fn_with_lt_constraint[N: Int]() where N < 10:
     """Function with a less-than constraint.
 
     Parameters:
@@ -268,7 +268,7 @@ fn fn_with_lt_constraint[N: Int]() where N < 10:
 
 # CHECK-LABEL: "name": "fn_with_not_constraint",
 # CHECK: "signature": "fn_with_not_constraint[x: Bool]() where not x"
-fn fn_with_not_constraint[x: Bool]() where not x:
+def fn_with_not_constraint[x: Bool]() where not x:
     """Function with a 'not' constraint.
 
     Parameters:
@@ -279,7 +279,7 @@ fn fn_with_not_constraint[x: Bool]() where not x:
 
 # CHECK-LABEL: "name": "fn_with_neg_constraint",
 # CHECK: "signature": "fn_with_neg_constraint[N: Int]() where (-N == 1)"
-fn fn_with_neg_constraint[N: Int]() where -N == 1:
+def fn_with_neg_constraint[N: Int]() where -N == 1:
     """Function with a negation constraint.
 
     Parameters:
@@ -297,7 +297,7 @@ fn fn_with_neg_constraint[N: Int]() where -N == 1:
 # CHECK: "constraints": " where is_positive(X)"
 # CHECK: "name": "X",
 # CHECK: "signature": "fn_with_both_constraint_types[X: Int where is_positive(X), Y: Int]() where is_even(Y)"
-fn fn_with_both_constraint_types[
+def fn_with_both_constraint_types[
     X: Int where is_positive(X), Y: Int
 ]() where is_even(Y):
     """Function with both parameter-level and function-level constraints.
@@ -319,7 +319,7 @@ fn fn_with_both_constraint_types[
 
 # CHECK-LABEL: "name": "fn_with_identity_reconstruction",
 # CHECK: "signature": "fn_with_identity_reconstruction(c: Container[c.T]) where (c.inner_size == 2)"
-fn fn_with_identity_reconstruction(c: Container) where c.inner_size == 2:
+def fn_with_identity_reconstruction(c: Container) where c.inner_size == 2:
     """Function where a constraint references a computed property of an argument.
 
     The constraint 'c.inner_size' should be printed using the argument name 'c'
@@ -335,7 +335,7 @@ fn fn_with_identity_reconstruction(c: Container) where c.inner_size == 2:
 # so AltContainer[c.T] should NOT simplify to just 'c'.
 # CHECK-LABEL: "name": "fn_no_false_positive_different_struct",
 # CHECK: "signature": "fn_no_false_positive_different_struct(c: Container[c.T]) where (AltContainer[c.T].alt_size == 4)"
-fn fn_no_false_positive_different_struct(
+def fn_no_false_positive_different_struct(
     c: Container,
 ) where AltContainer[c.T].alt_size == 4:
     """Constraint references a DIFFERENT struct built from the same auto-params.
@@ -358,7 +358,7 @@ fn fn_no_false_positive_different_struct(
 # CHECK: "constraints": " where (C <= B) if (A <= B) else (C <= 0)"
 # CHECK: "name": "C",
 # CHECK: "signature": "fn_with_cond_where[A: Int, B: Int, C: Int where (C <= B) if (A <= B) else (C <= 0)]()"
-fn fn_with_cond_where[
+def fn_with_cond_where[
     A: Int, B: Int, C: Int where (C <= B) if (A <= B) else (C <= 0)
 ]():
     """Function with a conditional inline constraint.
@@ -391,7 +391,7 @@ fn fn_with_cond_where[
 struct MethodConstraints:
     """A struct to test method-level constraints."""
 
-    fn method_with_where[M: Int](self) where is_positive(M):
+    def method_with_where[M: Int](self) where is_positive(M):
         """Method with a where clause.
 
         Parameters:
@@ -399,7 +399,7 @@ struct MethodConstraints:
         """
         pass
 
-    fn method_with_param_constraint[K: Int where is_even(K)](self):
+    def method_with_param_constraint[K: Int where is_even(K)](self):
         """Method with parameter-level constraint.
 
         Parameters:

@@ -10,7 +10,7 @@
 from std.io.io import _printf
 
 
-fn raiseErrorIf(cond: Bool) raises -> Int:
+def raiseErrorIf(cond: Bool) raises -> Int:
     if cond:
         raise Error()
     return 0
@@ -20,7 +20,7 @@ def implicitlyPropagate(cond: Bool) raises -> Int:
     return raiseErrorIf(cond)
 
 
-fn main():
+def main():
     # CHECK: first success
     try:
         _ = implicitlyPropagate(False)

@@ -8,6 +8,6 @@
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
 
-fn main():
+def main():
     # CHECK: Assert Error: x must be positive
     assert False, "x must be positive"

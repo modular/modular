@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn inner[T: AnyType](y: T):
+def inner[T: AnyType](y: T):
     pass
 
 
-fn bar() -> fn(Int) -> None:
+def bar() -> def(Int) -> None:
     return inner[Int]

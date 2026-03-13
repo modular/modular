@@ -29,7 +29,7 @@ from test_package.module import dont_inline_me
 from test_package_2.module import dont_inline_me_either
 
 
-fn main():
+def main():
     # CHECK: Don't you dare!
     dont_inline_me()
     # CHECK: Don't you dare!

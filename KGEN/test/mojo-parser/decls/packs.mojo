@@ -20,7 +20,7 @@ struct SomeMem(ImplicitlyCopyable, SomeTrait):
 
 
 struct SomeReg(RegisterPassable, SomeTrait):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
@@ -30,7 +30,7 @@ struct SomeReg(RegisterPassable, SomeTrait):
 
 
 # This function takes a pack of owned values by Trait.
-fn takeOwnedAnyTypePack[*Ts: AnyType](var *rest: *Ts):
+def takeOwnedAnyTypePack[*Ts: AnyType](var *rest: *Ts):
     pass
 
 
@@ -49,12 +49,12 @@ fn takeOwnedAnyTypePack[*Ts: AnyType](var *rest: *Ts):
 # CHECK-LABEL: lit.fn @"takeOwnedSomeTraitPack
 # CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 1}, {{.*}}origin<1> *"rest`"
 # CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>>, mut *"rest`1"> owned_in_mem|pack_vararg)
-fn takeOwnedSomeTraitPack[*Ts: SomeTrait](var *rest: *Ts):
+def takeOwnedSomeTraitPack[*Ts: SomeTrait](var *rest: *Ts):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_owned_trait
-fn test_owned_trait():
+def test_owned_trait():
     # CHECK-NEXT: %value1 = lit.var.decl
     var value1: SomeMem
     # CHECK-NEXT: %value2 = lit.var.decl
@@ -107,12 +107,12 @@ fn test_owned_trait():
 # CHECK-LABEL: lit.fn @"takeInoutSomeTraitPack
 # CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 1}, {{.*}}origin<1> *"rest`"
 # CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>>, imm *"rest`1"> mut|pack_vararg)
-fn takeInoutSomeTraitPack[*Ts: SomeTrait](mut*rest: *Ts):
+def takeInoutSomeTraitPack[*Ts: SomeTrait](mut*rest: *Ts):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_inout
-fn test_inout():
+def test_inout():
     # CHECK-NEXT: %value1 = lit.var.decl
     var value1: SomeMem
     # CHECK-NEXT: %value2 = lit.var.decl
@@ -153,12 +153,12 @@ fn test_inout():
 
 struct not_nested_struct[*Ts: AnyType]:
     @implicit
-    fn __init__(out self, mut*args: * Self.Ts):
+    def __init__(out self, mut*args: * Self.Ts):
         pass
 
 
 # CHECK-LABEL: lit.fn @"test_empty_pack
-fn test_empty_pack():
+def test_empty_pack():
     # Make sure we pass an immortal origin for the pack.
     # CHECK: lit.call {{.*}}VariadicPack::@"__init__{{.*}}origin<1> {}
     var s1 = not_nested_struct()
@@ -173,33 +173,33 @@ fn test_empty_pack():
 # CHECK-SAME: <Ts: variadic<!AnyType> pos_vararg>
 struct MyTuple[*Ts: AnyType]:
     @implicit
-    fn __init__(out self, *args: * Self.Ts):
+    def __init__(out self, *args: * Self.Ts):
         pass
 
 
 # CHECK-LABEL: lit.fn @"pack
 # CHECK-SAME: Ts: variadic<!AnyType> pos_vararg>
 # CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, {{.*}}origin<0> *"args`", {{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>>, imm *"args`1"> read_mem|pack_vararg)
-fn pack[*Ts: AnyType](*args: *Ts):
+def pack[*Ts: AnyType](*args: *Ts):
     pass
 
 
 # CHECK-LABEL: lit.fn @"packBorrowed[
 # CHECK-SAME: Ts: variadic<!AnyType> pos_vararg>
 # CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, {{.*}}origin<0> *"args`", {{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>>, imm *"args`1"> read_mem|pack_vararg)
-fn packBorrowed[*Ts: AnyType](*args: *Ts):
+def packBorrowed[*Ts: AnyType](*args: *Ts):
     pass
 
 
 # Ensure that parameters can be bound correctly.
-fn variadicParameter[*Ts: TrivialRegisterPassable](x: Int):
+def variadicParameter[*Ts: TrivialRegisterPassable](x: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"usePacks
 # CHECK-SAME: [[ARGX:%.*]]: !FloatDyn
 # CHECK-SAME: [[ARGY:%.*]]: !Int
-fn usePacks(x: FloatDyn, y: Int):
+def usePacks(x: FloatDyn, y: Int):
     # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:variadic<!AnyType> [!Int]>
     var a: MyTuple[Int]
     # CHECK: lit.var.decl {{.*}} : !lit.ref<{{.*}}#MyTuple <:variadic<!AnyType> [!Int, !FloatDyn, !Int]>
@@ -227,7 +227,7 @@ fn usePacks(x: FloatDyn, y: Int):
 
 
 # CHECK-LABEL: test_comptime_call
-fn test_comptime_call[a: Int]():
+def test_comptime_call[a: Int]():
     # CHECK: lit.alias.decl *"foo`": none =
     # CHECK-SAME: <apply(:!lit.generator<[2](
     # CHECK-SAME: "args": !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, {{.*}}origin<0> #lit.comptime.origin, {{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [!Int]>>, imm #lit.comptime.origin> read_mem|pack_vararg)

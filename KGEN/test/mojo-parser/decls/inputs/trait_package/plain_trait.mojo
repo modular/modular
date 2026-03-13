@@ -5,5 +5,5 @@
 # ===----------------------------------------------------------------------=== #
 
 trait Flying:
-    fn fly_to(mut self, new_location: Int):
+    def fly_to(mut self, new_location: Int):
         ...

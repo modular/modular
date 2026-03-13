@@ -13,34 +13,34 @@
 
 
 struct BoolT[x: Bool](ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
 
 struct BuiltinBoolT[x: __mlir_type.`!pop.scalar<bool>`](ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
 
 struct DTypeT[x: DType](ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
 
 struct BuiltinSI32T[x: __mlir_type.`!pop.scalar<si32>`](ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
 
@@ -60,7 +60,7 @@ comptime POP_UI8_77 = __mlir_attr.`#pop.simd<77> : !pop.scalar<ui8>`
 
 
 @always_inline("builtin")
-fn pop_cast_from_builtin_bool(
+def pop_cast_from_builtin_bool(
     x: __mlir_type.i1,
 ) -> __mlir_type.`!pop.scalar<bool>`:
     return __mlir_op.`pop.cast_from_builtin`[
@@ -69,7 +69,7 @@ fn pop_cast_from_builtin_bool(
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_cast_from_builtin_bool
-fn fold_pop_cast_from_builtin_bool() -> (
+def fold_pop_cast_from_builtin_bool() -> (
     BuiltinBoolT[__mlir_attr.`#pop.simd<true> : !pop.scalar<bool>`]
 ):
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#BuiltinBoolT <:scalar<bool>
@@ -85,34 +85,34 @@ fn fold_pop_cast_from_builtin_bool() -> (
 
 
 struct UInt8T[x: __mlir_type.ui8](ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
 
 @always_inline("builtin")
-fn pop_cast_to_builtin_ui8(x: UInt8._mlir_type) -> __mlir_type.ui8:
+def pop_cast_to_builtin_ui8(x: UInt8._mlir_type) -> __mlir_type.ui8:
     return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.ui8](x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_cast_to_builtin_ui8
-fn fold_pop_cast_to_builtin_ui8() -> UInt8T[MLIR_UI8_139]:
+def fold_pop_cast_to_builtin_ui8() -> UInt8T[MLIR_UI8_139]:
     # CHECK: %a = lit.var.decl "a" var : {{.*}}<:ui8 139>>
     var a = UInt8T[pop_cast_to_builtin_ui8(POP_UI8_139)]()
     return a
 
 
 @always_inline("builtin")
-fn pop_cast_to_builtin_bool(
+def pop_cast_to_builtin_bool(
     x: __mlir_type.`!pop.scalar<bool>`,
 ) -> __mlir_type.i1:
     return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i1](x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_cast_to_builtin_bool
-fn fold_pop_cast_to_builtin_bool() -> BoolT[True]:
+def fold_pop_cast_to_builtin_bool() -> BoolT[True]:
     # CHECK: %a = lit.var.decl "a" var : {{.*}}:i1 1}>>,
     var a = BoolT[
         pop_cast_to_builtin_bool(
@@ -134,12 +134,12 @@ fn fold_pop_cast_to_builtin_bool() -> BoolT[True]:
 
 
 @always_inline("builtin")
-fn pop_dtype_from_ui8(ui8: __mlir_type.ui8) -> DType:
+def pop_dtype_from_ui8(ui8: __mlir_type.ui8) -> DType:
     return DType(mlir_value=__mlir_op.`pop.dtype.from_ui8`(ui8))
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_dtype_from_ui8
-fn fold_pop_dtype_from_ui8() -> DTypeT[DType.int32]:
+def fold_pop_dtype_from_ui8() -> DTypeT[DType.int32]:
     # CHECK: %a = lit.var.decl "a" var : {{.*}} si32}>>,
     var a = DTypeT[pop_dtype_from_ui8(MLIR_UI8_139)]()
     # CHECK: %b = lit.var.decl "b" var : {{.*}} f8e5m2}>>,
@@ -152,17 +152,17 @@ fn fold_pop_dtype_from_ui8() -> DTypeT[DType.int32]:
 
 
 @always_inline("builtin")
-fn pop_cast(
+def pop_cast(
     x: __mlir_type.`!pop.scalar<si8>`,
 ) -> __mlir_type.`!pop.scalar<ui8>`:
     return __mlir_op.`pop.cast`[_type=__mlir_type.`!pop.scalar<ui8>`](x)
 
 
 struct POPUInt8T[x: __mlir_type.`!pop.scalar<ui8>`](ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
 
@@ -171,7 +171,7 @@ comptime POP_UI8_N1 = __mlir_attr.`#pop.simd<255> : !pop.scalar<ui8>`
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_cast
-fn fold_pop_cast() -> POPUInt8T[POP_UI8_N1]:
+def fold_pop_cast() -> POPUInt8T[POP_UI8_N1]:
     # CHECK: %a = lit.var.decl "a" var : {{.*}} 255)>>,
     var a = POPUInt8T[pop_cast(POP_SI8_N1)]()
     return a
@@ -183,10 +183,10 @@ fn fold_pop_cast() -> POPUInt8T[POP_UI8_N1]:
 
 
 struct POPUInt8x4T[x: __mlir_type.`!pop.simd<4, ui8>`](ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
 
@@ -194,14 +194,14 @@ comptime POP_UI8x4_N1 = __mlir_attr.`#pop.simd<255, 255, 255, 255> : !pop.simd<4
 
 
 @always_inline("builtin")
-fn pop_simd_splat(
+def pop_simd_splat(
     x: __mlir_type.`!pop.scalar<ui8>`,
 ) -> __mlir_type.`!pop.simd<4, ui8>`:
     return __mlir_op.`pop.simd.splat`[_type=__mlir_type.`!pop.simd<4, ui8>`](x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_splat
-fn fold_pop_simd_splat() -> POPUInt8x4T[POP_UI8x4_N1]:
+def fold_pop_simd_splat() -> POPUInt8x4T[POP_UI8x4_N1]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPUInt8x4T <:simd<4, ui8> {{.*}} #alias_POP_UI8_N1), 255)>>,
     var a = POPUInt8x4T[pop_simd_splat(POP_UI8_N1)]()
     return a
@@ -213,7 +213,7 @@ fn fold_pop_simd_splat() -> POPUInt8x4T[POP_UI8x4_N1]:
 
 
 @always_inline("builtin")
-fn pop_simd_and(
+def pop_simd_and(
     x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
 ) -> __mlir_type.`!pop.simd<4, ui8>`:
     return __mlir_op.`pop.simd.and`(x, y)
@@ -223,7 +223,7 @@ comptime POP_UI8x4_Fold = __mlir_attr.`#pop.simd<42, 255, 1, 0> : !pop.simd<4, u
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_and
-fn fold_pop_simd_and() -> POPUInt8x4T[POP_UI8x4_Fold]:
+def fold_pop_simd_and() -> POPUInt8x4T[POP_UI8x4_Fold]:
     # CHECK: %a = lit.var.decl "a" {{.*}} <42, 255, 1, 0>
     var a = POPUInt8x4T[
         pop_simd_and(
@@ -236,7 +236,7 @@ fn fold_pop_simd_and() -> POPUInt8x4T[POP_UI8x4_Fold]:
 
 # CHECK-LABEL: lit.fn @"pop_unresolved_simd_and
 @always_inline("builtin")
-fn pop_unresolved_simd_and[
+def pop_unresolved_simd_and[
     dt: DType, n: Int
 ](x: SIMD[dt, n], y: SIMD[dt, n],) -> SIMD[dt, n]._mlir_type:
     return __mlir_op.`pop.simd.and`(x._mlir_value, y._mlir_value)
@@ -248,14 +248,14 @@ fn pop_unresolved_simd_and[
 
 
 @always_inline("builtin")
-fn pop_simd_xor(
+def pop_simd_xor(
     x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
 ) -> __mlir_type.`!pop.simd<4, ui8>`:
     return __mlir_op.`pop.simd.xor`(x, y)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_xor
-fn fold_pop_simd_xor() -> POPUInt8x4T[POP_UI8x4_Fold]:
+def fold_pop_simd_xor() -> POPUInt8x4T[POP_UI8x4_Fold]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPUInt8x4T <:simd<4, ui8> {{.*}} <9, 15, 1, 1>, <35, 240, 0, 1>), <42, 255, 1, 0>)>>
     var a = POPUInt8x4T[
         pop_simd_xor(
@@ -268,7 +268,7 @@ fn fold_pop_simd_xor() -> POPUInt8x4T[POP_UI8x4_Fold]:
 
 # CHECK-LABEL: lit.fn @"pop_unresolved_simd_xor
 @always_inline("builtin")
-fn pop_unresolved_simd_xor[
+def pop_unresolved_simd_xor[
     dt: DType, n: Int
 ](x: SIMD[dt, n], y: SIMD[dt, n],) -> SIMD[dt, n]._mlir_type:
     return __mlir_op.`pop.simd.xor`(x._mlir_value, y._mlir_value)
@@ -280,14 +280,14 @@ fn pop_unresolved_simd_xor[
 
 
 @always_inline("builtin")
-fn pop_simd_or(
+def pop_simd_or(
     x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
 ) -> __mlir_type.`!pop.simd<4, ui8>`:
     return __mlir_op.`pop.simd.or`(x, y)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_or
-fn fold_pop_simd_or() -> POPUInt8x4T[POP_UI8x4_Fold]:
+def fold_pop_simd_or() -> POPUInt8x4T[POP_UI8x4_Fold]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPUInt8x4T <:simd<4, ui8> {{.*}} <8, 15, 1, 0>, <34, 240, 1, 0>), <42, 255, 1, 0>)>>
     var a = POPUInt8x4T[
         pop_simd_or(
@@ -304,10 +304,10 @@ fn fold_pop_simd_or() -> POPUInt8x4T[POP_UI8x4_Fold]:
 
 
 struct POPBoolx4T[x: __mlir_type.`!pop.simd<4, bool>`](ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
 
@@ -315,91 +315,91 @@ comptime POP_Boolx4_EQ_Fold = __mlir_attr.`#pop.simd<false, true, true, false> :
 
 
 @always_inline("builtin")
-fn pop_simd_cmp_eq(
+def pop_simd_cmp_eq(
     x: __mlir_type.`!pop.simd<4, si8>`, y: __mlir_type.`!pop.simd<4, si8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
     return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred eq>`](x, y)
 
 
 @always_inline("builtin")
-fn pop_simd_cmp_eq(
+def pop_simd_cmp_eq(
     x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
     return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred eq>`](x, y)
 
 
 @always_inline("builtin")
-fn pop_simd_cmp_ne(
+def pop_simd_cmp_ne(
     x: __mlir_type.`!pop.simd<4, si8>`, y: __mlir_type.`!pop.simd<4, si8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
     return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred ne>`](x, y)
 
 
 @always_inline("builtin")
-fn pop_simd_cmp_ne(
+def pop_simd_cmp_ne(
     x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
     return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred ne>`](x, y)
 
 
 @always_inline("builtin")
-fn pop_simd_cmp_ult(
+def pop_simd_cmp_ult(
     x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
     return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred lt>`](x, y)
 
 
 @always_inline("builtin")
-fn pop_simd_cmp_slt(
+def pop_simd_cmp_slt(
     x: __mlir_type.`!pop.simd<4, si8>`, y: __mlir_type.`!pop.simd<4, si8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
     return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred lt>`](x, y)
 
 
 @always_inline("builtin")
-fn pop_simd_cmp_ule(
+def pop_simd_cmp_ule(
     x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
     return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred le>`](x, y)
 
 
 @always_inline("builtin")
-fn pop_simd_cmp_sle(
+def pop_simd_cmp_sle(
     x: __mlir_type.`!pop.simd<4, si8>`, y: __mlir_type.`!pop.simd<4, si8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
     return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred le>`](x, y)
 
 
 @always_inline("builtin")
-fn pop_simd_cmp_ugt(
+def pop_simd_cmp_ugt(
     x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
     return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred gt>`](x, y)
 
 
 @always_inline("builtin")
-fn pop_simd_cmp_sgt(
+def pop_simd_cmp_sgt(
     x: __mlir_type.`!pop.simd<4, si8>`, y: __mlir_type.`!pop.simd<4, si8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
     return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred gt>`](x, y)
 
 
 @always_inline("builtin")
-fn pop_simd_cmp_uge(
+def pop_simd_cmp_uge(
     x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
     return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred ge>`](x, y)
 
 
 @always_inline("builtin")
-fn pop_simd_cmp_sge(
+def pop_simd_cmp_sge(
     x: __mlir_type.`!pop.simd<4, si8>`, y: __mlir_type.`!pop.simd<4, si8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
     return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred ge>`](x, y)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_cmp
-fn fold_pop_simd_cmp() -> POPBoolx4T[POP_Boolx4_EQ_Fold]:
+def fold_pop_simd_cmp() -> POPBoolx4T[POP_Boolx4_EQ_Fold]:
     # CHECK: %a = lit.var.decl "a" var : {{.*}} <true, false, false, false>)>>
     var a = POPBoolx4T[
         pop_simd_cmp_eq(
@@ -489,7 +489,7 @@ fn fold_pop_simd_cmp() -> POPBoolx4T[POP_Boolx4_EQ_Fold]:
 
 # CHECK-LABEL: lit.fn @"pop_unresolved_simd_cmp_sge
 @always_inline("builtin")
-fn pop_unresolved_simd_cmp_sge[
+def pop_unresolved_simd_cmp_sge[
     dt: DType, n: Int, m: Int
 ](x: SIMD[dt, n + m], y: SIMD[dt, n + m]) -> SIMD[DType.bool, n + m]._mlir_type:
     return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred ge>`](
@@ -498,7 +498,7 @@ fn pop_unresolved_simd_cmp_sge[
 
 
 @always_inline("builtin")
-fn var_decls[dtype: DType](value: IntLiteral) -> Scalar[dtype]._mlir_type:
+def var_decls[dtype: DType](value: IntLiteral) -> Scalar[dtype]._mlir_type:
     # Convert the IntLiteral to !pop.simd<si32>
     var si32 = __mlir_attr[
         `#pop.int_literal_convert<`, value.value, `> : !pop.scalar<si32>`
@@ -527,7 +527,7 @@ fn var_decls[dtype: DType](value: IntLiteral) -> Scalar[dtype]._mlir_type:
 
 
 # CHECK-LABEL: lit.fn @"fold_var_decls
-fn fold_var_decls() -> (
+def fold_var_decls() -> (
     BuiltinSI32T[__mlir_attr.`#pop.simd<0> : !pop.scalar<si32>`]
 ):
     # CHECK: %a = lit.var.decl "a" var : {{.*}} 0)>>
@@ -543,14 +543,14 @@ fn fold_var_decls() -> (
 
 
 @always_inline("builtin")
-fn pop_simd_reduce_or(
+def pop_simd_reduce_or(
     x: __mlir_type.`!pop.simd<4, ui8>`,
 ) -> __mlir_type.`!pop.scalar<ui8>`:
     return __mlir_op.`pop.simd.reduce_or`(x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_reduce_or
-fn fold_pop_simd_reduce_or() -> POPUInt8T[POP_UI8_77]:
+def fold_pop_simd_reduce_or() -> POPUInt8T[POP_UI8_77]:
     # CHECK: %a = lit.var.decl "a" var : {{.*}} <1, 8, 68, 0>), 77)>>
     var a = POPUInt8T[
         pop_simd_reduce_or(
@@ -562,7 +562,7 @@ fn fold_pop_simd_reduce_or() -> POPUInt8T[POP_UI8_77]:
 
 # CHECK-LABEL: lit.fn @"pop_unresolved_simd_reduce_or
 @always_inline("builtin")
-fn pop_unresolved_simd_reduce_or[
+def pop_unresolved_simd_reduce_or[
     dt: DType, n: Int
 ](x: SIMD[dt, n]) -> SIMD[dt, 1]._mlir_type:
     return __mlir_op.`pop.simd.reduce_or`(x._mlir_value)
@@ -574,14 +574,14 @@ fn pop_unresolved_simd_reduce_or[
 
 
 @always_inline("builtin")
-fn pop_simd_reduce_and(
+def pop_simd_reduce_and(
     x: __mlir_type.`!pop.simd<4, ui8>`,
 ) -> __mlir_type.`!pop.scalar<ui8>`:
     return __mlir_op.`pop.simd.reduce_and`(x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_reduce_and
-fn fold_pop_simd_reduce_and() -> POPUInt8T[POP_UI8_77]:
+def fold_pop_simd_reduce_and() -> POPUInt8T[POP_UI8_77]:
     # CHECK: %a = lit.var.decl "a" var : {{.*}} <79, 93, 207, 221>), 77)>>
     var a = POPUInt8T[
         pop_simd_reduce_and(
@@ -596,18 +596,18 @@ fn fold_pop_simd_reduce_and() -> POPUInt8T[POP_UI8_77]:
 ##===----------------------------------------------------------------------===##
 
 
-fn unfoldable_function() -> Bool:
+def unfoldable_function() -> Bool:
     return False
 
 
 @always_inline("builtin")
-fn kgen_assert() -> Bool:
+def kgen_assert() -> Bool:
     comptime assert unfoldable_function(), "Ignore this"
     return True
 
 
 # CHECK-LABEL: lit.fn @"fold_kgen_assert
-fn fold_kgen_assert() -> BoolT[True]:
+def fold_kgen_assert() -> BoolT[True]:
     var a = BoolT[kgen_assert()]()
     return a
 
@@ -618,10 +618,10 @@ fn fold_kgen_assert() -> BoolT[True]:
 
 
 struct POPSInt8x4T[x: __mlir_type.`!pop.simd<4, si8>`](ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
 
@@ -629,14 +629,14 @@ comptime POP_SI8x4_Fold = __mlir_attr.`#pop.simd<42, -120, 1, 0> : !pop.simd<4, 
 
 
 @always_inline("builtin")
-fn pop_simd_neg(
+def pop_simd_neg(
     x: __mlir_type.`!pop.simd<4, si8>`,
 ) -> __mlir_type.`!pop.simd<4, si8>`:
     return __mlir_op.`pop.neg`(x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_neg
-fn fold_pop_simd_neg() -> POPSInt8x4T[POP_SI8x4_Fold]:
+def fold_pop_simd_neg() -> POPSInt8x4T[POP_SI8x4_Fold]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPSInt8x4T <:simd<4, si8> {{.*}} <-42, 120, -1, 0>), <42, -120, 1, 0>)>>
     var a = POPSInt8x4T[
         pop_simd_neg(
@@ -652,10 +652,10 @@ fn fold_pop_simd_neg() -> POPSInt8x4T[POP_SI8x4_Fold]:
 
 
 struct POPF32x4T[x: __mlir_type.`!pop.simd<4, f32>`](ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
 
@@ -663,14 +663,14 @@ comptime POP_F32x4_Floor = __mlir_attr.`#pop.simd<"1.0", "-3.0", "0.0", "4.0"> :
 
 
 @always_inline("builtin")
-fn pop_simd_floor(
+def pop_simd_floor(
     x: __mlir_type.`!pop.simd<4, f32>`,
 ) -> __mlir_type.`!pop.simd<4, f32>`:
     return __mlir_op.`pop.floor`(x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_floor
-fn fold_pop_simd_floor() -> POPF32x4T[POP_F32x4_Floor]:
+def fold_pop_simd_floor() -> POPF32x4T[POP_F32x4_Floor]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPF32x4T <:simd<4, f32> {{.*}} <"1.5", "-2.29999995", "0", "4.9000001">), <"1", "-3", "0", "4">)>>
     var a = POPF32x4T[
         pop_simd_floor(
@@ -689,14 +689,14 @@ comptime POP_SI8x4_Floor = __mlir_attr.`#pop.simd<7, -42, 1, 0> : !pop.simd<4, s
 
 
 @always_inline("builtin")
-fn pop_simd_floor_si8(
+def pop_simd_floor_si8(
     x: __mlir_type.`!pop.simd<4, si8>`,
 ) -> __mlir_type.`!pop.simd<4, si8>`:
     return __mlir_op.`pop.floor`(x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_floor_si8
-fn fold_pop_simd_floor_si8() -> POPSInt8x4T[POP_SI8x4_Floor]:
+def fold_pop_simd_floor_si8() -> POPSInt8x4T[POP_SI8x4_Floor]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPSInt8x4T <:simd<4, si8> {{.*}} <7, -42, 1, 0>), <7, -42, 1, 0>)>>
     var a = POPSInt8x4T[
         pop_simd_floor_si8(
@@ -707,10 +707,10 @@ fn fold_pop_simd_floor_si8() -> POPSInt8x4T[POP_SI8x4_Floor]:
 
 
 struct POPBool2T[x: __mlir_type.`!pop.simd<2, bool>`](ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
 
@@ -718,14 +718,14 @@ comptime POP_BOOL2_Floor = __mlir_attr.`#pop.simd<true, false> : !pop.simd<2, bo
 
 
 @always_inline("builtin")
-fn pop_simd_floor_bool(
+def pop_simd_floor_bool(
     x: __mlir_type.`!pop.simd<2, bool>`,
 ) -> __mlir_type.`!pop.simd<2, bool>`:
     return __mlir_op.`pop.floor`(x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_floor_bool
-fn fold_pop_simd_floor_bool() -> POPBool2T[POP_BOOL2_Floor]:
+def fold_pop_simd_floor_bool() -> POPBool2T[POP_BOOL2_Floor]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPBool2T <:simd<2, bool> {{.*}} <true, false>), <true, false>)>>
     var a = POPBool2T[
         pop_simd_floor_bool(
@@ -744,14 +744,14 @@ comptime POP_F32x4_Ceil = __mlir_attr.`#pop.simd<"2.0", "-2.0", "0.0", "5.0"> : 
 
 
 @always_inline("builtin")
-fn pop_simd_ceil(
+def pop_simd_ceil(
     x: __mlir_type.`!pop.simd<4, f32>`,
 ) -> __mlir_type.`!pop.simd<4, f32>`:
     return __mlir_op.`pop.ceil`(x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_ceil
-fn fold_pop_simd_ceil() -> POPF32x4T[POP_F32x4_Ceil]:
+def fold_pop_simd_ceil() -> POPF32x4T[POP_F32x4_Ceil]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPF32x4T <:simd<4, f32> {{.*}} <"1.5", "-2.29999995", "0", "4.9000001">), <"2", "-2", "0", "5">)>>
     var a = POPF32x4T[
         pop_simd_ceil(
@@ -770,14 +770,14 @@ comptime POP_SI8x4_Ceil = __mlir_attr.`#pop.simd<7, -42, 1, 0> : !pop.simd<4, si
 
 
 @always_inline("builtin")
-fn pop_simd_ceil_si8(
+def pop_simd_ceil_si8(
     x: __mlir_type.`!pop.simd<4, si8>`,
 ) -> __mlir_type.`!pop.simd<4, si8>`:
     return __mlir_op.`pop.ceil`(x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_ceil_si8
-fn fold_pop_simd_ceil_si8() -> POPSInt8x4T[POP_SI8x4_Ceil]:
+def fold_pop_simd_ceil_si8() -> POPSInt8x4T[POP_SI8x4_Ceil]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPSInt8x4T <:simd<4, si8> {{.*}} <7, -42, 1, 0>), <7, -42, 1, 0>)>>
     var a = POPSInt8x4T[
         pop_simd_ceil_si8(
@@ -791,14 +791,14 @@ comptime POP_BOOL2_Ceil = __mlir_attr.`#pop.simd<true, false> : !pop.simd<2, boo
 
 
 @always_inline("builtin")
-fn pop_simd_ceil_bool(
+def pop_simd_ceil_bool(
     x: __mlir_type.`!pop.simd<2, bool>`,
 ) -> __mlir_type.`!pop.simd<2, bool>`:
     return __mlir_op.`pop.ceil`(x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_ceil_bool
-fn fold_pop_simd_ceil_bool() -> POPBool2T[POP_BOOL2_Ceil]:
+def fold_pop_simd_ceil_bool() -> POPBool2T[POP_BOOL2_Ceil]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPBool2T <:simd<2, bool> {{.*}} <true, false>), <true, false>)>>
     var a = POPBool2T[
         pop_simd_ceil_bool(
@@ -817,14 +817,14 @@ comptime POP_F32x4_Trunc = __mlir_attr.`#pop.simd<"1.0", "-2.0", "0.0", "4.0"> :
 
 
 @always_inline("builtin")
-fn pop_simd_trunc(
+def pop_simd_trunc(
     x: __mlir_type.`!pop.simd<4, f32>`,
 ) -> __mlir_type.`!pop.simd<4, f32>`:
     return __mlir_op.`pop.trunc`(x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_trunc
-fn fold_pop_simd_trunc() -> POPF32x4T[POP_F32x4_Trunc]:
+def fold_pop_simd_trunc() -> POPF32x4T[POP_F32x4_Trunc]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPF32x4T <:simd<4, f32> {{.*}} <"1.5", "-2.29999995", "0", "4.9000001">), <"1", "-2", "0", "4">)>>
     var a = POPF32x4T[
         pop_simd_trunc(
@@ -843,14 +843,14 @@ comptime POP_SI8x4_Trunc = __mlir_attr.`#pop.simd<7, -42, 1, 0> : !pop.simd<4, s
 
 
 @always_inline("builtin")
-fn pop_simd_trunc_si8(
+def pop_simd_trunc_si8(
     x: __mlir_type.`!pop.simd<4, si8>`,
 ) -> __mlir_type.`!pop.simd<4, si8>`:
     return __mlir_op.`pop.trunc`(x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_trunc_si8
-fn fold_pop_simd_trunc_si8() -> POPSInt8x4T[POP_SI8x4_Trunc]:
+def fold_pop_simd_trunc_si8() -> POPSInt8x4T[POP_SI8x4_Trunc]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPSInt8x4T <:simd<4, si8> {{.*}} <7, -42, 1, 0>), <7, -42, 1, 0>)>>
     var a = POPSInt8x4T[
         pop_simd_trunc_si8(
@@ -864,14 +864,14 @@ comptime POP_BOOL2_Trunc = __mlir_attr.`#pop.simd<true, false> : !pop.simd<2, bo
 
 
 @always_inline("builtin")
-fn pop_simd_trunc_bool(
+def pop_simd_trunc_bool(
     x: __mlir_type.`!pop.simd<2, bool>`,
 ) -> __mlir_type.`!pop.simd<2, bool>`:
     return __mlir_op.`pop.trunc`(x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_trunc_bool
-fn fold_pop_simd_trunc_bool() -> POPBool2T[POP_BOOL2_Trunc]:
+def fold_pop_simd_trunc_bool() -> POPBool2T[POP_BOOL2_Trunc]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPBool2T <:simd<2, bool> {{.*}} <true, false>), <true, false>)>>
     var a = POPBool2T[
         pop_simd_trunc_bool(
@@ -890,7 +890,7 @@ comptime POP_F32x4_Div = __mlir_attr.`#pop.simd<"2.5", "-1.5", "0.0", "2.0"> : !
 
 
 @always_inline("builtin")
-fn pop_simd_div(
+def pop_simd_div(
     x: __mlir_type.`!pop.simd<4, f32>`,
     y: __mlir_type.`!pop.simd<4, f32>`,
 ) -> __mlir_type.`!pop.simd<4, f32>`:
@@ -898,7 +898,7 @@ fn pop_simd_div(
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_div
-fn fold_pop_simd_div() -> POPF32x4T[POP_F32x4_Div]:
+def fold_pop_simd_div() -> POPF32x4T[POP_F32x4_Div]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPF32x4T <:simd<4, f32> {{.*}} <"2.5", "-1.5", "0", "2">)>>
     var a = POPF32x4T[
         pop_simd_div(
@@ -918,7 +918,7 @@ comptime POP_F32x4_FloorDiv = __mlir_attr.`#pop.simd<"2.0", "-3.0", "0.0", "2.0"
 
 
 @always_inline("builtin")
-fn pop_simd_floordiv(
+def pop_simd_floordiv(
     x: __mlir_type.`!pop.simd<4, f32>`,
     y: __mlir_type.`!pop.simd<4, f32>`,
 ) -> __mlir_type.`!pop.simd<4, f32>`:
@@ -926,7 +926,7 @@ fn pop_simd_floordiv(
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_floordiv
-fn fold_pop_simd_floordiv() -> POPF32x4T[POP_F32x4_FloorDiv]:
+def fold_pop_simd_floordiv() -> POPF32x4T[POP_F32x4_FloorDiv]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPF32x4T <:simd<4, f32> {{.*}} <"2", "-3", "0", "2">)>>
     var a = POPF32x4T[
         pop_simd_floordiv(
@@ -943,14 +943,14 @@ fn fold_pop_simd_floordiv() -> POPF32x4T[POP_F32x4_FloorDiv]:
 
 
 @always_inline("builtin")
-fn pop_simd_shl(
+def pop_simd_shl(
     x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
 ) -> __mlir_type.`!pop.simd<4, ui8>`:
     return __mlir_op.`pop.shl`(x, y)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_shl
-fn fold_pop_simd_shl() -> POPUInt8x4T[POP_UI8x4_Fold]:
+def fold_pop_simd_shl() -> POPUInt8x4T[POP_UI8x4_Fold]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPUInt8x4T <:simd<4, ui8> {{.*}} <21, 255, 1, 192>, <1, 0, 0, 4>), <42, 255, 1, 0>)>>
     var a = POPUInt8x4T[
         pop_simd_shl(
@@ -962,14 +962,14 @@ fn fold_pop_simd_shl() -> POPUInt8x4T[POP_UI8x4_Fold]:
 
 
 @always_inline("builtin")
-fn pop_simd_shr(
+def pop_simd_shr(
     x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
 ) -> __mlir_type.`!pop.simd<4, ui8>`:
     return __mlir_op.`pop.shr`(x, y)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_shr
-fn fold_pop_simd_shr() -> POPUInt8x4T[POP_UI8x4_Fold]:
+def fold_pop_simd_shr() -> POPUInt8x4T[POP_UI8x4_Fold]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPUInt8x4T <:simd<4, ui8> {{.*}} <168, 255, 187, 16>, <2, 0, 7, 5>), <42, 255, 1, 0>)>>
     var a = POPUInt8x4T[
         pop_simd_shr(
@@ -987,14 +987,14 @@ comptime POP_F32x4_Abs = __mlir_attr.`#pop.simd<"7.0", "7.0", "NaN", "inf"> : !p
 
 
 @always_inline("builtin")
-fn pop_simd_abs(
+def pop_simd_abs(
     x: __mlir_type.`!pop.simd<4, f32>`,
 ) -> __mlir_type.`!pop.simd<4, f32>`:
     return __mlir_op.`pop.abs`(x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_abs
-fn fold_pop_simd_abs() -> POPF32x4T[POP_F32x4_Abs]:
+def fold_pop_simd_abs() -> POPF32x4T[POP_F32x4_Abs]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPF32x4T <:simd<4, f32> {{.*}} <"7", "7", "NaN", "+Inf">)>>
     var a = POPF32x4T[
         pop_simd_abs(
@@ -1010,10 +1010,10 @@ fn fold_pop_simd_abs() -> POPF32x4T[POP_F32x4_Abs]:
 
 
 struct POPF32x8T[x: __mlir_type.`!pop.simd<8, f32>`](ImplicitlyCopyable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
 
@@ -1021,14 +1021,14 @@ comptime POP_F32x8_Round = __mlir_attr.`#pop.simd<"1.0", "2.0", "2.0", "-1.0", "
 
 
 @always_inline("builtin")
-fn pop_simd_round(
+def pop_simd_round(
     x: __mlir_type.`!pop.simd<8, f32>`,
 ) -> __mlir_type.`!pop.simd<8, f32>`:
     return __mlir_op.`pop.round`(x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_round
-fn fold_pop_simd_round() -> POPF32x8T[POP_F32x8_Round]:
+def fold_pop_simd_round() -> POPF32x8T[POP_F32x8_Round]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPF32x8T <:simd<8, f32> {{.*}} <"1", "2", "2", "-1", "-2", "-2", "4", "-4">)>>
     var a = POPF32x8T[
         pop_simd_round(

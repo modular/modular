@@ -36,7 +36,7 @@ struct Bool:
   """This is doc for Bool."""
 
     @implicit
-    fn __init__(out self, value: __mlir_type.i1):
+    def __init__(out self, value: __mlir_type.i1):
       """ Bool init with mlir.i1.
 
       Args:
@@ -58,7 +58,7 @@ struct Error:
   """A stub for the Int to allow decoupling from the builtins."""
   pass
 
-fn foo():
+def foo():
   """This is a function doc."""
   documented_method_defined_in_init()
   return
@@ -70,7 +70,7 @@ trait AnyType:
 trait Trait:
   """This is a trait doc."""
 
-  fn f(self):
+  def f(self):
     """This is a trait function doc."""
     ...
 
@@ -79,7 +79,7 @@ trait Trait:
 struct StructWithExamples:
     """A struct with a function in it."""
 
-    fn method_with_example(self, zot: Int) raises:
+    def method_with_example(self, zot: Int) raises:
         """A function with an example.
 
         Args:

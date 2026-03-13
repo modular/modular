@@ -19,7 +19,7 @@ from std.collections import Optional
 struct CacheAligned(Movable):
     var x: Int
 
-    fn __init__(out self, x: Int):
+    def __init__(out self, x: Int):
         self.x = x
 
 
@@ -31,7 +31,7 @@ struct AlignedTrivial(TrivialRegisterPassable):
     var value: Int
 
     @always_inline
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.value = value
 
 
@@ -42,7 +42,7 @@ struct ContainsAlignedTrivialSecond(TrivialRegisterPassable):
     var second: AlignedTrivial  # @align(32) requires padding after first (8 bytes)
 
     @always_inline
-    fn __init__(out self, first: Int, second: AlignedTrivial):
+    def __init__(out self, first: Int, second: AlignedTrivial):
         self.first = first
         self.second = second
 
@@ -52,7 +52,7 @@ struct ContainsAlignedTrivialSecond(TrivialRegisterPassable):
 struct PageAligned:
     var data: Int
 
-    fn __init__(out self, data: Int):
+    def __init__(out self, data: Int):
         self.data = data
 
 
@@ -61,7 +61,7 @@ struct ContainsAligned:
     var inner: CacheAligned
     var other: Int
 
-    fn __init__(out self, var inner: CacheAligned, other: Int):
+    def __init__(out self, var inner: CacheAligned, other: Int):
         self.inner = inner^
         self.other = other
 
@@ -72,7 +72,7 @@ struct ContainsAlignedSecond:
     var other: Int
     var inner: CacheAligned
 
-    fn __init__(out self, other: Int, var inner: CacheAligned):
+    def __init__(out self, other: Int, var inner: CacheAligned):
         self.other = other
         self.inner = inner^
 
@@ -82,7 +82,7 @@ struct ContainsAlignedSecond:
 struct AlignedGeneric[T: TrivialRegisterPassable]:
     var value: Self.T
 
-    fn __init__(out self, value: Self.T):
+    def __init__(out self, value: Self.T):
         self.value = value
 
 
@@ -91,7 +91,7 @@ struct AlignedGeneric[T: TrivialRegisterPassable]:
 struct OuterSmallAlign:
     var inner: CacheAligned  # CacheAligned requires 64-byte alignment
 
-    fn __init__(out self, var inner: CacheAligned):
+    def __init__(out self, var inner: CacheAligned):
         self.inner = inner^
 
 
@@ -102,7 +102,7 @@ struct UsesLaterStruct:
     """
 
     @staticmethod
-    fn create_later() -> Int:
+    def create_later() -> Int:
         """Create a local variable of LaterAlignedStruct and verify alignment.
         """
         var later = LaterAlignedStruct(123)
@@ -118,11 +118,11 @@ struct LaterAlignedStruct:
 
     var value: Int
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.value = value
 
 
-fn test_align_of() raises:
+def test_align_of() raises:
     """Test that align_of[T]() reflects the @align decorator."""
     assert_equal(align_of[CacheAligned](), 64)
     assert_equal(align_of[AlignedTrivial](), 32)
@@ -130,7 +130,7 @@ fn test_align_of() raises:
     assert_equal(align_of[AlignedGeneric[Int]](), 128)
 
 
-fn test_nested_alignment() raises:
+def test_nested_alignment() raises:
     """Test that containing structs inherit alignment from aligned fields."""
     # ContainsAligned should have at least 64-byte alignment due to CacheAligned field
     assert_equal(align_of[ContainsAligned](), 64)
@@ -140,7 +140,7 @@ fn test_nested_alignment() raises:
     assert_equal(align_of[OuterSmallAlign](), 64)
 
 
-fn test_heap_allocation_alignment() raises:
+def test_heap_allocation_alignment() raises:
     """Test that heap-allocated aligned structs are actually aligned at runtime.
 
     The `alloc[T]()` function uses `align_of[T]()` as the default alignment,
@@ -164,7 +164,7 @@ fn test_heap_allocation_alignment() raises:
     page_ptr.free()
 
 
-fn test_stack_allocation_alignment() raises:
+def test_stack_allocation_alignment() raises:
     """Test that stack-allocated aligned structs respect @align.
 
     The compiler propagates alignment from @align(N) decorator to the LLVM
@@ -189,7 +189,7 @@ fn test_stack_allocation_alignment() raises:
     )
 
 
-fn test_generic_alignment() raises:
+def test_generic_alignment() raises:
     """Test that alignment works correctly with generic types."""
     # Different instantiations should all have 128-byte alignment
     assert_equal(align_of[AlignedGeneric[Int8]](), 128)
@@ -197,7 +197,7 @@ fn test_generic_alignment() raises:
     assert_equal(align_of[AlignedGeneric[SIMD[DType.float32, 4]]](), 128)
 
 
-fn test_generic_stack_allocation() raises:
+def test_generic_stack_allocation() raises:
     """Test that generic aligned structs are properly aligned on stack."""
     # Stack-allocate a generic aligned struct
     var generic_aligned = AlignedGeneric[Int](42)
@@ -211,7 +211,7 @@ fn test_generic_stack_allocation() raises:
     )
 
 
-fn test_array_alignment() raises:
+def test_array_alignment() raises:
     """Test array allocation alignment behavior.
 
     Note: @align(N) affects the alignment of allocations but does NOT pad the
@@ -238,7 +238,7 @@ fn test_array_alignment() raises:
     arr.free()
 
 
-fn test_cross_struct_alignment() raises:
+def test_cross_struct_alignment() raises:
     """Test that alignment works when a struct uses a later-defined aligned struct.
 
     This exercises the code path where we look up alignment from the symbol
@@ -251,7 +251,7 @@ fn test_cross_struct_alignment() raises:
     assert_equal(result, 1, "LaterAlignedStruct should be 256-byte aligned")
 
 
-fn test_inherited_stack_alignment() raises:
+def test_inherited_stack_alignment() raises:
     """Test that stack allocation respects alignment inherited from fields.
 
     This is the key test for MOCO-3165: a struct containing an @align(64) field
@@ -293,7 +293,7 @@ fn test_inherited_stack_alignment() raises:
     )
 
 
-fn test_field_offset_alignment() raises:
+def test_field_offset_alignment() raises:
     """Test that fields within a struct are at correct offsets (MOCO-3167).
 
     When a struct has a field with @align(N), that field should be placed at
@@ -321,7 +321,7 @@ fn test_field_offset_alignment() raises:
     assert_equal(container.inner.x, 42, "inner.x field should have value 42")
 
 
-fn test_struct_replace_with_alignment() raises:
+def test_struct_replace_with_alignment() raises:
     """Test that StructReplace works correctly with padding (MOCO-3167).
 
     This exercises the ConvertKGENStructReplace pattern which must use
@@ -350,7 +350,7 @@ fn test_struct_replace_with_alignment() raises:
     assert_equal(container.other, 123, "other field should still be 123")
 
 
-fn _helper_with_const_default(
+def _helper_with_const_default(
     val: ContainsAlignedTrivialSecond = ContainsAlignedTrivialSecond(
         42, AlignedTrivial(99)
     )
@@ -363,7 +363,7 @@ fn _helper_with_const_default(
     return val
 
 
-fn test_compile_time_struct_constant() raises:
+def test_compile_time_struct_constant() raises:
     """Test that compile-time struct constants work with alignment padding.
 
     This exercises convertParameterToLLVM which handles StructAttr lowering.
@@ -400,12 +400,12 @@ struct ContainsOptionalAligned:
     var other: Int
     var opt: Optional[AlignedTrivial]
 
-    fn __init__(out self, other: Int, opt: Optional[AlignedTrivial]):
+    def __init__(out self, other: Int, opt: Optional[AlignedTrivial]):
         self.other = other
         self.opt = opt
 
 
-fn test_optional_alignment() raises:
+def test_optional_alignment() raises:
     """Test that Optional[T] where T has @align(N) is properly aligned.
 
     This exercises UnionType::getTypeAlign which must return the max alignment
@@ -446,5 +446,5 @@ fn test_optional_alignment() raises:
         )
 
 
-fn main() raises:
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

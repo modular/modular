@@ -22,5 +22,5 @@
 
 
 @export
-fn foo():
+def foo():
     pass

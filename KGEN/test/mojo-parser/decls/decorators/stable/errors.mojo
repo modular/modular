@@ -19,7 +19,7 @@ struct StableWithArg:
 
 
 # Error: @stable on local variable is not supported.
-fn test_local_var():
+def test_local_var():
     # expected-error @+2 {{'var' statement in function body does not allow decorators}}
     @stable
     var x = 1
@@ -36,7 +36,7 @@ alias MY_STABLE_ALIAS = 42
 @stable
 struct StableStruct:
     @stable
-    fn stable_method_in_stable(self):
+    def stable_method_in_stable(self):
         pass
 
 
@@ -44,7 +44,7 @@ struct StableStruct:
 @stable
 trait StableTrait:
     @stable
-    fn stable_method_in_stable_trait(self): ...
+    def stable_method_in_stable_trait(self): ...
 
 
 # Verify that @stable members in non-opted-in package types are allowed.
@@ -52,13 +52,13 @@ trait StableTrait:
 # by default, and @stable members should be allowed.
 struct StructInNonOptedInPackage:
     @stable
-    fn stable_method(self):
+    def stable_method(self):
         pass
 
 
 trait TraitInNonOptedInPackage:
     @stable
-    fn stable_method(self): ...
+    def stable_method(self): ...
 
 
 # Error: Decorators are not allowed on import statements.

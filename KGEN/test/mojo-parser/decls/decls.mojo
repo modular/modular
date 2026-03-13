@@ -9,64 +9,64 @@
 from std.builtin.stubs import _get_kgen_string
 
 ##===----------------------------------------------------------------------===##
-# fn/def
+# def/def
 ##===----------------------------------------------------------------------===##
 
 
 # Method overloading.
 # CHECK-LABEL: lit.fn @"testThing({{.*}}Int)"
-fn testThing(a: Int) -> FloatDyn:
+def testThing(a: Int) -> FloatDyn:
     return 1.0
 
 
 # CHECK-LABEL: lit.fn @"testThing({{.*}}Int,{{.*}}Int)"
-fn testThing(a: Int, b: Int) -> Int:
+def testThing(a: Int, b: Int) -> Int:
     return 1
 
 
-fn implicit_variable_decls(a: Int) -> Int:
+def implicit_variable_decls(a: Int) -> Int:
     b = a + a
     return b
 
 
-comptime IntToFloat32Type = fn (:Int) -> FloatDyn
+comptime IntToFloat32Type = def (:Int) -> FloatDyn
 
 
-fn takeIntToFloat32Param[f: IntToFloat32Type]():
+def takeIntToFloat32Param[f: IntToFloat32Type]():
     pass
 
 
-fn varargOverload(a: Int):
+def varargOverload(a: Int):
     pass
 
 
-fn varargOverload(*a: Int):
+def varargOverload(*a: Int):
     pass
 
 
-fn varargOverload():
+def varargOverload():
     pass
 
 
-fn packOverload(a: Int):
+def packOverload(a: Int):
     pass
 
 
-fn packOverload[*Ts: AnyType](*a: *Ts):
+def packOverload[*Ts: AnyType](*a: *Ts):
     pass
 
 
-fn packOverload():
+def packOverload():
     pass
 
 
-fn directly_pass_pack(pack: __mlir_type.`!kgen.pack<[index]>`):
+def directly_pass_pack(pack: __mlir_type.`!kgen.pack<[index]>`):
     pass
 
 
 # Varargs + traits are a thing.
 # https://github.com/modular/mojo/issues/1443
-fn variadic_trait_elt[T: ImplicitlyCopyable](*xs: T):
+def variadic_trait_elt[T: ImplicitlyCopyable](*xs: T):
     pass
 
 
@@ -75,12 +75,12 @@ fn variadic_trait_elt[T: ImplicitlyCopyable](*xs: T):
 
 # CHECK-SAME: %rest: !lit.ref<!lit.struct<#VariadicPack <:!Bool {:i1 0}, :origin<0> *"rest`1",
 # CHECK-SAME: :!lit.anytrait<!AnyType> !ImplicitlyCopyable, :variadic<!ImplicitlyCopyable> Ts>>, imm *"rest`2"> read_mem|pack_vararg)
-fn trait_pack[T: ImplicitlyCopyable, *Ts: ImplicitlyCopyable](first: T, *rest: *Ts):
+def trait_pack[T: ImplicitlyCopyable, *Ts: ImplicitlyCopyable](first: T, *rest: *Ts):
     pass
 
 
 # CHECK-LABEL: lit.fn @"callOverload
-fn callOverload(a: Int, pack: __mlir_type.`!kgen.pack<[index]>`):
+def callOverload(a: Int, pack: __mlir_type.`!kgen.pack<[index]>`):
     # CHECK: lit.call {{.*}}@"testThing({{.*}}Int)"(%a)
     _ = testThing(a)
     # CHECK: lit.call {{.*}}@"testThing({{.*}}Int,{{.*}}Int)"(%a, %a)
@@ -130,27 +130,27 @@ struct MyInt(TrivialRegisterPassable):
     @implicit
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, _a: Int):
+    def __init__(out self, _a: Int):
         self.value = _a
 
-fn paramOverload[*x: Int]():
+def paramOverload[*x: Int]():
     pass
 
 
-fn paramOverload(y: Int):
+def paramOverload(y: Int):
     pass
 
 
-fn paramOverload[x: Int, T: TrivialRegisterPassable](y: T):
+def paramOverload[x: Int, T: TrivialRegisterPassable](y: T):
     pass
 
 
-fn paramOverload[*x: Int](y: Int):
+def paramOverload[*x: Int](y: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"callParametricOverload
-fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
+def callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     # CHECK-NEXT: lit.call {{.*}}@"paramOverload[{{.*}}Int]()"
     paramOverload[a]()
 
@@ -164,20 +164,20 @@ fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     paramOverload[a, b](x)
 
 struct VariadicStruct[*Ts: TrivialRegisterPassable]:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @staticmethod
-    fn param_func[i: Int]():
+    def param_func[i: Int]():
         pass
 
 
-fn take_variadic_struct[*Ts: TrivialRegisterPassable](a: VariadicStruct[*Ts]):
+def take_variadic_struct[*Ts: TrivialRegisterPassable](a: VariadicStruct[*Ts]):
     pass
 
 
 # CHECK-LABEL: lit.fn @"variadic_params()"
-fn variadic_params():
+def variadic_params():
     # CHECK-NEXT: call {{.*}}param_func[{{.*}}Int]()"<:variadic<!TrivialRegisterPassable> [!Int, !FloatDyn], :!Int {4}>
     VariadicStruct[Int, FloatDyn].param_func[4]()
     # CHECK: call {{.*}}take_variadic_struct{{.*}}<:variadic<!TrivialRegisterPassable> [!Int, !FloatDyn]>>
@@ -186,30 +186,30 @@ fn variadic_params():
 
 # Test that pointers don't get confused with by-ref arguments.
 # CHECK-LABEL: lit.fn @"testPointerArgs{{.*}}(%ptr: !kgen.pointer<si32>) -> si32
-fn testPointerArgs(ptr: __mlir_type.`!kgen.pointer<si32>`) -> __mlir_type.si32:
+def testPointerArgs(ptr: __mlir_type.`!kgen.pointer<si32>`) -> __mlir_type.si32:
     # CHECK-NEXT: %0 = pop.load %ptr : !kgen.pointer<si32>
     return __mlir_op.`pop.load`[_type = __mlir_type.si32](ptr)
 
 
 @always_inline("nodebug")
-fn returnParameter[a: __mlir_type.index]() -> __mlir_type.index:
+def returnParameter[a: __mlir_type.index]() -> __mlir_type.index:
     return a
 
 
 # CHECK-LABEL: lit.fn @"callReturnParam
-fn callReturnParam() -> __mlir_type.index:
+def callReturnParam() -> __mlir_type.index:
     # CHECK-NEXT: %0 = lit.call {{.*}}@"returnParameter[index]()"<3>()
     # CHECK-NEXT: return %0
     return returnParameter[Int(3)._mlir_value]()
 
 
-fn paramRefFunc[T: TrivialRegisterPassable](x: T):
+def paramRefFunc[T: TrivialRegisterPassable](x: T):
     pass
 
 
 # CHECK-LABEL: lit.fn @"orvalueInferType()"
-fn orvalueInferType():
-    fn func(x: __mlir_type.index) -> __mlir_type.index:
+def orvalueInferType():
+    def func(x: __mlir_type.index) -> __mlir_type.index:
         return x
 
     # CHECK: call {{.*}}paramRefFunc{{.*}}<:!TrivialRegisterPassable{{.*}}!lit.generator<("x": index) -> index>>
@@ -221,19 +221,19 @@ fn orvalueInferType():
 # https://github.com/modular/mojo/issues/1152
 # Allow mutable self argument when overloading operators using dunder methods
 struct MutatingAdd:
-    fn __add__(mut self, x: MutatingAdd):
+    def __add__(mut self, x: MutatingAdd):
         pass
 
 
 # CHECK-LABEL: lit.fn @"testMutatingAdd
-fn testMutatingAdd(var a: MutatingAdd, b: MutatingAdd):
+def testMutatingAdd(var a: MutatingAdd, b: MutatingAdd):
     # CHECK-NEXT: lit.call {{.*}}__add__{{.*}}(%a, %b)
     a + b
 
 
 # CHECK-LABEL: lit.fn @"testContextSensitiveKeyword
 # CHECK-SAME: (%out2: !Int) -> !Int
-fn testContextSensitiveKeyword(out x: Int, out2: Int):
+def testContextSensitiveKeyword(out x: Int, out2: Int):
     # Check that we handle the result slot correctly.
 
     # CHECK-NEXT: %x = lit.var.decl "x"
@@ -254,7 +254,7 @@ fn testContextSensitiveKeyword(out x: Int, out2: Int):
 # CHECK-LABEL: lit.fn @"ownedConventionMem
 # CHECK-SAME: (%a: !lit.ref<!StructWithInit, mut {{.*}}> owned_in_mem,
 # CHECK-SAME:  %b: !lit.ref<!StructWithInit, imm {{.*}}> read_mem)
-fn ownedConventionMem(var a: StructWithInit, b: StructWithInit):
+def ownedConventionMem(var a: StructWithInit, b: StructWithInit):
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
     # CHECK: %1 = lit.ref.load [[AX]]
     _ = a.x+1
@@ -282,7 +282,7 @@ struct RPStructWithInitTrivial(TrivialRegisterPassable):
 # CHECK-SAME: (%a: !lit.ref<!RPStructWithInit, mut *"a`"> owned_in_mem,
 # CHECK-SAME:  %b: !lit.ref<!RPStructWithInit, imm *"b`1"> read_mem,
 # CHECK-SAME:  %triv: !RPStructWithInitTrivial)
-fn ownedConventionReg(
+def ownedConventionReg(
     var a: RPStructWithInit,
     b: RPStructWithInit,
     triv: RPStructWithInitTrivial,
@@ -301,16 +301,16 @@ fn ownedConventionReg(
 
 
 struct BorrowStruct:
-    fn testMethod(self):
+    def testMethod(self):
         pass
 
-    fn borrowedVarArgs(self, *x: BorrowStruct):
+    def borrowedVarArgs(self, *x: BorrowStruct):
         pass
 
 
 # CHECK-LABEL: callerFn
 # CHECK-SAME: (%arg0: !lit.ref<{{.*}}> read_mem)
-fn callerFn(arg0: BorrowStruct):
+def callerFn(arg0: BorrowStruct):
     # CHECK-NEXT: lit.call {{.*}}testMethod{{.*}}(%arg0)
     arg0.testMethod()
 
@@ -325,14 +325,14 @@ fn callerFn(arg0: BorrowStruct):
 
 
 struct SomeResultType:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
 # CHECK-LABEL: lit.fn @"named_result
 # CHECK-SAME: %out: !lit.ref<!SomeResultType, {{.*}}> byref_result
 # CHECK-SAME: namedResult = "out"
-fn named_result(out out: SomeResultType):
+def named_result(out out: SomeResultType):
     # CHECK-NEXT: call {{.*}}SomeResultType::@"__init__{{.*}}(%out)
     out = SomeResultType()
     # CHECK: lit.return %none
@@ -341,7 +341,7 @@ fn named_result(out out: SomeResultType):
 
 
 # CHECK-LABEL: lit.fn @"named_result_return_expr
-fn named_result_return_expr(out out: SomeResultType):
+def named_result_return_expr(out out: SomeResultType):
     # CHECK-NEXT: call {{.*}}SomeResultType::@"__init__{{.*}}(%out)
     return SomeResultType()
 
@@ -353,12 +353,12 @@ fn named_result_return_expr(out out: SomeResultType):
 
 # CHECK-LABEL: lit.fn @"defaultArgument
 # CHECK-SAME: %c: !Int = {5})
-fn defaultArgument(a: Int, b: Int = 3, c: Int = 5) -> Int:
+def defaultArgument(a: Int, b: Int = 3, c: Int = 5) -> Int:
     return a + b
 
 
 # CHECK-LABEL: lit.fn @"callDefaultArgument
-fn callDefaultArgument(x: Int) -> Int:
+def callDefaultArgument(x: Int) -> Int:
     # CHECK: [[ARG1:%.*]] = kgen.param.constant{{.*}}3
     # CHECK-NEXT: [[ARG2:%.*]] = kgen.param.constant{{.*}}5
     # CHECK-NEXT: lit.call {{.*}}defaultArgument{{.*}}(%x, [[ARG1]], [[ARG2]])
@@ -374,7 +374,7 @@ fn callDefaultArgument(x: Int) -> Int:
 
 # CHECK-LABEL: lit.fn @"defaultArgumentReferencesParameter
 # CHECK-SAME: (%a: !Int = {{.*}}{_mlir_value = add(#lit.struct.extract<:!Int p, "_mlir_value">, 87)}
-fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
+def defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
     return a
 
 
@@ -382,17 +382,17 @@ struct MemoryType:
     var value: Int
 
     @implicit
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.value = value
 
     # MOCO-1445: throwing implicit conversions.
     @implicit
-    fn __init__(out self, value: String) raises:
+    def __init__(out self, value: String) raises:
         self.value = 4
 
     # Default arguments and variadics.
     @implicit
-    fn __init__(
+    def __init__(
         out self, value: SomeResultType, stuff: Int = 4, *other: String
     ):
         self.value = 4
@@ -400,12 +400,12 @@ struct MemoryType:
 
 # CHECK-LABEL: lit.fn @"defaultArgumentNonRegisterType
 # CHECK-SAME: read_mem = apply_result_slot({{.*}}__init__
-fn defaultArgumentNonRegisterType(a: MemoryType = 1):
+def defaultArgumentNonRegisterType(a: MemoryType = 1):
     pass
 
 
 # CHECK-LABEL: lit.fn @"callNonRegisterDefaultArg
-fn callNonRegisterDefaultArg():
+def callNonRegisterDefaultArg():
     # CHECK: %[[ANON:.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!MemoryType, mut *"anonymous*`">
     # CHECK: %[[VALUE:.*]] = kgen.param.materialize: !MemoryType = <apply_result_slot({{.*}}1}
     # CHECK: lit.ref.store %[[VALUE]], %[[ANON]]
@@ -418,7 +418,7 @@ fn callNonRegisterDefaultArg():
 
 
 # CHECK: lit.fn @"referencesDefaultArgumentFunction
-fn referencesDefaultArgumentFunction():
+def referencesDefaultArgumentFunction():
     # CHECK: %f = lit.var.decl "f"
     # CHECK: lit.ref.store %0, %f
     var f = defaultArgument
@@ -428,33 +428,33 @@ fn referencesDefaultArgumentFunction():
 struct Outer[X: Int]:
     # CHECK: lit.fn @"nested
     # CHECK-SAME: %x: !Int = X)
-    fn nested(self, x: Int = Self.X):
+    def nested(self, x: Int = Self.X):
         pass
 
 
 # CHECK-LABEL: lit.fn @"variadics({{.*}}Int*)"{{.*}}(%a: !kgen.variadic<!lit.ref<!Int, {{.*}}>> read_mem|pos_vararg)
-fn variadics(*a: Int):
+def variadics(*a: Int):
     # CHECK: lit.call {{.*}}VariadicList{{.*}}__init__
     pass
 
 
-fn parameterizedVariadic[T: TrivialRegisterPassable](*args: T):
+def parameterizedVariadic[T: TrivialRegisterPassable](*args: T):
     pass
 
 
 struct ParameterizedStruct[T: TrivialRegisterPassable]:
     @implicit
-    fn __init__(out self, *args: Self.T):
+    def __init__(out self, *args: Self.T):
         pass
 
 
 struct VarArgsParameterizedStruct[*Is: Int]:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
 # CHECK-LABEL: lit.fn @"callVariadic{{.*}}"<p: !Int>
-fn callVariadic[p: Int](x: Int):
+def callVariadic[p: Int](x: Int):
     # CHECK: %variadic = kgen.param.constant: variadic<!lit.ref<!Int, {{.*}}>> = <[]>
     # CHECK: lit.call {{.*}}@"variadics({{.*}}Int*)"{{.*}}(%variadic)
     variadics()
@@ -491,12 +491,12 @@ struct MemStruct:
     comptime t = 5
 
 
-fn variadic_mem_only(*values: MemStruct) -> Int:
+def variadic_mem_only(*values: MemStruct) -> Int:
     return 0
 
 
 # CHECK-LABEL: lit.fn @"test_variadic_mem_only{{.*}}"<x: !MemStruct, y: !MemStruct>
-fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
+def test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
     # CHECK-SAME: :!lit.generator<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, imm #lit.comptime.origin>> read_mem|pos_vararg) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
     # CHECK-SAME: [store_to_mem(x), store_to_mem(y)]
@@ -524,7 +524,7 @@ def defCanAlsoRaise() raises Int -> Int:
 
 
 # CHECK-LABEL: lit.fn @"fnThatRaises()"{{.*}} throws -> i1
-fn fnThatRaises() raises -> Int:
+def fnThatRaises() raises -> Int:
     # CHECK: [[RESULT:%.*]] = kgen{{.*}}{0}
     # CHECK-NEXT: lit.ref.store [[RESULT]], %__result__
     # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
@@ -533,7 +533,7 @@ fn fnThatRaises() raises -> Int:
 
 
 # CHECK-LABEL: lit.fn @"raisesReturnsNone()"{{.*}} throws -> i1
-fn raisesReturnsNone() raises:
+def raisesReturnsNone() raises:
     # CHECK-NEXT: %none = kgen.param.constant: none
     # CHECK-NEXT: lit.ref.store %none, %__result__
     # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
@@ -544,7 +544,7 @@ fn raisesReturnsNone() raises:
 
 # COM: We can return an variant of error and index in a non-throwing function.
 # CHECK-LABEL: lit.fn @"raisesReturnsVariant()"() -> !kgen.variant<!Error, index>
-fn raisesReturnsVariant() -> __mlir_type[`!kgen.variant<`, Error, `, index>`]:
+def raisesReturnsVariant() -> __mlir_type[`!kgen.variant<`, Error, `, index>`]:
     return __mlir_op.`kgen.variant.create`[
         _type = __mlir_type[`!kgen.variant<`, Error, `, index>`],
         index = Int(1)._mlir_value,
@@ -552,7 +552,7 @@ fn raisesReturnsVariant() -> __mlir_type[`!kgen.variant<`, Error, `, index>`]:
 
 
 # CHECK-LABEL: lit.fn @"raise_and_return{{.*}} throws -> i1
-fn raise_and_return(a: Error) raises -> Error:
+def raise_and_return(a: Error) raises -> Error:
     # COM: True result indicates an error.
     # CHECK: [[ERR:%.*]] = lit.call {{.*}}Error::@"__init__{{.*}}(%__result__)
     # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
@@ -562,27 +562,27 @@ fn raise_and_return(a: Error) raises -> Error:
 
 @fieldwise_init
 struct RaisingGetterSetter(TrivialRegisterPassable):
-    fn __getitem__(self, i: Int) raises -> FloatDyn:
+    def __getitem__(self, i: Int) raises -> FloatDyn:
         return 1.0
 
-    fn __setitem__(mut self, i: Int, v: FloatDyn) raises:
+    def __setitem__(mut self, i: Int, v: FloatDyn) raises:
         pass
 
 
-fn test_raising_computed_getter() raises:
+def test_raising_computed_getter() raises:
     var a = RaisingGetterSetter()[2]
 
 # CHECK-LABEL: lit.fn @"test_typed_raises_fn1
 # CHECK-SAME: %__error__: !lit.ref<!Int, mut *"__error__`"> byref_error
 # CHECK-SAME: ) throws -> i1
-fn test_typed_raises_fn1() raises Int -> String:
+def test_typed_raises_fn1() raises Int -> String:
     pass
 
-fn test_typed_raises_fn2() raises (Int) -> String:
+def test_typed_raises_fn2() raises (Int) -> String:
     pass
 
 # CHECK-LABEL: lit.fn @"test_typed_raises_fn3
-fn test_typed_raises_fn3() raises Float32:
+def test_typed_raises_fn3() raises Float32:
     # This tests calling a function that raises Int in context that requires
     # raising Float32.  We need a temporary for the implicit conversion.
 
@@ -600,7 +600,7 @@ fn test_typed_raises_fn3() raises Float32:
     _ = test_typed_raises_fn2()
 
 # CHECK-LABEL: lit.fn @"test_typed_raises_fn4
-fn test_typed_raises_fn4() raises Float32:
+def test_typed_raises_fn4() raises Float32:
     # CHECK: %anonymous2A = lit.var.decl
     # CHECK-NEXT: %__call_error_tmp__ = lit.var.decl
     # CHECK-NEXT: lit.try %__call_error_tmp__
@@ -613,7 +613,7 @@ fn test_typed_raises_fn4() raises Float32:
     _ = str.__len__()
 
 # CHECK-LABEL: lit.fn @"test_typed_raises_fn5
-fn test_typed_raises_fn5() raises Float32:
+def test_typed_raises_fn5() raises Float32:
 
     # Make sure to emit ValueDest outside the try block.
     # CHECK: %anonymous2A = lit.var.decl
@@ -621,12 +621,12 @@ fn test_typed_raises_fn5() raises Float32:
     # CHECK-NEXT: lit.try
     _ = test_typed_raises_fn2().__len__()
 
-fn test_typed_raises_fn3(x: String) raises Int -> ref [x] String:
+def test_typed_raises_fn3(x: String) raises Int -> ref [x] String:
     return x
 
 
 # CHECK-LABEL: lit.fn @"test_typed_raises_fn6
-fn test_typed_raises_fn6(x: String) raises Float32:
+def test_typed_raises_fn6(x: String) raises Float32:
 
     # Make sure to emit ValueDest outside the try block.
     # CHECK: %__ref_result_tmp__ = lit.var.decl
@@ -635,15 +635,15 @@ fn test_typed_raises_fn6(x: String) raises Float32:
     _ = test_typed_raises_fn3(x).__len__()
 
 # https://github.com/modular/modular/issues/5845
-fn callee_7(x: String) raises Int -> Pointer[String, origin_of(x)]:
+def callee_7(x: String) raises Int -> Pointer[String, origin_of(x)]:
     raise 4
 
-fn test_typed_raises_fn7() raises Float32:
+def test_typed_raises_fn7() raises Float32:
     var str: String
     var tmp = callee_7(str)
 
 # CHECK-LABEL: lit.fn @"call_test_typed_raises_fn
-fn call_test_typed_raises_fn() raises Int:
+def call_test_typed_raises_fn() raises Int:
     # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
     # CHECK-NEXT: lit.call {{.*}}@"test_typed_raises_fn1{{.*}}(%__error__, %__call_result_tmp__)
     _ = test_typed_raises_fn1()
@@ -658,21 +658,21 @@ fn call_test_typed_raises_fn() raises Int:
 def test_typed_raises_fn8() raises Int -> String:
     pass
 
-fn parametric_raise_example[ErrorType: AnyType](fp: fn () raises ErrorType) raises ErrorType:
+def parametric_raise_example[ErrorType: AnyType](fp: def () raises ErrorType) raises ErrorType:
     fp()
 
 # Test that parametric types raise the correct concrete error type.
 # CHECK-LABEL: lit.fn @"call_parametric_raise_example
-fn call_parametric_raise_example[GenTy: AnyType](func_ptr: fn () raises GenTy):
+def call_parametric_raise_example[GenTy: AnyType](func_ptr: def () raises GenTy):
     # CHECK:  lit.var.decl "err_int" var : !lit.ref<!Int,
-    fn raise_int() raises Int: pass
+    def raise_int() raises Int: pass
     try:
         parametric_raise_example(raise_int)
     except err_int:
         ref x: Int = err_int # Test no error.
 
     # CHECK: lit.var.decl "err_string" var : !lit.ref<!String,
-    fn raise_string() raises String: pass
+    def raise_string() raises String: pass
     try:
       parametric_raise_example(raise_string)
     except err_string:
@@ -686,17 +686,17 @@ fn call_parametric_raise_example[GenTy: AnyType](func_ptr: fn () raises GenTy):
 
     # These are not in a try block.
 
-    fn raise_never() raises Never: pass
+    def raise_never() raises Never: pass
     parametric_raise_example(raise_never)
 
-    fn doesnt_raise(): pass
+    def doesnt_raise(): pass
     parametric_raise_example(doesnt_raise)
 
 
 struct CutDownDict[V: Copyable]:
     # Throws an error that converts to Error. We don't care what it is, so long
     # as it isn't Error specifically.
-    fn __getitem__(ref self) raises StringLiteral["foo".value] -> ref [self] Self.V:
+    def __getitem__(ref self) raises StringLiteral["foo".value] -> ref [self] Self.V:
         pass
 
 def test_cut_down_dict() raises:
@@ -705,10 +705,10 @@ def test_cut_down_dict() raises:
     ptr[] = 17 # should be mutable.
 
 # MOCO-2997: Remapping of implicit origins into typed errors.
-fn callee(a: String) raises Pointer[String, origin_of(a)]:
+def callee(a: String) raises Pointer[String, origin_of(a)]:
     raise Pointer(to=a)
 
-fn caller(a: String) raises Pointer[String, origin_of(a)]:
+def caller(a: String) raises Pointer[String, origin_of(a)]:
     callee(a)
 
 ##===----------------------------------------------------------------------===##
@@ -716,26 +716,26 @@ fn caller(a: String) raises Pointer[String, origin_of(a)]:
 ##===----------------------------------------------------------------------===##
 
 # CHECK: lit.fn @"int_abs[[INT_ABS_NONNEG:[^"]+]]"
-fn int_abs[x: Int]() -> Int
+def int_abs[x: Int]() -> Int
     where x > -1:
     return x
 
 # CHECK: lit.fn @"int_abs[[INT_ABS_NEG:[^"]+]]"
-fn int_abs[x: Int]() -> Int
+def int_abs[x: Int]() -> Int
     where x < 0:
     return 0 - x
 
 # CHECK: lit.fn @"int_abs_param[[INT_ABS_PARAM_NONNEG:[^"]+]]"
-fn int_abs_param[x: Int where x > -1]() -> Int:
+def int_abs_param[x: Int where x > -1]() -> Int:
     return x
 
 # CHECK: lit.fn @"int_abs_param[[INT_ABS_PARAM_NEG:[^"]+]]"
-fn int_abs_param[x: Int where x < 0]() -> Int:
+def int_abs_param[x: Int where x < 0]() -> Int:
     return 0 - x
 
 
 # CHECK: lit.fn @"constraint_overloading
-fn constraint_overloading():
+def constraint_overloading():
     # CHECK: lit.call {{.*}}@"int_abs[[INT_ABS_NONNEG]]"
     _ = int_abs[1]()
     # CHECK: lit.call {{.*}}@"int_abs[[INT_ABS_NEG]]"
@@ -750,7 +750,7 @@ fn constraint_overloading():
 ##===----------------------------------------------------------------------===##
 
 
-fn forward_ref(x: EmptyStruct):
+def forward_ref(x: EmptyStruct):
     pass
 
 
@@ -773,7 +773,7 @@ struct StructWithInit:
     # CHECK: lit.fn @"__init__({{.*}}Int)"
     # CHECK-SAME: %self: !lit.ref<!StructWithInit, mut {{.*}}> byref_result)
     @implicit
-    fn __init__(out self, a: Int):
+    def __init__(out self, a: Int):
         # CHECK: %0 = lit.ref.struct.ger %self[x]
         # CHECK: lit.ref.store %a, %0
         self.x = a
@@ -789,7 +789,7 @@ struct StructWithInit:
     # Not very useful, but this form also works, so test it.
     # CHECK: lit.fn @"__init__
     # CHECK-SAME: %self: !lit.ref<!StructWithInit, mut {{.*}}> byref_result)
-    fn __init__(out self, a: Int, b: Int):
+    def __init__(out self, a: Int, b: Int):
         # CHECK: hlcf.elif
         if a == b:
             # CHECK:  lit.call {{.*}}__init__{{.*}}(%a, %self)
@@ -802,21 +802,21 @@ struct StructWithInit:
             self.x = a
             self.y = b
 
-    fn __init__(out self):
+    def __init__(out self):
         self = Self(0)
 
 
 # CHECK-LABEL: lit.struct.decl @StructExample
 struct StructExample(ImplicitlyCopyable, RegisterPassable):
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     # CHECK: lit.fn @"maybe_static({{.*}}Int)"(%x: !Int) {{.*}}isStatic
     @staticmethod
-    fn maybe_static(x: Int):
+    def maybe_static(x: Int):
         # CHECK: %0 = {{.*}}{4}
         # CHECK: lit.call {{.*}}@StructExample::@"maybe_static{{.*}}"(%0)
         StructExample.maybe_static(4)
@@ -824,19 +824,19 @@ struct StructExample(ImplicitlyCopyable, RegisterPassable):
 
     # This isn't static.
     # CHECK: lit.fn @"maybe_static
-    fn maybe_static(self, x: EmptyStruct):
+    def maybe_static(self, x: EmptyStruct):
         # CHECK: %0 = {{.*}}{4}
         # CHECK: lit.call {{.*}}@StructExample::@"maybe_static{{.*}}"(%0)
         StructExample.maybe_static(4)
         pass
 
     # CHECK: lit.fn @"mutatingMethod{{.*}}(%self: !lit.ref<!StructExample, mut {{.*}}> mut) -> !kgen.none
-    fn mutatingMethod(mut self):
+    def mutatingMethod(mut self):
         pass
 
 
 # CHECK-LABEL: lit.fn @"callMaybeStatic
-fn callMaybeStatic(a: Int, b: EmptyStruct):
+def callMaybeStatic(a: Int, b: EmptyStruct):
     # CHECK-NEXT: lit.call {{.*}}@StructExample::@"maybe_static{{.*}}(%a)
     StructExample.maybe_static(a)
 
@@ -861,32 +861,32 @@ fn callMaybeStatic(a: Int, b: EmptyStruct):
 
 # CHECK-LABEL: lit.fn @"initializersAsFunctions
 # See that we can take the address of initializers without a thunk.
-fn initializersAsFunctions():
+def initializersAsFunctions():
     # Register passable trivial.
-    # CHECK-NEXT: %fn_ptr1 = lit.var.decl
+    # CHECK-NEXT: %def_ptr1 = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::Int)")]()
-    # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr1
-    var fn_ptr1: fn (:Int) -> MyInt = MyInt.__init__
+    # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr1
+    var def_ptr1: def (:Int) -> MyInt = MyInt.__init__
 
     # Register passable non-trivial.
 
-    # CHECK-NEXT: %fn_ptr2 = lit.var.decl "fn_ptr2"
+    # CHECK-NEXT: %def_ptr2 = lit.var.decl "def_ptr2"
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.generator<() -> !StructExample>: @decls::@StructExample::@"__init__()"]()
-    # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr2
-    var fn_ptr2: fn () -> StructExample = StructExample.__init__
+    # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr2
+    var def_ptr2: def () -> StructExample = StructExample.__init__
 
-    # CHECK-NEXT: %fn_ptr4 = lit.var.decl "fn_ptr4"
+    # CHECK-NEXT: %def_ptr4 = lit.var.decl "def_ptr4"
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure{{.*}}@StructExample::@"__init__(copy:{{.*}}"]()
-    # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr4
-    var fn_ptr4: fn (
+    # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr4
+    var def_ptr4: def (
         *, copy: StructExample
     ) -> StructExample = StructExample.__init__
 
     # Memory
-    # CHECK-NEXT: %fn_ptr5 = lit.var.decl
+    # CHECK-NEXT: %def_ptr5 = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(::Int)")
-    # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr5
-    var fn_ptr5: fn (Int) -> StructWithInit = StructWithInit.__init__
+    # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr5
+    var def_ptr5: def (Int) -> StructWithInit = StructWithInit.__init__
 
 
 # CHECK-LABEL: lit.struct.decl @DelegatingInitMem
@@ -896,29 +896,29 @@ struct DelegatingInitMem:
 
     # CHECK: lit.fn @"__init__{{.*}}({{.*}}%self
     @implicit
-    fn __init__(out self, value: Bool):
+    def __init__(out self, value: Bool):
         # CHECK: lit.call {{.*}}__init__{{.*}}(%0, %self)
         self = Self(42)
 
     @implicit
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.value = value
 
 
 # External issue #260
-fn nameOutsideStruct(x: Int, y: Int):
+def nameOutsideStruct(x: Int, y: Int):
     pass
 
 
 struct ShadowsOuterName:
-    fn nameOutsideStruct(self):
+    def nameOutsideStruct(self):
         nameOutsideStruct(1, 2)
 
 
 struct LegacyInOutInit:
     # This should be accepted for compatibility, but "out" is the preferred
     # spelling.
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 ##===----------------------------------------------------------------------===##
@@ -930,16 +930,16 @@ struct Container[T: AnyType](TrivialRegisterPassable):
     comptime _mlir_type = __mlir_type[`!kgen.pointer<`, Self.T, `>`]
     var address: Self._mlir_type
 
-    fn __init__(out self):
+    def __init__(out self):
         self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
 
 
-async fn load(server_ptr: Container[__mlir_type.index]):
+async def load(server_ptr: Container[__mlir_type.index]):
     pass
 
 
 # CHECK-LABEL: lit.fn @"awaitSomething()"
-async fn awaitSomething():
+async def awaitSomething():
     var ptr = Container[__mlir_type.index]()
     # CHECK: [[CORO:%.*]] = lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}], :origin.set {}>(%{{.*}}) :
     # CHECK-SAME: !lit.generator<("handle": !alias_AnyCoroutine1) -> !lit.struct<#Coroutine <:!AnyType
@@ -948,7 +948,7 @@ async fn awaitSomething():
 
 # CHECK-LABEL: lit.fn @"coroutine
 # CHECK-SAME: [mut [[LT:.*]]](?, %__result__: !lit.ref<!Int, mut [[LT]]> byref_result) async -> !kgen.none
-async fn coroutine() -> Int:
+async def coroutine() -> Int:
     # CHECK: lit.ref.store %0, %__result__
     # CHECK: lit.return %none
     return 0
@@ -957,7 +957,7 @@ async fn coroutine() -> Int:
 # CHECK-LABEL: lit.struct.decl @StructWithAsync
 struct StructWithAsync:
     # CHECK-LABEL: lit.fn @"do_something{{.*}}({{.*}}) async
-    async fn do_something(self: StructWithAsync):
+    async def do_something(self: StructWithAsync):
         # CHECK-NEXT: [[CORO:%.*]] = lit.async.call[!lit.generator<[1](?, "__result__": !lit.ref<!Int, mut *[0,0]> byref_result) async -> !kgen.none>: @decls::@"coroutine()"][imm {}]()
         # CHECK-NEXT: %1 = kgen.rebind [[CORO]] : !co.routine to !alias_AnyCoroutine1
         # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType !Int, :origin.set {}>(%1)
@@ -966,21 +966,21 @@ struct StructWithAsync:
 
 # CHECK-LABEL: lit.fn @"call_struct_async
 # CHECK-SAME: [imm [[LT:.*]], mut {{.*}}]{{.*}}) async -> !kgen.none
-async fn call_struct_async(f: StructWithAsync):
+async def call_struct_async(f: StructWithAsync):
     # CHECK-NEXT: lit.async.call[!lit.generator<[2]({{.*}}, "__result__":{{.*}}) async -> !kgen.none>: @{{.*}}][imm [[LT]], imm {}](%f)
     _ = f.do_something()
 
 
 struct Awaitable:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __await__(mut self) -> Int:
+    def __await__(mut self) -> Int:
         return 0
 
 
 # CHECK-LABEL: lit.fn @"awaitable()"
-fn awaitable() -> Int:
+def awaitable() -> Int:
     # CHECK: call {{.*}}@Awaitable::@"__await__{{.*}}(%aw)
     var aw = Awaitable()
     return await aw
@@ -988,12 +988,12 @@ fn awaitable() -> Int:
 
 # COM: https://github.com/modular/mojo/issues/951
 @always_inline
-async fn inline_async() -> Int:
+async def inline_async() -> Int:
     return 0
 
 
 # CHECK-LABEL: lit.fn @"use_inline_async()"
-async fn use_inline_async() -> Int:
+async def use_inline_async() -> Int:
     # CHECK: [[ASYNC_RESULT:%.*]] = lit.async.call{{.*}}inline_async
     # CHECK: [[TMP2:%.*]] = kgen.rebind [[ASYNC_RESULT]] : !co.routine to !alias_AnyCoroutine1
     # CHECK: [[TMP:%.*]] = lit.call {{.*}}Coroutine{{.*}}__init__{{.*}}([[TMP2]]) :
@@ -1002,7 +1002,7 @@ async fn use_inline_async() -> Int:
     return await inline_async()
 
 
-async fn capture_byref(mut x: Awaitable, y: Awaitable):
+async def capture_byref(mut x: Awaitable, y: Awaitable):
     pass
 
 
@@ -1011,12 +1011,12 @@ struct LifetimeAccess[origin: __mlir_type.`!lit.origin<1>`](RegisterPassable):
     pass
 
 
-async fn lifetime_access(var x: LifetimeAccess[_]):
+async def lifetime_access(var x: LifetimeAccess[_]):
     pass
 
 
 # CHECK-LABEL: lit.fn @"coroutine_origins
-fn coroutine_origins():
+def coroutine_origins():
     # CHECK: var.decl "x" var : {{.*}}mut [[X_LT:.*]]>
     var x: Awaitable
     # CHECK: var.decl "y" var : {{.*}}mut [[Y_LT:.*]]>
@@ -1035,7 +1035,7 @@ fn coroutine_origins():
 
 
 # CHECK-LABEL: lit.fn @"mem_result{{.*}}(?, %__result__: !lit.ref<!Awaitable, {{.*}}> byref_result) async -> !kgen.none
-async fn mem_result() -> Awaitable:
+async def mem_result() -> Awaitable:
     # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_result()"][imm {}]()
     # CHECK: [[CORO2:%.*]] = kgen.rebind [[CORO]] : !co.routine to !alias_AnyCoroutine1
     # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}([[CORO2]])
@@ -1043,7 +1043,7 @@ async fn mem_result() -> Awaitable:
 
 
 # CHECK-LABEL: lit.fn @"mem_raises{{.*}}(?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!Int, {{.*}}> byref_result) throws|async -> i1
-async fn mem_raises() raises -> Int:
+async def mem_raises() raises -> Int:
     # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_raises()"][imm {}, imm {}]()
     # CHECK: [[CORO2:%.*]] = kgen.rebind [[CORO]] : !co.routine to !alias_AnyCoroutine1
     # CHECK: lit.call {{.*}}@RaisingCoroutine::@"__init__{{.*}}([[CORO2]])
@@ -1051,10 +1051,10 @@ async fn mem_raises() raises -> Int:
 
 
 # CHECK-LABEL: lit.fn @"async_closure_capture
-fn async_closure_capture(x: String):
+def async_closure_capture(x: String):
     @parameter
     # CHECK: lit.fn *"capture_it
-    async fn capture_it():
+    async def capture_it():
         _ = x
 
     # CHECK: lit.async.call[{{.*}}capture_it
@@ -1068,12 +1068,12 @@ fn async_closure_capture(x: String):
 
 
 # CHECK-LABEL: lit.fn @"topLevelFunction()"
-fn topLevelFunction() -> Int:
+def topLevelFunction() -> Int:
     var a = 0
 
     # CHECK: lit.fn *"nestedFunction()"
     @parameter
-    fn nestedFunction() -> Int:
+    def nestedFunction() -> Int:
         # CHECK-NEXT: lit.ref.load %a
         return a
 
@@ -1086,12 +1086,12 @@ fn topLevelFunction() -> Int:
 # CHECK-LABEL: lit.struct.decl @SomeStruct
 struct SomeStruct:
     # CHECK-LABEL: @"someMethod({{.*}})"
-    fn someMethod(self) -> Int:
+    def someMethod(self) -> Int:
         var a = 0
 
         # CHECK: lit.fn *"nestedFunction()"
         @parameter
-        fn nestedFunction() -> Int:
+        def nestedFunction() -> Int:
             # CHECK-NEXT: lit.ref.load %a
             return a
 
@@ -1103,15 +1103,15 @@ struct SomeStruct:
 
 # CHECK-LABEL: lit.fn @"closureParameter[fn() capturing -> index]()"
 # CHECK-SAME: capturing ->
-fn closureParameter[func: fn () capturing -> __mlir_type.index]():
+def closureParameter[func: def () capturing -> __mlir_type.index]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"closureParameterCaptures
 # CHECK-SAME: :*(0,0):
 # CHECK-SAME: func: !lit.generator<:rebind(:!alias_OriginSet1 origins):() capturing -> !kgen.none>
-fn closureParameterCaptures[
-    origins: OriginSet, //, func: fn () capturing [origins] -> None
+def closureParameterCaptures[
+    origins: OriginSet, //, func: def () capturing [origins] -> None
 ]():
     pass
 
@@ -1120,8 +1120,8 @@ struct HasParam[p: Int](TrivialRegisterPassable):
     pass
 
 
-fn closureParameterInference[
-    p: Int, //, f: fn () capturing -> None
+def closureParameterInference[
+    p: Int, //, f: def () capturing -> None
 ](arg: HasParam[p]):
     pass
 
@@ -1132,22 +1132,22 @@ struct HasLifetimeParam[p: Origin[mut=True]](TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.fn @"explicitLifetime
 # CHECK-SAME: #Origin <:!Bool {:i1 1}{{.*}}>> lt>
-fn explicitLifetime[lt: Origin[mut=True], //, arg: HasLifetimeParam[lt]]():
+def explicitLifetime[lt: Origin[mut=True], //, arg: HasLifetimeParam[lt]]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"inaccessibleImplicitLifetimeParam
 # CHECK-SAME: <?, *"arg.p._mlir_origin``": origin<1>,
-fn inaccessibleImplicitLifetimeParam(arg: HasLifetimeParam):
+def inaccessibleImplicitLifetimeParam(arg: HasLifetimeParam):
     pass
 
 
 # CHECK-LABEL: lit.struct.decl @CapturingStruct
 struct CapturingStruct[a: Int]:
     @staticmethod
-    fn takeClosure[
+    def takeClosure[
         origins: OriginSet, //,
-        f: fn () capturing [origins] -> None,
+        f: def () capturing [origins] -> None,
     ]():
         pass
 
@@ -1155,9 +1155,9 @@ struct CapturingStruct[a: Int]:
 # CHECK-LABEL: lit.trait.decl @CapturingTrait
 trait CapturingTrait:
     # CHECK: lit.fn @"takeClosure{{.*}}:*(0,0):
-    fn takeClosure[
+    def takeClosure[
         origins: OriginSet, //,
-        f: fn () capturing [origins] -> None,
+        f: def () capturing [origins] -> None,
     ](self):
         ...
 
@@ -1165,23 +1165,23 @@ trait CapturingTrait:
 # CHECK-LABEL: lit.struct.decl @CapturingStructTrait
 struct CapturingStructTrait(CapturingTrait, RegisterPassable):
     # CHECK: lit.fn @"takeClosure{{.*}}:*(0,0):
-    fn takeClosure[
+    def takeClosure[
         origins: OriginSet, //,
-        f: fn () capturing [origins] -> None,
+        f: def () capturing [origins] -> None,
     ](self):
         pass
 
 
 # CHECK-LABEL: lit.fn @"inferCaptureOrigins
-fn inferCaptureOrigins[
+def inferCaptureOrigins[
     lt: Origin[mut=True], param: HasLifetimeParam[lt]
 ](mut x: Int, mut y: Int, arg: HasParam):
     @parameter
-    fn bareFunc():
+    def bareFunc():
         pass
 
     @parameter
-    fn captureSomething():
+    def captureSomething():
         _ = x
 
     # CHECK: call {{.*}}closureParameterCaptures{{.*}}:origin.set {}),
@@ -1210,8 +1210,8 @@ fn inferCaptureOrigins[
     # CHECK: lit.fn *"captureWithClosure
     # CHECK-SAME: :{mut *"y`{{.*}}", mut |*(0,0)|}:
     @parameter
-    fn captureWithClosure[
-        lts: OriginSet, //, f: fn () capturing [lts] -> None
+    def captureWithClosure[
+        lts: OriginSet, //, f: def () capturing [lts] -> None
     ]():
         _ = y
 
@@ -1220,23 +1220,23 @@ fn inferCaptureOrigins[
 
 
 # CHECK-LABEL: lit.fn @"testParameterCapture
-fn testParameterCapture(mut x: Int, mut y: Int):
+def testParameterCapture(mut x: Int, mut y: Int):
     # CHECK: lit.fn *"capture()":{mut *"x`"}
     @parameter
-    fn capture():
+    def capture():
         _ = x
 
     # CHECK: lit.fn *"do_it()":{mut *"x`", mut *"y`
     @parameter
-    fn do_it():
+    def do_it():
         _ = y
         capture()
 
 
 # CHECK-LABEL: lit.fn @"topLevelParamFn[index]()"<a_param>
-fn topLevelParamFn[a_param: __mlir_type.index]():
+def topLevelParamFn[a_param: __mlir_type.index]():
     # CHECK: lit.fn *"nestedFunction[index]()"<b_param>
-    fn nestedFunction[b_param: __mlir_type.index]():
+    def nestedFunction[b_param: __mlir_type.index]():
         return
 
     # CHECK: lit.alias.decl *"thinref{{.*}}": !lit.generator<<"b_param": index>() -> !kgen.none> = <*"nestedFunction[index]()">
@@ -1248,7 +1248,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
 
     @__copy_capture(value)
     @parameter
-    fn capturingNestedFunction() -> Int:
+    def capturingNestedFunction() -> Int:
         return value
 
     # CHECK: lit.alias.decl *"fatRef{{.*}}": !lit.generator<() capturing -> !Int> = <*"capturingNestedFunction()">
@@ -1257,9 +1257,9 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
 
 struct SomeParamStruct[c_param: Int]:
     # CHECK-LABEL: lit.fn @"topLevelParamFn{{.*}}<a_param: !Int>
-    fn topLevelParamFn[a_param: Int](self):
+    def topLevelParamFn[a_param: Int](self):
         # CHECK: lit.fn *"nestedFunction{{.*}}"<b_param: !Int>
-        fn nestedFunction[b_param: Int]():
+        def nestedFunction[b_param: Int]():
             return
 
         # CHECK: lit.alias.decl *"reff{{.*}}": !lit.generator<<"b_param": !Int>() -> !kgen.none> = <*"nestedFunction[{{.*}}Int]()">
@@ -1282,14 +1282,14 @@ def export_me() raises -> None:
 
 @export
 # CHECK: lit.fn export @"not_c_exported()"
-fn not_c_exported():
+def not_c_exported():
     pass
 
 
 struct Thing:
     # CHECK: lit.fn export @"member
     @export
-    fn member(self):
+    def member(self):
         pass
 
 
@@ -1301,7 +1301,7 @@ struct Thing:
 # CHECK-SAME: external,
 # CHECK-SAME: linkageName = "add_one"
 @extern("add_one")
-fn my_extern_add_one(x: Int) -> Int:
+def my_extern_add_one(x: Int) -> Int:
     ...
 
 ##===----------------------------------------------------------------------===##
@@ -1310,17 +1310,17 @@ fn my_extern_add_one(x: Int) -> Int:
 
 
 struct MyStruct:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
 # CHECK-LABEL: lit.fn @"getThing()"
 # CHECK-SAME: [mut *"__result__`"](?, %__result__:
-fn getThing() -> MyStruct:
+def getThing() -> MyStruct:
     # result slot parameter should get a different name to avoid conflict.
     # CHECK: lit.fn *"localTest()"
     # CHECK-SAME: [mut *"__result__`2x"](?, %__result___0[__result__]:
-    fn localTest() -> MyStruct:
+    def localTest() -> MyStruct:
         return MyStruct()
 
     return localTest()
@@ -1328,7 +1328,7 @@ fn getThing() -> MyStruct:
 
 # CHECK-LABEL: lit.fn @"callThing()"
 # CHECK-SAME: [mut *"__result__`"](?, %__result__:
-fn callThing() -> MyStruct:
+def callThing() -> MyStruct:
     return getThing()
 
 
@@ -1345,7 +1345,7 @@ struct SomeType:
 # COM: binding. Ensure this passes `-verify-parameters`.
 # CHECK-LABEL: lit.fn @"implicit_origin_as_param
 # CHECK-SAME: !lit.ref<{{.*}}<:!AnyType {{.*}}Match<:origin<0> *"arg`">>
-fn implicit_origin_as_param(
+def implicit_origin_as_param(
     arg: SomeType,
 ) -> Bound[Match[origin_of(arg)._mlir_origin]]:
     pass
@@ -1374,14 +1374,14 @@ trait BarTrait:
 
 
 struct Bar[T: BarTrait]:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
 struct BarSelf(BarTrait):
     var bar: Bar[Self]
 
-    fn __init__(out self):
+    def __init__(out self):
         # CHECK: [[V0:%.*]] = lit.ref.struct.ger %self
         # CHECK: lit.call{{.*}}__init__{{.*}}([[V0]])
         self.bar = Bar[Self]()
@@ -1393,17 +1393,17 @@ struct RegPassableInitSelfInit(ImplicitlyCopyable, RegisterPassable):
 
     # CHECK: lit.fn @"__init__
     # CHECK-SAME: () -> !RegPassableInitSelfInit
-    fn __init__(out self):
+    def __init__(out self):
         self.a = 42
 
     # CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %copy:
     # CHECK-SAME: -> !RegPassableInitSelfInit
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.a = copy.a
 
 
 # CHECK-LABEL: testRegPassableInitSelf
-fn testRegPassableInitSelf():
+def testRegPassableInitSelf():
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
     # CHECK-NEXT: %x = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[TMP]], %x
@@ -1423,39 +1423,39 @@ fn testRegPassableInitSelf():
 struct OverloadedKwArgs:
     var val: Int
 
-    fn __init__(out self, single: Int):
+    def __init__(out self, single: Int):
         self.val = single
 
-    fn __init__(out self, *, double: Int):
+    def __init__(out self, *, double: Int):
         self.val = double * 2
 
-    fn __init__(out self, *, triple: Int):
+    def __init__(out self, *, triple: Int):
         self.val = triple * 3
 
-    fn __getitem__(self, idx: Int) -> Int:
+    def __getitem__(self, idx: Int) -> Int:
         return self.val
 
-    fn __getitem__(self, *, idx2: Int) -> Int:
+    def __getitem__(self, *, idx2: Int) -> Int:
         return self.val * 2
 
-    fn __getitem__(self, *, idx3: Int) -> Bool:
+    def __getitem__(self, *, idx3: Int) -> Bool:
         return self.val > 0
 
-    fn __setitem__(mut self, idx: Int, val: Int):
+    def __setitem__(mut self, idx: Int, val: Int):
         self.val = val
 
-    fn __setitem__(mut self, val: Int, *, idx2: Int):
+    def __setitem__(mut self, val: Int, *, idx2: Int):
         self.val = val * 2
 
-    fn overloaded_fn(mut self, x: Int, *, y: Int, z: Int):
+    def overloaded_fn(mut self, x: Int, *, y: Int, z: Int):
         self.val = x + y + z
 
-    fn overloaded_fn(mut self, x: Int, *, y2: Int, z: Int):
+    def overloaded_fn(mut self, x: Int, *, y2: Int, z: Int):
         self.val = x + y2 * 2 + z
 
 
 # CHECK-LABEL: lit.fn @"testOverloadKwArgs
-fn testOverloadKwArgs():
+def testOverloadKwArgs():
     # CHECK-NEXT: %0 = kgen.param.constant: !Int = <{1}>
     # CHECK-NEXT: %x = lit.var.decl
     # CHECK-NEXT: %1 = lit.call {{.*}}@OverloadedKwArgs{{.*}}single
@@ -1523,10 +1523,10 @@ struct MOCO1320[mut: Bool, //, origin: Origin[mut=mut]]:
     ]
     var _value: Self._mlir_type
 
-    fn __init__(out self, *, x: Self._mlir_type):
+    def __init__(out self, *, x: Self._mlir_type):
         self._value = x
 
-    fn __init__(out self, *, ref [Self.origin]to: Int):
+    def __init__(out self, *, ref [Self.origin]to: Int):
         self._value = __get_mvalue_as_litref(to)
 
 
@@ -1535,7 +1535,7 @@ struct StructWithParam[a: Int]:
 
 
 # CHECK-LABEL: lit.fn @"autoparam_mangler_crash
-fn autoparam_mangler_crash[*types: Int, constraints: StructWithParam]():
+def autoparam_mangler_crash[*types: Int, constraints: StructWithParam]():
     pass
 
 
@@ -1543,7 +1543,7 @@ fn autoparam_mangler_crash[*types: Int, constraints: StructWithParam]():
 # Dependent Constraints
 ##===----------------------------------------------------------------------===##
 
-fn need_positive_int[x: Int where x > 0]():
+def need_positive_int[x: Int where x > 0]():
     pass
 
 # CHECK-LABEL: lit.struct.decl @ConstraintStruct
@@ -1551,28 +1551,28 @@ fn need_positive_int[x: Int where x > 0]():
 struct ConstraintStruct[a: Int where a > 0]:
     comptime b = Self.a + 1
 
-    fn use_known_assumption(self):
+    def use_known_assumption(self):
         need_positive_int[self.a]()
 
     @staticmethod
-    fn static_use_known_assumption():
+    def static_use_known_assumption():
         need_positive_int[Self.a]()
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct
 # CHECK-SAME: <x: !Int {{.*}}ge(#lit.struct.extract<:!Int x, "_mlir_value">, 1)
-fn use_constraint_struct[x: Int where x > 0, cs: ConstraintStruct[x]]():
+def use_constraint_struct[x: Int where x > 0, cs: ConstraintStruct[x]]():
     need_positive_int[x]()
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct
 # CHECK-SAME: <["cs.a`"]*"cs.a`": !Int {{.*}}ge(#lit.struct.extract<:!Int *"cs.a`", "_mlir_value">, 1)
-fn use_constraint_struct_autoparam[cs: ConstraintStruct[_]]():
+def use_constraint_struct_autoparam[cs: ConstraintStruct[_]]():
     pass
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct_in_constraint
 # CHECK-SAME: <x: !Int {
 # CHECK-SAME: ge(#lit.struct.extract<:!Int x, "_mlir_value">, 1)
 # CHECK-SAME: ge(add(#lit.struct.extract<:!Int x, "_mlir_value">, 1), 2)
-fn use_constraint_struct_in_constraint[
+def use_constraint_struct_in_constraint[
     x: Int
         where x > 0
         where ConstraintStruct[x].b > 1
@@ -1580,7 +1580,7 @@ fn use_constraint_struct_in_constraint[
     pass
 
 
-fn bin_pred(x: Int, y: Int) -> Bool:
+def bin_pred(x: Int, y: Int) -> Bool:
     return x > y
 
 @fieldwise_init
@@ -1589,5 +1589,5 @@ struct BinStruct[x: Int, y: Int where bin_pred(x, y)]:
     comptime xx = Self.x
     # CHECK-LABEL: lit.fn @"get_with_z
     # CHECK-SAME: %__result__: !lit.ref<!lit.struct<#BinStruct
-    fn get_with_z[z: Int where bin_pred(Self.x, z)](self) -> BinStruct[Self.xx, z]:
+    def get_with_z[z: Int where bin_pred(Self.x, z)](self) -> BinStruct[Self.xx, z]:
         return {}

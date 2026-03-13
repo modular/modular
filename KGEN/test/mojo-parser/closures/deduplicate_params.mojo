@@ -7,25 +7,25 @@
 
 
 struct C[B: Int](RegisterPassable):
-    fn get(self) -> Int:
+    def get(self) -> Int:
         pass
 
 
 # CHECK-COUNT-1: lit.struct.decl @"`_CI_deduplicate_params_escaping0"<c_type: !Int, |>
 
 
-fn use(a: Int):
+def use(a: Int):
     pass
 
 
-fn take_closure[
+def take_closure[
     c_type: Int
-](x: C[c_type], closure: fn(z: C[c_type]) escaping -> None):
+](x: C[c_type], closure: def(z: C[c_type]) escaping -> None):
     closure(x)
 
 
-fn make_closure[c_type: Int]() -> fn(z: C[c_type]) escaping -> None:
-    fn foo(z: C[c_type]) escaping -> None:
+def make_closure[c_type: Int]() -> def(z: C[c_type]) escaping -> None:
+    def foo(z: C[c_type]) escaping -> None:
         use(z.get())
 
     return foo

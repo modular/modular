@@ -9,7 +9,9 @@ from std.sys import argv
 from std.memory.pointer import AddressSpace, _GPUAddressSpace
 
 
-fn hasOrigin[F: fn[T: MutOrigin](TypeWithOrigin[T]) unified -> None, //](f: F):
+def hasOrigin[
+    F: def[T: MutOrigin](TypeWithOrigin[T]) unified -> None, //
+](f: F):
     f[MutAnyOrigin](TypeWithOrigin[MutAnyOrigin]())
 
 
@@ -17,26 +19,26 @@ fn hasOrigin[F: fn[T: MutOrigin](TypeWithOrigin[T]) unified -> None, //](f: F):
 struct TypeWithOrigin[T: MutOrigin](ImplicitlyCopyable, Movable):
     var isMutable: Bool
 
-    fn __init__(out self):
+    def __init__(out self):
         self.isMutable = Self.T.mut
 
 
-fn takeIt[f: ImplicitlyCopyable & fn(z: Int) unified -> Int](impl: f, y: Int):
+def takeIt[f: ImplicitlyCopyable & def(z: Int) unified -> Int](impl: f, y: Int):
     print(impl(y))
 
 
 @no_inline
-fn aThing[f: fn(Int) capturing -> Int](y: Int):
-    fn aClosure(z: Int) unified {var} -> Int:
+def aThing[f: def(Int) capturing -> Int](y: Int):
+    def aClosure(z: Int) unified {var} -> Int:
         return f(y)
 
     takeIt(aClosure, y)
 
 
 @no_inline
-fn itCaptures[THREE: Int](one: Int, four: Int):
+def itCaptures[THREE: Int](one: Int, four: Int):
     @parameter
-    fn aParam(z: Int) -> Int:
+    def aParam(z: Int) -> Int:
         return THREE + four + z
 
     aThing[aParam](one)
@@ -46,8 +48,8 @@ fn itCaptures[THREE: Int](one: Int, four: Int):
 
         @__copy_capture(one, four)
         @parameter
-        fn aParam2(zz: Int) -> Int:
-            fn thing(z: Int) unified {var zz} -> Int:
+        def aParam2(zz: Int) -> Int:
+            def thing(z: Int) unified {var zz} -> Int:
                 return zz
 
             takeIt(thing, four)
@@ -57,7 +59,7 @@ fn itCaptures[THREE: Int](one: Int, four: Int):
 
 
 trait Coordinate:
-    fn prettyPrint(self):
+    def prettyPrint(self):
         ...
 
 
@@ -66,7 +68,7 @@ struct Cartesian(Coordinate, ImplicitlyCopyable):
     var x: Int
     var y: Int
 
-    fn prettyPrint(self):
+    def prettyPrint(self):
         print("{", self.x, ",", self.y, "}")
 
 
@@ -74,25 +76,25 @@ struct Cartesian(Coordinate, ImplicitlyCopyable):
 struct Polar[y: Int](Coordinate, ImplicitlyCopyable):
     var x: Int
 
-    fn prettyPrint(self):
+    def prettyPrint(self):
         print("{", self.x, ",", self.y, "}")
 
 
-fn useDefinesCapturingParamClosure[
-    X: Coordinate & ImplicitlyCopyable, C: fn() unified -> X
+def useDefinesCapturingParamClosure[
+    X: Coordinate & ImplicitlyCopyable, C: def() unified -> X
 ](impl: C):
     var coordinate = impl()
     coordinate.prettyPrint()
 
 
-fn definesCapturingParamClosure[
+def definesCapturingParamClosure[
     X: Coordinate & ImplicitlyCopyable
 ](something: X, one: Int) raises:
-    fn closureImpl() unified {var} -> X:
+    def closureImpl() unified {var} -> X:
         return something
 
     # COM: check that concrete types can conform to traits with aliases
-    fn closureConcreteImpl() unified {var} -> Cartesian:
+    def closureConcreteImpl() unified {var} -> Cartesian:
         return Cartesian(one, one)
 
     useDefinesCapturingParamClosure[X, type_of(closureImpl)](closureImpl)
@@ -101,16 +103,16 @@ fn definesCapturingParamClosure[
     )
 
 
-fn usesParamRefClosure[
+def usesParamRefClosure[
     T: Coordinate & ImplicitlyCopyable,
-    C: fn[x: Int, Y: Coordinate](xx: T, unused: Y) unified -> Polar[x],
+    C: def[x: Int, Y: Coordinate](xx: T, unused: Y) unified -> Polar[x],
 ](impl: C, value: T):
     var result = impl[3, Cartesian](value, Cartesian(3, 3))
     result.prettyPrint()
 
 
-fn definesParamRefClosure[T: Coordinate & ImplicitlyCopyable](value: T):
-    fn closureImpl[
+def definesParamRefClosure[T: Coordinate & ImplicitlyCopyable](value: T):
+    def closureImpl[
         x: Int, Y: Coordinate
     ](xx: T, unused: Y) unified {var} -> Polar[x]:
         _ = value
@@ -129,7 +131,7 @@ def main() raises:
 
     # Ensure origins are lowered
     # CHECK: True
-    fn closure[T: MutOrigin](_bar: TypeWithOrigin[T]) unified {read}:
+    def closure[T: MutOrigin](_bar: TypeWithOrigin[T]) unified {read}:
         print(_bar.isMutable)
 
     hasOrigin(closure)

@@ -21,7 +21,7 @@ from std.collections.string.string_slice import _get_kgen_string
 
 
 @always_inline("nodebug")
-fn my_constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
+def my_constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
     __mlir_op.`kgen.param.assert`[
         cond=cond.__mlir_i1__(),
         message=_get_kgen_string[msg, *extra](),
@@ -29,12 +29,12 @@ fn my_constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
 
 
 # expected-note @below {{function instantiation failed}}
-fn my_func():
+def my_func():
     # expected-note @below {{call expansion failed}}
     my_constrained[False, "foo"]()
 
 
 # expected-error @below {{function instantiation failed}}
-fn main():
+def main():
     # expected-note @below {{call expansion failed}}
     my_func()

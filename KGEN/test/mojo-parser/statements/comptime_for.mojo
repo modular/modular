@@ -15,10 +15,10 @@ struct IterRange(Iterator, ImplicitlyCopyable):
 
     var value: Int
 
-    fn __iter__(self) -> Self:
+    def __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self) raises StopIteration -> Int:
+    def __next__(mut self) raises StopIteration -> Int:
         if self.value <= 0:
             raise StopIteration()
         return self.value
@@ -27,12 +27,12 @@ struct IterRange(Iterator, ImplicitlyCopyable):
 struct MyType:
     pass
 
-fn use(value: MyType):
+def use(value: MyType):
     pass
 
 # CHECK-LABEL: lit.fn @"comptime_for_basic
 # CHECK-SAME: <a: !Int>[mut [[LT:.*]]](%value: !lit.ref<!MyType, mut [[LT]]>
-fn comptime_for_basic[a: Int](var value: MyType):
+def comptime_for_basic[a: Int](var value: MyType):
     # CHECK-NEXT: kgen.param.for [[iter:.*]]:  !IterRange in :!IterRange apply
     # CHECK-NEXT: has_next {{.*}}paramfor_has_next
     # CHECK-NEXT: get_next_iter :{{.*}}paramfor_next_iter{{.*}}<:!Iterator_Copyable !IterRange>
@@ -49,7 +49,7 @@ fn comptime_for_basic[a: Int](var value: MyType):
 
 # CHECK-LABEL: lit.fn @"parameter_for
 # CHECK-SAME: <a: !Int>[mut [[LT:.*]]](%value: !lit.ref<!MyType, mut [[LT]]>
-fn parameter_for[a: Int](var value: MyType):
+def parameter_for[a: Int](var value: MyType):
     # CHECK-NEXT: kgen.param.for [[iter:.*]]:  !IterRange in :!IterRange apply
     # CHECK-NEXT: has_next {{.*}}paramfor_has_next
     # CHECK-NEXT: get_next_iter :{{.*}}paramfor_next_iter{{.*}}<:!Iterator_Copyable !IterRange>

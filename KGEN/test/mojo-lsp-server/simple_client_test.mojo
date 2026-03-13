@@ -7,5 +7,5 @@
 # RUN: mojo-lsp-simple-client %s
 
 
-fn main():
+def main():
     print("foo")

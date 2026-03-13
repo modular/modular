@@ -15,7 +15,7 @@ struct ParametricOnInt[a: Int]:
     pass
 
 
-fn Rec2[
+def Rec2[
     a: ParametricOnInt[b],  # expected-error {{use of unknown declaration 'b'}}
     b: ParametricOnInt[a],
 ]():
@@ -27,37 +27,37 @@ struct Thing[a: Int, b: Int]:
     pass
 
 
-fn GoodUseOfThing(a: Thing[4, 5]):
+def GoodUseOfThing(a: Thing[4, 5]):
     pass
 
 
 # expected-error @below {{'Thing' expects 0 positional parameters, but 1 was specified}}
-fn MultipleThingMetaparams(a: Thing[1, 2][1]):
+def MultipleThingMetaparams(a: Thing[1, 2][1]):
     pass
 
 
 # expected-error @+1 {{'Thing' parameter 'b' has 'Int' type, but value has type 'FloatLiteral[1.5]'}}
-fn WeirdMetaParams(a: Thing[1, 1.5]):
+def WeirdMetaParams(a: Thing[1, 1.5]):
     pass
 
 
 struct Parameterized[p1: Int]:
     # expected-error @below {{invalid redefinition of 'p2'}}
     # expected-note @below {{previous definition here}}
-    fn b[p2: Int, p2: Int, p3: Int](self):  # Cannot shadow parameter names.
+    def b[p2: Int, p2: Int, p3: Int](self):  # Cannot shadow parameter names.
         pass
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     # expected-note @+1 {{function declared here}}
-    fn method[B: Int](self, other: Parameterized[Self.p1 + B]):
+    def method[B: Int](self, other: Parameterized[Self.p1 + B]):
         pass
 
 
 # Test that we support partially bound parameters and diagnose incorrect uses
 # of parameters.
-fn testTestParamStruct(a: Parameterized[4]):
+def testTestParamStruct(a: Parameterized[4]):
     a.method[7](Parameterized[11]())
     # expected-error-re @below {{invalid call to 'method': value passed to 'other' cannot be converted from 'Parameterized[{{.*}}12{{.*}}]' to 'Parameterized[{{.*}}11{{.*}}]'}}
     a.method[7](Parameterized[12]())
@@ -74,18 +74,18 @@ comptime DType = __mlir_type.`!kgen.dtype`
 
 struct MySIMD[size: Int, type: DType]:
     # expected-note @below {{function declared here}}
-    fn __add__(self, rhs: MySIMD[Self.size, Self.type]):
+    def __add__(self, rhs: MySIMD[Self.size, Self.type]):
         pass
 
 
 # expected-note @below {{function declared here}}
-fn twoUses[
+def twoUses[
     dt1: DType, dt2: DType, size: Int
 ](lhs: MySIMD[size, dt1], rhs: MySIMD[size, dt2]):
     pass
 
 
-fn testSIMD(
+def testSIMD(
     a: MySIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
     b: MySIMD[2, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
 ):
@@ -100,18 +100,18 @@ fn testSIMD(
 
 struct TwoParams[a: Int, b: Int]:
     @implicit
-    fn __init__(out self, other: TwoParams[1, 1]):
+    def __init__(out self, other: TwoParams[1, 1]):
         pass
 
 
 # expected-note @below {{function declared here}}
-fn infer_then_convert[
+def infer_then_convert[
     a: Int, b: Int
 ](lhs: TwoParams[a, b], rhs: TwoParams[a, b]):
     pass
 
 
-fn left_to_right_implicit_conversion(
+def left_to_right_implicit_conversion(
     lhs: TwoParams[1, 2], rhs: TwoParams[1, 1]
 ):
     # This succeeds because 'a' and 'b' are inferred to '1' and '2', and 'rhs'
@@ -124,11 +124,11 @@ fn left_to_right_implicit_conversion(
 
 
 # expected-note @below {{function declared here}}
-fn badReboundType[type: DType, val: __mlir_type[`!pop.scalar<`, type, `>`]]():
+def badReboundType[type: DType, val: __mlir_type[`!pop.scalar<`, type, `>`]]():
     pass
 
 
-fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
+def badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
     # expected-error @+1 {{invalid call to 'badReboundType': 'badReboundType' parameter 'val' has '__mlir_type.`!pop.scalar<f64>`' type, but value has type '__mlir_type.`!pop.scalar<f32>`'}}
     badReboundType[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`, val]()
 
@@ -143,7 +143,7 @@ def call_generic[dt: FloatLiteral]() raises:
     generic_fn[dt, 1, 42](57)
 
 
-fn meta_param_then_param_redef[
+def meta_param_then_param_redef[
     dt: __mlir_type.index  # expected-note {{previous definition here}}
 ](dt: __mlir_type.index):  # expected-error {{invalid redefinition of 'dt'}}
     pass
@@ -156,7 +156,7 @@ def param_redef(x: __mlir_type.index, x: __mlir_type.index) raises:
 
 
 # expected-error @+1 {{required positional parameter follows optional positional parameter}}
-fn default_after_non_default[a: Int = 7, b: Int]():
+def default_after_non_default[a: Int = 7, b: Int]():
     pass
 
 
@@ -167,15 +167,15 @@ fn default_after_non_default[a: Int = 7, b: Int]():
 
 
 # expected-error @+1 {{variadic keyword parameters not supported yet}}
-fn variadic_kw_result_binding[**a: Int]():
+def variadic_kw_result_binding[**a: Int]():
     pass
 
 # expected-note @below {{function declared here}}
-fn variadic_int_params[*a: Int]():
+def variadic_int_params[*a: Int]():
     pass
 
 
-fn callVariadic():
+def callVariadic():
     # expected-error @below {{invalid call to 'variadic_int_params': 'variadic_int_params' parameter 'a' has 'Int' type, but value has type 'FloatLiteral[1]'}}
     variadic_int_params[1.0]()
 
@@ -186,7 +186,7 @@ struct StructWithVariadic[*a: Int]:
 
 
 # expected-error @below {{unbound syntax (i.e. `_`) cannot be passed as a variadic parameter}}
-fn unbind_variadic(x: StructWithVariadic[_]):
+def unbind_variadic(x: StructWithVariadic[_]):
     pass
 
 ##===----------------------------------------------------------------------===##
@@ -195,7 +195,7 @@ fn unbind_variadic(x: StructWithVariadic[_]):
 
 
 
-fn testAliases(variable: Int):
+def testAliases(variable: Int):
     # expected-error @below {{only traits may contain a comptime member without an initializer}}
     comptime MissingInit: Int
 
@@ -206,19 +206,19 @@ fn testAliases(variable: Int):
     comptime MissingTypeAndInit
 
 
-fn testConversionQoI():
+def testConversionQoI():
     # expected-error @+1 {{cannot implicitly convert 'FloatLiteral[1.2]' value to 'Int'}}
     comptime intVal: Int = 1.2
 
 
 @always_inline("nodebug")
-fn crash1_callee(
+def crash1_callee(
     a: __mlir_type.index, rhs: __mlir_type.index
 ) -> __mlir_type.index:
     return __mlir_op.`index.add`(a, rhs)
 
 
-fn crash1_caller[p: __mlir_type.index](a: __mlir_type.index):
+def crash1_caller[p: __mlir_type.index](a: __mlir_type.index):
     # expected-error @below {{cannot use a dynamic value in comptime initializer}}
     comptime y = crash1_callee(a, p)
 
@@ -232,10 +232,10 @@ struct StructWithParams[a: Int, b: Int]:
 struct StructWithRecReference[n: Int]:
     comptime res = StructWithRecReference.f
     @staticmethod
-    fn f():
+    def f():
         pass
 
-fn testStructWithParams():
+def testStructWithParams():
     # These are ok because the referenced alias doesn't depend on unbound parameters.
     _ = StructWithParams.a1
     _ = StructWithParams[1].a2
@@ -269,12 +269,12 @@ struct DefaultParams2[a: Int, b: Int = 7]:  # expected-note {{declared here}}
     pass
 
 
-fn test_default_param_struct():
+def test_default_param_struct():
     # expected-error @+1 {{expects 2 positional parameters, but 3 were specified}}
     comptime S = DefaultParams2[1, 3, 4]
 
 
-fn missing_bound_param():
+def missing_bound_param():
     # expected-error @below {{failed to infer parameter 'a'}}
     var value: DefaultParams2[]
 
@@ -286,11 +286,11 @@ fn missing_bound_param():
 
 
 # expected-note @below {{declared here}}
-fn has_pos_only[a: Int, b: Int, /, c: Int = 9]():
+def has_pos_only[a: Int, b: Int, /, c: Int = 9]():
     pass
 
 
-fn test_pos_only():
+def test_pos_only():
     # expected-error @below {{positional-only parameter passed as keyword operand: 'b'}}
     has_pos_only[0, b=1, c=2]()
     # expected-error @below {{positional-only parameters passed as keyword operands: 'a', 'b'}}
@@ -300,8 +300,8 @@ fn test_pos_only():
     has_pos_only[1, c=9]()
 
 
-fn indirect_callable_pos_only[
-    callable: fn[a: Int, b: Int, /, c: Int = 9] () -> None
+def indirect_callable_pos_only[
+    callable: def[a: Int, b: Int, /, c: Int = 9] () -> None
 ]():
     # expected-error @below {{positional-only parameter passed as keyword operand: 'b'}}
     _ = callable[0, b=1, c=2]
@@ -327,18 +327,18 @@ struct VarParamStruct[s: StringLiteral, *args: Int]:
     pass
 
 
-fn test_struct_kw_params():
+def test_struct_kw_params():
     _ = KwParamStruct[
         a=42,  # expected-note {{previously specified here}}
         a=43,  # expected-error {{duplicate keyword parameter 'a'}}
     ]()
 
 
-fn test_struct_kw_params2():
+def test_struct_kw_params2():
     _ = KwParamStruct[b=42, 1]()
 
 
-fn test_struct_kw_params3():
+def test_struct_kw_params3():
     # expected-error @below {{unknown keyword parameter: 'args'}}
     _ = VarParamStruct["woof", args=7]
     # expected-error @below {{unknown keyword parameter: 'c'}}
@@ -361,7 +361,7 @@ struct PosOnlyStruct[a: Int, b: Int, /, c: Int = 9]:
     pass
 
 
-fn test_pos_only_struct():
+def test_pos_only_struct():
     # expected-error @below {{positional-only parameter passed as keyword operand: 'b'}}
     _ = PosOnlyStruct[0, b=1, c=2]
     # expected-error @below {{positional-only parameters passed as keyword operands: 'a', 'b'}}
@@ -380,11 +380,11 @@ fn test_pos_only_struct():
 struct CtadStruct[a: Int]:
     # expected-note @+2 {{declared here}}
     @staticmethod
-    fn foo():
+    def foo():
         pass
 
 
-fn test_implicitly_parametric_static_methods_fails():
+def test_implicitly_parametric_static_methods_fails():
     # FIXME: we handled CtadStruct.foo[5]() is COMPLETELY wrong.
     # besides, it seems that we should infer a = 5
 
@@ -411,7 +411,7 @@ struct TakesXOrigin[MUT: Int, O: XOrigin[MUT, _]]:
 
 
 trait SomeTrait:
-    fn requirement(self):
+    def requirement(self):
         pass
 
 
@@ -420,11 +420,11 @@ struct NoTraitsType:
 
 
 # expected-note @below {{function declared here}}
-fn take_some_trait[T: SomeTrait, //](x: T):
+def take_some_trait[T: SomeTrait, //](x: T):
     pass
 
 
-fn pass_no_traits(x: NoTraitsType):
+def pass_no_traits(x: NoTraitsType):
     # expected-error @below {{invalid call to 'take_some_trait': value passed to 'x' cannot be converted from 'NoTraitsType' to 'T', argument type 'NoTraitsType' does not conform to trait 'SomeTrait'}}
     take_some_trait(x)
 
@@ -440,17 +440,17 @@ struct MemParamType[p: Int]:
 
 
 # expected-note @below {{function declared here}}
-fn autoparams[a: Int](x: ParamType):
+def autoparams[a: Int](x: ParamType):
     pass
 
 
 # expected-note @below {{function declared here}}
-fn autoparams_mem(x: MemParamType):
+def autoparams_mem(x: MemParamType):
     pass
 
 
 # expected-note @below {{function declared here}}
-fn autoparams_variadic(*x: MemParamType):
+def autoparams_variadic(*x: MemParamType):
     pass
 
 # expected-note @below {{'InferredParam' declared here}}
@@ -474,7 +474,7 @@ struct BindStructField:
     var multi_infer_ooo2: MultiInferred[p=1, uP=ParamType[1](), q=2]
 
 
-fn invalid_params[f: fn (ParamType) -> None]():
+def invalid_params[f: def (ParamType) -> None]():
     # expected-error @below {{failed to infer parameter 'a'}}
     autoparams[](ParamType[1]())
     # expected-error @below {{invalid call to 'autoparams': 'autoparams' expects 1 positional parameter, but 2 were specified}}
@@ -491,11 +491,11 @@ fn invalid_params[f: fn (ParamType) -> None]():
 
 
 # expected-note @below {{function declared here}}
-fn mem_param_with_ref(a: MemParamType[_], ref [AddressSpace(3)]b: MemParamType[3]):
+def mem_param_with_ref(a: MemParamType[_], ref [AddressSpace(3)]b: MemParamType[3]):
     pass
 
 
-fn call_mem_param_with_ref(ref [AddressSpace(2)]b: MemParamType[3]):
+def call_mem_param_with_ref(ref [AddressSpace(2)]b: MemParamType[3]):
     var a = MemParamType[1]()
     # expected-error @below {{invalid call to 'mem_param_with_ref': value passed to 'b' cannot be converted from 'MemParamType[3]' to ref 'MemParamType[3]'}}
     # expected-note @below {{operand address space '2' doesn't match expected address space '3'}}
@@ -503,9 +503,9 @@ fn call_mem_param_with_ref(ref [AddressSpace(2)]b: MemParamType[3]):
 
 
 # expected-note @below {{declared here}}
-fn substitution_edge_case[p: Int, //, f: fn[a: Int] () [_] -> ParamType[a]]():
+def substitution_edge_case[p: Int, //, f: def[a: Int] () [_] -> ParamType[a]]():
     # FIXME: the error should be:
-    # e_xpected-error @below {{'substitution_edge_case' parameter 'f' has 'fn[a: Int]() -> ParamType[a]' type, but value has type 'IntLiteral[0]'}}
+    # e_xpected-error @below {{'substitution_edge_case' parameter 'f' has 'def[a: Int]() -> ParamType[a]' type, but value has type 'IntLiteral[0]'}}
     # expected-error @below {{invalid call to 'substitution_edge_case': failed to infer parameter 'p'}}
     substitution_edge_case[0]()
 
@@ -514,14 +514,14 @@ fn substitution_edge_case[p: Int, //, f: fn[a: Int] () [_] -> ParamType[a]]():
 # MOCO-846: bad message when types don't match due to parameter expressions
 # that can't be evaluated at overload resolution time.
 struct HasSize[size: Int]:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 # expected-note @below {{function declared here}}
-fn has_expr_for_elaborator[width: Int](x: HasSize[width + 4]):
+def has_expr_for_elaborator[width: Int](x: HasSize[width + 4]):
     pass
 
-fn use_take_args[width: Int]():
+def use_take_args[width: Int]():
     # expected-error @below {{value passed to 'x' cannot be converted from 'HasSize[(width + 5)]' to 'HasSize[(width + 4)]'}}
     _ = has_expr_for_elaborator[width](HasSize[size=width + 5]())
 
@@ -530,10 +530,10 @@ fn use_take_args[width: Int]():
 # expected-note @below {{struct declared here}}
 struct UnusedInitSelfParam[A: Int]:
     # expected-note @below {{function declared here}}
-    fn __init__[B: Int](out self: UnusedInitSelfParam[B]):
+    def __init__[B: Int](out self: UnusedInitSelfParam[B]):
         pass
 
-fn unused_init_self_param():
+def unused_init_self_param():
     # expected-error @below {{failed to infer parameter 'A' of parent struct 'UnusedInitSelfParam'}}
     var slice = UnusedInitSelfParam()
 
@@ -543,28 +543,28 @@ fn unused_init_self_param():
 # expected-note @below {{generated function with type 'fn[arg1: Int, size: Int, +](*, copy: SimpleSIMD[arg1, size]) -> SimpleSIMD[arg1, size]'}}
 struct SimpleSIMD[arg1: Int, size: Int](TrivialRegisterPassable):
     # expected-note @below {{candidate not viable: return type 'SimpleSIMD[50, 1]' parameter 'size' value '1' doesn't match expected value '4'}}
-    fn __init__[T: AnyType](out self: SimpleSIMD[Self.arg1, 1], value: T): pass
+    def __init__[T: AnyType](out self: SimpleSIMD[Self.arg1, 1], value: T): pass
 
-fn dont_miss_inference_conflict(b: SimpleSIMD[40, 1]):
+def dont_miss_inference_conflict(b: SimpleSIMD[40, 1]):
     # expected-error @below {{no matching function in initialization}}
     x = SimpleSIMD[50, 4](b)
 
 # expected-note @below {{function declared here}}
-fn takes4(x: HasSize[4]): pass
-fn get_int[A: Int]() -> Int: pass
-fn get_int2[Type: AnyType, //](a: Type) -> Int: pass
+def takes4(x: HasSize[4]): pass
+def get_int[A: Int]() -> Int: pass
+def get_int2[Type: AnyType, //](a: Type) -> Int: pass
 
 
 struct HoldsInt:
     var t: Int
-    fn __init__(out self):
+    def __init__(out self):
         self.t = 1
 
     @staticmethod
-    fn get_int() -> Int:
+    def get_int() -> Int:
         return 1
 
-fn test_param_call():
+def test_param_call():
     # expected-error @below {{cannot be converted from 'HasSize[get_int[42]()]' to 'HasSize[4]'}}
     # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
     takes4(HasSize[get_int[42]()]())
@@ -581,7 +581,7 @@ fn test_param_call():
     takes4(HasSize[HoldsInt.get_int()]())
 
 @always_inline("builtin")
-fn complex(a: Int) -> Int:
+def complex(a: Int) -> Int:
   return a*a if a < 42 else a-1
 
 struct StructWithAlias:
@@ -591,7 +591,7 @@ struct StructWithAlias:
 # Make sure error messages include scope for auto parameters.
 # MOCO-970: "can't convert type to type" error stripped off full parameter name.
 struct TestAutoParamsAndSugar[f1: HasSize]:
-    fn method[f2: HasSize](self, f3: HasSize):
+    def method[f2: HasSize](self, f3: HasSize):
         # expected-error @+1 {{cannot be converted from 'HasSize[size]' to 'HasSize[4]'}}
         takes4(HasSize[Self.f1.size]())
         # expected-error @+1 {{cannot be converted from 'HasSize[size]' to 'HasSize[4]'}}
@@ -614,25 +614,25 @@ struct TestAutoParamsAndSugar[f1: HasSize]:
 
 
 struct TakeAnything[T: AnyType, //, a: T]:
-    fn __init__(out self): pass
+    def __init__(out self): pass
 
 struct SomeParamStruct[x: HasSize]: pass
 
-fn auto_param_of_autoparam[a: SomeParamStruct]():
+def auto_param_of_autoparam[a: SomeParamStruct]():
     # expected-error @+1 {{cannot be converted from 'HasSize[size]' to 'HasSize[4]'}}
     takes4(HasSize[a.x.size]())
 
 # expected-note @below {{function declared here}}
-fn take_a_4(a: TakeAnything[4]): pass
-fn pass_it(x: String):
+def take_a_4(a: TakeAnything[4]): pass
+def pass_it(x: String):
   # expected-error @+1 {{cannot be converted from 'TakeAnything[origin_of(x)]' to 'TakeAnything[4]'}}
   take_a_4(TakeAnything[origin_of(x)]())
 
-fn test_unbound_pack_arg():
+def test_unbound_pack_arg():
     # expected-error @+1 {{unbound packs not supported yet in runtime arguments}}
     test_unbound_pack_arg(*_)
 
-fn test_unpack(d: Int):
+def test_unpack(d: Int):
     # expected-error @+1 {{unpacked arguments are not supported yet}}
     test_unpack(**d)
     # expected-error @+1 {{unpacked arguments are not supported yet}}
@@ -655,7 +655,7 @@ struct Foo[a: Int, b: SomeStruct[a, 1, 1]]:
 comptime foo = Foo[_, SomeStruct[1, 1, 1]()]
 
 
-fn depends_on_a[a: Int]() -> Int:
+def depends_on_a[a: Int]() -> Int:
     return a
 
 # expected-note @+1 {{'NestedDeps' declared here}}

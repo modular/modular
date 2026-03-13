@@ -11,10 +11,10 @@
 
 
 @export("extern_sub")
-fn extern_sub(a: Int32, b: Int32) -> Int32:
+def extern_sub(a: Int32, b: Int32) -> Int32:
     return a - b
 
 
 @export("extern_divide")
-fn extern_divide(a: Int32, b: Int32) -> Int32:
+def extern_divide(a: Int32, b: Int32) -> Int32:
     return a / b

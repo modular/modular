@@ -64,11 +64,11 @@ struct MemType(ImplicitlyCopyable):
     pass
 
 
-fn use(x: MemType):
+def use(x: MemType):
     pass
 
 
-fn thing(m: MemType):
-    fn nested(n: MemType) -> MemType:
+def thing(m: MemType):
+    def nested(n: MemType) -> MemType:
         use(m)
         return n

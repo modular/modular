@@ -16,8 +16,8 @@ struct Foo[a: Int](ImplicitlyCopyable, RegisterPassable):
 # CHECK-NEXT: [[VAR1:%.*]] = lit.ref.struct.ger %0[field0]
 # CHECK-NEXT: [[VAR2:%.*]] = lit.ref.load [[VAR1]]
 # CHECK-NEXT: kgen.param.constant: !Int = <#lit.struct.extract<:!lit.struct<#Foo <:!Int a>> X, "b">>
-fn parameter_capture[a: Int, X: Foo[a]](c: Int) -> fn (x: Int) escaping -> Int:
-    fn p_capture(x: Int) -> Int:
+def parameter_capture[a: Int, X: Foo[a]](c: Int) -> def (x: Int) escaping -> Int:
+    def p_capture(x: Int) -> Int:
         return X.b + c
 
     return p_capture

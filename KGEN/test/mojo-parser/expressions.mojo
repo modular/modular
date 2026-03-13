@@ -8,7 +8,7 @@
 
 # CHECK: module {
 
-fn noop(): pass
+def noop(): pass
 
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlyInt
@@ -17,28 +17,28 @@ struct MemoryOnlyInt(ImplicitlyCopyable):
 
   # CHECK-LABEL: lit.fn @"__init__
   @implicit
-  fn __init__(out self, a: Int = 42):
+  def __init__(out self, a: Int = 42):
     # CHECK: %0 = lit.ref.struct.ger %self[x]
     # CHECK: %1 = {{.*}}constant: !Int = <{1}>
     # CHECK: lit.ref.store %1, %0
     self.x = 1
-  fn __del__(deinit self): pass
+  def __del__(deinit self): pass
 
   # CHECK-LABEL: lit.fn @"__init__{{.*}}*, %copy
-  fn __init__(out self, *, copy: Self):
+  def __init__(out self, *, copy: Self):
     self.x = copy.x
 
   @staticmethod
-  fn variadic(*value: MemoryOnlyInt):
+  def variadic(*value: MemoryOnlyInt):
     pass
 
-fn consume(var a: MemoryOnlyInt): pass
+def consume(var a: MemoryOnlyInt): pass
 
 # This type is used to test implicit conversion from MemoryOnlyInt
 struct MemoryOnlyFloat64:
   var x: Float64
   @implicit
-  fn __init__(out self, value: MemoryOnlyInt):
+  def __init__(out self, value: MemoryOnlyInt):
     self.x = 1.0
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlyPair
@@ -48,7 +48,7 @@ struct MemoryOnlyPair(ImplicitlyCopyable):
 
   # CHECK: lit.fn @"__init__{{.*}}(*, %copy: !lit.ref<!MemoryOnlyPair, imm {{.*}}> read_mem,
   # CHECK-SAME: %self: !lit.ref<!MemoryOnlyPair, mut {{.*}}> byref_result)
-  fn __init__(out self, *, copy: MemoryOnlyPair):
+  def __init__(out self, *, copy: MemoryOnlyPair):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %self[x]
     # CHECK-NEXT: %1 = lit.ref.struct.ger %copy[x]
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}"{{.*}}(%1, %0){{.*}}*, "copy"
@@ -62,7 +62,7 @@ struct MemoryOnlyPair(ImplicitlyCopyable):
   # CHECK: lit.fn @"method{{.*}}(
   # CHECK-SAME: %self: !lit.ref<!MemoryOnlyPair, mut {{.*}}> owned_in_mem,
   # CHECK-SAME: %arg: !lit.ref<!MemoryOnlyInt, mut {{.*}}> owned_in_mem)
-  fn method(var self, var arg: MemoryOnlyInt):
+  def method(var self, var arg: MemoryOnlyInt):
     # CHECK: %0 = lit.ref.struct.ger %self[y]
     # CHECK: %1 = lit.ref.struct.ger %arg[x]
     # CHECK: %2 = lit.ref.load %0
@@ -70,11 +70,11 @@ struct MemoryOnlyPair(ImplicitlyCopyable):
     # CHECK: %4 = lit.call {{.*}}__add__{{.*}}"(%2, %3)
     _ = self.y+arg.x
 
-fn inferred_function_with_memory_result[
+def inferred_function_with_memory_result[
   width: Int](x: SIMD[DType.float32, width]) -> MemoryOnlyInt: pass
 
 # CHECK-LABEL: lit.fn @"memoryOnlyOps
-fn memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
+def memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: %v1 = lit.var.decl {{.*}} var : !lit.ref<!MemoryOnlyPair,
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}"{{.*}}([[IMMREF]], %v1){{.*}}*, "copy"
@@ -154,10 +154,10 @@ fn memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   return v2
 
 struct DirectInit:
-  fn __init__(out self):
+  def __init__(out self):
     pass
 
-fn direct_call_init():
+def direct_call_init():
   var value: DirectInit
   # This is a call of a static method on an instance, so 'value' is unused.
   # expected-warning @+1 {{'DirectInit' value is unused}}
@@ -165,13 +165,13 @@ fn direct_call_init():
 
 struct DummyFunc:
     @implicit
-    fn __init__(out self, f: def(Int) raises):
+    def __init__(out self, f: def(Int) raises):
         pass
 
-fn func_arg_conversion(f: DummyFunc): pass
+def func_arg_conversion(f: DummyFunc): pass
 
 # CHECK-LABEL: lit.fn @"implicit_func_conversion()"
-fn implicit_func_conversion():
+def implicit_func_conversion():
     def take_int(x: Int) raises:
         pass
 
@@ -195,38 +195,38 @@ struct RegPassable(ImplicitlyCopyable, RegisterPassable):
   # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %self
   # CHECK-NEXT: lit.return [[TMP]]
   @implicit
-  fn __init__(out self, value: Int):
+  def __init__(out self, value: Int):
     self.value = value
 
-  fn __del__(deinit self): pass
-  fn __neg__(self) -> Self: pass
-  fn __add__(self, rhs: Self) -> Self: pass
-  fn __matmul__(self, rhs: Self) -> Self: pass
-  fn __rmatmul__(lhs, rhs: Self) -> Self: pass
+  def __del__(deinit self): pass
+  def __neg__(self) -> Self: pass
+  def __add__(self, rhs: Self) -> Self: pass
+  def __matmul__(self, rhs: Self) -> Self: pass
+  def __rmatmul__(lhs, rhs: Self) -> Self: pass
 
 # CHECK-LABEL: lit.struct.decl @StructWithFuncParam<comparator: !lit.generator
 # CHECK-SAME: <"T": !TrivialRegisterPassable>(!kgen.param<:!TrivialRegisterPassable *(0,0)>, |)
-struct StructWithFuncParam[comparator: fn[T: TrivialRegisterPassable] (T) -> None]:
+struct StructWithFuncParam[comparator: def[T: TrivialRegisterPassable] (T) -> None]:
     # CHECK-LABEL: lit.fn @"f
     # CHECK-SAME: %self: !lit.ref<{{.*}}<:!lit.generator<<"T": !TrivialRegisterPassable>(!kgen.param<:!TrivialRegisterPassable *(0,0)>
-    fn f(self):
+    def f(self):
         pass
 
     # CHECK-LABEL: lit.fn @"g
-    fn g(self):
+    def g(self):
         # CHECK: lit.call {{.*}}[imm *"self`2x"]<:!lit.generator<<"T": !TrivialRegisterPassable>(!kgen.param<:!TrivialRegisterPassable *(0,0)>, |)
         # CHECK-SAME: !lit.ref<{{.*}}<"T": !TrivialRegisterPassable>(!kgen.param<:!TrivialRegisterPassable *(0,0)>, |)
         self.f()
 
 # CHECK-LABEL: lit.fn @"simpleMath
-fn simpleMath(a: Int, b: Int) -> Int:
+def simpleMath(a: Int, b: Int) -> Int:
   # CHECK: %0 = lit.call {{.*}}Int::@"__mul__{{.*}}(%b, %a)
   # CHECK: %1 = lit.call {{.*}}Int::@"__sub__{{.*}}(%a, %0)
   # CHECK: lit.return %1 : !Int
   return a-b*a
 
 # CHECK-LABEL: lit.fn @"precedence_associativity
-fn precedence_associativity(a: Int):
+def precedence_associativity(a: Int):
   # CHECK: %z = lit.var.decl "z" var
   var z: Int = 0
 
@@ -305,24 +305,24 @@ fn precedence_associativity(a: Int):
 
 struct LHS:
   @implicit
-  fn __init__(out self, value: Int):
+  def __init__(out self, value: Int):
     pass
 
 struct RHS(ImplicitlyCopyable):
-  fn __radd__(self, lhs: LHS) -> RHS: return self
-  fn __rsub__(self, lhs: LHS) -> RHS: return self
-  fn __rmul__(self, lhs: LHS) -> RHS: return self
-  fn __rfloordiv__(self, lhs: LHS) -> RHS: return self
-  fn __rmod__(self, lhs: LHS) -> RHS: return self
-  fn __rpow__(self, lhs: LHS) -> RHS: return self
-  fn __rlshift__(self, lhs: LHS) -> RHS: return self
-  fn __rrshift__(self, lhs: LHS) -> RHS: return self
-  fn __rand__(self, lhs: LHS) -> RHS: return self
-  fn __ror__(self, lhs: LHS) -> RHS: return self
-  fn __rxor__(self, lhs: LHS) -> RHS: return self
+  def __radd__(self, lhs: LHS) -> RHS: return self
+  def __rsub__(self, lhs: LHS) -> RHS: return self
+  def __rmul__(self, lhs: LHS) -> RHS: return self
+  def __rfloordiv__(self, lhs: LHS) -> RHS: return self
+  def __rmod__(self, lhs: LHS) -> RHS: return self
+  def __rpow__(self, lhs: LHS) -> RHS: return self
+  def __rlshift__(self, lhs: LHS) -> RHS: return self
+  def __rrshift__(self, lhs: LHS) -> RHS: return self
+  def __rand__(self, lhs: LHS) -> RHS: return self
+  def __ror__(self, lhs: LHS) -> RHS: return self
+  def __rxor__(self, lhs: LHS) -> RHS: return self
 
 # CHECK-LABEL: lit.fn @"reverse_operators
-fn reverse_operators(a: RHS):
+def reverse_operators(a: RHS):
   # CHECK: lit.call {{.*}}RHS::@"__radd__(expressions::RHS,expressions::LHS)"
   var z = Int(1) + a
 
@@ -360,7 +360,7 @@ fn reverse_operators(a: RHS):
   z = Int(3) ^ z
 
 # CHECK-LABEL: lit.fn @"precedence_matmul
-fn precedence_matmul(z: RegPassable) -> RegPassable:
+def precedence_matmul(z: RegPassable) -> RegPassable:
   # CHECK:  [[THREE:%.*]] = kgen.param.constant: !Int = <{3}>
   # CHECK-NEXT:  [[THREERP:%.*]] = lit.call {{.*}}@RegPassable::@"__init__{{.*}}([[THREE]])
   # CHECK-NEXT:  [[TWO:%.*]] = kgen.param.constant: !Int = <{2}>
@@ -386,7 +386,7 @@ fn precedence_matmul(z: RegPassable) -> RegPassable:
   return z + RegPassable(3) @ -RegPassable(2)
 
 # CHECK-LABEL: lit.fn @"precedence_bitwise
-fn precedence_bitwise(a: Int, b: Int, c: Int) -> Int:
+def precedence_bitwise(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}{2}
   # CHECK-NEXT: %[[MUL:.*]] = lit.call {{.*}}Int::@"__mul__{{.*}}(%a, %[[INT_TWO]])
   # CHECK-NEXT: %[[AND:.*]] = lit.call {{.*}}Int::@"__and__{{.*}}(%[[MUL]], %b)
@@ -397,7 +397,7 @@ fn precedence_bitwise(a: Int, b: Int, c: Int) -> Int:
   return a * 2 & b | 4 ^ c
 
 # CHECK-LABEL: @"comparisons
-fn comparisons(a: Int, b: Int):
+def comparisons(a: Int, b: Int):
    var res: Bool
    # CHECK: lit.call {{.*}}Int::@"__lt__{{.*}}(%a, %b)
    res = a < b
@@ -413,21 +413,21 @@ fn comparisons(a: Int, b: Int):
    res = a != b
 
 trait Boolable:
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         ...
 
 struct Boolish(Boolable, ImplicitlyCopyable, RegisterPassable):
-  fn __init__(out self, *, copy: Self): pass
-  fn __bool__(self) -> Bool: return True
+  def __init__(out self, *, copy: Self): pass
+  def __bool__(self) -> Bool: return True
 
 struct MemBoolish(ImplicitlyCopyable):
   @implicit
-  fn __init__(out self, value: Boolish): pass
-  fn __init__(out self, *, copy: Self): pass
-  fn __bool__(self) -> Bool: return True
+  def __init__(out self, value: Boolish): pass
+  def __init__(out self, *, copy: Self): pass
+  def __bool__(self) -> Bool: return True
 
 # CHECK-LABEL: @"unary
-fn unary(a: Bool, b: Int, c: Boolish, d: MemBoolish):
+def unary(a: Bool, b: Int, c: Boolish, d: MemBoolish):
   # CHECK: %0 = lit.call {{.*}}Bool::@"__bool__({{.*}}Bool)"(%a)
   # CHECK: %1 = lit.call {{.*}}Bool::@"__invert__({{.*}}Bool)"(%0)
   _ = not a
@@ -446,7 +446,7 @@ fn unary(a: Bool, b: Int, c: Boolish, d: MemBoolish):
   _ = not d
 
 # CHECK-LABEL: lit.fn @"andOr1
-fn andOr1(a: Boolish, b: Boolish):
+def andOr1(a: Boolish, b: Boolish):
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
 
@@ -463,7 +463,7 @@ fn andOr1(a: Boolish, b: Boolish):
 
 
 # CHECK-LABEL: lit.fn @"andOr2
-fn andOr2(a: Boolish, b: Boolish):
+def andOr2(a: Boolish, b: Boolish):
   # Short circuiting OR returns first operand when it is true-y, second
   # otherwise.  Boolish is defined with copy ctor so it must be invoked.
 
@@ -479,7 +479,7 @@ fn andOr2(a: Boolish, b: Boolish):
   _ = a or b
 
 # CHECK-LABEL: lit.fn @"andOr3
-fn andOr3(a: Boolish, c: Bool):
+def andOr3(a: Boolish, c: Bool):
   # Testing two different logic'y types returns the common bool type if present.
 
   # CHECK: [[ABOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%a)
@@ -493,7 +493,7 @@ fn andOr3(a: Boolish, c: Bool):
   _ = a and c
 
 # CHECK-LABEL: lit.fn @"andOr4
-fn andOr4(b: Boolish, c: Bool):
+def andOr4(b: Boolish, c: Bool):
   # Check incompatible types that are nevertheless boolish.
   # CHECK: [[BBOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%b)
   # CHECK-NEXT: [[BI1:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[BBOOL]])
@@ -506,7 +506,7 @@ fn andOr4(b: Boolish, c: Bool):
   _ = b or c
 
 # CHECK-LABEL: lit.fn @"andOr2
-fn andOr2(b: Boolish, d: MemBoolish):
+def andOr2(b: Boolish, d: MemBoolish):
   # Check memory-only boolish types.
   # Boolish and MemBoolish has a common type of MemBoolish.
 
@@ -525,7 +525,7 @@ fn andOr2(b: Boolish, d: MemBoolish):
   _ = d or b
 
 # CHECK-LABEL: lit.fn @"paramAndOr{{.*}}"<a: !Boolish, b: !Boolish>
-fn paramAndOr[a: Boolish, b: Boolish]():
+def paramAndOr[a: Boolish, b: Boolish]():
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
 
@@ -540,7 +540,7 @@ fn paramAndOr[a: Boolish, b: Boolish]():
   comptime d = a or b
 
 # CHECK-LABEL: lit.fn @"do_math
-fn do_math(a: Int, b: Int, c: Int) -> Int:
+def do_math(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: %z = lit.var.decl "z" var
   var z : Int
   # CHECK-NEXT: %[[INT_5:.*]] = kgen{{.*}}{5}
@@ -566,7 +566,7 @@ z
   return x
 
 # CHECK-LABEL: lit.fn @"test_if_cond
-fn test_if_cond(var cond: Bool, memCond: MemBoolish):
+def test_if_cond(var cond: Bool, memCond: MemBoolish):
     # CHECK: %i = lit.var.decl "i"
     # CHECK: %[[COND:.*]] = lit.ref.load %cond
     # CHECK: %[[LIT_BOOLI1:.*]] = lit.call {{.*}}__mlir_i1__{{.*}}(%[[COND]])
@@ -588,7 +588,7 @@ fn test_if_cond(var cond: Bool, memCond: MemBoolish):
         i += 1
 
 # CHECK-LABEL: lit.fn @"test_param_if_cond{{.*}}"<cond: !Bool>
-fn test_param_if_cond[cond: Bool]() -> Int:
+def test_param_if_cond[cond: Bool]() -> Int:
   # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond(#lit.struct.extract<:!Bool cond, "_mlir_value">, {2}, {3})>
   comptime i = 2 if cond else 3
 
@@ -601,40 +601,40 @@ fn test_param_if_cond[cond: Bool]() -> Int:
 
 # CHECK-LABEL: lit.fn @"callable_mv[fn(::Int, /) -> ::Int](::Int)"
 # CHECK-SAME: <callable: !lit.generator<(!Int, |) -> !Int>>(%a: !Int) -> !Int
-fn callable_mv[callable: fn (Int) -> Int](a: Int) -> Int:
+def callable_mv[callable: def (Int) -> Int](a: Int) -> Int:
   # CHECK-NEXT: lit.call tail[!lit.generator<(!Int, |) -> !Int>: callable](%a)
   return callable(a)
 
 # CHECK-LABEL: lit.fn @"callable_mv_inputs{{.*}})"<
 # CHECK-SAME: callable: !lit.generator<<"x": !Int>(!Int, |) -> !Int>, b: !Int>(%a: !Int) -> !Int
-fn callable_mv_inputs[callable: fn[x: Int](Int) -> Int, b: Int](a: Int) -> Int:
+def callable_mv_inputs[callable: def[x: Int](Int) -> Int, b: Int](a: Int) -> Int:
   # CHECK-NEXT: lit.call tail[!lit.generator<(!Int, |) -> !Int>: bind_params({{.*}}callable, :!Int b)](%a)
   return callable[b](a)
 
 # CHECK-LABEL: lit.fn @"takeIndexParam{{.*}}"<a: !Int>() -> !Int
-fn takeIndexParam[a: Int]() -> Int:
+def takeIndexParam[a: Int]() -> Int:
   return a + 1
 
 # CHECK-LABEL: lit.fn @"returnIndex()"() -> !Int
-fn returnIndex() -> Int:
+def returnIndex() -> Int:
   return 0
 
 # CHECK-LABEL: lit.fn @"returnIndex2()"() -> !Int
-fn returnIndex2() -> Int:
+def returnIndex2() -> Int:
   # CHECK-NEXT: %0 = lit.call {{.*}}takeIndexParam{{.*}}"<:!Int apply({{.*}}@{{.*}}returnIndex()")>()
   # CHECK-NEXT: return %0
   return takeIndexParam[returnIndex()]()
 
 # CHECK-LABEL: lit.fn @"callInParam[fn[::Int](::Int, /) -> ::Int]()"
 # CHECK-SAME: <callable: !lit.generator<<"x": !Int>(!Int, |) -> !Int>>() -> !Int
-fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
+def callInParam[callable: def[x: Int](Int) -> Int]() -> Int:
   # CHECK-NEXT: %0 = lit.call {{.*}}takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_params({{.*}}callable, :!Int {1}), {1})>()
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()
 
 # CHECK-LABEL: lit.fn @"parameterExprs{{.*}}()"
 # CHECK-SAME: <a: !Int, a2: !Int>
-fn parameterExprs[a: Int, a2: Int]():
+def parameterExprs[a: Int, a2: Int]():
   # CHECK: lit.alias.decl *"b{{.*}}": !Int = <{0}>
   comptime b = a-a
   # CHECK: lit.alias.decl *"c{{.*}}": !Int = <{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int a, "_mlir_value">, 42)}
@@ -647,7 +647,7 @@ fn parameterExprs[a: Int, a2: Int]():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.fn @"patterns()
-fn patterns():
+def patterns():
   # CHECK: %z2 = lit.var.decl "z2" var
   var z2: Int
 
@@ -680,7 +680,7 @@ fn patterns():
   (someSIMD) += someSIMD
 
 # CHECK-LABEL: lit.fn @"byval_byref_function(::Int,::Int&)"{{.*}}(%a: !Int, %b: !lit.ref<!Int, mut {{.*}}> mut) -> !kgen.none
-fn byval_byref_function(a: Int, mut b: Int):
+def byval_byref_function(a: Int, mut b: Int):
   # CHECK-NEXT: lit.ref.store %a, %b
   b = a
 
@@ -693,13 +693,13 @@ fn byval_byref_function(a: Int, mut b: Int):
   byval_byref_function(b, b)
 
 # CHECK-LABEL: lit.fn @"lvaluesAndRValues()
-fn lvaluesAndRValues() -> __mlir_type.index:
+def lvaluesAndRValues() -> __mlir_type.index:
   # CHECK: [[VALUE:%.*]] = kgen.param.constant = <4>
   # CHECK: lit.return [[VALUE]] : index
   return Int(4)._mlir_value
 
 # CHECK-LABEL: lit.fn @"mvalueStructField()"
-fn mvalueStructField():
+def mvalueStructField():
   # CHECK: lit.alias.decl [[INT:.*]]: !Int = <{4}>
   comptime Index = Int(4)
   # CHECK: lit.alias.decl *"value{{.*}}" = <sugar_preserved(#lit.struct.extract<{{.*}}, 4)>
@@ -711,7 +711,7 @@ fn mvalueStructField():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.fn @"basic_assignments
-fn basic_assignments(a0: Int, b: Int, c: RegPassable, d: RegPassable):
+def basic_assignments(a0: Int, b: Int, c: RegPassable, d: RegPassable):
   var a = a0
   # CHECK-NEXT:      %a = lit.var.decl "a" var
   # CHECK-NEXT: lit.ref.store %a0, %a
@@ -807,7 +807,7 @@ def literals() raises:
     c = True          # CHECK: !Bool = <{:i1 1}>
 
 # CHECK-LABEL: lit.fn @"_strings
-fn _strings():
+def _strings():
    """
       Various tests on strings
    """
@@ -862,7 +862,7 @@ world"
 
     # Issue #201: https://github.com/modular/mojo/issues/201
     # CHECK: lit.fn *"hello{{.*}} {
-    fn hello() -> StaticString:
+    def hello() -> StaticString:
         # CHECK: kgen.param.constant: {{.*}}#StringLiteral <:string "123">> = <*?>
         return "123"
         # lit.end_fn
@@ -876,11 +876,11 @@ world"
 
 # This is an array that has elements of MemoryOnlyInt.
 struct MemoryOnlyIntArray:
-  fn __getitem__(mut self, x: Int) -> MemoryOnlyInt: pass
-  fn __setitem__(mut self, x: Int, var value: MemoryOnlyInt): pass
+  def __getitem__(mut self, x: Int) -> MemoryOnlyInt: pass
+  def __setitem__(mut self, x: Int, var value: MemoryOnlyInt): pass
 
 # CHECK-LABEL: lit.fn @"testMemoryOnlyIntArray
-fn testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, var moi: MemoryOnlyInt):
+def testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, var moi: MemoryOnlyInt):
   # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, %moi)
   arr[x] = moi^
   # CHECK: [[ANON:%.*]] = lit.var.decl "__call_result_tmp__"
@@ -926,31 +926,31 @@ struct MyInlineIntInit:
     # CHECK-LABEL: lit.fn @"__init__(expressions::MemoryOnlyInt)"
     # CHECK-SAME: (%value: !lit.ref<!MemoryOnlyInt, imm {{.*}}> read_mem, ?, %self: !lit.ref<!MyInlineIntInit, mut {{.*}}> byref_result) -> !kgen.none
     @implicit
-    fn __init__(out self, value: MemoryOnlyInt):
+    def __init__(out self, value: MemoryOnlyInt):
         # CHECK: %0 = lit.ref.struct.ger %self[value]
         # CHECK: lit.call {{.*}}__init__{{.*}}"{{.*}}(%value, %0){{.*}}*, "copy"
         self.value = value
 
 struct ConstDynamicObject(RegisterPassable):
-    fn __init__(out self):
+    def __init__(out self):
         return
 
-    fn __getattr__(self, name: StringLiteral) -> Int:
+    def __getattr__(self, name: StringLiteral) -> Int:
         return 0
 
 struct DynamicObject:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __getattr__(self, name: StringLiteral) -> Int:
+    def __getattr__(self, name: StringLiteral) -> Int:
         return 0
 
-    fn __setattr__(self, name: StringLiteral, value: Int):
+    def __setattr__(self, name: StringLiteral, value: Int):
         pass
 
 
 # CHECK-LABEL: lit.fn @"dynamic_attribute()"
-fn dynamic_attribute():
+def dynamic_attribute():
     # CHECK: %const_obj = lit.var.decl "const_obj"
     var const_obj = ConstDynamicObject()
     # CHECK: call {{.*}}@ConstDynamicObject::@"__getattr__{{.*}}<:string "dynamic_attribute">(
@@ -971,21 +971,21 @@ struct CallableStruct:
     var value: Int
 
     @implicit
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.value = value
 
-    fn __call__(self, rhs: Int) -> Int:
+    def __call__(self, rhs: Int) -> Int:
         return self.value + rhs
 
 # CHECK-LABEL: lit.fn @"test_call_method()"
-fn test_call_method():
+def test_call_method():
     # CHECK: %[[C2:.*]] = kgen.param.constant: !Int = <{2}>
     # CHECK-NEXT: lit.call {{.*}}@"__call__{{.*}}(%{{.*}}, %[[C2]])
     var value = CallableStruct(5)
     _ = value(2)
 
 struct MemoryType:
-  fn __init__(out self, *, copy: Self):
+  def __init__(out self, *, copy: Self):
     pass
 
 struct RegType(RegisterPassable): pass
@@ -995,46 +995,46 @@ struct RegType(RegisterPassable): pass
 struct ParamType[a: Int](TrivialRegisterPassable): pass
 
 # CHECK-LABEL: lit.fn @"function_types
-fn function_types[
+def function_types[
   # CHECK-SAME: p0: {{.*}}<<"a": !Int>(!lit.struct<#ParamType <:!Int *(0,0)>{{.*}}>, |) -> !kgen.none
-  p0: fn[a: Int](ParamType[a]) -> None,
+  p0: def[a: Int](ParamType[a]) -> None,
 
   # CHECK-SAME: p1: {{.*}}<<"a": !Int, "b": {{.*}}#ParamType <:!Int *(0,0)>>>[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   p1: def[a: Int, b: ParamType[a]]() raises -> None,
 
   # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> pos_vararg>{{.*}}(!lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, {{.*}}origin<0> *[0,0]>> *?, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>>, imm *[0,1]> read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async
-  p2: async fn[*Ts: AnyType](* *Ts) -> None,
+  p2: async def[*Ts: AnyType](* *Ts) -> None,
 ](
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |) -> !Int
-  float0: fn(Int) -> Int,
+  float0: def(Int) -> Int,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!MemoryType, imm {{.*}}> read_mem, |, ?, "__result__": !lit.ref<!MemoryType, mut {{.*}}> byref_result) -> !kgen.none
-  float1: fn(MemoryType) -> MemoryType,
+  float1: def(MemoryType) -> MemoryType,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!RegType, mut *[0,0]> owned_in_mem, |) -> !RegType
-  float2: fn(var RegType) -> RegType,
+  float2: def(var RegType) -> RegType,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!MemoryType, mut *[0,0]> owned_in_mem, |) -> !kgen.none
-  float3: fn(var MemoryType) -> None,
+  float3: def(var MemoryType) -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!Int, mut *[0,0]> mut, |) -> !kgen.none
-  float4: fn(mut Int) -> None,
+  float4: def(mut Int) -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |, ?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
-  float5: fn(Int) raises -> None,
+  float5: def(Int) raises -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |, ?, "__result__": !lit.ref<none, mut *[0,0]> byref_result) async|capturing -> !kgen.none
-  float6: async fn(Int) capturing -> None,
+  float6: async def(Int) capturing -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!lit.ref<!Int, {{.*}}>> read_mem|pos_vararg, ?, {{.*}}) throws -> i1
   float7: def(*Int) raises -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}<(!Int = {10}, {{.*}}StringLiteral <:string "foo">
   # CHECK-SAME: , |) -> !kgen.none>
-  float12: fn(Int = 10, StaticString = "foo") -> None,
+  float12: def(Int = 10, StaticString = "foo") -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}<[1]("x": !lit.ref<!MemoryType, imm {{.*}}> read_mem) -> !Int>
-  named: fn(x: MemoryType) -> Int
+  named: def(x: MemoryType) -> Int
 ): pass
 
 # CHECK-LABEL: lit.struct.decl @Mem
@@ -1042,19 +1042,19 @@ fn function_types[
 # CHECK-NEXT:    lit.alias.decl *"B{{.*}}": non_struct_type = <!lit.generator<("foo": !kgen.param<:non_struct_type sugar_member_alias(!Mem, "x", i8)>) -> !kgen.none>>
 struct Mem:
    comptime x = __mlir_type.i8
-   comptime B = fn (foo: Self.x) -> None
+   comptime B = def (foo: Self.x) -> None
 
-comptime fn_type_alias = fn() -> None
+comptime def_type_alias = def() -> None
 
 @always_inline
-fn func_with_decorator(): pass
+def func_with_decorator(): pass
 
 
 struct TwoParamsStruct[a: Int, b: Int](ImplicitlyCopyable):
     pass
 
 # CHECK-LABEL: lit.fn @"variadic_subscript{{.*}}"<idx: !Int, a: variadic<!Int> pos_vararg>
-fn variadic_subscript[idx: Int, *a: Int](*b: Int):
+def variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK: %b_0 = lit.var.decl "b"
     # CHECK: lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b, %b_0)
     # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <#kgen.variadic.get<:variadic<!Int> a, 2>>
@@ -1073,7 +1073,7 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
 # CHECK-SAME: variadic<!lit.ref<{{.*}}TwoParamsStruct <
 # CHECK-SAME:   #kgen.variadic.get<:variadic<!Int> a, 0>
 # CHECK-SAME:   #kgen.variadic.get<:variadic<!Int> a, 1>
-fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
+def variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
     # CHECK: %b_0 = lit.var.decl
     # CHECK: [[IMMREF:%.*]] = lit.ref.immut %b_0 :
     # CHECK: [[B1REF:%.*]] = {{.*}}__getitem__{{.*}}([[IMMREF]],
@@ -1087,7 +1087,7 @@ fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
     # CHECK: lit.memcpy [[B2REF]], %v1
     var v1 = b[2]
 
-fn testTransferWarning():
+def testTransferWarning():
   var a = MemoryOnlyInt()
 
   # expected-warning @+1 {{transfer from an owned value has no effect}}
@@ -1103,7 +1103,7 @@ fn testTransferWarning():
 
 # CHECK: lit.alias.decl *"bigggNumber{{.*}}#IntLiteral <:!pop.int_literal 115792089237316195423570985008687907853269984665640564039457584007913129639936>> = <*?>
 comptime bigggNumber = 2 << 255
-fn useBigNumber() -> Int:
+def useBigNumber() -> Int:
   # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <{512}>
   var notSoBig = bigggNumber // (2 << 246)
   # Easy min-Index
@@ -1113,14 +1113,14 @@ fn useBigNumber() -> Int:
 
 struct IndexList[size: Int](TrivialRegisterPassable):
     @implicit
-    fn __init__(out self, *elements: Int):
+    def __init__(out self, *elements: Int):
         pass
 
-    fn __setitem__(mut self, val: Int):
+    def __setitem__(mut self, val: Int):
         pass
 
 # Issue 23233 https://github.com/modularml/modular/issues/23233
-fn setitemParamToDLValue():
+def setitemParamToDLValue():
   comptime x = 3
   var coords = IndexList[3](0)
   # The main check is just that it's not erroring.
@@ -1129,7 +1129,7 @@ fn setitemParamToDLValue():
   coords[] = -x
 
 # https://github.com/modular/mojo/issues/734
-fn reg_passable_trivial():
+def reg_passable_trivial():
   var x : Int = 100
   x = 42
   _ = x^  # expected-warning {{transfer from a value of trivial register type 'Int' has no effect and can be removed}}
@@ -1138,7 +1138,7 @@ fn reg_passable_trivial():
   # expected-warning @+1 {{transfer from a value of trivial register type 'Int' has no effect and can be removed}}
   _ = y^  # Consume RValue / BValue is not, this isn't tracked.
 
-fn del_warnings():
+def del_warnings():
   # These copy the value before destroying it, which is pointless.
   var m = MemoryOnlyInt()
   m.__del__()  # expected-warning {{explicit call to '__del__' destroys a copy of the value; consider removing this call}}
@@ -1154,17 +1154,17 @@ fn del_warnings():
 ##===----------------------------------------------------------------------===##
 
 # Test that parameter inference can handle this.
-fn dependent_call_it[dtype: DType](ptr: UnsafePointer[SIMD[dtype, 1], AnyOrigin[mut=True]]):
+def dependent_call_it[dtype: DType](ptr: UnsafePointer[SIMD[dtype, 1], AnyOrigin[mut=True]]):
    dependent_callee(ptr, 0.0)
 # This requires substitution to realize that storage.type.type == DType
-fn dependent_callee[dtype: DType](storage: UnsafePointer[SIMD[dtype, 1], AnyOrigin[mut=True]],
+def dependent_callee[dtype: DType](storage: UnsafePointer[SIMD[dtype, 1], AnyOrigin[mut=True]],
                    pad_value: SIMD[storage.type.dtype, 1]):
    pass
 
 # This requires handling of VariadicAttr in parameter inference.
-fn variadic_attr_caller(*inputs: Tuple[Int]):
+def variadic_attr_caller(*inputs: Tuple[Int]):
    variadic_attr_callee[Int](inputs)
-fn variadic_attr_callee[key_type: ImplicitlyCopyable](
+def variadic_attr_callee[key_type: ImplicitlyCopyable](
        inputs: VariadicList[Tuple[key_type], _]
     ):
   pass
@@ -1172,18 +1172,18 @@ fn variadic_attr_callee[key_type: ImplicitlyCopyable](
 # Test that parameter inference works with implicit conversions - in this case
 # that we can infer the parameters of 'thing_taking_reference' even though x
 # needs to be built as a Pointer.
-fn thing_taking_ref[
+def thing_taking_ref[
   type: AnyType,
   //,
   origin: Origin
 ](ref [origin] arg: type): pass
 
-fn thing_taking_ref2[type: AnyType](ref arg: type): pass
+def thing_taking_ref2[type: AnyType](ref arg: type): pass
 
-fn thing_taking_pointer2[type: AnyType](arg: Pointer[type, _]): pass
+def thing_taking_pointer2[type: AnyType](arg: Pointer[type, _]): pass
 
 # CHECK-LABEL: lit.fn @"test_thing_taking_reference
-fn test_thing_taking_reference(mut x: String):
+def test_thing_taking_reference(mut x: String):
   # CHECK-NEXT: lit.call {{.*}}thing_taking_ref{{.*}}(%x)
   thing_taking_ref(x)
   # CHECK-NEXT: lit.call {{.*}}thing_taking_ref2{{.*}}(%x)
@@ -1193,18 +1193,18 @@ fn test_thing_taking_reference(mut x: String):
 
 struct StructWithStaticMethods:
    @staticmethod
-   fn _init_op_state(state: Pointer[Int, _], foo: Int): pass
-   fn thing(self):
+   def _init_op_state(state: Pointer[Int, _], foo: Int): pass
+   def thing(self):
      var x = 42
      Self._init_op_state(Pointer(to=x), x)
 
-fn infer_through_alias():
+def infer_through_alias():
   comptime MyType = MemoryOnlyInt
   _ = MyType(4)
 
 
 # CHECK-LABEL: lit.fn @"infer_address_space
-fn infer_address_space[
+def infer_address_space[
     mut: __mlir_type.i1,
     //,
     origin: Origin[mut=mut]
@@ -1219,11 +1219,11 @@ fn infer_address_space[
 # https://linear.app/modularml/issue/MOCO-584/[references]-we-cannot-bind-litref-in-parameter-context
 # [References] We cannot bind !lit.ref in parameter context
 struct ThingWithMethodReferenceSelf:
-    fn method(ref a: Self):
+    def method(ref a: Self):
       pass
 
 # CHECK-LABEL: lit.fn @"testThingWithMethodReferenceSelf
-fn testThingWithMethodReferenceSelf[a: ThingWithMethodReferenceSelf]():
+def testThingWithMethodReferenceSelf[a: ThingWithMethodReferenceSelf]():
     # CHECK-NEXT: lit.alias.decl *"sizzle`": none =
     # CHECK-SAME: <apply(:!lit.generator<("a": !lit.ref<!ThingWithMethodReferenceSelf,
     # CHECK-SAME:     <:i1 0, :origin<0> #lit.any.origin>,
@@ -1231,11 +1231,11 @@ fn testThingWithMethodReferenceSelf[a: ThingWithMethodReferenceSelf]():
     comptime sizzle = a.method()
 
 struct HasOverloadedFooMethods:
-    fn foo(ref self): pass
-    fn foo(var self): pass
+    def foo(ref self): pass
+    def foo(var self): pass
 
 # CHECK-LABEL: lit.fn @"testHasOverloadedFooMethods
-fn testHasOverloadedFooMethods():
+def testHasOverloadedFooMethods():
     var foo: HasOverloadedFooMethods
     # CHECK: lit.call {{.*}}@HasOverloadedFooMethods::@"foo{{.*}}(%foo){{.*}}mut *"foo`"> ref) -> !kgen.none>
     foo.foo()

@@ -11,11 +11,11 @@
 # Error Handling related CheckLifetimes tests.
 
 
-fn use(x: Int):
+def use(x: Int):
     pass
 
 
-fn use(x: String):
+def use(x: String):
     pass
 
 
@@ -26,51 +26,51 @@ def use_and_raise(x: Int) raises:
 # CHECK-LABEL: lit.struct.decl @RegExample
 # CHECK: destructor {{.*}}RegExample::@"__del__
 struct RegExample(ImplicitlyCopyable, RegisterPassable):
-    fn __init__(out self):
+    def __init__(out self):
         return
 
     # CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %copy:
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         return
 
     # Test a raising constructor.
     # CHECK-LABEL: lit.fn @"__init__{{.*}}(%a: {{.*}}, %b: {{.*}}, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %self: !lit.ref<!RegExample, {{.*}}> byref_result) throws -> i1
-    fn __init__(out self, a: MemExample, b: MemExample) raises:
+    def __init__(out self, a: MemExample, b: MemExample) raises:
         # CHECK-NOT: __del__
         # CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
         # CHECK-NEXT: kgen.return [[FALSE]]
         return
 
-    fn noop(self):
+    def noop(self):
         pass
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
-    fn mutate(mut self):
+    def mutate(mut self):
         pass
 
 
 struct MemExample(ImplicitlyCopyable):
     var x: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.x = 42
         pass
 
-    fn noop(self):
+    def noop(self):
         pass
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         self.x = take.x
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.x = copy.x
 
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         return True
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 
@@ -86,12 +86,12 @@ def error_handling_int_let() raises:
     use(x)
 
 
-fn somethingThatRaises() raises:
+def somethingThatRaises() raises:
     pass
 
 
 # CHECK-LABEL: lit.fn @"thing_that_raises
-fn thing_that_raises(c: __mlir_type.i1) raises -> MemExample:
+def thing_that_raises(c: __mlir_type.i1) raises -> MemExample:
     # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<none,
     # CHECK-NEXT: lifetime.start [[RESULT]]
     # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}somethingThatRaises{{.*}}(%__error__, [[RESULT]])
@@ -122,7 +122,7 @@ fn thing_that_raises(c: __mlir_type.i1) raises -> MemExample:
 struct RaisingInit:
     var stream: Int
 
-    fn __init__(out self, flags: Int = 0) raises:
+    def __init__(out self, flags: Int = 0) raises:
         var stream = 4
         # This can raise, but 'self' doesn't need to be initialized.
         _ = somethingThatRaises()
@@ -130,7 +130,7 @@ struct RaisingInit:
 
 
 # CHECK-LABEL: lit.fn @"finally_may_raise
-fn finally_may_raise() raises:
+def finally_may_raise() raises:
     # CHECK: lit.try
     try:
         # CHECK-NEXT: lifetime.start %__try_error__
@@ -163,21 +163,21 @@ fn finally_may_raise() raises:
 
 @fieldwise_init
 struct ThrowingExit:
-    fn __enter__(self):
+    def __enter__(self):
         pass
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
-    fn __exit__(self) raises:
+    def __exit__(self) raises:
         pass
 
-    fn __exit__(self, e: Error) raises -> Bool:
+    def __exit__(self, e: Error) raises -> Bool:
         return False
 
 
 # CHECK-LABEL: lit.fn @"context_mgr_exit_raises
-fn context_mgr_exit_raises() raises:
+def context_mgr_exit_raises() raises:
     # CHECK: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__with_error__, %__error__){{.*}}*, "take"
     # CHECK-NEXT: lit.var.lifetime.end %__with_error__
     # CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
@@ -215,12 +215,12 @@ fn context_mgr_exit_raises() raises:
         raise Error()
 
 
-fn may_throw() raises -> RegExample:
+def may_throw() raises -> RegExample:
     return RegExample()
 
 
 # CHECK-LABEL: lit.fn @"propagate_reg_error
-fn propagate_reg_error() raises:
+def propagate_reg_error() raises:
     # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!RegExample,
     # CHECK-NEXT: lifetime.start [[RESULT]]
     # CHECK-NEXT: %0 = lit.call {{.*}}may_throw{{.*}}(%__error__, [[RESULT]])
@@ -248,7 +248,7 @@ struct BigRegExample(RegisterPassable):
 
     # Test a raising constructor.
     # CHECK-LABEL: lit.fn @"__init__{{.*}}MemExample{{.*}}MemExample
-    fn __init__(out self, a: MemExample, b: MemExample) raises:
+    def __init__(out self, a: MemExample, b: MemExample) raises:
         # CHECK-NEXT: [[A_REF:%.*]] = lit.ref.struct.ger %self[a]
         # CHECK-NEXT: [[A:%.*]] = lit.call {{.*}}__init__{{.*}}()
         # CHECK-NEXT: lit.ref.store [[A]], [[A_REF]]
@@ -264,18 +264,18 @@ struct BigRegExample(RegisterPassable):
 struct MyStringReturningCtx(Movable):
     var s: String
 
-    fn __init__(out self):
+    def __init__(out self):
         self.s = "hey"
 
-    fn __enter__(var self) -> Self:
+    def __enter__(var self) -> Self:
         return self^
 
-    fn read(self) raises -> String:
+    def read(self) raises -> String:
         return ""
 
 
 # CHECK: lit.fn @"testErrorReturn
-fn testErrorReturn() raises:
+def testErrorReturn() raises:
     var input: String
     # CHECK: try
     with MyStringReturningCtx() as ctx:
@@ -288,9 +288,9 @@ fn testErrorReturn() raises:
 
 # COM: Test partial destruction of initialized fields upon an error return.
 struct Field(ImplicitlyCopyable):
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         pass
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 
@@ -300,7 +300,7 @@ struct DestructSome:
     var b: Field
 
     # CHECK-LABEL: lit.fn @"__init__
-    fn __init__(out self, a: Field, b: Field) raises:
+    def __init__(out self, a: Field, b: Field) raises:
         # CHECK:      lifetime.start %__call_result_tmp__
         # CHECK-NEXT: call {{.*}}somethingThatRaises
         # CHECK-NEXT: if
@@ -343,16 +343,16 @@ struct DestructSome:
         somethingThatRaises()
 
 
-fn borrow_and_return(value: MemExample) raises -> MemExample:
+def borrow_and_return(value: MemExample) raises -> MemExample:
     return value
 
 
-fn use(err: Error):
+def use(err: Error):
     pass
 
 
 # CHECK-LABEL: lit.fn @"raising_use
-fn raising_use(var value: MemExample):
+def raising_use(var value: MemExample):
     try:
         # CHECK:      [[BORROW:%.*]] = lit.ref.immut %value
         # CHECK-NEXT: [[VAL:%.*]] = lit.var.decl "__call_result_tmp__"
@@ -383,15 +383,15 @@ fn raising_use(var value: MemExample):
 struct ThrowingSelfInit:
     var x: Int
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
     # CHECK-LABEL: lit.fn @"__init__
-    fn __init__(out self) raises:
+    def __init__(out self) raises:
         self.x = 0
 
     # CHECK-LABEL: lit.fn @"__init__
-    fn __init__(out self, x: Int) raises:
+    def __init__(out self, x: Int) raises:
         # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}__init__{{.*}}(%__error__, %self)
         # CHECK-NEXT: if [[IS_ERR]]
         # CHECK-NEXT:   mark_consumed %self
@@ -403,7 +403,7 @@ struct ThrowingSelfInit:
         self = ThrowingSelfInit()
 
     # CHECK-LABEL: lit.fn @"__init__
-    fn __init__(out self, x: Int, y: Int) raises:
+    def __init__(out self, x: Int, y: Int) raises:
         # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}__init__{{.*}}(%__error__, %self)
         # CHECK:      else
         # CHECK-NEXT:   call {{.*}}__del__{{.*}}(%self)
@@ -417,11 +417,11 @@ struct ThrowingSelfInit:
 struct InitFieldsDestroyedInThrowingConstructor:
     var x: MemExample
 
-    fn __init__(out self):
+    def __init__(out self):
         self.x = MemExample()
 
     # CHECK-LABEL: lit.fn @"__init__(i1)"
-    fn __init__(out self, cond: __mlir_type.`i1`) raises:
+    def __init__(out self, cond: __mlir_type.`i1`) raises:
         self = InitFieldsDestroyedInThrowingConstructor()
         # CHECK:      hlcf.elif {
         # CHECK-NEXT:   hlcf.elif.yield %cond
@@ -437,7 +437,7 @@ struct InitFieldsDestroyedInThrowingConstructor:
             raise Error()
 
 # CHECK-LABEL: lit.fn @"doesnt_actually_raise{{.*}}%__error__: !lit.ref<:non_struct_type #alias_Never
-fn doesnt_actually_raise() raises Never:
+def doesnt_actually_raise() raises Never:
     pass
 
 # CHECK-LABEL: lit.fn @"test_doesnt_actually_raise{{.*}}() -> !Int
@@ -449,7 +449,7 @@ fn doesnt_actually_raise() raises Never:
 # CHECK-NEXT: lit.var.lifetime.end %__never_error__
 # CHECK-NEXT: lit.var.lifetime.end %__call_result_tmp__
 # CHECK-NEXT: kgen.param.constant: !Int = <{42}>
-fn test_doesnt_actually_raise() -> Int:
+def test_doesnt_actually_raise() -> Int:
     doesnt_actually_raise()
     return 42
 

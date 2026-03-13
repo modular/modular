@@ -7,7 +7,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-fn main():
+def main():
     print(Float64(1.1))  # CHECK: 1.1
     print(Float64(0.1))  # CHECK-NEXT: 0.1
     print(Float64(1.0))  # CHECK-NEXT: 1

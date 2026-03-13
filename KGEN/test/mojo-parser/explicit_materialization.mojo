@@ -8,26 +8,26 @@
 
 
 struct NonEM:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn method(self):
+    def method(self):
         pass
 
 
 struct Foo[v: NonEM]:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn method(self):
+    def method(self):
         pass
 
 
-fn func(x: NonEM = NonEM()):
+def func(x: NonEM = NonEM()):
     pass
 
 
-fn main():
+def main():
     # This should not raise a warning.
     func()
 

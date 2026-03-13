@@ -12,7 +12,7 @@ struct StringNoMove(ImplicitlyCopyable):
     pass
 
 
-fn use(x: StringNoMove):
+def use(x: StringNoMove):
     pass
 
 
@@ -24,6 +24,6 @@ fn use(x: StringNoMove):
 # CHECK: lit.fn @"__del__
 # CHECK: lit.fn @"__init__{{.*}}*, %copy:
 # CHECK: lit.fn @"__init__{{.*}}*, %take
-fn makes_escaping_closure_from_nomove(m: StringNoMove):
-    fn foo():
+def makes_escaping_closure_from_nomove(m: StringNoMove):
+    def foo():
         use(m)

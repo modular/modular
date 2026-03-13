@@ -18,15 +18,15 @@
 # RUN: cat %s | grep -v "# CHECK" | FileCheck %s
 
 
-# CHECK-LABEL: fn old_origin_of
-fn old_origin_of[T: AnyType](a: T):
+# CHECK-LABEL: def old_origin_of
+def old_origin_of[T: AnyType](a: T):
     # CHECK-NEXT: _ = origin_of(a)
     # CHECK-NOT: _ = __origin_of(a)
     _ = __origin_of(a)
 
 
-# CHECK-LABEL: fn old_origin_of_2
-fn old_origin_of_2[T: AnyType](b: T):
+# CHECK-LABEL: def old_origin_of_2
+def old_origin_of_2[T: AnyType](b: T):
     # CHECK-NEXT: _ = origin_of(b)
     # CHECK-NOT: _ = __origin_of(b)
     _ = __origin_of(b)

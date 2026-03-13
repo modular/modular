@@ -24,7 +24,7 @@ comptime TabulateIndices = Variadic.tabulate[5, AddOne]
 # CHECK: lit.alias.decl *"TabulateIndices`{{.*}}": variadic<!Int> = <[{1}, {2}, {3}, {4}, {5}]>
 
 # CHECK-LABEL: lit.fn @"foo
-fn foo(
+def foo(
     t1: Tuple[Int, Int, Int], t2: Tuple[FloatDyn, FloatDyn, FloatDyn]
 ) -> Tuple[
     # CHECK: %__result__: !lit.ref<{{.*}}> [!Int, !Int, !Int, !FloatDyn, !FloatDyn, !FloatDyn]>

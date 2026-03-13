@@ -8,10 +8,10 @@
 
 struct Empty(TrivialRegisterPassable):
     @always_inline("builtin")
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-fn takeAnyType[T: AnyType](a: T):
+def takeAnyType[T: AnyType](a: T):
     pass
 
 ##===----------------------------------------------------------------------===##
@@ -23,17 +23,17 @@ struct StructWithIntParam[size: Int](RegisterPassable):
     pass
 
 # CHECK-LABEL: lit.fn @"paramArith{{.*}}"<x: !Int>() -> !kgen.none
-fn paramArith[x: Int]():
+def paramArith[x: Int]():
     # CHECK: lit.alias.decl *"y`": !Bool = <{{.*}}{_mlir_value: i1 = eq(#lit.struct.extract<:!Int x, "_mlir_value">, 99)}
     comptime y = x == 98 + 1
 
-fn take_3index(a: Int, b: Int, c: Int) -> Int:
+def take_3index(a: Int, b: Int, c: Int) -> Int:
     return a
 
 # CHECK-LABEL: lit.fn @"fancy_signature{{.*}}"<dt: !DType, size: !Int>
 # CHECK-SAME: (%x: {{.*}}#SIMD <:!DType dt, :!Int size>{{.*}}>,
 # CHECK-SAME: %exp: {{.*}}#SIMD <:!DType dt, :!Int size>{{.*}}>) -> !Int
-fn fancy_signature[dt: DType, size: Int](
+def fancy_signature[dt: DType, size: Int](
     x: SIMD[dt, size],
     exp: (SIMD)[dt, size]
 ) -> Int:
@@ -50,11 +50,11 @@ fn fancy_signature[dt: DType, size: Int](
   return size+42
 
 
-fn generic_fn[a: DType, b: Int, c: TrivialRegisterPassable](d : Int):
+def generic_fn[a: DType, b: Int, c: TrivialRegisterPassable](d : Int):
   pass
 
 # CHECK: lit.fn @"call_generic{{.*}}"<dt: !DType>()
-fn call_generic[dt: DType]():
+def call_generic[dt: DType]():
   # CHECK: %[[C57:.*]] = {{.*}}constant{{.*}}57
   # CHECK: lit.call {{.*}}@"generic_fn{{.*}}"<:!DType dt, :!Int {{.*}}42{{.*}}, :!TrivialRegisterPassable !DType>(%[[C57]])
   generic_fn[dt, 42, DType](57)
@@ -70,11 +70,11 @@ struct TestParamStruct[A: Int](TrivialRegisterPassable):
 
   # CHECK: lit.fn @"method{{.*}}"<B: !Int>(%self: !lit.struct<#TestParamStruct <:!Int [[A]]>
   # CHECK-SAME: %other: {{.*}}#TestParamStruct <:!Int {{.*}}{_mlir_value = add(#lit.struct.extract<:!Int [[A]], "_mlir_value">, #lit.struct.extract<:!Int B, "_mlir_value">)}
-  fn method[B: Int](self: TestParamStruct[Self.A], other: TestParamStruct[Self.A + B]):
+  def method[B: Int](self: TestParamStruct[Self.A], other: TestParamStruct[Self.A + B]):
     pass
 
   # CHECK-LABEL: lit.fn @"aliases{{.*}}%x: {{.*}}#TestParamStruct <
-  fn aliases(self, x: TestParamStruct[TestParamStruct[Self.A].TypeLevelAlias]):
+  def aliases(self, x: TestParamStruct[TestParamStruct[Self.A].TypeLevelAlias]):
     # CHECK: lit.alias.decl [[B:.*]]: !Int = <{{.*}}{_mlir_value = add({{.*}}mul(#lit.struct.extract<:!Int *"A`", "_mlir_value">, 2){{.*}}, 1)}
     comptime B = Self.A + Self.A + 1
     # CHECK: lit.alias.decl *"C{{.*}}: !Int =
@@ -96,7 +96,7 @@ struct TestParamStruct[A: Int](TrivialRegisterPassable):
 
 # Test that we support partially bound parameters.
 # CHECK-LABEL: lit.fn @"testTestParamStruct
-fn testTestParamStruct(a: TestParamStruct[4]):
+def testTestParamStruct(a: TestParamStruct[4]):
   # CHECK: %0 = lit.call {{.*}}@TestParamStruct::@"__init__{{.*}}<:!Int {{.*}}11{{.*}}>()
   # CHECK: %arg11 = lit.var.decl {{.*}} : {{.*}}#TestParamStruct <:!Int {{.*}}11
   var arg11 = TestParamStruct[11]()
@@ -106,7 +106,7 @@ fn testTestParamStruct(a: TestParamStruct[4]):
   a.method[7](arg11)
 
 # CHECK-LABEL: lit.fn @"testSIMD(
-fn testSIMD(a: SIMD[DType.float32, 1],
+def testSIMD(a: SIMD[DType.float32, 1],
             b: SIMD[DType.int32, 1],
             mut reff: SIMD[DType.int32, 1]):
   # CHECK: %field1 = lit.var.decl {{.*}} : !lit.ref<scalar<sugar_preserved(#lit.struct.extract<{{.*}}, f32)>
@@ -130,14 +130,14 @@ fn testSIMD(a: SIMD[DType.float32, 1],
 # CHECK-SAME: ]()"<
 # CHECK-SAME: size1: !Int, a: !lit.struct<#StructWithIntParam <:!Int size1>>,
 # CHECK-SAME: size2: !Int, b: !lit.struct<#StructWithIntParam <:!Int size2>>>()
-fn paramResolution[size1: Int, a: StructWithIntParam[size1],
+def paramResolution[size1: Int, a: StructWithIntParam[size1],
                    size2: Int, b: StructWithIntParam[size2]]():
   pass
 
 # Show that we can implicitly convert from 42's literal type to Int.
 # CHECK-LABEL: lit.fn @"implConversion
 # CHECK: <a: !lit.struct<#StructWithIntParam <:!Int {42}>>
-fn implConversion[a: StructWithIntParam[42]]():
+def implConversion[a: StructWithIntParam[42]]():
   pass
 
 # CHECK-LABEL: lit.struct.decl @Pair<dt: !DType>
@@ -149,17 +149,17 @@ struct Pair[dt: DType](RegisterPassable):
 
   # CHECK: lit.fn @"__init__{{.*}}-> !lit.struct<#Pair <:!DType dt>>
   @implicit
-  fn __init__(out self, a: SIMD[Self.dt, 42]):
+  def __init__(out self, a: SIMD[Self.dt, 42]):
     self.a = a
     self.b = 4
   # CHECK: }
 
-  fn __init__(out self, *, copy: Self): pass
+  def __init__(out self, *, copy: Self): pass
 
 # CHECK: }
 
 # CHECK: useParameterizedField
-fn useParameterizedField[x: Pair[DType.float32]]():
+def useParameterizedField[x: Pair[DType.float32]]():
   # CHECK: lit.alias.decl *"y{{.*}}":
   comptime y : SIMD[DType.float32, 42] = x.a
 
@@ -168,7 +168,7 @@ fn useParameterizedField[x: Pair[DType.float32]]():
 # CHECK-SAME: <[[TYPE:.*]]: non_struct_type>
 struct TypeParameter[T: __mlir_type.`!kgen.non_struct_type`]:
   # CHECK: @"bar(parameters::TypeParameter{{.*}}(%self: {{.*}} read_mem, %val: !kgen.param<:non_struct_type [[TYPE]]>)
-  fn bar(self, val: Self.T):
+  def bar(self, val: Self.T):
     pass
 
 # Test that parameter decls can refine subsequent ones in the same param list.
@@ -180,27 +180,27 @@ struct ParamSubst[
   ]: pass
 
 # CHECK-LABEL: lit.fn @"testParamSubst
-fn testParamSubst():
+def testParamSubst():
   # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<!lit.struct<#ParamSubst <:!TrivialRegisterPassable {{..*}}<:non_struct_type index>, {{.*}}:variadic<index> [1, 2]>>,
   var xx : ParamSubst[__mlir_type.index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
 
 
 # Test parameter substitution.
 # CHECK-LABEL: lit.fn @"fnToCall{{.*}}"<size: !Int, arr: array<#lit.struct.extract<:!Int size, "_mlir_value">, f32>>()
-fn fnToCall[size: Int, arr: __mlir_type[`!pop.array<`, size._mlir_value, `, f32>`]]():
+def fnToCall[size: Int, arr: __mlir_type[`!pop.array<`, size._mlir_value, `, f32>`]]():
   pass
 
 # CHECK: lit.fn @"fnWithCall{{.*}}"<array: array<10, f32>
-fn fnWithCall[array: __mlir_type[`!pop.array<10, f32>`]]():
+def fnWithCall[array: __mlir_type[`!pop.array<10, f32>`]]():
    # CHECK: lit.call {{.*}}@"fnToCall{{.*}}"<:!Int {10}, :array<10, f32> array>()
    fnToCall[10, array]()
 
 # CHECK-LABEL: lit.fn @"meta_str{{.*}}"<["type.value`"]*"type.value`": string, +, type: !lit.struct<#StringLiteral <:string *"type.value`">>>() -> !kgen.none
-fn meta_str[type: StringLiteral]():
+def meta_str[type: StringLiteral]():
   pass
 
 # CHECK-LABEL: lit.fn @"str_input_param()"() -> !kgen.none
-fn str_input_param():
+def str_input_param():
   # CHECK: %0 = lit.call {{.*}}@"meta_str{{.*}}"<{{.*}}!lit.struct<#StringLiteral <:string "123">>{{.*}}>()
   meta_str["123"]()
 
@@ -211,36 +211,36 @@ struct TwoParams[a: Int, b: Int](TrivialRegisterPassable):
 # CHECK-LABEL: lit.fn @"signature_capture{{.*}}"<
 # CHECK-SAME: a: !Int,
 # CHECK-SAME: f: !lit.generator<<"b": !Int>() -> {{.*}}TwoParams <:!Int a, :!Int *(0,0)>{{.*}}>
-fn signature_capture[a: Int, f: fn[b: Int]() -> TwoParams[a, b]]():
+def signature_capture[a: Int, f: def[b: Int]() -> TwoParams[a, b]]():
     _ = f[2]()
 
 # CHECK-LABEL: lit.fn @"my_constrained{{.*}}"<{{.*}}cond: !Bool, message: !lit.struct<#StringLiteral <:string *"message.value`">>>()
-fn my_constrained[cond: Bool, message: StringLiteral]():
+def my_constrained[cond: Bool, message: StringLiteral]():
     # CHECK: kgen.param.assert <{{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">{{.*}}>, *"message.value`"
     __mlir_op.`kgen.param.assert`[cond=cond.__mlir_i1__(), message=message.value]()
     return
 
 
 # CHECK-LABEL: lit.fn @"pass_str_param
-fn pass_str_param():
+def pass_str_param():
     # CHECK: lit.call {{.+}}my_constrained{{.*}}<:string "foo", :!Bool {:i1 1}, :!lit.struct<#StringLiteral <:string "foo">> *?>()
     my_constrained[1==1, "foo"]()
 
 # CHECK-LABEL: lit.fn @"implicit_params
 # CHECK-SAME: <?, [[VALUE0:.*]]: !Int, [[VALUE1:.*]]: !Int>
 # CHECK-SAME: %value: {{.*}}#TwoParams <:!Int [[VALUE0]], :!Int [[VALUE1]]>
-fn implicit_params(value: TwoParams):
+def implicit_params(value: TwoParams):
     pass
 
 # CHECK-LABEL: lit.fn @"implicit_params_with_others
 # CHECK-SAME: <a: !Int, ?, [[LHS0:.*]]: !Int, [[LHS1:.*]]: !Int, [[RHS0:.*]]: !Int, [[RHS1:.*]]: !Int>
 # CHECK-SAME: %lhs: {{.*}}#TwoParams <:!Int [[LHS0]], :!Int [[LHS1]]>
 # CHECK-SAME: %rhs: {{.*}}#TwoParams <:!Int [[RHS0]], :!Int [[RHS1]]>
-fn implicit_params_with_others[a: Int](lhs: TwoParams, rhs: TwoParams):
+def implicit_params_with_others[a: Int](lhs: TwoParams, rhs: TwoParams):
     pass
 
 # CHECK-LABEL: lit.fn @"infer_implicit_params()"
-fn infer_implicit_params():
+def infer_implicit_params():
     # CHECK: call {{.*}}implicit_params{{.*}}<:!Int {1}, :!Int {2}
     var one = TwoParams[1, 2]()
     implicit_params(one)
@@ -255,10 +255,10 @@ fn infer_implicit_params():
     # CHECK: lit.call {{.*}}implicit_params_with_others{{.*}}<:!Int {1}, :!Int {1}, :!Int {2}, :!Int {3}, :!Int {4}>
     partial_bind(one, two)
 
-fn implicit_params_with_var_params[*Ts: Int](s: TwoParams[1, _]): pass
+def implicit_params_with_var_params[*Ts: Int](s: TwoParams[1, _]): pass
 
 # CHECK-LABEL: lit.fn @"test_implicit_params_with_var_params
-fn test_implicit_params_with_var_params():
+def test_implicit_params_with_var_params():
     # CHECK: [[VAL0:%.*]] = lit.call {{.*}}@TwoParams::@"__init__{{.*}}<:!Int {1}, :!Int {2}>() :
     # CHECK: call {{.*}}@"implicit_params_with_var_params{{.*}}<:variadic<!Int> [], :!Int {2}>([[VAL0]])
     implicit_params_with_var_params(TwoParams[1, 2]())
@@ -267,7 +267,7 @@ fn test_implicit_params_with_var_params():
 # CHECK-SAME: "<?, [[V0:.*]]: !Int, [[W0:.*]]: !Int, [[W1:.*]]: !Int>(
 # CHECK-SAME: %v: {{.*}}#TwoParams <:!Int {5}, :!Int [[V0]]>
 # CHECK-SAME: %w: {{.*}}#TwoParams <:!Int [[W0]], :!Int [[W1]]>
-fn explicit_autoparameterization(v: TwoParams[5, _], w: TwoParams[b=_, a=_]):
+def explicit_autoparameterization(v: TwoParams[5, _], w: TwoParams[b=_, a=_]):
     pass
 
 comptime TwoParamsSwap[b: Int, a: Int] = TwoParams[a, b]
@@ -276,28 +276,28 @@ comptime TwoParamsSwap[b: Int, a: Int] = TwoParams[a, b]
 # CHECK-SAME: <?, [[B0:.*]]: !Int, [[A0:.*]]: !Int, [[B1:.*]]: !Int>
 # CHECK-SAME: %x: {{.*}}#TwoParams <:!Int [[A0]], :!Int [[B0]]>
 # CHECK-SAME: %y: {{.*}}#TwoParams <:!Int {2}, :!Int [[B1]]>
-fn autoparam_param_alias(x: TwoParamsSwap, y: TwoParamsSwap[_, 2]) -> Int:
+def autoparam_param_alias(x: TwoParamsSwap, y: TwoParamsSwap[_, 2]) -> Int:
     return x.a + y.b
 
 # CHECK-LABEL: lit.fn @"autoparam_param_alias_params
 # CHECK-SAME: <x: !Int, ["y.a`"][[A0:.*]]: !Int, +, y: {{.*}}TwoParams <:!Int [[A0]], :!Int {2}>
-fn autoparam_param_alias_params[x: Int, //, y: TwoParamsSwap[2, _]]():
+def autoparam_param_alias_params[x: Int, //, y: TwoParamsSwap[2, _]]():
     pass
 
 struct IndexParam[x: Int](TrivialRegisterPassable):
     @implicit
-    fn __init__(out self, p: __mlir_type.`!kgen.none`):
+    def __init__(out self, p: __mlir_type.`!kgen.none`):
         pass
 
 
 # CHECK-LABEL: lit.fn @"autoparam_of_params
 # CHECK-SAME: <a: !Int, ["b.x`"]*"b.x`": !Int, +, b: {{.*}}IndexParam <:!Int *"b.x`">>, c: {{.*}}IndexParam <:!Int a>
-fn autoparam_of_params[a: Int, //, b: IndexParam, c: IndexParam[a]]():
+def autoparam_of_params[a: Int, //, b: IndexParam, c: IndexParam[a]]():
     pass
 
 # CHECK-LABEL: lit.fn @"autoparam_of_struct_metatype_params
 # CHECK-SAME: <["a.x`1"]*"a.x`1": !Int, +, a: meta<!lit.struct<#IndexParam <:!Int *"a.x`1">>>>
-fn autoparam_of_struct_metatype_params[a: type_of(IndexParam)]():
+def autoparam_of_struct_metatype_params[a: type_of(IndexParam)]():
     pass
 
 @fieldwise_init
@@ -307,7 +307,7 @@ struct DependentParams[x: Int, //, p: IndexParam[x]](TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.fn @"autoparam_of_dependent_params
 # CHECK-SAME: <["dp.x`"]*"dp.x`": !Int, ["dp.p`1"]*"dp.p`1": {{.*}}IndexParam <:!Int *"dp.x`">>, +, dp: {{.*}}DependentParams <:!Int *"dp.x`", :{{.*}}IndexParam <:!Int *"dp.x`">> *"dp.p`1">>
-fn autoparam_of_dependent_params[dp: DependentParams]():
+def autoparam_of_dependent_params[dp: DependentParams]():
     pass
 
 
@@ -315,9 +315,9 @@ fn autoparam_of_dependent_params[dp: DependentParams]():
 # CHECK-SAME: :{mut |*(0,0)|, mut |*(0,1)|}:<["f.__origins__`"][[F_LT:.*]]: origin.set, ["g.__origins__`1"][[G_LT:.*]]: origin.set, +
 # CHECK-SAME: f: !lit.generator<:[[F_LT]]:() capturing -> !kgen.none>
 # CHECK-SAME: g: !lit.generator<:[[G_LT]]:() capturing -> !kgen.none>
-fn function_autoparam[f: fn () capturing [_] -> None, g: fn () capturing [_] -> None]():
+def function_autoparam[f: def () capturing [_] -> None, g: def () capturing [_] -> None]():
     @parameter
-    fn function():
+    def function():
         pass
 
     # CHECK: lit.alias.decl *"bind_one{{.*}}": !lit.generator<() capturing -> !kgen.none> =
@@ -327,24 +327,24 @@ fn function_autoparam[f: fn () capturing [_] -> None, g: fn () capturing [_] -> 
 
 # CHECK-LABEL: lit.fn @"nonprop_capture_set
 # CHECK-SAME: ()"<f: !lit.generator<<"g.__origins__`": origin.set, +, "g": !lit.generator<:*(1,0):() capturing -> !kgen.none>>:*(0,0):() -> !kgen.none>>()
-fn nonprop_capture_set[f: fn[g: fn () capturing [_] -> None] () -> None]():
+def nonprop_capture_set[f: def[g: def () capturing [_] -> None] () -> None]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"autoparam_param_vararg
 # CHECK-SAME: <["f.__origins__`"]*"f.__origins__`": origin.set, +, f: {{.*}}, x: variadic<!Int> pos_vararg>
-fn autoparam_param_vararg[f: fn () [_] -> None, *x: Int]():
+def autoparam_param_vararg[f: def () [_] -> None, *x: Int]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"auto_kw_default{{.*}}"<u: !Int = {3}, |, v: !Int = {3}, ?, {{.*}}, {{.*}}>(%a
-fn auto_kw_default[u: Int = 3, /, v: Int = 3](a: IndexParam, b: IndexParam):
+def auto_kw_default[u: Int = 3, /, v: Int = 3](a: IndexParam, b: IndexParam):
   pass
 
 
 # CHECK-LABEL: lit.fn @"test_auto_kw_default
 # CHECK-SAME: <?, [[A:.*]]: !Int, [[B:.*]]: !Int>(%a
-fn test_auto_kw_default(a: IndexParam, b: IndexParam):
+def test_auto_kw_default(a: IndexParam, b: IndexParam):
   # CHECK-NEXT: <:!Int {3}, :!Int {3}, :!Int [[A]], :!Int [[B]]>
   auto_kw_default(a, b)
   # CHECK-NEXT: <:!Int {1}, :!Int {3}, :!Int [[A]], :!Int [[B]]>
@@ -355,14 +355,14 @@ fn test_auto_kw_default(a: IndexParam, b: IndexParam):
   auto_kw_default[1, v=2](a, b)
 
 
-fn default_with_parametric_value[i: Int](a: StructWithIntParam[i], b: StructWithIntParam[i] = StructWithIntParam[i]()):
+def default_with_parametric_value[i: Int](a: StructWithIntParam[i], b: StructWithIntParam[i] = StructWithIntParam[i]()):
      pass
-fn test_default_with_parametric_value(zzz: StructWithIntParam[1]):
+def test_default_with_parametric_value(zzz: StructWithIntParam[1]):
     default_with_parametric_value(zzz)
 
 struct HasInferredParamWithAutoParam[value: StructWithIntParam, //]:
     pass
-fn test_autoparam_inferred[x: StructWithIntParam]():
+def test_autoparam_inferred[x: StructWithIntParam]():
     var arg: HasInferredParamWithAutoParam[value=x]
 
 
@@ -377,12 +377,12 @@ trait ASubTrait(ASuperTrait):
 struct StructWithTraitParam[T: ASuperTrait]():
     pass
 
-    fn __init__(out self: StructWithTraitParam[Self.T]):
+    def __init__(out self: StructWithTraitParam[Self.T]):
         pass
 
 
 # CHECK-LABEL: lit.fn @"test_upcast_trait
-fn test_upcast_trait[T: ASubTrait](tuples: StructWithTraitParam[T]):
+def test_upcast_trait[T: ASubTrait](tuples: StructWithTraitParam[T]):
     pass
 
 struct TakeSWIP[XYZ: StructWithIntParam = StructWithIntParam[1]()]:
@@ -400,7 +400,7 @@ struct MemoryType(ImplicitlyCopyable):
 
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.value = value
 
 struct NonMovableMemoryType(ImplicitlyCopyable):
@@ -408,21 +408,21 @@ struct NonMovableMemoryType(ImplicitlyCopyable):
 
     @always_inline
     @implicit
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.value = value
 
-fn makeMemoryValue(x: Int) -> MemoryType:
+def makeMemoryValue(x: Int) -> MemoryType:
     return x
 
-fn passMemoryValue(x: MemoryType) -> MemoryType:
+def passMemoryValue(x: MemoryType) -> MemoryType:
     return x
 
 @always_inline
-fn readMemoryValue(x: NonMovableMemoryType) -> Int:
+def readMemoryValue(x: NonMovableMemoryType) -> Int:
     return x.value
 
 # CHECK-LABEL: lit.fn @"callMemoryValueParam
-fn callMemoryValueParam():
+def callMemoryValueParam():
     # CHECK: lit.alias.decl [[PARAM_VALUE1:.*]]: {{.*}}MemoryType = <apply_result_slot({{.*}}makeMemoryValue{{.*}}, {{.*}}1234
     comptime paramValue = makeMemoryValue(1234)
     # CHECK: %dynamicLet = lit.var.decl
@@ -453,7 +453,7 @@ fn callMemoryValueParam():
     comptime dontFoldMemoryCall = readMemoryValue(NonMovableMemoryType(42))._mlir_value
 
 # CHECK-LABEL: lit.fn @"memoryParam{{.*}}"<value: !MemoryType>()
-fn memoryParam[value: MemoryType]():
+def memoryParam[value: MemoryType]():
     pass
 
 struct InitSelfCtor(TrivialRegisterPassable):
@@ -461,11 +461,11 @@ struct InitSelfCtor(TrivialRegisterPassable):
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, x: Int):
+    def __init__(out self, x: Int):
         self.x = x
 
     @always_inline("builtin")
-    fn __add__(self, rhs: Self) -> Self:
+    def __add__(self, rhs: Self) -> Self:
         return self.x + rhs.x
 
 struct InitSelfParam[x: InitSelfCtor](TrivialRegisterPassable):
@@ -478,13 +478,13 @@ struct IntBox:
 
 
 @always_inline
-fn intbox_memory_result(x: Int) -> IntBox:
+def intbox_memory_result(x: Int) -> IntBox:
     return x
 
 
 # CHECK-LABEL: lit.fn @"interpret_initself_ctor
 # CHECK-SAME: %arg: !lit.struct<#InitSelfParam <:!InitSelfCtor {{.*}}{x: !Int = {42}})>
-fn interpret_initself_ctor(arg: InitSelfParam[InitSelfCtor(42)]):
+def interpret_initself_ctor(arg: InitSelfParam[InitSelfCtor(42)]):
     # CHECK-NEXT: !lit.generator<() -> !lit.struct<#InitSelfParam <:!InitSelfCtor
     comptime refined_fn = refine_memory_only_results[1, 2]
 
@@ -498,22 +498,22 @@ fn interpret_initself_ctor(arg: InitSelfParam[InitSelfCtor(42)]):
     var inlined_byrefresult_call = intbox_memory_result(24)
 
 
-fn refine_memory_only_results[a: InitSelfCtor, b: InitSelfCtor]() -> InitSelfParam[a + b]:
+def refine_memory_only_results[a: InitSelfCtor, b: InitSelfCtor]() -> InitSelfParam[a + b]:
     pass
 
 
 struct ConvertFromIntLiteral:
     @implicit
-    fn __init__(out self, x: IntLiteral):
+    def __init__(out self, x: IntLiteral):
         pass
 
 
-fn nonmaterializable_arg(x: IntLiteral) -> ConvertFromIntLiteral:
+def nonmaterializable_arg(x: IntLiteral) -> ConvertFromIntLiteral:
     return x
 
 
 # CHECK-LABEL: lit.fn @"parameter_memoryonly_call
-fn parameter_memoryonly_call():
+def parameter_memoryonly_call():
     # CHECK-NEXT: %x = lit.var.decl "x"
     # CHECK-NEXT: [[TWO:%.*]] = kgen.param.constant: {{.*}}IntLiteral <:!pop.int_literal 2>
     # CHECK-NEXT: [[CST:%.*]] = lit.call {{.*}}ConvertFromIntLiteral::@"__init__{{.*}}([[TWO]], %x)
@@ -525,23 +525,23 @@ fn parameter_memoryonly_call():
 
 
 struct IntBoxParam[b: IntBox]: pass
-fn takeIntBoxParam[size: IntBox](a: IntBoxParam[size]): pass
-fn selectIntBoxFromVariadic(*values: IntBox) -> IntBox: pass
+def takeIntBoxParam[size: IntBox](a: IntBoxParam[size]): pass
+def selectIntBoxFromVariadic(*values: IntBox) -> IntBox: pass
 
 
 # CHECK-LABEL: lit.fn @"parameter_call_drop_dangling_implicit_origins
-fn parameter_call_drop_dangling_implicit_origins[b: IntBox]():
+def parameter_call_drop_dangling_implicit_origins[b: IntBox]():
     comptime res = selectIntBoxFromVariadic(b)
     var wrapper : IntBoxParam[res]
     takeIntBoxParam[res](wrapper)
 
 # https://github.com/modular/modular/issues/4362 + MOCO-187
 # Function call with IntLiteral incorrectly eliminated despite side-effects
-fn take_nonmat(x: IntLiteral):
+def take_nonmat(x: IntLiteral):
     _ = x
 
 # CHECK-LABEL: lit.fn @"call_take_nonmat
-fn call_take_nonmat():
+def call_take_nonmat():
   comptime a = 1
   # CHECK: lit.call {{.*}}take_nonmat
   take_nonmat(a)
@@ -552,40 +552,40 @@ fn call_take_nonmat():
 
 # CHECK-LABEL: lit.fn @"takeCallable{{.*}}"<
 # CHECK-SAME: callable: !lit.generator<(!Int, |) -> !Int>>(%a: !Int) -> !Int
-fn takeCallable[
-     callable: fn(Int) -> Int
+def takeCallable[
+     callable: def(Int) -> Int
    ](a: Int) -> Int:
   # CHECK-NEXT: %0 = lit.call tail[!lit.generator<(!Int, |) -> !Int>: callable](%a)
   # CHECK-NEXT: lit.return %0
   return callable(a)
 
-fn takeAndReturnIndex(x: Int) -> Int:
+def takeAndReturnIndex(x: Int) -> Int:
   return x
 
-fn posOnlyArg(x: Int, /):
+def posOnlyArg(x: Int, /):
   pass
 
 # CHECK-LABEL: lit.fn @"takeAndReturnIndex
-fn passFunction(a: Int) -> Int:
+def passFunction(a: Int) -> Int:
   # CHECK: rebind(:!lit.generator<("x": !Int, |) -> !kgen.none> {{.*}}posOnlyArg
-  comptime changeKw: fn(x: Int) -> None = posOnlyArg
+  comptime changeKw: def(x: Int) -> None = posOnlyArg
 
   # CHECK: lit.call {{.*}}@"takeCallable{{.*}}<:!lit.generator<(!Int, |) -> !Int>
   # CHECK-SAME: rebind(:!lit.generator<("x": !Int) -> !Int> {{.*}}takeAndReturnIndex{{.*}}")>(%a)
   return takeCallable[takeAndReturnIndex](a)
 
 # CHECK-LABEL: lit.fn @"callableWithParam{{.*}}"<type: dtype>() -> !kgen.none
-fn callableWithParam[type: __mlir_type.`!kgen.dtype`]():
+def callableWithParam[type: __mlir_type.`!kgen.dtype`]():
   pass
 
 # CHECK-LABEL: lit.fn @"takeCallable2
-fn takeCallable2[
-      func: fn[dt: __mlir_type.`!kgen.dtype`]() -> None
+def takeCallable2[
+      func: def[dt: __mlir_type.`!kgen.dtype`]() -> None
   ]():
       pass
 
 # CHECK-LABEL: lit.fn @"passFunctionParam2
-fn passFunctionParam2():
+def passFunctionParam2():
   # CHECK: lit.call {{.*}}@"takeCallable2{{.*}}"<
   # CHECK-SAME: :!lit.generator<<"dt": dtype>() -> !kgen.none> rebind(:!lit.generator<<"type": dtype>() -> !kgen.none> @parameters::@"callableWithParam
   takeCallable2[callableWithParam]()
@@ -596,28 +596,28 @@ struct ParamType[x: Int](TrivialRegisterPassable):
 
 
 # CHECK-LABEL: lit.fn @"dependent_function_type
-fn dependent_function_type[a: Int, f: fn (ParamType[a]) -> None]():
+def dependent_function_type[a: Int, f: def (ParamType[a]) -> None]():
     comptime func = dependent_function_type
     # CHECK: lit.call{{.*}}dependent_function_type
     func[a, f]()
 
-fn overloaded_function():
+def overloaded_function():
     pass
 
-fn overloaded_function(a: Int):
+def overloaded_function(a: Int):
     pass
 
-struct ParamFuncType[f: fn() -> None]:
+struct ParamFuncType[f: def() -> None]:
     pass
 
-fn bind_twice[f: fn() -> None, g: fn(Int) -> None]():
+def bind_twice[f: def() -> None, g: def(Int) -> None]():
     pass
 
-fn variadic_func_param[*fs: fn() -> None]():
+def variadic_func_param[*fs: def() -> None]():
     pass
 
 # CHECK-LABEL: lit.fn @"bind_overloaded_fn
-fn bind_overloaded_fn[f: fn[f: fn () -> None] () -> None]():
+def bind_overloaded_fn[f: def[f: def () -> None] () -> None]():
     # CHECK-NEXT: meta<!lit.struct<#ParamFuncType <:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()"
     comptime T = ParamFuncType[overloaded_function]
     # CHECK-NEXT: meta<!lit.struct<#ParamFuncType <:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()"
@@ -635,9 +635,9 @@ fn bind_overloaded_fn[f: fn[f: fn () -> None] () -> None]():
     comptime bind_variadic = variadic_func_param[overloaded_function, overloaded_function]
 
 # Make sure overload resolution can overload things based on parameter bindings.
-fn paramOverload[*, x: Int](zzz: Int): pass
-fn paramOverload[y: Int](): pass
-fn testParamOverload():
+def paramOverload[*, x: Int](zzz: Int): pass
+def paramOverload[y: Int](): pass
+def testParamOverload():
     takeAnyType(paramOverload[x=4])
     takeAnyType(paramOverload[y=4])
 
@@ -657,7 +657,7 @@ struct A[v: Int]:
   comptime member = Self.v + FORTY_TWO
 
 # CHECK-LABEL: lit.fn @"testUseOfAliases
-fn testUseOfAliases():
+def testUseOfAliases():
   # This type checks.
   SIMD[DType(boolDtype), 4].splat()
   # CHECK: lit.alias.decl *"y{{.*}}": !Int = <{{.*}}44
@@ -666,14 +666,14 @@ fn testUseOfAliases():
 struct MyDType(RegisterPassable):
   var state : Int
 
-  fn __init__(out self, *, copy: Self):
+  def __init__(out self, *, copy: Self):
     self.state = self.state
 
   @implicit
-  fn __init__(out self, value: Int):
+  def __init__(out self, value: Int):
      self.state = value
 
-  fn __eq__(self, rhs: MyDType) -> Bool:
+  def __eq__(self, rhs: MyDType) -> Bool:
      return __mlir_attr.true
 
   comptime ui8 = MyDType(Int(1))
@@ -683,7 +683,7 @@ struct MyDType(RegisterPassable):
 struct MyVector[size: Int, dtype: MyDType]:
     pass
 
-fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.float32],
+def testMyDType[dt: MyDType](a: MyVector[4, MyDType.float32],
                             b: MyVector[4, dt]):
     pass
 
@@ -692,7 +692,7 @@ fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.float32],
 struct UnqualAliasLookup[param: Int]:
   # CHECK: lit.alias.decl *"member{{.*}}": !Int = <{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int param, "_mlir_value">, 1)}
   comptime member = Self.param + 1
-  fn get(self) -> Int:
+  def get(self) -> Int:
     # CHECK: %0 = kgen.param.constant: !Int = <{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int param, "_mlir_value">, 1)}
     return Self.member
 
@@ -701,17 +701,17 @@ struct UnqualAliasLookup[param: Int]:
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.fn @"fnWithVariadics{{.*}}"<b: variadic<!Int> pos_vararg>
-fn fnWithVariadics[*b: Int]():
+def fnWithVariadics[*b: Int]():
   pass
 
 # CHECK-LABEL: lit.struct.decl @StructWithVariadics<b: variadic<!Int> pos_vararg>
 struct StructWithVariadics[*b: Int]:
     @implicit
-    fn __init__(out self, i: Int):
+    def __init__(out self, i: Int):
         pass
 
 # CHECK-LABEL: lit.fn @"useParamVariadics
-fn useParamVariadics():
+def useParamVariadics():
   # CHECK-NEXT: lit.call {{.*}}@"fnWithVariadics{{.*}}"<:variadic<!Int> []>()
   fnWithVariadics()
 
@@ -721,16 +721,16 @@ fn useParamVariadics():
   fnWithVariadics[1, 2]()
 
   # This keeps the parameters unbound, allowing them to be used with different length..
-  # CHECK-NEXT: lit.alias.decl *"fnAlias{{.*}}": !lit.generator<<"b": variadic<!Int> pos_vararg>() -> !kgen.none>
+  # CHECK-NEXT: lit.alias.decl *"defAlias{{.*}}": !lit.generator<<"b": variadic<!Int> pos_vararg>() -> !kgen.none>
   # CHECK-SAME: = <@parameters::@"fnWithVariadics{{.*}}">
-  comptime fnAlias = fnWithVariadics
+  comptime defAlias = fnWithVariadics
 
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
   # FIXME(#29495): Pack references aren't working right.
   # HECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.generator<() -> !kgen.none>: @parameters::@"fnWithVariadics{{.*}}"<:variadic<!Int> []>]()
-  # HECK-NEXT: %fnLet = lit.var.decl "fnLet" : {{.*}}!lit.generator<() -> !kgen.none>
-  # HECK-NEXT: lit.ref.store [[TMP]], %fnLet
-  # var fnLet = fnWithVariadics
+  # HECK-NEXT: %defLet = lit.var.decl "fnLet" : {{.*}}!lit.generator<() -> !kgen.none>
+  # HECK-NEXT: lit.ref.store [[TMP]], %defLet
+  # var defLet = fnWithVariadics
 
   # CHECK-NEXT: %a = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:variadic<!Int> []>
   var a: StructWithVariadics[]
@@ -747,7 +747,7 @@ fn useParamVariadics():
 
 
 # CHECK-LABEL: lit.fn @"unpack_variadic
-fn unpack_variadic[*a: Int]():
+def unpack_variadic[*a: Int]():
     # CHECK-NEXT: @StructWithVariadics<:variadic<!Int> a>
     comptime T = StructWithVariadics[*a]
     # CHECK-NEXT: fnWithVariadics{{.*}}<:variadic<!Int> a>
@@ -755,15 +755,15 @@ fn unpack_variadic[*a: Int]():
 
 
 # CHECK-LABEL: lit.fn @"variadic_parameter{{.*}}"<elems: variadic<index>>
-fn variadic_parameter[elems: __mlir_type.`!kgen.variadic<index>`]() -> Int:
+def variadic_parameter[elems: __mlir_type.`!kgen.variadic<index>`]() -> Int:
     return 3
 
-fn dependent_variadic_parameter[
+def dependent_variadic_parameter[
     type: TrivialRegisterPassable, *values: type
 ](): pass
 
 # CHECK-LABEL: lit.fn @"pass_variadic{{.*}}"<elems: variadic<index>>
-fn pass_variadic[elems: __mlir_type.`!kgen.variadic<index>`]():
+def pass_variadic[elems: __mlir_type.`!kgen.variadic<index>`]():
     # CHECK-NEXT: lit.call {{.*}}@"variadic_parameter{{.*}}"<:variadic<index> elems>
     _ = variadic_parameter[elems]()
     # CHECK: lit.call {{.*}}@"dependent_variadic_parameter{{.*}}"<:!TrivialRegisterPassable !Int, :variadic<!Int>
@@ -774,7 +774,7 @@ fn pass_variadic[elems: __mlir_type.`!kgen.variadic<index>`]():
 # https://github.com/modularml/modular/issues/33579
 
 # CHECK-LABEL: lit.fn @"init_self_memory_variadics
-fn init_self_memory_variadics():
+def init_self_memory_variadics():
     # 1 and 2 need to be passed through memory in the variadics.
     # CHECK-NEXT: lit.alias.decl *"x`":
     # CHECK-SAME:  [store_to_mem({1}), store_to_mem({2})]
@@ -782,7 +782,7 @@ fn init_self_memory_variadics():
 
 struct MyList[T: ImplicitlyCopyable]:
     @implicit
-    fn __init__(out self, *values: Self.T): pass
+    def __init__(out self, *values: Self.T): pass
 
 # Infer-only parameters should be bindable with keywords
 comptime ImmMyStringSlice = MyStringSlice[mut=False, ...]
@@ -791,7 +791,7 @@ struct MyStringSlice[mut: Bool, //, origin: Origin[mut=mut]]:  pass
 # This only binds to immutable things.
 # CHECK-LABEL: lit.fn @"test_imm_string_slice
 # CHECK-SAME: (%a: !lit.ref<{{.*}}MyStringSlice <:!Bool {:i1 0}
-fn test_imm_string_slice(a: ImmMyStringSlice):
+def test_imm_string_slice(a: ImmMyStringSlice):
     pass
 
 
@@ -803,20 +803,20 @@ fn test_imm_string_slice(a: ImmMyStringSlice):
 ##===----------------------------------------------------------------------===##
 
 
-fn parameter_overloading[param: Int]():
+def parameter_overloading[param: Int]():
     pass
 
-fn parameter_overloading[param: DType]():
+def parameter_overloading[param: DType]():
     pass
 
-fn partial_parameter_overloading[param: Int, other: Int]():
+def partial_parameter_overloading[param: Int, other: Int]():
     pass
 
-fn partial_parameter_overloading[param: DType, other: DType]():
+def partial_parameter_overloading[param: DType, other: DType]():
     pass
 
 # CHECK-LABEL: lit.fn @"form_reference_to_overloaded
-fn form_reference_to_overloaded():
+def form_reference_to_overloaded():
     # CHECK-NEXT: @"parameter_overloading[[[INT:.*Int]]]()"<:!Int {1}>
     comptime refresult = parameter_overloading[1]
     # CHECK-NEXT: !lit.generator<<"other": !Int>() -> !kgen.none> = <{{.*}}@"partial_parameter_overloading[[[INT]],[[INT]]]()"<:!Int {1}, :!Int ?>
@@ -827,22 +827,22 @@ fn form_reference_to_overloaded():
 ##===----------------------------------------------------------------------===##
 
 struct StaticVec[size: Int](TrivialRegisterPassable):
-  fn __init__[type: __mlir_type.`!kgen.dtype`](out self, v: __mlir_type[`!pop.simd<`, Self.size._mlir_value, `, `, type, `>`]):
+  def __init__[type: __mlir_type.`!kgen.dtype`](out self, v: __mlir_type[`!pop.simd<`, Self.size._mlir_value, `, `, type, `>`]):
       pass
 
   @staticmethod
-  fn thing[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, Self.size._mlir_value, `, `, type, `>`]):
+  def thing[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, Self.size._mlir_value, `, `, type, `>`]):
       return
 
-fn callee1[size: Int](v: StaticVec[size]): pass
-fn callee2[T: TrivialRegisterPassable](v: T): pass
-fn callee3[size: Int, type: __mlir_type.`!kgen.dtype`]
+def callee1[size: Int](v: StaticVec[size]): pass
+def callee2[T: TrivialRegisterPassable](v: T): pass
+def callee3[size: Int, type: __mlir_type.`!kgen.dtype`]
    (v:  __mlir_type[`!pop.simd<`, size._mlir_value, `, `, type, `>`]): pass
-fn callee4[T: __mlir_type.`!kgen.non_struct_type`]
+def callee4[T: __mlir_type.`!kgen.non_struct_type`]
    (v:  __mlir_type[`!kgen.pointer<`, T, `>`]): pass
 
 # CHECK-LABEL: lit.fn @"testParamInference{{.*}}"<size: !Int>(
-fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
+def testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
                                  b2: StaticVec[size+2],
                                  c: __mlir_type.`!pop.simd<17, f32>`,
                                  d: __mlir_type.`!kgen.pointer<f32>`):
@@ -866,31 +866,31 @@ struct Abstraction[a: Int](TrivialRegisterPassable):
   comptime val = Self.a._mlir_value
 
   @implicit
-  fn __init__(out self, arg: Int):
+  def __init__(out self, arg: Int):
     pass
 
   @staticmethod
-  fn push[b: Int]() -> Abstraction[Self.a + b]:
+  def push[b: Int]() -> Abstraction[Self.a + b]:
       return Abstraction[Self.a + b]()
 
   @staticmethod
-  fn pull[b: Int](value: Abstraction[Self.a + b]):
+  def pull[b: Int](value: Abstraction[Self.a + b]):
       return
 
 # CHECK-LABEL: lit.fn @"testDependentType{{.*}}"<
 # CHECK-SAME: rank: !Int, shape: array<#lit.struct.extract<:!Int rank, "_mlir_value">
-fn testDependentType[
+def testDependentType[
     rank: Int,
     shape: __mlir_type[`!pop.array<`, rank._mlir_value, `, index>`],
 ]():
     pass
 
 @no_inline
-fn dont_interpret():
+def dont_interpret():
   pass
 
 # CHECK-LABEL: lit.fn @"testParameterEvaluator()"
-fn testParameterEvaluator():
+def testParameterEvaluator():
   # CHECK-NEXT: lit.alias.decl *"x{{.*}}" = <sugar_member_alias(!lit.struct<#Abstraction <:!Int {1}>>, "val", 1)>
   comptime x = Abstraction[1].val
   # CHECK-NEXT: %y = lit.var.decl "y"
@@ -907,20 +907,20 @@ fn testParameterEvaluator():
   dont_interpret()
 
 
-fn takeAbstraction2(value: Abstraction[2]):
+def takeAbstraction2(value: Abstraction[2]):
     return
 
 struct AnotherAbstraction[a: Int](RegisterPassable):
     var value : Abstraction[Self.a + 1]
 
-    fn __init__(out self):
+    def __init__(out self):
         self.value = Abstraction[Self.a + 1]()
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.value = copy.value
 
 # CHECK-LABEL: lit.fn @"testDependentField()"
-fn testDependentField():
+def testDependentField():
     var lvalue = AnotherAbstraction[1]()
     # CHECK: [[VALUE_PTR:%.*]] = lit.ref.struct.ger %lvalue[value] {{.*}}AnotherAbstraction <:!Int {1}>>,{{.*}}Abstraction <:!Int {2}>>
     takeAbstraction2(lvalue.value)
@@ -929,15 +929,15 @@ struct LeafToRootEval[a: Int, b: Int]:
     var value: Abstraction[Self.a + Self.b + Self.a]
 
 # CHECK-LABEL: lit.fn @"refine_type_leaf_to_root
-fn refine_type_leaf_to_root(e: LeafToRootEval[2, 3]):
+def refine_type_leaf_to_root(e: LeafToRootEval[2, 3]):
     # CHECK: lit.var.decl "value" {{.*}}Abstraction <:!Int {7}>
     var value = e.value
 
-fn tail_types[T: TrivialRegisterPassable, *U: AnyType](a: T, *b: *U):
+def tail_types[T: TrivialRegisterPassable, *U: AnyType](a: T, *b: *U):
     pass
 
 # CHECK-LABEL: lit.fn @"call_with_tail_types()"
-fn call_with_tail_types():
+def call_with_tail_types():
     # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterPassable !Int, :variadic<!AnyType> []>
     tail_types(1)
     # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterPassable !Int, :variadic<!AnyType> [!FloatDyn]>
@@ -947,16 +947,16 @@ fn call_with_tail_types():
 
 # COM: We can't infer parameters from the default value, but we need to test if
 # COM: if other parameters are inferred correctly in their presence.
-fn infer_with_default_arg[T: TrivialRegisterPassable](a: T, b: Int = 7):
+def infer_with_default_arg[T: TrivialRegisterPassable](a: T, b: Int = 7):
     pass
 
 # CHECK-LABEL: lit.fn @"test_infer_with_default_arg()"
-fn test_infer_with_default_arg():
+def test_infer_with_default_arg():
     # lit.call {{.*}}::@"infer_with_default_arg[TrivialRegisterPassable]($0,::Int)"<:non_struct_type !Int>
     infer_with_default_arg(128)
 
 # CHECK-LABEL: lit.fn @"indirect_call_infer_params
-fn indirect_call_infer_params[callee: fn[x: Int](y: Abstraction[x])->None]():
+def indirect_call_infer_params[callee: def[x: Int](y: Abstraction[x])->None]():
     # CHECK: lit.call tail[!lit.generator<("y": {{.*}}#Abstraction <:!Int {2}>
     # CHECK-SAME: bind_params(:!lit.generator<<"x": !Int>("y": {{.*}}Abstraction <:!Int *(0,0)>
     # CHECK-SAME: callee, :!Int {2}
@@ -964,13 +964,13 @@ fn indirect_call_infer_params[callee: fn[x: Int](y: Abstraction[x])->None]():
 
 # COM: test parameter inference through signatureType,
 # COM: from issue https://github.com/modular/mojo/issues/1362
-fn mapSingle[A: AnyType, B: AnyType, R: AnyType](
-  f: fn(x: A, y: B) -> R,
+def mapSingle[A: AnyType, B: AnyType, R: AnyType](
+  f: def(x: A, y: B) -> R,
   a: A, b: B
 ) -> R:
   return f(a, b)
-fn useMapSingle() -> String:
-  fn f(x: String, y: String) -> String:
+def useMapSingle() -> String:
+  def f(x: String, y: String) -> String:
     return String()
   # CHECK: lit.call {{.*}}mapSingle{{.*}}<:!AnyType !String, :!AnyType !String, :!AnyType !String>
   return mapSingle(f, "a", "b")
@@ -978,48 +978,48 @@ fn useMapSingle() -> String:
 
 # COM: Test that keyword-only parameter can be inferred after variadic.
 # COM: Issue https://github.com/modularml/modular/issues/33939
-fn deduce_kw_only[*Ts: Int, x: Int](y: Abstraction[x]):
+def deduce_kw_only[*Ts: Int, x: Int](y: Abstraction[x]):
     pass
 
 
 # CHECK-LABEL: lit.fn @"out_of_order_kw
-fn out_of_order_kw[x: Int, y: IndexParam[x]]():
+def out_of_order_kw[x: Int, y: IndexParam[x]]():
     # CHECK-NEXT: out_of_order_kw{{.*}}<{{.*}}0{{.*}}, :{{.*}}IndexParam <{{.*}}0{{.*}}>> {{.*}}IndexParam::@"__init__{{.*}}<{{.*}}0{{.*}}>, #kgen.none)>>
     comptime bound = out_of_order_kw[y=None, x=0]
 
 
 # CHECK-LABEL: lit.fn @"test_deduce_kw_only
-fn test_deduce_kw_only(a: Abstraction[3]):
+def test_deduce_kw_only(a: Abstraction[3]):
     # CHECK: call {{.*}}@"deduce_kw_only{{.*}}<:variadic<!Int> [{1}, {2}], :!Int {3}>(%a)
     deduce_kw_only[1, 2](a)
 
 # Make sure the +1 in the 'a' argument doesn't break inference.
-fn test_infer_add(a: SIMD[DType.float32, 4], b: SIMD[DType.int32, 5]):
+def test_infer_add(a: SIMD[DType.float32, 4], b: SIMD[DType.int32, 5]):
    _ = take_two(a, b)
 
 struct CallableArg[ArgT: TrivialRegisterPassable]:
-    fn __call__(self, arg: Self.ArgT):
+    def __call__(self, arg: Self.ArgT):
         pass
 
 # CHECK-LABEL: lit.fn @"infer_conversion_arg_type
-fn infer_conversion_arg_type(callable: CallableArg[NoneType]):
+def infer_conversion_arg_type(callable: CallableArg[NoneType]):
     # CHECK: lit.call {{.*}}CallableArg::@"__call__{{.*}}<:!TrivialRegisterPassable !NoneType>
     callable(None)
 
-fn take_two[a_type: DType, c_type: DType, width: Int](
+def take_two[a_type: DType, c_type: DType, width: Int](
     c: SIMD[c_type, width], a: SIMD[a_type, width + 1],
 ) -> SIMD[c_type, width]: pass
 
-fn implicit_signature[
+def implicit_signature[
     type: DType,
     rank: Int, //,
-    func: fn[width: Int](Abstraction[rank]) -> SIMD[type, width],
+    func: def[width: Int](Abstraction[rank]) -> SIMD[type, width],
 ]():
     pass
 
 # CHECK-LABEL: lit.fn @"signature_inference
-fn signature_inference[dt: DType, rank: Int]():
-    fn func[width: Int](idx: Abstraction[rank]) -> SIMD[dt, width]:
+def signature_inference[dt: DType, rank: Int]():
+    def func[width: Int](idx: Abstraction[rank]) -> SIMD[dt, width]:
         pass
 
     # CHECK: call {{.*}}implicit_signature{{.*}}<:!DType dt, :!Int rank,
@@ -1028,12 +1028,12 @@ fn signature_inference[dt: DType, rank: Int]():
     implicit_signature[func]()
 
 
-struct ClosureParam[lt: Origin[mut=True], f: fn () capturing [lt._mlir_origin] -> None](Movable):
+struct ClosureParam[lt: Origin[mut=True], f: def () capturing [lt._mlir_origin] -> None](Movable):
   pass
 
 
 # CHECK-LABEL: lit.fn @"infer_implicit_params
-fn infer_implicit_params(var p: ClosureParam):
+def infer_implicit_params(var p: ClosureParam):
     # CHECK: lit.call {{.*}}ClosureParam::@"__init__
     # CHECK-SAME: *, "take"
     # CHECK-SAME: <:origin<1> *"p.lt._mlir_origin``",
@@ -1043,14 +1043,14 @@ fn infer_implicit_params(var p: ClosureParam):
 
 
 trait ToInt:
-    fn to_int(self) -> Int:
+    def to_int(self) -> Int:
         ...
 
 @fieldwise_init
 struct HasToInt(TrivialRegisterPassable, ToInt):
     var inner: Int
     @always_inline("nodebug")
-    fn to_int(self) -> Int:
+    def to_int(self) -> Int:
         return self.inner
 
 # COM: https://linear.app/modularml/issue/MOCO-885/crash-when-using-autoparam-in-parametrized-structs
@@ -1060,7 +1060,7 @@ struct MixedInferAndPosParam[size: Int](TrivialRegisterPassable):
 
     # CHECK-LABEL: lit.fn @"__init__[{{.*}}ToInt](
     # CHECK-SAME: T0: !ToInt, T1: !ToInt
-    fn __init__[T0: ToInt, T1: ToInt, //](out self, a: T0, b: T1):
+    def __init__[T0: ToInt, T1: ToInt, //](out self, a: T0, b: T1):
         self.f0 = a.to_int()
 
 @fieldwise_init
@@ -1069,11 +1069,11 @@ struct MixedInferAndPosParamWithInferredOnStruct[ST: ToInt, //, size: Int](Trivi
 
     # CHECK-LABEL: lit.fn @"__init__[{{.*}}ToInt](
     # CHECK-SAME: T0: !ToInt, T1: !ToInt
-    fn __init__[T0: ToInt, T1: ToInt, //](out self, z: Self.ST, a: T0, b: T1):
+    def __init__[T0: ToInt, T1: ToInt, //](out self, z: Self.ST, a: T0, b: T1):
         self.f0 = a.to_int()
 
 # CHECK-LABEL: lit.fn @"useMixedInferAndPosParam()"
-fn useMixedInferAndPosParam():
+def useMixedInferAndPosParam():
     # CHECK: lit.call {{.*}}::@MixedInferAndPosParam::@"__init__{{.*}}<:!Int {27}, :!ToInt !HasToInt, :!ToInt !HasToInt
     _ = MixedInferAndPosParam[27](HasToInt(37), HasToInt(47))
     # CHECK: lit.call {{.*}}::@MixedInferAndPosParamWithInferredOnStruct::@"__init__{{.*}}<:!ToInt !HasToInt, :!Int {27}, :!ToInt !HasToInt, :!ToInt !HasToInt
@@ -1081,26 +1081,26 @@ fn useMixedInferAndPosParam():
 
 struct Box[T: AnyType](TrivialRegisterPassable):
     @implicit
-    fn __init__(out self, x: Self.T):
+    def __init__(out self, x: Self.T):
         pass
 
 # CHECK-LABEL: lit.fn @"infer_box_type
-fn infer_box_type[T: AnyType, //, box: Box[T]]():
+def infer_box_type[T: AnyType, //, box: Box[T]]():
     # CHECK-NEXT: lit.call {{.*}}infer_box_type{{.*}}<:!AnyType !Int,
     infer_box_type[Int()]()
 
 # MOCO-1457: Support struct param inference for origins
 struct OriginStructInferenceImm[origin: Origin[]]:
-    fn __init__(out self, ref [Self.origin._mlir_origin]data: Int):  pass
+    def __init__(out self, ref [Self.origin._mlir_origin]data: Int):  pass
 struct OriginStructInferencePar[mut: Bool, //, origin: Origin[mut=mut]]:
-    fn __init__(out self, ref [Self.origin._mlir_origin]data: Int):  pass
+    def __init__(out self, ref [Self.origin._mlir_origin]data: Int):  pass
 struct OriginStructInferenceParWrapped[mut: Bool, //, origin: Origin[mut=mut]]:
-    fn __init__(out self, ref [Self.origin]data: Int):  pass
+    def __init__(out self, ref [Self.origin]data: Int):  pass
 struct OriginStructInferenceParSpecialized[mut: Bool, //, origin: Origin[mut=mut]]:
-    fn __init__[O: Origin[]](out self: OriginStructInferenceParSpecialized[O], ref [O]data: Int):  pass
+    def __init__[O: Origin[]](out self: OriginStructInferenceParSpecialized[O], ref [O]data: Int):  pass
 
 # CHECK-LABEL: lit.fn @"test_origin_struct_inf
-fn test_origin_struct_inf[imm_data: Int](mut data: Int):
+def test_origin_struct_inf[imm_data: Int](mut data: Int):
    # This needs to infer the origin through an implicit conversion
    # CHECK: %0 = lit.ref.immut %data
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceImm::@"__init__
@@ -1134,10 +1134,10 @@ struct SomeStruct(WithAnAlias):
 # Will infer `a` and `b` automatically from `__init__`.
 struct SomeWrapper[t: WithAnAlias, a: AnyType, b: AnyType]:
     @staticmethod
-    fn __init__(out self: SomeWrapper[Self.t, Self.t.A, Self.t.A]):
+    def __init__(out self: SomeWrapper[Self.t, Self.t.A, Self.t.A]):
         pass
 
-fn test_param_inference_contextual_fold():
+def test_param_inference_contextual_fold():
     # CHECK: lit.call {{.*}}SomeWrapper::@"__init__
     # CHECK-SAME: <:!WithAnAlias !SomeStruct,
     # CHECK-SAME: :!AnyType sugar_member_alias(!SomeStruct, "A", !Int),
@@ -1150,16 +1150,16 @@ fn test_param_inference_contextual_fold():
 ##===----------------------------------------------------------------------===##
 
 struct MultiStruct[p1: Int, p2: Int, p3: Int]:
-    fn __init__(out self): pass
+    def __init__(out self): pass
 
-fn foo[x: Int]():
+def foo[x: Int]():
   pass
 
-fn bar(x : Int):
+def bar(x : Int):
   pass
 
 # CHECK-LABEL: lit.fn @"reference_params_through_struct
-fn reference_params_through_struct():
+def reference_params_through_struct():
     var x = MultiStruct[52, 9, 33]()
 
     # CHECK: %[[Y:.*]] = lit.var.decl "y"
@@ -1193,7 +1193,7 @@ struct DependentParam[x: Int, y: ParamType[x]](RegisterPassable):
 
 # CHECK-LABEL: lit.fn @"auto_param_dependent
 # CHECK-SAME: <?, [[Y0:.*]]: !Int, [[Y1:.*]]: {{.*}}#ParamType <:!Int [[Y0]]>>
-fn auto_param_dependent(value: DependentParam[...]):
+def auto_param_dependent(value: DependentParam[...]):
     # CHECK-NEXT: ParamType <:!Int [[Y0]]>> = <*"value.y`1">
     comptime param = value.y
 
@@ -1202,12 +1202,12 @@ fn auto_param_dependent(value: DependentParam[...]):
 # Default function parameters
 ##===----------------------------------------------------------------------===##
 
-fn default_params[a: Int, b: Int = 7, c: String = "woof"]():
+def default_params[a: Int, b: Int = 7, c: String = "woof"]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_default_params()"
-fn test_default_params():
+def test_default_params():
     # CHECK: lit.call {{.*}}@"default_params[::Int,::Int,::String]()"
     # CHECK-SAME: <:!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof">
     default_params[1]()
@@ -1221,8 +1221,8 @@ fn test_default_params():
     default_params[4, 9, "meow"]()
 
 
-fn test_indirect_default_params[
-    callee: fn[a: Int, b: Int = 7, c: String = "woof"]()->None]():
+def test_indirect_default_params[
+    callee: def[a: Int, b: Int = 7, c: String = "woof"]()->None]():
 
     # CHECK: lit.call tail[!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
     # CHECK-SAME: :!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof"
@@ -1239,14 +1239,14 @@ fn test_indirect_default_params[
 
 # COM: check that inferred parameter values take precedence over defaults
 # CHECK-LABEL: lit.fn @"inferred_default_param
-fn inferred_default_param[dt: DType, w: Int = 8](a: SIMD[dt, w]):
+def inferred_default_param[dt: DType, w: Int = 8](a: SIMD[dt, w]):
     pass
 
 
 # CHECK: lit.fn @"test_inferred_default_param{{.*}}"<x: !Int>
 # CHECK: lit.call {{.*}}@"inferred_default_param{{.*}}"<:!DType {{.*}}f32{{.*}}, :!Int {4}>
 # CHECK: lit.call {{.*}}@"inferred_default_param{{.*}}"<:!DType {{.*}}f32{{.*}}, :!Int x>
-fn test_inferred_default_param[
+def test_inferred_default_param[
     x: Int
 ](concrete: SIMD[DType.float32, 4], p: SIMD[DType.float32, x]):
     inferred_default_param(concrete)
@@ -1260,21 +1260,21 @@ struct MemoryOnlyType:
 
 
 # CHECK: lit.fn @"mem_only_default_param[{{.*}}MemoryOnlyType::@"__init__()
-fn mem_only_default_param[x: MemoryOnlyType = MemoryOnlyType()]():
+def mem_only_default_param[x: MemoryOnlyType = MemoryOnlyType()]():
     pass
 
 # CHECK-LABEL: lit.fn @"test_mem_only_default_param()"
 # CHECK: lit.call {{.*}}@"mem_only_default_param[{{.*}}MemoryOnlyType::@"__init__()
-fn test_mem_only_default_param():
+def test_mem_only_default_param():
     mem_only_default_param()
 
 # CHECK-LABEL: lit.fn @"param_default{{.*}}"<
 # CHECK-SAME: x: !Int = {1}>(%y: !Int = x)
-fn param_default[x: Int = 1](y: Int = x):
+def param_default[x: Int = 1](y: Int = x):
     pass
 
 # CHECK-LABEL: lit.fn @"test_param_default
-fn test_param_default():
+def test_param_default():
     # CHECK: [[C:%.*]] = kgen.param.constant: !Int = <{4}>
     # CHECK-NEXT: call {{.*}}param_default{{.*}}<:!Int {4}>([[C]]
     param_default[4]()
@@ -1284,18 +1284,18 @@ fn test_param_default():
 
 struct Optional[T: AnyType]:
     @implicit
-    fn __init__(out self, none: __mlir_type.`!kgen.none`):
+    def __init__(out self, none: __mlir_type.`!kgen.none`):
         pass
 
     @implicit
-    fn __init__(out self, value: Self.T):
+    def __init__(out self, value: Self.T):
         pass
 
-fn default_on_infer_failure[p: Int = 0](a: Optional[ParamType[p]] = None):
+def default_on_infer_failure[p: Int = 0](a: Optional[ParamType[p]] = None):
     pass
 
 # CHECK-LABEL: lit.fn @"test_optional_inference
-fn test_optional_inference(value: ParamType[3]):
+def test_optional_inference(value: ParamType[3]):
     # CHECK-NEXT: %none = kgen.param.constant
     # CHECK-NEXT: [[NONEVD:%.*]] = lit.var.decl {{.*}}ParamType<:!Int {0}>
     # CHECK-NEXT: lit.call {{.*}}@Optional::@"__init__{{.*}}(%none, [[NONEVD]])
@@ -1314,11 +1314,11 @@ fn test_optional_inference(value: ParamType[3]):
 
 # CHECK-LABEL: lit.fn @"default_inferring_param
 # CHECK: (%str: !lit.struct<#StringSlice <{{.*}} O>> = :!alias_StaticString1 apply
-fn default_inferring_param[O: Origin[]](str: StringSlice[O] = StaticString("")):
+def default_inferring_param[O: Origin[]](str: StringSlice[O] = StaticString("")):
     pass
 
 # CHECK-LABEL: lit.fn @"test_default_inferring_param
-fn test_default_inferring_param(b: String):
+def test_default_inferring_param(b: String):
     # Infers O to default value.
     # CHECK: %0 = kgen.param.constant: !lit.struct<#StringSlice <:!Bool {:i1 0}, :origin<0> #lit.origin.field<#lit.static.origin : !lit.origin<0>, "__constants__">,
     # CHECK-NEXT: lit.call {{.*}}default_inferring_param{{.*}}(%0)
@@ -1335,7 +1335,7 @@ fn test_default_inferring_param(b: String):
 struct DefaultParams[a: Int, b: Int = 7, msg: String = "woof"]: pass
 
 # CHECK-LABEL: lit.fn @"test_default_param_struct()"
-fn test_default_param_struct():
+def test_default_param_struct():
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
     # CHECK-SAME: :!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof">
     comptime T = DefaultParams[1]
@@ -1366,7 +1366,7 @@ fn test_default_param_struct():
 struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
 
 # CHECK-LABEL: lit.fn @"test_default_param_struct_all_default()"
-fn test_default_param_struct_all_default():
+def test_default_param_struct_all_default():
     # CHECK: lit.alias.decl *"T{{.*}}": meta<!lit.struct<{{.*}}#AllDefaultParams{{.*}}>> = <@{{.*}}::@AllDefaultParams<
     # CHECK-SAME: :!Int {0},
     # CHECK-SAME: :!MemoryOnlyType {{.*}}MemoryOnlyType::@"__init__()
@@ -1379,14 +1379,14 @@ fn test_default_param_struct_all_default():
 
 
 # COM: Issue #22763
-fn IntForType[T: TrivialRegisterPassable]() -> Int:
+def IntForType[T: TrivialRegisterPassable]() -> Int:
     return 1
 
 struct StructWithParametricDefaultValue[T: TrivialRegisterPassable, N: Int = IntForType[T]()]:
     pass
 
 # CHECK-LABEL: lit.fn @"test_struct_with_parametric_default_value()"
-fn test_struct_with_parametric_default_value():
+def test_struct_with_parametric_default_value():
     # CHECK: lit.alias.decl *"a{{.*}}": meta<!lit.struct<{{.*}}>> = <@{{.*}}::@StructWithParametricDefaultValue<
     # CHECK-SAME: :!TrivialRegisterPassable !Int,
     # CHECK-SAME: :!Int apply(:!lit.generator<() -> !Int> @{{.*}}::@"IntForType[::TrivialRegisterPassable]()"{{.*}}<:!TrivialRegisterPassable !Int>)>
@@ -1400,7 +1400,7 @@ fn test_struct_with_parametric_default_value():
 struct KwParamStruct[a: Int, b: Int = 2, c: Int = 3]: pass
 
 # CHECK-LABEL: lit.fn @"test_struct_kw_params()"
-fn test_struct_kw_params():
+def test_struct_kw_params():
     # CHECK: lit.var.decl {{.*}} synth : !lit.ref<{{.*}}#KwParamStruct <:!Int {5}, :!Int {7}, :!Int {3}
     _ = KwParamStruct[5, b=7]()
     # CHECK: lit.var.decl {{.*}} synth : !lit.ref<{{.*}}#KwParamStruct <:!Int {5}, :!Int {7}, :!Int {9}
@@ -1423,36 +1423,36 @@ struct Thing[v: Int]: pass
 
 struct CtadStruct[a: Int, b: Int]:
     @implicit
-    fn __init__(out self, x: Thing[Self.a]): pass
+    def __init__(out self, x: Thing[Self.a]): pass
 
-    fn __init__(out self, x: Thing[Self.a], y: Thing[Self.b]): pass
-
-    @staticmethod
-    fn foo(x: Thing[Self.a]): pass
+    def __init__(out self, x: Thing[Self.a], y: Thing[Self.b]): pass
 
     @staticmethod
-    fn foo(x: Thing[Self.a], y: Thing[Self.b]): pass
+    def foo(x: Thing[Self.a]): pass
+
+    @staticmethod
+    def foo(x: Thing[Self.a], y: Thing[Self.b]): pass
 
 struct CtadStructWithDefault[a: Int, b: Int, c: Int = 8]:
     @implicit
-    fn __init__(out self, x: Thing[Self.a]): pass
+    def __init__(out self, x: Thing[Self.a]): pass
 
-    fn __init__(out self, x: Thing[Self.a], y: Thing[Self.b]): pass
-
-    @staticmethod
-    fn foo(x: Thing[Self.a]): pass
+    def __init__(out self, x: Thing[Self.a], y: Thing[Self.b]): pass
 
     @staticmethod
-    fn foo(x: Thing[Self.a], y: Thing[Self.b]): pass
+    def foo(x: Thing[Self.a]): pass
+
+    @staticmethod
+    def foo(x: Thing[Self.a], y: Thing[Self.b]): pass
 
 
 struct CtadStructWithMultiDefault[a: Int, b: Int = 6, c: Int = 8, d: Int = 10]:
     @implicit
-    fn __init__(out self, x: CtadStructWithMultiDefault[Self.a]): pass
+    def __init__(out self, x: CtadStructWithMultiDefault[Self.a]): pass
 
 
 # CHECK-LABEL: lit.fn @"test_partial_binding_CTAD(
-fn test_partial_binding_CTAD(multi: CtadStructWithMultiDefault[5]):
+def test_partial_binding_CTAD(multi: CtadStructWithMultiDefault[5]):
     # CHECK: call @{{.*}}::@CtadStruct::@"__init__({{.*}})"{{.*}}<:!Int {6}, :!Int {7}>
     _ = CtadStruct[b=7](Thing[6]())
     # CHECK: call @{{.*}}::@CtadStruct::@"__init__({{.*}})"{{.*}}<:!Int {8}, :!Int {9}>
@@ -1493,7 +1493,7 @@ struct DependentDefault[x: Int = 1, y: Int = x](TrivialRegisterPassable):
 
 
 # CHECK-LABEL: lit.fn @"dependent_default_ctad
-fn dependent_default_ctad():
+def dependent_default_ctad():
     # CHECK-NEXT: value{{.*}}: {{.*}}#DependentDefault <:!Int {1}, :!Int {1}>
     comptime value = DependentDefault()
 
@@ -1502,7 +1502,7 @@ comptime Scalar = SIMD[_, 1]
 
 
 # CHECK-LABEL: lit.fn @"scalar_type{{.*}}"<dt: !DType>
-fn scalar_type[dt: DType]():
+def scalar_type[dt: DType]():
     # CHECK: alias.decl [[T:.*]]: meta<{{.*}}SIMD<:!DType dt, :!Int {1}>>
     comptime T = Scalar[dt]
 
@@ -1514,33 +1514,33 @@ fn scalar_type[dt: DType]():
     #_ = value.cast[dt]()
 
 # CHECK-LABEL: lit.fn @"funct_partial_binding{{.*}}"<x: !Empty, F:
-fn funct_partial_binding[x: Empty, F: fn[t: Empty, s: Empty] () -> None]():
+def funct_partial_binding[x: Empty, F: def[t: Empty, s: Empty] () -> None]():
     # CHECK: !lit.generator<<"u": !Empty, "v": !Empty>() -> !kgen.none> = <rebind(
     # CHECK-SAME: :!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none>
     # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, :!Empty ?, :!Empty ?)
 
-    comptime G: fn[u: Empty, v: Empty] () -> None = F[s=_, t=_]
+    comptime G: def[u: Empty, v: Empty] () -> None = F[s=_, t=_]
     # CHECK: !lit.generator<<"u": !Empty>() -> !kgen.none> = <rebind(
     # CHECK-SAME: :!lit.generator<<"s": !Empty>() -> !kgen.none>
     # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, :!Empty x, :!Empty ?))>
-    comptime H: fn[u: Empty] () -> None = F[x, _]
+    comptime H: def[u: Empty] () -> None = F[x, _]
 
 struct StructWithSpecificSelfInitTypes[size: Int]:
-    fn __init__(out self: StructWithSpecificSelfInitTypes[0]): pass
+    def __init__(out self: StructWithSpecificSelfInitTypes[0]): pass
     @implicit
-    fn __init__(out self: StructWithSpecificSelfInitTypes[1], a: Int): pass
-    fn __init__(out self: StructWithSpecificSelfInitTypes[2], a: Int, b: Int): pass
+    def __init__(out self: StructWithSpecificSelfInitTypes[1], a: Int): pass
+    def __init__(out self: StructWithSpecificSelfInitTypes[2], a: Int, b: Int): pass
 
 struct DependentSpecificInitSelf[T: AnyType]:
     @implicit
-    fn __init__[U: Movable](out self: DependentSpecificInitSelf[U], var value: U):
+    def __init__[U: Movable](out self: DependentSpecificInitSelf[U], var value: U):
         pass
 
-fn implicit_convert_specific_Self(value: StructWithSpecificSelfInitTypes[1]):
+def implicit_convert_specific_Self(value: StructWithSpecificSelfInitTypes[1]):
     pass
 
 # CHECK-LABEL: lit.fn @"test_inference_from_Self_type
-fn test_inference_from_Self_type(x: Int):
+def test_inference_from_Self_type(x: Int):
   # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "__call_result_tmp__"
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {0}>([[TMP]])
   # CHECK-NEXT: lit.ownership.use [[TMP]]
@@ -1566,19 +1566,19 @@ fn test_inference_from_Self_type(x: Int):
 
 struct AutoParamDefault[value: Int, param: Int, default: Int = param]:
     @implicit
-    fn __init__(out self, ptr: ParamType[Self.value]): pass
-    fn __init__(out self, *, other: Self): pass
-    fn method(self, other: ParamType[Self.value]): pass
-    fn method(self, other: AutoParamDefault[Self.value, ...]): pass
+    def __init__(out self, ptr: ParamType[Self.value]): pass
+    def __init__(out self, *, other: Self): pass
+    def method(self, other: ParamType[Self.value]): pass
+    def method(self, other: AutoParamDefault[Self.value, ...]): pass
 
 # CHECK-LABEL: lit.fn @"implicit_conversion_overload
-fn implicit_conversion_overload(x: AutoParamDefault[1, ...], ptr: ParamType[1]):
+def implicit_conversion_overload(x: AutoParamDefault[1, ...], ptr: ParamType[1]):
     # CHECK: call {{.*}}method{{.*}}(%x, %ptr)
     x.method(ptr)
 
 # MOCO-1144
 # https://linear.app/modularml/issue/MOCO-1144/[mojo-lang]-crash-on-partially-bound-parameter-list
-fn takeAnyTypeReturnInt[t: AnyType]() -> Int: pass
+def takeAnyTypeReturnInt[t: AnyType]() -> Int: pass
 struct MOCO1144[
     mut: Bool,
     type: AnyType,
@@ -1586,10 +1586,10 @@ struct MOCO1144[
 ]: pass
 comptime MOCO1144Bound = MOCO1144[True, _, _]
 
-fn getMOCO1144Bound() -> MOCO1144Bound[Int]: pass
+def getMOCO1144Bound() -> MOCO1144Bound[Int]: pass
 
 # CHECK-LABEL: lit.fn @"tryCallingAThingReturningMOCO1144Bound
-fn tryCallingAThingReturningMOCO1144Bound():
+def tryCallingAThingReturningMOCO1144Bound():
     # CHECK-NEXT:  lit.var.decl "x" {{.*}}#MOCO1144 <:!Bool {:i1 1}, :!AnyType !Int{{.*}}takeAnyTypeReturnInt[::AnyType]()"<:!AnyType !Int
     var x = getMOCO1144Bound()
 
@@ -1598,12 +1598,12 @@ struct HasAutoParam[arg: StructWithIntParam]:
 # Solving this requires understanding that self_a = shadow_a and
 # self_param = shadow_param, even though they're resolved out of order.
 struct Ex1[self_a: Int, //, self_param: StructWithIntParam[self_a]]:
-    fn __init__[
+    def __init__[
         shadow_a: Int, //, shadow_param: StructWithIntParam[shadow_a]
     ](out self: Ex1[shadow_param], data: HasAutoParam[shadow_param]):
         pass
 
-fn testEx1(imm_data: HasAutoParam[StructWithIntParam[1]()]):
+def testEx1(imm_data: HasAutoParam[StructWithIntParam[1]()]):
     parSpecializedTest = Ex1(imm_data)
 
 # MOCO-1826: Improve parameter inference from other parameter bindings
@@ -1611,7 +1611,7 @@ struct MyTypeWithOrigin[
     elt_is_mutable: Bool,
     origin: Origin[mut=elt_is_mutable], //
 ]: pass
-fn testMOCO1826[o: Origin[]](a: MyTypeWithOrigin[origin=o]): pass
+def testMOCO1826[o: Origin[]](a: MyTypeWithOrigin[origin=o]): pass
 
 ##===----------------------------------------------------------------------===##
 # Origin Parameters
@@ -1624,15 +1624,15 @@ struct SomeReference[lt: __mlir_type.`!lit.origin<0>`](TrivialRegisterPassable):
 # CHECK-LABEL: lit.fn @"unbound_origin
 # CHECK-SAME: <?, [[R:.*]]: origin<0>>
 # CHECK-SAME: #SomeReference <:origin<0> [[R]]>
-fn unbound_origin(r: SomeReference[_]):
+def unbound_origin(r: SomeReference[_]):
     pass
 
 # #33498: Variadics can't infer types for function pointers
-fn indirect_function(x: Int):  pass
-fn take_variadic_pack[*ArgTypes: AnyType](*args: *ArgTypes):  pass
+def indirect_function(x: Int):  pass
+def take_variadic_pack[*ArgTypes: AnyType](*args: *ArgTypes):  pass
 
 # CHECK-LABEL: call_variadic_pack_with_function
-fn call_variadic_pack_with_function():
+def call_variadic_pack_with_function():
   # CHECK: [[FP:%.*]] = kgen.create_closure[!lit.generator<("x": !Int) -> !kgen.none>: @parameters::@"indirect_function
   # CHECK: lit.call {{.*}}take_variadic_pack
   var x = take_variadic_pack(indirect_function)
@@ -1645,10 +1645,10 @@ struct MOCO1065[
     T: ImplicitlyCopyable,
     o: Origin[mut=mut],
 ]:
-    fn __init__(out self: MOCO1065[UInt8, Self.o], ref [Self.o] string: Empty):
+    def __init__(out self: MOCO1065[UInt8, Self.o], ref [Self.o] string: Empty):
         pass
 
-fn test_MOCO1065[p: Empty](t: Empty):
+def test_MOCO1065[p: Empty](t: Empty):
     var s = MOCO1065(t)
     comptime a = MOCO1065(p)
 
@@ -1657,19 +1657,19 @@ fn test_MOCO1065[p: Empty](t: Empty):
 @fieldwise_init
 struct DepValue[a: Int]: pass
 struct DepUser[b: Int]:
-    fn foo(self):
+    def foo(self):
         # This should infer
         var x : DepUser[2] = self.xyz(DepValue[1]())
-    fn xyz(self, rhs: DepUser) -> type_of(rhs): pass
+    def xyz(self, rhs: DepUser) -> type_of(rhs): pass
     @implicit
-    fn __init__[x: Int](value: DepValue[x], out result: DepUser[x+1]):
+    def __init__[x: Int](value: DepValue[x], out result: DepUser[x+1]):
         pass
 
 
 # Ensure we can infer a variadic parameter from inside an incoming
 # parameter-value.
 
-fn infer_variadic[
+def infer_variadic[
     ArgTypes: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
     T: type_of(Tuple[*ArgTypes]),
 ]():
@@ -1677,7 +1677,7 @@ fn infer_variadic[
 
 
 # CHECK-LABEL:     lit.fn @"test_infer_variadic()"
-fn test_infer_variadic():
+def test_infer_variadic():
     # CHECK: lit.call {{.*}}@"infer_variadic{{.*}}"<:variadic<!AnyType>
     # CHECK-SAME: [!Int, !Bool]
     # CHECK-SAME: :meta<!lit.struct<#Tuple <:variadic<!AnyType>
@@ -1685,7 +1685,7 @@ fn test_infer_variadic():
 
 # Make sure we can store RP types with different sugars correctly.
 # CHECK-LABEL: lit.fn @"test_sugar_rebind
-fn test_sugar_rebind[N: Int](a: SIMD[DType.int32, 2 * N]):
+def test_sugar_rebind[N: Int](a: SIMD[DType.int32, 2 * N]):
     # CHECK-NEXT: %x = lit.var.decl
     # CHECK-NEXT: %0 = kgen.rebind %a
     # CHECK-NEXT: lit.ref.store %0, %x
@@ -1698,7 +1698,7 @@ struct CanonicalTypesInDel[input_rank: Int, conv_attr: StructWithIntParam[input_
 # Test remapping of parameter decls in the face of sugar.
 struct IO(TrivialRegisterPassable):
     @always_inline("builtin") # Sugared ctor.
-    fn __init__(out self):
+    def __init__(out self):
         pass
 @fieldwise_init
 struct IOSpec[input: IO](TrivialRegisterPassable):
@@ -1725,7 +1725,7 @@ comptime GeneratorTypeGeneratorType[
 comptime Generator[From: Copyable] = Int
 
 
-fn takeGenerator[
+def takeGenerator[
     F: type_of(AnyType),
     T: type_of(AnyType), //,
     G: GeneratorTypeGeneratorType[F, T],
@@ -1733,7 +1733,7 @@ fn takeGenerator[
     pass
 
 # CHECK-LABEL: lit.fn @"myDriver()"()
-fn myDriver():
+def myDriver():
     # We should be able to infer From -> Copyable, To -> mt_Int
     # CHECK: %0 = lit.call {{.*}}@"takeGenerator{{.*}}"<:!lit.anytrait<!AnyType> !Copyable, :!lit.anytrait<!AnyType> !mt_Int, :!lit.generator<<"From": !Copyable>!mt_Int>
     takeGenerator[Generator]()
@@ -1747,39 +1747,39 @@ struct XOrigin[mut: Bool, *, value: TakesBool[mut]]:
 struct TakesXOrigin[MUT: Bool, //, O: XOrigin[MUT, ...]]:
 
     # This should be fine, even though MUT is from the struct.
-    fn foo[P: XOrigin[Self.MUT, ...]](self):
+    def foo[P: XOrigin[Self.MUT, ...]](self):
         pass
 
 struct HasInferred[a: XOrigin]:
-    fn also_has_inferred[b: XOrigin](self):
+    def also_has_inferred[b: XOrigin](self):
         pass
-fn test_inferred_mixing[b: XOrigin](a: HasInferred):
+def test_inferred_mixing[b: XOrigin](a: HasInferred):
    a.also_has_inferred[b]()
 
 # This makes sure we can associate 'origin' back to the inferred result type of
 # the Pointer construction.
 struct FindOriginFromKGENOrigin[X: AnyType, origin: Origin[]]:
     var writable: Pointer[Self.X, Self.origin]
-    fn __init__(out self, ref [Self.origin]w: Self.X):
+    def __init__(out self, ref [Self.origin]w: Self.X):
         self.writable = Pointer(to=w)
 
 
 # Test non-materializable target of a meta type.
-fn infer_non_materializable_target_of_meta_type[
+def infer_non_materializable_target_of_meta_type[
     type_type: __mlir_type.`!kgen.type`,
     //,
     type: type_type,
 ]():
     pass
 
-fn test_non_materializable_target_of_meta_type():
+def test_non_materializable_target_of_meta_type():
     # CHECK:      lit.call tail {{.*}}"infer_non_materializable_target_of_meta_type{{.*}}"
     # CHECK-SAME: <:type meta<!lit.struct<#IntLiteral <:!pop.int_literal 0>
     infer_non_materializable_target_of_meta_type[type_of(0)]()
 
 
 struct HasParamList[*values: Int]:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
@@ -1800,11 +1800,11 @@ struct NDBuffer[shape: DimList]:
 
 
 # Make sure we don't default auto-parameterized `shape.values` to empty
-fn _get_element_idx2(buff: NDBuffer[_]):
+def _get_element_idx2(buff: NDBuffer[_]):
     pass
 
 
-fn _copy_nd_buffer_to_layout_tensor[shape: DimList](src: NDBuffer[shape]):
+def _copy_nd_buffer_to_layout_tensor[shape: DimList](src: NDBuffer[shape]):
     # CHECK:      lit.call tail @parameters::@"_get_element_idx2
     # CHECK-SAME: <:variadic<!Int> *"shape.values`", :!lit.struct<#DimList <:variadic<!Int> *"shape.values`">> shape>
     _get_element_idx2(src)

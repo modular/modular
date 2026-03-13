@@ -8,7 +8,7 @@
 from std.sys import llvm_intrinsic, size_of
 
 
-fn memcpy(
+def memcpy(
     dst: UnsafePointer[mut=True, Int, _],
     src: UnsafePointer[Int, _],
     count: Int,
@@ -29,41 +29,41 @@ struct Data(ImplicitlyCopyable, Writable):
     var _data: UnsafePointer[Int, MutExternalOrigin]
     var _size: Int
 
-    fn __init__(out self, *, size: Int):
+    def __init__(out self, *, size: Int):
         self._data = alloc[Int](size)
         self._size = size
         for i in range(size):
             self._data[i] = 0
 
-    fn __init__(out self, *data: Int):
+    def __init__(out self, *data: Int):
         var num_elems = len(data)
         self._data = alloc[Int](num_elems)
         self._size = num_elems
         for i in range(num_elems):
             self._data[i] = data[i]
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self._size = copy._size
         self._data = alloc[Int](self._size)
         for i in range(self._size):
             self._data[i] = copy._data[i]
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         for i in range(self._size):
             t"data[{i}] = {self._data[i]}\n".write_to(writer)
 
-    fn __add__(self, rhs: Self) -> Self:
+    def __add__(self, rhs: Self) -> Self:
         var size = self._size + rhs._size
         var result = Self(size=size)
         memcpy(result._data, self._data, self._size)
         memcpy(result._data + self._size, rhs._data, rhs._size)
         return result
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         self._data.free()
 
 
-fn main():
+def main():
     comptime d1 = Data(4, 2)
     comptime d2 = Data(2, 8)
     comptime d3 = d1 + d2

@@ -9,6 +9,6 @@
 # CHECK: lit.struct.decl @"fn() escaping -> None"
 
 
-fn no_capture():
-    fn closure() escaping:
+def no_capture():
+    def closure() escaping:
         pass

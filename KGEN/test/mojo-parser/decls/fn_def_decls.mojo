@@ -9,55 +9,55 @@
 
 # CHECK-LABEL: lit.fn @"empty_def()"() -> !kgen.none
 # CHECK: lit.end_fn
-fn empty_def():
+def empty_def():
     pass
 
 
 # CHECK-LABEL: lit.fn @"slash
 # CHECK-SAME: (%a: !Int, |, %b: !Int)
-fn slash(a: Int, /, b: Int):
+def slash(a: Int, /, b: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"trailing_slash
 # CHECK-SAME: (%a: !Int, |)
-fn trailing_slash(a: Int, /):
+def trailing_slash(a: Int, /):
     pass
 
 
 # CHECK-LABEL: lit.fn @"star
 # CHECK-SAME: (%a: !Int, *, %b: !Int)
-fn star(a: Int, *, b: Int):
+def star(a: Int, *, b: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"leading_star
 # CHECK-SAME: (*, %a: !Int)
-fn leading_star(*, a: Int):
+def leading_star(*, a: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"star_and_slash
 # CHECK-LABEL: (%a: !Int, |, *, %b: !Int)
-fn star_and_slash(a: Int, /, *, b: Int):
+def star_and_slash(a: Int, /, *, b: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"star_and_slash_2
 # CHECK-SAME: (%a: !Int, |, %b: !Int, *, %c: !Int)
-fn star_and_slash_2(a: Int, /, b: Int, *, c: Int):
+def star_and_slash_2(a: Int, /, b: Int, *, c: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"default_args
 # CHECK-SAME: (%a: !Int, %b: !Int = {8}, *, %c: !Int, %d: !Int = {9})
-fn default_args(a: Int, b: Int = 8, *, c: Int, d: Int = 9):
+def default_args(a: Int, b: Int = 8, *, c: Int, d: Int = 9):
     pass
 
 
 # CHECK-LABEL: lit.fn @"variadic_and_kw_only
 # CHECK-SAME: (%a: !Int, %b: !Int, %args: !kgen.variadic<!lit.ref<!Int, {{.*}}>> read_mem|pos_vararg, *, %c: !Int, %d: !Int = {9})
-fn variadic_and_kw_only(
+def variadic_and_kw_only(
     a: Int, b: Int, *args: Int, c: Int, d: Int = 9
 ):
     pass
@@ -66,7 +66,7 @@ fn variadic_and_kw_only(
 # CHECK-LABEL: lit.fn @"variadic_arg_after_default
 # CHECK-SAME: (%a: !Int, %b: !Int = {0}, %args: !kgen.variadic<!lit.ref<!Int, {{.*}}>> read_mem|pos_vararg = :none *?,
 # CHECK-SAME:  *, %c: !Int, %d: !Int = {1}, %kwargs: {{.*}}|kw_vararg = :none *?)
-fn variadic_arg_after_default(
+def variadic_arg_after_default(
     a: Int,
     b: Int = 0,
     *args: Int,
@@ -79,7 +79,7 @@ fn variadic_arg_after_default(
 
 # CHECK-LABEL: lit.fn @"variadic_param_after_default
 # CHECK-SAME: <a: !Int, b: !Int = {0}, args: {{.*}} pos_vararg = :none *?, *, c: !Int, d: !Int = {1}>()
-fn variadic_param_after_default[
+def variadic_param_after_default[
     a: Int, b: Int = 0, *args: Int, c: Int, d: Int = 1
 ]():
     pass
@@ -87,29 +87,29 @@ fn variadic_param_after_default[
 
 # CHECK-LABEL: lit.fn @"inferred_params
 # CHECK-SAME: <x: !Int, y: !Int, +>
-fn inferred_params[x: Int, y: Int, //]():
+def inferred_params[x: Int, y: Int, //]():
     # CHECK-NEXT: !lit.generator<<"x": !Int, "y": !Int, +>() -> !kgen.none> = <@
-    comptime fn_type: fn[x: Int, y: Int, //] () -> None = inferred_params
+    comptime def_type: def[x: Int, y: Int, //] () -> None = inferred_params
 
 
 # CHECK-LABEL: lit.fn @"inferred_params_regular
 # CHECK-SAME: <x: !Int, +, y: !Int>
-fn inferred_params_regular[x: Int, //, y: Int]():
+def inferred_params_regular[x: Int, //, y: Int]():
     # CHECK-NEXT: !lit.generator<<"x": !Int, +, "y": !Int>() -> !kgen.none> = <@
-    comptime fn_type: fn[
+    comptime def_type: def[
         x: Int, //, y: Int
     ] () -> None = inferred_params_regular
 
 
 # CHECK-LABEL: lit.fn @"inferred_params_pos_only
 # CHECK-SAME: <x: !Int, +, y: !Int = {1}, |>
-fn inferred_params_pos_only[x: Int, //, y: Int = 1, /]():
+def inferred_params_pos_only[x: Int, //, y: Int = 1, /]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"inferred_params_kw_only
 # CHECK-SAME: <x: !Int, +, *, y: !Int>
-fn inferred_params_kw_only[x: Int, //, *, y: Int]():
+def inferred_params_kw_only[x: Int, //, *, y: Int]():
     pass
 
 
@@ -129,7 +129,7 @@ struct NonTrivialReg(ImplicitlyCopyable, RegisterPassable):
 
 
 struct TypeWithParametricSelf:
-    fn method(ref self):
+    def method(ref self):
         pass
 
 
@@ -151,7 +151,7 @@ def test_def_arg_box_mbvalue(
     _ = b.member.method()
 
 
-fn returnsMultiple() -> Tuple[Int, MemoryOnly]:
+def returnsMultiple() -> Tuple[Int, MemoryOnly]:
     pass
 
 
@@ -164,7 +164,7 @@ def test_multi_tuple_def_value() raises:
 
 
 # CHECK-LABEL: lit.fn @"ref_result
-fn ref_result(mut x: MemoryOnly) -> ref [x] MemoryOnly:
+def ref_result(mut x: MemoryOnly) -> ref [x] MemoryOnly:
     # CHECK-NEXT: lit.return %x : !lit.ref<!MemoryOnly, mut *"x`">
     return x
 
@@ -203,7 +203,7 @@ def return_def_arg_box(abc: MemoryOnly) raises -> ref [abc] MemoryOnly:
 # CHECK-LABEL: lit.fn @"foldable_requires_1
 # CHECK-SAME: where {
 # CHECK-SAME:   ne(#lit.struct.extract<:!Int x, "_mlir_value">, 0){{.*}}>}
-fn foldable_requires_1[x: Int]()
+def foldable_requires_1[x: Int]()
     where x:
         pass
 
@@ -212,14 +212,14 @@ fn foldable_requires_1[x: Int]()
 # CHECK-SAME: where {
 # CHECK-SAME:   ge(#lit.struct.extract<:!Int y, "_mlir_value">, 11)
 # CHECK-SAME:   lt(#lit.struct.extract<:!Int x, "_mlir_value">, {{.*}}
-fn foldable_requires_2[x: Int, y: Int]()
+def foldable_requires_2[x: Int, y: Int]()
     where y > 10
     where x < 1:
         pass
 
 
 # CHECK-LABEL: lit.fn @"foldable_requires_passthru
-fn foldable_requires_passthru[a: Int, b: Int]()
+def foldable_requires_passthru[a: Int, b: Int]()
     where a > 10  # test comment
     where b < 1
     where b       # test another comment
@@ -230,7 +230,7 @@ fn foldable_requires_passthru[a: Int, b: Int]()
 
 
 # CHECK-LABEL: lit.fn @"foldable_requires_param_if
-fn foldable_requires_param_if[a: Int, b: Int]():
+def foldable_requires_param_if[a: Int, b: Int]():
     comptime if a > 10:
         comptime if b < 1:
             foldable_requires_2[b, a]()
@@ -247,14 +247,14 @@ fn foldable_requires_param_if[a: Int, b: Int]():
 
 # CHECK-LABEL: lit.fn @"foldable_param_requires_1
 # CHECK-SAME: <x: !Int {{.*}}ne(#lit.struct.extract<:!Int x, "_mlir_value">, 0)
-fn foldable_param_requires_1[x: Int where x]():
+def foldable_param_requires_1[x: Int where x]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"foldable_param_requires_2
 # CHECK-SAME: <x: !Int {{.*}}lt(#lit.struct.extract<:!Int x, "_mlir_value">, 1)
 # CHECK-SAME:  y: !Int {{.*}}ge(#lit.struct.extract<:!Int y, "_mlir_value">, 11)
-fn foldable_param_requires_2[
+def foldable_param_requires_2[
     x: Int where x < 1,
     y: Int where y > 10 = 11
 ]():

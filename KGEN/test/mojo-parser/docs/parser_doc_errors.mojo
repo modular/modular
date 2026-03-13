@@ -76,34 +76,34 @@ struct StructWithMissingMethod:
     """This defines methods with missing doc strings."""
 
     # expected-warning @below {{public symbol 'method_with_missing_doc_string' is missing a doc string}}
-    fn method_with_missing_doc_string(self):
+    def method_with_missing_doc_string(self):
         pass
 
-    fn _private_method_with_no_doc_string(self):
+    def _private_method_with_no_doc_string(self):
         pass
 
     # expected-warning @below {{public symbol '__init__' is missing a doc string}}
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
 # expected-warning @below {{public symbol 'fn_missing_doc_string' is missing a doc string}}
-fn fn_missing_doc_string():
+def fn_missing_doc_string():
     pass
 
 
-fn _fn_private_no_doc_string():
+def _fn_private_no_doc_string():
     pass
 
 
-fn fn_poor_style():
+def fn_poor_style():
     """this summary should be capitalized and end with a period"""
     # expected-warning @above {{doc string summary should begin with a capital letter or non-alpha character, but this begins with 't'}}
     # expected-warning @above {{doc string summary should end with a period '.', but this ends with 'd'}}
     pass
 
 
-fn _fn_private_args_missing(arg: ArgStruct):
+def _fn_private_args_missing(arg: ArgStruct):
     """This is a private function doc string.
 
     It doesn't need to include an `Args:` section.
@@ -112,12 +112,12 @@ fn _fn_private_args_missing(arg: ArgStruct):
 
 
 # expected-warning @below {{function takes arguments, but has no 'Args' in doc string}}
-fn fn_args_missing(arg: ArgStruct):
+def fn_args_missing(arg: ArgStruct):
     """This doc string is missing an `Args:` section."""
     return
 
 
-fn fn_args_invalid(arg: ArgStruct):
+def fn_args_invalid(arg: ArgStruct):
     """This is a function summary.
 
     # expected-warning @below {{argument 'arg' is not documented}}
@@ -128,7 +128,7 @@ fn fn_args_invalid(arg: ArgStruct):
     return
 
 
-fn fn_args_overindent(arg: ArgStruct):
+def fn_args_overindent(arg: ArgStruct):
     """This is a function summary.
 
     Description.
@@ -140,7 +140,7 @@ fn fn_args_overindent(arg: ArgStruct):
     return
 
 
-fn fn_args_duplicates(arg: ArgStruct):
+def fn_args_duplicates(arg: ArgStruct):
     """This is a function summary.
 
     # expected-note @below {{see previous definition here}}
@@ -156,7 +156,7 @@ fn fn_args_duplicates(arg: ArgStruct):
     return
 
 
-fn fn_args_order(arg: ArgStruct, arg2: ArgStruct):
+def fn_args_order(arg: ArgStruct, arg2: ArgStruct):
     """This is a function summary.
 
     Args:
@@ -167,7 +167,7 @@ fn fn_args_order(arg: ArgStruct, arg2: ArgStruct):
     return
 
 
-fn fn_args_empty(arg: ArgStruct, arg2: ArgStruct):
+def fn_args_empty(arg: ArgStruct, arg2: ArgStruct):
     """This function contains empty argument descriptions.
 
     Args:
@@ -179,7 +179,7 @@ fn fn_args_empty(arg: ArgStruct, arg2: ArgStruct):
     pass
 
 
-fn fn_args_poor_style(arg: ArgStruct, arg2: ArgStruct):
+def fn_args_poor_style(arg: ArgStruct, arg2: ArgStruct):
     """This function contains arguments with poor style.
 
     Args:
@@ -191,7 +191,7 @@ fn fn_args_poor_style(arg: ArgStruct, arg2: ArgStruct):
     pass
 
 
-fn fn_args_return():
+def fn_args_return():
     """This is a function summary.
 
     # expected-warning @below {{unexpected 'Returns' in doc string for function with no results}}
@@ -205,7 +205,7 @@ fn fn_args_return():
     """
     return
 
-fn fn_raises():
+def fn_raises():
     """This is a function summary.
 
     # expected-warning @below {{unexpected 'Raises' in doc string for function that does not throw}}
@@ -227,12 +227,12 @@ fn fn_missing_raises_section() raises:
 
 
 # expected-warning @below {{function has results, but has no 'Returns' in doc string}}
-fn fn_args_missing_return() -> Int:
+def fn_args_missing_return() -> Int:
     """This doc string is missing a `Returns:` section."""
     return 0
 
 
-fn fn_returns_section_empty() -> Int:
+def fn_returns_section_empty() -> Int:
     """This doc string includes a `Returns:` section, but it's empty.
 
     # expected-warning @below {{'Returns' section is empty}}
@@ -241,7 +241,7 @@ fn fn_returns_section_empty() -> Int:
     return 0
 
 
-fn fn_returns_section_poor_style() -> Int:
+def fn_returns_section_poor_style() -> Int:
     """This doc string has a `Returns:` section with poor style.
 
     Returns:
@@ -252,14 +252,14 @@ fn fn_returns_section_poor_style() -> Int:
     return 0
 
 
-fn fn_nested_fn():
+def fn_nested_fn():
     """This is a function that defines a nested function.
 
     The nested function does not include a doc string, but it should not be
     reported as invalid.
     """
 
-    fn nested_fn():
+    def nested_fn():
         pass
 
     return
@@ -271,7 +271,7 @@ struct Error:
     pass
 
 
-fn fn_raises_with_return_type(x: Int) raises -> Int:
+def fn_raises_with_return_type(x: Int) raises -> Int:
     """This is a function that raises, with an explicit return type.
 
     Because it raises, it implicitly has a memory-only `__result__` argument.
@@ -349,7 +349,7 @@ struct _AutoParamTest[a: __mlir_type.`!kgen.dtype`, b: __mlir_type.`!kgen.dtype`
     pass
 
 
-fn _fn_with_params[x: Int](s: _AutoParamTest):
+def _fn_with_params[x: Int](s: _AutoParamTest):
     pass
 
 

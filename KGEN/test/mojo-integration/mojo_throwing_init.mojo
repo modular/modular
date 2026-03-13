@@ -12,14 +12,14 @@ struct MemType1(ImplicitlyCopyable):
     var value: Int
 
     @implicit
-    fn __init__(out self, v: Int):
+    def __init__(out self, v: Int):
         self.value = v
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.value = copy.value + 1
         print("Copy to", self.value)
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         print("MemType1(", self.value, ") destroyed")
 
 
@@ -29,7 +29,7 @@ struct PartialInitType:
     var mem3: MemType1
     var setTwice: MemType1
 
-    fn __init__(out self, cond: Int, other: MemType1) raises:
+    def __init__(out self, cond: Int, other: MemType1) raises:
         self.mem1 = other
         self.mem2 = MemType1(2)
 
@@ -40,11 +40,11 @@ struct PartialInitType:
         self.setTwice = MemType1(98)
         self.mem3 = MemType1(3)
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         print("destroy PartialInitType")
 
 
-fn main():
+def main():
     print("start")
     # CHECK: start
     # CHECK-NOT: destroy PartialInitType

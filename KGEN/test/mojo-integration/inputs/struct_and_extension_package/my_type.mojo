@@ -6,7 +6,7 @@
 
 
 struct ZInt:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
@@ -14,11 +14,11 @@ struct ZInt:
 struct MyType:
     var value: ZInt
 
-    fn __init__(out self):
+    def __init__(out self):
         self.value = ZInt()
 
 
 # Extension that adds an alternate constructor
 __extension MyType:
-    fn __init__(out self, initial_value: ZInt):
+    def __init__(out self, initial_value: ZInt):
         self.value = ZInt()

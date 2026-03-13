@@ -7,11 +7,11 @@
 # RUN: %mojo %s | FileCheck %s
 
 
-fn f0(not_used: String, values: List[List[String]], i: Int) -> List[String]:
+def f0(not_used: String, values: List[List[String]], i: Int) -> List[String]:
     return values[i].copy()
 
 
-fn main():
+def main():
     # CHECK: [hello]
     # CHECK-NEXT: [world]
     comptime not_used = String("not_used")

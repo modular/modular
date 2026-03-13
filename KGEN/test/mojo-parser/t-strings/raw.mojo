@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # CHECK-LABEL: lit.fn @"test_raw_t_strings()"
-fn test_raw_t_strings():
+def test_raw_t_strings():
     var name = "Alice"
     var x = 42
 

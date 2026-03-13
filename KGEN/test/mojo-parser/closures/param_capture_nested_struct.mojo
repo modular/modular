@@ -20,8 +20,8 @@
 struct Foo[A: Int](ImplicitlyCopyable, RegisterPassable):
     var b: Int
 
-    fn get[C: Int](self) -> fn(y: Int) escaping -> Int:
-        fn bar(y: Int) -> Int:
+    def get[C: Int](self) -> def(y: Int) escaping -> Int:
+        def bar(y: Int) -> Int:
             var w = Self.A + self.b + y
             return w
 

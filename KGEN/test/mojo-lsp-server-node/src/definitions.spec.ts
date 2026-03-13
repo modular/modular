@@ -21,10 +21,10 @@ describe("definitions", () => {
       server,
       "test:///test.mojo",
       `
-fn example():
+def example():
   return 2
 
-fn main():
+def main():
   example()
 
   var y = 123
@@ -57,13 +57,13 @@ fn main():
       server,
       "test:///test.mojo",
       `
-fn print(x: String):
+def print(x: String):
     pass
 
-fn print(x: Bool):
+def print(x: Bool):
     pass
 
-fn function[type: TrivialRegisterPassable](arg: type):
+def function[type: TrivialRegisterPassable](arg: type):
     print(arg)
 `
     );

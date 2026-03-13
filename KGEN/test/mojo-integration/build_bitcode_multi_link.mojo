@@ -23,16 +23,16 @@
 
 
 @extern("extern_add")
-fn extern_add(a: Int32, b: Int32) -> Int32:
+def extern_add(a: Int32, b: Int32) -> Int32:
     ...
 
 
 @extern("extern_sub")
-fn extern_sub(a: Int32, b: Int32) -> Int32:
+def extern_sub(a: Int32, b: Int32) -> Int32:
     ...
 
 
-fn main():
+def main():
     var a = extern_add(10, 20)
     print("Extern add:", a)
     # CHECK: Extern add: 30

@@ -16,7 +16,7 @@ struct SingleFieldTrivial(Equatable, TrivialRegisterPassable):
     var value: Int
 
 
-fn main() raises:
+def main() raises:
     var a = SingleFieldTrivial(42)
     var b = SingleFieldTrivial(42)
     var c = SingleFieldTrivial(10)

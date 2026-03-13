@@ -12,13 +12,13 @@ from std.testing import assert_equal
 struct OverloadedKwArgs:
     var val: Int
 
-    fn __init__(out self, single: Int):
+    def __init__(out self, single: Int):
         self.val = single
 
-    fn __init__(out self, *, double: Int):
+    def __init__(out self, *, double: Int):
         self.val = double * 2
 
-    fn __init__(out self, *, triple: Int):
+    def __init__(out self, *, triple: Int):
         self.val = triple * 3
 
 
@@ -31,22 +31,22 @@ def test_keyword_name_overload() raises:
 struct OverloadedIndexers:
     var vals: List[Int]
 
-    fn __init__(out self):
+    def __init__(out self):
         self.vals = [0, 1, 2]
 
-    fn __getitem__(self, idx: Int) -> Int:
+    def __getitem__(self, idx: Int) -> Int:
         return self.vals[idx]
 
-    fn __getitem__(self, *, idx2: Int) -> Int:
+    def __getitem__(self, *, idx2: Int) -> Int:
         return self.vals[idx2 * 2]
 
-    fn __getitem__(self, *, idx3: Int) -> Float32:
+    def __getitem__(self, *, idx3: Int) -> Float32:
         return Float32(self.vals[idx3 * 3])
 
-    fn __setitem__(mut self, idx: Int, val: Int):
+    def __setitem__(mut self, idx: Int, val: Int):
         self.vals[idx] = val
 
-    fn __setitem__(mut self, val: Int, *, idx2: Int):
+    def __setitem__(mut self, val: Int, *, idx2: Int):
         self.vals[idx2 * 2] = val
 
 
@@ -66,22 +66,22 @@ def test_indexer_overload() raises:
 struct OverloadArgumentConventions:
     var val: Int
 
-    fn __init__(out self, *, x: Int):
+    def __init__(out self, *, x: Int):
         self.val = x
 
-    fn __init__(out self, *, mut x2: Int):
+    def __init__(out self, *, mut x2: Int):
         x2 *= 2
         self.val = x2
 
-    fn __init__(out self, *, var x3: Int):
+    def __init__(out self, *, var x3: Int):
         self.val = x3 * 3
 
 
-fn out_mut_kw_argument(*, out x: Int):
+def out_mut_kw_argument(*, out x: Int):
     x = 42
 
 
-fn out_mut_kw_argument(*, mut x: Int):
+def out_mut_kw_argument(*, mut x: Int):
     x = 84
 
 
@@ -106,10 +106,10 @@ def test_overloading_argument_conventions() raises:
 struct KeywordOverloadDefaultArgs:
     var val: Int
 
-    fn __init__(out self, *, x: Int = 1):
+    def __init__(out self, *, x: Int = 1):
         self.val = x
 
-    fn __init__(out self, *, x2: Int):
+    def __init__(out self, *, x2: Int):
         self.val = x2 * 2
 
 

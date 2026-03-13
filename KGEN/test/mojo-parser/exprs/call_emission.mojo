@@ -6,14 +6,14 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-fn use_string(arg: String): pass
+def use_string(arg: String): pass
 
-fn has_default_args(a: Int, b: Int = 1, c: Int = 2):
+def has_default_args(a: Int, b: Int = 1, c: Int = 2):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_kw_arg_passing
-fn test_kw_arg_passing(x: Int, y: Int, z: Int):
+def test_kw_arg_passing(x: Int, y: Int, z: Int):
     # CHECK: %[[C2:.*]] = kgen.param.constant: !Int = <{2}>
     # CHECK: call {{.*}}@"has_default_args{{.*}}"(%x, %y, %[[C2]])
     has_default_args(x, b=y)
@@ -36,7 +36,7 @@ fn test_kw_arg_passing(x: Int, y: Int, z: Int):
 
 
 # CHECK-LABEL: lit.fn @"test_kw_arg_passing_indirect
-fn test_kw_arg_passing_indirect[callee: fn(a: Int, b: Int=1, c: Int=2)->None](x: Int, y: Int, z: Int):
+def test_kw_arg_passing_indirect[callee: def(a: Int, b: Int=1, c: Int=2)->None](x: Int, y: Int, z: Int):
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{1}>
     # CHECK-NEXT: lit.call tail[{{.*}}](%x, %[[C1]], %z)
     callee(x, c=z)
@@ -44,12 +44,12 @@ fn test_kw_arg_passing_indirect[callee: fn(a: Int, b: Int=1, c: Int=2)->None](x:
     # CHECK-NEXT: lit.call tail[{{.*}}](%x, %y, %z)
     callee(c=z, b=y, a=x)
 
-fn has_default_params[a: Int, b: Int = 1, c: Int = 2]():
+def has_default_params[a: Int, b: Int = 1, c: Int = 2]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_kw_param_passing
-fn test_kw_param_passing[x: Int, y: Int, z: Int]():
+def test_kw_param_passing[x: Int, y: Int, z: Int]():
     # CHECK: lit.call {{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int y, :!Int {2}>
     has_default_params[x, b=y]()
 
@@ -70,8 +70,8 @@ fn test_kw_param_passing[x: Int, y: Int, z: Int]():
 
 
 # CHECK-LABEL: lit.fn @"test_kw_param_passing_indirect
-fn test_kw_param_passing_indirect[x: Int, y: Int, z: Int,
-                                  callee: fn[a: Int, b: Int=1, c: Int=2]()->None]():
+def test_kw_param_passing_indirect[x: Int, y: Int, z: Int,
+                                  callee: def[a: Int, b: Int=1, c: Int=2]()->None]():
 
     # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int {1}, :!Int z)]()
     callee[x, c=z]()
@@ -82,12 +82,12 @@ fn test_kw_param_passing_indirect[x: Int, y: Int, z: Int,
 
 @fieldwise_init
 struct MyCallable:
-    fn __call__(self, m: Int, n: Int = 2):
+    def __call__(self, m: Int, n: Int = 2):
         pass
 
 
 # CHECK-LABEL: lit.fn @"test_callable_object
-fn test_callable_object(x: Int, y: Int):
+def test_callable_object(x: Int, y: Int):
     # CHECK: %[[CALLABLE:.*]] = lit.var.decl {{.*}}: !lit.ref<!MyCallable
     var callable = MyCallable()
 
@@ -101,12 +101,12 @@ fn test_callable_object(x: Int, y: Int):
     callable(n=x, m=y)
 
 
-fn takes_kw_only_args(a: Int, b: Int = 1, *, c: Int, d: Int = 2):
+def takes_kw_only_args(a: Int, b: Int = 1, *, c: Int, d: Int = 2):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_kw_only_args
-fn test_kw_only_args(x: Int):
+def test_kw_only_args(x: Int):
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{1}>
     # CHECK-DAG: %[[C2:.*]] = kgen.param.constant: !Int = <{2}>
     # CHECK-NEXT: lit.call {{.*}}@"takes_kw_only_args{{.*}}"(%x, %[[C1]], %x, %[[C2]])
@@ -130,7 +130,7 @@ fn test_kw_only_args(x: Int):
 
 
 # CHECK-LABEL: lit.fn @"test_kw_only_indirect
-fn test_kw_only_indirect[callee: fn(a: Int, b: Int = 1, *, c: Int, d: Int = 2)->None](x: Int):
+def test_kw_only_indirect[callee: def(a: Int, b: Int = 1, *, c: Int, d: Int = 2)->None](x: Int):
 
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{1}>
     # CHECK-DAG: %[[C2:.*]] = kgen.param.constant: !Int = <{2}>
@@ -142,12 +142,12 @@ fn test_kw_only_indirect[callee: fn(a: Int, b: Int = 1, *, c: Int, d: Int = 2)->
     callee(x, d=x, c=x)
 
 
-fn takes_kw_only_params[a: Int, b: Int = 1, *, c: Int, d: Int = 2]():
+def takes_kw_only_params[a: Int, b: Int = 1, *, c: Int, d: Int = 2]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_kw_only_params
-fn test_kw_only_params[x: Int]():
+def test_kw_only_params[x: Int]():
     # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<:!Int x, :!Int {1}, :!Int x, :!Int {2}>()
     takes_kw_only_params[x, c=x]()
 
@@ -165,7 +165,7 @@ fn test_kw_only_params[x: Int]():
 
 
 # CHECK-LABEL: lit.fn @"test_kw_only_params_indirect
-fn test_kw_only_params_indirect[x: Int, callee: fn[a: Int, b: Int = 1, *, c: Int, d: Int = 2]()->None]():
+def test_kw_only_params_indirect[x: Int, callee: def[a: Int, b: Int = 1, *, c: Int, d: Int = 2]()->None]():
 
     # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int {1}, :!Int x, :!Int {2})]()
     callee[x, c=x]()
@@ -174,14 +174,14 @@ fn test_kw_only_params_indirect[x: Int, callee: fn[a: Int, b: Int = 1, *, c: Int
     callee[x, d=x, c=x]()
 
 
-fn takes_variadic_and_kw_only_args(
+def takes_variadic_and_kw_only_args(
     a: Int, b: Int, *args: Int, c: Int, d: Int = 0
 ):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_variadic_and_kw_only_args
-fn test_variadic_and_kw_only_args(x: Int):
+def test_variadic_and_kw_only_args(x: Int):
     # CHECK-DAG: %[[VAR:.*]] = kgen.param.constant: variadic<!lit.ref<!Int, {{.*}}>> = <[]>
     # CHECK-DAG: %[[ZERO:.*]] = kgen.param.constant: !Int = <{0}>
     # CHECK-DAG: lit.call {{.*}}@"takes_variadic_and_kw_only_args{{.*}}"{{.*}}(%x, %x, %[[VAR]], %x, %[[ZERO]])
@@ -197,14 +197,14 @@ fn test_variadic_and_kw_only_args(x: Int):
     takes_variadic_and_kw_only_args(x, x, x, x, c=x)
 
 
-fn takes_variadic_and_kw_only_params[
+def takes_variadic_and_kw_only_params[
     a: Int, b: Int, *args: Int, c: Int, d: Int = 0
 ]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_variadic_and_kw_only_params
-fn test_variadic_and_kw_only_params[x: Int]():
+def test_variadic_and_kw_only_params[x: Int]():
     # CHECK: call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<:!Int x, :!Int x, :variadic<!Int> [], :!Int x, :!Int {0}>()
     takes_variadic_and_kw_only_params[x, x, c=x]()
 
@@ -216,8 +216,8 @@ fn test_variadic_and_kw_only_params[x: Int]():
 
 
 # CHECK-LABEL: lit.fn @"test_variadic_and_kw_only_params_indirect
-fn test_variadic_and_kw_only_params_indirect[x: Int,
-    callee: fn [a: Int, b: Int, *args: Int, c: Int, d: Int = 0]()->None]():
+def test_variadic_and_kw_only_params_indirect[x: Int,
+    callee: def [a: Int, b: Int, *args: Int, c: Int, d: Int = 0]()->None]():
 
     # CHECK: lit.call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int x, :variadic<!Int> [], :!Int x, :!Int {0})]()
     callee[x, x, c=x]()
@@ -232,7 +232,7 @@ fn test_variadic_and_kw_only_params_indirect[x: Int,
 
 
 # CHECK-LABEL: lit.fn @"initialize_in_addrspace
-fn initialize_in_addrspace(
+def initialize_in_addrspace(
     ptr: UnsafePointer[ExampleRegPassable, AnyOrigin[mut=True], address_space=AddressSpace(1)]
 ):
 
@@ -247,19 +247,19 @@ fn initialize_in_addrspace(
 
 
 struct SomeRefItemStruct:
-    fn __getitem__(self) -> ref [self] Int:
+    def __getitem__(self) -> ref [self] Int:
         pass
 
 
 # CHECK-LABEL: lit.fn @"test_param_refitem
-fn test_param_refitem[a: SomeRefItemStruct]():
+def test_param_refitem[a: SomeRefItemStruct]():
     # CHECK-NEXT: !Int = <load_from_mem(:!lit.ref<!Int, imm #lit.comptime.origin> apply(:{{.*}}SomeRefItemStruct::@"__getitem__
     comptime x = a[]
 
 
 # Passing non-default address space through mut arg, must use temporary.
 # CHECK-LABEL: lit.fn @"mutate_in_addrspace
-fn mutate_in_addrspace(
+def mutate_in_addrspace(
     a: ExampleRegPassable,
     ptr: UnsafePointer[ExampleRegPassable, AnyOrigin[mut=True], address_space=AddressSpace(1)],
 ):
@@ -279,10 +279,10 @@ fn mutate_in_addrspace(
 
 
 struct ExampleRegPassable(TrivialRegisterPassable):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn mutateArg(self, mut other: Self):
+    def mutateArg(self, mut other: Self):
         pass
 
 
@@ -293,20 +293,20 @@ struct Matrix[rows: Int, cols: Int]:
     pass
 
 
-fn matmul_unrolled[I: Int](mut C: Matrix):
+def matmul_unrolled[I: Int](mut C: Matrix):
     pass
 
 
 @always_inline
-fn test_matrix_equal[
-    func: fn (mut: Matrix) -> None
+def test_matrix_equal[
+    func: def (mut: Matrix) -> None
 ](mut C: Matrix) raises -> Bool:
     func(C)
     return True
 
 
 # CHECK-LABEL: lit.fn @"partialBind
-fn partialBind(mut C: Matrix[1, 2]) raises:
+def partialBind(mut C: Matrix[1, 2]) raises:
     # CHECK-NEXT: %exp = lit.var.decl "exp
     # CHECK-NEXT: lit.call {{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"exp`{{.*}}"]
     # CHECK-SAME: <:!lit.generator<<?, ".rows`": !Int, ".cols`1": !Int>[1](!lit.ref<!lit.struct<#Matrix <:!Int *(0,0), :!Int *(0,1)>>, mut *[0,0]> mut, |) -> !kgen.none>
@@ -317,7 +317,7 @@ fn partialBind(mut C: Matrix[1, 2]) raises:
 
 # MOCO-692: [mojo-lang][ownership] Implicit conversion failure
 # CHECK-LABEL: lit.fn @"test_implicit_conversion_bvalue
-fn test_implicit_conversion_bvalue():
+def test_implicit_conversion_bvalue():
     # CHECK-NEXT: %foo = lit.var.decl
     # CHECK-NEXT: Struct1::@"__init__
     var foo = Struct1()
@@ -330,34 +330,34 @@ fn test_implicit_conversion_bvalue():
 
 
 struct Struct1:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         pass
 
 
 struct Struct2:
     @implicit
-    fn __init__(out self, var foo: Struct1):
+    def __init__(out self, var foo: Struct1):
         pass
 
 
-fn take_struct2(bar: Struct2):
+def take_struct2(bar: Struct2):
     pass
 
 
-fn pack_it[*Ts: AnyType](*args: *Ts) -> String:
+def pack_it[*Ts: AnyType](*args: *Ts) -> String:
     return String()
 
 
-fn also_broken(r: Pointer[String, _]) -> String:
+def also_broken(r: Pointer[String, _]) -> String:
     return r[]
 
 
 # MOCO-858: isSafeToUseValueDestForDirectResult doesn't handle aliasing through references
 # CHECK-LABEL: lit.fn @"test_byref_slot_with_references
-fn test_byref_slot_with_references():
+def test_byref_slot_with_references():
     var f = String()
 
     # CHECK: [[RESULTTMP:%.*]] = lit.var.decl "__call_result_tmp__"
@@ -377,10 +377,10 @@ fn test_byref_slot_with_references():
 
 
 # CHECK-LABEL: lit.fn @"test_byref_slot_closure_capture
-fn test_byref_slot_closure_capture(var x: String):
+def test_byref_slot_closure_capture(var x: String):
     # CHECK: lit.fn *"capture
     @parameter
-    fn capture() -> String:
+    def capture() -> String:
         return x
 
     # CHECK: %__call_result_tmp__
@@ -389,12 +389,12 @@ fn test_byref_slot_closure_capture(var x: String):
     # CHECK-NEXT: lit.call {{.*}}@String::@"__init__{{.*}}"{{.*}}(%__call_result_tmp__, %x){{.*}}*, "take"
 
 
-fn test_int_ref(ref x: Int) -> ref [x] Int:
+def test_int_ref(ref x: Int) -> ref [x] Int:
     return x
 
 
 # CHECK-LABEL: lit.fn @"complex_ref_box_emission
-fn complex_ref_box_emission[p: Int](a: Int):
+def complex_ref_box_emission[p: Int](a: Int):
     # Parameter ref just needs a box.
     _ = test_int_ref(p)
     # CHECK: [[VAR:%.*]] = lit.var.decl {{.*}}!lit.ref<!Int,
@@ -426,9 +426,9 @@ fn complex_ref_box_emission[p: Int](a: Int):
 # MOCO-1440 - Weird conditional conformance mismatch
 struct ThingWithParam[X: Int]:
   @implicit
-  fn __init__(out self: ThingWithParam[42], other: Bool): pass
+  def __init__(out self: ThingWithParam[42], other: Bool): pass
 
-fn test_cond_conformance(exclude: Bool):
+def test_cond_conformance(exclude: Bool):
     comptime local_alias = 42
     var ptr : UnsafePointer[ThingWithParam[local_alias], AnyOrigin[mut=True]]
     ptr[] = exclude
@@ -442,12 +442,12 @@ struct Heavy(ImplicitlyCopyable):
 # This is intended to be a lightweight view of Heavy.
 struct ViewOfHeavy:
   @implicit
-  fn __init__(out self, h: Heavy): pass
+  def __init__(out self, h: Heavy): pass
 
-fn takeOwnedValue(var view: ViewOfHeavy): pass
+def takeOwnedValue(var view: ViewOfHeavy): pass
 
 # CHECK-LABEL: lit.fn @"testUnneededCopy
-fn testUnneededCopy(heavy: Heavy):
+def testUnneededCopy(heavy: Heavy):
   # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl
   # CHECK-NEXT: lit.call {{.*}}ViewOfHeavy::@"__init__{{.*}}(%heavy, [[TMP]])
   # CHECK-NEXT: lit.call {{.*}}takeOwnedValue
@@ -457,14 +457,14 @@ fn testUnneededCopy(heavy: Heavy):
 
 # Check that field sensitivity is properly field sensitive.
 struct NonCopyable: pass
-fn take_and_return(a: NonCopyable) -> NonCopyable: pass
+def take_and_return(a: NonCopyable) -> NonCopyable: pass
 # CHECK-LABEL: lit.struct.decl @TestFieldSensitiveResultSlot
 struct TestFieldSensitiveResultSlot:
     var a: NonCopyable
     var b: NonCopyable
 
     # CHECK: lit.fn @"__init__
-    fn __init__(out self):
+    def __init__(out self):
         # CHECK-NEXT: [[B:%.*]] = lit.ref.struct.ger %self[b]
         # CHECK-NEXT: [[A:%.*]] = lit.ref.struct.ger %self[a]
         # CHECK-NEXT: [[AI:%.*]] = lit.ref.immut [[A]]
@@ -475,10 +475,10 @@ struct TestFieldSensitiveResultSlot:
 # Check that imm origin binding works with partially applied functions (which
 # get bound to a function pointer then called indirectly.
 struct SomeStructWithRefMethod:
-    fn take_ref(ref self) -> SomeStructWithRefMethod: pass
+    def take_ref(ref self) -> SomeStructWithRefMethod: pass
 
 # CHECK-LABEL: lit.fn @"testSomeStructWithRefMethod
-fn testSomeStructWithRefMethod[val: SomeStructWithRefMethod]():
+def testSomeStructWithRefMethod[val: SomeStructWithRefMethod]():
     comptime f = SomeStructWithRefMethod.take_ref
     # CHECK: lit.alias.decl *"b`1":
     # CHECK-SAME: <:i1 0, :origin<0> #lit.any.origin>), {{.*}} store_to_mem(val)))>
@@ -497,19 +497,19 @@ struct MyDictEntry[K: KeyElement, V: Copyable](Copyable):
 struct MyDict[K: KeyElement, V: Copyable](Copyable):
     var _entries: List[MyDictEntry[Self.K, Self.V]]
 
-    fn __getitem__(
+    def __getitem__(
         ref self, key: Self.K
     ) raises -> ref [self._entries[0].value] Self.V:
         ref entry = self._entries[0]
         return entry.value
 
-    fn __setitem__(mut self, var key: Self.K, var value: Self.V):
+    def __setitem__(mut self, var key: Self.K, var value: Self.V):
         pass
 
 @fieldwise_init
 struct Value(ImplicitlyCopyable):
     var max_width: Int
-    fn mutate(mut self): pass
+    def mutate(mut self): pass
 
 # CHECK-LABEL: lit.fn @"entry
 def entry(mut value: MyDict[String, Value], name: String) raises:
@@ -524,13 +524,13 @@ def entry(mut value: MyDict[String, Value], name: String) raises:
 # getitem on mutable list returns a mutable ref.
 struct MyMutGetItemCollection[T: AnyType]:
     var state: Value
-    fn clear(mut self): pass
-    fn __init__(out self): pass
-    fn __getitem__(ref self, idx: Int) -> ref [self] Self.T: pass
-    fn __setitem__(mut self, idx: Int, var value: Self.T): pass
+    def clear(mut self): pass
+    def __init__(out self): pass
+    def __getitem__(ref self, idx: Int) -> ref [self] Self.T: pass
+    def __setitem__(mut self, idx: Int, var value: Self.T): pass
 
 # CHECK-LABEL: lit.fn @"subscript_assignment_inplace
-fn subscript_assignment_inplace(mut list: MyMutGetItemCollection[MyMutGetItemCollection[Int]]):
+def subscript_assignment_inplace(mut list: MyMutGetItemCollection[MyMutGetItemCollection[Int]]):
     # CHECK: [[V0:%.*]] = lit.call {{.*}}::@MyMutGetItemCollection::@"__getitem__
     # CHECK-NEXT: lit.call {{.*}}::@MyMutGetItemCollection::@"clear{{.*}}"[{{.*}}]<{{.*}}>([[V0]])
     list[0].clear()
@@ -560,11 +560,11 @@ fn subscript_assignment_inplace(mut list: MyMutGetItemCollection[MyMutGetItemCol
 
 # getitem on mutable list returns a immutable ref so setitem is needed.
 struct MyImmutGetItemCollection[T: AnyType]:
-    fn __getitem__(self, idx: Int) -> ref [self] Self.T: pass
-    fn __setitem__(mut self, idx: Int, var value: Self.T): pass
+    def __getitem__(self, idx: Int) -> ref [self] Self.T: pass
+    def __setitem__(mut self, idx: Int, var value: Self.T): pass
 
 # CHECK-LABEL: lit.fn @"subscript_assignment_writeback
-fn subscript_assignment_writeback(mut list: MyImmutGetItemCollection[Value]):
+def subscript_assignment_writeback(mut list: MyImmutGetItemCollection[Value]):
     # This MUST perform a copy of the value, because getitem returns an
     # immutable ref.
 
@@ -575,7 +575,7 @@ fn subscript_assignment_writeback(mut list: MyImmutGetItemCollection[Value]):
 
 
 # CHECK-LABEL: lit.fn @"check_tail_call
-fn check_tail_call(str_arg: String, var var_str_arg: String):
+def check_tail_call(str_arg: String, var var_str_arg: String):
     var local_str = String()
 
     # This touches the local stack temporary so can't be a tail call.

@@ -16,7 +16,7 @@
 from test_reexport_name_collision import *
 
 # CHECK-LABEL: lit.fn @"main
-fn main():
+def main():
     # Parametric function via wildcard import.
     # CHECK: lit.call {{.*}}@test_reexport_name_collision::@foo::@"foo
     var a = foo[42]()

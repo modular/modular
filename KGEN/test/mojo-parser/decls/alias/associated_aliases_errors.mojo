@@ -52,18 +52,18 @@ struct StructWithTypelessUninitializedAlias:
 
 
 # expected-note @below {{function declared here}}
-fn funcForMyTrait[T: MyTrait](t: T) -> Int:
+def funcForMyTrait[T: MyTrait](t: T) -> Int:
     comptime X = T.N
     return X
 
 
-fn testError1():
+def testError1():
     # TODO(MOCO-1152): Add more detailed errors for this
     # expected-error @below {{invalid call to 'funcForMyTrait': value passed to 't' cannot be converted from 'StructWithNoMatchingAlias' to 'T', argument type 'StructWithNoMatchingAlias' does not conform to trait 'MyTrait'}}
     var whatev: Int = funcForMyTrait(StructWithNoMatchingAlias())
 
 
-fn testError2():
+def testError2():
     # TODO(MOCO-1152): Add more detailed errors for this
     # expected-error @below {{invalid call to 'funcForMyTrait': value passed to 't' cannot be converted from 'StructWithMismatchedAlias' to 'T', argument type 'StructWithMismatchedAlias' does not conform to trait 'MyTrait'}}
     var whatev: Int = funcForMyTrait(StructWithMismatchedAlias())

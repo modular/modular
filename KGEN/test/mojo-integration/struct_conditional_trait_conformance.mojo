@@ -21,7 +21,7 @@
 struct CopyableType(Copyable, ImplicitlyDestructible, Movable):
     var x: Int
 
-    fn __init__(out self, x: Int):
+    def __init__(out self, x: Int):
         self.x = x
 
 
@@ -31,7 +31,7 @@ struct ImplCopyableType(
 ):
     var x: Int
 
-    fn __init__(out self, x: Int):
+    def __init__(out self, x: Int):
         self.x = x
 
 
@@ -49,20 +49,20 @@ struct SimpleWrapper[T: ImplicitlyDestructible & Movable](
 ):
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
-    fn __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
+    def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
         self.value = rebind_var[Self.T](
             trait_downcast[Copyable](copy.value).copy()
         )
 
 
-fn needs_copyable[T: Copyable](x: T):
+def needs_copyable[T: Copyable](x: T):
     print("needs_copyable: Type is Copyable!")
 
 
-fn test_simple_conditional():
+def test_simple_conditional():
     var wrapped = SimpleWrapper(CopyableType(42))
     # CHECK: needs_copyable: Type is Copyable!
     needs_copyable(wrapped)
@@ -73,7 +73,7 @@ fn test_simple_conditional():
 # ===========================================================================
 
 
-fn test_nested_wrappers():
+def test_nested_wrappers():
     # SimpleWrapper[CopyableType] is Copyable
     # SimpleWrapper[SimpleWrapper[CopyableType]] is also Copyable
     var inner = SimpleWrapper(CopyableType(42))
@@ -92,14 +92,14 @@ fn test_nested_wrappers():
 # covariance.
 
 
-fn takes_copyable_via_trait[T: Copyable & ImplicitlyDestructible](x: T):
+def takes_copyable_via_trait[T: Copyable & ImplicitlyDestructible](x: T):
     var copy = x.copy()
     _ = copy^
     # CHECK: Function type conversion with conditional works
     print("Function type conversion with conditional works")
 
 
-fn test_function_type_conversion():
+def test_function_type_conversion():
     # SimpleWrapper[CopyableType] has conditional Copyable conformance
     # This tests that the conformance is correctly detected
     var wrapped = SimpleWrapper(CopyableType(42))
@@ -115,7 +115,7 @@ fn test_function_type_conversion():
 # is no longer resolved to the concrete type during conformance checking.
 #
 # trait Printable:
-#     fn print_value(self):
+#     def print_value(self):
 #         ...
 #
 #
@@ -123,7 +123,7 @@ fn test_function_type_conversion():
 # struct SimplePrintable(ImplicitlyCopyable, Printable):
 #     var x: Int
 #
-#     fn print_value(self):
+#     def print_value(self):
 #         print("SimplePrintable:", self.x)
 #
 #
@@ -133,30 +133,30 @@ fn test_function_type_conversion():
 # ):
 #     var value: Self.T
 #
-#     fn __init__(out self, value: Self.T):
+#     def __init__(out self, value: Self.T):
 #         self.value = value
 #
-#     fn __moveinit__(out self, deinit take: Self):
+#     def __moveinit__(out self, deinit take: Self):
 #         self.value = take.value
 #
-#     fn __copyinit__(out self, copy: Self, /):
+#     def __copyinit__(out self, copy: Self, /):
 #         self.value = copy.value
 #
-#     fn print_value(self) where conforms_to(Self.T, Printable):
+#     def print_value(self) where conforms_to(Self.T, Printable):
 #         trait_downcast[Printable](self.value).print_value()
 #
 #
-# fn use_printable_closure[
-#     T: Printable & ImplicitlyCopyable, C: fn() unified -> T
+# def use_printable_closure[
+#     T: Printable & ImplicitlyCopyable, C: def() unified -> T
 # ](impl: C):
 #     var result = impl()
 #     result.print_value()
 #
 #
-# fn test_closure_with_conditional_return():
+# def test_closure_with_conditional_return():
 #     var captured = SimplePrintable(42)
 #
-#     fn make_wrapper() unified {var} -> PrintableWrapper[SimplePrintable]:
+#     def make_wrapper() unified {var} -> PrintableWrapper[SimplePrintable]:
 #         return PrintableWrapper(captured)
 #
 #     # COM: CHECK: SimplePrintable: 42
@@ -165,10 +165,10 @@ fn test_function_type_conversion():
 #     ](make_wrapper)
 #
 #
-# fn test_nested_conditional_closure():
+# def test_nested_conditional_closure():
 #     var val = SimplePrintable(100)
 #
-#     fn make_nested() unified {
+#     def make_nested() unified {
 #         var val
 #     } -> PrintableWrapper[PrintableWrapper[SimplePrintable]]:
 #         return PrintableWrapper(PrintableWrapper(val))
@@ -196,10 +196,10 @@ fn test_function_type_conversion():
 struct CopyableIntableType(Copyable, ImplicitlyDestructible, Intable, Movable):
     var x: Int
 
-    fn __init__(out self, x: Int):
+    def __init__(out self, x: Int):
         self.x = x
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return self.x
 
 
@@ -231,23 +231,23 @@ struct DiamondBothConditional[T: ImplicitlyDestructible & Movable](
 ):
     var data: Self.T
 
-    fn __init__(out self, var data: Self.T):
+    def __init__(out self, var data: Self.T):
         self.data = data^
 
 
-fn needs_base[T: Base](x: T):
+def needs_base[T: Base](x: T):
     print("needs_base: Type conforms to Base!")
 
 
-fn needs_derived_a[T: DerivedA](x: T):
+def needs_derived_a[T: DerivedA](x: T):
     print("needs_derived_a: Type conforms to DerivedA!")
 
 
-fn needs_derived_b[T: DerivedB](x: T):
+def needs_derived_b[T: DerivedB](x: T):
     print("needs_derived_b: Type conforms to DerivedB!")
 
 
-fn test_diamond_both_conditional():
+def test_diamond_both_conditional():
     # CopyableIntableType is both Copyable and Intable
     # So DiamondBothConditional[CopyableIntableType] conforms to all three traits
     var diamond = DiamondBothConditional(CopyableIntableType(42))
@@ -272,7 +272,7 @@ fn test_diamond_both_conditional():
 struct MovableOnlyType(ImplicitlyDestructible, Movable):
     var x: Int
 
-    fn __init__(out self, x: Int):
+    def __init__(out self, x: Int):
         self.x = x
 
 
@@ -282,11 +282,11 @@ struct DiamondOneUnconditional[T: ImplicitlyDestructible & Movable](
 ):
     var data: Self.T
 
-    fn __init__(out self, var data: Self.T):
+    def __init__(out self, var data: Self.T):
         self.data = data^
 
 
-fn test_diamond_one_unconditional():
+def test_diamond_one_unconditional():
     # MovableOnlyType is NOT Copyable
     # But DiamondOneUnconditional[MovableOnlyType] still conforms to Base
     # because DerivedB is unconditional
@@ -311,11 +311,11 @@ struct ExplicitAncestor[T: ImplicitlyDestructible & Movable](
 ):
     var data: Self.T
 
-    fn __init__(out self, var data: Self.T):
+    def __init__(out self, var data: Self.T):
         self.data = data^
 
 
-fn test_explicit_ancestor():
+def test_explicit_ancestor():
     # MovableOnlyType is NOT Copyable
     # But ExplicitAncestor[MovableOnlyType] conforms to Base
     # because Base is explicitly listed without a constraint
@@ -336,23 +336,23 @@ struct MultipleConditional[T: ImplicitlyDestructible & Movable](
 ):
     var data: Self.T
 
-    fn __init__(out self, var data: Self.T):
+    def __init__(out self, var data: Self.T):
         self.data = data^
 
-    fn __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
+    def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
         self.data = rebind_var[Self.T](
             trait_downcast[Copyable](copy.data).copy()
         )
 
-    fn __int__(self) -> Int where conforms_to(Self.T, Intable):
+    def __int__(self) -> Int where conforms_to(Self.T, Intable):
         return 0
 
 
-fn needs_intable[T: Intable](x: T):
+def needs_intable[T: Intable](x: T):
     print("needs_intable: Type is Intable!")
 
 
-fn test_multiple_conditional():
+def test_multiple_conditional():
     # CopyableIntableType is both Copyable and Intable
     var multi = MultipleConditional(CopyableIntableType(42))
 
@@ -368,7 +368,7 @@ fn test_multiple_conditional():
 
 
 trait RequiresMethod:
-    fn method(self):
+    def method(self):
         ...
 
 
@@ -378,15 +378,15 @@ struct StrongerConformance[T: ImplicitlyDestructible & Movable](
 ):
     var data: Self.T
 
-    fn __init__(out self, var data: Self.T):
+    def __init__(out self, var data: Self.T):
         self.data = data^
 
     # Method only requires Copyable - satisfied by stronger conformance constraint
-    fn method(self) where conforms_to(Self.T, Copyable):
+    def method(self) where conforms_to(Self.T, Copyable):
         print("StrongerConformance.method")
 
 
-fn test_stronger_implies_weaker():
+def test_stronger_implies_weaker():
     # CopyableIntableType is both Copyable and Intable
     var s = StrongerConformance(CopyableIntableType(42))
     # CHECK: StrongerConformance.method
@@ -409,11 +409,11 @@ struct DiamondSameConstraint[T: ImplicitlyDestructible & Movable](
 ):
     var data: Self.T
 
-    fn __init__(out self, var data: Self.T):
+    def __init__(out self, var data: Self.T):
         self.data = data^
 
 
-fn test_diamond_same_constraint():
+def test_diamond_same_constraint():
     # CopyableIntableType is both Copyable and Intable, so the constraint
     # conforms_to(T, Copyable) is satisfied. Base is auto-propagated with the
     # same constraint from both paths.
@@ -446,11 +446,11 @@ struct DiamondReorderedConstraint[T: ImplicitlyDestructible & Movable](
 ):
     var data: Self.T
 
-    fn __init__(out self, var data: Self.T):
+    def __init__(out self, var data: Self.T):
         self.data = data^
 
 
-fn test_diamond_reordered_constraint():
+def test_diamond_reordered_constraint():
     # CopyableIntableType satisfies both Copyable and Intable.
     # The two paths to Base carry "Copyable and Intable" vs "Intable and Copyable"
     # which are logically equivalent, so Base should auto-propagate.
@@ -474,7 +474,7 @@ fn test_diamond_reordered_constraint():
 
 
 trait ViolatedPrecedenceTrait:
-    fn get_label(read self) -> Int:
+    def get_label(read self) -> Int:
         return 0
 
 
@@ -485,14 +485,14 @@ struct ViolatedTakesPrecedence[T: ImplicitlyDestructible & Movable](
 ):
     var data: Self.T
 
-    fn __init__(out self, var data: Self.T):
+    def __init__(out self, var data: Self.T):
         self.data = data^
 
     # First where clause: unprovable (Intable is independent of Copyable).
     # Second where clause: contradicts the conformance (conformance requires
     # Copyable, but this requires NOT Copyable).
     # The method should be Violated (rejected), not Unprovable (error).
-    fn get_label(
+    def get_label(
         read self,
     ) -> Int where conforms_to(Self.T, Intable) where not conforms_to(
         Self.T, Copyable
@@ -500,11 +500,11 @@ struct ViolatedTakesPrecedence[T: ImplicitlyDestructible & Movable](
         return 1
 
 
-fn needs_violated_precedence[T: ViolatedPrecedenceTrait](x: T):
+def needs_violated_precedence[T: ViolatedPrecedenceTrait](x: T):
     print("violated_precedence:", x.get_label())
 
 
-fn test_violated_precedence():
+def test_violated_precedence():
     var v = ViolatedTakesPrecedence(CopyableType(1))
     # CHECK: violated_precedence: 0
     needs_violated_precedence(v)
@@ -523,11 +523,11 @@ struct MovableViaCopyable[T: ImplicitlyDestructible & Movable](
 ):
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
 
-fn test_move_via_copyable():
+def test_move_via_copyable():
     var original = MovableViaCopyable(CopyableType(100))
     var moved = original^
     # CHECK: move_via_copyable: 100
@@ -547,11 +547,11 @@ struct MovableViaImplCopyable[T: ImplicitlyDestructible & Movable](
 ):
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
 
-fn test_move_via_impl_copyable():
+def test_move_via_impl_copyable():
     var original = MovableViaImplCopyable(ImplCopyableType(200))
     var moved = original^
     # CHECK: move_via_impl_copyable: 200
@@ -573,10 +573,10 @@ struct BothConditionalMoveCopy[T: ImplicitlyDestructible & Movable](
 ):
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
-    fn __init__(
+    def __init__(
         out self, *, copy: Self
     ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Movable):
         self.value = rebind_var[Self.T](
@@ -584,7 +584,7 @@ struct BothConditionalMoveCopy[T: ImplicitlyDestructible & Movable](
         )
 
 
-fn test_both_conditional_move_copy():
+def test_both_conditional_move_copy():
     var original = BothConditionalMoveCopy(CopyableType(300))
     var copied = original.copy()
     # CHECK: both_cond_copy: 300
@@ -611,11 +611,11 @@ struct SynthCopyWrapper[T: ImplicitlyDestructible & Movable](
 ):
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
 
-fn test_synthesized_copy():
+def test_synthesized_copy():
     var original = SynthCopyWrapper(CopyableType(42))
     var copied = original.copy()
     # CHECK: synth_copy: 42
@@ -631,7 +631,7 @@ fn test_synthesized_copy():
 # synthesized move init works correctly alongside conditional copy.
 
 
-fn test_synthesized_move():
+def test_synthesized_move():
     var original = SynthCopyWrapper(CopyableType(99))
     var moved = original^
     # CHECK: synth_move: 99
@@ -654,12 +654,12 @@ struct MixedFieldWrapper[T: ImplicitlyDestructible & Movable](
     var count: Int
     var value: Self.T
 
-    fn __init__(out self, count: Int, var value: Self.T):
+    def __init__(out self, count: Int, var value: Self.T):
         self.count = count
         self.value = value^
 
 
-fn test_mixed_field_copy():
+def test_mixed_field_copy():
     var original = MixedFieldWrapper(7, CopyableType(55))
     var copied = original.copy()
     # CHECK: mixed_copy: 7 55
@@ -682,11 +682,11 @@ struct CopyableViaImplCopyable[T: ImplicitlyDestructible & Movable](
 ):
     var value: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         self.value = value^
 
 
-fn test_copy_via_impl_copyable():
+def test_copy_via_impl_copyable():
     var original = CopyableViaImplCopyable(ImplCopyableType(500))
     var copied = original.copy()
     # CHECK: copy_via_impl_copyable: 500
@@ -704,7 +704,7 @@ fn test_copy_via_impl_copyable():
 # Both the synthesized copy and unconditional move should work.
 
 
-fn test_synth_copy_with_impl_copyable_type():
+def test_synth_copy_with_impl_copyable_type():
     var original = SynthCopyWrapper(ImplCopyableType(600))
     var copied = original.copy()
     # CHECK: synth_copy_ic: 600
@@ -727,7 +727,7 @@ fn test_synth_copy_with_impl_copyable_type():
 # struct's symbol table.
 
 
-fn test_conforms_to_evaluates_where_clause():
+def test_conforms_to_evaluates_where_clause():
     # SimpleWrapper[CopyableType] should conform to Copyable
     # because CopyableType is Copyable.
     # CHECK: conforms_to_satisfied: True
@@ -788,11 +788,11 @@ fn test_conforms_to_evaluates_where_clause():
 # true/false based on the conditional conformance constraint.
 
 
-fn check_copyable_symbolic[T: ImplicitlyDestructible & Movable]() -> Bool:
+def check_copyable_symbolic[T: ImplicitlyDestructible & Movable]() -> Bool:
     return conforms_to(SimpleWrapper[T], Copyable)
 
 
-fn test_symbolic_conforms_to():
+def test_symbolic_conforms_to():
     # CHECK: symbolic_copyable_int: True
     print("symbolic_copyable_int:", check_copyable_symbolic[CopyableType]())
     # CHECK: symbolic_copyable_movable: False
@@ -809,13 +809,13 @@ fn test_symbolic_conforms_to():
 # and can be passed to functions requiring Copyable.
 
 
-fn guarded_copyable_call[
+def guarded_copyable_call[
     T: Copyable & ImplicitlyDestructible
 ](x: SimpleWrapper[T]):
     needs_copyable(x)
 
 
-fn test_guarded_conditional_call():
+def test_guarded_conditional_call():
     var w = SimpleWrapper(CopyableType(42))
     # CHECK: guarded_call: ok
     guarded_copyable_call(w)
@@ -829,7 +829,7 @@ fn test_guarded_conditional_call():
 # body, allowing calls that require the conditional conformance.
 
 
-fn conditional_copy_in_guard[
+def conditional_copy_in_guard[
     T: ImplicitlyDestructible & Movable
 ](x: SimpleWrapper[T]):
     comptime if conforms_to(T, Copyable):
@@ -838,7 +838,7 @@ fn conditional_copy_in_guard[
         print("comptime_guard_copy: ok")
 
 
-fn test_comptime_if_guard():
+def test_comptime_if_guard():
     var w = SimpleWrapper(CopyableType(42))
     conditional_copy_in_guard(w)
 
@@ -853,13 +853,13 @@ fn test_comptime_if_guard():
 from std.reflection.traits import AllWritable
 
 
-fn repr_with_where[
+def repr_with_where[
     *types: Movable & Writable
 ](t: Tuple[*types]) -> String where AllWritable[*types]:
     return repr(t)
 
 
-fn test_where_clause_proves_variadic():
+def test_where_clause_proves_variadic():
     var t = (1, "hello")
     # CHECK: where_variadic: Tuple[Int, String](Int(1), 'hello')
     print("where_variadic:", repr_with_where(t))
@@ -874,7 +874,7 @@ fn test_where_clause_proves_variadic():
 # true by only checking ConformanceOp existence, ignoring the constraint.
 
 
-fn test_conforms_to_value_expression():
+def test_conforms_to_value_expression():
     # Positive: nested wrapper where inner satisfies the constraint.
     # CHECK: value_nested_pos: True
     print(
@@ -905,17 +905,17 @@ fn test_conforms_to_value_expression():
 # be upcast to a trait metatype.
 
 
-fn accept_copyable_metatype[T: Copyable]():
+def accept_copyable_metatype[T: Copyable]():
     pass
 
 
-fn upcast_with_scope[T: Copyable & ImplicitlyDestructible]():
+def upcast_with_scope[T: Copyable & ImplicitlyDestructible]():
     # SimpleWrapper[T] is Copyable because T: Copyable is in scope.
     # This exercises canMetaTypeUpCastTo receiving the scope.
     accept_copyable_metatype[SimpleWrapper[T]]()
 
 
-fn test_metatype_upcast_with_scope():
+def test_metatype_upcast_with_scope():
     upcast_with_scope[CopyableType]()
     # CHECK: metatype_upcast_scope: ok
     print("metatype_upcast_scope: ok")
@@ -926,24 +926,24 @@ fn test_metatype_upcast_with_scope():
 # ===========================================================================
 # canConvertFunctionTypes checks argument conformance via checkConformance
 # with the caller's declScope. This tests that a higher-order function
-# accepting `fn(Copyable)` can receive a function taking a conditionally-
+# accepting `def(Copyable)` can receive a function taking a conditionally-
 # conforming type when the scope proves the conformance.
 
 
-fn apply_copyable_fn[
+def apply_copyable_fn[
     T: Copyable & ImplicitlyDestructible & Movable
 ](f: fn(SimpleWrapper[T]) -> None, x: SimpleWrapper[T]):
     f(x)
 
 
-fn print_wrapper_value[
+def print_wrapper_value[
     T: Copyable & ImplicitlyDestructible & Movable
 ](w: SimpleWrapper[T],):
     # CHECK: fn_conversion_scope: ok
     print("fn_conversion_scope: ok")
 
 
-fn test_fn_conversion_with_scope():
+def test_fn_conversion_with_scope():
     var w = SimpleWrapper(CopyableType(42))
     apply_copyable_fn(print_wrapper_value[CopyableType], w)
 
@@ -957,11 +957,11 @@ fn test_fn_conversion_with_scope():
 # verifying the scope-aware path through checkConformance.
 
 
-fn accept_movable[T: Movable](x: T):
+def accept_movable[T: Movable](x: T):
     pass
 
 
-fn upcast_conditional_to_base[
+def upcast_conditional_to_base[
     T: Copyable & ImplicitlyDestructible & Movable
 ](x: SimpleWrapper[T]):
     # SimpleWrapper[T] is Copyable (proven by T: Copyable in scope).
@@ -969,7 +969,7 @@ fn upcast_conditional_to_base[
     accept_movable(x)
 
 
-fn test_upcast_conditional_to_base():
+def test_upcast_conditional_to_base():
     var w = SimpleWrapper(CopyableType(42))
     upcast_conditional_to_base(w)
     # CHECK: upcast_conditional_base: ok
@@ -992,15 +992,15 @@ struct TRPEquatable[T: AnyType](
 ):
     var value: Int
 
-    fn __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
+    def __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         return self.value == other.value
 
 
-fn needs_equatable[T: Equatable](a: T, b: T) -> Bool:
+def needs_equatable[T: Equatable](a: T, b: T) -> Bool:
     return (a == b) and not (a != b)
 
 
-fn test_trp_conditional_equatable():
+def test_trp_conditional_equatable():
     var a = TRPEquatable[Int](42)
     var b = TRPEquatable[Int](42)
     var c = TRPEquatable[Int](99)
@@ -1019,7 +1019,7 @@ fn test_trp_conditional_equatable():
 
 
 trait CustomTRPTrait:
-    fn get_value(self) -> Int:
+    def get_value(self) -> Int:
         ...
 
 
@@ -1027,7 +1027,7 @@ trait CustomTRPTrait:
 struct CustomTRPImpl(CustomTRPTrait, TrivialRegisterPassable):
     var x: Int
 
-    fn get_value(self) -> Int:
+    def get_value(self) -> Int:
         return self.x
 
 
@@ -1039,15 +1039,15 @@ struct TRPMulti[T: AnyType](
 ):
     var value: Int
 
-    fn get_value(self) -> Int where conforms_to(Self.T, CustomTRPTrait):
+    def get_value(self) -> Int where conforms_to(Self.T, CustomTRPTrait):
         return self.value
 
 
-fn needs_custom_trp[T: CustomTRPTrait](x: T) -> Int:
+def needs_custom_trp[T: CustomTRPTrait](x: T) -> Int:
     return x.get_value()
 
 
-fn test_trp_multiple_conditional():
+def test_trp_multiple_conditional():
     # Equatable path (Int conforms to Equatable) — uses default __eq__
     var a = TRPMulti[Int](77)
     var b = TRPMulti[Int](77)
@@ -1077,13 +1077,13 @@ struct CondWrapper[T: ImplicitlyDestructible & Movable](
     var value: Self.T
 
 
-fn implicit_copy_in_generic[
+def implicit_copy_in_generic[
     T: ImplicitlyCopyable & ImplicitlyDestructible
 ](x: CondWrapper[T]) -> CondWrapper[T]:
     return x
 
 
-fn test_implicit_copy_in_generic():
+def test_implicit_copy_in_generic():
     var w = CondWrapper(42)
     var copy = implicit_copy_in_generic(w)
     # CHECK: implicit_copy_generic: 42
@@ -1103,13 +1103,13 @@ struct CondMovable[T: ImplicitlyDestructible & Movable](
     var value: Self.T
 
 
-fn move_in_generic[
+def move_in_generic[
     T: Copyable & ImplicitlyDestructible
 ](var x: CondMovable[T]) -> CondMovable[T]:
     return x^
 
 
-fn test_move_in_generic():
+def test_move_in_generic():
     var w = CondMovable(42)
     var moved = move_in_generic(w^)
     # CHECK: move_in_generic: 42
@@ -1121,20 +1121,20 @@ fn test_move_in_generic():
 # ===========================================================================
 
 
-fn explicit_copy_in_generic[
+def explicit_copy_in_generic[
     T: Copyable & ImplicitlyDestructible
 ](x: CondWrapper[T]) -> CondWrapper[T]:
     return x.copy()
 
 
-fn test_explicit_copy_in_generic():
+def test_explicit_copy_in_generic():
     var w = CondWrapper(42)
     var copy = explicit_copy_in_generic(w)
     # CHECK: explicit_copy_generic: 42
     print("explicit_copy_generic:", copy.value)
 
 
-fn main():
+def main():
     test_simple_conditional()
     test_nested_wrappers()
     test_function_type_conversion()

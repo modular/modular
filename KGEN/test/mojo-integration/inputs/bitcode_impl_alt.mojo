@@ -12,10 +12,10 @@
 
 
 @export("extern_add")
-fn extern_add(a: Int32, b: Int32) -> Int32:
+def extern_add(a: Int32, b: Int32) -> Int32:
     return a + b + 1
 
 
 @export("extern_multiply")
-fn extern_multiply(a: Int32, b: Int32) -> Int32:
+def extern_multiply(a: Int32, b: Int32) -> Int32:
     return a * b + 1

@@ -42,9 +42,9 @@
 # WITH-DEBUG-DAG: !DISubprogram
 # WITH-DEBUG-DAG: !DIFile
 
-fn add_numbers(x: Int, y: Int) -> Int:
+def add_numbers(x: Int, y: Int) -> Int:
     return x + y
 
-fn main():
+def main():
     var result = add_numbers(5, 10)
     print(result)

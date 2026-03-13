@@ -6,17 +6,17 @@
 
 
 struct Struct:
-    fn parametric[a: Int](self) -> Int:
+    def parametric[a: Int](self) -> Int:
         return a
 
-    fn foo(self):
+    def foo(self):
         return
 
 
 struct ParametricStruct[a: Int]:
-    fn foo(self):
+    def foo(self):
         return
 
 
-fn print10():
+def print10():
     print(10)

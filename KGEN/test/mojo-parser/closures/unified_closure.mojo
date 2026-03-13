@@ -37,8 +37,8 @@
 # CHECK: lit.ownership.mark_destroyed %self
 
 
-fn make_closure(x: Int):
-    fn my_closure(y: Int) unified {var x} -> Int:
+def make_closure(x: Int):
+    def my_closure(y: Int) unified {var x} -> Int:
         return x + y
 
 
@@ -53,9 +53,9 @@ fn make_closure(x: Int):
 # CHECK: lit.struct.decl @"fn(z: Int) -> Int_{{.*}}"
 
 
-fn make_closure(x: Int):
-    fn my_closure(y: Int) unified {var x} -> Int:
-        fn my_nested_closure(z: Int) unified {var x} -> Int:
+def make_closure(x: Int):
+    def my_closure(y: Int) unified {var x} -> Int:
+        def my_nested_closure(z: Int) unified {var x} -> Int:
             return x
 
         return x + y
@@ -69,13 +69,13 @@ fn make_closure(x: Int):
 # CHECK-COUNT-1: lit.struct.decl @"fn(y: Int) -> Int
 
 
-fn make_closure(x: Int):
-    fn my_closure(y: Int) unified {} -> Int:
+def make_closure(x: Int):
+    def my_closure(y: Int) unified {} -> Int:
         return y
 
 
-fn make_identical_closure(x: Int):
-    fn my_closure(y: Int) unified {} -> Int:
+def make_identical_closure(x: Int):
+    def my_closure(y: Int) unified {} -> Int:
         return y
 
 
@@ -85,7 +85,7 @@ fn make_identical_closure(x: Int):
 
 
 trait MyInterface(Movable):
-    fn thing(self):
+    def thing(self):
         ...
 
 
@@ -99,8 +99,8 @@ struct Foo[T: Movable, b: T]:
 # CHECK-SAME: [mut *"self`", imm *"[[L1:.*]]`"](%0[*""]: !lit.ref<:[[TRAIT]] *"_Self`{{.*}}", mut *"self`"> read_mem, |, %a: !lit.ref<:!MyInterface T, imm *"[[L1]]`"> read_mem) capturing -> !kgen.none
 
 
-fn make_closure(x: Int) -> Int:
-    fn parametric[T: MyInterface, b: T, c: Foo[T, b]](a: T) unified {}:
+def make_closure(x: Int) -> Int:
+    def parametric[T: MyInterface, b: T, c: Foo[T, b]](a: T) unified {}:
         pass
 
     return x
@@ -125,8 +125,8 @@ fn make_closure(x: Int) -> Int:
 # CHECK-NEXT: lit.end_fn
 
 
-fn make_closure(x: Int) -> Int:
-    fn mutate[
+def make_closure(x: Int) -> Int:
+    def mutate[
         lt: Origin[mut=True]
     ](a: Pointer[String, lt]._mlir_type, b: String) unified {}:
         pass
@@ -140,7 +140,7 @@ fn make_closure(x: Int) -> Int:
 
 
 trait MyInterface:
-    fn thing(self):
+    def thing(self):
         ...
 
 
@@ -155,8 +155,8 @@ trait MyInterface:
 # CHECK-NEXT: lit.end_fn
 
 
-fn make_closure(x: Int) -> Int:
-    fn parametric[T: MyInterface](a: T) unified {}:
+def make_closure(x: Int) -> Int:
+    def parametric[T: MyInterface](a: T) unified {}:
         pass
 
     return x
@@ -171,7 +171,7 @@ fn make_closure(x: Int) -> Int:
 # CHECK: [[TRAIT:!Int_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn(y: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
 
 
-fn make_closure(x: Int):
+def make_closure(x: Int):
     # CHECK: [[RAW_CLOSURE:%.*]] = lit.closure.init[{{.*}}](%x)(%arg0[y]: [[INT]]) capturing -> [[INT]] {
     # CHECK-NEXT: [[BODY_OP:%.*]] = lit.call {{.*}}@Int::@"__add__{{.*}}"(%x, %arg0) : !lit.generator<("lhs": [[INT]], "rhs": [[INT]]) -> [[INT]]>
     # CHECK-NEXT: lit.return [[BODY_OP]] : [[INT]]
@@ -182,7 +182,7 @@ fn make_closure(x: Int):
     # CHECK-NEXT: [[WRAPPER:%.*]] = lit.var.decl "my_closure" var : !lit.ref<!lit.struct<[[T:#.*]] <:[[TRAIT]] {{.*}}, :origin.set {}>>, mut *"[[L1:.*]]">
     # CHECK-NEXT: lit.call {{.*}}::@"fn(y: Int) -> Int_{{.*}}"::@"__init__($0$)"[mut *"[[L0]]", mut *"[[L1]]"]<:[[TRAIT]] {{.*}}, :origin.set {}>([[RAW_CLOSURE]], [[WRAPPER]]) : !lit.generator<[2]("impl": !lit.ref<!kgen.closure<@{{.*}}::make_closure{{.*}}", "my_closure" nonescaping>, mut *[0,0]> owned_in_mem, |, ?, "self": !lit.ref<!lit.struct<[[T]] <:[[TRAIT]] {{.*}}, :origin.set {}>>, mut *[0,1]> byref_result) -> !kgen.none>
 
-    fn my_closure(y: Int) unified {var x} -> Int:
+    def my_closure(y: Int) unified {var x} -> Int:
         return x + y
 
 
@@ -197,7 +197,7 @@ fn make_closure(x: Int):
 # CHECK-NEXT: %0 = lit.call tail[!lit.generator<[1](!lit.ref<:!Int f, mut *[0,0]> read_mem, |, "y": !Int1) capturing -> !Int1>: #kgen.get_witness<:!Int f, "fn(y: Int) -> Int", "__call__{{.*}}">][imm *"myFunc`"](%myFunc, %x)
 # CHECK-NEXT: lit.ownership.use %0
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
-fn take_closure[f: fn(y: Int) unified -> Int](myFunc: f, x: Int):
+def take_closure[f: def(y: Int) unified -> Int](myFunc: f, x: Int):
     _ = myFunc(x)
 
 
@@ -217,9 +217,9 @@ fn take_closure[f: fn(y: Int) unified -> Int](myFunc: f, x: Int):
 # CHECK-SAME: [mut *"self`", imm *"[[L0:.*]]`"]
 # CHECK-SAME: (%0[*""]: !lit.ref<:[[TRAIT3]] *"_Self{{.*}}, mut *"self`"> read_mem, |
 # CHECK-SAME:, %impl: !lit.ref<:[[TRAIT2]] closure2, imm *"[[L0]]`"> read_mem, %y: [[INT]]) capturing -> [[INT]]
-fn take_closure[closure1: fn(y: Int) unified -> Int](x: Int):
-    fn nested[
-        closure2: fn(y: Int) unified -> Int
+def take_closure[closure1: def(y: Int) unified -> Int](x: Int):
+    def nested[
+        closure2: def(y: Int) unified -> Int
     ](impl: closure2, y: Int) unified {var x} -> Int:
         return x
 
@@ -235,10 +235,10 @@ fn take_closure[closure1: fn(y: Int) unified -> Int](x: Int):
 # CHECK-SAME:, %impl2: !lit.ref<:!Int closure2, imm *"[[L1]]`1"> read_mem, %x: !Int1) capturing -> !kgen.none
 
 
-fn take_closures[
-    closure1: fn(y: Int) unified -> Int,
+def take_closures[
+    closure1: def(y: Int) unified -> Int,
     T: Int,
-    closure2: fn(y: Int, z: Int) unified -> Int,
+    closure2: def(y: Int, z: Int) unified -> Int,
     U: Int,
 ](impl1: closure1, impl2: closure2, x: Int):
     pass
@@ -256,8 +256,8 @@ fn take_closures[
 # CHECK-SAME: <x: !Int, +>[imm *"[[L0:.*]]"]
 # CHECK-SAME: (%impl: !lit.ref<:!Int x, imm *"[[L0]]"> read_mem
 # TODO: remove the 'do_not_dce_int' argument (MOCO 2461)
-fn nested[
-    x: fn[y: fn(z: Int) unified -> Int](impl: y, u: Int) unified -> Int, //
+def nested[
+    x: def[y: def(z: Int) unified -> Int](impl: y, u: Int) unified -> Int, //
 ](impl: x, do_not_dce_int: Int):
     pass
 
@@ -281,8 +281,8 @@ fn nested[
 # CHECK-NEXT: kgen.witness "__init__(take:$0$)"
 # CHECK: kgen.conformance @"fn(z: Int) -> Int" {
 # CHECK-NEXT: kgen.witness "__call__{{.*}}"
-fn bindIt(x: Int, y: Int) -> Int:
-    fn myclosure(z: Int) unified {var x, var y} -> Int:
+def bindIt(x: Int, y: Int) -> Int:
+    def myclosure(z: Int) unified {var x, var y} -> Int:
         return x + y + z
 
 
@@ -299,8 +299,8 @@ fn bindIt(x: Int, y: Int) -> Int:
 
 
 # CHECK: lit.file_module
-fn bindIt() -> Int:
-    fn myclosure[my_param: AnyType](z: Int) unified {}:
+def bindIt() -> Int:
+    def myclosure[my_param: AnyType](z: Int) unified {}:
         pass
 
 
@@ -331,8 +331,8 @@ fn bindIt() -> Int:
 # CHECK-NEXT: }
 
 
-fn make_closure(x: Int) -> Int:
-    fn mutate[
+def make_closure(x: Int) -> Int:
+    def mutate[
         lt: Origin[mut=True]
     ](a: Pointer[String, lt]._mlir_type, b: String) unified {}:
         pass
@@ -347,9 +347,9 @@ fn make_closure(x: Int) -> Int:
 # CHECK: [[TRAIT:!None_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable*.]] = !lit.trait<@"fn() -> None", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
 
 
-fn nonemptyOriginSet(mut byRefMut: String):
+def nonemptyOriginSet(mut byRefMut: String):
     # CHECK: lit.call {{.*}}::@"fn() -> None_{{.*}}"::@"__init__({{.*}})"[{{.*}}]<:[[TRAIT]] {{.*}}, :origin.set {mut *"byRefMut`"}>
-    fn myclosure() unified {mut byRefMut}:
+    def myclosure() unified {mut byRefMut}:
         pass
 
 
@@ -366,12 +366,12 @@ fn nonemptyOriginSet(mut byRefMut: String):
 # CHECK-SAME: rebind(:!lit.generator<[1](!lit.ref<!lit.struct<[[T]] <:[[TRAIT1]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, |, "x": [[INT]]) capturing -> [[INT]]> @{{.*}}::@"fn(x: Int) -> Int_{{.*}}"::@"__call__{{.*}}"<:[[TRAIT1]] impl, :origin.set origin_set>)
 
 
-fn takeIt[C: fn(Int) unified -> Int](closure: C):
+def takeIt[C: def(Int) unified -> Int](closure: C):
     _ = closure(3)
 
 
-fn bindIt(z: Int):
-    fn myclosure(x: Int) unified {var} -> Int:
+def bindIt(z: Int):
+    def myclosure(x: Int) unified {var} -> Int:
         return z
 
     takeIt[type_of(myclosure)](myclosure)
@@ -390,12 +390,12 @@ fn bindIt(z: Int):
 # CHECK-SAME: rebind(:!lit.generator<[1](!lit.ref<!lit.struct<[[T]] <:[[TRAIT1]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, |, "x": [[INT]]) capturing -> [[INT]]> @{{.*}}::@"fn(x: Int) -> Int_{{.*}}"::@"__call__{{.*}}"<:[[TRAIT1]] impl, :origin.set origin_set>)
 
 
-fn takeIt[C: Copyable & fn(y: Int) unified -> Int](closure: C):
+def takeIt[C: Copyable & def(y: Int) unified -> Int](closure: C):
     _ = closure(3)
 
 
-fn bindIt(z: Int):
-    fn myclosure(x: Int) unified {var} -> Int:
+def bindIt(z: Int):
+    def myclosure(x: Int) unified {var} -> Int:
         return z
 
     takeIt[type_of(myclosure)](myclosure)
@@ -406,11 +406,11 @@ fn bindIt(z: Int):
 # COM: Verify that all closures are rebound when closure traits are combined or inherited
 
 
-fn takeIt[C: (fn(Bool) unified -> Int) & fn(Int) unified -> Int](closure: C):
+def takeIt[C: (def(Bool) unified -> Int) & def(Int) unified -> Int](closure: C):
     _ = closure(3)
 
 
-trait BoolWrapper(fn(Bool) unified -> Int):
+trait BoolWrapper(def(Bool) unified -> Int):
     pass
 
 
@@ -422,18 +422,18 @@ trait BoolWrapper(fn(Bool) unified -> Int):
 
 # CHECK: kgen.conformance @"fn(Int) -> Int"
 # CHECK:kgen.witness "__call__($0,::Int)" : !lit.generator<[1](!lit.ref<!MultipleClosure, mut *[0,0]> read_mem, !Int1, |) capturing -> !Int1> = rebind(:!lit.generator<[1]("self": !lit.ref<!MultipleClosure, imm *[0,0]> read_mem, "x": !Int1) capturing -> !Int1> @{{.*}}::@MultipleClosure::@"__call__({{.*}}::MultipleClosure,::Int)")
-struct MultipleClosure(BoolWrapper, Movable, fn(Int) unified -> Int):
-    fn __init__(out self):
+struct MultipleClosure(BoolWrapper, Movable, def(Int) unified -> Int):
+    def __init__(out self):
         pass
 
-    fn __call__(self, x: Bool) -> Int:
+    def __call__(self, x: Bool) -> Int:
         return 1
 
-    fn __call__(self, x: Int) -> Int:
+    def __call__(self, x: Int) -> Int:
         return 2
 
 
-fn bindIt(z: Int):
+def bindIt(z: Int):
     var fakeclosure = MultipleClosure()
 
     takeIt[type_of(fakeclosure)](fakeclosure)
@@ -453,13 +453,13 @@ fn bindIt(z: Int):
 # CHECK-SAME: rebind(:!lit.generator<<"a": [[INT]]>[1](!lit.ref<!lit.struct<[[T]] <:[[TRAIT1]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, |, "b": [[INT]]) capturing -> [[INT]]> @{{.*}}::@"fn[a: Int](b: Int) -> Int_{{.*}}"::@"__call__[::Int]({{.*}}::fn[a: Int](b: Int) -> Int_{{.*}}"<:[[TRAIT1]] impl, :origin.set origin_set, :[[INT]] ?>)
 
 
-fn takeIt[C: fn[x: Int](y: Int) unified -> Int](closure: C):
+def takeIt[C: def[x: Int](y: Int) unified -> Int](closure: C):
     # see MOCO-2606
     _ = closure.__call__[2](3)
 
 
-fn bindIt(z: Int):
-    fn myclosure[a: Int](b: Int) unified {var} -> Int:
+def bindIt(z: Int):
+    def myclosure[a: Int](b: Int) unified {var} -> Int:
         return z
 
     takeIt[type_of(myclosure)](myclosure)
@@ -472,8 +472,8 @@ fn bindIt(z: Int):
 
 # CHECK: [[TRAIT:!Int_AnyType.*]] = !lit.trait<@"fn(x: Int) -> Int"
 # CHECK: lit.struct.decl @custom([[TRAIT]])
-struct custom(fn(x: Int) unified -> Int):
-    fn __call__(self, x: Int) capturing -> Int:
+struct custom(def(x: Int) unified -> Int):
+    def __call__(self, x: Int) capturing -> Int:
         return x
 
 
@@ -494,11 +494,11 @@ struct custom(fn(x: Int) unified -> Int):
 # CHECK: lit.struct.decl @"fn(x: Int) -> Int_{{.*}}"<impl: [[CANONICAL_TRAIT]], origin_set: origin.set, |>([[CANONICAL_TRAIT]])
 
 
-fn takeItImplicit[T: ImplicitlyCopyable](impl: T):
+def takeItImplicit[T: ImplicitlyCopyable](impl: T):
     pass
 
 
-fn takeIt[T: Copyable](impl: T):
+def takeIt[T: Copyable](impl: T):
     pass
 
 
@@ -514,20 +514,20 @@ struct OneOfAKind(Movable):
     var y: Int
 
 
-fn useIt(var x: OneOfAKind):
+def useIt(var x: OneOfAKind):
     pass
 
 
 @no_inline
-fn giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
-    fn aThing(x: Int) unified {var z, var cm} -> Int:
+def giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
+    def aThing(x: Int) unified {var z, var cm} -> Int:
         return z + x
 
     takeItImplicit(aThing)
     takeIt(aThing)
 
-    # COM: uncopyable version can still implement the fn(x:Int) -> Int trait
-    fn anotherThing(x: Int) unified {var ^} -> Int:
+    # COM: uncopyable version can still implement the def(x:Int) -> Int trait
+    def anotherThing(x: Int) unified {var ^} -> Int:
         useIt(one^)
         return x
 
@@ -547,8 +547,8 @@ fn giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
 # COM: The alias is set to the alias of the impl in the struct wrapper
 # CHECK: lit.struct.decl @"fn() -> T_Mova_Impl_Copy_Impl"
 # CHECK: kgen.witness "T" : !TrivialRegisterPassable = #kgen.get_witness<:!{{.*}} impl, "fn() -> T", "T">
-fn makeIt[T: TrivialRegisterPassable](a: T):
-    fn parametric() unified {var a} -> T:
+def makeIt[T: TrivialRegisterPassable](a: T):
+    def parametric() unified {var a} -> T:
         return a
 
 
@@ -557,13 +557,13 @@ fn makeIt[T: TrivialRegisterPassable](a: T):
 # COM: Check that device passable conformance is emitted properly
 
 
-fn conditionallyDevicePassable(x: Int):
+def conditionallyDevicePassable(x: Int):
     # CHECK: kgen.conformance @"{{.*}}::DevicePassable" {
     # CHECK-NEXT: kgen.witness "device_type" : type =
     # CHECK-NEXT: kgen.witness "_is_convertible_to_device_type{{.*}}" : !lit.generator
     # CHECK-NEXT: kgen.witness "_to_device_type{{.*}}" : !lit.generator
     # CHECK-NEXT: kgen.witness "get_type_name{{.*}}" : !lit.generator
-    fn device_passable() unified register_passable {var} -> Int:
+    def device_passable() unified register_passable {var} -> Int:
         return x
 
 
@@ -573,20 +573,20 @@ fn conditionallyDevicePassable(x: Int):
 
 
 trait DoIt:
-    fn thing(self):
+    def thing(self):
         ...
 
 
 # CHECK: lit.trait.decl @"fn(x: T) -> None"
 # CHECK-NEXT: lit.alias.decl T: !DoIt
 struct House[T: DoIt]:
-    fn aMethod[C: fn(x: Self.T) unified](self, impl: C):
+    def aMethod[C: def(x: Self.T) unified](self, impl: C):
         pass
 
 
 # CHECK: lit.trait.decl @"fn(x: TT) -> None"
 # CHECK-NEXT: lit.alias.decl TT: !DoIt
-fn useIt[TT: DoIt, C: fn(x: TT) unified](impl: C):
+def useIt[TT: DoIt, C: def(x: TT) unified](impl: C):
     pass
 
 
@@ -599,8 +599,8 @@ fn useIt[TT: DoIt, C: fn(x: TT) unified](impl: C):
 # CHECK: lit.struct.decl @"fn() -> Int_Mova_Impl_Copy_Impl_Devi"<impl: [[TRAIT]]
 
 
-fn addTrivialRegisterPassable(x: Int):
-    fn closure() unified register_passable {var} -> Int:
+def addTrivialRegisterPassable(x: Int):
+    def closure() unified register_passable {var} -> Int:
         return x
 
 
@@ -632,8 +632,8 @@ struct ToyScalar[dtype_tag: Int]:
 struct MiniSpan[dtype_tag: Int]:
     var value: Int
 
-    fn count[
-        F: fn[w: Int](vec: ToySIMD[Self.dtype_tag, w]) unified -> ToyMask[
+    def count[
+        F: def[w: Int](vec: ToySIMD[Self.dtype_tag, w]) unified -> ToyMask[
             Self.dtype_tag, w
         ]
     ](self, func: F) -> Int:
@@ -646,12 +646,12 @@ struct MiniSpan[dtype_tag: Int]:
 # CHECK: kgen.witness "dtype_tag" : !Int = {1}
 
 
-fn is_vec_a[w: Int](vec: ToySIMD[1, w]) -> ToyMask[1, w]:
+def is_vec_a[w: Int](vec: ToySIMD[1, w]) -> ToyMask[1, w]:
     _ = vec
     return ToyMask[1, w](0)
 
 
-fn repro_top_level():
+def repro_top_level():
     var s = MiniSpan[1](0)
     _ = s.count[is_vec_a](is_vec_a)
 
@@ -684,8 +684,8 @@ struct ToyScalar[dtype_tag: Int]:
 struct MiniSpan[dtype_tag: Int]:
     var value: Int
 
-    fn count[
-        F: fn[u: Int](vec: ToySIMD[Self.dtype_tag, u]) unified -> ToyMask[
+    def count[
+        F: def[u: Int](vec: ToySIMD[Self.dtype_tag, u]) unified -> ToyMask[
             Self.dtype_tag, u
         ]
     ](self, func: F) -> Int:
@@ -696,10 +696,10 @@ struct MiniSpan[dtype_tag: Int]:
 # CHECK: kgen.conformance @"fn[u: Int](vec: ToySIMD[dtype_tag, u]) -> ToyMask[dtype_tag, u]" {
 # CHECK: kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK: kgen.witness "dtype_tag" : !Int = {1}
-fn repro_capturing():
+def repro_capturing():
     var capture = 0
 
-    fn is_vec_a_capturing[
+    def is_vec_a_capturing[
         u: Int
     ](vec: ToySIMD[1, u]) unified {var capture} -> ToyMask[1, u]:
         _ = vec
@@ -733,8 +733,8 @@ struct Box[E: ElemLike, n: Int]:
 struct Store[E: ElemLike]:
     var value: Int
 
-    fn apply[
-        F: fn[n: Int](item: Box[Self.E, n]) unified -> Box[Self.E, n]
+    def apply[
+        F: def[n: Int](item: Box[Self.E, n]) unified -> Box[Self.E, n]
     ](self, func: F) -> Int:
         return 0
 
@@ -743,10 +743,10 @@ struct Store[E: ElemLike]:
 # CHECK: kgen.conformance @"fn[n: Int](item: Box[E, n]) -> Box[E, n]" {
 # CHECK: kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK: kgen.witness "E" : !ElemLike = !ConcreteElem
-fn repro_nested_type_param():
+def repro_nested_type_param():
     var capture = 0
 
-    fn apply_concrete[
+    def apply_concrete[
         n: Int
     ](item: Box[ConcreteElem, n]) unified {var capture} -> Box[ConcreteElem, n]:
         _ = item
@@ -762,12 +762,12 @@ fn repro_nested_type_param():
 # COM: Verify that custom types (the result type !kgen.none in this case) are compared using equality
 
 
-fn print(x: Int):
+def print(x: Int):
     pass
 
 
-fn callee[
-    func: fn[width: Int, rank: Int, alignment: Int = 1]() unified -> None,
+def callee[
+    func: def[width: Int, rank: Int, alignment: Int = 1]() unified -> None,
     //,
     simd_width: Int,
 ](shape: Int, ctx: Int, closure: func):
@@ -781,7 +781,7 @@ def main() raises:
     var x = 42
 
     @always_inline
-    fn my_func[
+    def my_func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ]() unified {read x}:
         print(x)
@@ -810,15 +810,15 @@ struct V[dtype: Int, width: Int](RegisterPassable):
 # CHECK: kgen.conformance @"fn[width: Int]() -> V[dtype, width] register_passable" {
 # CHECK-NEXT: kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK-NEXT: kgen.witness "dtype" :{{.*}} = {42}
-fn callee[
+def callee[
     dtype: Int,
-    F: fn[width: Int]() unified register_passable -> V[dtype, width],
+    F: def[width: Int]() unified register_passable -> V[dtype, width],
 ](closure: F):
     var result = closure[4]()
 
 
-fn rebindResult():
-    fn my_closure[width: Int]() unified register_passable {} -> V[42, width]:
+def rebindResult():
+    def my_closure[width: Int]() unified register_passable {} -> V[42, width]:
         return V[42, width](0)
 
     callee[42](my_closure)
@@ -833,13 +833,13 @@ fn rebindResult():
 struct ToyIndex[size: Int](RegisterPassable):
     var _v: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self._v = 0
 
 
-fn variadic_callee[
+def variadic_callee[
     rank: Int,
-    map_fn: fn(ToyIndex[rank]) unified -> Tuple[
+    map_fn: def(ToyIndex[rank]) unified -> Tuple[
         ToyIndex[rank],
         ToyIndex[rank],
     ],
@@ -852,10 +852,10 @@ fn variadic_callee[
 # CHECK: @"fn(ToyIndex[rank]) -> Tuple[ToyIndex[rank], ToyIndex[rank]]" {
 # CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK:   kgen.witness "rank" : !Int = {2}
-fn repro_variadic_attr():
+def repro_variadic_attr():
     var x = 10
 
-    fn my_map_fn(
+    def my_map_fn(
         point: ToyIndex[2],
     ) unified {read x} -> Tuple[ToyIndex[2], ToyIndex[2]]:
         return ToyIndex[2](), ToyIndex[2]()
@@ -881,9 +881,9 @@ struct Container[p: Pair](RegisterPassable):
     var value: Int
 
 
-fn struct_callee[
+def struct_callee[
     tag: Int,
-    F: fn() unified -> Container[Pair(tag, 0)],
+    F: def() unified -> Container[Pair(tag, 0)],
 ](closure: F):
     var result = closure()
 
@@ -892,10 +892,10 @@ fn struct_callee[
 # CHECK: kgen.conformance @"fn() -> Container[Pair(tag, 0)]" {
 # CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK:   kgen.witness "tag" : !Int = {2}
-fn repro_struct_attr():
+def repro_struct_attr():
     var x = 10
 
-    fn my_fn() unified {read x} -> Container[Pair(2, 0)]:
+    def my_fn() unified {read x} -> Container[Pair(2, 0)]:
         return Container[Pair(2, 0)](x)
 
     struct_callee[2, type_of(my_fn)](my_fn)
@@ -907,20 +907,20 @@ fn repro_struct_attr():
 # COM: parameterized by a function reference (exercises symbol recursion).
 
 
-struct Dispatch[F: fn(Int) -> Int]:
+struct Dispatch[F: def(Int) -> Int]:
     var data: Int
 
-    fn __init__(out self, data: Int):
+    def __init__(out self, data: Int):
         self.data = data
 
 
-fn identity(x: Int) -> Int:
+def identity(x: Int) -> Int:
     return x
 
 
-fn symbol_callee[
+def symbol_callee[
     tag: Int,
-    C: fn() unified -> Dispatch[identity],
+    C: def() unified -> Dispatch[identity],
 ](closure: C):
     var result = closure()
 
@@ -928,10 +928,10 @@ fn symbol_callee[
 # CHECK: lit.struct.decl @"fn() -> Dispatch[identity]_{{.*}}"
 # CHECK: kgen.conformance @"fn() -> Dispatch[identity]" {
 # CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
-fn repro_symbol_attr():
+def repro_symbol_attr():
     var x = 10
 
-    fn my_fn() unified {read x} -> Dispatch[identity]:
+    def my_fn() unified {read x} -> Dispatch[identity]:
         return Dispatch[identity](x)
 
     symbol_callee[1, type_of(my_fn)](my_fn)
@@ -947,12 +947,12 @@ struct Width(TrivialRegisterPassable):
     var _mlir_value: __mlir_type.index
 
     @always_inline("builtin")
-    fn __mlir_index__(self) -> __mlir_type.index:
+    def __mlir_index__(self) -> __mlir_type.index:
         return self._mlir_value
 
     @implicit
     @always_inline
-    fn __init__[T: AnyType](out self, value: T):
+    def __init__[T: AnyType](out self, value: T):
         pass
 
 
@@ -960,9 +960,9 @@ struct Vec[tag: Int, size: Width](TrivialRegisterPassable):
     var _dummy: __mlir_type.i1
 
 
-fn repro_rebind_nonref_operand[
+def repro_rebind_nonref_operand[
     tag: Int,
-    F: fn[w: Width](v: Vec[tag, w]) unified -> Bool,
+    F: def[w: Width](v: Vec[tag, w]) unified -> Bool,
 ](func: F):
     # CHECK: lit.fn @"__call__[::Int,::Int]({{.*}}::fn[w: Int](val: Vec[tag, w]) -> Bool_Mova_Impl_Copy_Impl
     # CHECK-SAME: %val: !lit.struct<#Vec <:!Int _tag
@@ -970,7 +970,7 @@ fn repro_rebind_nonref_operand[
     # CHECK-SAME: to !lit.struct<#Vec <:!Int #kgen.get_witness<:!{{.*}} impl, "fn[w: Int](val: Vec[tag, w]) -> Bool", "tag">
     # CHECK: lit.call[{{.*}}"val": !lit.struct<#Vec <:!Int #kgen.get_witness<:!{{.*}} impl, "fn[w: Int](val: Vec[tag, w]) -> Bool", "tag">
     # CHECK-SAME: ]{{.*}}(%{{.*}}, [[REBIND]])
-    fn body[w: Int](val: Vec[tag, w]) unified {read func} -> Bool:
+    def body[w: Int](val: Vec[tag, w]) unified {read func} -> Bool:
         return func[w=w](val)
 
     _ = body

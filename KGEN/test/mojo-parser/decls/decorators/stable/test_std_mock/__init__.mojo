@@ -13,29 +13,29 @@
 struct StableStruct:
     """A stable struct that should not trigger warnings."""
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
 struct UnstableStruct:
     """An unstable struct that should trigger warnings when used."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Unstable constructor."""
         pass
 
-    fn unstable_method(self) -> Int:
+    def unstable_method(self) -> Int:
         """An unstable method that should trigger warnings when called."""
         return 42
 
 
 @stable
-fn stable_fn():
+def stable_fn():
     """A stable function that should not trigger warnings."""
     pass
 
 
-fn unstable_fn():
+def unstable_fn():
     """An unstable function that should trigger warnings when called."""
     pass
 
@@ -60,14 +60,14 @@ struct StructWithMethods:
     var value: Int
 
     @stable
-    fn __init__(out self):
+    def __init__(out self):
         self.value = 0
 
     @stable
-    fn stable_method(self) -> Int:
+    def stable_method(self) -> Int:
         return self.value
 
-    fn unstable_method(self) -> Int:
+    def unstable_method(self) -> Int:
         return self.value
 
 
@@ -76,7 +76,7 @@ trait TraitWithStableMethod:
     """A stable trait with a stable method requirement."""
 
     @stable
-    fn stable_required_method(self) -> Int:
+    def stable_required_method(self) -> Int:
         ...
 
 
@@ -84,14 +84,14 @@ trait TraitWithStableMethod:
 trait TraitWithUnstableMethod:
     """A stable trait with an unstable method requirement."""
 
-    fn unstable_required_method(self) -> Int:
+    def unstable_required_method(self) -> Int:
         ...
 
 
 # Test same-package usage: stable functions calling unstable functions internally.
 # This should NOT trigger warnings because both are in the same opted-in package.
 @stable
-fn stable_fn_using_unstable() -> Int:
+def stable_fn_using_unstable() -> Int:
     """A stable function that internally calls unstable APIs.
 
     When a user calls this stable function, they should NOT see warnings about
@@ -125,7 +125,7 @@ comptime UNSTABLE_CONSTANT: Int = 100
 @stable
 struct StableStructWithStableImpl(TraitWithStableMethod):
     @stable
-    fn stable_required_method(self) -> Int:
+    def stable_required_method(self) -> Int:
         return 1
 
 
@@ -135,7 +135,7 @@ struct StableStructWithStableImpl(TraitWithStableMethod):
 @stable
 struct StableStructWithUnstableImpl(TraitWithStableMethod):
     # Not marked @stable - this should warn!
-    fn stable_required_method(self) -> Int:
+    def stable_required_method(self) -> Int:
         return 2
 
 
@@ -143,13 +143,13 @@ struct StableStructWithUnstableImpl(TraitWithStableMethod):
 # This stable function returns an unstable type - should warn API author.
 # The warning is tested by warn_api_author.mojo using FileCheck.
 @stable
-fn stable_fn_returning_unstable() -> UnstableStruct:
+def stable_fn_returning_unstable() -> UnstableStruct:
     return UnstableStruct()
 
 
 # For comparison: stable function returning stable type - no warning.
 @stable
-fn stable_fn_returning_stable() -> StableStruct:
+def stable_fn_returning_stable() -> StableStruct:
     return StableStruct()
 
 
@@ -189,7 +189,7 @@ struct StableStructWithUnstableAliasImpl(TraitWithStableAlias):
     # expected-warning-re @below {{stable struct 'StableStructWithUnstableAliasImpl' implements stable trait alias 'Value{{.*}}' with unstable implementation}}
     comptime Value: Int = 42
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
@@ -199,7 +199,7 @@ struct StableStructWithStableAliasImpl(TraitWithStableAlias):
     @stable
     comptime Value: Int = 100
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
@@ -213,12 +213,12 @@ struct StableStructWithStableAliasImpl(TraitWithStableAlias):
 struct UnstableStructWithStableMember:
     """An unstable struct that incorrectly has a @stable member."""
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     # expected-warning@+1 {{@stable member cannot be declared in an unstable struct}}
     @stable
-    fn stable_method_in_unstable(self):
+    def stable_method_in_unstable(self):
         pass
 
 
@@ -227,4 +227,4 @@ trait UnstableTraitWithStableMember:
 
     # expected-warning@+1 {{@stable member cannot be declared in an unstable trait}}
     @stable
-    fn stable_method_in_unstable_trait(self): ...
+    def stable_method_in_unstable_trait(self): ...

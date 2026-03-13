@@ -22,10 +22,10 @@ trait E(A):
 struct List[T: A]():
     pass
 
-    fn __init__(out self: List[Self.T]):
+    def __init__(out self: List[Self.T]):
         pass
 
 
 # CHECK-LABEL: lit.fn @"test_upcast_trait
-fn test_upcast_trait[T: E](tuples: List[T]):
+def test_upcast_trait[T: E](tuples: List[T]):
     pass

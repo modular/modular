@@ -20,9 +20,9 @@
 # CHECK-C: language = "c"
 
 
-fn foo():
+def foo():
     pass
 
 
-fn main():
+def main():
     foo()

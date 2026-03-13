@@ -17,7 +17,7 @@
 # LOWER-LIT-LABEL: kgen.generator @"mojo_version_ops::get_mojo_version_major_builtin()"()
 # LOWER-LIT: kgen.param.constant: scalar<index> = <[[MOJO_MAJOR]]>
 @always_inline("builtin")
-fn get_mojo_version_major_builtin() -> __mlir_type.`!pop.scalar<index>`:
+def get_mojo_version_major_builtin() -> __mlir_type.`!pop.scalar<index>`:
     return __mlir_op.`lit.mojo.version.major`()
 
 
@@ -27,7 +27,7 @@ fn get_mojo_version_major_builtin() -> __mlir_type.`!pop.scalar<index>`:
 # LOWER-LIT-LABEL: kgen.generator @"mojo_version_ops::get_mojo_version_minor_builtin()"()
 # LOWER-LIT: kgen.param.constant: scalar<index> = <[[MOJO_MINOR]]>
 @always_inline("builtin")
-fn get_mojo_version_minor_builtin() -> __mlir_type.`!pop.scalar<index>`:
+def get_mojo_version_minor_builtin() -> __mlir_type.`!pop.scalar<index>`:
     return __mlir_op.`lit.mojo.version.minor`()
 
 
@@ -37,7 +37,7 @@ fn get_mojo_version_minor_builtin() -> __mlir_type.`!pop.scalar<index>`:
 # LOWER-LIT-LABEL: kgen.generator @"mojo_version_ops::get_mojo_version_patch_builtin()"()
 # LOWER-LIT: kgen.param.constant: scalar<index> = <[[MOJO_PATCH]]>
 @always_inline("builtin")
-fn get_mojo_version_patch_builtin() -> __mlir_type.`!pop.scalar<index>`:
+def get_mojo_version_patch_builtin() -> __mlir_type.`!pop.scalar<index>`:
     return __mlir_op.`lit.mojo.version.patch`()
 
 
@@ -46,7 +46,7 @@ fn get_mojo_version_patch_builtin() -> __mlir_type.`!pop.scalar<index>`:
 
 # LOWER-LIT-LABEL: kgen.generator @"mojo_version_ops::get_mojo_version_major()"()
 # LOWER-LIT: kgen.param.constant: scalar<index> = <[[MOJO_MAJOR]]>
-fn get_mojo_version_major() -> __mlir_type.`!pop.scalar<index>`:
+def get_mojo_version_major() -> __mlir_type.`!pop.scalar<index>`:
     return __mlir_op.`lit.mojo.version.major`()
 
 
@@ -55,7 +55,7 @@ fn get_mojo_version_major() -> __mlir_type.`!pop.scalar<index>`:
 
 # LOWER-LIT-LABEL: kgen.generator @"mojo_version_ops::get_mojo_version_minor()"()
 # LOWER-LIT: kgen.param.constant: scalar<index> = <[[MOJO_MINOR]]>
-fn get_mojo_version_minor() -> __mlir_type.`!pop.scalar<index>`:
+def get_mojo_version_minor() -> __mlir_type.`!pop.scalar<index>`:
     return __mlir_op.`lit.mojo.version.minor`()
 
 
@@ -64,7 +64,7 @@ fn get_mojo_version_minor() -> __mlir_type.`!pop.scalar<index>`:
 
 # LOWER-LIT-LABEL: kgen.generator @"mojo_version_ops::get_mojo_version_patch()"()
 # LOWER-LIT: kgen.param.constant: scalar<index> = <[[MOJO_PATCH]]>
-fn get_mojo_version_patch() -> __mlir_type.`!pop.scalar<index>`:
+def get_mojo_version_patch() -> __mlir_type.`!pop.scalar<index>`:
     return __mlir_op.`lit.mojo.version.patch`()
 
 # COMPTIME: lit.alias.decl {{.*}}major{{.*}}[[MOJO_MAJOR]]

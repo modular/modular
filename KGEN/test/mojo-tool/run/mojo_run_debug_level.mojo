@@ -18,5 +18,5 @@
 
 
 # CHECK: debug test ok
-fn main() -> None:
+def main() -> None:
     print("debug test ok")

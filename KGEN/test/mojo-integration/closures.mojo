@@ -12,23 +12,23 @@ from std.runtime.asyncrt import _run
 
 
 @no_inline
-fn takeClosure(var writer: Coroutine[Int, ...]) -> Int:
+def takeClosure(var writer: Coroutine[Int, ...]) -> Int:
     return _run(writer^)
 
 
 @no_inline
-fn makeClosure(x: Int) -> Coroutine[Int, origin_of()._mlir_origin]:
+def makeClosure(x: Int) -> Coroutine[Int, origin_of()._mlir_origin]:
     var z = x * x
 
     @__copy_capture(z)
     @parameter
-    async fn writer() -> Int:
+    async def writer() -> Int:
         return z
 
     return writer()
 
 
-fn main():
+def main():
     try:
         var x = atol(argv()[1])
         var y = atol(argv()[2])

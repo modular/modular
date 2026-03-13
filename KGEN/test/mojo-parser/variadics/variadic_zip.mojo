@@ -11,7 +11,7 @@ from std.builtin.variadics import *
 
 
 # CHECK-LABEL:  lit.fn @"foldable
-fn foldable(t0: Tuple[Int, Int, Int], t1: Tuple[FloatDyn, FloatDyn, FloatDyn]):
+def foldable(t0: Tuple[Int, Int, Int], t1: Tuple[FloatDyn, FloatDyn, FloatDyn]):
     comptime zipped = Variadic.zip_types[
         # CHECK: [!Int, !FloatDyn], [!Int, !FloatDyn], [!Int, !FloatDyn]
         type_of(t0).element_types,

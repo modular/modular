@@ -46,8 +46,8 @@ struct Reg(RegisterPassable):
 # CHECK-NEXT:   lit.return [[RES]]
 
 
-fn top(y: fn (Reg) escaping raises -> Mem):
-    fn fn_ptr(x: Mem) escaping -> Int:
+def top(y: def (Reg) escaping raises -> Mem):
+    def fn_ptr(x: Mem) escaping -> Int:
         return 0
 
-    var x: fn (Mem) escaping -> Int = fn_ptr
+    var x: def (Mem) escaping -> Int = fn_ptr

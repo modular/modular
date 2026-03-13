@@ -5,5 +5,5 @@
 # ===----------------------------------------------------------------------=== #
 # This file is a test input that defines a module within a nested package.
 
-fn nested_function():
+def nested_function():
     return

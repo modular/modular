@@ -26,7 +26,7 @@ comptime x3: Tuple[Int, Int] = (1, 1)
 comptime x4 = Indexer
 
 
-fn Indexing[T: Indexer](x: T):
+def Indexing[T: Indexer](x: T):
     pass
 
 

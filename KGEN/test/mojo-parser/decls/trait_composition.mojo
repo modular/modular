@@ -15,17 +15,17 @@
 
 
 trait Trait1:
-    fn f1(self):
+    def f1(self):
         ...
 
 
 trait Trait2:
-    fn f2(self):
+    def f2(self):
         ...
 
 
 trait Trait3:
-    fn f3(self):
+    def f3(self):
         ...
 
 
@@ -35,49 +35,49 @@ comptime Traits123 = Trait1 & Trait2 & Trait3
 
 @fieldwise_init
 struct Struct123(Trait1, Trait2, Trait3):
-    fn f1(self):
+    def f1(self):
         pass
 
-    fn f2(self):
+    def f2(self):
         pass
 
-    fn f3(self):
+    def f3(self):
         pass
 
 
 # Use direct trait union as parent.
 @fieldwise_init
 struct Struct12Direct(Trait1 & Trait2):
-    fn f1(self):
+    def f1(self):
         pass
 
-    fn f2(self):
+    def f2(self):
         pass
 
 
 # Use trait union alias.
 @fieldwise_init
 struct Struct12Alias(Traits12):
-    fn f1(self):
+    def f1(self):
         pass
 
-    fn f2(self):
+    def f2(self):
         pass
 
 
-fn useAny[T: AnyType](x: T):
+def useAny[T: AnyType](x: T):
     pass
 
 
 # CHECK: lit.fn @"use1
 # CHECK-SAME: <T: !Trait1>
 # CHECK-SAME: (%x: !lit.ref<:!Trait1 T,
-fn use1[T: Trait1](x: T):
+def use1[T: Trait1](x: T):
     # CHECK: lit.call tail[{{.*}}"self": !lit.ref<:!Trait1 T,{{.*}} #kgen.get_witness<:!Trait1 T, "trait_composition::Trait1", "f1{{.*}}">][{{.*}}](%x)
     x.f1()
 
 
-fn use2[T: Trait2](x: T):
+def use2[T: Trait2](x: T):
     x.f2()
 
 
@@ -85,7 +85,7 @@ fn use2[T: Trait2](x: T):
 # CHECK-LABEL: lit.fn @"use12
 # CHECK-SAME: <T: !Trait1_Trait2>
 # CHECK-SAME: (%x: !lit.ref<:!Trait1_Trait2 T,
-fn use12[T: Trait1 & Trait2](x: T):
+def use12[T: Trait1 & Trait2](x: T):
     # CHECK: lit.call tail @trait_composition::@"use1
     # CHECK-SAME: <:!Trait1 !kgen.param<:!Trait1_Trait2 T>>
     use1[T](x)
@@ -96,7 +96,7 @@ fn use12[T: Trait1 & Trait2](x: T):
 
 # Use direct trait composition.
 # CHECK-LABEL: lit.fn @"use23
-fn use23[T: Trait2 & Trait3](x: T):
+def use23[T: Trait2 & Trait3](x: T):
     # CHECK: lit.call tail[
     # CHECK-SAME: "self": !lit.ref<:!Trait2_Trait3 T,
     # CHECK-SAME: #kgen.get_witness<:!Trait3 {{.*}}!Trait2_Trait3 T{{.*}}, "trait_composition::Trait3", "f3{{.*}}">
@@ -104,14 +104,14 @@ fn use23[T: Trait2 & Trait3](x: T):
 
 
 # CHECK-LABEL: lit.fn @"use123
-fn use123[T: Trait1 & Trait2 & Trait3](x: T):
+def use123[T: Trait1 & Trait2 & Trait3](x: T):
     # CHECK: lit.call {{.*}}@"use23
     # CHECK-SAME: "x": !lit.ref<:!Trait1_Trait2_Trait3 T,
     use23(x)
 
 
 # CHECK-LABEL: lit.fn @"main_use()"
-fn main_use():
+def main_use():
     s123 = Struct123()
 
     # CHECK: lit.call {{.*}}@"useAny
@@ -156,12 +156,12 @@ fn main_use():
 
 
 trait Trait1:
-    fn f1(self):
+    def f1(self):
         ...
 
 
 trait Trait2:
-    fn f2(self):
+    def f2(self):
         ...
 
 
@@ -170,22 +170,22 @@ comptime Traits12 = Trait1 & Trait2
 
 @fieldwise_init
 struct Struct12(Traits12):
-    fn f1(self):
+    def f1(self):
         pass
 
-    fn f2(self):
+    def f2(self):
         pass
 
 
 # conditional method
 @fieldwise_init
 struct Wrapper[T: AnyType]:
-    fn cond1[Trait: Trait1](self: Wrapper[Trait], other: Wrapper[Trait]):
+    def cond1[Trait: Trait1](self: Wrapper[Trait], other: Wrapper[Trait]):
         pass
 
 
 # CHECK: lit.fn @"useCond1
-fn useCond1[
+def useCond1[
     ElementType: Trait1 & Trait2
 ](p1: Wrapper[ElementType], p2: Wrapper[ElementType]):
     # CHECK: lit.call {{.*}}@Wrapper::@"cond1
@@ -199,17 +199,17 @@ fn useCond1[
 
 
 trait Defaultable:
-    fn __init__(out self):
+    def __init__(out self):
         ...
 
 
 trait IntConstructable:
-    fn __init__(out self, x: Int):
+    def __init__(out self, x: Int):
         ...
 
 
 # CHECK-LABEL: lit.fn @"useIntConstructable
-fn useIntConstructable[T: Defaultable & IntConstructable]() -> T:
+def useIntConstructable[T: Defaultable & IntConstructable]() -> T:
     # CHECK: %[[INT33:.*]] = {{.*}} !Int = <{33}>
     # CHECK: lit.call tail[
     # CHECK-SAME: #kgen.get_witness<:!IntConstructable {{.*}}!Defaultable_IntConstructable T{{.*}}, "trait_composition::IntConstructable", "__init__{{.*}}">
@@ -220,10 +220,10 @@ fn useIntConstructable[T: Defaultable & IntConstructable]() -> T:
 struct MyStruct(Defaultable, IntConstructable, TrivialRegisterPassable):
     var x: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.x = 42
 
-    fn __init__(out self, x: Int):
+    def __init__(out self, x: Int):
         self.x = x
 
 
@@ -234,30 +234,30 @@ struct MyStruct(Defaultable, IntConstructable, TrivialRegisterPassable):
 
 
 trait Writer:
-    fn write(self):
+    def write(self):
         ...
 
 
 trait Writable:
-    fn write_to[T: Writer](self, x: T):
+    def write_to[T: Writer](self, x: T):
         ...
 
 
 trait Defaultable:
-    fn __init__(out self):
+    def __init__(out self):
         ...
 
 
 struct YourStruct:
     var x: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.x = 42
 
-    fn foo[W: Writable](self, x: W):
+    def foo[W: Writable](self, x: W):
         pass
 
-    fn do_it[W: Writable & Defaultable](self, x: W):
+    def do_it[W: Writable & Defaultable](self, x: W):
         self.foo(x)  # make sure this doesn't crash
 
 
@@ -267,37 +267,37 @@ struct YourStruct:
 
 
 trait Trait1:
-    fn f1(self):
+    def f1(self):
         ...
 
 
 trait Trait2:
-    fn f2(self):
+    def f2(self):
         ...
 
 
 trait Trait1C(Trait1):
-    fn f1C(self):
+    def f1C(self):
         ...
 
 
 @fieldwise_init
 struct Struct1C(Trait1C, Trait2):
-    fn f1(self):
+    def f1(self):
         pass
 
-    fn f2(self):
+    def f2(self):
         pass
 
-    fn f1C(self):
+    def f1C(self):
         pass
 
 
-fn trait_param[A: type_of(Trait1), T: A & Trait2](x: T):
+def trait_param[A: type_of(Trait1), T: A & Trait2](x: T):
     x.f1()
     x.f2()
 
 
-fn use_trait_param():
+def use_trait_param():
     s1c = Struct1C()
     trait_param[Trait1C, Struct1C](s1c)

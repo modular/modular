@@ -40,22 +40,22 @@ comptime struct_field_type_by_name[
 
 
 trait HasInt:
-    fn __init__(out self):
+    def __init__(out self):
         ...
 
-    fn get_int(self) -> Int:
+    def get_int(self) -> Int:
         ...
 
 
 @fieldwise_init
 struct MyStruct(HasInt, ImplicitlyCopyable):
-    fn get_int(self) -> Int:
+    def get_int(self) -> Int:
         return 42
 
 
 @fieldwise_init
 struct MyParam[x: Int](HasInt, ImplicitlyCopyable):
-    fn get_int(self) -> Int:
+    def get_int(self) -> Int:
         return Self.x
 
 
@@ -69,7 +69,7 @@ struct MyWrapper[x: Int]:
 
 
 # CHECK-LABEL: lit.fn @"main()"
-fn main():
+def main():
     # Test struct_field_types folding
     # CHECK: lit.alias.decl *"fieldType0`{{[0-9]*}}": !AnyType = <!MyStruct>
     comptime fieldType0 = __struct_field_types(MyWrapper[37])[0]

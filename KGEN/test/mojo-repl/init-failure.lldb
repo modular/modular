@@ -6,7 +6,7 @@
 # RUN: %repl <%s 2>&1 | FileCheck %s
 
 # Note: in REPL mode, failable values must be considered only initialized upon success.
-fn testFn() raises -> String:
+def testFn() raises -> String:
   return "Hello"
 
 var example = testFn()

@@ -15,7 +15,7 @@ trait BarAble:
 
 # CHECK-LABEL: lit.struct.decl @BarViaTrait
 struct BarViaTrait(BarAble):
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     comptime bar: Foo = 10
@@ -23,16 +23,16 @@ struct BarViaTrait(BarAble):
 
 struct Bar:
     @implicit
-    fn __init__[B: BarAble](out self, b: B):
+    def __init__[B: BarAble](out self, b: B):
         pass
 
 
 struct Foo:
     @implicit
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         pass
 
     # This will force the body resolution ConformanceOp in BarViaTrait,
     # leading to the construction call emission for `bar: Foo = 10`
-    fn __init__(out self, value: Bar = BarViaTrait()):
+    def __init__(out self, value: Bar = BarViaTrait()):
         pass
