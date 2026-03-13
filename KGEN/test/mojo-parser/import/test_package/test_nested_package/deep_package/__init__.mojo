@@ -3,5 +3,4 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
-from .module import nested_function
+# Empty __init__ file to signal this directory as a package.
