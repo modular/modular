@@ -736,7 +736,7 @@ TEST_RESOURCES = {
         "cpu": 2,
         "memory": 895,
     },
-    "//max/tests/tests/pipelines:test_parse_float8_config": {
+    "//max/tests/tests/pipelines:test_parse_quant_config": {
         "cpu": 2,
         "memory": 895,
     },

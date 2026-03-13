@@ -15,11 +15,11 @@ from std.math import exp
 from std.sys.info import simd_width_of
 
 from layout import (
-    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
-    RuntimeTuple,
     RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
 )
 from layout._fillers import random
 from std.memory import alloc
@@ -38,7 +38,7 @@ comptime PAD_SLOT_ID: Int32 = -1
 
 
 @always_inline
-fn silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
+def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     """Reference SiLU implementation: x * sigmoid(x) = x / (1 + exp(-x))."""
     var x_f32 = x.cast[DType.float32]()
     var neg_x = -x_f32
@@ -48,7 +48,7 @@ fn silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     return (x_f32 * sigmoid_x).cast[dtype]()
 
 
-fn run_varlen_causal_conv1d_fwd[
+def run_varlen_causal_conv1d_fwd[
     dtype: DType,
     activation: StaticString,
 ](
@@ -281,7 +281,7 @@ fn run_varlen_causal_conv1d_fwd[
     output_ref_heap.free()
 
 
-fn run_varlen_causal_conv1d_update[
+def run_varlen_causal_conv1d_update[
     dtype: DType,
     activation: StaticString,
 ](
@@ -558,7 +558,7 @@ fn run_varlen_causal_conv1d_update[
     output_ref_heap.free()
 
 
-fn run_varlen_causal_conv1d_states[
+def run_varlen_causal_conv1d_states[
     dtype: DType,
 ](
     batch: Int,
@@ -692,28 +692,28 @@ fn run_varlen_causal_conv1d_states[
 # =============================================================================
 
 
-fn test_varlen_causal_conv1d_fwd_equal_lengths() raises:
+def test_varlen_causal_conv1d_fwd_equal_lengths() raises:
     """Test varlen causal conv1d forward with equal-length sequences."""
     run_varlen_causal_conv1d_fwd[DType.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=3
     )
 
 
-fn test_varlen_causal_conv1d_fwd_variable_lengths() raises:
+def test_varlen_causal_conv1d_fwd_variable_lengths() raises:
     """Test varlen causal conv1d forward with variable-length sequences."""
     run_varlen_causal_conv1d_fwd[DType.float32, "none"](
         batch=3, dim=4, seq_lengths=Index(10, 6, 1), width=3
     )
 
 
-fn test_varlen_causal_conv1d_fwd_with_silu() raises:
+def test_varlen_causal_conv1d_fwd_with_silu() raises:
     """Test varlen causal conv1d forward with SiLU activation."""
     run_varlen_causal_conv1d_fwd[DType.float32, "silu"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=3
     )
 
 
-fn test_varlen_causal_conv1d_fwd_various_widths() raises:
+def test_varlen_causal_conv1d_fwd_various_widths() raises:
     """Test varlen causal conv1d forward with various kernel widths."""
     run_varlen_causal_conv1d_fwd[DType.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=2
@@ -728,21 +728,21 @@ fn test_varlen_causal_conv1d_fwd_various_widths() raises:
 # =============================================================================
 
 
-fn test_varlen_causal_conv1d_update_basic() raises:
+def test_varlen_causal_conv1d_update_basic() raises:
     """Test basic varlen causal conv1d update."""
     run_varlen_causal_conv1d_update[DType.float32, "none"](
         batch=2, dim=4, seqlen=1, width=3, state_len=4
     )
 
 
-fn test_varlen_causal_conv1d_update_with_silu() raises:
+def test_varlen_causal_conv1d_update_with_silu() raises:
     """Test varlen causal conv1d update with SiLU activation."""
     run_varlen_causal_conv1d_update[DType.float32, "silu"](
         batch=2, dim=4, seqlen=1, width=3, state_len=4
     )
 
 
-fn test_varlen_causal_conv1d_update_seqlen_gt_1() raises:
+def test_varlen_causal_conv1d_update_seqlen_gt_1() raises:
     """Test varlen causal conv1d update with seqlen > 1."""
     run_varlen_causal_conv1d_update[DType.float32, "none"](
         batch=2, dim=4, seqlen=4, width=3, state_len=4
@@ -754,14 +754,14 @@ fn test_varlen_causal_conv1d_update_seqlen_gt_1() raises:
 # =============================================================================
 
 
-fn test_varlen_causal_conv1d_states_basic() raises:
+def test_varlen_causal_conv1d_states_basic() raises:
     """Test basic varlen causal conv1d states extraction."""
     run_varlen_causal_conv1d_states[DType.float32](
         batch=2, dim=4, seq_lengths=Index(8, 8), state_len=3
     )
 
 
-fn test_varlen_causal_conv1d_states_variable_lengths() raises:
+def test_varlen_causal_conv1d_states_variable_lengths() raises:
     """Test varlen causal conv1d states with variable-length sequences."""
     run_varlen_causal_conv1d_states[DType.float32](
         batch=3, dim=4, seq_lengths=Index(10, 6, 1), state_len=3

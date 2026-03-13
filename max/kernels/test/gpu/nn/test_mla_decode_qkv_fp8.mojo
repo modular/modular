@@ -66,15 +66,15 @@ struct MLAMaskType(TrivialRegisterPassable):
     comptime MASK_3D = Self(2)
     comptime MASK_4D = Self(3)
 
-    fn __eq__(self, rhs: Self) -> Bool:
+    def __eq__(self, rhs: Self) -> Bool:
         return self.value == rhs.value
 
-    fn __ne__(self, rhs: Self) -> Bool:
+    def __ne__(self, rhs: Self) -> Bool:
         return self.value != rhs.value
 
 
 @always_inline
-fn host_cast_fp8_to_bf16[
+def host_cast_fp8_to_bf16[
     fp8_t: DType,
     bf16_t: DType,
 ](
@@ -88,7 +88,7 @@ fn host_cast_fp8_to_bf16[
 
 
 @always_inline
-fn host_quantize_bf16_to_fp8[
+def host_quantize_bf16_to_fp8[
     bf16_t: DType,
     fp8_t: DType,
 ](
@@ -101,14 +101,14 @@ fn host_quantize_bf16_to_fp8[
         dst[i] = src[i].cast[fp8_t]()
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
     return False
 
 
-fn test[
+def test[
     mla_mask_type: MLAMaskType,
     q_type: DType,  # float8_e4m3fn
     kv_type: DType,  # float8_e4m3fn
@@ -339,7 +339,7 @@ fn test[
         mask3d,
         mask4d,
     )
-    fn kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(ctx: DeviceContext) raises:
         comptime config = MHAConfig[q_type](UInt(num_heads), UInt(depth))
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             mla_decode_sm100_dispatch[
@@ -628,7 +628,7 @@ fn test[
     ref_full_output_ptr.free()
 
 
-fn bench[
+def bench[
     q_type: DType,
     kv_type: DType,
     output_type: DType,
@@ -737,7 +737,7 @@ fn bench[
         null_valid_length,
         scalar_args_buf_lt,
     )
-    fn kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(ctx: DeviceContext) raises:
         comptime config = MHAConfig[q_type](UInt(num_heads), UInt(depth))
         mla_decode_sm100_dispatch[
             q_type,
@@ -802,7 +802,7 @@ fn bench[
     _ = output_device_ptr
 
 
-fn test_decoding[
+def test_decoding[
     batch_size: Int,
     mla_mask_type: MLAMaskType,
 ](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:

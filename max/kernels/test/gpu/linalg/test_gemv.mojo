@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.random import randn, seed
+from std.random import randn, seed, random_float64
 
 import std.gpu.primitives.warp as warp
 from buffer import NDBuffer
@@ -20,36 +20,51 @@ from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
 from linalg.gemv import gemv_kernel, gevm_kernel
 from linalg.matmul.gpu import matmul_kernel
+import linalg.matmul.vendor.blas as vendor_blas
 
 from std.utils import Index, IndexList
 from std.utils.numerics import isnan
 from internal_utils import assert_almost_equal
 
 
-def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
+def run_matvec[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    accum_type: DType = DType.float32,
+](M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     print("== run_matvec kernel")
+    print("dtypes: A=", a_type, " B=", b_type, " C=", c_type)
 
     var iterations = 100
-    var a_host = alloc[Float32](M * K)
-    var b_host = alloc[Float32](K * N)
-    var c_host = alloc[Float32](M * N)
-    var c_host_naive = alloc[Float32](M * N)
+    var a_host = alloc[Scalar[a_type]](M * K)
+    var b_host = alloc[Scalar[b_type]](K * N)
+    var c_host = alloc[Scalar[c_type]](M * N)
+    var c_host_blas = alloc[Scalar[accum_type]](M * N)
 
+    # using large inputs for FP8 ctype will cause saturation and cause all output values to be FP8 max value which can cause false positives.
     for i in range(M * K):
-        a_host[i] = Float32(i)
+        a_host[i] = (
+            random_float64(min=-1.0, max=1.0).cast[a_type]() if c_type
+            == DType.float8_e4m3fn else Float32(i).cast[a_type]()
+        )
 
     for i in range(K * N):
-        b_host[i] = Float32(i + 1)
+        b_host[i] = (
+            random_float64(min=-1.0, max=1.0).cast[b_type]() if c_type
+            == DType.float8_e4m3fn else Float32(i + 1).cast[b_type]()
+        )
 
     for i in range(M * N):
-        c_host[i] = 0
+        c_host[i] = Float32(0).cast[c_type]()
 
     for i in range(M * N):
-        c_host_naive[i] = 0
+        c_host_blas[i] = Float32(0).cast[accum_type]()
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[a_type](M * K)
+    var b_device = ctx.enqueue_create_buffer[b_type](K * N)
+    var c_device = ctx.enqueue_create_buffer[c_type](M * N)
+    var c_device_naive = ctx.enqueue_create_buffer[accum_type](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -58,10 +73,8 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
 
     @always_inline
     @parameter
-    fn run_func_gemv(ctx: DeviceContext) raises:
-        comptime kernel = gemv_kernel[
-            DType.float32, DType.float32, DType.float32
-        ]
+    def run_func_gemv(ctx: DeviceContext) raises:
+        comptime kernel = gemv_kernel[c_type, a_type, b_type]
 
         ctx.enqueue_function_experimental[kernel](
             c_device,
@@ -76,11 +89,11 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
 
     @always_inline
     @parameter
-    fn run_func_gevm(ctx: DeviceContext) raises:
+    def run_func_gevm(ctx: DeviceContext) raises:
         comptime kernel = gevm_kernel[
-            DType.float32,
-            DType.float32,
-            DType.float32,
+            c_type,
+            a_type,
+            b_type,
             tile_size=WARP_SIZE * WARPS_PER_BLOCK,
         ]
 
@@ -117,66 +130,72 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     print(Float64(flops) * 1e-9 / sectime, " GFLOPS")
     print()
 
-    # running naive
+    # running reference using vendor_blas
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    comptime BLOCK_DIM = 16
+    # Create NDBuffers for vendor_blas
+    # For GEMV (N=1): A is MxK, B is Kx1, C is Mx1
+    # For GEVM (M=1): A is 1xK, B is KxN, C is 1xN
+    var a_nd = NDBuffer[rank=2, a_type](
+        a_device.unsafe_ptr(), IndexList[2](M, K)
+    )
+    var b_nd = NDBuffer[rank=2, b_type](
+        b_device.unsafe_ptr(), IndexList[2](K, N)
+    )
+    var c_ref_nd = NDBuffer[rank=2, accum_type](
+        c_device_naive.unsafe_ptr(), IndexList[2](M, N)
+    )
 
-    @always_inline
-    @parameter
-    fn run_func_naive(ctx: DeviceContext) raises:
-        comptime kernel = matmul_kernel[
-            DType.float32,
-            DType.float32,
-            DType.float32,
-            BLOCK_DIM,
-        ]
+    vendor_blas.matmul(
+        ctx,
+        c_ref_nd,
+        a_nd,
+        b_nd,
+        c_row_major=True,
+        transpose_b=False,
+    )
 
-        ctx.enqueue_function_experimental[kernel](
-            c_device,
-            a_device,
-            b_device,
-            M,
-            N,
-            K,
-            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_DIM),
-        )
-
-    run_func_naive(ctx)
-    ctx.enqueue_copy(c_host_naive, c_device)
+    ctx.enqueue_copy(c_host_blas, c_device_naive)
     ctx.synchronize()
 
-    nstime = Float64(ctx.execution_time[run_func_naive](iterations))
-    var sectime2 = Float64(nstime) / Float64(iterations) / 1000000000
-    print("SHMEM MATMUL:")
-    print(sectime2, "sec")
-    print(Float64(flops) * 1e-9 / sectime2, " GFLOPS")
+    print("Reference computed using vendor_blas")
     print()
 
-    # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
-    # accurate. Hence relative tolerance needs to be checked.
+    # Compare results - convert both to float32 for comparison
+    var c_host_f32 = alloc[Float32](M * N)
+    var c_host_blas_f32 = alloc[Float32](M * N)
+
+    for i in range(M * N):
+        c_host_f32[i] = c_host[i].cast[DType.float32]()
+        # c_host_blas is in accum_type (float32), cast to c_type to simulate quantization, then to float32
+        c_host_blas_f32[i] = c_host_blas[i].cast[c_type]().cast[DType.float32]()
+
+    # Use appropriate tolerance based on output dtype
     comptime errorTolerance = 1e-2
     assert_almost_equal(
-        c_host,
-        c_host_naive,
+        c_host_f32,
+        c_host_blas_f32,
         num_elements=M * N,
         atol=1e-4,
         rtol=errorTolerance,
     )
 
+    _ = c_host_f32
+    _ = c_host_blas_f32
+
     _ = a_device
     _ = b_device
     _ = c_device
+    _ = c_device_naive
 
     _ = a_host
     _ = b_host
     _ = c_host
-    _ = c_host_naive
+    _ = c_host_blas
 
 
-fn run_matvec_with_epilogue_fn(
+def run_matvec_with_epilogue_fn(
     M: Int, N: Int, K: Int, *, ctx: DeviceContext
 ) raises:
     comptime c_stride = 5
@@ -216,7 +235,7 @@ fn run_matvec_with_epilogue_fn(
     @parameter
     @always_inline
     @__copy_capture(c_device_nd, const_val)
-    fn epilogue_fn[
+    def epilogue_fn[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         c_device_nd.store[width=width](
@@ -230,7 +249,7 @@ fn run_matvec_with_epilogue_fn(
 
     @always_inline
     @parameter
-    fn run_func_gemv(ctx: DeviceContext) raises:
+    def run_func_gemv(ctx: DeviceContext) raises:
         comptime kernel = gemv_kernel[
             DType.float32,
             DType.float32,
@@ -252,7 +271,7 @@ fn run_matvec_with_epilogue_fn(
 
     @always_inline
     @parameter
-    fn run_func_gevm(ctx: DeviceContext) raises:
+    def run_func_gevm(ctx: DeviceContext) raises:
         comptime kernel = gevm_kernel[
             DType.float32,
             DType.float32,
@@ -307,7 +326,7 @@ fn run_matvec_with_epilogue_fn(
 
     @always_inline
     @parameter
-    fn run_func_naive(ctx: DeviceContext) raises:
+    def run_func_naive(ctx: DeviceContext) raises:
         comptime kernel = matmul_kernel[
             DType.float32,
             DType.float32,
@@ -361,9 +380,31 @@ fn run_matvec_with_epilogue_fn(
 
 def main() raises:
     with DeviceContext() as ctx:
-        # gemv for matrix vector multiply
-        run_matvec(4096, 1, 4096, ctx=ctx)
+        # gemv for matrix vector multiply - FP32
+        run_matvec[DType.float32, DType.float32, DType.float32](
+            4096, 1, 4096, ctx=ctx
+        )
         run_matvec_with_epilogue_fn(4096, 1, 4096, ctx=ctx)
-        # gevm for vector matrix multiply
-        run_matvec(1, 4096, 4096, ctx=ctx)
+        # gevm for vector matrix multiply - FP32
+        run_matvec[DType.float32, DType.float32, DType.float32](
+            1, 4096, 4096, ctx=ctx
+        )
         run_matvec_with_epilogue_fn(1, 4096, 4096, ctx=ctx)
+
+        # gemv for matrix vector multiply - BF16 input, FP8 output
+        run_matvec[DType.bfloat16, DType.bfloat16, DType.float8_e4m3fn](
+            4096, 1, 4096, ctx=ctx
+        )
+        # gevm for vector matrix multiply - BF16 input, FP8 output
+        run_matvec[DType.bfloat16, DType.bfloat16, DType.float8_e4m3fn](
+            1, 4096, 4096, ctx=ctx
+        )
+
+        # gemv for matrix vector multiply - BF16 input, BF16 output
+        run_matvec[DType.bfloat16, DType.bfloat16, DType.bfloat16](
+            4096, 1, 4096, ctx=ctx
+        )
+        # gevm for vector matrix multiply - BF16 input, BF16 output
+        run_matvec[DType.bfloat16, DType.bfloat16, DType.bfloat16](
+            1, 4096, 4096, ctx=ctx
+        )

@@ -34,9 +34,14 @@ from internal_utils import assert_almost_equal
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
-from layout.tile_layout import row_major as tile_row_major
-from layout.tile_tensor import TileTensor
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major as tile_row_major,
+)
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -57,7 +62,7 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scale
 )
 
 
-fn test_grouped_gemm_epilogue[
+def test_grouped_gemm_epilogue[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -223,7 +228,7 @@ fn test_grouped_gemm_epilogue[
     @parameter
     @always_inline
     @__copy_capture(c_tensor)
-    fn epilogue_add_c[
+    def epilogue_add_c[
         _dtype: DType,
         width: Int,
         *,
@@ -441,7 +446,7 @@ fn test_grouped_gemm_epilogue[
     @parameter
     @always_inline
     @__copy_capture(c_tensor_host)
-    fn epilogue_add_c_host[
+    def epilogue_add_c_host[
         _dtype: DType,
         width: Int,
         *,

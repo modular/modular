@@ -44,7 +44,7 @@ from std.utils import IndexList
 
 @__llvm_arg_metadata(src_tma_tile, `nvvm.grid_constant`)
 @__llvm_arg_metadata(dst_tma_tile, `nvvm.grid_constant`)
-fn mha_operand_tma_copy_kernel[
+def mha_operand_tma_copy_kernel[
     rank: Int,
     tile_shape: IndexList[rank],
     desc_shape: IndexList[rank],
@@ -139,7 +139,7 @@ fn mha_operand_tma_copy_kernel[
             dst_tma_tile.wait_group()
 
 
-fn mha_operand_copy[
+def mha_operand_copy[
     kv_t: MHAOperand,
     //,
     tile_m: Int,
@@ -195,7 +195,7 @@ fn mha_operand_copy[
     ctx.synchronize()
 
 
-fn test_mha_host_operand[
+def test_mha_host_operand[
     kv_t: MHAOperand,
     //,
     tile_m: Int,
@@ -228,7 +228,7 @@ fn test_mha_host_operand[
                         assert_equal(src_val, dst_val)
 
 
-fn test_continuous_kv_cache[
+def test_continuous_kv_cache[
     dtype: DType,
     tile_m: Int,
     kv_params: KVCacheStaticParams,
@@ -393,7 +393,7 @@ fn test_continuous_kv_cache[
     print("    ContinuousBatchingKVCache test passed!")
 
 
-fn test_paged_kv_cache[
+def test_paged_kv_cache[
     dtype: DType,
     tile_m: Int,
     kv_params: KVCacheStaticParams,
@@ -576,7 +576,7 @@ fn test_paged_kv_cache[
     print("    PagedKVCache test passed!")
 
 
-fn test_layout_tensor[
+def test_layout_tensor[
     dtype: DType,
     tile_m: Int,
     kv_params: KVCacheStaticParams,
@@ -667,7 +667,7 @@ fn test_layout_tensor[
     print("    LayoutTensor test passed!")
 
 
-fn test_ragged[
+def test_ragged[
     dtype: DType, tile_m: Int, kv_params: KVCacheStaticParams
 ](ctx: DeviceContext, batch_size: Int) raises:
     comptime msg = "  Testing RaggedTensor with tile_m=" + String(

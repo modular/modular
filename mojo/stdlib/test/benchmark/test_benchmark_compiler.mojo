@@ -65,11 +65,11 @@ def test_has_asm_side_effect() raises:
     )
 
 
-fn _no_constant_folding() -> Int64:
+def _no_constant_folding() -> Int64:
     return black_box(Int64(1)) + black_box(Int64(2))
 
 
-fn _yes_constant_folding() -> Int64:
+def _yes_constant_folding() -> Int64:
     return Int64(1) + Int64(2)
 
 

@@ -16,7 +16,7 @@ from std.random import rand
 from std.testing import TestSuite
 
 
-fn _sort_test[dtype: DType, name: StaticString](size: Int, max: Int) raises:
+def _sort_test[dtype: DType, name: StaticString](size: Int, max: Int) raises:
     var p = alloc[Scalar[dtype]](size)
     rand[dtype](p, size)
     sort(Span[Scalar[dtype], MutAnyOrigin](ptr=p, length=size))

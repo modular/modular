@@ -21,7 +21,7 @@ from std.testing import assert_almost_equal
 from std.utils import IndexList
 
 
-fn _size[rank: Int](dims: IndexList[rank, ...]) -> Int:
+def _size[rank: Int](dims: IndexList[rank, ...]) -> Int:
     var size = 1
 
     comptime for i in range(rank):
@@ -29,7 +29,7 @@ fn _size[rank: Int](dims: IndexList[rank, ...]) -> Int:
     return size
 
 
-fn _create_device_buffer[
+def _create_device_buffer[
     dtype: DType, rank: Int, shape: DimList
 ](ctx: DeviceContext, dynamic_shape: IndexList[rank]) raises -> Tuple[
     DeviceBuffer[dtype], NDBuffer[rank=rank, dtype, MutAnyOrigin, shape]
@@ -43,7 +43,7 @@ fn _create_device_buffer[
     )
 
 
-fn _create_host_buffer[
+def _create_host_buffer[
     dtype: DType, rank: Int, shape: DimList
 ](dynamic_shape: IndexList[rank, ...]) raises -> NDBuffer[
     rank=rank, dtype, MutAnyOrigin, shape
@@ -54,14 +54,14 @@ fn _create_host_buffer[
     )
 
 
-fn _linspace_fill[
+def _linspace_fill[
     dtype: DType, rank: Int, shape: DimList
 ](mut buff: NDBuffer[mut=True, rank=rank, dtype, _, shape]):
     for i in range(buff.size()):
         buff.data[i] = Scalar[dtype](i)
 
 
-fn _create_host_buffer_like[
+def _create_host_buffer_like[
     dtype: DType, rank: Int, shape: DimList
 ](buff: NDBuffer[rank=rank, dtype, _, shape]) raises -> NDBuffer[
     rank=rank, dtype, MutAnyOrigin, shape
@@ -69,7 +69,7 @@ fn _create_host_buffer_like[
     return _create_host_buffer[dtype, rank, shape](buff.dynamic_shape)
 
 
-fn _get_test_name[
+def _get_test_name[
     dtype: DType, shape_c: DimList, shape_a: DimList, shape_b: DimList
 ](
     shape_c_dim: IndexList[2],
@@ -98,7 +98,7 @@ fn _get_test_name[
     )
 
 
-fn matmul_test_case[
+def matmul_test_case[
     dtype: DType,
     shape_c: DimList,
     shape_a: DimList,
@@ -159,25 +159,25 @@ fn matmul_test_case[
 struct ValOrDim[dim: Dim = Dim()](Defaultable):
     var value: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         comptime assert (
             not Self.dim.is_dynamic()
         ), "Can't construct a dynamic dim with no runtime value"
         self.value = Self.dim.get()
 
-    fn __init__(out self, v: Int):
+    def __init__(out self, v: Int):
         self.value = v
 
 
-fn static[d: Int]() -> ValOrDim[d]:
+def static[d: Int]() -> ValOrDim[d]:
     return ValOrDim[d]()
 
 
-fn dynamic(d: Int) -> ValOrDim[]:
+def dynamic(d: Int) -> ValOrDim[]:
     return ValOrDim(d)
 
 
-fn create_matmul_test_case[
+def create_matmul_test_case[
     dtype: DType
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
     matmul_test_case[

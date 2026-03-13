@@ -19,8 +19,7 @@ from std.gpu import NamedBarrierSemaphore
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host.info import H100
 from std.gpu import block_idx, grid_dim, thread_idx
-from layout import Layout, LayoutTensor
-from layout.runtime_layout import RuntimeLayout
+from layout import Layout, LayoutTensor, RuntimeLayout
 from std.bit import log2_floor
 
 from std.utils.index import Index, IndexList
@@ -31,7 +30,7 @@ from ...structuring import RegTile
 
 
 @always_inline("nodebug")
-fn _check_scheduler_constraints[
+def _check_scheduler_constraints[
     prob_shape_nk: IndexList[2],
     tile_shape: IndexList[3],
     splits: UInt32,
@@ -70,11 +69,11 @@ struct ReductionMode(TrivialRegisterPassable):
     comptime Nondeterministic = Self(1)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
 
@@ -127,7 +126,7 @@ struct SplitKTileScheduler[
     ]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         prob_shape: IndexList[3],
         block_id_in_cluster: IndexList[2],
@@ -196,7 +195,7 @@ struct SplitKTileScheduler[
         )
 
     @always_inline
-    fn get_sm_num(self) -> UInt32:
+    def get_sm_num(self) -> UInt32:
         comptime if Self.raster_order == RasterOrder.AlongN:
             return UInt32(block_idx.x) + UInt32(grid_dim.x) * UInt32(
                 block_idx.y
@@ -208,7 +207,7 @@ struct SplitKTileScheduler[
 
     @staticmethod
     @always_inline
-    fn get_problem_blocks_shape(
+    def get_problem_blocks_shape(
         problem_shape: IndexList[3],
         dyn_tile_shape: IndexList[3],
         dyn_cluster_shape: IndexList[2],
@@ -233,11 +232,11 @@ struct SplitKTileScheduler[
         )
 
     @always_inline
-    fn initial_work_tile_info(mut self) -> WorkInfo:
+    def initial_work_tile_info(mut self) -> WorkInfo:
         return self.get_current_work_info()
 
     @always_inline
-    fn get_current_work_info(mut self) -> WorkInfo:
+    def get_current_work_info(mut self) -> WorkInfo:
         if (
             self.current_work_linear_idx
             >= self.blocks_per_problem * Self.splits
@@ -252,7 +251,7 @@ struct SplitKTileScheduler[
         return work_tile_info
 
     @always_inline
-    fn get_worktile_m_n_idx(
+    def get_worktile_m_n_idx(
         mut self,
         mut work_tile_info: WorkInfo,
         linear_tile_id: UInt32,
@@ -301,7 +300,7 @@ struct SplitKTileScheduler[
         work_tile_info.n = work_idx_n
 
     @always_inline
-    fn assign_work(mut self, mut work_tile_info: WorkInfo, linear_idx: UInt32):
+    def assign_work(mut self, mut work_tile_info: WorkInfo, linear_idx: UInt32):
         var linear_tile_id = self.get_k_start_and_linear_tile_id(
             work_tile_info, linear_idx
         )
@@ -309,7 +308,7 @@ struct SplitKTileScheduler[
         self.get_worktile_m_n_idx(work_tile_info, linear_tile_id)
 
     @always_inline
-    fn get_k_start_and_linear_tile_id(
+    def get_k_start_and_linear_tile_id(
         mut self, mut work_tile_info: WorkInfo, linear_idx: UInt32
     ) -> UInt32:
         var linear_cluster_id = linear_idx >> UInt32(self.log_cluster_size)
@@ -345,12 +344,12 @@ struct SplitKTileScheduler[
         return linear_tile_id  # basically linear index of the output tile
 
     @always_inline
-    fn fetch_next_work(mut self, mut work_tile_info: WorkInfo) -> WorkInfo:
+    def fetch_next_work(mut self, mut work_tile_info: WorkInfo) -> WorkInfo:
         self.advance_to_next_work()
         return self.get_current_work_info()
 
     @always_inline
-    fn requires_reduction(self, work_tile_info: WorkInfo) -> Bool:
+    def requires_reduction(self, work_tile_info: WorkInfo) -> Bool:
         var m = work_tile_info.m * UInt32(self.tile_shape[0])
         var n = work_tile_info.n * UInt32(self.tile_shape[1])
         var is_valid = m < UInt32(self.prob_shape[0]) and n < UInt32(
@@ -364,13 +363,13 @@ struct SplitKTileScheduler[
         )
 
     @always_inline
-    fn advance_to_next_work(mut self):
+    def advance_to_next_work(mut self):
         self.current_work_linear_idx += (
             UInt32(grid_dim.x) * UInt32(grid_dim.y) * UInt32(grid_dim.z)
         )
 
     @always_inline
-    fn is_last_split(
+    def is_last_split(
         self,
         work_tile_info: WorkInfo,
     ) -> Bool:
@@ -387,7 +386,7 @@ struct SplitKTileScheduler[
 
     @staticmethod
     @always_inline
-    fn get_grid_shape(
+    def get_grid_shape(
         dyn_cluster_shape: IndexList[3],
         dyn_raster_order: RasterOrder = RasterOrder.AlongN,
     ) raises -> IndexList[3]:
@@ -415,7 +414,7 @@ struct SplitKTileScheduler[
 
     @staticmethod
     @always_inline
-    fn get_num_tiles(
+    def get_num_tiles(
         problem_shape: IndexList[3],
         dyn_tile_shape: IndexList[3],
         dyn_cluster_shape: IndexList[2],
@@ -436,7 +435,7 @@ struct SplitKTileScheduler[
 
     @staticmethod
     @always_inline
-    fn get_required_locks_buffer_size_bytes[
+    def get_required_locks_buffer_size_bytes[
         accum_type: DType, dyn_num_consumer: UInt32
     ](
         problem_shape: IndexList[3],
@@ -458,7 +457,7 @@ struct SplitKTileScheduler[
         return Int(locks_workspace_bytes)
 
     @always_inline
-    fn get_linear_idx_from_m_and_n(
+    def get_linear_idx_from_m_and_n(
         self, tile_m: UInt32, tile_n: UInt32
     ) -> UInt32:
         var minor_work_idx: UInt32
@@ -504,13 +503,13 @@ struct SplitKTileScheduler[
         return linear_idx
 
     @always_inline
-    fn output_tile_index(self, work_tile_info: WorkInfo) -> UInt32:
+    def output_tile_index(self, work_tile_info: WorkInfo) -> UInt32:
         return self.get_linear_idx_from_m_and_n(
             work_tile_info.m, work_tile_info.n
         )
 
     @always_inline
-    fn reduction[
+    def reduction[
         accum_type: DType,
         c_reg_layout: Layout,
         workspace_layout: Layout,
@@ -603,7 +602,7 @@ struct SplitKTileScheduler[
 
     @staticmethod
     @always_inline
-    fn wait_eq(
+    def wait_eq(
         lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
@@ -617,7 +616,7 @@ struct SplitKTileScheduler[
 
     @staticmethod
     @always_inline
-    fn wait_lt(
+    def wait_lt(
         lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
@@ -631,7 +630,7 @@ struct SplitKTileScheduler[
 
     @staticmethod
     @always_inline
-    fn arrive_set(
+    def arrive_set(
         lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
@@ -644,7 +643,7 @@ struct SplitKTileScheduler[
         sema.arrive_set(barrier_id, Int32(increment))
 
     @always_inline
-    fn store_accumulator[
+    def store_accumulator[
         accum_type: DType,
         c_reg_layout: Layout,
         workspace_layout: Layout,
@@ -688,7 +687,7 @@ struct SplitKTileScheduler[
                 ] = c_reg_tile[mma_id, i]
 
     @always_inline
-    fn reduce_add[
+    def reduce_add[
         accum_type: DType,
         c_reg_layout: Layout,
         workspace_layout: Layout,
@@ -758,7 +757,7 @@ struct SplitKTileScheduler[
                     c_reg_tile[mma_id, i] = sum_val
 
     @always_inline
-    fn _get_workspace_tile_reshaped[
+    def _get_workspace_tile_reshaped[
         accum_type: DType,
         workspace_layout: Layout,
     ](

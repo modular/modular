@@ -14,23 +14,21 @@
 
 from buffer import Dim, DimList
 from layout import (
-    Layout,
-    LayoutTensor,
-    UNKNOWN_VALUE,
-    RuntimeLayout,
-    TileTensor,
-    lt_to_tt,
-)
-from layout.coord import (
-    _DimsToCoordLike,
+    ComptimeInt,
     Coord,
     CoordLike,
-    ComptimeInt,
+    IntTuple,
+    LTToTTLayout,
+    Layout,
+    LayoutTensor,
     RuntimeInt,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    lt_to_tt,
 )
-from layout.int_tuple import IntTuple
+from layout.coord import _DimsToCoordLike
 from layout.tile_layout import Layout as InternalLayout
-from layout.tile_tensor import LTToTTLayout
 from std.memory import UnsafePointer
 from std.utils.index import Index
 from std.testing import assert_equal
@@ -41,7 +39,7 @@ from std.testing import assert_equal
 # ============================================================
 
 
-fn test_dims_to_coord_like_static() raises:
+def test_dims_to_coord_like_static() raises:
     print("--- test_dims_to_coord_like_static ---")
     comptime dims = DimList[4, 8]()
     comptime CoordTypes = _DimsToCoordLike[DType.int64, dims]
@@ -53,7 +51,7 @@ fn test_dims_to_coord_like_static() raises:
     print("  PASSED")
 
 
-fn test_dims_to_coord_like_dynamic() raises:
+def test_dims_to_coord_like_dynamic() raises:
     print("--- test_dims_to_coord_like_dynamic ---")
     comptime dims = DimList[Dim(), Dim(8)]()
     comptime CoordTypes = _DimsToCoordLike[DType.int64, dims]
@@ -69,7 +67,7 @@ fn test_dims_to_coord_like_dynamic() raises:
 # ============================================================
 
 
-fn test_tiletensor_type_from_dims() raises:
+def test_tiletensor_type_from_dims() raises:
     print("--- test_tiletensor_type_from_dims ---")
     comptime dims = DimList[4, 8]()
     comptime shape_types = _DimsToCoordLike[DType.int64, dims]
@@ -88,7 +86,7 @@ fn test_tiletensor_type_from_dims() raises:
 # ============================================================
 
 
-fn test_dimlist_from_layout_shape() raises:
+def test_dimlist_from_layout_shape() raises:
     print("--- test_dimlist_from_layout_shape ---")
 
     # Public layout with static dims
@@ -117,7 +115,7 @@ fn test_dimlist_from_layout_shape() raises:
 # ============================================================
 
 
-fn test_dimlist_from_dynamic_layout_shape() raises:
+def test_dimlist_from_dynamic_layout_shape() raises:
     print("--- test_dimlist_from_dynamic_layout_shape ---")
 
     # Public layout with one dynamic dim
@@ -142,14 +140,14 @@ fn test_dimlist_from_dynamic_layout_shape() raises:
 # ============================================================
 
 
-fn test_tiletensor_type_from_public_layout() raises:
+def test_tiletensor_type_from_public_layout() raises:
     print("--- test_tiletensor_type_from_public_layout ---")
 
     comptime lt_layout = Layout.row_major[dims=DimList[Dim(), Dim(8)]()]()
 
     # Helper: convert IntTuple element to Dim
     @parameter
-    fn _int_to_dim(value: Int) -> Dim:
+    def _int_to_dim(value: Int) -> Dim:
         if value != UNKNOWN_VALUE:
             return Dim(value)
         return Dim()
@@ -183,16 +181,16 @@ fn test_tiletensor_type_from_public_layout() raises:
 # ============================================================
 
 
-fn test_lt_to_tt_function() raises:
+def test_lt_to_tt_function() raises:
     print("--- test_lt_to_tt_function ---")
 
     @parameter
-    fn _int_to_dim(value: Int) -> Dim:
+    def _int_to_dim(value: Int) -> Dim:
         if value != UNKNOWN_VALUE:
             return Dim(value)
         return Dim()
 
-    fn lt_to_tt_2d[
+    def lt_to_tt_2d[
         dtype: DType,
         lt_layout: Layout,
     ](lt: LayoutTensor[dtype, lt_layout, ...]) -> TileTensor[
@@ -278,7 +276,7 @@ fn test_lt_to_tt_function() raises:
 # ============================================================
 
 
-fn test_generalized_lt_to_tt() raises:
+def test_generalized_lt_to_tt() raises:
     print("--- test_generalized_lt_to_tt ---")
 
     # --- 2D static layout ---
@@ -367,7 +365,7 @@ fn test_generalized_lt_to_tt() raises:
     print("  ALL PASSED")
 
 
-fn main() raises:
+def main() raises:
     test_dims_to_coord_like_static()
     test_dims_to_coord_like_dynamic()
     test_tiletensor_type_from_dims()

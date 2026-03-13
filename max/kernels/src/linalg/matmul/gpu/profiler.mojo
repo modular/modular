@@ -65,7 +65,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
 
     @staticmethod
     @parameter
-    fn _get_warp_count[warp_role: UInt32]() -> UInt32:
+    def _get_warp_count[warp_role: UInt32]() -> UInt32:
         comptime if warp_role == 0:
             return Self.load_warps
         elif warp_role == 1:
@@ -77,12 +77,12 @@ struct BlackwellWarpProfilingWorkspaceManager[
 
     @staticmethod
     @parameter
-    fn _calculate_entries_before_role[warp_role: UInt32]() -> UInt32:
+    def _calculate_entries_before_role[warp_role: UInt32]() -> UInt32:
         return warp_role * Self.max_entries_per_warp
 
     @staticmethod
     @always_inline
-    fn _get_workspace_offset[
+    def _get_workspace_offset[
         warp_role: UInt32
     ](sm_idx: UInt32, entry_idx: UInt32) -> UInt32:
         var sm_length = Self.total_data_points * Self.entries_per_sm
@@ -98,14 +98,14 @@ struct BlackwellWarpProfilingWorkspaceManager[
 
     @staticmethod
     @parameter
-    fn _calculate_buffer_length() -> UInt32:
+    def _calculate_buffer_length() -> UInt32:
         return (
             UInt32(Self.sm_count) * Self.entries_per_sm * Self.total_data_points
         )
 
     @staticmethod
     @always_inline
-    fn get_workspace(
+    def get_workspace(
         ctx: DeviceContext,
     ) raises -> Span[UInt64, MutAnyOrigin]:
         var length = Int(Self._calculate_buffer_length())
@@ -118,7 +118,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
 
     @staticmethod
     @always_inline
-    fn write_to_workspace[
+    def write_to_workspace[
         warp_role: UInt32
     ](
         sm_idx: UInt32,
@@ -143,7 +143,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
 
     @staticmethod
     @always_inline
-    fn dump_workspace_as_csv(
+    def dump_workspace_as_csv(
         ctx: DeviceContext,
         workspace: Span[UInt64, MutAnyOrigin],
         filename: StaticString,
@@ -203,7 +203,7 @@ struct BlackwellProfileWarp[
     var entry_idx: UInt32
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         workspace: Span[UInt64, MutAnyOrigin],
         entry_idx: UInt32,
@@ -213,12 +213,12 @@ struct BlackwellProfileWarp[
         self.entry_idx = entry_idx
 
     @always_inline
-    fn __enter__(mut self):
+    def __enter__(mut self):
         comptime if Self.enable_profiling:
             self.timeline[0] = global_perf_counter_ns()
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         comptime if Self.enable_profiling:
             self.timeline[1] = global_perf_counter_ns()
             Self.WorkspaceManager.write_to_workspace[Self.warp_role](

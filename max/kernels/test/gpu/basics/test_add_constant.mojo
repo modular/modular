@@ -16,7 +16,7 @@ from std.gpu.host import DeviceContext
 from std.testing import *
 
 
-fn add_constant_fn(
+def add_constant_fn(
     output: UnsafePointer[Float32, MutAnyOrigin],
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     constant: Float32,

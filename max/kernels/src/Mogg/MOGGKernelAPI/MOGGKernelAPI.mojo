@@ -75,16 +75,21 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from layout import IntTuple, TileTensor, UNKNOWN_VALUE, row_major
-from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
-from layout.coord import (
-    DynamicCoord,
-    RuntimeInt,
+from layout import (
     Coord,
     CoordLike,
     Idx,
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeInt,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
     coord_to_index_list,
+    row_major,
 )
+from layout.coord import DynamicCoord
 from layout.tile_layout import Layout as TileLayout
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
@@ -313,7 +318,6 @@ from tensor import (
     OutputTensor,
     OutputVariadicTensors,
     VariadicTensors,
-    copy_tensor,
     foreach,
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
@@ -4748,6 +4752,7 @@ struct Conv:
     ) capturing raises:
         @parameter
         @always_inline
+        @__copy_capture(output)
         fn output_fn[
             _dtype: DType, _rank: Int, _width: Int
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
@@ -4935,6 +4940,7 @@ struct Conv2dResidualAdd:
     ) capturing raises:
         @parameter
         @always_inline
+        @__copy_capture(output, bias)
         fn output_fn[
             _dtype: DType, _rank: Int, _width: Int
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
@@ -7531,6 +7537,108 @@ struct Struct_mla_decode_ragged_paged:
             output.to_layout_tensor(),
             null_scalar_args,
             context,
+        )
+
+
+@compiler.register("mo.mla.decode.ragged.paged.scaled")
+struct Struct_mla_decode_ragged_paged_scaled:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        q_dtype: DType,
+        kv_dtype: DType,
+        //,
+        mask_str: StaticString,
+        target: StaticString,
+        per_token_scale_rope_aware: Int = 0,
+        quantization_granularity: Int = 640,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=q_dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        kv_scales: MutableInputTensor[dtype=DType.float32, rank=6, ...],
+        q_scales: InputTensor[dtype=DType.float32, rank=1, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert (
+            kv_blocks.static_spec.shape.get[1]() == 1
+        ), "Only support only_k=True for MLA decompress"
+
+        comptime page_size = kv_blocks.static_spec.shape.get[3]()
+        comptime head_dim = kv_blocks.static_spec.shape.get[5]()
+        comptime kv_num_heads = kv_blocks.static_spec.shape.get[4]()
+        comptime kv_params = KVCacheStaticParams(
+            UInt(kv_num_heads), UInt(head_dim), True
+        )
+
+        var kv_collection = generic_get_paged_cache_with_scales[
+            kv_dtype,
+            DType.float32,
+            kv_params,
+            page_size,
+            quantization_granularity,
+        ](
+            LayoutTensor[kv_dtype, Layout.row_major[6](), MutAnyOrigin](
+                kv_blocks.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    kv_blocks.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+                cache_lengths.to_layout_tensor().ptr,
+                RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                    cache_lengths.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                kv_lookup_table.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    kv_lookup_table.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                max_lengths.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    max_lengths.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.float32, Layout.row_major[6](), MutAnyOrigin](
+                kv_scales.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    kv_scales.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+        )
+
+        # Get the q_scales raw pointer for per-token Q scaling.
+        var q_scale_ptr = UnsafePointer[
+            Scalar[DType.float32], origin=MutAnyOrigin
+        ](q_scales.to_layout_tensor().ptr)
+
+        var null_scalar_args = LayoutTensor[
+            DType.int64, Layout.row_major(4), MutAnyOrigin
+        ](UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]())
+        generic_flare_mla_decode_kv_cache_ragged[
+            target=target,
+            mask_str=mask_str,
+            per_token_scale_rope_aware=per_token_scale_rope_aware != 0,
+        ](
+            q.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            scale,
+            output.to_layout_tensor(),
+            null_scalar_args,
+            context,
+            q_scale_ptr,
         )
 
 
@@ -10280,7 +10388,7 @@ struct DistributedAllReduceSum:
         _trace_name: StaticString,
     ](
         outputs: FusedOutputVariadicTensors[dtype=dtype, rank=rank, ...],
-        inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
@@ -10306,11 +10414,12 @@ struct DistributedAllReduceSum:
         )
 
         var input_size_bytes = inputs[0].size() * size_of[dtype]()
-        _check_signal_buffer_size(
-            signal_buffers[0].size(), input_size_bytes * 2
-        )
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
         # Marshal input tensors, output tensors, and signal buffers into the expected format.
+        var in_bufs = InlineArray[
+            NDBuffer[rank=rank, dtype, ImmutAnyOrigin], num_devices
+        ](fill={})
         var out_bufs = InlineArray[
             NDBuffer[rank=rank, dtype, MutAnyOrigin], num_devices
         ](fill={})
@@ -10319,53 +10428,24 @@ struct DistributedAllReduceSum:
         ](fill={})
 
         comptime for i in range(num_devices):
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                inputs[i]
+            ).make_dims_unknown()
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(
                 outputs[i]
             ).make_dims_unknown()
-
-            # Split the signal_buffers slab in half: lower half for the
-            # Signal struct and any payload, upper half for the stable
-            # input copy.
-            var half = signal_buffers[i].size() // 2
-            var signal_buffer, _ = signal_buffers[i].split(half)
-            rank_sigs[i] = signal_buffer._ptr.bitcast[Signal]()
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
         fn launch_allreduce[
             index: Int
         ]() raises unified {
-            read dev_ctxs_input,
-            read inputs,
+            read in_bufs,
             read out_bufs,
-            read outputs,
             read rank_sigs,
-            read signal_buffers,
+            read dev_ctxs_input,
+            read outputs,
         }:
-            var stable_input = (
-                signal_buffers[index]
-                .split(signal_buffers[index].size() // 2)[1]
-                .like(inputs[index])
-            )
-
-            copy_tensor[target=target, _trace_name=_trace_name](
-                stable_input, inputs[index], dev_ctxs_input[index]
-            )
-
-            var stable_inputs = InlineArray[
-                NDBuffer[rank=rank, dtype, ImmutAnyOrigin], num_devices
-            ](fill={})
-
-            comptime for i in range(num_devices):
-                stable_inputs[i] = (
-                    managed_tensor_slice_to_ndbuffer(
-                        signal_buffers[i]
-                        .split(signal_buffers[i].size() // 2)[1]
-                        .like(inputs[i])
-                    )
-                    .make_dims_unknown()
-                    .get_immutable()
-                )
-
             @always_inline
             @parameter
             fn output_lambda[
@@ -10387,7 +10467,7 @@ struct DistributedAllReduceSum:
                 ngpus=num_devices,
                 output_lambda=output_lambda[output_index=index, ...],
             ](
-                stable_inputs,
+                in_bufs,
                 out_bufs[index].make_dims_unknown(),
                 rank_sigs,
                 dev_ctxs_input[index],
@@ -10512,7 +10592,7 @@ struct DistributedAllGather:
         _trace_name: StaticString,
     ](
         outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
-        inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
@@ -10537,11 +10617,22 @@ struct DistributedAllGather:
         )
 
         var input_size_bytes = inputs[0].size() * size_of[dtype]()
-        _check_signal_buffer_size(
-            signal_buffers[0].size(), input_size_bytes * 2
-        )
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
-        # Marshal output variadic tensors into the expected format.
+        var dev_ctxs = List[DeviceContext]()
+        for i in range(len(dev_ctxs_input)):
+            dev_ctxs.append(dev_ctxs_input[i])
+
+        # Marshal input and output variadic tensors into the expected format.
+        var in_bufs = InlineArray[
+            NDBuffer[rank=rank, dtype, ImmutAnyOrigin], inputs.size
+        ](fill={})
+
+        comptime for i in range(inputs.size):
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                inputs[i]
+            ).make_dims_unknown()
+
         var out_bufs = InlineArray[
             NDBuffer[rank=rank, dtype, MutAnyOrigin], num_devices * num_devices
         ](fill={})
@@ -10551,61 +10642,15 @@ struct DistributedAllGather:
                 outputs[i]
             ).make_dims_unknown()
 
-        # Split the signal_buffers slab in half: lower half for the Signal
-        # struct and any payload, upper half for the stable input copy.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
-        comptime for i in range(num_devices):
-            var half = signal_buffers[i].size() // 2
-            var signal_buffer, _ = signal_buffers[i].split(half)
-            rank_sigs[i] = signal_buffer._ptr.bitcast[Signal]()
-
-        @always_inline
-        fn copy_input[
-            index: Int
-        ]() raises unified {
-            read dev_ctxs_input,
-            read inputs,
-            read signal_buffers,
-        }:
-            var stable_input = (
-                signal_buffers[index]
-                .split(signal_buffers[index].size() // 2)[1]
-                .like(inputs[index])
-            )
-
-            copy_tensor[target=target, _trace_name=_trace_name](
-                stable_input, inputs[index], dev_ctxs_input[index]
-            )
-
-        _launch_device_collective[num_devices](copy_input, dev_ctxs_input)
-
-        # Build stable_inputs from signal buffer stable regions.
-        var stable_inputs = InlineArray[
-            NDBuffer[rank=rank, dtype, ImmutAnyOrigin], num_devices
-        ](fill={})
-
-        comptime for i in range(num_devices):
-            stable_inputs[i] = (
-                managed_tensor_slice_to_ndbuffer(
-                    signal_buffers[i]
-                    .split(signal_buffers[i].size() // 2)[1]
-                    .like(inputs[i])
-                )
-                .make_dims_unknown()
-                .get_immutable()
-            )
-
-        var dev_ctxs = List[DeviceContext]()
-        for i in range(len(dev_ctxs_input)):
-            dev_ctxs.append(dev_ctxs_input[i])
+        comptime for i in range(signal_buffers.size):
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
-            allgather[ngpus=num_devices](
-                stable_inputs, out_bufs, rank_sigs, dev_ctxs
-            )
+            allgather[ngpus=num_devices](in_bufs, out_bufs, rank_sigs, dev_ctxs)
 
 
 @compiler.register("mo.distributed.broadcast")
@@ -10628,7 +10673,7 @@ struct DistributedBroadcast:
         _trace_name: StaticString,
     ](
         outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
-        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
@@ -10666,40 +10711,16 @@ struct DistributedBroadcast:
         # Use 2-stage requirement as upper bound.
         var input_size_bytes = input.size() * size_of[dtype]()
         var payload_size = ceildiv(input_size_bytes, num_devices)
-        _check_signal_buffer_size(
-            signal_buffers[0].size(), input_size_bytes + payload_size
-        )
+        _check_signal_buffer_size(signal_buffers[0].size(), payload_size)
 
-        # Split the signal_buffers slab in half: lower half for the Signal
-        # struct and any payload, upper half for the stable input copy.
+        var in_buf = managed_tensor_slice_to_ndbuffer(input)
+
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
         comptime for i in range(signal_buffers.size):
-            var half = signal_buffers[i].size() // 2
-            var signal_buffer, _ = signal_buffers[i].split(half)
-            rank_sigs[i] = signal_buffer._ptr.bitcast[Signal]()
-
-        # Only the root device copies the input to its signal buffer's
-        # stable region. The broadcast barrier inside the kernel ensures
-        # this copy is visible to all GPUs before they read from it.
-        var stable_input = (
-            signal_buffers[root]
-            .split(signal_buffers[root].size() // 2)[1]
-            .like(input)
-        )
-
-        copy_tensor[target=target, _trace_name=_trace_name](
-            stable_input, input, dev_ctxs_input[root]
-        )
-
-        # Build in_buf from root's signal buffer stable region.
-        var in_buf = managed_tensor_slice_to_ndbuffer(
-            signal_buffers[root]
-            .split(signal_buffers[root].size() // 2)[1]
-            .like(input)
-        ).get_immutable()
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
         fn launch_broadcast[
@@ -10820,19 +10841,21 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output: OutputTensor[dtype=output_type, rank=rank, ...],
-        output_scales: OutputTensor[dtype=scales_type, rank=rank, ...],
-        output_residual: OutputTensor[dtype=dtype, rank=rank, ...],
+        outputs: OutputVariadicTensors[dtype=output_type, rank=rank, ...],
+        outputs_scales: OutputVariadicTensors[
+            dtype=scales_type, rank=rank, ...
+        ],
+        outputs_residual: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
-        residual: InputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
-        weight_offset: Scalar[dtype=dtype],
-        scale_ub: Float32,
-        device_ctx: DeviceContextPtr,
+        residuals: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
+        epsilons: InputVariadicTensors[dtype=dtype, ...],
+        weight_offsets: InputVariadicTensors[dtype=dtype, ...],
+        scales_ub: InputVariadicTensors[dtype=DType.float32, ...],
+        dev_ctxs_input: DeviceContextPtrList,
     ) capturing raises:
         comptime num_devices = inputs.size
         comptime assert signal_buffers.size == num_devices, (
@@ -10843,50 +10866,104 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         var input_size_bytes = inputs[0].size() * size_of[dtype]()
         _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
-        # Marshal input tensors into the expected format.
+        # Filter the dev_ctxs_list to have only the GPU devices
+        # The kernel also takes CPU operands, so the CPU devices must be removed.
+        var gpu_ctxs_tuple = StaticTuple[DeviceContextPtr, num_devices]()
+        var dev_idx = 0
+        for i in range(dev_ctxs_input.size):
+            if dev_idx < num_devices and dev_ctxs_input[i].api() != "cpu":
+                gpu_ctxs_tuple[dev_idx] = dev_ctxs_input.ptrs[i]
+                dev_idx += 1
+        if dev_idx != num_devices:
+            raise Error("Invalid number of device contexts")
+        var dev_ctxs = DeviceContextPtrList[num_devices](gpu_ctxs_tuple)
+
+        # Marshal input tensors / output tensors into the expected format.
+        var out_bufs = InlineArray[
+            NDBuffer[rank=rank, output_type, MutAnyOrigin], inputs.size
+        ](fill={})
+        var out_scale_bufs = InlineArray[
+            NDBuffer[rank=rank, scales_type, MutAnyOrigin], inputs.size
+        ](fill={})
+        var out_residual_bufs = InlineArray[
+            NDBuffer[rank=rank, dtype, MutAnyOrigin], inputs.size
+        ](fill={})
         var in_bufs = InlineArray[
             NDBuffer[rank=rank, dtype, ImmutAnyOrigin], inputs.size
         ](fill={})
-
-        comptime for i in range(inputs.size):
-            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
-                inputs[i]
-            ).make_dims_unknown()
-
-        # Marshal output tensors
-        var out_buf = managed_tensor_slice_to_ndbuffer(output)
-        var out_scales_buf = managed_tensor_slice_to_ndbuffer(output_scales)
-        var out_residual_buf = managed_tensor_slice_to_ndbuffer(output_residual)
+        var residual_bufs = InlineArray[
+            NDBuffer[rank=rank, dtype, ImmutAnyOrigin], inputs.size
+        ](fill={})
 
         # Marshal signal buffers.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
-        comptime for i in range(signal_buffers.size):
+        comptime for i in range(inputs.size):
+            # Outputs
+            out_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                outputs[i]
+            ).make_dims_unknown()
+            out_scale_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                outputs_scales[i]
+            ).make_dims_unknown()
+            out_residual_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                outputs_residual[i]
+            ).make_dims_unknown()
+
+            # Inputs
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                inputs[i]
+            ).make_dims_unknown()
+            residual_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                residuals[i]
+            ).make_dims_unknown()
+
+            # Signal buffers
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
-        # Marshal gamma
-        var gamma_tensor = gamma.to_tile_tensor[DType.int64]()
+        @always_inline
+        fn launch_fused_allreduce[
+            index: Int
+        ]() raises unified {
+            read out_bufs,
+            read out_scale_bufs,
+            read out_residual_bufs,
+            read in_bufs,
+            read residual_bufs,
+            read rank_sigs,
+            read dev_ctxs,
+            read gammas,
+            read epsilons,
+            read weight_offsets,
+            read scales_ub,
+        }:
+            # Marshal gamma
+            var gamma_tensor = gammas[index].to_tile_tensor[DType.int64]()
 
-        # Marshal residual
-        var residual_buf = managed_tensor_slice_to_ndbuffer(
-            residual
-        ).make_dims_unknown()
+            # TODO: Add a new struct like `VariadicInputScalar`` to represent instead of manually loading the values in the kernel code.
+            var epsilon = epsilons[index].unsafe_ptr()[]
+            var weight_offset = weight_offsets[index].unsafe_ptr()[]
+            var scale_ub = scales_ub[index].unsafe_ptr()[]
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
             allreduce_residual_rmsnorm_fp8(
                 in_bufs,
-                residual_buf,
-                out_buf,
-                out_residual_buf,
+                residual_bufs[index],
+                out_bufs[index],
+                out_residual_bufs[index],
                 gamma_tensor,
                 epsilon,
                 weight_offset,
                 scale_ub,
-                out_scales_buf,
+                out_scale_bufs[index],
                 rank_sigs,
-                device_ctx[],
+                dev_ctxs[index],
+            )
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            _launch_device_collective[num_devices](
+                launch_fused_allreduce, dev_ctxs
             )
 
 

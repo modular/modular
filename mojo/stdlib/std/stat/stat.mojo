@@ -43,7 +43,7 @@ comptime S_IFSOCK = 0o0140000
 """Bits that determine the socket."""
 
 
-fn S_ISLNK[intable: Intable](mode: intable) -> Bool:
+def S_ISLNK[intable: Intable](mode: intable) -> Bool:
     """
     Returns True if the mode is a symlink.
 
@@ -59,7 +59,7 @@ fn S_ISLNK[intable: Intable](mode: intable) -> Bool:
     return (Int(mode) & S_IFMT) == S_IFLNK
 
 
-fn S_ISREG[intable: Intable](mode: intable) -> Bool:
+def S_ISREG[intable: Intable](mode: intable) -> Bool:
     """
     Returns True if the mode is a regular file.
 
@@ -75,7 +75,7 @@ fn S_ISREG[intable: Intable](mode: intable) -> Bool:
     return (Int(mode) & S_IFMT) == S_IFREG
 
 
-fn S_ISDIR[intable: Intable](mode: intable) -> Bool:
+def S_ISDIR[intable: Intable](mode: intable) -> Bool:
     """
     Returns True if the mode is a directory.
 
@@ -91,7 +91,7 @@ fn S_ISDIR[intable: Intable](mode: intable) -> Bool:
     return (Int(mode) & S_IFMT) == S_IFDIR
 
 
-fn S_ISCHR[intable: Intable](mode: intable) -> Bool:
+def S_ISCHR[intable: Intable](mode: intable) -> Bool:
     """
     Returns True if the mode is a character device.
 
@@ -107,7 +107,7 @@ fn S_ISCHR[intable: Intable](mode: intable) -> Bool:
     return (Int(mode) & S_IFMT) == S_IFCHR
 
 
-fn S_ISBLK[intable: Intable](mode: intable) -> Bool:
+def S_ISBLK[intable: Intable](mode: intable) -> Bool:
     """
     Returns True if the mode is a block device.
 
@@ -123,7 +123,7 @@ fn S_ISBLK[intable: Intable](mode: intable) -> Bool:
     return (Int(mode) & S_IFMT) == S_IFBLK
 
 
-fn S_ISFIFO[intable: Intable](mode: intable) -> Bool:
+def S_ISFIFO[intable: Intable](mode: intable) -> Bool:
     """
     Returns True if the mode is a fifo.
 
@@ -139,7 +139,7 @@ fn S_ISFIFO[intable: Intable](mode: intable) -> Bool:
     return (Int(mode) & S_IFMT) == S_IFIFO
 
 
-fn S_ISSOCK[intable: Intable](mode: intable) -> Bool:
+def S_ISSOCK[intable: Intable](mode: intable) -> Bool:
     """
     Returns True if the mode is a socket.
 

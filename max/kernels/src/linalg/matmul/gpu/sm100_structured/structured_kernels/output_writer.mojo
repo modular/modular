@@ -24,22 +24,23 @@ from std.collections import Optional
 from std.memory import Pointer, UnsafePointer
 from std.sys import simd_width_of, size_of, align_of
 
-from std.gpu import WARP_SIZE, thread_idx
+from std.gpu import WARP_SIZE, thread_idx_int as thread_idx
 from std.gpu import lane_id
 from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
+    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeTuple,
+    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
-from layout.int_tuple import IntTuple
-from layout.layout_tensor import zipped_divide, upcast
-from layout.tile_layout import TensorLayout
+from layout.layout import zipped_divide
+from layout.layout_tensor import upcast
 from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
@@ -143,7 +144,9 @@ struct TileWriter[
 
     # FP8 uses float32 epilogue (GEX-2630), bf16 uses native type
     comptime epilogue_dtype = (
-        Self.c_type if Self.a_type == DType.bfloat16 else DType.float32
+        DType.bfloat16 if (
+            Self.a_type == Self.c_type == DType.bfloat16
+        ) else DType.float32
     )
 
     # Stage dimensions - now use direct dimension access
@@ -185,7 +188,7 @@ struct TileWriter[
     var c_tma_op: Self.TmaOpPtr
 
     @always_inline
-    fn __init__(out self, c_tma_op: Self.TmaOpPtr):
+    def __init__(out self, c_tma_op: Self.TmaOpPtr):
         """Initialize with pointer to TMA descriptor."""
         comptime assert (
             Self.stage_stride_cols > 0
@@ -195,7 +198,7 @@ struct TileWriter[
     # ========== Public Write Methods ==========
 
     @always_inline
-    fn write(
+    def write(
         self,
         c_tiles: Self.CTileArray,
         stage: Self.Stage,
@@ -207,7 +210,7 @@ struct TileWriter[
         self._copy_to_gmem(c_tiles, stage, tile_coord, shape)
 
     @always_inline
-    fn write_batched(
+    def write_batched(
         self,
         c_tiles: Self.CTileArray,
         stage: Self.Stage,
@@ -227,7 +230,7 @@ struct TileWriter[
         self._copy_to_gmem_batched(c_tiles, stage, tile_coord, shape, alpha)
 
     @always_inline
-    fn write_splitk[
+    def write_splitk[
         reduction_layout: TensorLayout,
     ](
         self,
@@ -260,7 +263,7 @@ struct TileWriter[
         self._copy_to_gmem(c_tiles, stage, (work_info.m, work_info.n), shape)
 
     @always_inline
-    fn write_absolute_with_bounds_check[
+    def write_absolute_with_bounds_check[
         c_tensor_layout: Layout,
     ](
         self,
@@ -287,7 +290,7 @@ struct TileWriter[
         )
 
     @always_inline
-    fn _copy_to_gmem(
+    def _copy_to_gmem(
         self,
         c_tiles: Self.CTileArray,
         output_stage: Self.Stage,
@@ -303,7 +306,7 @@ struct TileWriter[
             self._copy_to_gmem_impl(c_tiles, output_stage, c_coord, c_shape)
 
     @always_inline
-    fn _copy_to_gmem_batched(
+    def _copy_to_gmem_batched(
         self,
         c_tiles: Self.CTileArray,
         output_stage: Self.Stage,
@@ -337,7 +340,7 @@ struct TileWriter[
             )
 
     @always_inline
-    fn _copy_to_gmem_with_elementwise_epilogue_impl(
+    def _copy_to_gmem_with_elementwise_epilogue_impl(
         self,
         c_tiles: Self.CTileArray,
         output_stage: Self.Stage,
@@ -453,7 +456,7 @@ struct TileWriter[
             WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
 
     @always_inline
-    fn _copy_to_gmem_impl(
+    def _copy_to_gmem_impl(
         self,
         c_tiles: Self.CTileArray,
         output_stage: Self.Stage,
@@ -692,7 +695,7 @@ struct TileWriter[
                 WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
 
     @always_inline
-    fn _write_absolute_with_bounds_check[
+    def _write_absolute_with_bounds_check[
         c_tensor_layout: Layout,
     ](
         self,
@@ -918,17 +921,13 @@ struct TileWriter[
                 comptime if Self.transpose_c:
                     # Transpose: coord_m→tc0→N(weights),
                     # coord_n→tc1→M(tokens)
-                    store_coords.coord_m = UInt(n_abs)
-                    store_coords.coord_n = UInt(m_abs) + UInt(
-                        loop_stage * Self.stageN
-                    )
+                    store_coords.coord_m = Int(n_abs)
+                    store_coords.coord_n = Int(m_abs) + loop_stage * Self.stageN
                 else:
                     # Non-transpose: coord_m→tc1→M(tokens),
                     # coord_n→tc0→N(weights)
-                    store_coords.coord_m = UInt(m_abs)
-                    store_coords.coord_n = UInt(n_abs) + UInt(
-                        loop_stage * Self.stageN
-                    )
+                    store_coords.coord_m = Int(m_abs)
+                    store_coords.coord_n = Int(n_abs) + loop_stage * Self.stageN
 
                 StoreExecutorLocal.execute[
                     Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
@@ -956,7 +955,7 @@ struct TileWriter[
 
     @staticmethod
     @always_inline
-    fn _store_with_bounds_check[
+    def _store_with_bounds_check[
         c_tensor_layout: Layout,
     ](
         c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
@@ -1015,7 +1014,7 @@ struct TileWriter[
                 var input_crd = RuntimeTuple[
                     IntTuple(UNKNOWN_VALUE, j),
                     element_type=DType.uint32,
-                ](Int(thread_idx.x), j)
+                ](thread_idx.x, j)
                 var linear_idx = rt_crd2idx[
                     IntTuple(UNKNOWN_VALUE, j),
                     zipped.shape,
@@ -1066,7 +1065,7 @@ struct TileWriter[
 
     @staticmethod
     @always_inline
-    fn _store_with_bounds_check_transpose[
+    def _store_with_bounds_check_transpose[
         c_tensor_layout: Layout,
     ](
         c_smem_ptr: UnsafePointer[
@@ -1141,7 +1140,7 @@ struct TileWriter[
     # Methods for D = lambda(accum) + beta * C residual operations
 
     @always_inline
-    fn write_with_residual(
+    def write_with_residual(
         self,
         out_tiles: Self.CTileArray,
         stage: Self.Stage,
@@ -1187,7 +1186,7 @@ struct TileWriter[
         )
 
     @always_inline
-    fn _copy_to_gmem_with_residual(
+    def _copy_to_gmem_with_residual(
         self,
         out_tiles: Self.CTileArray,
         output_stage: Self.Stage,

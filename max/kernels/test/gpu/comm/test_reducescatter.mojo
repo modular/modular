@@ -46,7 +46,7 @@ comptime test_dtypes = (DType.bfloat16, DType.float32)
 comptime test_gpu_counts = (2, 4, 8)
 
 
-fn reducescatter_test[
+def reducescatter_test[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -155,7 +155,7 @@ fn reducescatter_test[
     @always_inline
     @parameter
     @__copy_capture(out_bufs)
-    fn outputs_lambda[
+    def outputs_lambda[
         input_index: Int,
         _dtype: DType,
         _width: Int,
@@ -236,7 +236,7 @@ fn reducescatter_test[
         host_buffers[i].free()
 
 
-fn run_reducescatter_sweep() raises:
+def run_reducescatter_sweep() raises:
     """Run a sweep of reduce-scatter tests across configurations."""
     var list_of_ctx = List[DeviceContext](capacity=MAX_GPUS)
     for i in range(DeviceContext.number_of_devices()):
@@ -264,7 +264,7 @@ fn run_reducescatter_sweep() raises:
         ](list_of_ctx, length)
 
 
-fn reducescatter_axis_test[
+def reducescatter_axis_test[
     dtype: DType,
     ngpus: Int,
     axis: Int,
@@ -392,7 +392,7 @@ fn reducescatter_axis_test[
     @always_inline
     @parameter
     @__copy_capture(out_bufs)
-    fn outputs_lambda[
+    def outputs_lambda[
         input_index: Int,
         _dtype: DType,
         _width: Int,
@@ -499,7 +499,7 @@ comptime test_2d_shapes = (
 )
 
 
-fn run_reducescatter_axis_sweep() raises:
+def run_reducescatter_axis_sweep() raises:
     """Run a sweep of 2D axis-aware reduce-scatter tests."""
     var list_of_ctx = List[DeviceContext](capacity=MAX_GPUS)
     for i in range(DeviceContext.number_of_devices()):

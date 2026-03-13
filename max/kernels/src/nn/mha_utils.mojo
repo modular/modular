@@ -31,10 +31,8 @@ from std.bit import prev_power_of_two
 from std.gpu import WARP_SIZE, lane_id_int as lane_id
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace
-from layout.int_tuple import UNKNOWN_VALUE
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor, LayoutTensorIter
-from layout.runtime_layout import RuntimeLayout
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout.layout_tensor import LayoutTensorIter
 from layout.swizzle import make_ldmatrix_swizzle
 from nn.mha_mask import (
     CausalMask,
@@ -61,7 +59,7 @@ comptime is_sm90or100 = is_sm90 or is_sm100
 
 
 @always_inline
-fn as_dynamic_row_major_1d[
+def as_dynamic_row_major_1d[
     dtype: DType
 ](
     tensor: LayoutTensor[
@@ -84,26 +82,26 @@ struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
     comptime FLASH_ATTENTION_2 = Self(2)
     comptime FLASH_ATTENTION_3 = Self(3)
 
-    fn __init__(out self):
+    def __init__(out self):
         self._value = 3
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
     @always_inline
-    fn __eq__(self, version: Int) -> Bool:
+    def __eq__(self, version: Int) -> Bool:
         return self._value == Int32(version)
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
     @always_inline
-    fn init(self, dtype: DType) -> Self:
+    def init(self, dtype: DType) -> Self:
         if self._value == -1:
             comptime if is_sm90or100:
                 return FlashAttentionAlgorithm(2 + Int(dtype.is_half_float()))
@@ -113,7 +111,7 @@ struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
             return self
 
     @always_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self._value == 0:
             writer.write("naive-attention")
         elif self._value == 1:
@@ -142,80 +140,80 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
     var algorithm: FlashAttentionAlgorithm
     var swizzle_mode: TensorMapSwizzle
 
-    fn block_m(self) -> UInt:
+    def block_m(self) -> UInt:
         return self.num_queries_per_block
 
-    fn block_n(self) -> UInt:
+    def block_n(self) -> UInt:
         return self.num_keys_per_block
 
-    fn block_k(self) -> UInt:
+    def block_k(self) -> UInt:
         return self.BK
 
-    fn warp_m(self) -> UInt:
+    def warp_m(self) -> UInt:
         return self.WM
 
-    fn warp_n(self) -> UInt:
+    def warp_n(self) -> UInt:
         return self.WN
 
-    fn num_warps_m(self) -> UInt:
+    def num_warps_m(self) -> UInt:
         return self.block_m() // self.warp_m()
 
-    fn num_warps_n(self) -> UInt:
+    def num_warps_n(self) -> UInt:
         return self.block_n() // self.warp_n()
 
-    fn num_consumer_threads(self) -> UInt:
+    def num_consumer_threads(self) -> UInt:
         return self.num_warps_m() * self.num_warps_n() * UInt(WARP_SIZE)
 
-    fn num_producer_threads[
+    def num_producer_threads[
         producer_consumer_kernel: Bool = False
     ](self) -> UInt:
         return UInt(128) if (
             producer_consumer_kernel and self.algorithm == 3
         ) else UInt(0)
 
-    fn num_threads[producer_consumer_kernel: Bool = False](self) -> UInt:
+    def num_threads[producer_consumer_kernel: Bool = False](self) -> UInt:
         return (
             self.num_consumer_threads()
             + self.num_producer_threads[producer_consumer_kernel]()
         )
 
-    fn swizzle_granularity(self) -> UInt:
+    def swizzle_granularity(self) -> UInt:
         return UInt(self.swizzle_mode.bytes()) // UInt(size_of[self.dtype]())
 
-    fn q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> UInt:
+    def q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> UInt:
         q_size = self.block_m() * self.padded_depth
         num_q = 2 if fa3 and persistent else 1
         return UInt(num_q * Int(q_size))
 
-    fn kv_smem_size(self, fa3: Bool = False) -> UInt:
+    def kv_smem_size(self, fa3: Bool = False) -> UInt:
         if fa3:
             return self.num_pipeline_stages * self.block_n() * self.padded_depth
         else:
             return self.block_n() * self.padded_depth
 
-    fn k_smem_size(self, fa3: Bool = False) -> UInt:
+    def k_smem_size(self, fa3: Bool = False) -> UInt:
         if fa3:
             return self.kv_smem_size(True)
         else:
             return self.block_n() * self.padded_depth
 
-    fn v_smem_size(self, fa3: Bool = False) -> UInt:
+    def v_smem_size(self, fa3: Bool = False) -> UInt:
         if fa3:
             return self.kv_smem_size(True)
         else:
             BN = self.block_n()
             return BN * BN
 
-    fn p_smem_size(self) -> UInt:
+    def p_smem_size(self) -> UInt:
         return self.block_m() * self.block_n()
 
-    fn warp_scratch_smem_size(self) -> UInt:
+    def warp_scratch_smem_size(self) -> UInt:
         n_warps_n = self.num_warps_n()
         return UInt(
             2 * Int(n_warps_n) * Int(self.block_m()) if n_warps_n > 1 else 0
         )
 
-    fn shared_mem_bytes[
+    def shared_mem_bytes[
         shared_kv: Bool = False, sm_90: Bool = False
     ](self) -> UInt:
         if not has_nvidia_gpu_accelerator():
@@ -251,7 +249,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             )
         return UInt(num_smem_bytes)
 
-    fn __init__(
+    def __init__(
         out self,
         num_heads: UInt,
         depth: UInt,
@@ -363,7 +361,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             )
         )
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self.algorithm == 2:
             writer.write("ampere_")
         else:
@@ -379,7 +377,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
 
 
 @always_inline
-fn _kernel_mask[
+def _kernel_mask[
     dtype: DType, width: Int
 ](
     coord: IndexList[2, ...], bound: IndexList[2, ...], vec: SIMD[dtype, width]
@@ -398,7 +396,7 @@ fn _kernel_mask[
 
 
 @always_inline
-fn _copy_frag_to_smem_nvidia[
+def _copy_frag_to_smem_nvidia[
     BM: UInt,
     BN: UInt,
     BK: UInt,
@@ -497,7 +495,7 @@ fn _copy_frag_to_smem_nvidia[
 
 
 @always_inline
-fn _copy_frag_to_smem_amd[
+def _copy_frag_to_smem_amd[
     BM: UInt,
     BN: UInt,
     BK: UInt,
@@ -577,7 +575,7 @@ fn _copy_frag_to_smem_amd[
 
 
 @always_inline
-fn _copy_frag_to_smem[
+def _copy_frag_to_smem[
     BM: UInt,
     BN: UInt,
     BK: UInt,
@@ -616,7 +614,7 @@ fn _copy_frag_to_smem[
 
 
 @always_inline
-fn get_start_and_end_for_partitions[
+def get_start_and_end_for_partitions[
     tile_size: Int
 ](num_keys: Int, num_partitions: Int, partition_idx: Int) -> Tuple[Int, Int]:
     """Calculate start and end indices for a partition.
@@ -656,14 +654,14 @@ comptime callback_fn_type = fn[mask_t: MHAMask](
 
 
 @always_inline
-fn dispatch_mask[
+def dispatch_mask[
     mask_type: String,
     callback_fn: callback_fn_type,
     local_window_size: Int = -1,
 ]() raises -> None:
     @always_inline
     @parameter
-    fn outer_wrapper[mask_t: MHAMask](mask: mask_t) raises:
+    def outer_wrapper[mask_t: MHAMask](mask: mask_t) raises:
         return callback_fn(mask)
 
     # TODO: attach string constants to mask types themselves.
@@ -691,7 +689,7 @@ fn dispatch_mask[
 
 
 @always_inline
-fn dispatch_materialized_mask[
+def dispatch_materialized_mask[
     dtype: DType,
     layout: Layout,
     //,
@@ -716,7 +714,7 @@ fn dispatch_materialized_mask[
 trait OptionallyStaticInt(Copyable, Intable, TrivialRegisterPassable):
     comptime static_value: Optional[Int]
 
-    fn as_uint32(self) -> UInt32:
+    def as_uint32(self) -> UInt32:
         ...
 
 
@@ -728,15 +726,15 @@ struct StaticInt[value: Int](
     comptime static_value: Optional[Int] = Optional[Int](Self.value)
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @always_inline("nodebug")
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Self.value
 
     @always_inline("nodebug")
-    fn as_uint32(self) -> UInt32:
+    def as_uint32(self) -> UInt32:
         return UInt32(Self.value)
 
 
@@ -745,20 +743,20 @@ struct DynamicInt(OptionallyStaticInt, TrivialRegisterPassable):
     comptime static_value: Optional[Int] = None
 
     @always_inline("nodebug")
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.value = UInt32(value)
 
     @always_inline("nodebug")
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self.value)
 
     @always_inline("nodebug")
-    fn as_uint32(self) -> UInt32:
+    def as_uint32(self) -> UInt32:
         return self.value
 
 
 @always_inline
-fn _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
+def _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
     return int_t.static_value.or_else(0) == 1
 
 
@@ -767,11 +765,11 @@ trait MHAPartitionScheme(Copyable, TrivialRegisterPassable):
     comptime accum_dtype: DType
 
     @always_inline
-    fn num_partitions(self) -> UInt32:
+    def num_partitions(self) -> UInt32:
         ...
 
     @always_inline
-    fn get_exp_sum_qk_max_pointer(
+    def get_exp_sum_qk_max_pointer(
         self,
     ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
         ...
@@ -784,15 +782,15 @@ struct NoPartition[dtype: DType](
     comptime accum_dtype: DType = Self.dtype
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @always_inline
-    fn num_partitions(self) -> UInt32:
+    def num_partitions(self) -> UInt32:
         return 1
 
     @always_inline
-    fn get_exp_sum_qk_max_pointer(
+    def get_exp_sum_qk_max_pointer(
         self,
     ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
         return UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]()
@@ -807,7 +805,7 @@ struct SplitKPartition[dtype: DType](
     var num_partitions_value: UInt32
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin],
         num_partitions_value: UInt32,
@@ -817,11 +815,11 @@ struct SplitKPartition[dtype: DType](
         self.num_partitions_value = num_partitions_value
 
     @always_inline
-    fn num_partitions(self) -> UInt32:
+    def num_partitions(self) -> UInt32:
         return self.num_partitions_value
 
     @always_inline
-    fn get_exp_sum_qk_max_pointer(
+    def get_exp_sum_qk_max_pointer(
         self,
     ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
         return self.ptr

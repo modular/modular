@@ -35,16 +35,22 @@ from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
-    Layout as LegacyLayout,
+    ComptimeInt,
+    Coord,
+    CoordLike,
+    Idx,
+    IntTuple,
+    LTToTTLayout,
     LayoutTensor,
+    Layout as LegacyLayout,
+    RuntimeInt,
+    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    row_major,
     lt_to_tt,
-    LTToTTLayout,
+    row_major,
 )
 from buffer import Dim, DimList
-from layout.int_tuple import IntTuple
 from layout.coord import _DimsToCoordLike
 from layout.tma_async import (
     SharedMemBarrier,
@@ -53,14 +59,7 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 from std.builtin.variadics import Variadic
-from layout.coord import (
-    ComptimeInt,
-    Coord,
-    CoordLike,
-    Idx,
-    RuntimeInt,
-)
-from layout.tile_layout import Layout, TensorLayout
+from layout.tile_layout import Layout
 from .smem_types import SMemTileArray as LTSMemTileArray
 from std.utils.index import IndexList
 from std.memory import stack_allocation
@@ -262,8 +261,6 @@ Parameters:
     layout: The full layout including swizzle information.
     alignment: Memory alignment (default 128 for shared memory).
 """
-
-from layout.tile_layout import TensorLayout
 
 
 # ============================================================================

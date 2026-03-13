@@ -20,7 +20,7 @@ from std.memory import stack_allocation
 from std.testing import assert_true
 
 
-fn test_mbarrier(
+def test_mbarrier(
     addr0: UnsafePointer[Int8, MutAnyOrigin],
     addr1: UnsafePointer[UInt8, MutAnyOrigin],
     addr2: UnsafePointer[
@@ -44,7 +44,7 @@ fn test_mbarrier(
     async_copy_arrive(addr5)
 
 
-fn _verify_mbarrier(asm: StringSlice) raises -> None:
+def _verify_mbarrier(asm: StringSlice) raises -> None:
     assert_true("cp.async.mbarrier.arrive.b64" in asm)
     assert_true("cp.async.mbarrier.arrive.shared.b64" in asm)
 
@@ -63,7 +63,7 @@ def test_mbarrier_sm90() raises:
     _verify_mbarrier(asm)
 
 
-fn test_mbarrier_init(
+def test_mbarrier_init(
     shared_mem: UnsafePointer[
         Int32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
@@ -71,7 +71,7 @@ fn test_mbarrier_init(
     mbarrier_init(shared_mem, 4)
 
 
-fn _verify_mbarrier_init(asm: StringSlice) raises -> None:
+def _verify_mbarrier_init(asm: StringSlice) raises -> None:
     assert_true("ld.param.b32" in asm)
     assert_true("mov.b32" in asm)
     assert_true("mbarrier.init.shared.b64" in asm)
@@ -92,7 +92,7 @@ def test_mbarrier_init_sm90() raises:
     _verify_mbarrier_init(asm)
 
 
-fn test_mbarrier_test_wait(
+def test_mbarrier_test_wait(
     shared_mem: UnsafePointer[
         Int32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
@@ -103,7 +103,7 @@ fn test_mbarrier_test_wait(
         done = mbarrier_test_wait(shared_mem, state)
 
 
-fn _verify_mbarrier_test_wait(asm: StringSlice) raises -> None:
+def _verify_mbarrier_test_wait(asm: StringSlice) raises -> None:
     assert_true("mbarrier.test_wait.shared.b64" in asm)
 
 
@@ -123,7 +123,7 @@ def test_mbarrier_test_wait_sm90() raises:
     assert_true("mbarrier.test_wait.shared.b64" in asm)
 
 
-fn test_async_copy(
+def test_async_copy(
     src: UnsafePointer[
         Float32, ImmutAnyOrigin, address_space=AddressSpace.GLOBAL
     ]
@@ -135,7 +135,7 @@ fn test_async_copy(
     async_copy[16](src, shared_mem)
 
 
-fn _verify_async_copy(asm: StringSlice) raises -> None:
+def _verify_async_copy(asm: StringSlice) raises -> None:
     assert_true("cp.async.ca.shared.global" in asm)
     assert_true("cp.async.cg.shared.global" in asm)
 
@@ -154,7 +154,7 @@ def test_async_copy_sm90() raises:
     _verify_async_copy(asm)
 
 
-fn test_async_copy_l2_prefetch(
+def test_async_copy_l2_prefetch(
     src: UnsafePointer[
         Float32, ImmutAnyOrigin, address_space=AddressSpace.GLOBAL
     ]
@@ -166,7 +166,7 @@ fn test_async_copy_l2_prefetch(
     async_copy[16, bypass_L1_16B=False, l2_prefetch=64](src, shared_mem)
 
 
-fn _verify_async_copy_l2_prefetch(asm: StringSlice) raises -> None:
+def _verify_async_copy_l2_prefetch(asm: StringSlice) raises -> None:
     assert_true("cp.async.ca.shared.global.L2::128B" in asm)
     assert_true("cp.async.ca.shared.global.L2::64B" in asm)
 
@@ -187,7 +187,7 @@ def test_async_copy_l2_prefetch_sm90() raises:
     _verify_async_copy_l2_prefetch(asm)
 
 
-fn test_async_copy_with_zero_fill_kernel(
+def test_async_copy_with_zero_fill_kernel(
     src: UnsafePointer[
         Float32, ImmutAnyOrigin, address_space=AddressSpace.GLOBAL
     ]
@@ -203,7 +203,7 @@ fn test_async_copy_with_zero_fill_kernel(
     )
 
 
-fn _verify_test_async_copy_with_zero_fill(asm: StringSlice) raises -> None:
+def _verify_test_async_copy_with_zero_fill(asm: StringSlice) raises -> None:
     # Should contain something like:
     #     cp.async.ca.shared.global.L2::128B [%r1], [%rd2], 4, %r2;
     # Regex would be nice here, but alas...
@@ -257,7 +257,7 @@ def test_async_copy_with_zero_fill() raises:
     _verify_test_async_copy_with_zero_fill(asm)
 
 
-fn test_async_copy_with_eviction(
+def test_async_copy_with_eviction(
     src: UnsafePointer[
         Float32, ImmutAnyOrigin, address_space=AddressSpace.GLOBAL
     ]
@@ -271,7 +271,7 @@ fn test_async_copy_with_eviction(
     async_copy[16, eviction_policy=CacheEviction.EVICT_LAST](src, shared_mem)
 
 
-fn async_copy_with_non_zero_fill_kernel(
+def async_copy_with_non_zero_fill_kernel(
     src: UnsafePointer[Int32, ImmutAnyOrigin, address_space=AddressSpace.GLOBAL]
 ):
     var shared_mem = stack_allocation[
@@ -285,7 +285,7 @@ fn async_copy_with_non_zero_fill_kernel(
     )
 
 
-fn _verify_async_copy_with_non_zero_fill(asm: StringSlice) raises -> None:
+def _verify_async_copy_with_non_zero_fill(asm: StringSlice) raises -> None:
     assert_true("mov.b32 	%r3, 32;" in asm)
     assert_true("@p cp.async.ca.shared.global.L2::128B" in asm and "16" in asm)
     assert_true("@p cp.async.ca.shared.global.L2::64B" in asm and "16" in asm)
@@ -300,7 +300,7 @@ def test_async_copy_with_non_zero_fill() raises:
     _verify_async_copy_with_non_zero_fill(asm)
 
 
-fn _verify_async_copy_with_eviction(asm: StringSlice) raises -> None:
+def _verify_async_copy_with_eviction(asm: StringSlice) raises -> None:
     assert_true("createpolicy.fractional.L2::evict_first.b64" in asm)
     assert_true("createpolicy.fractional.L2::evict_last.b64" in asm)
     assert_true("cp.async.ca.shared.global" in asm)

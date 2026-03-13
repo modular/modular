@@ -28,7 +28,7 @@ from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 
-fn test_prefill[
+def test_prefill[
     qkv_type: DType,
     k_rope_type: DType,
     output_type: DType,
@@ -245,7 +245,7 @@ fn test_prefill[
         cache_row_offsets_device,
         output_device,
     )
-    fn kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(ctx: DeviceContext) raises:
         flare_mla_prefill[rank=q.rank](
             output_device,
             q_device,
@@ -461,7 +461,7 @@ fn test_prefill[
     cache_row_offsets.free()
 
 
-fn test_mla_prefill_qkv_fp8[
+def test_mla_prefill_qkv_fp8[
     qkv_type: DType,
     k_rope_type: DType,
     output_type: DType,

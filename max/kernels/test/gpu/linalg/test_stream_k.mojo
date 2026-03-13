@@ -17,9 +17,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu import Semaphore, block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import TileTensor
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.memory import alloc
 from std.testing import assert_almost_equal
@@ -27,7 +25,7 @@ from std.testing import assert_almost_equal
 from std.utils import Index, IndexList
 
 
-fn swizzle_tile(
+def swizzle_tile(
     tile_id: Int,
     M: Int,
     N: Int,
@@ -47,7 +45,7 @@ fn swizzle_tile(
     return IndexList[2](pid_m, pid_n)
 
 
-fn linear_tile(
+def linear_tile(
     tile_id: Int,
     M: Int,
     N: Int,
@@ -61,7 +59,7 @@ fn linear_tile(
     return IndexList[2](pid_m, pid_n)
 
 
-fn mac_loop[
+def mac_loop[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -135,7 +133,7 @@ fn mac_loop[
     sema.release(Int32(start_iter))
 
 
-fn first_wave_kernel[
+def first_wave_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -205,7 +203,7 @@ fn first_wave_kernel[
         start_iter = end_iter
 
 
-fn full_tiles_kernel[
+def full_tiles_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -286,7 +284,7 @@ fn full_tiles_kernel[
 #        +-----------+
 
 
-fn matmul_stream_k[
+def matmul_stream_k[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -426,7 +424,7 @@ fn matmul_stream_k[
     return
 
 
-fn run_matmul_stream_k[
+def run_matmul_stream_k[
     dtype: DType,
     M: Int,
     N: Int,

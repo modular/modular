@@ -59,6 +59,7 @@ from .pipeline_variants.text_generation import TextGenerationPipeline
 from .speculative_decoding import (
     EAGLESpeculativeDecodingPipeline,
     StandaloneSpeculativeDecodingPipeline,
+    UnifiedEAGLEPipeline,
 )
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import TextTokenizer
@@ -104,6 +105,7 @@ def get_pipeline_for_task(
     | type[AudioGeneratorPipeline]
     | type[PixelGenerationPipeline[Any]]
     | type[StandaloneSpeculativeDecodingPipeline]
+    | type[UnifiedEAGLEPipeline]
     | type[SpeechTokenGenerationPipeline]
     | type[EAGLESpeculativeDecodingPipeline]
     | type[OverlapTextGenerationPipeline[TextContext]]
@@ -128,6 +130,13 @@ def get_pipeline_for_task(
                 "Overlap scheduler is not supported with speculative decoding yet."
             )
 
+        # TODO: delete this temporary env var once things are less hacky
+        if os.getenv("MODULAR_USE_UNIFIED_EAGLE_PIPELINE"):
+            logger.warning(
+                "Using highly experimental UnifiedEAGLEPipeline. We really don't recommend using this."
+            )
+            return UnifiedEAGLEPipeline
+
         if pipeline_config.speculative.is_standalone():
             return StandaloneSpeculativeDecodingPipeline
         elif (
@@ -138,15 +147,18 @@ def get_pipeline_for_task(
         else:
             raise ValueError(f"Unsupported speculative method: {spec_method}")
     elif pipeline_config.runtime.enable_overlap_scheduler:
-        role = pipeline_config.runtime.pipeline_role
-        if (
-            task == PipelineTask.TEXT_GENERATION
-            and role == "prefill_and_decode"
-        ):
+        if task == PipelineTask.TEXT_GENERATION:
+            # TODO: Enable overlap pipeline for prefill_only workers
+            # once the prefill overlap pipeline is implemented.
+            if pipeline_config.runtime.pipeline_role == "prefill_only":
+                raise ValueError(
+                    "Overlap scheduling is not yet supported for "
+                    "prefill_only workers (WIP)."
+                )
             return OverlapTextGenerationPipeline[TextContext]
         raise ValueError(
-            "Overlap scheduler is only supported for TEXT_GENERATION task "
-            f"and PrefillAndDecode pipeline role, got {task} and {role}"
+            f"Overlap scheduler requires the TEXT_GENERATION pipeline task, "
+            f"got task={task}."
         )
     elif task == PipelineTask.TEXT_GENERATION:
         return TextGenerationPipeline[TextContext]

@@ -205,12 +205,12 @@ struct StandardTilePayload[
     var b_tiles: Self.BTileArray
 
     @always_inline
-    fn __init__(out self, a_tiles: Self.ATileArray, b_tiles: Self.BTileArray):
+    def __init__(out self, a_tiles: Self.ATileArray, b_tiles: Self.BTileArray):
         self.a_tiles = a_tiles
         self.b_tiles = b_tiles
 
     @always_inline
-    fn get_tile[
+    def get_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Tuple[Self.ATile, Self.BTile]:
         """Get A and B tiles at the specified stage and k-group index."""
@@ -218,14 +218,14 @@ struct StandardTilePayload[
         return (self.a_tiles[idx], self.b_tiles[idx])
 
     @always_inline
-    fn get_a_tile[
+    def get_a_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.ATile:
         """Get A tile at the specified stage and k-group index."""
         return self.a_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
-    fn get_b_tile[
+    def get_b_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified stage and k-group index."""
@@ -291,7 +291,7 @@ struct BlockScaledTilePayload[
     var sfb_tiles: Self.SFBTileArray
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         a_tiles: Self.ATileArray,
         b_tiles: Self.BTileArray,
@@ -304,7 +304,7 @@ struct BlockScaledTilePayload[
         self.sfb_tiles = sfb_tiles
 
     @always_inline
-    fn get_tile[
+    def get_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Tuple[
         Self.ATile, Self.BTile, Self.SFATile, Self.SFBTile
@@ -319,28 +319,28 @@ struct BlockScaledTilePayload[
         )
 
     @always_inline
-    fn get_a_tile[
+    def get_a_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.ATile:
         """Get A tile at the specified stage and k-group index."""
         return self.a_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
-    fn get_b_tile[
+    def get_b_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified stage and k-group index."""
         return self.b_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
-    fn get_sfa_tile[
+    def get_sfa_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.SFATile:
         """Get SFA tile at the specified stage and k-group index."""
         return self.sfa_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
-    fn get_sfb_tile[
+    def get_sfb_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.SFBTile:
         """Get SFB tile at the specified stage and k-group index."""
@@ -393,7 +393,7 @@ struct BlockwiseFP8TilePayload[
     var a_scales_tiles: Self.AScalesTileArray
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         a_tiles: Self.ATileArray,
         b_tiles: Self.BTileArray,
@@ -404,7 +404,7 @@ struct BlockwiseFP8TilePayload[
         self.a_scales_tiles = a_scales_tiles
 
     @always_inline
-    fn get_tile[
+    def get_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Tuple[
         Self.ATile, Self.BTile, Self.AScalesTile
@@ -418,21 +418,21 @@ struct BlockwiseFP8TilePayload[
         )
 
     @always_inline
-    fn get_a_tile[
+    def get_a_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.ATile:
         """Get A tile at the specified stage and k-group index."""
         return self.a_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
-    fn get_b_tile[
+    def get_b_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified stage and k-group index."""
         return self.b_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
-    fn get_a_scales_tile[
+    def get_a_scales_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.AScalesTile:
         """Get A-scales tile at the specified stage and k-group index."""
@@ -465,7 +465,7 @@ struct InputTilePipeline[
 
     @staticmethod
     @always_inline
-    fn init_barriers(
+    def init_barriers(
         storage_ptr: MbarPtr,
         producer_arv_count: Int32,
         consumer_arv_count: Int32,
@@ -475,32 +475,32 @@ struct InputTilePipeline[
         pipeline.init_mbars(producer_arv_count, consumer_arv_count)
 
     @always_inline
-    fn __init__(out self, barriers: Self.BarrierArray, payload: Self.Payload):
+    def __init__(out self, barriers: Self.BarrierArray, payload: Self.Payload):
         """Initialize from typed barrier array and payload."""
         self.pipeline = Self.Pipeline(barriers.ptr)
         self.payload = payload
 
     @always_inline
-    fn _acquire_producer(mut self) -> Tuple[UInt32, MbarPtr]:
+    def _acquire_producer(mut self) -> Tuple[UInt32, MbarPtr]:
         """Wait for slot availability and return (stage, barrier)."""
         self.pipeline.wait_consumer()
         var stage = self.pipeline.producer_stage()
         return (stage, self.pipeline.producer_mbar(stage))
 
     @always_inline
-    fn _release_producer(mut self):
+    def _release_producer(mut self):
         """Signal completion and advance producer stage."""
         self.pipeline.producer_step()
 
     @always_inline
-    fn _acquire_consumer(mut self) -> Tuple[UInt32, MbarPtr]:
+    def _acquire_consumer(mut self) -> Tuple[UInt32, MbarPtr]:
         """Wait for data availability and return (stage, barrier)."""
         self.pipeline.wait_producer()
         var stage = self.pipeline.consumer_stage()
         return (stage, self.pipeline.consumer_mbar(stage))
 
     @always_inline
-    fn _release_consumer(mut self):
+    def _release_consumer(mut self):
         """Signal completion and advance consumer stage."""
         self.pipeline.consumer_step()
 
@@ -508,7 +508,7 @@ struct InputTilePipeline[
     # These enable overlapping barrier checks with useful work.
 
     @always_inline
-    fn try_acquire_producer(self) -> Bool:
+    def try_acquire_producer(self) -> Bool:
         """Non-blocking check if next producer stage is available.
 
         Returns:
@@ -526,7 +526,7 @@ struct InputTilePipeline[
         return self.pipeline.try_wait_consumer()
 
     @always_inline
-    fn try_acquire_consumer(self) -> Bool:
+    def try_acquire_consumer(self) -> Bool:
         """Non-blocking check if next consumer stage has data.
 
         Returns:
@@ -544,7 +544,7 @@ struct InputTilePipeline[
         return self.pipeline.try_wait_producer()
 
     @always_inline
-    fn wait_producer_if_needed(self, already_ready: Bool):
+    def wait_producer_if_needed(self, already_ready: Bool):
         """Conditionally wait for producer stage if not already ready.
 
         Args:
@@ -553,7 +553,7 @@ struct InputTilePipeline[
         self.pipeline.wait_producer_if_needed(already_ready)
 
     @always_inline
-    fn wait_consumer_if_needed(self, already_ready: Bool):
+    def wait_consumer_if_needed(self, already_ready: Bool):
         """Conditionally wait for consumer to free stage if not already ready.
 
         Args:
@@ -562,23 +562,23 @@ struct InputTilePipeline[
         self.pipeline.wait_consumer_if_needed(already_ready)
 
     @always_inline
-    fn producer_stage(self) -> UInt32:
+    def producer_stage(self) -> UInt32:
         return self.pipeline.producer_stage()
 
     @always_inline
-    fn consumer_stage(self) -> UInt32:
+    def consumer_stage(self) -> UInt32:
         return self.pipeline.consumer_stage()
 
     @always_inline
-    fn producer_mbar(self, stage: UInt32) -> MbarPtr:
+    def producer_mbar(self, stage: UInt32) -> MbarPtr:
         return self.pipeline.producer_mbar(stage)
 
     @always_inline
-    fn consumer_mbar(self, stage: UInt32) -> MbarPtr:
+    def consumer_mbar(self, stage: UInt32) -> MbarPtr:
         return self.pipeline.consumer_mbar(stage)
 
     @always_inline
-    fn producer[
+    def producer[
         mut_origin: MutOrigin
     ](ref[mut_origin] self) -> InputProducer[
         mut_origin, Self.Payload, Self.num_group_stages, Self.k_group_size
@@ -587,7 +587,7 @@ struct InputTilePipeline[
         return InputProducer(pipeline_ptr=Pointer(to=self))
 
     @always_inline
-    fn consumer[
+    def consumer[
         mut_origin: MutOrigin
     ](ref[mut_origin] self) -> InputConsumer[
         mut_origin, Self.Payload, Self.num_group_stages, Self.k_group_size
@@ -600,7 +600,7 @@ struct InputTilePipeline[
     # =========================================================================
 
     @always_inline
-    fn acquire_producer[
+    def acquire_producer[
         mut_origin: MutOrigin
     ](ref[mut_origin] self) -> InputProducerStage[
         mut_origin, Self.Payload, Self.num_group_stages, Self.k_group_size
@@ -624,7 +624,7 @@ struct InputTilePipeline[
         )
 
     @always_inline
-    fn acquire_consumer[
+    def acquire_consumer[
         mut_origin: MutOrigin
     ](ref[mut_origin] self) -> InputConsumerStage[
         mut_origin, Self.Payload, Self.num_group_stages, Self.k_group_size
@@ -648,7 +648,7 @@ struct InputTilePipeline[
         )
 
     @always_inline
-    fn drain_producer(mut self):
+    def drain_producer(mut self):
         """Drain pipeline to prevent CTA exit while peer is still working.
 
         Call this after all producer iterations are complete.
@@ -715,7 +715,7 @@ struct InputProducerStage[
     var _barrier: MbarPtr
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pipeline_ptr: Pointer[Self.PipelineType, Self.origin],
         stage: UInt32,
@@ -726,27 +726,27 @@ struct InputProducerStage[
         self._barrier = barrier
 
     @always_inline
-    fn payload(self) -> Self.Payload:
+    def payload(self) -> Self.Payload:
         """Get the tile payload for direct access."""
         return self.pipeline_ptr[].payload
 
     @always_inline
-    fn stage(self) -> UInt32:
+    def stage(self) -> UInt32:
         """Get the current stage index."""
         return self._stage
 
     @always_inline
-    fn expect_bytes(self, num_bytes: Int):
+    def expect_bytes(self, num_bytes: Int):
         """Set expected bytes on the barrier for TMA loads."""
         self._barrier[0].expect_bytes(Int32(num_bytes))
 
     @always_inline
-    fn barrier(self) -> MbarPtr:
+    def barrier(self) -> MbarPtr:
         """Get the barrier pointer for TMA multicast loads."""
         return self._barrier
 
     @always_inline
-    fn release(deinit self):
+    def release(deinit self):
         """Advance producer to next stage.
 
         This is the only way to destroy this linear type.
@@ -789,7 +789,7 @@ struct ProducerTiles[
     var _barrier: MbarPtr
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pipeline_ptr: Pointer[Self.PipelineType, Self.origin],
         stage: UInt32,
@@ -800,31 +800,31 @@ struct ProducerTiles[
         self._barrier = barrier
 
     @always_inline
-    fn payload(self) -> Self.Payload:
+    def payload(self) -> Self.Payload:
         """Get the tile payload for direct access."""
         return self.pipeline_ptr[].payload
 
     @always_inline
-    fn stage(self) -> UInt32:
+    def stage(self) -> UInt32:
         """Get the current stage index."""
         return self._stage
 
     @always_inline
-    fn expect_bytes(self, num_bytes: Int):
+    def expect_bytes(self, num_bytes: Int):
         """Set expected bytes on the barrier for TMA loads."""
         self._barrier[0].expect_bytes(Int32(num_bytes))
 
     @always_inline
-    fn barrier(self) -> MbarPtr:
+    def barrier(self) -> MbarPtr:
         """Get the barrier pointer for TMA multicast loads."""
         return self._barrier
 
     @always_inline
-    fn __enter__(self) -> Self:
+    def __enter__(self) -> Self:
         return self
 
     @always_inline
-    fn __exit__(self):
+    def __exit__(self):
         """Release the producer (advances to next stage)."""
         self.pipeline_ptr[]._release_producer()
 
@@ -865,7 +865,7 @@ struct InputConsumerStage[
     var _mbar: MbarPtr
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pipeline_ptr: Pointer[Self.PipelineType, Self.origin],
         stage: UInt32,
@@ -876,22 +876,22 @@ struct InputConsumerStage[
         self._mbar = mbar
 
     @always_inline
-    fn payload(self) -> Self.Payload:
+    def payload(self) -> Self.Payload:
         """Get the tile payload for direct access."""
         return self.pipeline_ptr[].payload
 
     @always_inline
-    fn stage(self) -> UInt32:
+    def stage(self) -> UInt32:
         """Get the current stage index."""
         return self._stage
 
     @always_inline
-    fn mbar(self) -> MbarPtr:
+    def mbar(self) -> MbarPtr:
         """Get the barrier pointer."""
         return self._mbar
 
     @always_inline
-    fn release(deinit self):
+    def release(deinit self):
         """Signal consumption and advance to next stage.
 
         This is the only way to destroy this linear type.
@@ -933,7 +933,7 @@ struct ConsumerTiles[
     var _mbar: MbarPtr
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pipeline_ptr: Pointer[Self.PipelineType, Self.origin],
         stage: UInt32,
@@ -944,26 +944,26 @@ struct ConsumerTiles[
         self._mbar = mbar
 
     @always_inline
-    fn payload(self) -> Self.Payload:
+    def payload(self) -> Self.Payload:
         """Get the tile payload for direct access."""
         return self.pipeline_ptr[].payload
 
     @always_inline
-    fn stage(self) -> UInt32:
+    def stage(self) -> UInt32:
         """Get the current stage index."""
         return self._stage
 
     @always_inline
-    fn mbar(self) -> MbarPtr:
+    def mbar(self) -> MbarPtr:
         """Get the barrier pointer."""
         return self._mbar
 
     @always_inline
-    fn __enter__(self) -> Self:
+    def __enter__(self) -> Self:
         return self
 
     @always_inline
-    fn __exit__(self):
+    def __exit__(self):
         """Release the consumer (signals and advances to next stage)."""
         self.pipeline_ptr[]._release_consumer()
 
@@ -989,15 +989,15 @@ struct InputProducer[
     var pipeline_ptr: Pointer[Self.PipelineType, Self.origin]
 
     @always_inline
-    fn __enter__(mut self) -> Self:
+    def __enter__(mut self) -> Self:
         return self
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         pass
 
     @always_inline
-    fn drain(mut self):
+    def drain(mut self):
         """Drain pipeline to prevent CTA exit while peer is still working."""
 
         comptime for _ in range(Self.num_group_stages):
@@ -1005,7 +1005,7 @@ struct InputProducer[
             self.pipeline_ptr[].pipeline.producer_step()
 
     @always_inline
-    fn acquire(
+    def acquire(
         mut self,
     ) -> ProducerTiles[
         Self.origin, Self.Payload, Self.num_group_stages, Self.k_group_size
@@ -1022,7 +1022,7 @@ struct InputProducer[
         )
 
     @always_inline
-    fn acquire_stage(
+    def acquire_stage(
         mut self,
     ) -> InputProducerStage[
         Self.origin, Self.Payload, Self.num_group_stages, Self.k_group_size
@@ -1040,7 +1040,7 @@ struct InputProducer[
         )
 
     @always_inline
-    fn try_acquire(mut self) -> Bool:
+    def try_acquire(mut self) -> Bool:
         """Non-blocking check if next producer stage is available.
 
         Returns:
@@ -1057,7 +1057,7 @@ struct InputProducer[
         return self.pipeline_ptr[].try_acquire_producer()
 
     @always_inline
-    fn acquire_if_needed(
+    def acquire_if_needed(
         mut self, already_ready: Bool
     ) -> ProducerTiles[
         Self.origin, Self.Payload, Self.num_group_stages, Self.k_group_size
@@ -1096,15 +1096,15 @@ struct InputConsumer[
     var pipeline_ptr: Pointer[Self.PipelineType, Self.origin]
 
     @always_inline
-    fn __enter__(mut self) -> Self:
+    def __enter__(mut self) -> Self:
         return self
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         pass
 
     @always_inline
-    fn acquire(
+    def acquire(
         mut self,
     ) -> ConsumerTiles[
         Self.origin, Self.Payload, Self.num_group_stages, Self.k_group_size
@@ -1119,7 +1119,7 @@ struct InputConsumer[
         )
 
     @always_inline
-    fn acquire_stage(
+    def acquire_stage(
         mut self,
     ) -> InputConsumerStage[
         Self.origin, Self.Payload, Self.num_group_stages, Self.k_group_size
@@ -1135,7 +1135,7 @@ struct InputConsumer[
         )
 
     @always_inline
-    fn try_acquire(mut self) -> Bool:
+    def try_acquire(mut self) -> Bool:
         """Non-blocking check if next consumer stage has data.
 
         Returns:
@@ -1152,7 +1152,7 @@ struct InputConsumer[
         return self.pipeline_ptr[].try_acquire_consumer()
 
     @always_inline
-    fn acquire_if_needed(
+    def acquire_if_needed(
         mut self, already_ready: Bool
     ) -> ConsumerTiles[
         Self.origin, Self.Payload, Self.num_group_stages, Self.k_group_size
@@ -1190,7 +1190,7 @@ struct OutputStage[
     var pipeline: Self.Pipeline
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         index: UInt32,
         tmem: Self.Tmem,
@@ -1202,7 +1202,7 @@ struct OutputStage[
 
     @staticmethod
     @always_inline
-    fn from_raw(
+    def from_raw(
         pipeline: Self.Pipeline,
         stage_index: UInt32,
         tmem_offset: UInt32,
@@ -1243,7 +1243,7 @@ struct OutputTilePipeline[
 
     @staticmethod
     @always_inline
-    fn init_barriers(
+    def init_barriers(
         storage_ptr: MbarPtr,
         producer_arv_count: Int32,
         consumer_arv_count: Int32,
@@ -1253,7 +1253,7 @@ struct OutputTilePipeline[
         pipeline.init_mbars(producer_arv_count, consumer_arv_count)
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         barriers_ptr: MbarPtr,
         tmem: Self.Tmem,
@@ -1266,7 +1266,7 @@ struct OutputTilePipeline[
         self.mma_complete_mask = mma_complete_mask
 
     @always_inline
-    fn acquire_for_mma(self) -> Self.Stage:
+    def acquire_for_mma(self) -> Self.Stage:
         """Acquire stage for MMA, waiting for epilogue to finish."""
         var idx = self.pipeline.producer_stage()
         self.pipeline.wait_consumer()
@@ -1274,7 +1274,7 @@ struct OutputTilePipeline[
         return Self.Stage(idx, tmem, self.pipeline)
 
     @always_inline
-    fn release_from_mma(mut self, stage: Self.Stage):
+    def release_from_mma(mut self, stage: Self.Stage):
         """Signal MMA completion using mma_arrive (1-SM) or multicast (2-SM)."""
         from std.gpu.primitives.cluster import elect_one_sync
         from std.gpu.compute.arch.mma_nvidia_sm100 import (
@@ -1295,7 +1295,7 @@ struct OutputTilePipeline[
         self.pipeline.producer_step()
 
     @always_inline
-    fn acquire_for_epilogue(self) -> Self.Stage:
+    def acquire_for_epilogue(self) -> Self.Stage:
         """Acquire stage for epilogue, waiting for MMA to complete."""
         var idx = self.pipeline.consumer_stage()
         self.pipeline.wait_producer()
@@ -1303,19 +1303,19 @@ struct OutputTilePipeline[
         return Self.Stage(idx, tmem, self.pipeline)
 
     @always_inline
-    fn release_from_epilogue(mut self):
+    def release_from_epilogue(mut self):
         """Signal epilogue completion, freeing stage for MMA reuse."""
         self.pipeline.consumer_step()
 
     @always_inline
-    fn producer[
+    def producer[
         origin: MutOrigin, //
     ](ref[origin] self) -> OutputProducer[origin, Self.opc]:
         """Get producer view for MMA warp."""
         return OutputProducer(Pointer(to=self))
 
     @always_inline
-    fn consumer[
+    def consumer[
         origin: MutOrigin, //
     ](ref[origin] self) -> OutputConsumer[origin, Self.opc]:
         """Get consumer view for epilogue warp."""
@@ -1326,7 +1326,7 @@ struct OutputTilePipeline[
     # =========================================================================
 
     @always_inline
-    fn acquire_mma_linear[
+    def acquire_mma_linear[
         origin: MutOrigin, //
     ](ref[origin] self) -> MmaStage[origin, Self.opc]:
         """Acquire a stage for MMA using linear types.
@@ -1347,7 +1347,7 @@ struct OutputTilePipeline[
         return MmaStage(Pointer(to=self), stage)
 
     @always_inline
-    fn acquire_epilogue_linear[
+    def acquire_epilogue_linear[
         origin: MutOrigin, //
     ](ref[origin] self) -> EpilogueStage[origin, Self.opc]:
         """Acquire a stage for epilogue using linear types.
@@ -1367,12 +1367,12 @@ struct OutputTilePipeline[
         return EpilogueStage(Pointer(to=self), stage)
 
     @always_inline
-    fn get_pipeline(self) -> Self.Pipeline:
+    def get_pipeline(self) -> Self.Pipeline:
         """Get underlying pipeline (used during barrier initialization)."""
         return self.pipeline
 
     @always_inline
-    fn per_k[
+    def per_k[
         origin: MutOrigin, //
     ](ref[origin] self) -> OutputKPipeline[origin, Self.opc]:
         """Get per-K-iteration view for kernels with per-K signaling.
@@ -1388,7 +1388,7 @@ struct OutputTilePipeline[
         return OutputKPipeline(Pointer(to=self))
 
     @always_inline
-    fn per_k_epilogue[
+    def per_k_epilogue[
         output_origin: MutOrigin,
         input_origin: MutOrigin,
         num_input_stages: Int,
@@ -1438,7 +1438,7 @@ struct OutputProducer[
     var stage: Self.Stage
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self, pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin]
     ):
         self.pipeline_ptr = pipeline_ptr
@@ -1451,12 +1451,12 @@ struct OutputProducer[
         )
 
     @always_inline
-    fn __enter__(mut self) -> Self.Stage:
+    def __enter__(mut self) -> Self.Stage:
         self.stage = self.pipeline_ptr[].acquire_for_mma()
         return self.stage
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         self.pipeline_ptr[].release_from_mma(self.stage)
 
 
@@ -1472,17 +1472,17 @@ struct OutputConsumer[
     var pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self, pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin]
     ):
         self.pipeline_ptr = pipeline_ptr
 
     @always_inline
-    fn __enter__(mut self) -> Self.Stage:
+    def __enter__(mut self) -> Self.Stage:
         return self.pipeline_ptr[].acquire_for_epilogue()
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         self.pipeline_ptr[].release_from_epilogue()
 
 
@@ -1529,7 +1529,7 @@ struct MmaStage[
     var _stage: Self.Stage
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin],
         stage: Self.Stage,
@@ -1538,27 +1538,27 @@ struct MmaStage[
         self._stage = stage
 
     @always_inline
-    fn tmem(self) -> Self.Stage.Tmem:
+    def tmem(self) -> Self.Stage.Tmem:
         """Get the TMEM stage handle."""
         return self._stage.tmem
 
     @always_inline
-    fn tmem_offset(self) -> Int:
+    def tmem_offset(self) -> Int:
         """Get the TMEM offset for MMA accumulator."""
         return self._stage.tmem.offset()
 
     @always_inline
-    fn index(self) -> UInt32:
+    def index(self) -> UInt32:
         """Get the current stage index."""
         return self._stage.index
 
     @always_inline
-    fn mbar(self) -> MbarPtr:
+    def mbar(self) -> MbarPtr:
         """Get the producer barrier for MMA commit."""
         return self.pipeline_ptr[].pipeline.producer_mbar(self._stage.index)
 
     @always_inline
-    fn release(deinit self):
+    def release(deinit self):
         """Signal MMA completion and advance to next stage.
 
         This is the only way to destroy this linear type.
@@ -1593,7 +1593,7 @@ struct EpilogueStage[
     var _stage: Self.Stage
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin],
         stage: Self.Stage,
@@ -1602,22 +1602,22 @@ struct EpilogueStage[
         self._stage = stage
 
     @always_inline
-    fn tmem(self) -> Self.Stage.Tmem:
+    def tmem(self) -> Self.Stage.Tmem:
         """Get the TMEM stage handle."""
         return self._stage.tmem
 
     @always_inline
-    fn tmem_offset(self) -> Int:
+    def tmem_offset(self) -> Int:
         """Get the TMEM offset for reading MMA results."""
         return self._stage.tmem.offset()
 
     @always_inline
-    fn index(self) -> UInt32:
+    def index(self) -> UInt32:
         """Get the current stage index."""
         return self._stage.index
 
     @always_inline
-    fn release(deinit self):
+    def release(deinit self):
         """Free stage for MMA reuse and advance to next stage.
 
         This is the only way to destroy this linear type.
@@ -1660,13 +1660,13 @@ struct OutputKPipeline[
     var pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self, pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin]
     ):
         self.pipeline_ptr = pipeline_ptr
 
     @always_inline
-    fn produce(
+    def produce(
         self,
     ) -> MmaKStage[Self.origin, Self.opc]:
         """Get MMA stage context manager for one K iteration.
@@ -1678,7 +1678,7 @@ struct OutputKPipeline[
         return MmaKStage(self.pipeline_ptr)
 
     @always_inline
-    fn consume(
+    def consume(
         self,
     ) -> PerKConsumerStage[Self.origin, Self.opc]:
         """Get consumer context manager for one K iteration.
@@ -1709,7 +1709,7 @@ struct MmaKStage[
     var stage: Self.Stage
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self, pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin]
     ):
         self.pipeline_ptr = pipeline_ptr
@@ -1722,12 +1722,12 @@ struct MmaKStage[
         )
 
     @always_inline
-    fn __enter__(mut self) -> Self.Stage:
+    def __enter__(mut self) -> Self.Stage:
         self.stage = self.pipeline_ptr[].acquire_for_mma()
         return self.stage
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         self.pipeline_ptr[].release_from_mma(self.stage)
 
 
@@ -1755,7 +1755,7 @@ struct PerKConsumerStage[
     var stage: Self.Stage
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self, pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin]
     ):
         self.pipeline_ptr = pipeline_ptr
@@ -1768,12 +1768,12 @@ struct PerKConsumerStage[
         )
 
     @always_inline
-    fn __enter__(mut self) -> Self.Stage:
+    def __enter__(mut self) -> Self.Stage:
         self.stage = self.pipeline_ptr[].acquire_for_epilogue()
         return self.stage
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         # Signal the consumer barrier to tell MMA we're done with this stage.
         # This is critical for per-K synchronization - MMA waits on this
         # barrier before each K iteration.
@@ -1816,7 +1816,7 @@ struct EpilogueKStage[
     var input_pipeline: Self.InputPipelineType
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         output_stage: Self.OutputStageType,
         input_stage_index: UInt32,
@@ -1827,7 +1827,7 @@ struct EpilogueKStage[
         self.input_pipeline = input_pipeline
 
     @always_inline
-    fn arrive_input(self):
+    def arrive_input(self):
         """Arrive on the input pipeline's consumer barrier.
 
         Use with lane-guarded patterns:
@@ -1881,7 +1881,7 @@ struct EpilogueKContext[
     var input_stage_index: UInt32
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         output_pipeline_ptr: Pointer[Self.OutputPipelineType, Self.origin],
         input_pipeline_ptr: Pointer[Self.InputPipelineType, Self.input_origin],
@@ -1898,7 +1898,7 @@ struct EpilogueKContext[
         )
 
     @always_inline
-    fn __enter__(mut self) -> Self.CombinedStageType:
+    def __enter__(mut self) -> Self.CombinedStageType:
         self.output_stage = self.output_pipeline_ptr[].acquire_for_epilogue()
         self.input_stage_index = self.input_pipeline_ptr[].consumer_stage()
         return Self.CombinedStageType(
@@ -1906,7 +1906,7 @@ struct EpilogueKContext[
         )
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         # Signal input pipeline consumer_step (for A-scales consumption)
         self.input_pipeline_ptr[].consumer_step()
 

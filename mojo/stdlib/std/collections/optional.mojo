@@ -56,7 +56,7 @@ struct EmptyOptionalError[T: AnyType](
         T: The type of the value that was accessed in the `Optional`.
     """
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write the error to a `Writer`.
 
         Args:
@@ -66,7 +66,7 @@ struct EmptyOptionalError[T: AnyType](
             TypeNames[Self.T]()
         ).fields()
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write the error to a `Writer`.
 
         Args:
@@ -100,9 +100,6 @@ struct Optional[T: Movable](
     Optional values can be thought of as a type-safe nullable pattern.
     Your value can take on a value or `None`, and you need to check
     and explicitly extract the value to get it out.
-
-    Currently T is required to be a `Copyable` so we can implement
-    copy/move for Optional and allow it to be used in collections itself.
 
     ## Layout
 
@@ -153,7 +150,7 @@ struct Optional[T: Movable](
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__(out self):
+    def __init__(out self):
         """Construct an empty `Optional`.
 
         Examples:
@@ -166,7 +163,7 @@ struct Optional[T: Movable](
         self._value = Self._type(_NoneType())
 
     @implicit
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         """Construct an `Optional` containing a value.
 
         Args:
@@ -186,7 +183,7 @@ struct Optional[T: Movable](
     #   only the initializer from a `NoneType`.
     @doc_private
     @implicit
-    fn __init__(out self, value: NoneType._mlir_type):
+    def __init__(out self, value: NoneType._mlir_type):
         """Construct an empty `Optional`.
 
         Args:
@@ -202,7 +199,7 @@ struct Optional[T: Movable](
         self = Self(value=NoneType(value))
 
     @implicit
-    fn __init__(out self, value: NoneType):
+    def __init__(out self, value: NoneType):
         """Construct an empty `Optional`.
 
         Args:
@@ -221,7 +218,7 @@ struct Optional[T: Movable](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __is__(self, other: NoneType) -> Bool:
+    def __is__(self, other: NoneType) -> Bool:
         """Return `True` if the Optional has no value.
 
         Args:
@@ -236,7 +233,7 @@ struct Optional[T: Movable](
         """
         return not self.__bool__()
 
-    fn __isnot__(self, other: NoneType) -> Bool:
+    def __isnot__(self, other: NoneType) -> Bool:
         """Return `True` if the Optional has a value.
 
         Args:
@@ -251,7 +248,7 @@ struct Optional[T: Movable](
         """
         return self.__bool__()
 
-    fn __eq__(self, rhs: NoneType) -> Bool:
+    def __eq__(self, rhs: NoneType) -> Bool:
         """Return `True` if a value is not present.
 
         Args:
@@ -262,7 +259,7 @@ struct Optional[T: Movable](
         """
         return self is None
 
-    fn __eq__[
+    def __eq__[
         _T: Equatable & Copyable
     ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
         """Return `True` if this is the same as another `Optional` value,
@@ -285,7 +282,7 @@ struct Optional[T: Movable](
             return False
         return not rhs
 
-    fn __ne__(self, rhs: NoneType) -> Bool:
+    def __ne__(self, rhs: NoneType) -> Bool:
         """Return `True` if a value is present.
 
         Args:
@@ -296,7 +293,7 @@ struct Optional[T: Movable](
         """
         return self is not None
 
-    fn __ne__[
+    def __ne__[
         _T: Equatable & Copyable, //
     ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
         """Return `False` if this is the same as another `Optional` value,
@@ -319,7 +316,7 @@ struct Optional[T: Movable](
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the Optional's possibly contained value.
 
         Optionals act as a collection of size 0 or 1.
@@ -344,7 +341,7 @@ struct Optional[T: Movable](
         return self.copy()
 
     @always_inline
-    fn __next__(mut self) raises StopIteration -> Self.Element:
+    def __next__(mut self) raises StopIteration -> Self.Element:
         """Return the contained value of the Optional.
 
         Returns:
@@ -358,7 +355,7 @@ struct Optional[T: Movable](
         return self.take()
 
     @always_inline
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         """Return the bounds of the `Optional`, which is 0 or 1.
 
         Returns:
@@ -367,7 +364,7 @@ struct Optional[T: Movable](
         Examples:
 
         ```mojo
-        fn bounds():
+        def bounds():
             empty_instance = Optional[Int]()
             populated_instance = Optional[Int](50)
 
@@ -383,7 +380,7 @@ struct Optional[T: Movable](
         return (len, {len})
 
     @always_inline
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Return true if the Optional has a value.
 
         Returns:
@@ -392,7 +389,7 @@ struct Optional[T: Movable](
         return not self._value.isa[_NoneType]()
 
     @always_inline
-    fn __invert__(self) -> Bool:
+    def __invert__(self) -> Bool:
         """Return False if the `Optional` has a value.
 
         Returns:
@@ -401,7 +398,7 @@ struct Optional[T: Movable](
         return not self
 
     @always_inline
-    fn __getitem__(
+    def __getitem__(
         ref self,
     ) raises EmptyOptionalError[Self.T] -> ref[self._value] Self.T:
         """Retrieve a reference to the value inside the `Optional`.
@@ -417,7 +414,7 @@ struct Optional[T: Movable](
         return self.unsafe_value()
 
     @always_inline("nodebug")
-    fn __merge_with__[
+    def __merge_with__[
         other_type: type_of(Bool),
     ](self) -> Bool:
         """Merge with other bools in an expression.
@@ -430,7 +427,7 @@ struct Optional[T: Movable](
         """
         return self.__bool__()
 
-    fn _write_to[
+    def _write_to[
         *, is_repr: Bool
     ](self: Self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         if self:
@@ -441,7 +438,7 @@ struct Optional[T: Movable](
         else:
             writer.write_string("None")
 
-    fn write_to(
+    def write_to(
         self: Self, mut writer: Some[Writer]
     ) where conforms_to(Self.T, Writable):
         """Write this `Optional` to a `Writer`.
@@ -451,7 +448,7 @@ struct Optional[T: Movable](
         """
         self._write_to[is_repr=False](writer)
 
-    fn write_repr_to(
+    def write_repr_to(
         self: Self, mut writer: Some[Writer]
     ) where conforms_to(Self.T, Writable):
         """Write this `Optional`'s representation to a `Writer`.
@@ -461,7 +458,7 @@ struct Optional[T: Movable](
         """
 
         @parameter
-        fn fields(mut w: Some[Writer]):
+        def fields(mut w: Some[Writer]):
             self._write_to[is_repr=True](w)
 
         FormatStruct(writer, "Optional").params(TypeNames[Self.T]()).fields[
@@ -473,7 +470,7 @@ struct Optional[T: Movable](
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn value(ref self) -> ref[self._value] Self.T:
+    def value(ref self) -> ref[self._value] Self.T:
         """Retrieve a reference to the value of the `Optional`.
 
         Returns:
@@ -503,7 +500,7 @@ struct Optional[T: Movable](
         return self.unsafe_value()
 
     @always_inline
-    fn unsafe_value(ref self) -> ref[self._value] Self.T:
+    def unsafe_value(ref self) -> ref[self._value] Self.T:
         """Unsafely retrieve a reference to the value of the `Optional`.
 
         Returns:
@@ -533,7 +530,7 @@ struct Optional[T: Movable](
         assert self.__bool__(), "`.value()` on empty `Optional`"
         return self._value.unsafe_get[Self.T]()
 
-    fn take(mut self) -> Self.T:
+    def take(mut self) -> Self.T:
         """Move the value out of the `Optional`.
 
         Returns:
@@ -573,7 +570,7 @@ struct Optional[T: Movable](
             )
         return self.unsafe_take()
 
-    fn unsafe_take(mut self) -> Self.T:
+    def unsafe_take(mut self) -> Self.T:
         """Unsafely move the value out of the `Optional`.
 
         Returns:
@@ -607,7 +604,7 @@ struct Optional[T: Movable](
         assert self.__bool__(), "`.unsafe_take()` on empty `Optional`"
         return self._value.unsafe_replace[_NoneType, Self.T](_NoneType())
 
-    fn or_else[
+    def or_else[
         _T: Movable & ImplicitlyDestructible, //
     ](deinit self: Optional[_T], var default: _T) -> _T:
         """Return the underlying value contained in the `Optional` or a default
@@ -638,7 +635,7 @@ struct Optional[T: Movable](
             return self._value^.unsafe_take[_T]()
         return default^
 
-    fn copied[
+    def copied[
         mut: Bool,
         origin: Origin[mut=mut],
         //,
@@ -701,11 +698,11 @@ struct OptionalReg[T: __TypeOfAllTypes](
     comptime device_type: AnyType = Self
     """The device-side type for this optional register."""
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """Get the human-readable type name for this `OptionalReg` type.
 
         Returns:
@@ -718,13 +715,13 @@ struct OptionalReg[T: __TypeOfAllTypes](
     # ===-------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __init__(out self):
+    def __init__(out self):
         """Create an optional with a value of None."""
         self = Self(None)
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: Self.T):
+    def __init__(out self, value: Self.T):
         """Create an optional with a value.
 
         Args:
@@ -740,7 +737,7 @@ struct OptionalReg[T: __TypeOfAllTypes](
     @doc_private
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: NoneType._mlir_type):
+    def __init__(out self, value: NoneType._mlir_type):
         """Construct an empty Optional.
 
         Args:
@@ -750,7 +747,7 @@ struct OptionalReg[T: __TypeOfAllTypes](
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: NoneType):
+    def __init__(out self, value: NoneType):
         """Create an optional without a value from a None literal.
 
         Args:
@@ -764,7 +761,7 @@ struct OptionalReg[T: __TypeOfAllTypes](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __is__(self, other: NoneType) -> Bool:
+    def __is__(self, other: NoneType) -> Bool:
         """Return `True` if the Optional has no value.
 
         It allows you to use the following syntax: `if my_optional is None:`
@@ -777,7 +774,7 @@ struct OptionalReg[T: __TypeOfAllTypes](
         """
         return not self.__bool__()
 
-    fn __isnot__(self, other: NoneType) -> Bool:
+    def __isnot__(self, other: NoneType) -> Bool:
         """Return `True` if the Optional has a value.
 
         It allows you to use the following syntax: `if my_optional is not None:`
@@ -791,7 +788,7 @@ struct OptionalReg[T: __TypeOfAllTypes](
         return self.__bool__()
 
     @always_inline("nodebug")
-    fn __merge_with__[
+    def __merge_with__[
         other_type: type_of(Bool),
     ](self) -> Bool:
         """Merge with other bools in an expression.
@@ -808,7 +805,7 @@ struct OptionalReg[T: __TypeOfAllTypes](
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Return true if the optional has a value.
 
         Returns:
@@ -823,7 +820,7 @@ struct OptionalReg[T: __TypeOfAllTypes](
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn value(self) -> Self.T:
+    def value(self) -> Self.T:
         """Get the optional value.
 
         Returns:
@@ -833,7 +830,7 @@ struct OptionalReg[T: __TypeOfAllTypes](
             self._value
         )
 
-    fn or_else(var self, var default: Self.T) -> Self.T:
+    def or_else(var self, var default: Self.T) -> Self.T:
         """Return the underlying value contained in the Optional or a default
         value if the Optional's underlying value is not present.
 

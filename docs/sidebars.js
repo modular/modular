@@ -217,7 +217,6 @@ const maxSidebars = {
             "mojo/manual/decorators/implicit",
             "mojo/manual/decorators/no-inline",
             "mojo/manual/decorators/parameter",
-            "mojo/manual/decorators/register-passable",
             "mojo/manual/decorators/staticmethod",
           ],
         },

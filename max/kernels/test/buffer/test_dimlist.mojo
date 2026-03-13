@@ -128,8 +128,8 @@ def test_dimlist_eq() raises:
     )
 
 
-fn test_dim_ceildiv() raises:
-    fn test_dim_ceildiv(m: ValOrDim) -> Dim:
+def test_dim_ceildiv() raises:
+    def test_dim_ceildiv(m: ValOrDim) -> Dim:
         comptime BLOCK_SCALE_M = 128
         return ceildiv(m.dim, BLOCK_SCALE_M)
 

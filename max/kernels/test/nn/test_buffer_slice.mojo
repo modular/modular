@@ -27,7 +27,7 @@ def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]) raises:
 
     @always_inline
     @parameter
-    fn print_elements_lambda[
+    def print_elements_lambda[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](coords: IndexList[rank]):
         var index = rebind[IndexList[tensor.rank]](coords)

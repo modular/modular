@@ -88,7 +88,7 @@ struct _DirHandle:
 
     var _handle: OpaquePointer[MutExternalOrigin]
 
-    fn __init__(out self, var path: String) raises:
+    def __init__(out self, var path: String) raises:
         """Construct the _DirHandle using the path provided.
 
         Args:
@@ -111,11 +111,11 @@ struct _DirHandle:
                 String(err),
             )
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Closes the handle opened via popen."""
         _ = external_call["closedir", Int32](self._handle)
 
-    fn list(self) -> List[String]:
+    def list(self) -> List[String]:
         """Reads all the data from the handle.
 
         Returns:
@@ -127,7 +127,7 @@ struct _DirHandle:
         else:
             return self._list_macos()
 
-    fn _list_linux(self) -> List[String]:
+    def _list_linux(self) -> List[String]:
         """Reads all the data from the handle.
 
         Returns:
@@ -155,7 +155,7 @@ struct _DirHandle:
 
         return res^
 
-    fn _list_macos(self) -> List[String]:
+    def _list_macos(self) -> List[String]:
         """Reads all the data from the handle.
 
         Returns:
@@ -187,7 +187,7 @@ struct _DirHandle:
 # ===----------------------------------------------------------------------=== #
 # getuid
 # ===----------------------------------------------------------------------=== #
-fn getuid() -> Int:
+def getuid() -> Int:
     """Retrieve the user ID of the calling process.
 
     Returns:
@@ -204,7 +204,7 @@ fn getuid() -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn listdir[PathLike: os.PathLike](path: PathLike) raises -> List[String]:
+def listdir[PathLike: os.PathLike](path: PathLike) raises -> List[String]:
     """Gets the list of entries contained in the path provided.
 
     Parameters:
@@ -229,7 +229,7 @@ fn listdir[PathLike: os.PathLike](path: PathLike) raises -> List[String]:
 
 
 @always_inline
-fn abort() -> Never:
+def abort() -> Never:
     """Terminates execution, using a target dependent trap instruction if
     available.
     """
@@ -242,7 +242,7 @@ fn abort() -> Never:
 
 
 @always_inline
-fn abort[*, prefix: StaticString = "ABORT:"](message: String) -> Never:
+def abort[*, prefix: StaticString = "ABORT:"](message: String) -> Never:
     """Calls a target dependent trap instruction if available.
 
     Parameters:
@@ -259,7 +259,7 @@ fn abort[*, prefix: StaticString = "ABORT:"](message: String) -> Never:
 
 
 @always_inline
-fn abort[*, prefix: StaticString = "ABORT:"](message: TString) -> Never:
+def abort[*, prefix: StaticString = "ABORT:"](message: TString) -> Never:
     """Calls a target dependent trap instruction if available.
 
     Parameters:
@@ -278,7 +278,7 @@ fn abort[*, prefix: StaticString = "ABORT:"](message: TString) -> Never:
 # ===----------------------------------------------------------------------=== #
 # remove/unlink
 # ===----------------------------------------------------------------------=== #
-fn remove[PathLike: os.PathLike](path: PathLike) raises:
+def remove[PathLike: os.PathLike](path: PathLike) raises:
     """Removes the specified file.
 
     If the path is a directory or it can not be deleted, an error is raised.
@@ -304,7 +304,7 @@ fn remove[PathLike: os.PathLike](path: PathLike) raises:
         raise Error("Can not remove file: ", fspath, " Err: ", String(err))
 
 
-fn unlink[PathLike: os.PathLike](path: PathLike) raises:
+def unlink[PathLike: os.PathLike](path: PathLike) raises:
     """Removes the specified file.
 
     If the path is a directory or it can not be deleted, an error is raised.
@@ -328,7 +328,7 @@ fn unlink[PathLike: os.PathLike](path: PathLike) raises:
 # ===----------------------------------------------------------------------=== #
 
 
-fn symlink[
+def symlink[
     TargetType: os.PathLike, LinkType: os.PathLike
 ](target: TargetType, linkpath: LinkType) raises:
     """Creates a symlink.
@@ -372,7 +372,7 @@ fn symlink[
 # ===----------------------------------------------------------------------=== #
 
 
-fn link[
+def link[
     OldType: os.PathLike, NewType: os.PathLike
 ](oldpath: OldType, newpath: NewType) raises:
     """Creates a new hard-link to an existing file.
@@ -413,7 +413,7 @@ fn link[
 # ===----------------------------------------------------------------------=== #
 
 
-fn mkdir[PathLike: os.PathLike](path: PathLike, mode: Int = 0o777) raises:
+def mkdir[PathLike: os.PathLike](path: PathLike, mode: Int = 0o777) raises:
     """Creates a directory at the specified path.
 
     If the directory can not be created an error is raised.
@@ -439,7 +439,7 @@ fn mkdir[PathLike: os.PathLike](path: PathLike, mode: Int = 0o777) raises:
         raise Error("Can not create directory: ", fspath, " Err: ", String(err))
 
 
-fn makedirs[
+def makedirs[
     PathLike: os.PathLike
 ](path: PathLike, mode: Int = 0o777, exist_ok: Bool = False) raises -> None:
     """Creates a specified leaf directory along with any necessary intermediate
@@ -480,7 +480,7 @@ fn makedirs[
             raise Error("path not created: ", path.__fspath__(), "\n", e)
 
 
-fn rmdir[PathLike: os.PathLike](path: PathLike) raises:
+def rmdir[PathLike: os.PathLike](path: PathLike) raises:
     """Removes the specified directory.
 
     If the path is not a directory or it can not be deleted, an error is raised.
@@ -504,7 +504,7 @@ fn rmdir[PathLike: os.PathLike](path: PathLike) raises:
         raise Error("Can not remove directory: ", fspath, " Err: ", String(err))
 
 
-fn removedirs[PathLike: os.PathLike](path: PathLike) raises -> None:
+def removedirs[PathLike: os.PathLike](path: PathLike) raises -> None:
     """Removes a leaf directory and all empty intermediate ones.
 
     Directories corresponding to rightmost path segments will be pruned away
@@ -537,7 +537,7 @@ fn removedirs[PathLike: os.PathLike](path: PathLike) raises -> None:
 # ===----------------------------------------------------------------------=== #
 
 
-fn isatty(fd: Int) -> Bool:
+def isatty(fd: Int) -> Bool:
     """Checks whether a file descriptor refers to a terminal.
 
     Returns `True` if the file descriptor `fd` is open and connected to a

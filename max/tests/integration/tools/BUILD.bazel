@@ -286,6 +286,22 @@ modular_py_test(
     ],
 )
 
+modular_run_binary_test(
+    name = "test_precompile_all_pipelines_smoke",
+    size = "medium",
+    args = [
+        "--devices",
+        "cpu",
+        "--dry-run",
+    ],
+    binary = "//max/tests/integration/tools:precompile_all_pipelines",
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)
+
 modular_py_binary(
     name = "precompile_pipeline",
     testonly = True,

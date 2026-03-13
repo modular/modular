@@ -30,7 +30,7 @@ comptime CUDA_CUFFT_LIBRARY_PATHS: List[Path] = [
 ]
 
 
-fn _on_error_msg() -> Error:
+def _on_error_msg() -> Error:
     return Error(
         (
             "Cannot find the cuFFT libraries. Please make sure that "
@@ -50,14 +50,14 @@ comptime CUDA_CUFFT_LIBRARY = _Global[
 ]()
 
 
-fn _init_dylib() -> OwnedDLHandle:
+def _init_dylib() -> OwnedDLHandle:
     return _find_dylib[abort_on_failure=False](
         materialize[CUDA_CUFFT_LIBRARY_PATHS]()
     )
 
 
 @always_inline
-fn _get_dylib_function[
+def _get_dylib_function[
     func_name: StaticString, result_type: __TypeOfAllTypes
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
@@ -68,6 +68,6 @@ fn _get_dylib_function[
 
 
 @always_inline
-fn check_error(stat: Status) raises:
+def check_error(stat: Status) raises:
     if stat != Status.CUFFT_SUCCESS:
         raise Error("CUFFT ERROR: ", stat)

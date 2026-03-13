@@ -35,17 +35,20 @@ from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.info import is_cpu
 from std.gpu.memory import AddressSpace, external_memory
 from std.random import Random
-from layout.coord import (
+from layout import (
     ComptimeInt,
     Coord,
     CoordLike,
-    DynamicCoord,
     Idx,
+    RowMajorLayout,
     RuntimeInt,
+    TensorLayout,
+    TileTensor,
     coord_to_index_list,
+    row_major,
 )
-from layout.tile_layout import TensorLayout, Layout, RowMajorLayout
-from layout import TileTensor, row_major
+from layout.coord import DynamicCoord
+from layout.tile_layout import Layout
 from std.math import log2
 from std.memory import stack_allocation
 from nn.gather_scatter import normalize_neg_index
@@ -60,7 +63,7 @@ from std.utils.numerics import max_or_inf, min_or_neg_inf
 
 
 @always_inline
-fn top_k_shape_impl[
+def top_k_shape_impl[
     dtype: DType,
     single_thread_blocking_override: Bool,
 ](input: TileTensor[dtype, ...], max_k: Int, axis: Int) raises -> IndexList[
@@ -97,7 +100,7 @@ fn top_k_shape_impl[
 
 
 @always_inline
-fn _adjust_top_p[
+def _adjust_top_p[
     T: DType,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](
@@ -121,7 +124,7 @@ fn _adjust_top_p[
     return _top_p
 
 
-fn top_k[
+def top_k[
     dtype: DType,
     out_idx_type: DType,
     //,
@@ -210,7 +213,7 @@ fn top_k[
         )
 
 
-fn _top_k_cpu[
+def _top_k_cpu[
     dtype: DType,
     out_idx_type: DType,
     largest: Bool,
@@ -236,7 +239,7 @@ fn _top_k_cpu[
 
     @__copy_capture(shape)
     @parameter
-    fn process_rows(start_row: Int, end_row: Int):
+    def process_rows(start_row: Int, end_row: Int):
         # Allocate the index list without initializing its elements.
         var idxs = List[Int64](unsafe_uninit_length=shape[axis])
 
@@ -256,7 +259,7 @@ fn _top_k_cpu[
 
             @parameter
             @always_inline
-            fn indices_to_val(idx: Int64) -> Scalar[dtype]:
+            def indices_to_val(idx: Int64) -> Scalar[dtype]:
                 indices[axis] = Int(idx)
                 var input_idx = input.layout(Coord(indices))
                 return input.ptr[input_idx]
@@ -265,7 +268,7 @@ fn _top_k_cpu[
 
                 @parameter
                 @always_inline
-                fn _val_greater_than(lhs: Int64, rhs: Int64) -> Bool:
+                def _val_greater_than(lhs: Int64, rhs: Int64) -> Bool:
                     return indices_to_val(lhs) > indices_to_val(rhs)
 
                 if sorted:
@@ -276,7 +279,7 @@ fn _top_k_cpu[
 
                 @parameter
                 @always_inline
-                fn _val_less_than(lhs: Int64, rhs: Int64) -> Bool:
+                def _val_less_than(lhs: Int64, rhs: Int64) -> Bool:
                     return indices_to_val(lhs) < indices_to_val(rhs)
 
                 if sorted:
@@ -328,7 +331,7 @@ fn _top_k_cpu[
 
 
 @always_inline
-fn fused_token_sampling_cpu[
+def fused_token_sampling_cpu[
     dtype: DType,
     out_idx_type: DType,
     KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
@@ -403,7 +406,7 @@ fn fused_token_sampling_cpu[
     out_vals.ptr.free()
 
 
-fn _top_k_sampling[
+def _top_k_sampling[
     dtype: DType,
     KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
     TemperatureLayoutType: TensorLayout = RowMajorLayout[
@@ -570,7 +573,7 @@ fn _top_k_sampling[
 
 
 @always_inline("nodebug")
-fn _topk_dead_val[T: DType, largest: Bool = True]() -> Scalar[T]:
+def _topk_dead_val[T: DType, largest: Bool = True]() -> Scalar[T]:
     comptime if largest:
         return min_or_neg_inf[T]()
     else:
@@ -585,11 +588,11 @@ struct TopK_2[T: DType, largest: Bool = True](
     var p: Int  # flattened index of the element
     var u: Scalar[Self.T]  # value of the element
 
-    fn __init__(out self):
+    def __init__(out self):
         self.p = -1
         self.u = _topk_dead_val[Self.T, Self.largest]()
 
-    fn insert(mut self, elem: Scalar[Self.T], elem_id: Int):
+    def insert(mut self, elem: Scalar[Self.T], elem_id: Int):
         comptime if Self.largest:
             if elem > self.u:
                 self.u = elem
@@ -603,7 +606,7 @@ struct TopK_2[T: DType, largest: Bool = True](
 # Function to perform warp-level reduction to find the maximum TopK_2
 @always_inline
 @parameter
-fn _warp_reduce_topk[
+def _warp_reduce_topk[
     T: DType,
     largest: Bool,
     num_lanes: Int = WARP_SIZE,
@@ -634,7 +637,7 @@ fn _warp_reduce_topk[
 
     # Shuffle function for TopK_2 structure
     @parameter
-    fn shuffle_topk2(v: TopK_2[T, largest], offset: Int) -> TopK_2[T, largest]:
+    def shuffle_topk2(v: TopK_2[T, largest], offset: Int) -> TopK_2[T, largest]:
         comptime fn_type = fn[dtype: DType, simd_width: Int](
             val: SIMD[dtype, simd_width], offset: UInt32
         ) -> SIMD[dtype, simd_width]
@@ -649,7 +652,7 @@ fn _warp_reduce_topk[
         )
 
     @parameter
-    fn reduce_fn(
+    def reduce_fn(
         a: TopK_2[T, largest], b: TopK_2[T, largest]
     ) -> TopK_2[T, largest]:
         comptime if largest:
@@ -677,7 +680,7 @@ fn _warp_reduce_topk[
 
 # Function to perform block-level reduction to find the maximum TopK_2
 @always_inline
-fn _block_reduce_topk[
+def _block_reduce_topk[
     T: DType, largest: Bool
 ](val: TopK_2[T, largest]) -> TopK_2[T, largest]:
     """
@@ -757,7 +760,7 @@ fn _block_reduce_topk[
     return _warp_reduce_topk[T, largest](block_accum)
 
 
-fn _topk_stage1_old[
+def _topk_stage1_old[
     T: DType,
     out_idx_type: DType,
     largest: Bool = True,
@@ -862,7 +865,7 @@ fn _topk_stage1_old[
                 ](-1)
 
 
-fn _topk_stage1[
+def _topk_stage1[
     T: DType,
     out_idx_type: DType,
     largest: Bool = True,
@@ -982,12 +985,12 @@ fn _topk_stage1[
 
 
 @always_inline("nodebug")
-fn _get_shmem_size_stg_1[dtype: DType](block_size: Int) -> Int:
+def _get_shmem_size_stg_1[dtype: DType](block_size: Int) -> Int:
     # Get dynamic shared memory size for stage 1
     return block_size * size_of[TopK_2[dtype]]()
 
 
-fn _topk_stage2[
+def _topk_stage2[
     T: DType,
     out_idx_type: DType,
     sampling: Bool = True,
@@ -1198,7 +1201,7 @@ fn _topk_stage2[
                         break
 
 
-fn _topk_gpu[
+def _topk_gpu[
     dtype: DType,
     out_idx_type: DType,
     //,
@@ -1451,7 +1454,7 @@ fn _topk_gpu[
 
 
 @always_inline
-fn topk_gpu[
+def topk_gpu[
     dtype: DType,
     out_idx_type: DType,
     //,
@@ -1673,7 +1676,7 @@ fn topk_gpu[
     _ = internal_idxs_buf^
 
 
-fn _topk_topp_sampling_fi[
+def _topk_topp_sampling_fi[
     dtype: DType,
     out_idx_type: DType,
     KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
@@ -1743,7 +1746,7 @@ fn _topk_topp_sampling_fi[
 
 
 @always_inline
-fn fused_token_sampling_gpu[
+def fused_token_sampling_gpu[
     dtype: DType,
     out_idx_type: DType,
     //,
@@ -1850,7 +1853,7 @@ fn fused_token_sampling_gpu[
 # ===-----------------------------------------------------------------------===#
 
 
-fn apply_gumbel_noise_kernel[
+def apply_gumbel_noise_kernel[
     dtype: DType,
     OutputLayoutType: TensorLayout,
     InputLayoutType: TensorLayout,
@@ -1952,7 +1955,7 @@ fn apply_gumbel_noise_kernel[
 
 
 @always_inline
-fn gumbel_sampling_gpu[
+def gumbel_sampling_gpu[
     dtype: DType,
     out_idx_type: DType,
     //,

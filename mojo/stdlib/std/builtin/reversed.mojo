@@ -48,7 +48,7 @@ trait ReversibleRange:
     # iterators currently check __len__() instead of raising an exception
     # so there is no ReversibleRaising trait yet.
 
-    fn __reversed__(self) -> _StridedRange:
+    def __reversed__(self) -> _StridedRange:
         """Get a reversed iterator for the type.
 
         **Note**: iterators are currently non-raising.
@@ -64,7 +64,7 @@ trait ReversibleRange:
 # ===----------------------------------------------------------------------=== #
 
 
-fn reversed[T: ReversibleRange](value: T) -> _StridedRange:
+def reversed[T: ReversibleRange](value: T) -> _StridedRange:
     """Get a reversed iterator of the input range.
 
     **Note**: iterators are currently non-raising.
@@ -81,7 +81,7 @@ fn reversed[T: ReversibleRange](value: T) -> _StridedRange:
     return value.__reversed__()
 
 
-fn reversed[
+def reversed[
     T: Copyable
 ](ref value: List[T, ...]) -> _ListIter[T, origin_of(value), False]:
     """Get a reversed iterator of the input list.
@@ -100,7 +100,7 @@ fn reversed[
     return value.__reversed__()
 
 
-fn reversed[
+def reversed[
     T: Copyable, size: Int
 ](ref value: InlineArray[T, size]) -> _InlineArrayIter[
     T, size, origin_of(value), False
@@ -122,7 +122,7 @@ fn reversed[
     return value.__reversed__()
 
 
-fn reversed[
+def reversed[
     T: Copyable & ImplicitlyDestructible
 ](ref value: Deque[T]) -> _DequeIter[T, origin_of(value), False]:
     """Get a reversed iterator of the deque.
@@ -141,7 +141,7 @@ fn reversed[
     return value.__reversed__()
 
 
-fn reversed[
+def reversed[
     K: KeyElement,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
@@ -164,7 +164,7 @@ fn reversed[
     return value.__reversed__()
 
 
-fn reversed[
+def reversed[
     dict_mutability: Bool,
     //,
     K: KeyElement,
@@ -194,7 +194,7 @@ fn reversed[
     return value.__reversed__()
 
 
-fn reversed[
+def reversed[
     dict_mutability: Bool,
     //,
     K: KeyElement,
@@ -228,7 +228,7 @@ fn reversed[
 
 
 @always_inline
-fn reversed[
+def reversed[
     T: Copyable
 ](value: Span[T, _]) -> _SpanIter[T, value.origin, forward=False]:
     """Get a reversed iterator of the input Span.

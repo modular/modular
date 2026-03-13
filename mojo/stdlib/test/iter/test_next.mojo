@@ -14,7 +14,7 @@
 from std.testing import TestSuite, assert_equal, assert_true, assert_raises
 
 
-fn test_next() raises:
+def test_next() raises:
     var l = [1, 2, 3]
 
     var it = iter(l)

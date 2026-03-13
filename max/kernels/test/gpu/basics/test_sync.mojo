@@ -21,10 +21,10 @@ from std.gpu.sync import (
 
 
 # CHECK-LABEL: test_cp_async_bulk_wait_group
-fn test_cp_async_bulk_wait_group():
+def test_cp_async_bulk_wait_group():
     print("== test_cp_async_bulk_wait_group")
 
-    fn cp_async_bulk_wait_group_kernel[n: Int32]():
+    def cp_async_bulk_wait_group_kernel[n: Int32]():
         # CHECK: cp.async.bulk.wait_group.read 0;
         cp_async_bulk_wait_group[0]()
         # CHECK: cp.async.bulk.wait_group 2;
@@ -39,10 +39,10 @@ fn test_cp_async_bulk_wait_group():
 
 
 # CHECK-LABEL: test_cp_async_bulk_commit_group
-fn test_cp_async_bulk_commit_group():
+def test_cp_async_bulk_commit_group():
     print("== test_cp_async_bulk_commit_group")
 
-    fn cp_async_bulk_commit_group_kernel():
+    def cp_async_bulk_commit_group_kernel():
         # CHECK: cp.async.bulk.commit_group;
         cp_async_bulk_commit_group()
 
@@ -55,10 +55,10 @@ fn test_cp_async_bulk_commit_group():
 
 
 # CHECK-LABEL: test_named_barrier
-fn test_named_barrier():
+def test_named_barrier():
     print("== test_named_barrier")
 
-    fn test_test_named_barrier_kernel():
+    def test_test_named_barrier_kernel():
         # CHECK: bar.sync 10, 256
         named_barrier[256,](10)
 
@@ -70,7 +70,7 @@ fn test_named_barrier():
     )
 
 
-fn main():
+def main():
     test_cp_async_bulk_wait_group()
     test_cp_async_bulk_commit_group()
     test_named_barrier()

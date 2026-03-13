@@ -27,8 +27,8 @@ from .model_config import GptOssConfig
 gpt_oss_arch = SupportedArchitecture(
     name="GptOssForCausalLM",
     example_repo_ids=[
-        # "openai/gpt-oss-20b",
-        # "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "openai/gpt-oss-120b",
         "unsloth/gpt-oss-20b-BF16",
     ],
     default_encoding="bfloat16",

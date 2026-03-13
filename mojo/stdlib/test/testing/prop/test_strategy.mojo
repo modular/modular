@@ -30,7 +30,7 @@ struct TestStruct(Copyable):
     var n: Int
 
     @staticmethod
-    fn strategy() -> TestStructStrategy:
+    def strategy() -> TestStructStrategy:
         return TestStructStrategy(0, 10)
 
 
@@ -41,7 +41,7 @@ struct TestStructStrategy(Movable, Strategy):
     var min: Int
     var max: Int
 
-    fn value(mut self, mut rng: Rng) raises -> Self.Value:
+    def value(mut self, mut rng: Rng) raises -> Self.Value:
         return {rng.rand_int(min=self.min, max=self.max)}
 
 

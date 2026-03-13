@@ -23,7 +23,7 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from _cublas.cublaslt import cublasLtGetVersion, cublasLtMatmulMatrixScale_t
 from std.collections import OptionalReg
 from std.builtin.simd import _convert_f32_to_float8_ue8m0
-from layout import Layout, LayoutTensor, IntTuple, RuntimeLayout, UNKNOWN_VALUE
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
 from std.sys import argv
@@ -39,7 +39,7 @@ from linalg.fp4_quantization import naive_block_scaled_matmul
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-fn test_block_scaled_nvfp4_cublaslt[
+def test_block_scaled_nvfp4_cublaslt[
     out_dtype: DType,
     in_dtype: DType,
     transpose_b: Bool,
@@ -262,7 +262,7 @@ fn test_block_scaled_nvfp4_cublaslt[
     _ = b_scales
 
 
-fn main() raises:
+def main() raises:
     with DeviceContext() as ctx:
         test_block_scaled_nvfp4_cublaslt[
             DType.bfloat16,

@@ -18,7 +18,7 @@ from std.gpu.compute.mma import mma
 from std.testing import *
 
 
-fn SM80_16x8x8_F16F16F16F16_TN(
+def SM80_16x8x8_F16F16F16F16_TN(
     a: SIMD[DType.float16, 4],
     b: SIMD[DType.float16, 2],
     c: SIMD[DType.float16, 4],
@@ -37,7 +37,7 @@ def test_SM80_16x8x8_F16F16F16F16_TN() raises:
     assert_true("{%r4, %r5};" in asm)
 
 
-fn SM80_m16n8k4_F32TF32TF32F32_TN(
+def SM80_m16n8k4_F32TF32TF32F32_TN(
     a: SIMD[DType.float32, 2],
     b: Float32,
     c: SIMD[DType.float32, 4],
@@ -56,7 +56,7 @@ def test_SM80_m16n8k4_F32TF32TF32F32_TN() raises:
     assert_true("{%r3, %r4, %r5, %r6};" in asm)
 
 
-fn SM80_m16n8k8_F32TF32TF32F32_TN(
+def SM80_m16n8k8_F32TF32TF32F32_TN(
     a: SIMD[DType.float32, 4],
     b: Float32,
     c: SIMD[DType.float32, 4],
@@ -75,7 +75,7 @@ def test_SM80_m16n8k8_F32TF32TF32F32_TN() raises:
     assert_true("{%r5, %r6, %r7, %r8};" in asm)
 
 
-fn SM80_m16n8k32_F8E4M3F8E4M_TN(
+def SM80_m16n8k32_F8E4M3F8E4M_TN(
     a: SIMD[DType.float8_e4m3fn, 16],
     b: SIMD[DType.float8_e4m3fn, 8],
     c: SIMD[DType.float32, 4],

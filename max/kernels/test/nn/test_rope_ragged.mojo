@@ -14,13 +14,7 @@
 
 from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    coord,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, coord, row_major
 from layout.tile_layout import Layout
 from nn.rope import rope_ragged
 from testdata.fused_qk_rope_goldens import (
@@ -46,7 +40,7 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() raises -> None:
     comptime max_seq_len = 16
     comptime num_layers = 1
 
-    fn _max[dtype: DType](items: List[Scalar[dtype]]) -> Scalar[dtype]:
+    def _max[dtype: DType](items: List[Scalar[dtype]]) -> Scalar[dtype]:
         assert len(items) > 0, "empty list in _max"
         var max_item = items[0]
 
@@ -151,7 +145,7 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() raises -> None:
     var start_pos_tensor = TileTensor(start_pos_host_buffer, start_pos_layout)
 
     @always_inline
-    fn output_fn[
+    def output_fn[
         width: Int, alignment: Int
     ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
         q_out_tensor.store[width=width](Coord(idx), val)

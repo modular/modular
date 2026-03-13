@@ -48,9 +48,10 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
     row_major,
 )
-from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import (
     TensorCoreAsync,
@@ -182,22 +183,22 @@ struct HopperMatmulSM90Kernel_SMem[
 
     # Accessor functions (like SM100 pattern)
     @always_inline
-    fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
+    def a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
         """Get A tile array accessor (TileTensor-based)."""
         return Self.ATileArray(self.a_tiles_storage.unsafe_ptr())
 
     @always_inline
-    fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
+    def b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
         """Get B tile array accessor (TileTensor-based)."""
         return Self.BTileArray(self.b_tiles_storage.unsafe_ptr())
 
     @always_inline
-    fn c_tile(ref[AddressSpace.SHARED] self) -> Self.CTile:
+    def c_tile(ref[AddressSpace.SHARED] self) -> Self.CTile:
         """Get C tile accessor (TileTensor-based)."""
         return Self.CTileArray(self.c_tile_storage.unsafe_ptr())[0]
 
     @always_inline
-    fn create_pipeline(
+    def create_pipeline(
         ref[AddressSpace.SHARED] self,
     ) -> ProducerConsumerPipeline[Self._num_barrier_stages]:
         """Create producer-consumer pipeline from barrier storage."""
@@ -208,7 +209,7 @@ struct HopperMatmulSM90Kernel_SMem[
 
     @staticmethod
     @always_inline
-    fn pipeline_storage_size() -> Int:
+    def pipeline_storage_size() -> Int:
         """Calculate the memory size for all pipeline stages."""
         return (
             # A and B tile storage
@@ -220,13 +221,13 @@ struct HopperMatmulSM90Kernel_SMem[
 
     @staticmethod
     @always_inline
-    fn output_storage_size() -> Int:
+    def output_storage_size() -> Int:
         """Calculate the memory size for output tile."""
         return Self.CTileArray.storage_size
 
     @staticmethod
     @always_inline
-    fn storage_size() -> Int:
+    def storage_size() -> Int:
         """Calculate the total storage size."""
         return Self.pipeline_storage_size() + Self.output_storage_size()
 
@@ -352,7 +353,7 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @always_inline
-    fn validate_constraints():
+    def validate_constraints():
         """Validate common constraints for all kernel variants."""
         comptime assert (
             Self.a_type == Self.b_type
@@ -385,7 +386,7 @@ struct HopperMatmulSM90Kernel[
 
     @always_inline
     @staticmethod
-    fn pipeline_init():
+    def pipeline_init():
         """Initialize pipeline synchronization barriers.
 
         This function ensures that all pipeline initialization (barriers, shared memory)
@@ -404,7 +405,7 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @always_inline
-    fn finalize_kernel():
+    def finalize_kernel():
         """Common finalization for all kernel variants."""
 
         comptime if Self.pdl_level >= PDLLevel.OVERLAP_AT_END:
@@ -417,7 +418,7 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @always_inline
-    fn multicast_mask(rank_m: Int, rank_n: Int) -> Tuple[Int32, Int32]:
+    def multicast_mask(rank_m: Int, rank_n: Int) -> Tuple[Int32, Int32]:
         comptime CLUSTER_N = Self.cluster_shape[0]
         comptime CLUSTER_M = Self.cluster_shape[1]
 
@@ -435,7 +436,7 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @always_inline
-    fn common_kernel_init() -> (
+    def common_kernel_init() -> (
         Tuple[
             Int,
             Int,
@@ -475,7 +476,7 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @always_inline
-    fn setup_producer() -> Int:
+    def setup_producer() -> Int:
         """Setup producer warp group by deallocating registers.
 
         Returns:
@@ -487,7 +488,7 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @always_inline
-    fn setup_consumer(
+    def setup_consumer(
         warp_group_idx: Int,
     ) -> Tuple[Int, Self.AccumRegTile, Self.AccumRegTile]:
         """Setup consumer warp group.
@@ -497,7 +498,7 @@ struct HopperMatmulSM90Kernel[
         """
 
         @parameter
-        fn num_regs() -> Int:
+        def num_regs() -> Int:
             if Self.num_consumer == 1:
                 return 256
             if Self.num_consumer == 2:
@@ -514,7 +515,7 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @always_inline
-    fn consumer_arrive_empty_barriers(
+    def consumer_arrive_empty_barriers(
         warp_group_thread_idx: Int,
         mut pipeline: ProducerConsumerPipeline[
             Self.adjusted_num_pipeline_stages
@@ -538,7 +539,7 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @always_inline
-    fn get_block_swizzle(
+    def get_block_swizzle(
         lut_ptr: UnsafePointer[UInt32, MutAnyOrigin] = {},
     ) -> IndexList[2, element_type=DType.uint32]:
         """Calculate block swizzle for better L2 cache locality.
@@ -571,7 +572,7 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @always_inline
-    fn consumer_output[
+    def consumer_output[
         custom_elementwise_lambda_fn: Optional[
             elementwise_epilogue_type
         ] = Self.elementwise_lambda_fn
@@ -617,7 +618,7 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @always_inline
-    fn build_tma_loaders[
+    def build_tma_loaders[
         a_tma_rank: Int,
         b_tma_rank: Int,
         a_tile_shape: IndexList[a_tma_rank],
@@ -678,7 +679,7 @@ struct HopperMatmulSM90Kernel[
 
     @always_inline
     @staticmethod
-    fn build_cpasync_loaders[
+    def build_cpasync_loaders[
         k_align: Int,
         vector_size: Int = k_align // size_of[Self.a_type](),
         num_threads_per_row: Int = Self.BK // vector_size,
@@ -722,7 +723,7 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @always_inline
-    fn producer_main_loop_pipeline[
+    def producer_main_loop_pipeline[
         a_loader_type: TileLoader,
         b_loader_type: TileLoader,
         barrier_handler_type: BarrierHandler,
@@ -743,7 +744,7 @@ struct HopperMatmulSM90Kernel[
     ):
         @always_inline
         @parameter
-        fn producer_loop[
+        def producer_loop[
             num_pipeline_stages_to_unroll: Int,
         ](k_iter: Int):
             comptime for j in range(num_pipeline_stages_to_unroll):
@@ -841,7 +842,7 @@ struct HopperMatmulSM90Kernel[
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-    fn run[
+    def run[
         a_tma_rank: Int,
         b_tma_rank: Int,
         c_tma_rank: Int,
@@ -996,7 +997,7 @@ struct HopperMatmulSM90Kernel[
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-    fn run_splitk[
+    def run_splitk[
         a_tma_rank: Int,
         b_tma_rank: Int,
         c_tma_rank: Int,
@@ -1192,7 +1193,7 @@ struct HopperMatmulSM90Kernel[
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-    fn run_grouped[
+    def run_grouped[
         a_tma_rank: Int,
         b_tma_rank: Int,
         c_tma_rank: Int,
@@ -1354,7 +1355,7 @@ struct HopperMatmulSM90Kernel[
             )
 
             @parameter
-            fn elementwise_epilogue_fn_wrapper[
+            def elementwise_epilogue_fn_wrapper[
                 dtype: DType, width: Int, *, alignment: Int = 1
             ](idx: IndexList[2], val: SIMD[dtype, width]):
                 comptime if Self.elementwise_lambda_fn:
@@ -1384,7 +1385,7 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @always_inline
-    fn consumer_main_loop_pipeline[
+    def consumer_main_loop_pipeline[
         num_k_iters: Int,
     ](
         wgmma_op: Self.WgmmaOp,
@@ -1428,7 +1429,7 @@ struct HopperMatmulSM90Kernel[
 
         @always_inline
         @parameter
-        fn consumer_loop[
+        def consumer_loop[
             num_pipeline_stages_to_unroll: Int,
         ]():
             comptime for _ in range(num_pipeline_stages_to_unroll):
@@ -1490,7 +1491,7 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @always_inline
-    fn promote_to_cuda_cores(
+    def promote_to_cuda_cores(
         c_reg_tile: Self.AccumRegTile,
         final_c_reg_tile: Self.AccumRegTile,
     ):
@@ -1527,7 +1528,7 @@ struct HopperMatmulSM90Kernel[
 
     @always_inline
     @staticmethod
-    fn wgmma(
+    def wgmma(
         wgmma_op: Self.WgmmaOp,
         local_warp_group_idx: Int,
         a_tile: Self.SMem.ATileArray.Tile,
@@ -1559,7 +1560,7 @@ struct HopperMatmulSM90Kernel[
 
 
 @always_inline
-fn find_K_alignment_upto_16B(row_bytes_arg: Int) -> Int:
+def find_K_alignment_upto_16B(row_bytes_arg: Int) -> Int:
     """Find alignment among 1B, 2B, 4B, 16B based on the row's bytes.
 
     This function determines the largest power-of-2 alignment (up to 16 bytes)

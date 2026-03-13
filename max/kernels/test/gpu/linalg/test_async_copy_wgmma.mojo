@@ -23,11 +23,10 @@ from std.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
 )
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import cp_async_k_major
-from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core_async import (
     TensorCoreAsync,
     tile_layout_mn_major,
@@ -40,7 +39,7 @@ from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
 
-fn cpasync_wgmma_kernel[
+def cpasync_wgmma_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,

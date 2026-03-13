@@ -30,12 +30,12 @@ from std.utils import IndexList
 
 
 # CHECK-LABEL: test_logsoftmax
-fn test_logsoftmax() raises:
+def test_logsoftmax() raises:
     print("== test_logsoftmax")
     comptime type = DType.float32
     comptime simd_width = simd_width_of[type]()
 
-    fn logsoftmax_test_nd[rank: Int, shape: IndexList[rank]]() raises:
+    def logsoftmax_test_nd[rank: Int, shape: IndexList[rank]]() raises:
         comptime layout = Layout.row_major(shape)
         var in_stack = InlineArray[Scalar[type], layout.size()](
             uninitialized=True
@@ -95,7 +95,7 @@ fn test_logsoftmax() raises:
 
 
 # CHECK-LABEL: test_softmax_2pass
-fn test_softmax_2pass():
+def test_softmax_2pass():
     print("== test_softmax_2pass")
     comptime type = DType.float32
     comptime simd_width = simd_width_of[type]()

@@ -32,8 +32,7 @@ InputType = DLPackArray | Buffer | int | float | bool
 
 class TensorSpec:
     """
-    Defines the properties of a tensor, including its name, shape and
-    data type.
+    Defines the properties of a tensor, including its name, shape and data type.
 
     For usage examples, see :obj:`Model.input_metadata`.
     """
@@ -79,8 +78,7 @@ class Model:
     @property
     def input_metadata(self) -> list[TensorSpec]:
         """
-        Metadata about the model's input tensors, as a list of
-        :obj:`TensorSpec` objects.
+        Metadata about the model's input tensors, as a list of :obj:`TensorSpec` objects.
 
         For example, you can print the input tensor names, shapes, and dtypes:
 
@@ -99,8 +97,7 @@ class Model:
     @property
     def output_metadata(self) -> list[TensorSpec]:
         """
-        Metadata about the model's output tensors, as a list of
-        :obj:`TensorSpec` objects.
+        Metadata about the model's output tensors, as a list of :obj:`TensorSpec` objects.
 
         For example, you can print the output tensor names, shapes, and dtypes:
 

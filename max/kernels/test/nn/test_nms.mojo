@@ -24,7 +24,7 @@ struct BoxCoords[dtype: DType](TrivialRegisterPassable):
     var y2: Scalar[Self.dtype]
     var x2: Scalar[Self.dtype]
 
-    fn __init__(
+    def __init__(
         out self,
         y1: Scalar[Self.dtype],
         x1: Scalar[Self.dtype],
@@ -37,7 +37,7 @@ struct BoxCoords[dtype: DType](TrivialRegisterPassable):
         self.x2 = x2
 
 
-fn fill_boxes[
+def fill_boxes[
     dtype: DType
 ](
     batch_size: Int,
@@ -56,7 +56,7 @@ fn fill_boxes[
         boxes[coords[0], coords[1], 3] = box_list[i].x2
 
 
-fn linear_offset_to_coords[
+def linear_offset_to_coords[
     rank: Int
 ](idx: Int, shape: IndexList[rank]) -> IndexList[rank]:
     var output = IndexList[rank](0)
@@ -68,7 +68,7 @@ fn linear_offset_to_coords[
     return output
 
 
-fn fill_scores[
+def fill_scores[
     dtype: DType
 ](
     batch_size: Int,
@@ -84,7 +84,7 @@ fn fill_scores[
         scores[coords[0], coords[1], coords[2]] = scores_list[i]
 
 
-fn test_case[
+def test_case[
     dtype: DType
 ](
     batch_size: Int,
@@ -150,8 +150,8 @@ fn test_case[
     selected_idxs.ptr.free()
 
 
-fn main():
-    fn test_no_score_threshold():
+def main():
+    def test_no_score_threshold():
         print("== test_no_score_threshold")
         var box_list = [
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),
@@ -167,7 +167,7 @@ fn main():
             1, 1, 6, Float32(0.5), Float32(0.0), 3, box_list, scores_list
         )
 
-    fn test_flipped_coords():
+    def test_flipped_coords():
         print("== test_flipped_coords")
         var box_list = [
             BoxCoords[DType.float32](1.0, 1.0, 0.0, 0.0),
@@ -183,7 +183,7 @@ fn main():
             1, 1, 6, Float32(0.5), Float32(0.0), 3, box_list, scores_list
         )
 
-    fn test_reflect_over_yx():
+    def test_reflect_over_yx():
         print("== test_reflect_over_yx")
         var box_list = [
             BoxCoords[DType.float32](-1.0, -1.0, 0.0, 0.0),
@@ -199,7 +199,7 @@ fn main():
             1, 1, 6, Float32(0.5), Float32(0.0), 3, box_list, scores_list
         )
 
-    fn test_score_threshold():
+    def test_score_threshold():
         print("== test_score_threshold")
         var box_list = [
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),
@@ -215,7 +215,7 @@ fn main():
             1, 1, 6, Float32(0.5), Float32(0.4), 3, box_list, scores_list
         )
 
-    fn test_limit_outputs():
+    def test_limit_outputs():
         print("== test_limit_outputs")
         var box_list = [
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),
@@ -231,7 +231,7 @@ fn main():
             1, 1, 6, Float32(0.5), Float32(0.0), 2, box_list, scores_list
         )
 
-    fn test_single_box():
+    def test_single_box():
         print("== test_single_box")
         var box_list = [
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),
@@ -242,7 +242,7 @@ fn main():
             1, 1, 1, Float32(0.5), Float32(0.0), 2, box_list, scores_list
         )
 
-    fn test_two_classes():
+    def test_two_classes():
         print("== test_two_classes")
         var box_list = [
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),
@@ -271,7 +271,7 @@ fn main():
             1, 2, 6, Float32(0.5), Float32(0.0), 2, box_list, scores_list
         )
 
-    fn test_two_batches():
+    def test_two_batches():
         print("== test_two_batches")
         var box_list = [
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),

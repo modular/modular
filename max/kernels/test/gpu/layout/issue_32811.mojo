@@ -14,10 +14,9 @@
 from std.gpu.host import DeviceContext
 from std.gpu import block_idx, thread_idx
 from layout import *
-from layout.layout_tensor import LayoutTensor
 
 
-fn gpu_kernel(
+def gpu_kernel(
     dst: UnsafePointer[Float32, MutAnyOrigin],
     rhs: UnsafePointer[Float32, ImmutAnyOrigin],
     lhs: UnsafePointer[Float32, ImmutAnyOrigin],

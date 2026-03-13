@@ -79,7 +79,7 @@ def test_causal_mask_asm() raises:
 
     print("== test_causal_mask_asm")
 
-    fn kernel(
+    def kernel(
         q_idx: UInt32, k_idx: UInt32, x: UnsafePointer[Float32, MutAnyOrigin]
     ):
         var mask = CausalMask()
@@ -197,7 +197,7 @@ def test_sliding_window_causal_mask_asm() raises:
 
     print("== test_sliding_window_causal_mask_asm")
 
-    fn kernel(
+    def kernel(
         q_idx: UInt32, k_idx: UInt32, x: UnsafePointer[Float32, MutAnyOrigin]
     ):
         var mask = SlidingWindowCausalMask[8]()

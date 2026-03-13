@@ -14,7 +14,7 @@
 from std.random import rand
 
 from std.benchmark import *
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.flash_attention import flash_attention
 
 from std.utils import IndexList
@@ -29,7 +29,7 @@ struct AttentionSpec(ImplicitlyCopyable, Writable):
     var depth_dim: Int
 
     # fmt: off
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the attention spec.
 
         Args:
@@ -79,21 +79,21 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
 
     @parameter
     @always_inline
-    fn input_k_fn[
+    def input_k_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width](rebind[IndexList[3]](idx))
 
     @parameter
     @always_inline
-    fn input_v_fn[
+    def input_v_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width](rebind[IndexList[3]](idx))
 
     @parameter
     @always_inline
-    fn mask_fn[
+    def mask_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return mask.load[width=simd_width](rebind[IndexList[3]](idx))
@@ -102,10 +102,10 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
 
     @always_inline
     @parameter
-    fn flash_bench_fn(mut b: Bencher):
+    def flash_bench_fn(mut b: Bencher):
         @always_inline
         @parameter
-        fn iter_fn[depth_static_dim: Int]():
+        def iter_fn[depth_static_dim: Int]():
             comptime output_static_shape = IndexList[3](
                 UNKNOWN_VALUE, UNKNOWN_VALUE, depth_static_dim
             )

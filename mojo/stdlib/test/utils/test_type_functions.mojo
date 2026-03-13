@@ -30,7 +30,7 @@ def test_conditional_type_with_bool_literal() raises:
 
 
 def test_conditional_type_with_bool_function() raises:
-    fn bool[b: Bool]() -> Bool:
+    def bool[b: Bool]() -> Bool:
         return b
 
     comptime IsInt = ConditionalType[

@@ -11,13 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.collections.string.format import _FormatUtils, _comptime_list_to_span
-from std.sys import is_run_in_comptime_interpreter
 from std.utils import Variant
 import std.format._utils as fmt
 
 
 @always_inline
-fn _strlen(ptr: UnsafePointer[mut=False, Byte, _]) -> Int:
+def _strlen(ptr: UnsafePointer[mut=False, Byte, _]) -> Int:
     var offset = 0
     while ptr[offset]:
         offset += 1
@@ -51,17 +50,17 @@ struct TString[
 
     @doc_private
     @always_inline
-    fn __init__(out self, *, var pack: Self._InjectedValues):
+    def __init__(out self, *, var pack: Self._InjectedValues):
         self._values = pack^
 
     @always_inline
-    fn _write_to_impl(
+    def _write_to_impl(
         self, mut writer: Some[Writer], encoded_bytes: Span[mut=False, Byte, _]
     ):
         var offset = 0
 
         @always_inline
-        fn write_string() unified {
+        def write_string() unified {
             read encoded_bytes, read offset, mut writer
         } -> Int:
             var literal_start = encoded_bytes.unsafe_ptr() + offset
@@ -82,7 +81,7 @@ struct TString[
         # Write the final string literal part.
         _ = write_string()
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write the formatted string to a writer.
 
         This method implements the `Writable` trait by formatting the TString's
@@ -94,14 +93,14 @@ struct TString[
             writer: The writer to output the formatted string to.
         """
         comptime bytes = _encode_format_string_comptime[Self.format_string]()
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             self._write_to_impl(writer, materialize[bytes]())
         else:
             var span = _comptime_list_to_span[bytes]()
             self._write_to_impl(writer, span)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write a debug representation of the TString to a writer.
 
         This method provides a detailed view of the TString's internal structure,
@@ -114,7 +113,7 @@ struct TString[
         """
 
         @parameter
-        fn fields(mut writer: Some[Writer]):
+        def fields(mut writer: Some[Writer]):
             self._values._write_to[is_repr=True](writer, start="", end="")
 
         fmt.FormatStruct(writer, "TString").params(
@@ -124,7 +123,7 @@ struct TString[
 
 
 @always_inline
-fn __make_tstring[
+def __make_tstring[
     format_string: __mlir_type.`!kgen.string`, *Ts: Writable
 ](
     *args: *Ts,
@@ -154,7 +153,7 @@ fn __make_tstring[
     tstring = {pack = rebind_var[type_of(tstring)._InjectedValues](args.copy())}
 
 
-fn _encode_format_string_comptime[format: StringSlice]() -> List[Byte]:
+def _encode_format_string_comptime[format: StringSlice]() -> List[Byte]:
     comptime result = _encode_format_string_no_raises(format)
     comptime if result.isa[Error]():
         comptime assert False, String(result[Error])
@@ -162,7 +161,7 @@ fn _encode_format_string_comptime[format: StringSlice]() -> List[Byte]:
         return result.take[List[Byte]]()
 
 
-fn _encode_format_string_no_raises(
+def _encode_format_string_no_raises(
     format: StringSlice,
 ) -> Variant[List[Byte], Error]:
     try:
@@ -221,7 +220,7 @@ def _encode_format_string(format: StringSlice) raises -> List[Byte]:
     var i = 0
 
     @always_inline
-    fn peek_next_is(byte: Byte) unified {read} -> Bool:
+    def peek_next_is(byte: Byte) unified {read} -> Bool:
         return i + 1 < len(bytes) and bytes[i + 1] == byte
 
     while i < len(bytes):

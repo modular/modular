@@ -25,17 +25,18 @@ from unittest.mock import MagicMock
 import numpy as np
 import numpy.typing as npt
 import pytest
-from max.interfaces import RequestID
+from max.interfaces import RequestID, TextGenerationInputs
 from max.interfaces.context import SamplingParams
 from max.interfaces.tokens import TokenBuffer
 from max.pipelines.core import reserve_token_space_for_batch
 from max.pipelines.core.context import TextContext
 from max.pipelines.lib.interfaces import ModelInputs
-from max.pipelines.lib.speculative_decoding.base import (
-    SpeculativeDecodingMetrics,
-)
 from max.pipelines.lib.speculative_decoding.eagle import (
     EAGLESpeculativeDecodingPipeline,
+)
+from max.pipelines.lib.speculative_decoding.utils import (
+    SpeculativeDecodingMetrics,
+    update_contexts_and_compute_metrics_eagle,
 )
 
 
@@ -66,7 +67,7 @@ class EAGLEIndexTracker:
     """Minimal mock so we can call real EAGLE methods as unbound."""
 
     def __init__(self) -> None:
-        self._metrics = SpeculativeDecodingMetrics()
+        self._metrics = SpeculativeDecodingMetrics.empty()
         self._draft_kv_manager = MagicMock()
         self._target_kv_manager = MagicMock()
         self._num_draft_steps = 42
@@ -75,38 +76,6 @@ class EAGLEIndexTracker:
         self._draft_model = MagicMock()
         self.devices = MagicMock()
 
-    def update_contexts(
-        self,
-        context_batch: list[TextContext],
-        first_rejected_tokens: npt.NDArray[np.integer[Any]],
-        recovered_tokens: npt.NDArray[np.integer[Any]],
-        bonus_tokens: npt.NDArray[np.integer[Any]] | None,
-        draft_tokens: npt.NDArray[np.integer[Any]],
-        num_draft_tokens_generated: int,
-        data_parallel_splits: npt.NDArray[np.int64] | None = None,
-    ) -> None:
-        EAGLESpeculativeDecodingPipeline.update_contexts(
-            self,  # type: ignore[arg-type]
-            context_batch=context_batch,
-            first_rejected_tokens=first_rejected_tokens,
-            recovered_tokens=recovered_tokens,
-            bonus_tokens=bonus_tokens,
-            draft_tokens=draft_tokens,
-            num_draft_tokens_generated=num_draft_tokens_generated,
-            data_parallel_splits=data_parallel_splits,
-        )
-
-    def _seek_processing_position(
-        self,
-        context: TextContext,
-        target_position: int,
-    ) -> None:
-        EAGLESpeculativeDecodingPipeline._seek_processing_position(
-            self,  # type: ignore[arg-type]
-            context,
-            target_position,
-        )
-
     def prepare_draft_batch(
         self,
         batch: list[TextContext],
@@ -114,10 +83,9 @@ class EAGLEIndexTracker:
     ) -> None:
         EAGLESpeculativeDecodingPipeline._prepare_draft_batch(
             self,  # type: ignore[arg-type]
-            batch=batch,
-            replica_batches=[batch],
+            inputs=TextGenerationInputs(batches=[batch], num_steps=1),
             return_n_logits=return_n_logits,
-            hidden_states=None,  # type: ignore[arg-type]
+            hidden_states=MagicMock(),
         )
 
 
@@ -235,8 +203,8 @@ class TestUpdateContextsSingle:
         bonus: npt.NDArray[np.int64] | None,
         expected: dict[str, int],
     ) -> None:
-        ctx, tracker = setup_single_context()
-        tracker.update_contexts(
+        ctx, _ = setup_single_context()
+        update_contexts_and_compute_metrics_eagle(
             context_batch=[ctx],
             first_rejected_tokens=np.array([first_rejected], dtype=np.int64),
             recovered_tokens=np.array([[200, 201, 202]], dtype=np.int64),
@@ -262,9 +230,8 @@ class TestUpdateContextsMixedBatch:
     def test_two_contexts(self) -> None:
         ctx0, _ = setup_single_context()
         ctx1, _ = setup_single_context()
-        tracker = EAGLEIndexTracker()
 
-        tracker.update_contexts(
+        update_contexts_and_compute_metrics_eagle(
             context_batch=[ctx0, ctx1],
             first_rejected_tokens=np.array([3, 0], dtype=np.int64),
             recovered_tokens=np.array(
@@ -291,9 +258,8 @@ class TestDraftKVStartIndexCapping:
         """Artificially high kv_idx (10) is capped to processed (7)."""
         ctx, _ = setup_single_context()
         ctx.spec_decoding_state.draft_kv_start_idx = 10
-        tracker = EAGLEIndexTracker()
 
-        tracker.update_contexts(
+        update_contexts_and_compute_metrics_eagle(
             context_batch=[ctx],
             first_rejected_tokens=np.array([2], dtype=np.int64),
             recovered_tokens=np.array([[200, 201, 202]], dtype=np.int64),
@@ -304,8 +270,8 @@ class TestDraftKVStartIndexCapping:
         assert ctx.spec_decoding_state.draft_kv_start_idx == 7
 
     def test_not_capped_when_below(self) -> None:
-        ctx, tracker = setup_single_context()
-        tracker.update_contexts(
+        ctx, _ = setup_single_context()
+        update_contexts_and_compute_metrics_eagle(
             context_batch=[ctx],
             first_rejected_tokens=np.array([3], dtype=np.int64),
             recovered_tokens=np.array([[200, 201, 202]], dtype=np.int64),
@@ -322,8 +288,8 @@ class TestDraftKVStartIndexCapping:
 # ---------------------------------------------------------------------------
 class TestMetrics:
     def test_all_accepted_with_bonus(self) -> None:
-        ctx, tracker = setup_single_context()
-        tracker.update_contexts(
+        ctx, _ = setup_single_context()
+        stats = update_contexts_and_compute_metrics_eagle(
             context_batch=[ctx],
             first_rejected_tokens=np.array([3], dtype=np.int64),
             recovered_tokens=np.array([[200, 201, 202]], dtype=np.int64),
@@ -331,14 +297,13 @@ class TestMetrics:
             draft_tokens=np.array([[100, 101, 102]], dtype=np.int64),
             num_draft_tokens_generated=3,
         )
-        stats = tracker._metrics.get_stats()
-        assert stats["draft_tokens_accepted"] == 3
-        assert stats["bonus_tokens_used"] == 1
-        assert stats["acceptance_rate"] == 1.0
+        assert stats.draft_tokens_accepted == 3
+        assert stats.bonus_tokens_used == 1
+        assert stats.acceptance_rate == 1.0
 
     def test_partial_rejection(self) -> None:
-        ctx, tracker = setup_single_context()
-        tracker.update_contexts(
+        ctx, _ = setup_single_context()
+        stats = update_contexts_and_compute_metrics_eagle(
             context_batch=[ctx],
             first_rejected_tokens=np.array([1], dtype=np.int64),
             recovered_tokens=np.array([[200, 201, 202]], dtype=np.int64),
@@ -346,10 +311,9 @@ class TestMetrics:
             draft_tokens=np.array([[100, 101, 102]], dtype=np.int64),
             num_draft_tokens_generated=3,
         )
-        stats = tracker._metrics.get_stats()
-        assert stats["draft_tokens_accepted"] == 1
-        assert stats["bonus_tokens_used"] == 0
-        assert stats["acceptance_rate"] == pytest.approx(1 / 3)
+        assert stats.draft_tokens_accepted == 1
+        assert stats.bonus_tokens_used == 0
+        assert stats.acceptance_rate == pytest.approx(1 / 3)
 
 
 # ===========================================================================
@@ -371,7 +335,7 @@ class TestPrepareDraftBatchFullCycle:
         assert ctx.spec_decoding_state.draft_kv_start_idx == 4
 
         # --- update_contexts: all accepted + bonus ---
-        tracker.update_contexts(
+        update_contexts_and_compute_metrics_eagle(
             context_batch=[ctx],
             first_rejected_tokens=np.array([3], dtype=np.int64),
             recovered_tokens=np.array([[200, 201, 202]], dtype=np.int64),
@@ -388,7 +352,7 @@ class TestPrepareDraftBatchFullCycle:
         assert ctx.spec_decoding_state.draft_kv_start_idx == 8
 
         # --- update_contexts: partial acceptance (1 of 3) ---
-        tracker.update_contexts(
+        update_contexts_and_compute_metrics_eagle(
             context_batch=[ctx],
             first_rejected_tokens=np.array([1], dtype=np.int64),
             recovered_tokens=np.array([[500, 501, 502]], dtype=np.int64),
@@ -411,7 +375,7 @@ class TestPrepareDraftBatchMixedBatch:
         tracker = EAGLEIndexTracker()
 
         # ctx0: all accepted + bonus → kv_idx stays 4, offset=-3
-        tracker.update_contexts(
+        update_contexts_and_compute_metrics_eagle(
             context_batch=[ctx0],
             first_rejected_tokens=np.array([3], dtype=np.int64),
             recovered_tokens=np.array([[200, 201, 202]], dtype=np.int64),
@@ -421,7 +385,7 @@ class TestPrepareDraftBatchMixedBatch:
         )
 
         # ctx1: partial (2/3) → kv_idx stays 4, offset=-2
-        tracker.update_contexts(
+        update_contexts_and_compute_metrics_eagle(
             context_batch=[ctx1],
             first_rejected_tokens=np.array([2], dtype=np.int64),
             recovered_tokens=np.array([[200, 201, 202]], dtype=np.int64),
@@ -463,8 +427,8 @@ class TestReserveTokenSpace:
 
     def test_with_nonzero_processing_offset(self) -> None:
         """Bump interacts correctly with non-zero offset from update_contexts."""
-        ctx, tracker = setup_single_context()
-        tracker.update_contexts(
+        ctx, _ = setup_single_context()
+        update_contexts_and_compute_metrics_eagle(
             context_batch=[ctx],
             first_rejected_tokens=np.array([3], dtype=np.int64),
             recovered_tokens=np.array([[200, 201, 202]], dtype=np.int64),

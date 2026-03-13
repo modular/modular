@@ -41,9 +41,7 @@ from max.nn.kv_cache.utils import (
     build_max_lengths_tensor,
 )
 from max.profiler import traced
-from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
-    MemoryTier,
-)
+from max.serve.kvcache_agent.kvcache_types import MemoryTier
 from max.support.math import ceildiv
 
 from ..connectors import create_connector

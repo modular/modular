@@ -21,15 +21,15 @@ from std.testing import assert_equal
 from std.utils.index import IndexList
 
 
-fn linear_filler(i: Int, n: Int) -> Float32:
+def linear_filler(i: Int, n: Int) -> Float32:
     return Float32(i)
 
 
-fn reverse_filler(i: Int, n: Int) -> Float32:
+def reverse_filler(i: Int, n: Int) -> Float32:
     return Float32(n - i)
 
 
-fn test_argsort[
+def test_argsort[
     dtype: DType = DType.float32,
     *,
     filler: fn(Int, Int) -> Float32,
@@ -98,7 +98,7 @@ fn test_argsort[
     _ = device_input^
 
 
-fn test_argsort_helper[
+def test_argsort_helper[
     *,
     dtype: DType,
     filler: fn(Int, Int) -> Float32,
