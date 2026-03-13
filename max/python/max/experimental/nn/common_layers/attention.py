@@ -149,9 +149,9 @@ class AttentionWithRope(Module[..., Tensor]):
             wk: Tensor = self.k_proj.weight
             wv: Tensor = self.v_proj.weight
             if self.clip_qkv:
-                wq = F.min(F.max(wq, -self.clip_qkv), self.clip_qkv)
-                wk = F.min(F.max(wk, -self.clip_qkv), self.clip_qkv)
-                wv = F.min(F.max(wv, -self.clip_qkv), self.clip_qkv)
+                wq = F.clip(wq, -self.clip_qkv, self.clip_qkv)
+                wk = F.clip(wk, -self.clip_qkv, self.clip_qkv)
+                wv = F.clip(wv, -self.clip_qkv, self.clip_qkv)
             return F.concat([wq, wk, wv], axis=0)
 
     @property

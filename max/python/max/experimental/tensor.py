@@ -106,22 +106,10 @@ from dataclasses import dataclass
 from typing import Any, Protocol, TypeAlias, cast
 
 from max import driver, graph
-from max.driver import (
-    CPU,
-    Accelerator,
-    Device,
-    DLPackArray,
-    accelerator_count,
-)
+from max.driver import CPU, Accelerator, Device, DLPackArray, accelerator_count
 from max.dtype import DType
 from max.experimental.support import contextvar_context, driver_tensor_type
-from max.graph import (
-    DimLike,
-    ShapeLike,
-    TensorType,
-    TensorValueLike,
-    ops,
-)
+from max.graph import DimLike, ShapeLike, TensorType, TensorValueLike, ops
 from max.graph.ops.constant import NestedArray, Number
 from max.graph.value import HasTensorValue
 from rich.pretty import pretty_repr
