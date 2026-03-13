@@ -533,29 +533,35 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         )
 
         context_batch = inputs.flat_batch
-        penalty_inputs: PenaltyInputs | None = None
-        if self.pipeline_config.sampling.enable_penalties:
-            penalty_inputs = PenaltyInputs.create(
-                context_batch, self.devices[0]
-            )
 
-        sampler_inputs = SamplerInputs.create(
-            inputs.flat_batch, self.devices[0]
-        )
+        # Rejection sampling with 0 draft tokens: bonus_token = sampled token.
+        # Construct dummy logit_offsets (unused by _TypicalAcceptanceRunner but
+        # required by the RejectionRunner protocol).
+        logit_offsets = target_outputs.logit_offsets
+        if logit_offsets is None:
+            logit_offsets = Buffer.from_numpy(
+                np.arange(batch_size + 1, dtype=np.uint32)
+            ).to(self.devices[0])
 
-        target_sampled_tokens = self._sampler.sample_logits(
-            logits=target_outputs.logits,
-            sampler_inputs=sampler_inputs,
-            penalty_inputs=penalty_inputs,
+        first_rejected, recovered, bonus = self._rejection_runner.run(
+            draft_tokens=saved_draft_tokens,
+            draft_logits=None,
+            target_logits=target_outputs.logits,
+            target_logit_offsets=logit_offsets,
+            all_draft_logits=None,
+            context_batch=context_batch,
         )
-        target_sampled_tokens_np = target_sampled_tokens.to_numpy()
+        first_rejected_np = first_rejected.to_numpy()
+        recovered_np = recovered.to_numpy()
+        bonus_np = bonus.to_numpy() if bonus is not None else None
+
+        # The bonus token is our sampled target token.
+        assert bonus_np is not None
+        next_tokens_for_shift = bonus_np.flatten().astype(np.int64)
 
         assert target_outputs.hidden_states is not None
         hs = target_outputs.hidden_states
         assert isinstance(hs, Buffer)
-        next_tokens_for_shift: npt.NDArray[np.int64] = (
-            target_sampled_tokens_np.flatten().astype(np.int64)
-        )
 
         draft_ce_inputs, _ = self._prepare_draft_batch(
             inputs=inputs,
@@ -574,7 +580,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 state.saved_draft_tokens = np.array(
                     [int(draft_sampled_tokens[i])], dtype=np.int64
                 )
-            token = int(target_sampled_tokens_np[i].item())
+            token = int(next_tokens_for_shift[i].item())
             ctx.update(token)
 
         return build_response(
