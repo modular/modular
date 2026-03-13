@@ -237,6 +237,25 @@ def _warmup_configs_and_prompts(
     return warmup_configs, warmup_prompts
 
 
+def _print_gpu_info() -> None:
+    """Print GPU name, VRAM, and CUDA build version."""
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            print("  GPU: not available (CPU mode)")
+            return
+        name = torch.cuda.get_device_name(0)
+        total_memory = torch.cuda.get_device_properties(0).total_memory
+        total_gb = total_memory / (1024**3)
+        cuda_version = torch.version.cuda or "N/A"
+        print(f"  GPU            : {name}")
+        print(f"  VRAM           : {total_gb:.1f} GB")
+        print(f"  CUDA (build)   : {cuda_version}")
+    except Exception as e:
+        print(f"  GPU info       : unavailable ({e})")
+
+
 def _truncate_prompt(prompt: str, max_len: int = 40) -> str:
     """Return a display-friendly truncated prompt."""
     if len(prompt) <= max_len:
@@ -328,6 +347,7 @@ def run_diffusers(args: argparse.Namespace) -> TimingResult:
     result = TimingResult()
     timed_configs = _iter_configs(args, args.num_iterations)
     timed_prompts = _iter_prompts(args, args.num_iterations)
+
     for i, ((h, w, steps), prompt) in enumerate(
         zip(timed_configs, timed_prompts, strict=False)
     ):
@@ -497,6 +517,7 @@ def run_max(args: argparse.Namespace) -> TimingResult:
     result = TimingResult()
     timed_configs = _iter_configs(args, args.num_iterations)
     timed_prompts = _iter_prompts(args, args.num_iterations)
+
     for i, ((h, w, steps), prompt) in enumerate(
         zip(timed_configs, timed_prompts, strict=False)
     ):
@@ -605,6 +626,7 @@ def main(argv: list[str] | None = None) -> int:
     print("\n" + "=" * 60)
     print("FLUX.2 Performance Comparison")
     print("=" * 60)
+    _print_gpu_info()
     if args.vary_prompts:
         print("  prompts          : varied (seq-length stress test)")
     else:
