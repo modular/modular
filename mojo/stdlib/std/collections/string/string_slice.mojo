@@ -2626,9 +2626,9 @@ def _unsafe_strlen(
 @always_inline
 def _memchr[
     dtype: DType, //
-](
-    source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]
-) -> source.UnsafePointerType:
+](source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]) -> type_of(
+    source.unsafe_ptr()
+):
     if (
         __is_run_in_comptime_interpreter
         or len(source) < simd_width_of[Scalar[dtype]]()
@@ -2649,7 +2649,7 @@ def _memchr_impl[
 ](
     source: Span[mut=False, Scalar[dtype], ...],
     char: Scalar[dtype],
-    out output: source.UnsafePointerType,
+    out output: type_of(source.unsafe_ptr()),
 ):
     var haystack = source.unsafe_ptr()
     var length = len(source)
@@ -2684,7 +2684,7 @@ def _memmem[
         Scalar[dtype],
         ...,
     ],
-) -> haystack_span.UnsafePointerType:
+) -> type_of(haystack_span.unsafe_ptr()):
     if (
         __is_run_in_comptime_interpreter
         or len(haystack_span) < simd_width_of[Scalar[dtype]]()
@@ -2716,7 +2716,7 @@ def _memmem_impl[
         Scalar[dtype],
         ...,
     ],
-    out output: haystack_span.UnsafePointerType,
+    out output: type_of(haystack_span.unsafe_ptr()),
 ):
     var haystack = haystack_span.unsafe_ptr()
     var haystack_len = len(haystack_span)

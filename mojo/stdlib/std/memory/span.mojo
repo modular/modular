@@ -24,6 +24,7 @@ from std.reflection import call_location
 from std.bit._mask import splat
 from std.bit import pop_count
 from std.memory import pack_bits, uninit_copy_n
+from std.memory._nonnull import NonNullUnsafePointer
 from std.collections._index_normalization import normalize_index
 from std.builtin.rebind import downcast
 from std.sys import align_of
@@ -143,7 +144,7 @@ struct Span[
     # Aliases
     comptime Immutable = Span[Self.T, ImmutOrigin(Self.origin)]
     """The immutable version of the `Span`."""
-    comptime UnsafePointerType = UnsafePointer[
+    comptime _UnsafePointerType = NonNullUnsafePointer[
         Self.T,
         Self.origin,
     ]
@@ -158,7 +159,7 @@ struct Span[
         iterable_origin: The origin of the iterable.
     """
     # Fields
-    var _data: Self.UnsafePointerType
+    var _data: Self._UnsafePointerType
     var _len: Int
 
     comptime device_type: AnyType = Self
@@ -190,7 +191,7 @@ struct Span[
     @always_inline("nodebug")
     def __init__(out self):
         """Create an empty / zero-length span."""
-        self._data = {}
+        self._data = Self._UnsafePointerType.dangling()
         self._len = 0
 
     @doc_private
@@ -207,14 +208,16 @@ struct Span[
         self = rebind[type_of(self)](other)
 
     @always_inline("builtin")
-    def __init__(out self, *, ptr: Self.UnsafePointerType, length: Int):
+    def __init__(
+        out self, *, ptr: UnsafePointer[Self.T, Self.origin], length: Int
+    ):
         """Unsafe construction from a pointer and length.
 
         Args:
             ptr: The underlying pointer of the span.
             length: The length of the view.
         """
-        self._data = ptr
+        self._data = {unsafe_from_nullable = ptr}
         self._len = length
 
     @always_inline
@@ -232,7 +235,7 @@ struct Span[
         Args:
             list: The list to which the span refers.
         """
-        self._data = list.unsafe_ptr()
+        self._data = {unsafe_from_nullable = list.unsafe_ptr()}
         self._len = list._len
 
     @always_inline
@@ -257,7 +260,7 @@ struct Span[
             array: The array to which the span refers.
         """
 
-        self._data = array.unsafe_ptr()
+        self._data = {unsafe_from_nullable = array.unsafe_ptr()}
         self._len = size
 
     # ===------------------------------------------------------------------===#
@@ -464,7 +467,11 @@ struct Span[
     def unsafe_ptr(
         self,
     ) -> UnsafePointer[Self.T, Self.origin]:
-        """Retrieves a pointer to the underlying memory.
+        """Retrieves a pointer to the underlying memory, or a dangling
+        pointer if the span doesn't point to anything.
+
+        You should use the `len` of this `Span` to determine if the pointer
+        is valid for reads and writes.
 
         Returns:
             The pointer to the underlying memory.
