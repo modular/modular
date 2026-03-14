@@ -76,7 +76,7 @@ any list whose elements can be compared.
 Here's a concrete version that's only useful for Integers:
 
 ```mojo
-fn all_equal_int(ref lhs: List[Int], ref rhs: List[Int]) -> Bool:
+def all_equal_int(ref lhs: List[Int], ref rhs: List[Int]) -> Bool:
     if len(lhs) != len(rhs): return False
 
     for left, right in zip(lhs, rhs):
@@ -94,7 +94,7 @@ Given those requirements, your function can walk both lists
 element-by-element, just like the Integer version.
 
 ```mojo
-fn all_equal[
+def all_equal[
     T: Equatable & Copyable
 ](ref lhs: List[T], ref rhs: List[T]) -> Bool:
     if len(lhs) != len(rhs): return False
@@ -223,7 +223,7 @@ of type `T`. Generic types can also be used without embedding
 them into container types, like you see here:
 
 ```mojo
-fn my_generic_fn[T: AnyType](value: T):
+def my_generic_fn[T: AnyType](value: T):
 ```
 
 This function accepts any type, because its only limit is `AnyType`.
@@ -252,7 +252,7 @@ struct Pair[T: ComparableValue](ComparableValue):
     var left: Self.T
     var right: Self.T
 
-    fn __eq__(self, other: Pair[Self.T]) -> Bool:
+    def __eq__(self, other: Pair[Self.T]) -> Bool:
         return self.left == other.left and
                self.right == other.right
 ```
@@ -302,7 +302,7 @@ you're building:
 
 ```mojo
 struct ExampleStruct:
-    fn example[
+    def example[
         T: Writable & Copyable,   # generic type parameter
         count: Int,               # parameter
     ](
@@ -332,7 +332,7 @@ This pattern keeps your code correct and makes fallback behavior
 explicit:
 
 ```mojo
-fn process[T: AnyType](value: T):
+def process[T: AnyType](value: T):
     comptime if conforms_to(T, Writable & ImplicitlyCopyable):
         var w = trait_downcast[Writable & ImplicitlyCopyable](value)
         print(w)
@@ -568,7 +568,7 @@ struct Wrapper[T: BaseTraits](
     var value: Self.T
 
     # New method
-    fn __bool__(self) -> Bool where conforms_to(Self.T, Boolable):
+    def __bool__(self) -> Bool where conforms_to(Self.T, Boolable):
         return trait_downcast[Boolable](self.value).__bool__()
 ```
 

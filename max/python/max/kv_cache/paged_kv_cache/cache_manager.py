@@ -244,7 +244,10 @@ class PagedKVCacheManager:
                 device=DeviceRef.from_device(replica_devices[0]),
                 is_mla=params.is_mla,
                 n_kv_heads_per_device=params.n_kv_heads_per_device,
-                num_q_heads=params.num_q_heads,
+                num_q_heads_per_device=params.num_q_heads_per_device,
+                # TODO(SERVOPT-1094): Replace with quantized_kv_cache once
+                # SnapMLA uses a valid scale_dtype.
+                is_fp8_kv=params.is_fp8_kv_dtype,
             )
             replica_metadata = _ReplicaMetadata(
                 block_manager=block_manager,

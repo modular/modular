@@ -927,20 +927,48 @@ def _batched_matmul_gpu[
 
                     elementwise_epilogue(batch_coords, val)
 
+                # TODO(KERN-2219): Replace _to_ndbuffer() roundtrip with a
+                # pure TileTensor batch-to-2D reshape.
                 _matmul_gpu[
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_epilogue_fn_wrapper,
                 ](
-                    _reshape_nd_buffer_with_batch_to_2d(c_buf._to_ndbuffer()),
-                    _reshape_nd_buffer_with_batch_to_2d(a_buf._to_ndbuffer()),
-                    _reshape_nd_buffer_with_batch_to_2d(b_buf._to_ndbuffer()),
+                    TileTensor(
+                        _reshape_nd_buffer_with_batch_to_2d(
+                            c_buf._to_ndbuffer()
+                        )
+                    ),
+                    TileTensor(
+                        _reshape_nd_buffer_with_batch_to_2d(
+                            a_buf._to_ndbuffer()
+                        )
+                    ),
+                    TileTensor(
+                        _reshape_nd_buffer_with_batch_to_2d(
+                            b_buf._to_ndbuffer()
+                        )
+                    ),
                     ctx=ctx,
                 )
             else:
+                # TODO(KERN-2219): Replace _to_ndbuffer() roundtrip with a
+                # pure TileTensor batch-to-2D reshape.
                 _matmul_gpu[transpose_b=transpose_b](
-                    _reshape_nd_buffer_with_batch_to_2d(c_buf._to_ndbuffer()),
-                    _reshape_nd_buffer_with_batch_to_2d(a_buf._to_ndbuffer()),
-                    _reshape_nd_buffer_with_batch_to_2d(b_buf._to_ndbuffer()),
+                    TileTensor(
+                        _reshape_nd_buffer_with_batch_to_2d(
+                            c_buf._to_ndbuffer()
+                        )
+                    ),
+                    TileTensor(
+                        _reshape_nd_buffer_with_batch_to_2d(
+                            a_buf._to_ndbuffer()
+                        )
+                    ),
+                    TileTensor(
+                        _reshape_nd_buffer_with_batch_to_2d(
+                            b_buf._to_ndbuffer()
+                        )
+                    ),
                     ctx=ctx,
                 )
 
@@ -1167,6 +1195,78 @@ def batched_matmul[
             TileTensor(b_buf),
             context.get_device_context(),
         )
+
+
+@always_inline
+def batched_matmul[
+    *,
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
+    saturated_vnni: Bool = False,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    c_buf: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    a_buf: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b_buf: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    *,
+    context: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    """TileTensor overload of `batched_matmul`. Converts to NDBuffer and
+    delegates."""
+    comptime assert c_buf.rank >= 2, "c must be at least rank 2"
+    comptime assert (
+        c_buf.rank == a_buf.rank == b_buf.rank
+    ), "all tensors must have the same rank"
+    comptime assert (
+        c_buf.flat_rank == c_buf.rank
+    ), "c must have a non-nested layout"
+    comptime assert (
+        a_buf.flat_rank == a_buf.rank
+    ), "a must have a non-nested layout"
+    comptime assert (
+        b_buf.flat_rank == b_buf.rank
+    ), "b must have a non-nested layout"
+
+    comptime rank = c_buf.rank
+
+    # Construct NDBuffers with static shapes preserved (no strides).
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+    comptime _c_dim[idx: Int]: Dim = dim[c_buf.static_shape[idx]]
+    comptime _a_dim[idx: Int]: Dim = dim[a_buf.static_shape[idx]]
+    comptime _b_dim[idx: Int]: Dim = dim[b_buf.static_shape[idx]]
+    comptime c_shape = DimList[*Variadic.tabulate[rank, _c_dim[_]]]()
+    comptime a_shape = DimList[*Variadic.tabulate[rank, _a_dim[_]]]()
+    comptime b_shape = DimList[*Variadic.tabulate[rank, _b_dim[_]]]()
+
+    var c_nd = NDBuffer[rank=rank, c_buf.dtype, MutAnyOrigin, c_shape](
+        c_buf.ptr.as_any_origin(),
+        rebind[IndexList[rank]](
+            coord_to_index_list(c_buf.layout.shape_coord())
+        ),
+    )
+    var a_nd = NDBuffer[rank=rank, a_buf.dtype, ImmutAnyOrigin, a_shape](
+        a_buf.ptr.as_any_origin(),
+        rebind[IndexList[rank]](
+            coord_to_index_list(a_buf.layout.shape_coord())
+        ),
+    )
+    var b_nd = NDBuffer[rank=rank, b_buf.dtype, ImmutAnyOrigin, b_shape](
+        b_buf.ptr.as_any_origin(),
+        rebind[IndexList[rank]](
+            coord_to_index_list(b_buf.layout.shape_coord())
+        ),
+    )
+
+    batched_matmul[
+        transpose_a=transpose_a,
+        transpose_b=transpose_b,
+        elementwise_epilogue_fn=elementwise_epilogue_fn,
+        saturated_vnni=saturated_vnni,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](c_nd, a_nd, b_nd, context=context)
 
 
 @always_inline

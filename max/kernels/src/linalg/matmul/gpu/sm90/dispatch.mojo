@@ -14,7 +14,6 @@
 from std.math import ceildiv
 from std.sys import get_defined_bool, get_defined_int, size_of
 
-from buffer.buffer import NDBuffer
 from layout import TileTensor
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext
@@ -139,31 +138,6 @@ def matmul_dispatch_sm90[
         return DISPATCH_MISS
 
     return _dispatch()
-
-
-def matmul_dispatch_sm90[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    transpose_b: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    pdl_level: PDLLevel = PDLLevel(),
-](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[rank=2, a_type, _, _],
-    b: NDBuffer[rank=2, b_type, _, _],
-    ctx: DeviceContext,
-) raises -> Int:
-    """NDBuffer overload — converts to TileTensor and delegates."""
-    return matmul_dispatch_sm90[
-        transpose_b=transpose_b,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        pdl_level=pdl_level,
-    ](TileTensor(c), TileTensor(a), TileTensor(b), ctx)
 
 
 # ===----------------------------------------------------------------------=== #

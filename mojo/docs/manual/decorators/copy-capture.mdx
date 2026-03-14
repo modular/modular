@@ -12,16 +12,16 @@ of formation instead of capturing that variable by reference. This allows the
 closure to be passed as an escaping function, without lifetime concerns.
 
 ```mojo
-  fn foo(x: Int):
+  def foo(x: Int):
       var z = x
 
       @__copy_capture(z)
       @parameter
-      fn formatter() -> Int:
+      def formatter() -> Int:
           return z
       z = 2
       print(formatter())
 
-  fn main():
+  def main():
       foo(5)
 ```

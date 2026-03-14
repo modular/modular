@@ -39,6 +39,7 @@ from layout import (
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    lt_to_tt,
     row_major,
 )
 from layout.layout import zipped_divide
@@ -399,7 +400,7 @@ struct BlockwiseFP8TileWriter[
                 comptime for _j in range(cast_width):
                     upper_st[offset + _j] = casted[_j]
             stsm_helper[swizzle, Self.stageN, swizzle_mode=Self.c_swizzle](
-                upper_st, c_smem_warp_tile_upper
+                upper_st, lt_to_tt(c_smem_warp_tile_upper)
             )
 
             var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
@@ -421,7 +422,7 @@ struct BlockwiseFP8TileWriter[
                     comptime for _j in range(cast_width):
                         lower_st[offset + _j] = casted[_j]
                 stsm_helper[swizzle, Self.stageN, swizzle_mode=Self.c_swizzle](
-                    lower_st, c_smem_warp_tile_lower
+                    lower_st, lt_to_tt(c_smem_warp_tile_lower)
                 )
 
             named_barrier[Int32(Self.num_output_warps * WARP_SIZE)]()

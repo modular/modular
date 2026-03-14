@@ -34,7 +34,7 @@ from std.utils.numerics import get_accum_type
 comptime test_dtypes = (DType.bfloat16, DType.float32)
 comptime test_gpu_counts = (2, 4, 8)
 
-# 1D test lengths (tested with axis=-1)
+# 1D test lengths
 comptime test_1d_lengths = (
     8 * 1024,  # Small
     8 * 1024 + 8,  # Ragged: +1 bf16 SIMD vector / +2 f32 SIMD vectors
@@ -66,8 +66,8 @@ def reducescatter_test[
     """Test reduce-scatter operation (1D and 2D)."""
     comptime assert ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"
     comptime assert axis < rank
+    comptime assert axis >= 0
     comptime assert rank <= 2, "Only up to 2D supported currently"
-    # comptime assert axis >= 0 # TODO(KERN-2526): re-enable
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
     var num_elements = shape.product()
@@ -104,7 +104,6 @@ def reducescatter_test[
     # Compute partitioning config.
     var axis_size: Int
     var unit_numel: Int
-    # TODO(KERN-2526): Let's stop using -1
     comptime if rank == 1:
         axis_size = num_elements // simd_width
         unit_numel = simd_width
@@ -385,7 +384,7 @@ def run_reducescatter_sweep() raises:
             dtype=dtype,
             ngpus=ngpus,
             rank=1,
-            axis=-1,
+            axis=0,
             use_custom_epilogue=use_custom_epilogue,
         ](list_of_ctx, Coord(Idx(length)))
 

@@ -357,7 +357,7 @@ of the storage.
 That method looks something like this:
 
 ```mojo
-fn unsafe_ptr(
+def unsafe_ptr(
     ref self,
 ) -> UnsafePointer[T, origin_of(self)]:
 
@@ -398,7 +398,7 @@ You can create a `UnsafePointer` from a raw memory address using the
 `unsafe_from_address` initializer.
 
 ```mojo
-fn write_to_address(mmio_address: Int, value: Int32):
+def write_to_address(mmio_address: Int, value: Int32):
     var ptr = UnsafePointer[Int32, MutExternalOrigin](
       unsafe_from_address=mmio_address
     )

@@ -420,3 +420,113 @@ def test_overlap_di_has_pending_outputs_prevents_no_progress() -> None:
 
     result = decode.run_iteration()
     assert result == SchedulerProgress.MADE_PROGRESS
+
+
+def test_prefill_reqs_per_replica_decremented_on_completion() -> None:
+    """prefill_reqs_per_replica must return to [0, 0] after requests complete
+    end-to-end with DP=2.
+
+    Regression: check_for_completed_transfers popped from prefill_reqs
+    without decrementing prefill_reqs_per_replica, causing the counter to
+    drift and degrade DP replica load balancing.
+    """
+    decode, prefill, server_addr = create_di_scheduler(dp=2)
+    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
+
+    # Submit 2 requests
+    ctx1 = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    ctx2 = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    request_queue.put(ctx1)
+    request_queue.put(ctx2)
+
+    # Run end-to-end
+    decode.run_iteration()
+    prefill.run_iteration()
+    decode.run_iteration()
+
+    # Both requests should have been popped from prefill_reqs
+    assert decode.prefill_reqs == {}
+
+    # prefill_reqs_per_replica must be back to zero for both replicas
+    assert decode.prefill_reqs_per_replica == [0, 0], (
+        f"prefill_reqs_per_replica not decremented on normal completion: "
+        f"{decode.prefill_reqs_per_replica}"
+    )
+
+
+def test_cancel_pending_prefill_releases_decode_kv_blocks() -> None:
+    """Cancelling a request pending prefill must release its KV cache blocks
+    on the decode side.
+
+    Regression: _handle_cancelled_requests removed the request from
+    prefill_reqs but never called kv_cache.release, permanently leaking
+    the blocks allocated before sending to prefill.
+    """
+    decode, _, ctx = create_default_di_scheduler_and_submit_one_request()
+    req_id = ctx.request_id
+    cancel_queue: queue.Queue = cast(queue.Queue, decode.cancel_queue)  # type: ignore[type-arg]
+    response_q = cast(queue.Queue, decode.response_queue)  # type: ignore[type-arg]
+
+    # Record baseline KV usage.
+    pages_before = decode.kv_cache.get_num_used_pages(replica_idx=0)
+
+    # Send to prefill -> allocates KV blocks on decode
+    decode.run_iteration()
+
+    pages_after_send = decode.kv_cache.get_num_used_pages(replica_idx=0)
+    assert pages_after_send > pages_before, (
+        "Expected KV blocks to be allocated after sending to prefill"
+    )
+
+    # Cancel before prefill runs
+    cancel_queue.put([req_id])
+    decode.run_iteration()
+
+    # Drain the cancelled response
+    assert not response_q.empty()
+    batch = response_q.get()
+    assert req_id in batch
+    assert batch[req_id].result is None  # cancelled
+
+    # KV blocks must be released back to pool
+    pages_after_cancel = decode.kv_cache.get_num_used_pages(replica_idx=0)
+    assert pages_after_cancel == pages_before, (
+        f"KV blocks leaked after cancel: had {pages_before} before, "
+        f"{pages_after_cancel} after cancel (expected {pages_before}). "
+        f"Delta = {pages_after_cancel - pages_before} pages leaked."
+    )
+
+
+def test_stale_prefill_response_after_cancel_does_not_crash() -> None:
+    """A PrefillResponse arriving after the request was cancelled must be
+    silently discarded, not raise KeyError.
+
+    Regression: handle_prefill_response accessed self.prefill_reqs[request_id]
+    without checking membership, crashing when the request had already been
+    cancelled and removed in a prior iteration.
+    """
+    decode, prefill, ctx = create_default_di_scheduler_and_submit_one_request()
+    req_id = ctx.request_id
+    cancel_queue: queue.Queue = cast(queue.Queue, decode.cancel_queue)  # type: ignore[type-arg]
+
+    # Send to prefill
+    decode.run_iteration()
+
+    # Cancel before prefill runs
+    cancel_queue.put([req_id])
+    decode.run_iteration()
+
+    # Prefill runs now and sends a PrefillResponse (has not seen cancel)
+    prefill.run_iteration()
+
+    # Decode receives the stale PrefillResponse
+    # It must not crash and must discard it
+    decode.run_iteration()
+
+    assert req_id not in decode.prefill_reqs
+    assert req_id not in decode.inflight_transfers
+    assert not decode.batch_constructor.contains(req_id)

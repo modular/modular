@@ -17,7 +17,8 @@ import pytest
 import torch
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
-from max.engine.api import InferenceSession
+from max.engine import InferenceSession
+from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.architectures.qwen3vl_moe.nn.moe import (
     Qwen3VLMoE,
@@ -96,7 +97,7 @@ def generate_max_moe_outputs(
 
     # Convert weights to MAX format
     state_dict = {
-        weight_name: value.to(dtype.to_torch()).cpu()
+        weight_name: value.to(max_dtype_to_torch(dtype)).cpu()
         for weight_name, value in moe_weights.items()
     }
 
