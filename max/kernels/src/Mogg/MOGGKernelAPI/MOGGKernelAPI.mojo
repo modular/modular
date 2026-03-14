@@ -3835,10 +3835,6 @@ struct Matmul:
 
         comptime transposed_a = False
 
-        var a_buffer = managed_tensor_slice_to_ndbuffer(a)
-        var b_buffer = managed_tensor_slice_to_ndbuffer(b)
-        var c_buffer = managed_tensor_slice_to_ndbuffer(c)
-
         @parameter
         @always_inline
         def epilgue_fn[
@@ -3864,23 +3860,47 @@ struct Matmul:
 
         comptime has_compute_lambda = c.static_spec.out_compute_lambda is not None
 
-        matmul[
-            transposed_a,
-            transpose_b,
-            packed_b,
-            Optional[matmul_elementwise_epilogue_type](
-                epilgue_fn
-            ) if lambdas_have_fusion
-            and not has_compute_lambda else None,
-            Optional[matmul_elementwise_compute_lambda_type](
-                output_compute_fn
-            ) if lambdas_have_fusion
-            and has_compute_lambda else None,
-            saturated_vnni=False,
-            single_thread_blocking_override=False,
-            target=target,
-            _trace_description=_trace_name,
-        ](c_buffer, a_buffer, b_buffer, ctx)
+        comptime elementwise_lambda = Optional[
+            matmul_elementwise_epilogue_type
+        ](
+            epilgue_fn
+        ) if lambdas_have_fusion and not has_compute_lambda else None
+
+        comptime compute_lambda = Optional[
+            matmul_elementwise_compute_lambda_type
+        ](
+            output_compute_fn
+        ) if lambdas_have_fusion and has_compute_lambda else None
+
+        comptime if is_gpu[target]():
+            matmul[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda,
+                elementwise_compute_lambda_fn=compute_lambda,
+                target=target,
+                _trace_description=_trace_name,
+            ](
+                c.to_tile_tensor[DType.int64](),
+                a.to_tile_tensor[DType.int64](),
+                b.to_tile_tensor[DType.int64](),
+                Optional(ctx.get_device_context()),
+            )
+        else:
+            var a_buffer = managed_tensor_slice_to_ndbuffer(a)
+            var b_buffer = managed_tensor_slice_to_ndbuffer(b)
+            var c_buffer = managed_tensor_slice_to_ndbuffer(c)
+
+            matmul[
+                transposed_a,
+                transpose_b,
+                packed_b,
+                elementwise_lambda,
+                compute_lambda,
+                saturated_vnni=False,
+                single_thread_blocking_override=False,
+                target=target,
+                _trace_description=_trace_name,
+            ](c_buffer, a_buffer, b_buffer, ctx)
 
 
 @compiler.register("mo.batch_matmul")
@@ -11266,12 +11286,12 @@ struct MatmulStaticScaledFloat8:
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        var output = managed_tensor_slice_to_ndbuffer(output_tensor)
-        var input = managed_tensor_slice_to_ndbuffer(input_tensor)
-        var weight = managed_tensor_slice_to_ndbuffer(weight_tensor)
+        var output_tt = output_tensor.to_tile_tensor[DType.int64]()
+        var input_tt = input_tensor.to_tile_tensor[DType.int64]()
+        var weight_tt = weight_tensor.to_tile_tensor[DType.int64]()
 
         @parameter
-        @__copy_capture(output, input_scale, weight_scale)
+        @__copy_capture(output_tt, input_scale, weight_scale)
         @always_inline
         def scaled_output_fn[
             dtype: DType, width: Int, *, alignment: Int = 1
@@ -11279,14 +11299,15 @@ struct MatmulStaticScaledFloat8:
             var scale = input_scale.cast[dtype]() * weight_scale.cast[dtype]()
             var scaled_val = val * scale
 
-            output.store[width=width, alignment=alignment](
+            output_tt.store_linear[width=width, alignment=alignment](
                 idx, scaled_val.cast[output_type]()
             )
 
-        # create a dummy buffer to instruct the matmul kernel to output values
-        # in the correct type
-        comptime N = weight.shape.get[0]()
-        var M = input.dim[0]()
+        # Create a dummy buffer to instruct the matmul kernel to accumulate
+        # in float32. The null pointer tells vendor matmul to allocate a
+        # temp buffer; the epilogue lambda writes to the real output.
+        comptime N = type_of(weight_tt).static_shape[0]
+        var M = Int(input_tt.dim[0]())
         var output_dummy = NDBuffer[
             rank=2, DType.float32, MutAnyOrigin, DimList[Dim(), N]()
         ](
@@ -11299,10 +11320,10 @@ struct MatmulStaticScaledFloat8:
             transpose_b=True,
             elementwise_lambda_fn=scaled_output_fn,
         ](
-            output_dummy,
-            input,
-            weight,
-            Optional[DeviceContext](ctx.get_device_context()),
+            TileTensor(output_dummy),
+            input_tt,
+            weight_tt,
+            Optional(ctx.get_device_context()),
         )
 
 
