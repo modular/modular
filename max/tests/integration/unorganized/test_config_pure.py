@@ -1432,7 +1432,12 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
 
 @prepare_registry
 @mock_pipeline_config_resolve
-def test_validate_and_resolve_overlap_scheduler__validate() -> None:
+def test_validate_and_resolve_overlap_scheduler__validate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Mock .huggingface_model_repo so that we don't reach out to HF.
+    monkeypatch.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
+
     # Allow user to manually enable overlap scheduler
     config = PipelineConfig(
         model=MAXModelConfig(
@@ -1462,7 +1467,8 @@ def test_validate_and_resolve_overlap_scheduler__validate() -> None:
             device_specs=[DeviceSpec.accelerator()],
         ),
         runtime=PipelineRuntimeConfig(
-            pipeline_role="prefill_only", enable_overlap_scheduler=True
+            pipeline_role="prefill_only",
+            enable_overlap_scheduler=True,
         ),
     )
     with pytest.raises(ValueError):
@@ -1475,7 +1481,8 @@ def test_validate_and_resolve_overlap_scheduler__validate() -> None:
             device_specs=[DeviceSpec.accelerator()],
         ),
         runtime=PipelineRuntimeConfig(
-            pipeline_role="prefill_and_decode", enable_overlap_scheduler=True
+            pipeline_role="prefill_and_decode",
+            enable_overlap_scheduler=True,
         ),
         audio_decoder=Mock(),
     )
