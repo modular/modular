@@ -79,6 +79,7 @@ class BatchMetrics:
     draft_tokens_accepted: int
     avg_acceptance_length: float
     max_acceptance_length: int
+    bonus_tokens_used: int
 
     nixl_read_latency_avg_ms: float
     nixl_write_latency_avg_ms: float
@@ -196,6 +197,7 @@ class BatchMetrics:
         draft_tokens_accepted = 0
         avg_acceptance_length = 0.0
         max_acceptance_length = 0
+        bonus_tokens_used = 0
         if speculative_decoding_metrics is not None:
             draft_tokens_generated = (
                 speculative_decoding_metrics.draft_tokens_generated
@@ -209,6 +211,8 @@ class BatchMetrics:
             max_acceptance_length = (
                 speculative_decoding_metrics.num_speculative_tokens
             )
+            bonus_tokens_used = speculative_decoding_metrics.bonus_tokens_used
+            speculative_decoding_metrics.reset()
 
         return cls(
             batch_type=inputs.batch_type,
@@ -241,6 +245,7 @@ class BatchMetrics:
             draft_tokens_accepted=draft_tokens_accepted,
             avg_acceptance_length=avg_acceptance_length,
             max_acceptance_length=max_acceptance_length,
+            bonus_tokens_used=bonus_tokens_used,
             nixl_read_latency_avg_ms=nixl_read_latency_avg_ms,
             nixl_write_latency_avg_ms=nixl_write_latency_avg_ms,
             rpc_acquire_latency_avg_ms=rpc_acquire_latency_avg_ms,
@@ -339,6 +344,15 @@ class BatchMetrics:
             METRICS.dkv_rpc_acquire_latency(self.rpc_acquire_latency_avg_ms)
         if self.rpc_read_latency_avg_ms > 0:
             METRICS.dkv_rpc_read_latency(self.rpc_read_latency_avg_ms)
+
+        if self.draft_tokens_generated > 0:
+            METRICS.speculative_draft_tokens_accepted(
+                self.draft_tokens_accepted
+            )
+            METRICS.speculative_draft_tokens_generated(
+                self.draft_tokens_generated
+            )
+            METRICS.speculative_bonus_tokens_used(self.bonus_tokens_used)
 
 
 class SchedulerLogger:

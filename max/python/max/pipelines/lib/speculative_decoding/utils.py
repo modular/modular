@@ -82,6 +82,14 @@ class SpeculativeDecodingMetrics:
         self.draft_tokens_accepted += metrics.draft_tokens_accepted
         self.draft_tokens_generated += metrics.draft_tokens_generated
 
+    def reset(self) -> None:
+        """Reset all counters to zero."""
+        self.bonus_tokens_used = 0
+        self.draft_tokens_accepted = 0
+        self.draft_tokens_generated = 0
+        self.total_acceptance_lengths = 0
+        self.num_generations = 0
+
     @property
     def acceptance_rate(self) -> float:
         """Get the acceptance rate."""
