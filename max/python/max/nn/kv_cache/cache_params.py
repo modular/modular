@@ -219,6 +219,10 @@ class KVCacheParams(KVCacheParamInterface):
     n_kv_heads_per_device: int = 0
     """Number of KV heads allocated to each device. Computed automatically in __post_init__."""
 
+    num_q_heads_per_device: int | None = None
+    """Number of query heads per device. Computed automatically in __post_init__
+    from ``num_q_heads`` and the parallelism configuration."""
+
     kvcache_quant_config: KVCacheQuantizationConfig | None = None
     """KVCache quantization config. Currently only FP8 quantization supported."""
 
@@ -262,6 +266,11 @@ class KVCacheParams(KVCacheParamInterface):
                     "num_q_heads is required when is_mla=True so the "
                     "attention dispatch resolver can use the MLA kernel."
                 )
+            devices_per_replica = self.n_devices // self.data_parallel_degree
+            self.num_q_heads_per_device = (
+                self.num_q_heads // devices_per_replica
+            )
+
         else:
             # Tensor parallel mode: shard by heads, keep all layers per device
             if self.n_kv_heads % self.n_devices != 0:

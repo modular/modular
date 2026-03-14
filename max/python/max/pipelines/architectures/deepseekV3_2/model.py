@@ -91,6 +91,10 @@ class DeepseekV3_2Model(DeepseekV3Model):
         """Create model configuration from huggingface config."""
         config = self.huggingface_config
 
+        # data_parallel_degree controls the attention strategy:
+        #   == num_devices  ->  DP attention  (each device owns a batch shard)
+        #   == 1            ->  TP attention  (heads sharded, tokens replicated)
+        data_parallel_degree = self.pipeline_config.model.data_parallel_degree
         max_batch_total_tokens = (
             self.pipeline_config.runtime.max_batch_total_tokens
         )
@@ -110,22 +114,33 @@ class DeepseekV3_2Model(DeepseekV3Model):
         else:
             quant_config = None
 
-        if self.pipeline_config.runtime.ep_size == 1:
+        ep_size = self.pipeline_config.runtime.ep_size
+        if ep_size == 1:
             ep_config = None
         else:
-            if self.pipeline_config.runtime.ep_size % len(self.devices) != 0:
+            if ep_size % len(self.devices) != 0:
                 raise ValueError(
                     "If you are running with expert parallelism, ep_size must"
                     " be set to the total number of GPUs across nodes."
                 )
-            n_nodes = self.pipeline_config.runtime.ep_size // len(self.devices)
+            n_nodes = ep_size // len(self.devices)
+
+            # With a mixed TP-attention + EP-MoE strategy, the attention output
+            # will be scattered across ranks, so each rank will only send a
+            # subset of the tokens.
+            attn_tp_size = ep_size // data_parallel_degree
+            ep_max_rank_send_tokens = (
+                self.pipeline_config.runtime.max_batch_input_tokens
+                // attn_tp_size
+            )
+
             ep_kwargs: dict[str, Any] = dict(
                 dispatch_dtype=dtype,
                 combine_dtype=DType.bfloat16,
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
                 n_experts=config.n_routed_experts,
-                max_tokens_per_rank=self.pipeline_config.runtime.max_batch_input_tokens,
+                max_tokens_per_rank=ep_max_rank_send_tokens,
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
                 dispatch_quant_config=None,
@@ -167,10 +182,16 @@ class DeepseekV3_2Model(DeepseekV3Model):
         model_config.quant_config = quant_config
         model_config.ep_config = ep_config
         model_config.graph_mode = graph_mode
-        model_config.data_parallel_degree = (
-            self.pipeline_config.model.data_parallel_degree
-        )
+        model_config.data_parallel_degree = data_parallel_degree
         model_config.return_logits = self.return_logits
+
+        if ep_size > 1:
+            attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
+            logger.info(
+                f"DeepSeekV3.2: data_parallel_degree={data_parallel_degree},"
+                f" ep_size={ep_size}. Use {attn_strategy}-attention + EP-MoE"
+                f" strategy."
+            )
 
         return model_config
 

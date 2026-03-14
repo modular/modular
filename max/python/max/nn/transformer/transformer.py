@@ -55,6 +55,7 @@ def extract_hs(
     all_hs_distributed: Sequence[TensorValue],
     normalizer: Sequence[Callable[[TensorValue], TensorValue]],
     signal_buffers: Sequence[BufferValue] | None = None,
+    duplicated_hs: bool = True,
 ) -> tuple[TensorValue, ...]:
     """Extract hidden states from the model.
 
@@ -64,6 +65,9 @@ def extract_hs(
         all_hs_distributed: Hidden states from all tokens.
         normalizer: Normalization function.
         signal_buffers: Signal buffers for allgather.
+        duplicated_hs: Whether the ``all_hs_distributed`` are duplicated across
+            devices. If False, we will all-gather them and return the result
+            only on device 0.
 
     Returns:
         Either an empty tuple or a tuple containing a single hs on gpu0.
@@ -76,7 +80,7 @@ def extract_hs(
         norm_hs = forward_sharded_layers(normalizer, all_hs_distributed)
         # Each entry in all_hs_distributed will contain different hs when we
         # use data parallelism. As such, we need to allgather the hs.
-        if len(norm_hs) > 1:
+        if not duplicated_hs:
             assert signal_buffers is not None
             norm_hs = ops.allgather(norm_hs, signal_buffers)
         norm_h = norm_hs[0]

@@ -48,7 +48,7 @@ def mla_resolver() -> AttentionDispatchResolver:
         device=device,
         is_mla=True,
         n_kv_heads_per_device=1,
-        num_q_heads=NUM_HEADS,
+        num_q_heads_per_device=NUM_HEADS // 1,
     )
 
 
@@ -62,7 +62,7 @@ def mla_resolver_fp8() -> AttentionDispatchResolver:
         device=device,
         is_mla=True,
         n_kv_heads_per_device=1,
-        num_q_heads=NUM_HEADS,
+        num_q_heads_per_device=NUM_HEADS // 1,
         is_fp8_kv=True,
     )
 

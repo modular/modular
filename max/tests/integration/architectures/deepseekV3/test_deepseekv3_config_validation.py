@@ -40,15 +40,6 @@ def make_mock_config(
     return config
 
 
-def test_data_parallel_degree_must_match_num_devices() -> None:
-    """Test that data_parallel_degree must equal number of devices."""
-    # data_parallel_degree=1 but num_devices=8
-    config = make_mock_config(data_parallel_degree=1, num_devices=8)
-
-    with pytest.raises(ValueError, match="data_parallel_degree must match"):
-        _validate_parallelism_config(config)
-
-
 def test_multi_gpu_requires_ep() -> None:
     """Test that multi-GPU requires EP config."""
     # num_devices=8 with matching data_parallel_degree but no EP config

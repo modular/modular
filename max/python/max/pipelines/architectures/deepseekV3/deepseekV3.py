@@ -35,6 +35,7 @@ from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
     MLADecodeMetadata,
     MLAPrefillMetadata,
+    TensorParallelLatentAttentionWithRope,
 )
 from max.nn.attention.multi_latent_attention_fp8 import (
     DataParallelLatentAttentionWithRopeFp8,
@@ -90,13 +91,15 @@ def _unpack_kv_collections(
 
 
 def _validate_parallelism_config(config: DeepseekV3Config) -> None:
-    """Validate parallelism configuration for DeepseekV3."""
+    """Validate parallelism configuration for DeepseekV3.
+
+    Supported multi-GPU modes:
+      - DP attention + EP MoE: ``data_parallel_degree == num_devices``
+      - TP attention + EP MoE: ``data_parallel_degree == 1``
+    ``DeepseekV3Config.__post_init__`` already enforces
+    ``data_parallel_degree in (1, num_devices)``.
+    """
     num_devices = len(config.devices)
-    if config.data_parallel_degree != num_devices:
-        raise ValueError(
-            f"data_parallel_degree must match the number of devices ({num_devices}). "
-            "Tensor-parallel attention is not supported for DeepseekV3."
-        )
     # Skip EP validation in virtual device mode (compilation-only) since EP
     # will be disabled later due to NVSHMEM linking requirements
     if (
@@ -121,6 +124,7 @@ class DeepseekV3DecoderLayer(Module):
         self.config = config
         self.ep_manager = ep_manager
         num_devices = len(config.devices)
+        self.use_tp_ep = config.data_parallel_degree == 1 and num_devices > 1
 
         # Create Multi-head Latent Attention layer.
         mla_kwargs: dict[str, Any] = dict(
@@ -156,13 +160,22 @@ class DeepseekV3DecoderLayer(Module):
         mla_cls: (
             type[DataParallelLatentAttentionWithRope]
             | type[DataParallelLatentAttentionWithRopeFp8]
+            | type[TensorParallelLatentAttentionWithRope]
         )
-        if use_fp8_mla:
-            mla_kwargs["quant_config"] = config.quant_config
-            mla_cls = DataParallelLatentAttentionWithRopeFp8
-        else:
+        if self.use_tp_ep:
+            # TP attention + EP MoE: shard heads across devices, use
+            # reduce-scatter after attention so hidden states stay in
+            # sequence-parallel [S/P, H] form between layers.
             mla_kwargs["dtype"] = DType.bfloat16
-            mla_cls = DataParallelLatentAttentionWithRope
+            mla_kwargs["skip_allreduce"] = True
+            mla_cls = TensorParallelLatentAttentionWithRope
+        else:
+            if use_fp8_mla:
+                mla_kwargs["quant_config"] = config.quant_config
+                mla_cls = DataParallelLatentAttentionWithRopeFp8
+            else:
+                mla_kwargs["dtype"] = DType.bfloat16
+                mla_cls = DataParallelLatentAttentionWithRope
 
         self.self_attn = mla_cls(**mla_kwargs)
 
@@ -340,7 +353,17 @@ class DeepseekV3DecoderLayer(Module):
             mla_decode_metadata=mla_decode_metadata,
         )
 
-        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
+        if self.use_tp_ep:
+            # xs is replicated across all devices. attn_outs[i] is device i's
+            # partial sum (TP allreduce was skipped). The reduce-scatter below
+            # sums contributions from all devices, so adding the residual on
+            # every device would count it `num_devices` times.
+            hs = [xs[0] + attn_outs[0], *attn_outs[1:]]
+            hs = ops.reducescatter.sum(hs, signal_buffers, axis=0)
+        else:
+            hs = [
+                x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)
+            ]
 
         # Post-attention norm (per-device)
         norm_outs = forward_sharded_layers(
@@ -359,6 +382,10 @@ class DeepseekV3DecoderLayer(Module):
             mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
 
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
+
+        if self.use_tp_ep:
+            hs = ops.allgather(hs, signal_buffers, axis=0)
+            hs = [ops.rebind(h, x.shape) for h, x in zip(hs, xs, strict=True)]
 
         return hs
 
@@ -526,7 +553,7 @@ class DeepseekV3(Module):
             input_row_offsets, signal_buffers
         )
 
-        if len(devices) > 1:
+        if self.config.data_parallel_degree > 1:
             # Split batch across devices for data-parallel attention.
             h, input_row_offsets_ = split_batch_replicated(
                 devices,
@@ -801,6 +828,7 @@ class DeepseekV3(Module):
             all_hs_distributed=h,
             normalizer=self.norm_shards,
             signal_buffers=signal_buffers,
+            duplicated_hs=self.config.data_parallel_degree == 1,
         )
 
         return ret_val

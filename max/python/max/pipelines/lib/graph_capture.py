@@ -197,7 +197,7 @@ class ServeGraphCaptureRunner:
             device=kv_params.devices[0],
             is_mla=kv_params.is_mla,
             n_kv_heads_per_device=kv_params.n_kv_heads_per_device,
-            num_q_heads=kv_params.num_q_heads,
+            num_q_heads_per_device=kv_params.num_q_heads_per_device,
             # TODO(SERVOPT-1094): Replace with quantized_kv_cache once
             # SnapMLA uses a valid scale_dtype.
             is_fp8_kv=kv_params.is_fp8_kv_dtype,
