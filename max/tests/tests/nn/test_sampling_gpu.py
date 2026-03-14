@@ -12,12 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for max.nn.sampling"""
 
+from __future__ import annotations
+
 from typing import cast
 
 import numpy as np
 import numpy.typing as npt
 import pytest
-from max.driver import Buffer
+from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -151,9 +153,10 @@ def test_greedy_acceptance_sampler(session: InferenceSession) -> None:
     np.testing.assert_array_equal(bonus_tokens_np, [[2], [1]])
 
 
-def test_typical_acceptance_sampler(session: InferenceSession) -> None:
+@pytest.mark.parametrize("device", [Accelerator(), CPU()])
+def test_typical_acceptance_sampler(device: Device) -> None:
     """Tests stochastic mode (accept with prob p_target)."""
-    device = session.devices[0]
+    session = InferenceSession(devices=[device])
     graph = build_stochastic_acceptance_sampler_graph(
         device=DeviceRef.from_device(device)
     )
@@ -161,14 +164,10 @@ def test_typical_acceptance_sampler(session: InferenceSession) -> None:
 
     def _make_inputs(
         batch_size: int,
-        num_steps: int,
         vocab_size: int,
-        draft_tokens_np: "npt.NDArray[np.int64]",
-        logits: "npt.NDArray[np.float32]",
+        draft_tokens_np: npt.NDArray[np.int64],
+        logits: npt.NDArray[np.float32],
     ) -> list[Buffer]:
-        offsets = np.arange(
-            0, (batch_size + 1) * (num_steps + 1), num_steps + 1, dtype=np.int64
-        )
         return [
             Buffer.from_numpy(draft_tokens_np).to(device),
             Buffer.from_numpy(logits).to(device),
@@ -181,27 +180,34 @@ def test_typical_acceptance_sampler(session: InferenceSession) -> None:
             Buffer.from_numpy(np.array(1.0, dtype=np.float32)),
         ]
 
-    num_steps = 3
     vocab_size = 5
 
-    # Case 1: draft token has ~1.0 probability → all accepted
-    logits_high = np.full((num_steps + 1, vocab_size), -100.0, dtype=np.float32)
-    logits_high[:, 2] = 100.0
-    draft_high = np.full((1, num_steps), 2, dtype=np.int64)
+    # Test both num_steps = 0 and num_steps = 3
+    # With num_steps = 0, some tensors will be empty.
+    # The kernels should handle this gracefully and not crash.
+    for num_steps in [0, 3]:
+        # Case 1: draft token has ~1.0 probability → all accepted
+        logits_high = np.full(
+            (num_steps + 1, vocab_size), -100.0, dtype=np.float32
+        )
+        logits_high[:, 2] = 100.0
+        draft_high = np.full((1, num_steps), 2, dtype=np.int64)
 
-    first_rejected, recovered, bonus = model.execute(
-        *_make_inputs(1, num_steps, vocab_size, draft_high, logits_high)
-    )
-    assert cast(Buffer, first_rejected).to_numpy()[0] == num_steps
-    assert cast(Buffer, recovered).to_numpy().shape == (1, num_steps)
-    assert cast(Buffer, bonus).to_numpy().shape == (1, 1)
+        first_rejected, recovered, bonus = model.execute(
+            *_make_inputs(1, vocab_size, draft_high, logits_high)
+        )
+        assert cast(Buffer, first_rejected).to_numpy()[0] == num_steps
+        assert cast(Buffer, recovered).to_numpy().shape == (1, num_steps)
+        assert cast(Buffer, bonus).to_numpy().shape == (1, 1)
 
-    # Case 2: draft token has ~0.0 probability → rejected at position 0
-    logits_low = np.full((num_steps + 1, vocab_size), -100.0, dtype=np.float32)
-    logits_low[:, 0] = 100.0
-    draft_low = np.full((1, num_steps), 4, dtype=np.int64)
+        # Case 2: draft token has ~0.0 probability → rejected at position 0
+        logits_low = np.full(
+            (num_steps + 1, vocab_size), -100.0, dtype=np.float32
+        )
+        logits_low[:, 0] = 100.0
+        draft_low = np.full((1, num_steps), 4, dtype=np.int64)
 
-    first_rejected, _, _ = model.execute(
-        *_make_inputs(1, num_steps, vocab_size, draft_low, logits_low)
-    )
-    assert cast(Buffer, first_rejected).to_numpy()[0] == 0
+        first_rejected, _, _ = model.execute(
+            *_make_inputs(1, vocab_size, draft_low, logits_low)
+        )
+        assert cast(Buffer, first_rejected).to_numpy()[0] == 0

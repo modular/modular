@@ -876,6 +876,9 @@ def softmax[
         "softmax",
         Trace[TraceLevel.OP]._get_detail_str[trace_information](),
     ):
+        # Exit early if the tensors are empty.
+        if shape.flattened_length() == 0:
+            return
         comptime if is_cpu[target]():
             _softmax_cpu[
                 dtype,

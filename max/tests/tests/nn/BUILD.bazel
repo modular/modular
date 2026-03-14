@@ -21,11 +21,12 @@ _MACOS_INCOMPATIBLE_TESTS = [
             "norm_test_utils.py",
             src,
         ],
+        gpu_constraints = ["//:has_gpu"] if "_gpu.py" in src else [],
         mojo_deps = ["//max:MOGGKernelAPI"],
         tags = ["no-pydeps"] + (["skip-external-ci"] if src in [
             # FIXME: SDLC-3032
             "test_module.py",
-        ] else []),
+        ] else []) + (["gpu"] if "_gpu.py" in src else []),
         target_compatible_with = select({
             "@platforms//os:macos": ["@platforms//:incompatible"],
             "//conditions:default": [],

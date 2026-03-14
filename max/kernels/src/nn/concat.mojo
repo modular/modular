@@ -670,6 +670,9 @@ def concat[
     with Trace[TraceLevel.OP, target=target](
         "concat", task_id=get_safe_task_id(context)
     ):
+        # Exit early if the tensors are empty.
+        if output.num_elements() == 0:
+            return
         comptime if is_cpu[target]():
             var inputVec = List[
                 TileTensor[dtype, InputLayoutType, input_origin]
@@ -1138,6 +1141,9 @@ def fused_concat[
     with Trace[TraceLevel.OP, target=target](
         "concat", task_id=get_safe_task_id(ctx)
     ):
+        # Exit early if the tensors are empty.
+        if output.num_elements() == 0:
+            return
         comptime if is_cpu[target]():
             return _fused_concat_cpu[
                 rank,
