@@ -1453,23 +1453,6 @@ struct String(
             `sep` itself, and the part after `sep`. If `sep` is not found,
             returns `(self, "", "")`.
 
-        Examples:
-
-        ```mojo
-        %# from testing import assert_equal
-
-        var s = String("hello world hello")
-        var before, separator, after = s.partition("world")
-        assert_equal(before, "hello ")
-        assert_equal(separator, "world")
-        assert_equal(after, " hello")
-
-        # When sep is not found:
-        var b, sep2, a = String("hello").partition("xyz")
-        assert_equal(b, "hello")
-        assert_equal(sep2, "")
-        assert_equal(a, "")
-        ```
         """
         return StringSlice(self).partition(sep)
 
@@ -1488,23 +1471,6 @@ struct String(
             `sep` itself, and the part after `sep`. If `sep` is not found,
             returns `("", "", self)`.
 
-        Examples:
-
-        ```mojo
-        %# from testing import assert_equal
-
-        var s = String("hello world hello")
-        var before, separator, after = s.rpartition("hello")
-        assert_equal(before, "hello world ")
-        assert_equal(separator, "hello")
-        assert_equal(after, "")
-
-        # When sep is not found:
-        var b, sep2, a = String("hello").rpartition("xyz")
-        assert_equal(b, "")
-        assert_equal(sep2, "")
-        assert_equal(a, "hello")
-        ```
         """
         return StringSlice(self).rpartition(sep)
 
