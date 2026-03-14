@@ -2308,8 +2308,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var result = self.lower()
         var ptr = result.unsafe_ptr_mut()
         var b = ptr[0]
-        if b >= ord("a") and b <= ord("z"):
-            ptr[0] = b - 32
+        comptime lower_a = UInt8(ord("a"))
+        comptime lower_z = UInt8(ord("z"))
+        if b >= lower_a and b <= lower_z:
+            ptr[0] = b - UInt8(32)
         return result^
 
     def title(self) -> String:
@@ -2325,17 +2327,21 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             A new `String` where each word's first character is uppercased and the rest are lowercased.
         """
+        comptime lower_a = UInt8(ord("a"))
+        comptime lower_z = UInt8(ord("z"))
+        comptime upper_A = UInt8(ord("A"))
+        comptime upper_Z = UInt8(ord("Z"))
         var result = self.lower()
         var prev_cased = False
         var ptr = result.unsafe_ptr_mut()
         var n = result.byte_length()
         for i in range(n):
             var b = ptr[i]
-            if b >= ord("a") and b <= ord("z"):
+            if b >= lower_a and b <= lower_z:
                 if not prev_cased:
-                    ptr[i] = b - 32
+                    ptr[i] = b - UInt8(32)
                 prev_cased = True
-            elif b >= ord("A") and b <= ord("Z"):
+            elif b >= upper_A and b <= upper_Z:
                 prev_cased = True
             else:
                 prev_cased = False
