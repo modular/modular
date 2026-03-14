@@ -302,6 +302,19 @@ class KVCacheParams(KVCacheParamInterface):
                 raise ValueError("KVCache quantization config required.")
 
     @property
+    def is_fp8_kv_dtype(self) -> bool:
+        """Whether the KV cache stores FP8 data, for dispatch resolution.
+
+        Unlike ``quantized_kv_cache`` (which also requires valid scale config),
+        this checks only the storage dtype—matching the compile-time detection
+        in the MLA decode kernel.
+
+        TODO(SERVOPT-1094): Once SnapMLA uses a valid scale_dtype, this
+        can be replaced by ``quantized_kv_cache``.
+        """
+        return self.dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz)
+
+    @property
     def quantized_kv_cache(self) -> bool:
         """Returns whether FP8 KV cache quantization is enabled.
 
