@@ -8,7 +8,10 @@ package(default_visibility = ["//visibility:private"])
         size = "large",
         srcs = [src],
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"],
+        target_compatible_with = [
+            "//:has_gpu",
+            "//:nvidia_gpu",
+        ],
         deps = [
             "@mojo//:std",
             "@mojo//:test_utils",

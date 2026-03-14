@@ -150,7 +150,8 @@ portable syntax for this fundamental operation.
 Mojo also provides `barrier_count(predicate)`, which mirrors CUDA's
 `__syncthreads_count(predicate)` and returns the number of threads in the block
 whose `predicate` is true while synchronizing the block. On NVIDIA GPUs this
-maps to a single PTX `bar.red.popc` instruction.
+maps to a single PTX `bar.red.popc` instruction. This API is NVIDIA-only and
+emits a compile-time error on other GPU targets.
 
 :::tip
 

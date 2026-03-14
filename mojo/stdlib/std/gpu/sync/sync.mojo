@@ -143,6 +143,14 @@ def barrier():
 
 @always_inline("nodebug")
 def barrier_count(predicate: Bool) -> Int32:
+    """Counts threads in the block with `predicate` true and synchronizes.
+
+    All threads in the block participate; the return value is the number of
+    threads whose `predicate` evaluated to true. This is a block-wide barrier
+    reduction that also synchronizes the block. Available on NVIDIA GPUs only
+    and maps to PTX `bar.red.popc`.
+    """
+
     comptime if is_nvidia_gpu():
         return __mlir_op.`nvvm.barrier0.popc`[_type=__mlir_type.i32](
             to_i32(Int32(predicate))
