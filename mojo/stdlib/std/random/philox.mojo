@@ -87,7 +87,7 @@ struct Random[rounds: Int = 10](Copyable, Writable):
             SIMD[DType.uint64, 2](offset, subsequence)
         )
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write a human-readable representation of this RNG state.
 
         Args:
@@ -96,7 +96,7 @@ struct Random[rounds: Int = 10](Copyable, Writable):
         self.write_repr_to(writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this RNG state.
 
         Args:
