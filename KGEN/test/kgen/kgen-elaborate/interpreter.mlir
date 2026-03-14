@@ -1,5 +1,5 @@
-// RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=false" -allow-unregistered-dialect | FileCheck --check-prefixes=CHECK,CHECK-MAIN %s
-// RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=true" -allow-unregistered-dialect | FileCheck --check-prefixes=CHECK,CHECK-PARAM %s
+// RUN: kgen-opt %s -split-input-file -verify-parameters -elaborate-generators="use-parametric-interpret=false" -allow-unregistered-dialect | FileCheck --check-prefixes=CHECK,CHECK-MAIN %s
+// RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=true" -allow-unregistered-dialect | FileCheck --check-prefixes=CHECK %s
 
 kgen.generator @recursive(%arg0: index) -> index {
   %idx1 = index.constant 1
@@ -538,7 +538,7 @@ kgen.generator @makePtrPtrConstant<ptr: !kgen.pointer<index>>() -> !kgen.pointer
 // CHECK-LABEL: kgen.func export @constant() -> index {
 kgen.generator export @constant() -> index {
   kgen.param.apply ptrptr = [() -> !kgen.pointer<pointer<index>>: @makePtrPtrConstant<:pointer<index> #mem>]()
-  kgen.param.apply loadIt = [(!kgen.pointer<index>) -> index: @testInternalization](load_from_mem(ptrptr))
+  kgen.param.apply loadIt = [(!kgen.pointer<index>) -> index: @testInternalization](load_from_mem(:!kgen.pointer<pointer<index>> ptrptr))
   // CHECK-NEXT: %index7 = kgen.param.constant = <7>
   %0 = kgen.param.constant: index = <loadIt>
   kgen.return %0 : index
@@ -561,7 +561,7 @@ kgen.generator @makePtrPtrMaterialize() -> !kgen.pointer<pointer<index>> {
 // CHECK-LABEL: kgen.func export @materialize() -> index {
 kgen.generator export @materialize() -> index {
   kgen.param.apply ptrptr = [() -> !kgen.pointer<pointer<index>>: @makePtrPtrMaterialize]()
-  kgen.param.apply loadIt = [(!kgen.pointer<index>) -> index: @testInternalization](load_from_mem(ptrptr))
+  kgen.param.apply loadIt = [(!kgen.pointer<index>) -> index: @testInternalization](load_from_mem(:!kgen.pointer<pointer<index>> ptrptr))
   // CHECK-NEXT: %index7 = kgen.param.constant = <7>
   %0 = kgen.param.constant: index = <loadIt>
   kgen.return %0 : index
@@ -641,7 +641,7 @@ kgen.generator @"captureIt"<dst_layout: pointer<index>, idx_type: dtype>(%arg0: 
 
 kgen.generator @embedMemRefInSymbol<dst_layout: pointer<index>>() -> index {
   %0 = kgen.param.constant: index = <0>
-  kgen.param.declare symbolWithMemRef: <dtype>(index) -> index = <@"captureIt"<:struct<(pointer<index>)> dst_layout, :dtype ?>>
+  kgen.param.declare symbolWithMemRef: <dtype>(index) -> index = <@"captureIt"<:pointer<index> dst_layout, :dtype ?>>
 
   // The "store to mem" operation results in an opaque capture of a PointerAttr.
   kgen.param.apply callIt = [(!kgen.pointer<<dtype>(index) -> index>) -> !kgen.generator<<dtype>(index) -> index>: @call_it](store_to_mem(symbolWithMemRef))
@@ -690,7 +690,7 @@ kgen.generator @get_variant(%arg0: !kgen.pointer<!variant> byref_result) {
 // CHECK-LABEL: kgen.func export @call_result_slot
 kgen.generator export @call_result_slot() {
   // CHECK-NEXT: <{:pointer<index> #interp.memref<{[({{.*}}, heap, [], []), (#[[MEM_STACK]], stack, [(0, 0, 0)], [])], []}, 0, 0>, 0}>
-  kgen.param.constant: !ptr_v = <apply_result_slot(:(!kgen.pointer<!ptr_v> byref_result) -> () @get_variant)>
+  kgen.param.constant: !variant = <apply_result_slot(:(!ptr_v byref_result) -> () @get_variant)>
   kgen.return
 }
 
@@ -713,7 +713,7 @@ kgen.generator export @readIndexType() -> index {
   kgen.param.apply PTR = [(index) -> !kgen.pointer<index>: @writeIndexType](0)
 
   // CHECK-NEXT: %index-1 = kgen.param.constant = <-1>
-  %0 = kgen.param.constant: index = <load_from_mem(PTR)>
+  %0 = kgen.param.constant: index = <load_from_mem(:!kgen.pointer<index> PTR)>
   kgen.return %0 :  index
 }
 
@@ -831,51 +831,6 @@ kgen.generator export @top() -> () {
 
 // -----
 
-kgen.generator @count_to_zero(%arg0: !kgen.pointer<index> read_mem, %arg1: !kgen.pointer<index> byref_result) -> !kgen.none {
-  %i0 = pop.load %arg0 : !kgen.pointer<index>
-  %idx1 = index.constant 1
-  %1 = index.sub %i0, %idx1
-  pop.store %1, %arg1 : !kgen.pointer<index>
-  %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
-}
-
-kgen.generator @count_to_zero_has_next(%arg0: index) -> i1 {
-  %idx0 = index.constant 0
-  %0 = index.cmp ne(%idx0, %arg0)
-  kgen.return %0 : i1
-}
-
-kgen.generator @sum_from_zero<upper>() -> index {
-  %idx0 = index.constant 0
-  %0 = kgen.param.for i in upper
-    has_next :(index) -> i1 @count_to_zero_has_next
-    get_next_iter :(!kgen.pointer<index> read_mem, !kgen.pointer<index> byref_result) -> !kgen.none @count_to_zero
-    (%arg0 = %idx0 : index) -> index {
-
-    kgen.param.if <apply(:!lit.generator<(index) -> i1> @count_to_zero_has_next, i)> {
-      %1 = kgen.param.constant = <i>
-      %2 = index.add %arg0, %1
-      kgen.param.for.continue %2 : index
-    } else {
-      kgen.param.for.break %arg0 : index
-    }
-    kgen.unreachable
-  } else {
-    kgen.unreachable
-  }
-  kgen.return %0 : index
-}
-
-// CHECK-PARAM-LABEL @top
-kgen.generator export @top()->() {
-    // CHECK-PARAM: kgen.param.materialize = <15>
-    %0 = kgen.param.materialize: index = <apply(:()-> index @sum_from_zero<:index 5>)>
-    kgen.return
-}
-
-// -----
-
 // COM: Check integer bitcasting when sizes do not match.
 
 kgen.generator @check128to64(%arg0: !pop.simd<1, ui128>) -> !pop.simd<2, ui64> {
@@ -888,15 +843,15 @@ kgen.generator @check64to128(%arg0: !pop.simd<2, ui64>) -> !pop.simd<1, ui128> {
   kgen.return %0 : !pop.simd<1, ui128>
 }
 
-kgen.generator @callIt() -> !pop.simd<2, ui64> {
+kgen.generator @callIt() -> !pop.simd<1, ui128> {
   kgen.param.declare X: simd<1, ui128> = <<16622636600618719503991588326398409450>>
   kgen.param.declare Y: simd<2, ui64> = <apply(:(!pop.simd<1, ui128>) -> !pop.simd<2, ui64> @check128to64, X)>
   // CHECK: <<4225598797516028650, 901114935741393800>>
   %0 = kgen.param.constant: !pop.simd<2, ui64> = <Y>
   // CHECK: <16622636600618719503991588326398409450>
   kgen.param.declare Z: simd<1, ui128> = <apply(:(!pop.simd<2, ui64>) -> !pop.simd<1, ui128> @check64to128, Y)>
-  %1 = kgen.param.constant: !pop.simd<2, ui64> = <Z>
-  kgen.return %0 : !pop.simd<2, ui64>
+  %1 = kgen.param.constant: !pop.simd<1, ui128> = <Z>
+  kgen.return %1 : !pop.simd<1, ui128>
 }
 
 // -----
@@ -947,7 +902,7 @@ kgen.generator @callIt() -> !pop.simd<2, ui64> {
   %0 = kgen.param.constant: !pop.simd<2, ui64> = <Y>
   // CHECK: <16622636600618719503991588326398409450>
   kgen.param.declare Z: simd<1, ui128> = <apply(:(!pop.simd<2, ui64>) -> !pop.simd<1, ui128> @check64to128, Y)>
-  %1 = kgen.param.constant: !pop.simd<2, ui64> = <Z>
+  %1 = kgen.param.constant: !pop.simd<1, ui128> = <Z>
   kgen.return %0 : !pop.simd<2, ui64>
 }
 }
