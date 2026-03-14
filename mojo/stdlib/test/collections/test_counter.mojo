@@ -235,6 +235,23 @@ def test_most_common() raises:
     assert_equal(most_common[1][1][Int], 2)
 
 
+def test_most_common_heap_path() raises:
+    # Build a counter with 20 distinct keys so that requesting n=5 triggers
+    # the heap path (n < total // 2 => 5 < 10).
+    var c = Counter[Int]()
+    for i in range(20):
+        c[i] = i + 1  # key i has count i+1; highest counts are keys 19..15
+
+    var most_common = c.most_common(5)
+    assert_equal(len(most_common), 5)
+    # Keys with the five highest counts: 19 (20), 18 (19), 17 (18), 16 (17), 15 (16)
+    assert_equal(most_common[0][1][Int], 20)
+    assert_equal(most_common[1][1][Int], 19)
+    assert_equal(most_common[2][1][Int], 18)
+    assert_equal(most_common[3][1][Int], 17)
+    assert_equal(most_common[4][1][Int], 16)
+
+
 def test_eq_and_ne() raises:
     var c1 = Counter[String]()
     c1["a"] = 1

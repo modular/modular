@@ -863,6 +863,11 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """Return a list of the `n` most common elements and their counts from
         the most common to the least.
 
+        Uses a full sort (O(total * log(total))) when `n` is close to the total
+        number of distinct elements, and a min-heap of size `n`
+        (O(total * log(n))) when `n` is much smaller than the total. The
+        heap-based path is taken when `n < total // 2`.
+
         Args:
             n: The number of most common elements to return.
 
@@ -881,6 +886,15 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             # output: 2 4
         ```
         """
+        var total = len(self._data)
+        var want = Int(min(n, UInt(total)))
+
+        # Fast path: use a min-heap of size `want` when n < total // 2.
+        # This runs in O(total * log(n)) instead of O(total * log(total)).
+        if want > 0 and want < total // 2:
+            return _most_common_heap[Self.V, Self.H](self._data, want)
+
+        # Default: collect all items, sort, and truncate.
         var items: List[CountTuple[Self.V]] = List[CountTuple[Self.V]]()
         for item in self._data.items():
             var t = CountTuple[Self.V](item.key, UInt(item.value))
@@ -891,7 +905,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             return a < b
 
         sort[comparator](items)
-        items.shrink(Int(n))
+        items.shrink(want)
         return items^
 
     def elements(self) -> List[Self.V]:
@@ -1032,3 +1046,109 @@ struct CountTuple[V: KeyElement](Comparable, Copyable):
             return self._value.copy()
         else:
             return self._count
+
+
+# ===-----------------------------------------------------------------------===#
+# Min-heap helpers for most_common()
+# ===-----------------------------------------------------------------------===#
+
+
+fn _heap_sift_up[V: KeyElement](mut heap: List[CountTuple[V]], i: Int):
+    """Restore the min-heap property by sifting the element at index `i` up.
+
+    The heap is ordered by ascending `_count` (min-heap), so the element with
+    the smallest count sits at index 0.  This is used when a new element is
+    pushed onto the heap.
+
+    Parameters:
+        V: The value type of the `CountTuple` elements.
+
+    Args:
+        heap: The heap list to operate on.
+        i: The index of the element to sift up.
+    """
+    var idx = i
+    while idx > 0:
+        var parent = (idx - 1) // 2
+        if heap[idx]._count < heap[parent]._count:
+            var tmp = heap[idx].copy()
+            heap[idx] = heap[parent].copy()
+            heap[parent] = tmp^
+            idx = parent
+        else:
+            break
+
+
+fn _heap_sift_down[V: KeyElement](
+    mut heap: List[CountTuple[V]], i: Int, size: Int
+):
+    """Restore the min-heap property by sifting the element at index `i` down.
+
+    The heap is ordered by ascending `_count` (min-heap).  This is used after
+    replacing the root with a new element.
+
+    Parameters:
+        V: The value type of the `CountTuple` elements.
+
+    Args:
+        heap: The heap list to operate on.
+        i: The index of the element to sift down.
+        size: The number of valid elements in `heap`.
+    """
+    var idx = i
+    while True:
+        var left = 2 * idx + 1
+        var right = 2 * idx + 2
+        var smallest = idx
+        if left < size and heap[left]._count < heap[smallest]._count:
+            smallest = left
+        if right < size and heap[right]._count < heap[smallest]._count:
+            smallest = right
+        if smallest == idx:
+            break
+        var tmp = heap[idx].copy()
+        heap[idx] = heap[smallest].copy()
+        heap[smallest] = tmp^
+        idx = smallest
+
+
+fn _most_common_heap[
+    V: KeyElement, H: Hasher
+](data: Dict[V, Int, H], n: Int) -> List[CountTuple[V]]:
+    """Return the `n` most common elements using a min-heap of size `n`.
+
+    This runs in O(total * log(n)) time and is called by `Counter.most_common`
+    when `n < total // 2`.
+
+    Parameters:
+        V: The value type stored in the `Counter`.
+        H: The hasher type of the underlying dictionary.
+
+    Args:
+        data: The underlying dictionary of the `Counter`.
+        n: The number of top elements to return.
+
+    Returns:
+        A list of the `n` most common `CountTuple`s, sorted from most to least
+        common.
+    """
+    var heap = List[CountTuple[V]]()
+
+    for item in data.items():
+        var t = CountTuple[V](item.key, UInt(item.value))
+        if len(heap) < n:
+            # Fill the heap until it has n elements.
+            heap.append(t^)
+            _heap_sift_up(heap, len(heap) - 1)
+        elif t._count > heap[0]._count:
+            # New element beats the current minimum: replace root and re-heapify.
+            heap[0] = t^
+            _heap_sift_down(heap, 0, len(heap))
+
+    # Sort the n-element heap in descending order (most common first).
+    @parameter
+    def comparator(a: CountTuple[V], b: CountTuple[V]) -> Bool:
+        return a < b
+
+    sort[comparator](heap)
+    return heap^
