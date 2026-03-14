@@ -89,16 +89,13 @@ def get_function_name[
 
 
 def get_type_name[
-    type_type: __mlir_type.`!kgen.type`,
-    //,
-    type: type_type,
+    type: AnyType,
     *,
     qualified_builtins: Bool = False,
 ]() -> StaticString:
     """Returns the struct name of the given type parameter.
 
     Parameters:
-        type_type: Type of type.
         type: A mojo type.
         qualified_builtins: Whether to print fully qualified builtin type names
             (e.g. `std.builtin.int.Int`) or shorten them (e.g. `Int`).
