@@ -653,7 +653,7 @@ struct Span[
         for ref element in self:
             rebind[_T](element) = value.copy()
 
-    fn fill[
+    def fill[
         dtype: DType, _origin: MutOrigin, //
     ](self: Span[Scalar[dtype], _origin], value: Scalar[dtype]):
         """Fill the span with `value` using vectorized SIMD stores.
