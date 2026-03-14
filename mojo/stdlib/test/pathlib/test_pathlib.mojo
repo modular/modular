@@ -218,6 +218,27 @@ def test_parts() raises:
     assert_equal(root_path.parts(), root_path.path.split("/"))
 
 
+def test_path_comparable() raises:
+    assert_true(Path("a") < Path("b"))
+    assert_true(Path("b") > Path("a"))
+    assert_true(Path("a") <= Path("a"))
+    assert_true(Path("a") >= Path("a"))
+    assert_false(Path("a") < Path("a"))
+    assert_false(Path("b") < Path("a"))
+    assert_false(Path("a") > Path("a"))
+    assert_false(Path("a") > Path("b"))
+
+    # Sorting
+    var paths = List[Path]([Path("c"), Path("a"), Path("b")])
+    sort(paths)
+    assert_equal(paths[0], Path("a"))
+    assert_equal(paths[1], Path("b"))
+    assert_equal(paths[2], Path("c"))
+
+    # Unicode: "café" > "cafe" because 'é' > 'e' in lexicographic byte order
+    assert_true(Path("café") > Path("cafe"))
+
+
 def test_write_to() raises:
     check_write_to(Path("foo/bar"), expected="foo/bar", is_repr=False)
     check_write_to(Path(""), expected="", is_repr=False)
