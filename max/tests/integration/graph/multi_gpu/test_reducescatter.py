@@ -109,15 +109,15 @@ def test_reducescatter_execution() -> None:
 
     # Check Executed Graph
     # Output shape should be [M, N/num_gpus] for each device
-    expected_cols = N // num_gpus
+    expected_rows = M // num_gpus
     for out_tensor, device in zip(output, devices, strict=True):
         assert isinstance(out_tensor, Buffer)
         assert out_tensor.device == device
         result = out_tensor.to(host).to_numpy()
-        assert result.shape == (M, expected_cols)
+        assert result.shape == (expected_rows, N)
         # Each device gets a portion of the reduced result
         expected_out = np.full(
-            (M, expected_cols), expected_sum, dtype=np.float32
+            (expected_rows, N), expected_sum, dtype=np.float32
         )
         assert np.allclose(expected_out, result)
 
@@ -309,13 +309,13 @@ def test_reducescatter_epilogue_fusion(num_gpus: int) -> None:
 
     # Expected: sum of all inputs (num_gpus ones) + 42 bias
     # Each input is ones, so sum = num_gpus, plus bias = 42
-    expected_cols = N // num_gpus
-    expected = np.full((M, expected_cols), num_gpus + 42.0, dtype=np.float32)
+    expected_rows = M // num_gpus
+    expected = np.full((expected_rows, N), num_gpus + 42.0, dtype=np.float32)
 
     for tensor in outputs:
         assert isinstance(tensor, Buffer)
         result = tensor.to(host).to_numpy()
-        assert result.shape == (M, expected_cols)
+        assert result.shape == (expected_rows, N)
         assert np.allclose(expected, result, atol=1e-6)
 
 

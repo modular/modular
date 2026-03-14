@@ -28,7 +28,7 @@ from .utils import _buffer_values, _tensor_values
 def sum(
     inputs: Iterable[TensorValueLike],
     signal_buffers: Iterable[BufferValueLike],
-    axis: int = -1,
+    axis: int = 0,
 ) -> list[TensorValue]:
     """Collective reduce-scatter summation operation.
 
@@ -39,7 +39,7 @@ def sum(
     Args:
         inputs: The input tensors to reduce and scatter.
         signal_buffers: Device buffer values used for synchronization.
-        axis: The axis along which to scatter the reduced result. Defaults to -1.
+        axis: The axis along which to scatter the reduced result. Defaults to 0.
 
     Returns:
         An iterable of outputs where each device receives its portion of the
@@ -68,8 +68,7 @@ def sum(
             f"input tensors. Got: {devices=}"
         )
 
-    # Resolve negative axis before passing to MLIR. The kernel treats axis=-1
-    # as a distinct flat-1D codepath, so we must always pass a non-negative value.
+    # Resolve negative axis before passing to MLIR.
     input_shape = inputs[0].shape
     input_dtype = inputs[0].dtype
     if axis < 0:
