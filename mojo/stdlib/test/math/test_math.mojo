@@ -153,7 +153,7 @@ def test_perm() raises:
     assert_equal(perm(10, 3), 720)
 
 
-fn test_comb_scalar() raises:
+def test_comb_scalar() raises:
     # Int32
     assert_equal(comb(Int32(0), Int32(0)), Int32(1))
     assert_equal(comb(Int32(5), Int32(0)), Int32(1))
@@ -173,7 +173,7 @@ fn test_comb_scalar() raises:
     assert_equal(comb(UInt64(10), UInt64(3)), UInt64(120))
 
 
-fn test_perm_scalar() raises:
+def test_perm_scalar() raises:
     # Int32 — perm(n, k)
     assert_equal(perm(Int32(5), Int32(0)), Int32(1))
     assert_equal(perm(Int32(5), Int32(1)), Int32(5))
