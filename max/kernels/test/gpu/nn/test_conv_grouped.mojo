@@ -19,13 +19,13 @@ iteration to group-local channels when num_groups > 1.
 from std.random import rand
 from std.testing import assert_false
 
-from layout import LayoutTensor, Layout
+from layout import Layout, LayoutTensor
 from std.gpu.host import DeviceContext
 from nn.conv import Naive2dConvolution, conv_gpu
 from std.utils.index import Index, IndexList
 
 
-fn test_grouped_conv2d[
+def test_grouped_conv2d[
     N: Int,
     H: Int,
     W: Int,

@@ -53,13 +53,7 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
-from layout import (
-    Coord,
-    Idx,
-    RuntimeInt,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from structured_kernels.tile_types import (
     GMEMLayout1D,
@@ -79,7 +73,7 @@ from linalg.fp4_utils import (
 )
 
 
-fn _get_run_name[
+def _get_run_name[
     in_type: DType,
     out_type: DType,
     *,
@@ -119,7 +113,7 @@ comptime epilogue_func_type = fn[
 
 
 @always_inline
-fn test_epilogue[
+def test_epilogue[
     dtype: DType
 ](m: Int, n: Int, val: Scalar[dtype]) -> Scalar[dtype]:
     return val + 4 * (Scalar[dtype]((m + n) % 21 - 10))
@@ -127,7 +121,7 @@ fn test_epilogue[
 
 @always_inline
 @parameter
-fn add_two[
+def add_two[
     dtype: DType,
     width: Int,
     *,
@@ -136,7 +130,7 @@ fn add_two[
     return val + 2
 
 
-fn bench_grouped_matmul[
+def bench_grouped_matmul[
     _in_type: DType,
     out_type: DType,
     num_experts: Int,
@@ -257,7 +251,7 @@ fn bench_grouped_matmul[
     @always_inline
     @__copy_capture(c_dev)
     @parameter
-    fn epilogue_fn[
+    def epilogue_fn[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         var new_val = val
@@ -391,10 +385,10 @@ fn bench_grouped_matmul[
             expert_scales_tt,
         )
         @always_inline
-        fn bench_func_nvfp4(mut bench: Bencher):
+        def bench_func_nvfp4(mut bench: Bencher):
             @parameter
             @always_inline
-            fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
                 comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
@@ -536,10 +530,10 @@ fn bench_grouped_matmul[
             expert_ids,
         )
         @always_inline
-        fn bench_func_fp8_1d2d(mut bench: Bencher):
+        def bench_func_fp8_1d2d(mut bench: Bencher):
             @parameter
             @always_inline
-            fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
                 comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
@@ -617,10 +611,10 @@ fn bench_grouped_matmul[
             expert_ids,
         )
         @always_inline
-        fn bench_func(mut bench: Bencher):
+        def bench_func(mut bench: Bencher):
             @parameter
             @always_inline
-            fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
                 comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
@@ -679,7 +673,7 @@ fn bench_grouped_matmul[
     _ = expert_ids_dev_buffer^
 
 
-fn create_grouped_matmul_bench[
+def create_grouped_matmul_bench[
     in_type: DType,
     out_type: DType,
     num_experts: Int,
@@ -717,7 +711,7 @@ fn create_grouped_matmul_bench[
     )
 
 
-fn string_to_list(string: String) raises -> List[Int]:
+def string_to_list(string: String) raises -> List[Int]:
     var list = List[Int]()
     for i in string.split(","):
         try:

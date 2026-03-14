@@ -16,12 +16,14 @@ from .min_p import MinPSampler
 from .rejection_sampler import (
     RejectionSampler,
     RejectionSamplerWithResiduals,
-    TypicalAcceptanceSampler,
+    greedy_acceptance_sampler,
+    stochastic_acceptance_sampler,
 )
 
 __all__ = [
     "MinPSampler",
     "RejectionSampler",
     "RejectionSamplerWithResiduals",
-    "TypicalAcceptanceSampler",
+    "greedy_acceptance_sampler",
+    "stochastic_acceptance_sampler",
 ]

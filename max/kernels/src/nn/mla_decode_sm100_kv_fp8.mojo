@@ -40,7 +40,13 @@ from layout.tma_async import (
     SharedMemBarrier,
 )
 from std.memory import bitcast
-from layout import TileTensor, RowMajorLayout, ComptimeInt
+from layout import (
+    ComptimeInt,
+    RowMajorLayout,
+    TileTensor,
+    row_major,
+    stack_allocation as tt_stack_allocation,
+)
 from nn.mha_fa3_utils import (
     OptionalPointer,
 )
@@ -53,7 +59,6 @@ from nn.sm100_attention_utils import (
     elect,
     elect_mma_arrive,
 )
-from layout import row_major, stack_allocation as tt_stack_allocation
 from nn.mha_fa3_utils import KVTMATile
 
 from nn.mla_decode_sm100_utils import (
@@ -238,7 +243,7 @@ struct MLA_SM100_Decode_KV_FP8[
         )
     )
     @__llvm_metadata(`nvvm.minctasm`=Int(1))
-    fn kernel(
+    def kernel(
         q_tma: QOTMATile[
             dtype=Self.q_type,
             BM=Self.config.BM,  # tile_m =64
@@ -266,7 +271,7 @@ struct MLA_SM100_Decode_KV_FP8[
         ],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         scalar_args: TileTensor[
-            DType.int64, RowMajorLayout[ComptimeInt[4]], MutAnyOrigin
+            DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
         ],
     ):
         # Softmax now includes the epilogue, so it needs more registers
@@ -589,7 +594,7 @@ struct MLA_SM100_Decode_KV_FP8[
 
     @staticmethod
     @always_inline
-    fn load(
+    def load(
         q_tma: QOTMATile[
             dtype=Self.q_type,
             BM=Self.config.BM,  # tile_m =64
@@ -746,7 +751,7 @@ struct MLA_SM100_Decode_KV_FP8[
 
     @staticmethod
     @always_inline
-    fn _load_scales_for_tile(
+    def _load_scales_for_tile(
         scale_smem_base: SharedMemPointer[Scalar[DType.uint8]],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         kv_lut: Self.KVLUTType,
@@ -792,7 +797,7 @@ struct MLA_SM100_Decode_KV_FP8[
 
     @staticmethod
     @always_inline
-    fn convertFP8ToBF16(
+    def convertFP8ToBF16(
         kv_smem_fp8: SharedMemPointer[Scalar[Self.kv_type]],
         kv_smem_bf16: SharedMemPointer[Scalar[Self.q_type]],
         kv_load2cvt_pipe: KVPipelineGeneric[
@@ -1018,7 +1023,7 @@ struct MLA_SM100_Decode_KV_FP8[
 
     @staticmethod
     @always_inline
-    fn mmaQK(
+    def mmaQK(
         tmem_addr: UInt32,
         q_smem: SharedMemPointer[Scalar[Self.q_type]],
         kv_smem: SharedMemPointer[Scalar[Self.q_type]],
@@ -1098,7 +1103,7 @@ struct MLA_SM100_Decode_KV_FP8[
 
     @staticmethod
     @always_inline
-    fn mmaPV(
+    def mmaPV(
         tmem_addr: UInt32,
         kv_smem: SharedMemPointer[Scalar[Self.q_type]],
         p_bars: DecodeSM100MiscMBars[

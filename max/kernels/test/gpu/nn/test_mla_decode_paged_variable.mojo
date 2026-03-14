@@ -59,7 +59,7 @@ comptime NUM_LAYERS = 1  # Single layer for testing
 comptime KV_NUM_HEADS = 1  # MLA has 1 KV head
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
@@ -71,7 +71,7 @@ fn is_benchmark() -> Bool:
 # ===-----------------------------------------------------------------------===#
 
 
-fn run_test_paged_variable[
+def run_test_paged_variable[
     q_type: DType,
     kv_type: DType,
     num_heads: Int,
@@ -520,7 +520,7 @@ fn run_test_paged_variable[
 # ===-----------------------------------------------------------------------===#
 
 
-fn run_test_paged_variable_multiq[
+def run_test_paged_variable_multiq[
     q_type: DType,
     kv_type: DType,
     num_heads: Int,
@@ -975,7 +975,7 @@ fn run_test_paged_variable_multiq[
 # ===-----------------------------------------------------------------------===#
 
 
-fn run_test_paged_variable_ragged_q[
+def run_test_paged_variable_ragged_q[
     q_type: DType,
     kv_type: DType,
     num_heads: Int,
@@ -1488,7 +1488,7 @@ fn run_test_paged_variable_ragged_q[
 # ===-----------------------------------------------------------------------===#
 
 
-fn run_bench_paged_variable[
+def run_bench_paged_variable[
     q_type: DType,
     kv_type: DType,
     num_heads: Int,
@@ -1730,7 +1730,7 @@ fn run_bench_paged_variable[
         row_offsets_lt,
         scalar_args_buf_lt,
     )
-    fn kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(ctx: DeviceContext) raises:
         flare_mla_decoding[rank=3, ragged=True](
             out_lt,
             q_lt,
@@ -1776,7 +1776,7 @@ fn run_bench_paged_variable[
 # ===-----------------------------------------------------------------------===#
 
 
-fn run_test_paged_variable_native_fp8[
+def run_test_paged_variable_native_fp8[
     num_heads: Int,
 ](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
     """Test native FP8 MLA decode through the paged path.
@@ -2235,7 +2235,7 @@ fn run_test_paged_variable_native_fp8[
 # ===-----------------------------------------------------------------------===#
 
 
-fn run_bench_paged_variable_native_fp8[
+def run_bench_paged_variable_native_fp8[
     num_heads: Int,
 ](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
     """Benchmark the native FP8 paged path (no numerical verification)."""
@@ -2477,7 +2477,7 @@ fn run_bench_paged_variable_native_fp8[
     @parameter
     @always_inline
     @__copy_capture(out_lt, q_lt, kv_cache, row_offsets_lt, scalar_args_buf_lt)
-    fn kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(ctx: DeviceContext) raises:
         flare_mla_decoding[rank=3, ragged=True](
             out_lt,
             q_lt,
@@ -2523,7 +2523,7 @@ fn run_bench_paged_variable_native_fp8[
 # ===-----------------------------------------------------------------------===#
 
 
-fn make_uniform(count: Int, value: Int) -> List[Int]:
+def make_uniform(count: Int, value: Int) -> List[Int]:
     """Create a list of `count` identical cache lengths."""
     var result = List[Int]()
     for _ in range(count):
@@ -2531,7 +2531,7 @@ fn make_uniform(count: Int, value: Int) -> List[Int]:
     return result^
 
 
-fn run_both_kv_types[
+def run_both_kv_types[
     num_heads: Int
 ](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext) raises:
     """Run correctness test for both bf16 and fp8 KV types."""
@@ -2543,14 +2543,14 @@ fn run_both_kv_types[
     )
 
 
-fn run_uniform_both[
+def run_uniform_both[
     num_heads: Int
 ](name: StringLiteral, count: Int, value: Int, ctx: DeviceContext) raises:
     """Run correctness test with uniform cache lengths for both KV types."""
     run_both_kv_types[num_heads](name, make_uniform(count, value), ctx)
 
 
-fn run_bench_both_kv_types[
+def run_bench_both_kv_types[
     num_heads: Int
 ](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext) raises:
     """Run benchmark for both bf16 and fp8 KV types."""
@@ -2562,14 +2562,14 @@ fn run_bench_both_kv_types[
     )
 
 
-fn run_bench_uniform_both[
+def run_bench_uniform_both[
     num_heads: Int
 ](name: StringLiteral, count: Int, value: Int, ctx: DeviceContext) raises:
     """Run benchmark with uniform cache lengths for both KV types."""
     run_bench_both_kv_types[num_heads](name, make_uniform(count, value), ctx)
 
 
-fn run_multiq_both_kv_types[
+def run_multiq_both_kv_types[
     num_heads: Int
 ](
     name: StringLiteral,
@@ -2586,7 +2586,7 @@ fn run_multiq_both_kv_types[
     ](name + "_fp8", cache_lengths, q_max_seq_len, ctx)
 
 
-fn run_multiq_uniform_both[
+def run_multiq_uniform_both[
     num_heads: Int
 ](
     name: StringLiteral,
@@ -2601,7 +2601,7 @@ fn run_multiq_uniform_both[
     )
 
 
-fn run_ragged_q_both_kv_types[
+def run_ragged_q_both_kv_types[
     num_heads: Int
 ](
     name: StringLiteral,
@@ -2618,7 +2618,7 @@ fn run_ragged_q_both_kv_types[
     ](name + "_fp8", cache_lengths, seq_lens, ctx)
 
 
-fn run_all_three_kv_types[
+def run_all_three_kv_types[
     num_heads: Int
 ](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext) raises:
     """Run correctness test for bf16, fp8 (converter), and native fp8."""
@@ -2628,7 +2628,7 @@ fn run_all_three_kv_types[
     )
 
 
-fn run_uniform_all_three[
+def run_uniform_all_three[
     num_heads: Int
 ](name: StringLiteral, count: Int, value: Int, ctx: DeviceContext) raises:
     """Run correctness test with uniform cache lengths for all three KV types.
@@ -2636,7 +2636,7 @@ fn run_uniform_all_three[
     run_all_three_kv_types[num_heads](name, make_uniform(count, value), ctx)
 
 
-fn run_bench_all_three_kv_types[
+def run_bench_all_three_kv_types[
     num_heads: Int
 ](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext) raises:
     """Run benchmark for bf16, fp8 (converter), and native fp8."""
@@ -2646,7 +2646,7 @@ fn run_bench_all_three_kv_types[
     )
 
 
-fn run_bench_uniform_all_three[
+def run_bench_uniform_all_three[
     num_heads: Int
 ](name: StringLiteral, count: Int, value: Int, ctx: DeviceContext) raises:
     """Run benchmark with uniform cache lengths for all three KV types."""

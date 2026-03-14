@@ -32,7 +32,7 @@ from ..tile_scheduler import MatmulSchedule
 from .matmul import warp_specialize_gemm_with_multicasting
 
 
-fn test_matmul_sm90[
+def test_matmul_sm90[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -182,7 +182,7 @@ fn test_matmul_sm90[
     @parameter
     @always_inline
     @__copy_capture(c_device)
-    fn epilogue_fn[
+    def epilogue_fn[
         _dtype: DType,
         width: Int,
         *,

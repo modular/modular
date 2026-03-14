@@ -57,9 +57,9 @@ class GptOssTextModel(DistributedLogitsPostprocessMixin, Module):
 
         # Set embedding output dtype for quantized models
         self.embedding_output_dtype: DType | None = None
-        if config.float8_config and config.float8_config.embedding_output_dtype:
+        if config.quant_config and config.quant_config.embedding_output_dtype:
             self.embedding_output_dtype = (
-                config.float8_config.embedding_output_dtype
+                config.quant_config.embedding_output_dtype
             )
 
         # Create YARN scaling params if configured

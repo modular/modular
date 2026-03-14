@@ -17,10 +17,16 @@ from std.gpu import WARP_SIZE, barrier, lane_id
 from std.gpu.host import DeviceContext
 from std.gpu.compute.mma import ld_matrix, mma
 from std.gpu.compute.mma_util import store_matrix_d
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, TileTensor
-from layout.runtime_layout import RuntimeLayout
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.memory import stack_allocation
@@ -29,7 +35,7 @@ from std.testing import assert_almost_equal
 from std.utils.numerics import get_accum_type
 
 
-fn test_ldmatrix_fp8[
+def test_ldmatrix_fp8[
     input_type: DType,
 ](
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
@@ -82,7 +88,7 @@ fn test_ldmatrix_fp8[
     )
 
 
-fn check_ldmatrix_fp8[
+def check_ldmatrix_fp8[
     input_type: DType,
 ](ctx: DeviceContext) raises:
     print("== test ldmatrix transposed fp8")

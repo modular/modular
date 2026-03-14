@@ -20,9 +20,14 @@ from std.gpu import (
     thread_idx,
     warp_id as get_warp_id,
 )
-from layout import Layout, LayoutTensor, TileTensor, row_major as tt_row_major
+from layout import (
+    Layout,
+    LayoutTensor,
+    TileTensor,
+    row_major as tt_row_major,
+    stack_allocation as tt_stack_allocation,
+)
 from layout._utils import idx2crd
-from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from nn.softmax import _exp2_concrete, _exp_concrete
 
 
@@ -97,7 +102,7 @@ struct Softmax[
     var correction: Self.ScoreFragTensorType
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         self.rowmax_tensor = tt_stack_allocation[
             dtype=Self.dtype, address_space=AddressSpace.LOCAL
         ](Self.row_tt_layout)
@@ -115,7 +120,7 @@ struct Softmax[
         ](Self.score_frag_tt_layout).fill(1)
 
     @always_inline
-    fn calculate_qk_max(
+    def calculate_qk_max(
         self,
         score_reg_tile: LayoutTensor[Self.dtype, ...],
         warp_scratch: LayoutTensor[mut=True, Self.dtype, ...],
@@ -212,7 +217,7 @@ struct Softmax[
                     ](self.score_frag_rowmax[col_tile, row])
 
     @always_inline
-    fn calculate_qk_sum(
+    def calculate_qk_sum(
         self,
         score_reg_tile: LayoutTensor[Self.dtype, ...],
         warp_scratch: LayoutTensor[mut=True, Self.dtype, ...],
@@ -308,7 +313,7 @@ struct Softmax[
                     ](self.score_frag_rowsum[col_tile, row])
 
     @always_inline
-    fn exp[
+    def exp[
         start: Int = 0, stride: Int = 1
     ](self, score_reg_tile: LayoutTensor[mut=True, Self.dtype, ...]):
         comptime frag_type = score_reg_tile.element_type
@@ -337,7 +342,7 @@ struct Softmax[
                         )
 
     @always_inline
-    fn calculate_correction(self):
+    def calculate_correction(self):
         comptime for col_tile in range(Self.num_colwise_tiles):
             # Corrention since previous max may be updated.
             comptime for row in range(Self.frag_num_rows):
@@ -347,7 +352,7 @@ struct Softmax[
                 )
 
     @always_inline
-    fn update_output(
+    def update_output(
         self, output_reg_tile: LayoutTensor[mut=True, Self.dtype, ...]
     ):
         comptime num_output_replications = output_reg_tile.layout.shape[
@@ -383,7 +388,7 @@ struct Softmax[
                             )
 
     @always_inline
-    fn update_sum(self):
+    def update_sum(self):
         # Save current rowmax and rowsum
         comptime for col_tile in range(Self.num_colwise_tiles):
             comptime for row in range(Self.frag_num_rows):
@@ -394,14 +399,14 @@ struct Softmax[
                 )
 
     @always_inline
-    fn update_max(self):
+    def update_max(self):
         # Save current rowmax and rowsum
         comptime for i in range(Self.num_colwise_tiles):
             comptime for j in range(Self.frag_num_rows):
                 self.rowmax_tensor[i, j] = self.score_frag_rowmax[i, j]
 
     @always_inline
-    fn full(
+    def full(
         self,
         output_reg_tile: LayoutTensor[mut=True, Self.dtype, ...],
         score_reg_tile: LayoutTensor[mut=True, Self.dtype, ...],

@@ -41,11 +41,11 @@ from linalg.fp4_utils import (
 )
 from std.random import random_ui64
 from std.builtin.simd import _convert_f32_to_float8_ue8m0
-from layout import LayoutTensor, Layout, RuntimeLayout, TileTensor
+from layout import Layout, LayoutTensor, RuntimeLayout, TileTensor
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-fn simple_init() -> Bool:
+def simple_init() -> Bool:
     for arg in argv():
         if arg == "--simple-init":
             return True

@@ -59,6 +59,7 @@ from .pipeline_variants.text_generation import TextGenerationPipeline
 from .speculative_decoding import (
     EAGLESpeculativeDecodingPipeline,
     StandaloneSpeculativeDecodingPipeline,
+    UnifiedEAGLEPipeline,
 )
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import TextTokenizer
@@ -104,6 +105,7 @@ def get_pipeline_for_task(
     | type[AudioGeneratorPipeline]
     | type[PixelGenerationPipeline[Any]]
     | type[StandaloneSpeculativeDecodingPipeline]
+    | type[UnifiedEAGLEPipeline]
     | type[SpeechTokenGenerationPipeline]
     | type[EAGLESpeculativeDecodingPipeline]
     | type[OverlapTextGenerationPipeline[TextContext]]
@@ -128,6 +130,13 @@ def get_pipeline_for_task(
                 "Overlap scheduler is not supported with speculative decoding yet."
             )
 
+        # TODO: delete this temporary env var once things are less hacky
+        if os.getenv("MODULAR_USE_UNIFIED_EAGLE_PIPELINE"):
+            logger.warning(
+                "Using highly experimental UnifiedEAGLEPipeline. We really don't recommend using this."
+            )
+            return UnifiedEAGLEPipeline
+
         if pipeline_config.speculative.is_standalone():
             return StandaloneSpeculativeDecodingPipeline
         elif (
@@ -138,15 +147,18 @@ def get_pipeline_for_task(
         else:
             raise ValueError(f"Unsupported speculative method: {spec_method}")
     elif pipeline_config.runtime.enable_overlap_scheduler:
-        role = pipeline_config.runtime.pipeline_role
-        if (
-            task == PipelineTask.TEXT_GENERATION
-            and role == "prefill_and_decode"
-        ):
+        if task == PipelineTask.TEXT_GENERATION:
+            # TODO: Enable overlap pipeline for prefill_only workers
+            # once the prefill overlap pipeline is implemented.
+            if pipeline_config.runtime.pipeline_role == "prefill_only":
+                raise ValueError(
+                    "Overlap scheduling is not yet supported for "
+                    "prefill_only workers (WIP)."
+                )
             return OverlapTextGenerationPipeline[TextContext]
         raise ValueError(
-            "Overlap scheduler is only supported for TEXT_GENERATION task "
-            f"and PrefillAndDecode pipeline role, got {task} and {role}"
+            f"Overlap scheduler requires the TEXT_GENERATION pipeline task, "
+            f"got task={task}."
         )
     elif task == PipelineTask.TEXT_GENERATION:
         return TextGenerationPipeline[TextContext]
@@ -303,6 +315,46 @@ class SupportedArchitecture:
             return self.tokenizer
         # Otherwise fall back to PipelineTokenizer.
         return TextTokenizer
+
+
+class _ValidatedNewContext:
+    """Picklable wrapper that applies architecture-level validators.
+
+    Unlike a closure or ``functools.wraps``-decorated function, this plain
+    class survives pickling when tokenizers are sent to model-worker
+    subprocesses.
+    """
+
+    def __init__(
+        self,
+        tokenizer: PipelineTokenizer[Any, Any, Any],
+        validators: list[Callable[..., None]],
+    ) -> None:
+        self._tokenizer = tokenizer
+        self._validators = validators
+
+    async def __call__(self, request: Any) -> Any:
+        # Call the original (unwrapped) class method, not the instance
+        # attribute, so we always reach the real implementation.
+        context = await type(self._tokenizer).new_context(
+            self._tokenizer, request
+        )
+        for validator in self._validators:
+            validator(context)
+        return context
+
+
+def _apply_context_validators(
+    tokenizer: PipelineTokenizer[Any, Any, Any],
+    validators: list[Callable[..., None]],
+) -> None:
+    """Wraps a tokenizer's new_context to apply architecture-level validators.
+
+    This keeps validation logic out of individual tokenizer classes while
+    ensuring validators run automatically after context creation.
+    """
+    wrapper = _ValidatedNewContext(tokenizer, validators)
+    tokenizer.new_context = wrapper  # type: ignore[method-assign]
 
 
 class PipelineRegistry:
@@ -835,7 +887,6 @@ class PipelineRegistry:
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
                 chat_template=pipeline_config.model.retrieve_chat_template(),
-                context_validators=arch.context_validators,
             )
         else:
             tokenizer = arch.tokenizer(
@@ -845,8 +896,11 @@ class PipelineRegistry:
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 chat_template=pipeline_config.model.retrieve_chat_template(),
-                context_validators=arch.context_validators,
             )
+
+        if arch.context_validators:
+            _apply_context_validators(tokenizer, arch.context_validators)
+
         # Cast tokenizer to the proper type for text generation pipeline compatibility
         typed_tokenizer = cast(
             PipelineTokenizer[

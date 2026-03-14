@@ -55,7 +55,7 @@ DISABLE = set(RUNNERS)
 #    3a) For VLMs, add it to the is_vision_model check in smoke_test.py
 #    3b) For reasoning models, add it to the is_reasoning_model check in smoke_test.py
 # fmt: off
-MODELS: dict[str, set[str]] = {
+HF_MODELS: dict[str, set[str]] = {
     "allenai/olmo-3-7b-instruct": MULTI | {"max"},
     "allenai/olmocr-2-7b-1025-fp8": MULTI | {"sglang"},
     "bytedance-seed/academic-ds-9b": MULTI | {"max", "max-ci@MI355", "sglang@B200", "vllm@B200"},
@@ -86,20 +86,23 @@ MODELS: dict[str, set[str]] = {
     "redhatai/gemma-3-27b-it-fp8-dynamic": MULTI,  # TODO(MODELS-1021)
     "nvidia/llama-3.1-405b-instruct-nvfp4": NON_XL | {"max", "8xMI355"},
     "redhatai/meta-llama-3.1-405b-instruct-fp8-dynamic": NON_XL,
+    "openai/gpt-oss-20b": XL | {"max@H100"},
     "unsloth/gpt-oss-20b-bf16": XL | {"max@H100"},
 }
 
-# These models are hardcoded to run on module-V3. They're duplicates
-# of the model from the org listed in the comment next to the model name.
-V3_MODELS: dict[str, set[str]] = {
-    "tbmod/meta-llama-3.1-8b-instruct": MULTI, # unsloth/
-    "tbmod/llama-3.2-1b-instruct": MULTI, # unsloth/
-    "tbmod/gpt-oss-20b-bf16": DISABLE,  # unsloth/ TODO(MXF-121)
-    "tbmod/phi-3.5-mini-instruct": MULTI, # microsoft/
-    "tbmod/phi-4": MULTI, # microsoft/
+# Models tested with custom MAX serve flags. MODEL_ALIASES in
+# smoke_test.py maps each alias back to the real HuggingFace model
+# path and injects the appropriate serve args.
+CUSTOM_MODELS: dict[str, set[str]] = {
+    "meta-llama/llama-3.1-8b-instruct__modulev3": MULTI,
+    "meta-llama/llama-3.2-1b-instruct__modulev3": MULTI,
+    "unsloth/gpt-oss-20b-bf16__modulev3": DISABLE,  # TODO(MXF-121)
+    "microsoft/phi-3.5-mini-instruct__modulev3": MULTI,
+    "microsoft/phi-4__modulev3": MULTI,
+    "nvidia/deepseek-v3.1-nvfp4__fp8kv": NON_XL | {"8xMI355"},
 }
 
-MODELS = {**MODELS, **V3_MODELS}
+MODELS = {**HF_MODELS, **CUSTOM_MODELS}
 # fmt: on
 
 

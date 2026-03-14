@@ -36,14 +36,14 @@ from std.utils.numerics import get_accum_type
 # ===------------------------------------------------------------------===#
 
 
-fn block_swizzle(
+def block_swizzle(
     block_idx: IndexList[2, ...], grid_dim: type_of(block_idx)
 ) -> type_of(block_idx):
     return _block_swizzle_by_scale[3](block_idx, grid_dim)
 
 
 @always_inline
-fn _block_swizzle_by_scale[
+def _block_swizzle_by_scale[
     scale0: UInt
 ](block_idx: IndexList[2, ...], grid_dim: type_of(block_idx)) -> type_of(
     block_idx
@@ -144,7 +144,7 @@ struct MatmulConfig[
     # TODO: output precision will break the integration test.
     comptime split_k_reduction_type = Self.c_type if Self.OUTPUT_PRECISION == Self.split_k_reduction_scheme else Self.accum_type
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         block_tile_shape: IndexList[3] = Index(128, 128, 32),
@@ -171,7 +171,7 @@ struct MatmulConfig[
         self.partitioned_multicast = partitioned_multicast
         self._pdl_level = pdl_level
 
-    fn copy_field(mut self, other: MatmulConfig):
+    def copy_field(mut self, other: MatmulConfig):
         self.block_tile_shape = other.block_tile_shape
         self.warp_tile_shape = other.warp_tile_shape
         self.mma_shape = other.mma_shape
@@ -184,7 +184,7 @@ struct MatmulConfig[
         self.partitioned_multicast = other.partitioned_multicast
         self._pdl_level = other._pdl_level
 
-    fn swapAB(
+    def swapAB(
         self,
     ) -> MatmulConfig[Self.b_type, Self.a_type, Self.c_type, Self.transpose_b]:
         var new_config = MatmulConfig[
@@ -193,13 +193,13 @@ struct MatmulConfig[
         new_config.copy_field(self)
         return new_config
 
-    fn num_warps_m(self) -> UInt:
+    def num_warps_m(self) -> UInt:
         return UInt(self.block_tile_shape[0] // self.warp_tile_shape[0])
 
-    fn num_warps_n(self) -> UInt:
+    def num_warps_n(self) -> UInt:
         return UInt(self.block_tile_shape[1] // self.warp_tile_shape[1])
 
-    fn num_threads(self) -> UInt:
+    def num_threads(self) -> UInt:
         return (
             self.num_warps_m()
             * self.num_warps_n()
@@ -207,7 +207,7 @@ struct MatmulConfig[
             * UInt(WARP_SIZE)
         )
 
-    fn shared_mem_usage(self) -> Int:
+    def shared_mem_usage(self) -> Int:
         return Int(
             _shared_memory_usage[Self.a_type, Self.b_type, Self.c_type](
                 self.block_tile_shape,
@@ -216,23 +216,23 @@ struct MatmulConfig[
             )
         )
 
-    fn grid_dim(self, m: UInt, n: UInt) -> IndexList[3]:
+    def grid_dim(self, m: UInt, n: UInt) -> IndexList[3]:
         return Index(
             Int(ceildiv(n, UInt(self.block_tile_shape[1]))),
             Int(ceildiv(m, UInt(self.block_tile_shape[0]))),
             Int(self.num_k_partitions),
         )
 
-    fn block_dim(self) -> IndexList[3]:
+    def block_dim(self) -> IndexList[3]:
         return Index(Int(self.num_threads()), 1, 1)
 
-    fn work_space_size(self, M: UInt, N: UInt) -> UInt:
+    def work_space_size(self, M: UInt, N: UInt) -> UInt:
         return M * N * (self.num_k_partitions - 1)
 
-    fn pdl_level(self) -> PDLLevel:
+    def pdl_level(self) -> PDLLevel:
         return self._pdl_level
 
-    fn __eq__(self, rhs: MatmulConfig) -> Bool:
+    def __eq__(self, rhs: MatmulConfig) -> Bool:
         comptime static_info_match = Self.a_type == rhs.a_type and Self.b_type == rhs.b_type and Self.c_type == rhs.c_type and Self.transpose_b == rhs.transpose_b
 
         comptime if static_info_match:
@@ -243,7 +243,7 @@ struct MatmulConfig[
         else:
             return False
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("kernel_")
         writer.write(Self.a_type, "_")
         writer.write(Self.c_type, "_")
@@ -261,10 +261,10 @@ struct MatmulConfig[
         # transpose B
         writer.write("T" if Self.transpose_b else "N")
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         self.write_to(writer)
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
+    def __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
 
         Parameters:
@@ -291,7 +291,7 @@ struct MatmulConfig[
 
 # Helper for choosing the base of BK based on type.
 # Actual BK should be multiple of BK_base.
-fn _bk_base[type: DType, amd_kernel: Bool = False]() -> Int:
+def _bk_base[type: DType, amd_kernel: Bool = False]() -> Int:
     if type.is_float8():
         comptime if amd_kernel:
             return 128
@@ -307,7 +307,7 @@ fn _bk_base[type: DType, amd_kernel: Bool = False]() -> Int:
 
 
 @always_inline
-fn _shared_memory_usage[
+def _shared_memory_usage[
     a_type: DType, b_type: DType, c_type: DType
 ](block_mnk: IndexList[3], num_pipeline_stages: Int, slice_k: Int = 1) -> UInt:
     # fmt: off
@@ -384,7 +384,7 @@ struct MatmulKernels[
     )
 
 
-fn select_config[
+def select_config[
     a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
 ](M: Int, N: Int, K: Int, ctx: DeviceContext) -> MatmulConfig[
     a_type, b_type, c_type, transpose_b
@@ -491,7 +491,7 @@ fn select_config[
     )
 
 
-fn _vendor_blas_fallback_disabled() -> Bool:
+def _vendor_blas_fallback_disabled() -> Bool:
     """Determine if fallback to vendor blas is disabled
 
     Returns True if:
@@ -506,7 +506,7 @@ fn _vendor_blas_fallback_disabled() -> Bool:
     return globally_disabled or bench_disabled
 
 
-fn create_hilbert_lut(
+def create_hilbert_lut(
     ctx: DeviceContext, grid_x: Int, grid_y: Int
 ) raises -> DeviceBuffer[DType.uint32]:
     """Precompute Hilbert-curve block swizzle lookup-table for a rectangular grid.
@@ -561,7 +561,7 @@ fn create_hilbert_lut(
     return device_buf
 
 
-fn get_hilbert_lut_with_cache(
+def get_hilbert_lut_with_cache(
     ctx: DeviceContext, grid_x: Int, grid_y: Int
 ) raises -> DeviceBuffer[DType.uint32]:
     """Get Hilbert lookup table using global cache (no struct needed)."""

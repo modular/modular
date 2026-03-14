@@ -17,18 +17,13 @@ from std.sys import get_defined_dtype, simd_width_of
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, row_major
 from nn.softmax import softmax
 
 from std.utils.index import Index, IndexList
 
 
-fn bench_softmax_gpu[
+def bench_softmax_gpu[
     rank: Int, //, dtype: DType, shape: IndexList[rank]
 ](ctx: DeviceContext, mut b: Bench, fn_name: String) raises:
     comptime cols = shape[rank - 1]
@@ -50,10 +45,10 @@ fn bench_softmax_gpu[
     @always_inline
     @__copy_capture(shape, data_buf, out_buf)
     @parameter
-    fn bench_fn(mut b: Bencher) raises:
+    def bench_fn(mut b: Bencher) raises:
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             softmax[dtype, simd_width_of[dtype](), rank](
                 data_buf, out_buf, rank - 1
             )

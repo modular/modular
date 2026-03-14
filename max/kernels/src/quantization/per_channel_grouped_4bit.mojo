@@ -19,7 +19,7 @@ from std.utils import IndexList, StaticTuple, product
 
 
 @always_inline
-fn _to_StaticTuple[
+def _to_StaticTuple[
     dtype: DType, size: Int
 ](data: SIMD[dtype, size]) -> StaticTuple[Scalar[dtype], size]:
     """Convert SIMD to StaticTuple."""
@@ -32,7 +32,7 @@ fn _to_StaticTuple[
 
 
 @always_inline
-fn _to_SIMD[
+def _to_SIMD[
     dtype: DType, size: Int
 ](data: StaticTuple[Scalar[dtype], size]) -> SIMD[dtype, size]:
     """Convert StaticTuple to SIMD."""
@@ -44,7 +44,7 @@ fn _to_SIMD[
 
 
 @always_inline
-fn calculate_symmetric_vector[
+def calculate_symmetric_vector[
     input_dtype: DType, simd_width: Int, output_bits: Int
 ](data: SIMD[input_dtype, simd_width]) -> Tuple[
     SIMD[DType.uint8, simd_width],
@@ -135,7 +135,7 @@ struct Q4sym[
 
     @staticmethod
     @always_inline
-    fn _check_constraints():
+    def _check_constraints():
         # TODO
         comptime assert (
             Self.group_size.is_power_of_two()
@@ -150,14 +150,14 @@ struct Q4sym[
         ), "Must be floating point type"
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Construct a default initialized Q4sym."""
         self.scale = StaticTuple[UInt8, 2]()
         self.bits = StaticTuple[UInt8, Self.group_size // 2]()
         self._check_constraints()
 
     @always_inline
-    fn __init__(out self, data: SIMD[Self.float_dtype, Self.group_size]):
+    def __init__(out self, data: SIMD[Self.float_dtype, Self.group_size]):
         """
         Construct an encoded Q4sym from data.
 
@@ -178,14 +178,14 @@ struct Q4sym[
 
     @staticmethod
     @always_inline
-    fn _encode_bits(
+    def _encode_bits(
         qdata: SIMD[DType.uint8, Self.group_size]
     ) -> SIMD[DType.uint8, Self.group_size // 2]:
         var lo_hi = qdata.split()
         return lo_hi[0] | (lo_hi[1] << 4)
 
     @always_inline
-    fn _decode_bits(mut self) -> SIMD[DType.uint8, Self.group_size]:
+    def _decode_bits(mut self) -> SIMD[DType.uint8, Self.group_size]:
         # Extract the lower 4 bits of all bits in the `l_bits` format
         var bits_simd = _to_SIMD[DType.uint8, Self.group_size // 2](self.bits)
         var bits_upper = (bits_simd & 0xF0) >> 4
@@ -195,7 +195,7 @@ struct Q4sym[
         )
 
     @always_inline
-    fn decode_scale(mut self) -> Float16:
+    def decode_scale(mut self) -> Float16:
         """
         Obtain the scale factor.
 
@@ -218,7 +218,7 @@ struct Q4sym[
         return scale_decoded
 
     @always_inline
-    fn decode_unsigned(mut self) -> SIMD[DType.uint8, Self.group_size]:
+    def decode_unsigned(mut self) -> SIMD[DType.uint8, Self.group_size]:
         """
         Decode the stored uint4 numbers to uint8.
 
@@ -230,7 +230,7 @@ struct Q4sym[
         return self._decode_bits()
 
     @always_inline
-    fn decode_signed(mut self) -> SIMD[DType.int8, Self.group_size]:
+    def decode_signed(mut self) -> SIMD[DType.int8, Self.group_size]:
         """
         Decode the stored uint4 numbers to requantized int4 numbers.
 
@@ -245,7 +245,7 @@ struct Q4sym[
         return decoded_result.cast[DType.int8]() - 8
 
     @always_inline
-    fn decode_fully(mut self) -> SIMD[Self.float_dtype, Self.group_size]:
+    def decode_fully(mut self) -> SIMD[Self.float_dtype, Self.group_size]:
         """
         Decode the stored numbers into floating point representation.
 
@@ -264,7 +264,7 @@ struct Q4sym[
     # TODO: support other axis of quantization, right now assume inner-most dim.
     # TODO: support axis which not divisible by group_size
     @staticmethod
-    fn quantize_and_write_to_tensor(
+    def quantize_and_write_to_tensor(
         input_tensor: LayoutTensor[
             Self.float_dtype, address_space=AddressSpace.GENERIC, ...
         ],
@@ -341,7 +341,7 @@ struct Q4sym[
                 _ = encoded_data^
 
     @staticmethod
-    fn dequantize_and_write_to_tensor(
+    def dequantize_and_write_to_tensor(
         input_tensor: LayoutTensor[
             DType.uint8, address_space=AddressSpace.GENERIC, ...
         ],
@@ -431,7 +431,7 @@ struct block_Q4_K:
     var q_bits: InlineArray[UInt8, block_QK_K.quantized_k // 2]
 
 
-fn scale_min_k4(
+def scale_min_k4(
     src_ptr: UnsafePointer[block_Q4_K, address_space=AddressSpace.GENERIC, ...],
     g: Int,
 ) -> Tuple[Float32, Float32]:
@@ -451,7 +451,7 @@ fn scale_min_k4(
         return q_scale.cast[DType.float32](), q_min.cast[DType.float32]()
 
 
-fn q4_k_dequantize_impl(
+def q4_k_dequantize_impl(
     input_tensor: LayoutTensor[
         DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
@@ -535,7 +535,7 @@ struct block_Q6_K:
     var base_scale: Float16
 
 
-fn q6_k_dequantize_impl(
+def q6_k_dequantize_impl(
     input_tensor: LayoutTensor[DType.uint8, ...],
     output_tensor: LayoutTensor[mut=True, DType.float32, ...],
     output_shape: IndexList[output_tensor.rank],

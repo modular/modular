@@ -22,7 +22,7 @@ from std.utils import IndexList
 from std.utils.index import Index
 
 
-fn test_vendor[
+def test_vendor[
     in_type: DType,
     out_type: DType,
     num_experts: Int,
@@ -228,7 +228,7 @@ fn test_vendor[
     _ = expert_ids_dev_buffer^
 
 
-fn test_negative_lora_id_vendor[
+def test_negative_lora_id_vendor[
     in_type: DType,
     out_type: DType,
     num_experts: Int,

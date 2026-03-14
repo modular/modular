@@ -94,9 +94,7 @@ from std.gpu.primitives.warp import _vote_nvidia_helper
 from layout.tma_async import (
     SharedMemBarrier,
 )
-from layout import row_major
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
+from layout import Layout, LayoutTensor, row_major
 from layout.swizzle import make_ldmatrix_swizzle
 from std.memory import bitcast
 from nn.mha_fa3_utils import (
@@ -275,7 +273,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             Int32(Self.config.num_threads)
         )
     )
-    fn kernel(
+    def kernel(
         # Q_nope TMA: FP8, 64×512, SWIZZLE_64B
         q_nope_tma: QOTMATile[
             dtype=Self.fp8_type,
@@ -324,7 +322,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # Null pointer means no Q scale (sigma_Q = 1.0).
         q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         scalar_args: LayoutTensor[
-            DType.int64, Layout.row_major(4), MutAnyOrigin
+            DType.int64, Layout.row_major(3), MutAnyOrigin
         ],
     ):
         # Extract scalar launch args from the stable device buffer.
@@ -646,7 +644,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
-    fn load(
+    def load(
         q_nope_tma: QOTMATile[
             dtype=Self.fp8_type,
             BM=Self.config.BM,
@@ -804,9 +802,6 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         kv_prod.commit_step()
         kv_row += UInt32(Self.config.BN)
 
-        # Wait for Q TMA to complete. Q arrives split: nope as FP8, rope as BF16.
-        mbar_q[].wait(0)
-
         # Load remaining KV tiles
         var tile_idx: Int = 1
         while tile_idx < num_k_tiles:
@@ -877,7 +872,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
-    fn mmaQK(
+    def mmaQK(
         tmem_addr: UInt32,
         q_nope_smem: SharedMemPointer[Scalar[Self.fp8_type]],
         q_rope_smem: SharedMemPointer[Scalar[Self.bf16_type]],
@@ -937,9 +932,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         comptime content_stage_stride_bytes = Self.ContentStageBytes
         comptime rope_stage_stride_bytes = Self.RopeStageBytes
 
-        # Q FP8 + BF16 are ready (load warp waited on mbar_q).
-        # The barrier() at the end of init ensures visibility.
-
+        mbar_q[].wait(0)
         var tile_idx: Int = 0
         while tile_idx < num_k_tiles:
             s_prod.acquire()
@@ -980,7 +973,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
-    fn mmaPV(
+    def mmaPV(
         tmem_addr: UInt32,
         kv_content_smem: SharedMemPointer[Scalar[Self.fp8_type]],
         p_smem: SharedMemPointer[Scalar[Self.fp8_type]],

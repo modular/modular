@@ -17,7 +17,7 @@ from std.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 
 
-fn vec_func(
+def vec_func(
     in0: UnsafePointer[Float32, MutAnyOrigin],
     in1: UnsafePointer[Float32, MutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
@@ -35,7 +35,7 @@ def test_concurrent_copy() raises:
     _run_test_concurrent_copy(ctx1, ctx2)
 
 
-fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
+def _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     comptime length = 1 * 1024 * 1024
     comptime T = DType.float32
 
@@ -169,7 +169,7 @@ def test_concurrent_func() raises:
     _run_test_concurrent_func(ctx1, ctx2)
 
 
-fn _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
+def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     comptime length = 20 * 1024 * 1024
     comptime T = DType.float32
 

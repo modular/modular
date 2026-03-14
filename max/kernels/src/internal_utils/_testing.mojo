@@ -27,7 +27,7 @@ from std.utils.numerics import FPUtils
 # ===----------------------------------------------------------------------=== #
 
 
-fn _flat_to_nd_index(flat_idx: Int, shape: List[Int]) -> String:
+def _flat_to_nd_index(flat_idx: Int, shape: List[Int]) -> String:
     """Convert a flat index to an N-dimensional index string.
 
     Args:
@@ -58,7 +58,7 @@ fn _flat_to_nd_index(flat_idx: Int, shape: List[Int]) -> String:
     return result
 
 
-fn _format_index(i: Int, shape: List[Int]) -> String:
+def _format_index(i: Int, shape: List[Int]) -> String:
     """Format an index for error messages.
 
     Args:
@@ -81,7 +81,7 @@ fn _format_index(i: Int, shape: List[Int]) -> String:
 
 
 @always_inline
-fn assert_almost_equal[
+def assert_almost_equal[
     dtype: DType,
     //,
 ](
@@ -147,7 +147,7 @@ fn assert_almost_equal[
 
 
 @always_inline
-fn assert_equal[
+def assert_equal[
     dtype: DType,
     //,
 ](
@@ -201,7 +201,7 @@ fn assert_equal[
 
 
 @always_inline
-fn assert_with_measure[
+def assert_with_measure[
     dtype: DType,
     //,
     measure: fn[dtype: DType](
@@ -274,7 +274,7 @@ fn assert_with_measure[
 
 
 @always_inline
-fn pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
+def pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
     """Get PyTorch-like default tolerances for a given dtype.
 
     Returns tolerance values modeled after PyTorch's default tolerances
@@ -312,7 +312,7 @@ fn pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
 
 @always_inline
 @parameter
-fn test_value_for_gpu_element[
+def test_value_for_gpu_element[
     dtype: DType,
 ](gpu_rank: Int, element_idx: Int) -> Scalar[dtype]:
     """Generates unique deterministic test values per GPU and element index.

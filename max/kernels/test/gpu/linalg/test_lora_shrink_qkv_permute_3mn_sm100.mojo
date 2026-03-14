@@ -26,7 +26,7 @@ from std.utils import IndexList
 from std.utils.index import Index
 
 
-fn test[
+def test[
     in_type: DType,
     out_type: DType,
     num_experts: Int,

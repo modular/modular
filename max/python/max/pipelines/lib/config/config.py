@@ -62,12 +62,7 @@ _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "DeepseekV3ForCausalLMNextN",
 )
 
-_AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
-    "LlamaForCausalLM",
-    "DeepseekV3ForCausalLM",
-    "DeepseekV32ForCausalLM",
-    "DeepseekV3ForCausalLMNextN",
-)
+_AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = ("LlamaForCausalLM",)
 
 
 class PipelineConfig(ConfigFileModel):
@@ -629,11 +624,25 @@ class PipelineConfig(ConfigFileModel):
 
         # Raise errors when we detect features that are not compatible with the overlap scheduler.
         if self.runtime.enable_overlap_scheduler:
-            if self.runtime.pipeline_role != "prefill_and_decode":
+            if self.runtime.pipeline_role == "decode_only":
+                if self.runtime.max_num_steps != 1:
+                    logger.info(
+                        "Setting max-num-steps=1 for overlap scheduling "
+                        "on %s worker.",
+                        self.runtime.pipeline_role,
+                    )
+                    self.runtime.max_num_steps = 1
+                logger.info(
+                    "Overlap scheduling enabled for decode_only worker "
+                    "(Disaggregated Inference). THIS IS EXPERIMENTAL."
+                )
+            # TODO: Enable overlap scheduling for prefill_only workers
+            # once prefill_only + overlap scheduling is implemented.
+            elif self.runtime.pipeline_role == "prefill_only":
                 raise ValueError(
-                    "The Overlap scheduler does not support Disaggregated Inference yet. "
-                    "It is only supported with the PrefillAndDecode pipeline role. "
-                    f"Found {self.runtime.pipeline_role}."
+                    "Overlap scheduling is not yet supported for "
+                    "prefill_only workers (WIP). Only decode_only and "
+                    "prefill_and_decode roles are currently supported."
                 )
             if self.sampling.enable_structured_output:
                 raise ValueError(

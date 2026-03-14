@@ -29,13 +29,13 @@ import std.itertools
 
 
 @always_inline
-fn test_epilogue[
+def test_epilogue[
     dtype: DType
 ](m: Int, n: Int, val: Scalar[dtype]) -> Scalar[dtype]:
     return val + 4 * (Scalar[dtype]((m + n) % 21 - 10))
 
 
-fn test[
+def test[
     in_type: DType,
     out_type: DType,
     num_experts: Int,
@@ -208,7 +208,7 @@ fn test[
     @always_inline
     @__copy_capture(c_dev_ndbuffer)
     @parameter
-    fn epilogue_fn[
+    def epilogue_fn[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         var new_val = val
@@ -223,7 +223,7 @@ fn test[
     @always_inline
     @__copy_capture(c_dev_ndbuffer, total_num_tokens)
     @parameter
-    fn perm_dim_fn[
+    def perm_dim_fn[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         var new_val = val
@@ -308,7 +308,7 @@ fn test[
     _ = expert_ids_dev_buffer^
 
 
-fn test_negative_lora_id[
+def test_negative_lora_id[
     in_type: DType,
     out_type: DType,
     num_experts: Int,

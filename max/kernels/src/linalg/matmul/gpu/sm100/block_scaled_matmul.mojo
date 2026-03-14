@@ -60,14 +60,14 @@ from std.gpu.sync import (
 )
 from std.gpu.compute.arch.tcgen05 import *
 from layout import (
-    UNKNOWN_VALUE,
+    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
     TileTensor,
+    UNKNOWN_VALUE,
 )
-from layout.int_tuple import IntTuple
 from layout.layout import blocked_product, make_layout, flatten, coalesce
 from layout.layout_tensor import LayoutTensorIter
 from layout.runtime_tuple import idx2crd, crd2idx
@@ -220,7 +220,7 @@ struct B200BlockScaledMatmulSmem[
 
 
 @always_inline
-fn load_AB_SFA_SFB[
+def load_AB_SFA_SFB[
     a_type: DType,
     b_type: DType,
     sfa_dtype: DType,
@@ -403,7 +403,7 @@ fn load_AB_SFA_SFB[
 
 
 @always_inline
-fn consumer_main_loop[
+def consumer_main_loop[
     accum_type: DType,
     c_type: DType,
     a_type: DType,
@@ -519,7 +519,7 @@ fn consumer_main_loop[
 
 
 @always_inline
-fn consumer_main_loop[
+def consumer_main_loop[
     accum_type: DType,
     c_type: DType,
     a_type: DType,
@@ -629,7 +629,7 @@ fn consumer_main_loop[
 
 
 @always_inline
-fn multi_stage_store_C[
+def multi_stage_store_C[
     c_type: DType,
     c_smem_layout: Layout,
     c_rank: Int,
@@ -722,7 +722,7 @@ fn multi_stage_store_C[
 
 
 @always_inline
-fn copy_accum_to_gmem[
+def copy_accum_to_gmem[
     c_type: DType,
     c_rank: Int,
     c_tile_shape: IndexList[c_rank],
@@ -920,14 +920,14 @@ fn copy_accum_to_gmem[
                 ](0, 1)
 
                 warp_offset = warp_i * tile_width
-                stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
+                stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     upper_frag_casted,
                     c_smem_warp_tile_upper,
                     UInt32(warp_offset),
                 )
 
                 warp_offset += tile_width // 2
-                stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
+                stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     lower_frag_casted,
                     c_smem_warp_tile_lower,
                     UInt32(warp_offset),
@@ -982,7 +982,7 @@ fn copy_accum_to_gmem[
                 var c_smem_warp_tile_upper = c_smem_warp_tile
                 var c_smem_warp_tile_lower = c_smem_warp_tile
                 warp_offset = Int(warp_id) * tile_width
-                stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
+                stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     upper_frag_casted,
                     c_smem_warp_tile_upper,
                     UInt32(warp_offset),
@@ -1025,7 +1025,7 @@ fn copy_accum_to_gmem[
             var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
                 data_paths, stageN
             ](0, 0)
-            stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
+            stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                 upper_frag_casted, c_smem_warp_tile_upper
             )
 
@@ -1034,7 +1034,7 @@ fn copy_accum_to_gmem[
             ](1, 0)
 
             comptime if is_lower_frag_required:
-                stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
+                stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     lower_frag_casted, c_smem_warp_tile_lower
                 )
 
@@ -1172,7 +1172,7 @@ fn copy_accum_to_gmem[
 
 
 @parameter
-fn _reshape_to_3d[layout: Layout]() -> Layout:
+def _reshape_to_3d[layout: Layout]() -> Layout:
     comptime rank = len(layout.shape)
 
     comptime if rank == 3:
@@ -1185,7 +1185,7 @@ fn _reshape_to_3d[layout: Layout]() -> Layout:
         )
 
 
-fn _convert_input_to_batched_tensor[
+def _convert_input_to_batched_tensor[
     dtype: DType,
     layout: Layout,
     reshape_layout: Layout = _reshape_to_3d[layout](),
@@ -1220,7 +1220,7 @@ fn _convert_input_to_batched_tensor[
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
-fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
+def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -1909,7 +1909,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 # =============================================================================
 
 
-fn _create_tma_and_launch[
+def _create_tma_and_launch[
     transpose_b: Bool,
     *,
     K: Int,
@@ -2120,9 +2120,7 @@ fn _create_tma_and_launch[
             max_profiled_tiles
         ].get_workspace(ctx)
     else:
-        workspace = Span[UInt64, MutAnyOrigin](
-            ptr=UnsafePointer[UInt64, origin=MutAnyOrigin](), length=0
-        )
+        workspace = {}
 
     # Launch kernel
     ctx.enqueue_function[kernel, kernel](
@@ -2154,7 +2152,7 @@ fn _create_tma_and_launch[
         ].dump_workspace_as_csv(ctx, workspace, "profile")
 
 
-fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     sfa_dtype: DType,
     sfa_layout: Layout,
     sfb_dtype: DType,
@@ -2355,7 +2353,7 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         )
 
 
-fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     sfa_dtype: DType,
     sfa_layout: Layout,
     sfb_dtype: DType,

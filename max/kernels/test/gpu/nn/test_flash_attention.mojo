@@ -18,7 +18,7 @@ from std.sys import argv, has_amd_gpu_accelerator
 from std.gpu import *
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import A100, B200, H100, GPUInfo, Vendor
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import (
     _naive_attention_with_transpose,
     flash_attention,
@@ -30,14 +30,14 @@ from std.testing import assert_almost_equal
 from std.utils.index import Index
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
     return False
 
 
-fn is_sm8(info: GPUInfo) -> Bool:
+def is_sm8(info: GPUInfo) -> Bool:
     return (
         info.vendor == Vendor.NVIDIA_GPU
         and info.compute >= 8
@@ -45,7 +45,7 @@ fn is_sm8(info: GPUInfo) -> Bool:
     )
 
 
-fn test[
+def test[
     mask_rank: Int,
     qkv_type: DType,
     mask_type: DType,
@@ -274,7 +274,7 @@ fn test[
     @parameter
     @always_inline
     @__copy_capture(q_device, k_device, v_device, mask3d, mask4d, output_device)
-    fn kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(ctx: DeviceContext) raises:
         comptime if mask_rank == 3:
             flash_attention[decoding_warp_split_k=decoding_warp_split_k](
                 output_device,
@@ -368,7 +368,7 @@ fn test[
         _ = output_ref_device_ptr
 
     @parameter
-    fn get_rtol() -> Float64:
+    def get_rtol() -> Float64:
         return 2e-2 if num_partitions and num_partitions.value() >= 4 else 1e-2
 
     var rtol = get_rtol()
@@ -404,7 +404,7 @@ fn test[
     flash_output_ptr.free()
 
 
-fn test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
+def test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
     var depths = [64, 128]
 
     if info == materialize[H100]() or info == materialize[B200]():
@@ -412,7 +412,7 @@ fn test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
     return depths^
 
 
-fn test_context_encoding(ctx: DeviceContext) raises:
+def test_context_encoding(ctx: DeviceContext) raises:
     # fp32 arbitrary depth and num_heads, baseline impl.
     test[3, DType.float32, DType.float32, depth=127, num_heads=2](111, 121, ctx)
 
@@ -609,7 +609,7 @@ fn test_context_encoding(ctx: DeviceContext) raises:
         ](119, 200, ctx)
 
 
-fn test_decoding[
+def test_decoding[
     batch_size: Int,
     num_partitions: Optional[Int],
     split_k: Bool,
@@ -687,7 +687,7 @@ fn test_decoding[
     # ](1, 208, ctx, use_index_input=use_index_input)
 
 
-fn test_decoding_large_group[
+def test_decoding_large_group[
     batch_size: Int,
     num_partitions: Optional[Int] = None,
     split_k: Bool = False,
@@ -711,7 +711,7 @@ fn test_decoding_large_group[
         ](1, 2000, ctx, use_index_input=use_index_input)
 
 
-fn test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
+def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     print("test_flash_attention_sink_kernel")
     comptime batch_size = 1
     comptime num_heads = 2
@@ -857,7 +857,7 @@ fn test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     )
 
     @always_inline
-    fn launch(ctx: DeviceContext) raises:
+    def launch(ctx: DeviceContext) raises:
         flash_attention[sink=True](
             out_device,
             q_device,
@@ -874,7 +874,7 @@ fn test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     ctx.synchronize()
     ctx.enqueue_copy(out_ptr, out_dev)
 
-    fn expected_mass(sink: Float32) -> Float32:
+    def expected_mass(sink: Float32) -> Float32:
         return Float32(num_keys) / (Float32(num_keys) + exp(sink))
 
     var want0 = expected_mass(sink_h0)

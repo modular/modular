@@ -31,10 +31,9 @@ from std.gpu.memory import (
 from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import IntTuple
 from layout.layout_tensor import LayoutTensorIter
 from layout.tma_async import PipelineState, SharedMemBarrier
 
@@ -43,7 +42,7 @@ from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark":
             return True
@@ -52,7 +51,7 @@ fn is_benchmark() -> Bool:
 
 @__llvm_arg_metadata(descriptor_a, `nvvm.grid_constant`)
 @__llvm_arg_metadata(descriptor_b, `nvvm.grid_constant`)
-fn gemv_tma_kernel[
+def gemv_tma_kernel[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -410,7 +409,7 @@ def test_gemv_tma[
 
         @always_inline
         @parameter
-        fn run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises:
             gemv_tma(
                 c_device,
                 c_device_nd,

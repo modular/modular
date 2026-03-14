@@ -52,7 +52,7 @@ This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
 
 
 @always_inline
-fn _use_32bit_indexing[address_space: AddressSpace]() -> Bool:
+def _use_32bit_indexing[address_space: AddressSpace]() -> Bool:
     return is_gpu() and address_space in (
         AddressSpace.SHARED,
         AddressSpace.LOCAL,
@@ -61,7 +61,7 @@ fn _use_32bit_indexing[address_space: AddressSpace]() -> Bool:
 
 
 @always_inline
-fn _compute_nd_index(buf: NDBuffer, index: Int) -> IndexList[buf.rank]:
+def _compute_nd_index(buf: NDBuffer, index: Int) -> IndexList[buf.rank]:
     """Computes the NDBuffer's offset using the index positions provided.
 
     Args:
@@ -88,7 +88,7 @@ fn _compute_nd_index(buf: NDBuffer, index: Int) -> IndexList[buf.rank]:
 
 
 @always_inline
-fn _compute_ndbuffer_offset(
+def _compute_ndbuffer_offset(
     buf: NDBuffer,
     index: VariadicList[Int, is_owned=False],
 ) -> Int:
@@ -125,7 +125,7 @@ fn _compute_ndbuffer_offset(
 
 
 @always_inline
-fn _compute_ndbuffer_offset(
+def _compute_ndbuffer_offset(
     buf: NDBuffer,
     index: StaticTuple[Int, buf.rank],
 ) -> Int:
@@ -162,7 +162,7 @@ fn _compute_ndbuffer_offset(
 
 
 @always_inline
-fn _compute_ndbuffer_offset(
+def _compute_ndbuffer_offset(
     buf: NDBuffer,
     idx: IndexList[buf.rank, ...],
 ) -> Int:
@@ -179,7 +179,7 @@ fn _compute_ndbuffer_offset(
 
 
 @always_inline
-fn _compute_ndbuffer_stride[
+def _compute_ndbuffer_stride[
     rank: Int, //
 ](shape: IndexList[rank, ...]) -> type_of(shape):
     """Computes the NDBuffer's default dynamic strides using the input shape.
@@ -269,11 +269,11 @@ struct NDBuffer[
     """The dynamic stride of the buffer."""
 
     @staticmethod
-    fn _default_alignment[width: Int = 1]() -> Int:
+    def _default_alignment[width: Int = 1]() -> Int:
         return align_of[SIMD[Self.dtype, width]]() if is_nvidia_gpu() else 1
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Default initializer for NDBuffer. By default the fields are all
         initialized to 0.
         """
@@ -282,7 +282,7 @@ struct NDBuffer[
         self.dynamic_stride = {}
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         ptr: UnsafePointer[
             Scalar[Self.dtype],
@@ -310,7 +310,7 @@ struct NDBuffer[
 
     @always_inline
     @implicit
-    fn __init__(
+    def __init__(
         other: NDBuffer[mut=True, ...],
         out self: NDBuffer[
             rank=other.rank,
@@ -334,7 +334,7 @@ struct NDBuffer[
 
     @always_inline
     @implicit
-    fn __init__(
+    def __init__(
         other: NDBuffer,
         out self: NDBuffer[
             rank=other.rank,
@@ -351,7 +351,7 @@ struct NDBuffer[
         return rebind[type_of(self)](other)
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         ptr: UnsafePointer[
             Scalar[Self.dtype],
@@ -377,7 +377,7 @@ struct NDBuffer[
         self.dynamic_stride = _compute_ndbuffer_stride(self.dynamic_shape)
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self: Self.OriginCastType[MutAnyOrigin],
         ptr: UnsafePointer[Scalar[Self.dtype], ...],
         dynamic_shape: IndexList[Self.rank, ...],
@@ -398,7 +398,7 @@ struct NDBuffer[
         self.dynamic_stride = _compute_ndbuffer_stride(self.dynamic_shape)
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         ptr: UnsafePointer[
             Scalar[Self.dtype],
@@ -428,7 +428,7 @@ struct NDBuffer[
         )
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self: Self.OriginCastType[MutAnyOrigin],
         ptr: UnsafePointer[Scalar[Self.dtype], ...],
         dynamic_shape: IndexList[Self.rank, ...],
@@ -453,7 +453,7 @@ struct NDBuffer[
         )
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         ptr: UnsafePointer[
             Scalar[Self.dtype],
@@ -488,7 +488,7 @@ struct NDBuffer[
     """
 
     @always_inline("nodebug")
-    fn get_immutable(
+    def get_immutable(
         self,
     ) -> Self.OriginCastType[ImmutOrigin(Self.origin)]:
         """Changes the mutability of the `NDBuffer` to immutable.
@@ -503,7 +503,7 @@ struct NDBuffer[
         }
 
     @always_inline("nodebug")
-    fn as_any_origin(
+    def as_any_origin(
         self: NDBuffer[mut=True, ...],
     ) -> type_of(self).OriginCastType[MutAnyOrigin]:
         """Changes the origin of the `NDBuffer` to `MutAnyOrigin`.
@@ -526,7 +526,7 @@ struct NDBuffer[
         }
 
     @always_inline("nodebug")
-    fn as_any_origin(
+    def as_any_origin(
         self: NDBuffer[mut=False, ...],
     ) -> type_of(self).OriginCastType[ImmutAnyOrigin]:
         """Changes the origin of the `NDBuffer` to `ImmutAnyOrigin`.
@@ -546,7 +546,7 @@ struct NDBuffer[
         }
 
     @always_inline
-    fn get_rank(self) -> Int:
+    def get_rank(self) -> Int:
         """Returns the rank of the buffer.
 
         Returns:
@@ -555,7 +555,7 @@ struct NDBuffer[
         return Self.rank
 
     @always_inline
-    fn get_shape(self) -> IndexList[Self.rank]:
+    def get_shape(self) -> IndexList[Self.rank]:
         """Returns the shapes of the buffer.
 
         Returns:
@@ -568,7 +568,7 @@ struct NDBuffer[
         return res
 
     @always_inline
-    fn get_strides(self) -> IndexList[Self.rank]:
+    def get_strides(self) -> IndexList[Self.rank]:
         """Returns the strides of the buffer.
 
         Returns:
@@ -581,7 +581,7 @@ struct NDBuffer[
         return res
 
     @always_inline
-    fn get_nd_index(self, idx: Int) -> IndexList[Self.rank]:
+    def get_nd_index(self, idx: Int) -> IndexList[Self.rank]:
         """Computes the NDBuffer's ND-index based on the flat index.
 
         Args:
@@ -593,7 +593,7 @@ struct NDBuffer[
         return _compute_nd_index(self, idx)
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Computes the NDBuffer's number of elements.
 
         Returns:
@@ -602,7 +602,7 @@ struct NDBuffer[
         return self.size()
 
     @always_inline
-    fn num_elements(self) -> Int:
+    def num_elements(self) -> Int:
         """Computes the NDBuffer's number of elements.
 
         Returns:
@@ -611,7 +611,7 @@ struct NDBuffer[
         return self.size()
 
     @always_inline
-    fn size(self) -> Int:
+    def size(self) -> Int:
         """Computes the NDBuffer's number of elements.
 
         Returns:
@@ -624,7 +624,7 @@ struct NDBuffer[
 
         return product
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """
         Formats this buffer to the provided Writer.
 
@@ -634,7 +634,7 @@ struct NDBuffer[
         writer.write("NDBuffer(")
 
         @parameter
-        fn serialize[T: Writable](val: T):
+        def serialize[T: Writable](val: T):
             writer.write(val)
 
         var dyn_shape = List[Int]()
@@ -647,7 +647,7 @@ struct NDBuffer[
 
         writer.write(")")
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """
         Formats this buffer to the provided Writer.
 
@@ -657,7 +657,7 @@ struct NDBuffer[
         self.write_to(writer)
 
     @always_inline
-    fn _offset(
+    def _offset(
         self, idx: VariadicList[Int, is_owned=False]
     ) -> UnsafePointer[
         Scalar[Self.dtype],
@@ -676,7 +676,7 @@ struct NDBuffer[
         return self.data + _compute_ndbuffer_offset(self, idx)
 
     @always_inline
-    fn _offset(
+    def _offset(
         self, idx: IndexList[Self.rank, ...]
     ) -> UnsafePointer[
         Scalar[Self.dtype],
@@ -687,7 +687,7 @@ struct NDBuffer[
         return self.data + _compute_ndbuffer_offset(self, idx.as_tuple())
 
     @always_inline
-    fn _offset(
+    def _offset(
         self, idx: StaticTuple[Int, Self.rank]
     ) -> UnsafePointer[
         Scalar[Self.dtype],
@@ -706,7 +706,7 @@ struct NDBuffer[
         return self.data + _compute_ndbuffer_offset(self, idx)
 
     @always_inline
-    fn __getitem__(self, *idx: Int) -> Scalar[Self.dtype]:
+    def __getitem__(self, *idx: Int) -> Scalar[Self.dtype]:
         """Gets an element from the buffer from the specified index.
 
         Args:
@@ -718,7 +718,7 @@ struct NDBuffer[
         return self.load[width=1](idx)
 
     @always_inline
-    fn __getitem__(self, idx: IndexList[Self.rank, ...]) -> Scalar[Self.dtype]:
+    def __getitem__(self, idx: IndexList[Self.rank, ...]) -> Scalar[Self.dtype]:
         """Gets an element from the buffer from the specified index.
 
         Args:
@@ -730,7 +730,7 @@ struct NDBuffer[
         return self.load[width=1](idx)
 
     @always_inline
-    fn tile[
+    def tile[
         *tile_sizes: Dim
     ](self, tile_coords: IndexList[Self.rank, ...]) -> NDBuffer[
         rank=Self.rank,
@@ -752,7 +752,7 @@ struct NDBuffer[
             The tiled buffer at tile_coords.
         """
 
-        comptime num_tile_sizes = std.builtin.Variadic.size(tile_sizes)
+        comptime num_tile_sizes = Variadic.size(tile_sizes)
 
         comptime assert (
             num_tile_sizes == Self.rank
@@ -793,7 +793,7 @@ struct NDBuffer[
         return tile
 
     @always_inline("nodebug")
-    fn load[
+    def load[
         *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, *idx: Int) -> SIMD[Self.dtype, width]:
         """Loads a simd value from the buffer at the specified index.
@@ -815,7 +815,7 @@ struct NDBuffer[
         return self.load[width=width, alignment=alignment](idx)
 
     @always_inline("nodebug")
-    fn load[
+    def load[
         *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, idx: VariadicList[Int, is_owned=False]) -> SIMD[Self.dtype, width]:
         """Loads a simd value from the buffer at the specified index.
@@ -840,7 +840,7 @@ struct NDBuffer[
         return self._offset(idx).load[width=width, alignment=alignment]()
 
     @always_inline("nodebug")
-    fn load[
+    def load[
         *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, idx: IndexList) -> SIMD[Self.dtype, width]:
         """Loads a simd value from the buffer at the specified index.
@@ -867,7 +867,7 @@ struct NDBuffer[
         )
 
     @always_inline("nodebug")
-    fn load[
+    def load[
         *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
     ](self, idx: StaticTuple[Int, Self.rank]) -> SIMD[Self.dtype, width]:
         """Loads a simd value from the buffer at the specified index.
@@ -892,7 +892,7 @@ struct NDBuffer[
         return self._offset(idx).load[width=width, alignment=alignment]()
 
     @always_inline
-    fn __setitem__(
+    def __setitem__(
         self: NDBuffer[
             mut=True,
             rank=Self.rank,
@@ -916,7 +916,7 @@ struct NDBuffer[
         self.store[width=1](idx, val)
 
     @always_inline
-    fn __setitem__(
+    def __setitem__(
         self: NDBuffer[
             mut=True,
             rank=Self.rank,
@@ -940,7 +940,7 @@ struct NDBuffer[
         self.store[width=1](IndexList[Self.rank](idx), val)
 
     @always_inline("nodebug")
-    fn store[
+    def store[
         _alignment: Int,
         //,
         *,
@@ -978,7 +978,7 @@ struct NDBuffer[
         self.store[width=width, alignment=alignment](idx.as_tuple(), val)
 
     @always_inline("nodebug")
-    fn store[
+    def store[
         _alignment: Int,
         //,
         *,
@@ -1019,7 +1019,7 @@ struct NDBuffer[
         self._offset(idx).store[alignment=alignment](val)
 
     @always_inline
-    fn dim[index: Int](self) -> Int:
+    def dim[index: Int](self) -> Int:
         """Gets the buffer dimension at the given index.
 
         Parameters:
@@ -1037,7 +1037,7 @@ struct NDBuffer[
         return self.dynamic_shape[index]
 
     @always_inline
-    fn dim(self, index: Int) -> Int:
+    def dim(self, index: Int) -> Int:
         """Gets the buffer dimension at the given index.
 
         Args:
@@ -1049,7 +1049,7 @@ struct NDBuffer[
         return self.dynamic_shape[index]
 
     @always_inline
-    fn stride[index: Int](self) -> Int:
+    def stride[index: Int](self) -> Int:
         """Gets the buffer stride at the given index.
 
         Parameters:
@@ -1067,7 +1067,7 @@ struct NDBuffer[
         return self.dynamic_stride[index]
 
     @always_inline
-    fn stride(self, index: Int) -> Int:
+    def stride(self, index: Int) -> Int:
         """Gets the buffer stride at the given index.
 
         Args:
@@ -1079,7 +1079,7 @@ struct NDBuffer[
         return self.dynamic_stride[index]
 
     @always_inline
-    fn is_contiguous(self) -> Bool:
+    def is_contiguous(self) -> Bool:
         """Checks if the buffer is contiguous in memory.
 
         Returns:
@@ -1090,7 +1090,7 @@ struct NDBuffer[
         return self.stride[Self.rank - 1]() == 1
 
     @always_inline
-    fn flatten(
+    def flatten(
         self,
         out result: NDBuffer[
             rank=1,
@@ -1112,7 +1112,7 @@ struct NDBuffer[
         return {self.data, IndexList[1](self.size())}
 
     @always_inline
-    fn make_dims_unknown(
+    def make_dims_unknown(
         self,
         out result: NDBuffer[
             rank=Self.rank,
@@ -1129,7 +1129,7 @@ struct NDBuffer[
         return rebind[type_of(result)](self)
 
     @always_inline
-    fn bytecount(self) -> Int:
+    def bytecount(self) -> Int:
         """Returns the size of the NDBuffer in bytes.
 
         Returns:
@@ -1138,7 +1138,7 @@ struct NDBuffer[
         return self.size() * size_of[Self.dtype]()
 
     @always_inline
-    fn zero(self: NDBuffer[mut=True, ...]):
+    def zero(self: NDBuffer[mut=True, ...]):
         """Sets all bytes of the NDBuffer to 0.
 
         Constraints:
@@ -1153,7 +1153,7 @@ struct NDBuffer[
             memset_zero(self.data, len(self))
 
     @always_inline
-    fn _simd_fill[
+    def _simd_fill[
         simd_width: Int
     ](
         self: NDBuffer[
@@ -1195,7 +1195,7 @@ struct NDBuffer[
                 self.store(IndexList[Self.rank](i), val)
 
     @always_inline
-    fn tofile(self, path: Path) raises:
+    def tofile(self, path: Path) raises:
         """Write values to a file.
 
         Args:
@@ -1209,7 +1209,7 @@ struct NDBuffer[
             f._write(ptr, self.bytecount())
 
     @always_inline
-    fn fill(
+    def fill(
         self: NDBuffer[
             mut=True,
             rank=Self.rank,
@@ -1236,7 +1236,7 @@ struct NDBuffer[
 
     @staticmethod
     @always_inline("nodebug")
-    fn stack_allocation[*, alignment: Int = align_of[Self.dtype]()]() -> Self:
+    def stack_allocation[*, alignment: Int = align_of[Self.dtype]()]() -> Self:
         """Constructs an NDBuffer instance backed by stack allocated memory space.
 
         Parameters:
@@ -1262,7 +1262,7 @@ struct NDBuffer[
         return Self(data_pointer)
 
     @always_inline
-    fn prefetch[params: PrefetchOptions](self, *idx: Int):
+    def prefetch[params: PrefetchOptions](self, *idx: Int):
         """Prefetches the data at the given index.
 
         Parameters:
@@ -1274,7 +1274,7 @@ struct NDBuffer[
         prefetch[params](self._offset(idx))
 
     @always_inline
-    fn prefetch[params: PrefetchOptions](self, indices: IndexList[Self.rank]):
+    def prefetch[params: PrefetchOptions](self, indices: IndexList[Self.rank]):
         """Prefetches the data at the given index.
 
         Parameters:
@@ -1289,7 +1289,7 @@ struct NDBuffer[
     comptime device_type: AnyType = Self
     """The device-side type for this buffer."""
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         """Convert the host type object to a device_type and store it at the
         target address.
 
@@ -1300,7 +1300,7 @@ struct NDBuffer[
 
     @no_inline
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """Gets the name of the host type (the one implementing this trait).
 
         Returns:
@@ -1320,7 +1320,7 @@ struct NDBuffer[
 
 
 @always_inline
-fn partial_simd_load[
+def partial_simd_load[
     dtype: DType, //, width: Int
 ](
     storage: UnsafePointer[mut=False, Scalar[dtype], ...],
@@ -1361,7 +1361,7 @@ fn partial_simd_load[
 
 
 @always_inline
-fn partial_simd_store[
+def partial_simd_store[
     dtype: DType, //, width: Int
 ](
     storage: UnsafePointer[mut=True, Scalar[dtype], ...],
@@ -1400,7 +1400,7 @@ fn partial_simd_store[
 
 
 @always_inline
-fn prod_dims[start_dim: Int, end_dim: Int](x: NDBuffer) -> Int:
+def prod_dims[start_dim: Int, end_dim: Int](x: NDBuffer) -> Int:
     """Computes the product of a slice of the given buffer's dimensions.
 
     Parameters:

@@ -27,6 +27,7 @@ from max.nn.kv_cache.cache_params import (
 from max.pipelines.architectures.deepseekV3.model_config import DeepseekV3Config
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -86,7 +87,7 @@ class DeepseekV3_2Config(DeepseekV3Config):
 
         This method creates a config instance with all fields that can be determined
         from the pipeline configuration, without needing the state_dict.
-        Fields that depend on the state_dict (like norm_dtype, float8_config, etc.)
+        Fields that depend on the state_dict (like norm_dtype, quant_config, etc.)
         should be set directly after calling this method.
 
         Args:
@@ -153,7 +154,7 @@ class DeepseekV3_2Config(DeepseekV3Config):
             max_position_embeddings=config.max_position_embeddings,
             rms_norm_eps=config.rms_norm_eps,
             tie_word_embeddings=config.tie_word_embeddings,
-            rope_theta=config.rope_theta,
+            rope_theta=get_rope_theta(config),
             rope_scaling=config.rope_scaling,
             rope_interleave=getattr(config, "rope_interleave", True),
             scoring_func=config.scoring_func,

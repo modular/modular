@@ -73,7 +73,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         target: StaticString,
     ](
@@ -513,7 +513,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
             raise Error("Unsupported target device")
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
     ](
         u: InputTensor[dtype=dtype, rank=2, ...],
@@ -560,7 +560,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         target: StaticString,
     ](
@@ -997,7 +997,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
             raise Error("Unsupported target device")
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
     ](
         x: InputTensor[dtype=dtype, rank=3, ...],

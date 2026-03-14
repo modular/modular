@@ -45,7 +45,7 @@ from .arch.mma_nvidia import _mma_nvidia
 from .arch.mma_amd import _mma_amd
 
 
-fn get_amd_fp8_dtype() -> DType:
+def get_amd_fp8_dtype() -> DType:
     """Gets the appropriate FP8 dtype for the current AMD GPU architecture.
 
     Returns:
@@ -62,7 +62,7 @@ fn get_amd_fp8_dtype() -> DType:
         return DType.float8_e4m3fnuz
 
 
-fn get_amd_bf8_dtype() -> DType:
+def get_amd_bf8_dtype() -> DType:
     """Gets the appropriate BF8 dtype for the current AMD GPU architecture.
 
     Returns:
@@ -80,7 +80,7 @@ fn get_amd_bf8_dtype() -> DType:
 
 
 @always_inline
-fn _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+def _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # fmt: off
     comptime assert False, String(
         "no valid implementation of mma for a=",
@@ -93,24 +93,24 @@ fn _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
 
 @always_inline
-fn _has_type[type: DType](a: DType, b: DType, c: DType, d: DType) -> Bool:
+def _has_type[type: DType](a: DType, b: DType, c: DType, d: DType) -> Bool:
     return _has_type[(type, type, type, type)](a, b, c, d)
 
 
 @always_inline
-fn _has_type[
+def _has_type[
     abcd: Tuple[DType, DType, DType, DType]
 ](a: DType, b: DType, c: DType, d: DType) -> Bool:
     return (a, b, c, d) == abcd
 
 
 @always_inline
-fn _has_shape[size: Int](a: Int, b: Int, c: Int, d: Int) -> Bool:
+def _has_shape[size: Int](a: Int, b: Int, c: Int, d: Int) -> Bool:
     return _has_shape[(size, size, size, size)](a, b, c, d)
 
 
 @always_inline
-fn _has_shape[
+def _has_shape[
     abcd: Tuple[Int, Int, Int, Int]
 ](a: Int, b: Int, c: Int, d: Int) -> Bool:
     return (a, b, c, d) == abcd
@@ -121,7 +121,7 @@ fn _has_shape[
 # ===----------------------------------------------------------------------===#
 
 
-fn _dtype_to_nvvm_type[
+def _dtype_to_nvvm_type[
     out_type: DType, in_type: DType = out_type
 ]() -> __mlir_type.`!kgen.deferred`:
     comptime if out_type == DType.float16 or out_type == DType.uint32:
@@ -133,7 +133,7 @@ fn _dtype_to_nvvm_type[
         return out_type.__mlir_type()
 
 
-fn _dtype_to_nvvm_wgmma_type[
+def _dtype_to_nvvm_wgmma_type[
     out_type: DType, in_type: DType = out_type
 ]() -> __mlir_type.`!kgen.deferred`:
     comptime if out_type == DType.float8_e4m3fn:
@@ -157,7 +157,7 @@ fn _dtype_to_nvvm_wgmma_type[
         ]
 
 
-fn _get_shape[m: Int, n: Int, k: Int]() -> __mlir_type.`!kgen.deferred`:
+def _get_shape[m: Int, n: Int, k: Int]() -> __mlir_type.`!kgen.deferred`:
     return __mlir_deferred_attr[
         `#nvvm.shape<m =`,
         +m._mlir_value,
@@ -169,28 +169,28 @@ fn _get_shape[m: Int, n: Int, k: Int]() -> __mlir_type.`!kgen.deferred`:
     ]
 
 
-fn _to_nvvm_scale_out[s: Int]() -> __mlir_type.`!kgen.deferred`:
+def _to_nvvm_scale_out[s: Int]() -> __mlir_type.`!kgen.deferred`:
     comptime if s == 0:
         return __mlir_attr.`#nvvm.wgmma_scale_out<zero>`
     else:
         return __mlir_attr.`#nvvm.wgmma_scale_out<one>`
 
 
-fn _to_nvvm_scale_in[s: Int]() -> __mlir_type.`!kgen.deferred`:
+def _to_nvvm_scale_in[s: Int]() -> __mlir_type.`!kgen.deferred`:
     comptime if s == -1:
         return __mlir_attr.`#nvvm.wgmma_scale_in<neg>`
     else:
         return __mlir_attr.`#nvvm.wgmma_scale_in<one>`
 
 
-fn _to_nvvm_layout[s: StaticString]() -> __mlir_type.`!kgen.deferred`:
+def _to_nvvm_layout[s: StaticString]() -> __mlir_type.`!kgen.deferred`:
     return __mlir_deferred_attr[
         `#nvvm.mma_layout<`, +_get_kgen_string[s](), `>`
     ]
 
 
 @always_inline
-fn mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+def mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     """Performs warp sync Tensor Core based Matrix-multiply and accumulate (MMA) operation.
 
     This function executes a matrix multiply-accumulate operation using GPU Tensor Cores,
@@ -234,7 +234,7 @@ fn mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
 
 @always_inline
-fn ld_matrix[
+def ld_matrix[
     dtype: DType, //, simd_width: Int, *, transpose: Bool = False
 ](ptr: UnsafePointer[mut=False, Scalar[dtype], ...]) -> SIMD[dtype, simd_width]:
     """Loads a matrix from shared memory into registers in a format suitable for tensor core operations.
@@ -288,7 +288,7 @@ fn ld_matrix[
     comptime base = "llvm.nvvm.ldmatrix.sync.aligned.m8n8"
 
     @parameter
-    fn get_suffix() -> String:
+    def get_suffix() -> String:
         comptime sfx = ".b16.p3"
         if transpose:
             return ".trans" + sfx
@@ -350,7 +350,7 @@ fn ld_matrix[
 
 
 @always_inline
-fn st_matrix[
+def st_matrix[
     dtype: DType, //, simd_width: Int, *, transpose: Bool = False
 ](
     ptr: UnsafePointer[
@@ -392,7 +392,7 @@ fn st_matrix[
     comptime base = "stmatrix.sync.aligned"
 
     @parameter
-    fn get_suffix() -> String:
+    def get_suffix() -> String:
         comptime sfx = ".m8n8"
         if transpose:
             return ".trans" + sfx
@@ -470,7 +470,7 @@ struct WGMMADescriptor[dtype: DType](
     to efficiently access shared memory with the appropriate layout and access patterns.
     """
 
-    fn __init__(out self, val: Int64):
+    def __init__(out self, val: Int64):
         """Initialize descriptor with raw 64-bit value.
 
         This constructor allows creating a descriptor directly from a 64-bit integer
@@ -484,7 +484,7 @@ struct WGMMADescriptor[dtype: DType](
         self.desc = val
 
     @always_inline
-    fn _insert_bit[start_bit: Int](self, val: Int64) -> Self:
+    def _insert_bit[start_bit: Int](self, val: Int64) -> Self:
         """Insert bits at specified position in descriptor.
 
         Parameters:
@@ -499,7 +499,7 @@ struct WGMMADescriptor[dtype: DType](
         return Self(self.desc | (val << Int64(start_bit)))
 
     @staticmethod
-    fn create[
+    def create[
         stride_byte_offset: Int,
         leading_byte_offset: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -527,7 +527,7 @@ struct WGMMADescriptor[dtype: DType](
         # TMA enumerates no swizzle, 32, 64, 128B as 0, 1, 2, 3.
         # WGMMA enumerates these as 0, 3, 2, 1.
         @parameter
-        fn _convert_swizzle_enum[mode: Int32]() -> Int64:
+        def _convert_swizzle_enum[mode: Int32]() -> Int64:
             comptime if mode == 0:
                 return mode.cast[DType.int64]()
             else:
@@ -562,7 +562,7 @@ struct WGMMADescriptor[dtype: DType](
         return desc
 
     @always_inline
-    fn __iadd__(mut self, offset: Int):
+    def __iadd__(mut self, offset: Int):
         """Add offset to descriptor's base address in-place.
 
         Args:
@@ -571,7 +571,7 @@ struct WGMMADescriptor[dtype: DType](
         self.desc += Int64((offset & 0x3FFFF) >> 4)
 
     @always_inline
-    fn __add__(self, offset: Int) -> Self:
+    def __add__(self, offset: Int) -> Self:
         """Add offset to descriptor's base address.
 
         Args:
@@ -584,7 +584,7 @@ struct WGMMADescriptor[dtype: DType](
 
 
 @always_inline
-fn wgmma_fence_aligned():
+def wgmma_fence_aligned():
     """Inserts a memory fence for warp group matrix multiply operations.
 
     This ensures all prior shared memory accesses are visible before subsequent WGMMA operations.
@@ -594,7 +594,7 @@ fn wgmma_fence_aligned():
 
 
 @always_inline
-fn wgmma_commit_group_sync():
+def wgmma_commit_group_sync():
     """Commits pending warp group matrix multiply operations.
 
     This synchronizes the warp group and ensures all WGMMA operations have been committed.
@@ -604,7 +604,7 @@ fn wgmma_commit_group_sync():
 
 
 @always_inline
-fn wgmma_wait_group_sync[group: Int = 0]():
+def wgmma_wait_group_sync[group: Int = 0]():
     """Waits for all pending warp group matrix multiply operations to complete.
 
     This synchronizes the warp group and ensures all WGMMA operations have finished executing.
@@ -619,7 +619,7 @@ fn wgmma_wait_group_sync[group: Int = 0]():
 
 
 @always_inline
-fn wgmma_async[
+def wgmma_async[
     m: Int,
     n: Int,
     k: Int,
@@ -747,7 +747,7 @@ fn wgmma_async[
 
 
 @always_inline
-fn wgmma_async[
+def wgmma_async[
     m: Int,
     n: Int,
     k: Int,
@@ -874,7 +874,7 @@ fn wgmma_async[
 
 
 @always_inline
-fn wgmma_async[
+def wgmma_async[
     m: Int,
     n: Int,
     k: Int,
@@ -1267,14 +1267,14 @@ fn wgmma_async[
 
 
 @always_inline("nodebug")
-fn _str_iota[
+def _str_iota[
     count: Int, *, prefix: String = String(), sep: String = ", "
 ]() -> String:
     return _str_iota_impl[count, prefix=prefix, sep=sep]()
 
 
 @always_inline("nodebug")
-fn _str_iota_impl[
+def _str_iota_impl[
     count: Int, *, prefix: String = String(), sep: String = ", "
 ]() -> String:
     var s = String()

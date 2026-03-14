@@ -36,7 +36,7 @@ from layout.tma_async import (
     SharedMemBarrier,
 )
 from std.memory import bitcast
-from layout import TileTensor, RowMajorLayout, ComptimeInt
+from layout import ComptimeInt, RowMajorLayout, TileTensor
 from nn.mha_fa3_utils import (
     OptionalPointer,
 )
@@ -180,7 +180,7 @@ struct MLA_SM100_Decode_KV_BF16[
         )
     )
     @__llvm_metadata(`nvvm.minctasm`=Int(1))
-    fn kernel(
+    def kernel(
         q_tma: QOTMATile[
             dtype=Self.q_type,
             BM=Self.config.BM,  # tile_m =64
@@ -208,7 +208,7 @@ struct MLA_SM100_Decode_KV_BF16[
         ],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         scalar_args: TileTensor[
-            DType.int64, RowMajorLayout[ComptimeInt[4]], MutAnyOrigin
+            DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
         ],
     ):
         comptime num_reg_softmax = 192
@@ -486,7 +486,7 @@ struct MLA_SM100_Decode_KV_BF16[
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
-    fn load(
+    def load(
         q_tma: QOTMATile[
             dtype=Self.q_type,
             BM=Self.config.BM,  # tile_m =64
@@ -647,7 +647,7 @@ struct MLA_SM100_Decode_KV_BF16[
 
     @staticmethod
     @always_inline
-    fn mmaQK(
+    def mmaQK(
         tmem_addr: UInt32,
         q_smem: SharedMemPointer[Scalar[Self.q_type]],
         kv_smem: SharedMemPointer[Scalar[Self.q_type]],
@@ -719,7 +719,7 @@ struct MLA_SM100_Decode_KV_BF16[
 
     @staticmethod
     @always_inline
-    fn mmaPV(
+    def mmaPV(
         tmem_addr: UInt32,
         kv_smem: SharedMemPointer[Scalar[Self.q_type]],
         p_bars: DecodeSM100MiscMBars[

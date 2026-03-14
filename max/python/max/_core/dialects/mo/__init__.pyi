@@ -581,6 +581,12 @@ class SameVariadicOperandSizeInterface(Protocol):
     Wrapper around the builtin `SameVariadicOperandSize` that can't be checked in C++.
     """
 
+class SameVariadicResultSizeInterface(Protocol):
+    """
+    Interface that represent MO Ops that have multiple variadic results, all with the same size.
+    Wrapper around the builtin `SameVariadicResultSize` that can't be checked in C++.
+    """
+
 class ScatterLike(Protocol):
     """
     Interface for modeling Scatter-like operations (i.e., regular Scatter
@@ -1067,9 +1073,6 @@ class DistributedAllreduceAddRmsNormQuantFp8Op(max._core.Operation):
     across the devices. This op instance executes on a specific device
     (specified by the device attribute) and produces the output for that device.
 
-    Multiple instances of this op are created (one per device) to enable
-    multi-threaded execution.
-
     This op also applies a residual (add), then RMSNorm and dynamic FP8 quantization to the output of AllReduce.
     It returns both the quantized output value and the quantization scale.
     It also returns the intermediate output of the residual (add) op.
@@ -1079,40 +1082,35 @@ class DistributedAllreduceAddRmsNormQuantFp8Op(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        output: TensorType,
-        out_scale: TensorType,
-        out_residual: TensorType,
+        output: Sequence[max._core.Type],
+        out_scale: Sequence[max._core.Type],
+        out_residual: Sequence[max._core.Type],
         out_chain: ChainType,
         inputs: Sequence[max._core.Value[max._core.Type]],
         signal_buffers: Sequence[max._core.Value[max._core.Type]],
-        residual: max._core.Value[TensorType],
-        gamma: max._core.Value[TensorType],
-        epsilon: max._core.Value[TensorType],
-        weight_offset: max._core.Value[TensorType],
-        scale_ub: max._core.Value[TensorType],
+        residual: Sequence[max._core.Value[max._core.Type]],
+        gamma: Sequence[max._core.Value[max._core.Type]],
+        epsilon: Sequence[max._core.Value[max._core.Type]],
+        weight_offset: Sequence[max._core.Value[max._core.Type]],
+        scale_ub: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
-        device: max._core.dialects.m.DeviceRefAttr,
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
-    def residual(self) -> max._core.Value[TensorType]: ...
+    def residual(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
-    def gamma(self) -> max._core.Value[TensorType]: ...
+    def gamma(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
-    def epsilon(self) -> max._core.Value[TensorType]: ...
+    def epsilon(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
-    def weight_offset(self) -> max._core.Value[TensorType]: ...
+    def weight_offset(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
-    def scale_ub(self) -> max._core.Value[TensorType]: ...
+    def scale_ub(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
-    @property
-    def device(self) -> max._core.dialects.m.DeviceRefAttr: ...
-    @device.setter
-    def device(self, arg: max._core.dialects.m.DeviceRefAttr, /) -> None: ...
 
 class DistributedAllreduceSumOp(max._core.Operation):
     """
@@ -4407,26 +4405,20 @@ class ParallelOp(max._core.Operation):
     The `mo.parallel` operation takes a single "body" block, which is executed
     in parallel for each set of inputs.
 
-    The results of the `mo.parallel` op are the operands of the
-    `mo.yield` op from each iteration. Each result has the same type as its
-    corresponding input.
+    Type constraints:
+    1. All inputs must have the same type (tensor device IDs may differ).
+    2. The input types must match the block argument type.
+    3. The yield type must match the result types.
+    4. All results must have the same type (tensor device IDs may differ).
 
-    Inputs may have different device IDs but must all have the same device
-    label (e.g., all "gpu" or all "cpu"). The body block argument uses the
-    first input's type as the representative type.
+    The input and result types may differ (e.g. when a pass annotates the
+    block argument with a layout attribute that the yield does not carry).
+    The block argument uses the first input's type as a representative.
 
-    Example with shared type (all inputs same type):
-    ```mlir
-    %res:2 = mo.parallel %arg in (%a, %b : !mo.tensor<[3], f32, gpu:0>) {
-      %1 = mo.relu(%arg) : !mo.tensor<[3], f32, gpu:0>
-      mo.yield %1 : !mo.tensor<[3], f32, gpu:0>
-    }
-    ```
-
-    Example with individual types (different device IDs):
     ```mlir
     %res:2 = mo.parallel %arg in (%a : !mo.tensor<[3], f32, gpu:0>,
-                                  %b : !mo.tensor<[3], f32, gpu:1>) {
+                                  %b : !mo.tensor<[3], f32, gpu:1>)
+          -> (!mo.tensor<[3], f32, gpu:0>, !mo.tensor<[3], f32, gpu:1>) {
       %1 = mo.relu(%arg) : !mo.tensor<[3], f32, gpu:0>
       mo.yield %1 : !mo.tensor<[3], f32, gpu:0>
     }

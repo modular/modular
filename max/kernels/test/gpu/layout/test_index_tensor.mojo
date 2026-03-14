@@ -14,13 +14,7 @@
 from std.random import random_ui64
 
 from std.gpu.host import DeviceContext, DeviceBuffer
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    coord_to_index_list,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 from nn.index_tensor import _index_tensor_impl
 from std.testing import assert_equal, assert_true
 
@@ -77,7 +71,7 @@ def execute_index_tensor_test[
                 assert_equal(actual_output_host[i], expected_output_host[i])
 
 
-fn test_index_tensor_DLRM(ctx: DeviceContext) raises:
+def test_index_tensor_DLRM(ctx: DeviceContext) raises:
     print("== test_index_tensor_DLRM")
 
     comptime input_type = DType.int32
@@ -145,7 +139,7 @@ fn test_index_tensor_DLRM(ctx: DeviceContext) raises:
     )
 
 
-fn test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
+def test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
     print("== test_index_tensor_DLRM_batch")
 
     comptime input_type = DType.int32

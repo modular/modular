@@ -32,21 +32,13 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType, Value
+from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.graph.buffer_utils import cast_tensor_to
-from max.graph.weights import (
-    WeightData,
-    Weights,
-    WeightsAdapter,
-)
+from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm import Signals
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import estimate_ep_memory_usage
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParamInterface,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -62,7 +54,7 @@ from max.pipelines.lib.config.config_enums import (
     is_float4_encoding,
     supported_encoding_dtype,
 )
-from max.pipelines.lib.float8 import parse_float8_config
+from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
@@ -211,9 +203,9 @@ class KimiK2_5Model(
 
         dtype = self.dtype
         if dtype in (DType.float8_e4m3fn, DType.uint8, DType.float4_e2m1fn):
-            float8_config = parse_float8_config(config, state_dict, dtype)
+            quant_config = parse_quant_config(config, state_dict, dtype)
         else:
-            float8_config = None
+            quant_config = None
 
         # Check if EP should be configured
         if self.pipeline_config.runtime.ep_size == 1:
@@ -234,7 +226,7 @@ class KimiK2_5Model(
                 max_tokens_per_rank=self.pipeline_config.runtime.max_batch_input_tokens,
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
-                dispatch_fp8_config=None,
+                dispatch_quant_config=None,
             )
 
             if config.n_shared_experts == 1:
@@ -242,8 +234,8 @@ class KimiK2_5Model(
                 # the same shape as routed experts.
                 ep_kwargs["fused_shared_expert"] = True
 
-            if float8_config is not None:
-                ep_kwargs["dispatch_fp8_config"] = float8_config
+            if quant_config is not None:
+                ep_kwargs["dispatch_quant_config"] = quant_config
 
             ep_config = EPConfig(**ep_kwargs)
 
@@ -280,7 +272,7 @@ class KimiK2_5Model(
         model_config.norm_dtype = norm_dtype
         model_config.correction_bias_dtype = correction_bias_dtype
         model_config.max_batch_context_length = max_batch_total_tokens
-        model_config.float8_config = float8_config
+        model_config.quant_config = quant_config
         model_config.ep_config = ep_config
         model_config.graph_mode = graph_mode
         model_config.data_parallel_degree = data_parallel_degree
@@ -572,7 +564,6 @@ class KimiK2_5Model(
             llm_config=config,
         )
         self.model_config = kimik2_5_config
-        config.use_subgraphs = False  # subgraphs assume to weights prefix, which leads to misplaced weights in a composite model
         self.nn_model = KimiK2_5(self.model_config)
         self.nn_model.load_state_dict(
             state_dict, weight_alignment=1, strict=True
@@ -732,34 +723,6 @@ class KimiK2_5Model(
             graph.output(*image_embeddings)
 
             return graph
-
-    def _unflatten_kv_inputs(
-        self,
-        kv_inputs_flat: Sequence[Value[Any]],
-        kv_params: KVCacheParamInterface | None = None,
-    ) -> list[PagedCacheValues]:
-        kv_params = kv_params or self.get_kv_params(
-            huggingface_config=self.huggingface_config,
-            pipeline_config=self.pipeline_config,
-            devices=[DeviceRef.from_device(d) for d in self.devices],
-            kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
-        )
-        n_devices = kv_params.n_devices
-        fetch_types = kv_params.get_symbolic_inputs()[0]
-        len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(n_devices):
-            start_idx = i * len_of_kv_tuple_per_dev
-            kv_caches_per_dev.append(
-                PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-                )
-            )
-        return kv_caches_per_dev
 
     def _build_language_graph(self, config: KimiK2_5TextConfig) -> Graph:
         """Build the language model graph for text generation with image embeddings."""
@@ -954,41 +917,24 @@ class KimiK2_5Model(
     def _process_model_outputs(
         self, model_outputs: list[Buffer]
     ) -> ModelOutputs:
-        num_hidden_state_outputs = len(self.devices)
         num_outputs = len(model_outputs)
 
         # Possible output configurations:
-        # - 1 output: next_token_logits only
+        # - 4 outputs: next_token_logits, logits, logit_offsets + hidden_states
         # - 3 outputs: next_token_logits, logits, logit_offsets (variable logits)
-        # - 1 + N: next_token_logits + hidden_states (one per device)
-        # - 3 + N: next_token_logits, logits, logit_offsets + hidden_states (one per device)
+        # - 2 outputs: next_token_logits + hidden_states
+        # - 1 output: next_token_logits only
 
-        if num_outputs == 3 + num_hidden_state_outputs:
+        if num_outputs == 4:
             assert isinstance(model_outputs[0], Buffer)
             assert isinstance(model_outputs[1], Buffer)
             assert isinstance(model_outputs[2], Buffer)
-            hidden_states_list: list[Buffer] = []
-            for i in range(num_hidden_state_outputs):
-                hs = model_outputs[3 + i]
-                assert isinstance(hs, Buffer)
-                hidden_states_list.append(hs)
+            assert isinstance(model_outputs[3], Buffer)
             return ModelOutputs(
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[1],
                 logit_offsets=model_outputs[2],
-                hidden_states=hidden_states_list,
-            )
-        elif num_outputs == 1 + num_hidden_state_outputs:
-            assert isinstance(model_outputs[0], Buffer)
-            hidden_states_list = []
-            for i in range(num_hidden_state_outputs):
-                hs = model_outputs[1 + i]
-                assert isinstance(hs, Buffer)
-                hidden_states_list.append(hs)
-            return ModelOutputs(
-                next_token_logits=model_outputs[0],
-                logits=model_outputs[0],
-                hidden_states=hidden_states_list,
+                hidden_states=model_outputs[3],
             )
         elif num_outputs == 3:
             assert isinstance(model_outputs[0], Buffer)
@@ -998,6 +944,14 @@ class KimiK2_5Model(
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[1],
                 logit_offsets=model_outputs[2],
+            )
+        elif num_outputs == 2:
+            assert isinstance(model_outputs[0], Buffer)
+            assert isinstance(model_outputs[1], Buffer)
+            return ModelOutputs(
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[0],
+                hidden_states=model_outputs[1],
             )
         else:
             assert isinstance(model_outputs[0], Buffer)

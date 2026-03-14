@@ -15,26 +15,26 @@ from std.os import abort
 
 
 @fieldwise_init
-struct LibraryProperty(Equatable, TrivialRegisterPassable):
+struct LibraryProperty(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime MAJOR_VERSION = Self(0)
     comptime MINOR_VERSION = Self(1)
     comptime PATCH_LEVEL = Self(2)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
     @no_inline
-    fn __str__(self) -> String:
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.MAJOR_VERSION:
-            return "MAJOR_VERSION"
+            return writer.write_string("MAJOR_VERSION")
         if self == Self.MINOR_VERSION:
-            return "MINOR_VERSION"
+            return writer.write_string("MINOR_VERSION")
         if self == Self.PATCH_LEVEL:
-            return "PATCH_LEVEL"
+            return writer.write_string("PATCH_LEVEL")
         abort("invalid LibraryProperty entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -59,54 +59,54 @@ struct Status(Equatable, Identifiable, TrivialRegisterPassable, Writable):
     comptime CUFFT_LICENSE_ERROR = Self(15)
     comptime CUFFT_NOT_SUPPORTED = Self(16)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUFFT_SUCCESS:
-            return writer.write("CUFFT_SUCCESS")
+            return writer.write_string("CUFFT_SUCCESS")
         if self is Self.CUFFT_INVALID_PLAN:
-            return writer.write("CUFFT_INVALID_PLAN")
+            return writer.write_string("CUFFT_INVALID_PLAN")
         if self is Self.CUFFT_ALLOC_FAILED:
-            return writer.write("CUFFT_ALLOC_FAILED")
+            return writer.write_string("CUFFT_ALLOC_FAILED")
         if self is Self.CUFFT_INVALID_TYPE:
-            return writer.write("CUFFT_INVALID_TYPE")
+            return writer.write_string("CUFFT_INVALID_TYPE")
         if self is Self.CUFFT_INVALID_VALUE:
-            return writer.write("CUFFT_INVALID_VALUE")
+            return writer.write_string("CUFFT_INVALID_VALUE")
         if self is Self.CUFFT_INTERNAL_ERROR:
-            return writer.write("CUFFT_INTERNAL_ERROR")
+            return writer.write_string("CUFFT_INTERNAL_ERROR")
         if self is Self.CUFFT_EXEC_FAILED:
-            return writer.write("CUFFT_EXEC_FAILED")
+            return writer.write_string("CUFFT_EXEC_FAILED")
         if self is Self.CUFFT_SETUP_FAILED:
-            return writer.write("CUFFT_SETUP_FAILED")
+            return writer.write_string("CUFFT_SETUP_FAILED")
         if self is Self.CUFFT_INVALID_SIZE:
-            return writer.write("CUFFT_INVALID_SIZE")
+            return writer.write_string("CUFFT_INVALID_SIZE")
         if self is Self.CUFFT_UNALIGNED_DATA:
-            return writer.write("CUFFT_UNALIGNED_DATA")
+            return writer.write_string("CUFFT_UNALIGNED_DATA")
         if self is Self.CUFFT_INCOMPLETE_PARAMETER_LIST:
-            return writer.write("CUFFT_INCOMPLETE_PARAMETER_LIST")
+            return writer.write_string("CUFFT_INCOMPLETE_PARAMETER_LIST")
         if self is Self.CUFFT_INVALID_DEVICE:
-            return writer.write("CUFFT_INVALID_DEVICE")
+            return writer.write_string("CUFFT_INVALID_DEVICE")
         if self is Self.CUFFT_PARSE_ERROR:
-            return writer.write("CUFFT_PARSE_ERROR")
+            return writer.write_string("CUFFT_PARSE_ERROR")
         if self is Self.CUFFT_NO_WORKSPACE:
-            return writer.write("CUFFT_NO_WORKSPACE")
+            return writer.write_string("CUFFT_NO_WORKSPACE")
         if self is Self.CUFFT_NOT_IMPLEMENTED:
-            return writer.write("CUFFT_NOT_IMPLEMENTED")
+            return writer.write_string("CUFFT_NOT_IMPLEMENTED")
         if self is Self.CUFFT_LICENSE_ERROR:
-            return writer.write("CUFFT_LICENSE_ERROR")
+            return writer.write_string("CUFFT_LICENSE_ERROR")
         if self is Self.CUFFT_NOT_SUPPORTED:
-            return writer.write("CUFFT_NOT_SUPPORTED")
+            return writer.write_string("CUFFT_NOT_SUPPORTED")
         abort("invalid cufftResult_t entry")
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cufftResult_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -123,32 +123,32 @@ struct Type(Equatable, Identifiable, TrivialRegisterPassable, Writable):
     comptime CUFFT_Z2D = Self(0x6C)
     comptime CUFFT_Z2Z = Self(0x69)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUFFT_R2C:
-            return writer.write("CUFFT_R2C")
+            return writer.write_string("CUFFT_R2C")
         if self is Self.CUFFT_C2R:
-            return writer.write("CUFFT_C2R")
+            return writer.write_string("CUFFT_C2R")
         if self is Self.CUFFT_C2C:
-            return writer.write("CUFFT_C2C")
+            return writer.write_string("CUFFT_C2C")
         if self is Self.CUFFT_D2Z:
-            return writer.write("CUFFT_D2Z")
+            return writer.write_string("CUFFT_D2Z")
         if self is Self.CUFFT_Z2D:
-            return writer.write("CUFFT_Z2D")
+            return writer.write_string("CUFFT_Z2D")
         if self is Self.CUFFT_Z2Z:
-            return writer.write("CUFFT_Z2Z")
+            return writer.write_string("CUFFT_Z2Z")
         abort("invalid cufftType_t entry")
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cufftType_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -159,22 +159,22 @@ struct Compatibility(
     var _value: Int8
     comptime CUFFT_COMPATIBILITY_FFTW_PADDING = Self(0)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.CUFFT_COMPATIBILITY_FFTW_PADDING:
-            return writer.write("CUFFT_COMPATIBILITY_FFTW_PADDING")
+            return writer.write_string("CUFFT_COMPATIBILITY_FFTW_PADDING")
         abort("invalid cufftCompatibility_t entry")
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cufftCompatibility_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
@@ -184,24 +184,24 @@ struct Property(Equatable, Identifiable, TrivialRegisterPassable, Writable):
     comptime NVFFT_PLAN_PROPERTY_INT64_PATIENT_JIT = Self(0)
     comptime NVFFT_PLAN_PROPERTY_INT64_MAX_NUM_HOST_THREADS = Self(1)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.NVFFT_PLAN_PROPERTY_INT64_PATIENT_JIT:
-            return writer.write("NVFFT_PLAN_PROPERTY_INT64_PATIENT_JIT")
+            return writer.write_string("NVFFT_PLAN_PROPERTY_INT64_PATIENT_JIT")
         if self is Self.NVFFT_PLAN_PROPERTY_INT64_MAX_NUM_HOST_THREADS:
             return writer.write(
                 "NVFFT_PLAN_PROPERTY_INT64_MAX_NUM_HOST_THREADS"
             )
         abort("invalid cufftProperty_t entry")
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"cufftProperty_t({self})".write_to(writer)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)

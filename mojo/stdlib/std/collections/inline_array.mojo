@@ -48,7 +48,7 @@ from std.memory import UnsafeMaybeUninit
 # ===-----------------------------------------------------------------------===#
 
 
-fn _inline_array_construction_checks[size: Int]():
+def _inline_array_construction_checks[size: Int]():
     """Checks if the properties in `InlineArray` are valid.
 
     Validity right now is just ensuring the number of elements is > 0.
@@ -90,10 +90,10 @@ struct _InlineArrayIter[
     var src: Pointer[InlineArray[Self.T, Self.size], Self.origin]
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __next__(
+    def __next__(
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
         comptime if Self.forward:
@@ -108,7 +108,7 @@ struct _InlineArrayIter[
             return self.src[][self.index]
 
     @always_inline
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         var iter_len: Int
 
         comptime if Self.forward:
@@ -190,7 +190,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         iterable_origin: The origin of the iterable.
     """
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         """Convert the host type object to a device_type and store it at the
         target address.
 
@@ -200,7 +200,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         target.bitcast[Self.device_type]()[] = self.copy()
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """Gets the name of the host type (the one implementing this trait).
 
         Returns:
@@ -219,7 +219,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """This constructor will always cause a compile time error if used.
         It is used to steer users away from uninitialized memory.
         """
@@ -230,7 +230,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         )
 
     @always_inline
-    fn __init__(out self, *, uninitialized: Bool):
+    def __init__(out self, *, uninitialized: Bool):
         """Create an InlineArray with uninitialized memory.
 
         Args:
@@ -252,7 +252,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         _inline_array_construction_checks[Self.size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         var unsafe_assume_initialized: InlineArray[
@@ -284,7 +284,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             )
 
     @always_inline
-    fn __init__[batch_size: Int = 64](out self, *, fill: Self.ElementType):
+    def __init__[batch_size: Int = 64](out self, *, fill: Self.ElementType):
         """Constructs an array where each element is initialized to the supplied
         value.
 
@@ -341,7 +341,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         )
 
     @always_inline
-    fn __init__(out self, var *elems: Self.ElementType, __list_literal__: ()):
+    def __init__(out self, var *elems: Self.ElementType, __list_literal__: ()):
         """Constructs an array from a variadic list of elements.
 
         Args:
@@ -360,7 +360,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         self = Self(storage=elems^)
 
     @always_inline
-    fn __init__[
+    def __init__[
         origin: MutOrigin,
         //,
     ](
@@ -404,7 +404,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         # FIXME: Why doesn't consume_elements work here?
         storage^._anihilate()
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Copy constructs the array from another array.
 
         Args:
@@ -426,7 +426,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
                 var ptr = self.unsafe_ptr() + idx
                 ptr.init_pointee_copy(copy.unsafe_get(idx))
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         """Move constructs the array from another array.
 
         Args:
@@ -444,7 +444,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
                 var other_ptr = take.unsafe_ptr() + idx
                 (self.unsafe_ptr() + idx).init_pointee_move_from(other_ptr)
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Deallocates the array and destroys its elements."""
 
         _constrained_conforms_to[
@@ -467,7 +467,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn __getitem__[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
+    def __getitem__[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
         """Gets a reference to the element at the given index.
 
         Parameters:
@@ -501,7 +501,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         return self.unsafe_get(normalized_index)
 
     @always_inline
-    fn __getitem__[
+    def __getitem_param__[
         I: Indexer, //, idx: I
     ](ref self) -> ref[self] Self.ElementType:
         """Gets a reference to the element at the given index with compile-time
@@ -543,7 +543,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
     # ===------------------------------------------------------------------=== #
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Returns the length of the array.
 
         Returns:
@@ -563,7 +563,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         return Self.size
 
     @always_inline
-    fn __eq__(
+    def __eq__(
         self, other: Self
     ) -> Bool where conforms_to(Self.ElementType, Equatable):
         """Compares two arrays for equality.
@@ -582,7 +582,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         return True
 
     @always_inline
-    fn __ne__(
+    def __ne__(
         self, other: Self
     ) -> Bool where conforms_to(Self.ElementType, Equatable):
         """Compares two arrays for inequality.
@@ -600,7 +600,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
                 return True
         return False
 
-    fn __hash__[
+    def __hash__[
         H: Hasher
     ](self, mut hasher: H) where conforms_to(Self.ElementType, Hashable):
         """Hashes the elements of the array using the given hasher.
@@ -619,7 +619,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn unsafe_get[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
+    def unsafe_get[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
         """Gets a reference to an element without bounds checking.
 
         Parameters:
@@ -664,7 +664,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         return UnsafePointer[_, origin_of(self)](ptr)[]
 
     @always_inline
-    fn unsafe_ptr[
+    def unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
     ](ref[origin, address_space] self) -> UnsafePointer[
         Self.ElementType,
@@ -708,7 +708,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         )
 
     @always_inline
-    fn __contains__[
+    def __contains__[
         T: Equatable & Copyable, //
     ](self: InlineArray[T, Self.size], value: T) -> Bool:
         """Tests if a value is present in the array using the `in` operator.
@@ -749,7 +749,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
     # String representation
     # ===-------------------------------------------------------------------===#
 
-    fn _write_self_to[
+    def _write_self_to[
         f: fn(Self.ElementType, mut Some[Writer])
     ](self, mut writer: Some[Writer]) where conforms_to(
         Self.ElementType, Writable
@@ -757,7 +757,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         var index = 0
 
         @parameter
-        fn iterate(mut w: Some[Writer]) raises StopIteration:
+        def iterate(mut w: Some[Writer]) raises StopIteration:
             if index >= Self.size:
                 raise StopIteration()
             f(self.unsafe_get(index), w)
@@ -766,7 +766,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         fmt.write_sequence_to[ElementFn=iterate](writer)
         _ = index
 
-    fn write_to(
+    def write_to(
         self, mut writer: Some[Writer]
     ) where conforms_to(Self.ElementType, Writable):
         """Writes the InlineArray representation to a Writer.
@@ -776,7 +776,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         """
         self._write_self_to[f=fmt.write_to[Self.ElementType]](writer)
 
-    fn write_repr_to(
+    def write_repr_to(
         self, mut writer: Some[Writer]
     ) where conforms_to(Self.ElementType, Writable):
         """Writes the repr representation of this InlineArray to a Writer.
@@ -786,7 +786,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         """
 
         @parameter
-        fn write_fields(mut w: Some[Writer]):
+        def write_fields(mut w: Some[Writer]):
             self._write_self_to[f=fmt.write_repr_to[Self.ElementType]](w)
 
         fmt.FormatStruct(writer, "InlineArray").params(
@@ -794,7 +794,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             Self.size,
         ).fields[FieldsFn=write_fields]()
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the array, returning immutable references.
 
         Returns:
@@ -802,7 +802,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         """
         return {0, Pointer(to=self)}
 
-    fn __reversed__(
+    def __reversed__(
         ref self,
     ) -> _InlineArrayIter[Self.ElementType, Self.size, origin_of(self), False]:
         """Iterate over elements of the array in reverse order, returning immutable references.

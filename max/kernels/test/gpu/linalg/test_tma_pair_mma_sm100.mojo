@@ -52,7 +52,7 @@ from std.utils.static_tuple import StaticTuple
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-fn tma_umma_kernel_pair_cta[
+def tma_umma_kernel_pair_cta[
     a_type: DType,
     b_type: DType,
     c_type: DType,

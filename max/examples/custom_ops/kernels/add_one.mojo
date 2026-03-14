@@ -23,7 +23,7 @@ from std.utils.index import IndexList
 @compiler.register("add_one")
 struct AddOne:
     @staticmethod
-    fn execute[
+    def execute[
         # The kind of device this will be run on: "cpu" or "gpu"
         target: StaticString,
     ](
@@ -34,7 +34,7 @@ struct AddOne:
     ) raises:
         @parameter
         @always_inline
-        fn elementwise_add_one[
+        def elementwise_add_one[
             width: Int
         ](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
@@ -44,7 +44,7 @@ struct AddOne:
     # You only need to implement this if you do not manually annotate
     # output shapes in the graph.
     @staticmethod
-    fn shape(
+    def shape(
         x: InputTensor,
     ) raises -> IndexList[x.rank]:
         raise Error("NotImplemented")

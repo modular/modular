@@ -36,10 +36,10 @@ from max.graph import (
 from max.graph.ops import assert_same_device
 from max.graph.ops.quantized import repack_gguf_quantized_weights
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.nn.float8_config import (
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8WeightScaleSpec,
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    WeightScaleSpec,
 )
 
 from .attention.mask_config import AttentionMaskVariant, MHAMaskVariant
@@ -263,7 +263,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
     input_scale: TensorValue,
     weight_scale: TensorValue,
     bias: TensorValue | None = None,
-    float8_config: Float8Config | None = None,
+    quant_config: QuantConfig | None = None,
     _output_dim: int | None = None,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with scaled float8 input and weights.
@@ -285,7 +285,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
         weight_scale: TensorValue representing the weight scale tensor. Shape
             varies depending on the quantization config.
         bias: Optional bias vector concatenated as [q, k, v].
-        float8_config: Optional Float8Config object containing float8
+        quant_config: Optional QuantConfig object containing scaled
             quantization parameters. If not provided, the quantization config
             will be inferred from the input and weight scale shapes.
         _output_dim: Optional output dimension. If not provided, the output
@@ -349,10 +349,10 @@ def fused_qkv_ragged_matmul_scaled_float8(
         weight_scale = weight_scale.reshape([1, 1])
 
     # Try to infer the quantization config
-    if float8_config is not None:
-        scales_granularity_mnk = float8_config.scales_granularity_mnk
+    if quant_config is not None:
+        scales_granularity_mnk = quant_config.scales_granularity_mnk
     else:
-        # with out float8_config, we either use per-tensor or per-channel quantization
+        # with out quant_config, we either use per-tensor or per-channel quantization
         if (
             input_scale.shape[0] == 1
             and input_scale.shape[1] == 1
@@ -365,7 +365,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
         else:
             raise ValueError(
                 "Can not infer the quantization config from the input tensor shapes",
-                "Please provide a float8_config",
+                "Please provide a quant_config",
             )
 
     assert kv_params.page_size is not None
@@ -2151,6 +2151,107 @@ def flare_mla_decode_ragged(
     )[0].tensor
 
 
+def flare_mla_decode_ragged_scaled(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    kv_collection: PagedCacheValues,
+    kv_scales: BufferValue,
+    q_scales: TensorValue,
+    layer_idx: TensorValue,
+    mask_variant: MHAMaskVariant,
+    scale: float,
+    qk_rope_dim: int = 64,
+    per_token_scale_rope_aware: bool = False,
+    quantization_granularity: int = 640,
+) -> TensorValue:
+    """MLA decode with explicit per-token KV and Q scale tensors.
+
+    Like ``flare_mla_decode_ragged`` but accepts explicit scale tensors so the
+    per-token-scale rope-aware kernel receives real (non-identity) scales.
+
+    Args:
+        kv_params: KV cache parameters.
+        input: Query tensor [total_tokens, num_heads, head_dim].
+        input_row_offsets: Ragged row offsets [batch_size + 1].
+        kv_collection: Paged KV cache collection.
+        kv_scales: Per-token KV scales buffer
+            [num_blocks, 1, 1, page_size, 1, 1] float32.
+        q_scales: Per-token Q scales tensor [total_tokens] float32.
+        layer_idx: Layer index (uint32, on CPU).
+        mask_variant: Attention mask variant.
+        scale: Softmax scale (typically 1/sqrt(d_qk)).
+        qk_rope_dim: Rope head dimension (default 64).
+        per_token_scale_rope_aware: Use FP8+BF16 interleaved layout.
+        quantization_granularity: Granularity for KV scale quantization.
+            Should equal the KV cache head_dim (640 for rope-aware).
+
+    Returns:
+        Output tensor [total_tokens, num_heads, output_dim].
+    """
+    input_rank_expected = 3
+    if input.rank != input_rank_expected:
+        raise ValueError(
+            f"expected input of rank {input_rank_expected} but got {input.rank}"
+        )
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
+
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            f"expected uint32 input_row_offsets but got"
+            f" {input_row_offsets.dtype}"
+        )
+
+    if kv_collection.kv_blocks.shape[1] != 1:
+        raise ValueError(
+            f"expected kv_collection.kv_blocks.shape[1] to be 1, got"
+            f" {kv_collection.kv_blocks.shape[1]}"
+        )
+
+    assert kv_params.page_size is not None
+    parameters = _mha_parameters(mask_variant)
+    if per_token_scale_rope_aware:
+        parameters["per_token_scale_rope_aware"] = 1
+    parameters["quantization_granularity"] = quantization_granularity
+
+    output_dtype = (
+        DType.bfloat16 if input.dtype == DType.float8_e4m3fn else input.dtype
+    )
+
+    if per_token_scale_rope_aware:
+        output_last_dim = input.shape[2] - qk_rope_dim * 2
+    else:
+        output_last_dim = input.shape[2] - qk_rope_dim
+
+    return ops.inplace_custom(
+        "mo.mla.decode.ragged.paged.scaled",
+        device=input.device,
+        values=[
+            input,
+            input_row_offsets,
+            *kv_collection,
+            kv_scales,
+            q_scales,
+            layer_idx,
+            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=output_dtype,
+                shape=[
+                    input.shape[0],
+                    input.shape[1],
+                    output_last_dim,
+                ],
+                device=input.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
 def flare_mla_prefill_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -2367,7 +2468,7 @@ def mla_prefill_graph(
     kv: TensorValue | None = None,
     w_k_scale: TensorValue | None = None,
     w_uv_scale: TensorValue | None = None,
-    float8_config: Float8Config | None = None,
+    quant_config: QuantConfig | None = None,
 ) -> TensorValue:
     """This is a manually fused kernel that performs the following operations:
     - Apply RoPE to the query and the key cache (in-place).
@@ -2406,10 +2507,10 @@ def mla_prefill_graph(
         v_head_dim: Dimension of the V heads.
         kv: KV latent tensor from the first projection. Shape:
             [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
-            qk_rope_head_dim. Required when float8_config is None.
+            qk_rope_head_dim. Required when quant_config is None.
         w_k_scale: Optional FP8 scale tensor for `w_k`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
-        float8_config: Optional FP8 config. When set, FP8 scales are required.
+        quant_config: Optional quantization config. When set, scales are required.
 
     Returns:
         Tensor of shape [total_seq_len, num_heads, v_head_dim].
@@ -2445,22 +2546,22 @@ def mla_prefill_graph(
     else:
         input_values[0:0] = [q]
 
-    if float8_config is not None:
+    if quant_config is not None:
         assert w_k_scale is not None and w_uv_scale is not None
-        assert float8_config.input_scale.block_size is not None
-        assert float8_config.weight_scale.block_size is not None
+        assert quant_config.input_scale.block_size is not None
+        assert quant_config.weight_scale.block_size is not None
         parameters.update(
             {
-                "m_scale_granularity": float8_config.input_scale.block_size[0],
-                "n_scale_granularity": float8_config.weight_scale.block_size[0],
-                "k_scale_granularity": float8_config.weight_scale.block_size[1],
+                "m_scale_granularity": quant_config.input_scale.block_size[0],
+                "n_scale_granularity": quant_config.weight_scale.block_size[0],
+                "k_scale_granularity": quant_config.weight_scale.block_size[1],
             }
         )
         op_name += ".fp8"
         input_values += [w_k_scale, w_uv_scale]
     else:
         assert w_k_scale is None and w_uv_scale is None, (
-            "w_k_scale and w_uv_scale must be None when float8_config is not set"
+            "w_k_scale and w_uv_scale must be None when quant_config is not set"
         )
 
     return ops.inplace_custom(
@@ -2504,7 +2605,7 @@ def compute_mla_dispatch_args_scalar(
         device=device,
         values=[batch_size, max_cache_valid_length, q_max_seq_len],
         out_types=[
-            TensorType(shape=[4], dtype=DType.int64, device=DeviceRef.CPU()),
+            TensorType(shape=[3], dtype=DType.int64, device=DeviceRef.CPU()),
         ],
         parameters={"num_heads": num_heads, "is_fp8_kv": is_fp8_kv},
     )
@@ -2530,7 +2631,7 @@ def mla_decode_graph(
     kv: TensorValue | None = None,
     w_uk_scale: TensorValue | None = None,
     w_uv_scale: TensorValue | None = None,
-    float8_config: Float8Config | None = None,
+    quant_config: QuantConfig | None = None,
 ) -> TensorValue:
     """This is a manually fused kernel that performs the following operations:
 
@@ -2566,12 +2667,12 @@ def mla_decode_graph(
         v_head_dim: Dimension of the V heads.
         kv: KV latent tensor from the first projection. Shape:
             [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
-            qk_rope_head_dim. Required when float8_config is None.
+            qk_rope_head_dim. Required when quant_config is None.
         scalar_args: Optional pre-computed dispatch scalar args (GPU buffer).
             When provided, uses the capturable op variant for CUDA graph capture.
         w_uk_scale: Optional FP8 scale tensor for `w_uk`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
-        float8_config: Optional FP8 config. When set, FP8 scales are required.
+        quant_config: Optional quantization config. When set, scales are required.
 
     Returns:
         Tensor of shape [total_seq_len, num_heads, v_head_dim].
@@ -2604,15 +2705,15 @@ def mla_decode_graph(
     else:
         input_values[0:0] = [q]
 
-    if float8_config is not None:
+    if quant_config is not None:
         assert w_uk_scale is not None and w_uv_scale is not None
-        assert float8_config.input_scale.block_size is not None
-        assert float8_config.weight_scale.block_size is not None
+        assert quant_config.input_scale.block_size is not None
+        assert quant_config.weight_scale.block_size is not None
         parameters.update(
             {
-                "m_scale_granularity": float8_config.input_scale.block_size[0],
-                "n_scale_granularity": float8_config.weight_scale.block_size[0],
-                "k_scale_granularity": float8_config.weight_scale.block_size[1],
+                "m_scale_granularity": quant_config.input_scale.block_size[0],
+                "n_scale_granularity": quant_config.weight_scale.block_size[0],
+                "k_scale_granularity": quant_config.weight_scale.block_size[1],
             }
         )
         op_name += ".fp8"
@@ -2655,7 +2756,7 @@ def mla_prefill_decode_graph(
     w_k_scale: TensorValue | None = None,
     w_uk_scale: TensorValue | None = None,
     w_uv_scale: TensorValue | None = None,
-    float8_config: Float8Config | None = None,
+    quant_config: QuantConfig | None = None,
 ) -> TensorValue:
     """Fused MLA prefill/decode kernel for FP8.
 
@@ -2683,13 +2784,13 @@ def mla_prefill_decode_graph(
         v_head_dim: Value head dimension for output tensor shape.
         kv: KV latent tensor from the first projection. Shape:
             [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
-            qk_rope_head_dim. Required when float8_config is None.
+            qk_rope_head_dim. Required when quant_config is None.
         scalar_args: Optional pre-computed dispatch scalar args (GPU buffer).
             When provided, uses the capturable op variant for CUDA graph capture.
         w_k_scale: Optional FP8 scale tensor for `w_k`.
         w_uk_scale: Optional FP8 scale tensor for `w_uk`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
-        float8_config: Optional FP8 config. When set, FP8 scales are required.
+        quant_config: Optional quantization config. When set, scales are required.
 
     Returns:
         Tensor of shape [total_seq_len, num_heads, v_head_dim].
@@ -2726,19 +2827,19 @@ def mla_prefill_decode_graph(
     else:
         input_values[0:0] = [q]
 
-    if float8_config is not None:
+    if quant_config is not None:
         assert (
             w_k_scale is not None
             and w_uk_scale is not None
             and w_uv_scale is not None
         )
-        assert float8_config.input_scale.block_size is not None
-        assert float8_config.weight_scale.block_size is not None
+        assert quant_config.input_scale.block_size is not None
+        assert quant_config.weight_scale.block_size is not None
         parameters.update(
             {
-                "m_scale_granularity": float8_config.input_scale.block_size[0],
-                "n_scale_granularity": float8_config.weight_scale.block_size[0],
-                "k_scale_granularity": float8_config.weight_scale.block_size[1],
+                "m_scale_granularity": quant_config.input_scale.block_size[0],
+                "n_scale_granularity": quant_config.weight_scale.block_size[0],
+                "k_scale_granularity": quant_config.weight_scale.block_size[1],
             }
         )
         op_name += ".fp8"
@@ -3479,8 +3580,8 @@ def grouped_dynamic_scaled_fp8_matmul(
     expert_start_indices: TensorValue,
     expert_ids: TensorValue,
     expert_usage_stats_host: TensorValue,
-    input_scale_spec: Float8InputScaleSpec,
-    weight_scale_spec: Float8WeightScaleSpec,
+    input_scale_spec: InputScaleSpec,
+    weight_scale_spec: WeightScaleSpec,
     out_type: DType = DType.bfloat16,
     tokens_padded_per_expert: bool = False,
 ) -> TensorValue:
@@ -3634,8 +3735,8 @@ def batched_dynamic_scaled_fp8_matmul(
     b: TensorValue,
     a_scales: TensorValue,
     b_scales: TensorValue,
-    input_scale_spec: Float8InputScaleSpec,
-    weight_scale_spec: Float8WeightScaleSpec,
+    input_scale_spec: InputScaleSpec,
+    weight_scale_spec: WeightScaleSpec,
     out_type: DType = DType.bfloat16,
 ) -> TensorValue:
     """Performs a batched blockwise scaled matmul of two tensors with scaling factors.
@@ -3786,8 +3887,8 @@ def quantize_static_scaled_float8(
 
 def quantize_dynamic_scaled_float8(
     input: TensorValue,
-    input_scale_spec: Float8InputScaleSpec,
-    weight_scale_spec: Float8WeightScaleSpec,
+    input_scale_spec: InputScaleSpec,
+    weight_scale_spec: WeightScaleSpec,
     scale_ub: float = 1200.0,
     group_size_or_per_token: int = -1,
     out_type: DType = DType.float8_e4m3fn,
@@ -3868,8 +3969,8 @@ def quantize_dynamic_scaled_float8(
 
 def batched_quantize_dynamic_scaled_float8(
     input: TensorValue,
-    input_scale_spec: Float8InputScaleSpec,
-    weight_scale_spec: Float8WeightScaleSpec,
+    input_scale_spec: InputScaleSpec,
+    weight_scale_spec: WeightScaleSpec,
     scale_ub: float = 1200.0,
     group_size_or_per_token: int = -1,
     out_type: DType = DType.float8_e4m3fn,
@@ -3952,8 +4053,8 @@ def dynamic_scaled_matmul(
     b: TensorValue,
     a_scales: TensorValue,
     b_scales: TensorValue,
-    input_scale_spec: Float8InputScaleSpec,
-    weight_scale_spec: Float8WeightScaleSpec,
+    input_scale_spec: InputScaleSpec,
+    weight_scale_spec: WeightScaleSpec,
     out_type: DType = DType.bfloat16,
 ) -> TensorValue:
     """Performs a matmul of two tensors with scaling factors. Currently only

@@ -15,7 +15,7 @@ from std.gpu.host import Dim
 from std.testing import assert_equal
 
 
-fn test_dim() raises:
+def test_dim() raises:
     print("== test_dim")
 
     assert_equal(String(Dim(4, 1, 2)), "(x=4, y=1, z=2)")

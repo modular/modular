@@ -515,9 +515,9 @@ class KVCacheParams(KVCacheParamInterface):
                 dispatch_metadata=AttentionDispatchMetadata(
                     TensorType(
                         DType.int64,
-                        shape=[4],
-                        # MLA kernels consume dispatch metadata on GPU;
-                        # MHA reads it on CPU.
+                        shape=[3] if self.is_mla else [4],
+                        # MLA kernels consume 3-value dispatch metadata on GPU;
+                        # MHA reads 4-value metadata on CPU.
                         device=device if self.is_mla else DeviceRef.CPU(),
                     )
                 ),

@@ -33,7 +33,7 @@ from std.runtime.asyncrt import DeviceContextPtr
 @compiler.register("my_add")
 struct MyAdd:
     @staticmethod
-    fn execute(
+    def execute(
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         y: InputTensor[dtype=output.dtype, rank=output.rank, ...],
@@ -41,7 +41,7 @@ struct MyAdd:
         output[0] = x[0] + y[0]
 
     @staticmethod
-    fn shape(
+    def shape(
         x: InputTensor,
         y: InputTensor,
     ) raises -> IndexList[x.rank]:
@@ -51,7 +51,7 @@ struct MyAdd:
 @compiler.register("op_with_device_context")
 struct OpWidthDeviceContext:
     @staticmethod
-    fn execute(
+    def execute(
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContextPtr,
@@ -59,7 +59,7 @@ struct OpWidthDeviceContext:
         output[0] = x[0]
 
     @staticmethod
-    fn shape(
+    def shape(
         x: InputTensor,
     ) raises -> IndexList[x.rank]:
         raise "NotImplemented"
@@ -68,7 +68,7 @@ struct OpWidthDeviceContext:
 @compiler.register("op_with_multiple_outputs")
 struct OpWithMultipleOutputs:
     @staticmethod
-    fn execute(
+    def execute(
         out0: OutputTensor,
         out1: OutputTensor[dtype=out0.dtype, rank=out0.rank, ...],
         x: InputTensor[dtype=out0.dtype, rank=out0.rank, ...],
@@ -77,7 +77,7 @@ struct OpWithMultipleOutputs:
         out1[0] = 4 * x[0]
 
     @staticmethod
-    fn shape(
+    def shape(
         x: InputTensor,
     ) raises -> IndexList[x.rank]:
         raise "NotImplemented"
@@ -86,7 +86,7 @@ struct OpWithMultipleOutputs:
 @compiler.register("op_without_outputs")
 struct OpWithoutOutputs:
     @staticmethod
-    fn execute(
+    def execute(
         x: InputTensor,
     ):
         print(x[0])
@@ -95,17 +95,17 @@ struct OpWithoutOutputs:
 struct MyIntMemory(Movable):
     var val: Int
 
-    fn __init__(out self, val: Int):
+    def __init__(out self, val: Int):
         self.val = val
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         print("MyInt del")
 
 
 @compiler.register("make_my_int_memory")
 struct MakeMyIntMemory:
     @staticmethod
-    fn execute(x: InputTensor[dtype=DType.int32, rank=1, ...]) -> MyIntMemory:
+    def execute(x: InputTensor[dtype=DType.int32, rank=1, ...]) -> MyIntMemory:
         return MyIntMemory(Int(x[0]))
 
 
@@ -117,14 +117,14 @@ struct MyIntReg(TrivialRegisterPassable):
 @compiler.register("make_my_int_reg")
 struct MakeMyIntReg:
     @staticmethod
-    fn execute(x: InputTensor[dtype=DType.int32, rank=1, ...]) -> MyIntReg:
+    def execute(x: InputTensor[dtype=DType.int32, rank=1, ...]) -> MyIntReg:
         return MyIntReg(Int(x[0]))
 
 
 @compiler.register("variadic_input_to_output")
 struct VariadicInputToOutput:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         size: Int,
     ](
@@ -141,7 +141,7 @@ struct VariadicInputToOutput:
 @compiler.register("variadic_add")
 struct VariadicAdd:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         size: Int,
     ](
@@ -159,7 +159,7 @@ struct VariadicAdd:
 @compiler.register("binary_kernel_with_raises")
 struct BinaryKernelWithRaises:
     @staticmethod
-    fn execute(
+    def execute(
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         y: InputTensor[dtype=output.dtype, rank=output.rank, ...],
@@ -167,7 +167,7 @@ struct BinaryKernelWithRaises:
         output[0] = x[0] + y[0]
 
     @staticmethod
-    fn shape(
+    def shape(
         x: InputTensor,
         y: InputTensor,
     ) raises -> IndexList[x.rank]:
@@ -177,14 +177,14 @@ struct BinaryKernelWithRaises:
 @compiler.register("mutable_input_tensor")
 struct MutableInputTensorKernel:
     @staticmethod
-    fn execute(in_place_tensor: MutableInputTensor) raises:
+    def execute(in_place_tensor: MutableInputTensor) raises:
         in_place_tensor._ptr.store(0, 0)
 
 
 @compiler.register("op_with_int_parameter")
 struct OpWithIntParameter[IntParameter: Int]:
     @staticmethod
-    fn execute(
+    def execute(
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
@@ -195,7 +195,7 @@ struct OpWithIntParameter[IntParameter: Int]:
 @compiler.register("op_with_dtype_parameter")
 struct OpWithDTypeParameter[DTypeParameter: DType]:
     @staticmethod
-    fn execute(
+    def execute(
         output: OutputTensor[...],
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
@@ -206,7 +206,7 @@ struct OpWithDTypeParameter[DTypeParameter: DType]:
 @compiler.register("op_with_string_parameter")
 struct OpWithStringParameter[StringParameter: String]:
     @staticmethod
-    fn execute(
+    def execute(
         output: OutputTensor[...],
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
@@ -217,7 +217,7 @@ struct OpWithStringParameter[StringParameter: String]:
 @compiler.register("op_with_string_slice_parameter")
 struct OpWithStringSliceParameter[StringParameter: StringSlice]:
     @staticmethod
-    fn execute(
+    def execute(
         output: OutputTensor[...],
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
@@ -228,7 +228,7 @@ struct OpWithStringSliceParameter[StringParameter: StringSlice]:
 @compiler.register("op_with_static_string_parameter")
 struct OpWithStaticStringParameter[StringParameter: StaticString]:
     @staticmethod
-    fn execute(
+    def execute(
         output: OutputTensor[...],
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
@@ -300,7 +300,7 @@ struct IntentionalGpuCrash:
         comptime assert target == "gpu"
         gpu_ctx = ctx.get_device_context()
 
-        fn crash_kernel():
+        def crash_kernel():
             abort()
 
         gpu_ctx.enqueue_function_experimental[crash_kernel](

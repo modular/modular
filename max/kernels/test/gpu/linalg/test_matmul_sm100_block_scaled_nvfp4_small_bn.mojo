@@ -42,8 +42,8 @@ from linalg.fp4_utils import (
 from std.random import random_ui64
 from std.builtin.simd import _convert_f32_to_float8_ue8m0
 from layout import (
-    LayoutTensor,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -51,7 +51,7 @@ from layout import (
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-fn simple_init() -> Bool:
+def simple_init() -> Bool:
     for arg in argv():
         if arg == "--simple-init":
             return True
@@ -170,6 +170,19 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var c_device_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
+
+    # This row major layout coorelates to this
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-mma-scale-factor-a-layout-4x
+
+    # Dim 0: the scale factors cover batches of 128 rows (4 sets of 32 rows to be specifc) so divide to find out how
+    # tiles we have over the first mode
+
+    # Dim 1: Assuming NVFP4_SF_VECTOR_SIZE for SF_VECTOR_SIZE, we know each scale factor covers 16 elements. The MMA has K fixed to 64 (32 in fp8),
+    # so we divide K by 64 (4 scales) and we get the batch of scales for each mma across that mode.
+
+    # Dim 2: Now in each batch as previosuly mentioned we have 32 rows
+    # Dim 3: each column in the row is actually a subrow there are a total of 4 (32 * 4 gives us 128)
+    # Dim 4: each subrow has 4 scale factors.
 
     comptime static_a_scales_shape = DimList[
         ceildiv(m.dim, SF_MN_GROUP_SIZE),

@@ -44,7 +44,7 @@ from std.collections import OptionalReg
 
 from ....structuring import SMemTile, RegTile, eval
 from ....utils import elementwise_epilogue_type
-from layout import Layout, LayoutTensor, IntTuple, RuntimeLayout
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from layout.swizzle import Swizzle
 from layout._utils import make_amd_buffer_resource, idx2crd
 from .matmul import write_output_fragments
@@ -79,7 +79,7 @@ from .matmul import write_output_fragments
 # =============================================================================
 
 
-fn make_mma_swizzle[dtype: DType, MMA_M: Int, MMA_K: Int]() -> Swizzle:
+def make_mma_swizzle[dtype: DType, MMA_M: Int, MMA_K: Int]() -> Swizzle:
     """Create swizzle pattern for MMA LDS access.
 
     AMD MI355X have 64 LDS banks × 4 bytes each. Without swizzling,
@@ -107,10 +107,9 @@ fn make_mma_swizzle[dtype: DType, MMA_M: Int, MMA_K: Int]() -> Swizzle:
     """
     # Compute lds_frag_width (elements loaded per LDS read)
     comptime mma_frag_width = (MMA_M * MMA_K) // WARP_SIZE
-    # FP8 16×16×128 uses split-K with 16-element fragments
-    comptime use_split_k = (
-        dtype == DType.float8_e4m3fn and MMA_M == 16 and MMA_K == 128
-    )
+    # FP8 16×16×128: each lane group holds two non-contiguous 16-element
+    # K-chunks (see CDNA4 ISA §7.1.5.1 FP8 layout), so load 16 at a time.
+    comptime use_split_k = (dtype.is_float8() and MMA_M == 16 and MMA_K == 128)
     comptime lds_frag_width = 16 if use_split_k else mma_frag_width
 
     # Compute swizzle parameters
@@ -199,7 +198,7 @@ struct TileLoaderLDS[
     comptime stride = Self.src_layout.shape[1].value()
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         src: LayoutTensor,
         warp_id: Int,
@@ -240,7 +239,7 @@ struct TileLoaderLDS[
         self.thread_col = warp_col * Self.subtile_cols + subtile_col
 
     @always_inline
-    fn load_tile[
+    def load_tile[
         dst_layout: Layout,
         //,
     ](
@@ -283,7 +282,7 @@ struct TileLoaderLDS[
 
 
 @always_inline
-fn _load_from_lds[
+def _load_from_lds[
     dtype: DType,
     //,
     width: Int = 1,
@@ -339,7 +338,7 @@ fn _load_from_lds[
                 _type=SIMD[DType.bfloat16, 8]._mlir_type
             ](llvm_res)
         )
-    elif dtype == DType.float8_e4m3fn and width == 8:
+    elif dtype.is_float8() and width == 8:
         # FP8 x8 = 64 bits = ds_read_b64
         # Load as i8 vector, then bitcast to fp8 (same bit pattern)
         var llvm_res = __mlir_op.`llvm.load`[
@@ -355,7 +354,7 @@ fn _load_from_lds[
         return bitcast[dtype, width](
             rebind[SIMD[DType.uint8, width]](uint8_vec)
         )
-    elif dtype == DType.float8_e4m3fn and width == 16:
+    elif dtype.is_float8() and width == 16:
         # FP8 x16 = 128 bits = ds_read_b128
         # Used for 16×16×128 MMA (HipKittens-style FP8 schedule)
         var llvm_res = __mlir_op.`llvm.load`[
@@ -371,7 +370,7 @@ fn _load_from_lds[
         return bitcast[dtype, width](
             rebind[SIMD[DType.uint8, width]](uint8_vec)
         )
-    elif dtype == DType.float8_e4m3fn and width == 32:
+    elif dtype.is_float8() and width == 32:
         # FP8 x32 = 256 bits = 2 x ds_read_b128
         # Used for 32×32×64 MMA (mfma_scale_f32_32x32x64)
         # Load as two 128-bit chunks using pointer arithmetic
@@ -409,7 +408,7 @@ fn _load_from_lds[
 
 
 @always_inline
-fn load_lds_fragment[
+def load_lds_fragment[
     dtype: DType,
     smem_layout: Layout,
     smem_element_layout: Layout,
@@ -503,12 +502,12 @@ fn load_lds_fragment[
     var lane_offset = Int(RuntimeLayout[mma_access_layout]()(lane))
     var frag_ptr = reg_frag.ptr.bitcast[FragElement]()
 
-    # Iteration pattern:
-    # - Standard (BF16/FP8 16×16×32): iter_base = i * WARP_SIZE * frag_width
-    # - FP8 16×16×128: Split-K pattern with 2 iterations per MMA position
+    # Standard iteration: each iteration loads one MMA position's fragment.
+    # iter_base = i * WARP_SIZE * frag_width advances through M-positions.
     #
-    # Detect split-K mode: when MMA_K (stride[0]) requires more elements than
-    # one iteration can provide (col_groups * frag_width).
+    # Split-K mode (dead path): was used when lds_frag_width < mma_frag_width,
+    # requiring multiple K-loads per MMA position. No longer triggered since
+    # lds_frag_width == mma_frag_width for all configurations.
     comptime mma_m = Int(mma_access_layout.shape[0])
     comptime col_groups = Int(mma_access_layout.shape[1])
     comptime mma_k = Int(mma_access_layout.stride[0])
@@ -555,7 +554,7 @@ struct KernelConfig(ImplicitlyCopyable, Movable, Writable):
     var warp_shape: IndexList[3]
     var mma_shape: IndexList[3]
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         block_shape: IndexList[3],
@@ -567,7 +566,7 @@ struct KernelConfig(ImplicitlyCopyable, Movable, Writable):
         self.mma_shape = mma_shape
 
     @staticmethod
-    fn _write_index_list(
+    def _write_index_list(
         mut writer: Some[Writer], list: IndexList, sep: StaticString
     ):
         comptime for i in range(list.size):
@@ -576,11 +575,11 @@ struct KernelConfig(ImplicitlyCopyable, Movable, Writable):
             writer.write(list[i])
 
     @always_inline
-    fn num_threads(self) -> Int:
+    def num_threads(self) -> Int:
         var num_warps = self.block_shape // self.warp_shape
         return num_warps.flattened_length() * WARP_SIZE
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("config_")
         Self._write_index_list(writer, self.block_shape, "x")
         writer.write("_")
@@ -588,7 +587,7 @@ struct KernelConfig(ImplicitlyCopyable, Movable, Writable):
         writer.write("_")
         Self._write_index_list(writer, self.mma_shape, "x")
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         self.write_to(writer)
 
 
@@ -647,19 +646,15 @@ struct MmaOp[
     # FP8 MMA Mode Detection
     # =========================================================================
     # FP8 supports two MMA configurations:
-    # - 16×16×128: Highest throughput (4× K), split-K LDS reads (2×16 elements)
-    # - 32×32×64:  Medium throughput (2× K), single 32-element LDS read
+    # - 16×16×128: Highest throughput (4× K), 32-element LDS reads (2×ds_read_b128)
+    # - 32×32×64:  Medium throughput (2× K), 32-element LDS reads (2×ds_read_b128)
     # Both use row-major LDS layout (MMA_K == BK) for correct partial blocks.
     # =========================================================================
     comptime use_fp8_16x16x128_mma = (
-        Self.in_type == DType.float8_e4m3fn
-        and Self.MMA_M == 16
-        and Self.MMA_K == 128
+        Self.in_type.is_float8() and Self.MMA_M == 16 and Self.MMA_K == 128
     )
     comptime use_fp8_32x32x64_mma = (
-        Self.in_type == DType.float8_e4m3fn
-        and Self.MMA_M == 32
-        and Self.MMA_K == 64
+        Self.in_type.is_float8() and Self.MMA_M == 32 and Self.MMA_K == 64
     )
 
     # Fragment widths:
@@ -667,7 +662,7 @@ struct MmaOp[
     # - lds_frag_width: Elements per LDS read (16 for FP8 16×16×128, else mma_frag_width)
     # - mma_frag_width: MMA hardware expectation = (MMA_M * MMA_K) // WARP_SIZE
     #   - BF16 16×16×32:  8 elements
-    #   - FP8  16×16×128: 32 elements (loaded as 2×16 split-K)
+    #   - FP8  16×16×128: 32 elements (loaded as 2×16 interleaved K-chunks)
     #   - FP8  32×32×64:  32 elements (single load)
     comptime load_width = simd_width_of[Self.in_type]()
     comptime mma_frag_width = (Self.MMA_M * Self.MMA_K) // WARP_SIZE
@@ -742,7 +737,7 @@ struct MmaOp[
     var out_reg_tile: Self.OutRegTile
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize MMA operation with register tiles."""
         comptime assert Self.WM % Self.MMA_M == 0
         comptime assert Self.WN % Self.MMA_N == 0
@@ -756,12 +751,12 @@ struct MmaOp[
         self.out_reg_tile = Self.OutRegTile.stack_allocation().fill(0)
 
     @always_inline
-    fn reset_accumulator(self):
+    def reset_accumulator(self):
         """Reset output register tile to zero."""
         _ = self.out_reg_tile.fill(0)
 
     @always_inline
-    fn load_a[which: Int](self, smem_tile: SMemTile[Self.in_type, ...]):
+    def load_a[which: Int](self, smem_tile: SMemTile[Self.in_type, ...]):
         """Load A[which] from LDS → registers.
 
         Accepts SMemTile with matching dtype - layout compatibility validated
@@ -782,7 +777,7 @@ struct MmaOp[
         ](smem_frag, reg_frag)
 
     @always_inline
-    fn load_b[which: Int](self, smem_tile: SMemTile[Self.in_type, ...]):
+    def load_b[which: Int](self, smem_tile: SMemTile[Self.in_type, ...]):
         """Load B[which] from LDS → registers.
 
         Accepts SMemTile with matching dtype - layout compatibility validated
@@ -803,7 +798,7 @@ struct MmaOp[
         ](smem_frag, reg_frag)
 
     @always_inline
-    fn mma[which_a: Int, which_b: Int](self):
+    def mma[which_a: Int, which_b: Int](self):
         """Execute MMA operations for a quadrant of the output tile.
 
         Accesses quadrant via .tile[] view into the contiguous out_reg_tile.
@@ -832,7 +827,6 @@ struct MmaOp[
         comptime for k in range(Self.num_k_mmas):
             comptime for m in range(Self.quadrant_m_mmas):
                 comptime for n in range(Self.quadrant_n_mmas):
-                    # stdlib mma() handles both BF16 and FP8 dispatch
                     mma(
                         c_accum_frag[m, n],
                         b_mma_frag[n, k],
@@ -883,9 +877,7 @@ struct TileBuffers[
     comptime mma_frag_width = (
         16 * Self.MMA_K
     ) // WARP_SIZE  # Assume MMA_M=16 or 32
-    comptime use_split_k = (
-        Self.in_type == DType.float8_e4m3fn and Self.MMA_K == 128
-    )
+    comptime use_split_k = (Self.in_type.is_float8() and Self.MMA_K == 128)
     comptime lds_frag_width = 16 if Self.use_split_k else Self.mma_frag_width
 
     # Swizzle parameters matching make_mma_swizzle
@@ -897,8 +889,7 @@ struct TileBuffers[
     comptime swizzle_subtile_cols = 4 * Self.load_width
     comptime elem_size = size_of[Self.in_type]()
     comptime swizzle_base = (
-        log2_floor(Self.frag_bytes) if Self.in_type
-        == DType.float8_e4m3fn else (
+        log2_floor(Self.frag_bytes) if Self.in_type.is_float8() else (
             log2_floor(Self.swizzle_subtile_cols // 2)
             + log2_floor(Self.elem_size)
         )
@@ -910,11 +901,12 @@ struct TileBuffers[
     ) if Self.enable_swizzle else Optional[Swizzle]()
 
     # FP8 uses row-major LDS layout for correct partial block OOB handling
-    comptime use_fp8_row_major = Self.in_type == DType.float8_e4m3fn
+    comptime use_fp8_row_major = Self.in_type.is_float8()
 
     # Half-tile dimensions (each warp group loads/uses one half independently)
-    # Note: half_BM == WM, so A half-tile == warp's A region
-    comptime half_BM = Self.BM // 2
+    # half_BM == WM so A half-tile matches the warp's A region exactly.
+    # This holds for both 2xN grids (BM//2 == WM) and 1xN grids (BM == WM).
+    comptime half_BM = Self.WM
     comptime half_BN = Self.BN // 2
 
     # MMA tile dimensions (2 tiles per warp dimension for quadrant processing)
@@ -958,9 +950,8 @@ struct TileBuffers[
     # With 4 warps: 256/8 = 32 rows per iteration
 
     # Global load counts for vmcnt tracking (load_to_lds ops per half-tile)
-    comptime vmcnt_per_load_a = (
-        Self.BM // 2
-    ) // Self.rows_per_load_iteration  # 8-warp A half
+    # half_BM = WM (A half-tile matches warp M region)
+    comptime vmcnt_per_load_a = Self.half_BM // Self.rows_per_load_iteration  # 8-warp A half
     comptime vmcnt_per_load_b = (
         Self.BN // 2
     ) // Self.rows_per_load_iteration  # 8-warp B half
@@ -970,9 +961,7 @@ struct TileBuffers[
     comptime rows_per_iter_4warp = (
         4 * WARP_SIZE
     ) // Self.loads_per_row  # 32 rows
-    comptime vmcnt_per_load_a_4warp = (
-        Self.BM // 2
-    ) // Self.rows_per_iter_4warp  # 4 ops
+    comptime vmcnt_per_load_a_4warp = Self.half_BM // Self.rows_per_iter_4warp  # 4 ops
     comptime vmcnt_per_load_b_4warp = (
         Self.BN // 2
     ) // Self.rows_per_iter_4warp  # 4 ops
@@ -987,20 +976,29 @@ struct TileBuffers[
     # =========================================================================
     # TileLoader Configuration
     # =========================================================================
-    comptime half_tile_layout = Layout.row_major(Self.half_BM, Self.BK)
+    # A and B use separate tile layouts since half_BM and half_BN may differ
+    # (e.g. skinny 128x256: half_BM=64, half_BN=128)
+    comptime a_half_tile_layout = Layout.row_major(Self.half_BM, Self.BK)
+    comptime b_half_tile_layout = Layout.row_major(Self.half_BN, Self.BK)
 
-    # TileLoader parameterized on source layout, with use_full_tile_width for FP8
-    comptime TileLoader[src_layout: Layout] = TileLoaderLDS[
+    comptime ATileLoader = TileLoaderLDS[
         Self.in_type,
-        src_layout,
-        Self.half_tile_layout,
+        Self.a_layout,
+        Self.a_half_tile_layout,
         Self.loading_warps,
         Self.byte_swizzle,
         Self.load_width,
-        Self.use_fp8_row_major,  # FP8: row-major for partial block support
+        Self.use_fp8_row_major,
     ]
-    comptime ATileLoader = Self.TileLoader[Self.a_layout]
-    comptime BTileLoader = Self.TileLoader[Self.b_layout]
+    comptime BTileLoader = TileLoaderLDS[
+        Self.in_type,
+        Self.b_layout,
+        Self.b_half_tile_layout,
+        Self.loading_warps,
+        Self.byte_swizzle,
+        Self.load_width,
+        Self.use_fp8_row_major,
+    ]
 
     # MMA tiles: [stage][half] for double-buffered compute
     var a_mma_tiles: Tuple[Self.AMmaTilePair, Self.AMmaTilePair]
@@ -1023,7 +1021,7 @@ struct TileBuffers[
     var warp_shift_rows: Int
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         a: LayoutTensor[Self.in_type, Self.a_layout, ...],
         b: LayoutTensor[_, Self.b_layout, ...],
@@ -1060,8 +1058,13 @@ struct TileBuffers[
         var a_s0 = a_s0_g0 if warp_id_m == 0 else a_s0_g1
         var a_s1 = a_s1_g0 if warp_id_m == 0 else a_s1_g1
 
+        # warps_per_b_half: number of N-warps sharing each B half-tile
+        # 256x256 (2x4 grid): 4/2 = 2 warps per B half
+        # 128x512 (1x8 grid): 8/2 = 4 warps per B half
+        comptime num_warps_n = Self.BN // Self.WN
+        comptime warps_per_b_half = num_warps_n // 2
         var b_half_idx, b_local_n = divmod(
-            warp_id_n, 2
+            warp_id_n, warps_per_b_half
         )  # which B half, position within
         var b_s0 = b_s0_h0 if b_half_idx == 0 else b_s0_h1
         var b_s1 = b_s1_h0 if b_half_idx == 0 else b_s1_h1
@@ -1128,7 +1131,7 @@ struct TileBuffers[
     # =========================================================================
 
     @always_inline
-    fn load_a[stage: Int, which: Int](self, *, k: Int):
+    def load_a[stage: Int, which: Int](self, *, k: Int):
         """Load A[stage][which] from global to LDS using all 8 warps."""
         self.loader_a.load_tile(
             self.a_load_tiles[stage][which],
@@ -1137,7 +1140,7 @@ struct TileBuffers[
         )
 
     @always_inline
-    fn load_b[stage: Int, which: Int](self, *, k: Int):
+    def load_b[stage: Int, which: Int](self, *, k: Int):
         """Load B[stage][which] from global to LDS using all 8 warps."""
         self.loader_b.load_tile(
             self.b_load_tiles[stage][which],
@@ -1150,12 +1153,12 @@ struct TileBuffers[
     # =========================================================================
 
     @always_inline
-    fn _load_tile_4warp[
+    def _load_tile_4warp[
         half_data_rows: Int,
         which: Int,
     ](
         self,
-        loader: Self.TileLoader[_],
+        loader: TileLoaderLDS[Self.in_type, ...],
         dst_tile: Self.HalfTile[half_data_rows],
         k_offset: Int,
     ):
@@ -1203,7 +1206,7 @@ struct TileBuffers[
     # =========================================================================
 
     @always_inline
-    fn load_a_as_group[
+    def load_a_as_group[
         stage: Int,
         target_group: Int,
     ](self, caller_group: Int, *, k: Int):
@@ -1215,7 +1218,7 @@ struct TileBuffers[
         )
 
     @always_inline
-    fn load_b_as_group[
+    def load_b_as_group[
         stage: Int,
         which: Int,
     ](self, caller_group: Int, loading_group: Int, *, k: Int):
@@ -1238,6 +1241,7 @@ struct AMDPingPongMatmul[
     /,
     # Enable 16×32 swizzle pattern for bank conflict avoidance
     enable_swizzle: Bool,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ]:
     """8-warp ping-pong matmul for AMD MI355X.
 
@@ -1308,24 +1312,24 @@ struct AMDPingPongMatmul[
     comptime LGKM_PER_LOAD_AB = Self.LGKM_PER_LOAD_A + Self.LGKM_PER_LOAD_B  # 12
 
     # Global → LDS (vmcnt): load_to_lds ops per buffers.load_* call (8-warp)
+    # half_BM = WM (matches TileBuffers), half_BN = BN // 2
     comptime loads_per_row = Self.BK // Self.load_width  # 8
     comptime loading_threads_8warp = 8 * WARP_SIZE  # 512
     comptime rows_per_iter_8warp = Self.loading_threads_8warp // Self.loads_per_row  # 64
-    comptime VMCNT_PER_LOAD_A = (Self.BM // 2) // Self.rows_per_iter_8warp  # 2
+    comptime half_BM = Self.config.warp_shape[0]  # WM
+    comptime VMCNT_PER_LOAD_A = Self.half_BM // Self.rows_per_iter_8warp  # 2
     comptime VMCNT_PER_LOAD_B = (Self.BN // 2) // Self.rows_per_iter_8warp  # 2
 
     # 4-warp loading (vmcnt): for load_a_as_group / load_b_as_group
     comptime loading_threads_4warp = 4 * WARP_SIZE  # 256
     comptime rows_per_iter_4warp = Self.loading_threads_4warp // Self.loads_per_row  # 32
-    comptime VMCNT_PER_LOAD_A_4WARP = (
-        Self.BM // 2
-    ) // Self.rows_per_iter_4warp  # 4
+    comptime VMCNT_PER_LOAD_A_4WARP = Self.half_BM // Self.rows_per_iter_4warp  # 4
     comptime VMCNT_PER_LOAD_B_4WARP = (
         Self.BN // 2
     ) // Self.rows_per_iter_4warp  # 4
 
     @staticmethod
-    fn validate_config():
+    def validate_config():
         """Validate the kernel configuration."""
         comptime assert (
             Self.BM % Self.WM == 0
@@ -1358,17 +1362,17 @@ struct AMDPingPongMatmul[
         )
     )
     @staticmethod
-    fn matmul_ping_pong(
+    def matmul_ping_pong(
         a: LayoutTensor[
             Self.a_type,
             Self.a_layout,
-            MutAnyOrigin,
+            ImmutAnyOrigin,
             address_space=AddressSpace.GENERIC,
         ],
         b: LayoutTensor[
             Self.b_type,
             Self.b_layout,
-            MutAnyOrigin,
+            ImmutAnyOrigin,
             address_space=AddressSpace.GENERIC,
         ],
         c: LayoutTensor[
@@ -1471,8 +1475,12 @@ struct AMDPingPongMatmul[
         # MMA operation encapsulates register tiles and compute operations
         var mma_op = MmaOpType()
 
-        # Warp position in 2×4 grid
+        # Warp position in warp grid
         var warp_id_m, warp_id_n = divmod(warp_id, num_warps_n)
+
+        # Warp group for ping-pong scheduling (always 2 groups of 4 warps)
+        # Decoupled from warp_id_m to support both 2xN and 1xN warp grids
+        var warp_group_id = warp_id // 4
 
         # Tile Buffers struct
         var buffers = BuffersType(
@@ -1480,11 +1488,11 @@ struct AMDPingPongMatmul[
         )
 
         @always_inline
-        fn s_barrier():
+        def s_barrier():
             llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
 
         @always_inline
-        fn s_setprio[priority: Int16]():
+        def s_setprio[priority: Int16]():
             llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](priority)
 
         # ================================================================
@@ -1514,7 +1522,7 @@ struct AMDPingPongMatmul[
         # Helper to extract compute logic (used by both groups)
         @parameter
         @always_inline
-        fn compute_stage[stage: Int]():
+        def compute_stage[stage: Int]():
             """Execute MMA operations for a given stage with fine-grained lgkmcnt.
 
             Dependencies:
@@ -1558,25 +1566,29 @@ struct AMDPingPongMatmul[
         # TILE ORGANIZATION AND PING-PONG SCHEDULE
         # ================================================================
         #
-        # BLOCK TILE (256×256, 8 warps in 2×4 grid):
-        # ┌─────────────┬─────────────┬─────────────┬─────────────┐
-        # │   Warp 0    │   Warp 1    │   Warp 2    │   Warp 3    │ group 0
-        # │   128×64    │   128×64    │   128×64    │   128×64    │
-        # ├─────────────┼─────────────┼─────────────┼─────────────┤
-        # │   Warp 4    │   Warp 5    │   Warp 6    │   Warp 7    │ group 1
-        # │   128×64    │   128×64    │   128×64    │   128×64    │
-        # └─────────────┴─────────────┴─────────────┴─────────────┘
-        #   warp_id_m = warp_id // 4, warp_id_n = warp_id % 4
+        # BLOCK TILE (BM×BN, 8 warps in num_warps_m × num_warps_n grid):
+        #
+        # Standard (256×256, 2×4):            Skinny (128×256, 2×4):
+        # ┌──────┬──────┬──────┬──────┐       ┌──────┬──────┬──────┬──────┐
+        # │  W0  │  W1  │  W2  │  W3  │ g0    │  W0  │  W1  │  W2  │  W3  │ g0
+        # │128×64│128×64│128×64│128×64│       │ 64×64│ 64×64│ 64×64│ 64×64│
+        # ├──────┼──────┼──────┼──────┤       ├──────┼──────┼──────┼──────┤
+        # │  W4  │  W5  │  W6  │  W7  │ g1    │  W4  │  W5  │  W6  │  W7  │ g1
+        # │128×64│128×64│128×64│128×64│       │ 64×64│ 64×64│ 64×64│ 64×64│
+        # └──────┴──────┴──────┴──────┘       └──────┴──────┴──────┴──────┘
+        #
+        # warp_group_id = warp_id // 4 (group selection, decoupled from grid)
+        # warp_id_m, warp_id_n = divmod(warp_id, num_warps_n) (tile coords)
         #
         # DOUBLE BUFFERING (ping-pong):
         #   Stage 0: A[0][0,1], B[0][0,1]  ←→  Stage 1: A[1][0,1], B[1][0,1]
         #   K loop: compute[0] while load[1], then compute[1] while load[0]
         #
-        # WARP OUTPUT QUADRANTS (128×64 → 4 quadrants):
+        # WARP OUTPUT QUADRANTS (WM×WN → 4 quadrants):
         # ┌─────────────────┬─────────────────┐
-        # │ mma[0,0] 64×32  │ mma[0,1] 64×32  │
+        # │ mma[0,0]        │ mma[0,1]        │
         # ├─────────────────┼─────────────────┤
-        # │ mma[1,0] 64×32  │ mma[1,1] 64×32  │
+        # │ mma[1,0]        │ mma[1,1]        │
         # └─────────────────┴─────────────────┘
         #
         # ================================================================
@@ -1585,10 +1597,25 @@ struct AMDPingPongMatmul[
         # - USE_SIMPLIFIED_SCHEDULE: Simple schedule with clear load/compute phases
         # - USE_FP8_HIPKITTENS_SCHEDULE: Optimized FP8 16×16×128 (from HipKittens)
         # - else: Optimized BF16 schedule with aggressive interleaving
-        comptime USE_SIMPLIFIED_SCHEDULE = False
-        comptime USE_FP8_HIPKITTENS_SCHEDULE = (
-            in_type == DType.float8_e4m3fn and MMA_K == 128
+        # BM=192 uses simplified schedule because half_BM=96 doesn't divide
+        # evenly by rows_per_iter_8warp=64 (96/64=1.5), so 8-warp loading fails.
+        # 4-warp loading works: 96/32=3 iterations.
+        comptime _8warp_loading_ok = (
+            Self.half_BM % Self.rows_per_iter_8warp == 0
         )
+        comptime USE_SIMPLIFIED_SCHEDULE = not _8warp_loading_ok
+        comptime USE_FP8_HIPKITTENS_SCHEDULE = (
+            in_type.is_float8() and MMA_K == 128 and _8warp_loading_ok
+        )
+
+        # Parameterized vmcnt wait counts for 8-warp loading schedules.
+        # Adapts automatically to different block shapes (256x256, 128x256, 192x256).
+        comptime VA = Self.VMCNT_PER_LOAD_A
+        comptime VB = Self.VMCNT_PER_LOAD_B
+        comptime vmcnt_prologue = VA + VB
+        comptime vmcnt_stage1_partial = VA + 2 * VB
+        comptime vmcnt_epilogue_drain = VA + VB
+        comptime vmcnt_epilogue_last = VA
 
         comptime if USE_SIMPLIFIED_SCHEDULE:
             # ================================================================
@@ -1606,21 +1633,21 @@ struct AMDPingPongMatmul[
 
                 if k == 0:
                     # Prologue: load stage 0
-                    buffers.load_a_as_group[0, 0](warp_id_m, k=k0)
-                    buffers.load_a_as_group[0, 1](warp_id_m, k=k0)
-                    buffers.load_b_as_group[0, 0](warp_id_m, 0, k=k0)
-                    buffers.load_b_as_group[0, 1](warp_id_m, 1, k=k0)
+                    buffers.load_a_as_group[0, 0](warp_group_id, k=k0)
+                    buffers.load_a_as_group[0, 1](warp_group_id, k=k0)
+                    buffers.load_b_as_group[0, 0](warp_group_id, 0, k=k0)
+                    buffers.load_b_as_group[0, 1](warp_group_id, 1, k=k0)
                     s_waitcnt[vmcnt=0]()
                     s_barrier()
-                    if warp_id_m == 1:
+                    if warp_group_id == 1:
                         s_barrier()  # Warp stagger
 
                 # Load stage 1
                 s_barrier()
-                buffers.load_a_as_group[1, 0](warp_id_m, k=k1)
-                buffers.load_a_as_group[1, 1](warp_id_m, k=k1)
-                buffers.load_b_as_group[1, 0](warp_id_m, 0, k=k1)
-                buffers.load_b_as_group[1, 1](warp_id_m, 1, k=k1)
+                buffers.load_a_as_group[1, 0](warp_group_id, k=k1)
+                buffers.load_a_as_group[1, 1](warp_group_id, k=k1)
+                buffers.load_b_as_group[1, 0](warp_group_id, 0, k=k1)
+                buffers.load_b_as_group[1, 1](warp_group_id, 1, k=k1)
                 s_waitcnt[vmcnt=0]()
 
                 # Compute stage 0
@@ -1629,8 +1656,8 @@ struct AMDPingPongMatmul[
 
                 # Prefetch A for next iteration (overlaps with compute[1])
                 if k < K - BK * 2:
-                    buffers.load_a_as_group[0, 0](warp_id_m, k=k_next)
-                    buffers.load_a_as_group[0, 1](warp_id_m, k=k_next)
+                    buffers.load_a_as_group[0, 0](warp_group_id, k=k_next)
+                    buffers.load_a_as_group[0, 1](warp_group_id, k=k_next)
 
                 # Compute stage 1
                 s_barrier()
@@ -1639,12 +1666,12 @@ struct AMDPingPongMatmul[
                 # Prefetch B for next iteration
                 if k < K - BK * 2:
                     s_barrier()
-                    buffers.load_b_as_group[0, 0](warp_id_m, 0, k=k_next)
-                    buffers.load_b_as_group[0, 1](warp_id_m, 1, k=k_next)
+                    buffers.load_b_as_group[0, 0](warp_group_id, 0, k=k_next)
+                    buffers.load_b_as_group[0, 1](warp_group_id, 1, k=k_next)
                     s_waitcnt[vmcnt=0]()
 
             # Epilogue: rebalance warp stagger
-            if warp_id_m == 0:
+            if warp_group_id == 0:
                 s_barrier()
 
         elif USE_FP8_HIPKITTENS_SCHEDULE:
@@ -1655,7 +1682,6 @@ struct AMDPingPongMatmul[
             # Based on HipKittens 8_wave.cu schedule.
             # ================================================================
 
-            # Wait counts from HipKittens
             comptime lgkm_partial = 8  # lgkmcnt(8)
 
             # === PROLOGUE ===
@@ -1666,26 +1692,27 @@ struct AMDPingPongMatmul[
             buffers.load_a[0, 1](k=0)
 
             # Warp staggering
-            if warp_id_m == 1:
+            if warp_group_id == 1:
                 s_barrier()
 
-            s_waitcnt[vmcnt=4]()
+            s_waitcnt[vmcnt=UInt32(vmcnt_prologue)]()
             s_barrier()
 
-            # Stage 1: 3 tiles at k=0 (A[1,1] loaded in main loop)
-            buffers.load_a[1, 0](k=0)
-            buffers.load_b[1, 0](k=0)
-            buffers.load_b[1, 1](k=0)
+            # Stage 1: 3 tiles at k=BK (A[1,1] loaded in main loop)
+            buffers.load_a[1, 0](k=BK)
+            buffers.load_b[1, 0](k=BK)
+            buffers.load_b[1, 1](k=BK)
 
-            s_waitcnt[vmcnt=6]()
+            s_waitcnt[vmcnt=UInt32(vmcnt_stage1_partial)]()
             s_barrier()
 
             # === MAIN LOOP ===
             # Each iteration processes 2*BK elements (one full ping-pong cycle).
             # Loop variable k is the K offset for stage 0 prefetch.
-            for k in range(BK, K - BK, 2 * BK):
+            # Prologue loaded stage 0 at k=0 and stage 1 at k=BK.
+            for k in range(BK * 2, K, BK * 2):
                 # K offsets: stage 1 completion matches prologue/previous prefetch,
-                # stage 0 prefetch+completion at same K, stage 1 prefetch for next iter
+                # stage 0 prefetch for current iter, stage 1 prefetch for next iter
                 var k_complete_1 = k - BK  # Matches stage 1's other tiles
                 var k_prefetch_0 = k  # All 4 stage 0 tiles at same K
                 var k_complete_0 = k  # Matches stage 0's prefetch
@@ -1708,7 +1735,6 @@ struct AMDPingPongMatmul[
                 schedule_barrier()
 
                 mma_op.load_b[1](buffers.b_mma_tiles[0][1])
-                buffers.load_a[0, 0](k=k_prefetch_0)
                 s_barrier()
 
                 s_waitcnt[lgkmcnt=0]()
@@ -1718,6 +1744,7 @@ struct AMDPingPongMatmul[
                 s_barrier()
 
                 mma_op.load_a[1](buffers.a_mma_tiles[0][1])
+                buffers.load_a[0, 0](k=k_prefetch_0)
                 buffers.load_b[0, 0](k=k_prefetch_0)
                 s_barrier()
 
@@ -1729,7 +1756,7 @@ struct AMDPingPongMatmul[
                 schedule_barrier()
 
                 buffers.load_b[0, 1](k=k_prefetch_0)
-                s_waitcnt[vmcnt=6]()
+                s_waitcnt[vmcnt=UInt32(vmcnt_stage1_partial)]()
                 s_barrier()
 
                 s_setprio[1]()
@@ -1754,7 +1781,6 @@ struct AMDPingPongMatmul[
                 schedule_barrier()
 
                 mma_op.load_b[1](buffers.b_mma_tiles[1][1])
-                buffers.load_a[1, 0](k=k_prefetch_1)
                 s_barrier()
 
                 s_waitcnt[lgkmcnt=0]()
@@ -1764,6 +1790,7 @@ struct AMDPingPongMatmul[
                 s_barrier()
 
                 mma_op.load_a[1](buffers.a_mma_tiles[1][1])
+                buffers.load_a[1, 0](k=k_prefetch_1)
                 buffers.load_b[1, 0](k=k_prefetch_1)
                 s_barrier()
 
@@ -1775,7 +1802,7 @@ struct AMDPingPongMatmul[
                 schedule_barrier()
 
                 buffers.load_b[1, 1](k=k_prefetch_1)
-                s_waitcnt[vmcnt=6]()
+                s_waitcnt[vmcnt=UInt32(vmcnt_stage1_partial)]()
                 s_barrier()
 
                 s_setprio[1]()
@@ -1787,7 +1814,7 @@ struct AMDPingPongMatmul[
             # Process final stage 0, then final stage 1
             mma_op.load_b[0](buffers.b_mma_tiles[0][0])
             mma_op.load_a[0](buffers.a_mma_tiles[0][0])
-            buffers.load_a[1, 1](k=K - 2 * BK)  # Complete stage 1
+            buffers.load_a[1, 1](k=K - BK)  # Complete stage 1
             s_barrier()
 
             s_waitcnt[lgkmcnt=0]()
@@ -1816,7 +1843,7 @@ struct AMDPingPongMatmul[
             s_barrier()
 
             mma_op.load_b[0](buffers.b_mma_tiles[1][0])
-            s_waitcnt[vmcnt=4]()
+            s_waitcnt[vmcnt=UInt32(vmcnt_epilogue_drain)]()
             s_barrier()
 
             s_waitcnt[lgkmcnt=0]()
@@ -1827,7 +1854,7 @@ struct AMDPingPongMatmul[
 
             # Last iteration (stage 1 at k = K - BK)
             mma_op.load_a[0](buffers.a_mma_tiles[1][0])
-            s_waitcnt[vmcnt=2]()
+            s_waitcnt[vmcnt=UInt32(vmcnt_epilogue_last)]()
             s_barrier()
 
             s_waitcnt[lgkmcnt=0]()
@@ -1857,8 +1884,8 @@ struct AMDPingPongMatmul[
             s_setprio[0]()
             s_barrier()
 
-            # Re-balance warp staggering: if (warp_m == 0) barrier
-            if warp_id_m == 0:
+            # Re-balance warp staggering
+            if warp_group_id == 0:
                 s_barrier()
 
         else:
@@ -1877,11 +1904,10 @@ struct AMDPingPongMatmul[
             buffers.load_a[0, 1](k=0)
 
             # Warp staggering
-            if warp_id_m == 1:
+            if warp_group_id == 1:
                 s_barrier()
 
-            # HipKittens-style: vmcnt=4 after 4 loads (more conservative for BF16)
-            s_waitcnt[vmcnt=4]()
+            s_waitcnt[vmcnt=UInt32(vmcnt_prologue)]()
             s_barrier()
 
             # Stage 1: 3 tiles at k=BK (A[1,1] loaded in main loop)
@@ -1889,8 +1915,7 @@ struct AMDPingPongMatmul[
             buffers.load_a[1, 0](k=BK)
             buffers.load_b[1, 1](k=BK)
 
-            # HipKittens-style: vmcnt=6 after 7 loads
-            s_waitcnt[vmcnt=6]()
+            s_waitcnt[vmcnt=UInt32(vmcnt_stage1_partial)]()
             s_barrier()
 
             # === MAIN LOOP ===
@@ -1942,7 +1967,7 @@ struct AMDPingPongMatmul[
 
                 mma_op.load_b[0](buffers.b_mma_tiles[1][0])
                 buffers.load_b[0, 1](k=k_prefetch_0)
-                s_waitcnt[vmcnt=6]()
+                s_waitcnt[vmcnt=UInt32(vmcnt_stage1_partial)]()
                 s_barrier()
 
                 s_setprio[1]()
@@ -1986,7 +2011,7 @@ struct AMDPingPongMatmul[
                 schedule_barrier()
 
                 buffers.load_b[1, 1](k=k_prefetch_1)
-                s_waitcnt[vmcnt=6]()
+                s_waitcnt[vmcnt=UInt32(vmcnt_stage1_partial)]()
                 s_barrier()
 
                 s_setprio[1]()
@@ -2061,64 +2086,85 @@ struct AMDPingPongMatmul[
             s_barrier()
 
             # Re-balance warp staggering
-            if warp_id_m == 0:
+            if warp_group_id == 0:
                 s_barrier()
 
         # ================================================================
-        # Output Store using write_output_fragments (reused from matmul.mojo)
+        # Output Store
         # ================================================================
-        # Thread layout for output: maps lane_id to (m_offset, n_offset)
-        # For 16×16 MMA with accum_width=4:
-        #   lane_crd[0] = lane_id % 16 (m offset within MMA tile)
-        #   lane_crd[1] = lane_id // 16 (n group, multiplied by accum_width)
+        # MFMA 16x16 output: D = A_operand * B_operand^T
+        #   Per-lane accumulator layout (accum_width=4 values per lane):
+        #     MFMA_row = (lane // MMA_M) * accum_width + f
+        #     MFMA_col = lane % MMA_N
+        #
+        # MMA call: mma(d, b_frag, a_frag, d) — B is MFMA's A-operand
+        # (drives MFMA rows → N-coords), A is MFMA's B-operand (drives
+        # MFMA cols → M-coords). The store transposes to compensate:
+        #     stored_row = M-coord = m_mma*MMA_M + MFMA_col
+        #     stored_col = N-coord = n_mma*MMA_N + MFMA_row
+
+        var warp_tile_m = m + WM * warp_id_m
+        var warp_tile_n = n + WN * warp_id_n
+
         comptime output_thread_layout = Layout(
             IntTuple(MMA_M, WARP_SIZE // MMA_M),
             IntTuple(1, MMA_M),
         )
-
-        # Fragment layout: (num_m_mmas, num_n_mmas, accum_width)
-        # Strides must match out_reg_layout = row_major(num_m_mmas, num_n_mmas * accum_width)
-        # Element at (m, n, f) is at: m * (num_n_mmas * accum_width) + n * accum_width + f
         comptime out_frag_layout = Layout(
             IntTuple(num_m_mmas, num_n_mmas, accum_width),
             IntTuple(num_n_mmas * accum_width, accum_width, 1),
         )
 
-        # Reshape MMA output to fragment view and vectorize
         var c_reg_fragment = mma_op.out_reg_tile.reshape[
             out_frag_layout
         ]().vectorize[1, 1, accum_width]()
 
-        # Create warp tile in output matrix
-        var warp_tile_m = m + WM * warp_id_m
-        var warp_tile_n = n + WN * warp_id_n
+        if warp_tile_m < M and warp_tile_n < N:
+            var c_warp_tile = c.tile[WM, WN](
+                warp_tile_m // WM, warp_tile_n // WN
+            )
+            var c_gmem_fragment = c_warp_tile.vectorize[
+                1, accum_width
+            ]().distribute[output_thread_layout](Int(lane_id))
 
-        var c_warp_tile = c.tile[WM, WN](warp_tile_m // WM, warp_tile_n // WN)
-
-        # Create global memory fragment distributed across threads
-        var c_gmem_fragment = c_warp_tile.vectorize[
-            1, accum_width
-        ]().distribute[output_thread_layout](lane_id)
-
-        # Use shared write_output_fragments function
-        write_output_fragments[
-            Self.c_type,
-            accum_width,
-            MMA_M,
-            MMA_N,
-            output_thread_layout,
-        ](
-            c_reg_fragment,
-            c_gmem_fragment,
-            warp_tile_m,
-            warp_tile_n,
-            M,
-            N,
-        )
+            # Epilogue path: use coordinate-based stores (correct for
+            # the pingpong kernel's register layout)
+            comptime if Self.elementwise_lambda_fn:
+                write_output_fragments[
+                    Self.c_type,
+                    accum_width,
+                    MMA_M,
+                    MMA_N,
+                    output_thread_layout,
+                    Self.elementwise_lambda_fn,
+                ](
+                    c_reg_fragment,
+                    c_gmem_fragment,
+                    warp_tile_m,
+                    warp_tile_n,
+                    M,
+                    N,
+                )
+            else:
+                # Direct store path: uses c_gmem_fragment tile view
+                write_output_fragments[
+                    Self.c_type,
+                    accum_width,
+                    MMA_M,
+                    MMA_N,
+                    output_thread_layout,
+                ](
+                    c_reg_fragment,
+                    c_gmem_fragment,
+                    warp_tile_m,
+                    warp_tile_n,
+                    M,
+                    N,
+                )
 
 
 @always_inline
-fn ping_pong_matmul[
+def ping_pong_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -2135,22 +2181,18 @@ fn ping_pong_matmul[
 ) raises:
     comptime assert a_type == b_type, "A and B must have the same type"
     comptime assert (
-        a_type == DType.bfloat16 or a_type == DType.float8_e4m3fn
+        a_type == DType.bfloat16 or a_type.is_float8()
     ), "A must be bfloat16 or float8_e4m3fn"
 
     # Select kernel based on input dtype
-    comptime is_fp8 = a_type == DType.float8_e4m3fn
-
-    # Block tile dimensions (used by all configurations)
-    comptime BM = 256
-    comptime BN = 256
+    comptime is_fp8 = a_type.is_float8()
 
     var N = c_device_tensor.dim(1)
     var M = c_device_tensor.dim(0)
 
     @always_inline
     @parameter
-    fn run_kernel[config: KernelConfig]() raises:
+    def run_kernel[config: KernelConfig]() raises:
         comptime kernel = AMDPingPongMatmul[
             a_type,
             b_type,
@@ -2166,7 +2208,10 @@ fn ping_pong_matmul[
             a_device_tensor,
             b_device_tensor,
             c_device_tensor,
-            grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+            grid_dim=(
+                ceildiv(N, config.block_shape[1]),
+                ceildiv(M, config.block_shape[0]),
+            ),
             block_dim=config.num_threads(),
         )
 
@@ -2174,30 +2219,50 @@ fn ping_pong_matmul[
     # Fallback to 16×16×128 for M % 32 != 0 (still high perf, supports any M)
     # BF16 uses 16×16×32 with BK=64
     #
-    # Swizzle enabled for all configs (each has matched write/read swizzle patterns)
+    # Skinny 128x256 wins in a mid-M band whose boundaries depend on N:
+    #   Large N (>=4096): skinny wins for 150 < M <= 512
+    #   Small N (<4096):  skinny wins for 512 < M <= 2048
+    # Outside those bands, baseline 256x256 is faster.
     comptime if is_fp8:
-        # FP8 32×32×64 MMA with BK=128 (split-K: 2 MMAs per tile)
-        # Requires M % 32 == 0: transpose reads mix data across 32 rows,
-        # and split-K offsets corrupt partial groups with OOB zeros
+        comptime BM = 256
+        comptime BN = 256
         comptime BK = 128
+
+        # Standard 256x256 configs
         comptime config_32x32 = KernelConfig(
             block_shape=Index(BM, BN, BK),
             warp_shape=Index(BM // 2, BN // 4, BK),
             mma_shape=Index(32, 32, 64),
         )
-        # FP8 16×16×128 fallback for unaligned M
         comptime config_16x16 = KernelConfig(
             block_shape=Index(BM, BN, BK),
             warp_shape=Index(BM // 2, BN // 4, BK),
             mma_shape=Index(16, 16, 128),
         )
 
-        if M % 32 == 0:
-            run_kernel[config_32x32]()
+        # Skinny 128x256 config (170 FLOP/B, 96 KB LDS)
+        comptime skinny_config = KernelConfig(
+            block_shape=Index(128, BN, BK),
+            warp_shape=Index(64, BN // 4, BK),
+            mma_shape=Index(16, 16, 128),
+        )
+
+        if N >= 4096:
+            use_skinny = M > 150 and M <= 512
         else:
-            run_kernel[config_16x16]()
+            use_skinny = M > 512 and M <= 2048
+
+        if use_skinny:
+            run_kernel[skinny_config]()
+        else:
+            if M % 32 == 0:
+                run_kernel[config_32x32]()
+            else:
+                run_kernel[config_16x16]()
     else:
         # BF16: 16×16×32 MMA with BK=64 (~1.55 TFLOPS)
+        comptime BM = 256
+        comptime BN = 256
         comptime BK = 64
         comptime config = KernelConfig(
             block_shape=Index(BM, BN, BK),

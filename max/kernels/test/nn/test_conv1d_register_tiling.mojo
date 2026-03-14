@@ -56,7 +56,7 @@ comptime filter_shape = row_major[num_micro_tile, S, C, micro_kernel_f_size]()
 
 
 @export(ABI="C")
-fn conv1d_register_tiling(
+def conv1d_register_tiling(
     output: UnsafePointer[Scalar[type], MutAnyOrigin],
     input: UnsafePointer[Scalar[type], MutAnyOrigin],
     filter: UnsafePointer[Scalar[type], MutAnyOrigin],
@@ -102,7 +102,7 @@ fn conv1d_register_tiling(
     )
 
 
-fn test_conv1d_register_tiling() raises:
+def test_conv1d_register_tiling() raises:
     var output_stack = InlineArray[Scalar[type], Int(output_shape.product())](
         uninitialized=True
     )

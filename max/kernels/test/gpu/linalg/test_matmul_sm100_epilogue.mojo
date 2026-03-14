@@ -22,7 +22,7 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
@@ -144,7 +144,7 @@ def test_matmul_sm100_epilogue[
     @parameter
     @always_inline
     @__copy_capture(c_tensor)
-    fn test_lambda_add_coords_summ[
+    def test_lambda_add_coords_summ[
         _dtype: DType,
         width: Int,
         *,
@@ -220,7 +220,7 @@ def test_matmul_sm100_epilogue[
     @parameter
     @always_inline
     @__copy_capture(c_tensor_host)
-    fn test_lambda_add_coords_summ_local[
+    def test_lambda_add_coords_summ_local[
         _dtype: DType,
         width: Int,
         *,
@@ -296,17 +296,9 @@ def main() raises:
                 )
 
                 comptime for register_based_epilogue in [True, False]:
-                    # SMEM epilogue has issues for MMA_M==128 and odd MMA_N
-                    comptime if (
-                        not register_based_epilogue
-                        and mma_m_scale == 1
-                        and mma_n_scale % 2 != 0
-                    ):
-                        continue
-
                     # Helper to run test with varying cluster/k_group/sizes
                     @parameter
-                    fn run[
+                    def run[
                         cluster_m: Int,
                         cluster_n: Int,
                         k_group: Int = 1,

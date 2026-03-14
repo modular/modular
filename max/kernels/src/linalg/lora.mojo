@@ -26,11 +26,10 @@ from std.gpu.host.info import B200
 from std.utils import IndexList
 from std.utils.index import Index
 import std.itertools
-from layout import IntTuple, Layout, TileTensor
-from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
+from layout import IntTuple, Layout, RuntimeLayout, TileTensor, UNKNOWN_VALUE
 
 
-fn shrink_qkv_permute_3mn_sm100[
+def shrink_qkv_permute_3mn_sm100[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -104,7 +103,7 @@ fn shrink_qkv_permute_3mn_sm100[
     @always_inline
     @__copy_capture(c_tensor_lora, M)
     @parameter
-    fn permute_dim_lora_bmn[
+    def permute_dim_lora_bmn[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         """Epilogue: permute flat (M, 3N) columns to planar (3, M, N) tiles.

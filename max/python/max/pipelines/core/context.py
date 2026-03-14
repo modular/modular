@@ -768,7 +768,7 @@ class PixelContext:
         return GenerationOutput(
             request_id=self.request_id,
             final_status=self.status,
-            output=[OutputImageContent.from_numpy(self.image, format="png")],
+            output=[OutputImageContent.from_numpy(self.image, format="jpeg")],
         )
 
 

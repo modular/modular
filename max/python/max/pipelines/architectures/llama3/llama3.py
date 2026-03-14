@@ -118,14 +118,16 @@ class Llama3(Transformer):
             )
         else:
             linear_cls = functools.partial(
-                Linear, float8_config=config.float8_config
+                Linear, quant_config=config.quant_config
             )
-        if config.stacked_mlp and config.float8_config:
-            raise ValueError("StackedMLP and float8 are not compatible")
+        if config.stacked_mlp and config.quant_config:
+            raise ValueError(
+                "StackedMLP and scaled quantization are not compatible"
+            )
         mlp_cls = (
             StackedMLP
             if config.stacked_mlp
-            else functools.partial(MLP, float8_config=config.float8_config)
+            else functools.partial(MLP, quant_config=config.quant_config)
         )
         attention_cls: Callable[..., AttentionWithRope]
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
@@ -156,7 +158,7 @@ class Llama3(Transformer):
                 has_bias=config.attention_bias,
                 max_num_loras=config.lora_config.max_num_loras,
                 max_lora_rank=config.lora_config.max_lora_rank,
-                float8_config=config.float8_config,
+                quant_config=config.quant_config,
             )
         else:
             attention_cls = functools.partial(
@@ -165,7 +167,7 @@ class Llama3(Transformer):
                 scale=config.attention_multiplier,
                 clip_qkv=config.clip_qkv,
                 has_bias=config.attention_bias,
-                float8_config=config.float8_config,
+                quant_config=config.quant_config,
             )
 
         layers = [
@@ -201,8 +203,8 @@ class Llama3(Transformer):
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             embedding_output_dtype = DType.bfloat16
             embedding_output_quantization = None
-        if config.float8_config and config.float8_config.embedding_output_dtype:
-            embedding_output_dtype = config.float8_config.embedding_output_dtype
+        if config.quant_config and config.quant_config.embedding_output_dtype:
+            embedding_output_dtype = config.quant_config.embedding_output_dtype
         embedding_layer = Embedding(
             config.vocab_size,
             config.hidden_size,

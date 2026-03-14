@@ -18,7 +18,7 @@ from std.python.bindings import PythonModuleBuilder
 
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     try:
         var b = PythonModuleBuilder("mojo_module")
 
@@ -63,7 +63,7 @@ fn PyInit_mojo_module() -> PythonObject:
 @fieldwise_init
 struct Dummy(Defaultable, Movable, Writable):
     @staticmethod
-    fn takes_zero_raises_returns() raises -> PythonObject:
+    def takes_zero_raises_returns() raises -> PythonObject:
         var s = Python().evaluate("getattr(sys.modules['test_module'], 's')")
         if s != "just a python string":
             raise Error(String("`s` must be 'just a python string'"))
@@ -71,13 +71,13 @@ struct Dummy(Defaultable, Movable, Writable):
         return PythonObject("just another python string")
 
     @staticmethod
-    fn takes_one_raises_returns(a: PythonObject) raises -> PythonObject:
+    def takes_one_raises_returns(a: PythonObject) raises -> PythonObject:
         if a != PythonObject("foo"):
             raise Error(String("input must be 'foo'"))
         return a
 
     @staticmethod
-    fn takes_two_raises_returns(
+    def takes_two_raises_returns(
         a: PythonObject, b: PythonObject
     ) raises -> PythonObject:
         if a != PythonObject("foo"):
@@ -85,7 +85,7 @@ struct Dummy(Defaultable, Movable, Writable):
         return a + b
 
     @staticmethod
-    fn takes_three_raises_returns(
+    def takes_three_raises_returns(
         a: PythonObject, b: PythonObject, c: PythonObject
     ) raises -> PythonObject:
         if a != PythonObject("foo"):
@@ -93,28 +93,28 @@ struct Dummy(Defaultable, Movable, Writable):
         return a + b + c
 
     @staticmethod
-    fn takes_zero_returns() -> PythonObject:
+    def takes_zero_returns() -> PythonObject:
         try:
             return Self.takes_zero_raises_returns()
         except e:
             abort(String("Unexpected Python error: ", e))
 
     @staticmethod
-    fn takes_one_returns(a: PythonObject) -> PythonObject:
+    def takes_one_returns(a: PythonObject) -> PythonObject:
         try:
             return Self.takes_one_raises_returns(a)
         except e:
             abort(String("Unexpected Python error: ", e))
 
     @staticmethod
-    fn takes_two_returns(a: PythonObject, b: PythonObject) -> PythonObject:
+    def takes_two_returns(a: PythonObject, b: PythonObject) -> PythonObject:
         try:
             return Self.takes_two_raises_returns(a, b)
         except e:
             abort(String("Unexpected Python error: ", e))
 
     @staticmethod
-    fn takes_three_returns(
+    def takes_three_returns(
         a: PythonObject, b: PythonObject, c: PythonObject
     ) -> PythonObject:
         try:
@@ -123,7 +123,7 @@ struct Dummy(Defaultable, Movable, Writable):
             abort(String("Unexpected Python error: ", e))
 
     @staticmethod
-    fn takes_zero_raises() raises:
+    def takes_zero_raises() raises:
         var s = Python().evaluate("getattr(sys.modules['test_module'], 's')")
         if s != "just a python string":
             raise Error(String("`s` must be 'just a python string'"))
@@ -134,19 +134,19 @@ struct Dummy(Defaultable, Movable, Writable):
         )
 
     @staticmethod
-    fn takes_one_raises(list_obj: PythonObject) raises:
+    def takes_one_raises(list_obj: PythonObject) raises:
         if len(list_obj) != 3:
             raise Error(String("list_obj must have length 3"))
         list_obj[PythonObject(0)] = PythonObject("baz")
 
     @staticmethod
-    fn takes_two_raises(list_obj: PythonObject, obj: PythonObject) raises:
+    def takes_two_raises(list_obj: PythonObject, obj: PythonObject) raises:
         if len(list_obj) != 3:
             raise Error(String("list_obj must have length 3"))
         list_obj[PythonObject(0)] = obj
 
     @staticmethod
-    fn takes_three_raises(
+    def takes_three_raises(
         list_obj: PythonObject, obj: PythonObject, obj2: PythonObject
     ) raises:
         if len(list_obj) != 3:
@@ -154,28 +154,28 @@ struct Dummy(Defaultable, Movable, Writable):
         list_obj[PythonObject(0)] = obj + obj2
 
     @staticmethod
-    fn takes_zero():
+    def takes_zero():
         try:
             Self.takes_zero_raises()
         except e:
             abort(String("Unexpected Python error: ", e))
 
     @staticmethod
-    fn takes_one(list_obj: PythonObject):
+    def takes_one(list_obj: PythonObject):
         try:
             Self.takes_one_raises(list_obj)
         except e:
             abort(String("Unexpected Python error: ", e))
 
     @staticmethod
-    fn takes_two(list_obj: PythonObject, obj: PythonObject):
+    def takes_two(list_obj: PythonObject, obj: PythonObject):
         try:
             Self.takes_two_raises(list_obj, obj)
         except e:
             abort(String("Unexpected Python error: ", e))
 
     @staticmethod
-    fn takes_three(
+    def takes_three(
         list_obj: PythonObject, obj: PythonObject, obj2: PythonObject
     ):
         try:

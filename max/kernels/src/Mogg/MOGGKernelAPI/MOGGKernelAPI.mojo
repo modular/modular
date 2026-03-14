@@ -75,16 +75,21 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from layout import IntTuple, TileTensor, UNKNOWN_VALUE, row_major
-from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
-from layout.coord import (
-    DynamicCoord,
-    RuntimeInt,
+from layout import (
     Coord,
     CoordLike,
     Idx,
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeInt,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
     coord_to_index_list,
+    row_major,
 )
+from layout.coord import DynamicCoord
 from layout.tile_layout import Layout as TileLayout
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
@@ -313,7 +318,6 @@ from tensor import (
     OutputTensor,
     OutputVariadicTensors,
     VariadicTensors,
-    copy_tensor,
     foreach,
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
@@ -357,7 +361,7 @@ from nn.tpool_patch_merger import (
 
 
 @always_inline("nodebug")
-fn reduce_shape[
+def reduce_shape[
     input_rank: Int, input_type: DType, //
 ](
     input_buf: ManagedTensorSlice[dtype=input_type, rank=input_rank, ...],
@@ -386,7 +390,7 @@ fn reduce_shape[
 
 
 @always_inline
-fn _unsafe_str_to_coord[
+def _unsafe_str_to_coord[
     str_slice: StaticString
 ]() -> DynamicCoord[DType.int64, len(str_slice.split("_"))]:
     """
@@ -415,7 +419,7 @@ fn _unsafe_str_to_coord[
 
 # TODO(MOCO-1413): remove this need to keep imported exported funcs alive.
 @export
-fn export():
+def export():
     comptime _simd_load_from_managed_tensor_slice = simd_load_from_managed_tensor_slice
     comptime _simd_store_into_managed_tensor_slice = simd_store_into_managed_tensor_slice
 
@@ -428,7 +432,7 @@ fn export():
 @compiler.register("mo.range")
 struct Range:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         target: StaticString,
         _trace_name: StaticString,
@@ -442,7 +446,7 @@ struct Range:
     ) capturing raises:
         @parameter
         @always_inline
-        fn func[
+        def func[
             width: Int, element_alignment: Int
         ](idx: IndexList[1]) -> SIMD[dtype, width]:
             return start + step * (iota[dtype, width](Scalar[dtype](idx[0])))
@@ -455,7 +459,7 @@ struct Range:
         ](output, ctx)
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType
     ](
         start: Scalar[dtype],
@@ -478,7 +482,7 @@ struct Range:
 @compiler.register("copy")
 struct Copy:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
     ](
@@ -488,7 +492,7 @@ struct Copy:
     ) capturing raises:
         @parameter
         @always_inline
-        fn func[
+        def func[
             width: Int, element_alignment: Int
         ](idx: IndexList[rank]) -> SIMD[dtype, width]:
             return input._fused_load[
@@ -501,7 +505,7 @@ struct Copy:
 @compiler.register("mo.add")
 struct Add(ElementwiseBinaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -511,7 +515,7 @@ struct Add(ElementwiseBinaryOp):
 @compiler.register("mo.sub")
 struct Sub(ElementwiseBinaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -521,7 +525,7 @@ struct Sub(ElementwiseBinaryOp):
 @compiler.register("mo.mul")
 struct Mul(ElementwiseBinaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -531,7 +535,7 @@ struct Mul(ElementwiseBinaryOp):
 @compiler.register("mo.div")
 struct Div(ElementwiseBinaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -541,7 +545,7 @@ struct Div(ElementwiseBinaryOp):
 @compiler.register("mo.mod")
 struct Mod(ElementwiseBinaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -551,7 +555,7 @@ struct Mod(ElementwiseBinaryOp):
 @compiler.register("mo.equal")
 struct Equal(ElementwiseBinaryComparisonOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -563,7 +567,7 @@ struct Equal(ElementwiseBinaryComparisonOp):
 @compiler.register("mo.greater")
 struct Greater(ElementwiseBinaryComparisonOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -575,7 +579,7 @@ struct Greater(ElementwiseBinaryComparisonOp):
 @compiler.register("mo.greater_equal")
 struct GreaterEqual(ElementwiseBinaryComparisonOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -587,7 +591,7 @@ struct GreaterEqual(ElementwiseBinaryComparisonOp):
 @compiler.register("mo.not_equal")
 struct NotEqual(ElementwiseBinaryComparisonOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -599,7 +603,7 @@ struct NotEqual(ElementwiseBinaryComparisonOp):
 @compiler.register("mo.and")
 struct And(ElementwiseBinaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -610,7 +614,7 @@ struct And(ElementwiseBinaryOp):
 @compiler.register("mo.or")
 struct Or(ElementwiseBinaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -621,7 +625,7 @@ struct Or(ElementwiseBinaryOp):
 @compiler.register("mo.xor")
 struct Xor(ElementwiseBinaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -632,7 +636,7 @@ struct Xor(ElementwiseBinaryOp):
 @compiler.register("mo.pow")
 struct Pow:
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         pow_dtype: DType,
         width: Int,
@@ -645,7 +649,7 @@ struct Pow:
 @compiler.register("mo.max")
 struct Max(ElementwiseBinaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -655,7 +659,7 @@ struct Max(ElementwiseBinaryOp):
 @compiler.register("mo.min")
 struct Min(ElementwiseBinaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -670,7 +674,7 @@ struct Min(ElementwiseBinaryOp):
 @compiler.register("mo.cast")
 struct Cast(ElementwiseUnaryMixedOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         out_dtype: DType,
         width: Int,
@@ -681,7 +685,7 @@ struct Cast(ElementwiseUnaryMixedOp):
 @compiler.register("mo.negative")
 struct Negative(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -691,7 +695,7 @@ struct Negative(ElementwiseUnaryOp):
 @compiler.register("mo.relu")
 struct ReLU(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -701,7 +705,7 @@ struct ReLU(ElementwiseUnaryOp):
 @compiler.register("mo.ceil")
 struct Ceil(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -711,7 +715,7 @@ struct Ceil(ElementwiseUnaryOp):
 @compiler.register("mo.floor")
 struct Floor(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -721,7 +725,7 @@ struct Floor(ElementwiseUnaryOp):
 @compiler.register("mo.tanh")
 struct Tanh(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -734,7 +738,7 @@ struct Tanh(ElementwiseUnaryOp):
 @compiler.register("mo.acos")
 struct ACos(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -747,7 +751,7 @@ struct ACos(ElementwiseUnaryOp):
 @compiler.register("mo.atanh")
 struct ATanh(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -760,7 +764,7 @@ struct ATanh(ElementwiseUnaryOp):
 @compiler.register("mo.cos")
 struct Cos(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -773,7 +777,7 @@ struct Cos(ElementwiseUnaryOp):
 @compiler.register("mo.sin")
 struct Sin(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -786,7 +790,7 @@ struct Sin(ElementwiseUnaryOp):
 @compiler.register("mo.erf")
 struct Erf(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -799,7 +803,7 @@ struct Erf(ElementwiseUnaryOp):
 @compiler.register("mo.exp")
 struct Exp(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -812,7 +816,7 @@ struct Exp(ElementwiseUnaryOp):
 @compiler.register("mo.round")
 struct Round(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -822,7 +826,7 @@ struct Round(ElementwiseUnaryOp):
 @compiler.register("mo.sqrt")
 struct Sqrt(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -832,7 +836,7 @@ struct Sqrt(ElementwiseUnaryOp):
 @compiler.register("mo.rsqrt")
 struct Rsqrt(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -842,7 +846,7 @@ struct Rsqrt(ElementwiseUnaryOp):
 @compiler.register("mo.select")
 struct Select:
     @staticmethod
-    fn elementwise[
+    def elementwise[
         cond_dtype: DType,
         dtype: DType,
         width: Int,
@@ -857,7 +861,7 @@ struct Select:
 @compiler.register("mo.trunc")
 struct Trunc(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -869,7 +873,7 @@ struct Trunc(ElementwiseUnaryOp):
 @compiler.register("mo.log")
 struct Log(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -882,7 +886,7 @@ struct Log(ElementwiseUnaryOp):
 @compiler.register("mo.log1p")
 struct Log1p(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -895,7 +899,7 @@ struct Log1p(ElementwiseUnaryOp):
 @compiler.register("mo.is_nan")
 struct IsNan(ElementwiseUnaryMixedOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         out_dtype: DType,
         width: Int,
@@ -909,7 +913,7 @@ struct IsNan(ElementwiseUnaryMixedOp):
 @compiler.register("mo.is_inf")
 struct IsInf(ElementwiseUnaryMixedOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         out_dtype: DType,
         width: Int,
@@ -923,7 +927,7 @@ struct IsInf(ElementwiseUnaryMixedOp):
 @compiler.register("mo.not")
 struct Not(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -934,7 +938,7 @@ struct Not(ElementwiseUnaryOp):
 @compiler.register("mo.abs")
 struct Abs(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -944,7 +948,7 @@ struct Abs(ElementwiseUnaryOp):
 @compiler.register("mo.convert_e4m3fn_to_e4m3fnuz")
 struct ConvertE4M3FNToE4M3FNUZ:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -959,7 +963,7 @@ struct ConvertE4M3FNToE4M3FNUZ:
         )
 
     @staticmethod
-    fn shape(
+    def shape(
         input: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
     ) -> IndexList[2]:
         return IndexList[2](input.dim_size[0](), input.dim_size[1]())
@@ -968,7 +972,7 @@ struct ConvertE4M3FNToE4M3FNUZ:
 @compiler.register("mo.squeeze_shape")
 struct SqueezeShape:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         dtype: DType,
         indices_type: DType,
@@ -1014,7 +1018,7 @@ struct SqueezeShape:
             output_shape_index += 1
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType, indices_type: DType
     ](
         input_shape: InputTensor[dtype=dtype, rank=1, ...],
@@ -1034,7 +1038,7 @@ struct SqueezeShape:
 @compiler.register("mo.unsqueeze_shape")
 struct UnsqueezeShape:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         dtype: DType,
         indices_type: DType,
@@ -1082,7 +1086,7 @@ struct UnsqueezeShape:
             orig_shape_index += 1
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType, indices_type: DType
     ](
         input_shape: InputTensor[dtype=dtype, rank=1, ...],
@@ -1100,7 +1104,7 @@ struct UnsqueezeShape:
 @compiler.register("mo.scatter_nd")
 struct ScatterND:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         output: OutputTensor[...],
@@ -1124,7 +1128,7 @@ struct ScatterND:
         )
 
     @staticmethod
-    fn shape[](
+    def shape[](
         input: InputTensor[...],
         updates: InputTensor[dtype=input.dtype, ...],
         indices: InputTensor[...],
@@ -1141,7 +1145,7 @@ struct ScatterND:
 @compiler.register("mo.scatter_nd.skip_neg_indices")
 struct ScatterNDSkipNegIndices:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         output: OutputTensor[...],
@@ -1178,7 +1182,7 @@ struct ScatterNDSkipNegIndices:
 @compiler.register("mo.scatter_nd.add")
 struct ScatterNDAdd:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         output: OutputTensor[...],
@@ -1189,7 +1193,7 @@ struct ScatterNDAdd:
     ) raises:
         @always_inline
         @parameter
-        fn reduce_fn[
+        def reduce_fn[
             dtype: DType, width: Int
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
@@ -1212,7 +1216,7 @@ struct ScatterNDAdd:
         )
 
     @staticmethod
-    fn shape[](
+    def shape[](
         input: InputTensor[...],
         updates: InputTensor[dtype=input.dtype, ...],
         indices: InputTensor[...],
@@ -1229,7 +1233,7 @@ struct ScatterNDAdd:
 @compiler.register("mo.scatter_nd.mul")
 struct ScatterNDMul:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         output: OutputTensor[...],
@@ -1240,7 +1244,7 @@ struct ScatterNDMul:
     ) raises:
         @always_inline
         @parameter
-        fn reduce_fn[
+        def reduce_fn[
             dtype: DType, width: Int
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
@@ -1263,7 +1267,7 @@ struct ScatterNDMul:
         )
 
     @staticmethod
-    fn shape[](
+    def shape[](
         input: InputTensor[...],
         updates: InputTensor[dtype=input.dtype, ...],
         indices: InputTensor[...],
@@ -1280,7 +1284,7 @@ struct ScatterNDMul:
 @compiler.register("mo.scatter_nd.min")
 struct ScatterNDMin:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         output: OutputTensor[...],
@@ -1291,7 +1295,7 @@ struct ScatterNDMin:
     ) raises:
         @always_inline
         @parameter
-        fn reduce_fn[
+        def reduce_fn[
             dtype: DType, width: Int
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
@@ -1314,7 +1318,7 @@ struct ScatterNDMin:
         )
 
     @staticmethod
-    fn shape(
+    def shape(
         input: InputTensor[...],
         updates: InputTensor[dtype=input.dtype, ...],
         indices: InputTensor[...],
@@ -1331,7 +1335,7 @@ struct ScatterNDMin:
 @compiler.register("mo.scatter_nd.max")
 struct ScatterNDMax:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         output: OutputTensor[...],
@@ -1342,7 +1346,7 @@ struct ScatterNDMax:
     ) raises:
         @always_inline
         @parameter
-        fn reduce_fn[
+        def reduce_fn[
             dtype: DType, width: Int
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
@@ -1366,7 +1370,7 @@ struct ScatterNDMax:
         )
 
     @staticmethod
-    fn shape[](
+    def shape[](
         input: InputTensor[...],
         updates: InputTensor[dtype=input.dtype, ...],
         indices: InputTensor[...],
@@ -1383,7 +1387,7 @@ struct ScatterNDMax:
 @compiler.register("mo.scatter_set_constant")
 struct ScatterSetConstant:
     @staticmethod
-    fn execute[
+    def execute[
         data_type: DType,
         index_type: DType,
         //,
@@ -1410,7 +1414,7 @@ struct ScatterSetConstant:
 @compiler.register("mo.scatter")
 struct Scatter:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         output: OutputTensor[...],
@@ -1422,7 +1426,7 @@ struct Scatter:
     ) raises:
         @always_inline
         @parameter
-        fn reduce_func[
+        def reduce_func[
             dtype: DType, width: Int
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
@@ -1438,7 +1442,7 @@ struct Scatter:
         )
 
     @staticmethod
-    fn shape(
+    def shape(
         input: InputTensor[...],
         updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
         indices: InputTensor[rank=input.rank, ...],
@@ -1457,7 +1461,7 @@ struct Scatter:
 @compiler.register("mo.scatter.add")
 struct ScatterAdd:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         output: OutputTensor[...],
@@ -1469,7 +1473,7 @@ struct ScatterAdd:
     ) raises:
         @always_inline
         @parameter
-        fn reduce_func[
+        def reduce_func[
             dtype: DType, width: Int
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
@@ -1485,7 +1489,7 @@ struct ScatterAdd:
         )
 
     @staticmethod
-    fn shape(
+    def shape(
         input: InputTensor[...],
         updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
         indices: InputTensor[rank=input.rank, ...],
@@ -1504,7 +1508,7 @@ struct ScatterAdd:
 @compiler.register("mo.scatter.max")
 struct ScatterMax:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         output: OutputTensor[...],
@@ -1516,7 +1520,7 @@ struct ScatterMax:
     ) raises:
         @always_inline
         @parameter
-        fn reduce_func[
+        def reduce_func[
             dtype: DType, width: Int
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
@@ -1532,7 +1536,7 @@ struct ScatterMax:
         )
 
     @staticmethod
-    fn shape(
+    def shape(
         input: InputTensor[...],
         updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
         indices: InputTensor[rank=input.rank, ...],
@@ -1551,7 +1555,7 @@ struct ScatterMax:
 @compiler.register("mo.scatter.min")
 struct ScatterMin:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         output: OutputTensor[...],
@@ -1563,7 +1567,7 @@ struct ScatterMin:
     ) raises:
         @always_inline
         @parameter
-        fn reduce_func[
+        def reduce_func[
             dtype: DType, width: Int
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
@@ -1579,7 +1583,7 @@ struct ScatterMin:
         )
 
     @staticmethod
-    fn shape(
+    def shape(
         input: InputTensor[...],
         updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
         indices: InputTensor[rank=input.rank, ...],
@@ -1598,7 +1602,7 @@ struct ScatterMin:
 @compiler.register("mo.scatter.mul")
 struct ScatterMul:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         output: OutputTensor[...],
@@ -1610,7 +1614,7 @@ struct ScatterMul:
     ) raises:
         @always_inline
         @parameter
-        fn reduce_func[
+        def reduce_func[
             dtype: DType, width: Int
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
@@ -1626,7 +1630,7 @@ struct ScatterMul:
         )
 
     @staticmethod
-    fn shape(
+    def shape(
         input: InputTensor[...],
         updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
         indices: InputTensor[rank=input.rank, ...],
@@ -1654,11 +1658,11 @@ struct BroadcastTo:
     #
     # Sometimes with a call to the below shape function.
     @staticmethod
-    fn execute(input: InputTensor[...], shape: InputTensor) raises:
+    def execute(input: InputTensor[...], shape: InputTensor) raises:
         raise Error("Should never be called!")
 
     @staticmethod
-    fn shape_impl[
+    def shape_impl[
         input_rank: Int, output_rank: Int
     ](
         input: InputTensor[rank=input_rank, ...],
@@ -1699,7 +1703,7 @@ struct BroadcastTo:
         return output_shape
 
     @staticmethod
-    fn shape[
+    def shape[
         input_rank: Int, output_rank: Int
     ](
         input: InputTensor[rank=input_rank, ...],
@@ -1712,7 +1716,7 @@ struct BroadcastTo:
 struct BroadcastShape:
     @always_inline
     @staticmethod
-    fn broadcast_shape_impl(
+    def broadcast_shape_impl(
         out_buf: ManagedTensorSlice[rank=1, ...],
         lhs_buf: ManagedTensorSlice[rank=1, ...],
         rhs_buf: ManagedTensorSlice[rank=1, ...],
@@ -1750,7 +1754,7 @@ struct BroadcastShape:
     #
     # Sometimes with a call to the below shape function.
     @staticmethod
-    fn execute(
+    def execute(
         out_buf: OutputTensor[rank=1, ...],
         lhs_buf: InputTensor[rank=1, ...],
         rhs_buf: InputTensor[rank=1, ...],
@@ -1764,7 +1768,7 @@ struct BroadcastShape:
         return BroadcastShape.broadcast_shape_impl(out_buf, lhs_buf, rhs_buf)
 
     @staticmethod
-    fn shape(
+    def shape(
         lhs_buf: InputTensor[rank=1, ...], rhs_buf: InputTensor[rank=1, ...]
     ) raises -> IndexList[1]:
         var lhs_dim = lhs_buf.dim_size[0]()
@@ -1777,7 +1781,7 @@ struct BroadcastShape:
 struct StaticBroadcastTo:
     @always_inline
     @staticmethod
-    fn build_view[
+    def build_view[
         out_rank: Int,
     ](x: InputTensor[...],) -> IndexList[out_rank]:
         var new_strides = IndexList[out_rank]()
@@ -1795,7 +1799,7 @@ struct StaticBroadcastTo:
         return new_strides
 
     @staticmethod
-    fn get_view_strides_list[
+    def get_view_strides_list[
         out_rank: Int,
         in_rank: Int,
         input_shape: DimList,
@@ -1817,7 +1821,7 @@ struct StaticBroadcastTo:
         return new_strides
 
     @staticmethod
-    fn get_view_strides[
+    def get_view_strides[
         out_rank: Int,
         in_rank: Int,
         input_shape: DimList,
@@ -1832,7 +1836,7 @@ struct StaticBroadcastTo:
         return {}
 
     @staticmethod
-    fn update_input_view[
+    def update_input_view[
         dtype: DType,
         in_rank: Int,
         out_rank: Int,
@@ -1855,7 +1859,7 @@ struct StaticBroadcastTo:
         return {x.unsafe_ptr(), output_shape, x_runtime_strides}
 
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         dtype: DType,
         in_rank: Int,
@@ -1884,13 +1888,13 @@ struct StaticBroadcastTo:
 @compiler.view_kernel
 struct StaticReshape:
     @staticmethod
-    fn get_view_strides[
+    def get_view_strides[
         out_shape: DimList
     ]() -> DimList[*out_shape.get_row_major_strides().values]:
         return {}
 
     @staticmethod
-    fn update_input_view[
+    def update_input_view[
         dtype: DType,
         output_rank: Int,
         //,
@@ -1922,7 +1926,7 @@ struct StaticReshape:
         }
 
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         _trace_name: StaticString,
         dtype: DType,
@@ -1950,11 +1954,11 @@ struct Reshape:
     #
     # Sometimes with a call to the below shape function.
     @staticmethod
-    fn execute(input: InputTensor[...], shape: InputTensor) raises:
+    def execute(input: InputTensor[...], shape: InputTensor) raises:
         raise Error("Should never be called!")
 
     @staticmethod
-    fn shape[
+    def shape[
         output_rank: Int
     ](
         input: InputTensor[...], shape: InputTensor[rank=1, ...]
@@ -1979,7 +1983,7 @@ comptime _transpose_tabulate[
 struct Transpose:
     @always_inline
     @staticmethod
-    fn transpose_in_place(
+    def transpose_in_place(
         input: InputTensor[...],
         permutations: InputTensor[rank=1, ...],
         out result: Tuple[IndexList[input.rank], IndexList[input.rank]],
@@ -1995,7 +1999,7 @@ struct Transpose:
         return {new_shape, new_stride}
 
     @staticmethod
-    fn get_view_strides[
+    def get_view_strides[
         permutations: DimList, rank: Int, input_strides: DimList
     ]() -> DimList[
         *Variadic.tabulate[
@@ -2005,7 +2009,7 @@ struct Transpose:
         return {}
 
     @staticmethod
-    fn update_input_view[
+    def update_input_view[
         dtype: DType,
         rank: Int,
         //,
@@ -2028,7 +2032,7 @@ struct Transpose:
         return {input.unsafe_ptr(), shape, strides}
 
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         _trace_name: StaticString,
         static_permutations: DimList,
@@ -2052,7 +2056,7 @@ struct Transpose:
     # TODO(GEX-1033) Make it possible to have multiple raises.
     @no_inline
     @staticmethod
-    fn shape_impl(
+    def shape_impl(
         input: InputTensor[...],
         permutations: InputTensor[rank=1, ...],
     ) raises -> IndexList[input.rank]:
@@ -2076,7 +2080,7 @@ struct Transpose:
         return out
 
     @staticmethod
-    fn shape(
+    def shape(
         input: InputTensor[...],
         permutations: InputTensor[rank=1, ...],
     ) raises -> IndexList[input.rank]:
@@ -2092,7 +2096,7 @@ comptime _slice_stride_at[
 @compiler.view_kernel
 struct Slice:
     @staticmethod
-    fn get_view_strides[
+    def get_view_strides[
         rank: Int, input_strides: DimList, steps: DimList
     ]() -> DimList[
         *Variadic.tabulate[rank, _slice_stride_at[input_strides, steps, _]]
@@ -2100,7 +2104,7 @@ struct Slice:
         return {}
 
     @staticmethod
-    fn update_input_view[
+    def update_input_view[
         dtype: DType,
         rank: Int,
         //,
@@ -2141,7 +2145,7 @@ struct Slice:
         }
 
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         _trace_name: StaticString,
         static_steps: DimList,
@@ -2167,7 +2171,7 @@ struct Slice:
         ](output, view_tensor, ctx)
 
     @staticmethod
-    fn shape(
+    def shape(
         input: InputTensor[...],
         starts: InputTensor[rank=1, ...],
         stops: InputTensor[rank=1, ...],
@@ -2186,14 +2190,14 @@ struct Slice:
 @compiler.register("mo.mutable.store")
 struct MutableStore(ElementwiseUnaryOp):
     @staticmethod
-    fn elementwise[
+    def elementwise[
         dtype: DType,
         width: Int,
     ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return val
 
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -2208,7 +2212,7 @@ struct MutableStore(ElementwiseUnaryOp):
 @compiler.register("mo.mutable.store.slice")
 struct MutableStoreSlice:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         dtype: DType,
         rank: Int,
@@ -2244,7 +2248,7 @@ comptime _slice_dim_stride_at[
 @compiler.view_kernel
 struct SliceDim:
     @staticmethod
-    fn get_view_strides[
+    def get_view_strides[
         rank: Int,
         axis: Int,
         input_strides: DimList,
@@ -2257,7 +2261,7 @@ struct SliceDim:
         return {}
 
     @staticmethod
-    fn get_view_alignment[
+    def get_view_alignment[
         rank: Int,
         dtype: DType,
         input_strides: DimList,
@@ -2285,7 +2289,7 @@ struct SliceDim:
             return gcd(input_alignment, offset)
 
     @staticmethod
-    fn update_input_view[
+    def update_input_view[
         dtype: DType,
         rank: Int,
         //,
@@ -2333,7 +2337,7 @@ struct SliceDim:
         }
 
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         _trace_name: StaticString,
         dtype: DType,
@@ -2367,7 +2371,7 @@ struct SliceDim:
 @compiler.register("mo.arg_max")
 struct ArgMax:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         rank: Int,
         _trace_name: StaticString,
@@ -2406,7 +2410,7 @@ struct ArgMax:
 @compiler.register("mo.arg_min")
 struct ArgMin:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         rank: Int,
         _trace_name: StaticString,
@@ -2443,7 +2447,7 @@ struct ArgMin:
 @compiler.register("mo.arg_nonzero")
 struct ArgNonZero:
     @staticmethod
-    fn execute(
+    def execute(
         output_buffer: OutputTensor[rank=2, ...],
         input_buffer: InputTensor[...],
     ) raises:
@@ -2453,7 +2457,7 @@ struct ArgNonZero:
         )
 
     @staticmethod
-    fn shape(input_buffer: InputTensor) -> IndexList[2]:
+    def shape(input_buffer: InputTensor) -> IndexList[2]:
         return arg_nonzero.arg_nonzero_shape[
             single_thread_blocking_override=True
         ](input_buffer.to_tile_tensor[DType.int64]())
@@ -2462,7 +2466,7 @@ struct ArgNonZero:
 @compiler.register("mo.mean")
 struct Mean:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString
     ](
         output: FusedOutputTensor[...],
@@ -2472,7 +2476,7 @@ struct Mean:
     ) capturing raises:
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
             return input._lambda_load[width=width](
@@ -2481,7 +2485,7 @@ struct Mean:
 
         @parameter
         @always_inline
-        fn output_fn[
+        def output_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
@@ -2500,7 +2504,7 @@ struct Mean:
         ](input.shape(), axis_val, output.shape(), ctx)
 
     @staticmethod
-    fn shape[
+    def shape[
         input_rank: Int,
         input_type: DType,
     ](
@@ -2513,7 +2517,7 @@ struct Mean:
 @compiler.register("mo.reduce.add")
 struct ReduceAdd:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString, _trace_name: StaticString
     ](
         output: FusedOutputTensor[...],
@@ -2523,7 +2527,7 @@ struct ReduceAdd:
     ) capturing raises:
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
             return input._lambda_load[width=width](
@@ -2532,7 +2536,7 @@ struct ReduceAdd:
 
         @parameter
         @always_inline
-        fn output_fn[
+        def output_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
@@ -2554,7 +2558,7 @@ struct ReduceAdd:
             ](input.shape(), axis_val, ctx)
 
     @staticmethod
-    fn shape[
+    def shape[
         input_rank: Int,
         input_type: DType,
     ](
@@ -2567,7 +2571,7 @@ struct ReduceAdd:
 @compiler.register("mo.reduce.mul")
 struct ReduceMul:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -2578,7 +2582,7 @@ struct ReduceMul:
     ) capturing raises:
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
             return input._lambda_load[width=width](
@@ -2587,7 +2591,7 @@ struct ReduceMul:
 
         @parameter
         @always_inline
-        fn output_fn[
+        def output_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
@@ -2609,7 +2613,7 @@ struct ReduceMul:
             ](input.shape(), axis_val, ctx)
 
     @staticmethod
-    fn shape[
+    def shape[
         input_rank: Int,
         input_type: DType,
     ](
@@ -2622,7 +2626,7 @@ struct ReduceMul:
 @compiler.register("mo.reduce.max")
 struct ReduceMax:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -2633,7 +2637,7 @@ struct ReduceMax:
     ) capturing raises:
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
             return input._lambda_load[width=width](
@@ -2642,7 +2646,7 @@ struct ReduceMax:
 
         @parameter
         @always_inline
-        fn output_fn[
+        def output_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
@@ -2664,7 +2668,7 @@ struct ReduceMax:
             ](input.shape(), axis_val, ctx)
 
     @staticmethod
-    fn shape[
+    def shape[
         input_rank: Int,
         input_type: DType,
     ](
@@ -2677,7 +2681,7 @@ struct ReduceMax:
 @compiler.register("mo.reduce.min")
 struct ReduceMin:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -2688,7 +2692,7 @@ struct ReduceMin:
     ) capturing raises:
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
             return input._lambda_load[width=width](
@@ -2697,7 +2701,7 @@ struct ReduceMin:
 
         @parameter
         @always_inline
-        fn output_fn[
+        def output_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
@@ -2719,7 +2723,7 @@ struct ReduceMin:
             ](input.shape(), axis_val, ctx)
 
     @staticmethod
-    fn shape[
+    def shape[
         input_rank: Int,
         input_type: DType,
     ](
@@ -2732,7 +2736,7 @@ struct ReduceMin:
 @compiler.register("reduce_min_and_max")
 struct ReduceMinMax:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         _trace_name: StaticString,
         dtype: DType,
@@ -2753,7 +2757,7 @@ struct ReduceMinMax:
 
         @parameter
         @always_inline
-        fn input_0_fn[
+        def input_0_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
             return input._fused_load[width=width](
@@ -2762,7 +2766,7 @@ struct ReduceMinMax:
 
         @parameter
         @always_inline
-        fn output_0_fn[
+        def output_0_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._fused_store[width=width](
@@ -2772,14 +2776,14 @@ struct ReduceMinMax:
 
         @always_inline
         @parameter
-        fn input_0_fn_wrapper[
+        def input_0_fn_wrapper[
             _type: DType, width: Int, rank: Int
         ](idx: IndexList[rank]) -> SIMD[_type, width]:
             return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
 
         @always_inline
         @parameter
-        fn output_0_fn_wrapper[
+        def output_0_fn_wrapper[
             _type: DType,
             width: Int,
             rank: Int,
@@ -2803,7 +2807,7 @@ struct ReduceMinMax:
 
         @always_inline
         @parameter
-        fn reduce_fn[
+        def reduce_fn[
             ty: DType,
             width: Int,
             reduction_idx: Int,
@@ -2841,7 +2845,7 @@ struct ReduceMinMax:
         _ = axis
 
     @staticmethod
-    fn shape(input: InputTensor[...], axis: Scalar) -> IndexList[input.rank]:
+    def shape(input: InputTensor[...], axis: Scalar) -> IndexList[input.rank]:
         var new_shape = input.shape()
         new_shape[_unsafe_normalize_neg_index(Int(axis), input.rank)] = 2
 
@@ -2856,7 +2860,7 @@ struct ReduceMinMax:
 @compiler.register("mo.avg_pool")
 struct AvgPool:
     @staticmethod
-    fn execute[
+    def execute[
         count_boundary: Bool,
         dtype: DType,
         int_type: DType,
@@ -2882,7 +2886,7 @@ struct AvgPool:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
         int_type: DType,
     ](
@@ -2906,7 +2910,7 @@ struct AvgPool:
 @compiler.register("mo.avg_pool_ceil_mode_true")
 struct AvgPoolCeilModeTrue:
     @staticmethod
-    fn execute[
+    def execute[
         count_boundary: Bool,
         dtype: DType,
         int_type: DType,
@@ -2932,7 +2936,7 @@ struct AvgPoolCeilModeTrue:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
         int_type: DType,
     ](
@@ -2956,7 +2960,7 @@ struct AvgPoolCeilModeTrue:
 @compiler.register("mo.max_pool")
 struct MaxPool:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         int_type: DType,
         target: StaticString,
@@ -2981,7 +2985,7 @@ struct MaxPool:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
         int_type: DType,
     ](
@@ -3005,7 +3009,7 @@ struct MaxPool:
 @compiler.register("mo.max_pool_ceil_mode_true")
 struct MaxPoolCeilModeTrue:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         int_type: DType,
         target: StaticString,
@@ -3030,7 +3034,7 @@ struct MaxPoolCeilModeTrue:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
         int_type: DType,
     ](
@@ -3059,7 +3063,7 @@ struct MaxPoolCeilModeTrue:
 @compiler.register("mo.pad.constant")
 struct PadConstant:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType, rank: Int, target: StaticString
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
@@ -3091,7 +3095,7 @@ struct PadConstant:
             comptime assert False, "Unknown target " + target
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
         rank: Int,
     ](
@@ -3112,7 +3116,7 @@ struct PadConstant:
 @compiler.register("mo.pad.repeat")
 struct PadRepeat:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
     ](
@@ -3128,7 +3132,7 @@ struct PadRepeat:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
         rank: Int,
     ](
@@ -3146,7 +3150,7 @@ struct PadRepeat:
 @compiler.register("mo.pad.reflect")
 struct PadReflect:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
     ](
@@ -3162,7 +3166,7 @@ struct PadReflect:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
         rank: Int,
     ](
@@ -3185,7 +3189,7 @@ struct PadReflect:
 @compiler.register("mo.gather_nd")
 struct GatherND:
     @staticmethod
-    fn execute[
+    def execute[
         batchDims: Int,
         target: StaticString,
         _trace_name: StaticString,
@@ -3206,7 +3210,7 @@ struct GatherND:
             )
 
     @staticmethod
-    fn shape[
+    def shape[
         batch_dims: Int, output_rank: Int
     ](
         data: InputTensor[...],
@@ -3227,7 +3231,7 @@ struct GatherND:
 @compiler.register("mo.gather")
 struct Gather:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -3239,7 +3243,7 @@ struct Gather:
     ) capturing raises:
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[output.dtype, width]:
             return input._lambda_load[width=width](
@@ -3248,7 +3252,7 @@ struct Gather:
 
         @parameter
         @always_inline
-        fn indices_fn[
+        def indices_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[indices.dtype, width]:
             return indices._fused_load[width=width](
@@ -3257,7 +3261,7 @@ struct Gather:
 
         @parameter
         @always_inline
-        fn output_fn[
+        def output_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
@@ -3285,7 +3289,7 @@ struct Gather:
             )
 
     @staticmethod
-    fn shape[
+    def shape[
         output_rank: Int,
     ](
         input: InputTensor[...],
@@ -3305,12 +3309,12 @@ struct Gather:
 @compiler.register("mo.gather_sum")
 struct GatherSum:
     @staticmethod
-    fn execute(
+    def execute(
         output: OutputTensor[...],
         input: InputTensor[dtype=output.dtype, ...],
         indices: InputTensor[dtype=DType.int32, ...],
     ) raises:
-        fn add[
+        def add[
             dtype: DType, simd_width: Int
         ](x: SIMD[dtype, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
             dtype, simd_width
@@ -3333,7 +3337,7 @@ struct GatherSum:
 @compiler.register("mo.layer_norm")
 struct LayerNorm:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         target: StaticString,
@@ -3350,7 +3354,7 @@ struct LayerNorm:
 
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
             return input._lambda_load[width=width](
@@ -3359,14 +3363,14 @@ struct LayerNorm:
 
         @parameter
         @always_inline
-        fn gamma_fn[
+        def gamma_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
             return gamma._lambda_load[width=width](rebind[IndexList[1]](coords))
 
         @parameter
         @always_inline
-        fn output_fn[
+        def output_fn[
             width: Int, _rank: Int, alignment: Int
         ](coords: IndexList[_rank], val: SIMD[dtype, width]):
             output._lambda_store[width=width, element_alignment=alignment](
@@ -3383,7 +3387,7 @@ struct LayerNorm:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
         rank: Int,
     ](
@@ -3398,7 +3402,7 @@ struct LayerNorm:
 @compiler.register("rms_norm_fused_residual_add")
 struct RMSNormFusedResidualAdd:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         target: StaticString,
@@ -3424,7 +3428,7 @@ struct RMSNormFusedResidualAdd:
 
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
             return input._lambda_load[width=width, element_alignment=width](
@@ -3433,7 +3437,7 @@ struct RMSNormFusedResidualAdd:
 
         @parameter
         @always_inline
-        fn residual_input_fn[
+        def residual_input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
             return residual_input._lambda_load[width=width](
@@ -3442,7 +3446,7 @@ struct RMSNormFusedResidualAdd:
 
         @parameter
         @always_inline
-        fn output_fn[
+        def output_fn[
             width: Int, _rank: Int, alignment: Int
         ](coords: IndexList[_rank], val: SIMD[dtype, width]):
             output._fused_store[width=width, element_alignment=alignment](
@@ -3452,7 +3456,7 @@ struct RMSNormFusedResidualAdd:
 
         @parameter
         @always_inline
-        fn residual_output_fn[
+        def residual_output_fn[
             width: Int, _rank: Int, alignment: Int
         ](coords: IndexList[_rank], val: SIMD[dtype, width]):
             residual_output._fused_store[
@@ -3481,7 +3485,7 @@ struct RMSNormFusedResidualAdd:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
         rank: Int,
     ](
@@ -3500,7 +3504,7 @@ struct RMSNormFusedResidualAdd:
 @compiler.register("rms_norm")
 struct RMSNorm:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         target: StaticString,
@@ -3518,7 +3522,7 @@ struct RMSNorm:
 
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
             return input._lambda_load[width=width, element_alignment=width](
@@ -3527,7 +3531,7 @@ struct RMSNorm:
 
         @parameter
         @always_inline
-        fn output_fn[
+        def output_fn[
             width: Int, _rank: Int, alignment: Int
         ](coords: IndexList[_rank], val: SIMD[dtype, width]):
             output._lambda_store[width=width, element_alignment=alignment](
@@ -3551,7 +3555,7 @@ struct RMSNorm:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
         rank: Int,
     ](
@@ -3566,7 +3570,7 @@ struct RMSNorm:
 @compiler.register("rms_norm_fused_quantize_dynamic_scaled_fp8")
 struct RMSNormFusedQuantizeDynamicScaledFP8:
     @staticmethod
-    fn execute[
+    def execute[
         input_dtype: DType,
         output_dtype: DType,
         scale_dtype: DType,
@@ -3587,7 +3591,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
 
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[input_dtype, width]:
             return input._lambda_load[width=width, element_alignment=width](
@@ -3613,7 +3617,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         input_dtype: DType,
         rank: Int,
     ](
@@ -3629,7 +3633,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
 @compiler.register("group_norm")
 struct GroupNorm:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         target: StaticString,
@@ -3644,7 +3648,7 @@ struct GroupNorm:
     ) capturing raises:
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
             return input._lambda_load[width=width](
@@ -3653,12 +3657,12 @@ struct GroupNorm:
 
         @parameter
         @always_inline
-        fn gamma_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+        def gamma_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
             return gamma._lambda_load[width=width](coords)
 
         @parameter
         @always_inline
-        fn beta_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+        def beta_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
             return beta._lambda_load[width=width](coords)
 
         group_norm[dtype, rank, input_fn, gamma_fn, beta_fn, target](
@@ -3670,7 +3674,7 @@ struct GroupNorm:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
         rank: Int,
     ](
@@ -3691,7 +3695,7 @@ struct GroupNorm:
 @compiler.register("mo.bottom_k")
 struct BottomK:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         target: StaticString,
@@ -3715,7 +3719,7 @@ struct BottomK:
         )
 
     @staticmethod
-    fn shape(
+    def shape(
         input: InputTensor[...],
         k: Scalar,
         axis: Scalar,
@@ -3733,7 +3737,7 @@ struct BottomK:
 @compiler.register("mo.top_k")
 struct TopK:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         target: StaticString,
@@ -3761,7 +3765,7 @@ struct TopK:
             )
 
     @staticmethod
-    fn shape(
+    def shape(
         input: InputTensor[...],
         k: Scalar,
         axis: Scalar,
@@ -3784,7 +3788,7 @@ struct TopK:
 @compiler.register("mo.non_maximum_suppression")
 struct NonMaximumSuppression:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType
     ](
         output: OutputTensor[dtype=DType.int64, rank=2, ...],
@@ -3808,7 +3812,7 @@ struct NonMaximumSuppression:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType
     ](
         boxes: InputTensor[dtype=dtype, rank=3, ...],
@@ -3838,7 +3842,7 @@ struct NonMaximumSuppression:
 @compiler.register("mo.matmul")
 struct Matmul:
     @staticmethod
-    fn execute[
+    def execute[
         transpose_b: Bool,
         packed_b: Bool,
         lambdas_have_fusion: Bool,
@@ -3863,7 +3867,7 @@ struct Matmul:
 
         @parameter
         @always_inline
-        fn epilgue_fn[
+        def epilgue_fn[
             _dtype: DType, _width: Int, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[_dtype, _width]):
             c._lambda_store[width=_width, element_alignment=alignment](
@@ -3873,7 +3877,7 @@ struct Matmul:
 
         @parameter
         @always_inline
-        fn output_compute_fn[
+        def output_compute_fn[
             _dtype: DType, _width: Int, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[_dtype, _width]) -> SIMD[
             _dtype, _width
@@ -3908,7 +3912,7 @@ struct Matmul:
 @compiler.register("mo.batch_matmul")
 struct BatchMatmul:
     @staticmethod
-    fn execute[
+    def execute[
         lambdas_have_fusion: Bool,
         rank: Int,
         transpose_b: Bool,
@@ -3928,7 +3932,7 @@ struct BatchMatmul:
 
         @parameter
         @always_inline
-        fn output_fn[
+        def output_fn[
             _type: DType, _width: Int, _rank: Int, *, alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_type, _width]):
             comptime has_compute_lambda = c.static_spec.out_compute_lambda is not None
@@ -3959,7 +3963,7 @@ struct BatchMatmul:
         ](c_buffer, a_buffer, b_buffer, context=ctx)
 
     @staticmethod
-    fn shape[
+    def shape[
         rank: Int,
         a_type: DType,
         b_type: DType,
@@ -3977,7 +3981,7 @@ struct BatchMatmul:
 @compiler.register("mo.linalg.band_part")
 struct LinalgBandPart:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         dtype: DType,
         int_type: DType,
@@ -3992,7 +3996,7 @@ struct LinalgBandPart:
     ) capturing raises:
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[output.dtype, width]:
             return input._lambda_load[width=width](
@@ -4022,7 +4026,7 @@ struct LinalgBandPart:
 @compiler.register("mo.resize.nearest")
 struct ResizeNearest:
     @staticmethod
-    fn execute[
+    def execute[
         coordinate_transform_mode: Int,
         round_mode: Int,
         rank: Int,
@@ -4041,7 +4045,7 @@ struct ResizeNearest:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         rank: Int
     ](
         input: InputTensor[rank=rank, ...],
@@ -4057,7 +4061,7 @@ struct ResizeNearest:
 @compiler.register("mo.resize.linear")
 struct ResizeLinear:
     @staticmethod
-    fn execute[
+    def execute[
         coordinate_transform_mode: Int,
         antialias: Bool,
         rank: Int,
@@ -4075,7 +4079,7 @@ struct ResizeLinear:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         rank: Int
     ](
         input: InputTensor[rank=rank, ...],
@@ -4091,7 +4095,7 @@ struct ResizeLinear:
 @compiler.register("mo.resize.bicubic")
 struct ResizeBicubic:
     @staticmethod
-    fn execute[
+    def execute[
         rank: Int,
         dtype: DType,
         target: StaticString,
@@ -4109,7 +4113,7 @@ struct ResizeBicubic:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         rank: Int
     ](
         input: InputTensor[rank=rank, ...], size: InputTensor[rank=1, ...]
@@ -4129,7 +4133,7 @@ struct ResizeBicubic:
 @compiler.register("mo.roi_align")
 struct ROIAlign:
     @staticmethod
-    fn execute[
+    def execute[
         aligned: Bool,
         mode: StaticString,
         dtype: DType,
@@ -4153,7 +4157,7 @@ struct ROIAlign:
         )
 
     @staticmethod
-    fn shape(
+    def shape(
         input: InputTensor[rank=4, ...],
         rois: InputTensor[rank=2, ...],
         output_height: Int64,
@@ -4181,7 +4185,7 @@ struct ROIAlign:
 @compiler.register("mo.tile")
 struct Tile:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType, rank: Int
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
@@ -4195,7 +4199,7 @@ struct Tile:
         )
 
     @staticmethod
-    fn shape(
+    def shape(
         input: InputTensor[...],
         repeats: InputTensor[rank=1, ...],
     ) raises -> IndexList[input.rank]:
@@ -4217,7 +4221,7 @@ struct Tile:
 @compiler.register("repeat_interleave")
 struct RepeatInterleave:
     @staticmethod
-    fn execute(
+    def execute(
         output: OutputTensor[...],
         input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         repeats: InputTensor[rank=1, ...],
@@ -4235,7 +4239,7 @@ struct RepeatInterleave:
         )
 
     @staticmethod
-    fn shape(
+    def shape(
         input: InputTensor[...], repeats: InputTensor[rank=1, ...], axis: Scalar
     ) raises -> IndexList[input.rank]:
         comptime assert (
@@ -4259,7 +4263,7 @@ struct RepeatInterleave:
 @compiler.register("mo.random.normal")
 struct RandomNormal:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         target: StaticString,
     ](
@@ -4272,7 +4276,7 @@ struct RandomNormal:
     ) capturing raises:
         @parameter
         @always_inline
-        fn output_fn[
+        def output_fn[
             _width: Int,
             _rank: Int,
         ](coords: IndexList[_rank], val: SIMD[dtype, _width]):
@@ -4286,7 +4290,7 @@ struct RandomNormal:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         output_rank: Int
     ](
         shape: InputTensor[rank=1, ...],
@@ -4304,7 +4308,7 @@ struct RandomNormal:
 @compiler.register("mo.random.uniform")
 struct RandomUniform:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         target: StaticString,
     ](
@@ -4317,7 +4321,7 @@ struct RandomUniform:
     ) capturing raises:
         @parameter
         @always_inline
-        fn output_fn[
+        def output_fn[
             _width: Int,
             _rank: Int,
         ](coords: IndexList[_rank], val: SIMD[dtype, _width]):
@@ -4331,7 +4335,7 @@ struct RandomUniform:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         output_rank: Int
     ](
         shape: InputTensor[rank=1, ...],
@@ -4356,7 +4360,7 @@ struct RandomUniform:
 @compiler.register("mo.softmax")
 struct Softmax:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString
     ](
         output: OutputTensor[...],
@@ -4367,7 +4371,7 @@ struct Softmax:
         # For adapting input fusion lambda required by call
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[output.dtype, width]:
             return input._lambda_load[width=width](
@@ -4391,7 +4395,7 @@ struct Softmax:
 @compiler.register("mo.logsoftmax")
 struct LogSoftmax:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString
     ](
         output: OutputTensor[...],
@@ -4402,7 +4406,7 @@ struct LogSoftmax:
         # For adapting input fusion lambda required by call
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[output.dtype, width]:
             return input._lambda_load[width=width](
@@ -4431,7 +4435,7 @@ struct LogSoftmax:
 @compiler.register("mo.cumsum")
 struct CumSum:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         exclusive: Int,
@@ -4454,7 +4458,7 @@ struct CumSum:
 # ===-----------------------------------------------------------------------===#
 
 
-fn concat_shape_impl[
+def concat_shape_impl[
     dtype: DType, rank: Int, size: Int, io_spec: IOSpec
 ](
     axis0: Int,
@@ -4464,7 +4468,7 @@ fn concat_shape_impl[
 
     @parameter
     @always_inline
-    fn shape_equal_ignore_axis(
+    def shape_equal_ignore_axis(
         s1: IndexList[rank], s2: IndexList[rank]
     ) -> Bool:
         comptime for i in range(rank):
@@ -4493,7 +4497,7 @@ fn concat_shape_impl[
 @compiler.register("mo.shard_and_stack")
 struct ShardWeights:
     @staticmethod
-    fn execute[
+    def execute[
         axis: Int,
     ](
         outputs: OutputVariadicTensors,
@@ -4510,7 +4514,7 @@ struct ShardWeights:
 @compiler.register("mo.concat")
 struct Concat:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         target: StaticString,
@@ -4527,7 +4531,7 @@ struct Concat:
 
         @always_inline
         @parameter
-        fn inputs_lambda[
+        def inputs_lambda[
             input_index: Int,
             width: Int,
             _rank: Int,
@@ -4541,7 +4545,7 @@ struct Concat:
 
         @always_inline
         @parameter
-        fn epilogue_wrapper[
+        def epilogue_wrapper[
             _dtype: DType, _rank: Int, width: Int, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
             output._lambda_store[width=width, element_alignment=alignment](
@@ -4564,7 +4568,7 @@ struct Concat:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
         rank: Int,
     ](
@@ -4575,7 +4579,7 @@ struct Concat:
 
 # NOTE: there are a lot of similarities between this and the shape func
 # for mo.concat.
-fn concat_from_list_shape_impl[
+def concat_from_list_shape_impl[
     dtype: DType, rank: Int
 ](
     axis0: Int,
@@ -4589,7 +4593,7 @@ fn concat_from_list_shape_impl[
 
     @parameter
     @always_inline
-    fn shape_equal_ignore_axis(
+    def shape_equal_ignore_axis(
         s1: IndexList[rank], s2: IndexList[rank]
     ) -> Bool:
         for i in range(rank):
@@ -4624,7 +4628,7 @@ fn concat_from_list_shape_impl[
 @compiler.register("mo.split")
 struct Split:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         target: StaticString,
@@ -4673,7 +4677,7 @@ struct Split:
 @compiler.register("split_ith_output_shape")
 struct SplitOutputShapeHelper:
     @staticmethod
-    fn execute(
+    def execute(
         input_buf: InputTensor[...],
         split_sizes_buf: InputTensor[...],
         split_axis: Scalar,
@@ -4683,7 +4687,7 @@ struct SplitOutputShapeHelper:
 
     @staticmethod
     @always_inline
-    fn shape[
+    def shape[
         rank: Int,
         input_type: DType,
         split_size_type: DType,
@@ -4727,7 +4731,7 @@ struct SplitOutputShapeHelper:
 @compiler.register("mo.conv")
 struct Conv:
     @staticmethod
-    fn execute[
+    def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
         lambdas_have_fusion: Bool,
@@ -4748,7 +4752,8 @@ struct Conv:
     ) capturing raises:
         @parameter
         @always_inline
-        fn output_fn[
+        @__copy_capture(output)
+        def output_fn[
             _dtype: DType, _rank: Int, _width: Int
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             output._lambda_store[width=_width](
@@ -4883,7 +4888,7 @@ struct Conv:
                 )
 
     @staticmethod
-    fn shape(
+    def shape(
         input: InputTensor[...],
         filter: InputTensor[...],
         strides: InputTensor[rank=1, ...],
@@ -4916,7 +4921,7 @@ struct Conv2dResidualAdd:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         stride_h: Int,
         stride_w: Int,
         pad_top: Int,
@@ -4935,7 +4940,8 @@ struct Conv2dResidualAdd:
     ) capturing raises:
         @parameter
         @always_inline
-        fn output_fn[
+        @__copy_capture(output, bias)
+        def output_fn[
             _dtype: DType, _rank: Int, _width: Int
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var result = val
@@ -4990,7 +4996,7 @@ struct Conv2dResidualAdd:
             )
 
     @staticmethod
-    fn shape(
+    def shape(
         input: InputTensor[rank=4, ...],
         filter: InputTensor[rank=4, ...],
         source: InputTensor[rank=4, ...],
@@ -5003,7 +5009,7 @@ struct Conv2dResidualAdd:
 @compiler.register("mo.conv_transpose")
 struct ConvTranspose:
     @staticmethod
-    fn execute[
+    def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
         lambdas_have_fusion: Bool,
@@ -5072,7 +5078,7 @@ struct ConvTranspose:
 
         @parameter
         @always_inline
-        fn output_fn[
+        def output_fn[
             _dtype: DType, _rank: Int, _width: Int
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             output._lambda_store[width=_width](
@@ -5136,7 +5142,7 @@ struct ConvTranspose:
             )
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType
     ](
         input: InputTensor[dtype=dtype, ...],
@@ -5161,7 +5167,7 @@ struct ConvTranspose:
 @compiler.register("fold")
 struct Fold:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         stride_h: Int,
         stride_w: Int,
@@ -5199,7 +5205,7 @@ struct Fold:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
         stride_h: Int,
         stride_w: Int,
@@ -5232,7 +5238,7 @@ struct Fold:
 @compiler.register("irfft")
 struct IRFFT:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
         dtype: DType,
         rank: Int,
@@ -5260,7 +5266,7 @@ struct IRFFT:
 @compiler.register("mo.mla.indexer.ragged.float8.paged")
 struct MLAIndexerRaggedFloat8Paged:
     @staticmethod
-    fn execute[
+    def execute[
         *,
         num_heads: Int,
         depth: Int,
@@ -5394,7 +5400,7 @@ struct MLAIndexerRaggedFloat8Paged:
 @compiler.register("masked_flash_attention_gpu")
 struct MaskedFlashAttentionGPU:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString, rank: Int
     ](
         output: OutputTensor[rank=rank, ...],
@@ -5465,7 +5471,7 @@ struct MaskedFlashAttentionGPU:
 @compiler.register("mo.mha.no_cache")
 struct FlashAttentionGPU:
     @staticmethod
-    fn execute[
+    def execute[
         rank: Int,
         //,
         target: StaticString,
@@ -5528,7 +5534,7 @@ struct FlashAttentionGPU:
 
         @parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
-        fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+        def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
             flash_attention[](
                 output_buffer,
                 q_buffer,
@@ -5549,7 +5555,7 @@ struct FlashAttentionGPU:
 @compiler.register("mo.mha.padded.no_cache")
 struct PaddedFlashAttentionGPU:
     @staticmethod
-    fn execute[
+    def execute[
         rank: Int,
         //,
         target: StaticString,
@@ -5578,7 +5584,7 @@ struct PaddedFlashAttentionGPU:
 
         @parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
-        fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+        def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
             flash_attention[
                 _use_valid_length=True,
                 _padded_ndbuffer=True,
@@ -5603,7 +5609,7 @@ struct PaddedFlashAttentionGPU:
 @compiler.register("mo.mha.ragged.no_cache")
 struct RaggedFlashAttentionGPU:
     @staticmethod
-    fn execute[
+    def execute[
         rank: Int,
         //,
         target: StaticString,
@@ -5640,7 +5646,7 @@ struct RaggedFlashAttentionGPU:
 
         @parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
-        fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+        def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
             flash_attention_ragged[](
                 output_buffer,
                 q_buffer,
@@ -5663,7 +5669,7 @@ struct RaggedFlashAttentionGPU:
 @compiler.register("no_mask_flash_attention_cpu")
 struct NoMaskFlashAttentionCPU:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
     ](
@@ -5675,7 +5681,7 @@ struct NoMaskFlashAttentionCPU:
     ) capturing raises:
         @parameter
         @always_inline
-        fn k_input_fn[
+        def k_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[k.dtype, width]:
             return k._lambda_load[width=width](
@@ -5684,7 +5690,7 @@ struct NoMaskFlashAttentionCPU:
 
         @parameter
         @always_inline
-        fn v_input_fn[
+        def v_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[v.dtype, width]:
             return v._lambda_load[width=width](
@@ -5693,7 +5699,7 @@ struct NoMaskFlashAttentionCPU:
 
         @parameter
         @always_inline
-        fn mask_input_fn[
+        def mask_input_fn[
             width: Int, _rank: Int
         ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
             return SIMD[dtype, width](0)
@@ -5711,7 +5717,7 @@ struct NoMaskFlashAttentionCPU:
 @compiler.register("with_mask_flash_attention_split_kv_cpu")
 struct WithMaskFlashAttentionSplitKVCPU:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
     ](
@@ -5726,7 +5732,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
     ) capturing raises:
         @parameter
         @always_inline
-        fn k_input_fn[
+        def k_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[k.dtype, width]:
             return k._lambda_load[width=width](
@@ -5735,7 +5741,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
 
         @parameter
         @always_inline
-        fn v_input_fn[
+        def v_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[v.dtype, width]:
             return v._lambda_load[width=width](
@@ -5744,7 +5750,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
 
         @parameter
         @always_inline
-        fn k_cache_input_fn[
+        def k_cache_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[k_cache.dtype, width]:
             return k_cache._lambda_load[width=width](
@@ -5753,7 +5759,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
 
         @parameter
         @always_inline
-        fn v_cache_input_fn[
+        def v_cache_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[v_cache.dtype, width]:
             return v_cache._lambda_load[width=width](
@@ -5762,7 +5768,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
 
         @parameter
         @always_inline
-        fn mask_input_fn[
+        def mask_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[mask.dtype, width]:
             return mask._lambda_load[width=width](
@@ -5787,7 +5793,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
         )
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
         rank: Int,
     ](
@@ -5805,7 +5811,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
 @compiler.register("with_mask_flash_attention_cpu")
 struct WithMaskFlashAttentionCPU:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
     ](
@@ -5818,7 +5824,7 @@ struct WithMaskFlashAttentionCPU:
     ) capturing raises:
         @parameter
         @always_inline
-        fn k_input_fn[
+        def k_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[k.dtype, width]:
             return k._lambda_load[width=width](
@@ -5827,7 +5833,7 @@ struct WithMaskFlashAttentionCPU:
 
         @parameter
         @always_inline
-        fn v_input_fn[
+        def v_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[v.dtype, width]:
             return v._lambda_load[width=width](
@@ -5836,7 +5842,7 @@ struct WithMaskFlashAttentionCPU:
 
         @parameter
         @always_inline
-        fn mask_input_fn[
+        def mask_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[mask.dtype, width]:
             return mask._lambda_load[width=width](
@@ -5866,7 +5872,7 @@ struct WithMaskFlashAttentionCPU:
 struct GGMLQ40Dequantize:
     @staticmethod
     @always_inline
-    fn execute[
+    def execute[
         _trace_name: StaticString,
     ](
         output: OutputTensor[dtype=DType.float32, rank=2, ...],
@@ -5885,7 +5891,7 @@ struct GGMLQ40Dequantize:
 
     @staticmethod
     @always_inline
-    fn shape(
+    def shape(
         input: InputTensor[dtype=DType.uint8, rank=2, ...]
     ) -> IndexList[2]:
         comptime block_nbytes = size_of[Q4sym[group_size=32]]()
@@ -5900,7 +5906,7 @@ struct GGMLQ40Dequantize:
 struct VroomQ40Matmul:
     @staticmethod
     @always_inline
-    fn execute[
+    def execute[
         _trace_name: StaticString,
     ](
         c: OutputTensor[dtype=DType.float32, rank=2, ...],
@@ -5914,7 +5920,7 @@ struct VroomQ40Matmul:
 
     @staticmethod
     @always_inline
-    fn shape(
+    def shape(
         a: InputTensor[dtype=DType.float32, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) -> IndexList[2]:
@@ -5925,7 +5931,7 @@ struct VroomQ40Matmul:
 struct VroomQ40RepackWeights:
     @staticmethod
     @always_inline
-    fn execute[
+    def execute[
         _trace_name: StaticString,
     ](
         b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
@@ -5938,7 +5944,7 @@ struct VroomQ40RepackWeights:
 
     @staticmethod
     @always_inline
-    fn shape(b: InputTensor[dtype=DType.uint8, rank=2, ...]) -> IndexList[2]:
+    def shape(b: InputTensor[dtype=DType.uint8, rank=2, ...]) -> IndexList[2]:
         return b.shape()
 
 
@@ -5951,7 +5957,7 @@ struct VroomQ40RepackWeights:
 struct GGMLQ4KDequantize:
     @staticmethod
     @always_inline
-    fn execute[
+    def execute[
         _trace_name: StaticString,
     ](
         output: OutputTensor[dtype=DType.float32, rank=2, ...],
@@ -5965,7 +5971,7 @@ struct GGMLQ4KDequantize:
 
     @staticmethod
     @always_inline
-    fn shape(
+    def shape(
         input: InputTensor[dtype=DType.uint8, rank=2, ...]
     ) -> IndexList[2]:
         comptime block_nbytes = size_of[block_Q4_K]()
@@ -5985,7 +5991,7 @@ struct GGMLQ4KDequantize:
 struct VroomQ4KMatmul:
     @staticmethod
     @always_inline
-    fn execute[
+    def execute[
         _trace_name: StaticString,
     ](
         c: OutputTensor[dtype=DType.float32, rank=2, ...],
@@ -5999,7 +6005,7 @@ struct VroomQ4KMatmul:
 
     @staticmethod
     @always_inline
-    fn shape(
+    def shape(
         a: InputTensor[dtype=DType.float32, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) -> IndexList[2]:
@@ -6010,7 +6016,7 @@ struct VroomQ4KMatmul:
 struct VroomQ4KRepackWeights:
     @staticmethod
     @always_inline
-    fn execute[
+    def execute[
         _trace_name: StaticString,
     ](
         b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
@@ -6023,7 +6029,7 @@ struct VroomQ4KRepackWeights:
 
     @staticmethod
     @always_inline
-    fn shape(
+    def shape(
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) -> IndexList[2]:
         return b.shape()
@@ -6038,7 +6044,7 @@ struct VroomQ4KRepackWeights:
 struct GGMLQ6KDequantize:
     @staticmethod
     @always_inline
-    fn execute[
+    def execute[
         _trace_name: StaticString,
     ](
         output: OutputTensor[dtype=DType.float32, rank=2, ...],
@@ -6057,7 +6063,7 @@ struct GGMLQ6KDequantize:
 
     @staticmethod
     @always_inline
-    fn shape(
+    def shape(
         input: InputTensor[dtype=DType.uint8, rank=2, ...]
     ) -> IndexList[2]:
         comptime block_nbytes = size_of[block_Q6_K]()
@@ -6077,7 +6083,7 @@ struct GGMLQ6KDequantize:
 struct VroomQ6KMatmul:
     @staticmethod
     @always_inline
-    fn execute[
+    def execute[
         _trace_name: StaticString,
     ](
         c: OutputTensor[dtype=DType.float32, rank=2, ...],
@@ -6091,7 +6097,7 @@ struct VroomQ6KMatmul:
 
     @staticmethod
     @always_inline
-    fn shape(
+    def shape(
         a: InputTensor[dtype=DType.float32, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) -> IndexList[2]:
@@ -6102,7 +6108,7 @@ struct VroomQ6KMatmul:
 struct VroomQ6KRepackWeights:
     @staticmethod
     @always_inline
-    fn execute[
+    def execute[
         _trace_name: StaticString,
     ](
         b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
@@ -6115,7 +6121,7 @@ struct VroomQ6KRepackWeights:
 
     @staticmethod
     @always_inline
-    fn shape(
+    def shape(
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) -> IndexList[2]:
         return b.shape()
@@ -6130,7 +6136,7 @@ struct VroomQ6KRepackWeights:
 struct QMatmulGPU_b4_g32:
     @staticmethod
     @always_inline
-    fn execute[
+    def execute[
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -6153,7 +6159,7 @@ struct QMatmulGPU_b4_g32:
 
     @staticmethod
     @always_inline
-    fn shape(
+    def shape(
         a: InputTensor[dtype=DType.float32, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) -> IndexList[2]:
@@ -6164,7 +6170,7 @@ struct QMatmulGPU_b4_g32:
 struct QMatmulGPU_b4_g128:
     @staticmethod
     @always_inline
-    fn execute[
+    def execute[
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -6187,7 +6193,7 @@ struct QMatmulGPU_b4_g128:
 
     @staticmethod
     @always_inline
-    fn shape(
+    def shape(
         a: InputTensor[dtype=DType.float32, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) -> IndexList[2]:
@@ -6198,7 +6204,7 @@ struct QMatmulGPU_b4_g128:
 struct QMatmulGPURepackGGUF:
     @staticmethod
     @always_inline
-    fn execute[
+    def execute[
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -6217,7 +6223,7 @@ struct QMatmulGPURepackGGUF:
 
     @staticmethod
     @always_inline
-    fn shape(
+    def shape(
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) -> IndexList[2]:
         return b.shape()
@@ -6227,7 +6233,7 @@ struct QMatmulGPURepackGGUF:
 struct QMatmulGPURepackGPTQ_b4_g128:
     @staticmethod
     @always_inline
-    fn execute[
+    def execute[
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -6246,7 +6252,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
 
     @staticmethod
     @always_inline
-    fn shape(
+    def shape(
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) -> IndexList[2]:
         return IndexList[2](b.dim_size[1](), b.dim_size[0]())
@@ -6256,7 +6262,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
 struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
     @staticmethod
     @always_inline
-    fn execute[
+    def execute[
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -6285,7 +6291,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
 
     @staticmethod
     @always_inline
-    fn shape(
+    def shape(
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
         perm_idx: InputTensor[dtype=DType.int32, rank=1, ...],
     ) -> IndexList[2]:
@@ -6306,7 +6312,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
 
 
 @always_inline
-fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
+def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     dtype: DType,
     weight_type: DType,
     target: StaticString,
@@ -6337,7 +6343,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
 
 
 @always_inline
-fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
+def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     dtype: DType,
     weight_type: DType,
     target: StaticString,
@@ -6370,7 +6376,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
 
 
 @always_inline
-fn generic_fused_qkv_matmul_kv_cache_bshd_paged_kernel_api[
+def generic_fused_qkv_matmul_kv_cache_bshd_paged_kernel_api[
     dtype: DType,
     target: StaticString,
 ](
@@ -6399,7 +6405,7 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_paged_kernel_api[
 struct Struct_fused_qkv_matmul_padded_paged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -6445,7 +6451,7 @@ struct Struct_fused_qkv_matmul_padded_paged:
 struct Struct_fused_qkv_matmul_padded_ragged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -6484,7 +6490,7 @@ struct Struct_fused_qkv_matmul_padded_ragged:
 struct Struct_fused_qkv_matmul_padded_ragged_quantized:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         weight_type: DType,
         group_size: Int,
@@ -6532,7 +6538,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
 struct Struct_fused_qkv_matmul_padded_ragged_bias:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -6573,7 +6579,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
 struct Struct_fused_qkv_matmul_padded_ragged_scale:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         scale_type: DType,
         output_type: DType,
@@ -6634,7 +6640,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
 struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         scale_type: DType,
         output_type: DType,
@@ -6684,7 +6690,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
 struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         scale_type: DType,
         output_type: DType,
@@ -6747,7 +6753,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
 struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         weight_type: DType,
         group_size: Int,
@@ -6799,7 +6805,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
 
 
 @always_inline
-fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
+def generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     dtype: DType,
     freq_dtype: DType,
     cache_dtype: DType,
@@ -6844,7 +6850,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
 struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         freq_dtype: DType,
         //,
@@ -6893,7 +6899,7 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
 struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         freq_dtype: DType,
         //,
@@ -6941,7 +6947,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
 struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -6989,7 +6995,7 @@ struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
 struct Struct_rope_ragged_paged[interleaved: Bool]:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         freq_dtype: DType,
         //,
@@ -7004,7 +7010,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
     ) capturing raises:
         @always_inline
         @parameter
-        fn description_fn() -> String:
+        def description_fn() -> String:
             return String(";").join(
                 Span(
                     [
@@ -7023,7 +7029,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
 
         @always_inline
         @parameter
-        fn output_fn[
+        def output_fn[
             width: Int, alignment: Int
         ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
             output._lambda_store[width=width, element_alignment=alignment](
@@ -7067,7 +7073,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
 struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         freq_dtype: DType,
         //,
@@ -7083,7 +7089,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
     ) capturing raises:
         @always_inline
         @parameter
-        fn description_fn() -> String:
+        def description_fn() -> String:
             return String(";").join(
                 Span(
                     [
@@ -7103,7 +7109,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
 
         @always_inline
         @parameter
-        fn output_fn[
+        def output_fn[
             width: Int, alignment: Int
         ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
             output._lambda_store[width=width, element_alignment=alignment](
@@ -7158,7 +7164,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
 struct Struct_mha_padded_paged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -7207,7 +7213,7 @@ struct Struct_mha_padded_paged:
 
 
 @always_inline
-fn _unmarshal_mha_decode_dispatch_metadata(
+def _unmarshal_mha_decode_dispatch_metadata(
     mha_decode_dispatch_metadata: InputTensor[dtype=DType.int64, rank=1, ...],
 ) -> MHADecodeDispatchMetadata:
     return MHADecodeDispatchMetadata(
@@ -7222,7 +7228,7 @@ fn _unmarshal_mha_decode_dispatch_metadata(
 struct Struct_get_mha_decode_num_partitions:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         *, n_kv_heads: Int
     ](
         num_partitions: OutputTensor[dtype=DType.int64, rank=1, ...],
@@ -7262,7 +7268,7 @@ struct Struct_get_mha_decode_num_partitions:
 
 
 @always_inline
-fn _execute_mha_ragged_paged_scalar_args[
+def _execute_mha_ragged_paged_scalar_args[
     dtype: DType,
     //,
     target: StaticString,
@@ -7335,7 +7341,7 @@ fn _execute_mha_ragged_paged_scalar_args[
 struct Struct_mha_ragged_paged_scalar_args:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -7379,7 +7385,7 @@ struct Struct_mha_ragged_paged_scalar_args:
 struct Struct_mha_ragged_paged_sink_weights_scalar_args:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -7440,7 +7446,7 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
 struct Struct_mla_decode_ragged_paged_capturable:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         q_dtype: DType,
         kv_dtype: DType,
@@ -7488,7 +7494,7 @@ struct Struct_mla_decode_ragged_paged_capturable:
 struct Struct_mla_decode_ragged_paged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         q_dtype: DType,
         kv_dtype: DType,
@@ -7517,7 +7523,7 @@ struct Struct_mla_decode_ragged_paged:
             max_lengths,
         )
         var null_scalar_args = LayoutTensor[
-            DType.int64, Layout.row_major(4), MutAnyOrigin
+            DType.int64, Layout.row_major(3), MutAnyOrigin
         ](UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]())
         generic_flare_mla_decode_kv_cache_ragged[
             target=target,
@@ -7534,11 +7540,113 @@ struct Struct_mla_decode_ragged_paged:
         )
 
 
+@compiler.register("mo.mla.decode.ragged.paged.scaled")
+struct Struct_mla_decode_ragged_paged_scaled:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        q_dtype: DType,
+        kv_dtype: DType,
+        //,
+        mask_str: StaticString,
+        target: StaticString,
+        per_token_scale_rope_aware: Int = 0,
+        quantization_granularity: Int = 640,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=q_dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        kv_scales: MutableInputTensor[dtype=DType.float32, rank=6, ...],
+        q_scales: InputTensor[dtype=DType.float32, rank=1, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert (
+            kv_blocks.static_spec.shape.get[1]() == 1
+        ), "Only support only_k=True for MLA decompress"
+
+        comptime page_size = kv_blocks.static_spec.shape.get[3]()
+        comptime head_dim = kv_blocks.static_spec.shape.get[5]()
+        comptime kv_num_heads = kv_blocks.static_spec.shape.get[4]()
+        comptime kv_params = KVCacheStaticParams(
+            UInt(kv_num_heads), UInt(head_dim), True
+        )
+
+        var kv_collection = generic_get_paged_cache_with_scales[
+            kv_dtype,
+            DType.float32,
+            kv_params,
+            page_size,
+            quantization_granularity,
+        ](
+            LayoutTensor[kv_dtype, Layout.row_major[6](), MutAnyOrigin](
+                kv_blocks.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    kv_blocks.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+                cache_lengths.to_layout_tensor().ptr,
+                RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                    cache_lengths.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                kv_lookup_table.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    kv_lookup_table.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                max_lengths.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    max_lengths.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.float32, Layout.row_major[6](), MutAnyOrigin](
+                kv_scales.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    kv_scales.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+        )
+
+        # Get the q_scales raw pointer for per-token Q scaling.
+        var q_scale_ptr = UnsafePointer[
+            Scalar[DType.float32], origin=MutAnyOrigin
+        ](q_scales.to_layout_tensor().ptr)
+
+        var null_scalar_args = LayoutTensor[
+            DType.int64, Layout.row_major(4), MutAnyOrigin
+        ](UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]())
+        generic_flare_mla_decode_kv_cache_ragged[
+            target=target,
+            mask_str=mask_str,
+            per_token_scale_rope_aware=per_token_scale_rope_aware != 0,
+        ](
+            q.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            scale,
+            output.to_layout_tensor(),
+            null_scalar_args,
+            context,
+            q_scale_ptr,
+        )
+
+
 @compiler.register("mo.mla.prefill.ragged.paged")
 struct Struct_mla_prefill_ragged_paged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -7587,7 +7695,7 @@ struct Struct_mla_prefill_ragged_paged:
 struct Struct_mla_prefill_ragged_plan:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -7630,7 +7738,7 @@ struct Struct_mla_prefill_ragged_plan:
 struct Struct_mla_decompress_k_cache_ragged_paged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -7671,7 +7779,7 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
 struct Struct_kv_cache_get_max_seq_len_paged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -7698,7 +7806,7 @@ struct Struct_kv_cache_get_max_seq_len_paged:
 struct Struct_mla_prefill_graph_paged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         freq_dtype: DType,
         gamma_dtype: DType,
@@ -7778,7 +7886,7 @@ struct Struct_mla_prefill_graph_paged:
 struct Struct_mla_compute_dispatch_args_scalar:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         num_heads: Int,
         is_fp8_kv: Bool,
         target: StaticString,
@@ -7816,14 +7924,13 @@ struct Struct_mla_compute_dispatch_args_scalar:
         output[0] = Int64(scalars[0])
         output[1] = Int64(scalars[1])
         output[2] = Int64(scalars[2])
-        output[3] = Int64(scalars[3])
 
 
 @compiler.register("mo.mla.graph.decode.paged.fp8.capturable")
 struct Struct_mla_decode_graph_paged_fp8_capturable:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         freq_dtype: DType,
         gamma_dtype: DType,
@@ -7899,7 +8006,7 @@ struct Struct_mla_decode_graph_paged_fp8_capturable:
 struct Struct_mla_decode_graph_paged_fp8:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         freq_dtype: DType,
         gamma_dtype: DType,
@@ -7942,7 +8049,7 @@ struct Struct_mla_decode_graph_paged_fp8:
         ](), "mo.mla.graph.decode.paged.fp8 is only supported on GPU"
 
         var null_ptr = UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]()
-        var null_scalar_args = TileTensor(null_ptr, row_major[4]())
+        var null_scalar_args = TileTensor(null_ptr, row_major[3]())
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.decode.paged.fp8",
@@ -7977,7 +8084,7 @@ struct Struct_mla_decode_graph_paged_fp8:
 struct Struct_mla_prefill_graph_bf16_paged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         kv_dtype: DType,
         freq_dtype: DType,
         gamma_dtype: DType,
@@ -8047,7 +8154,7 @@ struct Struct_mla_prefill_graph_bf16_paged:
 struct Struct_mla_decode_graph_bf16_paged_capturable:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         kv_dtype: DType,
         freq_dtype: DType,
         gamma_dtype: DType,
@@ -8113,7 +8220,7 @@ struct Struct_mla_decode_graph_bf16_paged_capturable:
 struct Struct_mla_decode_graph_bf16_paged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         kv_dtype: DType,
         freq_dtype: DType,
         gamma_dtype: DType,
@@ -8150,7 +8257,7 @@ struct Struct_mla_decode_graph_bf16_paged:
         ](), "mo.mla.graph.decode.paged is only supported on GPU"
 
         var null_ptr = UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]()
-        var null_scalar_args = TileTensor(null_ptr, row_major[4]())
+        var null_scalar_args = TileTensor(null_ptr, row_major[3]())
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.decode.paged",
@@ -8181,7 +8288,7 @@ struct Struct_mla_decode_graph_bf16_paged:
 struct Struct_mla_prefill_graph_decode_paged_fp8_capturable:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         freq_dtype: DType,
         gamma_dtype: DType,
@@ -8270,7 +8377,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_capturable:
 struct Struct_mla_prefill_graph_decode_paged_fp8:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         freq_dtype: DType,
         gamma_dtype: DType,
@@ -8319,7 +8426,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
         ](), "mo.mla.graph.prefill.decode.paged.fp8 is only supported on GPU"
 
         var null_ptr = UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]()
-        var null_scalar_args = TileTensor(null_ptr, row_major[4]())
+        var null_scalar_args = TileTensor(null_ptr, row_major[3]())
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.prefill.decode.paged.fp8",
@@ -8360,7 +8467,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
 struct Struct_mla_prefill_graph_decode_bf16_paged_capturable:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         kv_dtype: DType,
         freq_dtype: DType,
         gamma_dtype: DType,
@@ -8436,7 +8543,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_capturable:
 struct Struct_mla_prefill_graph_decode_bf16_paged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         kv_dtype: DType,
         freq_dtype: DType,
         gamma_dtype: DType,
@@ -8477,7 +8584,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
         ](), "mo.mla.graph.prefill.decode.paged is only supported on GPU"
 
         var null_ptr = UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]()
-        var null_scalar_args = TileTensor(null_ptr, row_major[4]())
+        var null_scalar_args = TileTensor(null_ptr, row_major[3]())
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.prefill.decode.paged",
@@ -8513,7 +8620,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
 struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         kv_dtype: DType,
         freq_dtype: DType,
         gamma_dtype: DType,
@@ -8556,7 +8663,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
         ](), "mo.mla.graph.prefill.decode.paged is only supported on GPU"
 
         var null_ptr = UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]()
-        var null_scalar_args = TileTensor(null_ptr, row_major[4]())
+        var null_scalar_args = TileTensor(null_ptr, row_major[3]())
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.prefill.decode.paged.quantized.capturable",
@@ -8600,7 +8707,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
 struct Struct_cross_attention_ragged_paged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         mask_str: StaticString,
@@ -8652,7 +8759,7 @@ struct Struct_cross_attention_ragged_paged:
 struct Struct_moe_create_indices:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         token_expert_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
@@ -8679,7 +8786,7 @@ struct Struct_moe_router_group_limited:
     @always_inline
     @staticmethod
     @parameter
-    fn execute[
+    def execute[
         scores_type: DType,
         bias_type: DType,
         //,
@@ -8699,7 +8806,7 @@ struct Struct_moe_router_group_limited:
     ) raises:
         @parameter
         @always_inline
-        fn scores_input_fn[
+        def scores_input_fn[
             width: Int
         ](coords: IndexList[2]) -> SIMD[scores_type, width]:
             return expert_scores._lambda_load[width=width](coords)
@@ -8730,7 +8837,7 @@ struct Struct_moe_router_group_limited:
 struct Struct_grouped_matmul_ragged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         c_type: DType,
         a_type: DType,
         b_type: DType,
@@ -8772,7 +8879,7 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
 
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         c_type: DType,
         a_type: DType,
         b_type: DType,
@@ -8847,7 +8954,7 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
 struct Struct_grouped_matmul_dynamic_scaled_fp8:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         c_type: DType,
         a_type: DType,
         b_type: DType,
@@ -8905,7 +9012,7 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
 struct Struct_batched_matmul_dynamic_scaled_fp8:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         c_type: DType,
         a_type: DType,
         b_type: DType,
@@ -8956,7 +9063,7 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
 struct Struct_matmul_dynamic_block_scaled:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         c_type: DType,
         a_type: DType,
         b_type: DType,
@@ -8998,7 +9105,7 @@ struct Struct_matmul_dynamic_block_scaled:
 struct Struct_quantize_dynamic_block_scaled:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         out_dtype: DType,
         scales_type: DType,
         in_dtype: DType,
@@ -9034,7 +9141,7 @@ struct Struct_quantize_dynamic_block_scaled:
 struct Struct_matmul_mxfp4_dequant_fp8:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         c_type: DType,
         a_type: DType,
         b_type: DType,
@@ -9081,7 +9188,7 @@ struct Struct_matmul_mxfp4_dequant_fp8:
 struct Struct_dequant_mxfp4:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         out_type: DType,
         in_type: DType,
         scales_type: DType,
@@ -9129,7 +9236,7 @@ struct Struct_dequant_mxfp4:
 struct Struct_interleave_block_scales:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         scales_type: DType,
         //,
         SF_VECTOR_SIZE: Int,
@@ -9164,7 +9271,7 @@ struct Struct_interleave_block_scales:
 struct Struct_kv_cache_store_paged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType, target: StaticString, key_or_value: Int
     ](
         inputs: FusedInputTensor[dtype=dtype, rank=3, ...],
@@ -9197,7 +9304,7 @@ struct Struct_kv_cache_store_paged:
 
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, alignment: Int
         ](idx: IndexList[3]) capturing -> SIMD[dtype, width]:
             return inputs._lambda_load[
@@ -9218,7 +9325,7 @@ struct Struct_kv_cache_store_paged:
 struct Struct_kv_cache_store_k_scales_paged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         cache_dtype: DType,
         scale_dtype: DType,
         target: StaticString,
@@ -9296,7 +9403,7 @@ struct Struct_kv_cache_store_k_scales_paged:
 
         @parameter
         @__copy_capture(k_cache, input_row_offsets_tt, input_row_offsets)
-        fn write_scale_to_cache[
+        def write_scale_to_cache[
             width: Int,
             rank: Int,
             alignment: Int = 1,
@@ -9348,7 +9455,7 @@ struct Struct_kv_cache_store_k_scales_paged:
 struct Struct_kv_cache_store_padded:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType, target: StaticString, key_or_value: Int
     ](
         inputs: FusedInputTensor[dtype=dtype, rank=4, ...],
@@ -9381,7 +9488,7 @@ struct Struct_kv_cache_store_padded:
 
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, alignment: Int
         ](idx: IndexList[4]) capturing -> SIMD[dtype, width]:
             return inputs._lambda_load[
@@ -9404,7 +9511,7 @@ struct Struct_kv_cache_store_padded:
 
 
 # TODO(GEX-1492): use filter_rank+1 instead of packed_filter_rank
-fn layout_transform_conv_transpose_filter_common[
+def layout_transform_conv_transpose_filter_common[
     dtype: DType,
     filter_rank: Int,
     packed_filter_rank: Int,
@@ -9428,7 +9535,7 @@ fn layout_transform_conv_transpose_filter_common[
 struct LayoutTransformRSFC2FRSCf:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType, filter_rank: Int, packed_filter_rank: Int
     ](
         packed_filter: OutputTensor[dtype=dtype, rank=packed_filter_rank, ...],
@@ -9441,7 +9548,7 @@ struct LayoutTransformRSFC2FRSCf:
 struct LayoutTransformQRSFC2FQRSCf:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType, filter_rank: Int, packed_filter_rank: Int
     ](
         packed_filter: OutputTensor[dtype=dtype, rank=packed_filter_rank, ...],
@@ -9454,12 +9561,12 @@ struct LayoutTransformQRSFC2FQRSCf:
 struct PackConvFilterShape:
     @always_inline
     @staticmethod
-    fn execute(filter_buf: InputTensor) raises:
+    def execute(filter_buf: InputTensor) raises:
         raise Error("Only meant to be used for shape function!")
 
     @always_inline
     @staticmethod
-    fn shape[
+    def shape[
         rank: Int,
         filter_type: DType,
         input_shape: DimList,
@@ -9512,7 +9619,7 @@ struct PackConvFilterShape:
 struct PackConvTransposeFilterShape:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         rank: Int,
         filter_type: DType,
     ](filter_buf: InputTensor[dtype=filter_type, rank=rank, ...]) raises:
@@ -9520,7 +9627,7 @@ struct PackConvTransposeFilterShape:
 
     @always_inline
     @staticmethod
-    fn shape[
+    def shape[
         rank: Int,
         filter_type: DType,
     ](filter_buf: InputTensor[dtype=filter_type, rank=rank, ...]) -> IndexList[
@@ -9536,7 +9643,7 @@ struct PackConvTransposeFilterShape:
 # Wrapper that take `num_groups` as a parameter.
 # This is required unti `mo.layout.transform` passes `num_groups` as a runtime
 # value.
-fn layout_transform_conv_filter_common[
+def layout_transform_conv_filter_common[
     dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
 ](
     packed_filter: ManagedTensorSlice[dtype=dtype, rank=packed_rank, ...],
@@ -9557,7 +9664,7 @@ fn layout_transform_conv_filter_common[
 struct LayoutTransformQRSCF2FQRSCf:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
     ](
         packed_filter: OutputTensor[dtype=dtype, rank=packed_rank, ...],
@@ -9572,7 +9679,7 @@ struct LayoutTransformQRSCF2FQRSCf:
 struct LayoutTransformRSCF2FRSCf:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
     ](
         packed_filter: OutputTensor[dtype=dtype, rank=packed_rank, ...],
@@ -9587,7 +9694,7 @@ struct LayoutTransformRSCF2FRSCf:
 struct LayoutTransformMatmulKN2KNkni:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         a_type: DType,
         a_shape: DimList,
         b_type: DType,
@@ -9620,7 +9727,7 @@ struct LayoutTransformMatmulKN2KNkni:
 struct LayoutTransformMatmulNK2KNkni:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         a_type: DType,
         a_shape: DimList,
         b_type: DType,
@@ -9653,12 +9760,12 @@ struct LayoutTransformMatmulNK2KNkni:
 struct PackMatmulBShapeFunc:
     @always_inline
     @staticmethod
-    fn execute(b_input: InputTensor) raises:
+    def execute(b_input: InputTensor) raises:
         raise Error("Only meant to be used for shape function!")
 
     @always_inline
     @staticmethod
-    fn shape[
+    def shape[
         a_type: DType,
         a_shape: DimList,
         b_type: DType,
@@ -9689,7 +9796,7 @@ struct PackMatmulBShapeFunc:
 struct Struct_rms_norm_kv_cache_ragged_paged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         multiply_before_cast: Bool,
         per_head_norm: Bool,
@@ -9739,7 +9846,7 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
 # ===-----------------------------------------------------------------------===#
 
 
-fn print_kv_cache_paged_generic_kernel_api[
+def print_kv_cache_paged_generic_kernel_api[
     dtype: DType,
     //,
     target: StaticString,
@@ -9774,7 +9881,7 @@ fn print_kv_cache_paged_generic_kernel_api[
 struct Struct_print_kv_cache_paged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -9815,7 +9922,7 @@ struct Struct_print_kv_cache_paged:
 struct Struct_kv_matmul_ragged_paged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -9858,7 +9965,7 @@ struct Struct_kv_matmul_ragged_paged:
 struct Struct_k_matmul_ragged_paged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -9893,7 +10000,7 @@ struct Struct_k_matmul_ragged_paged:
 struct Struct_k_matmul_ragged_paged_scale:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         scale_dtype: DType,
         kv_cache_t: DType,
@@ -9942,7 +10049,7 @@ struct Struct_k_matmul_ragged_paged_scale:
 struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         quantization_encoding_q: StaticString,
         quantization_encoding_k: StaticString,
         quantization_encoding_v: StaticString,
@@ -9992,7 +10099,7 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
 struct Struct_fused_token_sampling:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         out_idx_type: DType,
@@ -10069,7 +10176,7 @@ struct Struct_fused_token_sampling:
 struct Struct_min_p_sampling:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         out_idx_type: DType,
@@ -10109,7 +10216,7 @@ struct Struct_min_p_sampling:
 struct Struct_sampler_apply_penalties:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         logit_type: DType,
         penalty_type: DType,
         rank: Int,
@@ -10144,7 +10251,7 @@ struct Struct_sampler_apply_penalties:
 struct Struct_sampler_update_frequency_data:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         token_type: DType,
         //,
         target: StaticString,
@@ -10179,7 +10286,7 @@ struct Struct_sampler_update_frequency_data:
 struct Struct_swishGLU:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         c: OutputTensor[rank=2, ...],
@@ -10198,7 +10305,7 @@ struct Struct_swishGLU:
 
 
 @always_inline
-fn _check_signal_buffer_size(
+def _check_signal_buffer_size(
     signal_buffer_size: Int, input_size_bytes: Int
 ) raises:
     # The signal buffer has to be large enough to hold the entire input buffer.
@@ -10219,7 +10326,7 @@ fn _check_signal_buffer_size(
 
 
 @always_inline("nodebug")
-fn task_id_for_device(device_id: Int, num_workers: Int) -> Int:
+def task_id_for_device(device_id: Int, num_workers: Int) -> Int:
     # Map from device ID to task ID for CPU affinity.
     # Note: Keep in sync with taskIdForDevice() in MGPPrimitives.cpp
     if num_workers <= 1:
@@ -10228,7 +10335,7 @@ fn task_id_for_device(device_id: Int, num_workers: Int) -> Int:
 
 
 @always_inline
-fn _launch_device_collective[
+def _launch_device_collective[
     num_devices: Int,
     F: fn[Int]() raises unified -> None,
 ](func: F, dev_ctxs: DeviceContextPtrList) raises:
@@ -10247,7 +10354,7 @@ fn _launch_device_collective[
     # Wrap the launch function in a Mojo async function which does not raise.
     @always_inline
     @parameter
-    async fn wrapper[index: Int]() -> None:
+    async def wrapper[index: Int]() -> None:
         try:
             func[index]()
         except e:
@@ -10273,14 +10380,14 @@ fn _launch_device_collective[
 @compiler.register("mo.distributed.allreduce.sum")
 struct DistributedAllReduceSum:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         target: StaticString,
         _trace_name: StaticString,
     ](
         outputs: FusedOutputVariadicTensors[dtype=dtype, rank=rank, ...],
-        inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
@@ -10306,11 +10413,12 @@ struct DistributedAllReduceSum:
         )
 
         var input_size_bytes = inputs[0].size() * size_of[dtype]()
-        _check_signal_buffer_size(
-            signal_buffers[0].size(), input_size_bytes * 2
-        )
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
         # Marshal input tensors, output tensors, and signal buffers into the expected format.
+        var in_bufs = InlineArray[
+            NDBuffer[rank=rank, dtype, ImmutAnyOrigin], num_devices
+        ](fill={})
         var out_bufs = InlineArray[
             NDBuffer[rank=rank, dtype, MutAnyOrigin], num_devices
         ](fill={})
@@ -10319,56 +10427,27 @@ struct DistributedAllReduceSum:
         ](fill={})
 
         comptime for i in range(num_devices):
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                inputs[i]
+            ).make_dims_unknown()
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(
                 outputs[i]
             ).make_dims_unknown()
-
-            # Split the signal_buffers slab in half: lower half for the
-            # Signal struct and any payload, upper half for the stable
-            # input copy.
-            var half = signal_buffers[i].size() // 2
-            var signal_buffer, _ = signal_buffers[i].split(half)
-            rank_sigs[i] = signal_buffer._ptr.bitcast[Signal]()
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
-        fn launch_allreduce[
+        def launch_allreduce[
             index: Int
         ]() raises unified {
-            read dev_ctxs_input,
-            read inputs,
+            read in_bufs,
             read out_bufs,
-            read outputs,
             read rank_sigs,
-            read signal_buffers,
+            read dev_ctxs_input,
+            read outputs,
         }:
-            var stable_input = (
-                signal_buffers[index]
-                .split(signal_buffers[index].size() // 2)[1]
-                .like(inputs[index])
-            )
-
-            copy_tensor[target=target, _trace_name=_trace_name](
-                stable_input, inputs[index], dev_ctxs_input[index]
-            )
-
-            var stable_inputs = InlineArray[
-                NDBuffer[rank=rank, dtype, ImmutAnyOrigin], num_devices
-            ](fill={})
-
-            comptime for i in range(num_devices):
-                stable_inputs[i] = (
-                    managed_tensor_slice_to_ndbuffer(
-                        signal_buffers[i]
-                        .split(signal_buffers[i].size() // 2)[1]
-                        .like(inputs[i])
-                    )
-                    .make_dims_unknown()
-                    .get_immutable()
-                )
-
             @always_inline
             @parameter
-            fn output_lambda[
+            def output_lambda[
                 output_index: Int,
                 _dtype: DType,
                 _rank: Int,
@@ -10387,7 +10466,7 @@ struct DistributedAllReduceSum:
                 ngpus=num_devices,
                 output_lambda=output_lambda[output_index=index, ...],
             ](
-                stable_inputs,
+                in_bufs,
                 out_bufs[index].make_dims_unknown(),
                 rank_sigs,
                 dev_ctxs_input[index],
@@ -10402,7 +10481,7 @@ struct DistributedAllReduceSum:
 @compiler.register("mo.distributed.reducescatter.sum")
 struct DistributedReduceScatterSum:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         target: StaticString,
@@ -10460,7 +10539,7 @@ struct DistributedReduceScatterSum:
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
-        fn launch_reducescatter[
+        def launch_reducescatter[
             index: Int
         ]() raises unified {
             read in_bufs,
@@ -10470,7 +10549,7 @@ struct DistributedReduceScatterSum:
         }:
             @always_inline
             @parameter
-            fn output_lambda[
+            def output_lambda[
                 output_index: Int,
                 _dtype: DType,
                 _width: Int,
@@ -10505,14 +10584,14 @@ struct DistributedReduceScatterSum:
 @compiler.register("mo.distributed.allgather")
 struct DistributedAllGather:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         target: StaticString,
         _trace_name: StaticString,
     ](
         outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
-        inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
@@ -10537,11 +10616,22 @@ struct DistributedAllGather:
         )
 
         var input_size_bytes = inputs[0].size() * size_of[dtype]()
-        _check_signal_buffer_size(
-            signal_buffers[0].size(), input_size_bytes * 2
-        )
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
-        # Marshal output variadic tensors into the expected format.
+        var dev_ctxs = List[DeviceContext]()
+        for i in range(len(dev_ctxs_input)):
+            dev_ctxs.append(dev_ctxs_input[i])
+
+        # Marshal input and output variadic tensors into the expected format.
+        var in_bufs = InlineArray[
+            NDBuffer[rank=rank, dtype, ImmutAnyOrigin], inputs.size
+        ](fill={})
+
+        comptime for i in range(inputs.size):
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                inputs[i]
+            ).make_dims_unknown()
+
         var out_bufs = InlineArray[
             NDBuffer[rank=rank, dtype, MutAnyOrigin], num_devices * num_devices
         ](fill={})
@@ -10551,61 +10641,15 @@ struct DistributedAllGather:
                 outputs[i]
             ).make_dims_unknown()
 
-        # Split the signal_buffers slab in half: lower half for the Signal
-        # struct and any payload, upper half for the stable input copy.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
-        comptime for i in range(num_devices):
-            var half = signal_buffers[i].size() // 2
-            var signal_buffer, _ = signal_buffers[i].split(half)
-            rank_sigs[i] = signal_buffer._ptr.bitcast[Signal]()
-
-        @always_inline
-        fn copy_input[
-            index: Int
-        ]() raises unified {
-            read dev_ctxs_input,
-            read inputs,
-            read signal_buffers,
-        }:
-            var stable_input = (
-                signal_buffers[index]
-                .split(signal_buffers[index].size() // 2)[1]
-                .like(inputs[index])
-            )
-
-            copy_tensor[target=target, _trace_name=_trace_name](
-                stable_input, inputs[index], dev_ctxs_input[index]
-            )
-
-        _launch_device_collective[num_devices](copy_input, dev_ctxs_input)
-
-        # Build stable_inputs from signal buffer stable regions.
-        var stable_inputs = InlineArray[
-            NDBuffer[rank=rank, dtype, ImmutAnyOrigin], num_devices
-        ](fill={})
-
-        comptime for i in range(num_devices):
-            stable_inputs[i] = (
-                managed_tensor_slice_to_ndbuffer(
-                    signal_buffers[i]
-                    .split(signal_buffers[i].size() // 2)[1]
-                    .like(inputs[i])
-                )
-                .make_dims_unknown()
-                .get_immutable()
-            )
-
-        var dev_ctxs = List[DeviceContext]()
-        for i in range(len(dev_ctxs_input)):
-            dev_ctxs.append(dev_ctxs_input[i])
+        comptime for i in range(signal_buffers.size):
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
-            allgather[ngpus=num_devices](
-                stable_inputs, out_bufs, rank_sigs, dev_ctxs
-            )
+            allgather[ngpus=num_devices](in_bufs, out_bufs, rank_sigs, dev_ctxs)
 
 
 @compiler.register("mo.distributed.broadcast")
@@ -10620,7 +10664,7 @@ struct DistributedBroadcast:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         root: Int,
@@ -10628,7 +10672,7 @@ struct DistributedBroadcast:
         _trace_name: StaticString,
     ](
         outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
-        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
@@ -10666,43 +10710,19 @@ struct DistributedBroadcast:
         # Use 2-stage requirement as upper bound.
         var input_size_bytes = input.size() * size_of[dtype]()
         var payload_size = ceildiv(input_size_bytes, num_devices)
-        _check_signal_buffer_size(
-            signal_buffers[0].size(), input_size_bytes + payload_size
-        )
+        _check_signal_buffer_size(signal_buffers[0].size(), payload_size)
 
-        # Split the signal_buffers slab in half: lower half for the Signal
-        # struct and any payload, upper half for the stable input copy.
+        var in_buf = managed_tensor_slice_to_ndbuffer(input)
+
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
         comptime for i in range(signal_buffers.size):
-            var half = signal_buffers[i].size() // 2
-            var signal_buffer, _ = signal_buffers[i].split(half)
-            rank_sigs[i] = signal_buffer._ptr.bitcast[Signal]()
-
-        # Only the root device copies the input to its signal buffer's
-        # stable region. The broadcast barrier inside the kernel ensures
-        # this copy is visible to all GPUs before they read from it.
-        var stable_input = (
-            signal_buffers[root]
-            .split(signal_buffers[root].size() // 2)[1]
-            .like(input)
-        )
-
-        copy_tensor[target=target, _trace_name=_trace_name](
-            stable_input, input, dev_ctxs_input[root]
-        )
-
-        # Build in_buf from root's signal buffer stable region.
-        var in_buf = managed_tensor_slice_to_ndbuffer(
-            signal_buffers[root]
-            .split(signal_buffers[root].size() // 2)[1]
-            .like(input)
-        ).get_immutable()
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
-        fn launch_broadcast[
+        def launch_broadcast[
             index: Int
         ]() raises unified {
             read in_buf,
@@ -10741,7 +10761,7 @@ struct DistributedScatter:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         root: Int,
@@ -10790,7 +10810,7 @@ struct DistributedScatter:
 
         @always_inline
         @parameter
-        fn launch_scatter[
+        def launch_scatter[
             index: Int
         ]() raises unified {
             read in_bufs,
@@ -10812,7 +10832,7 @@ struct DistributedScatter:
 @compiler.register("mo.distributed.allreduce_add_rms_norm_quant_fp8")
 struct DistributedAllReduceAddRMSNormQuantFP8:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         output_type: DType,
         scales_type: DType,
@@ -10820,19 +10840,21 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output: OutputTensor[dtype=output_type, rank=rank, ...],
-        output_scales: OutputTensor[dtype=scales_type, rank=rank, ...],
-        output_residual: OutputTensor[dtype=dtype, rank=rank, ...],
+        outputs: OutputVariadicTensors[dtype=output_type, rank=rank, ...],
+        outputs_scales: OutputVariadicTensors[
+            dtype=scales_type, rank=rank, ...
+        ],
+        outputs_residual: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
-        residual: InputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
-        weight_offset: Scalar[dtype=dtype],
-        scale_ub: Float32,
-        device_ctx: DeviceContextPtr,
+        residuals: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
+        epsilons: InputVariadicTensors[dtype=dtype, ...],
+        weight_offsets: InputVariadicTensors[dtype=dtype, ...],
+        scales_ub: InputVariadicTensors[dtype=DType.float32, ...],
+        dev_ctxs_input: DeviceContextPtrList,
     ) capturing raises:
         comptime num_devices = inputs.size
         comptime assert signal_buffers.size == num_devices, (
@@ -10843,50 +10865,104 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         var input_size_bytes = inputs[0].size() * size_of[dtype]()
         _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
-        # Marshal input tensors into the expected format.
+        # Filter the dev_ctxs_list to have only the GPU devices
+        # The kernel also takes CPU operands, so the CPU devices must be removed.
+        var gpu_ctxs_tuple = StaticTuple[DeviceContextPtr, num_devices]()
+        var dev_idx = 0
+        for i in range(dev_ctxs_input.size):
+            if dev_idx < num_devices and dev_ctxs_input[i].api() != "cpu":
+                gpu_ctxs_tuple[dev_idx] = dev_ctxs_input.ptrs[i]
+                dev_idx += 1
+        if dev_idx != num_devices:
+            raise Error("Invalid number of device contexts")
+        var dev_ctxs = DeviceContextPtrList[num_devices](gpu_ctxs_tuple)
+
+        # Marshal input tensors / output tensors into the expected format.
+        var out_bufs = InlineArray[
+            NDBuffer[rank=rank, output_type, MutAnyOrigin], inputs.size
+        ](fill={})
+        var out_scale_bufs = InlineArray[
+            NDBuffer[rank=rank, scales_type, MutAnyOrigin], inputs.size
+        ](fill={})
+        var out_residual_bufs = InlineArray[
+            NDBuffer[rank=rank, dtype, MutAnyOrigin], inputs.size
+        ](fill={})
         var in_bufs = InlineArray[
             NDBuffer[rank=rank, dtype, ImmutAnyOrigin], inputs.size
         ](fill={})
-
-        comptime for i in range(inputs.size):
-            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
-                inputs[i]
-            ).make_dims_unknown()
-
-        # Marshal output tensors
-        var out_buf = managed_tensor_slice_to_ndbuffer(output)
-        var out_scales_buf = managed_tensor_slice_to_ndbuffer(output_scales)
-        var out_residual_buf = managed_tensor_slice_to_ndbuffer(output_residual)
+        var residual_bufs = InlineArray[
+            NDBuffer[rank=rank, dtype, ImmutAnyOrigin], inputs.size
+        ](fill={})
 
         # Marshal signal buffers.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
-        comptime for i in range(signal_buffers.size):
+        comptime for i in range(inputs.size):
+            # Outputs
+            out_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                outputs[i]
+            ).make_dims_unknown()
+            out_scale_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                outputs_scales[i]
+            ).make_dims_unknown()
+            out_residual_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                outputs_residual[i]
+            ).make_dims_unknown()
+
+            # Inputs
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                inputs[i]
+            ).make_dims_unknown()
+            residual_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                residuals[i]
+            ).make_dims_unknown()
+
+            # Signal buffers
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
-        # Marshal gamma
-        var gamma_tensor = gamma.to_tile_tensor[DType.int64]()
+        @always_inline
+        def launch_fused_allreduce[
+            index: Int
+        ]() raises unified {
+            read out_bufs,
+            read out_scale_bufs,
+            read out_residual_bufs,
+            read in_bufs,
+            read residual_bufs,
+            read rank_sigs,
+            read dev_ctxs,
+            read gammas,
+            read epsilons,
+            read weight_offsets,
+            read scales_ub,
+        }:
+            # Marshal gamma
+            var gamma_tensor = gammas[index].to_tile_tensor[DType.int64]()
 
-        # Marshal residual
-        var residual_buf = managed_tensor_slice_to_ndbuffer(
-            residual
-        ).make_dims_unknown()
+            # TODO: Add a new struct like `VariadicInputScalar`` to represent instead of manually loading the values in the kernel code.
+            var epsilon = epsilons[index].unsafe_ptr()[]
+            var weight_offset = weight_offsets[index].unsafe_ptr()[]
+            var scale_ub = scales_ub[index].unsafe_ptr()[]
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
             allreduce_residual_rmsnorm_fp8(
                 in_bufs,
-                residual_buf,
-                out_buf,
-                out_residual_buf,
+                residual_bufs[index],
+                out_bufs[index],
+                out_residual_bufs[index],
                 gamma_tensor,
                 epsilon,
                 weight_offset,
                 scale_ub,
-                out_scales_buf,
+                out_scale_bufs[index],
                 rank_sigs,
-                device_ctx[],
+                dev_ctxs[index],
+            )
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            _launch_device_collective[num_devices](
+                launch_fused_allreduce, dev_ctxs
             )
 
 
@@ -10895,7 +10971,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
 @compiler.register("index_tensor")
 struct IndexTensor:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         indices_type: DType,
         data_rank: Int,
@@ -10926,7 +11002,7 @@ struct IndexTensor:
 struct AdvancedIndexingGetItem:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         input_rank: Int,
         index_rank: Int,
         output_rank: Int,
@@ -10952,14 +11028,14 @@ struct AdvancedIndexingGetItem:
 
         @parameter
         @always_inline
-        fn input_tensor_fn[
+        def input_tensor_fn[
             width: Int
         ](idx: IndexList[input_rank]) capturing -> SIMD[input_type, width]:
             return input_tensor._fused_load[width](idx)
 
         @always_inline
         @parameter
-        fn indices_fn[
+        def indices_fn[
             indices_index: Int,
         ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
             comptime assert (
@@ -10984,7 +11060,7 @@ struct AdvancedIndexingGetItem:
 
     @always_inline
     @staticmethod
-    fn shape[
+    def shape[
         input_rank: Int,
         index_rank: Int,
         input_type: DType,
@@ -11007,7 +11083,7 @@ struct AdvancedIndexingGetItem:
 struct AdvancedIndexingSetItemInplace:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         input_rank: Int,
         index_rank: Int,
         updates_rank: Int,
@@ -11030,14 +11106,14 @@ struct AdvancedIndexingSetItemInplace:
     ) capturing raises:
         @parameter
         @always_inline
-        fn updates_tensor_fn[
+        def updates_tensor_fn[
             width: Int
         ](idx: IndexList[updates_rank]) capturing -> SIMD[input_type, width]:
             return updates._fused_load[width](idx)
 
         @always_inline
         @parameter
-        fn indices_fn[
+        def indices_fn[
             indices_index: Int,
         ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
             comptime assert (
@@ -11065,7 +11141,7 @@ struct AdvancedIndexingSetItemInplace:
 struct AdvancedIndexingSetItem:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         input_rank: Int,
         index_rank: Int,
         updates_rank: Int,
@@ -11091,7 +11167,7 @@ struct AdvancedIndexingSetItem:
         # First copy over input tensor into the output
         @parameter
         @always_inline
-        fn func[
+        def func[
             width: Int, element_alignment: Int
         ](idx: IndexList[output_tensor.rank]) -> SIMD[
             output_tensor.dtype, width
@@ -11132,7 +11208,7 @@ struct AdvancedIndexingSetItem:
 @compiler.register("mx.argsort")
 struct ArgSort[*, ascending: Bool]:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString
     ](
         indices: OutputTensor[rank=1, ...],
@@ -11160,7 +11236,7 @@ struct ArgSort[*, ascending: Bool]:
 struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         input_type: DType,
         output_type: DType,
         scale_type: DType,
@@ -11190,7 +11266,7 @@ struct QuantizeDynamicScaledFloat8:
     @parameter
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         input_type: DType,
         scales_type: DType,
         output_type: DType,
@@ -11208,7 +11284,7 @@ struct QuantizeDynamicScaledFloat8:
 
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, alignment: Int
         ](row: Int, col: Int) capturing -> SIMD[input_type, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
@@ -11235,7 +11311,7 @@ struct QuantizeDynamicScaledFloat8:
 struct BatchedQuantizeDynamicScaledFloat8:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         input_type: DType,
         scales_type: DType,
         output_type: DType,
@@ -11253,7 +11329,7 @@ struct BatchedQuantizeDynamicScaledFloat8:
 
         @parameter
         @always_inline
-        fn input_fn[
+        def input_fn[
             width: Int, alignment: Int
         ](batch: Int, row: Int, col: Int) capturing -> SIMD[input_type, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
@@ -11278,7 +11354,7 @@ struct BatchedQuantizeDynamicScaledFloat8:
 struct MatmulDynamicScaledFloat8:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         input_type: DType,
         scales_type: DType,
         output_type: DType,
@@ -11321,7 +11397,7 @@ struct MatmulDynamicScaledFloat8:
 struct MatmulStaticScaledFloat8:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         output_type: DType,
         input_dtype: DType,
         scale_type: DType,
@@ -11343,7 +11419,7 @@ struct MatmulStaticScaledFloat8:
         @parameter
         @__copy_capture(output, input_scale, weight_scale)
         @always_inline
-        fn scaled_output_fn[
+        def scaled_output_fn[
             dtype: DType, width: Int, *, alignment: Int = 1
         ](idx: IndexList[2], val: SIMD[dtype, width]):
             var scale = input_scale.cast[dtype]() * weight_scale.cast[dtype]()
@@ -11385,7 +11461,7 @@ struct MatmulStaticScaledFloat8:
 struct MergeRaggedTensors:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         //,
@@ -11419,7 +11495,7 @@ struct MergeRaggedTensors:
 struct Struct_lora_sgmv_ragged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         c_type: DType,
         a_type: DType,
         b_type: DType,
@@ -11459,7 +11535,7 @@ struct Struct_lora_sgmv_ragged:
 struct Struct_lora_sgmv_qkv_shrink_ragged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         c_type: DType,
         a_type: DType,
         b_type: DType,
@@ -11504,7 +11580,7 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
 struct Struct_kv_cache_ragged_paged_radd:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -11544,7 +11620,7 @@ struct Struct_kv_cache_ragged_paged_radd:
 struct Learnable2DInterpPosEmb:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -11576,7 +11652,7 @@ struct Learnable2DInterpPosEmb:
 struct SpatialMerge:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -11606,7 +11682,7 @@ struct SpatialMerge:
 struct TPoolPatchMerger:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -11660,7 +11736,7 @@ struct TPoolPatchMerger:
 struct Struct_kv_cache_ragged_paged_2m_iadd:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -11712,7 +11788,7 @@ struct Struct_kv_cache_ragged_paged_2m_iadd:
 struct Struct_sliced_add_ragged:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -11758,7 +11834,7 @@ struct Struct_sliced_add_ragged:
 @compiler.register("mo.kv_cache.copy_pages_d2h")
 struct KVCacheCopyPagesD2H:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         target: StaticString,
@@ -11816,7 +11892,7 @@ struct LMCacheOffload:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         page_size: Int,
@@ -11877,7 +11953,7 @@ struct LMCacheOnload:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         //,
         page_size: Int,
@@ -11937,7 +12013,7 @@ struct LMCacheOnload:
 @compiler.register("mo.sleep")
 struct Sleep:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         # In order to prevent this kernel from being DCE'd, we pass in a mutable
@@ -11955,7 +12031,7 @@ struct Sleep:
 
         if is_gpu[target]():
 
-            fn sleep_kernel(duration_sec: Float64):
+            def sleep_kernel(duration_sec: Float64):
                 sleep(duration_sec)
 
             var device_ctx = ctx.get_device_context()

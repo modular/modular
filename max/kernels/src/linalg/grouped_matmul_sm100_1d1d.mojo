@@ -51,15 +51,15 @@ from std.gpu.sync import (
 )
 from std.gpu.compute.arch.tcgen05 import *
 from layout import (
-    UNKNOWN_VALUE,
+    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
+    UNKNOWN_VALUE,
 )
-from layout.int_tuple import IntTuple
-from layout.layout import flatten, coalesce
-from layout.layout_tensor import zipped_divide, upcast
+from layout.layout import flatten, coalesce, zipped_divide
+from layout.layout_tensor import upcast
 from layout.runtime_tuple import idx2crd
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
@@ -113,7 +113,7 @@ comptime WarpRole = _WarpRole[has_scheduler=False]
 
 
 @always_inline
-fn copy_accum_to_gmem[
+def copy_accum_to_gmem[
     c_type: DType,
     c_tile_rank: Int,
     c_tile_shape: IndexList[c_tile_rank],
@@ -294,10 +294,10 @@ fn copy_accum_to_gmem[
                     Layout.row_major(stageN, swizzle_width)
                 ]()
 
-                stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
+                stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     upper_frag_casted, c_smem_warp_tile_upper
                 )
-                stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
+                stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     lower_frag_casted, c_smem_warp_tile_lower
                 )
             else:
@@ -307,7 +307,7 @@ fn copy_accum_to_gmem[
                     Layout.row_major(stageN, swizzle_width)
                 ]()
 
-                stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
+                stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     upper_frag_casted, c_smem_warp_tile_upper
                 )
 
@@ -328,7 +328,7 @@ fn copy_accum_to_gmem[
             var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
                 data_paths, stageN
             ](0, 0)
-            stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
+            stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                 upper_frag_casted, c_smem_warp_tile_upper
             )
 
@@ -337,7 +337,7 @@ fn copy_accum_to_gmem[
             ](1, 0)
 
             comptime if is_lower_frag_required:
-                stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
+                stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     lower_frag_casted, c_smem_warp_tile_lower
                 )
 
@@ -587,7 +587,7 @@ fn copy_accum_to_gmem[
 
 
 @always_inline
-fn multi_stage_store_C[
+def multi_stage_store_C[
     c_type: DType,
     c_tile_rank: Int,
     c_tile_shape: IndexList[c_tile_rank],
@@ -776,7 +776,7 @@ struct B200BlockScaledMatmulSmem[
 
 
 @always_inline
-fn load_AB[
+def load_AB[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -997,7 +997,7 @@ fn load_AB[
 
 
 @always_inline
-fn consumer_main_loop[
+def consumer_main_loop[
     accum_type: DType,
     c_type: DType,
     a_type: DType,
@@ -1128,7 +1128,7 @@ fn consumer_main_loop[
         mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
 
 
-fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -1284,7 +1284,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         )
 
 
-fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -1584,9 +1584,7 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             max_profiled_tiles
         ].get_workspace(ctx)
     else:
-        workspace = Span[UInt64, MutAnyOrigin](
-            ptr=UnsafePointer[UInt64, origin=MutAnyOrigin](), length=0
-        )
+        workspace = {}
 
     ctx.enqueue_function[kernel, kernel](
         num_active_experts,
@@ -1626,7 +1624,7 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
-fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
+def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -2163,7 +2161,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         _ = tmem_dealloc_mbar[].arrive()
 
 
-fn grouped_matmul_dynamic_scaled_nvfp4[
+def grouped_matmul_dynamic_scaled_nvfp4[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,

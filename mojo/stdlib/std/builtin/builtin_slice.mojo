@@ -50,7 +50,7 @@ struct Slice(
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __init__(out self, start: Int, end: Int):
+    def __init__(out self, start: Int, end: Int):
         """Construct slice given the start and end values.
 
         Args:
@@ -62,7 +62,7 @@ struct Slice(
         self.step = None
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         start: Optional[Int],
         end: Optional[Int],
@@ -86,7 +86,7 @@ struct Slice(
     # ===-------------------------------------------------------------------===#
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write Slice string representation to a `Writer`.
 
         Args:
@@ -95,7 +95,7 @@ struct Slice(
         FormatStruct(writer, "Slice").fields(self.start, self.end, self.step)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write Slice string representation to a `Writer`.
 
         Args:
@@ -108,7 +108,7 @@ struct Slice(
         )
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Compare this slice to the other.
 
         Args:
@@ -124,7 +124,7 @@ struct Slice(
             and self.step == other.step
         )
 
-    fn indices(self, length: Int) -> Tuple[Int, Int, Int]:
+    def indices(self, length: Int) -> Tuple[Int, Int, Int]:
         """Returns a tuple of 3 integers representing the start, end, and step
            of the slice if applied to a container of the given length.
 
@@ -194,7 +194,7 @@ struct StridedSlice(ImplicitlyCopyable, Writable):
     var _inner: Slice
 
     @implicit
-    fn __init__(out self, other: Slice):
+    def __init__(out self, other: Slice):
         """Implicitly convert from a general slice.
 
         Args:
@@ -202,7 +202,7 @@ struct StridedSlice(ImplicitlyCopyable, Writable):
         """
         self._inner = other
 
-    fn __init__(
+    def __init__(
         out self,
         start: Optional[Int],
         end: Optional[Int],
@@ -225,7 +225,7 @@ struct StridedSlice(ImplicitlyCopyable, Writable):
     # ===-------------------------------------------------------------------===#
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write StridedSlice string representation to a `Writer`.
 
         Args:
@@ -234,7 +234,7 @@ struct StridedSlice(ImplicitlyCopyable, Writable):
         self._inner.write_to(writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write StridedSlice debug representation to a `Writer`.
 
         Args:
@@ -242,7 +242,7 @@ struct StridedSlice(ImplicitlyCopyable, Writable):
         """
         self._inner.write_repr_to(writer)
 
-    fn indices(self, length: Int) -> Tuple[Int, Int, Int]:
+    def indices(self, length: Int) -> Tuple[Int, Int, Int]:
         """Returns a tuple of 3 integers representing start, end, and step
         of the slice if applied to a container of given length.
 
@@ -268,7 +268,7 @@ struct ContiguousSlice(ImplicitlyCopyable, Writable):
     """The end index of the slice."""
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         start: Optional[Int],
         end: Optional[Int],
@@ -291,7 +291,7 @@ struct ContiguousSlice(ImplicitlyCopyable, Writable):
     # ===-------------------------------------------------------------------===#
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write ContiguousSlice string representation to a `Writer`.
 
         Args:
@@ -300,7 +300,7 @@ struct ContiguousSlice(ImplicitlyCopyable, Writable):
         Slice(self.start, self.end, None).write_to(writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write ContiguousSlice debug representation to a `Writer`.
 
         Args:
@@ -308,7 +308,7 @@ struct ContiguousSlice(ImplicitlyCopyable, Writable):
         """
         Slice(self.start, self.end, None).write_repr_to(writer)
 
-    fn indices(self, length: Int) -> Tuple[Int, Int]:
+    def indices(self, length: Int) -> Tuple[Int, Int]:
         """Returns a tuple of 2 integers representing the start, and end
         of the slice if applied to a container of the given length.
 
@@ -339,7 +339,7 @@ struct ContiguousSlice(ImplicitlyCopyable, Writable):
 
 
 @always_inline
-fn slice(end: Int) -> Slice:
+def slice(end: Int) -> Slice:
     """Construct slice given the end value.
 
     Args:
@@ -352,7 +352,7 @@ fn slice(end: Int) -> Slice:
 
 
 @always_inline
-fn slice(start: Int, end: Int) -> Slice:
+def slice(start: Int, end: Int) -> Slice:
     """Construct slice given the start and end values.
 
     Args:
@@ -366,7 +366,7 @@ fn slice(start: Int, end: Int) -> Slice:
 
 
 @always_inline
-fn slice(
+def slice(
     start: Optional[Int], end: Optional[Int], step: Optional[Int]
 ) -> Slice:
     """Construct a Slice given the start, end and step values.

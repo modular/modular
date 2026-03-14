@@ -48,7 +48,7 @@ from std.gpu.intrinsics import mulwide
 from std.format._utils import FormatStruct, Named
 
 
-fn _mulhilow(a: UInt32, b: UInt32) -> SIMD[DType.uint32, 2]:
+def _mulhilow(a: UInt32, b: UInt32) -> SIMD[DType.uint32, 2]:
     var res = mulwide(a, b)
     return bitcast[DType.uint32, 2](res)
 
@@ -68,7 +68,7 @@ struct Random[rounds: Int = 10](Copyable, Writable):
     var _key: SIMD[DType.uint32, 2]
     var _counter: SIMD[DType.uint32, 4]
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         seed: UInt64 = 0,
@@ -110,7 +110,7 @@ struct Random[rounds: Int = 10](Copyable, Writable):
         )
 
     @always_inline
-    fn step(mut self) -> SIMD[DType.uint32, 4]:
+    def step(mut self) -> SIMD[DType.uint32, 4]:
         """Generate 4 random 32-bit unsigned integers.
 
         Returns:
@@ -129,7 +129,7 @@ struct Random[rounds: Int = 10](Copyable, Writable):
         return res
 
     @always_inline
-    fn step_uniform(mut self) -> SIMD[DType.float32, 4]:
+    def step_uniform(mut self) -> SIMD[DType.float32, 4]:
         """Generate 4 random floating point numbers uniformly distributed in [0,1).
 
         Returns:
@@ -140,7 +140,7 @@ struct Random[rounds: Int = 10](Copyable, Writable):
         return (self.step() & 0x7FFFFFFF).cast[DType.float32]() * SCALE
 
     @always_inline
-    fn _incrn(mut self, n: Int64):
+    def _incrn(mut self, n: Int64):
         """Increment the internal counter by n.
 
         Args:
@@ -165,7 +165,7 @@ struct Random[rounds: Int = 10](Copyable, Writable):
 
     @always_inline
     @staticmethod
-    fn _single_round(
+    def _single_round(
         counter: SIMD[DType.uint32, 4], key: SIMD[DType.uint32, 2]
     ) -> SIMD[DType.uint32, 4]:
         """Perform a single round of the Philox mixing function.
@@ -204,7 +204,7 @@ struct NormalRandom[rounds: Int = 10](Copyable, Writable):
 
     var _rng: Random[Self.rounds]
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         seed: UInt64 = 0,
@@ -244,7 +244,7 @@ struct NormalRandom[rounds: Int = 10](Copyable, Writable):
             Named("counter", self._rng._counter),
         )
 
-    fn step_normal(
+    def step_normal(
         mut self, mean: Float32 = 0.0, stddev: Float32 = 1.0
     ) -> SIMD[DType.float32, 8]:
         """Generate 8 normally distributed random numbers using Box-Muller transform.

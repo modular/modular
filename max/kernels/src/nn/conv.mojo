@@ -51,6 +51,30 @@ from _cudnn.infer import (
     cudnnTensorFormat_t,
     cudnnTensorStruct,
 )
+from _miopen.miopen import (
+    miopenCreate,
+    miopenDestroy,
+    miopenSetStream,
+    miopenCreateTensorDescriptor,
+    miopenDestroyTensorDescriptor,
+    miopenSet4dTensorDescriptorEx,
+    miopenCreateConvolutionDescriptor,
+    miopenInitConvolutionNdDescriptor,
+    miopenSetConvolutionGroupCount,
+    miopenConvolutionForwardGetWorkSpaceSize,
+    miopenFindConvolutionForwardAlgorithm,
+    miopenConvolutionForward,
+)
+from _miopen.types import (
+    Handle as MIOpenHandle,
+    TensorDescriptor as MIOpenTensorDescriptor,
+    ConvolutionDescriptor as MIOpenConvolutionDescriptor,
+    DataType as MIOpenDataType,
+    ConvolutionMode,
+    ConvFwdAlgorithm,
+    ConvAlgoPerf,
+)
+from _miopen.utils import check_error as check_miopen_error
 from std.algorithm import (
     elementwise,
     sync_parallelize,
@@ -69,17 +93,24 @@ from buffer.dimlist import Dim, DimList
 from std.gpu.host import DeviceContext
 from std.gpu.host._nvidia_cuda import CUDA
 from std.gpu import block_dim, block_idx, thread_idx
-from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple, UNKNOWN_VALUE
-from layout.tile_layout import row_major
-from layout.tile_tensor import stack_allocation as tt_stack_allocation
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
+    row_major,
+    stack_allocation as tt_stack_allocation,
+)
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.sys import has_nvidia_gpu_accelerator
+from std.sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
 from std.sys.info import _accelerator_arch
 from std.gpu.host.info import B200
+from std.gpu.host._amdgpu_hip import HIP
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
@@ -133,7 +164,7 @@ struct Naive2dConvolution[
     var filter_shape: IndexList[5]  # QRSCF layout.
 
     @staticmethod
-    fn run(
+    def run(
         output: UnsafePointer[Scalar[Self.output_type], Self.output_origin],
         input: UnsafePointer[Scalar[Self.input_type], Self.input_origin],
         filter: UnsafePointer[Scalar[Self.filter_type], Self.filter_origin],
@@ -168,7 +199,7 @@ struct Naive2dConvolution[
         # Run the actual loops and computations.
         naive2d_convolution._outer_loop()
 
-    fn __init__(
+    def __init__(
         out self,
         output: UnsafePointer[Scalar[Self.output_type], Self.output_origin],
         input: UnsafePointer[Scalar[Self.input_type], Self.input_origin],
@@ -196,7 +227,7 @@ struct Naive2dConvolution[
         self.dilation = dilation
         self.num_groups = num_groups
 
-    fn _outer_loop(self):
+    def _outer_loop(self):
         """Implementation of the outermost loop of a convolution operator with
         loops covering the iteration space of batch, filter count, height and wi-
         dth dimensions.
@@ -215,7 +246,7 @@ struct Naive2dConvolution[
                             #  ion.
                             self._compute_point(n, do, ho, wo, f)
 
-    fn _compute_point(self, n: Int, do: Int, ho: Int, wo: Int, f: Int):
+    def _compute_point(self, n: Int, do: Int, ho: Int, wo: Int, f: Int):
         """Implementation of the inner loop computation of a conv2d operator
         producing a single scalar value at the given output tensor index.
         """
@@ -293,7 +324,7 @@ struct Naive2dConvolution[
 
 
 @always_inline
-fn _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> IndexList[3]:
+def _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> IndexList[3]:
     """Converts post-im2col m dimension index to pre-im2col coordinates on
     (N, Hout, Wout) dimensions.
         Args:
@@ -313,7 +344,7 @@ fn _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> IndexList[3]:
 
 # Reduce helper when the input channel dimension is partitioned.
 @always_inline
-fn _reduce_output[
+def _reduce_output[
     dtype: DType,
     //,
     simd_size: Int,
@@ -333,12 +364,12 @@ fn _reduce_output[
     # Reduce from the output scratch buffer to the actual output.
     @parameter
     @always_inline
-    fn reduce_task(tid: Int):
+    def reduce_task(tid: Int):
         # Use all threads in reduction.
         var reduce_range = partition_work(tid, num_threads, num_rows, 1)
 
         @always_inline
-        fn sum[width: Int](offset: Int) unified {mut}:
+        def sum[width: Int](offset: Int) unified {mut}:
             var tid_output_offset = reduce_range[0] * F + offset
             var vec = scratch.load[width=width](tid_output_offset)
             # The number of partitions here is typically small.
@@ -424,7 +455,7 @@ struct ConvDirectNHWC[
     ]() and Self.filter_layout.shape.all_known() and Self.filter_packed
 
     @staticmethod
-    fn run(
+    def run(
         output: LayoutTensor[
             Self.output_type, Self.output_layout, Self.output_origin
         ],
@@ -504,7 +535,7 @@ struct ConvDirectNHWC[
         )
         @parameter
         @always_inline
-        fn task_func(task_id: Int):
+        def task_func(task_id: Int):
             var partition = get_partition(
                 task_id,
                 num_partitions,
@@ -574,13 +605,13 @@ struct ConvDirectNHWC[
             # Use sync to work around #12624
             sync_parallelize[task_func](num_tasks)
 
-    fn _batch_group_loop(self):
+    def _batch_group_loop(self):
         """Loop over the batch and group dimensions. The two dimension are
         merged and partitioned for parallelism."""
 
         @always_inline
         @parameter
-        fn body[padded: Bool]():
+        def body[padded: Bool]():
             for ng in range(
                 self.partition.ng_offset,
                 self.partition.ng_offset + self.partition.ng_size,
@@ -591,7 +622,7 @@ struct ConvDirectNHWC[
 
         unswitch[body](self.conv_shape.padded())
 
-    fn _c_tile_loop[padded: Bool](self, n: Int, g: Int, tile_size: Int):
+    def _c_tile_loop[padded: Bool](self, n: Int, g: Int, tile_size: Int):
         """Loop over C tiles."""
 
         # TODO: Extend to 1D/3D.
@@ -605,7 +636,7 @@ struct ConvDirectNHWC[
 
         @always_inline
         @parameter
-        fn c_tile_iteration(c_tile_offset: Int, c_tile_size: Int):
+        def c_tile_iteration(c_tile_offset: Int, c_tile_size: Int):
             # Only apply static shape optimizations to shapes with padding since
             # there is a fast path for pointwise (no padding) conv with strides.
             # Grouped conv logic has not been plumbed into static specialized funcs yet.
@@ -654,7 +685,7 @@ struct ConvDirectNHWC[
                     c_round_by_tile_residual,
                 )
 
-    fn _f_tile_loop[
+    def _f_tile_loop[
         padded: Bool, last_c_tile: Bool
     ](self, n: Int, g: Int, c_tile_offset: Int, c_tile_size: Int):
         """Loop over F tiles."""
@@ -671,7 +702,7 @@ struct ConvDirectNHWC[
 
         @always_inline
         @parameter
-        fn f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
+        def f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
             comptime if not merge_output_space_loops:
                 self.output_space_loop[
                     micro_kernel_height, size // simd_size, False, last_c_tile
@@ -736,13 +767,13 @@ struct ConvDirectNHWC[
                 )
 
     @always_inline
-    fn is_new_c_accum(self, c_idx: Int) -> Bool:
+    def is_new_c_accum(self, c_idx: Int) -> Bool:
         # returns true when processing first C in a group or first C in a C partition
         if self.conv_shape.num_groups > 1:
             return self.conv_shape.c_in_group(c_idx) == 0
         return c_idx == self.partition.c_offset
 
-    fn update_output_tile_no_padding[
+    def update_output_tile_no_padding[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         c_fully_cached: Bool,
@@ -904,7 +935,7 @@ struct ConvDirectNHWC[
                 )
 
     @always_inline
-    fn _init_output_micro_tile[
+    def _init_output_micro_tile[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
@@ -934,7 +965,7 @@ struct ConvDirectNHWC[
                 )
 
     @always_inline
-    fn _load_output_micro_tile[
+    def _load_output_micro_tile[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
@@ -992,7 +1023,7 @@ struct ConvDirectNHWC[
                 output_ptr = output_ptr + self.conv_shape.f
 
     @always_inline
-    fn _store_output_micro_tile[
+    def _store_output_micro_tile[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
@@ -1051,7 +1082,7 @@ struct ConvDirectNHWC[
                 output_ptr = output_ptr + self.conv_shape.f
 
     @always_inline
-    fn _accumulate[
+    def _accumulate[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
@@ -1092,7 +1123,7 @@ struct ConvDirectNHWC[
         )
 
     @always_inline
-    fn _accumulate[
+    def _accumulate[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
@@ -1139,7 +1170,7 @@ struct ConvDirectNHWC[
             F % simd_size,
         )
 
-    fn output_space_flat_loop[
+    def output_space_flat_loop[
         micro_kernel_f_size: Int, has_residual: Bool, last_c_tile: Bool
     ](
         self,
@@ -1155,10 +1186,10 @@ struct ConvDirectNHWC[
 
         @always_inline
         @parameter
-        fn iteration[tile_size: Int](output_flat_coord: Int):
+        def iteration[tile_size: Int](output_flat_coord: Int):
             @always_inline
             @parameter
-            fn body[c_fully_cached: Bool]():
+            def body[c_fully_cached: Bool]():
                 self.update_output_tile_no_padding[
                     tile_size,  # micro kernel height
                     micro_kernel_width,
@@ -1185,7 +1216,7 @@ struct ConvDirectNHWC[
             self.partition.ho_or_howo_offset + self.partition.ho_or_howo_size,
         )
 
-    fn output_space_loop[
+    def output_space_loop[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         has_residual: Bool,
@@ -1313,7 +1344,7 @@ struct ConvDirectNHWC[
                 right_pad_impact_start,
             )
 
-    fn output_space_loop_1d[
+    def output_space_loop_1d[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         has_residual: Bool,
@@ -1346,7 +1377,7 @@ struct ConvDirectNHWC[
 
         @parameter
         @always_inline
-        fn work_fn[height: Int, effected_by_padding: Bool](wo: Int):
+        def work_fn[height: Int, effected_by_padding: Bool](wo: Int):
             conv1d_update_wo_tile[
                 height,
                 micro_kernel_width,
@@ -1386,7 +1417,7 @@ struct ConvDirectNHWC[
         _ = input_base
         _ = output_base
 
-    fn output_space_loop_2d[
+    def output_space_loop_2d[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         has_residual: Bool,
@@ -1430,7 +1461,7 @@ struct ConvDirectNHWC[
 
             @parameter
             @always_inline
-            fn work_fn[height: Int, effected_by_padding: Bool](wo: Int):
+            def work_fn[height: Int, effected_by_padding: Bool](wo: Int):
                 conv2d_update_wo_tile[
                     height,
                     micro_kernel_width,
@@ -1470,7 +1501,7 @@ struct ConvDirectNHWC[
             _ = input_base
             _ = output_base
 
-    fn output_space_loop_3d[
+    def output_space_loop_3d[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         has_residual: Bool,
@@ -1524,7 +1555,7 @@ struct ConvDirectNHWC[
 
                 @parameter
                 @always_inline
-                fn work_fn[height: Int, effected_by_padding: Bool](wo: Int):
+                def work_fn[height: Int, effected_by_padding: Bool](wo: Int):
                     conv3d_update_wo_tile[
                         height,
                         micro_kernel_width,
@@ -1565,7 +1596,7 @@ struct ConvDirectNHWC[
                 _ = input_base
                 _ = output_base
 
-    fn _f_tile_loop_static[
+    def _f_tile_loop_static[
         last_c_tile: Bool
     ](self, n: Int, c_tile_offset: Int, c_tile_size: Int):
         comptime assert Self.conv_attr_rank == Self.input_layout.rank() - 2
@@ -1583,7 +1614,7 @@ struct ConvDirectNHWC[
 
         @always_inline
         @parameter
-        fn f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
+        def f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
             self._h_loop_static[
                 micro_kernel_shape[0],
                 size // simd_size,
@@ -1616,7 +1647,7 @@ struct ConvDirectNHWC[
             ](n, f_round_by_simd, simd_size, c_tile_offset, c_tile_size)
 
     @always_inline
-    fn _h_loop_static[
+    def _h_loop_static[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         has_residual: Bool,
@@ -1735,7 +1766,7 @@ struct ConvDirectNHWC[
                 @__copy_capture(filter_base)
                 @always_inline
                 @parameter
-                fn update_middle[height: Int](wo: Int):
+                def update_middle[height: Int](wo: Int):
                     self._inner_loops_static[
                         height,
                         micro_kernel_width,
@@ -1794,7 +1825,7 @@ struct ConvDirectNHWC[
                 )
 
     @always_inline
-    fn _inner_loops_static[
+    def _inner_loops_static[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         padded_left: Bool,
@@ -1962,7 +1993,7 @@ struct ConvDirectNHWC[
 
 
 @always_inline
-fn accumulate_wo_tile_1d[
+def accumulate_wo_tile_1d[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
     simd_size: Int,
@@ -2040,7 +2071,7 @@ fn accumulate_wo_tile_1d[
         )
 
 
-fn conv1d_update_wo_tile[
+def conv1d_update_wo_tile[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
     simd_size: Int,
@@ -2151,7 +2182,7 @@ fn conv1d_update_wo_tile[
 
 
 @always_inline
-fn accumulate_wo_tile_2d[
+def accumulate_wo_tile_2d[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
     simd_size: Int,
@@ -2206,7 +2237,7 @@ fn accumulate_wo_tile_2d[
         )
 
 
-fn conv2d_update_wo_tile[
+def conv2d_update_wo_tile[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
     simd_size: Int,
@@ -2331,7 +2362,7 @@ fn conv2d_update_wo_tile[
 
 # TODO: Simplify this with a rank parameter + recursion.
 @always_inline
-fn accumulate_wo_tile_3d[
+def accumulate_wo_tile_3d[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
     simd_size: Int,
@@ -2385,7 +2416,7 @@ fn accumulate_wo_tile_3d[
         )
 
 
-fn conv3d_update_wo_tile[
+def conv3d_update_wo_tile[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
     simd_size: Int,
@@ -2511,7 +2542,7 @@ fn conv3d_update_wo_tile[
 
 
 @always_inline
-fn pack_filter_shape_impl[
+def pack_filter_shape_impl[
     filter_type: DType
 ](Q: Int, R: Int, S: Int, C: Int, F: Int, num_groups: Int) -> IndexList[6]:
     """
@@ -2550,7 +2581,7 @@ fn pack_filter_shape_impl[
 
 
 @always_inline
-fn pack_conv_filter_shape[
+def pack_conv_filter_shape[
     single_thread_blocking_override: Bool,
 ](filter: LayoutTensor, num_groups: Int) -> IndexList[filter.rank + 1]:
     """
@@ -2592,7 +2623,7 @@ fn pack_conv_filter_shape[
 
 
 @always_inline
-fn pack_filter_shape[
+def pack_filter_shape[
     filter_type: DType,
     input_shape: DimList,
     filter_shape: DimList,
@@ -2660,7 +2691,7 @@ fn pack_filter_shape[
 
 
 @always_inline
-fn _get_group_filter_base(
+def _get_group_filter_base(
     packed_filter: LayoutTensor, group_idx: Int, f_per_group: Int
 ) -> UnsafePointer[
     Scalar[packed_filter.dtype],
@@ -2696,7 +2727,7 @@ fn _get_group_filter_base(
 
 
 @always_inline
-fn pack_filter(
+def pack_filter(
     filter: LayoutTensor,
     packed_filter: LayoutTensor[mut=True, ...],
     num_groups: Int,
@@ -2725,7 +2756,7 @@ fn pack_filter(
 
 
 @always_inline
-fn pack_filter[
+def pack_filter[
     simd_size: Int,
     micro_kernel_f_size: Int,  # 64
 ](
@@ -2789,7 +2820,7 @@ fn pack_filter[
         @always_inline
         @__copy_capture(group_start, F_per_group, F)
         @parameter
-        fn pack[f_tile_size: Int](f_tile_start: Int):
+        def pack[f_tile_size: Int](f_tile_start: Int):
             var packed_filter_ptr = group_start + f_tile_start * outer_dims_prod
 
             for row in range(outer_dims_prod):
@@ -2841,7 +2872,7 @@ fn pack_filter[
 
 
 @always_inline
-fn conv_shape[
+def conv_shape[
     input_type: DType,
     filter_type: DType,
     strides_type: DType,
@@ -2954,7 +2985,7 @@ fn conv_shape[
     return output_shape
 
 
-fn conv_nhwc_direct[
+def conv_nhwc_direct[
     conv_info_rank: Int,
     input_origin: Origin[mut=False],
     filter_origin: Origin[mut=False],
@@ -2991,7 +3022,7 @@ fn conv_nhwc_direct[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return ";".join(
             Span(
                 [
@@ -3025,13 +3056,13 @@ fn conv_nhwc_direct[
         # The closure updates a row segment of the output.
         @always_inline
         @parameter
-        fn elementwise_epilogue[
+        def elementwise_epilogue[
             rank: Int
         ](coords: IndexList[rank], f_size: Int):
             comptime simd_size = simd_width_of[output_type]()
 
             @always_inline
-            fn body[width: Int](idx: Int) unified {mut}:
+            def body[width: Int](idx: Int) unified {mut}:
                 # Coordinates of the current index.
                 var curr_coords = rebind[IndexList[input.rank]](coords)
                 curr_coords[input.rank - 1] += idx
@@ -3066,7 +3097,7 @@ fn conv_nhwc_direct[
 # ===----------------------------------------------------------------------=== #
 
 
-fn conv2d_gpu_naive_nhwc_rscf[
+def conv2d_gpu_naive_nhwc_rscf[
     input_layout: Layout,
     filter_layout: Layout,
     output_layout: Layout,
@@ -3150,7 +3181,7 @@ fn conv2d_gpu_naive_nhwc_rscf[
 
 
 @always_inline
-fn check_cudnn_error(stat: cudnnStatus_t):
+def check_cudnn_error(stat: cudnnStatus_t):
     if stat != cudnnStatus_t.CUDNN_STATUS_SUCCESS:
         print(stat)
 
@@ -3164,7 +3195,7 @@ struct CuDNNConvMeta(ImplicitlyCopyable, RegisterPassable):
     ]
     var ptr_output_desc: UnsafePointer[cudnnTensorStruct, AnyOrigin[mut=True]]
 
-    fn __init__(out self) raises:
+    def __init__(out self) raises:
         self.ptr_handle = UnsafePointer[cudnnContext, AnyOrigin[mut=True]]()
         check_cudnn_error(cudnnCreate(UnsafePointer(to=self.ptr_handle)))
 
@@ -3198,7 +3229,7 @@ struct CuDNNConvMeta(ImplicitlyCopyable, RegisterPassable):
             cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_output_desc))
         )
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         try:
             check_cudnn_error(
                 cudnnDestroyTensorDescriptor(self.ptr_output_desc)
@@ -3215,7 +3246,7 @@ struct CuDNNConvMeta(ImplicitlyCopyable, RegisterPassable):
             abort(String(e))
 
 
-fn _get_cudnn_meta(
+def _get_cudnn_meta(
     ctx: DeviceContext,
 ) raises -> UnsafePointer[CuDNNConvMeta, AnyOrigin[mut=True]]:
     """Get the cuDNN metadata with proper device context management.
@@ -3261,7 +3292,7 @@ fn _get_cudnn_meta(
     return ptr_meta
 
 
-fn get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
+def get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
     """Map Mojo DType to cuDNN data type.
 
     Support only floating point dtypes for now.
@@ -3303,7 +3334,7 @@ struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable):
     var stride: Tuple[Int, Int]
     var dil: Tuple[Int, Int]
 
-    fn __init__(out self) raises:
+    def __init__(out self) raises:
         self.ptr_handle = UnsafePointer[cudnnContext, AnyOrigin[mut=True]]()
         check_cudnn_error(cudnnCreate(UnsafePointer(to=self.ptr_handle)))
 
@@ -3352,7 +3383,7 @@ struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable):
         self.dil = (0, 0)
 
 
-fn _get_cached_cudnn_meta_nhwc_full(
+def _get_cached_cudnn_meta_nhwc_full(
     ctx: DeviceContext,
 ) raises -> UnsafePointer[CachedCuDNNMetaNHWCFull, AnyOrigin[mut=True]]:
     var cache_key = "CUDA_CUDNN_CACHED_META_NHWC_FULL_" + String(ctx.id())
@@ -3380,7 +3411,7 @@ fn _get_cached_cudnn_meta_nhwc_full(
     return new_ptr_meta
 
 
-fn _conv_cudnn[
+def _conv_cudnn[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -3601,7 +3632,7 @@ fn _conv_cudnn[
     _ = workspace_buffer^
 
 
-fn conv_cudnn[
+def conv_cudnn[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -3622,7 +3653,484 @@ fn conv_cudnn[
         )
 
 
-fn conv_gpu[
+# ===----------------------------------------------------------------------=== #
+# GPU Convolution using MIOpen (AMD)                                           #
+# ===----------------------------------------------------------------------=== #
+
+
+struct CachedMIOpenMeta(Movable):
+    var handle: MIOpenHandle
+    var input_desc: MIOpenTensorDescriptor
+    var filter_desc: MIOpenTensorDescriptor
+    var output_desc: MIOpenTensorDescriptor
+    var conv_desc: MIOpenConvolutionDescriptor
+
+    # Legacy API: cached algorithm and workspace size from FindAlgorithm
+    var algo: ConvFwdAlgorithm
+    var workspace_size: UInt64
+
+    # Cache key fields
+    var is_set: Bool
+    var in_dtype: DType
+    var in_: Tuple[Int, Int, Int, Int]
+    var filt: Tuple[Int, Int, Int, Int]
+    var out: Tuple[Int, Int, Int, Int]
+    var pad: Tuple[Int, Int]
+    var stride: Tuple[Int, Int]
+    var dil: Tuple[Int, Int]
+    var filter_is_fcrs: Bool
+
+    def __init__(out self) raises:
+        self.handle = MIOpenHandle()
+        check_miopen_error(
+            miopenCreate(UnsafePointer(to=self.handle).bitcast[NoneType]())
+        )
+
+        self.input_desc = MIOpenTensorDescriptor()
+        check_miopen_error(
+            miopenCreateTensorDescriptor(
+                UnsafePointer(to=self.input_desc).bitcast[NoneType]()
+            )
+        )
+
+        self.filter_desc = MIOpenTensorDescriptor()
+        check_miopen_error(
+            miopenCreateTensorDescriptor(
+                UnsafePointer(to=self.filter_desc).bitcast[NoneType]()
+            )
+        )
+
+        self.output_desc = MIOpenTensorDescriptor()
+        check_miopen_error(
+            miopenCreateTensorDescriptor(
+                UnsafePointer(to=self.output_desc).bitcast[NoneType]()
+            )
+        )
+
+        self.conv_desc = MIOpenConvolutionDescriptor()
+        check_miopen_error(
+            miopenCreateConvolutionDescriptor(
+                UnsafePointer(to=self.conv_desc).bitcast[NoneType]()
+            )
+        )
+
+        self.algo = ConvFwdAlgorithm(0)
+        self.workspace_size = 0
+
+        self.is_set = False
+        self.in_dtype = DType.invalid
+        self.in_ = (0, 0, 0, 0)
+        self.filt = (0, 0, 0, 0)
+        self.out = (0, 0, 0, 0)
+        self.pad = (0, 0)
+        self.stride = (0, 0)
+        self.dil = (0, 0)
+        self.filter_is_fcrs = False
+
+
+def _get_cached_miopen_meta(
+    ctx: DeviceContext,
+) raises -> UnsafePointer[CachedMIOpenMeta, AnyOrigin[mut=True]]:
+    var cache_key = "MIOPEN_CACHED_META_" + String(ctx.id())
+
+    if ptr_meta := _get_global_or_null(cache_key).bitcast[CachedMIOpenMeta]():
+        check_miopen_error(
+            miopenSetStream(ptr_meta[].handle, HIP(ctx.stream()))
+        )
+        return ptr_meta
+
+    var new_ptr_meta = alloc[CachedMIOpenMeta](1)
+    new_ptr_meta.init_pointee_move(CachedMIOpenMeta())
+
+    external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
+        StringSlice(cache_key),
+        new_ptr_meta.bitcast[NoneType](),
+    )
+
+    check_miopen_error(
+        miopenSetStream(new_ptr_meta[].handle, HIP(ctx.stream()))
+    )
+
+    return new_ptr_meta
+
+
+def _miopen_algo_find_and_forward[
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+](
+    ptr_meta: UnsafePointer[CachedMIOpenMeta, AnyOrigin[mut=True]],
+    input: LayoutTensor[input_type, ...],
+    filter_ptr: OpaquePointer,
+    filt: Tuple[Int, Int, Int, Int],
+    output: LayoutTensor[output_type, ...],
+    in_shape: Tuple[Int, Int, Int, Int],
+    out_shape: Tuple[Int, Int, Int, Int],
+    pad: Tuple[Int, Int],
+    stride: Tuple[Int, Int],
+    dil: Tuple[Int, Int],
+    num_groups: Int,
+    params_match: Bool,
+    filter_is_fcrs: Bool,
+    ctx: DeviceContext,
+) raises:
+    """Set up descriptors, find algorithm, and run forward convolution.
+
+    Uses NHWC strides for input/output and appropriate strides for
+    the filter physical layout, avoiding NHWC↔NCHW transposes.
+    Dimensions are passed in NCHW logical order with strides describing
+    the actual physical memory layout (following PyTorch's approach).
+    """
+    # in_shape is NHWC: (N, H, W, C)
+    var in_N = in_shape[0]
+    var in_H = in_shape[1]
+    var in_W = in_shape[2]
+    var in_C = in_shape[3]
+
+    var out_N = out_shape[0]
+    var out_H = out_shape[1]
+    var out_W = out_shape[2]
+    var out_C = out_shape[3]
+
+    if not params_match:
+        # Input descriptor: NCHW logical dims with NHWC physical strides
+        check_miopen_error(
+            miopenSet4dTensorDescriptorEx(
+                ptr_meta[].input_desc,
+                MIOpenDataType(input_type),
+                Int32(in_N),
+                Int32(in_C),
+                Int32(in_H),
+                Int32(in_W),
+                Int32(in_H * in_W * in_C),  # N stride
+                Int32(1),  # C stride (channels-last)
+                Int32(in_W * in_C),  # H stride
+                Int32(in_C),  # W stride
+            )
+        )
+
+        # Filter descriptor: NHWC strides (matching input/output layout).
+        # Filter data must be in FRSC physical layout for NHWC strides.
+        var f_F: Int
+        var f_C: Int
+        var f_R: Int
+        var f_S: Int
+        if filter_is_fcrs:
+            f_F = filt[0]
+            f_C = filt[1]
+            f_R = filt[2]
+            f_S = filt[3]
+        else:
+            f_F = filt[3]
+            f_C = filt[2]
+            f_R = filt[0]
+            f_S = filt[1]
+        check_miopen_error(
+            miopenSet4dTensorDescriptorEx(
+                ptr_meta[].filter_desc,
+                MIOpenDataType(filter_type),
+                Int32(f_F),
+                Int32(f_C),
+                Int32(f_R),
+                Int32(f_S),
+                Int32(f_R * f_S * f_C),  # F stride (NHWC: channels-last)
+                Int32(1),  # C stride
+                Int32(f_S * f_C),  # R stride
+                Int32(f_C),  # S stride
+            )
+        )
+
+        # Output descriptor: NCHW logical dims with NHWC physical strides
+        check_miopen_error(
+            miopenSet4dTensorDescriptorEx(
+                ptr_meta[].output_desc,
+                MIOpenDataType(output_type),
+                Int32(out_N),
+                Int32(out_C),
+                Int32(out_H),
+                Int32(out_W),
+                Int32(out_H * out_W * out_C),  # N stride
+                Int32(1),  # C stride (channels-last)
+                Int32(out_W * out_C),  # H stride
+                Int32(out_C),  # W stride
+            )
+        )
+
+        # Convolution descriptor (stack-allocated to avoid leak on raise)
+        var conv_pad: InlineArray[Int32, 2] = [Int32(pad[0]), Int32(pad[1])]
+        var conv_stride: InlineArray[Int32, 2] = [
+            Int32(stride[0]),
+            Int32(stride[1]),
+        ]
+        var conv_dilation: InlineArray[Int32, 2] = [
+            Int32(dil[0]),
+            Int32(dil[1]),
+        ]
+        check_miopen_error(
+            miopenInitConvolutionNdDescriptor(
+                ptr_meta[].conv_desc,
+                Int32(2),
+                conv_pad.unsafe_ptr().bitcast[NoneType](),
+                conv_stride.unsafe_ptr().bitcast[NoneType](),
+                conv_dilation.unsafe_ptr().bitcast[NoneType](),
+                ConvolutionMode.CONVOLUTION,
+            )
+        )
+
+        if num_groups > 1:
+            check_miopen_error(
+                miopenSetConvolutionGroupCount(
+                    ptr_meta[].conv_desc, Int32(num_groups)
+                )
+            )
+
+        # Get workspace size
+        var ws_size: UInt64 = 0
+        check_miopen_error(
+            miopenConvolutionForwardGetWorkSpaceSize(
+                ptr_meta[].handle,
+                ptr_meta[].filter_desc,
+                ptr_meta[].input_desc,
+                ptr_meta[].conv_desc,
+                ptr_meta[].output_desc,
+                UnsafePointer(to=ws_size).bitcast[NoneType](),
+            )
+        )
+
+        var find_ws = ctx.enqueue_create_buffer[DType.uint8](Int(ws_size))
+
+        var perf = ConvAlgoPerf()
+        var returned_count: Int32 = 0
+        check_miopen_error(
+            miopenFindConvolutionForwardAlgorithm(
+                ptr_meta[].handle,
+                ptr_meta[].input_desc,
+                input.ptr.bitcast[NoneType](),
+                ptr_meta[].filter_desc,
+                filter_ptr.bitcast[NoneType](),
+                ptr_meta[].conv_desc,
+                ptr_meta[].output_desc,
+                output.ptr.bitcast[NoneType](),
+                Int32(1),
+                UnsafePointer(to=returned_count).bitcast[NoneType](),
+                UnsafePointer(to=perf).bitcast[NoneType](),
+                find_ws.unsafe_ptr().bitcast[NoneType](),
+                ws_size,
+                False,  # non-exhaustive search
+            )
+        )
+        _ = find_ws^
+
+        if returned_count == 0:
+            raise Error("MIOpen: no algorithm found for convolution")
+
+        ptr_meta[].algo = ConvFwdAlgorithm(perf.fwd_algo)
+        ptr_meta[].workspace_size = perf.memory
+
+        # Update cache state
+        ptr_meta[].is_set = True
+        ptr_meta[].in_dtype = input_type
+        ptr_meta[].in_ = in_shape
+        ptr_meta[].filt = filt
+        ptr_meta[].out = out_shape
+        ptr_meta[].pad = pad
+        ptr_meta[].stride = stride
+        ptr_meta[].dil = dil
+        ptr_meta[].filter_is_fcrs = filter_is_fcrs
+
+    # Run forward convolution
+    var fwd_ws_size = Int(ptr_meta[].workspace_size)
+    var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](fwd_ws_size)
+
+    var alpha = Float32(1.0)
+    var beta = Float32(0.0)
+    check_miopen_error(
+        miopenConvolutionForward(
+            ptr_meta[].handle,
+            UnsafePointer(to=alpha).bitcast[NoneType](),
+            ptr_meta[].input_desc,
+            input.ptr.bitcast[NoneType](),
+            ptr_meta[].filter_desc,
+            filter_ptr.bitcast[NoneType](),
+            ptr_meta[].conv_desc,
+            ptr_meta[].algo,
+            UnsafePointer(to=beta).bitcast[NoneType](),
+            ptr_meta[].output_desc,
+            output.ptr.bitcast[NoneType](),
+            workspace_buffer.unsafe_ptr().bitcast[NoneType](),
+            ptr_meta[].workspace_size,
+        )
+    )
+
+    _ = workspace_buffer^
+
+
+def _conv_miopen[
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+    filter_is_fcrs: Bool = False,
+](
+    input: LayoutTensor[input_type, ...],
+    filter: LayoutTensor[filter_type, ...],
+    output: LayoutTensor[output_type, ...],
+    stride_list: IndexList[2],
+    dilation_list: IndexList[2],
+    padding_list: IndexList[2],
+    num_groups: Int,
+    ctx: DeviceContext,
+) raises:
+    var ptr_meta = _get_cached_miopen_meta(ctx)
+
+    # Input shape: NHWC
+    var in_: Tuple[Int, Int, Int, Int] = (
+        input.dim[0](),
+        input.dim[1](),
+        input.dim[2](),
+        input.dim[3](),
+    )
+
+    # Filter shape depends on filter_is_fcrs
+    var filt: Tuple[Int, Int, Int, Int] = (
+        filter.dim[0](),
+        filter.dim[1](),
+        filter.dim[2](),
+        filter.dim[3](),
+    )
+
+    # Output shape: NHWC
+    var out: Tuple[Int, Int, Int, Int] = (
+        output.dim[0](),
+        output.dim[1](),
+        output.dim[2](),
+        output.dim[3](),
+    )
+
+    var pad: Tuple[Int, Int] = (padding_list[0], padding_list[1])
+    var stride: Tuple[Int, Int] = (stride_list[0], stride_list[1])
+    var dil: Tuple[Int, Int] = (dilation_list[0], dilation_list[1])
+
+    var params_match = ptr_meta[].is_set
+
+    if params_match:
+        if ptr_meta[].in_dtype != input_type:
+            params_match = False
+        elif ptr_meta[].in_ != in_:
+            params_match = False
+        elif ptr_meta[].filt != filt:
+            params_match = False
+        elif ptr_meta[].out != out:
+            params_match = False
+        elif ptr_meta[].pad != pad:
+            params_match = False
+        elif ptr_meta[].stride != stride:
+            params_match = False
+        elif ptr_meta[].dil != dil:
+            params_match = False
+        elif ptr_meta[].filter_is_fcrs != filter_is_fcrs:
+            params_match = False
+
+    # MIOpen needs all tensors in the same layout. Since input/output use
+    # NHWC strides, the filter must also be NHWC (FRSC physical layout).
+    # Transpose RSCF→FRSC or FCRS→FRSC on GPU. This is a small weight
+    # tensor — the cost is negligible compared to the conv itself.
+    var filter_size = filter.size()
+    var filter_frsc_buf = ctx.enqueue_create_buffer[filter_type](filter_size)
+    var filter_frsc_ptr = filter_frsc_buf.unsafe_ptr()
+
+    comptime if filter_is_fcrs:
+        # FCRS [F,C,R,S] -> FRSC [F,R,S,C]
+        var F_dim = filter.dim[0]()
+        var C_dim = filter.dim[1]()
+        var R_dim = filter.dim[2]()
+        var S_dim = filter.dim[3]()
+
+        @parameter
+        @__copy_capture(filter, filter_frsc_ptr, F_dim, C_dim, R_dim, S_dim)
+        @always_inline
+        def transpose_fcrs_to_frsc[
+            _width: Int, _rank: Int, alignment: Int = 1
+        ](coords: IndexList[_rank]):
+            var f = coords[0]
+            var r = coords[1]
+            var s = coords[2]
+            var c = coords[3]
+            var val = filter.load[width=_width](IndexList[4](f, c, r, s))
+            var out_idx = (
+                f * R_dim * S_dim * C_dim + r * S_dim * C_dim + s * C_dim + c
+            )
+            filter_frsc_ptr.store(out_idx, val)
+
+        elementwise[transpose_fcrs_to_frsc, 1, target="gpu"](
+            IndexList[4](F_dim, R_dim, S_dim, C_dim), ctx
+        )
+    else:
+        # RSCF [R,S,C,F] -> FRSC [F,R,S,C]
+        var R_dim = filter.dim[0]()
+        var S_dim = filter.dim[1]()
+        var C_dim = filter.dim[2]()
+        var F_dim = filter.dim[3]()
+
+        @parameter
+        @__copy_capture(filter, filter_frsc_ptr, R_dim, S_dim, C_dim, F_dim)
+        @always_inline
+        def transpose_rscf_to_frsc[
+            _width: Int, _rank: Int, alignment: Int = 1
+        ](coords: IndexList[_rank]):
+            var f = coords[0]
+            var r = coords[1]
+            var s = coords[2]
+            var c = coords[3]
+            var val = filter.load[width=_width](IndexList[4](r, s, c, f))
+            var out_idx = (
+                f * R_dim * S_dim * C_dim + r * S_dim * C_dim + s * C_dim + c
+            )
+            filter_frsc_ptr.store(out_idx, val)
+
+        elementwise[transpose_rscf_to_frsc, 1, target="gpu"](
+            IndexList[4](F_dim, R_dim, S_dim, C_dim), ctx
+        )
+
+    _miopen_algo_find_and_forward[input_type, filter_type, output_type](
+        ptr_meta,
+        input,
+        filter_frsc_ptr.bitcast[NoneType](),
+        filt,
+        output,
+        in_,
+        out,
+        pad,
+        stride,
+        dil,
+        num_groups,
+        params_match,
+        filter_is_fcrs,
+        ctx,
+    )
+    _ = filter_frsc_buf^
+
+
+def conv_miopen[
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+    filter_is_fcrs: Bool = False,
+](
+    input: LayoutTensor[input_type, ...],
+    filter: LayoutTensor[filter_type, ...],
+    output: LayoutTensor[output_type, ...],
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    padding: IndexList[2],
+    num_groups: Int,
+    ctx: DeviceContext,
+) raises:
+    _conv_miopen[filter_is_fcrs=filter_is_fcrs](
+        input, filter, output, stride, dilation, padding, num_groups, ctx
+    )
+
+
+def conv_gpu[
     conv_rank: Int,
     //,
     input_layout: Layout,
@@ -3805,7 +4313,7 @@ fn conv_gpu[
 
                 @parameter
                 @always_inline
-                fn _sm100_dispatch[
+                def _sm100_dispatch[
                     _epilogue: Optional[elementwise_epilogue_type] = None,
                 ]() raises:
                     dispatch_sm100_conv2d[
@@ -3840,7 +4348,8 @@ fn conv_gpu[
 
                     @parameter
                     @always_inline
-                    fn sm100_void_epilogue[
+                    @__copy_capture(hw, out_w)
+                    def sm100_void_epilogue[
                         _dtype: DType,
                         _width: Int,
                         *,
@@ -3865,6 +4374,64 @@ fn conv_gpu[
                 else:
                     _sm100_dispatch[]()
                 return
+
+        # AMD GPU path: use MIOpen for conv2d.
+        # Note: MIOpen's miopenConvolution mode (0) is cross-correlation
+        # (standard DNN conv). The old CROSS_CORRELATION (1) was actually
+        # miopenTranspose (deconvolution), causing x/y descriptor swaps.
+        comptime if has_amd_gpu_accelerator():
+            comptime if maybe_epilogue_func:
+                # MIOpen doesn't support epilogues. Compute to temp buffer,
+                # then apply epilogue.
+                comptime epilogue = maybe_epilogue_func.value()
+                var output_tmp_data = ctx.enqueue_create_buffer[output_type](
+                    output.size()
+                )
+                var output_tmp = output
+                output_tmp.ptr = output_tmp_data.unsafe_ptr()
+                _conv_miopen[filter_is_fcrs=filter_is_fcrs](
+                    input,
+                    filter,
+                    output_tmp,
+                    rebind[IndexList[2]](stride),
+                    rebind[IndexList[2]](dilation),
+                    rebind[IndexList[2]](symmetric_padding),
+                    num_groups,
+                    ctx,
+                )
+
+                @parameter
+                @__copy_capture(output_tmp)
+                @always_inline
+                def amd_miopen_epilogue[
+                    _width: Int, _rank: Int, alignment: Int = 1
+                ](coords: IndexList[_rank]):
+                    var vec = output_tmp.load[width=_width](
+                        rebind[IndexList[4]](coords)
+                    )
+                    epilogue(coords, vec)
+
+                elementwise[
+                    amd_miopen_epilogue,
+                    simd_width_of[output_type](),
+                    target="gpu",
+                ](
+                    output.runtime_layout.shape.value.canonicalize(),
+                    ctx,
+                )
+                _ = output_tmp_data^
+            else:
+                _conv_miopen[filter_is_fcrs=filter_is_fcrs](
+                    input,
+                    filter,
+                    output,
+                    rebind[IndexList[2]](stride),
+                    rebind[IndexList[2]](dilation),
+                    rebind[IndexList[2]](symmetric_padding),
+                    num_groups,
+                    ctx,
+                )
+            return
 
         # Fallback paths for non-SM100, unsupported dtypes, or constraints
         comptime if filter_is_fcrs:
@@ -3912,7 +4479,7 @@ fn conv_gpu[
                 @parameter
                 @__copy_capture(output_tmp)
                 @always_inline
-                fn epilogue_wrapper[
+                def epilogue_wrapper[
                     _width: Int, _rank: Int, alignment: Int = 1
                 ](coords: IndexList[_rank]):
                     comptime align = align_of[SIMD[output_type, _width]]()
@@ -3993,7 +4560,7 @@ fn conv_gpu[
         )
 
 
-fn conv3d_gpu_naive_ndhwc_qrscf[
+def conv3d_gpu_naive_ndhwc_qrscf[
     input_layout: Layout,
     filter_layout: Layout,
     output_layout: Layout,

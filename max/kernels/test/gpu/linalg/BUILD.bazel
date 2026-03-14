@@ -25,6 +25,10 @@ _EXTRA_CONSTRAINTS = {
     "test_dual_gemm.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_gemm_kernel.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_gemm_kernel_new.mojo": ["//:nvidia_gpu"],  # Requires 32-thread warps
+    "test_gemv.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: GEX-3155 — "Metal not supported" in device_context
     "test_gemv2.mojo": select({
         "//:h100_gpu": ["@platforms//:incompatible"],
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: PRDT-506
@@ -44,6 +48,7 @@ _EXTRA_CONSTRAINTS = {
     "test_matmul_amd.mojo": ["//:amd_gpu"],  # TODO: Disabled FIXME: KERN-1377
     "test_ping_pong.mojo": ["//:amd_gpu"],
     "test_ping_pong_shapes.mojo": ["//:amd_gpu"],
+    "test_matmul_dispatching_amd.mojo": ["//:amd_gpu"],
     "test_structured_kernel_components.mojo": ["//:amd_gpu"],
     "test_matmul_selection_heuristic.mojo": ["//:a100_gpu"],
     "test_matmul_sm90_epilogue.mojo": ["//:h100_gpu"],
@@ -170,6 +175,10 @@ _B200_TESTS = [
     "test_matmul_sm100_1sm_bf16_normal_epilogue.mojo",
     "test_matmul_sm100_block_scaled_mxfp8_small_bn.mojo",
     "test_matmul_sm100_block_scaled_nvfp4_small_bn.mojo",
+    "test_matmul_sm100_1sm_bf16_ctype_fp8.mojo",
+    "test_matmul_sm100_2sm_bf16_ctype_fp8.mojo",
+    "test_matmul_sm100_batched_2sm_bf16_ctype_fp8.mojo",
+    "test_matmul_sm100_batched_1sm_bf16_ctype_fp8.mojo",
 ]
 
 _GPU_MEMORY = {
@@ -177,6 +186,7 @@ _GPU_MEMORY = {
     "test_dual_gemm.mojo": "2",
     "test_gemv2.mojo": "2",
     "test_matmul.mojo": "3",
+    "test_matmul_dispatching_amd.mojo": "8",
     "test_matmul_custom.mojo": "4",
     "test_matmul_sm90_bf16_multicast.mojo": "2",
     "test_matmul_sm90_deepseek_scheduler.mojo": "1",
@@ -205,6 +215,10 @@ _GPU_MEMORY = {
     "test_matmul_sm100_1sm_bf16_normal_epilogue.mojo": "3",
     "test_matmul_sm100_block_scaled_mxfp8_small_bn.mojo": "3",
     "test_matmul_sm100_block_scaled_nvfp4_small_bn.mojo": "3",
+    "test_matmul_sm100_1sm_bf16_ctype_fp8.mojo": "3",
+    "test_matmul_sm100_2sm_bf16_ctype_fp8.mojo": "3",
+    "test_matmul_sm100_batched_2sm_bf16_ctype_fp8.mojo": "3",
+    "test_matmul_sm100_batched_1sm_bf16_ctype_fp8.mojo": "3",
 }
 
 [
@@ -232,15 +246,6 @@ _GPU_MEMORY = {
         name = src + ".test",
         size = "large",
         srcs = [src],
-        # KERN-2339: Tests disabled due to bounds check failures
-        enable_assertions = src not in [
-            "test_matmul_sm100_1sm_blockwise_fp8.mojo",  # KERN-2339: bounds check reveals kernel bug
-            "test_matmul_sm100_2sm_blockwise_fp8.mojo",  # KERN-2339: bounds check reveals kernel bug
-            "test_matmul_sm100_1sm_blockwise_fp8_part_a.mojo",  # KERN-2339: split test
-            "test_matmul_sm100_1sm_blockwise_fp8_part_b.mojo",  # KERN-2339: split test
-            "test_matmul_sm100_2sm_blockwise_fp8_part_a.mojo",  # KERN-2339: split test
-            "test_matmul_sm100_2sm_blockwise_fp8_part_b.mojo",  # KERN-2339: split test
-        ],
         exec_properties = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
         },
@@ -340,11 +345,6 @@ mojo_test(
         name = src + ".test",
         size = "large",
         srcs = [src],
-        # KERN-2339: Tests disabled due to bounds check failures or other assertion issues
-        enable_assertions = not src in [
-            "test_warp_specialization_gemm.mojo",  # KERN-2339: assertions exception
-            "test_dual_gemm.mojo",  # KERN-2339: bounds check triggers on zero-sized edge tiles
-        ],
         exec_properties = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
         },

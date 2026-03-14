@@ -16,7 +16,7 @@ from std.testing import *
 comptime CanCompare = Equatable & ImplicitlyCopyable
 
 
-fn all_equal[T: Copyable](lhs: List[T], rhs: List[T]) -> Bool:
+def all_equal[T: Copyable](lhs: List[T], rhs: List[T]) -> Bool:
     # Must be same length
     if len(lhs) != len(rhs):
         return False
@@ -38,11 +38,11 @@ fn all_equal[T: Copyable](lhs: List[T], rhs: List[T]) -> Bool:
 struct CanBeEquatable[T: CanCompare](CanCompare):
     var value: Self.T
 
-    fn __eq__(self, other: CanBeEquatable[Self.T]) -> Bool:
+    def __eq__(self, other: CanBeEquatable[Self.T]) -> Bool:
         return self.value == other.value
 
 
-fn main() raises:
+def main() raises:
     var list1 = [CanBeEquatable(1), CanBeEquatable(2)]
     var list2 = [CanBeEquatable(1), CanBeEquatable(2)]
     var list3 = [CanBeEquatable(1), CanBeEquatable(3)]

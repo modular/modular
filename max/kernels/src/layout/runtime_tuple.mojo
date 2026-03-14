@@ -40,7 +40,7 @@ from layout.int_tuple import product as product_int_tuple
 from std.utils import IndexList
 
 
-fn concat(var lhs: IntTuple, rhs: IntTuple) -> IntTuple:
+def concat(var lhs: IntTuple, rhs: IntTuple) -> IntTuple:
     """Concatenates two `IntTuple` instances into a single `IntTuple`.
 
     This function appends all elements from the right-hand side tuple to the
@@ -59,7 +59,7 @@ fn concat(var lhs: IntTuple, rhs: IntTuple) -> IntTuple:
     return lhs.owned_copy()
 
 
-fn _get_returned_type[bitwidth: Int, unsigned: Bool]() -> DType:
+def _get_returned_type[bitwidth: Int, unsigned: Bool]() -> DType:
     comptime if unsigned:
         return _uint_type_of_width[bitwidth]()
 
@@ -89,7 +89,7 @@ struct RuntimeTuple[
     """Storage for the actual tuple values, implemented as an IndexList with the appropriate size and element type."""
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize a `RuntimeTuple` with default values.
 
         For dimensions with known compile-time values in S, uses those values.
@@ -108,7 +108,7 @@ struct RuntimeTuple[
                 self.value[i] = UNKNOWN_VALUE
 
     @always_inline
-    fn __init__(out self, *values: Int):
+    def __init__(out self, *values: Int):
         """Initialize a `RuntimeTuple` with the provided values.
 
         Args:
@@ -118,7 +118,7 @@ struct RuntimeTuple[
 
     @always_inline
     @implicit
-    fn __init__[l: Int](out self, values: IndexList[l, ...]):
+    def __init__[l: Int](out self, values: IndexList[l, ...]):
         """Initialize a `RuntimeTuple` from an `IndexList`.
 
         Parameters:
@@ -140,7 +140,7 @@ struct RuntimeTuple[
 
     @staticmethod
     @always_inline
-    fn offset_until[i: Int]() -> Int:
+    def offset_until[i: Int]() -> Int:
         """Calculates the offset in the flattened value array for a given tuple index.
 
         This method computes the sum of lengths of all flattened subtuple elements
@@ -160,7 +160,7 @@ struct RuntimeTuple[
         return result
 
     @always_inline
-    fn get_int(self) -> Scalar[Self.element_type]:
+    def get_int(self) -> Scalar[Self.element_type]:
         """Returns the integer value of this RuntimeTuple.
 
         For tuples with a known compile-time value, returns that value.
@@ -178,7 +178,7 @@ struct RuntimeTuple[
             return Scalar[Self.element_type](self.value[0])
 
     @always_inline
-    fn __getitem__[
+    def __getitem_param__[
         i: Int
     ](self, out res: RuntimeTuple[Self.S[i], element_type=Self.element_type]):
         """Retrieves the element at the specified index in the tuple.
@@ -200,7 +200,7 @@ struct RuntimeTuple[
             res.value[i] = self.value[i + offset]
 
     @always_inline
-    fn concat[
+    def concat[
         R: IntTuple
     ](
         self,
@@ -239,7 +239,7 @@ struct RuntimeTuple[
                 result.value[Self.scalar_length + i] = rhs.value[i]
 
     @always_inline
-    fn flatten(
+    def flatten(
         self,
         out result: RuntimeTuple[
             flatten(Self.S), element_type=Self.element_type
@@ -255,7 +255,7 @@ struct RuntimeTuple[
         """
         return {self.value}
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the RuntimeTuple to a Writer object.
 
         This method is used by the string conversion system to generate a string
@@ -281,7 +281,7 @@ struct RuntimeTuple[
             writer.write(")")
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Returns the length (number of top-level elements) of the `RuntimeTuple`.
 
         This method provides the standard Python-like len() functionality,
@@ -296,7 +296,7 @@ struct RuntimeTuple[
         return l
 
     @always_inline
-    fn cast[
+    def cast[
         dtype: DType
     ](self, out result: RuntimeTuple[Self.S, element_type=dtype]):
         """Casts the RuntimeTuple to use a different numeric type.
@@ -313,7 +313,7 @@ struct RuntimeTuple[
         return {self.value.cast[dtype]()}
 
     @always_inline
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         """Converts the RuntimeTuple to an integer value.
 
         This method enables implicit conversion of a RuntimeTuple to an integer,
@@ -326,7 +326,7 @@ struct RuntimeTuple[
         return self.value[0]
 
 
-fn is_tuple[t: IntTuple](tuple: RuntimeTuple[t, ...]) -> Bool:
+def is_tuple[t: IntTuple](tuple: RuntimeTuple[t, ...]) -> Bool:
     """Determines if a `RuntimeTuple` represents a tuple rather than a scalar value.
 
     This function checks the structure of the underlying IntTuple to determine
@@ -344,7 +344,7 @@ fn is_tuple[t: IntTuple](tuple: RuntimeTuple[t, ...]) -> Bool:
     return t.is_tuple()
 
 
-fn is_int[t: IntTuple](tuple: RuntimeTuple[t, ...]) -> Bool:
+def is_int[t: IntTuple](tuple: RuntimeTuple[t, ...]) -> Bool:
     """Determines if a `RuntimeTuple` represents a scalar integer value.
 
     This function checks if the `RuntimeTuple` holds a single scalar value
@@ -363,7 +363,7 @@ fn is_int[t: IntTuple](tuple: RuntimeTuple[t, ...]) -> Bool:
 
 
 @always_inline
-fn prefix_product[
+def prefix_product[
     t: IntTuple
 ](tuple: RuntimeTuple[t, ...]) -> RuntimeTuple[prefix_product_int_tuple(t)]:
     """Computes the prefix products of elements in the `RuntimeTuple`.
@@ -390,7 +390,7 @@ fn prefix_product[
 
 
 @always_inline
-fn product[t: IntTuple](tuple: RuntimeTuple[t, ...]) -> Int:
+def product[t: IntTuple](tuple: RuntimeTuple[t, ...]) -> Int:
     """Computes the product of all elements in the `RuntimeTuple`.
 
     This function multiplies all scalar values in the tuple, including
@@ -414,7 +414,7 @@ fn product[t: IntTuple](tuple: RuntimeTuple[t, ...]) -> Int:
 
 
 @always_inline
-fn idx2crd[
+def idx2crd[
     idx_t: IntTuple,
     shape_t: IntTuple,
     stride_t: IntTuple,
@@ -459,7 +459,7 @@ fn idx2crd[
 
 # take shape as return type
 @always_inline
-fn idx2crd[
+def idx2crd[
     idx_t: IntTuple,
     shape_t: IntTuple,
 ](
@@ -489,7 +489,7 @@ fn idx2crd[
     return idx2crd(idx, shape, prefix_product(shape))
 
 
-fn crd2idx[
+def crd2idx[
     crd_t: IntTuple,
     shape_t: IntTuple,
     stride_t: IntTuple,
@@ -570,7 +570,7 @@ fn crd2idx[
 # the implementation. We are keeping it here to be consistent with IntTuple
 # shape_div.
 @always_inline
-fn signum(a: Int) -> Int:
+def signum(a: Int) -> Int:
     """Returns the sign of an integer value.
 
     This helper function determines whether a number is positive, negative, or zero,
@@ -585,7 +585,7 @@ fn signum(a: Int) -> Int:
     return 1 if (a > 0) else (-1 if (a < 0) else 0)
 
 
-fn shape_div[
+def shape_div[
     a_t: IntTuple, b_t: IntTuple
 ](
     a: RuntimeTuple[a_t, ...],
@@ -659,7 +659,7 @@ fn shape_div[
             return {va // vb if va % vb == 0 else signum(va * vb)}
 
 
-fn to_index_list[
+def to_index_list[
     rank: Int, t: IntTuple
 ](tuple: RuntimeTuple[t, ...]) -> IndexList[rank]:
     """
@@ -681,7 +681,7 @@ fn to_index_list[
     return res
 
 
-fn _int_tuple_product_flatten[t: IntTuple]() -> IntTuple:
+def _int_tuple_product_flatten[t: IntTuple]() -> IntTuple:
     comptime rank = len(t)
     var tup = IntTuple(num_elems=rank)
 
@@ -697,7 +697,7 @@ fn _int_tuple_product_flatten[t: IntTuple]() -> IntTuple:
     return tup
 
 
-fn coalesce_nested_tuple[
+def coalesce_nested_tuple[
     t: IntTuple,
     out_t: IntTuple = _int_tuple_product_flatten[t](),
 ](tuple: RuntimeTuple[t, ...]) -> RuntimeTuple[out_t]:

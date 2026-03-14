@@ -41,7 +41,12 @@ from ..kv_cache import (
 from ..layer import LayerList, Module, Shardable
 from ..linear import ColumnParallelLinear
 from ..rotary_embedding import RotaryEmbedding
-from .transformer import ReturnHiddenStates, ReturnLogits
+from .transformer import (
+    ReturnHiddenStates,
+    ReturnLogits,
+    extract_hs,
+    forward_sharded_layers,
+)
 
 
 def take(it: Iterable[Value[Any]], n: int) -> list[Value[Any]]:
@@ -53,28 +58,6 @@ def take(it: Iterable[Value[Any]], n: int) -> list[Value[Any]]:
 # distributed by default.
 class ShardableCallable(Shardable, Protocol):
     def __call__(self, x: TensorValue) -> TensorValue: ...
-
-
-def forward_sharded_layers(
-    layers: Sequence[Callable[[TensorValue], TensorValue]],
-    xs: Sequence[TensorValue],
-) -> list[TensorValue]:
-    """Forward pass through sharded layers.
-
-    Args:
-        layers: Sequence of callable layers that return TensorValue
-        xs: Input tensors, one per layer
-
-    Returns:
-        List of output tensors from each layer
-
-    Raises:
-        AssertionError: If the number of layers and input tensors don't match
-    """
-    assert len(xs) == len(layers), (
-        f"Number of layers ({len(layers)}) must match number of inputs ({len(xs)})"
-    )
-    return [layer(x) for layer, x in zip(layers, xs, strict=True)]
 
 
 def distributed_logits_postprocess(
@@ -178,11 +161,13 @@ def distributed_logits_postprocess(
         assert logits is not None
         ret_val += (logits, offsets)
 
-    if return_hidden_states == ReturnHiddenStates.LAST:
-        ret_val += tuple(last_token_h)
-    elif return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
-        norm_h = forward_sharded_layers(norm_shards, h)
-        ret_val += tuple(norm_h)
+    ret_val += extract_hs(
+        return_hidden_states=return_hidden_states,
+        last_token_hs_distributed=last_token_h,
+        all_hs_distributed=h,
+        normalizer=norm_shards,
+        signal_buffers=signal_buffers,
+    )
     return ret_val
 
 

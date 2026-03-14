@@ -47,7 +47,6 @@ Attention dispatch
    :toctree: generated
    :template: autosummary/class.rst
 
-   AttentionDispatchMetadataScalars
    AttentionDispatchResolver
 
 Metrics

@@ -61,7 +61,7 @@ from layout import (
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-fn simple_init() -> Bool:
+def simple_init() -> Bool:
     for arg in argv():
         if arg == "--simple-init":
             return True
@@ -89,6 +89,8 @@ def _test_kernel_impl[
     swapAB: Bool = False,
     k_group_size: Int = 1,
     SF_VECTOR_SIZE: Int = MXFP8_SF_VECTOR_SIZE,
+    test_atol: Float64 = 1e-2,
+    test_rtol: Float64 = 1e-2,
 ](
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -661,8 +663,8 @@ def _test_kernel_impl[
         c_host.data,
         c_host_ref.data,
         c_host.num_elements(),
-        atol=1e-2,
-        rtol=1e-2,
+        atol=test_atol,
+        rtol=test_rtol,
     )
     print("\n=== TEST PASSED ===\n")
 
@@ -1068,6 +1070,196 @@ def main() raises:
             num_experts=4,
             expert_shape=Index(2048, 1024),
             swapAB=True,
+        ](
+            3,
+            [64 + 1, 1024 + 3, 128 * 3 + 2],
+            [2, 0, 1],
+            ctx,
+        )
+
+        # MMA_N=8 tests (new structured kernel only, small BN, MXFP8)
+        print("\n========================================")
+        print("Testing NEW kernel with MMA_N=8 (MXFP8)")
+        print("========================================\n")
+
+        comptime umma_shape_n8 = Index(bm, 8, MMA_K)
+        comptime block_tile_shape_n8 = Index(bm, 8, BK)
+
+        # MMA_N=8: Aligned token counts
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n8,
+            umma_shape_n8,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            # MMA_N=8 produces slightly different rounding than cuBLAS
+            # due to smaller tile accumulation; allow wider tolerance.
+            test_rtol=0.08,
+        ](
+            3,
+            [128, 512, 1024],
+            [0, 1, 1],
+            ctx,
+        )
+
+        # MMA_N=8: Unaligned token counts
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n8,
+            umma_shape_n8,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            test_rtol=0.08,
+        ](
+            3,
+            [64 + 1, 1024 + 3, 128 * 3 + 2],
+            [2, 0, 1],
+            ctx,
+        )
+
+        # MMA_N=8: Small token counts
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n8,
+            umma_shape_n8,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            test_rtol=0.08,
+        ](
+            3,
+            [31, 97, 63],
+            [2, 0, 1],
+            ctx,
+        )
+
+        # MMA_N=16 tests (new structured kernel only, small BN, MXFP8)
+        print("\n========================================")
+        print("Testing NEW kernel with MMA_N=16 (MXFP8)")
+        print("========================================\n")
+
+        comptime umma_shape_n16 = Index(bm, 16, MMA_K)
+        comptime block_tile_shape_n16 = Index(bm, 16, BK)
+
+        # MMA_N=16: Large token counts
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n16,
+            umma_shape_n16,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=6,
+            expert_shape=Index(2048, 1024),
+        ](
+            4,
+            [512, 1000, 2000, 3000],
+            [0, 3, 2, 4],
+            ctx,
+        )
+
+        # MMA_N=16: Unaligned token counts
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n16,
+            umma_shape_n16,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+        ](
+            3,
+            [64 + 1, 1024 + 3, 128 * 3 + 2],
+            [2, 0, 1],
+            ctx,
+        )
+
+        # MMA_N=32 tests (new structured kernel only, small BN, MXFP8)
+        print("\n========================================")
+        print("Testing NEW kernel with MMA_N=32 (MXFP8)")
+        print("========================================\n")
+
+        comptime umma_shape_n32 = Index(bm, 32, MMA_K)
+        comptime block_tile_shape_n32 = Index(bm, 32, BK)
+
+        # MMA_N=32: Large token counts
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n32,
+            umma_shape_n32,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=6,
+            expert_shape=Index(2048, 1024),
+        ](
+            4,
+            [512, 1000, 2000, 3000],
+            [0, 3, 2, 4],
+            ctx,
+        )
+
+        # MMA_N=32: Unaligned token counts
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n32,
+            umma_shape_n32,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
         ](
             3,
             [64 + 1, 1024 + 3, 128 * 3 + 2],

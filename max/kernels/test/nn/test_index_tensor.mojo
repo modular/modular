@@ -33,7 +33,7 @@ from std.utils import IndexList, StaticTuple
 
 # TODO: It is like example 5 ONNX.
 # CHECK-LABEL: test_index_tensor_DLRM
-fn test_index_tensor_DLRM() raises:
+def test_index_tensor_DLRM() raises:
     print("== test_index_tensor_DLRM")
 
     comptime input_type = DType.int32
@@ -134,7 +134,7 @@ fn test_index_tensor_DLRM() raises:
 
 # Example with batch_dim = 2 (i.e., result[:, :, indexA, indexB])
 # CHECK-LABEL: test_index_tensor_DLRM_batch
-fn test_index_tensor_DLRM_batch() raises:
+def test_index_tensor_DLRM_batch() raises:
     print("== test_index_tensor_DLRM_batch")
 
     comptime input_type = DType.int32
@@ -237,7 +237,7 @@ fn test_index_tensor_DLRM_batch() raises:
 
 # TODO: It is like example 3 ONNX gather_nd.
 # CHECK-LABEL: test_index_tensor_CLIPVIT
-fn test_index_tensor_CLIPVIT() raises:
+def test_index_tensor_CLIPVIT() raises:
     print("== test_index_tensor_CLIPVIT")
 
     comptime input_type = DType.int32
@@ -350,7 +350,7 @@ fn test_index_tensor_CLIPVIT() raises:
 
 
 # CHECK-LABEL: test_index_tensor_llama2_mistral
-fn test_index_tensor_llama2_mistral() raises:
+def test_index_tensor_llama2_mistral() raises:
     print("== test_index_tensor_llama2_mistral")
 
     comptime input_type = DType.int32
@@ -436,7 +436,7 @@ fn test_index_tensor_llama2_mistral() raises:
 
 # CHECK-LABEL: test_advanced_indexing_getitem
 # Matches equivalent numpy: input[:, :, index_a, index_b]
-fn test_advanced_indexing_getitem() raises:
+def test_advanced_indexing_getitem() raises:
     print("== test_advanced_indexing_getitem")
 
     # Initialize input with sequential data for test purposes.
@@ -491,14 +491,14 @@ fn test_advanced_indexing_getitem() raises:
 
     @parameter
     @always_inline
-    fn input_tensor_fn[
+    def input_tensor_fn[
         width: Int
     ](idx: IndexList[input_rank]) capturing -> SIMD[input_type, width]:
         return input_dyn.load[width=width, alignment=1](Coord(idx))
 
     @always_inline
     @parameter
-    fn indices_fn[
+    def indices_fn[
         indices_index: Int,
     ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
         comptime if indices_index == 0:
@@ -585,7 +585,7 @@ fn test_advanced_indexing_getitem() raises:
 
 # CHECK-LABEL: test_advanced_indexing_setitem_inplace
 # Matches equivalent numpy: input[:, :, index_a, index_b] = updates
-fn test_advanced_indexing_setitem_inplace() raises:
+def test_advanced_indexing_setitem_inplace() raises:
     print("== test_advanced_indexing_setitem_inplace")
 
     # Create input vector
@@ -642,14 +642,14 @@ fn test_advanced_indexing_setitem_inplace() raises:
 
     @parameter
     @always_inline
-    fn updates_tensor_fn[
+    def updates_tensor_fn[
         width: Int
     ](idx: IndexList[updates_rank]) capturing -> SIMD[input_type, width]:
         return updates_dyn.load[width=width, alignment=1](Coord(idx))
 
     @always_inline
     @parameter
-    fn indices_fn[
+    def indices_fn[
         indices_index: Int,
     ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
         comptime if indices_index == 0:

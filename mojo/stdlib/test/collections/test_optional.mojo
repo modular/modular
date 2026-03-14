@@ -156,6 +156,14 @@ def test_optional_conditional_conformances() raises:
     assert_true(conforms_to(Optional[String], Writable))
     assert_false(conforms_to(Optional[MoveOnly[Int]], Writable))
 
+    assert_true(conforms_to(Optional[Int], Copyable))
+    assert_true(conforms_to(Optional[String], Copyable))
+    assert_false(conforms_to(Optional[MoveOnly[Int]], Copyable))
+
+    assert_true(conforms_to(Optional[Int], Hashable))
+    assert_true(conforms_to(Optional[String], Hashable))
+    assert_false(conforms_to(Optional[MoveOnly[Int]], Hashable))
+
 
 def test_optional_write_to() raises:
     check_write_to(Optional[Int](None), expected="None", is_repr=False)
@@ -169,6 +177,25 @@ def test_optional_write_repr_to() raises:
     check_write_to(
         Optional[Int](42), expected="Optional[Int](Int(42))", is_repr=True
     )
+
+
+def test_optional_hash() raises:
+    # Equal optionals should produce the same hash.
+    assert_equal(hash(Optional(1)), hash(Optional(1)))
+    assert_equal(hash(Optional("hello")), hash(Optional("hello")))
+
+    # None optionals should hash equally.
+    assert_equal(hash(Optional[Int](None)), hash(Optional[Int](None)))
+
+    # Different values should (likely) produce different hashes.
+    assert_not_equal(hash(Optional(1)), hash(Optional(2)))
+
+    # Present vs None should produce different hashes.
+    assert_not_equal(hash(Optional(0)), hash(Optional[Int](None)))
+
+    # A value stored in an Optional should have a different hash than that
+    # value on its own.
+    assert_not_equal(hash(1), hash(Optional(1)))
 
 
 def test_optional_equality() raises:

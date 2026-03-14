@@ -58,7 +58,7 @@ comptime MOJO_PYTHON_TYPE_OBJECTS = _Global[
 that Mojo type to this CPython interpreter instance."""
 
 
-fn _register_py_type_object(
+def _register_py_type_object(
     type_id: StaticString, var type_obj: PythonObject
 ) raises:
     """Register a Python type object for the identified Mojo type.
@@ -89,7 +89,7 @@ fn _register_py_type_object(
     type_dict[][type_id] = type_obj^
 
 
-fn lookup_py_type_object[T: AnyType]() raises -> PythonObject:
+def lookup_py_type_object[T: AnyType]() raises -> PythonObject:
     """Retrieve a reference to the unique Python type describing Python objects
     containing Mojo values of type `T`.
 
@@ -167,7 +167,7 @@ struct PyMojoObject[T: ImplicitlyDestructible]:
     """Whether the Mojo value has been initialized."""
 
 
-fn _tp_dealloc_wrapper[T: ImplicitlyDestructible](py_self: PyObjectPtr):
+def _tp_dealloc_wrapper[T: ImplicitlyDestructible](py_self: PyObjectPtr):
     """Python-compatible wrapper for deallocating a `PyMojoObject`.
 
     This function serves as the tp_dealloc slot for Python type objects that
@@ -193,7 +193,7 @@ fn _tp_dealloc_wrapper[T: ImplicitlyDestructible](py_self: PyObjectPtr):
     cpython.PyObject_Free(py_self.bitcast[NoneType]())
 
 
-fn _tp_repr_wrapper[
+def _tp_repr_wrapper[
     T: ImplicitlyDestructible
 ](py_self: PyObjectPtr) -> PyObjectPtr:
     """Python-compatible wrapper for generating string representation of a
@@ -305,7 +305,7 @@ struct PythonModuleBuilder:
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__(out self, name: StaticString) raises:
+    def __init__(out self, name: StaticString) raises:
         """Construct a Python module builder with the given module name.
 
         Args:
@@ -316,7 +316,7 @@ struct PythonModuleBuilder:
         """
         self = Self(Python().create_module(name))
 
-    fn __init__(out self, module: PythonObject):
+    def __init__(out self, module: PythonObject):
         """Construct a Python module builder with the given module.
 
         Args:
@@ -330,7 +330,7 @@ struct PythonModuleBuilder:
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn add_type[
+    def add_type[
         T: ImplicitlyDestructible
     ](mut self, type_name: StaticString) -> ref[
         self.type_builders
@@ -349,7 +349,7 @@ struct PythonModuleBuilder:
         self.type_builders.append(PythonTypeBuilder.bind[T](type_name))
         return self.type_builders[-1]
 
-    fn def_py_c_function(
+    def def_py_c_function(
         mut self,
         func: PyCFunction,
         func_name: StaticString,
@@ -367,7 +367,7 @@ struct PythonModuleBuilder:
 
         self.functions.append(PyMethodDef.function(func, func_name, docstring))
 
-    fn def_py_c_function(
+    def def_py_c_function(
         mut self,
         func: PyCFunctionWithKeywords,
         func_name: StaticString,
@@ -385,7 +385,7 @@ struct PythonModuleBuilder:
 
         self.functions.append(PyMethodDef.function(func, func_name, docstring))
 
-    fn def_py_function[
+    def def_py_function[
         func: PyFunctionRaising
     ](mut self, func_name: StaticString, docstring: StaticString = ""):
         """Declare a binding for a function with PyFunctionRaising signature in
@@ -402,7 +402,7 @@ struct PythonModuleBuilder:
 
         self._generic_def_py_function[func](func_name, docstring)
 
-    fn def_py_function[
+    def def_py_function[
         func: PyFunctionWithKeywordsRaising
     ](mut self, func_name: StaticString, docstring: StaticString = ""):
         """Declare a binding for a function with PyFunctionWithKeywordsRaising signature in
@@ -419,15 +419,15 @@ struct PythonModuleBuilder:
 
         self._generic_def_py_function[func](func_name, docstring)
 
-    fn _generic_def_py_function[
+    def _generic_def_py_function[
         func: GenericPyFunction
     ](mut self, func_name: StaticString, docstring: StaticString = ""):
         self.def_py_c_function(
             _py_c_function_wrapper[func], func_name, docstring
         )
 
-    fn def_function[
-        func_type: __TypeOfAllTypes,
+    def def_function[
+        func_type: TrivialRegisterPassable,
         //,
         func: PyObjectFunction[func_type, has_kwargs=_],
     ](mut self, func_name: StaticString, docstring: StaticString = ""):
@@ -439,10 +439,10 @@ struct PythonModuleBuilder:
 
         Example signatures:
         ```mojo
-        fn func(arg1: PythonObject) -> PythonObject: ...
-        fn func(arg1: PythonObject, arg2: PythonObject) raises: ...
-        fn func(kwargs: OwnedKwargsDict[PythonObject]) -> PythonObject: ...
-        fn func(arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]) raises: ...
+        def func(arg1: PythonObject) -> PythonObject: ...
+        def func(arg1: PythonObject, arg2: PythonObject) raises: ...
+        def func(kwargs: OwnedKwargsDict[PythonObject]) -> PythonObject: ...
+        def func(arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]) raises: ...
         ```
 
         Parameters:
@@ -460,7 +460,7 @@ struct PythonModuleBuilder:
             func_name, docstring
         )
 
-    fn finalize(mut self) raises -> PythonObject:
+    def finalize(mut self) raises -> PythonObject:
         """Finalize the module builder, creating the module object.
 
 
@@ -528,7 +528,7 @@ struct PythonTypeBuilder(Copyable):
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__(out self, type_name: StaticString, *, basicsize: Int):
+    def __init__(out self, type_name: StaticString, *, basicsize: Int):
         """Construct a new builder for a Python type binding.
 
         Args:
@@ -544,7 +544,7 @@ struct PythonTypeBuilder(Copyable):
         self.methods = []
 
     @staticmethod
-    fn bind[
+    def bind[
         T: ImplicitlyDestructible
     ](type_name: StaticString) -> PythonTypeBuilder:
         """Construct a new builder for a Python type that binds a Mojo type.
@@ -572,7 +572,7 @@ struct PythonTypeBuilder(Copyable):
 
         return b^
 
-    fn finalize(mut self, module: PythonObject) raises:
+    def finalize(mut self, module: PythonObject) raises:
         """Finalize the builder and add the created type to a Python module.
 
         This method completes the type building process by calling the
@@ -650,7 +650,7 @@ struct PythonTypeBuilder(Copyable):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn _insert_slot(mut self, slot: PyType_Slot):
+    def _insert_slot(mut self, slot: PyType_Slot):
         """Insert a slot into the type builder.
         If the slot is already present, it will be replaced.
 
@@ -659,7 +659,7 @@ struct PythonTypeBuilder(Copyable):
         """
         self._slots[Int(slot.slot)] = slot.pfunc
 
-    fn def_init_defaultable[
+    def def_init_defaultable[
         T: Defaultable & Movable,
     ](mut self) raises -> ref[self] Self:
         """Declare a binding for the `__init__` method of the type which
@@ -676,7 +676,7 @@ struct PythonTypeBuilder(Copyable):
         """
 
         @always_inline
-        fn default_init_func(
+        def default_init_func(
             out self: T, args: PythonObject, kwargs: PythonObject
         ) raises:
             if len(args) > 0 or kwargs._obj_ptr:
@@ -688,7 +688,7 @@ struct PythonTypeBuilder(Copyable):
         )
         return self
 
-    fn def_py_init[
+    def def_py_init[
         T: Movable & ImplicitlyDestructible,
         //,
         init_func: fn(out T, args: PythonObject, kwargs: PythonObject),
@@ -707,14 +707,14 @@ struct PythonTypeBuilder(Copyable):
         """
 
         @always_inline
-        fn raising_wrapper[
+        def raising_wrapper[
             init_func: fn(out t: T, args: PythonObject, kwargs: PythonObject)
         ](out t: T, args: PythonObject, kwargs: PythonObject) raises:
             t = init_func(args, kwargs)
 
         return self.def_py_init[raising_wrapper[init_func]]()
 
-    fn def_py_init[
+    def def_py_init[
         T: Movable & ImplicitlyDestructible,
         //,
         init_func: fn(out T, args: PythonObject, kwargs: PythonObject) raises,
@@ -736,7 +736,7 @@ struct PythonTypeBuilder(Copyable):
         )
         return self
 
-    fn def_py_c_method[
+    def def_py_c_method[
         static_method: Bool = False
     ](
         mut self,
@@ -767,7 +767,7 @@ struct PythonTypeBuilder(Copyable):
         )
         return self
 
-    fn def_py_c_method[
+    def def_py_c_method[
         static_method: Bool = False
     ](
         mut self,
@@ -799,7 +799,7 @@ struct PythonTypeBuilder(Copyable):
         )
         return self
 
-    fn def_py_method[
+    def def_py_method[
         method: PyFunctionRaising, static_method: Bool = False
     ](
         mut self: Self,
@@ -828,7 +828,7 @@ struct PythonTypeBuilder(Copyable):
             method_name, docstring
         )
 
-    fn def_py_method[
+    def def_py_method[
         method: PyFunctionWithKeywordsRaising, static_method: Bool = False
     ](
         mut self: Self,
@@ -858,7 +858,7 @@ struct PythonTypeBuilder(Copyable):
             method_name, docstring
         )
 
-    fn _generic_def_py_method[
+    def _generic_def_py_method[
         method: GenericPyFunction,
         static_method: Bool = False,
     ](
@@ -870,8 +870,8 @@ struct PythonTypeBuilder(Copyable):
             _py_c_function_wrapper[method], method_name, docstring
         )
 
-    fn def_method[
-        method_type: __TypeOfAllTypes,
+    def def_method[
+        method_type: TrivialRegisterPassable,
         //,
         method: PyObjectFunction[method_type, self_type=_, has_kwargs=_],
     ](
@@ -886,8 +886,8 @@ struct PythonTypeBuilder(Copyable):
 
         Example signatures:
         ```mojo
-        fn method(mut self: PythonObject) -> PythonObject: ...
-        fn method(mut self: PythonObject, arg1: PythonObject) raises: ...
+        def method(mut self: PythonObject) -> PythonObject: ...
+        def method(mut self: PythonObject, arg1: PythonObject) raises: ...
         ```
 
         Parameters:
@@ -909,8 +909,8 @@ struct PythonTypeBuilder(Copyable):
             _py_function_wrapper[method, is_method=True](), static_method=False
         ](method_name, docstring)
 
-    fn def_staticmethod[
-        method_type: __TypeOfAllTypes,
+    def def_staticmethod[
+        method_type: TrivialRegisterPassable,
         //,
         method: PyObjectFunction[method_type, has_kwargs=_],
     ](
@@ -925,8 +925,8 @@ struct PythonTypeBuilder(Copyable):
 
         Example signatures:
         ```mojo
-        fn static_method(arg1: PythonObject) -> PythonObject: ...
-        fn static_method(arg1: PythonObject, arg2: PythonObject) raises: ...
+        def static_method(arg1: PythonObject) -> PythonObject: ...
+        def static_method(arg1: PythonObject, arg2: PythonObject) raises: ...
         ```
 
         Parameters:
@@ -954,7 +954,7 @@ struct PythonTypeBuilder(Copyable):
 # ===-----------------------------------------------------------------------===#
 
 
-fn _py_init_function_nonregistered(
+def _py_init_function_nonregistered(
     py_self_ptr: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
 ) -> c_int:
     ref cpython = Python().cpython()
@@ -966,7 +966,7 @@ fn _py_init_function_nonregistered(
     return -1
 
 
-fn _py_new_function_wrapper[
+def _py_new_function_wrapper[
     T: AnyType
 ](
     subtype: PyTypeObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
@@ -984,7 +984,7 @@ fn _py_new_function_wrapper[
         return {}
 
 
-fn _py_init_function_wrapper[
+def _py_init_function_wrapper[
     T: Movable & ImplicitlyDestructible,
     init_func: fn(out T, args: PythonObject, kwargs: PythonObject) raises,
 ](
@@ -1015,7 +1015,7 @@ fn _py_init_function_wrapper[
 
 
 @always_inline
-fn _py_c_function_wrapper[
+def _py_c_function_wrapper[
     user_func: GenericPyFunction
 ](
     py_self_ptr: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
@@ -1090,8 +1090,8 @@ fn _py_c_function_wrapper[
 
 
 @always_inline
-fn _py_function_wrapper[
-    method_type: __TypeOfAllTypes,
+def _py_function_wrapper[
+    method_type: TrivialRegisterPassable,
     self_type: ImplicitlyDestructible,
     //,
     func: PyObjectFunction[method_type, self_type, has_kwargs=_],
@@ -1104,7 +1104,7 @@ fn _py_function_wrapper[
     comptime if func.has_kwargs:
 
         @always_inline
-        fn wrapper_with_kwargs(
+        def wrapper_with_kwargs(
             mut py_self: PythonObject,
             mut py_args: PythonObject,
             mut py_kwargs: PythonObject,
@@ -1118,7 +1118,7 @@ fn _py_function_wrapper[
     else:
 
         @always_inline
-        fn wrapper(
+        def wrapper(
             mut py_self: PythonObject, mut py_args: PythonObject
         ) raises -> PythonObject:
             comptime if is_method:
@@ -1134,7 +1134,7 @@ fn _py_function_wrapper[
 # ===-----------------------------------------------------------------------===#
 
 
-fn check_arguments_arity(
+def check_arguments_arity(
     arity: Int,
     args: PythonObject,
 ) raises:
@@ -1158,7 +1158,7 @@ fn check_arguments_arity(
     return check_arguments_arity(arity, args, "<mojo function>")
 
 
-fn check_arguments_arity(
+def check_arguments_arity(
     arity: Int,
     args: PythonObject,
     func_name: StringSlice,
@@ -1213,7 +1213,7 @@ fn check_arguments_arity(
             )
 
 
-fn check_and_get_arg[
+def check_and_get_arg[
     T: ImplicitlyDestructible
 ](
     func_name: StaticString, py_args: PythonObject, index: Int
@@ -1238,7 +1238,7 @@ fn check_and_get_arg[
     return py_args[index].downcast_value_ptr[T](func=func_name)
 
 
-fn _try_convert_arg[
+def _try_convert_arg[
     T: ConvertibleFromPython
 ](
     func_name: StringSlice, py_args: PythonObject, argidx: Int, out result: T
@@ -1267,7 +1267,7 @@ fn _try_convert_arg[
 #   allowing us to "return" a pointer to stack-allocated data from this
 #   function.
 @always_inline
-fn check_and_get_or_convert_arg[
+def check_and_get_or_convert_arg[
     T: ConvertibleFromPython
 ](
     func_name: StaticString, py_args: PythonObject, index: Int
@@ -1313,7 +1313,7 @@ fn check_and_get_or_convert_arg[
         return converted_arg_ptr
 
 
-fn _get_type_name(obj: PythonObject) raises -> String:
+def _get_type_name(obj: PythonObject) raises -> String:
     ref cpython = Python().cpython()
 
     var actual_type = cpython.Py_TYPE(obj._obj_ptr)
@@ -1324,7 +1324,7 @@ fn _get_type_name(obj: PythonObject) raises -> String:
     return String(actual_type_name)
 
 
-fn _pluralize(
+def _pluralize(
     count: Int,
     singular: StaticString,
     plural: StaticString,

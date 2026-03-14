@@ -39,7 +39,7 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable):
     var nw: SIMD[Self.dtype, 2]
     var se: SIMD[Self.dtype, 2]
 
-    fn __init__(
+    def __init__(
         out self,
         y1: Scalar[Self.dtype],
         x1: Scalar[Self.dtype],
@@ -61,7 +61,7 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable):
         self.nw = SIMD[Self.dtype, 2](max(y1, y2), max(x1, x2))
         self.se = SIMD[Self.dtype, 2](min(y1, y2), min(x1, x2))
 
-    fn iou(self, other: BoundingBox[Self.dtype]) -> Scalar[Self.dtype]:
+    def iou(self, other: BoundingBox[Self.dtype]) -> Scalar[Self.dtype]:
         """Calculate Intersection over Union (IoU) with another bounding box.
 
         Args:
@@ -76,7 +76,7 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable):
         var iou_val = abs(intersection_area) / abs(union_area)
         return iou_val
 
-    fn intersection_area(
+    def intersection_area(
         self, other: BoundingBox[Self.dtype]
     ) -> Scalar[Self.dtype]:
         """Calculate the area of intersection with another bounding box.
@@ -96,7 +96,7 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable):
 
         return Self(nw, se).area()
 
-    fn area(self) -> Scalar[Self.dtype]:
+    def area(self) -> Scalar[Self.dtype]:
         """Calculate the area of this bounding box.
 
         Returns:
@@ -106,7 +106,7 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable):
 
 
 @always_inline
-fn _get_bounding_box[
+def _get_bounding_box[
     dtype: DType
 ](
     batch_size: Int,
@@ -136,7 +136,7 @@ fn _get_bounding_box[
     return BoundingBox(y1, x1, y2, x2)
 
 
-fn non_max_suppression[
+def non_max_suppression[
     dtype: DType
 ](
     boxes: TileTensor[dtype, ...],
@@ -175,7 +175,7 @@ fn non_max_suppression[
 
     @parameter
     @always_inline
-    fn store_to_outputs(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
+    def store_to_outputs(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
         """Store selected box indices to output tensor."""
         output[pred_count, 0] = batch_idx
         output[pred_count, 1] = class_idx
@@ -191,7 +191,7 @@ fn non_max_suppression[
     )
 
 
-fn non_max_suppression_shape_func[
+def non_max_suppression_shape_func[
     dtype: DType
 ](
     boxes: TileTensor[dtype, ...],
@@ -223,7 +223,7 @@ fn non_max_suppression_shape_func[
 
     @parameter
     @always_inline
-    fn incr_pred_count(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
+    def incr_pred_count(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
         """Count selected boxes without storing them."""
         box_pred_count += 1
 
@@ -238,7 +238,7 @@ fn non_max_suppression_shape_func[
     return IndexList[2](Int(box_pred_count), 3)
 
 
-fn non_max_suppression[
+def non_max_suppression[
     dtype: DType,
     func: fn(Int64, Int64, Int64) capturing[_] -> None,
 ](
@@ -301,7 +301,7 @@ fn non_max_suppression[
 
             @parameter
             @always_inline
-            fn _greater_than(lhs: Int64, rhs: Int64) -> Bool:
+            def _greater_than(lhs: Int64, rhs: Int64) -> Bool:
                 """Compare boxes by their scores in descending order."""
                 return per_class_scores[Int(lhs)] > per_class_scores[Int(rhs)]
 
@@ -353,7 +353,7 @@ fn non_max_suppression[
 
             @always_inline
             @parameter
-            fn sorted() -> Bool:
+            def sorted() -> Bool:
                 for i in range(len(box_idxs) - 1):
                     if (
                         per_class_scores[Int(box_idxs[i])]

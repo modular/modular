@@ -15,6 +15,7 @@ from std.math import align_down, align_up, ceildiv
 from std.sys import (
     has_amd_gpu_accelerator,
     is_amd_gpu,
+    is_nvidia_gpu,
     llvm_intrinsic,
     simd_width_of,
 )
@@ -50,15 +51,15 @@ from std.gpu.primitives.grid_controls import (
 
 # layout imports
 from layout import (
-    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
     TileTensor,
+    UNKNOWN_VALUE,
 )
 from std.logger import Logger
-from std.memory import stack_allocation
+from std.memory import bitcast, stack_allocation
 from std.utils import IndexList
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
@@ -81,29 +82,29 @@ struct GEMVAlgorithm(ImplicitlyCopyable, Writable):
     comptime GEVM_KERNEL = Self(4)
     comptime MATMUL_NAIVE = Self(5)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
+    def __isnot__(self, other: Self) -> Bool:
         return self != other
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(String(self))
 
 
 @always_inline
-fn reverse_idx[transpose: Bool](x: Int, y: Int) -> IndexList[2]:
+def reverse_idx[transpose: Bool](x: Int, y: Int) -> IndexList[2]:
     return Index(y, x) if transpose else Index(x, y)
 
 
 # Matrix-Column Vector Multiplication using scalar arithmetic
-fn gemv_kernel[
+def gemv_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -158,7 +159,7 @@ fn gemv_kernel[
 
 
 # Matrix-Column Vector Multiplication using vectorized instructions
-fn gemv_kernel_vector[
+def gemv_kernel_vector[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -232,7 +233,7 @@ fn gemv_kernel_vector[
 
 
 @always_inline
-fn _dot_accum[
+def _dot_accum[
     in_type: DType,
     accum_type: DType,
     width: Int,
@@ -276,6 +277,18 @@ fn _dot_accum[
     elif is_amd_gpu():
         # AMD non-BF16 (e.g. FP8): vector multiply + horizontal reduce.
         result += (a.cast[accum_type]() * b.cast[accum_type]()).reduce_add()
+    elif is_nvidia_gpu() and in_type.is_float8() and width >= 2:
+        # NVIDIA FP8: paired bitcast emits cvt.rn.f16x2.e4m3x2, eliminating
+        # PRMT byte-shuffle instructions. Multiply in f32 to avoid overflow
+        # (FP8 max=480, 480²=230400 > f16 max 65504).
+        comptime half_width = width // 2
+        var a_u16 = bitcast[DType.uint16, half_width](a)
+        var b_u16 = bitcast[DType.uint16, half_width](b)
+        comptime for l in range(half_width):
+            var a_f16 = bitcast[in_type, 2](a_u16[l]).cast[DType.float16]()
+            var b_f16 = bitcast[in_type, 2](b_u16[l]).cast[DType.float16]()
+            result += a_f16[0].cast[accum_type]() * b_f16[0].cast[accum_type]()
+            result += a_f16[1].cast[accum_type]() * b_f16[1].cast[accum_type]()
     else:
         # NVIDIA/generic: scalar element-wise loop. reduce_add() generates
         # wider intermediates that increase NVIDIA register pressure vs
@@ -289,7 +302,7 @@ fn _dot_accum[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-fn gemv_split_k[
+def gemv_split_k[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -356,7 +369,7 @@ fn gemv_split_k[
     # Each thread sums local data in K.
     @parameter
     @always_inline
-    fn _k_iter_body():
+    def _k_iter_body():
         """Single K-iteration: load weights, load activations, accumulate."""
         var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
         var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
@@ -465,7 +478,7 @@ fn gemv_split_k[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(tile_size))
 )
-fn gevm_kernel[
+def gevm_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -525,7 +538,7 @@ fn gevm_kernel[
         launch_dependent_grids()
 
 
-fn _amd_gemv_config[
+def _amd_gemv_config[
     simd_width: Int,
     max_thread_block_size: Int,
     static_K: Int,
@@ -600,49 +613,129 @@ fn _amd_gemv_config[
     return IndexList[3](num_threads, tile_n, unroll)
 
 
+def _nvidia_gemv_config[
+    simd_width: Int,
+    static_K: Int,
+    has_N: Bool,
+    static_N: Int,
+]() -> IndexList[3]:
+    """Compute GEMV split-K dispatch config for NVIDIA B200 GPUs.
+
+    Returns (num_threads, tile_n, unroll_factor).
+    B200 has 160 SMs, warp size 32.
+    """
+    comptime tile_k_256 = 256 * simd_width
+    comptime tile_k_128 = 128 * simd_width
+
+    var num_threads: Int
+    comptime if simd_width <= 8:
+        # BF16: 128T default. 256T only for large N with ~4 k_iters
+        # at 128T, where halving iterations improves BW utilization.
+        if (
+            has_N
+            and static_N >= 16384
+            and static_K >= 4 * tile_k_128
+            and static_K < 5 * tile_k_128
+        ):
+            num_threads = 256
+        else:
+            num_threads = 128
+    else:
+        # FP8: scale threads with K.
+        if static_K < 3 * tile_k_128:
+            num_threads = 64
+        elif static_K >= 4 * tile_k_256:
+            num_threads = 256
+        else:
+            num_threads = 128
+
+    # tile_n=4 halves grid but doubles weight loads per block.
+    var tile_n = 2
+    # k_iters is per-thread K work (tile_n affects N, not K).
+    var k_iters = static_K // (num_threads * simd_width)
+    # Only use tile_n=4 at 128T; 256T + tile_n=4 regresses BF16.
+    if num_threads <= 128 and k_iters >= 3 and has_N:
+        var blocks_tn4 = static_N // 4
+        if k_iters <= 3:
+            tile_n = 4
+        elif k_iters <= 6 and blocks_tn4 >= 960:
+            tile_n = 4
+        elif blocks_tn4 >= 960 and blocks_tn4 < 1600:
+            tile_n = 4
+        else:
+            tile_n = 2
+    elif has_N:
+        var blocks_tn2 = static_N // 2
+        if blocks_tn2 < 160:
+            tile_n = 1
+        else:
+            tile_n = 2
+
+    # BF16: always unroll=1 (I-cache sensitive due to scalar FMA chain).
+    # FP8: unroll benefits from fewer instructions per iteration.
+    var unroll: Int
+    comptime if simd_width <= 8:
+        unroll = 1
+    else:
+        if k_iters == 4:
+            unroll = 4
+        elif k_iters >= 3:
+            unroll = 2
+        else:
+            unroll = 1
+    return IndexList[3](num_threads, tile_n, unroll)
+
+
 @always_inline
-fn gemv_gpu_dispatch[
+def gemv_gpu_dispatch[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
     kernel_func: GEMVAlgorithm,
-    c: NDBuffer[rank=2, ...],
-    a: NDBuffer[rank=2, ...],
-    b: NDBuffer[rank=2, ...],
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b: TileTensor,
     ctx: DeviceContext,
 ) raises:
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
     var k = shape.K
 
     comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
-    comptime simd_width = simd_width_of[a.type, target=get_gpu_target()]()
+    comptime c_type = c.dtype
+    comptime a_type = a.dtype
+    comptime b_type = b.dtype
+    comptime simd_width = simd_width_of[a_type, target=get_gpu_target()]()
 
-    var c_tensor = TileTensor(c).to_layout_tensor()
-    var b_tensor = TileTensor(b).to_layout_tensor()
-    var a_tensor = TileTensor(a).to_layout_tensor()
+    var c_tensor = c.to_layout_tensor()
+    var b_tensor = b.to_layout_tensor()
+    var a_tensor = a.to_layout_tensor()
 
-    comptime has_N = c.shape.has_value[1]()
-    comptime static_N = c.shape.get[1]() if has_N else UNKNOWN_VALUE
-    comptime static_K = a.shape.get[1]()
+    comptime has_N = c.static_shape[1] > -1
+    comptime static_N = c.static_shape[1] if has_N else UNKNOWN_VALUE
+    comptime static_K = a.static_shape[1]
 
     if kernel_func is GEMVAlgorithm.GEMV_SPLIT_K:
         logger.info("Executing: GEMV_SPLIT_K kernel")
         comptime tile_m = 1
 
         @parameter
-        fn _gemv_split_k_dispatch[
+        def _gemv_split_k_dispatch[
             num_threads: Int,
             tile_n: Int,
             unroll_factor: Int = 2,
         ]() raises:
             comptime check_bounds = static_N % tile_n != 0
             comptime kernel = gemv_split_k[
-                c.type,
-                a.type,
-                b.type,
+                c_type,
+                a_type,
+                b_type,
                 c_tensor.layout,
                 a_tensor.layout,
                 b_tensor.layout,
@@ -681,12 +774,18 @@ fn gemv_gpu_dispatch[
                 config[2],
             ]()
         else:
-            # NVIDIA/generic: uniform 128T/tile_n=2/unroll=1.
-            # unroll_factor=1 uses the simple loop path (no ceildiv,
-            # no remainder loop) — produces cleaner NVIDIA PTX with
-            # fewer registers. Thread count sweep on B200 showed all
-            # configs within ±2% noise for both FP8 and BF16.
-            _gemv_split_k_dispatch[128, tile_n=2, unroll_factor=1]()
+            # NVIDIA B200: shape-dependent dispatch for FP8 and BF16.
+            comptime config = _nvidia_gemv_config[
+                simd_width,
+                static_K,
+                has_N,
+                static_N,
+            ]()
+            _gemv_split_k_dispatch[
+                config[0],
+                config[1],
+                config[2],
+            ]()
 
     elif kernel_func is GEMVAlgorithm.GEMV_KERNEL_VECTOR:
         logger.info("Executing: GEMV_KERNEL_VECTOR kernel")
@@ -698,9 +797,9 @@ fn gemv_gpu_dispatch[
         if n == 1:
             comptime if transpose_b:
                 comptime kernel = gemv_kernel_vector[
-                    c.type,
-                    a.type,
-                    b.type,
+                    c_type,
+                    a_type,
+                    b_type,
                     c_tensor.layout,
                     a_tensor.layout,
                     b_tensor.layout,
@@ -722,10 +821,12 @@ fn gemv_gpu_dispatch[
                 )
             else:
                 # runtime transpose since layout_tensor.transpose requires static shape
-                var aligned_b = b.data
+                var aligned_b = b.ptr
 
-                comptime has_K = a.shape.has_value[1]()
-                comptime static_K = a.shape.get[1]() if has_K else UNKNOWN_VALUE
+                comptime has_K = a.static_shape[1] > -1
+                comptime static_K = a.static_shape[
+                    1
+                ] if has_K else UNKNOWN_VALUE
                 comptime b_layout_template = Layout.row_major(
                     static_N, static_K
                 )
@@ -743,16 +844,16 @@ fn gemv_gpu_dispatch[
                 )
 
                 var b_tensor_n_major = LayoutTensor[
-                    b.type,
+                    b_type,
                     b_layout_template,
                     b.origin,
                     address_space=aligned_b.address_space,
                 ](aligned_b, b_runtime_layout)
 
                 comptime kernel = gemv_kernel_vector[
-                    c.type,
-                    a.type,
-                    b.type,
+                    c_type,
+                    a_type,
+                    b_type,
                     c_tensor.layout,
                     a_tensor.layout,
                     b_layout_template,
@@ -774,9 +875,9 @@ fn gemv_gpu_dispatch[
                 )
         elif m == 1:
             comptime kernel = gemv_kernel_vector[
-                c.type,
-                b.type,
-                a.type,
+                c_type,
+                b_type,
+                a_type,
                 c_tensor.layout,
                 b_tensor.layout,
                 a_tensor.layout,
@@ -801,9 +902,9 @@ fn gemv_gpu_dispatch[
         logger.info("Executing: GEMV_KERNEL (no transpose)")
 
         comptime kernel = gemv_kernel[
-            c.type,
-            a.type,
-            b.type,
+            c_type,
+            a_type,
+            b_type,
             elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
         ]
@@ -824,9 +925,9 @@ fn gemv_gpu_dispatch[
         logger.info("Executing: GEMV_KERNEL (with transpose)")
 
         comptime kernel = gemv_kernel[
-            c.type,
-            b.type,
-            a.type,
+            c_type,
+            b_type,
+            a_type,
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
@@ -845,9 +946,9 @@ fn gemv_gpu_dispatch[
     elif kernel_func is GEMVAlgorithm.GEVM_KERNEL:
         logger.info("Executing: GEVM_KERNEL")
         comptime kernel = gevm_kernel[
-            c.type,
-            a.type,
-            b.type,
+            c_type,
+            a_type,
+            b_type,
             tile_size=WARP_SIZE * WARPS_PER_BLOCK,
             elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
@@ -868,25 +969,21 @@ fn gemv_gpu_dispatch[
         logger.info("Executing: MATMUL_NAIVE kernel")
         comptime BLOCK_DIM = 16
 
-        var c_tt = TileTensor(c)
-        var a_tt = TileTensor(a)
-        var b_tt = TileTensor(b)
-
         comptime kernel = matmul_kernel_naive[
-            c.type,
-            a.type,
-            b.type,
-            type_of(c_tt).LayoutType,
-            type_of(a_tt).LayoutType,
-            type_of(b_tt).LayoutType,
+            c_type,
+            a_type,
+            b_type,
+            type_of(c).LayoutType,
+            type_of(a).LayoutType,
+            type_of(b).LayoutType,
             BLOCK_DIM,
             transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
         ctx.enqueue_function[kernel, kernel](
-            c_tt,
-            a_tt,
-            b_tt,
+            c,
+            a,
+            b,
             m,
             n,
             k,
@@ -895,7 +992,7 @@ fn gemv_gpu_dispatch[
         )
 
 
-fn log_shape[
+def log_shape[
     has_mode_1: Bool, has_mode_2: Bool, name: String
 ](mode_1: Int, mode_2: Int,) -> None:
     logger.info(
@@ -912,25 +1009,31 @@ fn log_shape[
 
 
 @always_inline
-fn gemv_gpu[
+def gemv_gpu[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[rank=2, ...],
-    a: NDBuffer[rank=2, ...],
-    b: NDBuffer[rank=2, ...],
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b: TileTensor,
     ctx: DeviceContext,
 ) raises:
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+
+    comptime a_type = a.dtype
+
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
     var k = shape.K
-    comptime simd_width = simd_width_of[a.type, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[a_type, target=get_gpu_target()]()
 
-    comptime has_M = c.shape.has_value[0]()
-    comptime has_N = c.shape.has_value[1]()
-    comptime has_K = a.shape.has_value[1]()
+    comptime has_M = c.static_shape[0] > -1
+    comptime has_N = c.static_shape[1] > -1
+    comptime has_K = a.static_shape[1] > -1
 
     logger.info("------ Dispatching to GEMV ------")
 
@@ -943,7 +1046,7 @@ fn gemv_gpu[
     var kernel_func: GEMVAlgorithm
 
     if n == 1:
-        comptime if a.type == DType.bfloat16:
+        comptime if a_type == DType.bfloat16:
             if k % simd_width == 0:
                 kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR
             else:
@@ -952,7 +1055,7 @@ fn gemv_gpu[
             kernel_func = GEMVAlgorithm.GEMV_KERNEL
 
     elif m == 1 and transpose_b == True:
-        comptime if a.type in (DType.bfloat16, DType.float8_e4m3fn):
+        comptime if a_type in (DType.bfloat16, DType.float8_e4m3fn):
             if k % simd_width == 0:
                 if ceildiv(n, 2) <= ctx.get_attribute(
                     DeviceAttribute.MAX_GRID_DIM_Y
@@ -978,11 +1081,30 @@ fn gemv_gpu[
     ](kernel_func, c, a, b, ctx)
 
 
+@always_inline
+def gemv_gpu[
+    transpose_b: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: NDBuffer[mut=True, rank=2, ...],
+    a: NDBuffer[rank=2, ...],
+    b: NDBuffer[rank=2, ...],
+    ctx: DeviceContext,
+) raises:
+    """NDBuffer shim — converts to TileTensor and delegates."""
+    gemv_gpu[
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        pdl_level=pdl_level,
+    ](TileTensor(c), TileTensor(a), TileTensor(b), ctx)
+
+
 # Parallelized version of Gemv
 
 
 @always_inline
-fn gemv[
+def gemv[
     c_size: DimList,
     c_type: DType,
     a_shape: DimList,
@@ -1004,7 +1126,7 @@ fn gemv[
 
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[dtype, width]:
         return (
@@ -1014,7 +1136,7 @@ fn gemv[
 
     @always_inline
     @parameter
-    fn output_fn[
+    def output_fn[
         out_type: DType, width: Int, rank: Int
     ](idx: IndexList[rank], value: SIMD[out_type, width]):
         comptime if elementwise_lambda_fn:
@@ -1027,7 +1149,7 @@ fn gemv[
 
     @always_inline
     @parameter
-    fn reduce_impl[
+    def reduce_impl[
         ty: DType, width: Int
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 + v2
@@ -1044,7 +1166,7 @@ fn gemv[
     )
 
 
-fn naive_gemv[
+def naive_gemv[
     dtype: DType
 ](
     c_buf: NDBuffer[mut=True, rank=1, dtype, _, _],

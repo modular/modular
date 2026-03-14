@@ -15,10 +15,10 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 
 @parameter
-fn bench_allocation(mut b: Bencher) raises:
+def bench_allocation(mut b: Bencher) raises:
     @always_inline
     @parameter
-    fn call_fn():
+    def call_fn():
         for _ in range(10000):
             var a = alloc[Int](100)
             keep(a)

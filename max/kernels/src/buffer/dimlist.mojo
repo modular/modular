@@ -57,7 +57,7 @@ struct Dim(
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[I: Indexer](out self, value: I):
+    def __init__[I: Indexer](out self, value: I):
         """Creates a statically-known dimension.
 
         Parameters:
@@ -70,7 +70,7 @@ struct Dim(
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         """Creates a statically-known dimension.
 
         Args:
@@ -79,12 +79,12 @@ struct Dim(
         self._value_or_missing = value
 
     @always_inline("builtin")
-    fn __init__(out self):
+    def __init__(out self):
         """Creates a dynamic dimension with no static value."""
         self._value_or_missing = Self._sentinel
 
     @always_inline("builtin")
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Returns True if the dimension has a static value.
 
         Returns:
@@ -93,7 +93,7 @@ struct Dim(
         return self._value_or_missing != Self._sentinel
 
     @always_inline("builtin")
-    fn has_value(self) -> Bool:
+    def has_value(self) -> Bool:
         """Returns True if the dimension has a static value.
 
         Returns:
@@ -102,7 +102,7 @@ struct Dim(
         return self.__bool__()
 
     @always_inline("builtin")
-    fn is_dynamic(self) -> Bool:
+    def is_dynamic(self) -> Bool:
         """Returns True if the dimension has a dynamic value.
 
         Returns:
@@ -111,7 +111,7 @@ struct Dim(
         return not self.has_value()
 
     @always_inline("builtin")
-    fn get(self) -> Int:
+    def get(self) -> Int:
         """Gets the static dimension value.
 
         Returns:
@@ -121,7 +121,7 @@ struct Dim(
         return self._value_or_missing
 
     @always_inline
-    fn is_multiple[alignment: Int](self) -> Bool:
+    def is_multiple[alignment: Int](self) -> Bool:
         """Checks if the dimension is aligned.
 
         Parameters:
@@ -136,7 +136,7 @@ struct Dim(
 
     @doc_private
     @always_inline("nodebug")
-    fn __mlir_index__(self) -> __mlir_type.index:
+    def __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:
@@ -145,7 +145,7 @@ struct Dim(
         return self.get()._mlir_value
 
     @always_inline("nodebug")
-    fn __mul__(self, rhs: Dim) -> Dim:
+    def __mul__(self, rhs: Dim) -> Dim:
         """Multiplies two dimensions.
 
         If either are unknown, the result is unknown as well.
@@ -161,7 +161,7 @@ struct Dim(
         return Dim(self.get() * rhs.get())
 
     @always_inline("nodebug")
-    fn __ceildiv__(self, rhs: Dim) -> Dim:
+    def __ceildiv__(self, rhs: Dim) -> Dim:
         """Return the rounded-up result of dividing self by denominator dimension.
 
         If either are unknown, the result is unknown as well.
@@ -177,7 +177,7 @@ struct Dim(
         return Dim()
 
     @always_inline("nodebug")
-    fn __imul__(mut self, rhs: Dim):
+    def __imul__(mut self, rhs: Dim):
         """Inplace multiplies two dimensions.
 
         If either are unknown, the result is unknown as well.
@@ -188,7 +188,7 @@ struct Dim(
         self = self * rhs
 
     @always_inline
-    fn __floordiv__(self, rhs: Dim) -> Dim:
+    def __floordiv__(self, rhs: Dim) -> Dim:
         """Divide by the given dimension and round towards negative infinity.
 
         If either are unknown, the result is unknown as well.
@@ -204,7 +204,7 @@ struct Dim(
         return Dim(self.get() // rhs.get())
 
     @always_inline
-    fn __rfloordiv__(self, rhs: Dim) -> Dim:
+    def __rfloordiv__(self, rhs: Dim) -> Dim:
         """Divide the given argument by self and round towards negative
         infinity.
 
@@ -219,7 +219,7 @@ struct Dim(
         return rhs // self
 
     @always_inline("nodebug")
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         """Gets the static dimension value.
 
         Returns:
@@ -228,7 +228,7 @@ struct Dim(
         return self.get()
 
     @always_inline("nodebug")
-    fn __eq__(self, rhs: Dim) -> Bool:
+    def __eq__(self, rhs: Dim) -> Bool:
         """Compares two dimensions for equality.
 
         Args:
@@ -242,7 +242,7 @@ struct Dim(
         return (not self) == (not rhs)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """
         Formats this DimList to the provided Writer.
 
@@ -255,7 +255,7 @@ struct Dim(
         else:
             return writer.write(Int(self))
 
-    fn or_else(self, default: Int) -> Int:
+    def or_else(self, default: Int) -> Int:
         """Return the underlying value contained in the Optional or a default
         value if the Optional's underlying value is not present.
 
@@ -275,7 +275,7 @@ struct Dim(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_row_major_dims[shape: IndexList]() -> IndexList[shape.size]:
+def _get_row_major_dims[shape: IndexList]() -> IndexList[shape.size]:
     """Get the dimensions in row-major order, propagating unknown."""
     var result = IndexList[shape.size]()
     var offset = Dim(1)
@@ -294,22 +294,16 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         values: The list of dimensions.
     """
 
-    comptime rank = Int(
-        mlir_value=__mlir_attr[
-            `#kgen.variadic.size<`,
-            Self.values,
-            `> : index`,
-        ]
-    )
+    comptime rank = VariadicParamList[*Self.values].size
     """The number of dimensions in the DimList."""
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         """Creates a dimension list from the given list of values."""
         pass
 
     @always_inline("nodebug")
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Gets the length of the DimList.
 
         Returns:
@@ -318,7 +312,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         return Self.rank
 
     @always_inline("nodebug")
-    fn get[i: Int](self) -> Int:
+    def get[i: Int](self) -> Int:
         """Gets the static dimension value at a specified index.
 
         Parameters:
@@ -331,7 +325,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         return Self.values[i].get()
 
     @always_inline("nodebug")
-    fn at[i: Int](self) -> Dim:
+    def at[i: Int](self) -> Dim:
         """Gets the dimension at a specified index.
 
         Parameters:
@@ -344,7 +338,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         return Self.values[i]
 
     @always_inline("nodebug")
-    fn has_value[i: Int](self) -> Bool:
+    def has_value[i: Int](self) -> Bool:
         """Returns True if the dimension at the given index has a static value.
 
         Parameters:
@@ -357,7 +351,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         return Self.values[i].__bool__()
 
     @always_inline
-    fn get_row_major_strides(
+    def get_row_major_strides(
         self,
     ) -> DimList[
         *Self.from_index_list[
@@ -375,7 +369,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         return {}
 
     @always_inline
-    fn product[length: Int](self) -> Dim:
+    def product[length: Int](self) -> Dim:
         """Computes the product of the first `length` dimensions in the list.
 
         If any are dynamic, the result is a dynamic dimension value.
@@ -389,7 +383,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         return self.product[0, length]()
 
     @always_inline
-    fn product[start: Int, end: Int](self) -> Dim:
+    def product[start: Int, end: Int](self) -> Dim:
         """Computes the product of a range of the dimensions in the list.
 
         If any in the range are dynamic, the result is a dynamic dimension
@@ -412,7 +406,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         return res
 
     @always_inline
-    fn product(self) -> Dim:
+    def product(self) -> Dim:
         """Computes the product of all the dimensions in the list.
 
         If any are dynamic, the result is a dynamic dimension value.
@@ -430,7 +424,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         return res
 
     @always_inline
-    fn _contains_impl[i: Int, length: Int](self, value: Dim) -> Bool:
+    def _contains_impl[i: Int, length: Int](self, value: Dim) -> Bool:
         comptime if i >= length:
             return False
         else:
@@ -439,7 +433,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
             )
 
     @always_inline
-    fn contains[length: Int](self, value: Dim) -> Bool:
+    def contains[length: Int](self, value: Dim) -> Bool:
         """Determines whether the dimension list contains a specified dimension
         value.
 
@@ -455,7 +449,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         return self._contains_impl[0, length](value)
 
     @always_inline
-    fn all_known(self) -> Bool:
+    def all_known(self) -> Bool:
         """Determines whether all dimensions are statically known.
 
         Returns:
@@ -464,7 +458,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         return not self.contains[Self.rank](Dim())
 
     @always_inline
-    fn all_known[start: Int, end: Int](self) -> Bool:
+    def all_known[start: Int, end: Int](self) -> Bool:
         """Determines whether all dimensions within [start, end) are statically
         known.
 
@@ -478,7 +472,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         return not self._contains_impl[start, end](Dim())
 
     @always_inline
-    fn to_index_list[num_elements: Int](self) -> IndexList[num_elements]:
+    def to_index_list[num_elements: Int](self) -> IndexList[num_elements]:
         """Copy the DimList values into an `IndexList`, providing the rank.
 
         Parameters:
@@ -510,7 +504,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
 
     @always_inline("nodebug")
     @staticmethod
-    fn from_index_list[
+    def from_index_list[
         rank: Int, //, value: IndexList[rank]
     ]() -> DimList[
         *Variadic.tabulate[rank, Self._transform_index_to_dim[value, _]]
@@ -528,7 +522,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
 
     @always_inline
     @staticmethod
-    fn create_unknown[
+    def create_unknown[
         length: Int
     ]() -> DimList[*Variadic.splat_value[length, Dim()]]:
         """Creates a dimension list of all dynamic dimension values.
@@ -543,7 +537,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         return {}
 
     @always_inline("nodebug")
-    fn __eq__(self, rhs: DimList) -> Bool:
+    def __eq__(self, rhs: DimList) -> Bool:
         """Compares two DimLists for equality.
 
         DimLists are considered equal if all non-dynamic Dims have similar
@@ -564,7 +558,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
 
         return True
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write this DimList to the provided Writer.
 
         Args:
@@ -580,7 +574,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
 
         writer.write_string("]")
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write this DimList to the provided Writer.
 
         Args:
@@ -590,7 +584,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
 
 
 @always_inline
-fn _make_partially_static_index_list[
+def _make_partially_static_index_list[
     size: Int, static_list: DimList, *, element_type: DType = DType.int64
 ](
     dynamic_list: IndexList,

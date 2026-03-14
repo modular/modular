@@ -49,7 +49,7 @@ trait Indexer(ImplicitlyDestructible):
     types like `SIMD` to not have to be converted to an `Int` first.
     """
 
-    fn __mlir_index__(self) -> __mlir_type.index:
+    def __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:
@@ -64,7 +64,7 @@ trait Indexer(ImplicitlyDestructible):
 
 
 @always_inline("nodebug")
-fn index[T: Indexer](idx: T, /) -> Int:
+def index[T: Indexer](idx: T, /) -> Int:
     """Returns the value of `__mlir_index__` for the given value.
 
     Parameters:
@@ -98,7 +98,7 @@ trait Intable(ImplicitlyDestructible):
     struct Foo(Intable):
         var i: Int
 
-        fn __int__(self) -> Int:
+        def __int__(self) -> Int:
             return self.i
     ```
 
@@ -115,7 +115,7 @@ trait Intable(ImplicitlyDestructible):
     instead.
     """
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         """Get the integral representation of the value.
 
         Returns:
@@ -139,7 +139,7 @@ trait IntableRaising:
     struct Foo(IntableRaising):
         var i: Int
 
-        fn __int__(self) raises -> Int:
+        def __int__(self) raises -> Int:
             return self.i
     ```
 
@@ -152,7 +152,7 @@ trait IntableRaising:
     ```
     """
 
-    fn __int__(self) raises -> Int:
+    def __int__(self) raises -> Int:
         """Get the integral representation of the value.
 
         Returns:
@@ -165,7 +165,7 @@ trait IntableRaising:
 
 
 trait _FromInt:
-    fn __init__(out self, *, from_int: Int):
+    def __init__(out self, *, from_int: Int):
         ...
 
 
@@ -220,12 +220,12 @@ struct Int(
     comptime device_type: AnyType = Self
     """Int is remapped to the same type when passed to accelerator devices."""
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """
         Gets this type's name, for use in error messages when handing arguments
         to kernels.
@@ -242,13 +242,13 @@ struct Int(
     # ===------------------------------------------------------------------=== #
 
     @always_inline("builtin")
-    fn __init__(out self):
+    def __init__(out self):
         """Default constructor that produces zero."""
         self._mlir_value = __mlir_attr.`0 : index`
 
     @doc_private
     @always_inline("builtin")
-    fn __init__(out self, *, mlir_value: __mlir_type.index):
+    def __init__(out self, *, mlir_value: __mlir_type.index):
         """Construct Int from the given index value.
 
         Args:
@@ -258,7 +258,7 @@ struct Int(
 
     @doc_private
     @always_inline("nodebug")
-    fn __init__(out self, value: __mlir_type.`!pop.scalar<index>`):
+    def __init__(out self, value: __mlir_type.`!pop.scalar<index>`):
         """Construct Int from the given Index value.
 
         Args:
@@ -270,7 +270,7 @@ struct Int(
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: IntLiteral):
+    def __init__(out self, value: IntLiteral):
         """Construct Int from the given IntLiteral value.
 
         Args:
@@ -279,7 +279,7 @@ struct Int(
         self = value.__int__()
 
     @always_inline("nodebug")
-    fn __init__[T: Intable](out self, value: T):
+    def __init__[T: Intable](out self, value: T):
         """Get the Int representation of the value.
 
         Parameters:
@@ -291,7 +291,7 @@ struct Int(
         self = value.__int__()
 
     @always_inline("nodebug")
-    fn __init__[T: IntableRaising](out self, value: T) raises:
+    def __init__[T: IntableRaising](out self, value: T) raises:
         """Get the Int representation of the value.
 
         Parameters:
@@ -307,7 +307,7 @@ struct Int(
 
     @doc_private
     @always_inline("nodebug")
-    fn __init__(out self, *, from_int: Int):
+    def __init__(out self, *, from_int: Int):
         self = from_int
 
     # ===------------------------------------------------------------------=== #
@@ -315,7 +315,7 @@ struct Int(
     # ===------------------------------------------------------------------=== #
 
     @always_inline("builtin")
-    fn __lt__(self, rhs: Int) -> Bool:
+    def __lt__(self, rhs: Int) -> Bool:
         """Compare this Int to the RHS using LT comparison.
 
         Args:
@@ -329,7 +329,7 @@ struct Int(
         ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
-    fn __le__(self, rhs: Int) -> Bool:
+    def __le__(self, rhs: Int) -> Bool:
         """Compare this Int to the RHS using LE comparison.
 
         Args:
@@ -344,7 +344,7 @@ struct Int(
         ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
-    fn __eq__(self, rhs: Int) -> Bool:
+    def __eq__(self, rhs: Int) -> Bool:
         """Compare this Int to the RHS using EQ comparison.
 
         Args:
@@ -358,7 +358,7 @@ struct Int(
         ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
-    fn __ne__(self, rhs: Int) -> Bool:
+    def __ne__(self, rhs: Int) -> Bool:
         """Compare this Int to the RHS using NE comparison.
 
         Args:
@@ -372,7 +372,7 @@ struct Int(
         ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
-    fn __gt__(self, rhs: Int) -> Bool:
+    def __gt__(self, rhs: Int) -> Bool:
         """Compare this Int to the RHS using GT comparison.
 
         Args:
@@ -386,7 +386,7 @@ struct Int(
         ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
-    fn __ge__(self, rhs: Int) -> Bool:
+    def __ge__(self, rhs: Int) -> Bool:
         """Compare this Int to the RHS using GE comparison.
 
         Args:
@@ -401,7 +401,7 @@ struct Int(
         ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
-    fn __pos__(self) -> Int:
+    def __pos__(self) -> Int:
         """Return +self.
 
         Returns:
@@ -410,7 +410,7 @@ struct Int(
         return self
 
     @always_inline("builtin")
-    fn __neg__(self) -> Int:
+    def __neg__(self) -> Int:
         """Return -self.
 
         Returns:
@@ -419,7 +419,7 @@ struct Int(
         return self * -1
 
     @always_inline("builtin")
-    fn __invert__(self) -> Int:
+    def __invert__(self) -> Int:
         """Return ~self.
 
         Returns:
@@ -428,7 +428,7 @@ struct Int(
         return self ^ -1
 
     @always_inline("builtin")
-    fn __add__(self, rhs: Int) -> Int:
+    def __add__(self, rhs: Int) -> Int:
         """Return `self + rhs`.
 
         Args:
@@ -442,7 +442,7 @@ struct Int(
         )
 
     @always_inline("builtin")
-    fn __sub__(self, rhs: Int) -> Int:
+    def __sub__(self, rhs: Int) -> Int:
         """Return `self - rhs`.
 
         Args:
@@ -456,7 +456,7 @@ struct Int(
         )
 
     @always_inline("builtin")
-    fn __mul__(self, rhs: Int) -> Int:
+    def __mul__(self, rhs: Int) -> Int:
         """Return `self * rhs`.
 
         Args:
@@ -470,7 +470,7 @@ struct Int(
         )
 
     @always_inline("builtin")
-    fn __truediv__(self, rhs: Int) -> Self:
+    def __truediv__(self, rhs: Int) -> Self:
         """Return the result of the division of `self` and `rhs`.
 
         Performs truncating division (toward zero) for integers.
@@ -486,7 +486,7 @@ struct Int(
         )
 
     @always_inline("nodebug")
-    fn __floordiv__(self, rhs: Int) -> Int:
+    def __floordiv__(self, rhs: Int) -> Int:
         """Return the division of `self` and `rhs` rounded down to the nearest
         integer.
 
@@ -504,7 +504,7 @@ struct Int(
         return select(rhs == 0, 0, res)
 
     @always_inline("nodebug")
-    fn __mod__(self, rhs: Int) -> Int:
+    def __mod__(self, rhs: Int) -> Int:
         """Return the remainder of self divided by rhs.
 
         Args:
@@ -520,7 +520,7 @@ struct Int(
         return select(rhs == 0, 0, res)
 
     @always_inline("nodebug")
-    fn __divmod__(self, rhs: Int) -> Tuple[Int, Int]:
+    def __divmod__(self, rhs: Int) -> Tuple[Int, Int]:
         """Computes both the quotient and remainder using integer division.
 
         Args:
@@ -539,7 +539,7 @@ struct Int(
         return select(rhs == 0, 0, div), select(rhs == 0, 0, mod)
 
     @always_inline("nodebug")
-    fn __pow__(self, exp: Self) -> Self:
+    def __pow__(self, exp: Self) -> Self:
         """Return the value raised to the power of the given exponent.
 
         Computes the power of an integer using the Russian Peasant Method.
@@ -571,7 +571,7 @@ struct Int(
         return res
 
     @always_inline("builtin")
-    fn __lshift__(self, rhs: Int) -> Int:
+    def __lshift__(self, rhs: Int) -> Int:
         """Return `self << rhs`.
 
         Args:
@@ -591,7 +591,7 @@ struct Int(
         )
 
     @always_inline("builtin")
-    fn __rshift__(self, rhs: Int) -> Int:
+    def __rshift__(self, rhs: Int) -> Int:
         """Return `self >> rhs`.
 
         Args:
@@ -611,7 +611,7 @@ struct Int(
         )
 
     @always_inline("builtin")
-    fn __and__(self, rhs: Int) -> Int:
+    def __and__(self, rhs: Int) -> Int:
         """Return `self & rhs`.
 
         Args:
@@ -625,7 +625,7 @@ struct Int(
         )
 
     @always_inline("builtin")
-    fn __xor__(self, rhs: Int) -> Int:
+    def __xor__(self, rhs: Int) -> Int:
         """Return `self ^ rhs`.
 
         Args:
@@ -639,7 +639,7 @@ struct Int(
         )
 
     @always_inline("builtin")
-    fn __or__(self, rhs: Int) -> Int:
+    def __or__(self, rhs: Int) -> Int:
         """Return `self | rhs`.
 
         Args:
@@ -657,7 +657,7 @@ struct Int(
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn __iadd__(mut self, rhs: Int):
+    def __iadd__(mut self, rhs: Int):
         """Compute `self + rhs` and save the result in self.
 
         Args:
@@ -666,7 +666,7 @@ struct Int(
         self = self + rhs
 
     @always_inline("nodebug")
-    fn __isub__(mut self, rhs: Int):
+    def __isub__(mut self, rhs: Int):
         """Compute `self - rhs` and save the result in self.
 
         Args:
@@ -675,7 +675,7 @@ struct Int(
         self = self - rhs
 
     @always_inline("nodebug")
-    fn __imul__(mut self, rhs: Int):
+    def __imul__(mut self, rhs: Int):
         """Compute self*rhs and save the result in self.
 
         Args:
@@ -684,7 +684,7 @@ struct Int(
         self = self * rhs
 
     @always_inline("nodebug")
-    fn __itruediv__(mut self, rhs: Int):
+    def __itruediv__(mut self, rhs: Int):
         """Compute `self / rhs`, convert to int, and save the result in self.
 
         Since `floor(self / rhs)` is equivalent to `self // rhs`, this yields
@@ -696,7 +696,7 @@ struct Int(
         self = self // rhs
 
     @always_inline("nodebug")
-    fn __ifloordiv__(mut self, rhs: Int):
+    def __ifloordiv__(mut self, rhs: Int):
         """Compute `self // rhs` and save the result in self.
 
         Args:
@@ -705,7 +705,7 @@ struct Int(
         self = self // rhs
 
     @always_inline("nodebug")
-    fn __imod__(mut self, rhs: Int):
+    def __imod__(mut self, rhs: Int):
         """Compute `self % rhs` and save the result in self.
 
         Args:
@@ -714,7 +714,7 @@ struct Int(
         self = self % rhs
 
     @always_inline("nodebug")
-    fn __ipow__(mut self, rhs: Int):
+    def __ipow__(mut self, rhs: Int):
         """Compute `pow(self, rhs)` and save the result in self.
 
         Args:
@@ -723,7 +723,7 @@ struct Int(
         self = self**rhs
 
     @always_inline("nodebug")
-    fn __ilshift__(mut self, rhs: Int):
+    def __ilshift__(mut self, rhs: Int):
         """Compute `self << rhs` and save the result in self.
 
         Args:
@@ -732,7 +732,7 @@ struct Int(
         self = self << rhs
 
     @always_inline("nodebug")
-    fn __irshift__(mut self, rhs: Int):
+    def __irshift__(mut self, rhs: Int):
         """Compute `self >> rhs` and save the result in self.
 
         Args:
@@ -741,7 +741,7 @@ struct Int(
         self = self >> rhs
 
     @always_inline("nodebug")
-    fn __iand__(mut self, rhs: Int):
+    def __iand__(mut self, rhs: Int):
         """Compute `self & rhs` and save the result in self.
 
         Args:
@@ -750,7 +750,7 @@ struct Int(
         self = self & rhs
 
     @always_inline("nodebug")
-    fn __ixor__(mut self, rhs: Int):
+    def __ixor__(mut self, rhs: Int):
         """Compute `self ^ rhs` and save the result in self.
 
         Args:
@@ -759,7 +759,7 @@ struct Int(
         self = self ^ rhs
 
     @always_inline("nodebug")
-    fn __ior__(mut self, rhs: Int):
+    def __ior__(mut self, rhs: Int):
         """Compute self|rhs and save the result in self.
 
         Args:
@@ -772,7 +772,7 @@ struct Int(
     # ===-------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __radd__(self, value: Int) -> Int:
+    def __radd__(self, value: Int) -> Int:
         """Return `value + self`.
 
         Args:
@@ -784,7 +784,7 @@ struct Int(
         return self + value
 
     @always_inline("builtin")
-    fn __rsub__(self, value: Int) -> Int:
+    def __rsub__(self, value: Int) -> Int:
         """Return `value - self`.
 
         Args:
@@ -796,7 +796,7 @@ struct Int(
         return value - self
 
     @always_inline("builtin")
-    fn __rmul__(self, value: Int) -> Int:
+    def __rmul__(self, value: Int) -> Int:
         """Return `value * self`.
 
         Args:
@@ -808,7 +808,7 @@ struct Int(
         return self * value
 
     @always_inline("nodebug")
-    fn __rfloordiv__(self, value: Int) -> Int:
+    def __rfloordiv__(self, value: Int) -> Int:
         """Return `value // self`.
 
         Args:
@@ -820,7 +820,7 @@ struct Int(
         return value // self
 
     @always_inline("nodebug")
-    fn __rmod__(self, value: Int) -> Int:
+    def __rmod__(self, value: Int) -> Int:
         """Return `value % self`.
 
         Args:
@@ -832,7 +832,7 @@ struct Int(
         return value % self
 
     @always_inline("nodebug")
-    fn __rpow__(self, value: Int) -> Int:
+    def __rpow__(self, value: Int) -> Int:
         """Return `pow(value,self)`.
 
         Args:
@@ -844,7 +844,7 @@ struct Int(
         return value**self
 
     @always_inline("builtin")
-    fn __rlshift__(self, value: Int) -> Int:
+    def __rlshift__(self, value: Int) -> Int:
         """Return `value << self`.
 
         Args:
@@ -856,7 +856,7 @@ struct Int(
         return value << self
 
     @always_inline("builtin")
-    fn __rrshift__(self, value: Int) -> Int:
+    def __rrshift__(self, value: Int) -> Int:
         """Return `value >> self`.
 
         Args:
@@ -868,7 +868,7 @@ struct Int(
         return value >> self
 
     @always_inline("builtin")
-    fn __rand__(self, value: Int) -> Int:
+    def __rand__(self, value: Int) -> Int:
         """Return `value & self`.
 
         Args:
@@ -880,7 +880,7 @@ struct Int(
         return value & self
 
     @always_inline("builtin")
-    fn __ror__(self, value: Int) -> Int:
+    def __ror__(self, value: Int) -> Int:
         """Return `value | self`.
 
         Args:
@@ -892,7 +892,7 @@ struct Int(
         return value | self
 
     @always_inline("builtin")
-    fn __rxor__(self, value: Int) -> Int:
+    def __rxor__(self, value: Int) -> Int:
         """Return `value ^ self`.
 
         Args:
@@ -908,7 +908,7 @@ struct Int(
     # ===-------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Convert this Int to Bool.
 
         Returns:
@@ -918,7 +918,7 @@ struct Int(
 
     @doc_private
     @always_inline("builtin")
-    fn __mlir_index__(self) -> __mlir_type.index:
+    def __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:
@@ -927,7 +927,7 @@ struct Int(
         return self._mlir_value
 
     @always_inline("builtin")
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         """Gets the integral value (this is an identity function for Int).
 
         Returns:
@@ -936,7 +936,7 @@ struct Int(
         return self
 
     @always_inline("builtin")
-    fn __abs__(self) -> Self:
+    def __abs__(self) -> Self:
         """Return the absolute value of the Int value.
 
         The absolute value of Int.MIN is Int.MIN.
@@ -947,7 +947,7 @@ struct Int(
         return select(self < 0, -self, self)
 
     @always_inline("builtin")
-    fn __ceil__(self) -> Self:
+    def __ceil__(self) -> Self:
         """Return the ceiling of the Int value, which is itself.
 
         Returns:
@@ -956,7 +956,7 @@ struct Int(
         return self
 
     @always_inline("builtin")
-    fn __floor__(self) -> Self:
+    def __floor__(self) -> Self:
         """Return the floor of the Int value, which is itself.
 
         Returns:
@@ -965,7 +965,7 @@ struct Int(
         return self
 
     @always_inline("builtin")
-    fn __round__(self) -> Self:
+    def __round__(self) -> Self:
         """Return the rounded value of the Int value, which is itself.
 
         Returns:
@@ -974,7 +974,7 @@ struct Int(
         return self
 
     @always_inline("nodebug")
-    fn __round__(self, ndigits: Int) -> Self:
+    def __round__(self, ndigits: Int) -> Self:
         """Return the rounded value of the Int value, which is itself.
 
         Args:
@@ -988,7 +988,7 @@ struct Int(
         return self - (self % 10 ** -(ndigits))
 
     @always_inline("builtin")
-    fn __trunc__(self) -> Self:
+    def __trunc__(self) -> Self:
         """Return the truncated Int value, which is itself.
 
         Returns:
@@ -997,7 +997,7 @@ struct Int(
         return self
 
     @always_inline("nodebug")
-    fn __ceildiv__(self, denominator: Self) -> Self:
+    def __ceildiv__(self, denominator: Self) -> Self:
         """Return the rounded-up result of dividing self by denominator.
 
 
@@ -1010,7 +1010,7 @@ struct Int(
         return -(self // -denominator)
 
     @always_inline("builtin")
-    fn is_power_of_two(self) -> Bool:
+    def is_power_of_two(self) -> Bool:
         """Check if the integer is a (non-zero) power of two.
 
         Returns:
@@ -1018,7 +1018,7 @@ struct Int(
         """
         return (self & (self - 1) == 0) & (self > 0)
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Formats this integer to the provided Writer.
 
         Args:
@@ -1027,7 +1027,7 @@ struct Int(
 
         writer.write(Int64(self))
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write the string representation of the Int".
 
         Args:
@@ -1035,7 +1035,7 @@ struct Int(
         """
         writer.write("Int(", self, ")")
 
-    fn write_padded[W: Writer](self, mut writer: W, width: Int):
+    def write_padded[W: Writer](self, mut writer: W, width: Int):
         """Write the int right-aligned to a set padding.
 
         Parameters:
@@ -1054,7 +1054,7 @@ struct Int(
 
         writer.write(self)
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
+    def __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this int value.
 
         Parameters:
@@ -1066,7 +1066,7 @@ struct Int(
         hasher._update_with_simd(Int64(self))
 
     @doc_private
-    fn __init__(out self, *, py: PythonObject) raises:
+    def __init__(out self, *, py: PythonObject) raises:
         """Construct an `Int` from a PythonObject.
 
         Args:
@@ -1081,7 +1081,7 @@ struct Int(
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn to_python_object(var self) raises -> PythonObject:
+    def to_python_object(var self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:
@@ -1093,7 +1093,7 @@ struct Int(
         return PythonObject(self)
 
     @always_inline("builtin")
-    fn _positive_rem(self, rhs: Int) -> Int:
+    def _positive_rem(self, rhs: Int) -> Int:
         """Return the modulus of `self` and `rhs` assuming that the arguments
         are both positive.
 
@@ -1107,7 +1107,7 @@ struct Int(
             mlir_value=__mlir_op.`index.rems`(self._mlir_value, rhs._mlir_value)
         )
 
-    fn _decimal_digit_count(self) -> Int:
+    def _decimal_digit_count(self) -> Int:
         """
         Returns the number of decimal digits required to display this integer.
 

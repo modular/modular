@@ -27,7 +27,7 @@ from std.utils.index import Index
 comptime tile_size = 32
 
 
-fn matmul_sram(
+def matmul_sram(
     a_ptr: UnsafePointer[Float32, MutAnyOrigin],
     b_ptr: UnsafePointer[Float32, MutAnyOrigin],
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
@@ -81,7 +81,7 @@ fn matmul_sram(
     @parameter
     @__copy_capture(localCol, a, row, a_shared, localRow, col, b, b_shared)
     @always_inline
-    fn update_tile[full_tile: Bool](offset: Int, end: Int, tile_size: Int):
+    def update_tile[full_tile: Bool](offset: Int, end: Int, tile_size: Int):
         # If K is not multiple of tile_size, the last tile contains less than
         # tile_size elements. The thread block needs to take addition bound check
         # when loading elements into shared memory.
@@ -127,7 +127,7 @@ fn matmul_sram(
         c[Index(row, col)] = result
 
 
-fn run_matmul(ctx: DeviceContext) raises:
+def run_matmul(ctx: DeviceContext) raises:
     print("== run_matmul_sram")
 
     # Should be able to handle non-divisible values.

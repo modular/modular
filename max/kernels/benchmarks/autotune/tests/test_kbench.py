@@ -14,6 +14,7 @@
 
 # Run: bazel test max/kernels/benchmarks/autotune:autotune_tests
 
+import json
 import os
 import string
 import subprocess
@@ -27,6 +28,9 @@ from click.core import Command
 from click.testing import CliRunner
 from kbench import cli as kbench_cli
 from kbench_model import (
+    BuildItem,
+    ExecItemTask,
+    ItemPool,
     KbenchCache,
     Param,
     ProcessOutput,
@@ -574,6 +578,9 @@ def test_cli_accepts_num_gpu_within_available(mocker: MockerFixture) -> None:
     assert result.exit_code == 0, result.output
 
 
+# --- Binary-grouped execution tests ---
+
+
 def _make_spec_instance(
     compile_params: dict[str, str | int],
     runtime_params: dict[str, str | int],
@@ -606,6 +613,125 @@ def test_build_shared_lib(tmp_path: Path) -> None:
     assert "benchmark_entry" in content
 
 
+def test_scheduler_output_dir_list_per_item(tmp_path: Path) -> None:
+    """output_dir_list assigns sequential out_N/ within each base dir."""
+    dir_a = tmp_path / "dirA"
+    dir_b = tmp_path / "dirB"
+    dir_a.mkdir()
+    dir_b.mkdir()
+
+    specs = [
+        _make_spec_instance({"dtype": "float16"}, {"x": i}) for i in range(4)
+    ]
+    output_dir_list = [dir_a, dir_a, dir_b, dir_a]
+
+    cache = KbenchCache()
+    scheduler = Scheduler(
+        num_cpu=4,
+        num_gpu=1,
+        obj_cache=cache,
+        run_only=False,
+        spec_list=specs,
+        output_dir=tmp_path,
+        build_opts=[],
+        dryrun=True,
+        output_dir_list=output_dir_list,
+    )
+
+    assert scheduler.build_items[0].output_dir == dir_a / "out_0"
+    assert scheduler.build_items[1].output_dir == dir_a / "out_1"
+    assert scheduler.build_items[2].output_dir == dir_b / "out_0"
+    assert scheduler.build_items[3].output_dir == dir_a / "out_2"
+
+
+def test_scheduler_output_dir_list_none_fallback(tmp_path: Path) -> None:
+    """When output_dir_list=None, output dirs are output_dir/out_N."""
+    specs = [
+        _make_spec_instance({"dtype": "float16"}, {"x": i}) for i in range(3)
+    ]
+
+    cache = KbenchCache()
+    scheduler = Scheduler(
+        num_cpu=4,
+        num_gpu=1,
+        obj_cache=cache,
+        run_only=False,
+        spec_list=specs,
+        output_dir=tmp_path,
+        build_opts=[],
+        dryrun=True,
+    )
+
+    for i in range(3):
+        assert scheduler.build_items[i].output_dir == tmp_path / f"out_{i}"
+
+
+def test_item_pool_basic() -> None:
+    """ItemPool distributes items by binary group and supports work-stealing."""
+    spec_a = _make_spec_instance({"dtype": "float16"}, {"x": 0})
+    spec_b = _make_spec_instance({"dtype": "float32"}, {"x": 0})
+
+    bi_a = BuildItem(
+        idx=0,
+        spec_instance=spec_a,
+        output_dir=Path("/tmp"),
+        build_opts=[],
+        dryrun=True,
+    )
+    bi_b = BuildItem(
+        idx=1,
+        spec_instance=spec_b,
+        output_dir=Path("/tmp"),
+        build_opts=[],
+        dryrun=True,
+    )
+
+    group_a = [ExecItemTask(build_item=bi_a, use_shared_lib=True)]
+    group_b = [ExecItemTask(build_item=bi_b, use_shared_lib=True)]
+
+    pool = ItemPool([group_a, group_b])
+    pool.register_gpu(0)
+    pool.register_gpu(1)
+
+    # Each GPU should get one group
+    item0 = pool.next_for(0)
+    item1 = pool.next_for(1)
+    assert item0 is not None
+    assert item1 is not None
+
+    # Both groups exhausted, should return None
+    assert pool.next_for(0) is None
+    assert pool.next_for(1) is None
+
+
+def test_item_pool_work_stealing() -> None:
+    """When one GPU finishes, it can steal from another's queue."""
+    spec = _make_spec_instance({"dtype": "float16"}, {"x": 0})
+    items = []
+    for i in range(4):
+        bi = BuildItem(
+            idx=i,
+            spec_instance=spec,
+            output_dir=Path("/tmp"),
+            build_opts=[],
+            dryrun=True,
+        )
+        items.append(ExecItemTask(build_item=bi, use_shared_lib=True))
+
+    # One large group
+    pool = ItemPool([items])
+    pool.register_gpu(0)
+    pool.register_gpu(1)
+
+    # GPU 0 grabs the group
+    first = pool.next_for(0)
+    assert first is not None
+
+    # GPU 1 should be able to steal remaining items
+    stolen = pool.next_for(1)
+    assert stolen is not None
+
+
 def test_group_by_binary_hash() -> None:
     """Items with same compile-time params group together; different params form separate groups."""
     spec_a0 = _make_spec_instance({"dtype": "float16"}, {"x": 0})
@@ -624,3 +750,71 @@ def test_group_by_binary_hash() -> None:
     assert spec_a0.hash(with_variables=False) != spec_b0.hash(
         with_variables=False
     )
+
+
+# --- Shared-lib failure / recovery tests ---
+
+
+def test_shared_lib_timeout_recovery(tmp_path: Path) -> None:
+    """Timed-out shared lib executions are killed; remaining items still run.
+
+    4 items (1 binary group): 2 fast sleeps succeed, 2 long sleeps time out.
+    Verifies the worker respawns after each timeout.
+    """
+    out_dir = tmp_path / "out"
+    result = CliRunner().invoke(
+        kbench_cli,
+        f"{kernel_benchmarks_root}/autotune/tests/test_timeout.yaml"
+        f" -fv --output-dir {out_dir} --plot none"
+        f" --timeout-secs 5",
+        env=os.environ.copy(),
+    )
+    assert result.exit_code == 0, result.output
+    out = result.output.lower()
+    # 2 items should time out (invalid) and 2 should succeed (valid).
+    assert "invalid specs: 2" in out, (
+        f"Expected 2 invalid specs (timed out) in output:\n{result.output}"
+    )
+    assert "valid executed specs: 2" in out, (
+        f"Expected 2 valid specs (succeeded) in output:\n{result.output}"
+    )
+    # Verify failures.json records both timeouts with the "timeout" type.
+    failures_json = out_dir / "output.failures.json"
+    assert failures_json.exists(), f"Missing {failures_json}"
+    failures = json.loads(failures_json.read_text())
+    assert failures["num_valid"] == 2
+    assert len(failures["failures"]) == 2
+    assert all(f["failure_type"] == "timeout" for f in failures["failures"])
+
+
+def test_shared_lib_crash_recovery(tmp_path: Path) -> None:
+    """Crashed benchmarks don't prevent subsequent items from running.
+
+    6 items (1 binary group): cross product of should_crash=[False,True]
+    x sleep_secs=[0.01,0.02,0.03]. 3 succeed, 3 crash. Verifies the
+    worker recovers after each crash.
+    """
+    out_dir = tmp_path / "out"
+    result = CliRunner().invoke(
+        kbench_cli,
+        f"{kernel_benchmarks_root}/autotune/tests/test_crash.yaml"
+        f" -fv --output-dir {out_dir} --plot none"
+        f" --timeout-secs 30",
+        env=os.environ.copy(),
+    )
+    assert result.exit_code == 0, result.output
+    out = result.output.lower()
+    # 3 items should crash (invalid) and 3 should succeed (valid).
+    assert "invalid specs: 3" in out, (
+        f"Expected 3 invalid specs (crashed) in output:\n{result.output}"
+    )
+    assert "valid executed specs: 3" in out, (
+        f"Expected 3 valid specs (succeeded) in output:\n{result.output}"
+    )
+    # Verify failures.json records all crashes as execution failures.
+    failures_json = out_dir / "output.failures.json"
+    assert failures_json.exists(), f"Missing {failures_json}"
+    failures = json.loads(failures_json.read_text())
+    assert failures["num_valid"] == 3
+    assert len(failures["failures"]) == 3
+    assert all(f["failure_type"] == "execution" for f in failures["failures"])

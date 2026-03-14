@@ -42,6 +42,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModel,
 )
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from transformers import AutoConfig
 
 from .layers import (
@@ -172,7 +173,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         rope = Llama3RotaryEmbedding(
             dim=self.huggingface_config.hidden_size,
             n_heads=self.huggingface_config.num_attention_heads,
-            theta=self.huggingface_config.rope_theta,
+            theta=get_rope_theta(self.huggingface_config),
             max_seq_len=max_seq_len,
             head_dim=head_dim,
             interleaved=False,  # Qwen3 uses non-interleaved RoPE

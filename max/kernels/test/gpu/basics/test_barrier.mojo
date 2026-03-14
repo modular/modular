@@ -18,7 +18,7 @@ from std.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 
-fn kernel[
+def kernel[
     dtype: DType
 ](
     input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
@@ -38,7 +38,7 @@ fn kernel[
     output[global_tid] = result
 
 
-fn test_barrier[dtype: DType](ctx: DeviceContext) raises:
+def test_barrier[dtype: DType](ctx: DeviceContext) raises:
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size
     comptime constant_add: Scalar[dtype] = 42

@@ -14,7 +14,7 @@
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
 
-fn test_cannot_cast_from_immutable_any_to_named[
+def test_cannot_cast_from_immutable_any_to_named[
     T: AnyType, mut: Bool, //, origin: Origin[mut=mut]
 ](p: UnsafePointer[T, origin]):
     pass

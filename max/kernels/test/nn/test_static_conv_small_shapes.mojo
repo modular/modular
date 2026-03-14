@@ -16,7 +16,7 @@
 from std.math import ceildiv
 from std.sys.info import simd_width_of
 
-from layout import IntTuple, LayoutTensor, Layout, RuntimeLayout
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv_utils import (
     ConvShape,
@@ -66,7 +66,7 @@ comptime micro_kernel_f_size = micro_kernel_shape[1] * simd_size
 comptime num_micro_tile = ceildiv(F, micro_kernel_f_size)
 
 
-fn static_conv(
+def static_conv(
     output: LayoutTensor[
         mut=True, value_type, Layout.row_major(N, HO, WO, F), _
     ],
@@ -92,7 +92,7 @@ fn static_conv(
         num_groups=num_groups,
     )
 
-    fn direct_null_elementwise_epilogue(
+    def direct_null_elementwise_epilogue(
         n: Int, ho: Int, wo: Int, f_offset: Int, f_size: Int
     ):
         pass

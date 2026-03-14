@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -34,7 +34,6 @@ from max.interfaces import (
     TextGenerationRequestMessage,
     TokenBuffer,
 )
-from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.support.image import find_contiguous_ranges, hash_image
 from transformers import AutoTokenizer
@@ -54,6 +53,11 @@ logger = logging.getLogger("max.pipelines")
 # Kimi K2.5 special token for image placeholder padding.
 _MEDIA_PAD_TOKEN = "<|media_pad|>"
 
+# Chat turn terminator. The HF tokenizer lists [EOS] as eos_token, but the
+# chat format ends assistant turns with <|im_end|>.  We need both in the
+# EOS set so generation stops.
+_IM_END_TOKEN = "<|im_end|>"
+
 
 class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
     """Kimi K2.5 tokenizer for multimodal (text + vision) inputs.
@@ -71,8 +75,6 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         revision: str | None = None,
         max_length: int | None = None,
         trust_remote_code: bool = False,
-        context_validators: list[Callable[[TextAndVisionContext], None]]
-        | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -94,12 +96,12 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             elif isinstance(eos_token_id, list):
                 self._default_eos_token_ids.update(eos_token_id)
 
+        im_end_id = self.delegate.convert_tokens_to_ids(_IM_END_TOKEN)
+        if isinstance(im_end_id, int):
+            self._default_eos_token_ids.add(im_end_id)
+
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
-        )
-
-        self._context_validators = (
-            context_validators if context_validators else []
         )
 
         # Resolve the media pad token ID used as the vision placeholder.
@@ -323,9 +325,6 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             ],
             vision_token_ids=self.vision_token_ids,
         )
-
-        for validator in self._context_validators:
-            validator(context)
 
         return context
 

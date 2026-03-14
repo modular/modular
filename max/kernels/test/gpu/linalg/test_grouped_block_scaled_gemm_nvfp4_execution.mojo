@@ -36,10 +36,15 @@ from internal_utils import assert_almost_equal
 from std.random import rand, random_ui64, seed
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major as tile_row_major,
+)
 from layout._utils import ManagedLayoutTensor
-from layout.tile_layout import row_major as tile_row_major
-from layout.tile_tensor import TileTensor
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -60,7 +65,7 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scale
 )
 
 
-fn launch_grouped_gemm_with_templates[
+def launch_grouped_gemm_with_templates[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -174,7 +179,7 @@ fn launch_grouped_gemm_with_templates[
     )
 
 
-fn test_grouped_kernel_nvfp4_single_group[
+def test_grouped_kernel_nvfp4_single_group[
     a_type: DType,  # uint8 for packed FP4
     b_type: DType,
     c_type: DType,
@@ -547,7 +552,7 @@ fn test_grouped_kernel_nvfp4_single_group[
     sfb_ptrs_host.free()
 
 
-fn test_grouped_kernel_nvfp4_multi_group[
+def test_grouped_kernel_nvfp4_multi_group[
     a_type: DType,
     b_type: DType,
     c_type: DType,
