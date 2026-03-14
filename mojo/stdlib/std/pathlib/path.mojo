@@ -238,7 +238,7 @@ struct Path(
         return StringSlice(self.path) == other
 
     @always_inline
-    fn __lt__(self, other: Self) -> Bool:
+    def __lt__(self, other: Self) -> Bool:
         """Returns True if this path is less than the other path.
 
         Comparison uses lexicographic ordering of the underlying path strings.
@@ -252,7 +252,7 @@ struct Path(
         return self.path < other.path
 
     @always_inline
-    fn __le__(self, other: Self) -> Bool:
+    def __le__(self, other: Self) -> Bool:
         """Returns True if this path is less than or equal to the other path.
 
         Comparison uses lexicographic ordering of the underlying path strings.
@@ -267,7 +267,7 @@ struct Path(
         return self.path <= other.path
 
     @always_inline
-    fn __gt__(self, other: Self) -> Bool:
+    def __gt__(self, other: Self) -> Bool:
         """Returns True if this path is greater than the other path.
 
         Comparison uses lexicographic ordering of the underlying path strings.
@@ -281,7 +281,7 @@ struct Path(
         return self.path > other.path
 
     @always_inline
-    fn __ge__(self, other: Self) -> Bool:
+    def __ge__(self, other: Self) -> Bool:
         """Returns True if this path is greater than or equal to the other path.
 
         Comparison uses lexicographic ordering of the underlying path strings.
