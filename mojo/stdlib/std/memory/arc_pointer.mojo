@@ -70,6 +70,7 @@ struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
 
 
 struct ArcPointer[T: Movable & ImplicitlyDestructible](
+    Equatable,
     Hashable,
     Identifiable,
     ImplicitlyCopyable,
@@ -266,6 +267,35 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
             False otherwise.
         """
         return self._inner == rhs._inner
+
+    def __eq__(self, rhs: Self) -> Bool:
+        """Returns True if the two `ArcPointer` instances point at the same
+        object (pointer equality).
+
+        Two `ArcPointer` values are equal if and only if they refer to the same
+        heap allocation, consistent with `__hash__` and `__is__`.
+
+        Args:
+            rhs: The other `ArcPointer`.
+
+        Returns:
+            True if the two `ArcPointer` instances point at the same object and
+            False otherwise.
+        """
+        return self._inner == rhs._inner
+
+    def __ne__(self, rhs: Self) -> Bool:
+        """Returns True if the two `ArcPointer` instances point at different
+        objects.
+
+        Args:
+            rhs: The other `ArcPointer`.
+
+        Returns:
+            True if the two `ArcPointer` instances point at different objects
+            and False otherwise.
+        """
+        return self._inner != rhs._inner
 
     def __hash__[H: Hasher](self, mut hasher: H):
         """Hash this pointer by its address.
