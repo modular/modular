@@ -426,15 +426,16 @@ modular_cc_library(
         "//conditions:default": [],
     }) + select({
         # Tracy CUDA support - only when both Tracy and NVIDIA GPU are enabled.
-        # libcupti_tracy_stub and libcuda_tracy_stub (Tracy deps) provide all
-        # CUPTI and CUDA driver symbols Tracy calls directly via on-demand
-        # dlopen, so neither libcupti.so nor libcuda.so.1 needs a hard link
-        # here.  cuda_cupti_headers provides <cupti.h> for TracyCUDA.hpp.
-        # cuda_runtime provides cuda_runtime_api.h (transitively included by
-        # cupti.h) and libcudart.so for cudaDeviceSynchronize.
+        # cuda_cupti_headers provides <cupti.h> for TracyCUDA.hpp.
+        # cuda_runtime_headers provides cuda_runtime_api.h (transitively
+        # included by cupti.h) without linking against libcudart.so.
+        # libcudart_tracy_stub provides cudaDeviceSynchronize (called by
+        # TracyCUDA.hpp inline functions) via on-demand dlopen of libcudart.so,
+        # avoiding a hard NEEDED entry.
         "//:tracy_cuda_enabled": [
             "//bazel/third-party:cuda_cupti_headers",
-            "//bazel/third-party:cuda_runtime",
+            "//bazel/third-party:cuda_runtime_headers",
+            "//bazel/third-party:libcudart_tracy_stub",
         ],
         "//conditions:default": [],
     }),
