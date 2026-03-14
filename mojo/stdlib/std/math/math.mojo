@@ -2508,7 +2508,7 @@ def hypot[
     return _simd_apply[_float32_dispatch, result_dtype=dtype](arg0, arg1)
 
 
-fn hypot[dtype: DType](args: Span[Scalar[dtype], _]) -> Scalar[dtype]:
+def hypot[dtype: DType](args: Span[Scalar[dtype], _]) -> Scalar[dtype]:
     """Computes the n-dimensional Euclidean distance, i.e.
     `sqrt(sum(x**2 for x in args))`.
 
@@ -2578,7 +2578,7 @@ fn hypot[dtype: DType](args: Span[Scalar[dtype], _]) -> Scalar[dtype]:
     return max_abs * sqrt(sum_sq)
 
 
-fn hypot[dtype: DType](*args: Scalar[dtype]) -> Scalar[dtype]:
+def hypot[dtype: DType](*args: Scalar[dtype]) -> Scalar[dtype]:
     """Computes the n-dimensional Euclidean distance, i.e.
     `sqrt(sum(x**2 for x in args))`.
 
