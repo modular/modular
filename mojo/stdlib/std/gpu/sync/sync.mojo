@@ -141,6 +141,22 @@ def barrier():
         ]()
 
 
+@always_inline("nodebug")
+def barrier_count(predicate: Bool) -> Int32:
+    comptime if is_nvidia_gpu():
+        return __mlir_op.`nvvm.barrier0.popc`[_type=__mlir_type.i32](
+            to_i32(Int32(predicate))
+        )
+    else:
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
+            note=(
+                "barrier_count() is currently only available when targeting"
+                " NVIDIA GPUs"
+            ),
+        ]()
+
+
 @fieldwise_init
 struct AMDScheduleBarrierMask(
     Equatable, Intable, TrivialRegisterPassable, Writable

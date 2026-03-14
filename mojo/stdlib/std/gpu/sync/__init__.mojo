@@ -34,6 +34,7 @@ from .sync import (
     AMDScheduleBarrierMask,
     async_copy_arrive,
     barrier,
+    barrier_count,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
     mbarrier_arrive,

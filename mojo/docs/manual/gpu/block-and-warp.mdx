@@ -147,6 +147,11 @@ The Mojo `barrier()` function is functionally equivalent to the
 `threadgroup_barrier(mem_flags::mem_threadgroup)` in Apple Metal, providing a
 portable syntax for this fundamental operation.
 
+Mojo also provides `barrier_count(predicate)`, which mirrors CUDA's
+`__syncthreads_count(predicate)` and returns the number of threads in the block
+whose `predicate` is true while synchronizing the block. On NVIDIA GPUs this
+maps to a single PTX `bar.red.popc` instruction.
+
 :::tip
 
 For fine-grained synchronization within a single warp, see
