@@ -476,6 +476,39 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         return UInt64(pos)
 
+    def tell(self) raises -> UInt64:
+        """Returns the current byte position in the file.
+
+        Returns the offset of the next byte to be read or written, measured
+        from the start of the file.
+
+        Raises:
+            An error if this file handle is invalid, or if querying the
+            position fails.
+
+        Returns:
+            The current byte offset from the start of the file.
+
+        Examples:
+
+        ```mojo
+        var f = open("/tmp/example.txt", "r")
+        _ = f.seek(10)
+        print(f.tell())  # 10
+        ```
+        """
+        if self.handle < 0:
+            raise Error("invalid file handle")
+
+        var fd = self._get_raw_fd()
+        var pos = external_call["lseek", Int64](fd, Int64(0), Int(os.SEEK_CUR))
+
+        if pos < 0:
+            var err = get_errno()
+            raise Error("Failed to get file position: " + String(err))
+
+        return UInt64(pos)
+
     def write_once(mut self, bytes: Span[Byte, _]) raises -> Int:
         """Attempt to write bytes to the file, returning the number of bytes written.
 
