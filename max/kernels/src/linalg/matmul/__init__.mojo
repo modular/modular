@@ -120,6 +120,69 @@ def matmul[
 def matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    _trace_description: StaticString = "",
+    target: StaticString = "cpu",
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor[...],
+    b: TileTensor[...],
+    ctx: Optional[DeviceContext],
+) raises:
+    """TileTensor overload. Routes directly to GPU dispatch, avoiding
+    intermediate NDBuffer construction.
+    """
+    comptime assert is_valid_target[target](), "unsupported target"
+    comptime assert not is_cpu[target](), (
+        "TileTensor matmul not supported for CPU; use NDBuffer or"
+        " LayoutTensor overload"
+    )
+    comptime assert not transpose_a, "transpose_a not yet supported"
+    assert Bool(ctx), "expected DeviceContext for GPU target"
+
+    if Int(c.dim[0]()) == 0 or Int(c.dim[1]()) == 0:
+        return
+
+    @always_inline
+    @parameter
+    def description_fn() -> String:
+        var shape = GemmShape.get[transpose_b](c, a, b)
+        # fmt: off
+        return String(
+            "(",
+            target,
+            ";", trace_arg("A", IndexList[2](shape.M, shape.K), a.dtype),
+            ";", trace_arg("B", IndexList[2](shape.K, shape.N), b.dtype),
+            ";", trace_arg("C", IndexList[2](shape.M, shape.N), c.dtype),
+            ";transpose_a=", transpose_a,
+            ";transpose_b=", transpose_b,
+            ")"
+        )
+        # fmt: on
+
+    with Trace[TraceLevel.OP, target=target](
+        get_static_string[
+            "matmul",
+            _trace_description if _trace_description else "",
+        ](),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=OptionalReg(Int(ctx.value().id())),
+    ):
+        _matmul_gpu[
+            use_tensor_core=True,
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        ](c, a, b, ctx.value())
+
+
+@always_inline
+def matmul[
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
     b_packed: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: Optional[

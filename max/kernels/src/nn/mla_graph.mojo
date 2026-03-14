@@ -1685,9 +1685,9 @@ def mla_prefill_branch_bf16[
             transpose_b=True,
             elementwise_lambda_fn=k_elementwise_convert,
         ](
-            k_dummy_flat.to_layout_tensor(),
-            k_latent.to_layout_tensor(),
-            w_k.to_layout_tensor(),
+            k_dummy_flat,
+            k_latent,
+            w_k,
             Optional(ctx),
         )
 
@@ -1720,9 +1720,9 @@ def mla_prefill_branch_bf16[
             transpose_b=True,
             elementwise_lambda_fn=v_elementwise_convert,
         ](
-            v_dummy_flat.to_layout_tensor(),
-            k_latent.to_layout_tensor(),
-            w_v.to_layout_tensor(),
+            v_dummy_flat,
+            k_latent,
+            w_v,
             Optional(ctx),
         )
 
@@ -1779,9 +1779,9 @@ def mla_prefill_branch_bf16[
             ),
         )
         matmul[target=target, transpose_b=True](
-            k_flat.to_layout_tensor(),
-            k_latent.to_layout_tensor(),
-            w_k.to_layout_tensor(),
+            k_flat,
+            k_latent,
+            w_k,
             Optional(ctx),
         )
 
@@ -1797,9 +1797,9 @@ def mla_prefill_branch_bf16[
             row_major((Idx(buffer_length), Idx[num_heads * v_head_dim]())),
         )
         matmul[target=target, transpose_b=True](
-            v_flat.to_layout_tensor(),
-            k_latent.to_layout_tensor(),
-            w_v.to_layout_tensor(),
+            v_flat,
+            k_latent,
+            w_v,
             Optional(ctx),
         )
 

@@ -899,6 +899,7 @@ def _batched_matmul_gpu[
                 a_tensor_reshaped.ptr,
                 row_major(Coord(Idx(m), Idx(k))),
             )
+            # Use b's actual dims since their order depends on transpose_b.
             var b_2d = TileTensor(
                 b_tensor_reshaped.ptr,
                 row_major(
