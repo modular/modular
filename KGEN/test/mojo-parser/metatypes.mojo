@@ -99,11 +99,11 @@ def access_param_from_metatype():
     # CHECK: lit.call {{.*}}@"use_int{{.*}}([[TMP]])
     use_int(f1.x)
 
-    # CHECK: lit.call {{.*}}@"increment()"<:!Int {0}>()
-    # CHECK: lit.call {{.*}}@"increment()"<:!Int {1}>()
-    # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <{2}>
-    # CHECK-NEXT: lit.call {{.*}}@"use_int{{.*}}([[TMP]])
-    use_int(StefStressTest[0].increment().increment().x)
+    # CHECK: lit.call {{.*}}@"increment()"{{.*}}<:!Int {0}>
+    # CHECK: lit.call {{.*}}@"increment()"{{.*}}<:!Int {1}>
+    # CHECK: [[TMP1:%.*]] = kgen.param.constant: !Int = <{2}>
+    # CHECK-NEXT: lit.call tail {{.*}}@"use_int(::Int)"([[TMP1]])
+    use_int((StefStressTest[0].increment().increment()).x)
 
 
 # COM: we should handle mt_Int : mt_mt_Int -> copyable : any_trait<Copyable>

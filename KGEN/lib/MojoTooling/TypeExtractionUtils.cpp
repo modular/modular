@@ -154,11 +154,8 @@ tryResolveTypeToDecl(llvm::StringRef typeName, SharedState &sharedState,
 
   // Strategy 2: Try looking up builtin traits using SharedState
   if (contextDecl && *contextDecl) {
-    // lookupBuiltinTrait expects a non-const ASTDecl*, but we have const
-    // context
-    if (ASTDecl *builtinTraitDecl = sharedState.lookupBuiltinTrait(
-            typeName, const_cast<ASTDecl *>(contextDecl->operator->()),
-            SMLoc())) {
+    if (ASTDecl *builtinTraitDecl =
+            sharedState.lookupBuiltinTrait(typeName, SMLoc())) {
       return M::MojoASTDeclRef(builtinTraitDecl);
     }
   }

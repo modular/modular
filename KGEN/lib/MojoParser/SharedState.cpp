@@ -1233,12 +1233,16 @@ bool SharedState::hasBuiltinModule() const { return useBuiltinModule; }
 
 /// Lookup a builtin trait like `AnyType`, `ImplicitlyDestructible`, `Copyable`,
 /// `Movable` etc.  On error this returns null but does not print an error.
-ASTDecl *SharedState::lookupBuiltinTrait(StringRef traitName, ASTDecl *context,
-                                         SMLoc loc) {
-  if (useBuiltinModule)
-    context = &importModule("std.prelude", /*currentPackage=*/nullptr, loc);
+ASTDecl *SharedState::lookupBuiltinTrait(StringRef traitName, SMLoc loc) {
+  if (!useBuiltinModule) {
+    // I don't even know why we are allowing this
+    return {};
+  }
 
-  LookupResult lookup = lookupAndResolveDecl(traitName, loc, *context, true);
+  LookupResult lookup = lookupAndResolveDecl(
+      traitName, loc,
+      importModule("std.prelude", /*currentPackage=*/nullptr, loc), true,
+      false);
   if (!lookup.isFailure() && !lookup.getIfSuccess().empty()) {
     for (ASTDecl *result : lookup.getIfSuccess()) {
       if (auto trait = dyn_cast_or_null<TraitDeclOp>(result->getIfOperation()))
@@ -1248,9 +1252,8 @@ ASTDecl *SharedState::lookupBuiltinTrait(StringRef traitName, ASTDecl *context,
   return nullptr;
 }
 
-TraitType SharedState::lookupBuiltinTraitType(StringRef traitName,
-                                              ASTDecl *context, SMLoc loc) {
-  ASTDecl *traitDecl = lookupBuiltinTrait(traitName, context, loc);
+TraitType SharedState::lookupBuiltinTraitType(StringRef traitName, SMLoc loc) {
+  ASTDecl *traitDecl = lookupBuiltinTrait(traitName, loc);
   if (!traitDecl || !isa_and_nonnull<TraitDeclOp>(traitDecl->getIfOperation()))
     return {};
 

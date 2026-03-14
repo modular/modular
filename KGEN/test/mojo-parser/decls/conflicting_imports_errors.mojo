@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated --mojo-disable-builtins -I %S/inputs %s -split-input-file -verify-diagnostics
+# RUN: %parse-mojo-isolated -I %S/inputs %s -split-input-file -verify-diagnostics
 
 # Test suite for ambiguous import detection (MOCO-3264).
 # Each section is an independent compilation unit.
@@ -25,12 +25,15 @@
 # error at the second import statement, not at the use site.
 
 from struct_a import Foo
+
 # @expected-error @below {{import of 'Foo' is ambiguous}}
 from struct_b import Foo
+
 
 # After the import error the first struct is still usable.
 def use_it[x: Foo]():
     pass
+
 
 # // -----
 
@@ -39,11 +42,14 @@ def use_it[x: Foo]():
 # the second import statement.
 
 from comptime_a import Foo
+
 # @expected-error @below {{import of 'Foo' is ambiguous}}
 from comptime_b import Foo
 
+
 def use_alias[x: Foo]():
     pass
+
 
 # // -----
 
@@ -54,9 +60,11 @@ def use_alias[x: Foo]():
 from fn_a import Foo
 from fn_b import Foo
 
+
 # Foo() unambiguously calls fn_a.Foo (no args); fn_b.Foo requires an i1 arg.
 def call_it():
     Foo()
+
 
 # // -----
 
@@ -65,11 +73,14 @@ def call_it():
 # detected at the second import statement.
 
 from mlirtype_a import Foo
+
 # @expected-error @below {{import of 'Foo' is ambiguous}}
 from mlirtype_b import Foo
 
+
 def use_mlirtype[x: Foo]():
     pass
+
 
 # // -----
 
@@ -79,6 +90,7 @@ def use_mlirtype[x: Foo]():
 # the rule for local declarations.
 
 from struct_c import Foo
+
 # @expected-error @below {{import of 'Foo' is ambiguous}}
 from fn_c import Foo
 
@@ -90,6 +102,7 @@ from fn_c import Foo
 # incomingNonFn+existingFn branch of checkImportNamingConflict.
 
 from fn_d import Foo
+
 # @expected-error @below {{import of 'Foo' is ambiguous}}
 from struct_d import Foo
 
@@ -103,6 +116,7 @@ from struct_d import Foo
 
 from struct_dup import Foo
 from struct_dup import Foo  # no error
+
 
 def use_dup[x: Foo]():
     pass
