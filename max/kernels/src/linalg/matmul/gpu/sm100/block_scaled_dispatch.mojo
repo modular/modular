@@ -260,7 +260,7 @@ def small_bn_dispatch[
         mma_shape=Index(128, 8, 32),
         cluster_shape=Index(1, 1, 1),
         block_swizzle_size=8,
-        num_accum_pipeline_stages=2,
+        num_accum_pipeline_stages=1,
         k_group_size=2,
         num_clc_pipeline_stages=0,
         AB_swapped=True,
