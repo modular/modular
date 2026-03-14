@@ -159,7 +159,7 @@ def barrier_count(predicate: Bool) -> Int32:
     """
 
     comptime if is_nvidia_gpu():
-        return Int32(
+        return rebind[Int32](
             __mlir_op.`nvvm.barrier0.popc`[_type=__mlir_type.i32](
                 to_i32(Int32(predicate))
             )
