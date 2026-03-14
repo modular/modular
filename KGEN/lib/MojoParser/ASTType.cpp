@@ -8,11 +8,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/MojoParser/ASTType.h"
+#include "IREmitter.h"
+#include "ParserEvaluationContext.h"
+
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/ExprNode.h"
-#include "ParserEvaluationContext.h"
 #include "Support/Compiler/OperationUtils.h"
 
 #include "KGEN/KGENDialect/KGENParameters.h"
@@ -539,73 +541,50 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
                                              TypeConvention genericDefault) {
   // Downcast preserves register passability, strip it before querying the
   // property.
+  //
+  // FIXME: we should instead make downcast an actual downcast.
   if (auto paramRefTy = sugarDynCast<ParamType>(type.mlirType))
     type = DowncastAttr::strip(paramRefTy.getParam());
 
   ASTDecl *decl = type.getDecl(shared);
-
-  if (!decl || sugarIsa<StructMetaType>(type.mlirType)) {
+  if (sugarIsa<StructMetaType>(type.mlirType)) {
     // If this is a generic type, use the default specification.
     if (auto paramRefTy = sugarDynCast<ParamType>(type.mlirType))
       if (sugarIsa<ParamType, AnyTraitType>(paramRefTy.getParam().getType()))
         return genericDefault;
-
-    // MLIR types are assumed to be register-passable + Trivial.
-    return TypeConvention::RegisterPassableTrivial;
   }
-
-  // Make sure we know about the signature of the type.
-  if (failed(shared.declResolver->resolveSignature(*decl, loc)))
-    return TypeConvention::MemoryOnly;
 
   // We don't yet have a runtime representation for packages or modules, but
   // when we do, it will not be register-passable.
-  if (isa_and_nonnull<FileModuleOp, PackageOp>(decl->getIfOperation()))
+  if (decl && isa_and_nonnull<FileModuleOp, PackageOp>(decl->getIfOperation()))
     return TypeConvention::MemoryOnly;
 
-  // Trait values are generic and therefore use the default specification.
-  if (auto trait = dyn_cast_or_null<TraitDeclOp>(decl->getIfOperation())) {
-    if (type.isTrivialRegisterType(decl->getLoc(), shared))
-      return TypeConvention::RegisterPassableTrivial;
+  auto checkPR = [&](StringRef traitName) {
+    auto trait = shared.lookupBuiltinTraitType(traitName, loc);
+    // If builtin is not enabled (let's kill this!), we just assume __mlir_type
+    // to be register-passable (by no means this is correct, but just to pass
+    // some existing tests).
+    if (!trait)
+      return !decl;
 
-    if (type.isRegisterType(decl->getLoc(), shared))
-      return TypeConvention::RegisterPassable;
+    return IREmitter::canMetaTypeUpCastTo(shared, loc, type.extractMetaType(),
+                                          trait, decl)
+        .value_or(false);
+  };
 
-    TypeConvention convention = trait.getConvention();
-    if (convention == TypeConvention::Unspecified)
-      return genericDefault;
-    return convention;
-  }
-
-  if (TraitType traitType =
-          sugarDynCastIfPresent<TraitType>(decl->getIfTypeValue())) {
-    // The register passability of a trait composition is the strictest of its
-    // members.
-    TypeConvention convention = TypeConvention::Unspecified;
-    for (SymbolRefAttr symbol : traitType.getSymbols()) {
-      TypeConvention singleTraitRP =
-          ASTType(TraitType::get(symbol)).getRegisterPassability(loc, shared);
-      if (singleTraitRP == TypeConvention::Unspecified)
-        continue;
-      if (convention == TypeConvention::Unspecified)
-        convention = singleTraitRP;
-      else
-        convention = std::max(convention, singleTraitRP);
-    }
-    if (convention == TypeConvention::Unspecified)
-      return genericDefault;
-    return convention;
-  }
-
-  auto structOp = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation());
-  assert(structOp && "only one user-defined type so far");
-  if (type.isTrivialRegisterType(decl->getLoc(), shared))
+  if (checkPR("TrivialRegisterPassable"))
     return TypeConvention::RegisterPassableTrivial;
 
-  if (type.isRegisterType(decl->getLoc(), shared))
+  if (checkPR("RegisterPassable"))
     return TypeConvention::RegisterPassable;
 
-  return structOp.getConvention();
+  if (decl && isa<TraitType>(type.getMetaType())) {
+    // We can not prove non-register passability for a type value bound by
+    // trait, return the generic default.
+    return genericDefault;
+  }
+
+  return TypeConvention::MemoryOnly;
 }
 
 /// Return the StructDeclOp::RegisterPassable enum for this type.
@@ -654,8 +633,7 @@ FnTriviality ASTType::getSpecialFunctionTriviality(llvm::SMLoc loc,
   ASTDecl *typeDecl = getDecl(shared);
   assert(typeDecl && "MLIR types shouldn't reach here");
 
-  ASTDecl *traitDecl =
-      shared.lookupBuiltinTrait(traitName, typeDecl->getParentDecl(), loc);
+  ASTDecl *traitDecl = shared.lookupBuiltinTrait(traitName, loc);
   if (!traitDecl)
     return FnTriviality::Unknown;
 
@@ -776,8 +754,7 @@ bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared,
   StringRef traitName = isImplicit ? "ImplicitlyCopyable" : "Copyable";
 
   // Check whether the type conforms to `ImplicitlyCopyable` trait.
-  ASTDecl *traitDecl =
-      shared.lookupBuiltinTrait(traitName, typeDecl, typeDecl->getLoc());
+  ASTDecl *traitDecl = shared.lookupBuiltinTrait(traitName, typeDecl->getLoc());
   if (!traitDecl)
     return false;
   auto trait = dyn_cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
@@ -820,8 +797,7 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared) const {
   // checkConformance (not doesNominalTypeConformTo directly) so that
   // concrete parameter bindings are available to evaluate conditional
   // conformance constraints — matching isCopyable's behavior.
-  ASTDecl *traitDecl =
-      shared.lookupBuiltinTrait("Movable", typeDecl, typeDecl->getLoc());
+  ASTDecl *traitDecl = shared.lookupBuiltinTrait("Movable", SMLoc());
   if (!traitDecl)
     return false;
   auto trait = dyn_cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
@@ -829,36 +805,6 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared) const {
     return false;
   return checkConformance(trait.bindReference(), shared, nullptr) ==
          ConformanceResult::Yes;
-}
-
-template <typename CheckFnT>
-bool isRegisterTypeHelper(const ASTType &asttype, llvm::SMLoc loc,
-                          SharedState &shared, StringRef traitName,
-                          CheckFnT &&checkFn) {
-
-  ASTDecl *typeDecl = asttype.getDecl(shared);
-  if (!typeDecl)
-    return true; // MLIR Types are trivial register passable.
-
-  // TODO: probably no need to check this
-  // once we deprecate TrivialRegisterPassable
-  if (auto *declOp = typeDecl->getIfOperation()) {
-    if (checkFn(declOp))
-      return true;
-  }
-
-  // Check whether the type conforms to `TrivialRegisterPassable` trait.
-  ASTDecl *traitDecl =
-      shared.lookupBuiltinTrait(traitName, typeDecl, typeDecl->getLoc());
-
-  if (!traitDecl)
-    return false;
-  auto trait = dyn_cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
-  if (!trait)
-    return false;
-  // Don't pass concreteType to avoid recursive constraint evaluation.
-  return typeDecl->doesNominalTypeConformTo(trait.bindReference(), {},
-                                            nullptr) == ConformanceResult::Yes;
 }
 
 ConformanceResult ASTType::checkConformance(TraitType trait,
@@ -871,24 +817,15 @@ ConformanceResult ASTType::checkConformance(TraitType trait,
 }
 
 bool ASTType::isRegisterType(llvm::SMLoc loc, SharedState &shared) const {
-  return isRegisterTypeHelper(
-      *this, loc, shared, "RegisterPassable", [](Operation *op) {
-        bool result = false;
-        TypeSwitch<Operation &>(*op).Case<StructDeclOp, TraitDeclOp>(
-            [&](auto op) { result = op.isRegisterPassable(); });
-        return result;
-      });
+  TypeConvention convention = getRegisterPassability(loc, shared);
+  return convention == TypeConvention::RegisterPassable ||
+         convention == TypeConvention::RegisterPassableTrivial;
 }
 
 bool ASTType::isTrivialRegisterType(llvm::SMLoc loc,
                                     SharedState &shared) const {
-  return isRegisterTypeHelper(
-      *this, loc, shared, "TrivialRegisterPassable", [](Operation *op) {
-        bool result = false;
-        TypeSwitch<Operation &>(*op).Case<StructDeclOp, TraitDeclOp>(
-            [&](auto op) { result = op.isRegisterPassableTrivial(); });
-        return result;
-      });
+  return getRegisterPassability(loc, shared) ==
+         TypeConvention::RegisterPassableTrivial;
 }
 
 /// Given a reference, return the element as an ASTType.  This aborts

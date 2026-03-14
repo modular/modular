@@ -157,7 +157,7 @@ TraitDeclOp ClosureEmitter::ClosureParent::getTrait(ASTDecl &moduleDecl) {
     return trait;
   SharedState &shared = moduleDecl.getShared();
   auto traitDeclParent =
-      shared.lookupBuiltinTrait(traitName, &moduleDecl, moduleDecl.getLoc());
+      shared.lookupBuiltinTrait(traitName, moduleDecl.getLoc());
   if (traitDeclParent->resolvedness < DeclResolvedness::body) {
     [[maybe_unused]] bool outcome = succeeded(shared.declResolver->resolveBody(
         *traitDeclParent, traitDeclParent->getLoc()));

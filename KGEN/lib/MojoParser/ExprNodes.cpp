@@ -4451,8 +4451,7 @@ MagicFunctionNode::getValidatedStructTypeArg(IREmitter &emitter,
 }
 
 static TraitType getAnyTypeTraitType(IREmitter &emitter, SMLoc loc) {
-  TraitType anyType = emitter.shared.lookupBuiltinTraitType(
-      "AnyType", &emitter.getDeclScope(), loc);
+  TraitType anyType = emitter.shared.lookupBuiltinTraitType("AnyType", loc);
   if (!anyType) {
     emitter.emitError(loc, "can not locate 'AnyType'");
     return {};

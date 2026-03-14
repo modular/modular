@@ -1166,7 +1166,7 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
     for (auto [traitName, entryName] :
          SmallVector<std::pair<StringRef, StringRef>>{
              {"ImplicitlyDestructible", "__del__"}, {"Movable", "__init__"}}) {
-      auto traitDecl = shared.lookupBuiltinTrait(traitName, &decl, smloc);
+      auto traitDecl = shared.lookupBuiltinTrait(traitName, smloc);
       if (!traitDecl)
         continue;
       auto traitDeclOp = cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
@@ -3203,10 +3203,9 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // These lookups are reused below both for constraint building (to skip
   // propagated constraints) and for the actual injection into parentTraits,
   // so the trait names are stated only once here.
-  ASTDecl *anyTypeDecl =
-      shared.lookupBuiltinTrait("AnyType", decl.getParentDecl(), decl.getLoc());
-  ASTDecl *implDestrDecl = shared.lookupBuiltinTrait(
-      "ImplicitlyDestructible", decl.getParentDecl(), decl.getLoc());
+  ASTDecl *anyTypeDecl = shared.lookupBuiltinTrait("AnyType", decl.getLoc());
+  ASTDecl *implDestrDecl =
+      shared.lookupBuiltinTrait("ImplicitlyDestructible", decl.getLoc());
 
   DenseSet<SymbolRefAttr> compilerInjectedTraits;
   if (anyTypeDecl)
@@ -3561,8 +3560,8 @@ static void processRegisterPassableDecorator(
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                                       ASTDecl &structDecl) {
   auto conformsToTrait = [&](StringRef traitName) {
-    ASTDecl *traitDecl = shared.lookupBuiltinTrait(
-        traitName, structDecl.getParentDecl(), structDecl.getLoc());
+    ASTDecl *traitDecl =
+        shared.lookupBuiltinTrait(traitName, structDecl.getLoc());
     if (!traitDecl)
       return false;
     auto trait = dyn_cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
@@ -4075,8 +4074,8 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
 
   // Make every trait inherit from `AnyType`, except itself.
   if (parentTraits.empty() && traitOp.getSymName() != "AnyType") {
-    if (ASTDecl *anyTypeDecl = shared.lookupBuiltinTrait(
-            "AnyType", decl.getParentDecl(), decl.getLoc())) {
+    if (ASTDecl *anyTypeDecl =
+            shared.lookupBuiltinTrait("AnyType", decl.getLoc())) {
       parentTraits.push_back(anyTypeDecl->getSymbolRef());
       // No need to add AnyType to immediateParents, since it
       // has an empty requirements table.

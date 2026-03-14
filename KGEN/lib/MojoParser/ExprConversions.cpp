@@ -1384,38 +1384,11 @@ CValue IREmitter::emitZeroCostConvert(ASTExprAnd<CValue> value,
 /// Return true if the MLIR type can implicitly conform to the trait.
 static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
                                      TraitType trait) {
-  ASTDecl &traitDecl = *ASTType(trait).getDecl(shared);
-  // Make sure the body of the trait is resolved.
-  if (failed(shared.declResolver->resolveBody(traitDecl, loc)))
-    return false; // an error was emitted
-  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
-    for (ASTDecl *decl : decls) {
-      auto traitFn = dyn_cast_or_null<FnOp>(decl->getIfOperation());
-      // Skip any children that aren't methods or are inherited. This could be
-      // an alias.
-      if (!traitFn || traitFn.getInheritedFrom())
-        continue;
-      if (failed(shared.declResolver->resolveSignature(*decl, loc)))
-        continue;
-
-      // MLIR types are movable, copyable, and destructible only.
-      if (llvm::is_contained({SpecialFunctionKind::kMoveCtor,
-                              SpecialFunctionKind::kCopyCtor,
-                              SpecialFunctionKind::kDel},
-                             traitFn.getSpecialFunctionKind()))
-        continue;
-
-      // MLIR types can conform to the `copy()` method of `Copyable`.
-      // NOTE: This only works for `Copyable` because `__MLIRType`
-      //       only explicitly conforms to `Copyable`, so its OK that
-      //       this doesn't validate the signature of this `copy()` method.
-      if (name == "copy")
-        continue;
-
-      return false;
-    }
-  }
-  return true;
+  // Use a special wrapper decl in the builtins as stubs.
+  ASTType wrapperType = shared.getBuiltinStubsMLIRType(loc);
+  return wrapperType.checkConformance(trait, shared,
+                                      wrapperType.getDecl(shared)) ==
+         ConformanceResult::Yes;
 }
 
 /// Emit a conversion from an MLIR type to a trait type by materializing stubs
@@ -1432,10 +1405,6 @@ PValue IREmitter::bindNonStructTypeToTrait(ASTExprAnd<CValue> value,
   ASTType mlirType = typeValue.getIfTypeValue();
 
   SMLoc loc = value.expr->getLoc();
-  ASTDecl &traitDecl = *ASTType(trait).getDecl(shared);
-  // Make sure the body of the trait is resolved.
-  if (failed(shared.declResolver->resolveBody(traitDecl, loc)))
-    return {};
 
   // Use a special wrapper decl in the builtins as stubs.
   ASTType wrapperType = shared.getBuiltinStubsMLIRType(loc);

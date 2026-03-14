@@ -787,7 +787,7 @@ fieldConditionallyConformsToBuiltin(Type fieldMLIRType, StringRef traitName,
     return {};
 
   ASTDecl *requiredTraitDecl =
-      shared.lookupBuiltinTrait(traitName, &structDecl, structDecl.getLoc());
+      shared.lookupBuiltinTrait(traitName, structDecl.getLoc());
   if (!requiredTraitDecl)
     return {};
 
@@ -1030,8 +1030,8 @@ std::optional<ValueInfo> StructEmitter::addMissingValueMemberStubsToStruct(
     valueInfo->del = synthesizeEmptyDtor();
 
   auto addCopyOrMoveBuiltinTrait = [&](StringRef traitName) {
-    ASTDecl *traitDecl = shared.lookupBuiltinTrait(
-        traitName, structDecl.getParentDecl(), structDecl.getLoc());
+    ASTDecl *traitDecl =
+        shared.lookupBuiltinTrait(traitName, structDecl.getLoc());
     if (traitDecl) // Don't crash if the builtin trait is not found.
       addTraitParent(structDeclOp, traitDecl);
   };
@@ -1144,8 +1144,8 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
         dest);
   };
 
-  ASTDecl *traitDecl = shared.lookupBuiltinTrait(
-      traitName, structDecl.getParentDecl(), structDecl.getLoc());
+  ASTDecl *traitDecl =
+      shared.lookupBuiltinTrait(traitName, structDecl.getLoc());
   auto witnessName =
       StringAttr::get(getContext(), Twine(baseName) + "is_trivial");
   auto witnessSymbolName = getFlattenedSymbolName(traitDecl->getSymbolRef());

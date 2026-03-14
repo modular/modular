@@ -438,11 +438,10 @@ public:
 
   /// Lookup a builtin trait like `AnyType`, `Copyable`, `Movable` etc.  On
   /// error this returns null but does not print an error.
-  ASTDecl *lookupBuiltinTrait(StringRef traitName, ASTDecl *context, SMLoc loc);
+  ASTDecl *lookupBuiltinTrait(StringRef traitName, SMLoc loc);
 
   /// A handy version of lookupBuiltinTrait, which returns the trait type.
-  TraitType lookupBuiltinTraitType(StringRef traitName, ASTDecl *context,
-                                   SMLoc loc);
+  TraitType lookupBuiltinTraitType(StringRef traitName, SMLoc loc);
 
   /// Lookup the specified name, and check that it is a non-parameterized type.
   /// This emits a diagnostic on error and returns null, or returns the ASTDecl
