@@ -351,8 +351,8 @@ def print[
     *Ts: Writable
 ](
     *values: *Ts,
-    sep: StaticString = " ",
-    end: StaticString = "\n",
+    sep: StringSlice = " ",
+    end: StringSlice = "\n",
     flush: Bool = False,
     var file: FileDescriptor = stdout,
 ):
