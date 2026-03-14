@@ -234,26 +234,27 @@ def KGEN_VariadicSizeAttr : KGEN_ExprAttr<"VariadicSize", "variadic.size",
     [ContextuallyEvaluatedAttrInterface]> {
   let summary = "return the size of a variadic";
 
-  let parameters = (ins
-    AttributeSelfTypeParameter<"", "IndexType">:$type,
-    "TypedAttr":$variadic
-  );
+  let parameters = (ins "TypedAttr":$variadic);
 
   let builders = [
     // Override the default builder used by the generated parser because this
     // may not return an variadic.size.
     AttrBuilderWithInferredContext<(ins
-       "IndexType":$type, "TypedAttr":$variadic), "", "TypedAttr">,
+       "TypedAttr":$variadic), "", "TypedAttr">,
 
     // Verbose form with MLIRContext, needed for ODS constructors.
     AttrBuilder<(ins "IndexType":$type, "TypedAttr":$variadic), [{
-      return get(type, variadic);
+      return get(variadic);
     }], "TypedAttr">,
   ];
 
   let assemblyFormat = "`<` custom<ColonTypeParamValue>($variadic) `>`";
   let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;
+
+  let extraClassDeclaration = [{
+    Type getType() const { return IndexType::get(getContext()); }
+  }];
 }
 
 def KGEN_VariadicGetAttr : KGEN_ExprAttr<"VariadicGet", "variadic.get",

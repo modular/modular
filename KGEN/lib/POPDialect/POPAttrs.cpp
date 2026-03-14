@@ -2241,10 +2241,50 @@ TypedAttr SIMDShrAttr::get(MLIRContext *ctx, TypedAttr value, TypedAttr shft) {
 }
 
 //===----------------------------------------------------------------------===//
+// VariadicToArrayAttr
+//===----------------------------------------------------------------------===//
+
+bool VariadicToArrayAttr::isConstant() const { return false; }
+
+Type VariadicToArrayAttr::getType() const {
+  auto size = VariadicSizeAttr::get(getVariadic());
+  auto varType = cast<VariadicType>(getVariadic().getType());
+  return ArrayType::get(size, varType.getElementType());
+}
+
+TypedAttr VariadicToArrayAttr::get(TypedAttr variadic) {
+  auto type = cast<VariadicType>(variadic.getType());
+  assert(type && "expected a 'variadic' type for the input");
+  auto vaAttr = sugarDynCast<VariadicAttr>(variadic);
+  if (vaAttr) {
+    ArrayRef<TypedAttr> values = vaAttr.getValues();
+    auto arrayType = ArrayType::get(values.size(), type.getElementType());
+    return POP::ArrayAttr::get(values, arrayType);
+  }
+  return Base::get(variadic.getContext(), variadic);
+}
+
+LogicalResult
+VariadicToArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                            TypedAttr variadic) {
+  auto variadicType = dyn_cast<VariadicType>(variadic.getType());
+  if (!variadicType)
+    return emitError() << "expected a 'variadic' type for the input, got: "
+                       << variadic.getType();
+  return success();
+}
+
+TypedAttr VariadicToArrayAttr::getChecked(
+    function_ref<::mlir::InFlightDiagnostic()> emitError, TypedAttr variadic) {
+  if (failed(verify(emitError, variadic)))
+    return {};
+  return get(variadic);
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/POPDialect/POPEnums.cpp.inc"
-
 #define GET_ATTRDEF_CLASSES
 #include "KGEN/POPDialect/POPAttrs.cpp.inc"
+#include "KGEN/POPDialect/POPEnums.cpp.inc"

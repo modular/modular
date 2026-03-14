@@ -2770,7 +2770,7 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
 
   if (auto vaSizeOp = dyn_cast<POP::VariadicSizeOp>(op))
     if (auto va = findValue(vaSizeOp.getOperand()))
-      return KGEN::VariadicSizeAttr::get(vaSizeOp.getResult().getType(), va);
+      return KGEN::VariadicSizeAttr::get(va);
 
   if (auto vaGetOp = dyn_cast<POP::VariadicGetOp>(op))
     if (auto va = findValue(vaGetOp.getVariadic()))

@@ -1069,4 +1069,41 @@ class POP_SIMDReduceAttr<string name>
 def POP_SIMDReduceOrAttr : POP_SIMDReduceAttr<"Or">;
 def POP_SIMDReduceAndAttr : POP_SIMDReduceAttr<"And">;
 
+//===----------------------------------------------------------------------===//
+// VariadicToArrayAttr
+//===----------------------------------------------------------------------===//
+
+def POP_VariadicToArrayAttr : POP_ExprAttr<"VariadicToArray", "variadic_to_array"> {
+  let summary = "Convert a variadic to an array.";
+  let description = [{
+    The `#pop.variadic_to_array` attribute converts a `!kgen.variadic` into a
+    `!pop.array` whose length equals the variadic size and whose elements are
+    the variadic's elements.
+
+    Example:
+
+    ```mlir
+    #pop.variadic_to_array<:!kgen.variadic<index> #kgen.variadic<1, 2, 3>>
+      : !pop.array<3, index>
+    ```
+  }];
+
+  let parameters = (ins "TypedAttr":$variadic);
+
+  let assemblyFormat = "`<`  custom<ColonTypeParamValue>($variadic) `>`";
+  let skipDefaultBuilders = 1;
+  let genVerifyDecl = 1;
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$variadic), "",
+                                   "TypedAttr">,
+    AttrBuilder<(ins "TypedAttr":$variadic), [{
+      return get(variadic);
+    }], "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{
+    Type getType() const;
+  }];
+}
+
 #endif // KGEN_POPDIALECT_POPATTRS_TD

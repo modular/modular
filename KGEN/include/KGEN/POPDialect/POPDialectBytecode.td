@@ -177,6 +177,10 @@ def SIMDReduceAndAttr : DialectAttribute<(attr
   TypedAttr:$vector, ConcreteType<"SIMDType">:$type
 )>;
 
+def VariadicToArrayAttr : DialectAttribute<(attr
+  TypedAttr:$variadic
+)>;
+
 def POPDialectAttributes : DialectAttributes<"pop"> {
   let elems = [
     CmpPredicateAttr,
@@ -225,6 +229,7 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
     SIMDCmpAttr,
     SIMDReduceOrAttr,
     SIMDReduceAndAttr,
+    VariadicToArrayAttr,
   ];
 }
 

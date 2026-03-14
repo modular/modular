@@ -357,7 +357,7 @@ TypedAttr VariadicTabulateAttr::getChecked(
 
 LogicalResult
 VariadicSizeAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                         IndexType type, TypedAttr variadic) {
+                         TypedAttr variadic) {
   if (!isa<VariadicType>(variadic.getType()))
     return emitError() << diagMsg(
                Diag::DiagID::err_expected_variadic_type_count_got_2,
@@ -365,20 +365,20 @@ VariadicSizeAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-TypedAttr VariadicSizeAttr::get(IndexType type, TypedAttr variadic) {
+TypedAttr VariadicSizeAttr::get(TypedAttr variadic) {
   auto vaAttr = sugarDynCast<VariadicAttr>(variadic);
-  if (!vaAttr)
-    return Base::get(type.getContext(), type, variadic);
+  if (vaAttr)
+    return IntegerAttr::get(IndexType::get(variadic.getContext()),
+                            vaAttr.getValues().size());
 
-  return IntegerAttr::get(type, vaAttr.getValues().size());
+  return Base::get(variadic.getContext(), variadic);
 }
 
 TypedAttr VariadicSizeAttr::getChecked(
-    function_ref<::mlir::InFlightDiagnostic()> emitError, IndexType type,
-    TypedAttr variadic) {
-  if (failed(verify(emitError, type, variadic)))
+    function_ref<::mlir::InFlightDiagnostic()> emitError, TypedAttr variadic) {
+  if (failed(verify(emitError, variadic)))
     return {};
-  return get(type, variadic);
+  return get(variadic);
 }
 
 LogicalResult
