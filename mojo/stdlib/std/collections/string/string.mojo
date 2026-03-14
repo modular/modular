@@ -1438,6 +1438,76 @@ struct String(
 
         return StringSlice(self).rfind(substr, start=start)
 
+    def partition(self, sep: StringSlice) -> Tuple[String, String, String]:
+        """Splits the string at the first occurrence of `sep`.
+
+        Splits `self` at the first occurrence of `sep`, and returns a
+        3-tuple of the form `(before, sep, after)`. If `sep` is not in `self`,
+        returns `(self, "", "")`.
+
+        Args:
+            sep: The separator to partition on.
+
+        Returns:
+            A `Tuple[String, String, String]` containing the part before `sep`,
+            `sep` itself, and the part after `sep`. If `sep` is not found,
+            returns `(self, "", "")`.
+
+        Examples:
+
+        ```mojo
+        %# from testing import assert_equal
+
+        var s = String("hello world hello")
+        var before, separator, after = s.partition("world")
+        assert_equal(before, "hello ")
+        assert_equal(separator, "world")
+        assert_equal(after, " hello")
+
+        # When sep is not found:
+        var b, sep2, a = String("hello").partition("xyz")
+        assert_equal(b, "hello")
+        assert_equal(sep2, "")
+        assert_equal(a, "")
+        ```
+        """
+        return StringSlice(self).partition(sep)
+
+    def rpartition(self, sep: StringSlice) -> Tuple[String, String, String]:
+        """Splits the string at the last occurrence of `sep`.
+
+        Splits `self` at the last occurrence of `sep`, and returns a
+        3-tuple of the form `(before, sep, after)`. If `sep` is not in `self`,
+        returns `("", "", self)`.
+
+        Args:
+            sep: The separator to partition on.
+
+        Returns:
+            A `Tuple[String, String, String]` containing the part before `sep`,
+            `sep` itself, and the part after `sep`. If `sep` is not found,
+            returns `("", "", self)`.
+
+        Examples:
+
+        ```mojo
+        %# from testing import assert_equal
+
+        var s = String("hello world hello")
+        var before, separator, after = s.rpartition("hello")
+        assert_equal(before, "hello world ")
+        assert_equal(separator, "hello")
+        assert_equal(after, "")
+
+        # When sep is not found:
+        var b, sep2, a = String("hello").rpartition("xyz")
+        assert_equal(b, "")
+        assert_equal(sep2, "")
+        assert_equal(a, "hello")
+        ```
+        """
+        return StringSlice(self).rpartition(sep)
+
     def isspace(self) -> Bool:
         """Determines whether every character in the given String is a
         python whitespace String. This corresponds to Python's
