@@ -950,9 +950,8 @@ ASTDecl *ClosureEmitter::createStructWrapper(
     auto callOp =
         LIT::CallOp::create(b, callResultType, boundSymbol, origins, operands);
     Value returnValue = callOp.getResult(0);
-    if (callResultType != op.getFuncTypeGenerator().getResultType())
-      returnValue = RebindOp::create(
-          b, op.getFuncTypeGenerator().getResultType(), returnValue);
+    if (callResultType != result)
+      returnValue = RebindOp::create(b, result, returnValue);
     IREmitter::emitNormalReturn(b, returnValue);
     return op;
   };
