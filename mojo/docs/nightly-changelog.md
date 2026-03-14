@@ -58,6 +58,9 @@ This version is still a work in progress.
 - Subscripting `String` and `StringSlice` now requires a named parameter for range
   indexing, for example `s[1:3]` is now `s[byte=1:3]`.
 
+- `Path` now conforms to `Comparable`, enabling lexicographic ordering and use
+  with `sort()`.
+
 ## Tooling changes
 
 ## ❌ Removed
