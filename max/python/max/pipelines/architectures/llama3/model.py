@@ -28,7 +28,7 @@ from max.driver import (
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
-from max.graph.weights import WeightData, Weights, WeightsAdapter
+from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -45,7 +45,10 @@ from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
     log_probabilities_ragged_graph,
 )
-from max.pipelines.lib.utils import compute_data_parallel_splits
+from max.pipelines.lib.utils import (
+    compute_data_parallel_splits,
+    parse_state_dict_from_weights,
+)
 from max.profiler import traced
 from max.support.algorithm import flatten2d
 from transformers import AutoConfig
@@ -461,31 +464,14 @@ class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
         )
         return session.load(graph)
 
-    def _get_state_dict(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-    ) -> dict[str, WeightData]:
-        # Get Config
-        huggingface_config = self.huggingface_config
-        if adapter:
-            state_dict = adapter(
-                dict(weights.items()),
-                huggingface_config=huggingface_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            state_dict = {key: value.data() for key, value in weights.items()}
-
-        return state_dict
-
     def _build_graph(
         self,
         weights: Weights,
         adapter: WeightsAdapter | None = None,
     ) -> Graph:
-        # Retrieve config
-        state_dict = self._get_state_dict(weights, adapter)
+        state_dict = parse_state_dict_from_weights(
+            self.pipeline_config, weights, adapter
+        )
         model_config = Llama3Config.initialize(self.pipeline_config)
         model_config.finalize(
             huggingface_config=self.huggingface_config,

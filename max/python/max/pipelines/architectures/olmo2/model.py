@@ -19,6 +19,7 @@ from max.driver import Buffer
 from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 
 from ..llama3.model import LlamaModelBase
 from .model_config import Olmo2Config
@@ -54,7 +55,9 @@ class Olmo2Model(LlamaModelBase):
         device0 = self.devices[0]
 
         # Retrieve config using Olmo2Config instead of Llama3Config
-        state_dict = self._get_state_dict(weights, adapter)
+        state_dict = parse_state_dict_from_weights(
+            self.pipeline_config, weights, adapter
+        )
         model_config = Olmo2Config.initialize(self.pipeline_config)
         model_config.finalize(
             huggingface_config=self.huggingface_config,

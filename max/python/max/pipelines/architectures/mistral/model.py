@@ -24,15 +24,11 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.graph.weights import (
     SafetensorWeights,
-    WeightData,
     Weights,
     WeightsAdapter,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.layer import Module
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
@@ -45,6 +41,7 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
     upper_bounded_default,
 )
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -216,26 +213,6 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
                 f"({huggingface_config.max_position_embeddings})."
             ) from e
 
-    def _get_state_dict(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-    ) -> dict[str, WeightData]:
-        text_config = getattr(
-            self.huggingface_config, "text_config", self.huggingface_config
-        )
-        if self.adapter:
-            state_dict = self.adapter(
-                dict(self.weights.items()),
-                huggingface_config=text_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-        return state_dict
-
     def graph_inputs(self) -> tuple[TensorType | BufferType, ...]:
         # Generate DeviceRef
         device_ref = DeviceRef.from_device(self.devices[0])
@@ -278,14 +255,19 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
     def _build_graph(
         self, weights: Weights, adapter: WeightsAdapter | None = None
     ) -> Graph:
-        # Retrieve config
-        state_dict = self._get_state_dict(weights, adapter)
+        text_config = getattr(
+            self.huggingface_config, "text_config", self.huggingface_config
+        )
+        state_dict = parse_state_dict_from_weights(
+            self.pipeline_config,
+            weights,
+            adapter,
+            hf_config=text_config,
+        )
 
         model_config = MistralConfig.initialize_from_config(
             self.pipeline_config,
-            getattr(
-                self.huggingface_config, "text_config", self.huggingface_config
-            ),
+            text_config,
         )
         model_config.return_logits = self.return_logits
 

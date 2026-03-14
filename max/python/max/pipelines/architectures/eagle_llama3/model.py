@@ -26,6 +26,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 
 from ..llama3.model import Llama3Inputs, LlamaModelBase
 from .eagle_llama3 import EagleLlama3
@@ -95,7 +96,9 @@ class EagleLlama3Model(LlamaModelBase):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
     ) -> Graph:
-        state_dict = self._get_state_dict(weights, adapter)
+        state_dict = parse_state_dict_from_weights(
+            self.pipeline_config, weights, adapter
+        )
         model_config = Llama3Config.initialize(self.pipeline_config)
         model_config.finalize(
             huggingface_config=self.huggingface_config,
