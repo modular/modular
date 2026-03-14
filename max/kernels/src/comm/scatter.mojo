@@ -125,7 +125,7 @@ def scatter_pull_kernel[
 
 @always_inline
 @parameter
-fn scatter[
+def scatter[
     dtype: DType,
     rank: Int,
     //,

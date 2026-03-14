@@ -844,7 +844,7 @@ def allreduce[
 
 @parameter
 @always_inline
-fn allreduce[
+def allreduce[
     dtype: DType,
     rank: Int,
     ngpus: Int,

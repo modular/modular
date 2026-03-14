@@ -228,7 +228,7 @@ def _allgather_p2p[
 
 
 @always_inline
-fn allgather[
+def allgather[
     dtype: DType,
     rank: Int,
     ngpus: Int,

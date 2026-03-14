@@ -435,7 +435,7 @@ def _should_use_2stage[ngpus: Int](num_bytes: Int) -> Bool:
 
 @parameter
 @always_inline
-fn broadcast[
+def broadcast[
     dtype: DType,
     rank: Int,
     //,

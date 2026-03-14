@@ -1385,7 +1385,7 @@ def allreduce_residual_rmsnorm_fp8[
     )
 
 
-fn allreduce_residual_rmsnorm_fp8[
+def allreduce_residual_rmsnorm_fp8[
     in_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
