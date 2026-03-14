@@ -108,6 +108,13 @@ kgen.func @union_constants() {
 // CHECK: f0 = #pop.simd_shr<#kgen.unknown : !pop.simd<4, si32>, #pop<simd 1> : !pop.simd<4, si32>> : !pop.simd<4, si32>
 "simd_shr.attr"() { f0 = #pop.simd_shr<#kgen.unknown : !pop.simd<4, si32>, #pop<simd 1> : !pop.simd<4, si32>> } : () -> ()
 
+// CHECK: f0 = #pop.variadic_to_array<:variadic<index> v> : !pop.array<#kgen.variadic.size<:variadic<index> v>, index>
+"variadic_to_array.attr"() { f0 = #pop.variadic_to_array<:!kgen.variadic<index> #kgen.param.decl.ref<"v">>
+      : !pop.array<#kgen.variadic.size<:!kgen.variadic<index> #kgen.param.decl.ref<"v">>, index> } : () -> ()
+
+// CHECK: f0 = #pop.array<1, 2, 3> : !pop.array<3, index>
+"variadic_to_array_fold.attr"() { f0 = #pop.variadic_to_array<:!kgen.variadic<index> #kgen.variadic<1, 2, 3> > : !pop.array<3, index> } : () -> ()
+
 // CHECK:      a0 = #pop<simd 0>
 // CHECK-SAME: a1 = #pop<simd 1>
 // CHECK-SAME: a2 = #pop<simd 0>
