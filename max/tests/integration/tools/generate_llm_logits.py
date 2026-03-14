@@ -17,13 +17,10 @@ import copy
 import os
 import sys
 import tempfile
-
-# Standard library
 from datetime import datetime
 from pathlib import Path
 from typing import Any, get_args
 
-# 3rd-party
 import click
 import torch
 import transformers
@@ -45,16 +42,11 @@ from run_models import (
     run_torch_model,
     run_vllm_model,
 )
-
-# Tests
 from test_common import (
     numpy_encoder,
 )
 from test_common.evaluate import NUM_STEPS, ModelOutput
 from test_common.github_utils import github_log_group
-
-# This version is detached from the one pulled from rules_pycross, assert that the override is working.
-assert transformers.__version__ == "4.57.6"
 
 # This is far from a universal standard, but this is the closest to a standard
 # that I could find: BSD-derived programs sometimes use exit codes from
@@ -158,6 +150,15 @@ def main(
     mini: bool,
     generate_logprobs: bool,
 ) -> None:
+    # This version is detached from the one pulled from rules_pycross,
+    # assert that the override is working. Checked here rather than at
+    # module level so that transitive importers (e.g. precompile_all_pipelines)
+    # that never use transformers don't fail.
+    assert transformers.__version__ == "4.57.6", (
+        f"Expected transformers 4.57.6 but got {transformers.__version__}."
+        " The v4 wheel override may not be wired into this target's deps."
+    )
+
     if "gemma3" in pipeline_name:
         # Running into dynamo error:
         # https://huggingface.co/google/gemma-3-4b-it/discussions/51

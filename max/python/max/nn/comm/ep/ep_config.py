@@ -16,7 +16,7 @@
 from dataclasses import dataclass
 
 from max.dtype import DType
-from max.nn.float8_config import Float8Config
+from max.nn.quant_config import QuantConfig
 
 # We always use two groups of SHMEM shared memory buffers to avoid race
 # conditions between the dispatch and combine phases of Expert Parallelism
@@ -74,8 +74,8 @@ class EPConfig:
     node_id: int = -1
     """ID of the current node. Will be set by the EPCommInitializer."""
 
-    dispatch_fp8_config: Float8Config | None = None
-    """Float8 configuration used for dispatch token quantization."""
+    dispatch_quant_config: QuantConfig | None = None
+    """Quantization configuration used for dispatch token quantization."""
 
     fused_shared_expert: bool = False
     """Whether to fuse the shared expert computation with the routed experts."""
@@ -99,21 +99,21 @@ class EPConfig:
 
     def __post_init__(self):
         if self.dispatch_dtype != DType.bfloat16:
-            if self.dispatch_fp8_config is None:
+            if self.dispatch_quant_config is None:
                 raise ValueError(
-                    "dispatch_fp8_config must be specified when dispatch_dtype is not bfloat16"
+                    "dispatch_quant_config must be specified when dispatch_dtype is not bfloat16"
                 )
 
             if self.dispatch_dtype.is_float8():
-                if not self.dispatch_fp8_config.input_scale.is_block:
+                if not self.dispatch_quant_config.input_scale.is_block:
                     raise NotImplementedError(
                         "Only block-wise quantization is supported for float8_e4m3fn and float8_e4m3fnuz"
                     )
 
             elif self.dispatch_dtype in (DType.uint8, DType.float4_e2m1fn):
-                if not self.dispatch_fp8_config.is_nvfp4:
+                if not self.dispatch_quant_config.is_nvfp4:
                     raise ValueError(
-                        "dispatch_fp8_config must be an NVFP4 configuration when dispatch_dtype is uint8 or float4_e2m1fn"
+                        "dispatch_quant_config must be an NVFP4 configuration when dispatch_dtype is uint8 or float4_e2m1fn"
                     )
 
             else:
@@ -136,13 +136,13 @@ def estimate_ep_memory_usage(
     """Estimate the EP communication memory usage per device per buffer group.
 
     This is a standalone function so it can be called both from
-    :class:`EPCommInitializer` (which has a fully-validated ``EPConfig``)
+    :class:`~max.nn.comm.ep.ep_manager.EPCommInitializer` (which has a fully-validated ``EPConfig``)
     and from memory estimators that only need the numeric fields.
 
     Args:
         hidden_size: Model hidden dimension.
-        dispatch_dtype_size: Size in bytes of the dispatch data type.
-        combine_dtype_size: Size in bytes of the combine data type.
+        dispatch_dtype: Data type used for dispatching tokens to experts.
+        combine_dtype: Data type used for combining expert outputs.
         max_tokens_per_rank: Maximum tokens per GPU rank.
         n_experts: Total number of routed experts.
         n_nodes: Total number of nodes in the distributed setup.

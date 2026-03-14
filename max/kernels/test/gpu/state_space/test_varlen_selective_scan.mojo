@@ -12,12 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-)
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from std.random import rand
 from state_space.varlen_selective_scan import (
     varlen_selective_scan_fwd_cpu,
@@ -30,7 +25,7 @@ from std.testing import TestSuite, assert_almost_equal
 from std.utils.index import Index, IndexList
 
 
-fn run_varlen_selective_scan_fwd_gpu[
+def run_varlen_selective_scan_fwd_gpu[
     dtype: DType,
     DSTATE: Int,
     has_D: Bool = True,
@@ -473,7 +468,7 @@ fn run_varlen_selective_scan_fwd_gpu[
 # =============================================================================
 
 
-fn test_varlen_selective_scan_fwd_gpu_equal_lengths() raises:
+def test_varlen_selective_scan_fwd_gpu_equal_lengths() raises:
     """Test varlen selective scan forward GPU with equal-length sequences."""
     with DeviceContext() as ctx:
         if not ctx.is_compatible():
@@ -488,7 +483,7 @@ fn test_varlen_selective_scan_fwd_gpu_equal_lengths() raises:
         ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
 
 
-fn test_varlen_selective_scan_fwd_gpu_variable_lengths() raises:
+def test_varlen_selective_scan_fwd_gpu_variable_lengths() raises:
     """Test varlen selective scan forward GPU with variable-length sequences."""
     with DeviceContext() as ctx:
         if not ctx.is_compatible():
@@ -509,7 +504,7 @@ fn test_varlen_selective_scan_fwd_gpu_variable_lengths() raises:
         )
 
 
-fn test_varlen_selective_scan_fwd_gpu_without_D() raises:
+def test_varlen_selective_scan_fwd_gpu_without_D() raises:
     """Test varlen selective scan forward GPU without D tensor."""
     with DeviceContext() as ctx:
         if not ctx.is_compatible():
@@ -524,7 +519,7 @@ fn test_varlen_selective_scan_fwd_gpu_without_D() raises:
         ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
 
 
-fn test_varlen_selective_scan_fwd_gpu_without_z() raises:
+def test_varlen_selective_scan_fwd_gpu_without_z() raises:
     """Test varlen selective scan forward GPU without z tensor."""
     with DeviceContext() as ctx:
         if not ctx.is_compatible():
@@ -539,7 +534,7 @@ fn test_varlen_selective_scan_fwd_gpu_without_z() raises:
         ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
 
 
-fn test_varlen_selective_scan_fwd_gpu_with_delta_softplus() raises:
+def test_varlen_selective_scan_fwd_gpu_with_delta_softplus() raises:
     """Test varlen selective scan forward GPU with delta softplus activation."""
     with DeviceContext() as ctx:
         if not ctx.is_compatible():

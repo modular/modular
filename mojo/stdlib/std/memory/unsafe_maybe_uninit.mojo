@@ -66,12 +66,12 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
     var _array: Self._mlir_type
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """The memory is now considered uninitialized."""
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline
-    fn __init__[
+    def __init__[
         MovableType: Movable
     ](out self: UnsafeMaybeUninit[MovableType], var value: MovableType):
         """Create an `UnsafeMaybeUninit` in an initialized state.
@@ -87,7 +87,7 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
 
     @staticmethod
     @always_inline
-    fn zeroed() -> Self:
+    def zeroed() -> Self:
         """Create an `UnsafeMaybeUninit` in an uninitialized state, with the memory set to all 0 bytes.
 
         It depends on `T` whether zeroed memory makes for proper initialization.
@@ -101,7 +101,7 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
         memset_zero(UnsafePointer(to=result), 1)
         return result^
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Copies the raw bits from another `UnsafeMaybeUninit` instance.
 
         This performs a bitwise copy of the underlying memory without invoking
@@ -117,7 +117,7 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
         )
         self._array = copy._array
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         """Moves the raw bits from another `UnsafeMaybeUninit` instance.
 
         This performs a bitwise move of the underlying memory without invoking
@@ -134,7 +134,7 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
         self._array = take._array
 
     @always_inline
-    fn init_from[
+    def init_from[
         MovableType: Movable
     ](mut self: UnsafeMaybeUninit[MovableType], var value: MovableType):
         """Initialize this memory with the given `value`.
@@ -152,7 +152,7 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
         self.unsafe_ptr().init_pointee_move(value^)
 
     @always_inline
-    fn unsafe_assume_init_ref(ref self) -> ref[self._array] Self.T:
+    def unsafe_assume_init_ref(ref self) -> ref[self._array] Self.T:
         """Returns a reference to the internal value.
 
         Calling this method assumes that the memory is initialized.
@@ -163,7 +163,7 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
         return self.unsafe_ptr()[]
 
     @always_inline
-    fn unsafe_assume_init_take[
+    def unsafe_assume_init_take[
         U: Movable, //
     ](mut self: UnsafeMaybeUninit[U]) -> U:
         """Takes ownership of the internal value.
@@ -181,7 +181,7 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
         return self.unsafe_ptr().take_pointee()
 
     @always_inline
-    fn unsafe_ptr(
+    def unsafe_ptr(
         ref self,
     ) -> UnsafePointer[Self.T, origin_of(self._array)]:
         """Get a pointer to the underlying element.
@@ -195,7 +195,7 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
         return UnsafePointer(to=self._array).bitcast[Self.T]()
 
     @always_inline
-    fn unsafe_assume_init_destroy[
+    def unsafe_assume_init_destroy[
         D: ImplicitlyDestructible
     ](mut self: UnsafeMaybeUninit[D]):
         """Runs the destructor of the internal value.
@@ -210,14 +210,14 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
 
 
 @always_inline
-fn _is_trivially_copyable[T: AnyType]() -> Bool:
+def _is_trivially_copyable[T: AnyType]() -> Bool:
     comptime if conforms_to(T, Copyable):
         return downcast[T, Copyable].__copy_ctor_is_trivial
     return False
 
 
 @always_inline
-fn _is_trivially_movable[T: AnyType]() -> Bool:
+def _is_trivially_movable[T: AnyType]() -> Bool:
     comptime if conforms_to(T, Movable):
         return downcast[T, Movable].__move_ctor_is_trivial
     return False

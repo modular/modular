@@ -131,12 +131,12 @@ struct _PrecompiledEntriesRuntime[
 
 
 @always_inline
-fn _comptime_list_to_span[
+def _comptime_list_to_span[
     T: ImplicitlyDestructible & Copyable, //, list: List[T]
 ]() -> Span[T, StaticConstantOrigin]:
     """Convert a comptime list to a runtime span of static constant origin."""
 
-    fn list_to_array[list: List[T]]() -> InlineArray[T, len(list)]:
+    def list_to_array[list: List[T]]() -> InlineArray[T, len(list)]:
         var array = InlineArray[T, len(list)](uninitialized=True)
 
         comptime for i in range(len(list)):
@@ -154,7 +154,7 @@ struct _FormatUtils:
     # TODO: Allow a way to provide a `comptime _PrecompiledEntries` to avoid
     # allocations in the `_PrecompiledEntries` struct.
     @staticmethod
-    fn format_precompiled[
+    def format_precompiled[
         *Ts: Writable,
     ](
         mut writer: Some[Writer],
@@ -169,7 +169,7 @@ struct _FormatUtils:
         var fmt_len = compiled.format.byte_length()
 
         @always_inline
-        fn _build_slice(
+        def _build_slice(
             p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(ptr=p + start, length=end - start)
@@ -185,7 +185,7 @@ struct _FormatUtils:
         writer.write(_build_slice(ptr, offset, fmt_len))
 
     @staticmethod
-    fn format(
+    def format(
         format: StringSlice, args: VariadicPack[element_trait=Writable, ...]
     ) raises -> String:
         """Format the arguments using the given format string."""
@@ -194,7 +194,7 @@ struct _FormatUtils:
         return buffer^
 
     @staticmethod
-    fn format_to_runtime(
+    def format_to_runtime(
         mut writer: Some[Writer],
         format: StringSlice,
         args: VariadicPack[_, Writable, ...],
@@ -229,7 +229,7 @@ struct _FormatUtils:
         )
 
     @staticmethod
-    fn format_to_comptime[
+    def format_to_comptime[
         format: StaticString
     ](mut writer: Some[Writer], args: VariadicPack[_, Writable, ...]):
         """Format arguments into a writer using a compile-time format string.
@@ -273,7 +273,7 @@ struct _FormatUtils:
             )
 
     @staticmethod
-    fn compile_entries_runtime_no_raises[
+    def compile_entries_runtime_no_raises[
         *Ts: Writable
     ](
         format: StringSlice,
@@ -295,7 +295,7 @@ struct _FormatUtils:
             return e^
 
     @staticmethod
-    fn compile_entries_runtime[
+    def compile_entries_runtime[
         *Ts: Writable
     ](
         format: StringSlice,
@@ -449,7 +449,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
     """Store the substitution field. See `Self._FieldVariantType` docstrings for
     more details."""
 
-    fn __init__(
+    def __init__(
         out self,
         first_curly: Int,
         last_curly: Int,
@@ -472,7 +472,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         self.conversion_flag = conversion_flag
 
     @always_inline
-    fn is_escaped_brace(ref self) -> Bool:
+    def is_escaped_brace(ref self) -> Bool:
         """Whether the field is escaped_brace.
 
         Returns:
@@ -481,7 +481,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         return self.field.isa[Bool]()
 
     @always_inline
-    fn is_kwargs_field(ref self) -> Bool:
+    def is_kwargs_field(ref self) -> Bool:
         """Whether the field is kwargs_field.
 
         Returns:
@@ -490,7 +490,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         return self.field.isa[String]()
 
     @always_inline
-    fn is_automatic_indexing(ref self) -> Bool:
+    def is_automatic_indexing(ref self) -> Bool:
         """Whether the field is automatic_indexing.
 
         Returns:
@@ -499,7 +499,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         return self.field.isa[NoneType]()
 
     @always_inline
-    fn is_manual_indexing(ref self) -> Bool:
+    def is_manual_indexing(ref self) -> Bool:
         """Whether the field is manual_indexing.
 
         Returns:
@@ -507,7 +507,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         """
         return self.field.isa[Int]()
 
-    fn _handle_field_and_break(
+    def _handle_field_and_break(
         mut self,
         fmt_src: StringSlice[Self.origin],
         len_pos_args: Int,
@@ -521,7 +521,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         mut total_estimated_entry_byte_width: Int,
     ) raises -> Bool:
         @always_inline("nodebug")
-        fn _build_slice(
+        def _build_slice(
             p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(ptr=p + start, length=end - start)
@@ -573,7 +573,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
             except e:
 
                 @parameter
-                fn check_string() -> Bool:
+                def check_string() -> Bool:
                     return "not convertible to integer" in String(e)
 
                 debug_assert[check_string]("Not the expected error from atol")
@@ -586,7 +586,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
                 return True
         return False
 
-    fn _format_entry[
+    def _format_entry[
         len_pos_args: Int
     ](self, mut writer: Some[Writer], args: _FormatArgs, mut auto_idx: Int):
         # TODO(#3403 and/or #3252): this function should be able to use
@@ -598,7 +598,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         comptime s_value = UInt8(ord("s"))
         # alias a_value = UInt8(ord("a")) # TODO
 
-        fn _format(idx: Int) unified {read self, read args, mut writer}:
+        def _format(idx: Int) unified {read self, read args, mut writer}:
             comptime for i in range(len_pos_args):
                 if i == idx:
                     var flag = self.conversion_flag

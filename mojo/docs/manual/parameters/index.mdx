@@ -1,30 +1,48 @@
 ---
-title: "Parameterization: compile-time metaprogramming"
-description: An introduction to parameters and compile-time metaprogramming.
+title: "Parameterization"
+description: Creating and using parameterized structs and functions.
 ---
 
-Many languages have facilities for *metaprogramming*: that is, for writing code that
-generates or modifies code. Python has facilities for dynamic metaprogramming: features
-like decorators, metaclasses, and many more. These features make Python very flexible
-and productive, but since they're dynamic, they come with runtime overhead. Other
-languages have static or compile-time metaprogramming features, like C preprocessor
-macros and C++ templates. These can be limiting and hard to use.
+Many programming languages offer systems for writing generic or polymorphic
+code, which let you write code once, and generate efficient, specialized
+code at compile time.
 
-To support Modular's work in AI, Mojo aims to provide powerful, easy-to-use
-metaprogramming with zero runtime cost. This compile-time metaprogramming uses
-the same language as runtime programs, so you don't have to learn a new
-language—just a few new features.
+Mojo's compile-time parameter system lets you define reusable code. A parameter
+is a compile-time input to a struct or function. Parameters appear in square
+brackets after the struct or function name. Parameters can take ordinary
+values, like `Int` or `String`:
 
-The main new feature is *parameters*. You can think of a parameter as a
-compile-time variable that becomes a runtime constant. This usage of "parameter"
-is probably different from what you're used to from other languages, where
-"parameter" and "argument" are often used interchangeably. In Mojo, "parameter"
-and "parameter expression" refer to compile-time values, and "argument" and
-"expression" refer to runtime values.
+```mojo
+def multiplier[factor: Int](x: Int):
+    return x * factor
 
-In Mojo, you can add parameters to a struct or function. You can also define
-named parameter expressions—`comptime` values—that you can use as runtime
-constants.
+def main():
+    comptime times_ten = multiplier[10]
+    x10 = times_ten(3)
+```
+
+Parameters can also take _types_ as values, so you can write generic code that
+works for multiple data types:
+
+```mojo
+struct MyList[T: AnyType]:
+    # ... implementation omitted
+
+def main():
+    var l = MyList[Int]()
+```
+
+Mojo's parameters are similar to C++ template parameters or Rust generic
+parameters.
+
+In Mojo, "parameter" and "parameter expression" refer to compile-time values,
+and "argument" and "expression" refer to dynamic values—which can be evaluated
+either at compile time or at run time. This usage of "parameter" is probably
+different from what you're used to from other languages, where "parameter" and
+"argument" are often used interchangeably.
+
+In addition to parameterizing structs and functions, you can also define
+parameterized `comptime` values.
 
 ## Parameterized functions
 
@@ -81,12 +99,18 @@ intermediate representation in [MLIR](https://mlir.llvm.org/).
 If the compiler can't resolve all parameter values to constant values,
 compilation fails.
 
-## Anatomy of a parameter list
+### Overloading on parameters
+
+Functions and methods can be overloaded on their parameter signatures. For
+information on overload resolution, see
+[Overloaded functions](/mojo/manual/functions#overloaded-functions).
+
+## Parameters at a glance
 
 Parameters to a function or struct appear in square brackets after a function
 or struct name. Parameters always require type annotations.
 
-When you're looking at a function or struct definition, you may
+When you're looking at a function or struct signature, you may
 see some special characters such as `/` and `*` in the parameter list.
 Here's an example:
 
@@ -129,7 +153,7 @@ Here's a quick overview of the special characters in the parameter list:
 containers that can hold multiple types of values. For example,
 [`List`](/mojo/std/collections/list/List), can hold
 different types of values, so you can have a list of `Int` values, or
-a list of `String` values).
+a list of `String` values.
 
 In Mojo, generics use parameters to specify types. For example, `List`
 takes a type parameter, so a vector of integers is written `List[Int]`.
@@ -163,7 +187,7 @@ This updated function takes any `Writable` type, so you can pass it an `Int`,
 `String`, or `Bool` value.
 
 Note that there's a double-slash (`//`) in the parameter list after `MsgType`,
-to specify that it's an [infer-only parameter](#infer-only-parameters), so you
+to show that it's an [infer-only parameter](#infer-only-parameters), so you
 don't need to specify it explicitly. Instead, the compiler sees that the `msg`
 argument is an `Int` and *infers* the type from the value.
 
@@ -276,83 +300,125 @@ fn on_instance():
     print(x.dtype)  # prints int32
 ```
 
-:::note Works for comptime members too
+### `comptime` members
 
-Although you may not have seen [`comptime` members](#comptime-members) yet,
-they're another type of compile-time value attached to a struct,
-and they can be accessed the same way.
+You can also define `comptime` values as members of a `struct` or `trait`
+declaration:
 
-:::
+```mojo
+struct Circle[radius: Float64]:
+    comptime pi = 3.14159265359
+    comptime circumference = 2 * Self.pi * Self.radius
+```
 
-### Conditional conformance
+These `comptime` members have a number of uses:
 
-When creating a generic struct, you might want to define some methods that
-require extra features. For example, consider a collection like `GenericArray`
-that holds instances of a type that conforms to the
-[`Copyable`](/mojo/std/builtin/value/Copyable) trait. This imposes a lot
-of limitations: you can't implement a `sort()` method because you can't
-guarantee that the stored type supports the comparison operators; you can't
-write a useful `write_to()` or `write_repr_to()` method because you can't
-guarantee that the stored type supports conversion to a string.
+- Constant values specific to the type.
+- Constant values calculated based on the struct's parameters.
+- Associated types based on the struct's parameters.
 
-The answer to these issues is *conditional conformance*, which lets you define a
-method that requires additional features. You do this by defining the `self`
-value that has a more specific bound on one or more of its parameters.
+The difference between parameters and `comptime` members is that parameter
+values are specified by the user, but `comptime` members represent either
+constant values or values derived from the input parameters.
 
-For example, the following code defines a `Container` type that holds an
-instance of a type conforming to `Movable`. It also defines a
-`write_to()` method that can only be called if the stored `ElementType` conforms
-to `Writable` as well as `Movable`:
+A trait can declare a `comptime` member, which must be defined by all conforming
+structs.
+
+Referencing `comptime` members works just like referencing struct parameters—you
+can reference a member using dot syntax (such as `Self.IteratorType`).
+
+#### `comptime` members as enumerations
+
+Some Mojo types use `comptime` members to express enumerations. For example, the
+following code defines a `Sentiment` type that defines `comptime` constants
+for different sentiment values:
 
 ```mojo
 @fieldwise_init
-struct Container[ElementType: Movable & ImplicitlyDestructible]:
-    var element: Self.ElementType
+struct Sentiment(Equatable, ImplicitlyCopyable):
+    var _value: Int
 
-    def write_to[
-        StrElementType: Writable & Movable, //
-    ](self: Container[StrElementType], mut writer: Some[Writer]) raises:
-      self.element.write_to(writer)
+    comptime NEGATIVE = Sentiment(0)
+    comptime NEUTRAL = Sentiment(1)
+    comptime POSITIVE = Sentiment(2)
 
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
 
-def main() raises:
-    float_container = Container(5.0)
-    string_container = Container("Hello")
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
 
-    var string = String()
-    float_container.write_to(string)
-    print(string)
-
-    string = {}
-    string_container.write_to(string)
-    print(string)
+fn is_happy(s: Sentiment):
+    if s == Sentiment.POSITIVE:
+        print("Yes. 😀")
+    else:
+        print("No. ☹️")
 ```
 
-```output
-5.0
-Hello
-```
+This pattern provides a type-safe enumeration.
 
-Note the signature of the `write_to()` method, which declares the `self` argument
-with a more specific type. Specifically, it declares that it takes a `Container`
-with an `ElementType` that conforms to the `Writable` and `Movable`
-traits.
+The [`DType`](/mojo/std/builtin/dtype/DType) struct implements a simple enum
+using `comptime` members like this. This allows clients to use values like
+`DType.float32` in parameter expressions or runtime expressions.
+
+#### `comptime` members as associated types
+
+Associated types are a common use for `comptime` members. For example, a
+`List[T]` struct holds values of type `T`. The list's `__iter__()` method
+returns a list iterator that returns values of type `T`. `List` uses a
+`comptime` member, `IteratorType`, to define the type of the returned iterator.
+
+The following code excerpt shows a simplified version of some of the `List`
+code, showing the `List` and its associated `IteratorType`:
 
 ```mojo
-def write_to[StrElementType: Writable & Movable, //](
-        self: Container[StrElementType], mut writer: Some[Writer]) raises:
+@fieldwise_init
+struct _ListIter[
+    mut: Bool,
+    //,
+    T: Copyable,
+    origin: Origin[mut],
+](ImplicitlyCopyable, Iterable, Iterator):
+
+    comptime Element = Self.T  # Required by the Iterator trait
+
+    var index: Int
+    var src: Pointer[List[Self.Element], Self.origin]
+
+    # ... implementation omitted
+
+struct List[T: Copyable](
+    Boolable, Copyable, Defaultable, Iterable, Sized
+):
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _ListIter[Self.T, iterable_origin]
+
+    # ... code omitted
+
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return {0, Pointer(to=self)}
+
+    # ... code omitted
 ```
 
-The trait bound on `StrElementType` must include `ElementType`'s original trait
-(`Movable` in this case), either by composition or by refinement. The trait
-composition `Writable & Movable` includes the original trait. You could also use
-a trait that refines `Movable`.
+The `IteratorType` member is parameterized on an origin, so it can
+represent both mutable and immutable iterators.
 
-Note that the `main()` function calls the `write_to()` method directly,
-rather than calling `String(float_container)`. One current limitation of
-conditional conformance is that Mojo can't recognize the struct
-`Container[Int]` as conforming to `Writable`, even though the `write_to()`
-method is implemented for any `ElementType` that's also `Writable`.
+
+### Struct methods
+
+A struct's method can take its own parameters. For example, the `SIMD.slice()`
+method takes a `size` parameter:
+
+```mojo
+var m = SIMD[DType.int32](1, 3, 5, 7)
+var n = m.slice[2]()
+print(n)  # prints [1, 3]
+```
+
+A struct's lifecycle methods (`__init__()` and `__del__()`) are an exception to
+this rule—they can't take parameters.
 
 ### Case study: the SIMD type
 
@@ -360,13 +426,13 @@ For a real-world example of a parameterized type, let's look at the
 [`SIMD`](/mojo/std/builtin/simd/SIMD) type from Mojo's standard library.
 
 [Single instruction, multiple data (SIMD)](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data)
-is a parallel processing technology built into many modern CPUs,
-GPUs, and custom accelerators. SIMD allows you to perform a single operation on
-multiple pieces of data at once. For example, if you want to take the square
-root of each element in an array, you can use SIMD to parallelize the work.
+is a parallel processing technology built into many modern CPUs, GPUs, and
+custom accelerators. SIMD allows you to perform a single operation on multiple
+pieces of data at once. For example, if you want to take the square root of each
+element in an array, you can use SIMD to parallelize the work.
 
 Processors implement SIMD using low-level vector registers in hardware that hold
-multiple instances of a scalar data type. In order to use the SIMD instructions
+multiple instances of a scalar data type. To use the SIMD instructions
 on these processors, the data must be shaped into the proper SIMD width
 (data type) and length (vector size). Processors may support 512-bit or
 longer SIMD vectors, and support many data types from 8-bit integers to 64-bit
@@ -374,8 +440,8 @@ floating point numbers, so it's not practical to define all of the possible SIMD
 variations.
 
 Mojo's [`SIMD`](/mojo/std/builtin/simd/SIMD) type (defined as a struct)
-exposes the common SIMD operations through its methods, and makes the SIMD data
-type and size values parametric. This allows you to directly map your data to
+exposes the common SIMD operations through its methods, and takes the SIMD data
+type and size values as parameters. This allows you to directly map your data to
 the SIMD vectors on any hardware.
 
 Here's a cut-down (non-functional) version of Mojo's `SIMD` type definition:
@@ -424,18 +490,12 @@ it's valid to write this out (as shown in the return type of `splat()`), this
 can be verbose, so we recommend using the `Self` type (from
 [PEP673](https://peps.python.org/pep-0673/)) like the `__add__` example does.
 
-## Overloading on parameters
-
-Functions and methods can be overloaded on their parameter signatures. For
-information on overload resolution, see
-[Overloaded functions](/mojo/manual/functions#overloaded-functions).
-
 ## Using parameterized types and functions
 
-You can use parametric types and functions by passing values to the
-parameters in square brackets. For example, for the `SIMD` type above, `type`
-specifies the data type and `size` specifies the length of the SIMD vector (it
-must be a power of 2):
+You can use parameterized types and functions by passing values to the
+parameters in square brackets. For example, for the `SIMD` type above, `dtype`
+specifies the data type and `size` specifies the length of the SIMD vector
+(which must be a power of 2):
 
 ```mojo
 def main() raises:
@@ -461,22 +521,22 @@ def main() raises:
 ```
 
 ```output
-small_vec type: float32 length: 4
-bigger_vec2 type: float32 length: 32
+small_vec DType: float32 size: 4
+bigger_vec2 DType: float32 size: 32
 ```
 
 Note that the `cast()` method also needs a parameter to specify the type you
-want from the cast (the method definition above expects a `target` parametric
+want from the cast (the method definition above expects a `target` parameter
 value). Thus, just as the `SIMD` struct is a generic type definition, the
 `cast()` method is a generic method definition. At compile time, the compiler
 creates a concrete version of the `cast()` method with the target parameter
 bound to `DType.float32`.
 
 The code above shows the use of concrete types (that is, the parameters are all
-bound to known values). But the major power of parameters comes from the
-ability to define parametric algorithms and types (code that uses the parameter
-values). For example, here's how to define a parametric algorithm with `Scalar`
-that is datatype agnostic:
+bound to known values). But the major power of parameters comes from the ability
+to define parameterized algorithms and types (code that uses the parameter
+values). For example, here's how to define a parameterized algorithm with
+`Scalar` that is datatype agnostic:
 
 ```mojo
 from std.math import sqrt
@@ -493,33 +553,18 @@ def main() raises:
 0.154296875
 ```
 
-Notice that the `x` argument is a `Scalar` type that's parameterized
-based on the `dt` function parameter. And note that the actual call to `rsqrt()`
-doesn't specify the `dt` parameter, because it can be *inferred* from the
-argument's type (here, `Scalar[DType.float16]`).
-
 ### Parameter inference
 
 The Mojo compiler can often *infer* parameter values, so you don't always have
-to specify them. For example, you can call the `rsqrt()` function defined above
-without specifying the `dt` parameter:
+to specify them. For example, in the previous section, this is how we called
+the parameterized `rsqrt()` function:
 
 ```mojo
-from std.math import sqrt
-
-fn rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
-    return 1 / sqrt(x)
-
-def main() raises:
-    var v = Scalar[DType.float16](33)
-    print(rsqrt(v))
+var v = Scalar[DType.float16](42)
+print(rsqrt(v))
 ```
 
-```output
-0.174072265625
-```
-
-The compiler infers the `dt` parameter based on the parametric `v`
+The compiler infers the `dt` parameter based on the type of the `v`
 value passed into it, as if you wrote `rsqrt[DType.float16](v)` explicitly.
 Figure 1 shows a mental model for how parameter inference works.
 
@@ -613,7 +658,16 @@ Argument Deduction (CTAD).
 
 :::
 
-## Optional parameters and keyword parameters
+## Parameter declarations
+
+When you declare parameters on a struct or function, you have many of the same
+options as you have with arguments—you can define optional parameters with
+default values; keyword-only parameters; and variadic parameters.
+
+In addition, you can define *infer-only parameters*, which provide a flexible
+way of defining dependencies between parameterized types.
+
+### Optional parameters and keyword parameters
 
 Just as you can specify [optional
 arguments](/mojo/manual/functions#optional-arguments) in function signatures,
@@ -639,17 +693,17 @@ fn use_defaults():
     speak[msg="baaa"]()  # prints 'baaa 3'
 ```
 
-Recall that when a parametric function is called, Mojo can
+Recall that when a parameterized function is called, Mojo can
 [infer the parameter values](#parameter-inference). That is, it can determine
 its parameter values from the parameters attached to an argument. If the
-parametric function also has a default value defined, then the inferred
+parameterized function also has a default value defined, then the inferred
 parameter value takes precedence.
 
-For example, in the following code, we update the parametric `speak[]()` function
-to take an argument with a parametric type. Although the function has a default
-parameter value for `a`, Mojo instead uses the inferred `a` parameter value
-from the `bar` argument (as written, the default `a` value can never be used,
-but this is just for demonstration purposes):
+For example, in the following code, we update the parameterized `speak[]()`
+function to take an argument with a parameterized type. Although the function
+has a default parameter value for `a`, Mojo instead uses the inferred `a`
+parameter value from the `bar` argument (as written, the default `a` value can
+never be used, but this is just for demonstration purposes):
 
 ```mojo
 @fieldwise_init
@@ -687,7 +741,40 @@ arguments](/mojo/manual/functions#positional-only-and-keyword-only-arguments).
 
 :::
 
-## Infer-only parameters
+
+### Variadic parameters
+
+Mojo also supports variadic parameters, similar to
+[Variadic arguments](/mojo/manual/functions#variadic-arguments):
+
+```mojo
+struct MyTensor[*dimensions: Int]:
+    pass
+```
+
+Variadic parameters currently have some limitations that variadic arguments don't have:
+
+- Variadic parameters must be homogeneous—that is, all the values must be the
+  same type.
+
+- The parameter type must be register-passable.
+
+- The parameter values aren't automatically projected into a list, so you
+  need to construct the list (in this case, a `VariadicParamList`) explicitly:
+
+  ```mojo
+  def sum_params[*values: Int]() -> Int:
+      comptime list = VariadicParamList[*values]()
+      var sum = 0
+      for v in list:
+          sum += v
+      return sum
+  ```
+
+Variadic keyword parameters (for example, `**kwparams`) are
+not supported yet.
+
+### Infer-only parameters
 
 Sometimes you need to declare functions where parameters depend on other
 parameters. Because the signature is processed left to right, a parameter can
@@ -720,7 +807,7 @@ placed at the **beginning** of the parameter list, set off from other parameters
 by the `//` sigil:
 
 ```mojo
-fn example[type: Copyable, //, list: List[type]]()
+fn example[T: Copyable, //, list: List[T]]()
 ```
 
 Transforming `dtype` into an infer-only parameter solves this problem:
@@ -745,7 +832,7 @@ to infer the infer-only values from bound parameters or arguments.
 There are sometimes cases where it's useful to specify an infer-only parameter
 by keyword. For example, the
 [`Span`](/mojo/std/memory/span/Span/) type
-is parametric on [origin](/mojo/manual/values/lifetimes):
+is parameterized on [origin](/mojo/manual/values/lifetimes):
 
 ```mojo
 struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]]:
@@ -765,39 +852,6 @@ def mutate_span(span: Span[mut=True, Byte, ...]) raises:
 
 If the compiler can't infer the value of an infer-only parameter, and it's not
 specified by keyword, compilation fails.
-
-## Variadic parameters
-
-Mojo also supports variadic parameters, similar to
-[Variadic arguments](/mojo/manual/functions#variadic-arguments):
-
-```mojo
-struct MyTensor[*dimensions: Int]:
-    pass
-```
-
-Variadic parameters currently have some limitations that variadic arguments
-don't have:
-
-- Variadic parameters must be homogeneous—that is, all the values must be the
-  same type.
-
-- The parameter type must be register-passable.
-
-- The parameter values aren't automatically projected into a
-  `VariadicParamList`, so you need to construct the list explicitly:
-
-```mojo
-fn sum_params[*values: Int]() -> Int:
-    comptime list = VariadicParamList(values)
-    var sum = 0
-    for v in list:
-        sum += v
-    return sum
-```
-
-Variadic keyword parameters (for example, `**kwparams`) are
-not supported yet.
 
 ## Parameter expressions are just Mojo code
 
@@ -826,10 +880,6 @@ fn concat[
     comptime for j in range(rh_size):
         result[ls_size + j] = rhs[j]
     return result
-```
-
-```output
-result type: float32 length: 4
 ```
 
 Note that the resulting length is the sum of the input vector lengths, and this
@@ -884,46 +934,10 @@ that its condition be a valid parameter expression, and ensures that only the
 live branch of the `if` statement is compiled into the program. This is similar
 to use of the `comptime for` loop shown earlier.
 
-## `comptime`: named parameter expressions
 
-It is very common to want to *name* compile-time values. Whereas `var` defines a
-runtime value, we need a way to define a
-compile-time temporary value. For this, Mojo uses a `comptime` declaration. At its
-simplest, `comptime` can be used to define a constant value:
+## Parameterized `comptime` values
 
-```mojo
-comptime rows = 512
-```
-
-A `comptime` value is always evaluated at compile time, so you can use
-`comptime` to force a function to run at compile time. You can use this to
-calculate constant values based on information available at compile time, such
-as hardware parameters.
-
-```mojo
-comptime block_size = _calculate_block_size()
-```
-
-Types are another common use for `comptime` values. Because types are
-compile-time expressions, you can use a `comptime` value as a shorthand (a type
-alias or "typedef") for a parameterized type:
-
-```mojo
-comptime Float16 = SIMD[DType.float16, 1]
-comptime UInt8 = SIMD[DType.uint8, 1]
-
-var x: Float16 = 0  # Float16 works like a "typedef"
-```
-
-(These aliases and others are actually defined in the
-[`simd` module](/mojo/std/builtin/simd/#comptime-values).)
-
-Like `var` variables, `comptime` values obey scope, and you can use local
-`comptime` values within functions as you'd expect.
-
-### Parametric `comptime` values
-
-A *parametric `comptime` value* is a compile-time expression that takes a
+A *parameterized `comptime` value* is a compile-time expression that takes a
 list of parameters and returns a compile-time constant value:
 
 ```mojo
@@ -932,7 +946,7 @@ comptime AddOne[a: Int] : Int = a + 1
 comptime nine = AddOne[8]
 ```
 
-As you can see in the previous example, a parametric `comptime` value is a
+As you can see in the previous example, a parameterized `comptime` value is a
 little like a *compile-time-only function*. A regular function or method can
 also be invoked at compile time:
 
@@ -943,7 +957,7 @@ fn add_one(a: Int) -> Int:
 comptime ten = add_one(9)
 ```
 
-A major difference between a function and a parametric `comptime` value is that
+A major difference between a function and a parameterized `comptime` value is that
 the value of a `comptime` expression can be a type, while a function can't
 return a type as a value.
 
@@ -956,7 +970,7 @@ fn int_type() -> AnyType:
 comptime IntType = Int
 ```
 
-Because a `comptime` value can be a type, you can use parametric `comptime`
+Because a `comptime` value can be a type, you can use parameterized `comptime`
 values to express new types:
 
 ```mojo
@@ -967,12 +981,13 @@ comptime StringKeyDict[ValueType: Copyable & ImplicitlyDestructible] = Dict[Stri
 var b: StringKeyDict[UInt8] = {"answer": 42}
 ```
 
-Parametric `comptime` declarations support the same features as parameterized
+Parameterized `comptime` declarations support the same features as parameterized
 structs or functions: infer-only parameters, keyword-only and optional
 parameters, [automatic parameterization](#automatic-parameterization), and so
 on.
 
 ```mojo
+def main():
     comptime Floats[size: Int, half_width: Bool = False] = SIMD[
         (DType.float16 if half_width else DType.float32), size
     ]
@@ -980,124 +995,15 @@ on.
     var half_floats = Floats[2, True](10.0, 12.0)
 ```
 
-### `comptime` members
-
-You can also define `comptime` values as members of a `struct` or `trait`
-declaration:
-
-```mojo
-struct Circle[radius: Float64]:
-    comptime pi = 3.14159265359
-    comptime circumference = 2 * Self.pi * Self.radius
-```
-
-These `comptime` members have a number of uses:
-
-- Constant values specific to the type.
-- Constant values calculated based on the struct's parameters.
-- Associated types based on the struct's parameters.
-
-The difference between parameters and `comptime` members is that parameter values
-are specified by the user, but `comptime` members represent either constant
-values or values derived from the input parameters.
-
-A trait can declare a `comptime` member, which must be defined by all conforming
-structs.
-
-:::note Referencing comptime members
-
-Referencing `comptime` members works just like referencing parameters—you can
-reference a member using dot syntax (such as `Self.IteratorType`). For more
-information, see
-[Referencing struct parameters](#referencing-struct-parameters).
-
-:::
-
-#### `comptime` members as enumerations
-
-Some Mojo types use `comptime` members to express enumerations. For example, the
-following code defines a `Sentiment` type that defines `comptime` constants
-for different sentiment values:
-
-```mojo
-@fieldwise_init
-struct Sentiment(Equatable, ImplicitlyCopyable):
-    var _value: Int
-
-    comptime NEGATIVE = Sentiment(0)
-    comptime NEUTRAL = Sentiment(1)
-    comptime POSITIVE = Sentiment(2)
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
-fn is_happy(s: Sentiment):
-    if s == Sentiment.POSITIVE:
-        print("Yes. 😀")
-    else:
-        print("No. ☹️")
-```
-
-This pattern provides a type-safe enumeration.
-
-The [`DType`](/mojo/std/builtin/dtype/DType) struct implements a simple enum
-using `comptime` members like this. This allows clients to use values like
-`DType.float32` in parameter expressions or runtime expressions.
-
-#### `comptime` members as associated types
-
-Associated types are a common use for `comptime` members. For example, a `List[T]`
-struct holds values of type `T`. The list's `__iter__()` method returns a list
-iterator that returns values of type `T`. `List` uses a `comptime` member,
-`IteratorType`, to define the type of the returned iterator.
-
-The following code excerpt shows a simplified version of some of the `List`
-code, showing the `List` and its associated `IteratorType`:
-
-```mojo
-@fieldwise_init
-struct _ListIter[
-    mut: Bool,
-    //,
-    T: Copyable,
-    origin: Origin[mut],
-](ImplicitlyCopyable, Iterable, Iterator):
-
-    comptime Element = Self.T  # Required by the Iterator trait
-
-    var index: Int
-    var src: Pointer[List[Self.Element], Self.origin]
-
-    # ... implementation omitted
-
-struct List[T: Copyable](
-    Boolable, Copyable, Defaultable, Iterable, Sized
-):
-    comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
-    ]: Iterator = _ListIter[Self.T, iterable_origin]
-
-    # ... code omitted
-
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
-        return {0, Pointer(to=self)}
-
-    # ... code omitted
-```
-
-The `IteratorType` member is parameterized on an origin, so it can
-represent both mutable and immutable iterators.
+<a id="fully-bound-partially-bound-and-unbound-types"></a>
 
 ## Fully-bound, partially-bound, and unbound types
 
-A parametric type with its parameters specified is said to be *fully-bound*.
+A parameterized type with its parameters specified is said to be *fully-bound*.
 That is, all of its parameters are bound to values. As mentioned before, you can
 only instantiate a fully-bound type (sometimes called a *concrete type*).
 
-However, parametric types can be *unbound* or *partially bound* in some
+However, parameterized types can be *unbound* or *partially bound* in some
 contexts. For example, you can use `comptime` to create a type alias to a
 partially-bound type to create a new type that requires fewer parameters:
 
@@ -1111,17 +1017,17 @@ underscore `_` in the parameter list indicates that the second parameter,
 `V` (the value type), is unbound.
 You specify the `V` parameter later, when you use `StringKeyDict`.
 
-:::note Partially-bound types versus parametric comptime values
+:::note Partially-bound types versus parameterized comptime values
 
 You may notice that this example is very similar to an example in the section on
-[parametric `comptime` values](#parametric-comptime-values). For simple type
-aliases like this, you can use either a partially-bound type or a parametric
-`comptime` value. Parametric `comptime` values provide a more flexible way to
+[parameterized `comptime` values](#parameterized-comptime-values). For simple type
+aliases like this, you can use either a partially-bound type or a parameterized
+`comptime` value. Parameterized `comptime` values provide a more flexible way to
 define type aliases, since you can define the order of the parameters, add
 default values, and so on.
 
 Partially-bound and unbound types can provide a handy shortcut when defining
-parametric functions and `comptime` values, called
+parameterized functions and `comptime` values, called
 [automatic parameterization](#automatic-parameterization).
 
 :::
@@ -1173,9 +1079,9 @@ When a parameter is explicitly unbound with the `_`, or `...` expressions,
 you **must** specify a value for that parameter to use the type.
 The default values of explicitly unbound parameters are ignored.
 
-Partially-bound and unbound parametric types can be used in some contexts where
+Partially-bound and unbound parameterized types can be used in some contexts where
 the missing (unbound) parameters will be supplied later—such as in
-[`comptime` values](#comptime-named-parameter-expressions) and
+[`comptime` values](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-values) and
 [automatically parameterized functions](#automatic-parameterization).
 
 ### Omitted parameters
@@ -1217,7 +1123,7 @@ explicitly unbound parameters in the future.
 
 ## Automatic parameterization
 
-Mojo supports "automatic" parameterization of functions and parametric
+Mojo supports "automatic" parameterization of functions and parameterized
 `comptime` values. If a function argument type or parameter type is
 [partially-bound or unbound](#fully-bound-partially-bound-and-unbound-types),
 the unbound parameters are automatically added as parameters on the
@@ -1298,7 +1204,7 @@ compact than writing the equivalent `SIMD[v1.dtype, v1.size]`.
 ### Automatic parameterization of parameters
 
 You can also take advantage of automatic parameterization in the parameter list
-of a function or parametric `comptime` value. For example:
+of a function or parameterized `comptime` value. For example:
 
 ```mojo
 fn foo[value: SIMD]():
@@ -1309,7 +1215,7 @@ fn foo[dtype: DType, size: Int, //, value: SIMD[dtype, size]]():
     pass
 ```
 
-Here's another example using a parametric `comptime` value:
+Here's another example using a parameterized `comptime` value:
 
 ```mojo
 comptime Foo[S: SIMD] = Bar[S]
@@ -1329,8 +1235,7 @@ For example, suppose we have a `Fudge` struct with three parameters:
 ```mojo
 @fieldwise_init
 struct Fudge[sugar: Int, cream: Int, chocolate: Int = 7](Writable):
-    fn write_to(self, mut writer: Some[Writer]):
-      t"Fudge ({Self.sugar},{Self.cream},{Self.chocolate})".write_to(writer)
+    pass
 ```
 
 We can write a function that takes a `Fudge` argument with just one bound
@@ -1422,7 +1327,7 @@ Devoured Fudge (4,6,8)
 ## The `rebind()` builtin
 
 One of the consequences of Mojo not performing function instantiation in the
-parser like C++ is that Mojo cannot always figure out whether some parametric
+parser like C++ is that Mojo cannot always figure out whether some parameterized
 types are equal and complain about an invalid conversion. This typically occurs
 in static dispatch patterns. For example, the following code won't compile:
 

@@ -59,7 +59,7 @@ struct UMMAKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
     """MXF4NVF4 type."""
 
     @always_inline("nodebug")
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         """Convert UMMA kind to an integer value.
 
         Returns:
@@ -68,7 +68,7 @@ struct UMMAKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
         return Int(self._value)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Check if two UMMA kinds are equal.
 
         Args:
@@ -80,7 +80,7 @@ struct UMMAKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
         return self._value == other._value
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Check if two UMMA kinds are not equal.
 
         Args:
@@ -91,18 +91,8 @@ struct UMMAKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
         """
         return self._value != other._value
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Convert UMMA kind to a string, this can be used as the instruction qualifier.
-
-        Returns:
-            The PTX qualifier representation of the UMMA kind.
-        """
-        return String.write(self)
-
     @always_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write the UMMA kind to a writer.
 
         Args:
@@ -127,7 +117,7 @@ struct UMMAKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
 
 
 @always_inline
-fn _constrained_mma_m[
+def _constrained_mma_m[
     mma_m: Int,
     mma_m_valid: Tuple[Int, Int],
     mma_kind: UMMAKind,
@@ -158,7 +148,7 @@ fn _constrained_mma_m[
 
 
 @always_inline
-fn _constrained_mma_n[
+def _constrained_mma_n[
     mma_n: Int,
     mma_n_range: Tuple[Int, Int],
     multiple_of: Int,
@@ -199,7 +189,7 @@ fn _constrained_mma_n[
 
 
 @always_inline
-fn _get_f16_mma_shape[
+def _get_f16_mma_shape[
     output_shape: IndexList[2, element_type=DType.uint32],
     /,
     *,
@@ -275,7 +265,7 @@ fn _get_f16_mma_shape[
 
 
 @always_inline
-fn _get_tf32_mma_shape[
+def _get_tf32_mma_shape[
     output_shape: IndexList[2, element_type=DType.uint32],
     /,
     *,
@@ -352,7 +342,7 @@ fn _get_tf32_mma_shape[
 
 
 @always_inline
-fn _get_f8f6f4_mma_shape[
+def _get_f8f6f4_mma_shape[
     output_shape: IndexList[2, element_type=DType.uint32],
     /,
     *,
@@ -431,7 +421,7 @@ fn _get_f8f6f4_mma_shape[
 
 
 @always_inline
-fn _get_mxf8f6f4_mma_shape[
+def _get_mxf8f6f4_mma_shape[
     output_shape: IndexList[2, element_type=DType.uint32],
     /,
     *,
@@ -547,7 +537,7 @@ struct UMMAInsDescriptor[
     - Bits 30-31: Maximum shift while attempting B matrix (2 bits)
     """
 
-    fn __init__(out self, value: UInt32):
+    def __init__(out self, value: UInt32):
         """Initialize descriptor with raw 32-bit value.
 
         This constructor allows creating a descriptor directly from a 32-bit integer
@@ -559,7 +549,7 @@ struct UMMAInsDescriptor[
         self.desc = value
 
     @staticmethod
-    fn _insert_bit[start_bit: Int](desc: UInt32, val: UInt32) -> UInt32:
+    def _insert_bit[start_bit: Int](desc: UInt32, val: UInt32) -> UInt32:
         """Insert bits at specified position in descriptor.
 
         Parameters:
@@ -576,7 +566,7 @@ struct UMMAInsDescriptor[
         return desc | (val << UInt32(start_bit))
 
     @staticmethod
-    fn _create_tf32_desc[
+    def _create_tf32_desc[
         d_type: DType, a_type: DType, b_type: DType
     ]() -> UInt32:
         """Create a descriptor for TF32 UMMA instructions.
@@ -612,7 +602,7 @@ struct UMMAInsDescriptor[
         return desc
 
     @staticmethod
-    fn _create_f16_desc[
+    def _create_f16_desc[
         d_type: DType, a_type: DType, b_type: DType
     ]() -> UInt32:
         """Create a descriptor for F16 UMMA instructions.
@@ -658,7 +648,7 @@ struct UMMAInsDescriptor[
         return desc
 
     @staticmethod
-    fn _create_f8f6f4_desc[
+    def _create_f8f6f4_desc[
         d_type: DType, a_type: DType, b_type: DType
     ]() -> UInt32:
         """Create a descriptor for F8F6F4 UMMA instructions.
@@ -706,7 +696,7 @@ struct UMMAInsDescriptor[
         return desc
 
     @staticmethod
-    fn _create_mxf8f6f4_desc[
+    def _create_mxf8f6f4_desc[
         d_type: DType, a_type: DType, b_type: DType, scale_type: DType
     ]() -> UInt32:
         """Create a descriptor for MXF8F6F4 UMMA instructions.
@@ -759,7 +749,7 @@ struct UMMAInsDescriptor[
         return desc
 
     @staticmethod
-    fn _create_mxf4_mxf4nvf4_desc[
+    def _create_mxf4_mxf4nvf4_desc[
         d_type: DType, a_type: DType, b_type: DType, scale_type: DType
     ]() -> UInt32:
         """Create a descriptor for MXF4/MXF4NVF4 UMMA instructions.
@@ -810,7 +800,7 @@ struct UMMAInsDescriptor[
         return desc
 
     @staticmethod
-    fn create[
+    def create[
         d_type: DType,
         a_type: DType,
         b_type: DType,
@@ -874,7 +864,7 @@ struct UMMAInsDescriptor[
             )
 
     @staticmethod
-    fn create[
+    def create[
         d_type: DType,
         a_type: DType,
         b_type: DType,
@@ -939,7 +929,7 @@ struct UMMAInsDescriptor[
             )
 
     @staticmethod
-    fn update_desc_with_sf_id[
+    def update_desc_with_sf_id[
         sf_id: UInt32
     ](inst_desc: UMMAInsDescriptor[Self.mma_kind],) -> Self:
         """Update the descriptor with the scale factor ID.
@@ -999,7 +989,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
     """Mask with the lower 14 bits set."""
 
     @always_inline
-    fn __init__(out self, val: UInt64):
+    def __init__(out self, val: UInt64):
         """Initialize descriptor with raw 64-bit value.
 
         This constructor allows creating a descriptor directly from a 64-bit integer
@@ -1013,7 +1003,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
         self.desc = val
 
     @always_inline
-    fn _insert_bit[start_bit: Int](self, val: UInt64) -> Self:
+    def _insert_bit[start_bit: Int](self, val: UInt64) -> Self:
         """Insert bits at specified position in descriptor.
 
         Parameters:
@@ -1029,7 +1019,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
 
     @staticmethod
     @always_inline
-    fn create[
+    def create[
         stride_byte_offset: Int,
         leading_byte_offset: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -1051,7 +1041,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
         # TMA enumerates no swizzle, 32, 64, 128B as 0, 1, 2, 3.
         # WGMMA enumerates these as 0, 3, 2, 1.
         @parameter
-        fn _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
+        def _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
             comptime if mode == TensorMapSwizzle.SWIZZLE_NONE:
                 return 0
             elif mode == TensorMapSwizzle.SWIZZLE_32B:
@@ -1096,7 +1086,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
         return desc
 
     @always_inline
-    fn __iadd__(mut self, offset: Int):
+    def __iadd__(mut self, offset: Int):
         """Add offset to descriptor's base address in-place.
 
         Args:
@@ -1105,7 +1095,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
         self = self + offset
 
     @always_inline
-    fn __add__(self, offset: Int) -> Self:
+    def __add__(self, offset: Int) -> Self:
         """Add offset to descriptor's base address.
 
         Args:
@@ -1153,7 +1143,7 @@ struct MMASmemDescriptorPair(TrivialRegisterPassable):
     """Mask with the lower 14 bits set."""
 
     @always_inline
-    fn __init__(out self, hi: UInt32, lo: UInt32):
+    def __init__(out self, hi: UInt32, lo: UInt32):
         """Initialize descriptor with raw 64-bit value.
 
         This constructor allows creating a descriptor directly from a 64-bit integer
@@ -1169,7 +1159,7 @@ struct MMASmemDescriptorPair(TrivialRegisterPassable):
         self.lo = lo
 
     @always_inline
-    fn _insert_bit[start_bit: Int](self, val: UInt32) -> Self:
+    def _insert_bit[start_bit: Int](self, val: UInt32) -> Self:
         """Insert bits at specified position in descriptor.
 
         Parameters:
@@ -1189,7 +1179,7 @@ struct MMASmemDescriptorPair(TrivialRegisterPassable):
 
     @staticmethod
     @always_inline
-    fn create[
+    def create[
         stride_byte_offset: Int,
         leading_byte_offset: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -1213,7 +1203,7 @@ struct MMASmemDescriptorPair(TrivialRegisterPassable):
         # TMA enumerates no swizzle, 32, 64, 128B as 0, 1, 2, 3.
         # WGMMA enumerates these as 0, 3, 2, 1.
         @parameter
-        fn _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
+        def _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
             comptime if mode == TensorMapSwizzle.SWIZZLE_NONE:
                 return 0
             elif mode == TensorMapSwizzle.SWIZZLE_32B:
@@ -1258,7 +1248,7 @@ struct MMASmemDescriptorPair(TrivialRegisterPassable):
         return desc
 
     @always_inline
-    fn __iadd__(mut self, offset: UInt32):
+    def __iadd__(mut self, offset: UInt32):
         """Add offset to descriptor's base address in-place.
 
         Args:
@@ -1267,7 +1257,7 @@ struct MMASmemDescriptorPair(TrivialRegisterPassable):
         self = self + offset
 
     @always_inline
-    fn __add__(self, offset: UInt32) -> Self:
+    def __add__(self, offset: UInt32) -> Self:
         """Add offset to descriptor's base address.
 
         Args:
@@ -1285,7 +1275,7 @@ struct MMASmemDescriptorPair(TrivialRegisterPassable):
 
 
 @always_inline
-fn mma[
+def mma[
     kind: UMMAKind,
     //,
     cta_group: Int = 1,
@@ -1376,7 +1366,7 @@ fn mma[
 
 
 @always_inline
-fn mma[
+def mma[
     kind: UMMAKind,
     //,
     cta_group: Int = 1,
@@ -1414,7 +1404,7 @@ fn mma[
     ), "Only MXF8F6F4 or MXF4NVF4 MMA kind supports block scale factors"
 
     @always_inline
-    fn _get_scale_vector_size[kind: UMMAKind]() -> String:
+    def _get_scale_vector_size[kind: UMMAKind]() -> String:
         var scale_vector_size = String(".block_scale")
 
         comptime if kind == UMMAKind.KIND_MXF4NVF4:
@@ -1470,7 +1460,7 @@ fn mma[
 
 
 @always_inline
-fn mma[
+def mma[
     kind: UMMAKind,
     //,
     cta_group: Int = 1,
@@ -1557,7 +1547,7 @@ fn mma[
 
 
 @always_inline
-fn mma[
+def mma[
     kind: UMMAKind,
     //,
     cta_group: Int = 1,
@@ -1643,7 +1633,7 @@ fn mma[
 
 
 @always_inline
-fn mma[
+def mma[
     kind: UMMAKind,
     //,
     cta_group: Int = 1,
@@ -1739,7 +1729,7 @@ fn mma[
 
 
 @always_inline
-fn mma_arrive[
+def mma_arrive[
     cta_group: Int = 1,
 ](mbar_ptr: UnsafePointer[_, _, address_space=AddressSpace.SHARED]):
     """Arrive at the mbar pointer for the MMA instruction.
@@ -1768,7 +1758,7 @@ fn mma_arrive[
 
 
 @always_inline
-fn mma_arrive_multicast[
+def mma_arrive_multicast[
     cta_group: Int = 1,
 ](
     mbar_ptr: UnsafePointer[_, _, address_space=AddressSpace.SHARED],

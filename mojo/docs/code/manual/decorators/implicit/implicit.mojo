@@ -16,18 +16,18 @@ struct MyInt:
     var value: Int
 
     @implicit
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.value = value
 
-    fn __init__(out self, value: Float64):
+    def __init__(out self, value: Float64):
         self.value = Int(value)
 
 
-fn func(n: MyInt):
+def func(n: MyInt):
     print("MyInt value: ", n.value)
 
 
-fn main():
+def main():
     func(Int(42))  # Implicit conversion from Int: OK
     func(MyInt(Float64(4.2)))  # Explicit conversion from Float64: OK
     # func(Float64(4.2))  # Error: can't convert Float64 to MyInt

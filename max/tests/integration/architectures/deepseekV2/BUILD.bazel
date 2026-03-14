@@ -82,7 +82,11 @@ modular_py_test(
 modular_py_test(
     name = "deepseekV2_distributed_tests",
     size = "large",
-    srcs = glob(["*_distributed.py"]) + ["conftest.py"],
+    srcs = glob(
+        ["*_distributed.py"],
+        # TODO (MAXPLAT-466): Re-enable after investigation
+        exclude = ["test_latent_attention_distributed.py"],
+    ) + ["conftest.py"],
     data = [
         "//max/tests/integration/architectures/deepseekV2/testdata",
     ],

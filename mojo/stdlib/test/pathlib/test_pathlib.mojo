@@ -101,11 +101,11 @@ def test_read_write_bytes() raises:
         assert_equal(List[Byte](data), file.read_bytes())
 
 
-fn get_user_path() -> Path:
+def get_user_path() -> Path:
     return Path("/home/user")
 
 
-fn get_current_home() -> String:
+def get_current_home() -> String:
     return std.os.env.getenv("HOME")
 
 

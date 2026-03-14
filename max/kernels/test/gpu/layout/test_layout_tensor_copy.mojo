@@ -26,8 +26,6 @@ from layout import *
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import (
-    UNKNOWN_VALUE,
-    LayoutTensor,
     binary_op_type,
     copy_dram_to_local,
     copy_dram_to_sram,
@@ -42,7 +40,7 @@ from std.utils import IndexList
 
 
 @always_inline
-fn add_op[
+def add_op[
     dtype: DType, width: Int
 ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return lhs + rhs
@@ -51,7 +49,7 @@ fn add_op[
 # ----------------------------------------------------------------------
 # async copy tests
 # ----------------------------------------------------------------------
-fn async_copy_kernel[
+def async_copy_kernel[
     input_layout: Layout,
     BM: Int,
     BN: Int,
@@ -75,7 +73,7 @@ fn async_copy_kernel[
     input_tile.copy_from(smem_tile)
 
 
-fn test_async_copy[
+def test_async_copy[
     layout: Layout, M: Int, N: Int, BM: Int, BN: Int
 ](ctx: DeviceContext) raises:
     print("=== test_async_copy")
@@ -143,7 +141,7 @@ def run_async_copy_tests(ctx: DeviceContext) raises:
 # ----------------------------------------------------------------------
 
 
-fn swizzle_copy[
+def swizzle_copy[
     dtype: DType,
     layout: Layout,
     BM: Int,
@@ -190,7 +188,7 @@ fn swizzle_copy[
     b_gmem_frag.copy_from(a_smem_frag)
 
 
-fn test_swizzle_copy[
+def test_swizzle_copy[
     layout: Layout,
     M: Int,
     K: Int,
@@ -309,7 +307,7 @@ def run_swizzle_copy_tests(ctx: DeviceContext) raises:
 
 
 @always_inline
-fn partial_copy_dram_to_sram_async_kernel[
+def partial_copy_dram_to_sram_async_kernel[
     layout: Layout,
     thread_layout: Layout,
     num_threads: Int,
@@ -348,7 +346,7 @@ fn partial_copy_dram_to_sram_async_kernel[
     )
 
 
-fn test_partial_copy_dram_to_sram_async[
+def test_partial_copy_dram_to_sram_async[
     layout: Layout,
     thread_layout: Layout,
     block_dim_x: Int,
@@ -415,7 +413,7 @@ def run_partial_copy_dram_to_sram_async_tests(ctx: DeviceContext) raises:
 
 
 @always_inline
-fn copy_dram_to_sram_kernel[
+def copy_dram_to_sram_kernel[
     layout: Layout,
     thread_layout: Layout,
     num_threads: Int,
@@ -453,7 +451,7 @@ fn copy_dram_to_sram_kernel[
     )
 
 
-fn test_copy_dram_to_sram[
+def test_copy_dram_to_sram[
     layout: Layout,
     thread_layout: Layout,
     block_dim_x: Int,
@@ -517,7 +515,7 @@ def run_copy_dram_to_sram_tests(ctx: DeviceContext) raises:
 
 
 @always_inline
-fn copy_sram_to_dram_kernel[
+def copy_sram_to_dram_kernel[
     dtype: DType,
     layout: Layout,
     M: Int,
@@ -553,7 +551,7 @@ fn copy_sram_to_dram_kernel[
     )
 
 
-fn test_copy_sram_to_dram[
+def test_copy_sram_to_dram[
     dtype: DType,
     layout: Layout,
     M: Int,
@@ -688,7 +686,7 @@ def run_copy_sram_to_dram_tests(ctx: DeviceContext) raises:
 
 
 @always_inline
-fn copy_local_to_local_kernel[
+def copy_local_to_local_kernel[
     dtype: DType,
     layout: Layout,
     WM: Int,
@@ -735,7 +733,7 @@ fn copy_local_to_local_kernel[
     )
 
 
-fn test_copy_local_to_local[
+def test_copy_local_to_local[
     dtype: DType,
     WM: Int,
     WN: Int,
@@ -831,7 +829,7 @@ def run_copy_local_to_local_tests(ctx: DeviceContext) raises:
 
 
 @always_inline
-fn copy_dram_to_local_kernel[
+def copy_dram_to_local_kernel[
     layout: Layout, num_threads: Int, block_dim_count: Int
 ](
     input: LayoutTensor[DType.float32, layout, MutAnyOrigin],
@@ -872,7 +870,7 @@ fn copy_dram_to_local_kernel[
     )
 
 
-fn test_copy_dram_to_local[
+def test_copy_dram_to_local[
     layout: Layout,
     block_dim_x: Int,
     block_dim_y: Int = 1,
@@ -945,7 +943,7 @@ def run_copy_dram_to_local_tests(ctx: DeviceContext) raises:
 
 
 @always_inline
-fn copy_local_to_sram_kernel[
+def copy_local_to_sram_kernel[
     dtype: DType,
     layout: Layout,
     WM: Int,
@@ -999,7 +997,7 @@ fn copy_local_to_sram_kernel[
     )
 
 
-fn test_copy_local_to_sram[
+def test_copy_local_to_sram[
     dtype: DType,
     WM: Int,
     WN: Int,

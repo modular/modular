@@ -16,7 +16,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn _minmax[
+def _minmax[
     dtype: DType, //
 ](x: UnsafePointer[Scalar[dtype], _], N: Int) -> Tuple[
     Scalar[dtype], Scalar[dtype]
@@ -31,7 +31,7 @@ fn _minmax[
     return (min_val, max_val)
 
 
-fn compare[
+def compare[
     dtype: DType, verbose: Bool = True
 ](
     x: UnsafePointer[Scalar[dtype], _],

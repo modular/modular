@@ -36,7 +36,7 @@ from .static_tuple import StaticTuple
 
 
 @always_inline
-fn _reduce_and_fn(a: Bool, b: Bool) -> Bool:
+def _reduce_and_fn(a: Bool, b: Bool) -> Bool:
     """Performs AND operation on two boolean inputs.
 
     Args:
@@ -56,7 +56,7 @@ fn _reduce_and_fn(a: Bool, b: Bool) -> Bool:
 
 
 @always_inline
-fn _int_tuple_binary_apply[
+def _int_tuple_binary_apply[
     binary_fn: fn[dtype: DType](Scalar[dtype], Scalar[dtype]) -> Scalar[dtype],
 ](a: IndexList, b: type_of(a), out c: type_of(a)):
     """Applies a given element binary function to each pair of corresponding
@@ -78,18 +78,16 @@ fn _int_tuple_binary_apply[
     c = {}
 
     comptime for i in range(a.size):
-        var a_elem = a.__getitem__[i]()
-        var b_elem = b.__getitem__[i]()
-        c.__setitem__[i](
-            binary_fn[a.element_type](
-                Scalar[a.element_type](a_elem),
-                Scalar[a.element_type](b_elem),
+        c[i] = Int(
+            binary_fn(
+                Scalar[a.element_type](a.get[i]()),
+                Scalar[a.element_type](b.get[i]()),
             )
         )
 
 
 @always_inline
-fn _int_tuple_compare[
+def _int_tuple_compare[
     comp_fn: fn[dtype: DType](Scalar[dtype], Scalar[dtype]) -> Bool,
 ](a: IndexList, b: type_of(a)) -> StaticTuple[Bool, a.size]:
     """Applies a given element compare function to each pair of corresponding
@@ -111,20 +109,16 @@ fn _int_tuple_compare[
     var c = StaticTuple[Bool, a.size]()
 
     comptime for i in range(a.size):
-        var a_elem = a.__getitem__[i]()
-        var b_elem = b.__getitem__[i]()
-        c.__setitem__[i](
-            comp_fn[a.element_type](
-                Scalar[a.element_type](a_elem),
-                Scalar[a.element_type](b_elem),
-            )
+        c[i] = comp_fn[a.element_type](
+            Scalar[a.element_type](a.get[i]()),
+            Scalar[a.element_type](b.get[i]()),
         )
 
     return c
 
 
 @always_inline
-fn _bool_tuple_reduce[
+def _bool_tuple_reduce[
     reduce_fn: fn(Bool, Bool) -> Bool,
 ](a: StaticTuple[Bool, _], init: Bool) -> Bool:
     """Reduces the tuple argument with the given reduce function and initial
@@ -148,7 +142,7 @@ fn _bool_tuple_reduce[
     var c: Bool = init
 
     comptime for i in range(a.size):
-        c = reduce_fn(c, a.__getitem__[i]())
+        c = reduce_fn(c, a.get[i]())
 
     return c
 
@@ -158,7 +152,7 @@ fn _bool_tuple_reduce[
 # ===-----------------------------------------------------------------------===#
 
 
-fn _type_of_width[bitwidth: Int, unsigned: Bool]() -> DType:
+def _type_of_width[bitwidth: Int, unsigned: Bool]() -> DType:
     comptime if unsigned:
         return _uint_type_of_width[bitwidth]()
     else:
@@ -192,13 +186,13 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     """The underlying storage of the tuple value."""
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Constructs a static int tuple of the given size."""
         self.data = StaticTuple[_, Self.size](fill=Self._int_type(0))
 
     @always_inline
     @implicit
-    fn __init__(out self, data: StaticTuple[Self._int_type, Self.size]):
+    def __init__(out self, data: StaticTuple[Self._int_type, Self.size]):
         """Constructs a static int tuple of the given size.
 
         Args:
@@ -211,7 +205,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
     @always_inline
     @implicit
-    fn __init__[*Ts: Movable & Intable](out self, elems: Tuple[*Ts]):
+    def __init__[*Ts: Movable & Intable](out self, elems: Tuple[*Ts]):
         """Constructs a static int tuple given a tuple of integers.
 
         Parameters:
@@ -236,7 +230,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = tup
 
     @always_inline
-    fn __init__(out self, *elems: Int, __list_literal__: () = ()):
+    def __init__(out self, *elems: Int, __list_literal__: () = ()):
         """Constructs a static int tuple given a set of arguments.
 
         Args:
@@ -251,7 +245,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = Self(values=elems)
 
     @always_inline
-    fn __init__(out self, fill: Int):
+    def __init__(out self, fill: Int):
         """Constructs a static int tuple given a set of arguments.
 
         Args:
@@ -263,7 +257,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self.data = StaticTuple[_, Self.size](fill=Self._int_type(fill))
 
     @always_inline
-    fn __init__(out self, values: VariadicList[Int, is_owned=False]):
+    def __init__(out self, values: VariadicList[Int, is_owned=False]):
         """Creates a tuple constant using the specified values.
 
         Args:
@@ -286,7 +280,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = tup
 
     @always_inline("nodebug")
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Returns the size of the tuple.
 
         Returns:
@@ -295,8 +289,8 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         return Self.size
 
     @always_inline
-    fn __getitem__[idx: Int](self) -> Int:
-        """Gets an element from the tuple by index.
+    def get[idx: Int](self) -> Int:
+        """Gets an element from the tuple by index parameter.
 
         Parameters:
             idx: The element index.
@@ -304,10 +298,10 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Returns:
             The tuple element value.
         """
-        return Int(self.data.__getitem__[idx]())
+        return Int(self.data.get[idx]())
 
     @always_inline("nodebug")
-    fn __getitem__[I: Indexer](self, idx: I) -> Int:
+    def __getitem__[I: Indexer](self, idx: I) -> Int:
         """Gets an element from the tuple by index.
 
         Parameters:
@@ -322,31 +316,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         return Int(self.data[idx])
 
     @always_inline("nodebug")
-    fn __setitem__[idx: Int](mut self, val: Int):
-        """Sets an element in the tuple at the given static index.
-
-        Parameters:
-            idx: The element index.
-
-        Args:
-            val: The value to store.
-        """
-        self.data.__setitem__[idx](Scalar[Self.element_type](val))
-
-    @always_inline("nodebug")
-    fn __setitem__[idx: Int](mut self, val: Self._int_type):
-        """Sets an element in the tuple at the given static index.
-
-        Parameters:
-            idx: The element index.
-
-        Args:
-            val: The value to store.
-        """
-        self.data.__setitem__[idx](val)
-
-    @always_inline("nodebug")
-    fn __setitem__(mut self, idx: Int, val: Int):
+    def __setitem__(mut self, idx: Int, val: Int):
         """Sets an element in the tuple at the given index.
 
         Args:
@@ -356,7 +326,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self.data[idx] = Scalar[Self.element_type](val)
 
     @always_inline("nodebug")
-    fn as_tuple(self) -> StaticTuple[Int, Self.size]:
+    def as_tuple(self) -> StaticTuple[Int, Self.size]:
         """Converts this IndexList to StaticTuple.
 
         Returns:
@@ -365,11 +335,11 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         var res = StaticTuple[Int, Self.size]()
 
         comptime for i in range(Self.size):
-            res[i] = self.__getitem__[i]()
+            res[i] = self.get[i]()
         return res
 
     @always_inline("nodebug")
-    fn canonicalize(
+    def canonicalize(
         self,
         out result: IndexList[Self.size, element_type=DType.int64],
     ):
@@ -381,7 +351,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         return self.cast[DType.int64]()
 
     @always_inline
-    fn reverse(self) -> Self:
+    def reverse(self) -> Self:
         """Reverses the IndexList.
 
         Returns:
@@ -394,7 +364,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         return result
 
     @always_inline
-    fn flattened_length(self) -> Int:
+    def flattened_length(self) -> Int:
         """Returns the flattened length of the tuple.
 
         Returns:
@@ -408,7 +378,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         return length
 
     @always_inline
-    fn get_row_major_strides(self) -> Self:
+    def get_row_major_strides(self) -> Self:
         """Interpret the current index list as a shape, and return the strides
         to traverse such a shape in row-major order.
 
@@ -423,7 +393,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         return strides
 
     @always_inline
-    fn __add__(self, rhs: Self) -> Self:
+    def __add__(self, rhs: Self) -> Self:
         """Performs element-wise integer add.
 
         Args:
@@ -434,7 +404,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         """
 
         @always_inline
-        fn apply_fn[
+        def apply_fn[
             dtype: DType
         ](a: Scalar[dtype], b: Scalar[dtype]) -> Scalar[dtype]:
             return a + b
@@ -442,7 +412,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         return _int_tuple_binary_apply[apply_fn](self, rhs)
 
     @always_inline
-    fn __sub__(self, rhs: Self) -> Self:
+    def __sub__(self, rhs: Self) -> Self:
         """Performs element-wise integer subtract.
 
         Args:
@@ -453,7 +423,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         """
 
         @always_inline
-        fn apply_fn[
+        def apply_fn[
             dtype: DType
         ](a: Scalar[dtype], b: Scalar[dtype]) -> Scalar[dtype]:
             return a - b
@@ -461,7 +431,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         return _int_tuple_binary_apply[apply_fn](self, rhs)
 
     @always_inline
-    fn __mul__(self, rhs: Self) -> Self:
+    def __mul__(self, rhs: Self) -> Self:
         """Performs element-wise integer multiply.
 
         Args:
@@ -472,7 +442,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         """
 
         @always_inline
-        fn apply_fn[
+        def apply_fn[
             dtype: DType
         ](a: Scalar[dtype], b: Scalar[dtype]) -> Scalar[dtype]:
             return a * b
@@ -480,7 +450,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         return _int_tuple_binary_apply[apply_fn](self, rhs)
 
     @always_inline
-    fn __floordiv__(self, rhs: Self) -> Self:
+    def __floordiv__(self, rhs: Self) -> Self:
         """Performs element-wise integer floor division.
 
         Args:
@@ -491,7 +461,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         """
 
         @always_inline
-        fn apply_fn[
+        def apply_fn[
             dtype: DType
         ](a: Scalar[dtype], b: Scalar[dtype]) -> Scalar[dtype]:
             return a // b
@@ -499,7 +469,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         return _int_tuple_binary_apply[apply_fn](self, rhs)
 
     @always_inline
-    fn __rfloordiv__(self, rhs: Self) -> Self:
+    def __rfloordiv__(self, rhs: Self) -> Self:
         """Floor divides rhs by this object.
 
         Args:
@@ -511,7 +481,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         return rhs // self
 
     @always_inline
-    fn remu(self, rhs: Self) -> Self:
+    def remu(self, rhs: Self) -> Self:
         """Performs element-wise integer unsigned modulo.
 
         Args:
@@ -522,7 +492,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         """
 
         @always_inline
-        fn apply_fn[
+        def apply_fn[
             dtype: DType
         ](a: Scalar[dtype], b: Scalar[dtype]) -> Scalar[dtype]:
             return a % b
@@ -530,7 +500,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         return _int_tuple_binary_apply[apply_fn](self, rhs)
 
     @always_inline
-    fn __eq__(self, rhs: Self) -> Bool:
+    def __eq__(self, rhs: Self) -> Bool:
         """Compares this tuple to another tuple for equality.
 
         The tuples are equal if all corresponding elements are equal.
@@ -543,7 +513,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         """
 
         @always_inline
-        fn apply_fn[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Bool:
+        def apply_fn[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Bool:
             return a == b
 
         return _bool_tuple_reduce[_reduce_and_fn](
@@ -551,7 +521,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         )
 
     @always_inline
-    fn __lt__(self, rhs: Self) -> Bool:
+    def __lt__(self, rhs: Self) -> Bool:
         """Compares this tuple to another tuple using LT comparison.
 
         A tuple is less-than another tuple if all corresponding elements of lhs
@@ -567,7 +537,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         """
 
         @always_inline
-        fn apply_fn[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Bool:
+        def apply_fn[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Bool:
             return a < b
 
         return _bool_tuple_reduce[_reduce_and_fn](
@@ -575,7 +545,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         )
 
     @always_inline
-    fn __le__(self, rhs: Self) -> Bool:
+    def __le__(self, rhs: Self) -> Bool:
         """Compares this tuple to another tuple using LE comparison.
 
         A tuple is less-or-equal than another tuple if all corresponding
@@ -591,7 +561,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         """
 
         @always_inline
-        fn apply_fn[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Bool:
+        def apply_fn[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Bool:
             return a <= b
 
         return _bool_tuple_reduce[_reduce_and_fn](
@@ -599,7 +569,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         )
 
     @always_inline
-    fn __gt__(self, rhs: Self) -> Bool:
+    def __gt__(self, rhs: Self) -> Bool:
         """Compares this tuple to another tuple using GT comparison.
 
         A tuple is greater-than than another tuple if all corresponding
@@ -615,7 +585,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         """
 
         @always_inline
-        fn apply_fn[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Bool:
+        def apply_fn[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Bool:
             return a > b
 
         return _bool_tuple_reduce[_reduce_and_fn](
@@ -623,7 +593,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         )
 
     @always_inline
-    fn __ge__(self, rhs: Self) -> Bool:
+    def __ge__(self, rhs: Self) -> Bool:
         """Compares this tuple to another tuple using GE comparison.
 
         A tuple is greater-or-equal than another tuple if all corresponding
@@ -639,7 +609,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         """
 
         @always_inline
-        fn apply_fn[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Bool:
+        def apply_fn[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Bool:
             return a >= b
 
         return _bool_tuple_reduce[_reduce_and_fn](
@@ -647,7 +617,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         )
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """
         Formats this IndexList value to the provided Writer.
 
@@ -675,7 +645,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         writer.write(")")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this `IndexList` to a writer.
 
         Args:
@@ -683,7 +653,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         """
 
         @parameter
-        fn write_fields(mut w: Some[Writer]):
+        def write_fields(mut w: Some[Writer]):
             self.write_to(w)
 
         fmt.FormatStruct(writer, "IndexList").params(
@@ -691,18 +661,8 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             Self.element_type,
         ).fields[FieldsFn=write_fields]()
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Get the tuple as a string.
-
-        Returns:
-            A string representation.
-        """
-        return String.write(self)
-
     @always_inline
-    fn cast[
+    def cast[
         dtype: DType
     ](self, out result: IndexList[Self.size, element_type=dtype]):
         """Casts to the target DType.
@@ -717,11 +677,9 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         result = {}
 
         comptime for i in range(Self.size):
-            result.data[i] = self.data.__getitem__[i]().cast[
-                result.element_type
-            ]()
+            result.data[i] = self.data.get[i]().cast[result.element_type]()
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
+    def __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
 
         Parameters:
@@ -734,7 +692,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         comptime for i in range(Self.size):
             hasher.update(self.data[i])
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         """
         Convert the host type object to a device_type and store it at the
         target address.
@@ -745,7 +703,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """
         Gets the name of the host type (the one implementing this trait).
         For example, Int would return "Int", DeviceBuffer[DType.float32] would
@@ -757,14 +715,14 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Returns:
             The host type's name.
         """
-        return t"IndexList[{Self.size},{Self.element_type}]"
+        return String(t"IndexList[{Self.size},{Self.element_type}]")
 
 
 # ===-----------------------------------------------------------------------===#
 # Factory functions for creating index.
 # ===-----------------------------------------------------------------------===#
 @always_inline
-fn Index[
+def Index[
     T0: Intable, //, *, dtype: DType = DType.int64
 ](x: T0, out result: IndexList[1, element_type=dtype]):
     """Constructs a 1-D Index from the given value.
@@ -783,7 +741,7 @@ fn Index[
 
 
 @always_inline
-fn Index[
+def Index[
     *, dtype: DType = DType.int64
 ](x: UInt, out result: IndexList[1, element_type=dtype]):
     """Constructs a 1-D Index from the given value.
@@ -801,7 +759,7 @@ fn Index[
 
 
 @always_inline
-fn Index[
+def Index[
     T0: Intable, T1: Intable, //, *, dtype: DType = DType.int64
 ](x: T0, y: T1, out result: IndexList[2, element_type=dtype]):
     """Constructs a 2-D Index from the given values.
@@ -822,7 +780,7 @@ fn Index[
 
 
 @always_inline
-fn Index[
+def Index[
     *, dtype: DType = DType.int64
 ](x: UInt, y: UInt, out result: IndexList[2, element_type=dtype]):
     """Constructs a 2-D Index from the given values.
@@ -841,7 +799,7 @@ fn Index[
 
 
 @always_inline
-fn Index[
+def Index[
     T0: Intable,
     T1: Intable,
     T2: Intable,
@@ -869,7 +827,7 @@ fn Index[
 
 
 @always_inline
-fn Index[
+def Index[
     T0: Intable,
     T1: Intable,
     T2: Intable,
@@ -900,7 +858,7 @@ fn Index[
 
 
 @always_inline
-fn Index[
+def Index[
     T0: Intable,
     T1: Intable,
     T2: Intable,
@@ -946,7 +904,7 @@ fn Index[
 
 
 @always_inline
-fn product[size: Int](tuple: IndexList[size, ...], end_idx: Int = size) -> Int:
+def product[size: Int](tuple: IndexList[size, ...], end_idx: Int = size) -> Int:
     """Computes a product of values in the tuple up to the given index.
 
     Parameters:
@@ -963,7 +921,7 @@ fn product[size: Int](tuple: IndexList[size, ...], end_idx: Int = size) -> Int:
 
 
 @always_inline
-fn product[
+def product[
     size: Int
 ](tuple: IndexList[size, ...], start_idx: Int, end_idx: Int) -> Int:
     """Computes a product of values in the tuple in the given index range.

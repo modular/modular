@@ -16,7 +16,7 @@ from std.random import randn
 from layout import TileTensor
 
 
-fn random_normal[
+def random_normal[
     dtype: DType,
     mean: Float64,
     variance: Float64,

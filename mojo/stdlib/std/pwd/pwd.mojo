@@ -50,7 +50,7 @@ struct Passwd(Copyable, Writable):
     var pw_shell: String
     """Shell program."""
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Formats this string to the provided Writer.
 
         Args:
@@ -65,28 +65,8 @@ struct Passwd(Copyable, Writable):
         writer.write("', pw_shell='", self.pw_shell)
         writer.write("')")
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Gets the Passwd struct as a string.
 
-        Returns:
-          A compact string of the Passwd struct.
-        """
-        return String.write(self)
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __repr__(self) -> String:
-        """Gets the Passwd struct as a string.
-
-        Returns:
-          A compact string representation of Passwd struct.
-        """
-        return String.write(self)
-
-
-fn getpwuid(uid: Int) raises -> Passwd:
+def getpwuid(uid: Int) raises -> Passwd:
     """Retrieve the password database entry for a given user ID.
 
     Args:
@@ -112,7 +92,7 @@ fn getpwuid(uid: Int) raises -> Passwd:
         return _getpw_linux(UInt32(uid))
 
 
-fn getpwnam(var name: String) raises -> Passwd:
+def getpwnam(var name: String) raises -> Passwd:
     """
     Retrieves the user ID in the password database for the given user name.
 

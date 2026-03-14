@@ -14,12 +14,7 @@
 from std.math import ceildiv, exp, exp2, log, rsqrt
 
 from std.gpu.host import DeviceContext
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-)
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from std.memory import alloc
 from state_space.selective_scan import (
@@ -35,7 +30,7 @@ comptime LOG2E = 1.4426950408889634
 
 
 @always_inline
-fn softplus_ref(val: Float32) -> Float32:
+def softplus_ref(val: Float32) -> Float32:
     """Reference softplus: log(1 + exp(x)) with numerical stability."""
     if val > 20.0:
         return val
@@ -43,14 +38,14 @@ fn softplus_ref(val: Float32) -> Float32:
 
 
 @always_inline
-fn silu_ref(val: Float32) -> Float32:
+def silu_ref(val: Float32) -> Float32:
     """Reference SiLU: x * sigmoid(x) = x / (1 + exp(-x))."""
     if val < -20.0:
         return 0.0
     return val / (Float32(1.0) + exp(-val))
 
 
-fn run_mamba_split_conv1d_scan_combined_gpu[
+def run_mamba_split_conv1d_scan_combined_gpu[
     dtype: DType,
     DSTATE: Int,
     has_D: Bool,
@@ -718,7 +713,7 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
     _ = output_gpu_d^
 
 
-fn test_mamba_combined_gpu_basic() raises:
+def test_mamba_combined_gpu_basic() raises:
     """Test basic mamba_split_conv1d_scan_combined on GPU."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -744,7 +739,7 @@ fn test_mamba_combined_gpu_basic() raises:
     )
 
 
-fn test_mamba_combined_gpu_without_D() raises:
+def test_mamba_combined_gpu_without_D() raises:
     """Test mamba_split_conv1d_scan_combined on GPU without D."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -770,7 +765,7 @@ fn test_mamba_combined_gpu_without_D() raises:
     )
 
 
-fn test_mamba_combined_gpu_with_rmsnorm() raises:
+def test_mamba_combined_gpu_with_rmsnorm() raises:
     """Test mamba_split_conv1d_scan_combined on GPU with RMSNorm."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -796,7 +791,7 @@ fn test_mamba_combined_gpu_with_rmsnorm() raises:
     )
 
 
-fn test_mamba_combined_gpu_norm_after_gate() raises:
+def test_mamba_combined_gpu_norm_after_gate() raises:
     """Test mamba_split_conv1d_scan_combined on GPU with norm_after_gate."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -822,7 +817,7 @@ fn test_mamba_combined_gpu_norm_after_gate() raises:
     )
 
 
-fn test_mamba_combined_gpu_without_delta_softplus() raises:
+def test_mamba_combined_gpu_without_delta_softplus() raises:
     """Test mamba_split_conv1d_scan_combined on GPU without delta_softplus."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -848,7 +843,7 @@ fn test_mamba_combined_gpu_without_delta_softplus() raises:
     )
 
 
-fn test_mamba_combined_gpu_larger_shapes() raises:
+def test_mamba_combined_gpu_larger_shapes() raises:
     """Test mamba_split_conv1d_scan_combined on GPU with larger shapes."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():

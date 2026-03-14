@@ -73,7 +73,7 @@ class Weights(Protocol):
         Returns:
             The hierarchical name built from attribute and index access.
             For example, if accessed as ``weights.model.layers[0]``,
-            returns ``"model.layers.0"``.
+            returns ``model.layers.0``.
         """
         ...
 
@@ -172,7 +172,7 @@ class Weights(Protocol):
         """Returns all previously allocated weights.
 
         This only includes weights that were explicitly allocated using
-        :meth:`allocate()`, not all available weights.
+        :meth:`Weights.allocate`, not all available weights.
 
         Returns:
             A dictionary mapping weight names to their numpy arrays for
@@ -194,7 +194,7 @@ class WeightData(DLPackArray):
     data: DLPackArray
     """The weight tensor as a DLPack array."""
     name: str
-    """Hierarchical name of the weight (for example, ``"model.layers.0.weight"``)."""
+    """Hierarchical name of the weight (for example, ``model.layers.0.weight``)."""
 
     dtype: DType
     """Data type of the tensor (for example, ``DType.float32``, ``DType.uint8``)."""
@@ -236,9 +236,9 @@ class WeightData(DLPackArray):
     def astype(self, dtype: DType) -> WeightData:
         """Convert the weight data to a different dtype.
 
-        This method performs actual data conversion, unlike :meth:`view()` which
-        reinterprets the underlying bytes. Special handling is provided for
-        bfloat16 conversions using PyTorch when available.
+        This method performs actual data conversion of the underlying tensor
+        data. Special handling is provided for bfloat16 conversions using
+        PyTorch when available.
 
         During cross-compilation (warm-cache) scenarios where no GPU is available,
         this method skips the actual data conversion but still returns a WeightData

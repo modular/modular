@@ -166,6 +166,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=3,
         help="Number of iterations to run for profiling.",
     )
+    parser.add_argument(
+        "--step-cache",
+        action="store_true",
+        help="Enable first-block step cache optimization.",
+    )
+    parser.add_argument(
+        "--residual-threshold",
+        type=float,
+        default=None,
+        help="Residual threshold for step cache early stopping.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -252,6 +263,7 @@ async def generate_image(args: argparse.Namespace) -> None:
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
+            enable_fbc=args.step_cache,
         ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
@@ -355,6 +367,11 @@ async def generate_image(args: argparse.Namespace) -> None:
                     width=args.width,
                     steps=args.num_inference_steps,
                     guidance_scale=args.guidance_scale,
+                    **(
+                        {"residual_threshold": args.residual_threshold}
+                        if args.residual_threshold is not None
+                        else {}
+                    ),
                 )
             ),
         )
@@ -371,6 +388,11 @@ async def generate_image(args: argparse.Namespace) -> None:
                     width=args.width,
                     steps=args.num_inference_steps,
                     guidance_scale=args.guidance_scale,
+                    **(
+                        {"residual_threshold": args.residual_threshold}
+                        if args.residual_threshold is not None
+                        else {}
+                    ),
                 )
             ),
         )
@@ -390,6 +412,10 @@ async def generate_image(args: argparse.Namespace) -> None:
     print(
         f"Context created: {context.height}x{context.width}, {context.num_inference_steps} steps"
     )
+    if args.step_cache:
+        print(
+            f"Step cache enabled, residual_threshold={context.residual_threshold}."
+        )
 
     # Step 6: Prepare inputs for the pipeline
     # Create a batch with a single context
@@ -411,6 +437,11 @@ async def generate_image(args: argparse.Namespace) -> None:
                     width=args.width,
                     steps=args.num_inference_steps,
                     guidance_scale=args.guidance_scale,
+                    **(
+                        {"residual_threshold": args.residual_threshold}
+                        if args.residual_threshold is not None
+                        else {}
+                    ),
                 )
             ),
         )

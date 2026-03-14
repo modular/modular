@@ -30,10 +30,10 @@ from std.utils.index import Index
 
 
 # CHECK-LABEL: test_async_copy_asm
-fn test_async_copy_asm():
+def test_async_copy_asm():
     print("== test_async_copy_asm")
 
-    fn test_async_copy_kernel(
+    def test_async_copy_kernel(
         dst_mem: UnsafePointer[
             Float32, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
@@ -61,10 +61,10 @@ fn test_async_copy_asm():
 
 
 # CHECK-LABEL: test_async_store_asm
-fn test_async_store_asm():
+def test_async_store_asm():
     print("== test_async_store_asm")
 
-    fn test_async_store_kernel(
+    def test_async_store_kernel(
         src_mem: UnsafePointer[
             Float32, ImmutAnyOrigin, address_space=AddressSpace.SHARED
         ],
@@ -97,10 +97,10 @@ fn test_async_store_asm():
 
 
 # CHECK-LABEL: test_async_bulk_tensor_reduce_asm
-fn test_async_bulk_tensor_reduce_asm():
+def test_async_bulk_tensor_reduce_asm():
     print("== test_async_bulk_tensor_reduce_asm")
 
-    fn test_async_bulk_tensor_reduce_asm(
+    def test_async_bulk_tensor_reduce_asm(
         src_mem: UnsafePointer[
             Float32, ImmutAnyOrigin, address_space=AddressSpace.SHARED
         ],
@@ -131,10 +131,10 @@ fn test_async_bulk_tensor_reduce_asm():
 
 
 # CHECK-LABEL: test_tma_fence_proxy
-fn test_tma_fence_proxy():
+def test_tma_fence_proxy():
     print("== test_tma_fence_proxy")
 
-    fn test_tma_fence_proxy_kernel(
+    def test_tma_fence_proxy_kernel(
         descriptor_ptr: UnsafePointer[Int32, MutAnyOrigin]
     ):
         # CHECK: fence.proxy.tensormap::generic.acquire.sys [%rd1], 128;
@@ -151,10 +151,10 @@ fn test_tma_fence_proxy():
 
 
 # CHECK-LABEL: test_elect_one_sync
-fn test_elect_one_sync():
+def test_elect_one_sync():
     print("== test_elect_one_sync")
 
-    fn test_elect_one_sync_kernel():
+    def test_elect_one_sync_kernel():
         # CHECK: elect.sync      %r1|%p1, -1;
         var _lane_predicate: Bool = elect_one_sync()
 
@@ -166,7 +166,7 @@ fn test_elect_one_sync():
     )
 
 
-fn main():
+def main():
     test_async_copy_asm()
     test_async_store_asm()
     test_async_bulk_tensor_reduce_asm()

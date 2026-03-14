@@ -32,8 +32,7 @@ InputType = DLPackArray | Buffer | int | float | bool
 
 class TensorSpec:
     """
-    Defines the properties of a tensor, including its name, shape and
-    data type.
+    Defines the properties of a tensor, including its name, shape and data type.
 
     For usage examples, see :obj:`Model.input_metadata`.
     """
@@ -79,8 +78,7 @@ class Model:
     @property
     def input_metadata(self) -> list[TensorSpec]:
         """
-        Metadata about the model's input tensors, as a list of
-        :obj:`TensorSpec` objects.
+        Metadata about the model's input tensors, as a list of :obj:`TensorSpec` objects.
 
         For example, you can print the input tensor names, shapes, and dtypes:
 
@@ -99,8 +97,7 @@ class Model:
     @property
     def output_metadata(self) -> list[TensorSpec]:
         """
-        Metadata about the model's output tensors, as a list of
-        :obj:`TensorSpec` objects.
+        Metadata about the model's output tensors, as a list of :obj:`TensorSpec` objects.
 
         For example, you can print the output tensor names, shapes, and dtypes:
 
@@ -282,43 +279,139 @@ class Model:
     def _load(self, weights_registry: Mapping[str, Any]) -> None: ...
 
 class InferenceSession:
+    """
+    Manages compilation and execution of MAX models.
+
+    An inference session holds device configuration and compiles graphs
+    into executable :class:`Model` objects. It also manages custom
+    extensions and debug options.
+
+    .. code-block:: python
+
+        from max._core.engine import InferenceSession
+        from max import driver
+
+        devices = [driver.CPU()]
+        session = InferenceSession(devices, custom_extensions=[])
+        model = session.compile_from_path("model.mef", [])
+    """
+
     def __init__(
         self,
         devices: Sequence[max._core.driver.Device],
         custom_extensions: Sequence[str | os.PathLike],
         num_threads: int = 0,
-    ) -> None: ...
+    ) -> None:
+        """
+        Creates an inference session for model compilation and execution.
+
+        Args:
+            devices: List of devices used for compilation and execution.
+            custom_extensions: Paths to custom Mojo extension libraries.
+            num_threads (int): Number of execution threads. Defaults to 0,
+                which lets the runtime choose automatically.
+        """
+
     def compile_from_path(
         self,
         model_path: str | os.PathLike,
         custom_extension_paths: Sequence[str | os.PathLike],
-    ) -> Model: ...
+    ) -> Model:
+        """
+        Compiles a model from a file path.
+
+        Args:
+            model_path: Path to the compiled model file (for example, a ``.mef`` file).
+            custom_extension_paths: Paths to custom Mojo extension libraries.
+
+        Returns:
+            Model: The compiled model ready for execution.
+        """
+
     def compile_from_object(
         self,
         model: types.CapsuleType,
         custom_extensions: Sequence[str | os.PathLike],
         pipeline_name: str,
-    ) -> Model: ...
+    ) -> Model:
+        """
+        Compiles a model from an in-memory capsule object.
+
+        Args:
+            model: A capsule containing the compiled model object.
+            custom_extensions: Paths to custom Mojo extension libraries.
+            pipeline_name: Name identifier for the compiled pipeline.
+
+        Returns:
+            Model: The compiled model ready for execution.
+        """
+
     def set_debug_print_options(
         self, style: PrintStyle, precision: int, directory: str
-    ) -> None: ...
+    ) -> None:
+        """
+        Sets debug output options for tensor printing during execution.
+
+        Args:
+            style (PrintStyle): The output format style.
+            precision (int): Number of decimal places for floating-point values.
+            directory (str): Directory path for binary output files.
+        """
+
     @overload
-    def set_mojo_define(self, key: str, value: bool) -> None: ...
+    def set_mojo_define(self, key: str, value: bool) -> None:
+        """
+        Sets a compile-time Mojo define to a boolean value.
+
+        Args:
+            key (str): The define name.
+            value (bool): The boolean value to assign.
+        """
+
     @overload
-    def set_mojo_define(self, key: str, value: int) -> None: ...
+    def set_mojo_define(self, key: str, value: int) -> None:
+        """
+        Sets a compile-time Mojo define to an integer value.
+
+        Args:
+            key (str): The define name.
+            value (int): The integer value to assign.
+        """
+
     @overload
-    def set_mojo_define(self, key: str, value: str) -> None: ...
+    def set_mojo_define(self, key: str, value: str) -> None:
+        """
+        Sets a compile-time Mojo define to a string value.
+
+        Args:
+            key (str): The define name.
+            value (str): The string value to assign.
+        """
+
     def register_runtime_context(self, ctx: mlir.Context) -> None: ...
     @property
-    def devices(self) -> list[max._core.driver.Device]: ...
+    def devices(self) -> list[max._core.driver.Device]:
+        """Returns the list of devices used by this session."""
 
 class PrintStyle(enum.Enum):
+    """
+    Controls the output format for debug tensor printing.
+
+    Pass one of these values to :meth:`InferenceSession.set_debug_print_options`
+    to configure how tensors are printed during execution.
+    """
+
     COMPACT = 0
+    """Compact human-readable format."""
 
     FULL = 1
+    """Full verbose format with all tensor details."""
 
     BINARY = 2
+    """Raw binary format."""
 
     BINARY_MAX_CHECKPOINT = 4
+    """Binary checkpoint format compatible with MAX."""
 
     NONE = 3
+    """Disables debug output."""

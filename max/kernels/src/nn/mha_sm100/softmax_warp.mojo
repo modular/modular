@@ -80,7 +80,7 @@ from std.utils.static_tuple import StaticTuple
 
 
 @always_inline
-fn fa4_scale_write_output[
+def fa4_scale_write_output[
     qkv_type: DType,
     output_type: DType,
     config: FA4Config,
@@ -141,7 +141,7 @@ fn fa4_scale_write_output[
 
     @always_inline
     @parameter
-    fn load_chunk[col: Int, m_half: Int](dst: type_of(o_cur)):
+    def load_chunk[col: Int, m_half: Int](dst: type_of(o_cur)):
         """Async tmem load for one M-half of column `col`."""
         comptime load_dtype = DType.uint32
         chunk_tmem_addr = o_tmem_arg.tmem_addr + UInt32(
@@ -150,7 +150,7 @@ fn fa4_scale_write_output[
 
         @parameter
         @always_inline
-        fn load_fn[pow_two: Int, local_offset: Int]():
+        def load_fn[pow_two: Int, local_offset: Int]():
             comptime assert pow_two + local_offset <= ST.repeat
             comptime if pow_two > 0:
                 comptime offsets = STMatrixOffsets[
@@ -207,7 +207,7 @@ fn fa4_scale_write_output[
 
     @always_inline
     @parameter
-    fn scale_half[m_half: Int](o: type_of(o_cur)):
+    def scale_half[m_half: Int](o: type_of(o_cur)):
         """Scale one M-half's registers by `inv_row_sum`."""
         comptime rows_per_half = ST.num_row_blocks_per_mma
         comptime start = m_half * rows_per_half
@@ -218,7 +218,7 @@ fn fa4_scale_write_output[
 
     @always_inline
     @parameter
-    fn write_to_smem[j: Int, m_half: Int](o: type_of(o_cur)):
+    def write_to_smem[j: Int, m_half: Int](o: type_of(o_cur)):
         """Write one M-half of column `j` to smem."""
         comptime datapath_offset: UInt32 = UInt32(
             16 * m_half * swizzle_granularity
@@ -250,7 +250,7 @@ fn fa4_scale_write_output[
 
     @always_inline
     @parameter
-    fn sync_and_tma_store[j: Int]():
+    def sync_and_tma_store[j: Int]():
         """Barrier sync + TMA store for column `j`."""
         named_barrier[Int32(WARPGROUP_SIZE)](Int32(warp_group_idx))
 
@@ -295,7 +295,7 @@ fn fa4_scale_write_output[
 
 
 @always_inline
-fn fa4_softmax[
+def fa4_softmax[
     KVLUTType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
@@ -447,7 +447,7 @@ fn fa4_softmax[
 
     @parameter
     @always_inline
-    fn mask_row[
+    def mask_row[
         BN: Int, //, mask_strategy: MaskStrategy
     ](mut s: InlineArray[Scalar[accum_type], BN], kv_row: UInt32):
         apply_mask[
@@ -481,7 +481,7 @@ fn fa4_softmax[
 
     @parameter
     @always_inline
-    fn load_mask_max_impl[
+    def load_mask_max_impl[
         *, mask_strategy: MaskStrategy
     ](kv_row: UInt32) -> StaticTuple[Float32, max_unroll]:
         comptime if EnableForcedOrdering:
@@ -548,12 +548,14 @@ fn fa4_softmax[
 
     @parameter
     @always_inline
-    fn load_mask_max[*, mask_strategy: MaskStrategy](kv_row: UInt32) -> Float32:
+    def load_mask_max[
+        *, mask_strategy: MaskStrategy
+    ](kv_row: UInt32) -> Float32:
         return maximum(load_mask_max_impl[mask_strategy=mask_strategy](kv_row))
 
     @parameter
     @always_inline
-    fn load_mask_max[
+    def load_mask_max[
         *, mask_strategy: MaskStrategy
     ](kv_row: UInt32, old_max: Float32) -> Float32:
         return maximum(
@@ -564,7 +566,7 @@ fn fa4_softmax[
 
     @parameter
     @always_inline
-    fn store_exp(row_max: Float32) -> f32x2:
+    def store_exp(row_max: Float32) -> f32x2:
         comptime exp_simd = 2
         comptime vs_len = config.BN // exp_simd  # 128 // 2 = 64
         comptime assert (vs_len % config.num_pv_stages) == 0
@@ -585,12 +587,12 @@ fn fa4_softmax[
 
         @parameter
         @always_inline
-        fn s_load[i: Int]() -> f32x2:
+        def s_load[i: Int]() -> f32x2:
             return f32x2(s[2 * i], s[2 * i + 1])
 
         @parameter
         @always_inline
-        fn s_store[i: Int](v: f32x2):
+        def s_store[i: Int](v: f32x2):
             s[2 * i] = v[0]
             s[2 * i + 1] = v[1]
 
@@ -609,7 +611,7 @@ fn fa4_softmax[
 
         @parameter
         @always_inline
-        fn score_to_logit(score: f32x2) -> f32x2:
+        def score_to_logit(score: f32x2) -> f32x2:
             comptime if use_fma:
                 return fma_ftz(score, vscale, vneg_max_scaled)
             else:
@@ -781,11 +783,10 @@ fn fa4_softmax[
                         kv_row
                     )
                     mask_iters[2] -= 1
-    var sink_weights_ptr = UnsafePointer[Scalar[qkv_type], ImmutAnyOrigin]()
     var sink_weight: Scalar[accum_type]
 
     comptime if not SinkType.is_null:
-        sink_weights_ptr = rebind[
+        var sink_weights_ptr = rebind[
             UnsafePointer[Scalar[qkv_type], ImmutAnyOrigin]
         ](sink_weights.value())
         var head_idx: UInt32 = seq_info.head_idx
@@ -796,7 +797,6 @@ fn fa4_softmax[
             sink_weight = sink_weights_ptr[head_idx].cast[accum_type]() * log2e
         row_max = max(row_max, sink_weight)
     else:
-        sink_weights_ptr = {}
         sink_weight = 0.0
 
     var row_sum: f32x2 = store_exp(row_max)

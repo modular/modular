@@ -22,12 +22,12 @@ comptime MAX_RANK = 5
 """The maximum rank of a tensor supported by the MO interpreter."""
 
 
-fn _get_dtype(buffer: PythonObject) raises -> DType:
+def _get_dtype(buffer: PythonObject) raises -> DType:
     return DType._from_ui8(UInt8(py=buffer.dtype.value)._mlir_value)
 
 
 # Helper to extract buffer pointer with dtype
-fn _get_buffer_ptr[
+def _get_buffer_ptr[
     dtype: DType
 ](buffer: PythonObject) raises -> UnsafePointer[
     Scalar[dtype], MutExternalOrigin
@@ -37,11 +37,11 @@ fn _get_buffer_ptr[
     )
 
 
-fn _get_size(buffer: PythonObject) raises -> Int:
+def _get_size(buffer: PythonObject) raises -> Int:
     return Int(py=buffer.num_elements)
 
 
-fn _get_ctx(
+def _get_ctx(
     device_context_ptr: PythonObject,
 ) raises -> OpaquePointer[MutExternalOrigin]:
     return OpaquePointer[MutExternalOrigin](
@@ -49,7 +49,7 @@ fn _get_ctx(
     )
 
 
-fn _get_shape(
+def _get_shape(
     shape_obj: PythonObject, rank: Int
 ) raises -> InlineArray[Int, MAX_RANK]:
     """Extract shape as InlineArray from Python sequence.

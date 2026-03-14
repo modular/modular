@@ -56,7 +56,7 @@ struct ManagedLayoutTensor[
     var ctx: DeviceContext
 
     @always_inline
-    fn __init__(out self) raises:
+    def __init__(out self) raises:
         self.ctx = DeviceContext(api="cpu")
         self.runtime_layout = {}
         self.device_data = None
@@ -66,7 +66,7 @@ struct ManagedLayoutTensor[
         self.ctx.synchronize()
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self, runtime_layout: RuntimeLayout[Self.layout, ...]
     ) raises:
         self.ctx = DeviceContext(api="cpu")
@@ -89,7 +89,7 @@ struct ManagedLayoutTensor[
         self.ctx.synchronize()
 
     @always_inline
-    fn __init__(out self, ctx: DeviceContext) raises:
+    def __init__(out self, ctx: DeviceContext) raises:
         self.ctx = ctx
         self.runtime_layout = {}
         self.device_data = ctx.enqueue_create_buffer[Self.dtype](
@@ -101,7 +101,7 @@ struct ManagedLayoutTensor[
         self.ctx.synchronize()
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         runtime_layout: RuntimeLayout[Self.layout, ...],
         ctx: DeviceContext,
@@ -137,7 +137,7 @@ struct ManagedLayoutTensor[
         )
         self.ctx.synchronize()
 
-    fn device_tensor[
+    def device_tensor[
         update: Bool = True
     ](self) raises -> Self.layout_tensor_type:
         assert (
@@ -157,7 +157,7 @@ struct ManagedLayoutTensor[
                 self.runtime_layout,
             )
 
-    fn tensor[update: Bool = True](self) raises -> Self.layout_tensor_type:
+    def tensor[update: Bool = True](self) raises -> Self.layout_tensor_type:
         comptime if update:
             self._update_host()
 
@@ -171,22 +171,22 @@ struct ManagedLayoutTensor[
                 self.runtime_layout,
             )
 
-    fn _update_device(self) raises:
+    def _update_device(self) raises:
         if self.ctx.api() != "cpu":
             self.ctx.enqueue_copy(self.device_data.value(), self.host_data)
             self.ctx.synchronize()
 
-    fn _update_host(self) raises:
+    def _update_host(self) raises:
         if self.ctx.api() != "cpu":
             self.ctx.enqueue_copy(self.host_data, self.device_data.value())
             self.ctx.synchronize()
 
     @always_inline
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 
-fn load_to_simd(
+def load_to_simd(
     tensor: LayoutTensor,
     out res: SIMD[tensor.dtype, product(tensor.layout.shape)],
 ):
@@ -200,7 +200,7 @@ fn load_to_simd(
 
 
 @always_inline
-fn _get_bounds(tensor: LayoutTensor) -> Int:
+def _get_bounds(tensor: LayoutTensor) -> Int:
     comptime assert (
         tensor.element_layout.all_dims_known()
     ), "Element layout must be known for _get_bounds"
@@ -223,7 +223,7 @@ fn _get_bounds(tensor: LayoutTensor) -> Int:
 
 
 @always_inline
-fn make_amd_buffer_resource(
+def make_amd_buffer_resource(
     tensor: LayoutTensor,
 ) -> AMDBufferResource:
     var ptr = tensor.ptr
@@ -232,7 +232,7 @@ fn make_amd_buffer_resource(
 
 
 @always_inline
-fn make_amd_buffer_resource(
+def make_amd_buffer_resource(
     tensor_iter: LayoutTensorIter, bound: Int
 ) -> AMDBufferResource:
     return AMDBufferResource(
@@ -241,7 +241,7 @@ fn make_amd_buffer_resource(
 
 
 @always_inline
-fn idx2crd[layout: Layout](idx: Int) -> IndexList[layout.rank()]:
+def idx2crd[layout: Layout](idx: Int) -> IndexList[layout.rank()]:
     comptime assert layout.all_dims_known(), "Layout must be known for idx2crd"
     var res = IndexList[layout.rank()]()
 
@@ -253,7 +253,7 @@ fn idx2crd[layout: Layout](idx: Int) -> IndexList[layout.rank()]:
 
 
 @always_inline
-fn hash(tensor: LayoutTensor) -> Int:
+def hash(tensor: LayoutTensor) -> Int:
     # Calculate hash of the content of the layout tensor, it can be useful for debugging
     comptime assert (
         size_of[tensor.dtype]() == 2

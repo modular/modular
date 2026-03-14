@@ -14,6 +14,6 @@
 from std.os import abort
 
 
-fn main():
+def main():
     # CHECK: hello world
     abort("hello world")

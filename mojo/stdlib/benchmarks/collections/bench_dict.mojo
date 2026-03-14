@@ -22,7 +22,7 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
 # ===-----------------------------------------------------------------------===#
-fn make_dict[size: Int, *, random: Bool = False]() -> Dict[Int, Int]:
+def make_dict[size: Int, *, random: Bool = False]() -> Dict[Int, Int]:
     var d = Dict[Int, Int]()
     for i in range(0, size):
         comptime if random:
@@ -36,10 +36,10 @@ fn make_dict[size: Int, *, random: Bool = False]() -> Dict[Int, Int]:
 # Benchmark Dict init
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_dict_init(mut b: Bencher) raises:
+def bench_dict_init(mut b: Bencher) raises:
     @always_inline
     @parameter
-    fn call_fn():
+    def call_fn():
         for _ in range(1000):
             var d = Dict[Int, Int]()
             keep(d)
@@ -51,13 +51,13 @@ fn bench_dict_init(mut b: Bencher) raises:
 # Benchmark Dict Insert
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_dict_insert[size: Int](mut b: Bencher) raises:
+def bench_dict_insert[size: Int](mut b: Bencher) raises:
     """Insert 10 new items 100_000 times."""
     var items = make_dict[size]()
 
     @always_inline
     @parameter
-    fn call_fn() raises:
+    def call_fn() raises:
         for _ in range(10_000):
             for key in range(size, size + 10):
                 items[key] = Int(random_si64(0, Int64(size)))
@@ -70,13 +70,13 @@ fn bench_dict_insert[size: Int](mut b: Bencher) raises:
 # Benchmark Dict Lookup
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_dict_lookup[size: Int](mut b: Bencher) raises:
+def bench_dict_lookup[size: Int](mut b: Bencher) raises:
     """Lookup 10 items 100_000 times."""
     var items = make_dict[size]()
 
     @always_inline
     @parameter
-    fn call_fn() raises:
+    def call_fn() raises:
         for _ in range(10_000):
             for key in range(10):
                 var res = items[key]
@@ -90,13 +90,13 @@ fn bench_dict_lookup[size: Int](mut b: Bencher) raises:
 # Benchmark Dict contains
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_dict_contains[size: Int](mut b: Bencher) raises:
+def bench_dict_contains[size: Int](mut b: Bencher) raises:
     """Check if the dict contains 10 keys 100_000 times."""
     var items = make_dict[size]()
 
     @always_inline
     @parameter
-    fn call_fn() raises:
+    def call_fn() raises:
         for _ in range(100_000):
             for key in range(10):
                 var res = key in items
@@ -110,13 +110,13 @@ fn bench_dict_contains[size: Int](mut b: Bencher) raises:
 # Benchmark Dict Lookup Miss
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_dict_lookup_miss[size: Int](mut b: Bencher) raises:
+def bench_dict_lookup_miss[size: Int](mut b: Bencher) raises:
     """Lookup 10 missing keys 100_000 times."""
     var items = make_dict[size]()
 
     @always_inline
     @parameter
-    fn call_fn() raises:
+    def call_fn() raises:
         for _ in range(10_000):
             for key in range(size, size + 10):
                 var res = black_box(key) in items
@@ -130,13 +130,13 @@ fn bench_dict_lookup_miss[size: Int](mut b: Bencher) raises:
 # Benchmark Dict Insert/Delete
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_dict_insert_delete[size: Int](mut b: Bencher) raises:
+def bench_dict_insert_delete[size: Int](mut b: Bencher) raises:
     """Insert and immediately delete 10_000 times."""
     var items = make_dict[size]()
 
     @always_inline
     @parameter
-    fn call_fn() raises:
+    def call_fn() raises:
         for i in range(10_000):
             var key = black_box(size + i)
             items[key] = i
@@ -151,13 +151,13 @@ fn bench_dict_insert_delete[size: Int](mut b: Bencher) raises:
 # Benchmark Dict Iteration
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_dict_iter[size: Int](mut b: Bencher) raises:
+def bench_dict_iter[size: Int](mut b: Bencher) raises:
     """Iterate over all keys."""
     var items = make_dict[size]()
 
     @always_inline
     @parameter
-    fn call_fn() raises:
+    def call_fn() raises:
         for key in black_box(items):
             keep(key)
 
@@ -170,7 +170,7 @@ fn bench_dict_iter[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 
 
-fn total_bytes_used[H: Hasher](items: Dict[Int, Int, H]) -> Int:
+def total_bytes_used[H: Hasher](items: Dict[Int, Int, H]) -> Int:
     # The SIMD group width used internally by Dict's Swiss Table.
     comptime _BENCH_GROUP_WIDTH: Int = 16
     # ctrl bytes: capacity + GROUP_WIDTH for SIMD mirroring

@@ -18,9 +18,9 @@ from std.io.io import _fdopen
 from std.testing import testing, TestSuite
 
 
-fn test_stdin() raises:
+def test_stdin() raises:
     # "Hello, World" piped from RUN command above
-    var stdin = _fdopen["r"](sys.stdin)
+    var stdin = _fdopen["r"](std.sys.stdin)
     testing.assert_equal(stdin.read_until_delimiter(","), "Hello")
     testing.assert_equal(stdin.readline(), " World")
 

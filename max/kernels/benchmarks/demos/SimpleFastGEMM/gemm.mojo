@@ -18,13 +18,14 @@ from std.sys import align_of, prefetch, simd_width_of
 from std.sys.intrinsics import PrefetchOptions
 
 import std.benchmark
-from buffer import NDBuffer
 from linalg.utils import (
     get_matmul_kernel_shape,
     get_matmul_prefetch_b_distance_k,
 )
 
 from std.utils.index import Index
+
+from layout import TileTensor, Coord, Idx, row_major
 
 comptime dtype = DType.float32
 comptime simd_size = simd_width_of[dtype]()
@@ -41,29 +42,33 @@ comptime NR = kernel_shape.simd_cols * simd_size
 comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
 
 
-fn print_mat(a_ptr: UnsafePointer[Scalar[dtype], _], m: Int, n: Int):
-    var a = NDBuffer[rank=2, dtype](a_ptr, Index(m, n))
+def print_mat(a_ptr: UnsafePointer[Scalar[dtype], _], m: Int, n: Int):
+    var a = TileTensor(a_ptr, row_major((Idx(m), Idx(n))))
     for i in range(m):
         for j in range(n):
             print(a[i, j], end=" ")
         print("")
 
 
-fn gemm_naive(
-    a: NDBuffer[rank=2, dtype],
-    b: NDBuffer[rank=2, dtype],
-    c: NDBuffer[rank=2, dtype],
+def gemm_naive(
+    a: TileTensor[dtype, element_size=1, ...],
+    b: TileTensor[dtype, element_size=1, ...],
+    c: TileTensor[mut=True, dtype, element_size=1, ...],
     m: Int,
     n: Int,
     k: Int,
 ):
+    comptime assert a.flat_rank == 2
+    comptime assert b.flat_rank == 2
+    comptime assert c.flat_rank == 2
+
     for i in range(m):
         for p in range(k):
             for j in range(n):
                 c[i, j] += a[i, p] * b[p, j]
 
 
-fn kernel(
+def kernel(
     a_ptr: UnsafePointer[Scalar[dtype], _],
     b_ptr: UnsafePointer[Scalar[dtype], _],
     c_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
@@ -71,20 +76,23 @@ fn kernel(
     k: Int,
     kc: Int,
 ):
-    var a = NDBuffer[rank=1, dtype](a_ptr, MR * k)
-    var b = NDBuffer[rank=1, dtype](b_ptr, k * NR)
-    var c = NDBuffer[rank=1, dtype](c_ptr, MR * n)
+    var a = TileTensor(a_ptr, row_major(Idx(MR * k)))
+    var b = TileTensor(b_ptr, row_major(Idx(k * NR)))
+    var c = TileTensor(c_ptr, row_major(Idx(MR * n)))
 
-    var c_local = NDBuffer[
-        rank=1, dtype, MutAnyOrigin, MR * NR
-    ]().stack_allocation[alignment=alignment]()
+    var c_stack = InlineArray[Scalar[dtype], align_up(MR * NR, alignment)](
+        uninitialized=True
+    )
+    var c_local = TileTensor(c_stack, row_major[MR * NR]())
 
     comptime NR2 = NR // simd_size
 
     comptime for idx0 in range(MR):
         for idx1 in range(NR2):
-            var cv = c.load[width=simd_size](n * idx0 + simd_size * idx1)
-            c_local.store(NR * idx0 + simd_size * idx1, cv)
+            var cv = c.load[width=simd_size](
+                Coord(Idx(n * idx0 + simd_size * idx1))
+            )
+            c_local.store(Coord(Idx(NR * idx0 + simd_size * idx1)), cv)
 
     for pr in range(kc):
         comptime for i in range(NR2):
@@ -95,20 +103,24 @@ fn kernel(
         comptime for idx0 in range(MR):
             for idx1 in range(NR2):
                 var av = a[idx0 * k + pr].cast[dtype]()
-                var bv = b.load[width=simd_size](NR * pr + simd_size * idx1)
+                var bv = b.load[width=simd_size](
+                    Coord(Idx(NR * pr + simd_size * idx1))
+                )
                 var cv = c_local.load[width=simd_size](
-                    NR * idx0 + simd_size * idx1
+                    Coord(Idx(NR * idx0 + simd_size * idx1))
                 )
                 cv += av * bv
-                c_local.store(NR * idx0 + simd_size * idx1, cv)
+                c_local.store(Coord(Idx(NR * idx0 + simd_size * idx1)), cv)
 
     comptime for idx0 in range(MR):
         for idx1 in range(NR2):
-            var cv = c_local.load[width=simd_size](NR * idx0 + simd_size * idx1)
-            c.store(n * idx0 + simd_size * idx1, cv)
+            var cv = c_local.load[width=simd_size](
+                Coord(Idx(NR * idx0 + simd_size * idx1))
+            )
+            c.store(Coord(Idx(n * idx0 + simd_size * idx1)), cv)
 
 
-fn pack_B(
+def pack_B(
     b_ptr: UnsafePointer[Scalar[dtype], _],
     b2_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     k: Int,
@@ -116,15 +128,15 @@ fn pack_B(
     kc: Int,
     nc: Int,
 ):
-    var b = NDBuffer[rank=1, dtype](b_ptr, k * n)
-    var bc = NDBuffer[rank=1, dtype](b2_ptr, k * n)
+    var b = TileTensor(b_ptr, row_major(Idx(k * n)))
+    var bc = TileTensor(b2_ptr, row_major(Idx(k * n)))
     for pr in range(kc):
         for ir in range(nc // NR):
             for v in range(NR):
                 bc[NR * (pr + kc * ir) + v] = b[pr * n + NR * ir + v]
 
 
-fn prepack_B(
+def prepack_B(
     b_ptr: UnsafePointer[Scalar[dtype], _],
     b2_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     k: Int,
@@ -137,7 +149,7 @@ fn prepack_B(
             pack_B(b_ptr + pc * n + jc, b2_ptr + n * pc + jc * kc, k, n, kc, nc)
 
 
-fn gemm(
+def gemm(
     a_ptr: UnsafePointer[Scalar[dtype], _],
     b_ptr: UnsafePointer[Scalar[dtype], _],
     c_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
@@ -188,29 +200,29 @@ def main() raises:
     var b2_ptr = alloc[Scalar[dtype]](k * n, alignment=alignment)
     var c_ptr = alloc[Scalar[dtype]](m * n, alignment=alignment)
     var c2_ptr = alloc[Scalar[dtype]](m * n, alignment=alignment)
-    var a = NDBuffer[rank=1, dtype](a_ptr, m * k)
-    var b = NDBuffer[rank=1, dtype](b_ptr, k * n)
-    var b2 = NDBuffer[rank=1, dtype](b2_ptr, k * n)
-    var c = NDBuffer[rank=1, dtype](c_ptr, m * n)
-    var c2 = NDBuffer[rank=1, dtype](c2_ptr, m * n)
+    var a = TileTensor(a_ptr, row_major(Idx(m * k)))
+    var b = TileTensor(b_ptr, row_major(Idx(k * n)))
+    var b2 = TileTensor(b2_ptr, row_major(Idx(k * n)))
+    var c = TileTensor(c_ptr, row_major(Idx(m * n)))
+    var c2 = TileTensor(c2_ptr, row_major(Idx(m * n)))
 
-    var am = NDBuffer[rank=2, dtype](a_ptr, Index(m, k))
-    var bm = NDBuffer[rank=2, dtype](b_ptr, Index(k, n))
-    var cm = NDBuffer[rank=2, dtype](c_ptr, Index(m, n))
+    var am = TileTensor(a_ptr, row_major((Idx(m), Idx(k))))
+    var bm = TileTensor(b_ptr, row_major((Idx(k), Idx(n))))
+    var cm = TileTensor(c_ptr, row_major((Idx(m), Idx(n))))
 
     for i in range(m * k):
-        a[i] = i
+        a[i] = Scalar[dtype](i)
     for i in range(k * n):
-        b[i] = i
-        b2[i] = i
+        b[i] = Scalar[dtype](i)
+        b2[i] = Scalar[dtype](i)
     for i in range(m * n):
-        c[i] = i
-        c2[i] = i
+        c[i] = Scalar[dtype](i)
+        c2[i] = Scalar[dtype](i)
 
-    prepack_B(b.data, b2.data, k, n, kc, nc)
+    prepack_B(b.ptr, b2.ptr, k, n, kc, nc)
 
     gemm_naive(am, bm, cm, m, n, k)
-    gemm(a.data, b2.data, c2.data, m, n, k, mc, nc, kc)
+    gemm(a.ptr, b2.ptr, c2.ptr, m, n, k, mc, nc, kc)
     var errors: Int = 0
     for i in range(m * n):
         if c[i] != c2[i]:
@@ -221,12 +233,12 @@ def main() raises:
     print(" errors")
 
     @parameter
-    fn bench_gemm():
-        gemm(a.data, b2.data, c2.data, m, n, k, mc, nc, kc)
+    def bench_gemm():
+        gemm(a.ptr, b2.ptr, c2.ptr, m, n, k, mc, nc, kc)
 
     var num_warmup: Int = 1
     var time = std.benchmark.run[func3=bench_gemm](num_warmup).mean()
-    var flops = 2.0 * m * n * k / time / 1e9
+    var flops = 2.0 * Float64(m) * Float64(n) * Float64(k) / time / 1e9
     print(time, end="")
     print(" seconds")
     print(flops, end="")

@@ -35,13 +35,7 @@ from std.gpu.sync import (
     mbarrier_arrive,
 )
 from std.gpu.compute.arch.tcgen05 import *
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeTuple,
-)
-from layout.int_tuple import IntTuple
+from layout import IntTuple, Layout, LayoutTensor, RuntimeTuple, UNKNOWN_VALUE
 from layout.layout import coalesce
 from layout.layout_tensor import LayoutTensorIter
 from layout.runtime_tuple import idx2crd
@@ -72,39 +66,39 @@ struct WarpRole[has_scheduler: Bool = True](TrivialRegisterPassable):
     comptime Epilogue = Self(3)
 
     @always_inline
-    fn __eq__(self, other: UInt) -> Bool:
+    def __eq__(self, other: UInt) -> Bool:
         return self._role == Int32(other)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._role == other._role
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self._role != other._role
 
     @always_inline
-    fn __ge__(self, other: UInt) -> Bool:
+    def __ge__(self, other: UInt) -> Bool:
         return self._role >= Int32(other)
 
     @staticmethod
     @always_inline
-    fn is_main_load() -> Bool:
+    def is_main_load() -> Bool:
         return Self.MainLoad == warp_id()
 
     @staticmethod
     @always_inline
-    fn is_mma() -> Bool:
+    def is_mma() -> Bool:
         return Self.Mma == warp_id()
 
     @staticmethod
     @always_inline
-    fn is_epilogue() -> Bool:
+    def is_epilogue() -> Bool:
         return Self.Epilogue >= warp_id()
 
     @staticmethod
     @always_inline
-    fn is_scheduler() -> Bool:
+    def is_scheduler() -> Bool:
         comptime assert Self.has_scheduler, "Scheduler warp is not enabled"
         return Self.Scheduler == warp_id()
 
@@ -112,7 +106,7 @@ struct WarpRole[has_scheduler: Bool = True](TrivialRegisterPassable):
 # TODO: Remove this LayoutTensorIter overload once all callers migrate
 # to SMemTileArray2D. See the TileTensor overload below.
 @always_inline
-fn consumer_main_loop[
+def consumer_main_loop[
     accum_type: DType,
     c_type: DType,
     a_type: DType,
@@ -186,7 +180,7 @@ fn consumer_main_loop[
 
 
 @always_inline
-fn consumer_main_loop[
+def consumer_main_loop[
     accum_type: DType,
     c_type: DType,
     a_type: DType,
@@ -270,9 +264,8 @@ comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
 
 
 @always_inline
-fn f32_frag_to_smem[
+def f32_frag_to_smem[
     swizzle_mode: TensorMapSwizzle,
-    stageN: UInt,
     vec_dtype: DType,
     vec_size: Int,
 ](
@@ -300,9 +293,9 @@ fn f32_frag_to_smem[
 
 
 @always_inline
-fn stsm_helper[
+def stsm_helper[
     swizzle: Swizzle,
-    stageN: UInt,
+    stageN: Int,
     vec_dtype: DType,
     vec_size: Int,
     transpose_c: Bool = False,
@@ -314,7 +307,7 @@ fn stsm_helper[
 ):
     comptime if size_of[dst.dtype]() == 4:
         comptime assert not transpose_c, "transpose_c must be False"
-        return f32_frag_to_smem[swizzle_mode, stageN](vec, dst)
+        return f32_frag_to_smem[swizzle_mode](vec, dst)
     # Number of elements in one row is 32B and 16B per stsmx4 and stmtx2 tile, respectively.
     comptime stsmx_row_size = 32 // size_of[
         dst.dtype
@@ -381,7 +374,7 @@ fn stsm_helper[
 
 
 @always_inline
-fn shared_memory_epilogue_transpose[
+def shared_memory_epilogue_transpose[
     stage: UInt,
     stageN: UInt,
     c_type: DType,
@@ -561,7 +554,7 @@ fn shared_memory_epilogue_transpose[
 
 
 @always_inline
-fn shared_memory_epilogue[
+def shared_memory_epilogue[
     MMA_M: UInt,
     data_paths: UInt,
     num_stages: UInt,
@@ -751,7 +744,7 @@ fn shared_memory_epilogue[
 
 
 @always_inline
-fn _compute_register_lambda_fn[
+def _compute_register_lambda_fn[
     epilogue_dtype: DType,
     frag_size: Int,
     inc: Int,
@@ -812,7 +805,7 @@ fn _compute_register_lambda_fn[
 
 
 @always_inline
-fn register_epilogue[
+def register_epilogue[
     MMA_M: Int,
     data_paths: Int,
     num_stages: Int,
@@ -920,7 +913,7 @@ fn register_epilogue[
 
 
 @always_inline
-fn accum_arrive[
+def accum_arrive[
     cta_group: Int
 ](mma_output_pipeline: ProducerConsumerPipeline, mma_output_stage: UInt32):
     comptime if cta_group == 1:

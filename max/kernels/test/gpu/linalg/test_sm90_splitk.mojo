@@ -30,7 +30,7 @@ from linalg.utils_gpu import MatmulConfig
 from std.utils.index import Index, IndexList
 
 
-fn test_warp_specialize_gemm_with_multicasting[
+def test_warp_specialize_gemm_with_multicasting[
     block_tile_shape: IndexList[3],
     a_type: DType,
     b_type: DType,
@@ -54,11 +54,11 @@ fn test_warp_specialize_gemm_with_multicasting[
     comptime CLUSTER_N = cluster_shape[0]
     comptime CLUSTER_M = cluster_shape[1]
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList[m.dim, k.dim]()
+    comptime static_b_shape = DimList[
+        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
+    ]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
     var dynamic_a_shape = IndexList[2](m.value, k.value)
     var dynamic_b_shape = IndexList[2](
         n.value, k.value

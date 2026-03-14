@@ -44,9 +44,8 @@ from std.gpu.primitives.cluster import cluster_sync, elect_one_sync
 from std.gpu.sync import syncwarp
 from std.gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
 from std.sys import inlined_assembly
-from layout import ComptimeInt, TileTensor
-from layout.tile_layout import TensorLayout
-from layout.tile_layout import RowMajorLayout, _IntToComptimeInt
+from layout import ComptimeInt, RowMajorLayout, TensorLayout, TileTensor
+from layout.tile_layout import _IntToComptimeInt
 from structured_kernels.tile_types import (
     TmaOpType,
     tma_desc_layout_3d,
@@ -174,7 +173,7 @@ struct GroupedTensormapSmem(TrivialRegisterPassable):
 
     @staticmethod
     @always_inline
-    fn from_smem(
+    def from_smem(
         ptr_a: UnsafePointer[
             TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
@@ -234,7 +233,7 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     var smem: GroupedTensormapSmem
 
     @always_inline
-    fn init_ab_tensormaps[
+    def init_ab_tensormaps[
         a_dtype: DType,
         a_rank: Int,
         a_tile_shape: IndexList[a_rank],
@@ -274,7 +273,7 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
             template_sfb.smem_tensormap_init(self.smem.desc_sfb)
 
     @always_inline
-    fn init_c_tensormap[
+    def init_c_tensormap[
         c_dtype: DType,
         c_rank: Int,
         c_tile_shape: IndexList[c_rank],
@@ -291,7 +290,7 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
             template_c.smem_tensormap_init(self.smem.desc_c)
 
     @always_inline
-    fn update_ab_for_group[
+    def update_ab_for_group[
         a_dtype: DType,
         a_rank: Int,
         a_tile_shape: IndexList[a_rank],
@@ -386,7 +385,7 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         syncwarp()
 
     @always_inline
-    fn update_c_for_group[
+    def update_c_for_group[
         c_dtype: DType,
         c_rank: Int,
         c_tile_shape: IndexList[c_rank],
@@ -434,7 +433,7 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
 # =============================================================================
 
 
-fn is_valid_dtypes_and_scale_factor_vec_size(
+def is_valid_dtypes_and_scale_factor_vec_size(
     ab_dtype: DType,
     sf_dtype: DType,
     sf_vec_size: Int,
@@ -503,7 +502,7 @@ fn is_valid_dtypes_and_scale_factor_vec_size(
     return True
 
 
-fn is_valid_mma_tiler_and_cluster_shape(
+def is_valid_mma_tiler_and_cluster_shape(
     mma_tiler_m: Int,
     mma_tiler_n: Int,
     cluster_m: Int,
@@ -528,7 +527,7 @@ fn is_valid_mma_tiler_and_cluster_shape(
     if mma_tiler_m == 256 and cluster_m % 2 != 0:
         return False
 
-    fn is_power_of_2(x: Int) -> Bool:
+    def is_power_of_2(x: Int) -> Bool:
         return x > 0 and (x & (x - 1)) == 0
 
     if not is_power_of_2(cluster_m) or not is_power_of_2(cluster_n):
@@ -1018,7 +1017,7 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== Validation ==========
 
     @staticmethod
-    fn validate_config():
+    def validate_config():
         """Compile-time validation of kernel configuration."""
         comptime assert (
             Self.a_type == Self.b_type
@@ -1037,7 +1036,7 @@ struct GroupedBlockScaledMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn _update_tensormap_address[
+    def _update_tensormap_address[
         dtype: DType,
         tma_rank: Int,
         cta_tile_shape: IndexList[tma_rank],
@@ -1077,7 +1076,7 @@ struct GroupedBlockScaledMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn init_barriers(
+    def init_barriers(
         ctx: Self.Context,
         a_tma_template: Self.ATmaOp,
         b_tma_template: Self.BTmaOp,
@@ -1119,7 +1118,7 @@ struct GroupedBlockScaledMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn init_barriers_2sm(
+    def init_barriers_2sm(
         ctx: Self.Context,
         a_tma_template: Self.ATmaOp,
         b_tma_template: Self.BTmaOp,
@@ -1189,7 +1188,7 @@ struct GroupedBlockScaledMatmulKernel[
     @__llvm_arg_metadata(c_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_template, `nvvm.grid_constant`)
-    fn run(
+    def run(
         # Template tensormaps for SMEM initialization
         a_tma_template: Self.ATmaOp,
         b_tma_template: Self.BTmaOp,
@@ -1495,7 +1494,7 @@ struct GroupedBlockScaledMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn load_input_tiles[
+    def load_input_tiles[
         tiles_origin: MutOrigin,
         //,
     ](
@@ -1606,7 +1605,7 @@ struct GroupedBlockScaledMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn mma[
+    def mma[
         tiles_origin: MutOrigin,
         //,
     ](
@@ -1662,7 +1661,7 @@ struct GroupedBlockScaledMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn epilogue(
+    def epilogue(
         c_tiles: Self.SmemType.Core.CTileArray,
         c_tma_op: Self.CTmaOp,
         stage: Self.TileWriterType.Stage,
@@ -1691,7 +1690,7 @@ struct GroupedBlockScaledMatmulKernel[
     @__llvm_arg_metadata(c_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_template, `nvvm.grid_constant`)
-    fn run_2sm(
+    def run_2sm(
         # Template tensormaps for SMEM initialization
         a_tma_template: Self.ATmaOp,
         b_tma_template: Self.BTmaOp,
@@ -2083,7 +2082,7 @@ struct GroupedBlockScaledMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn _compute_initial_work(
+    def _compute_initial_work(
         problem_sizes: Self.ProblemSizesTile,
         num_groups: Int,
         linear_idx: UInt32,

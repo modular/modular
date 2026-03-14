@@ -31,7 +31,7 @@ from std.utils import IndexList
 from std.utils.index import Index
 
 
-fn naive_matmul[
+def naive_matmul[
     layout_dst: Layout,
     layout_lhs: Layout,
     layout_rhs: Layout,
@@ -52,7 +52,7 @@ fn naive_matmul[
         )
 
 
-fn test_naive_matmul_kernel(ctx: DeviceContext) raises:
+def test_naive_matmul_kernel(ctx: DeviceContext) raises:
     print("=== test_naive_matmul_kernel")
     comptime M = 8
     comptime N = 8
@@ -91,7 +91,7 @@ fn test_naive_matmul_kernel(ctx: DeviceContext) raises:
     _ = mat_c^
 
 
-fn sram_blocked_matmul[
+def sram_blocked_matmul[
     layout_dst: Layout,
     layout_lhs: Layout,
     layout_rhs: Layout,
@@ -182,7 +182,7 @@ fn sram_blocked_matmul[
             dst_local_tile[m, n] = dst_register_tile[m, n]
 
 
-fn test_sram_blocked_matmul(ctx: DeviceContext) raises:
+def test_sram_blocked_matmul(ctx: DeviceContext) raises:
     print("=== test_sram_blocked_matmul")
     comptime M = 8
     comptime N = 8
@@ -228,7 +228,7 @@ fn test_sram_blocked_matmul(ctx: DeviceContext) raises:
     _ = mat_c^
 
 
-fn single_warp_mma_sync_m16n8k8[
+def single_warp_mma_sync_m16n8k8[
     layout_c: Layout,
     layout_a: Layout,
     layout_b: Layout,
@@ -269,7 +269,7 @@ fn single_warp_mma_sync_m16n8k8[
     mat_c_mma[thread_x, thread_y, 1, 1] = vec_d[3]
 
 
-fn test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
+def test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
     print("=== single_warp_tf32_m16n8k8_matmul")
     comptime M = 16
     comptime N = 8
@@ -329,7 +329,7 @@ fn test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
     _ = mat_c^
 
 
-fn sram_blocked_matmul_dynamic_nd_buffer[
+def sram_blocked_matmul_dynamic_nd_buffer[
     thread_layout: Layout,
     dst_shape: DimList,
     lhs_shape: DimList,
@@ -424,7 +424,7 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
     )
 
 
-fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
+def test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
     print("=== test_sram_blocked_matmul_dynamic_nd_buffer")
     comptime M = 8
     comptime N = 8
@@ -460,10 +460,10 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
     var mat_c = NDBuffer[rank=2, DType.float32, _, DimList.create_unknown[2]()](
         mat_c_dev.unsafe_ptr(), dynamic_shape=Index(M, N)
     )
-    var mat_a = NDBuffer[rank=2, DType.float32, _, DimList(M, K)](
+    var mat_a = NDBuffer[rank=2, DType.float32, _, DimList[M, K]()](
         mat_a_dev.unsafe_ptr(), dynamic_shape=Index(M, K)
     )
-    var mat_b = NDBuffer[rank=2, DType.float32, _, DimList(K, N)](
+    var mat_b = NDBuffer[rank=2, DType.float32, _, DimList[K, N]()](
         mat_b_dev.unsafe_ptr(), dynamic_shape=Index(K, N)
     )
 

@@ -23,6 +23,7 @@ from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -97,7 +98,10 @@ class DeepseekV2Config(ArchConfigWithKVCache):
                 "'silu' is the only hidden_act currently supported"
             )
 
-        if self.rope_scaling and self.rope_scaling["type"] != "yarn":
+        rope_type = self.rope_scaling and self.rope_scaling.get(
+            "rope_type", self.rope_scaling.get("type")
+        )
+        if rope_type and rope_type != "yarn":
             raise ValueError(
                 "'yarn' is the only rope_scaling type currently supported"
             )
@@ -208,7 +212,7 @@ class DeepseekV2Config(ArchConfigWithKVCache):
             qk_rope_head_dim=huggingface_config.qk_rope_head_dim,
             rms_norm_eps=huggingface_config.rms_norm_eps,
             rope_scaling=huggingface_config.rope_scaling,
-            rope_theta=huggingface_config.rope_theta,
+            rope_theta=get_rope_theta(huggingface_config),
             routed_scaling_factor=huggingface_config.routed_scaling_factor,
             scoring_func=huggingface_config.scoring_func,
             seq_aux=huggingface_config.seq_aux,

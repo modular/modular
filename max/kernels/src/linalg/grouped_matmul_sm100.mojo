@@ -52,15 +52,15 @@ from std.gpu.sync import (
 )
 from std.gpu.compute.arch.tcgen05 import *
 from layout import (
-    UNKNOWN_VALUE,
+    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
+    UNKNOWN_VALUE,
 )
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.int_tuple import IntTuple
 from layout.layout import blocked_product
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.runtime_tuple import idx2crd, crd2idx
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
@@ -97,39 +97,39 @@ struct WarpRole(TrivialRegisterPassable):
     comptime Epilogue = Self(3)
 
     @always_inline
-    fn __eq__(self, other: UInt) -> Bool:
+    def __eq__(self, other: UInt) -> Bool:
         return self._role == Int32(other)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._role == other._role
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self._role != other._role
 
     @always_inline
-    fn __ge__(self, other: UInt) -> Bool:
+    def __ge__(self, other: UInt) -> Bool:
         return self._role >= Int32(other)
 
     @staticmethod
     @always_inline
-    fn is_main_load() -> Bool:
+    def is_main_load() -> Bool:
         return Self.MainLoad == get_warp_id()
 
     @staticmethod
     @always_inline
-    fn is_mma() -> Bool:
+    def is_mma() -> Bool:
         return Self.Mma == get_warp_id()
 
     @staticmethod
     @always_inline
-    fn is_epilogue() -> Bool:
+    def is_epilogue() -> Bool:
         return Self.Epilogue >= get_warp_id()
 
 
 @always_inline
-fn load_AB[
+def load_AB[
     a_type: DType,
     b_type: DType,
     a_tile_rank: Int,
@@ -248,7 +248,7 @@ fn load_AB[
 
 
 @always_inline
-fn consumer_main_loop[
+def consumer_main_loop[
     accum_type: DType,
     c_type: DType,
     a_type: DType,
@@ -330,7 +330,7 @@ fn consumer_main_loop[
 
 
 @always_inline
-fn stsm_helper[
+def stsm_helper[
     swizzle: Swizzle,
     vec_dtype: DType,
     vec_size: Int,
@@ -395,7 +395,7 @@ fn stsm_helper[
 
 
 @always_inline
-fn multi_stage_store_C[
+def multi_stage_store_C[
     c_type: DType,
     c_tile_rank: Int,
     c_tile_shape: IndexList[c_tile_rank],
@@ -702,7 +702,7 @@ fn multi_stage_store_C[
             named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
 
-fn zero_output[
+def zero_output[
     c_type: DType,
     c_layout: Layout,
     *,
@@ -754,7 +754,7 @@ fn zero_output[
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-fn blackwell_tma_umma_warp_specialized_kernel[
+def blackwell_tma_umma_warp_specialized_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -1163,7 +1163,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         _ = tmem_dealloc_mbar[].arrive()
 
 
-fn grouped_matmul_sm100_persistent[
+def grouped_matmul_sm100_persistent[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -1232,7 +1232,7 @@ fn grouped_matmul_sm100_persistent[
     )
 
 
-fn _grouped_matmul_sm100_persistent[
+def _grouped_matmul_sm100_persistent[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,

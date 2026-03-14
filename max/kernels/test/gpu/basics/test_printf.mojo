@@ -17,14 +17,14 @@ from std.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: == test_gpu_printf
-fn test_gpu_printf() raises:
+def test_gpu_printf() raises:
     print("== test_gpu_printf")
 
     #
     # Test that stdlib _printf works on GPU
     #
 
-    fn do_print(x: Int, y: Float64):
+    def do_print(x: Int, y: Float64):
         # CHECK: printf printed 98 123.456!
         _printf["printf printed %ld %g!\n"](x, y)
         # CHECK: printf printed more 0 1 2 3 4 5 6 7 8 9

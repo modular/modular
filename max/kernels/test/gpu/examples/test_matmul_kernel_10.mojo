@@ -58,7 +58,7 @@ comptime BLOCK_DIM = 8
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(NUM_THREADS))
 )
-fn sgemm_warp_tiling_kernel[
+def sgemm_warp_tiling_kernel[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -112,14 +112,14 @@ fn sgemm_warp_tiling_kernel[
         rank=1,
         a_type,
         MutAnyOrigin,
-        DimList(BK * BM_padded),
+        DimList[BK * BM_padded](),
         address_space=AddressSpace.SHARED,
     ].stack_allocation()
     var b_sram = NDBuffer[
         rank=1,
         b_type,
         MutAnyOrigin,
-        DimList(BK * BN),
+        DimList[BK * BN](),
         address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -144,18 +144,18 @@ fn sgemm_warp_tiling_kernel[
         rank=4,
         c_type,
         MutAnyOrigin,
-        DimList(WMITER, WNITER, TM, TN),
+        DimList[WMITER, WNITER, TM, TN](),
     ]().stack_allocation()
     thread_results.zero()
 
     # We cache into registers on the warptile level.
     var reg_m = NDBuffer[
-        rank=2, a_type, MutAnyOrigin, DimList(WMITER, TM)
+        rank=2, a_type, MutAnyOrigin, DimList[WMITER, TM]()
     ]().stack_allocation()
     reg_m.zero()
 
     var reg_n = NDBuffer[
-        rank=2, b_type, MutAnyOrigin, DimList(WNITER, TN)
+        rank=2, b_type, MutAnyOrigin, DimList[WNITER, TN]()
     ]().stack_allocation()
     reg_n.zero()
 
@@ -283,7 +283,7 @@ fn sgemm_warp_tiling_kernel[
                         C_interim.store[alignment=16](Int(c_idx), vec)
 
 
-fn matmul_naive(
+def matmul_naive(
     a_ptr: UnsafePointer[Float32, MutAnyOrigin],
     b_ptr: UnsafePointer[Float32, MutAnyOrigin],
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
@@ -307,7 +307,7 @@ fn matmul_naive(
     c[Index(x, y)] = accum
 
 
-fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
+def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     print("== run_matmul_kernel_10")
 
     comptime M = 4096
@@ -408,23 +408,23 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_device, b_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    var c_buffer = NDBuffer[rank=2, DType.float32, _, DimList(M, N)](
+    var c_buffer = NDBuffer[rank=2, DType.float32, _, DimList[M, N]()](
         c_device.unsafe_ptr()
     )
-    var a_buffer = NDBuffer[rank=2, DType.float32, _, DimList(M, K)](
+    var a_buffer = NDBuffer[rank=2, DType.float32, _, DimList[M, K]()](
         a_device.unsafe_ptr()
     )
-    var b_buffer = NDBuffer[rank=2, DType.float32, _, DimList(K, N)](
+    var b_buffer = NDBuffer[rank=2, DType.float32, _, DimList[K, N]()](
         b_device.unsafe_ptr()
     )
 
     comptime sgemm_type = sgemm_warp_tiling_kernel[
         DType.float32,
-        DimList(M, N),
+        DimList[M, N](),
         DType.float32,
-        DimList(M, K),
+        DimList[M, K](),
         DType.float32,
-        DimList(K, N),
+        DimList[K, N](),
         BM=K10_BM,
         BN=K10_BN,
         BK=K10_BK,
@@ -439,10 +439,10 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
 
     @parameter
     @always_inline
-    fn bench_matmul_10(mut b: Bencher):
+    def bench_matmul_10(mut b: Bencher):
         @parameter
         @always_inline
-        fn run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises:
             ctx.enqueue_function[sgemm_type, sgemm_type](
                 c_buffer,
                 a_buffer,
@@ -473,10 +473,10 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
 
     @parameter
     @always_inline
-    fn bench_naive(mut b: Bencher):
+    def bench_naive(mut b: Bencher):
         @parameter
         @always_inline
-        fn run_func_naive(ctx: DeviceContext) raises:
+        def run_func_naive(ctx: DeviceContext) raises:
             ctx.enqueue_function[matmul_naive, matmul_naive](
                 a_device,
                 b_device,

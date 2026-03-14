@@ -213,7 +213,7 @@ def test_span_coerce() raises:
     var l = [1, 2, 3]
     var a: InlineArray[Int, 3] = [1, 2, 3]
 
-    fn takes_span(s: Span[Int, ...]):
+    def takes_span(s: Span[Int, ...]):
         pass
 
     takes_span(l)
@@ -241,7 +241,7 @@ def test_merge() raises:
     var a = [1, 2, 3]
     var b = [4, 5, 6]
 
-    fn inner(cond: Bool, mut a: List[Int], mut b: List[Int]):
+    def inner(cond: Bool, mut a: List[Int], mut b: List[Int]):
         var either = Span(a) if cond else Span(b)
         either[0] = 0
         either[-1] = 10
@@ -303,11 +303,11 @@ def test_reverse() raises:
 
 def test_apply() raises:
     @parameter
-    fn _twice[D: DType, w: Int](x: SIMD[D, w]) -> SIMD[D, w]:
+    def _twice[D: DType, w: Int](x: SIMD[D, w]) -> SIMD[D, w]:
         return x * 2
 
     @parameter
-    fn _where[D: DType, w: Int](x: SIMD[D, w]) -> SIMD[DType.bool, w]:
+    def _where[D: DType, w: Int](x: SIMD[D, w]) -> SIMD[DType.bool, w]:
         return (x % 2).eq(0)
 
     def _test[D: DType]() raises:
@@ -362,7 +362,7 @@ def test_apply() raises:
 
 
 def test_count_func() raises:
-    fn is_2[w: Int](v: SIMD[DType.uint8, w]) unified {} -> SIMD[DType.bool, w]:
+    def is_2[w: Int](v: SIMD[DType.uint8, w]) unified {} -> SIMD[DType.bool, w]:
         return v.eq(2)
 
     var data = Span[Byte]([Byte(0), 1, 2, 1, 2, 1, 2])
@@ -419,25 +419,25 @@ def test_binary_sarch_by() raises:
     var data: List[Int] = [1, 3, 5, 7, 9, 11, 13]
     var span = Span(data)
 
-    fn cmp_7(x: Int) -> Int:
+    def cmp_7(x: Int) -> Int:
         return x - 7
 
     var result = span.binary_search_by[cmp_7]()
     assert_equal(3, result.value())
 
-    fn cmp_6(x: Int) -> Int:
+    def cmp_6(x: Int) -> Int:
         return x - 6
 
     var result2 = span.binary_search_by[cmp_6]()
     assert_true(not result2)
 
-    fn cmp_1(x: Int) -> Int:
+    def cmp_1(x: Int) -> Int:
         return x - 1
 
     var result3 = span.binary_search_by[cmp_1]()
     assert_equal(0, result3.value())
 
-    fn cmp_13(x: Int) -> Int:
+    def cmp_13(x: Int) -> Int:
         return x - 13
 
     var result4 = span.binary_search_by[cmp_13]()
@@ -468,7 +468,7 @@ def test_iter_empty() raises:
 def test_mut_span_alias() raises:
     var data = [1, 2, 3, 4, 5]
 
-    fn fill_span(span: MutSpan[Int, _]):
+    def fill_span(span: MutSpan[Int, _]):
         span.fill(42)
 
     fill_span(data)
@@ -479,7 +479,7 @@ def test_mut_span_alias() raises:
 def test_immut_span_alias() raises:
     var data: List[Int] = [1, 2, 3, 4, 5]
 
-    fn sum_span(span: ImmutSpan[Int, _]) -> Int:
+    def sum_span(span: ImmutSpan[Int, _]) -> Int:
         var total = 0
         for i in range(len(span)):
             total += span[i]

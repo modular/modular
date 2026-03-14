@@ -55,7 +55,7 @@ def check_write_to(
 
 
 @always_inline
-fn libm_call[
+def libm_call[
     dtype: DType,
     width: Int,
     //,
@@ -79,14 +79,14 @@ fn libm_call[
 
     @always_inline("nodebug")
     @parameter
-    fn _float32_dispatch[
+    def _float32_dispatch[
         input_type: DType, result_type: DType
     ](arg: Scalar[input_type]) -> Scalar[result_type]:
         return external_call[fn_fp32, Scalar[result_type]](arg)
 
     @always_inline("nodebug")
     @parameter
-    fn _float64_dispatch[
+    def _float64_dispatch[
         input_type: DType, result_type: DType
     ](arg: Scalar[input_type]) -> Scalar[result_type]:
         return external_call[fn_fp64, Scalar[result_type]](arg)

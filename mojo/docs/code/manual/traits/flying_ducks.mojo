@@ -13,26 +13,26 @@
 
 
 trait Quackable:
-    fn quack(self):
+    def quack(self):
         ...
 
 
 trait Flyable:
-    fn fly(self):
+    def fly(self):
         ...
 
 
-fn quack_and_go[type: Quackable & Flyable](quacker: type):
+def quack_and_go[type: Quackable & Flyable](quacker: type):
     quacker.quack()
     quacker.fly()
 
 
 @fieldwise_init
 struct FlyingDuck(Copyable, Flyable, Quackable):
-    fn quack(self):
+    def quack(self):
         print("Quack")
 
-    fn fly(self):
+    def fly(self):
         print("Whoosh!")
 
 
@@ -41,10 +41,10 @@ comptime DuckLike = Quackable & Flyable
 
 @fieldwise_init
 struct ToyDuck(Copyable, DuckLike):
-    fn quack(self):
+    def quack(self):
         print("Squeak!")
 
-    fn fly(self):
+    def fly(self):
         print("Boing!")
 
 

@@ -46,7 +46,7 @@ from std.sys.info import simd_width_of
 
 
 @always_inline
-fn block_reduce[
+def block_reduce[
     BLOCK_SIZE: Int,
     reduce_fn: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
@@ -74,7 +74,7 @@ fn block_reduce[
 
     @always_inline
     @parameter
-    fn reduce_wrapper[
+    def reduce_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
@@ -95,7 +95,7 @@ fn block_reduce[
 
 
 @always_inline
-fn block_reduce[
+def block_reduce[
     BLOCK_SIZE: Int,
     num_reductions: Int,
     reduce_fn: fn[dtype: DType, width: Int, reduction_idx: Int](
@@ -131,7 +131,7 @@ fn block_reduce[
 
     @always_inline
     @parameter
-    fn do_warp_reduce(
+    def do_warp_reduce(
         val: StaticTuple[SIMD[dtype, simd_width], num_reductions]
     ) -> StaticTuple[SIMD[dtype, simd_width], num_reductions]:
         var result = StaticTuple[SIMD[dtype, simd_width], num_reductions]()
@@ -140,7 +140,7 @@ fn block_reduce[
 
             @always_inline
             @parameter
-            fn reduce_wrapper[
+            def reduce_wrapper[
                 dtype: DType, width: Int
             ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
                 dtype, width
@@ -194,7 +194,7 @@ fn block_reduce[
 
 
 @always_inline
-fn row_reduce[
+def row_reduce[
     BLOCK_SIZE: Int,
     input_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
@@ -238,7 +238,7 @@ fn row_reduce[
 
     @always_inline
     @parameter
-    fn reduce_wrapper[
+    def reduce_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
@@ -261,7 +261,7 @@ fn row_reduce[
 
 
 @always_inline
-fn row_reduce[
+def row_reduce[
     BLOCK_SIZE: Int,
     num_reductions: Int,
     input_fn: fn[dtype: DType, width: Int, rank: Int](
@@ -352,7 +352,7 @@ fn row_reduce[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-fn reduce_kernel[
+def reduce_kernel[
     rank: Int,
     axis: Int,
     num_reductions: Int,
@@ -433,7 +433,7 @@ fn reduce_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-fn small_reduce_kernel[
+def small_reduce_kernel[
     rank: Int,
     axis: Int,
     num_reductions: Int,
@@ -524,7 +524,7 @@ fn small_reduce_kernel[
 
                 @always_inline
                 @parameter
-                fn reduce_wrapper[
+                def reduce_wrapper[
                     dtype: DType, width: Int
                 ](
                     x: SIMD[dtype, width], y: SIMD[dtype, width]
@@ -553,7 +553,7 @@ fn small_reduce_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-fn saturated_reduce_kernel[
+def saturated_reduce_kernel[
     rank: Int,
     axis: Int,
     num_reductions: Int,
@@ -649,7 +649,7 @@ fn saturated_reduce_kernel[
         launch_dependent_grids()
 
 
-fn reduce_launch[
+def reduce_launch[
     num_reductions: Int,
     input_fn: fn[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
@@ -797,7 +797,7 @@ fn reduce_launch[
 
 
 @always_inline
-fn _reduce_generator_gpu[
+def _reduce_generator_gpu[
     num_reductions: Int,
     init_type: DType,
     input_0_fn: fn[dtype: DType, width: Int, rank: Int](

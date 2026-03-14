@@ -144,7 +144,7 @@ comptime needle = "school"  # a word intentionally not in the test data
 # Baseline `_memmem` implementation
 # ===-----------------------------------------------------------------------===#
 @always_inline
-fn _memmem_baseline[
+def _memmem_baseline[
     dtype: DType
 ](
     haystack: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
@@ -191,14 +191,14 @@ fn _memmem_baseline[
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_find_baseline(mut b: Bencher) raises:
+def bench_find_baseline(mut b: Bencher) raises:
     # Make sure comptime materialization happens before the benchmark starts.
     var local_haystack = haystack
     var local_needle = needle
 
     @always_inline
     @parameter
-    fn call_fn():
+    def call_fn():
         _ = _memmem_baseline(
             local_haystack.unsafe_ptr(),
             len(local_haystack),
@@ -210,14 +210,14 @@ fn bench_find_baseline(mut b: Bencher) raises:
 
 
 @parameter
-fn bench_find_optimized(mut b: Bencher) raises:
+def bench_find_optimized(mut b: Bencher) raises:
     # Make sure comptime materialization happens before the benchmark starts.
     var local_haystack = haystack
     var local_needle = needle
 
     @always_inline
     @parameter
-    fn call_fn():
+    def call_fn():
         _ = _memmem(local_haystack.as_bytes(), local_needle.as_bytes())
 
     b.iter[call_fn]()

@@ -484,13 +484,13 @@ def test_dict_update_empty_new() raises:
 struct DummyKey(KeyElement):
     var value: Int
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
+    def __hash__[H: Hasher](self, mut hasher: H):
         return hasher.update(self.value)
 
-    fn __eq__(self, other: DummyKey) -> Bool:
+    def __eq__(self, other: DummyKey) -> Bool:
         return self.value == other.value
 
-    fn __ne__(self, other: DummyKey) -> Bool:
+    def __ne__(self, other: DummyKey) -> Bool:
         return self.value != other.value
 
 
@@ -604,7 +604,7 @@ def test_pop_string_values() raises:
         _ = dict.pop("absent")
 
 
-fn test_clear() raises:
+def test_clear() raises:
     var some_dict: Dict[String, Int] = {}
     some_dict["key"] = 1
     some_dict.clear()
@@ -637,7 +637,7 @@ def test_init_initial_capacity() raises:
     assert_equal(w._reserved(), 16)
 
 
-fn test_dict_setdefault() raises:
+def test_dict_setdefault() raises:
     var some_dict: Dict[String, Int] = {}
     some_dict["key1"] = 1
     some_dict["key2"] = 2
@@ -662,7 +662,7 @@ fn test_dict_setdefault() raises:
 def test_compile_time_dict() raises:
     comptime N = 10
 
-    fn _get_dict() -> Dict[String, Int32, default_comp_time_hasher]:
+    def _get_dict() -> Dict[String, Int32, default_comp_time_hasher]:
         var res = Dict[String, Int32, default_comp_time_hasher]()
         for i in range(N):
             res[String(i)] = Int32(i)
@@ -1075,7 +1075,7 @@ def test_inplace_rehash_all_deleted() raises:
 def test_compile_time_dict_with_rehash() raises:
     """Compile-time dict that triggers in-place rehash."""
 
-    fn _build_dict() -> Dict[String, Int32, default_comp_time_hasher]:
+    def _build_dict() -> Dict[String, Int32, default_comp_time_hasher]:
         var capacity = 16
         var max_load = capacity * 7 // 8  # 14
         var keep = 4
@@ -1179,16 +1179,15 @@ def test_dict_hash() raises:
     assert_equal(hash(Dict[String, Int]()), hash(Dict[String, Int]()))
 
 
+struct NonWritable(Copyable, ImplicitlyDestructible):
+    pass
+
+
 def test_dict_conditional_conformances() raises:
     assert_true(conforms_to(Dict[Int, Int], Writable))
     assert_true(conforms_to(Dict[Int, Int], Equatable))
     assert_true(conforms_to(Dict[Int, Int], Hashable))
-    # TODO(MOCO-3413): The `conforms_to` builtin does not evaluate the
-    # `where` clause on conditional conformances — it sees that `Dict` has a
-    # conformance for `Writable` and returns True without checking whether
-    # the condition holds for the concrete types. The type checker at call
-    # sites *does* enforce the condition correctly.
-    # assert_false(conforms_to(Dict[Int, NoneType], Writable))
+    assert_false(conforms_to(Dict[Int, NonWritable], Writable))
 
 
 def main() raises:

@@ -30,7 +30,7 @@ from std.utils.static_tuple import StaticTuple
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
-fn test_kernel[
+def test_kernel[
     num_stages: Int, cluster_shape: StaticTuple[Int32, 3]
 ](cluster_dim: StaticTuple[Int32, 3]):
     var clc_response = stack_allocation[
@@ -205,7 +205,7 @@ fn test_kernel[
                 break
 
 
-fn test_tile_scheduler(ctx: DeviceContext) raises:
+def test_tile_scheduler(ctx: DeviceContext) raises:
     comptime cluster_shape = StaticTuple[Int32, 3](2, 1, 1)
     comptime grid_dim = (88, 16, 1)
 

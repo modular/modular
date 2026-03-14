@@ -23,7 +23,7 @@ from std.utils.index import Index
 comptime BLOCK_DIM = 8
 
 
-fn stencil1d(
+def stencil1d(
     a_ptr: UnsafePointer[Float32, MutAnyOrigin],
     b_ptr: UnsafePointer[Float32, MutAnyOrigin],
     arr_size: Int,
@@ -44,7 +44,7 @@ fn stencil1d(
         )
 
 
-fn stencil1d_smem(
+def stencil1d_smem(
     a_ptr: UnsafePointer[Float32, MutAnyOrigin],
     b_ptr: UnsafePointer[Float32, MutAnyOrigin],
     arr_size: Int,
@@ -80,7 +80,7 @@ fn stencil1d_smem(
 
 
 # CHECK-LABEL: run_stencil1d
-fn run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
+def run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
     print("== run_stencil1d")
 
     comptime m = 64

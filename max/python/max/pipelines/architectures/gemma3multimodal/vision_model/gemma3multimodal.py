@@ -98,8 +98,8 @@ class Gemma3LanguageModel(DistributedLogitsPostprocessMixin, Module):
         )
 
         embedding_output_dtype = config.dtype
-        if config.float8_config and config.float8_config.embedding_output_dtype:
-            embedding_output_dtype = config.float8_config.embedding_output_dtype
+        if config.quant_config and config.quant_config.embedding_output_dtype:
+            embedding_output_dtype = config.quant_config.embedding_output_dtype
 
         self.embed_tokens = ScaledWordEmbedding(
             text_config.vocab_size,
@@ -150,7 +150,7 @@ class Gemma3LanguageModel(DistributedLogitsPostprocessMixin, Module):
                     devices=config.devices,
                     qk_norm_eps=text_config.rms_norm_eps,
                     local_window_size=text_config.sliding_window,
-                    float8_config=config.float8_config,
+                    quant_config=config.quant_config,
                 ),
                 mlp=MLP(
                     dtype=config.dtype,
@@ -159,7 +159,7 @@ class Gemma3LanguageModel(DistributedLogitsPostprocessMixin, Module):
                     feed_forward_length=text_config.intermediate_size,
                     devices=config.devices,
                     activation_function=text_config.hidden_activation,
-                    float8_config=config.float8_config,
+                    quant_config=config.quant_config,
                 ),
                 input_layernorm=create_norm(),
                 post_attention_layernorm=create_norm(),

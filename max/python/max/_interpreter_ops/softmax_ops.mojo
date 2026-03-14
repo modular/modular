@@ -34,7 +34,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 @export
-fn PyInit_softmax_ops() -> PythonObject:
+def PyInit_softmax_ops() -> PythonObject:
     """Create a Python module with softmax kernel function bindings."""
     try:
         var b = PythonModuleBuilder("softmax_ops")
@@ -56,7 +56,7 @@ fn PyInit_softmax_ops() -> PythonObject:
 # =============================================================================
 
 
-fn _softmax_cpu[
+def _softmax_cpu[
     dtype: DType,
     is_logsoftmax: Bool,
 ](
@@ -109,7 +109,7 @@ fn _softmax_cpu[
                 out_ptr[offset + i] /= sum_val
 
 
-fn softmax_op[
+def softmax_op[
     dtype: DType,
     is_logsoftmax: Bool,
 ](
@@ -148,7 +148,7 @@ fn softmax_op[
                 @always_inline
                 @parameter
                 @__copy_capture(in_ptr, axis_dim)
-                fn input_fn[
+                def input_fn[
                     width: Int, rank: Int
                 ](coords: IndexList[rank]) -> SIMD[dtype, width]:
                     var c = rebind[IndexList[2]](coords)
@@ -195,7 +195,7 @@ fn softmax_op[
 # =============================================================================
 
 
-fn _softmax_dispatch[
+def _softmax_dispatch[
     is_logsoftmax: Bool,
 ](
     out_buffer: PythonObject,
@@ -272,7 +272,7 @@ fn _softmax_dispatch[
 # Concrete dispatcher functions for def_function registration.
 
 
-fn softmax_dispatcher(
+def softmax_dispatcher(
     out_buffer: PythonObject,
     in_buffer: PythonObject,
     axis: PythonObject,
@@ -283,7 +283,7 @@ fn softmax_dispatcher(
     )
 
 
-fn logsoftmax_dispatcher(
+def logsoftmax_dispatcher(
     out_buffer: PythonObject,
     in_buffer: PythonObject,
     axis: PythonObject,

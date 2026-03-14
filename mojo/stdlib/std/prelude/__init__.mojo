@@ -36,7 +36,7 @@ from std.collections.string import (
     chr,
     ord,
 )
-from std.format import Writable, Writer
+from std.format import Writable, Writer, repr
 from std.hashlib.hash import Hashable, hash
 from std.io.file import FileHandle, open
 from std.io.file_descriptor import FileDescriptor
@@ -88,7 +88,6 @@ from std.builtin.rebind import (
     trait_downcast,
     trait_downcast_var,
 )
-from std.builtin.repr import Representable, repr
 from std.builtin.reversed import ReversibleRange, reversed
 from std.builtin.simd import (
     SIMD,
@@ -118,12 +117,10 @@ from std.builtin.simd import (
     UInt,
 )
 from std.builtin.sort import partition, sort
-from std.builtin.str import Stringable
 from std.builtin.string_literal import StringLiteral
 from std.builtin.swap import swap
 from std.builtin.tuple import Tuple
 from std.builtin.type_aliases import (
-    __TypeOfAllTypes,
     AnyOrigin,
     ImmutAnyOrigin,
     ImmutOrigin,

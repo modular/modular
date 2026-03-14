@@ -15,14 +15,14 @@ from std.os import abort
 from std.random import rand, seed
 
 import internal_utils
-from layout.layout_tensor import UNKNOWN_VALUE, Layout, LayoutTensor
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from linalg.qr_factorization import form_q, qr_factorization
 from std.memory import alloc, memcpy
 from std.testing import assert_almost_equal
 
 
 # A is a general matrix, B is a non-unit upper triangular matrix
-fn trmm[
+def trmm[
     dtype: DType,
     element_layout: Layout,
 ](
@@ -45,7 +45,7 @@ fn trmm[
                 C[i, j] += A[i, p] * B[p, j]
 
 
-fn a_mul_bt[
+def a_mul_bt[
     dtype: DType,
     element_layout: Layout,
 ](
@@ -84,7 +84,7 @@ def all_almost_id[
             assert_almost_equal(A[i, j], reference, atol=atol, rtol=rtol)
 
 
-fn create_vector[
+def create_vector[
     dtype: DType, layout: Layout
 ](
     m: Int,
@@ -98,7 +98,7 @@ fn create_vector[
     return {ptr, dynamic_layout}
 
 
-fn create_tensor[
+def create_tensor[
     dtype: DType, layout: Layout
 ](
     m: Int,

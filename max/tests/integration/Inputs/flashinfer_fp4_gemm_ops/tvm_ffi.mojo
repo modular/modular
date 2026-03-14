@@ -84,7 +84,7 @@ struct TVMFFIObject:
     var _deleter: Int64  # function pointer stored as Int64
     # Object data lives here following the header
 
-    fn __getitem__[T: TVMFFIType](ref self) -> ref[self] T:
+    def __getitem_param__[T: TVMFFIType](ref self) -> ref[self] T:
         if not self.type_index == T.type_index:
             # TODO(MOCO-3215): raise instead
             abort(
@@ -103,18 +103,18 @@ struct TVMFFIErrorCell(
     var backtrace: TVMFFIByteArray
     # Unused fields omitted (update_backtrace, cause_chain, extra_context)
 
-    fn write_to(self, mut writer: Some[std.format.Writer]):
+    def write_to(self, mut writer: Some[std.format.Writer]):
         writer.write(StringSlice(unsafe_from_utf8=self.kind))
         writer.write(": ")
         writer.write(StringSlice(unsafe_from_utf8=self.message))
 
-    fn write_repr_to(self, mut writer: Some[std.format.Writer]):
+    def write_repr_to(self, mut writer: Some[std.format.Writer]):
         writer.write("TVMFFIErrorCell('")
         self.write_to(writer)
         writer.write("')")
 
 
-fn _tvm_ffi_error_move_from_raised(
+def _tvm_ffi_error_move_from_raised(
     mut result: UnsafePointer[TVMFFIObject, MutAnyOrigin]
 ) raises:
     """Wraps TVMFFIErrorMoveFromRaised."""
@@ -128,7 +128,7 @@ fn _tvm_ffi_error_move_from_raised(
     fn_ptr(UnsafePointer(to=result))
 
 
-fn take_latest_error() raises -> TVMFFIErrorCell:
+def take_latest_error() raises -> TVMFFIErrorCell:
     """Retrieves the last TVM FFI error message."""
     error_ptr = UnsafePointer[TVMFFIObject, MutAnyOrigin]()
     _tvm_ffi_error_move_from_raised(error_ptr)

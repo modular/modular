@@ -29,11 +29,11 @@ from std.benchmark import (
 from std.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import (
-    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
+    UNKNOWN_VALUE,
 )
 from layout._fillers import random
 from std.gpu.host.info import B200
@@ -55,7 +55,7 @@ from linalg.fp4_quantization import (
 from internal_utils import arg_parse
 
 
-fn bench_1d1d_quantization[
+def bench_1d1d_quantization[
     in_dtype: DType, cols: Int, use_async: Bool, is_fp4: Bool
 ](ctx: DeviceContext, mut b: Bench, fn_name: String, rows: Int) raises:
     comptime out_dtype = DType.uint8 if is_fp4 else DType.float8_e4m3fn
@@ -125,10 +125,10 @@ fn bench_1d1d_quantization[
     @always_inline
     @__copy_capture(input_tensor, output_tensor, scales_tensor)
     @parameter
-    fn bench_fn(mut b: Bencher) raises:
+    def bench_fn(mut b: Bencher) raises:
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             # Run the quantization kernel
             comptime if use_async:
                 quantize_dynamic_scaled_fp4_async[

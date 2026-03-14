@@ -70,7 +70,7 @@ from std.testing import TestSuite
 from std.utils.index import IndexList
 
 
-fn _test_my_naive_matmul[
+def _test_my_naive_matmul[
     shape: DimList, dtype: DType
 ](
     c: NDBuffer[mut=True, rank=2, dtype, _, shape],
@@ -92,9 +92,9 @@ fn _test_my_naive_matmul[
             c[IndexList[2](m, n)] = c_val
 
 
-fn fill_a[
+def fill_a[
     size: Int
-](buf: NDBuffer[mut=True, rank=2, DType.float32, _, DimList(size, size)]):
+](buf: NDBuffer[mut=True, rank=2, DType.float32, _, DimList[size, size]()]):
     """Fills the matrix with the values `row + 2*col`."""
 
     for i in range(size):
@@ -103,9 +103,9 @@ fn fill_a[
             buf[IndexList[2](i, j)] = val
 
 
-fn fill_b[
+def fill_b[
     size: Int
-](buf: NDBuffer[mut=True, rank=2, DType.float32, _, DimList(size, size)]):
+](buf: NDBuffer[mut=True, rank=2, DType.float32, _, DimList[size, size]()]):
     """Fills the matrix with the values `row/(col + 1) + col`."""
 
     for i in range(size):
@@ -114,9 +114,9 @@ fn fill_b[
             buf[IndexList[2](i, j)] = val
 
 
-fn print_matrix[
+def print_matrix[
     size: Int
-](buf: NDBuffer[rank=2, DType.float32, _, DimList(size, size)]):
+](buf: NDBuffer[rank=2, DType.float32, _, DimList[size, size]()]):
     """Prints each element of the input matrix, element-wise."""
     for i in range(size):
         for j in range(size):
@@ -124,14 +124,14 @@ fn print_matrix[
 
 
 # CHECK-LABEL: _test_naive_matmul
-fn _test_naive_matmul[size: Int]():
+def _test_naive_matmul[size: Int]():
     print("== _test_naive_matmul")
     var c_stack = InlineArray[Float32, size * size](uninitialized=True)
     var c = NDBuffer[
         rank=2,
         DType.float32,
         _,
-        DimList(size, size),
+        DimList[size, size](),
     ](c_stack.unsafe_ptr())
     c.fill(0)
 
@@ -140,7 +140,7 @@ fn _test_naive_matmul[size: Int]():
         rank=2,
         DType.float32,
         _,
-        DimList(size, size),
+        DimList[size, size](),
     ](b_stack.unsafe_ptr())
     fill_b[size](b)
 
@@ -149,12 +149,12 @@ fn _test_naive_matmul[size: Int]():
         rank=2,
         DType.float32,
         _,
-        DimList(size, size),
+        DimList[size, size](),
     ](a_stack.unsafe_ptr())
     fill_a[size](a)
 
     _test_my_naive_matmul[
-        DimList(size, size),
+        DimList[size, size](),
         DType.float32,
     ](c, a, b)
 

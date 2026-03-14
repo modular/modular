@@ -20,10 +20,10 @@ from nn.gather_scatter import gather_elements
 from std.utils.index import Index
 
 
-fn bench_gather(mut m: Bench, spec: GatherSpec) raises:
+def bench_gather(mut m: Bench, spec: GatherSpec) raises:
     @parameter
     @always_inline
-    fn bench_gather_wrapper(mut b: Bencher, concrete_spec: GatherSpec) raises:
+    def bench_gather_wrapper(mut b: Bencher, concrete_spec: GatherSpec) raises:
         bench_gather(b, concrete_spec)
 
     m.bench_with_input[GatherSpec, bench_gather_wrapper](
@@ -32,7 +32,7 @@ fn bench_gather(mut m: Bench, spec: GatherSpec) raises:
 
 
 @parameter
-fn bench_gather(mut bencher: Bencher, spec: GatherSpec):
+def bench_gather(mut bencher: Bencher, spec: GatherSpec):
     var index_rand_min = 0
     var index_rand_max = spec.m1 - 1
 
@@ -59,7 +59,7 @@ fn bench_gather(mut bencher: Bencher, spec: GatherSpec):
 
     @always_inline
     @parameter
-    fn bench_fn():
+    def bench_fn():
         try:
             gather_elements(
                 data_tensor,
@@ -85,13 +85,8 @@ struct GatherSpec(ImplicitlyCopyable, Writable):
     var n1: Int
     var n2: Int
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
     # fmt: off
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the gather spec.
 
         Args:

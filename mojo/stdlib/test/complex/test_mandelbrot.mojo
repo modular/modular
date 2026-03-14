@@ -24,7 +24,7 @@ from std.testing import assert_equal
 # from testing import TestSuite
 
 
-fn mandelbrot_iter(row: Int, col: Int) -> Int:
+def mandelbrot_iter(row: Int, col: Int) -> Int:
     comptime height = 375
     comptime width = 500
 

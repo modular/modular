@@ -88,7 +88,7 @@ struct RuntimeLayout[
     """
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize a `RuntimeLayout` with default values.
 
         Creates a new `RuntimeLayout` instance with default shape and stride
@@ -108,7 +108,7 @@ struct RuntimeLayout[
         self.stride = {}
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         shape: RuntimeTuple[Self.layout.shape, element_type=Self.element_type],
         stride: RuntimeTuple[
@@ -127,7 +127,7 @@ struct RuntimeLayout[
 
     # FIXME: This should probably better done in the RuntimeTuple constructor
     @always_inline
-    fn __call__(self, idx: Int) -> Scalar[Self.linear_idx_type]:
+    def __call__(self, idx: Int) -> Scalar[Self.linear_idx_type]:
         """Convert a single index to a flat linear index.
 
         Args:
@@ -139,7 +139,7 @@ struct RuntimeLayout[
         return self.__call__(RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx))
 
     @always_inline
-    fn __call__[
+    def __call__[
         t: IntTuple
     ](self, idx: RuntimeTuple[t, ...]) -> Scalar[Self.linear_idx_type]:
         """Convert a multi-dimensional index to a flat linear index.
@@ -158,7 +158,7 @@ struct RuntimeLayout[
         )
 
     @always_inline("nodebug")
-    fn idx2crd[
+    def idx2crd[
         t: IntTuple
     ](self, idx: RuntimeTuple[t, ...]) -> RuntimeTuple[
         idx2crd_int_tuple(t, Self.layout.shape, Self.layout.stride),
@@ -181,7 +181,7 @@ struct RuntimeLayout[
         return idx2crd(idx, self.shape, self.stride)
 
     @always_inline
-    fn size(self) -> Int:
+    def size(self) -> Int:
         """Calculate the total number of elements in the layout.
 
         Returns:
@@ -191,7 +191,7 @@ struct RuntimeLayout[
         return product(self.shape)
 
     @always_inline
-    fn bound_check_required(self) -> Bool:
+    def bound_check_required(self) -> Bool:
         """Determine if bounds checking is required for this layout.
 
         Returns:
@@ -206,7 +206,7 @@ struct RuntimeLayout[
         return False
 
     @always_inline
-    fn cast[
+    def cast[
         _element_type: DType,
         /,
         *,
@@ -230,18 +230,8 @@ struct RuntimeLayout[
             self.stride.cast[target_linear_idx_type](),
         }
 
-    @no_inline
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Convert the layout to a string representation.
-
-        Returns:
-            A string representation of the layout.
-        """
-        return String.write(self)
-
     @staticmethod
-    fn row_major[
+    def row_major[
         rank: Int, //
     ](
         shape: IndexList[rank, ...],
@@ -271,7 +261,7 @@ struct RuntimeLayout[
         }
 
     @staticmethod
-    fn col_major[
+    def col_major[
         rank: Int, //
     ](
         shape: IndexList[rank, ...],
@@ -307,7 +297,7 @@ struct RuntimeLayout[
         return {shape.cast[Self.element_type](), stride}
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write a string representation of the layout to a writer.
 
         Args:
@@ -320,7 +310,7 @@ struct RuntimeLayout[
         writer.write(self.stride)
         writer.write(")")
 
-    fn sublayout[
+    def sublayout[
         i: Int
     ](
         self,
@@ -351,7 +341,7 @@ struct RuntimeLayout[
             ](self.stride[i]),
         }
 
-    fn dim(self, i: Int) -> Int:
+    def dim(self, i: Int) -> Int:
         """Get the size of the dimension at the specified index.
 
         Args:
@@ -363,7 +353,7 @@ struct RuntimeLayout[
         return self.shape.value[i]
 
     @staticmethod
-    fn __len__() -> Int:
+    def __len__() -> Int:
         """Get the number of dimensions in the layout.
 
         Returns:
@@ -372,7 +362,7 @@ struct RuntimeLayout[
         return comptime (len(Self.layout))
 
 
-fn coalesce[
+def coalesce[
     l: Layout,
     keep_rank: Bool = False,
 ](
@@ -446,7 +436,7 @@ fn coalesce[
     return {res_shape, res_stride}
 
 
-fn make_layout[
+def make_layout[
     l1: Layout, l2: Layout, /, *, linear_idx_type: DType = DType.uint64
 ](
     a: RuntimeLayout[l1, ...],

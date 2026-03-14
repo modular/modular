@@ -25,7 +25,7 @@ struct Person(Movable, Writable):
     var age: Int
 
     @staticmethod
-    fn py_init(
+    def py_init(
         out self: Person, args: PythonObject, kwargs: PythonObject
     ) raises:
         # Validate argument count
@@ -40,7 +40,7 @@ struct Person(Movable, Writable):
 
 
 @export
-fn PyInit_person_module() -> PythonObject:
+def PyInit_person_module() -> PythonObject:
     try:
         var mb = PythonModuleBuilder("person_module")
 

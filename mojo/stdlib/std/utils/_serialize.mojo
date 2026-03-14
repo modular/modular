@@ -18,7 +18,7 @@ comptime _kCompactMaxElemsToPrint = 7
 comptime _kCompactElemPerSide = _kCompactMaxElemsToPrint // 2
 
 
-fn _serialize_elements_compact[
+def _serialize_elements_compact[
     dtype: DType,
     //,
     serialize_fn: fn[T: Writable](elem: T) capturing[_] -> None,
@@ -40,7 +40,7 @@ fn _serialize_elements_compact[
     serialize_fn(_kEndTensorMarker)
 
 
-fn _serialize_elements_complete[
+def _serialize_elements_complete[
     dtype: DType,
     //,
     serialize_fn: fn[T: Writable](elem: T) capturing[_] -> None,
@@ -53,7 +53,7 @@ fn _serialize_elements_complete[
         serialize_fn(ptr.load(i))
 
 
-fn _serialize_elements[
+def _serialize_elements[
     dtype: DType,
     //,
     serialize_fn: fn[T: Writable](elem: T) capturing[_] -> None,
@@ -65,7 +65,7 @@ fn _serialize_elements[
         _serialize_elements_complete[serialize_fn=serialize_fn](ptr, len)
 
 
-fn _serialize[
+def _serialize[
     dtype: DType,
     //,
     serialize_fn: fn[T: Writable](elem: T) capturing[_] -> None,

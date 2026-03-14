@@ -34,19 +34,15 @@ from std.gpu.memory import (
     async_copy_wait_group,
     external_memory,
 )
-from layout import Layout
+from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple, TileTensor
 from layout.layout_tensor import (
-    LayoutTensor,
     LayoutTensorIter,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_shared,
     copy_sram_to_dram,
 )
-from layout.runtime_layout import RuntimeLayout
-from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
-from layout.tile_tensor import TileTensor
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from std.memory import memset_zero, stack_allocation
 from register import register_internal
@@ -62,7 +58,7 @@ from .utils_gpu import MatmulConfig, MatmulKernels, _bk_base, block_swizzle
 
 
 @always_inline
-fn multistage_dual_mma[
+def multistage_dual_mma[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -159,7 +155,7 @@ fn multistage_dual_mma[
 
     @always_inline
     @parameter
-    fn _mask_tensor_row(
+    def _mask_tensor_row(
         tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
     ):
         return {
@@ -177,7 +173,7 @@ fn multistage_dual_mma[
 
     @always_inline
     @parameter
-    fn _copy_single_tensor_to_sram(
+    def _copy_single_tensor_to_sram(
         dst: LayoutTensor[mut=True, ...], src: LayoutTensor
     ):
         copy_dram_to_sram_async[
@@ -190,7 +186,7 @@ fn multistage_dual_mma[
 
     @always_inline
     @parameter
-    fn _copy_dual_tensor_to_sram(
+    def _copy_dual_tensor_to_sram(
         b0_dst: LayoutTensor[mut=True, ...],
         b1_dst: LayoutTensor[mut=True, ...],
         b0_src: LayoutTensor,
@@ -470,7 +466,7 @@ comptime binary_fn_type = fn[type: DType, width: Int](
         Int32(config.num_threads())
     )
 )
-fn multistage_dual_gemm_kernel[
+def multistage_dual_gemm_kernel[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -776,7 +772,7 @@ fn multistage_dual_gemm_kernel[
             )
 
 
-fn swilu[
+def swilu[
     dtype: DType, width: Int
 ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[
     dtype, width
@@ -785,7 +781,7 @@ fn swilu[
 
 
 @always_inline
-fn multistage_dual_gemm[
+def multistage_dual_gemm[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -845,7 +841,7 @@ fn multistage_dual_gemm[
     ctx.synchronize()
 
 
-fn multistage_dual_gemm[
+def multistage_dual_gemm[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -877,7 +873,7 @@ fn multistage_dual_gemm[
     ](tensor_c, tensor_a, tensor_b0, tensor_b1, ctx)
 
 
-fn config_in_smem[
+def config_in_smem[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -933,7 +929,7 @@ fn config_in_smem[
     return c
 
 
-fn dual_gemm[
+def dual_gemm[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -967,9 +963,11 @@ fn dual_gemm[
     var N = 2 * shape.N
     var K = shape.K
     var multi_gemm_cond = M > 1 and N % 128 == 0 and K % 32 == 0 and K >= 128
-    comptime multistage_gemm_supported_shape = b_shape.all_known[
-        2
-    ]() and a_shape.has_value[1]() and c_shape.has_value[1]()
+    comptime multistage_gemm_supported_shape = b_shape.all_known() and a_shape.has_value[
+        1
+    ]() and c_shape.has_value[
+        1
+    ]()
     comptime matmul_supported_format = (
         a_type in (DType.float32, DType.bfloat16, DType.float16)
         and b_type in (DType.float32, DType.bfloat16, DType.float16)
@@ -1195,7 +1193,7 @@ fn dual_gemm[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-fn dual_gemv_kernel[
+def dual_gemv_kernel[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -1323,7 +1321,7 @@ fn dual_gemv_kernel[
             c.data.store(output_idx + mid * n + nid, val0.cast[c_type]())
 
 
-fn dual_gemv[
+def dual_gemv[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -1381,7 +1379,7 @@ fn dual_gemv[
 
 @register_internal("swishGLU")
 @always_inline
-fn swishGLU[
+def swishGLU[
     target: StaticString = "cpu",
 ](
     a: NDBuffer[rank=2, _, ImmutAnyOrigin, _],
@@ -1403,7 +1401,7 @@ fn swishGLU[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         var shape = GemmShape.get[True](c, a, b0)
         return ";".join(
             Span(

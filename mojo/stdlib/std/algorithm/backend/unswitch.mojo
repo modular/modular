@@ -29,7 +29,7 @@ comptime SwitchedFunction2 = fn[sw0: Bool, sw1: Bool]() capturing[_] -> None
 
 
 @always_inline
-fn unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool) raises:
+def unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool) raises:
     """Performs a functional unswitch transformation.
 
     Unswitch is a simple pattern that is similar idea to loop unswitching
@@ -79,7 +79,7 @@ fn unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool) raises:
 
 
 @always_inline
-fn unswitch[
+def unswitch[
     switched_func: fn[sw: Bool]() capturing[_] -> None
 ](dynamic_switch: Bool):
     """Performs a functional unswitch transformation.
@@ -129,7 +129,7 @@ fn unswitch[
 
 
 @always_inline
-fn unswitch[
+def unswitch[
     switched_func: SwitchedFunction2
 ](dynamic_switch_a: Bool, dynamic_switch_b: Bool):
     """Performs a functional 2-predicates unswitch transformation.
@@ -150,7 +150,7 @@ fn unswitch[
 
         @always_inline
         @parameter
-        fn switched_a_true[static_switch: Bool]():
+        def switched_a_true[static_switch: Bool]():
             switched_func[True, static_switch]()
 
         unswitch[switched_a_true](dynamic_switch_b)
@@ -158,7 +158,7 @@ fn unswitch[
 
         @always_inline
         @parameter
-        fn switched_a_false[static_switch: Bool]():
+        def switched_a_false[static_switch: Bool]():
             switched_func[False, static_switch]()
 
         unswitch[switched_a_false](dynamic_switch_b)
@@ -184,7 +184,7 @@ comptime Static1DTileUnitFuncWithFlag = fn[width: Int, flag: Bool](
 
 
 @always_inline("nodebug")
-fn tile_and_unswitch[
+def tile_and_unswitch[
     workgroup_function: Static1DTileUnswitchUnitFunc,
     tile_size_list: List[Int],
 ](offset: Int, upperbound: Int):
@@ -232,7 +232,7 @@ comptime Dynamic1DTileUnswitchUnitFunc = fn[sw: Bool](Int, Int, Int) capturing[
 
 
 @always_inline
-fn tile_and_unswitch[
+def tile_and_unswitch[
     workgroup_function: Dynamic1DTileUnswitchUnitFunc,
 ](offset: Int, upperbound: Int, *tile_size_list: Int):
     """Performs time and unswitch functional transformation.
@@ -272,7 +272,7 @@ fn tile_and_unswitch[
 
 
 @always_inline
-fn tile_middle_unswitch_boundaries[
+def tile_middle_unswitch_boundaries[
     work_fn: Static1DTileUnitFuncWithFlag,
     middle_tile_sizes: List[Int],
     left_tile_size: Int = 1,  # No tiling by default.
@@ -341,7 +341,7 @@ comptime Static1DTileUnitFuncWithFlags = fn[
 
 
 @always_inline
-fn tile_middle_unswitch_boundaries[
+def tile_middle_unswitch_boundaries[
     work_fn: Static1DTileUnitFuncWithFlags,
     tile_size: Int,
     size: Int,
@@ -379,7 +379,7 @@ fn tile_middle_unswitch_boundaries[
         # middle
         @always_inline
         @parameter
-        fn update_middle[_tile_size: Int](_offset: Int):
+        def update_middle[_tile_size: Int](_offset: Int):
             work_fn[_tile_size, False, False](_offset)
 
         comptime num_middle_points = size - tile_size_lbound - tile_size_rbound

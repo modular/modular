@@ -17,7 +17,7 @@ from std.sys import align_of, simd_width_of, size_of
 from std.gpu.intrinsics import AMDBufferResource
 from std.gpu.memory import external_memory
 from layout import Layout, LayoutTensor
-from layout.layout import coalesce
+from layout.layout import blocked_product, coalesce
 from layout._utils import _get_bounds, make_amd_buffer_resource
 from layout.layout_tensor import (
     LayoutTensorIter,
@@ -31,7 +31,7 @@ from layout.int_tuple import (
     _get_unsigned_type,
 )
 from layout.tma_async import SharedMemBarrier
-from layout.layout import blocked_product, logical_product
+from layout.layout import logical_product
 from std.memory import stack_allocation
 
 
@@ -53,7 +53,7 @@ struct ScatterGatherAmd[
     var buffer: AMDBufferResource
 
     @always_inline
-    fn __init__(out self, tensor: LayoutTensor):
+    def __init__(out self, tensor: LayoutTensor):
         """Initialize with a tensor.
 
         Args:
@@ -62,7 +62,7 @@ struct ScatterGatherAmd[
         self.buffer = make_amd_buffer_resource(tensor)
 
     @always_inline
-    fn copy(
+    def copy(
         self,
         dst_reg_tile: LayoutTensor[
             mut=True, address_space=AddressSpace.LOCAL, ...
@@ -85,7 +85,7 @@ struct ScatterGatherAmd[
         ](dst_reg_tile, src_gmem_tile, self.buffer)
 
     @always_inline("nodebug")
-    fn copy(
+    def copy(
         self,
         dst_gmem_tile: LayoutTensor[mut=True, ...],
         src_reg_tile: LayoutTensor[address_space=AddressSpace.LOCAL, ...],
@@ -122,7 +122,7 @@ struct IteratorScatterGatherAmd[
     var buffer: AMDBufferResource
 
     @always_inline
-    fn __init__(out self, tensor: LayoutTensor, tensor_iter: LayoutTensorIter):
+    def __init__(out self, tensor: LayoutTensor, tensor_iter: LayoutTensorIter):
         """Initialize with tensor and iterator.
 
         Args:
@@ -132,7 +132,7 @@ struct IteratorScatterGatherAmd[
         self.buffer = make_amd_buffer_resource(tensor_iter, _get_bounds(tensor))
 
     @always_inline
-    fn copy(
+    def copy(
         self,
         dst_reg_tile: LayoutTensor[mut=True, ...],
         src_gmem_tile_iter: LayoutTensorIter,
@@ -173,7 +173,7 @@ trait SharedMemoryBasePtr:
 
     @always_inline
     @staticmethod
-    fn ptr() -> (
+    def ptr() -> (
         UnsafePointer[Int8, MutAnyOrigin, address_space=AddressSpace.SHARED]
     ):
         ...
@@ -187,7 +187,7 @@ struct NVIDIASharedMemoryBasePtr[
 
     @always_inline
     @staticmethod
-    fn ptr() -> (
+    def ptr() -> (
         UnsafePointer[Int8, MutAnyOrigin, address_space=AddressSpace.SHARED]
     ):
         return external_memory[
@@ -207,7 +207,9 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
         dtype: DType, layout: Layout, num_tiles: Int
     ] = SMemTileArray[dtype, layout, num_tiles, Self.SMBP.alignment]
 
-    comptime Array[type: __TypeOfAllTypes, size: Int] = SMemArray[type, size]
+    comptime Array[type: TrivialRegisterPassable, size: Int] = SMemArray[
+        type, size
+    ]
 
     var base_ptr: UnsafePointer[
         Int8, MutAnyOrigin, address_space=AddressSpace.SHARED
@@ -215,13 +217,13 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
     var offset: Int
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize the shared memory manager."""
         self.base_ptr = Self.SMBP.ptr()
         self.offset = 0
 
     @always_inline
-    fn build[
+    def build[
         dtype: DType,
         layout: Layout,
         //,
@@ -239,7 +241,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
         return result
 
     @always_inline
-    fn build[
+    def build[
         dtype: DType,
         layout: Layout,
         num_tiles: Int,
@@ -258,8 +260,8 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
         return result
 
     @always_inline
-    fn build[
-        type: __TypeOfAllTypes,
+    def build[
+        type: TrivialRegisterPassable,
         size: Int,
         //,
         T: type_of(Self.Array[type, size]),

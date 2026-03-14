@@ -17,7 +17,7 @@ struct Person(Writable):
     var name: String
     var age: Int
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         t"{self.name} ({self.age})".write_to(writer)
 
 

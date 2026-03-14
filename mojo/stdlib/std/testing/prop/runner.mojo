@@ -24,7 +24,7 @@ struct PropTestConfig(Copyable):
     var seed: Int
     """The seed for the random number generator."""
 
-    fn __init__(out self, *, runs: Int = 100, seed: Optional[Int] = None):
+    def __init__(out self, *, runs: Int = 100, seed: Optional[Int] = None):
         """Construct a new property test configuration.
 
         Args:
@@ -40,7 +40,7 @@ struct PropTest(Movable):
 
     var _config: PropTestConfig
 
-    fn __init__(out self):
+    def __init__(out self):
         """Construct a new property test runner with the default configuration.
 
         Returns:
@@ -48,7 +48,7 @@ struct PropTest(Movable):
         """
         self = Self(config=PropTestConfig())
 
-    fn __init__(out self, *, var config: PropTestConfig):
+    def __init__(out self, *, var config: PropTestConfig):
         """Construct a new property test runner.
 
         Args:
@@ -56,7 +56,7 @@ struct PropTest(Movable):
         """
         self._config = config^
 
-    fn test[
+    def test[
         StrategyType: Strategy,
         //,
         f: fn(var StrategyType.Value) capturing raises,
@@ -89,12 +89,12 @@ struct _PropTestError(Copyable, Writable):
     var seed: Int
     var error: Error
 
-    fn __init__(out self, *, runs: Int, seed: Int, var error: Error = {}):
+    def __init__(out self, *, runs: Int, seed: Int, var error: Error = {}):
         self.runs = runs
         self.seed = seed
         self.error = error^
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("PropTestError: ", "\n")
         writer.write("\tRuns: ", self.runs, "\n")
         writer.write("\tSeed: ", self.seed, "\n")

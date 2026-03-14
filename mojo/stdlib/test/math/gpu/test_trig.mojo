@@ -17,7 +17,7 @@ from std.gpu.host import DeviceContext
 from std.testing import assert_almost_equal, TestSuite
 
 
-fn run_func[
+def run_func[
     dtype: DType, kernel_fn: fn(Scalar[dtype]) capturing -> Scalar[dtype]
 ](
     out_prefix: String,
@@ -30,7 +30,7 @@ fn run_func[
     var out = ctx.enqueue_create_buffer[dtype](1)
 
     @parameter
-    fn kernel(
+    def kernel(
         out_dev: UnsafePointer[Scalar[dtype], MutAnyOrigin], lhs: Scalar[dtype]
     ):
         var result = kernel_fn(lhs)
@@ -48,19 +48,19 @@ fn run_func[
 
 def test_trig() raises:
     @parameter
-    fn cos_fn(val: Float16) -> Float16:
+    def cos_fn(val: Float16) -> Float16:
         return cos(val)
 
     @parameter
-    fn cos_fn(val: Float32) -> Float32:
+    def cos_fn(val: Float32) -> Float32:
         return cos(val)
 
     @parameter
-    fn sin_fn(val: Float16) -> Float16:
+    def sin_fn(val: Float16) -> Float16:
         return sin(val)
 
     @parameter
-    fn sin_fn(val: Float32) -> Float32:
+    def sin_fn(val: Float32) -> Float32:
         return sin(val)
 
     with DeviceContext() as ctx:

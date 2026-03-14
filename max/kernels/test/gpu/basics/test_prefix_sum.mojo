@@ -22,7 +22,7 @@ from std.testing import assert_equal
 comptime dtype = DType.uint64
 
 
-fn warp_prefix_sum_kernel[
+def warp_prefix_sum_kernel[
     dtype: DType,
     exclusive: Bool,
 ](
@@ -79,7 +79,7 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
         assert_equal(
             out_host[i],
             expected,
-            msg=t"out_host[{i}] = {out_host[i]} expected = {expected}",
+            msg=String(t"out_host[{i}] = {out_host[i]} expected = {expected}"),
         )
 
     # Cleanup
@@ -87,7 +87,7 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
     out_host.free()
 
 
-fn block_prefix_sum_kernel[
+def block_prefix_sum_kernel[
     dtype: DType,
     block_size: Int,
     exclusive: Bool,
@@ -151,7 +151,7 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
         assert_equal(
             out_host[i],
             expected,
-            msg=t"out_host[{i}] = {out_host[i]} expected = {expected}",
+            msg=String(t"out_host[{i}] = {out_host[i]} expected = {expected}"),
         )
 
     # Cleanup

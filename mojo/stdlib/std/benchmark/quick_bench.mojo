@@ -29,7 +29,7 @@ struct QuickBench:
     """Bench object to collect the results."""
 
     @always_inline
-    fn __init__(out self) raises:
+    def __init__(out self) raises:
         """Initializes the `Bench` object.
 
         Raises:
@@ -38,7 +38,7 @@ struct QuickBench:
         self.m = Bench()
 
     @always_inline
-    fn dump_report(mut self) raises:
+    def dump_report(mut self) raises:
         """Prints out the report from a Benchmark execution collected in Bench object.
 
         Raises:
@@ -47,8 +47,8 @@ struct QuickBench:
         self.m.dump_report()
 
     @always_inline
-    fn run[
-        T_out: __TypeOfAllTypes
+    def run[
+        T_out: TrivialRegisterPassable
     ](
         mut self,
         func: fn() -> T_out,
@@ -73,10 +73,10 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(mut b: Bencher):
+        def bench_iter(mut b: Bencher):
             @parameter
             @always_inline
-            fn call_func():
+            def call_func():
                 var x = func()
                 keep(x)
 
@@ -85,8 +85,8 @@ struct QuickBench:
         self.m.bench_function[bench_iter](bench_id, measures=measures)
 
     @always_inline
-    fn run[
-        T0: __TypeOfAllTypes, /, T_out: __TypeOfAllTypes
+    def run[
+        T0: TrivialRegisterPassable, /, T_out: TrivialRegisterPassable
     ](
         mut self,
         func: fn(T0) -> T_out,
@@ -114,10 +114,10 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(mut b: Bencher):
+        def bench_iter(mut b: Bencher):
             @parameter
             @always_inline
-            fn call_func():
+            def call_func():
                 var x = func(x0)
                 keep(x)
 
@@ -126,11 +126,11 @@ struct QuickBench:
         self.m.bench_function[bench_iter](bench_id, measures=measures)
 
     @always_inline
-    fn run[
-        T0: __TypeOfAllTypes,
-        T1: __TypeOfAllTypes,
+    def run[
+        T0: TrivialRegisterPassable,
+        T1: TrivialRegisterPassable,
         /,
-        T_out: __TypeOfAllTypes,
+        T_out: TrivialRegisterPassable,
     ](
         mut self,
         func: fn(T0, T1) -> T_out,
@@ -161,10 +161,10 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(mut b: Bencher):
+        def bench_iter(mut b: Bencher):
             @parameter
             @always_inline
-            fn call_func():
+            def call_func():
                 var x = func(x0, x1)
                 keep(x)
 
@@ -173,12 +173,12 @@ struct QuickBench:
         self.m.bench_function[bench_iter](bench_id, measures=measures)
 
     @always_inline
-    fn run[
-        T0: __TypeOfAllTypes,
-        T1: __TypeOfAllTypes,
-        T2: __TypeOfAllTypes,
+    def run[
+        T0: TrivialRegisterPassable,
+        T1: TrivialRegisterPassable,
+        T2: TrivialRegisterPassable,
         /,
-        T_out: __TypeOfAllTypes,
+        T_out: TrivialRegisterPassable,
     ](
         mut self,
         func: fn(T0, T1, T2) -> T_out,
@@ -212,10 +212,10 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(mut b: Bencher):
+        def bench_iter(mut b: Bencher):
             @parameter
             @always_inline
-            fn call_func():
+            def call_func():
                 var x = func(x0, x1, x2)
                 keep(x)
 
@@ -224,13 +224,13 @@ struct QuickBench:
         self.m.bench_function[bench_iter](bench_id, measures=measures)
 
     @always_inline
-    fn run[
-        T0: __TypeOfAllTypes,
-        T1: __TypeOfAllTypes,
-        T2: __TypeOfAllTypes,
-        T3: __TypeOfAllTypes,
+    def run[
+        T0: TrivialRegisterPassable,
+        T1: TrivialRegisterPassable,
+        T2: TrivialRegisterPassable,
+        T3: TrivialRegisterPassable,
         /,
-        T_out: __TypeOfAllTypes,
+        T_out: TrivialRegisterPassable,
     ](
         mut self,
         func: fn(T0, T1, T2, T3) -> T_out,
@@ -267,10 +267,10 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(mut b: Bencher):
+        def bench_iter(mut b: Bencher):
             @parameter
             @always_inline
-            fn call_func():
+            def call_func():
                 var x = func(x0, x1, x2, x3)
                 keep(x)
 
@@ -279,14 +279,14 @@ struct QuickBench:
         self.m.bench_function[bench_iter](bench_id, measures=measures)
 
     @always_inline
-    fn run[
-        T0: __TypeOfAllTypes,
-        T1: __TypeOfAllTypes,
-        T2: __TypeOfAllTypes,
-        T3: __TypeOfAllTypes,
-        T4: __TypeOfAllTypes,
+    def run[
+        T0: TrivialRegisterPassable,
+        T1: TrivialRegisterPassable,
+        T2: TrivialRegisterPassable,
+        T3: TrivialRegisterPassable,
+        T4: TrivialRegisterPassable,
         /,
-        T_out: __TypeOfAllTypes,
+        T_out: TrivialRegisterPassable,
     ](
         mut self,
         func: fn(T0, T1, T2, T3, T4) -> T_out,
@@ -326,10 +326,10 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(mut b: Bencher):
+        def bench_iter(mut b: Bencher):
             @parameter
             @always_inline
-            fn call_func():
+            def call_func():
                 var x = func(x0, x1, x2, x3, x4)
                 keep(x)
 
@@ -338,15 +338,15 @@ struct QuickBench:
         self.m.bench_function[bench_iter](bench_id, measures=measures)
 
     @always_inline
-    fn run[
-        T0: __TypeOfAllTypes,
-        T1: __TypeOfAllTypes,
-        T2: __TypeOfAllTypes,
-        T3: __TypeOfAllTypes,
-        T4: __TypeOfAllTypes,
-        T5: __TypeOfAllTypes,
+    def run[
+        T0: TrivialRegisterPassable,
+        T1: TrivialRegisterPassable,
+        T2: TrivialRegisterPassable,
+        T3: TrivialRegisterPassable,
+        T4: TrivialRegisterPassable,
+        T5: TrivialRegisterPassable,
         /,
-        T_out: __TypeOfAllTypes,
+        T_out: TrivialRegisterPassable,
     ](
         mut self,
         func: fn(T0, T1, T2, T3, T4, T5) -> T_out,
@@ -389,10 +389,10 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(mut b: Bencher):
+        def bench_iter(mut b: Bencher):
             @parameter
             @always_inline
-            fn call_func():
+            def call_func():
                 var x = func(x0, x1, x2, x3, x4, x5)
                 keep(x)
 
@@ -401,16 +401,16 @@ struct QuickBench:
         self.m.bench_function[bench_iter](bench_id, measures=measures)
 
     @always_inline
-    fn run[
-        T0: __TypeOfAllTypes,
-        T1: __TypeOfAllTypes,
-        T2: __TypeOfAllTypes,
-        T3: __TypeOfAllTypes,
-        T4: __TypeOfAllTypes,
-        T5: __TypeOfAllTypes,
-        T6: __TypeOfAllTypes,
+    def run[
+        T0: TrivialRegisterPassable,
+        T1: TrivialRegisterPassable,
+        T2: TrivialRegisterPassable,
+        T3: TrivialRegisterPassable,
+        T4: TrivialRegisterPassable,
+        T5: TrivialRegisterPassable,
+        T6: TrivialRegisterPassable,
         /,
-        T_out: __TypeOfAllTypes,
+        T_out: TrivialRegisterPassable,
     ](
         mut self,
         func: fn(T0, T1, T2, T3, T4, T5, T6) -> T_out,
@@ -456,10 +456,10 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(mut b: Bencher):
+        def bench_iter(mut b: Bencher):
             @parameter
             @always_inline
-            fn call_func():
+            def call_func():
                 var x = func(x0, x1, x2, x3, x4, x5, x6)
                 keep(x)
 
@@ -468,17 +468,17 @@ struct QuickBench:
         self.m.bench_function[bench_iter](bench_id, measures=measures)
 
     @always_inline
-    fn run[
-        T0: __TypeOfAllTypes,
-        T1: __TypeOfAllTypes,
-        T2: __TypeOfAllTypes,
-        T3: __TypeOfAllTypes,
-        T4: __TypeOfAllTypes,
-        T5: __TypeOfAllTypes,
-        T6: __TypeOfAllTypes,
-        T7: __TypeOfAllTypes,
+    def run[
+        T0: TrivialRegisterPassable,
+        T1: TrivialRegisterPassable,
+        T2: TrivialRegisterPassable,
+        T3: TrivialRegisterPassable,
+        T4: TrivialRegisterPassable,
+        T5: TrivialRegisterPassable,
+        T6: TrivialRegisterPassable,
+        T7: TrivialRegisterPassable,
         /,
-        T_out: __TypeOfAllTypes,
+        T_out: TrivialRegisterPassable,
     ](
         mut self,
         func: fn(T0, T1, T2, T3, T4, T5, T6, T7) -> T_out,
@@ -527,10 +527,10 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(mut b: Bencher):
+        def bench_iter(mut b: Bencher):
             @parameter
             @always_inline
-            fn call_func():
+            def call_func():
                 var x = func(x0, x1, x2, x3, x4, x5, x6, x7)
                 keep(x)
 
@@ -539,18 +539,18 @@ struct QuickBench:
         self.m.bench_function[bench_iter](bench_id, measures=measures)
 
     @always_inline
-    fn run[
-        T0: __TypeOfAllTypes,
-        T1: __TypeOfAllTypes,
-        T2: __TypeOfAllTypes,
-        T3: __TypeOfAllTypes,
-        T4: __TypeOfAllTypes,
-        T5: __TypeOfAllTypes,
-        T6: __TypeOfAllTypes,
-        T7: __TypeOfAllTypes,
-        T8: __TypeOfAllTypes,
+    def run[
+        T0: TrivialRegisterPassable,
+        T1: TrivialRegisterPassable,
+        T2: TrivialRegisterPassable,
+        T3: TrivialRegisterPassable,
+        T4: TrivialRegisterPassable,
+        T5: TrivialRegisterPassable,
+        T6: TrivialRegisterPassable,
+        T7: TrivialRegisterPassable,
+        T8: TrivialRegisterPassable,
         /,
-        T_out: __TypeOfAllTypes,
+        T_out: TrivialRegisterPassable,
     ](
         mut self,
         func: fn(T0, T1, T2, T3, T4, T5, T6, T7, T8) -> T_out,
@@ -602,10 +602,10 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(mut b: Bencher):
+        def bench_iter(mut b: Bencher):
             @parameter
             @always_inline
-            fn call_func():
+            def call_func():
                 var x = func(x0, x1, x2, x3, x4, x5, x6, x7, x8)
                 keep(x)
 
@@ -614,19 +614,19 @@ struct QuickBench:
         self.m.bench_function[bench_iter](bench_id, measures=measures)
 
     @always_inline
-    fn run[
-        T0: __TypeOfAllTypes,
-        T1: __TypeOfAllTypes,
-        T2: __TypeOfAllTypes,
-        T3: __TypeOfAllTypes,
-        T4: __TypeOfAllTypes,
-        T5: __TypeOfAllTypes,
-        T6: __TypeOfAllTypes,
-        T7: __TypeOfAllTypes,
-        T8: __TypeOfAllTypes,
-        T9: __TypeOfAllTypes,
+    def run[
+        T0: TrivialRegisterPassable,
+        T1: TrivialRegisterPassable,
+        T2: TrivialRegisterPassable,
+        T3: TrivialRegisterPassable,
+        T4: TrivialRegisterPassable,
+        T5: TrivialRegisterPassable,
+        T6: TrivialRegisterPassable,
+        T7: TrivialRegisterPassable,
+        T8: TrivialRegisterPassable,
+        T9: TrivialRegisterPassable,
         /,
-        T_out: __TypeOfAllTypes,
+        T_out: TrivialRegisterPassable,
     ](
         mut self,
         func: fn(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9) -> T_out,
@@ -681,10 +681,10 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(mut b: Bencher):
+        def bench_iter(mut b: Bencher):
             @parameter
             @always_inline
-            fn call_func():
+            def call_func():
                 var x = func(x0, x1, x2, x3, x4, x5, x6, x7, x8, x9)
                 keep(x)
 

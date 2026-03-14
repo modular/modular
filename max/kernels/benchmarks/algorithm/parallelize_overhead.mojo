@@ -19,20 +19,20 @@ from std.testing import assert_true
 
 
 @parameter
-fn bench_empty_sync_parallelize(mut b: Bencher) raises:
+def bench_empty_sync_parallelize(mut b: Bencher) raises:
     @always_inline
     @parameter
-    fn parallel_fn(thread_id: Int):
+    def parallel_fn(thread_id: Int):
         keep(thread_id)
 
     sync_parallelize[parallel_fn](num_physical_cores())
 
 
 @parameter
-fn bench_empty_parallelize(mut b: Bencher) raises:
+def bench_empty_parallelize(mut b: Bencher) raises:
     @always_inline
     @parameter
-    fn parallel_fn(thread_id: Int):
+    def parallel_fn(thread_id: Int):
         keep(thread_id)
 
     parallelize[parallel_fn](num_physical_cores())

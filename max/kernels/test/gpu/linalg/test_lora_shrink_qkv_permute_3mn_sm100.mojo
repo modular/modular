@@ -26,7 +26,7 @@ from std.utils import IndexList
 from std.utils.index import Index
 
 
-fn test[
+def test[
     in_type: DType,
     out_type: DType,
     num_experts: Int,
@@ -69,20 +69,20 @@ fn test[
         )
 
     # Define shapes
-    comptime static_a_shape = DimList(Dim(), K)
+    comptime static_a_shape = DimList[Dim(), K]()
     var dynamic_a_shape = IndexList[2](total_num_tokens, K)
     var a_size = total_num_tokens * K
 
     comptime actual_N = 3 * N
-    comptime static_c_ref_shape = DimList(Dim(), actual_N)
+    comptime static_c_ref_shape = DimList[Dim(), actual_N]()
     var dynamic_c_ref_shape = IndexList[2](total_num_tokens, actual_N)
     var c_ref_size = total_num_tokens * actual_N
 
-    comptime static_lora_c_shape = DimList(3, Dim(), N)
+    comptime static_lora_c_shape = DimList[3, Dim(), N]()
     var dynamic_lora_c_shape = IndexList[3](3, total_num_tokens, N)
     var lora_c_size = 3 * total_num_tokens * N
 
-    comptime static_b_shape = DimList(num_experts, 3 * N, K)
+    comptime static_b_shape = DimList[num_experts, 3 * N, K]()
     var dynamic_b_shape = IndexList[3](num_experts, 3 * N, K)
     var b_size = num_experts * 3 * N * K
 
@@ -211,7 +211,7 @@ fn test[
         assert_almost_equal(
             actual,
             expect,
-            msg=(
+            msg=String(
                 t"qkv_idx: {qkv_idx} m: {m} n: {n} ref: {expect} actual:"
                 t" {actual}"
             ),
