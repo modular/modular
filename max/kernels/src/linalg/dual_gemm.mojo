@@ -34,7 +34,14 @@ from std.gpu.memory import (
     async_copy_wait_group,
     external_memory,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple, TileTensor
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    TileTensor,
+    coord_to_index_list,
+)
 from layout.layout_tensor import (
     LayoutTensorIter,
     copy_dram_to_sram_async,
@@ -350,7 +357,7 @@ def multistage_dual_mma[
         comptime for k_mma0 in range(num_k_mma_iters):
             comptime for k_mma1 in range(k_group_size):
                 comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
-                comptime current = k_mma % num_reg_tiles
+                comptime current = k_mma % UInt32(num_reg_tiles)
                 comptime k_mma_next = k_mma + UInt32(k_group_size)
                 comptime next = Int(k_mma_next % UInt32(num_reg_tiles))
 
@@ -1423,3 +1430,167 @@ def swishGLU[
         dual_gemm[transpose_b=True](
             c, a, b0, rebind[type_of(b0)](b1), ctx=ctx.get_device_context()
         )
+
+
+# ---------------------------------------------------------------------------- #
+# TileTensor overloads
+# ---------------------------------------------------------------------------- #
+
+
+@always_inline
+def dual_gemm[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    //,
+    *,
+    transpose_b: Bool,
+    binary_lambda_fn: binary_fn_type = swilu,
+    config: Optional[MatmulConfig[a_type, b_type, c_type, transpose_b]] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+](
+    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
+    b0: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
+    b1: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
+    ctx: DeviceContext,
+) raises:
+    """TileTensor overload of `dual_gemm`. Converts to NDBuffer and delegates.
+    """
+    comptime assert c.rank == 2 and c.flat_rank == 2
+    comptime assert a.rank == 2 and a.flat_rank == 2
+    comptime assert b0.rank == 2 and b0.flat_rank == 2
+    comptime assert b1.rank == 2 and b1.flat_rank == 2
+
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+
+    comptime c_shape = DimList[dim[c.static_shape[0]], dim[c.static_shape[1]]]()
+    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
+    comptime b_shape = DimList[
+        dim[b0.static_shape[0]], dim[b0.static_shape[1]]
+    ]()
+
+    var c_buf = NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape](
+        c.ptr,
+        rebind[IndexList[2]](coord_to_index_list(c.layout.shape_coord())),
+    )
+    var a_buf = NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape](
+        a.ptr,
+        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
+    )
+    var b0_buf = NDBuffer[rank=2, b_type, ImmutAnyOrigin](
+        b0.ptr,
+        rebind[IndexList[2]](coord_to_index_list(b0.layout.shape_coord())),
+    )
+    var b1_buf = NDBuffer[rank=2, b_type, ImmutAnyOrigin](
+        b1.ptr,
+        rebind[IndexList[2]](coord_to_index_list(b1.layout.shape_coord())),
+    )
+
+    dual_gemm[
+        transpose_b=transpose_b,
+        binary_lambda_fn=binary_lambda_fn,
+        config=config,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ](c_buf, a_buf, b0_buf, b1_buf, ctx)
+
+
+@always_inline
+def dual_gemv[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    //,
+    *,
+    binary_lambda_fn: binary_fn_type = swilu,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+](
+    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
+    b0: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
+    b1: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
+    ctx: DeviceContext,
+) raises:
+    """TileTensor overload of `dual_gemv`. Converts to NDBuffer and delegates.
+    """
+    comptime assert c.rank == 2 and c.flat_rank == 2
+    comptime assert a.rank == 2 and a.flat_rank == 2
+    comptime assert b0.rank == 2 and b0.flat_rank == 2
+    comptime assert b1.rank == 2 and b1.flat_rank == 2
+
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+
+    comptime c_shape = DimList[dim[c.static_shape[0]], dim[c.static_shape[1]]]()
+    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
+    comptime b_shape = DimList[
+        dim[b0.static_shape[0]], dim[b0.static_shape[1]]
+    ]()
+
+    var c_buf = NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape](
+        c.ptr,
+        rebind[IndexList[2]](coord_to_index_list(c.layout.shape_coord())),
+    )
+    var a_buf = NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape](
+        a.ptr,
+        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
+    )
+    var b0_buf = NDBuffer[rank=2, b_type, ImmutAnyOrigin](
+        b0.ptr,
+        rebind[IndexList[2]](coord_to_index_list(b0.layout.shape_coord())),
+    )
+    var b1_buf = NDBuffer[rank=2, b_type, ImmutAnyOrigin](
+        b1.ptr,
+        rebind[IndexList[2]](coord_to_index_list(b1.layout.shape_coord())),
+    )
+
+    dual_gemv[
+        binary_lambda_fn=binary_lambda_fn,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ](c_buf, a_buf, b0_buf, b1_buf, ctx)
+
+
+@always_inline
+def swishGLU[
+    target: StaticString = "cpu",
+](
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b0: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b1: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    ctx: DeviceContextPtr,
+) raises:
+    """TileTensor overload of `swishGLU`. Converts to NDBuffer and delegates."""
+    comptime assert c.rank == 2 and c.flat_rank == 2
+    comptime assert a.rank == 2 and a.flat_rank == 2
+    comptime assert b0.rank == 2 and b0.flat_rank == 2
+    comptime assert b1.rank == 2 and b1.flat_rank == 2
+
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+
+    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
+    comptime b0_shape = DimList[
+        dim[b0.static_shape[0]], dim[b0.static_shape[1]]
+    ]()
+    comptime b1_shape = DimList[
+        dim[b1.static_shape[0]], dim[b1.static_shape[1]]
+    ]()
+    comptime c_shape = DimList[dim[c.static_shape[0]], dim[c.static_shape[1]]]()
+
+    var a_buf = NDBuffer[rank=2, a.dtype, ImmutAnyOrigin, a_shape](
+        a.ptr,
+        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
+    )
+    var b0_buf = NDBuffer[rank=2, b0.dtype, ImmutAnyOrigin, b0_shape](
+        b0.ptr,
+        rebind[IndexList[2]](coord_to_index_list(b0.layout.shape_coord())),
+    )
+    var b1_buf = NDBuffer[rank=2, b1.dtype, ImmutAnyOrigin, b1_shape](
+        b1.ptr,
+        rebind[IndexList[2]](coord_to_index_list(b1.layout.shape_coord())),
+    )
+    var c_buf = NDBuffer[rank=2, c.dtype, MutAnyOrigin, c_shape](
+        c.ptr,
+        rebind[IndexList[2]](coord_to_index_list(c.layout.shape_coord())),
+    )
+
+    swishGLU[target](a_buf, b0_buf, b1_buf, c_buf, ctx)

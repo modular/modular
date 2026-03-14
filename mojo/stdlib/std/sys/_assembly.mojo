@@ -21,13 +21,13 @@ from std.sys import inlined_assembly
 
 from std.collections.string.string_slice import _get_kgen_string
 
-from .intrinsics import _mlirtype_is_eq
+from .intrinsics import _type_is_eq
 
 
 @always_inline("nodebug")
 def inlined_assembly[
     asm: StaticString,
-    result_type: __TypeOfAllTypes,
+    result_type: TrivialRegisterPassable,
     *types: AnyType,
     constraints: StaticString,
     has_side_effect: Bool = True,
@@ -92,7 +92,7 @@ def inlined_assembly[
     comptime asm_kgen_string = _get_kgen_string[asm]()
     comptime constraints_kgen_string = _get_kgen_string[constraints]()
 
-    comptime if _mlirtype_is_eq[result_type, NoneType]():
+    comptime if _type_is_eq[result_type, NoneType]():
         __mlir_op.`pop.inline_asm`[
             _type=None,
             assembly=asm_kgen_string,

@@ -88,7 +88,7 @@ class KimiK2_5ModelInputs(DeepseekV3Inputs):
     pixel_values: list[Buffer] | None = None
     """Pixel values for vision inputs."""
 
-    grid_thw: list[Buffer] | None = None
+    grid_thws: list[Buffer] | None = None
     """Grid dimensions (temporal, height, width) for each image/video, shape (n_images, 3) per device."""
 
     cu_seqlens: list[Buffer] | None = None
@@ -155,7 +155,11 @@ class KimiK2_5Model(
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
         encoding = pipeline_config.model.quantization_encoding
-        if encoding is not None and is_float4_encoding(encoding):
+        if (
+            encoding is not None
+            and is_float4_encoding(encoding)
+            and kv_cache_config.kv_cache_format is None
+        ):
             cache_dtype = DType.bfloat16
         return KimiK2_5TextConfig.construct_kv_params(
             huggingface_config=huggingface_config.text_config,
@@ -188,6 +192,10 @@ class KimiK2_5Model(
         """Create model configuration from huggingface config."""
         config = self.huggingface_config.text_config
 
+        # data_parallel_degree controls the attention strategy:
+        #   == num_devices  ->  DP attention  (each device owns a batch shard)
+        #   == 1            ->  TP attention  (heads sharded, tokens replicated)
+        data_parallel_degree = self.pipeline_config.model.data_parallel_degree
         max_batch_total_tokens = (
             self.pipeline_config.runtime.max_batch_total_tokens
         )
@@ -208,22 +216,33 @@ class KimiK2_5Model(
             quant_config = None
 
         # Check if EP should be configured
-        if self.pipeline_config.runtime.ep_size == 1:
+        ep_size = self.pipeline_config.runtime.ep_size
+        if ep_size == 1:
             ep_config = None
         else:
-            if self.pipeline_config.runtime.ep_size % len(self.devices) != 0:
+            if ep_size % len(self.devices) != 0:
                 raise ValueError(
                     "If you are running with expert parallelism, ep_size must"
                     " be set to the total number of GPUs across nodes."
                 )
-            n_nodes = self.pipeline_config.runtime.ep_size // len(self.devices)
+            n_nodes = ep_size // len(self.devices)
+
+            # With a mixed TP-attention + EP-MoE strategy, the attention output
+            # will be scattered across ranks, so each rank will only send a
+            # subset of the tokens.
+            attn_tp_size = ep_size // data_parallel_degree
+            ep_max_rank_send_tokens = (
+                self.pipeline_config.runtime.max_batch_input_tokens
+                // attn_tp_size
+            )
+
             ep_kwargs: dict[str, Any] = dict(
                 dispatch_dtype=dtype,
                 combine_dtype=DType.bfloat16,
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
                 n_experts=config.n_routed_experts,
-                max_tokens_per_rank=self.pipeline_config.runtime.max_batch_input_tokens,
+                max_tokens_per_rank=ep_max_rank_send_tokens,
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
                 dispatch_quant_config=None,
@@ -238,16 +257,6 @@ class KimiK2_5Model(
                 ep_kwargs["dispatch_quant_config"] = quant_config
 
             ep_config = EPConfig(**ep_kwargs)
-
-        # Determine data_parallel_degree: EP requires data-parallel attention
-        if ep_config is not None:
-            # When EP is used, data parallelism is required for attention
-            data_parallel_degree = len(self.devices)
-        else:
-            # Use the configured value from pipeline_config
-            data_parallel_degree = (
-                self.pipeline_config.model.data_parallel_degree
-            )
 
         norm_dtype = state_dict[
             "language_model.layers.0.self_attn.kv_a_layernorm.weight"
@@ -278,6 +287,14 @@ class KimiK2_5Model(
         model_config.data_parallel_degree = data_parallel_degree
         model_config.return_logits = self.return_logits
         model_config.return_hidden_states = self.return_hidden_states
+
+        if ep_size > 1:
+            attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
+            logger.info(
+                f"KimiK2_5: data_parallel_degree={data_parallel_degree},"
+                f" ep_size={ep_size}. Use {attn_strategy}-attention + EP-MoE"
+                f" strategy."
+            )
 
         return model_config
 
@@ -391,6 +408,7 @@ class KimiK2_5Model(
         assert encoding is not None
         mla_activation_memory: int = 0
         moe_activation_memory: int = 0
+        ep_buffer_memory = 0
 
         # During the prefill, we need to up-project all the KV cache for
         # current requests. The total context length of requests in a batch
@@ -413,17 +431,25 @@ class KimiK2_5Model(
                 * pipeline_config.model.kv_cache.cache_dtype.size_in_bytes
             )
 
-        # Estimate activation memory during Expert Parallel MoE.
+        # Estimate buffer and activation memory during Expert Parallel MoE.
         if pipeline_config.runtime.ep_size > 1:
             n_gpus_per_node = len(pipeline_config.model.device_specs)
-            max_input_len_per_rank = (
-                pipeline_config.runtime.max_batch_input_tokens
+
+            # With a mixed TP-attention + EP-MoE strategy, the attention output
+            # will be scattered across ranks, so each rank will only send a
+            # subset of the tokens.
+            attn_tp_size = (
+                pipeline_config.runtime.ep_size
+                // pipeline_config.model.data_parallel_degree
+            )
+            ep_max_rank_send_tokens = (
+                pipeline_config.runtime.max_batch_input_tokens // attn_tp_size
             )
 
             # Calculate the maximum number of tokens a rank may receive during
             # all-to-all routing. Each token selects top_k experts, and in the
             # worst case all selections land on one rank.
-            max_recv_tokens_per_rank = max_input_len_per_rank * min(
+            max_recv_tokens_per_rank = ep_max_rank_send_tokens * min(
                 huggingface_config.text_config.n_routed_experts,
                 pipeline_config.runtime.ep_size
                 * huggingface_config.text_config.num_experts_per_tok,
@@ -447,26 +473,17 @@ class KimiK2_5Model(
 
             # Adding 256MB per GPU to account for misc items (e.g. FP8 scalars).
             moe_activation_memory += 256 * 1024 * 1024
-
             moe_activation_memory *= n_gpus_per_node
 
-        # We only need to consider the maximum of the MLA and MoE activation
-        # memories, because the MLA and MoE layers are executed sequentially.
-        activation_memory = max(mla_activation_memory, moe_activation_memory)
-
-        # EP SHMEM communication buffers are persistent (allocated once at
-        # model init, not freed between layers), so add on top of the
-        # per-layer activation peak.
-        ep_buffer_memory = 0
-        if pipeline_config.runtime.ep_size > 1:
-            n_gpus_per_node = len(pipeline_config.model.device_specs)
+            # EP SHMEM communication buffers are persistent (allocated once at
+            # model init, not freed between layers).
             n_nodes = pipeline_config.runtime.ep_size // n_gpus_per_node
 
             per_device_ep_memory = estimate_ep_memory_usage(
                 hidden_size=huggingface_config.text_config.hidden_size,
                 dispatch_dtype=supported_encoding_dtype(encoding),
                 combine_dtype=DType.bfloat16,
-                max_tokens_per_rank=pipeline_config.runtime.max_batch_input_tokens,
+                max_tokens_per_rank=ep_max_rank_send_tokens,
                 n_experts=huggingface_config.text_config.n_routed_experts,
                 n_nodes=n_nodes,
                 n_gpus_per_node=n_gpus_per_node,
@@ -479,6 +496,9 @@ class KimiK2_5Model(
                 f"{to_human_readable_bytes(ep_buffer_memory)}"
             )
 
+        # We only need to consider the maximum of the MLA and MoE activation
+        # memories, because the MLA and MoE layers are executed sequentially.
+        activation_memory = max(mla_activation_memory, moe_activation_memory)
         activation_memory += ep_buffer_memory
 
         if activation_memory != 0:
@@ -616,7 +636,7 @@ class KimiK2_5Model(
             for device in self.devices
         ]
 
-        grid_thw_types = [
+        grid_thws_types = [
             TensorType(
                 DType.int64,
                 shape=["n_images", 3],
@@ -660,11 +680,11 @@ class KimiK2_5Model(
 
         # Build the vision graph
         with Graph(
-            "kimik2_5_vision",
+            "kimik2_5_vision_graph",
             input_types=tuple(
                 [
                     *pixel_values_types,
-                    *grid_thw_types,
+                    *grid_thws_types,
                     *cu_seqlens_types,
                     *max_seqlen_types,
                     *vision_rot_pos_ids_types,
@@ -679,7 +699,7 @@ class KimiK2_5Model(
             pixel_values_list = [inp.tensor for inp in all_inputs[:n_devices]]
             all_inputs = all_inputs[n_devices:]
 
-            grid_thw_list = [inp.tensor for inp in all_inputs[:n_devices]]
+            grid_thws_list = [inp.tensor for inp in all_inputs[:n_devices]]
             all_inputs = all_inputs[n_devices:]
 
             cu_seqlens_list = [inp.tensor for inp in all_inputs[:n_devices]]
@@ -709,7 +729,7 @@ class KimiK2_5Model(
             # from the grid_thws input via ops.max.
             image_embeddings = vision_encoder(
                 pixel_values=pixel_values_list,
-                grid_thws=grid_thw_list,
+                grid_thws=grid_thws_list,
                 input_row_offsets=cu_seqlens_list,
                 max_seq_len=max_seqlen_list,
                 position_ids=rot_pos_ids_list,
@@ -732,18 +752,20 @@ class KimiK2_5Model(
 
         # Create the graph
         with Graph(
-            "deepseekV3_graph",
+            "kimik2_5_language_graph",
             input_types=language_model.input_types(self.kv_params),
         ) as graph:
             n = len(self.devices)
-            tokens = graph.inputs[0]
-            image_embeddings = graph.inputs[1 : 1 + n]
-            image_token_indices = graph.inputs[1 + n : 1 + 2 * n]
-            devices_input_row_offsets = graph.inputs[1 + 2 * n]
-            host_input_row_offsets = graph.inputs[2 + 2 * n]
-            return_n_logits = graph.inputs[3 + 2 * n]
-            data_parallel_splits = graph.inputs[4 + 2 * n]
-            variadic_args = graph.inputs[5 + 2 * n :]
+            tokens, all_inputs = graph.inputs[0], graph.inputs[1:]
+            image_embeddings, all_inputs = all_inputs[:n], all_inputs[n:]
+            image_token_indices, all_inputs = all_inputs[:n], all_inputs[n:]
+            (
+                devices_input_row_offsets,
+                host_input_row_offsets,
+                return_n_logits,
+                data_parallel_splits,
+                *variadic_args,
+            ) = all_inputs
 
             variadic_args_iter = iter(variadic_args)
             # Multi-GPU passes a signal buffer per device: unmarshal these.
@@ -768,18 +790,18 @@ class KimiK2_5Model(
             # all remaining arguments are for EP inputs
             ep_model_inputs = list(variadic_args_iter)
 
-            outputs = language_model(  # type: ignore[call-arg]
-                tokens.tensor,
-                [v.tensor for v in image_embeddings],  # type: ignore[misc]
-                [v.tensor for v in image_token_indices],  # type: ignore[misc]
-                signal_buffers,  # type: ignore[arg-type]
-                kv_caches_per_dev,  # type: ignore[arg-type]
-                return_n_logits.tensor,
-                devices_input_row_offsets.tensor,
-                host_input_row_offsets.tensor,  # type: ignore[arg-type]
-                data_parallel_splits.tensor,  # type: ignore[arg-type]
-                batch_context_lengths,
-                ep_model_inputs,
+            outputs = language_model(
+                tokens=tokens.tensor,
+                image_embeddings=[v.tensor for v in image_embeddings],
+                image_token_indices=[v.tensor for v in image_token_indices],
+                signal_buffers=signal_buffers,
+                kv_collections=kv_caches_per_dev,
+                return_n_logits=return_n_logits.tensor,
+                input_row_offsets=devices_input_row_offsets.tensor,
+                host_input_row_offsets=host_input_row_offsets.tensor,
+                data_parallel_splits=data_parallel_splits.tensor,
+                batch_context_lengths=batch_context_lengths,
+                ep_inputs=ep_model_inputs,
             )
 
             graph.output(*outputs)
@@ -822,7 +844,7 @@ class KimiK2_5Model(
             assert model_inputs.vision_position_ids is not None
             assert model_inputs.cu_seqlens is not None
             assert model_inputs.max_seqlen is not None
-            assert model_inputs.grid_thw is not None
+            assert model_inputs.grid_thws is not None
 
             assert self.model_config is not None, (
                 "Model config must be initialized"
@@ -830,12 +852,12 @@ class KimiK2_5Model(
 
             image_embeddings = self.vision_model.execute(
                 *model_inputs.pixel_values,
-                *model_inputs.grid_thw,
+                *model_inputs.grid_thws,
                 *model_inputs.cu_seqlens,
                 *model_inputs.max_seqlen,
                 *model_inputs.vision_position_ids,
                 *model_inputs.signal_buffers,
-            )  # output should be projected via multimodal_projector as part of vision_graph
+            )
 
             assert len(image_embeddings) == len(self.devices)
             # assert image embeddings have the same hidden size as language model
@@ -847,7 +869,7 @@ class KimiK2_5Model(
                 )
             # Vision graph outputs [upper_bound, D]; slice to actual num patches for this batch.
             # Cast to bfloat16 so to_numpy() works (DLPack may not support e.g. float8), then copy prefix.
-            grid_np = model_inputs.grid_thw[
+            grid_np = model_inputs.grid_thws[
                 0
             ].to_numpy()  # (n_images, 3) with (T, H, W)
             actual_num_patches = int(
@@ -877,41 +899,20 @@ class KimiK2_5Model(
             image_embeddings = self._empty_image_embeddings
             image_token_indices = self._empty_image_image_token_indices
 
-        buffers = model_inputs.buffers
-        n_dev = len(self.devices)
-        fetch_types = self.kv_params.get_symbolic_inputs()[0]
-        len_of_kv_inputs = len(list(fetch_types)) * n_dev
-        tokens = buffers[0]
-        input_row_offsets = buffers[1]
-        host_input_row_offsets = buffers[2]
-        return_n_logits = buffers[3]
-        data_parallel_splits = buffers[4]
-        idx = 5
-        signal_buffers = buffers[idx : idx + n_dev]
-        idx += n_dev
-        kv_cache_inputs = buffers[idx : idx + len_of_kv_inputs]
-        idx += len_of_kv_inputs
-        batch_context_lengths = buffers[idx : idx + n_dev]
-        idx += n_dev
-        ep_inputs = buffers[idx:]
-
-        language_buffers = (
-            (tokens,)
-            + tuple(image_embeddings)
-            + tuple(model_inputs.image_token_indices or image_token_indices)
-            + (
-                input_row_offsets,
-                host_input_row_offsets,
-                return_n_logits,
-                data_parallel_splits,
-            )
-            + tuple(signal_buffers)
-            + tuple(kv_cache_inputs)
-            + tuple(batch_context_lengths)
-            + tuple(ep_inputs)
+        model_outputs = self.language_model.execute(
+            model_inputs.tokens,
+            *image_embeddings,
+            *(model_inputs.image_token_indices or image_token_indices),
+            model_inputs.input_row_offsets,
+            model_inputs.host_input_row_offsets,
+            model_inputs.return_n_logits,
+            model_inputs.data_parallel_splits,
+            *model_inputs.signal_buffers,
+            *(model_inputs.kv_cache_inputs or ()),
+            *model_inputs.batch_context_lengths,
+            *model_inputs.ep_inputs,
         )
 
-        model_outputs = self.language_model.execute(*language_buffers)
         return self._process_model_outputs(model_outputs)
 
     def _process_model_outputs(
@@ -1038,7 +1039,7 @@ class KimiK2_5Model(
                 pixel_values_f32, vision_dtype, session=self.session
             )
         )
-        grid_thw_buf = Buffer.from_numpy(all_grid_thws_np).to(device0)
+        grid_thws_buf = Buffer.from_numpy(all_grid_thws_np).to(device0)
         cu_seqlens_buf = Buffer.from_numpy(cu_seqlens_np).to(device0)
         vision_position_ids_buf = Buffer.from_numpy(position_ids_np).to(device0)
         image_token_indices_buf = Buffer.from_numpy(image_token_indices_np).to(
@@ -1047,7 +1048,7 @@ class KimiK2_5Model(
         max_seqlen_buf = Buffer.from_numpy(max_seqlen_np)
         return {
             "pixel_values": [pixel_values_buf.to(d) for d in self.devices],
-            "grid_thw": [grid_thw_buf.to(d) for d in self.devices],
+            "grid_thws": [grid_thws_buf.to(d) for d in self.devices],
             "cu_seqlens": [cu_seqlens_buf.to(d) for d in self.devices],
             "max_seqlen": [max_seqlen_buf for _ in self.devices],
             "vision_position_ids": [
@@ -1177,26 +1178,9 @@ class KimiK2_5Model(
             pinned_input_row_offsets.to_numpy()[:] = input_row_offsets[:]
             device_input_row_offsets = pinned_input_row_offsets.to(device0)
 
-        # The language model is compiled with data_parallel_degree = len(devices)
-        # when EP is enabled (matching _create_model_config logic), but the
-        # scheduler only creates `dp` (= pipeline_config.model.data_parallel_degree)
-        # replica batches. Expand to the effective DP degree so data_parallel_splits
-        # has the right shape expected by the compiled graph.
-        ep_size = self.pipeline_config.runtime.ep_size
-        effective_dp = (
-            len(self.devices) if (ep_size is not None and ep_size != 1) else dp
+        data_parallel_splits = Buffer.from_numpy(
+            compute_data_parallel_splits(replica_batches)
         )
-        if effective_dp != dp:
-            expanded_batches: list[Sequence[KimiK2_5TextAndVisionContext]] = (
-                list(replica_batches) + [[] for _ in range(effective_dp - dp)]
-            )
-            data_parallel_splits = Buffer.from_numpy(
-                compute_data_parallel_splits(expanded_batches)
-            )
-        else:
-            data_parallel_splits = Buffer.from_numpy(
-                compute_data_parallel_splits(replica_batches)
-            )
 
         ep_inputs = (
             ()
@@ -1221,7 +1205,7 @@ class KimiK2_5Model(
             pixel_values=vision_inputs["pixel_values"]
             if vision_inputs is not None
             else None,
-            grid_thw=vision_inputs["grid_thw"]
+            grid_thws=vision_inputs["grid_thws"]
             if vision_inputs is not None
             else None,
             cu_seqlens=vision_inputs["cu_seqlens"]

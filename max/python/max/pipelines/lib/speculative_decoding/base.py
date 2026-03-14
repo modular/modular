@@ -251,7 +251,7 @@ class SpeculativeDecodingPipelineBase(
         self._needs_all_draft_logits = strategy == "residual"
 
         # Initialize metrics tracker
-        self.metrics = SpeculativeDecodingMetrics.empty(log_on_destruction=True)
+        self.metrics = SpeculativeDecodingMetrics.empty()
 
         # Track draft model replica assignments per request
         self._draft_replica_idx: dict[RequestID, int] = {}

@@ -14,7 +14,7 @@
 from std.math import ceildiv
 from std.sys import get_defined_bool, get_defined_int, size_of
 
-from buffer.buffer import NDBuffer
+from layout import TileTensor
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import H100
@@ -59,11 +59,14 @@ def matmul_dispatch_sm90[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[rank=2, a_type, _, _],
-    b: NDBuffer[rank=2, b_type, _, _],
+    c: TileTensor[c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
+    comptime assert c.rank == 2, "c must be rank 2"
+    comptime assert a.rank == 2, "a must be rank 2"
+    comptime assert b.rank == 2, "b must be rank 2"
     comptime is_AB_fp8 = a_type == b_type == DType.float8_e4m3fn
     comptime is_AB_bf16 = a_type == b_type == DType.bfloat16
     comptime is_AB_fp32 = a_type == b_type == DType.float32
@@ -71,12 +74,12 @@ def matmul_dispatch_sm90[
     comptime input_type_supported = is_AB_fp8 or is_AB_bf16 or is_AB_fp32
 
     # fmt: off
-    comptime has_static_NK = b.shape.all_known() \
-                      and a.shape.has_value[1]() \
-                      and c.shape.has_value[1]()
+    comptime has_static_NK = (b.static_shape[0] > -1 and b.static_shape[1] > -1) \
+                      and a.static_shape[1] > -1 \
+                      and c.static_shape[1] > -1
     # fmt: on
 
-    comptime N = c.shape.get[1]()
+    comptime N = c.static_shape[1]
     comptime N_multiple_of_8 = N % 8 == 0
 
     logger.info("------ Dispatching to sm90 ------")
@@ -84,7 +87,7 @@ def matmul_dispatch_sm90[
     # Support K multiple of 16B for FP8 due to using TMA.
     # 4B and 8B alignments are supported for BF16/FP32 by using
     # cp.async.ca.
-    comptime K = a.shape.get[1]()
+    comptime K = a.static_shape[1]
     comptime K_multiple_of_16B = K * size_of[a_type]() % 16 == 0
     comptime K_multiple_of_4B = K * size_of[a_type]() % 4 == 0
     comptime K_align_supported = (K_multiple_of_16B and is_AB_fp8) or (
@@ -505,15 +508,18 @@ def matmul_dispatch_sm90_fp8[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[rank=2, a_type, _, _],
-    b: NDBuffer[rank=2, b_type, _, _],
+    c: TileTensor[c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
-    comptime static_N = c.shape.get[1]()
-    comptime static_K = a.shape.get[1]()
+    comptime assert c.rank == 2, "c must be rank 2"
+    comptime assert a.rank == 2, "a must be rank 2"
+    comptime assert b.rank == 2, "b must be rank 2"
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
 
-    var m = c.dim[0]()
+    var m = Int(c.dim[0]())
 
     comptime if get_defined_bool["AUTOTUNING_MODE", False]():
         comptime NUM_PIPELINE_STAGES = get_defined_int[
@@ -551,12 +557,7 @@ def matmul_dispatch_sm90_fp8[
             config=H100_FP8_TUNING_CONFIG,
             grid_shape=Index(128, 1),
             schedule=MatmulSchedule.DS_SCHEDULER,
-        ](
-            rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-            rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-            rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-            ctx,
-        )
+        ](c, a, b, ctx)
         return DISPATCH_HIT
 
     @parameter
@@ -578,12 +579,7 @@ def matmul_dispatch_sm90_fp8[
             config=config,
             schedule=entry.schedule,
             grid_shape=entry.grid_shape,
-        ](
-            rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-            rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-            rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-            ctx,
-        )
+        ](c, a, b, ctx)
 
     @parameter
     @always_inline("nodebug")
@@ -671,12 +667,7 @@ def matmul_dispatch_sm90_fp8[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                ](
-                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                    ctx,
-                )
+                ](c, a, b, ctx)
                 return DISPATCH_HIT
             elif m <= 1024:
                 comptime config = MatmulConfig[
@@ -697,12 +688,7 @@ def matmul_dispatch_sm90_fp8[
                     config=config,
                     schedule=MatmulSchedule.DS_SCHEDULER,
                     grid_shape=Index(H100.sm_count, 1),
-                ](
-                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                    ctx,
-                )
+                ](c, a, b, ctx)
                 return DISPATCH_HIT
             else:
                 comptime config = MatmulConfig[
@@ -726,12 +712,7 @@ def matmul_dispatch_sm90_fp8[
                     config=config,
                     schedule=MatmulSchedule.DS_SCHEDULER,
                     grid_shape=Index(H100.sm_count, 1),
-                ](
-                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                    ctx,
-                )
+                ](c, a, b, ctx)
                 return DISPATCH_HIT
     return DISPATCH_MISS
 
@@ -2152,18 +2133,21 @@ def matmul_dispatch_sm90_bf16_fp32[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[rank=2, a_type, _, _],
-    b: NDBuffer[rank=2, b_type, _, _],
+    c: TileTensor[c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
+    comptime assert c.rank == 2, "c must be rank 2"
+    comptime assert a.rank == 2, "a must be rank 2"
+    comptime assert b.rank == 2, "b must be rank 2"
     comptime size_factor = 2 if a_type == DType.float32 else 1
     comptime mma_k = 16 // size_factor
     comptime BK = 64 // size_factor
 
     comptime if get_defined_bool["AUTOTUNING_MODE", False]():
-        comptime static_N = c.shape.get[1]()
-        comptime static_K = a.shape.get[1]()
+        comptime static_N = c.static_shape[1]
+        comptime static_K = a.static_shape[1]
 
         comptime IS_LARGE_GEMM_SHAPE = get_defined_bool[
             "TUNE_LARGE_GEMM_SHAPE", True
@@ -2211,12 +2195,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 config=H100_TUNING_CONFIG,
                 grid_shape=Index(GRID_DIM_X, GRID_DIM_Y),
                 schedule=SCHEDULE_TYPE,
-            ](
-                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                ctx,
-            )
+            ](c, a, b, ctx)
             return DISPATCH_HIT
 
         else:
@@ -2259,12 +2238,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     config=SMALL_SHAPE_H100_BF16_TUNING_CONFIG_NON_SPLITK,
                     grid_shape=Index(GRID_DIM_X, GRID_DIM_Y),
                     schedule=SCHEDULE_TYPE,
-                ](
-                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                    ctx,
-                )
+                ](c, a, b, ctx)
                 return DISPATCH_HIT
 
             else:
@@ -2291,22 +2265,17 @@ def matmul_dispatch_sm90_bf16_fp32[
                     config=SMALL_SHAPE_H100_BF16_TUNING_CONFIG_SPLITK,
                     splits=SPLITS,
                     raster_order=RasterOrder.AlongM,
-                ](
-                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                    ctx,
-                )
+                ](c, a, b, ctx)
                 return DISPATCH_HIT
 
-    comptime static_N = c.shape.get[1]()
-    comptime static_K = a.shape.get[1]()
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
     comptime a_is_bfloat16_or_float32 = a_type in (
         DType.bfloat16,
         DType.float32,
     )
 
-    var m = c.dim[0]()
+    var m = Int(c.dim[0]())
 
     # We have fast gemv for BF16 and FP32, skip H100 matmul here
     # and continue dispatching outside to reach the fast gemv.
@@ -2357,12 +2326,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 config=config,
                 schedule=entry.schedule,
                 grid_shape=entry.grid_shape,
-            ](
-                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                ctx,
-            )
+            ](c, a, b, ctx)
         else:
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
@@ -2373,12 +2337,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 grid_shape=entry.grid_shape,
                 splits=entry.splits.value(),
                 raster_order=entry.raster_order.value(),
-            ](
-                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                ctx,
-            )
+            ](c, a, b, ctx)
 
     @parameter
     @always_inline("nodebug")
@@ -2511,18 +2470,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                             config=base_config,
                             schedule=MatmulSchedule.NONE,
                             swapAB=True,
-                        ](
-                            rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](
-                                c
-                            ),
-                            rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](
-                                a
-                            ),
-                            rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](
-                                b
-                            ),
-                            ctx,
-                        )
+                        ](c, a, b, ctx)
                         return DISPATCH_HIT
 
             elif m < 41:
@@ -2546,12 +2494,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
-                ](
-                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                    ctx,
-                )
+                ](c, a, b, ctx)
 
                 return DISPATCH_HIT
 
@@ -2576,12 +2519,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
-                ](
-                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                    ctx,
-                )
+                ](c, a, b, ctx)
 
                 return DISPATCH_HIT
 
@@ -2609,12 +2547,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
-                ](
-                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                    ctx,
-                )
+                ](c, a, b, ctx)
 
                 return DISPATCH_HIT
 
@@ -2639,12 +2572,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
-                ](
-                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                    ctx,
-                )
+                ](c, a, b, ctx)
 
                 return DISPATCH_HIT
 
@@ -2669,12 +2597,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     # swapAB = True,
-                ](
-                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                    ctx,
-                )
+                ](c, a, b, ctx)
 
                 return DISPATCH_HIT
 
@@ -2699,12 +2622,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
-                ](
-                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                    ctx,
-                )
+                ](c, a, b, ctx)
 
                 return DISPATCH_HIT
 
@@ -2729,12 +2647,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
-                ](
-                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                    ctx,
-                )
+                ](c, a, b, ctx)
 
                 return DISPATCH_HIT
 
@@ -2758,12 +2671,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
-                ](
-                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                    ctx,
-                )
+                ](c, a, b, ctx)
                 return DISPATCH_HIT
 
             elif m < 225:
@@ -2786,12 +2694,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
-                ](
-                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                    ctx,
-                )
+                ](c, a, b, ctx)
                 return DISPATCH_HIT
 
             elif m < 256:
@@ -2814,12 +2717,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
-                ](
-                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                    ctx,
-                )
+                ](c, a, b, ctx)
                 return DISPATCH_HIT
             elif m == 256:
                 comptime config = MatmulConfig[
@@ -2839,12 +2737,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
                     schedule=MatmulSchedule.NONE,
-                ](
-                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                    ctx,
-                )
+                ](c, a, b, ctx)
                 return DISPATCH_HIT
 
         comptime nk_idx_list = miscellaneous_table.query_index[rule_eq_nk]()
@@ -2922,12 +2815,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
                 grid_shape=Index(128, 1),
-            ](
-                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                ctx,
-            )
+            ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m <= 64:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
@@ -2946,12 +2834,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
                 grid_shape=Index(128, 1),
-            ](
-                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                ctx,
-            )
+            ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 8192:
             comptime M8192_N8192_K2048_config = MatmulConfig[
@@ -2972,12 +2855,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 config=M8192_N8192_K2048_config,
                 grid_shape=Index(4, H100.sm_count // 4),
                 schedule=MatmulSchedule.TILE2D,
-            ](
-                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                ctx,
-            )
+            ](c, a, b, ctx)
             return DISPATCH_HIT
 
         elif m == 4096:
@@ -2998,12 +2876,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=M4096_N8192_K2048_config,
                 schedule=MatmulSchedule.TILE2D,
-            ](
-                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                ctx,
-            )
+            ](c, a, b, ctx)
             return DISPATCH_HIT
 
     comptime if a_is_bfloat16_or_float32 and static_N == 14336 and static_K == 8192:
@@ -3024,12 +2897,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
                 grid_shape=Index(128, 1),
-            ](
-                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                ctx,
-            )
+            ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 8192:
             comptime M8192_N14336_K8192_config = MatmulConfig[
@@ -3050,12 +2918,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 config=M8192_N14336_K8192_config,
                 grid_shape=Index(8, H100.sm_count // 8),
                 schedule=MatmulSchedule.TILE2D,
-            ](
-                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                ctx,
-            )
+            ](c, a, b, ctx)
             return DISPATCH_HIT
 
         elif m == 4096:
@@ -3076,12 +2939,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=M4096_N14336_K8192_config,
                 schedule=MatmulSchedule.TILE2D,
-            ](
-                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                ctx,
-            )
+            ](c, a, b, ctx)
             return DISPATCH_HIT
 
     comptime if a_is_bfloat16_or_float32 and static_N == 8192 and static_K == 7168:
@@ -3102,12 +2960,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
                 grid_shape=Index(128, 1),
-            ](
-                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                ctx,
-            )
+            ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m <= 64:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
@@ -3126,12 +2979,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
                 grid_shape=Index(128, 1),
-            ](
-                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                ctx,
-            )
+            ](c, a, b, ctx)
             return DISPATCH_HIT
         elif m == 8192:
             comptime M8192_N8192_K7168_config = MatmulConfig[
@@ -3152,12 +3000,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 config=M8192_N8192_K7168_config,
                 grid_shape=Index(8, H100.sm_count // 8),
                 schedule=MatmulSchedule.TILE2D,
-            ](
-                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                ctx,
-            )
+            ](c, a, b, ctx)
             return DISPATCH_HIT
 
         elif m == 4096:
@@ -3181,12 +3024,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=M4096_N8192_K7168_config,
                 schedule=MatmulSchedule.TILE2D,
-            ](
-                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                ctx,
-            )
+            ](c, a, b, ctx)
             return DISPATCH_HIT
 
     comptime if (
@@ -3212,12 +3050,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=M512_N3840_K15360_config,
                 schedule=MatmulSchedule.NONE,
-            ](
-                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                ctx,
-            )
+            ](c, a, b, ctx)
 
             return DISPATCH_HIT
 
@@ -3251,12 +3084,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=default_bf16_config,
                     schedule=MatmulSchedule.NONE,
-                ](
-                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                    ctx,
-                )
+                ](c, a, b, ctx)
                 return DISPATCH_HIT
 
         comptime if cond:
@@ -3288,18 +3116,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                             config=base_config,
                             schedule=MatmulSchedule.NONE,
                             swapAB=True,
-                        ](
-                            rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](
-                                c
-                            ),
-                            rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](
-                                a
-                            ),
-                            rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](
-                                b
-                            ),
-                            ctx,
-                        )
+                        ](c, a, b, ctx)
                         return DISPATCH_HIT
 
             elif m < 65:
@@ -3333,18 +3150,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                             config=base_config,
                             schedule=MatmulSchedule.NONE,
                             swapAB=True,
-                        ](
-                            rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](
-                                c
-                            ),
-                            rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](
-                                a
-                            ),
-                            rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](
-                                b
-                            ),
-                            ctx,
-                        )
+                        ](c, a, b, ctx)
                         return DISPATCH_HIT
 
             # m 129-240: BN = 72 + ((m-129)//16)*8, cluster=(2,1,1), k_group=2
@@ -3375,18 +3181,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                             config=base_config,
                             schedule=MatmulSchedule.NONE,
                             swapAB=True,
-                        ](
-                            rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](
-                                c
-                            ),
-                            rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](
-                                a
-                            ),
-                            rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](
-                                b
-                            ),
-                            ctx,
-                        )
+                        ](c, a, b, ctx)
                         return DISPATCH_HIT
 
         @parameter
@@ -3446,12 +3241,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=base_config,
                     schedule=MatmulSchedule.NONE,
-                ](
-                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                    ctx,
-                )
+                ](c, a, b, ctx)
                 return DISPATCH_HIT
 
     # Fallback path, will use scalar 2B output and lots of OOB check.
@@ -3472,12 +3262,7 @@ def matmul_dispatch_sm90_bf16_fp32[
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             config=default_bf16_config,
             schedule=MatmulSchedule.NONE,
-        ](
-            rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-            rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-            rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-            ctx,
-        )
+        ](c, a, b, ctx)
         return DISPATCH_HIT
 
     return DISPATCH_MISS

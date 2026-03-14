@@ -76,44 +76,44 @@ struct WarpRole(TrivialRegisterPassable):
     comptime Epilogue = Self(3)
 
     @always_inline
-    fn __eq__(self, other: UInt) -> Bool:
+    def __eq__(self, other: UInt) -> Bool:
         return self._role == Int32(other)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._role == other._role
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self._role != other._role
 
     @always_inline
-    fn __ge__(self, other: UInt) -> Bool:
+    def __ge__(self, other: UInt) -> Bool:
         return self._role >= Int32(other)
 
     @staticmethod
     @always_inline
-    fn is_main_load() -> Bool:
+    def is_main_load() -> Bool:
         return Self.MainLoad == get_warp_id()
 
     @staticmethod
     @always_inline
-    fn is_mma() -> Bool:
+    def is_mma() -> Bool:
         return Self.Mma == get_warp_id()
 
     @staticmethod
     @always_inline
-    fn is_epilogue() -> Bool:
+    def is_epilogue() -> Bool:
         return Self.Epilogue >= get_warp_id()
 
     @staticmethod
     @always_inline
-    fn is_scheduler() -> Bool:
+    def is_scheduler() -> Bool:
         return Self.Scheduler == get_warp_id()
 
     @staticmethod
     @always_inline
-    fn is_epilogue_load() -> Bool:
+    def is_epilogue_load() -> Bool:
         """Check if current warp is the epilogue load warp (loads source C)."""
         return Self.EpilogueLoad == get_warp_id()
 
@@ -124,12 +124,18 @@ struct WarpRole(TrivialRegisterPassable):
 
 
 struct WarpRole1D1D(TrivialRegisterPassable):
-    """Warp role for 1D-1D kernels with 3-warp specialization.
+    """Warp role for 1D-1D kernels with warp specialization.
 
-    Thread layout (192 threads total):
+    Base thread layout (192 threads, MMA_N >= 64):
     - Warps 0-3 (threads 0-127): Epilogue (4 warps)
     - Warp 4 (threads 128-159): TMA Load
     - Warp 5 (threads 160-191): MMA
+
+    Extended layout (320 threads, MMA_N < 64):
+    - Warps 0-3 (threads 0-127): Epilogue (4 warps)
+    - Warp 4 (threads 128-159): TMA Load
+    - Warp 5 (threads 160-191): MMA
+    - Warps 6-9 (threads 192-319): SFB Load (4 warps, 128 threads)
 
     The epilogue warps being at 0-3 is important because TMAStoreCoords
     uses `warp_id == 0` for election.
@@ -140,22 +146,25 @@ struct WarpRole1D1D(TrivialRegisterPassable):
     comptime EPILOGUE_WARP_START = 0
     comptime LOAD_WARP_START = 128
     comptime MMA_WARP_START = 160
+    comptime SFB_LOAD_WARP_START = 192
 
     comptime NUM_EPILOGUE_THREADS = 128  # 4 warps
     comptime NUM_LOAD_THREADS = 32
     comptime NUM_MMA_THREADS = 32
+    comptime NUM_SFB_LOAD_THREADS = 128  # 4 warps
 
     comptime TOTAL_THREADS = 192
+    comptime TOTAL_THREADS_WITH_SFB = 320
 
     @staticmethod
     @always_inline
-    fn is_epilogue() -> Bool:
+    def is_epilogue() -> Bool:
         """Returns True if current thread is in an epilogue warp (warps 0-3)."""
         return thread_idx.x < Self.LOAD_WARP_START
 
     @staticmethod
     @always_inline
-    fn is_load() -> Bool:
+    def is_load() -> Bool:
         """Returns True if current thread is in the TMA load warp (warp 4)."""
         return (
             thread_idx.x >= Self.LOAD_WARP_START
@@ -164,9 +173,21 @@ struct WarpRole1D1D(TrivialRegisterPassable):
 
     @staticmethod
     @always_inline
-    fn is_mma() -> Bool:
+    def is_mma() -> Bool:
         """Returns True if current thread is in the MMA warp (warp 5)."""
-        return thread_idx.x >= Self.MMA_WARP_START
+        return (
+            thread_idx.x >= Self.MMA_WARP_START
+            and thread_idx.x < Self.SFB_LOAD_WARP_START
+        )
+
+    @staticmethod
+    @always_inline
+    fn is_sfb_load() -> Bool:
+        """Returns True if current thread is in an SFB load warp (warps 6-9).
+
+        Only active when MMA_N < 64 (kernel launched with 320 threads).
+        """
+        return thread_idx.x >= Self.SFB_LOAD_WARP_START
 
 
 # =============================================================================
@@ -208,7 +229,7 @@ struct KernelContext[
     var ptr_tmem_addr: SMemPtr[UInt32]
 
     @always_inline
-    fn __init__(out self, ptr_tmem_addr: SMemPtr[UInt32]):
+    def __init__(out self, ptr_tmem_addr: SMemPtr[UInt32]):
         """Initialize context from TMEM pointer; computes all derived state."""
         # Election variables
         self.warp_id = UInt32(get_warp_id())
@@ -261,7 +282,7 @@ struct KernelContext[
         self.ptr_tmem_addr = ptr_tmem_addr
 
     @always_inline
-    fn __init__(out self, tmem_addr: Self.TmemAddrArray):
+    def __init__(out self, tmem_addr: Self.TmemAddrArray):
         """Initialize context from typed TMEM address array."""
         self = Self(tmem_addr.ptr)
 
@@ -272,7 +293,7 @@ struct KernelContext[
 
 
 @always_inline
-fn compute_tma_tile_dims[
+def compute_tma_tile_dims[
     BM: Int,
     BN: Int,
     MMA_M: Int,
@@ -296,7 +317,7 @@ fn compute_tma_tile_dims[
 
 
 @always_inline
-fn compute_clc_barrier_counts[
+def compute_clc_barrier_counts[
     SCHEDULER_THREADS: Int,
     TMA_LOAD_THREADS: Int,
     MMA_THREADS: Int,
@@ -322,7 +343,7 @@ fn compute_clc_barrier_counts[
 
 
 @always_inline
-fn compute_accum_barrier_counts[
+def compute_accum_barrier_counts[
     EPILOGUE_THREADS: Int,
     cta_group: Int,
 ]() -> StaticTuple[Int, 2]:
@@ -343,7 +364,7 @@ fn compute_accum_barrier_counts[
 
 
 @always_inline
-fn compute_input_consumer_count[
+def compute_input_consumer_count[
     CLUSTER_M: Int,
     CLUSTER_N: Int,
     cta_group: Int,
@@ -365,7 +386,7 @@ fn compute_input_consumer_count[
 
 
 @always_inline
-fn init_core_barriers[
+def init_core_barriers[
     num_input_stages: Int,
     num_accum_stages: Int,
 ](
@@ -392,7 +413,7 @@ fn init_core_barriers[
 
 
 @always_inline
-fn init_clc_barriers[
+def init_clc_barriers[
     num_clc_stages: Int
 ](
     clc_full_ptr: MbarPtr,
@@ -421,7 +442,7 @@ comptime _Batched3DLayout[L: TensorLayout] = RowMajorLayout[
 """3D batched layout from a 2D layout: prepend batch=1, preserve shape types."""
 
 
-fn _to_batched_3d(
+def _to_batched_3d(
     tensor: TileTensor[...],
 ) -> tensor.ViewType[_Batched3DLayout[type_of(tensor).LayoutType]]:
     """Reshape 2D TileTensor to 3D by prepending batch=1: (M, K) -> (1, M, K).

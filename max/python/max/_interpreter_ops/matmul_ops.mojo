@@ -34,7 +34,7 @@ from MOGGKernelAPI.MOGGKernelAPI import BatchMatmul as BatchMatmulKernel
 from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
-fn _is_gpu_allowed_matmul_dtype[dtype: DType]() -> Bool:
+def _is_gpu_allowed_matmul_dtype[dtype: DType]() -> Bool:
     """Check if a dtype is allowed for GPU matmul at compile time.
 
     GPU matmul does not support int8, uint8, int16, uint16, or float64.
@@ -54,7 +54,7 @@ fn _is_gpu_allowed_matmul_dtype[dtype: DType]() -> Bool:
 
 
 @export
-fn PyInit_matmul_ops() -> PythonObject:
+def PyInit_matmul_ops() -> PythonObject:
     """Create a Python module with matmul kernel function bindings."""
     try:
         var b = PythonModuleBuilder("matmul_ops")
@@ -80,7 +80,7 @@ fn PyInit_matmul_ops() -> PythonObject:
 # =============================================================================
 
 
-fn matmul_dispatcher(
+def matmul_dispatcher(
     out_buffer: PythonObject,
     lhs_buffer: PythonObject,
     rhs_buffer: PythonObject,
@@ -245,7 +245,7 @@ fn matmul_dispatcher(
 
 
 @always_inline
-fn matmul_op[
+def matmul_op[
     dtype: DType
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -312,7 +312,7 @@ fn matmul_op[
 # =============================================================================
 
 
-fn batch_matmul_shape_dispatcher(
+def batch_matmul_shape_dispatcher(
     lhs_buffer: PythonObject,
     rhs_buffer: PythonObject,
 ) raises -> PythonObject:
@@ -375,7 +375,7 @@ fn batch_matmul_shape_dispatcher(
     return out_shape
 
 
-fn _batch_matmul_shape_for_rank[
+def _batch_matmul_shape_for_rank[
     rank: Int
 ](
     a_dims: InlineArray[Int, MAX_RANK],
@@ -422,7 +422,7 @@ fn _batch_matmul_shape_for_rank[
 # =============================================================================
 
 
-fn batch_matmul_dispatcher(
+def batch_matmul_dispatcher(
     out_buffer: PythonObject,
     lhs_buffer: PythonObject,
     rhs_buffer: PythonObject,
@@ -612,7 +612,7 @@ fn batch_matmul_dispatcher(
 
 
 @always_inline
-fn batch_matmul_op[
+def batch_matmul_op[
     dtype: DType
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],

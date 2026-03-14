@@ -123,9 +123,9 @@ def _blackwell_matmul_tma_umma_warp_specialized[
             or MMA_M != 128
             or register_based_epilogue
             or elementwise_compute_lambda_fn is None
-        ) or (MMA_N % 32 == 0), (
+        ) or (MMA_N % 16 == 0), (
             "SM100 doesn't support shared memory based epilogue when MMA_M =="
-            " 128 and MMA_N is not a multiple of 32"
+            " 128 and MMA_N is not a multiple of 16"
         )
     else:
         comptime assert (
@@ -271,9 +271,7 @@ def _blackwell_matmul_tma_umma_warp_specialized[
             max_profiled_tiles
         ].get_workspace(ctx)
     else:
-        workspace = Span[UInt64, MutAnyOrigin](
-            ptr=UnsafePointer[UInt64, origin=MutAnyOrigin](), length=0
-        )
+        workspace = {}
 
     ctx.enqueue_function[kernel, kernel](
         a_tma_op,

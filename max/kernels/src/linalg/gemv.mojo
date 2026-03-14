@@ -57,6 +57,7 @@ from layout import (
     RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
+    coord_to_index_list,
 )
 from std.logger import Logger
 from std.memory import bitcast, stack_allocation
@@ -693,26 +694,33 @@ def gemv_gpu_dispatch[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     kernel_func: GEMVAlgorithm,
-    c: NDBuffer[rank=2, ...],
-    a: NDBuffer[rank=2, ...],
-    b: NDBuffer[rank=2, ...],
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b: TileTensor,
     ctx: DeviceContext,
 ) raises:
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
     var k = shape.K
 
     comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
-    comptime simd_width = simd_width_of[a.type, target=get_gpu_target()]()
+    comptime c_type = c.dtype
+    comptime a_type = a.dtype
+    comptime b_type = b.dtype
+    comptime simd_width = simd_width_of[a_type, target=get_gpu_target()]()
 
-    var c_tensor = TileTensor(c).to_layout_tensor()
-    var b_tensor = TileTensor(b).to_layout_tensor()
-    var a_tensor = TileTensor(a).to_layout_tensor()
+    var c_tensor = c.to_layout_tensor()
+    var b_tensor = b.to_layout_tensor()
+    var a_tensor = a.to_layout_tensor()
 
-    comptime has_N = c.shape.has_value[1]()
-    comptime static_N = c.shape.get[1]() if has_N else UNKNOWN_VALUE
-    comptime static_K = a.shape.get[1]()
+    comptime has_N = c.static_shape[1] > -1
+    comptime static_N = c.static_shape[1] if has_N else UNKNOWN_VALUE
+    comptime static_K = a.static_shape[1]
 
     if kernel_func is GEMVAlgorithm.GEMV_SPLIT_K:
         logger.info("Executing: GEMV_SPLIT_K kernel")
@@ -726,9 +734,9 @@ def gemv_gpu_dispatch[
         ]() raises:
             comptime check_bounds = static_N % tile_n != 0
             comptime kernel = gemv_split_k[
-                c.type,
-                a.type,
-                b.type,
+                c_type,
+                a_type,
+                b_type,
                 c_tensor.layout,
                 a_tensor.layout,
                 b_tensor.layout,
@@ -790,9 +798,9 @@ def gemv_gpu_dispatch[
         if n == 1:
             comptime if transpose_b:
                 comptime kernel = gemv_kernel_vector[
-                    c.type,
-                    a.type,
-                    b.type,
+                    c_type,
+                    a_type,
+                    b_type,
                     c_tensor.layout,
                     a_tensor.layout,
                     b_tensor.layout,
@@ -814,10 +822,12 @@ def gemv_gpu_dispatch[
                 )
             else:
                 # runtime transpose since layout_tensor.transpose requires static shape
-                var aligned_b = b.data
+                var aligned_b = b.ptr
 
-                comptime has_K = a.shape.has_value[1]()
-                comptime static_K = a.shape.get[1]() if has_K else UNKNOWN_VALUE
+                comptime has_K = a.static_shape[1] > -1
+                comptime static_K = a.static_shape[
+                    1
+                ] if has_K else UNKNOWN_VALUE
                 comptime b_layout_template = Layout.row_major(
                     static_N, static_K
                 )
@@ -835,16 +845,16 @@ def gemv_gpu_dispatch[
                 )
 
                 var b_tensor_n_major = LayoutTensor[
-                    b.type,
+                    b_type,
                     b_layout_template,
                     b.origin,
                     address_space=aligned_b.address_space,
                 ](aligned_b, b_runtime_layout)
 
                 comptime kernel = gemv_kernel_vector[
-                    c.type,
-                    a.type,
-                    b.type,
+                    c_type,
+                    a_type,
+                    b_type,
                     c_tensor.layout,
                     a_tensor.layout,
                     b_layout_template,
@@ -866,9 +876,9 @@ def gemv_gpu_dispatch[
                 )
         elif m == 1:
             comptime kernel = gemv_kernel_vector[
-                c.type,
-                b.type,
-                a.type,
+                c_type,
+                b_type,
+                a_type,
                 c_tensor.layout,
                 b_tensor.layout,
                 a_tensor.layout,
@@ -893,9 +903,9 @@ def gemv_gpu_dispatch[
         logger.info("Executing: GEMV_KERNEL (no transpose)")
 
         comptime kernel = gemv_kernel[
-            c.type,
-            a.type,
-            b.type,
+            c_type,
+            a_type,
+            b_type,
             elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
         ]
@@ -916,9 +926,9 @@ def gemv_gpu_dispatch[
         logger.info("Executing: GEMV_KERNEL (with transpose)")
 
         comptime kernel = gemv_kernel[
-            c.type,
-            b.type,
-            a.type,
+            c_type,
+            b_type,
+            a_type,
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
@@ -937,9 +947,9 @@ def gemv_gpu_dispatch[
     elif kernel_func is GEMVAlgorithm.GEVM_KERNEL:
         logger.info("Executing: GEVM_KERNEL")
         comptime kernel = gevm_kernel[
-            c.type,
-            a.type,
-            b.type,
+            c_type,
+            a_type,
+            b_type,
             tile_size=WARP_SIZE * WARPS_PER_BLOCK,
             elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
@@ -960,25 +970,21 @@ def gemv_gpu_dispatch[
         logger.info("Executing: MATMUL_NAIVE kernel")
         comptime BLOCK_DIM = 16
 
-        var c_tt = TileTensor(c)
-        var a_tt = TileTensor(a)
-        var b_tt = TileTensor(b)
-
         comptime kernel = matmul_kernel_naive[
-            c.type,
-            a.type,
-            b.type,
-            type_of(c_tt).LayoutType,
-            type_of(a_tt).LayoutType,
-            type_of(b_tt).LayoutType,
+            c_type,
+            a_type,
+            b_type,
+            type_of(c).LayoutType,
+            type_of(a).LayoutType,
+            type_of(b).LayoutType,
             BLOCK_DIM,
             transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
         ctx.enqueue_function[kernel, kernel](
-            c_tt,
-            a_tt,
-            b_tt,
+            c,
+            a,
+            b,
             m,
             n,
             k,
@@ -1009,20 +1015,26 @@ def gemv_gpu[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[rank=2, ...],
-    a: NDBuffer[rank=2, ...],
-    b: NDBuffer[rank=2, ...],
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b: TileTensor,
     ctx: DeviceContext,
 ) raises:
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+
+    comptime a_type = a.dtype
+
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
     var k = shape.K
-    comptime simd_width = simd_width_of[a.type, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[a_type, target=get_gpu_target()]()
 
-    comptime has_M = c.shape.has_value[0]()
-    comptime has_N = c.shape.has_value[1]()
-    comptime has_K = a.shape.has_value[1]()
+    comptime has_M = c.static_shape[0] > -1
+    comptime has_N = c.static_shape[1] > -1
+    comptime has_K = a.static_shape[1] > -1
 
     logger.info("------ Dispatching to GEMV ------")
 
@@ -1035,7 +1047,7 @@ def gemv_gpu[
     var kernel_func: GEMVAlgorithm
 
     if n == 1:
-        comptime if a.type == DType.bfloat16:
+        comptime if a_type == DType.bfloat16:
             if k % simd_width == 0:
                 kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR
             else:
@@ -1044,7 +1056,7 @@ def gemv_gpu[
             kernel_func = GEMVAlgorithm.GEMV_KERNEL
 
     elif m == 1 and transpose_b == True:
-        comptime if a.type in (DType.bfloat16, DType.float8_e4m3fn):
+        comptime if a_type in (DType.bfloat16, DType.float8_e4m3fn):
             if k % simd_width == 0:
                 if ceildiv(n, 2) <= ctx.get_attribute(
                     DeviceAttribute.MAX_GRID_DIM_Y
@@ -1068,6 +1080,25 @@ def gemv_gpu[
         elementwise_lambda_fn=elementwise_lambda_fn,
         pdl_level=pdl_level,
     ](kernel_func, c, a, b, ctx)
+
+
+@always_inline
+def gemv_gpu[
+    transpose_b: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: NDBuffer[mut=True, rank=2, ...],
+    a: NDBuffer[rank=2, ...],
+    b: NDBuffer[rank=2, ...],
+    ctx: DeviceContext,
+) raises:
+    """NDBuffer shim — converts to TileTensor and delegates."""
+    gemv_gpu[
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        pdl_level=pdl_level,
+    ](TileTensor(c), TileTensor(a), TileTensor(b), ctx)
 
 
 # Parallelized version of Gemv
@@ -1152,3 +1183,133 @@ def naive_gemv[
         for m in range(M):
             var a_val = a_buf[m, k]
             c_buf[m] += a_val * b_val
+
+
+# --- TileTensor overloads ---
+#
+# Each overload converts TileTensor args to NDBuffer (preserving static shape)
+# and delegates to the NDBuffer implementation. NDBuffer is constructed without
+# explicit strides (row-major assumed), using MutAnyOrigin for origin erasure.
+
+
+@always_inline
+def gemv_gpu[
+    transpose_b: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    ctx: DeviceContext,
+) raises:
+    """TileTensor overload of `gemv_gpu`. Converts to NDBuffer and delegates."""
+    comptime assert c.rank == 2, "c must be rank 2"
+    comptime assert a.rank == 2, "a must be rank 2"
+    comptime assert b.rank == 2, "b must be rank 2"
+    comptime assert c.flat_rank == 2, "c must have a non-nested layout"
+    comptime assert a.flat_rank == 2, "a must have a non-nested layout"
+    comptime assert b.flat_rank == 2, "b must have a non-nested layout"
+
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+
+    comptime c_shape = DimList[dim[c.static_shape[0]], dim[c.static_shape[1]]]()
+    var c_buf = NDBuffer[rank=2, c.dtype, MutAnyOrigin, c_shape](
+        c.ptr,
+        rebind[IndexList[2]](coord_to_index_list(c.layout.shape_coord())),
+    )
+    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
+    var a_buf = NDBuffer[rank=2, a.dtype, ImmutAnyOrigin, a_shape](
+        a.ptr,
+        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
+    )
+    comptime b_shape = DimList[dim[b.static_shape[0]], dim[b.static_shape[1]]]()
+    var b_buf = NDBuffer[rank=2, b.dtype, ImmutAnyOrigin, b_shape](
+        b.ptr,
+        rebind[IndexList[2]](coord_to_index_list(b.layout.shape_coord())),
+    )
+
+    gemv_gpu[
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        pdl_level=pdl_level,
+    ](c_buf, a_buf, b_buf, ctx)
+
+
+@always_inline
+def gemv[
+    parallelize: Bool,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+](
+    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+) raises:
+    """TileTensor overload of `gemv`. Converts to NDBuffer and delegates."""
+    comptime assert c.rank == 1, "c must be rank 1"
+    comptime assert a.rank == 2, "a must be rank 2"
+    comptime assert b.rank == 1, "b must be rank 1"
+    comptime assert c.flat_rank == 1, "c must have a non-nested layout"
+    comptime assert a.flat_rank == 2, "a must have a non-nested layout"
+    comptime assert b.flat_rank == 1, "b must have a non-nested layout"
+
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+
+    comptime c_shape = DimList[dim[c.static_shape[0]]]()
+    var c_buf = NDBuffer[rank=1, c.dtype, c.origin, c_shape](
+        c.ptr,
+        rebind[IndexList[1]](coord_to_index_list(c.layout.shape_coord())),
+    )
+    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
+    var a_buf = NDBuffer[rank=2, a.dtype, a.origin, a_shape](
+        a.ptr,
+        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
+    )
+    comptime b_shape = DimList[dim[b.static_shape[0]]]()
+    var b_buf = NDBuffer[rank=1, b.dtype, b.origin, b_shape](
+        b.ptr,
+        rebind[IndexList[1]](coord_to_index_list(b.layout.shape_coord())),
+    )
+
+    gemv[
+        parallelize=parallelize,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ](c_buf, a_buf, b_buf)
+
+
+def naive_gemv[
+    dtype: DType
+](
+    c: TileTensor[mut=True, dtype, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+):
+    """TileTensor overload of `naive_gemv`. Converts to NDBuffer and delegates.
+    """
+    comptime assert c.rank == 1, "c must be rank 1"
+    comptime assert a.rank == 2, "a must be rank 2"
+    comptime assert b.rank == 1, "b must be rank 1"
+    comptime assert c.flat_rank == 1, "c must have a non-nested layout"
+    comptime assert a.flat_rank == 2, "a must have a non-nested layout"
+    comptime assert b.flat_rank == 1, "b must have a non-nested layout"
+
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+    comptime dtype = c.dtype
+
+    comptime c_shape = DimList[dim[c.static_shape[0]]]()
+    var c_buf = NDBuffer[rank=1, dtype, MutAnyOrigin, c_shape](
+        c.ptr,
+        rebind[IndexList[1]](coord_to_index_list(c.layout.shape_coord())),
+    )
+    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
+    var a_buf = NDBuffer[rank=2, dtype, ImmutAnyOrigin, a_shape](
+        a.ptr,
+        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
+    )
+    comptime b_shape = DimList[dim[b.static_shape[0]]]()
+    var b_buf = NDBuffer[rank=1, dtype, ImmutAnyOrigin, b_shape](
+        b.ptr,
+        rebind[IndexList[1]](coord_to_index_list(b.layout.shape_coord())),
+    )
+
+    naive_gemv(c_buf, a_buf, b_buf)

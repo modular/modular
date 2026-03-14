@@ -12,18 +12,18 @@ called from external code, such as
 
 ```mojo
 # This function is internal - not callable from Python
-fn internal_helper():
+def internal_helper():
     print("Internal")
 
 # This function can be called from Python as "my_exported_function"
 @export
-fn my_exported_function():
+def my_exported_function():
     print("Exported!")
     internal_helper()
 
 # This function can be called from Python as "my_renamed_function"
 @export("my_renamed_function")
-fn my_other_function():
+def my_other_function():
     print("Another function.")
 ```
 
@@ -38,7 +38,7 @@ identifier. For example:
 
 ```mojo
 @export("my_func", ABI="C")
-fn my_function(
+def my_function(
     name: StaticString,
     ptr: OpaquePointer[MutExternalOrigin],
 ) -> None:

@@ -2166,22 +2166,28 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         )
         logger.info(f"Tracing enabled, output: {trace_path}")
 
-    # Auto-default skip counts to max_concurrency when not explicitly set
+    # Auto-default skip counts to max_concurrency when not explicitly set.
+    # None means "auto" (user did not pass the flag); 0 means "explicitly
+    # no skipping" (user passed --skip-first-n-requests 0).
     skip_first_n_requests = args.skip_first_n_requests
     skip_last_n_requests = args.skip_last_n_requests
     if max_concurrency is not None:
-        if skip_first_n_requests == 0:
+        if skip_first_n_requests is None:
             skip_first_n_requests = max_concurrency
             logger.info(
                 f"Auto-setting skip_first_n_requests={skip_first_n_requests}"
                 f" (max_concurrency={max_concurrency})"
             )
-        if skip_last_n_requests == 0:
+        if skip_last_n_requests is None:
             skip_last_n_requests = max_concurrency
             logger.info(
                 f"Auto-setting skip_last_n_requests={skip_last_n_requests}"
                 f" (max_concurrency={max_concurrency})"
             )
+    if skip_first_n_requests is None:
+        skip_first_n_requests = 0
+    if skip_last_n_requests is None:
+        skip_last_n_requests = 0
 
     logger.info("Starting benchmark run")
     assert args.num_prompts is not None

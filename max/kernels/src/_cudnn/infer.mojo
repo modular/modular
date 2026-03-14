@@ -62,7 +62,7 @@ def _init_dylib() -> OwnedDLHandle:
 
 @always_inline
 def _get_dylib_function[
-    func_name: StaticString, result_type: __TypeOfAllTypes
+    func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
         CUDA_CUDNN_INFER_LIBRARY(),
@@ -2125,7 +2125,7 @@ comptime cudnnCallback_t = fn(
 
 
 struct cudnnAlgorithmUnionStruct(TrivialRegisterPassable):
-    var algo: OpaquePointer
+    var algo: OpaquePointer[MutAnyOrigin]
 
 
 comptime cudnnDropoutDescriptor_t = UnsafePointer[cudnnDropoutStruct, _]

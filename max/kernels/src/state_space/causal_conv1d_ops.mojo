@@ -62,7 +62,7 @@ struct CausalConv1D[activation: StaticString]:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         target: StaticString,
@@ -378,7 +378,7 @@ struct CausalConv1D[activation: StaticString]:
             raise Error("Unsupported target device")
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
         rank: Int,
     ](
@@ -417,7 +417,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         target: StaticString,
@@ -576,7 +576,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
             raise Error("Unsupported target device")
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
         rank: Int,
     ](

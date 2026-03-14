@@ -19,10 +19,10 @@ def string_slice_summary() raises:
     var text = StringSlice("Hello, 世界")
 
     # Zero-copy slicing
-    var hello = text[0:5]  # Hello
+    var hello = text[byte=0:5]  # Hello
 
     # Unicode-aware operations
-    var world = text[7:13]  # "世界"
+    var world = text[byte=7:13]  # "世界"
 
     # String comparison
     if text.startswith("Hello"):

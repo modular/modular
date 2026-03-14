@@ -21,7 +21,7 @@ struct AlignedGeneric[T: Copyable & ImplicitlyDestructible]:
     var value: Self.T
 
 
-fn main() raises:
+def main() raises:
     # print(align_of[AlignedGeneric[Int8]]())  # 128
     # print(align_of[AlignedGeneric[Int64]]())  # 128
 

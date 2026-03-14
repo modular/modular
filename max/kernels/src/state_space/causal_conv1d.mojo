@@ -78,7 +78,7 @@ from std.utils.numerics import get_accum_type
 # ===----------------------------------------------------------------------=== #
 
 
-fn silu[
+def silu[
     dtype: DType, width: Int
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Sigmoid Linear Unit (SiLU) activation function.
@@ -104,7 +104,7 @@ fn silu[
 # ===----------------------------------------------------------------------=== #
 
 
-fn causal_conv1d_channel_first_fwd_cpu[
+def causal_conv1d_channel_first_fwd_cpu[
     x_dtype: DType,
     x_layout: Layout,
     weight_dtype: DType,
@@ -170,7 +170,7 @@ fn causal_conv1d_channel_first_fwd_cpu[
 
     # Parallelize across batch*channel combinations
     @parameter
-    fn process_bc(bc_idx: Int):
+    def process_bc(bc_idx: Int):
         var b = bc_idx // dim
         var c = bc_idx % dim
 
@@ -250,7 +250,7 @@ fn causal_conv1d_channel_first_fwd_cpu[
     sync_parallelize[process_bc](total_bc)
 
 
-fn causal_conv1d_channel_first_fwd_cpu_no_bias[
+def causal_conv1d_channel_first_fwd_cpu_no_bias[
     x_dtype: DType,
     x_layout: Layout,
     weight_dtype: DType,
@@ -308,7 +308,7 @@ fn causal_conv1d_channel_first_fwd_cpu_no_bias[
 
     # Parallelize across batch*channel combinations
     @parameter
-    fn process_bc(bc_idx: Int):
+    def process_bc(bc_idx: Int):
         var b = bc_idx // dim
         var c = bc_idx % dim
 
@@ -376,7 +376,7 @@ fn causal_conv1d_channel_first_fwd_cpu_no_bias[
     sync_parallelize[process_bc](total_bc)
 
 
-fn causal_conv1d_channel_last_fwd_cpu[
+def causal_conv1d_channel_last_fwd_cpu[
     x_dtype: DType,
     x_layout: Layout,
     weight_dtype: DType,
@@ -461,7 +461,7 @@ fn causal_conv1d_channel_last_fwd_cpu[
                 output.ptr[out_offset] = out_val
 
 
-fn causal_conv1d_channel_last_fwd_cpu_no_bias[
+def causal_conv1d_channel_last_fwd_cpu_no_bias[
     x_dtype: DType,
     x_layout: Layout,
     weight_dtype: DType,
@@ -539,7 +539,7 @@ fn causal_conv1d_channel_last_fwd_cpu_no_bias[
                 output.ptr[out_offset] = out_val
 
 
-fn causal_conv1d_channel_last_fwd_cpu_with_seq_idx[
+def causal_conv1d_channel_last_fwd_cpu_with_seq_idx[
     x_dtype: DType,
     x_layout: Layout,
     weight_dtype: DType,
@@ -644,7 +644,7 @@ fn causal_conv1d_channel_last_fwd_cpu_with_seq_idx[
                 output.ptr[out_offset] = out_val
 
 
-fn causal_conv1d_channel_last_fwd_cpu_no_bias_with_seq_idx[
+def causal_conv1d_channel_last_fwd_cpu_no_bias_with_seq_idx[
     x_dtype: DType,
     x_layout: Layout,
     weight_dtype: DType,
@@ -749,7 +749,7 @@ fn causal_conv1d_channel_last_fwd_cpu_no_bias_with_seq_idx[
 # ===----------------------------------------------------------------------=== #
 
 
-fn causal_conv1d_channel_first_fwd_gpu[
+def causal_conv1d_channel_first_fwd_gpu[
     x_dtype: DType,
     x_layout: Layout,
     weight_dtype: DType,
@@ -1037,7 +1037,7 @@ fn causal_conv1d_channel_first_fwd_gpu[
 
 
 # Optimized GPU version without bias
-fn causal_conv1d_channel_first_fwd_gpu_no_bias[
+def causal_conv1d_channel_first_fwd_gpu_no_bias[
     x_dtype: DType,
     x_layout: Layout,
     weight_dtype: DType,
@@ -1273,7 +1273,7 @@ fn causal_conv1d_channel_first_fwd_gpu_no_bias[
         output.ptr[out_offset] = Scalar[output_dtype](out_vals[i])
 
 
-fn causal_conv1d_channel_last_fwd_gpu[
+def causal_conv1d_channel_last_fwd_gpu[
     x_dtype: DType,
     x_layout: Layout,
     weight_dtype: DType,
@@ -1495,7 +1495,7 @@ fn causal_conv1d_channel_last_fwd_gpu[
 
 
 # Optimized GPU version without bias for channel last
-fn causal_conv1d_channel_last_fwd_gpu_no_bias[
+def causal_conv1d_channel_last_fwd_gpu_no_bias[
     x_dtype: DType,
     x_layout: Layout,
     weight_dtype: DType,
@@ -1692,7 +1692,7 @@ fn causal_conv1d_channel_last_fwd_gpu_no_bias[
 
 
 # Optimized GPU implementation for channel-last with bias and seq_idx as LayoutTensor
-fn causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
+def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
     x_dtype: DType,
     x_layout: Layout,
     weight_dtype: DType,
@@ -2059,7 +2059,7 @@ fn causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
 
 
 # Optimized GPU implementation for channel-last without bias but with seq_idx as LayoutTensor
-fn causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
+def causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
     x_dtype: DType,
     x_layout: Layout,
     weight_dtype: DType,
@@ -2398,7 +2398,7 @@ fn causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
 
 
 # Optimized GPU implementation for channel-first with bias and seq_idx as LayoutTensor
-fn causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
+def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
     x_dtype: DType,
     x_layout: Layout,
     weight_dtype: DType,
@@ -2754,7 +2754,7 @@ fn causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
 
 
 # Optimized GPU implementation for channel-first without bias but with seq_idx as LayoutTensor
-fn causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
+def causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
     x_dtype: DType,
     x_layout: Layout,
     weight_dtype: DType,
@@ -3088,7 +3088,7 @@ fn causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
 # maintaining a conv_state buffer that gets updated with each step.
 
 
-fn causal_conv1d_update_cpu[
+def causal_conv1d_update_cpu[
     x_dtype: DType,
     x_layout: Layout,
     conv_state_dtype: DType,
@@ -3285,7 +3285,7 @@ fn causal_conv1d_update_cpu[
                     ](x_val)
 
 
-fn causal_conv1d_update_cpu_no_bias[
+def causal_conv1d_update_cpu_no_bias[
     x_dtype: DType,
     x_layout: Layout,
     conv_state_dtype: DType,
@@ -3425,7 +3425,7 @@ fn causal_conv1d_update_cpu_no_bias[
                     ](x_val)
 
 
-fn causal_conv1d_update_gpu[
+def causal_conv1d_update_gpu[
     x_dtype: DType,
     x_layout: Layout,
     conv_state_dtype: DType,
@@ -3596,7 +3596,7 @@ fn causal_conv1d_update_gpu[
             conv_state.ptr[conv_state_offset] = Scalar[conv_state_dtype](x_val)
 
 
-fn causal_conv1d_update_gpu_no_bias[
+def causal_conv1d_update_gpu_no_bias[
     x_dtype: DType,
     x_layout: Layout,
     conv_state_dtype: DType,

@@ -114,6 +114,7 @@ modular_py_binary(
 
 modular_run_binary_test(
     name = "properties_dtype_test",
+    size = "large",
     binary = "properties_dtype",
 )
 

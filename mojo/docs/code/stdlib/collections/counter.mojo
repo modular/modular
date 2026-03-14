@@ -15,7 +15,7 @@ from std.collections import Counter
 from std.testing import *
 
 
-fn init1() raises:
+def init1() raises:
     from std.collections import Counter
 
     var counter = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
@@ -23,14 +23,14 @@ fn init1() raises:
     assert_true(counter["b"] == 2)
 
 
-fn fromkeys() raises:
+def fromkeys() raises:
     from std.collections import Counter
 
     var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
     assert_true(counter["a"] == 1)
 
 
-fn string() raises:
+def string() raises:
     from std.collections import Counter
 
     var c = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
@@ -39,7 +39,7 @@ fn string() raises:
     # No test because exact output formatting may change over time
 
 
-fn is_lt() raises:
+def is_lt() raises:
     from std.collections import Counter
 
     var counter = Counter[Int]([1, 2, 1, 2, 3, 3])
@@ -49,7 +49,7 @@ fn is_lt() raises:
     assert_false(counter.lt(other))
 
 
-fn is_le() raises:
+def is_le() raises:
     from std.collections import Counter
 
     var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
@@ -59,7 +59,7 @@ fn is_le() raises:
     assert_false(counter.le(other))
 
 
-fn is_gt() raises:
+def is_gt() raises:
     from std.collections import Counter
 
     var counter = Counter[Int]([1, 2, 1, 2, 3, 3])
@@ -69,7 +69,7 @@ fn is_gt() raises:
     assert_false(other.gt(counter))
 
 
-fn is_ge() raises:
+def is_ge() raises:
     from std.collections import Counter
 
     var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
@@ -79,7 +79,7 @@ fn is_ge() raises:
     assert_false(other.ge(counter))
 
 
-fn lt() raises:
+def lt() raises:
     from std.collections import Counter
 
     var counter = Counter[Int]([1, 2, 1, 2, 3, 3])
@@ -89,7 +89,7 @@ fn lt() raises:
     assert_false(counter.lt(other))
 
 
-fn gt() raises:
+def gt() raises:
     from std.collections import Counter
 
     var counter = Counter[Int]([1, 2, 1, 2, 3, 3])
@@ -99,7 +99,7 @@ fn gt() raises:
     assert_false(other.gt(counter))
 
 
-fn ge() raises:
+def ge() raises:
     from std.collections import Counter
 
     var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
@@ -109,7 +109,7 @@ fn ge() raises:
     assert_false(other.ge(counter))
 
 
-fn get() raises:
+def get() raises:
     from std.collections import Counter
 
     var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
@@ -117,7 +117,7 @@ fn get() raises:
     assert_true(counter.get("d").or_else(0) == 0)
 
 
-fn get_default() raises:
+def get_default() raises:
     from std.collections import Counter
 
     var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
@@ -125,7 +125,7 @@ fn get_default() raises:
     assert_true(counter.get("d", default=0) == 0)
 
 
-fn pop() raises:
+def pop() raises:
     from std.collections import Counter
 
     var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
@@ -135,7 +135,7 @@ fn pop() raises:
     assert_true(counter.get("b").or_else(0) == 0)
 
 
-fn pop_default() raises:
+def pop_default() raises:
     var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
     var count = counter.pop("b", default=100)
     assert_true(count == 1)
@@ -143,7 +143,7 @@ fn pop_default() raises:
     assert_true(count == 0)
 
 
-fn keys() raises:
+def keys() raises:
     from std.collections import Counter
 
     var counter = Counter[String].fromkeys(["d", "b", "a", "c"], 1)
@@ -154,7 +154,7 @@ fn keys() raises:
     assert_true(key_list == ["a", "b", "c", "d"])
 
 
-fn values() raises:
+def values() raises:
     from std.collections import Counter
 
     # Construct `counter`
@@ -170,7 +170,7 @@ fn values() raises:
     assert_true(max_count == 5)
 
 
-fn items() raises:
+def items() raises:
     from std.collections import Counter
 
     var counter = Counter[Int]([1, 2, 1, 2, 1, 1, 1, 2, 2])
@@ -183,7 +183,7 @@ fn items() raises:
     # output: 2 4
 
 
-fn clear() raises:
+def clear() raises:
     from std.collections import Counter
 
     var counter = Counter[Int]([1, 2, 1, 2, 1, 1, 1, 2, 2])
@@ -192,7 +192,7 @@ fn clear() raises:
     assert_true(counter.total() == 0)
 
 
-fn popitem() raises:
+def popitem() raises:
     from std.collections import Counter
 
     var counter = Counter[String].fromkeys(["a", "b", "c"], 5)
@@ -202,7 +202,7 @@ fn popitem() raises:
     # output's value may vary since order is not guaranteed
 
 
-fn total() raises:
+def total() raises:
     from std.collections import Counter
 
     var counter = Counter[Int]([1, 2, 1, 2, 1, 1, 1, 2, 2])
@@ -211,7 +211,7 @@ fn total() raises:
     assert_true(counter.total() == 0)
 
 
-fn most_common() raises:
+def most_common() raises:
     from std.collections import Counter
 
     var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3, 1, 1, 1, 6, 6, 2, 2, 7])
@@ -224,7 +224,7 @@ fn most_common() raises:
         # output: 2 4
 
 
-fn elements() raises:
+def elements() raises:
     from std.collections import Counter
 
     var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3, 1, 1, 1, 6, 6, 2, 2, 7])
@@ -234,7 +234,7 @@ fn elements() raises:
     )
 
 
-fn update() raises:
+def update() raises:
     from std.collections import Counter
 
     var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
@@ -244,7 +244,7 @@ fn update() raises:
     assert_true(counter[1] == 12)
 
 
-fn subtract() raises:
+def subtract() raises:
     from std.collections import Counter
 
     var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
@@ -254,7 +254,7 @@ fn subtract() raises:
     assert_true(counter[1] == -8)
 
 
-fn main() raises:
+def main() raises:
     init1()
     fromkeys()
     is_le()

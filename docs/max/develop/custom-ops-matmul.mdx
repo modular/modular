@@ -333,7 +333,7 @@ actually work.
 In Mojo, a basic matrix multiplication looks like the following:
 
 ```mojo
-fn naive_matrix_multiplication[
+def naive_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -711,7 +711,7 @@ hardware units. The following is an example of how to perform the same
 calculation as the above, only on a Tensor Core:
 
 ```mojo
-fn tensor_core_matrix_multiplication[
+def tensor_core_matrix_multiplication[
     dtype: DType,
     layout_a: Layout,
     layout_b: Layout,

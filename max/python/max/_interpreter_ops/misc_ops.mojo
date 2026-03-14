@@ -52,7 +52,7 @@ from op_utils import (
 
 
 @export
-fn PyInit_misc_ops() -> PythonObject:
+def PyInit_misc_ops() -> PythonObject:
     """Create a Python module with miscellaneous kernel function bindings."""
     try:
         var b = PythonModuleBuilder("misc_ops")
@@ -80,7 +80,7 @@ fn PyInit_misc_ops() -> PythonObject:
 # ===----------------------------------------------------------------------=== #
 
 
-fn range_dispatcher(
+def range_dispatcher(
     out_buffer: PythonObject,
     start_buffer: PythonObject,
     stop_buffer: PythonObject,
@@ -217,7 +217,7 @@ fn range_dispatcher(
         raise Error("Unsupported dtype for range: " + String(dtype))
 
 
-fn range_op[
+def range_op[
     dtype: DType
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -266,7 +266,7 @@ fn range_op[
                 @always_inline
                 @parameter
                 @__copy_capture(out_ptr, start, step)
-                fn range_func[
+                def range_func[
                     width: Int, rank: Int, alignment: Int = 1
                 ](idx: IndexList[rank]):
                     var i = rebind[IndexList[1]](idx)[0]
@@ -294,7 +294,7 @@ fn range_op[
 # ===----------------------------------------------------------------------=== #
 
 
-fn range_shape_op[
+def range_shape_op[
     dtype: DType
 ](
     start_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -321,7 +321,7 @@ fn range_shape_op[
     return shape[0]
 
 
-fn range_shape_dispatcher(
+def range_shape_dispatcher(
     start_buffer: PythonObject,
     stop_buffer: PythonObject,
     step_buffer: PythonObject,
@@ -446,7 +446,7 @@ fn range_shape_dispatcher(
 # ===----------------------------------------------------------------------=== #
 
 
-fn random_normal_op[
+def random_normal_op[
     dtype: DType
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -475,7 +475,7 @@ fn random_normal_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, mean, variance, seed_value)
-    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         var i = rebind[IndexList[1]](idx)[0]
         var generator = NormalRandom(seed=seed_value, offset=UInt64(i))
         var values = generator.step_normal(mean=mean, stddev=variance)
@@ -504,7 +504,7 @@ fn random_normal_op[
             raise Error("No GPU accelerator available")
 
 
-fn random_normal_dispatcher(
+def random_normal_dispatcher(
     out_buffer: PythonObject,
     mean_val: PythonObject,
     variance_val: PythonObject,
@@ -572,7 +572,7 @@ fn random_normal_dispatcher(
 # ===----------------------------------------------------------------------=== #
 
 
-fn random_uniform_op[
+def random_uniform_op[
     dtype: DType
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -603,7 +603,7 @@ fn random_uniform_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, lower_bound, delta, seed_value)
-    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         var i = rebind[IndexList[1]](idx)[0]
         var generator = Random(seed=seed_value, offset=UInt64(i))
         var values: SIMD[DType.float32, 4] = generator.step_uniform()
@@ -633,7 +633,7 @@ fn random_uniform_op[
             raise Error("No GPU accelerator available")
 
 
-fn random_uniform_dispatcher(
+def random_uniform_dispatcher(
     out_buffer: PythonObject,
     lower_val: PythonObject,
     upper_val: PythonObject,
@@ -701,7 +701,7 @@ fn random_uniform_dispatcher(
 # ===----------------------------------------------------------------------=== #
 
 
-fn _cumsum_cpu[
+def _cumsum_cpu[
     dtype: DType,
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -755,7 +755,7 @@ fn _cumsum_cpu[
                     out_ptr[idx] = accumulator.cast[dtype]()
 
 
-fn cumsum_dispatcher(
+def cumsum_dispatcher(
     out_buffer: PythonObject,
     in_buffer: PythonObject,
     axis: PythonObject,

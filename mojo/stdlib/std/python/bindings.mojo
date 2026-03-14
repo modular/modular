@@ -427,7 +427,7 @@ struct PythonModuleBuilder:
         )
 
     def def_function[
-        func_type: __TypeOfAllTypes,
+        func_type: TrivialRegisterPassable,
         //,
         func: PyObjectFunction[func_type, has_kwargs=_],
     ](mut self, func_name: StaticString, docstring: StaticString = ""):
@@ -871,7 +871,7 @@ struct PythonTypeBuilder(Copyable):
         )
 
     def def_method[
-        method_type: __TypeOfAllTypes,
+        method_type: TrivialRegisterPassable,
         //,
         method: PyObjectFunction[method_type, self_type=_, has_kwargs=_],
     ](
@@ -910,7 +910,7 @@ struct PythonTypeBuilder(Copyable):
         ](method_name, docstring)
 
     def def_staticmethod[
-        method_type: __TypeOfAllTypes,
+        method_type: TrivialRegisterPassable,
         //,
         method: PyObjectFunction[method_type, has_kwargs=_],
     ](
@@ -1091,7 +1091,7 @@ def _py_c_function_wrapper[
 
 @always_inline
 def _py_function_wrapper[
-    method_type: __TypeOfAllTypes,
+    method_type: TrivialRegisterPassable,
     self_type: ImplicitlyDestructible,
     //,
     func: PyObjectFunction[method_type, self_type, has_kwargs=_],

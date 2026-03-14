@@ -500,11 +500,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # Create a string slice
     var text = StringSlice("Hello, 世界")
 
-    # Zero-copy slicing
-    var hello = text[0:5] # Hello
+    # Zero-copy slicing (byte-level)
+    var hello = text[byte=0:5] # Hello
 
-    # Unicode-aware operations
-    var world = text[7:13]  # "世界"
+    # Unicode-aware byte slicing
+    var world = text[byte=7:13]  # "世界"
 
     # String comparison
     if text.startswith("Hello"):
@@ -855,16 +855,16 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         return String(self)
 
     @always_inline
-    def __getitem__(self, span: ContiguousSlice) -> Self:
+    def __getitem__(self, *, byte: ContiguousSlice) -> Self:
         """Gets a substring at the specified byte positions.
 
         This performs byte-level slicing, not character (codepoint) slicing.
         The start and end positions are byte indices. For strings containing
-        multi-byte UTF-8 characters, slicing at arbitrary byte positions may
-        produce invalid UTF-8 sequences.
+        multi-byte UTF-8 characters, slicing at byte positions that do not fall
+        on codepoint boundaries will abort.
 
         Args:
-            span: A slice that specifies byte positions of the new substring.
+            byte: A slice that specifies byte positions of the new substring.
 
         Returns:
             A new StringSlice containing the bytes in the specified range.
@@ -872,7 +872,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var start: Int
         var end: Int
 
-        start, end = span.indices(len(self._slice))
+        start, end = byte.indices(len(self._slice))
         debug_assert[assert_mode="safe"](
             start == len(self._slice)
             or _is_utf8_start_byte(self._slice.unsafe_get(start)),
@@ -887,7 +887,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             end,
             " which is not a codepoint boundary.",
         )
-        return Self(unsafe_from_utf8=self._slice[span])
+        return Self(unsafe_from_utf8=self._slice[byte])
 
     def to_python_object(var self) raises -> PythonObject:
         """Convert this value to a PythonObject.
@@ -1795,7 +1795,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ```
         """
         if self.startswith(prefix):
-            return self[len(prefix) :]
+            return self[byte = len(prefix) :]
         return self
 
     def removesuffix(self, suffix: StringSlice, /) -> Self:
@@ -1816,7 +1816,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ```
         """
         if suffix and self.endswith(suffix):
-            return self[: -len(suffix)]
+            return self[byte = : -len(suffix)]
         return self
 
     @always_inline
@@ -2626,9 +2626,9 @@ def _unsafe_strlen(
 @always_inline
 def _memchr[
     dtype: DType, //
-](
-    source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]
-) -> source.UnsafePointerType:
+](source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]) -> type_of(
+    source.unsafe_ptr()
+):
     if (
         __is_run_in_comptime_interpreter
         or len(source) < simd_width_of[Scalar[dtype]]()
@@ -2649,7 +2649,7 @@ def _memchr_impl[
 ](
     source: Span[mut=False, Scalar[dtype], ...],
     char: Scalar[dtype],
-    out output: source.UnsafePointerType,
+    out output: type_of(source.unsafe_ptr()),
 ):
     var haystack = source.unsafe_ptr()
     var length = len(source)
@@ -2684,7 +2684,7 @@ def _memmem[
         Scalar[dtype],
         ...,
     ],
-) -> haystack_span.UnsafePointerType:
+) -> type_of(haystack_span.unsafe_ptr()):
     if (
         __is_run_in_comptime_interpreter
         or len(haystack_span) < simd_width_of[Scalar[dtype]]()
@@ -2716,7 +2716,7 @@ def _memmem_impl[
         Scalar[dtype],
         ...,
     ],
-    out output: haystack_span.UnsafePointerType,
+    out output: type_of(haystack_span.unsafe_ptr()),
 ):
     var haystack = haystack_span.unsafe_ptr()
     var haystack_len = len(haystack_span)

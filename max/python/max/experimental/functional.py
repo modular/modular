@@ -688,6 +688,30 @@ def min(
     return ops.reduction.min(x, axis=axis)
 
 
+@functional
+def clamp(
+    x: TensorValueLike,
+    lower_bound: TensorValueLike,
+    upper_bound: TensorValueLike,
+) -> TensorValue:
+    """Clamps tensor values to a specified range.
+
+    Args:
+        x: The input tensor.
+        lower_bound: The minimum value. Elements less than this are set to
+            ``lower_bound``.
+        upper_bound: The maximum value. Elements greater than this are set to
+            ``upper_bound``.
+
+    Returns:
+        A tensor with values clamped to the specified range.
+    """
+    return max(min(x, upper_bound), lower_bound)
+
+
+#: Alias for :func:`clamp`.
+clip = clamp
+
 #: Computes the modulo operation element-wise.
 #: See :func:`max.graph.ops.mod` for details.
 mod = functional(ops.mod)

@@ -2605,7 +2605,7 @@ def compute_mla_dispatch_args_scalar(
         device=device,
         values=[batch_size, max_cache_valid_length, q_max_seq_len],
         out_types=[
-            TensorType(shape=[4], dtype=DType.int64, device=DeviceRef.CPU()),
+            TensorType(shape=[3], dtype=DType.int64, device=DeviceRef.CPU()),
         ],
         parameters={"num_heads": num_heads, "is_fp8_kv": is_fp8_kv},
     )

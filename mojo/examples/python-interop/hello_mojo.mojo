@@ -20,7 +20,7 @@ from std.python.bindings import PythonModuleBuilder
 
 # An interface for this Mojo module must be exported to Python.
 @export
-fn PyInit_hello_mojo() -> PythonObject:
+def PyInit_hello_mojo() -> PythonObject:
     try:
         # A Python module is constructed, matching the name of this Mojo module.
         var module = PythonModuleBuilder("hello_mojo")
@@ -31,6 +31,6 @@ fn PyInit_hello_mojo() -> PythonObject:
         abort(String("failed to create Python module: ", e))
 
 
-fn passthrough(value: PythonObject) raises -> PythonObject:
+def passthrough(value: PythonObject) raises -> PythonObject:
     """A very basic function illustrating passing values to and from Mojo."""
     return value + " world from Mojo"
