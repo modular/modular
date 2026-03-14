@@ -874,7 +874,7 @@ struct Span[
         vectorize[simdwidth](length, do_count)
         return UInt(count)
 
-    fn count[
+    def count[
         dtype: DType, //
     ](self: Span[Scalar[dtype], _], value: Scalar[dtype]) -> Int:
         """Counts the number of occurrences of a value in the Span.
