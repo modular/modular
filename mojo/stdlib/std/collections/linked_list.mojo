@@ -454,7 +454,9 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             Time Complexity: O(n) in len(self).
         """
 
-        # TODO: use normalize_index
+        # `insert` follows Python's list.insert() semantics: out-of-range
+        # negative indices clamp to 0 (head) rather than raising, so
+        # normalize_index (which asserts bounds) cannot be used here.
         var i = index(idx)
         i = max(i if i >= 0 else i + len(self), 0)
 
