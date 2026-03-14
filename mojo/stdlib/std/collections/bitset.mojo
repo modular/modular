@@ -427,7 +427,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
 
         return Self._vectorize_apply[_difference](self, other)
 
-    fn symmetric_difference(self, other: Self) -> Self:
+    def symmetric_difference(self, other: Self) -> Self:
         """Returns a new bitset that is the symmetric difference of `self`
         and `other`.
 
@@ -441,7 +441,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
 
         @parameter
         @always_inline
-        fn _xor[
+        def _xor[
             simd_width: Int
         ](
             left: SIMD[DType.int64, simd_width],
@@ -451,7 +451,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
 
         return Self._vectorize_apply[_xor](self, other)
 
-    fn __or__(self, other: Self) -> Self:
+    def __or__(self, other: Self) -> Self:
         """Returns the union of `self` and `other`.
 
         Args:
@@ -462,7 +462,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         """
         return self.union(other)
 
-    fn __ior__(mut self, other: Self):
+    def __ior__(mut self, other: Self):
         """Updates `self` to be the union of `self` and `other`.
 
         Args:
@@ -470,7 +470,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         """
         self = self.union(other)
 
-    fn __and__(self, other: Self) -> Self:
+    def __and__(self, other: Self) -> Self:
         """Returns the intersection of `self` and `other`.
 
         Args:
@@ -481,7 +481,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         """
         return self.intersection(other)
 
-    fn __iand__(mut self, other: Self):
+    def __iand__(mut self, other: Self):
         """Updates `self` to be the intersection of `self` and `other`.
 
         Args:
@@ -489,7 +489,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         """
         self = self.intersection(other)
 
-    fn __sub__(self, other: Self) -> Self:
+    def __sub__(self, other: Self) -> Self:
         """Returns the difference of `self` and `other`.
 
         Args:
@@ -501,7 +501,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         """
         return self.difference(other)
 
-    fn __isub__(mut self, other: Self):
+    def __isub__(mut self, other: Self):
         """Updates `self` to be the difference of `self` and `other`.
 
         Args:
@@ -509,7 +509,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         """
         self = self.difference(other)
 
-    fn __xor__(self, other: Self) -> Self:
+    def __xor__(self, other: Self) -> Self:
         """Returns the symmetric difference of `self` and `other`.
 
         Args:
@@ -521,7 +521,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         """
         return self.symmetric_difference(other)
 
-    fn __ixor__(mut self, other: Self):
+    def __ixor__(mut self, other: Self):
         """Updates `self` to be the symmetric difference of `self` and `other`.
 
         Args:
