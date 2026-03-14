@@ -1534,7 +1534,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         if idx == -1:
             return (String(self), String(""), String(""))
         var sep_len = sep.byte_length()
-        var before = self[byte = :idx]
+        var before = self[byte=:idx]
         var after = self[byte = idx + sep_len :]
         return (String(before), String(sep), String(after))
 
@@ -1558,7 +1558,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         if idx == -1:
             return (String(""), String(""), String(self))
         var sep_len = sep.byte_length()
-        var before = self[byte = :idx]
+        var before = self[byte=:idx]
         var after = self[byte = idx + sep_len :]
         return (String(before), String(sep), String(after))
 
