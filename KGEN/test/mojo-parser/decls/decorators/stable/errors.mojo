@@ -12,7 +12,7 @@
 # test_std_mock/__init__.mojo since those errors only apply in opted-in packages.
 
 # Error: @stable with a positional (non-keyword) argument is not supported.
-# expected-error @+1 {{@stable only accepts the keyword argument 'since'}}
+# expected-error @+1 {{@stable requires a keyword argument ('since' or 'recursive'), not a positional argument}}
 @stable("since 1.0")
 struct StableWithArg:
     pass
@@ -34,7 +34,7 @@ alias MY_STABLE_ALIAS = 42
 
 # Verify that @stable members in stable structs are allowed (no error).
 @stable
-struct StableStruct:
+struct LocalStableStruct:
     @stable
     def stable_method_in_stable(self):
         pass
@@ -61,7 +61,22 @@ trait TraitInNonOptedInPackage:
     def stable_method(self): ...
 
 
-# Error: Decorators are not allowed on import statements.
-# expected-error @+2 {{'from' statement does not allow decorators}}
-@stable
+# Error: @stable on wildcard import is not supported.
+# expected-error @+2 {{@stable(recursive=True) is not supported on wildcard imports}}
+@stable(recursive=True)
 from test_std_mock import *
+
+# Error: bare @stable on import requires recursive=True argument.
+# expected-error @+1 {{@stable on import requires 'recursive=True' argument}}
+@stable
+from test_std_mock import StableStruct
+
+# Error: @stable(recursive=False) is not supported.
+# expected-error @+1 {{'recursive' argument to @stable must be True}}
+@stable(recursive=False)
+from test_std_mock import StableStruct
+
+# Error: @stable(recursive=<non-bool>) is not supported.
+# expected-error @+1 {{'recursive' argument to @stable must be True}}
+@stable(recursive="yes")
+from test_std_mock import StableStruct

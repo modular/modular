@@ -10,14 +10,14 @@
 
 
 # Error: positional string argument — only keyword 'since' is accepted.
-# expected-error @+1 {{@stable only accepts the keyword argument 'since'}}
+# expected-error @+1 {{@stable requires a keyword argument ('since' or 'recursive'), not a positional argument}}
 @stable("1.0")
 def fn_positional_string():
     pass
 
 
 # Error: unknown keyword argument.
-# expected-error @+1 {{@stable only accepts the keyword argument 'since'}}
+# expected-error @+1 {{@stable only accepts keyword arguments 'since' or 'recursive'}}
 @stable(unknown="1.0")
 def fn_unknown_kwarg():
     pass
@@ -52,7 +52,7 @@ def fn_since_hyphen():
 
 
 # Error: too many arguments.
-# expected-error @+1 {{@stable accepts only the 'since' argument}}
+# expected-error @+1 {{@stable accepts only one argument, either 'since' or 'recursive'}}
 @stable(since="1.0", extra="x")
 def fn_too_many_args():
     pass

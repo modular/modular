@@ -924,7 +924,8 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
 /// function without the parameters specified.  They can be bound later.
 TypedAttr OverloadSet::getBoundConstantAttr() const {
   if (fnDecls.size() == 1)
-    return getCallee(fnDecls[0], paramBindings, syntax);
+    return getCallee(fnDecls[0], paramBindings, syntax,
+                     /*verifiedBindings=*/std::nullopt);
 
   // If we have multiple candidates, emit an ambiguity error.
   assert(!fnDecls.empty() && "DirectCallable malformed");

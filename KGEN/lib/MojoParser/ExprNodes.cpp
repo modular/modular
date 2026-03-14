@@ -1101,7 +1101,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   // Overloaded declarations like functions can't be handled here. They are
   // handled when overload sets are resolved in CallEmission.cpp.
   checkDeclUsageWarnings(*decl, loc, emitter.getDeclScope(), emitter.shared,
-                         expr->getRange());
+                         expr->getRange(), CallSyntax::kDirectCall, {});
 
   // Aliases form a PValue.
   if (auto param = dyn_cast_or_null<AliasDeclOp>(decl->getIfOperation())) {
@@ -1973,7 +1973,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // Functions are checked in CallEmission.cpp::getCallee after overload
   // resolution.
   checkDeclUsageWarnings(memberDecl, getIdentifierLoc(), emitter.getDeclScope(),
-                         shared, getRange());
+                         shared, getRange(), CallSyntax::kDirectCall, {});
 
   // References to an AliasDecl form a PValue.
   if (auto aliasDeclOpParam =

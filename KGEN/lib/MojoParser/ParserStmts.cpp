@@ -335,7 +335,7 @@ struct StmtParser : public ParserBase {
                                        StringRef opName);
 
   // Declarations.
-  ParseResult parseFromImportStmt();
+  ParseResult parseFromImportStmt(bool hasStableOverride);
   ParseResult parseImportStmt();
   /// Emit an error and return failure if the current scope is not a valid
   /// location for an import statement. Imports are permitted at module scope
@@ -607,6 +607,11 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
 ///               | global_stmt [TODO]
 ///               | nonlocal_stmtParseResult [TODO]
 ///
+// Forward declaration — defined below after parseFromImportStmt.
+static bool parseFromImportDecorators(SharedState &shared,
+                                      LexerCursor startCursor,
+                                      size_t stmtIndent);
+
 ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
                                   size_t stmtIndent) {
   // Generate pretty stack traces if a crash happens in this scope.
@@ -728,9 +733,13 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     //===------------------------------------------------------------------===//
     // Simple statements.
     //===------------------------------------------------------------------===//
-  case Token::kw_from:
-    rejectDecorator(); // Decorators not allowed.
-    return parseFromImportStmt();
+  case Token::kw_from: {
+    bool hasStableOverride =
+        hadDecorators
+            ? parseFromImportDecorators(shared, startCursor, stmtIndent)
+            : false;
+    return parseFromImportStmt(hasStableOverride);
+  }
   case Token::kw_import:
     rejectDecorator(); // Decorators not allowed.
     return parseImportStmt();
@@ -2973,6 +2982,60 @@ ParseResult StmtParser::checkImportScope(SMLoc kwLoc) {
   return failure();
 }
 
+// TODO: Single-source this validation with Decorators::handleStable() in
+// DeclResolution.cpp. The logic is split because import decorator processing
+// must happen eagerly at parse time.
+
+/// Validate decorators written before a 'from ... import' statement.
+///
+/// Re-lexes from startCursor (which points before the leading '@') so that
+/// errors are emitted eagerly even when the import is never referenced
+/// (resolveSignature is lazy).
+///
+/// Returns true if @stable(recursive=True) was present.
+static bool parseFromImportDecorators(SharedState &shared,
+                                      LexerCursor startCursor,
+                                      size_t stmtIndent) {
+  bool hasStableOverride = false;
+  Lexer decorLexer(shared.diags, startCursor);
+  ParserBase decorParser(shared, decorLexer);
+  for (auto [expr, cursor] : decorParser.parseDecorators((ssize_t)stmtIndent)) {
+    if (auto *callNode = dyn_cast<CallNode>(expr)) {
+      auto *callee = dyn_cast<DeclRefNode>(callNode->callee);
+      if (callee && callee->spelling == "stable") {
+        if (callNode->operands.size() == 1 &&
+            callNode->operands.front().isKeyword() &&
+            callNode->operands.front().name == "recursive") {
+          auto *boolNode =
+              dyn_cast<BoolLiteralNode>(callNode->operands.front().expr);
+          if (boolNode && boolNode->value) {
+            hasStableOverride = true;
+            continue; // Valid decorator — proceed.
+          }
+          shared.emitError(callNode->operands.front().expr->getLoc(),
+                           "'recursive' argument to @stable must be True");
+          continue;
+        }
+        shared.emitError(
+            expr->getLoc(),
+            "@stable on import requires 'recursive=True' argument");
+        continue;
+      }
+    }
+    if (auto *declRef = dyn_cast<DeclRefNode>(expr)) {
+      if (declRef->spelling == "stable") {
+        shared.emitError(
+            expr->getLoc(),
+            "@stable on import requires 'recursive=True' argument");
+        continue;
+      }
+    }
+    shared.emitError(expr->getLoc(),
+                     "'from' statement does not allow decorators");
+  }
+  return hasStableOverride;
+}
+
 /// import_stmt     ::=  "from" relative_module "import" identifier
 ///                        ["as" identifier] ("," identifier ["as" identifier])*
 ///                      | "from" relative_module "import" "(" identifier
@@ -2981,7 +3044,7 @@ ParseResult StmtParser::checkImportScope(SMLoc kwLoc) {
 ///                      | "from" relative_module "import" "*"
 /// module          ::=  (identifier ".")* identifier
 /// relative_module ::=  "."* module | "."+
-ParseResult StmtParser::parseFromImportStmt() {
+ParseResult StmtParser::parseFromImportStmt(bool hasStableOverride) {
   SMLoc kwLoc = getToken().getLoc();
   consumeToken(Token::kw_from);
 
@@ -2996,6 +3059,9 @@ ParseResult StmtParser::parseFromImportStmt() {
 
   // Check for a wildcard import.
   if (consumeIf(Token::star)) {
+    if (hasStableOverride)
+      emitError(importLoc, "@stable(recursive=True) is not supported on "
+                           "wildcard imports");
     LIT::UnresolvedWildcardImportOp::create(builder,
                                             translateLocation(importLoc),
                                             moduleAttr, /*isFullImport=*/false);
@@ -3065,6 +3131,21 @@ ParseResult StmtParser::parseFromImportStmt() {
     getDeclResolver().addDecl(importDecl, importLoc, importDestNameAttr,
                               curDeclScope, getLexer().getCursor(),
                               getLexer().getCursor(), /*indentation=*/-1);
+
+    if (hasStableOverride) {
+      if (importSourceName != importDestName) {
+        // Renamed imports (from mod import X as Y) are unsupported: tracking
+        // 'Y' would miss member accesses if code uses 'X', and vice versa.
+        shared.emitError(importDestLoc,
+                         "@stable(recursive=True) is not supported on renamed "
+                         "imports ('import ... as ...')");
+      } else {
+        // Record the import name in the parent scope for use-site warning
+        // suppression. We do this here rather than in resolveSignature because
+        // UnresolvedImportOp does not carry the @stable decorator attribute.
+        curDeclScope->addRecursivelyStableName(importDestNameAttr);
+      }
+    }
 
     // Check for more elements to import.
     if (!consumeIf(Token::comma))

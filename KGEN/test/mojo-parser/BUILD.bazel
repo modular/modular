@@ -13,6 +13,7 @@ _DATA = [
     "**/test_package_user/**/*.mojo",
     "**/test_reexport_name_collision/**/*.mojo",
     "**/test_std_mock/**",
+    "**/test_std_mock_reexporter/**",
 ]
 
 lit_tests(
