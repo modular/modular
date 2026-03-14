@@ -933,6 +933,30 @@ class PipelineConfig(ConfigFileModel):
         """
         assert self.draft_model is not None
 
+        # This code is a mess and really needs to be overhauled...
+        #
+        # Resolve the target model's architecture first so we can use its
+        # quantization_encoding as the default for the draft model.
+        # _validate_and_resolve_architecture is safe to call again later
+        # (via _validate_and_resolve_remaining_pipeline_config) because the
+        # second call will find quantization_encoding already set and just
+        # validate it.
+        self._validate_and_resolve_architecture(self.model)
+
+        # Default draft model's quantization encoding to the target model's
+        # resolved encoding when the user hasn't explicitly specified one.
+        if (
+            self.draft_model.quantization_encoding is None
+            and self.model.quantization_encoding is not None
+        ):
+            logger.info(
+                f"draft_quantization_encoding not specified, defaulting to"
+                f" target model encoding: {self.model.quantization_encoding}"
+            )
+            self.draft_model.quantization_encoding = (
+                self.model.quantization_encoding
+            )
+
         draft_arch = self._validate_and_resolve_architecture(self.draft_model)
         draft_reservation = draft_arch.pipeline_model.estimate_weights_size(
             self
