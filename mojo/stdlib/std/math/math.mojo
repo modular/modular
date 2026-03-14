@@ -3209,8 +3209,8 @@ def factorial[dtype: DType, //](n: Scalar[dtype]) -> Scalar[dtype]:
     )
     # Compare in the scalar domain to avoid narrowing n through Int on
     # 32-bit platforms, which would incorrectly reject valid 64-bit inputs.
-    assert (
-        n <= Scalar[dtype](max_n)
+    assert n <= Scalar[dtype](
+        max_n
     ), "factorial() input causes overflow for the given dtype"
     var result = Scalar[dtype](1)
     var i = Scalar[dtype](2)
