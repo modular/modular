@@ -19,7 +19,7 @@ import copy
 import dataclasses
 import functools
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Generic
+from typing import TYPE_CHECKING, Annotated, Any, Generic
 
 from max import graph
 from max.driver import CPU, Device, DLPackArray
@@ -39,6 +39,39 @@ if TYPE_CHECKING:
 # Type variables for Module's forward signature.
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
+
+
+class _DevicePinned:
+    """Sentinel marker for parameters whose device should not be changed.
+
+    Used as annotation metadata in `PinnedDeviceTensor`. Do not use directly;
+    annotate fields with `PinnedDeviceTensor` instead.
+    """
+
+
+PinnedDeviceTensor = Annotated[Tensor, _DevicePinned]
+"""Type alias for a `Tensor` parameter that `Module.to` will leave on its
+current device.
+
+Use this for parameters that must stay on a specific device regardless of where
+the rest of the module is moved. For example, scalar quantization scale factors
+that GPU kernels consume as host-side launch arguments should remain on CPU; 
+moving them to the accelerator would force an expensive device sync every 
+forward pass.
+"""
+
+
+def _get_pinned_device_fields(cls: type) -> frozenset[str]:
+    """Returns field names annotated as `PinnedDeviceTensor` on `cls`.
+
+    Walks the MRO so that inherited annotations are included.
+    """
+    pinned: set[str] = set()
+    for base in cls.__mro__:
+        for name, ann in getattr(base, "__annotations__", {}).items():
+            if ann is PinnedDeviceTensor or ann == "PinnedDeviceTensor":
+                pinned.add(name)
+    return frozenset(pinned)
 
 
 def _validate_loaded_parameter(
@@ -629,7 +662,12 @@ class Module(Generic[_P, _R]):
             updated in place.
         """
         object.__setattr__(self, "_module_target_device", device)
-        self.apply_to_parameters(lambda _, t: t.to(device))
+        pinned = _get_pinned_device_fields(type(self))
+        for name, attr in self.local_parameters:
+            if name not in pinned:
+                setattr(self, name, attr.to(device))
+        for _, child in self.children:
+            child.to(device)
         return self
 
     @contextlib.contextmanager
