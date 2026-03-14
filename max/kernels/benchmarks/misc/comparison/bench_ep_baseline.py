@@ -34,6 +34,7 @@ from bench import bench_kineto_with_cupti_warmup
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 
 # MAX EP APIs
@@ -560,8 +561,8 @@ def bench_ep(
         hidden=hidden,
         num_topk=num_topk,
         num_experts=num_experts,
-        dispatch_dtype=DType.from_torch(dispatch_dtype),
-        combine_dtype=DType.from_torch(combine_dtype),
+        dispatch_dtype=torch_dtype_to_max(dispatch_dtype),
+        combine_dtype=torch_dtype_to_max(combine_dtype),
         iters=iters,
         warmup=0,
         gpus_per_node=gpus_per_node,

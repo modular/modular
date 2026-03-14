@@ -232,23 +232,23 @@ may need to cast to a compatible type first.
 
 
 MAX also provides dtype conversion for PyTorch and NumPy integration.
-The [`from_torch()`](/max/api/python/generated/max.dtype.DType#max.dtype.DType.from_torch) method converts a PyTorch dtype to a MAX dtype. For example:
+The [`torch_dtype_to_max()`](/max/api/python/generated/max.experimental.torch.torch_dtype_to_max) function converts a PyTorch dtype to a MAX dtype. For example:
 
 {/* @sync: _examples/dtypes/pytorch_to_max.py */}
 ```python
 import torch
 from max.dtype import DType
+from max.experimental.torch import torch_dtype_to_max
 
 # PyTorch tensor
 pt_tensor = torch.randn(10, 10, dtype=torch.float16)
 
 # Convert PyTorch dtype to MAX dtype
-# API: DType.from_torch(dtype)
+# API: torch_dtype_to_max(dtype)
 #   dtype: PyTorch dtype
 #   Returns: Corresponding MAX DType
 #   Raises: ValueError if dtype not supported
-#   Raises: RuntimeError if torch not installed
-max_dtype = DType.from_torch(pt_tensor.dtype)
+max_dtype = torch_dtype_to_max(pt_tensor.dtype)
 print(f"PyTorch {pt_tensor.dtype} → MAX {max_dtype}")  # float16 → DType.float16
 ```
 
@@ -261,7 +261,7 @@ PyTorch torch.float16 → MAX DType.float16
 Other conversion functions you can use are:
 
 - [`to_numpy()`](/max/api/python/generated/max.dtype.DType#max.dtype.DType.to_numpy): Convert a MAX dtype to a NumPy dtype.
-- [`to_torch()`](/max/api/python/generated/max.dtype.DType#max.dtype.DType.to_torch): Convert a MAX dtype to a PyTorch dtype.
+- [`max_dtype_to_torch()`](/max/api/python/generated/max.experimental.torch.max_dtype_to_torch): Convert a MAX dtype to a PyTorch dtype.
 
 ## Memory optimization
 

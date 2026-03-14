@@ -21,6 +21,7 @@ import torch
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental.torch import torch_dtype_to_max
 from max.graph import (
     BufferType,
     BufferValue,
@@ -46,7 +47,7 @@ TORCH_DTYPE = torch.bfloat16
 def null_mask_max_flash_attn(
     q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
 ) -> torch.Tensor:
-    dtype = DType.from_torch(q.dtype)
+    dtype = torch_dtype_to_max(q.dtype)
     _batch, _q_seq_len, nheads, head_dim = q.shape
 
     # Graph types.
@@ -92,7 +93,7 @@ def null_mask_max_flash_attn(
 def causal_max_flash_attn(
     q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
 ) -> torch.Tensor:
-    dtype = DType.from_torch(q.dtype)
+    dtype = torch_dtype_to_max(q.dtype)
     _batch, _q_seq_len, nheads, head_dim = q.shape
 
     # Graph types.
@@ -183,7 +184,7 @@ def compute_ragged_max_flash_attn(
     [torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
     torch.Tensor,
 ]:
-    dtype = DType.from_torch(TORCH_DTYPE)
+    dtype = torch_dtype_to_max(TORCH_DTYPE)
     # total_seq_len, nheads, head_dim = q_ragged.shape
 
     # Graph types.

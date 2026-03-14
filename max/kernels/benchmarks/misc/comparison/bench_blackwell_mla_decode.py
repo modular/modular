@@ -38,6 +38,7 @@ from bencher_utils import Bench, ThroughputMeasure
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental.torch import torch_dtype_to_max
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import (
@@ -400,8 +401,8 @@ def bench_max(
     )
     is_fp8_q = q_dtype in (torch.float8_e4m3fn, torch.float8_e5m2)
 
-    max_kv_dtype = DType.from_torch(kv_dtype)
-    max_q_dtype = DType.from_torch(q_dtype)
+    max_kv_dtype = torch_dtype_to_max(kv_dtype)
+    max_q_dtype = torch_dtype_to_max(q_dtype)
 
     # Create inference session
     session = InferenceSession(devices=[Accelerator()])

@@ -23,6 +23,7 @@ import torch
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.kv_cache import PagedKVCacheManager
 from max.mlir import StringAttr
@@ -83,7 +84,7 @@ def _dump_k_or_v_cache_to_torch_tensor(
     req_blocks = cache.get_req_blocks(ctx.request_id, replica_idx=0)
 
     params = cache.params
-    torch_dtype = params.dtype.to_torch()
+    torch_dtype = max_dtype_to_torch(params.dtype)
     page_size = params.page_size
 
     # [total_num_pages, kv_dim, num_layers, page_size, n_heads, head_dim]

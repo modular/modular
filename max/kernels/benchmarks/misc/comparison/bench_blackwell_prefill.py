@@ -31,8 +31,8 @@ from bencher_utils import Bench, ThroughputMeasure
 
 # MAX imports
 from max.driver import Accelerator
-from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu
@@ -201,7 +201,7 @@ def bench_max(
         dtype: torch dtype for inputs (e.g., torch.bfloat16)
     """
     # Convert torch dtype to MAX DType
-    max_dtype = DType.from_torch(dtype)
+    max_dtype = torch_dtype_to_max(dtype)
 
     # Create input tensors in (batch, seq_len, num_heads, head_dim) format
     q = torch.randn(

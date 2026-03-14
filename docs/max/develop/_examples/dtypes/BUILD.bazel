@@ -112,7 +112,7 @@ modular_py_binary(
     imports = ["."],
     mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
-        "//max/python/max/dtype",
+        "//max/python/max/experimental/torch",
         requirement("torch"),
     ],
 )

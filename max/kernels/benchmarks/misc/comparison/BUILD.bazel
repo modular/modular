@@ -45,6 +45,7 @@ modular_py_library(
         "//max/kernels/benchmarks/misc/blackwell_bench:cutlass-imports",
         "//max/kernels/benchmarks/misc/utils:bench_utils",
         "//max/python/max",
+        "//max/python/max/experimental/torch",
     ],
 )
 
@@ -72,6 +73,7 @@ modular_py_library(
         requirement("torch"),
         "//max/kernels/benchmarks/autotune:bencher_utils",
         "//max/python/max",
+        "//max/python/max/experimental/torch",
     ],
 )
 
@@ -144,5 +146,6 @@ modular_py_binary(
         requirement("torch"),
         "//max/kernels/benchmarks/misc/utils:bench_utils",
         "//max/python/max",
+        "//max/python/max/experimental/torch",
     ],
 )

@@ -19,6 +19,7 @@ import torch
 from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import sgmv_qkv_lora_kernel
@@ -72,7 +73,7 @@ def dump_kv_cache_to_torch(
     device_id: int = 0,
 ) -> list[torch.Tensor]:
     """Extract K or V cache contents for each sequence in batch."""
-    torch_dtype = cache.params.dtype.to_torch()
+    torch_dtype = max_dtype_to_torch(cache.params.dtype)
     device_buffer = cache.get_device_buffer(replica_idx=0).values[device_id]
     device_buffer_torch = from_dlpack(device_buffer).to(torch_dtype).cpu()
     device_buffer_torch = device_buffer_torch[:, key_or_value, :, :, :, :]
