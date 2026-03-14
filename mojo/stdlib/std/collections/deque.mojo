@@ -1097,10 +1097,10 @@ struct _DequeSliceIter[
     var step: Int
     var src: Pointer[Deque[Self.T], Self.origin]
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __next__(
+    def __next__(
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
         var done = (self.step > 0 and self.index >= self.stop) or (
@@ -1113,7 +1113,7 @@ struct _DequeSliceIter[
         return self.src[][idx]
 
     @always_inline
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         var remaining: Int
         if self.step > 0:
             remaining = max(
