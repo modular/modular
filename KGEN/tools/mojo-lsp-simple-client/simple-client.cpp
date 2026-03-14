@@ -6,8 +6,10 @@
 
 #include "../mojo-lsp-test-client/LSPBatchClient.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Path.h"
 
 using namespace M;
 namespace lsp = llvm::lsp;
@@ -32,6 +34,14 @@ int main(int argc, char **argv) {
       llvm::cl::init(false),
   };
 
+  llvm::cl::opt<bool> failOnDiagnostics{
+      "fail-on-diagnostics",
+      llvm::cl::desc(
+          "Exit with failure if the server reports any error-severity "
+          "diagnostics. Useful for verifying that a file parses cleanly."),
+      llvm::cl::init(false),
+  };
+
   llvm::cl::opt<std::string> inputFile{
       "inputFile", llvm::cl::desc("The input file to be processed by the LSP."),
       llvm::cl::Positional, llvm::cl::Required};
@@ -47,16 +57,40 @@ int main(int argc, char **argv) {
     llvm::report_fatal_error(Twine("Error reading the file ") + inputFile +
                              ": " + bufferOr.getError());
   llvm::MemoryBuffer &buffer = *bufferOr->get();
-  Document doc("file://" + inputFile, buffer.getBuffer());
+  // Convert to an absolute path so "file://" + path produces a valid
+  // file:///abs/path URI.  A relative path yields file://host/path where the
+  // first component is mis-parsed as the URI authority, causing the LSP server
+  // to lose track of the file and skip import resolution entirely.
+  llvm::SmallString<256> absPath(inputFile);
+  if (std::error_code ec = llvm::sys::fs::make_absolute(absPath))
+    llvm::report_fatal_error(Twine("Failed to make path absolute: ") +
+                             ec.message());
+  Document doc("file://" + absPath.str().str(), buffer.getBuffer());
 
   if (keepIOFiles)
     setenv("PRESERVE_LSP_IO_FILES", "1", /*overwrite=*/true);
 
+  // Register a diagnostics handler when --fail-on-diagnostics is set so that
+  // any error-severity diagnostic causes a non-zero exit.  The handler must be
+  // registered before execute() is called; the server sends
+  // textDocument/publishDiagnostics in response to textDocument/didOpen.
+  bool hasDiagnosticErrors = false;
+  LSPBatchClient client(/*attachDebugger=*/attachDebugger);
+  client.open(doc);
+  if (failOnDiagnostics)
+    client.onDiagnostics(doc, [&](const std::vector<lsp::Diagnostic> &diags) {
+      for (const auto &diag : diags) {
+        if (diag.severity == lsp::DiagnosticSeverity::Error) {
+          llvm::errs() << inputFile << ": error: " << diag.message << "\n";
+          hasDiagnosticErrors = true;
+        }
+      }
+    });
+
   // By default, we include the following requests that don't require any
   // special input.
   auto result =
-      LSPBatchClient(/*attachDebugger=*/attachDebugger)
-          .open(doc)
+      client
           .documentSymbol(doc,
                           [](const std::vector<llvm::lsp::DocumentSymbol> &) {
                             // This is left here for demonstrative purposes.
@@ -66,9 +100,8 @@ int main(int argc, char **argv) {
                             // probably more easily just inspect the
                             // stdout/stderr files.
                           })
-          .semanticTokensFull(doc, [&](ArrayRef<Mojo::LSP::SemanticToken>) {})
-          .hoverNullable(doc, {0, 0},
-                         [&](const std::optional<lsp::Hover2> &) {})
+          .semanticTokensFull(doc, [](ArrayRef<Mojo::LSP::SemanticToken>) {})
+          .hoverNullable(doc, {0, 0}, [](const std::optional<lsp::Hover2> &) {})
           .execute();
 
   if (failed(result.err) && result.serverIOFiles) {
@@ -81,5 +114,6 @@ int main(int argc, char **argv) {
     }
   }
 
-  return failed(result.err) ? EXIT_FAILURE : EXIT_SUCCESS;
+  return (failed(result.err) || hasDiagnosticErrors) ? EXIT_FAILURE
+                                                     : EXIT_SUCCESS;
 }
