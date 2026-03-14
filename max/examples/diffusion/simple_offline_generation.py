@@ -64,7 +64,7 @@ from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer
 from max.pipelines.lib.interfaces import DiffusionPipeline
-from max.pipelines.lib.interfaces.cache_mixin import CacheConfig
+from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.pipeline_variants.pixel_generation import (
     PixelGenerationPipeline,
@@ -199,12 +199,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Number of iterations to run for profiling.",
     )
     parser.add_argument(
-        "--step-cache",
+        "--first-block-caching",
         action="store_true",
         help="Enable first-block step cache optimization.",
     )
     parser.add_argument(
-        "--rdt",
+        "--residual-threshold",
         type=float,
         default=None,
         help="Relative-difference threshold for step cache.",
@@ -246,8 +246,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "num-inference-steps must be a positive integer."
     )
     assert args.guidance_scale > 0.0, "guidance-scale must be positive."
-    if args.rdt is not None:
-        assert args.rdt >= 0.0, "rdt must be non-negative."
+    if args.residual_threshold is not None:
+        assert args.residual_threshold >= 0.0, (
+            "residual-threshold must be non-negative."
+        )
     if args.taylorseer_cache_interval is not None:
         assert args.taylorseer_cache_interval >= 1, (
             "taylorseer-cache-interval must be >= 1."
@@ -397,9 +399,9 @@ async def generate_image(args: argparse.Namespace) -> None:
             f"{arch.pipeline_model}"
         )
     pipeline_model = cast(type[DiffusionPipeline], arch.pipeline_model)
-    cache_config = CacheConfig(
-        step_cache=args.step_cache,
-        rdt=args.rdt,
+    cache_config = DenoisingCacheConfig(
+        first_block_caching=args.first_block_caching,
+        residual_threshold=args.residual_threshold,
         taylorseer=args.taylorseer,
         taylorseer_cache_interval=args.taylorseer_cache_interval,
         taylorseer_warmup_steps=args.taylorseer_warmup_steps,
@@ -480,9 +482,13 @@ async def generate_image(args: argparse.Namespace) -> None:
     print(
         f"Context created: {context.height}x{context.width}, {context.num_inference_steps} steps"
     )
-    if args.step_cache:
-        rdt_info = f", rdt={args.rdt}" if args.rdt is not None else ""
-        print(f"Step cache enabled{rdt_info}.")
+    if args.first_block_caching:
+        rdt_info = (
+            f", rdt={args.residual_threshold}"
+            if args.residual_threshold is not None
+            else ""
+        )
+        print(f"First-block caching enabled{rdt_info}.")
     if args.taylorseer:
         order_info = (
             f"order={args.taylorseer_max_order}"

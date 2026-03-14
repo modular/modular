@@ -40,7 +40,11 @@ from typing_extensions import Self
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
-    from .cache_mixin import CacheConfig, CacheMixin, DenoisingCacheState
+    from .cache_mixin import (
+        CacheMixin,
+        DenoisingCacheConfig,
+        DenoisingCacheState,
+    )
 
 logger = logging.getLogger("max.pipelines")
 
@@ -74,12 +78,14 @@ class DiffusionPipeline(ABC):
         session: InferenceSession,
         devices: list[Device],
         weight_paths: list[Path],
-        cache_config: CacheConfig | None = None,
+        cache_config: DenoisingCacheConfig | None = None,
         **kwargs: Any,
     ) -> None:
-        from .cache_mixin import CacheConfig
+        from .cache_mixin import DenoisingCacheConfig
 
-        self.cache_config: CacheConfig = cache_config or CacheConfig()
+        self.cache_config: DenoisingCacheConfig = (
+            cache_config or DenoisingCacheConfig()
+        )
         self.pipeline_config = pipeline_config
         self.session = session
         self.devices = devices
@@ -250,8 +256,8 @@ class DiffusionPipeline(ABC):
 
         Subclasses must override this to call their transformer with the
         appropriate model-specific arguments.  The method should return
-        ``(noise_pred,)`` when step_cache is disabled, or
-        ``(new_residual, noise_pred)`` when step_cache is enabled.
+        ``(noise_pred,)`` when first_block_caching is disabled, or
+        ``(new_residual, noise_pred)`` when first_block_caching is enabled.
 
         Args:
             cache_state: Per-request mutable cache state for this stream.
@@ -335,7 +341,7 @@ class DiffusionPipeline(ABC):
 
         # 4. Full compute path
         result = self.run_transformer(cache_state, **kwargs)
-        if cache_config.step_cache:
+        if cache_config.first_block_caching:
             new_residual, noise_pred = result
             cache_state.prev_residual = new_residual
             cache_state.prev_output = noise_pred

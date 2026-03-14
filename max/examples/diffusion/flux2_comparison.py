@@ -431,7 +431,7 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
     from max.pipelines.core import PixelContext
     from max.pipelines.lib import PixelGenerationTokenizer
     from max.pipelines.lib.interfaces import DiffusionPipeline
-    from max.pipelines.lib.interfaces.cache_mixin import CacheConfig
+    from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
     from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
     from max.pipelines.lib.pipeline_variants.pixel_generation import (
         PixelGenerationPipeline,
@@ -472,9 +472,9 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
         max_length=max_length,
     )
 
-    cache_config = CacheConfig(
-        step_cache=args.enable_fbc,
-        rdt=args.residual_threshold if args.enable_fbc else None,
+    cache_config = DenoisingCacheConfig(
+        first_block_caching=args.enable_fbc,
+        residual_threshold=args.residual_threshold if args.enable_fbc else None,
         taylorseer=args.taylorseer,
         taylorseer_cache_interval=args.taylorseer_cache_interval,
         taylorseer_warmup_steps=args.taylorseer_warmup_steps,
@@ -518,7 +518,6 @@ async def _build_max_inputs(
                 width=width,
                 steps=steps,
                 guidance_scale=args.guidance_scale,
-                residual_threshold=args.residual_threshold,
             )
         ),
     )

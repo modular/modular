@@ -21,30 +21,77 @@ from typing import Any
 
 import numpy as np
 from max._core.driver import Device
+from max.config import ConfigFileModel
 from max.driver import Buffer
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph import TensorType, TensorValue
+from pydantic import ConfigDict, Field
 
 from .diffusion_pipeline import max_compile
 
 
-@dataclass
-class CacheConfig:
-    """Pipeline-level cache configuration, set once at init time."""
+class DenoisingCacheConfig(ConfigFileModel):
+    """Pipeline-level cache configuration for diffusion model denoising.
 
-    step_cache: bool = False
-    rdt: float | None = None
-    """Relative difference threshold for cache reuse.  ``None`` means the
-    pipeline should use its own model-appropriate default."""
-    taylorseer: bool = False
-    taylorseer_cache_interval: int | None = None
-    """Steps between full computations.  ``None`` uses the pipeline default."""
-    taylorseer_warmup_steps: int | None = None
-    """Warmup steps for factor gathering.  ``None`` uses the pipeline default."""
-    taylorseer_max_order: int | None = None
-    """Taylor expansion order (1 or 2).  ``None`` uses the pipeline default."""
+    Controls First-Block Cache (step cache) and TaylorSeer optimizations
+    that skip redundant transformer passes during the denoising loop.
+    """
+
+    model_config = ConfigDict(frozen=False)
+
+    first_block_caching: bool = Field(
+        default=False,
+        description=(
+            "Enable First-Block Cache (FBCache) for step-cache denoising. "
+            "When enabled, the transformer skips remaining blocks if the "
+            "first-block residual is similar to the previous step."
+        ),
+    )
+
+    residual_threshold: float | None = Field(
+        default=None,
+        description=(
+            "Relative difference threshold for step-cache reuse. "
+            "Lower values skip fewer steps (higher quality, slower). "
+            "None uses the model-specific default (typically 0.05-0.06)."
+        ),
+    )
+
+    taylorseer: bool = Field(
+        default=False,
+        description=(
+            "Enable TaylorSeer cache optimization. Uses Taylor series "
+            "prediction to skip full transformer passes on certain "
+            "denoising steps."
+        ),
+    )
+
+    taylorseer_cache_interval: int | None = Field(
+        default=None,
+        description=(
+            "Steps between full TaylorSeer computations. "
+            "None uses the model-specific default (typically 5)."
+        ),
+    )
+
+    taylorseer_warmup_steps: int | None = Field(
+        default=None,
+        description=(
+            "Number of warmup steps before TaylorSeer prediction begins. "
+            "None uses the model-specific default (typically 4)."
+        ),
+    )
+
+    taylorseer_max_order: int | None = Field(
+        default=None,
+        description=(
+            "Taylor expansion order (1 or 2). Higher order uses second "
+            "derivatives for more accurate prediction. "
+            "None uses the model-specific default (typically 1)."
+        ),
+    )
 
 
 @dataclass
@@ -74,7 +121,7 @@ class CacheMixin:
     construction time.
     """
 
-    cache_config: CacheConfig
+    cache_config: DenoisingCacheConfig
 
     # Pre-allocated tensors (created once at init, reused across requests)
     _cache_taylor_max_order_tensor: Tensor | None
@@ -84,7 +131,7 @@ class CacheMixin:
 
     def init_cache(
         self,
-        cache_config: CacheConfig,
+        cache_config: DenoisingCacheConfig,
         transformer: Any,
         dtype: DType,
         device: Device,
@@ -108,7 +155,7 @@ class CacheMixin:
             dtype: Data type for pre-allocated cache tensors.
             device: Device on which cache tensors are allocated.
             rdt: Model-specific default for the relative difference threshold.
-                Used when ``cache_config.rdt`` is ``None``.
+                Used when ``cache_config.residual_threshold`` is ``None``.
             taylorseer_cache_interval: Model-specific default for cache
                 interval.  Used when the config value is ``None``.
             taylorseer_warmup_steps: Model-specific default for warmup steps.
@@ -117,8 +164,8 @@ class CacheMixin:
                 order.  Used when the config value is ``None``.
         """
         # Resolve nullable fields to concrete values using per-model defaults.
-        if cache_config.rdt is None:
-            cache_config.rdt = rdt
+        if cache_config.residual_threshold is None:
+            cache_config.residual_threshold = rdt
         if cache_config.taylorseer_cache_interval is None:
             cache_config.taylorseer_cache_interval = taylorseer_cache_interval
         if cache_config.taylorseer_warmup_steps is None:
@@ -129,8 +176,10 @@ class CacheMixin:
 
         # Graph selection (init-time, not per-request).
         # rdt is baked into the step-cache graph as a constant.
-        if cache_config.step_cache:
-            transformer.use_step_cache_model(rdt=cache_config.rdt)
+        if cache_config.first_block_caching:
+            transformer.use_step_cache_model(
+                rdt=cache_config.residual_threshold
+            )
         else:
             transformer.use_standard_model()
 
@@ -199,7 +248,7 @@ class CacheMixin:
                 )
             )
 
-        if self.cache_config.step_cache:
+        if self.cache_config.first_block_caching:
             state.prev_residual = _device_zeros(
                 (batch_size, seq_len, residual_dim)
             )
