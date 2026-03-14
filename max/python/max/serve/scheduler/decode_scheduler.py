@@ -167,11 +167,12 @@ class DecodeScheduler(Scheduler):
         Raises:
             zmq.ZMQError: If there is an error sending on the socket
         """
-        # TODO: Do not crash the scheduler if a request does not have a target endpoint.
-        #       Instead we should validate this in the frontend.
+        # target_endpoint is validated in reserve_memory_and_send_to_prefill
+        # and in the frontend routes before reaching this point.
         if data.target_endpoint is None:
-            raise ValueError(
-                f"Target endpoint is not specified for the request {request_id}"
+            raise RuntimeError(
+                f"Target endpoint is not specified for request {request_id}."
+                " This should have been validated before reaching this point."
             )
         if data.target_endpoint not in self.remote_endpoints:
             self.dispatcher.send_request_nowait(
@@ -238,6 +239,23 @@ class DecodeScheduler(Scheduler):
             req_id = context.request_id
             del self.pending_reqs[req_id]
 
+            # Validate target_endpoint before allocating resources.
+            # NOTE: The client receives a cancelled response with no error
+            # detail. Frontend route validation should catch this earlier
+            # with a proper 400 error. This guard is a safety net.
+            if context.target_endpoint is None:
+                logger.error(
+                    "Target endpoint is not specified for request %s."
+                    " In disaggregated inference mode, a target_endpoint"
+                    " is required to route to a prefill worker."
+                    " Dropping request.",
+                    req_id,
+                )
+                self.response_queue.put_nowait(
+                    {req_id: SchedulerResult.cancelled()}
+                )
+                continue
+
             # Claim the slot with the paged manager
             replica_idx = self.batch_constructor.get_next_replica_idx(
                 external_requests_per_replica=self.prefill_reqs_per_replica
@@ -288,11 +306,13 @@ class DecodeScheduler(Scheduler):
                 # decode GPU before sending this request to prefill
                 self.kv_cache.release(req_id, replica_idx=dst_replica_idx)
 
-                # TODO: Do not crash the scheduler if a request does not have a target endpoint.
-                #       Instead we should validate this in the frontend.
+                # target_endpoint is validated before requests enter
+                # prefill_reqs, so it should never be None here.
                 if data.target_endpoint is None:
-                    raise ValueError(
-                        f"Target endpoint is not specified for the request {req_id}."
+                    raise RuntimeError(
+                        f"Target endpoint is not specified for request"
+                        f" {req_id}. This should have been validated before"
+                        " reaching this point."
                     )
                 # Send a cancel request to the prefill node
                 self.dispatcher.send_request_nowait(

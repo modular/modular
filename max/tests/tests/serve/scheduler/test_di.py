@@ -1400,3 +1400,57 @@ def test_overlap_di_both_sides_minimal_output() -> None:
     # match 42 as decode start_token_id
     assert all_tokens == [99, 42]
     assert FUTURE_TOKEN not in all_tokens
+
+
+def test_missing_target_endpoint_drops_request_gracefully() -> None:
+    """A request without target_endpoint must be dropped gracefully
+    without crashing the scheduler or leaking KV cache blocks.
+
+    The decode scheduler should log an error, send a cancelled result
+    back through the response queue, and continue processing other
+    requests.
+    """
+    decode, _prefill, server_addr, q = create_di_scheduler()
+
+    # Create a context without target_endpoint
+    tokens = TokenBuffer(np.ones(100, dtype=np.int64))
+    bad_ctx = TextContext(
+        request_id=RequestID(),
+        max_length=2048,
+        tokens=tokens,
+        target_endpoint=None,
+    )
+    bad_req_id = bad_ctx.request_id
+
+    # Also create a valid request to ensure processing continues
+    good_ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    good_req_id = good_ctx.request_id
+
+    # Submit both requests
+    q.request_queue.put(bad_ctx)
+    q.request_queue.put(good_ctx)
+
+    # Run the scheduler — should not crash
+    decode.run_iteration()
+
+    # The bad request should get a cancelled result
+    found_bad = False
+    while not q.response_queue.empty():
+        batch = q.response_queue.get()
+        if bad_req_id in batch:
+            found_bad = True
+            assert batch[bad_req_id].result is None  # cancelled
+
+    assert found_bad, (
+        "Expected cancelled result for request without target_endpoint"
+    )
+
+    # The bad request should not have allocated any KV cache blocks
+    # (only the good request should have allocated blocks)
+    assert bad_req_id not in decode.prefill_reqs
+    assert not decode.batch_constructor.contains(bad_req_id)
+
+    # The good request should have been sent to prefill normally
+    assert good_req_id in decode.prefill_reqs
