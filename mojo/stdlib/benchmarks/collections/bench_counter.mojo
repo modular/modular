@@ -28,10 +28,10 @@ def make_counter[size: Int]() -> Counter[Int]:
 
 
 # ===-----------------------------------------------------------------------===#
-# Benchmark most_common — heap path (n << total)
+# Benchmark most_common — heap path (n < total // 2)
 # ===-----------------------------------------------------------------------===#
 @parameter
-def bench_most_common_small_n[total: Int, n: Int](mut b: Bencher) raises:
+def bench_most_common_heap[total: Int, n: Int](mut b: Bencher) raises:
     """Benchmark most_common(n) via the heap path (n < total // 2)."""
     var c = make_counter[total]()
 
@@ -47,7 +47,7 @@ def bench_most_common_small_n[total: Int, n: Int](mut b: Bencher) raises:
 # Benchmark most_common — full sort path (n >= total // 2)
 # ===-----------------------------------------------------------------------===#
 @parameter
-def bench_most_common_large_n[total: Int, n: Int](mut b: Bencher) raises:
+def bench_most_common_sort[total: Int, n: Int](mut b: Bencher) raises:
     """Benchmark most_common(n) via the full sort path (n >= total // 2)."""
     var c = make_counter[total]()
 
@@ -65,28 +65,56 @@ def bench_most_common_large_n[total: Int, n: Int](mut b: Bencher) raises:
 def main() raises:
     var m = Bench(BenchConfig(num_repetitions=10))
 
-    # total=100: heap path (n=5), full sort path (n=80)
-    m.bench_function[bench_most_common_small_n[100, 5]](
-        BenchId("bench_most_common_heap[total=100,n=5]")
+    # --- Crossover comparison: same n on both sides of the total // 2 threshold ---
+    # For each total, n = total//2 - 1 takes the heap path,
+    # n = total//2 takes the sort path. Result counts differ by 1, making
+    # this the fairest apples-to-apples comparison of the two code paths.
+
+    # total=100, threshold=50
+    m.bench_function[bench_most_common_heap[100, 49]](
+        BenchId("bench_most_common_heap[total=100,n=49]")
     )
-    m.bench_function[bench_most_common_large_n[100, 80]](
-        BenchId("bench_most_common_sort[total=100,n=80]")
+    m.bench_function[bench_most_common_sort[100, 50]](
+        BenchId("bench_most_common_sort[total=100,n=50]")
     )
 
-    # total=1000: heap path (n=10), full sort path (n=800)
-    m.bench_function[bench_most_common_small_n[1000, 10]](
-        BenchId("bench_most_common_heap[total=1000,n=10]")
+    # total=1000, threshold=500
+    m.bench_function[bench_most_common_heap[1000, 499]](
+        BenchId("bench_most_common_heap[total=1000,n=499]")
     )
-    m.bench_function[bench_most_common_large_n[1000, 800]](
-        BenchId("bench_most_common_sort[total=1000,n=800]")
+    m.bench_function[bench_most_common_sort[1000, 500]](
+        BenchId("bench_most_common_sort[total=1000,n=500]")
     )
 
-    # total=10_000: heap path (n=10), full sort path (n=8000)
-    m.bench_function[bench_most_common_small_n[10_000, 10]](
+    # total=10_000, threshold=5000
+    m.bench_function[bench_most_common_heap[10_000, 4_999]](
+        BenchId("bench_most_common_heap[total=10000,n=4999]")
+    )
+    m.bench_function[bench_most_common_sort[10_000, 5_000]](
+        BenchId("bench_most_common_sort[total=10000,n=5000]")
+    )
+
+    # --- Small-n scaling: heap path, fixed total=10_000 ---
+    # Shows how the heap path scales as n grows toward the threshold.
+    m.bench_function[bench_most_common_heap[10_000, 10]](
         BenchId("bench_most_common_heap[total=10000,n=10]")
     )
-    m.bench_function[bench_most_common_large_n[10_000, 8_000]](
+    m.bench_function[bench_most_common_heap[10_000, 100]](
+        BenchId("bench_most_common_heap[total=10000,n=100]")
+    )
+    m.bench_function[bench_most_common_heap[10_000, 1_000]](
+        BenchId("bench_most_common_heap[total=10000,n=1000]")
+    )
+
+    # --- Large-n scaling: sort path, fixed total=10_000 ---
+    m.bench_function[bench_most_common_sort[10_000, 5_000]](
+        BenchId("bench_most_common_sort[total=10000,n=5000]")
+    )
+    m.bench_function[bench_most_common_sort[10_000, 8_000]](
         BenchId("bench_most_common_sort[total=10000,n=8000]")
+    )
+    m.bench_function[bench_most_common_sort[10_000, 10_000]](
+        BenchId("bench_most_common_sort[total=10000,n=10000]")
     )
 
     print(m)
