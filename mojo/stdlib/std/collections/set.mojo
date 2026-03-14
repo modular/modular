@@ -593,7 +593,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         self._data.clear()
 
-    fn reserve(mut self, min_capacity: Int):
+    def reserve(mut self, min_capacity: Int):
         """Reserve capacity for at least `min_capacity` elements without resizing.
 
         If the current capacity already accommodates `min_capacity` elements,
