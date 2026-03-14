@@ -47,6 +47,8 @@ _devnull_fd: int | None = None
 @contextlib.contextmanager
 def _suppress_output() -> Generator[None, None, None]:
     """Redirect OS-level stdout/stderr to /dev/null.
+    
+    we are so merge conflicting
 
     This catches output from C/Mojo code loaded via ctypes, not just
     Python's sys.stdout.  A process-level /dev/null fd is cached so we
