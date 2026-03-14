@@ -1816,8 +1816,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         if idx == -1:
             return (String(self), String(""), String(""))
         var sep_len = sep.byte_length()
-        var before = self[:idx]
-        var after = self[idx + sep_len :]
+        var before = self[byte = :idx]
+        var after = self[byte = idx + sep_len :]
         return (String(before), String(sep), String(after))
 
     def rpartition(self, sep: StringSlice) -> Tuple[String, String, String]:
@@ -1840,8 +1840,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         if idx == -1:
             return (String(""), String(""), String(self))
         var sep_len = sep.byte_length()
-        var before = self[:idx]
-        var after = self[idx + sep_len :]
+        var before = self[byte = :idx]
+        var after = self[byte = idx + sep_len :]
         return (String(before), String(sep), String(after))
 
     def isspace[single_character: Bool = False](self) -> Bool:
