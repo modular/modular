@@ -357,7 +357,7 @@ def test_tuple_assert_equal_failure_message() raises:
 def test_tuple_comparable_trait_conformance() raises:
     """Verify Tuple conforms to Comparable so it can be used as a Comparable."""
 
-    fn min_comparable[T: Comparable & ImplicitlyCopyable](a: T, b: T) -> T:
+    def min_comparable[T: Comparable & ImplicitlyCopyable](a: T, b: T) -> T:
         return a if a < b else b
 
     assert_equal(min_comparable((1, 2), (1, 3)), (1, 2))

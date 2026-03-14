@@ -271,7 +271,7 @@ struct Tuple[*element_types: Movable](
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __eq__(
+    def __eq__(
         self, other: Self
     ) -> Bool where AllComparable[*Self.element_types]:
         """Compare this tuple to another tuple of the same type for equality.
@@ -290,7 +290,7 @@ struct Tuple[*element_types: Movable](
         return True
 
     @always_inline
-    fn __ne__(
+    def __ne__(
         self, other: Self
     ) -> Bool where AllComparable[*Self.element_types]:
         """Compare this tuple to another tuple of the same type for inequality.
@@ -304,7 +304,7 @@ struct Tuple[*element_types: Movable](
         return not self.__eq__(other)
 
     @always_inline
-    fn __lt__(
+    def __lt__(
         self, other: Self
     ) -> Bool where AllComparable[*Self.element_types]:
         """Compare this tuple to another tuple using lexicographic less-than.
@@ -325,7 +325,7 @@ struct Tuple[*element_types: Movable](
         return False  # equal
 
     @always_inline
-    fn __le__(
+    def __le__(
         self, other: Self
     ) -> Bool where AllComparable[*Self.element_types]:
         """Compare this tuple to another tuple using lexicographic less-than-or-equal.
@@ -339,7 +339,7 @@ struct Tuple[*element_types: Movable](
         return not other.__lt__(self)
 
     @always_inline
-    fn __gt__(
+    def __gt__(
         self, other: Self
     ) -> Bool where AllComparable[*Self.element_types]:
         """Compare this tuple to another tuple using lexicographic greater-than.
@@ -353,7 +353,7 @@ struct Tuple[*element_types: Movable](
         return other.__lt__(self)
 
     @always_inline
-    fn __ge__(
+    def __ge__(
         self, other: Self
     ) -> Bool where AllComparable[*Self.element_types]:
         """Compare this tuple to another tuple using lexicographic greater-than-or-equal.
