@@ -159,23 +159,28 @@ def logits_postprocess(
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     logits_scaling: float = 1.0,
 ) -> tuple[TensorValue, ...]:
-    """Common logits postprocessing for single-device models.
+    """Performs common logits postprocessing for single-device models.
 
-    Handles last-token gathering, logits computation (VARIABLE/ALL/LAST_TOKEN),
-    logits scaling, and hidden states return.
+    Handles last-token gathering, logits computation, optional logits
+    scaling, and hidden states return.
 
     Args:
-        h: Hidden states from the final transformer layer.
-        input_row_offsets: Row offsets for ragged batching.
-        return_n_logits: Number of logits to return per sequence.
-        norm: Normalization function (e.g. RMSNorm).
-        lm_head: Language model head projection.
+        h: The hidden states from the final transformer layer.
+        input_row_offsets: The row offsets for ragged batching.
+        return_n_logits: The number of logits to return per sequence.
+        norm: The normalization function applied before the language model head.
+        lm_head: The language model head projection.
         return_logits: Which logits to return.
-        return_hidden_states: Which hidden states to return.
-        logits_scaling: Scaling factor for logits.
+        return_hidden_states: Which hidden states to return. Defaults to
+            ``ReturnHiddenStates.NONE``.
+        logits_scaling: A divisor applied to logits after projection. Logits
+            are divided by this value before returning. Defaults to ``1.0``
+            (no scaling).
 
     Returns:
-        Tuple of (last_logits, [logits, offsets], [hidden_states]).
+        A tuple of ``(last_logits,)``, optionally extended with
+        ``(logits, offsets)`` when returning multiple logits, and further
+        extended with hidden states when requested.
     """
     last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)
     last_logits = ops.cast(lm_head(norm(last_h)), DType.float32)
@@ -232,15 +237,26 @@ def logits_postprocess(
 class LogitsPostprocessMixin:
     """Mixin providing logits postprocessing for single-device models.
 
-    Requires: self.norm, self.lm_head, self.return_logits.
-    Optional: self.return_hidden_states, self.logits_scaling.
+    Subclasses must define :attr:`norm`, :attr:`lm_head`, and
+    :attr:`return_logits`. The :attr:`return_hidden_states` and
+    :attr:`logits_scaling` attributes are optional and have defaults.
     """
 
     norm: Callable[[TensorValue], TensorValue]
+    """The normalization function applied before the language model head."""
+
     lm_head: Callable[[TensorValue], TensorValue]
+    """The language model head projection."""
+
     return_logits: ReturnLogits
+    """Which logits to return."""
+
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    """Which hidden states to return. Defaults to :obj:`ReturnHiddenStates.NONE`."""
+
     logits_scaling: float = 1.0
+    """A divisor applied to logits after projection. Logits are divided by
+    this value before returning. Defaults to ``1.0`` (no scaling)."""
 
     def _postprocess_logits(
         self,
@@ -264,7 +280,27 @@ Block = TypeVar("Block", bound=Module, covariant=True)
 
 
 class Transformer(LogitsPostprocessMixin, Module):
-    """Transformer model consisting for TransformerBlock layers."""
+    """A transformer model consisting of :class:`TransformerBlock` layers.
+
+    Args:
+        dim: The model dimension.
+        n_heads: The number of attention heads.
+        layers: The list of transformer blocks.
+        norm: The normalization layer applied before the language model head.
+        output: The language model head projection.
+        embedding: The token embedding layer.
+        kv_params: The key-value cache parameters.
+        rope: The rotary position embedding.
+        return_logits: Which logits to return. Defaults to
+            ``ReturnLogits.LAST_TOKEN``.
+        return_hidden_states: Which hidden states to return. Defaults to
+            ``ReturnHiddenStates.NONE``.
+        embedding_multiplier: A scalar applied to token embeddings after
+            lookup. Defaults to ``1.0`` (no scaling).
+        logits_scaling: A divisor applied to logits after projection. Logits
+            are divided by this value before returning. Defaults to ``1.0``
+            (no scaling).
+    """
 
     def __init__(
         self,
