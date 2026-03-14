@@ -45,6 +45,7 @@ def main() raises:
     var should_crash = arg_parse("should_crash", False)
 
     if should_crash:
+        print("CRASH: intentional crash for testing", file=std.sys.stderr)
         raise "intentional crash for testing"
 
     var m = Bench(BenchConfig(max_iters=1, max_batch_size=1))

@@ -41,32 +41,32 @@ from subprocess import list2cmdline
 from time import time
 from typing import Any
 
-_devnull_fd: int | None = None
-
 
 @contextlib.contextmanager
-def _suppress_output() -> Generator[None, None, None]:
-    """Redirect OS-level stdout/stderr to /dev/null.
+def _redirect_output(
+    stdout_path: Path, stderr_path: Path
+) -> Generator[None, None, None]:
+    """Redirect OS-level stdout/stderr to named files on disk.
 
-    This catches output from C/Mojo code loaded via ctypes, not just
-    Python's sys.stdout.  A process-level /dev/null fd is cached so we
-    only open it once per worker.
+    Uses raw os.open() fds (not Python file objects) to avoid
+    BufferedWriter __del__ double-close in forked workers.
     """
-    global _devnull_fd
-    if _devnull_fd is None:
-        _devnull_fd = os.open(os.devnull, os.O_WRONLY)
-
+    _OPEN_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    stdout_fd = os.open(str(stdout_path), _OPEN_FLAGS, 0o644)
+    stderr_fd = os.open(str(stderr_path), _OPEN_FLAGS, 0o644)
     saved_stdout = os.dup(1)
     saved_stderr = os.dup(2)
     try:
-        os.dup2(_devnull_fd, 1)
-        os.dup2(_devnull_fd, 2)
+        os.dup2(stdout_fd, 1)
+        os.dup2(stderr_fd, 2)
         yield
     finally:
         os.dup2(saved_stdout, 1)
         os.dup2(saved_stderr, 2)
         os.close(saved_stdout)
         os.close(saved_stderr)
+        os.close(stdout_fd)
+        os.close(stderr_fd)
 
 
 import numpy as np
@@ -898,11 +898,18 @@ class BuildItem:
     use_shared_lib: bool = False
     output_path: Path = Path()
     bin_path: Path | None = None
+    stdout_capture_path: Path = field(init=False)
+    stderr_capture_path: Path = field(init=False)
 
     build_output: ProcessOutput = field(default_factory=ProcessOutput)
     build_elapsed_time: float = 0
     exec_output: ProcessOutput = field(default_factory=ProcessOutput)
     exec_benchmark_time: float = 0
+
+    def __post_init__(self) -> None:
+        spec_hash = self.spec_instance.hash(with_variables=True)
+        self.stdout_capture_path = self.output_dir / f"{spec_hash}_stdout.log"
+        self.stderr_capture_path = self.output_dir / f"{spec_hash}_stderr.log"
 
 
 @dataclass
@@ -969,9 +976,18 @@ class _SharedLibExecutor:
                 logging.error(f"Failed to load {self._so_path}: {e}")
                 self._lib = None
 
-        # Benchmark execution — suppress noisy Mojo runtime output.
-        with _suppress_output():
-            return _worker_exec_shared_lib(bi, self._lib)
+        # Benchmark execution — redirect output to capture files.
+        with _redirect_output(bi.stdout_capture_path, bi.stderr_capture_path):
+            result = _worker_exec_shared_lib(bi, self._lib)
+
+        # Read captured output after redirect is restored.
+        result.exec_output.stdout = bi.stdout_capture_path.read_text(
+            errors="replace"
+        )
+        result.exec_output.stderr = bi.stderr_capture_path.read_text(
+            errors="replace"
+        )
+        return result
 
 
 def _start_worker(
@@ -1019,9 +1035,9 @@ def _gpu_worker_loop(
                 )
         except Exception as e:
             bi.exec_output = ProcessOutput(
-                return_code=1, stderr=f"Worker error: {e}"
+                return_code=1,
+                stderr=f"Worker error: {type(e).__name__}: {e}",
             )
-
         result_queue.put(bi)
 
 
@@ -1048,15 +1064,11 @@ def _worker_exec_shared_lib(
     os.environ["KBENCH_OUTFILE"] = str(bi.output_path)
 
     t_start = time()
-    ok = False
-    error_msg = ""
+    rc = 1
     try:
         rc = lib.benchmark_entry()
-        ok = rc == 0
-        if not ok:
-            error_msg = f"benchmark_entry returned {rc}"
-    except Exception as e:
-        error_msg = str(e)
+    except Exception:
+        pass
 
     bi.exec_benchmark_time = time() - t_start
 
@@ -1065,10 +1077,8 @@ def _worker_exec_shared_lib(
     for key in env_keys:
         os.environ.pop(key, None)
 
-    if ok:
-        bi.exec_output = ProcessOutput(return_code=os.EX_OK, stdout="OK")
-    else:
-        bi.exec_output = ProcessOutput(return_code=1, stderr=error_msg)
+    # stdout/stderr are captured from redirect files by the caller.
+    bi.exec_output = ProcessOutput(return_code=rc)
     return bi
 
 
@@ -1174,11 +1184,22 @@ def _gpu_manager(
         completed_bi, status = _poll_result(result_queue, proc, timeout_secs)
 
         if completed_bi is None:
-            # Worker died or timed out — fabricate a failure result.
-            item.build_item.exec_output = ProcessOutput(
-                return_code=1, stderr=status
+            # Worker died or timed out — read any captured output.
+            bi = item.build_item
+            stdout = ""
+            stderr = status
+            if bi.stdout_capture_path.exists():
+                stdout = bi.stdout_capture_path.read_text(errors="replace")
+            if bi.stderr_capture_path.exists():
+                captured_stderr = bi.stderr_capture_path.read_text(
+                    errors="replace"
+                )
+                if captured_stderr:
+                    stderr += "\n" + captured_stderr
+            bi.exec_output = ProcessOutput(
+                return_code=1, stdout=stdout, stderr=stderr
             )
-            completed_bi = item.build_item
+            completed_bi = bi
 
         with results_lock:
             results_list[completed_bi.idx] = completed_bi
@@ -1188,6 +1209,10 @@ def _gpu_manager(
         logging.info(
             f"{status} [{done}/{total}] ({utils._percentage(done, total)}%)"
         )
+        completed_bi.exec_output.log()
+
+        completed_bi.stdout_capture_path.unlink(missing_ok=True)
+        completed_bi.stderr_capture_path.unlink(missing_ok=True)
 
         if completed_bi.exec_output.return_code != os.EX_OK:
             proc, task_queue, result_queue = _respawn_worker(
@@ -1892,6 +1917,8 @@ class Scheduler:
                         "mesh_idx": idx,
                         "params": s.to_obj(),
                         "failure_type": failure_type,
+                        "exec_stderr": bi_list[idx].exec_output.stderr or "",
+                        "exec_stdout": bi_list[idx].exec_output.stdout or "",
                     }
                 )
                 # check build failure

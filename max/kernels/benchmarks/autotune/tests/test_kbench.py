@@ -769,6 +769,11 @@ def test_shared_lib_timeout_recovery(tmp_path: Path) -> None:
         f" --timeout-secs 5",
         env=os.environ.copy(),
     )
+    # Print diagnostics before assertions so test logs show the actual errors.
+    failures_json = out_dir / "output.failures.json"
+    if failures_json.exists():
+        print("=== failures.json ===")
+        print(failures_json.read_text())
     assert result.exit_code == 0, result.output
     out = result.output.lower()
     # 2 items should time out (invalid) and 2 should succeed (valid).
@@ -786,6 +791,14 @@ def test_shared_lib_timeout_recovery(tmp_path: Path) -> None:
     assert len(failures["failures"]) == 2
     assert all(f["failure_type"] == "timeout" for f in failures["failures"])
 
+    # Verify capture files are cleaned up after execution.
+    remaining_logs = list(out_dir.rglob("*_stdout.log")) + list(
+        out_dir.rglob("*_stderr.log")
+    )
+    assert remaining_logs == [], (
+        f"Capture files not cleaned up: {remaining_logs}"
+    )
+
 
 def test_shared_lib_crash_recovery(tmp_path: Path) -> None:
     """Crashed benchmarks don't prevent subsequent items from running.
@@ -802,6 +815,11 @@ def test_shared_lib_crash_recovery(tmp_path: Path) -> None:
         f" --timeout-secs 30",
         env=os.environ.copy(),
     )
+    # Print diagnostics before assertions so test logs show the actual errors.
+    failures_json = out_dir / "output.failures.json"
+    if failures_json.exists():
+        print("=== failures.json ===")
+        print(failures_json.read_text())
     assert result.exit_code == 0, result.output
     out = result.output.lower()
     # 3 items should crash (invalid) and 3 should succeed (valid).
@@ -818,3 +836,18 @@ def test_shared_lib_crash_recovery(tmp_path: Path) -> None:
     assert failures["num_valid"] == 3
     assert len(failures["failures"]) == 3
     assert all(f["failure_type"] == "execution" for f in failures["failures"])
+
+    # Verify crash diagnostics are captured in failure records.
+    for f in failures["failures"]:
+        assert "intentional crash" in f["exec_stderr"], (
+            f"Expected crash message in exec_stderr for item {f['mesh_idx']}, "
+            f"got: {f['exec_stderr']!r}"
+        )
+
+    # Verify capture files are cleaned up after execution.
+    remaining_logs = list(out_dir.rglob("*_stdout.log")) + list(
+        out_dir.rglob("*_stderr.log")
+    )
+    assert remaining_logs == [], (
+        f"Capture files not cleaned up: {remaining_logs}"
+    )
