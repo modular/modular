@@ -42,6 +42,6 @@ class ComponentModel(ABC):
         self.weights = weights
 
     @abstractmethod
-    def load_model(self) -> Callable[..., Any]:
+    def load_model(self) -> Callable[..., Any] | None:
         """Load and return a runtime model instance."""
         ...
