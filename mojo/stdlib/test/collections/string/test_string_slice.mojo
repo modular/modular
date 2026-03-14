@@ -624,7 +624,9 @@ def test_partition() raises:
 
 def test_rpartition() raises:
     # Normal case: sep in middle, rpartition finds last occurrence.
-    var before, sep, after = StringSlice("hello world hello").rpartition("hello")
+    var before, sep, after = StringSlice("hello world hello").rpartition(
+        "hello"
+    )
     assert_equal(before, "hello world ")
     assert_equal(sep, "hello")
     assert_equal(after, "")
