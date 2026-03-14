@@ -35,6 +35,7 @@ from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
     MLADecodeMetadata,
     MLAPrefillMetadata,
+    TensorParallelLatentAttentionWithRope,
 )
 from max.nn.attention.multi_latent_attention_fp8 import (
     DataParallelLatentAttentionWithRopeFp8,
@@ -53,8 +54,11 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.nn.transformer.distributed_transformer import forward_sharded_layers
+from max.nn.transformer import ReturnLogits
+from max.nn.transformer.distributed_transformer import (
+    extract_hs,
+    forward_sharded_layers,
+)
 
 from .layers.moe_gate import DeepseekV3TopKRouter
 from .model_config import DeepseekV3Config
@@ -87,13 +91,15 @@ def _unpack_kv_collections(
 
 
 def _validate_parallelism_config(config: DeepseekV3Config) -> None:
-    """Validate parallelism configuration for DeepseekV3."""
+    """Validate parallelism configuration for DeepseekV3.
+
+    Supported multi-GPU modes:
+      - DP attention + EP MoE: ``data_parallel_degree == num_devices``
+      - TP attention + EP MoE: ``data_parallel_degree == 1``
+    ``DeepseekV3Config.__post_init__`` already enforces
+    ``data_parallel_degree in (1, num_devices)``.
+    """
     num_devices = len(config.devices)
-    if config.data_parallel_degree != num_devices:
-        raise ValueError(
-            f"data_parallel_degree must match the number of devices ({num_devices}). "
-            "Tensor-parallel attention is not supported for DeepseekV3."
-        )
     # Skip EP validation in virtual device mode (compilation-only) since EP
     # will be disabled later due to NVSHMEM linking requirements
     if (
@@ -118,6 +124,7 @@ class DeepseekV3DecoderLayer(Module):
         self.config = config
         self.ep_manager = ep_manager
         num_devices = len(config.devices)
+        self.use_tp_ep = config.data_parallel_degree == 1 and num_devices > 1
 
         # Create Multi-head Latent Attention layer.
         mla_kwargs: dict[str, Any] = dict(
@@ -137,29 +144,38 @@ class DeepseekV3DecoderLayer(Module):
         )
 
         nvfp4_enabled = (
-            config.float8_config is not None and config.float8_config.is_nvfp4
+            config.quant_config is not None and config.quant_config.is_nvfp4
         )
-        use_fp8_mla = config.float8_config is not None and not nvfp4_enabled
+        use_fp8_mla = config.quant_config is not None and not nvfp4_enabled
 
         if (
-            config.float8_config is not None
+            config.quant_config is not None
             and nvfp4_enabled
             and config.n_routed_experts
             != 384  # nvidia/KimiK2.5-NVFP4 out projections are not quantized
         ):
-            mla_kwargs["o_proj_float8_config"] = config.float8_config
+            mla_kwargs["o_proj_quant_config"] = config.quant_config
             mla_kwargs["o_proj_dtype"] = config.dtype
 
         mla_cls: (
             type[DataParallelLatentAttentionWithRope]
             | type[DataParallelLatentAttentionWithRopeFp8]
+            | type[TensorParallelLatentAttentionWithRope]
         )
-        if use_fp8_mla:
-            mla_kwargs["float8_config"] = config.float8_config
-            mla_cls = DataParallelLatentAttentionWithRopeFp8
-        else:
+        if self.use_tp_ep:
+            # TP attention + EP MoE: shard heads across devices, use
+            # reduce-scatter after attention so hidden states stay in
+            # sequence-parallel [S/P, H] form between layers.
             mla_kwargs["dtype"] = DType.bfloat16
-            mla_cls = DataParallelLatentAttentionWithRope
+            mla_kwargs["skip_allreduce"] = True
+            mla_cls = TensorParallelLatentAttentionWithRope
+        else:
+            if use_fp8_mla:
+                mla_kwargs["quant_config"] = config.quant_config
+                mla_cls = DataParallelLatentAttentionWithRopeFp8
+            else:
+                mla_kwargs["dtype"] = DType.bfloat16
+                mla_cls = DataParallelLatentAttentionWithRope
 
         self.self_attn = mla_cls(**mla_kwargs)
 
@@ -242,11 +258,11 @@ class DeepseekV3DecoderLayer(Module):
                 ep_size=ep_size,
                 apply_router_weight_first=False,
                 ep_batch_manager=self.ep_manager,
-                float8_config=config.float8_config,
+                quant_config=config.quant_config,
             )
 
             moe: MoE
-            if config.float8_config is not None:
+            if config.quant_config is not None:
                 moe = MoEQuantized(**moe_kwargs)
             else:
                 moe = MoE(**moe_kwargs)
@@ -264,7 +280,7 @@ class DeepseekV3DecoderLayer(Module):
                 hidden_dim=config.hidden_size,
                 feed_forward_length=config.intermediate_size,
                 devices=config.devices,
-                float8_config=config.float8_config,
+                quant_config=config.quant_config,
             )
             mlp.sharding_strategy = ShardingStrategy.replicate(
                 len(config.devices)
@@ -337,7 +353,17 @@ class DeepseekV3DecoderLayer(Module):
             mla_decode_metadata=mla_decode_metadata,
         )
 
-        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
+        if self.use_tp_ep:
+            # xs is replicated across all devices. attn_outs[i] is device i's
+            # partial sum (TP allreduce was skipped). The reduce-scatter below
+            # sums contributions from all devices, so adding the residual on
+            # every device would count it `num_devices` times.
+            hs = [xs[0] + attn_outs[0], *attn_outs[1:]]
+            hs = ops.reducescatter.sum(hs, signal_buffers, axis=0)
+        else:
+            hs = [
+                x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)
+            ]
 
         # Post-attention norm (per-device)
         norm_outs = forward_sharded_layers(
@@ -357,6 +383,10 @@ class DeepseekV3DecoderLayer(Module):
 
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
+        if self.use_tp_ep:
+            hs = ops.allgather(hs, signal_buffers, axis=0)
+            hs = [ops.rebind(h, x.shape) for h, x in zip(hs, xs, strict=True)]
+
         return hs
 
 
@@ -366,6 +396,8 @@ class DeepseekV3(Module):
     This is a combination of the DeepseekV3Model and the DeepseekV3ForCausalLM
     classes from the HuggingFace Transformers implementation.
     """
+
+    subgraph_layer_prefix: str = "layers"
 
     def __init__(self, config: DeepseekV3Config) -> None:
         super().__init__()
@@ -378,8 +410,8 @@ class DeepseekV3(Module):
         embedding_output_dtype = config.dtype
         if embedding_output_dtype == DType.uint8:
             embedding_output_dtype = DType.bfloat16
-        if config.float8_config and config.float8_config.embedding_output_dtype:
-            embedding_output_dtype = config.float8_config.embedding_output_dtype
+        if config.quant_config and config.quant_config.embedding_output_dtype:
+            embedding_output_dtype = config.quant_config.embedding_output_dtype
         self.embed_tokens = VocabParallelEmbedding(
             config.vocab_size,
             config.hidden_size,
@@ -476,14 +508,38 @@ class DeepseekV3(Module):
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
     ) -> tuple[TensorValue, ...]:
+        h = self.embed_tokens(tokens, signal_buffers)
+
+        return self._process_hidden_states(
+            h,
+            signal_buffers,
+            kv_collections,
+            return_n_logits,
+            input_row_offsets,
+            host_input_row_offsets,
+            data_parallel_splits,
+            batch_context_lengths,
+            ep_inputs,
+        )
+
+    def _process_hidden_states(
+        self,
+        h: list[TensorValue],
+        signal_buffers: list[BufferValue],
+        kv_collections: list[PagedCacheValues],
+        return_n_logits: TensorValue,
+        input_row_offsets: TensorValue,
+        host_input_row_offsets: TensorValue,
+        data_parallel_splits: TensorValue,
+        batch_context_lengths: list[TensorValue],
+        ep_inputs: list[Value[Any]] | None = None,
+    ) -> tuple[TensorValue, ...]:
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("input_row_offsets must be located on CPU")
         if not data_parallel_splits.device == DeviceRef.CPU():
             raise ValueError("data_parallel_splits must be located on CPU")
 
         devices = self.config.devices
-        h = self.embed_tokens(tokens, signal_buffers)
-
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
         # Keep this as explicit per-device `.to()` copies.
         # Broadcasting graph-time constants can hang when chained after
@@ -497,7 +553,7 @@ class DeepseekV3(Module):
             input_row_offsets, signal_buffers
         )
 
-        if len(devices) > 1:
+        if self.config.data_parallel_degree > 1:
             # Split batch across devices for data-parallel attention.
             h, input_row_offsets_ = split_batch_replicated(
                 devices,
@@ -583,7 +639,7 @@ class DeepseekV3(Module):
                 subgraph_layer.build_subgraph(
                     f"dist_transformer_block_{group_idx}",
                     subgraph_input_types,
-                    f"layers.{layer_group[0]}.",
+                    f"{self.subgraph_layer_prefix}.{layer_group[0]}.",
                 )
             )
 
@@ -615,7 +671,7 @@ class DeepseekV3(Module):
                                 else ()
                             ),
                             *(ep_inputs if ep_inputs is not None else ()),
-                            prefix=f"layers.{idx}.",
+                            prefix=f"{self.subgraph_layer_prefix}.{idx}.",
                         )
                     ]
                     break
@@ -766,14 +822,14 @@ class DeepseekV3(Module):
         if logits is not None and offsets is not None:
             ret_val += (logits, offsets)
 
-        if self.return_hidden_states == ReturnHiddenStates.LAST:
-            if self.config.data_parallel_degree > 1:
-                ret_val += tuple(last_token_per_dev)
-            else:
-                ret_val += tuple(last_token_distributed)
-        elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
-            norm_h = forward_sharded_layers(self.norm_shards, h)
-            ret_val += tuple(norm_h)
+        ret_val += extract_hs(
+            return_hidden_states=self.return_hidden_states,
+            last_token_hs_distributed=last_token_distributed,
+            all_hs_distributed=h,
+            normalizer=self.norm_shards,
+            signal_buffers=signal_buffers,
+            duplicated_hs=self.config.data_parallel_degree == 1,
+        )
 
         return ret_val
 

@@ -11,12 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-)
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from std.math import exp, exp2, log
 from std.memory import alloc
@@ -32,7 +27,7 @@ comptime LOG2E = 1.4426950408889634
 
 
 @always_inline
-fn softplus_ref(val: Float32) -> Float32:
+def softplus_ref(val: Float32) -> Float32:
     """Reference softplus: log(1 + exp(x)) with numerical stability."""
     if val > 20.0:
         return val
@@ -40,14 +35,14 @@ fn softplus_ref(val: Float32) -> Float32:
 
 
 @always_inline
-fn silu_ref(val: Float32) -> Float32:
+def silu_ref(val: Float32) -> Float32:
     """Reference SiLU: x * sigmoid(x) = x / (1 + exp(-x))."""
     if val < -20.0:
         return 0.0
     return val / (Float32(1.0) + exp(-val))
 
 
-fn run_ssd_combined[
+def run_ssd_combined[
     dtype: DType,
     DSTATE: Int,
     has_D: Bool = True,
@@ -354,7 +349,7 @@ fn run_ssd_combined[
     gamma_heap.free()
 
 
-fn test_ssd_combined_basic() raises:
+def test_ssd_combined_basic() raises:
     """Test basic ssd_combined."""
     run_ssd_combined[
         DType.float32,
@@ -366,7 +361,7 @@ fn test_ssd_combined_basic() raises:
     ](batch=2, dim=4, seqlen=8, n_groups=1)
 
 
-fn test_ssd_combined_without_D() raises:
+def test_ssd_combined_without_D() raises:
     """Test ssd_combined without D."""
     run_ssd_combined[
         DType.float32,
@@ -378,7 +373,7 @@ fn test_ssd_combined_without_D() raises:
     ](batch=2, dim=4, seqlen=8, n_groups=1)
 
 
-fn test_ssd_combined_without_z() raises:
+def test_ssd_combined_without_z() raises:
     """Test ssd_combined without z."""
     run_ssd_combined[
         DType.float32,
@@ -390,7 +385,7 @@ fn test_ssd_combined_without_z() raises:
     ](batch=2, dim=4, seqlen=8, n_groups=1)
 
 
-fn test_ssd_combined_without_delta_bias() raises:
+def test_ssd_combined_without_delta_bias() raises:
     """Test ssd_combined without delta_bias."""
     run_ssd_combined[
         DType.float32,
@@ -402,7 +397,7 @@ fn test_ssd_combined_without_delta_bias() raises:
     ](batch=2, dim=4, seqlen=8, n_groups=1)
 
 
-fn test_ssd_combined_with_delta_softplus() raises:
+def test_ssd_combined_with_delta_softplus() raises:
     """Test ssd_combined with delta_softplus."""
     run_ssd_combined[
         DType.float32,
@@ -414,7 +409,7 @@ fn test_ssd_combined_with_delta_softplus() raises:
     ](batch=2, dim=4, seqlen=8, n_groups=1)
 
 
-fn test_ssd_combined_larger_shapes() raises:
+def test_ssd_combined_larger_shapes() raises:
     """Test ssd_combined with larger shapes."""
     run_ssd_combined[
         DType.float32,

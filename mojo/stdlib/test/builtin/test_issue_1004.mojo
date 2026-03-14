@@ -15,7 +15,7 @@
 from std.testing import assert_equal, TestSuite
 
 
-fn foo(x: String) raises:
+def foo(x: String) raises:
     raise Error("Failed on: " + x)
 
 

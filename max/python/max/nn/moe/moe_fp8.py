@@ -32,6 +32,11 @@ from .quant_strategy import (
 _T = TypeVar("_T")
 
 
+def _scalar_max(t: TensorValue) -> TensorValue:
+    """Reduces a tensor to a rank-0 scalar max value."""
+    return ops.max(t).reshape([])
+
+
 class MoEQuantized(MoE):
     """Mixture of Experts with FP8 or NVFP4 quantization."""
 
@@ -45,17 +50,17 @@ class MoEQuantized(MoE):
 
     def _strategy(self) -> QuantStrategy:
         """Selects the quantization strategy for this MoE."""
-        assert self.float8_config is not None
-        if self.float8_config.is_nvfp4:
-            return Nvfp4Strategy(self.float8_config, self.dtype)
-        return Fp8Strategy(self.float8_config, self.dtype)
+        assert self.quant_config is not None
+        if self.quant_config.is_nvfp4:
+            return Nvfp4Strategy(self.quant_config, self.dtype)
+        return Fp8Strategy(self.quant_config, self.dtype)
 
     @property
     def _token_group_size(self) -> int:
         """Returns the activation token-group size for quantization."""
-        assert self.float8_config is not None
-        assert self.float8_config.input_scale.block_size is not None
-        return self.float8_config.input_scale.block_size[1]
+        assert self.quant_config is not None
+        assert self.quant_config.input_scale.block_size is not None
+        return self.quant_config.input_scale.block_size[1]
 
     def _with_shared_expert(
         self, values: list[_T], shared: _T | None
@@ -116,10 +121,10 @@ class MoEQuantized(MoE):
     @property
     def gate_up_proj_scales(self) -> TensorValue:
         """Returns stacked gate/up weight scales for grouped matmul."""
-        assert self.float8_config is not None
-        assert self.float8_config.weight_scale.block_size is not None
-        if not self.float8_config.is_nvfp4:
-            assert self.float8_config.weight_scale.block_size == (128, 128), (
+        assert self.quant_config is not None
+        assert self.quant_config.weight_scale.block_size is not None
+        if not self.quant_config.is_nvfp4:
+            assert self.quant_config.weight_scale.block_size == (128, 128), (
                 "Only support block_size=[128, 128] for weights."
             )
 
@@ -175,8 +180,8 @@ class MoEQuantized(MoE):
 
     @property
     def _is_nvfp4(self) -> bool:
-        """Whether the current float8 config uses NVFP4."""
-        return self.float8_config is not None and self.float8_config.is_nvfp4
+        """Whether the current quant config uses NVFP4."""
+        return self.quant_config is not None and self.quant_config.is_nvfp4
 
     def _ep_call(
         self,
@@ -264,7 +269,7 @@ class MoEQuantized(MoE):
         permuted_quant, permuted_scales = strategy.quantize(
             permuted,
             self._token_group_size,
-            nvfp4.gate_up_input if nvfp4 else None,
+            _scalar_max(nvfp4.gate_up_input) if nvfp4 else None,
         )
 
         gate_up_scales, down_scales = strategy.prepare_weight_scales(
@@ -297,10 +302,24 @@ class MoEQuantized(MoE):
         )
 
         gate_up = silu_gate(gate_up, self.moe_dim)
+
+        if nvfp4:
+            # down_expert = weight_scale * down_input_i (per-expert),
+            # but quantize() below scales activations by max(down_input)
+            # (global). Multiply through by max / down_input_i so the
+            # activation scale and expert scale agree.
+            max_down_input = _scalar_max(nvfp4.down_input)
+            adjusted_down_expert = nvfp4.down_expert * (
+                max_down_input / nvfp4.down_input
+            )
+        else:
+            max_down_input = None
+            adjusted_down_expert = None
+
         gate_up_quant, gate_up_scales = strategy.quantize(
             gate_up,
             self._token_group_size,
-            nvfp4.down_input if nvfp4 else None,
+            max_down_input,
         )
 
         down_inputs = (gate_up_quant, gate_up_scales) + expert_inputs[2:]
@@ -308,7 +327,7 @@ class MoEQuantized(MoE):
         down = strategy.grouped_matmul(
             self.down_proj,
             down_scales,
-            expert_scales=nvfp4.down_expert if nvfp4 else None,
+            expert_scales=adjusted_down_expert,
             expert_inputs=down_inputs,
         )
 

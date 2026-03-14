@@ -94,7 +94,7 @@ Functions
    generate_local_model_path
    get_default_max_config_file_section_name
    max_tokens_to_generate
-   parse_float8_config
+   parse_quant_config
    rejection_sampler
    rejection_sampler_with_residuals
    resolve_max_config_inheritance

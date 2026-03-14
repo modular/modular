@@ -13,7 +13,7 @@
 
 
 struct ExampleStruct:
-    fn example[
+    def example[
         T: Writable & Copyable,  # type parameter with bounds
         count: Int,  # parameter
     ](
@@ -26,11 +26,11 @@ struct ExampleStruct:
             out = out + "{}".format(init_value)
         return out
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
-fn main():
+def main():
     s = ExampleStruct()
     result = s.example[String, 3]("Value: ", "42")
     print(result)  # Expected output: "Value: 424242"

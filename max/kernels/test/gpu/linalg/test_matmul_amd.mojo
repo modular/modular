@@ -19,10 +19,17 @@ import linalg.matmul.vendor.blas as vendor_blas
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import MI355X
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from linalg.matmul.gpu import (
     _amdgpu_matmul_config_from_block_shape,
     _matmul_gpu,
+    multistage_gemm,
 )
 from linalg.utils_gpu import MatmulConfig
 from std.testing import assert_equal
@@ -32,7 +39,7 @@ from std.utils import Index, IndexList
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
 
-fn test[
+def test[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -48,11 +55,12 @@ fn test[
 
     print(m, "x", n, "x", k)
 
-    comptime static_a_shape = DimList(to_dim[M], to_dim[K])
-    comptime static_b_shape = DimList(
-        to_dim[N], to_dim[K]
-    ) if transpose_b else DimList(to_dim[K], to_dim[N])
-    comptime static_c_shape = DimList(to_dim[M], to_dim[N])
+    comptime static_a_shape = DimList[to_dim[M], to_dim[K]]()
+    comptime static_b_shape = DimList[
+        to_dim[N] if transpose_b else to_dim[K],
+        to_dim[K] if transpose_b else to_dim[N],
+    ]()
+    comptime static_c_shape = DimList[to_dim[M], to_dim[N]]()
 
     var dynamic_a_shape = IndexList[2](M.or_else(m), K.or_else(k))
     var dynamic_b_shape = IndexList[2](
@@ -113,9 +121,20 @@ fn test[
     ctx.enqueue_copy(b_device_buffer, b_host_ptr)
     ctx.enqueue_copy(c_device_buffer, c_host_ptr)
 
-    _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b, config=config](
-        c_device, a_device, b_device, ctx
-    )
+    comptime if config:
+        multistage_gemm[transpose_b=transpose_b, config=config.value()](
+            TileTensor(c_device),
+            TileTensor(a_device),
+            TileTensor(b_device),
+            ctx,
+        )
+    else:
+        _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
+            TileTensor(c_device),
+            TileTensor(a_device),
+            TileTensor(b_device),
+            ctx,
+        )
 
     vendor_blas.matmul(
         ctx,
@@ -148,7 +167,7 @@ fn test[
     _ = c_device_ref_buffer^
 
 
-fn test[
+def test[
     in_type: DType,
     out_type: DType,
     transpose_b: Bool,
@@ -161,7 +180,7 @@ fn test[
     )
 
 
-fn test[
+def test[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -245,6 +264,13 @@ def test_bf16(ctx: DeviceContext) raises:
         N=Int(284),
         K=Int(256),
     ](ctx, 256, 284, 256)
+    test[
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
+        transpose_b=True,
+        N=Int(260),
+        K=Int(1024),
+    ](ctx, 259, 260, 1024)
 
 
 def test_float8[in_type: DType](ctx: DeviceContext) raises:

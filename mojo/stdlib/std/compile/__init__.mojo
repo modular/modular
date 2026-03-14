@@ -30,7 +30,7 @@ Example:
 ```mojo
 from std.compile import compile_info
 
-fn my_func():
+def my_func():
     print("Hello")
 
 # Get assembly for the function

@@ -18,6 +18,8 @@ from enum import Enum
 
 
 class MHAMaskVariant(str, Enum):
+    """Defines the integer mask variant codes used by multihead attention kernels."""
+
     CAUSAL_MASK = 0
     NULL_MASK = 2
     CHUNKED_CAUSAL_MASK = 3
@@ -25,6 +27,8 @@ class MHAMaskVariant(str, Enum):
 
 
 class AttentionMaskVariant(str, Enum):
+    """Defines the string mask variant identifiers used in attention configuration."""
+
     NULL_MASK = "null"
     CAUSAL_MASK = "causal"
     TENSOR_MASK = "tensor_mask"

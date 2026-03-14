@@ -16,7 +16,7 @@ from linalg.fp4_quantization import (
     block_scales_interleave_fp4,
 )
 from std.testing import assert_equal
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.fp4_utils import (
     SF_ATOM_M,
@@ -30,7 +30,7 @@ from std.math import ceildiv, align_up
 from std.utils import IndexList
 
 
-fn test_block_scales_interleave_fp4[
+def test_block_scales_interleave_fp4[
     scales_dtype: DType,
     SF_VECTOR_SIZE: Int,
     M: Optional[Int],

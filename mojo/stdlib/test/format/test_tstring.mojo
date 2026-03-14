@@ -20,7 +20,7 @@ struct Point(Writable):
     var x: Int
     var y: Int
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(t"({self.x}, {self.y})")
 
 
@@ -394,11 +394,169 @@ def test_tstring_multiline_concatenation() raises:
 
 
 # =============================================================================
+# Raw t-string tests (rt"..." and tr"...")
+# =============================================================================
+
+
+def test_raw_tstring_basic() raises:
+    assert_equal(String(rt"Hello, World!"), "Hello, World!")
+
+
+def test_raw_tstring_backslash_n_literal() raises:
+    var name = "Alice"
+    assert_equal(String(rt"Hello\n{name}"), r"Hello\nAlice")
+
+
+def test_raw_tstring_backslash_t_literal() raises:
+    var x = 42
+    assert_equal(String(rt"value\t{x}"), r"value\t42")
+
+
+def test_raw_tstring_interpolation() raises:
+    var x = 10
+    var y = 20
+    assert_equal(String(rt"{x} + {y} = {x + y}"), "10 + 20 = 30")
+
+
+def test_raw_tstring_backslash_path() raises:
+    var name = "docs"
+    assert_equal(String(rt"C:\Users\{name}"), r"C:\Users\docs")
+
+
+def test_raw_tstring_escaped_braces() raises:
+    assert_equal(String(rt"Use {{braces}} like this"), "Use {braces} like this")
+
+
+def test_raw_tstring_mixed_escaped_and_interpolation() raises:
+    var value = 123
+    assert_equal(
+        String(rt"The value {{value}} = {value}"),
+        "The value {value} = 123",
+    )
+
+
+def test_raw_tstring_hex_escape_literal() raises:
+    var x = 1
+    assert_equal(String(rt"A\x42{x}"), r"A\x421")
+
+
+def test_raw_tstring_double_backslash() raises:
+    var x = 1
+    assert_equal(String(rt"AB\\{x}"), r"AB\\1")
+
+
+def test_raw_tstring_tr_prefix() raises:
+    var name = "world"
+    assert_equal(String(rt"Hello\n{name}"), r"Hello\nworld")
+
+
+def test_raw_tstring_prefix_variants() raises:
+    var x = 1
+    # fmt: off
+    assert_equal(String(rt"v{x}"), "v1")
+    assert_equal(String(rT"v{x}"), "v1")
+    assert_equal(String(Rt"v{x}"), "v1")
+    assert_equal(String(RT"v{x}"), "v1")
+    assert_equal(String(tr"v{x}"), "v1")
+    assert_equal(String(tR"v{x}"), "v1")
+    assert_equal(String(Tr"v{x}"), "v1")
+    assert_equal(String(TR"v{x}"), "v1")
+    # fmt: on
+
+
+def test_raw_tstring_empty() raises:
+    assert_equal(String(rt""), "")
+
+
+def test_raw_tstring_only_expression() raises:
+    assert_equal(String(rt"{42}"), "42")
+
+
+def test_raw_tstring_adjacent_interpolations() raises:
+    var a = "A"
+    var b = "B"
+    assert_equal(String(rt"{a}{b}"), "AB")
+
+
+def test_raw_tstring_triple_quoted() raises:
+    var x = 42
+    assert_equal(
+        String(rt"""raw\n{x}"""),
+        r"raw\n42",
+    )
+
+
+def test_raw_tstring_vs_regular_tstring() raises:
+    # Verify raw and regular t-strings differ on escape handling
+    var x = 1
+    assert_equal(String(t"tab\there{x}"), "tab\there1")
+    assert_equal(String(rt"tab\there{x}"), r"tab\there1")
+
+
+def test_raw_tstring_nested_in_tstring() raises:
+    var x = 42
+    assert_equal(String(t"outer {rt'raw\n{x}'}"), r"outer raw\n42")
+
+
+def test_raw_tstring_multiline_concatenation() raises:
+    var x = 10
+    var y = 20
+    # fmt: off
+    var tstring = (
+        rt"raw\n{x}"
+        rt" also raw\t{y}"
+        rt" end"
+    )
+    # fmt: on
+    assert_equal(String(tstring), r"raw\n10 also raw\t20 end")
+
+
+def test_raw_tstring_mixed_concat_raw_then_cooked() raises:
+    var x = 42
+    # fmt: off
+    var tstring = (
+        rt"raw\n{x}"
+        t" cooked\n{x}"
+    )
+    # fmt: on
+    assert_equal(String(tstring), r"raw\n" + "42 cooked\n42")
+
+
+def test_raw_tstring_mixed_concat_cooked_then_raw() raises:
+    var x = 42
+    # fmt: off
+    var tstring = (
+        t"cooked\n{x}"
+        rt" raw\n{x}"
+    )
+    # fmt: on
+    assert_equal(String(tstring), "cooked\n42" + r" raw\n42")
+
+
+def test_raw_tstring_mixed_concat_three_way() raises:
+    var x = 1
+    # fmt: off
+    var tstring = (
+        t"cooked\t{x}"
+        rt" raw\t{x}"
+        t" cooked\t{x}"
+    )
+    # fmt: on
+    assert_equal(String(tstring), "cooked\t1" + r" raw\t" + "1 cooked\t1")
+
+
+def test_raw_tstring_in_tstring() raises:
+    var x = 42
+    var tstring = t"hello \t{x}, {rt"world \t{x}"}"
+    assert_equal(String(tstring), "hello \t42, " + r"world \t42")
+
+
+# =============================================================================
 # _encode_format_string tests
 # =============================================================================
 
 
-fn _encode(*strings: String) -> List[Byte]:
+def _encode(*strings: String) -> List[Byte]:
     var result = List[Byte]()
     for i in range(len(strings)):
         for byte in strings[i].as_bytes():

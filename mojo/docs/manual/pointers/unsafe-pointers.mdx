@@ -20,25 +20,6 @@ In general, you should prefer safe pointer types when possible, reserving
 For a comparison of standard library pointer types, see [Intro to
 pointers](/mojo/manual/pointers/).
 
-:::note LegacyUnsafePointer
-
-The implementation of `UnsafePointer` documented here replaces an earlier
-version with a slightly different API. The old version has been renamed to
-[`LegacyUnsafePointer`](/mojo/std/memory/legacy_unsafe_pointer/LegacyUnsafePointer/)
-and will be deprecated.
-
-The [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer)
-reference page briefly describes the differences between the new and old
-versions.
-
-To ease this transition, the library currently supports implicit conversion
-between `LegacyUnsafePointer` and `UnsafePointer`, so you can pass a legacy
-pointer to an `UnsafePointer` function, and vice versa.
-
-For more details on migrating to the new `UnsafePointer`, see the migration
-guide provided in the
-[UnsafePointer v2 proposal](https://github.com/modular/modular/blob/main/mojo/proposals/unsafe-pointer-v2.md#migration-guide-from-legacyunsafepointer-to-the-new-unsafepointer).
-
 :::
 
 ## Unsafe pointer basics
@@ -184,8 +165,8 @@ str_ptr.init_pointee_move(my_string^)
 
 Note that to move the value, you usually need to add the transfer sigil
 (`^`), unless the value is a [trivial
-type](/mojo/manual/types#register-passable-memory-only-and-trivial-types) (like
-`Int`) or a newly-constructed, "owned" value:
+type](/mojo/manual/traits#register-passable) (like `Int`) or a
+newly-constructed, "owned" value:
 
 ```mojo
 str_ptr.init_pointee_move("Owned string")
@@ -376,7 +357,7 @@ of the storage.
 That method looks something like this:
 
 ```mojo
-fn unsafe_ptr(
+def unsafe_ptr(
     ref self,
 ) -> UnsafePointer[T, origin_of(self)]:
 
@@ -417,7 +398,7 @@ You can create a `UnsafePointer` from a raw memory address using the
 `unsafe_from_address` initializer.
 
 ```mojo
-fn write_to_address(mmio_address: Int, value: Int32):
+def write_to_address(mmio_address: Int, value: Int32):
     var ptr = UnsafePointer[Int32, MutExternalOrigin](
       unsafe_from_address=mmio_address
     )

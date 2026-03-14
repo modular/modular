@@ -23,18 +23,18 @@ from std.random import rand, random_ui64
 from layout import (
     Idx,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
-from layout.layout_tensor import LayoutTensor
 from std.utils.index import Index, IndexList
 from std.testing import assert_true
 from std.collections import Set
 
 
-fn test_mla_index_fp8_paged_variable_lengths[
+def test_mla_index_fp8_paged_variable_lengths[
     num_heads: Int,
     depth: Int,
     page_size: Int,

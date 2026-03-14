@@ -15,8 +15,7 @@ from std.collections import OptionalReg
 from std.sys import simd_width_of
 
 from std.gpu import barrier, block_idx, lane_id
-from layout import IntTuple, Layout, LayoutTensor
-from layout.runtime_layout import RuntimeLayout
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from nn.mha_operand import MHAOperand
 from nn.mha_utils import MHAConfig, get_start_and_end_for_partitions
 
@@ -41,35 +40,35 @@ struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
 
     @staticmethod
     @always_inline
-    fn q_head_idx() -> UInt:
+    def q_head_idx() -> UInt:
         return block_idx.y if Self.token_gen else MHAAttentionConfig[
             Self.token_gen, Self.config, 1
         ].q_head_idx()
 
     @staticmethod
     @always_inline
-    fn q_tile_idx() -> UInt:
+    def q_tile_idx() -> UInt:
         return Self.q_head_idx() if Self.token_gen else MHAAttentionConfig[
             Self.token_gen, Self.config, 1
         ].q_tile_idx()
 
     @staticmethod
     @always_inline
-    fn kv_head_idx() -> UInt:
+    def kv_head_idx() -> UInt:
         return 0 if Self.token_gen else MHAAttentionConfig[
             Self.token_gen, Self.config, 1
         ].kv_head_idx()
 
     @staticmethod
     @always_inline
-    fn get_mma_shape() -> IndexList[3]:
+    def get_mma_shape() -> IndexList[3]:
         return MHAAttentionConfig[
             Self.token_gen, Self.config, 1
         ].get_mma_shape()
 
     @staticmethod
     @always_inline
-    fn get_q_offset[q_depth: UInt]() -> UInt32:
+    def get_q_offset[q_depth: UInt]() -> UInt32:
         return UInt32(
             q_depth
             * (
@@ -84,13 +83,13 @@ struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
 
     @staticmethod
     @always_inline
-    fn get_output_offset[output_depth: UInt]() -> UInt32:
+    def get_output_offset[output_depth: UInt]() -> UInt32:
         return Self.get_q_offset[output_depth]()
 
 
 __extension Attention:
     @always_inline
-    fn mla_prefill[
+    def mla_prefill[
         k_rope_t: MHAOperand,
         //,
         # cache_num_heads: Int,
@@ -105,7 +104,7 @@ __extension Attention:
 
         @always_inline
         @parameter
-        fn loop_over_kvcache[
+        def loop_over_kvcache[
             tile_size: Int
         ](kv_tile_start_row: UInt32, end: UInt32, not_last_iter: Bool):
             if self.mask_skip_and_advance(
@@ -210,7 +209,7 @@ __extension Attention:
 
             @parameter
             @always_inline
-            fn prefetch_function1():
+            def prefetch_function1():
                 k_rope_buffer.load_from_dram()
 
             self.mma_qk[
@@ -221,7 +220,7 @@ __extension Attention:
 
             @parameter
             @always_inline
-            fn prefetch_function2():
+            def prefetch_function2():
                 v_buffer.load_from_dram()
 
             self.mma_qk[
@@ -258,7 +257,7 @@ __extension Attention:
         self.store_output()
 
     @always_inline
-    fn mla_decoding(
+    def mla_decoding(
         mut self,
         exp_sum_ptr: UnsafePointer[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin

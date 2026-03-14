@@ -90,7 +90,7 @@ struct stat_result(Copyable, Writable):
     var st_flags: Int
     """User defined flags for file."""
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         st_mode: Int,
@@ -145,7 +145,7 @@ struct stat_result(Copyable, Writable):
         self.st_flags = st_flags
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """
         Formats this path to the provided Writer.
 
@@ -170,32 +170,13 @@ struct stat_result(Copyable, Writable):
         writer.write(", st_flags=", self.st_flags)
         writer.write(")")
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Constructs a string representation of stat_result.
-
-        Returns:
-          A string representation of stat_result.
-        """
-        return String.write(self)
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        """Constructs a representation of stat_result.
-
-        Returns:
-          A representation of stat_result.
-        """
-        return String(self)
-
 
 # ===----------------------------------------------------------------------=== #
 # stat
 # ===----------------------------------------------------------------------=== #
 
 
-fn stat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
+def stat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
     """Get the status of a file or a file descriptor.
 
     Parameters:
@@ -223,7 +204,7 @@ fn stat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
 # ===----------------------------------------------------------------------=== #
 # lstat
 # ===----------------------------------------------------------------------=== #
-fn lstat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
+def lstat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
     """Get the status of a file or a file descriptor (similar to stat, but does
     not follow symlinks).
 

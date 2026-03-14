@@ -15,7 +15,7 @@ from std.math import align_up, ceildiv, gcd
 from std.sys import align_of, size_of, simd_width_of
 from std.gpu.host.info import B200, H100
 from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
+from buffer.dimlist import Dim, DimList
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -42,13 +42,22 @@ from std.gpu.sync import (
 )
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
-from layout import Layout, LayoutTensor
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
+    lt_to_tt,
+    coord_to_index_list,
+)
+from layout.layout import zipped_divide
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.int_tuple import IntTuple
-from layout.layout_tensor import LayoutTensorIter, zipped_divide, upcast
+from layout.layout_tensor import LayoutTensorIter, upcast
 from layout.swizzle import make_swizzle
 from layout.runtime_tuple import idx2crd, crd2idx
-from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout, RuntimeTuple
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import (
     PipelineState,
@@ -85,7 +94,7 @@ comptime logger = Logger()
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
+def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -505,7 +514,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
                             ](c_mn)
 
 
-fn grouped_matmul_sm100_blockwise_scaled_fp8[
+def grouped_matmul_sm100_blockwise_scaled_fp8[
     a_layout: Layout,
     b_layout: Layout,
     c_layout: Layout,
@@ -668,7 +677,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
 
 
 @always_inline
-fn _get_accumulator_size[
+def _get_accumulator_size[
     *,
     c_smem_layout: Layout,
     block_tile_shape: IndexList[3],
@@ -703,7 +712,7 @@ fn _get_accumulator_size[
 
 
 @always_inline
-fn load_AB[
+def load_AB[
     a_type: DType,
     b_type: DType,
     a_scales_type: DType,
@@ -856,7 +865,7 @@ fn load_AB[
 
 
 @always_inline
-fn multi_stage_reg_epilogue[
+def multi_stage_reg_epilogue[
     c_tile_rank: Int,
     c_tile_shape: IndexList[c_tile_rank],
     c_desc_shape: IndexList[c_tile_rank],
@@ -958,8 +967,8 @@ fn multi_stage_reg_epilogue[
             var casted = src.cast[c_type]()
             comptime for _j in range(cast_width):
                 upper_st[offset + _j] = casted[_j]
-        stsm_helper[swizzle, UInt(stageN), swizzle_mode=c_swizzle](
-            upper_st, c_smem_warp_tile_upper
+        stsm_helper[swizzle, stageN, swizzle_mode=c_swizzle](
+            upper_st, lt_to_tt(c_smem_warp_tile_upper)
         )
 
         var c_smem_warp_tile_lower = c_smem_warp_tile.tile[data_paths, stageN](
@@ -979,8 +988,8 @@ fn multi_stage_reg_epilogue[
                 var casted = src.cast[c_type]()
                 comptime for _j in range(cast_width):
                     lower_st[offset + _j] = casted[_j]
-            stsm_helper[swizzle, UInt(stageN), swizzle_mode=c_swizzle](
-                lower_st, c_smem_warp_tile_lower
+            stsm_helper[swizzle, stageN, swizzle_mode=c_swizzle](
+                lower_st, lt_to_tt(c_smem_warp_tile_lower)
             )
 
         # Guard the write to shared memory is done.
@@ -1109,7 +1118,7 @@ fn multi_stage_reg_epilogue[
 
 
 @always_inline
-fn promote_accumulators[
+def promote_accumulators[
     pipeline_stages: UInt,
     num_accum_pipeline_stages: Int,
     accum_type: DType,
@@ -1450,7 +1459,7 @@ fn promote_accumulators[
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
-fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
+def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -1997,7 +2006,7 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         _ = tmem_dealloc_mbar[].arrive()
 
 
-fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
+def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     a_layout: Layout,
     b_layout: Layout,
     c_layout: Layout,
@@ -2259,7 +2268,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     )
 
 
-fn grouped_matmul_dynamic_scaled_fp8[
+def grouped_matmul_dynamic_scaled_fp8[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -2375,3 +2384,142 @@ fn grouped_matmul_dynamic_scaled_fp8[
             num_active_experts,
             ctx,
         )
+
+
+# ===----------------------------------------------------------------------=== #
+# TileTensor overloads
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+def grouped_matmul_dynamic_scaled_fp8[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    a_offsets_type: DType,
+    expert_ids_type: DType,
+    //,
+    input_scale_granularity: StaticString,
+    weight_scale_granularity: StaticString,
+    m_scale_granularity: Int,
+    n_scale_granularity: Int,
+    k_scale_granularity: Int,
+    transpose_b: Bool = False,
+    tokens_padded_per_expert: Bool = False,
+    target: StaticString = "cpu",
+](
+    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
+    a_scales: TileTensor[
+        mut=False, a_scales_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    b_scales: TileTensor[
+        mut=False, b_scales_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    a_offsets: TileTensor[
+        mut=False, a_offsets_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    expert_ids: TileTensor[
+        mut=False, expert_ids_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    max_num_tokens_per_expert: Int,
+    num_active_experts: Int,
+    ctx: DeviceContext,
+) raises:
+    """TileTensor overload of `grouped_matmul_dynamic_scaled_fp8`. Converts to
+    NDBuffer and delegates."""
+    comptime assert c.rank == 2 and c.flat_rank == 2
+    comptime assert a.rank == 2 and a.flat_rank == 2
+    comptime assert b.rank == 3 and b.flat_rank == 3
+    comptime assert a_scales.rank == 2 and a_scales.flat_rank == 2
+    comptime assert b_scales.rank == 3 and b_scales.flat_rank == 3
+    comptime assert a_offsets.rank == 1 and a_offsets.flat_rank == 1
+    comptime assert expert_ids.rank == 1 and expert_ids.flat_rank == 1
+
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+    comptime c_shape = DimList[dim[c.static_shape[0]], dim[c.static_shape[1]]]()
+    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
+    comptime b_shape = DimList[
+        dim[b.static_shape[0]], dim[b.static_shape[1]], dim[b.static_shape[2]]
+    ]()
+    comptime a_scales_shape = DimList[
+        dim[a_scales.static_shape[0]],
+        dim[a_scales.static_shape[1]],
+    ]()
+    comptime b_scales_shape = DimList[
+        dim[b_scales.static_shape[0]],
+        dim[b_scales.static_shape[1]],
+        dim[b_scales.static_shape[2]],
+    ]()
+    comptime a_offsets_shape = DimList[dim[a_offsets.static_shape[0]]]()
+    comptime expert_ids_shape = DimList[dim[expert_ids.static_shape[0]]]()
+
+    var c_buf = NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape](
+        c.ptr,
+        rebind[IndexList[2]](coord_to_index_list(c.layout.shape_coord())),
+    )
+    var a_buf = NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape](
+        a.ptr,
+        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
+    )
+    var b_buf = NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape](
+        b.ptr,
+        rebind[IndexList[3]](coord_to_index_list(b.layout.shape_coord())),
+    )
+    var a_scales_buf = NDBuffer[
+        rank=2, a_scales_type, ImmutAnyOrigin, a_scales_shape
+    ](
+        a_scales.ptr,
+        rebind[IndexList[2]](
+            coord_to_index_list(a_scales.layout.shape_coord())
+        ),
+    )
+    var b_scales_buf = NDBuffer[
+        rank=3, b_scales_type, ImmutAnyOrigin, b_scales_shape
+    ](
+        b_scales.ptr,
+        rebind[IndexList[3]](
+            coord_to_index_list(b_scales.layout.shape_coord())
+        ),
+    )
+    var a_off_buf = NDBuffer[
+        rank=1, a_offsets_type, ImmutAnyOrigin, a_offsets_shape
+    ](
+        a_offsets.ptr,
+        rebind[IndexList[1]](
+            coord_to_index_list(a_offsets.layout.shape_coord())
+        ),
+    )
+    var exp_buf = NDBuffer[
+        rank=1, expert_ids_type, ImmutAnyOrigin, expert_ids_shape
+    ](
+        expert_ids.ptr,
+        rebind[IndexList[1]](
+            coord_to_index_list(expert_ids.layout.shape_coord())
+        ),
+    )
+
+    grouped_matmul_dynamic_scaled_fp8[
+        input_scale_granularity=input_scale_granularity,
+        weight_scale_granularity=weight_scale_granularity,
+        m_scale_granularity=m_scale_granularity,
+        n_scale_granularity=n_scale_granularity,
+        k_scale_granularity=k_scale_granularity,
+        transpose_b=transpose_b,
+        tokens_padded_per_expert=tokens_padded_per_expert,
+        target=target,
+    ](
+        c_buf,
+        a_buf,
+        b_buf,
+        a_scales_buf,
+        b_scales_buf,
+        a_off_buf,
+        exp_buf,
+        max_num_tokens_per_expert,
+        num_active_experts,
+        ctx,
+    )

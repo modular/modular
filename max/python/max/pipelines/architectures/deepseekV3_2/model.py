@@ -40,7 +40,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
-from max.pipelines.lib.float8 import parse_float8_config
+from max.pipelines.lib.quant import parse_quant_config
 from transformers import AutoConfig
 from typing_extensions import override
 
@@ -91,6 +91,10 @@ class DeepseekV3_2Model(DeepseekV3Model):
         """Create model configuration from huggingface config."""
         config = self.huggingface_config
 
+        # data_parallel_degree controls the attention strategy:
+        #   == num_devices  ->  DP attention  (each device owns a batch shard)
+        #   == 1            ->  TP attention  (heads sharded, tokens replicated)
+        data_parallel_degree = self.pipeline_config.model.data_parallel_degree
         max_batch_total_tokens = (
             self.pipeline_config.runtime.max_batch_total_tokens
         )
@@ -106,29 +110,40 @@ class DeepseekV3_2Model(DeepseekV3Model):
 
         dtype = self.dtype
         if dtype == DType.float8_e4m3fn:
-            float8_config = parse_float8_config(config, state_dict, dtype)
+            quant_config = parse_quant_config(config, state_dict, dtype)
         else:
-            float8_config = None
+            quant_config = None
 
-        if self.pipeline_config.runtime.ep_size == 1:
+        ep_size = self.pipeline_config.runtime.ep_size
+        if ep_size == 1:
             ep_config = None
         else:
-            if self.pipeline_config.runtime.ep_size % len(self.devices) != 0:
+            if ep_size % len(self.devices) != 0:
                 raise ValueError(
                     "If you are running with expert parallelism, ep_size must"
                     " be set to the total number of GPUs across nodes."
                 )
-            n_nodes = self.pipeline_config.runtime.ep_size // len(self.devices)
+            n_nodes = ep_size // len(self.devices)
+
+            # With a mixed TP-attention + EP-MoE strategy, the attention output
+            # will be scattered across ranks, so each rank will only send a
+            # subset of the tokens.
+            attn_tp_size = ep_size // data_parallel_degree
+            ep_max_rank_send_tokens = (
+                self.pipeline_config.runtime.max_batch_input_tokens
+                // attn_tp_size
+            )
+
             ep_kwargs: dict[str, Any] = dict(
                 dispatch_dtype=dtype,
                 combine_dtype=DType.bfloat16,
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
                 n_experts=config.n_routed_experts,
-                max_tokens_per_rank=self.pipeline_config.runtime.max_batch_input_tokens,
+                max_tokens_per_rank=ep_max_rank_send_tokens,
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
-                dispatch_fp8_config=None,
+                dispatch_quant_config=None,
             )
 
             if config.n_shared_experts == 1:
@@ -136,8 +151,8 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 # the same shape as routed experts.
                 ep_kwargs["fused_shared_expert"] = True
 
-            if float8_config is not None:
-                ep_kwargs["dispatch_fp8_config"] = float8_config
+            if quant_config is not None:
+                ep_kwargs["dispatch_quant_config"] = quant_config
 
             ep_config = EPConfig(**ep_kwargs)
 
@@ -164,13 +179,19 @@ class DeepseekV3_2Model(DeepseekV3Model):
         model_config.norm_dtype = norm_dtype
         model_config.correction_bias_dtype = correction_bias_dtype
         model_config.max_batch_context_length = max_batch_total_tokens
-        model_config.float8_config = float8_config
+        model_config.quant_config = quant_config
         model_config.ep_config = ep_config
         model_config.graph_mode = graph_mode
-        model_config.data_parallel_degree = (
-            self.pipeline_config.model.data_parallel_degree
-        )
+        model_config.data_parallel_degree = data_parallel_degree
         model_config.return_logits = self.return_logits
+
+        if ep_size > 1:
+            attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
+            logger.info(
+                f"DeepSeekV3.2: data_parallel_degree={data_parallel_degree},"
+                f" ep_size={ep_size}. Use {attn_strategy}-attention + EP-MoE"
+                f" strategy."
+            )
 
         return model_config
 

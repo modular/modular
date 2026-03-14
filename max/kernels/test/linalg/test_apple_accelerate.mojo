@@ -28,7 +28,7 @@ comptime b_type = DType.float32
 comptime c_type = DType.float32
 
 
-fn gemm_naive(
+def gemm_naive(
     c: NDBuffer[mut=True, ...],
     a: NDBuffer,
     b: NDBuffer,
@@ -123,7 +123,7 @@ def test_matmul() raises:
     test_matmul(2, 65, 1200)
 
 
-fn bmm_naive(
+def bmm_naive(
     c: NDBuffer[mut=True, ...],
     a: NDBuffer,
     b: NDBuffer,

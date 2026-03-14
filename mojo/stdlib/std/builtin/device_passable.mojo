@@ -22,7 +22,7 @@ trait DevicePassable:
     """Indicate the type being used on accelerator devices."""
 
     @staticmethod
-    fn _is_convertible_to_device_type[SrcT: AnyType]() -> Bool:
+    def _is_convertible_to_device_type[SrcT: AnyType]() -> Bool:
         comptime if not _type_is_eq[Self, Self.device_type]() and conforms_to(
             Self.device_type, DevicePassable
         ):
@@ -32,7 +32,7 @@ trait DevicePassable:
         else:
             return _type_is_eq[SrcT, Self.device_type]()
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         """
         Convert the host type object to a device_type and store it at the
         target address.
@@ -43,7 +43,7 @@ trait DevicePassable:
         ...
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """
         Gets the name of the host type (the one implementing this trait).
         For example, Int would return "Int", DeviceBuffer[DType.float32] would

@@ -64,7 +64,7 @@ def test_hash_byte_array() raises:
     # that at least the hash function returns _some_ different things.
 
     # TODO(MSTDL-472): fix this flaky check
-    # assert_true(num_same < 6, "too little entropy in hash fn low bits")
+    # assert_true(num_same < 6, "too little entropy in hash def low bits")
 
 
 def _test_hash_int_simd[
@@ -91,7 +91,8 @@ def _test_hash_int_simd[
     num_same += same_low_bits(hash(c), hash(d), bits)
 
     assert_true(
-        num_same < UInt8(max_num_same), "too little entropy in hash fn low bits"
+        num_same < UInt8(max_num_same),
+        "too little entropy in hash def low bits",
     )
 
 

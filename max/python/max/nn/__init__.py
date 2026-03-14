@@ -43,13 +43,6 @@ from .conv import Conv1D, Conv2d, Conv3D
 from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
 from .data_parallelism import split_batch, split_batch_replicated
 from .embedding import Embedding, VocabParallelEmbedding
-from .float8_config import (
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
-    Float8WeightScaleSpec,
-)
 from .identity import Identity
 from .kv_cache import (
     KVCacheInputs,
@@ -63,6 +56,13 @@ from .linear import MLP, ColumnParallelLinear, GPTQLinear, Linear
 from .lora import AttentionWithRopeAndLoRA, LinearLoRA, SupportsLoRA
 from .moe import MoE, MoEGate, MoEQuantized
 from .norm import ConstantLayerNorm, GroupNorm, LayerNorm, RMSNorm
+from .quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+)
 from .rotary_embedding import (
     DynamicRotaryEmbedding,
     LinearScalingParams,
@@ -78,7 +78,6 @@ from .sampling import (
     MinPSampler,
     RejectionSampler,
     RejectionSamplerWithResiduals,
-    TypicalAcceptanceSampler,
 )
 from .sequential import Sequential
 from .transformer import (
@@ -106,16 +105,12 @@ __all__ = [
     "DistributedTransformerBlock",
     "DynamicRotaryEmbedding",
     "Embedding",
-    "Float8Config",
-    "Float8InputScaleSpec",
-    "Float8ScaleGranularity",
-    "Float8ScaleOrigin",
-    "Float8WeightScaleSpec",
     "GGUFQAttentionWithRope",
     "GPTQAttentionWithRope",
     "GPTQLinear",
     "GroupNorm",
     "Identity",
+    "InputScaleSpec",
     "KVCacheInputs",
     "KVCacheMetrics",
     "KVCacheParams",
@@ -137,6 +132,7 @@ __all__ = [
     "Module",
     "MultiheadAttention",
     "PagedCacheValues",
+    "QuantConfig",
     "RMSNorm",
     "RaggedAttention",
     "RejectionSampler",
@@ -144,6 +140,8 @@ __all__ = [
     "ReturnHiddenStates",
     "ReturnLogits",
     "RotaryEmbedding",
+    "ScaleGranularity",
+    "ScaleOrigin",
     "Sequential",
     "Shardable",
     "Signals",
@@ -152,9 +150,9 @@ __all__ = [
     "TensorParallelLatentAttentionWithRope",
     "Transformer",
     "TransformerBlock",
-    "TypicalAcceptanceSampler",
     "VocabParallelEmbedding",
     "WeightNormConvTranspose1d",
+    "WeightScaleSpec",
     "YarnRotaryEmbedding",
     "YarnScalingParams",
     "build_max_lengths_tensor",

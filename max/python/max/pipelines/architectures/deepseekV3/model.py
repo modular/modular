@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import numpy as np
@@ -41,7 +41,7 @@ from max.pipelines.lib.config.config_enums import (
     is_float4_encoding,
     supported_encoding_dtype,
 )
-from max.pipelines.lib.float8 import parse_float8_config
+from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
@@ -89,6 +89,34 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
 class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     """A DeepseekV3 model."""
 
+    @staticmethod
+    def _get_mtp_draft_ep_dispatch_dtype(
+        pipeline_config: PipelineConfig,
+    ) -> DType | None:
+        """Returns the draft model's EP dispatch dtype for MTP with FP4 target.
+
+        When MTP speculative decoding is used with an FP4 target model, EP
+        buffers must be sized for the draft model's (larger) dispatch dtype.
+        Returns None if this override is not needed.
+        """
+        spec_config = pipeline_config.speculative
+        if spec_config is None or not spec_config.is_mtp():
+            return None
+
+        encoding = pipeline_config.model.quantization_encoding
+        if encoding is None or not is_float4_encoding(encoding):
+            return None
+
+        draft_encoding = (
+            pipeline_config.draft_model.quantization_encoding
+            if pipeline_config.draft_model is not None
+            else None
+        )
+        if draft_encoding is None:
+            return None
+
+        return supported_encoding_dtype(draft_encoding)
+
     @classmethod
     def get_kv_params(
         cls,
@@ -112,6 +140,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         """Create model configuration from huggingface config."""
         config = self.huggingface_config
 
+        # data_parallel_degree controls the attention strategy:
+        #   == num_devices  ->  DP attention  (each device owns a batch shard)
+        #   == 1            ->  TP attention  (heads sharded, tokens replicated)
+        data_parallel_degree = self.pipeline_config.model.data_parallel_degree
         max_batch_total_tokens = (
             self.pipeline_config.runtime.max_batch_total_tokens
         )
@@ -127,30 +159,49 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         dtype = self.dtype
         if dtype in (DType.float8_e4m3fn, DType.uint8, DType.float4_e2m1fn):
-            float8_config = parse_float8_config(config, state_dict, dtype)
+            quant_config = parse_quant_config(config, state_dict, dtype)
         else:
-            float8_config = None
+            quant_config = None
 
         # Check if EP should be configured
-        if self.pipeline_config.runtime.ep_size == 1:
+        ep_size = self.pipeline_config.runtime.ep_size
+        if ep_size == 1:
             ep_config = None
         else:
-            if self.pipeline_config.runtime.ep_size % len(self.devices) != 0:
+            if ep_size % len(self.devices) != 0:
                 raise ValueError(
                     "If you are running with expert parallelism, ep_size must"
                     " be set to the total number of GPUs across nodes."
                 )
-            n_nodes = self.pipeline_config.runtime.ep_size // len(self.devices)
+            n_nodes = ep_size // len(self.devices)
+
+            # With a mixed TP-attention + EP-MoE strategy, the attention output
+            # will be scattered across ranks, so each rank will only send a
+            # subset of the tokens.
+            attn_tp_size = ep_size // data_parallel_degree
+
+            # TODO: Support TP attention for FP8 Deepseek-V3 models.
+            if quant_config is not None and not quant_config.is_nvfp4:
+                if attn_tp_size > 1:
+                    raise ValueError(
+                        "TP attention is not supported for FP8 Deepseek-V3 models."
+                    )
+
+            ep_max_rank_send_tokens = (
+                self.pipeline_config.runtime.max_batch_input_tokens
+                // attn_tp_size
+            )
+
             ep_kwargs: dict[str, Any] = dict(
                 dispatch_dtype=dtype,
                 combine_dtype=DType.bfloat16,
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
                 n_experts=config.n_routed_experts,
-                max_tokens_per_rank=self.pipeline_config.runtime.max_batch_input_tokens,
+                max_tokens_per_rank=ep_max_rank_send_tokens,
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
-                dispatch_fp8_config=None,
+                dispatch_quant_config=None,
             )
 
             if config.n_shared_experts == 1:
@@ -158,20 +209,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 # the same shape as routed experts.
                 ep_kwargs["fused_shared_expert"] = True
 
-            if float8_config is not None:
-                ep_kwargs["dispatch_fp8_config"] = float8_config
+            if quant_config is not None:
+                ep_kwargs["dispatch_quant_config"] = quant_config
 
             ep_config = EPConfig(**ep_kwargs)
-
-        # Determine data_parallel_degree: EP requires data-parallel attention
-        if ep_config is not None:
-            # When EP is used, data parallelism is required for attention
-            data_parallel_degree = len(self.devices)
-        else:
-            # Use the configured value from pipeline_config
-            data_parallel_degree = (
-                self.pipeline_config.model.data_parallel_degree
-            )
 
         norm_dtype = state_dict[
             "layers.0.self_attn.kv_a_layernorm.weight"
@@ -196,12 +237,20 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         model_config.norm_dtype = norm_dtype
         model_config.correction_bias_dtype = correction_bias_dtype
         model_config.max_batch_context_length = max_batch_total_tokens
-        model_config.float8_config = float8_config
+        model_config.quant_config = quant_config
         model_config.ep_config = ep_config
         model_config.graph_mode = graph_mode
         model_config.data_parallel_degree = data_parallel_degree
         model_config.return_logits = self.return_logits
         model_config.return_hidden_states = self.return_hidden_states
+
+        if ep_size > 1:
+            attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
+            logger.info(
+                f"DeepSeekV3: data_parallel_degree={data_parallel_degree},"
+                f" ep_size={ep_size}. Use {attn_strategy}-attention + EP-MoE"
+                f" strategy."
+            )
 
         return model_config
 
@@ -315,6 +364,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         assert encoding is not None
         mla_activation_memory: int = 0
         moe_activation_memory: int = 0
+        ep_buffer_memory = 0
 
         # During the prefill, we need to up-project all the KV cache for
         # current requests. The total context length of requests in a batch
@@ -337,17 +387,25 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 * pipeline_config.model.kv_cache.cache_dtype.size_in_bytes
             )
 
-        # Estimate activation memory during Expert Parallel MoE.
+        # Estimate buffer and activation memory during Expert Parallel MoE.
         if pipeline_config.runtime.ep_size > 1:
             n_gpus_per_node = len(pipeline_config.model.device_specs)
-            max_input_len_per_rank = (
-                pipeline_config.runtime.max_batch_input_tokens
+
+            # With a mixed TP-attention + EP-MoE strategy, the attention output
+            # will be scattered across ranks, so each rank will only send a
+            # subset of the tokens.
+            attn_tp_size = (
+                pipeline_config.runtime.ep_size
+                // pipeline_config.model.data_parallel_degree
+            )
+            ep_max_rank_send_tokens = (
+                pipeline_config.runtime.max_batch_input_tokens // attn_tp_size
             )
 
             # Calculate the maximum number of tokens a rank may receive during
             # all-to-all routing. Each token selects top_k experts, and in the
             # worst case all selections land on one rank.
-            max_recv_tokens_per_rank = max_input_len_per_rank * min(
+            max_recv_tokens_per_rank = ep_max_rank_send_tokens * min(
                 huggingface_config.n_routed_experts,
                 pipeline_config.runtime.ep_size
                 * huggingface_config.num_experts_per_tok,
@@ -371,26 +429,24 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
             # Adding 256MB per GPU to account for misc items (e.g. FP8 scalars).
             moe_activation_memory += 256 * 1024 * 1024
-
             moe_activation_memory *= n_gpus_per_node
 
-        # We only need to consider the maximum of the MLA and MoE activation
-        # memories, because the MLA and MoE layers are executed sequentially.
-        activation_memory = max(mla_activation_memory, moe_activation_memory)
-
-        # EP SHMEM communication buffers are persistent (allocated once at
-        # model init, not freed between layers), so add on top of the
-        # per-layer activation peak.
-        ep_buffer_memory = 0
-        if pipeline_config.runtime.ep_size > 1:
-            n_gpus_per_node = len(pipeline_config.model.device_specs)
+            # EP SHMEM communication buffers are persistent (allocated once at
+            # model init, not freed between layers).
             n_nodes = pipeline_config.runtime.ep_size // n_gpus_per_node
+
+            ep_dispatch_dtype = supported_encoding_dtype(encoding)
+            draft_ep_dtype = cls._get_mtp_draft_ep_dispatch_dtype(
+                pipeline_config
+            )
+            if draft_ep_dtype is not None:
+                ep_dispatch_dtype = draft_ep_dtype
 
             per_device_ep_memory = estimate_ep_memory_usage(
                 hidden_size=huggingface_config.hidden_size,
-                dispatch_dtype=supported_encoding_dtype(encoding),
+                dispatch_dtype=ep_dispatch_dtype,
                 combine_dtype=DType.bfloat16,
-                max_tokens_per_rank=pipeline_config.runtime.max_batch_input_tokens,
+                max_tokens_per_rank=ep_max_rank_send_tokens,
                 n_experts=huggingface_config.n_routed_experts,
                 n_nodes=n_nodes,
                 n_gpus_per_node=n_gpus_per_node,
@@ -403,6 +459,9 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 f"{to_human_readable_bytes(ep_buffer_memory)}"
             )
 
+        # We only need to consider the maximum of the MLA and MoE activation
+        # memories, because the MLA and MoE layers are executed sequentially.
+        activation_memory = max(mla_activation_memory, moe_activation_memory)
         activation_memory += ep_buffer_memory
 
         if activation_memory != 0:
@@ -460,8 +519,28 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # since NVSHMEM functions cannot be linked without real GPU devices.
         # We still keep ep_config to generate the correct graph structure.
         if config.ep_config is not None and not is_virtual_device_mode():
-            self.ep_comm_initializer = EPCommInitializer(config.ep_config)
+            ep_alloc_config = config.ep_config
+            # When EAGLE/MTP speculative decoding shares EP buffers between
+            # target (FP4) and draft (BF16) models, allocate buffers
+            # large enough for the draft model's dispatch dtype.
+            draft_ep_dtype = self._get_mtp_draft_ep_dispatch_dtype(
+                self.pipeline_config
+            )
+            if draft_ep_dtype is not None:
+                ep_alloc_config = replace(
+                    config.ep_config,
+                    dispatch_dtype=draft_ep_dtype,
+                    dispatch_quant_config=None,
+                )
+                logger.info(
+                    f"Upsizing EP buffers for draft model dispatch dtype: {draft_ep_dtype}"
+                )
+            self.ep_comm_initializer = EPCommInitializer(ep_alloc_config)
             self.ep_comm_initializer.ep_init(session)
+            # ep_init() sets node_id on the initializer's config; propagate
+            # it back to the model's ep_config (which may be a different
+            # object when we created a copy above).
+            config.ep_config.node_id = ep_alloc_config.node_id
             if config.ep_config.node_id == -1:
                 raise ValueError(
                     "EP node ID is not set. Please check if the EP initialization is successful."
@@ -535,42 +614,24 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         assert isinstance(model_inputs, DeepseekV3Inputs)
 
         model_outputs = self.model.execute(*model_inputs.buffers)
-
-        num_hidden_state_outputs = len(self.devices)
         num_outputs = len(model_outputs)
 
         # Possible output configurations:
-        # - 1 output: next_token_logits only
+        # - 4 outputs: next_token_logits, logits, logit_offsets + hidden_states
         # - 3 outputs: next_token_logits, logits, logit_offsets (variable logits)
-        # - 1 + N: next_token_logits + hidden_states (one per device)
-        # - 3 + N: next_token_logits, logits, logit_offsets + hidden_states (one per device)
+        # - 2 outputs: next_token_logits + hidden_states
+        # - 1 output: next_token_logits only
 
-        if num_outputs == 3 + num_hidden_state_outputs:
+        if num_outputs == 4:
             assert isinstance(model_outputs[0], Buffer)
             assert isinstance(model_outputs[1], Buffer)
             assert isinstance(model_outputs[2], Buffer)
-            hidden_states_list: list[Buffer] = []
-            for i in range(num_hidden_state_outputs):
-                hs = model_outputs[3 + i]
-                assert isinstance(hs, Buffer)
-                hidden_states_list.append(hs)
+            assert isinstance(model_outputs[3], Buffer)
             return ModelOutputs(
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[1],
                 logit_offsets=model_outputs[2],
-                hidden_states=hidden_states_list,
-            )
-        elif num_outputs == 1 + num_hidden_state_outputs:
-            assert isinstance(model_outputs[0], Buffer)
-            hidden_states_list = []
-            for i in range(num_hidden_state_outputs):
-                hs = model_outputs[1 + i]
-                assert isinstance(hs, Buffer)
-                hidden_states_list.append(hs)
-            return ModelOutputs(
-                next_token_logits=model_outputs[0],
-                logits=model_outputs[0],
-                hidden_states=hidden_states_list,
+                hidden_states=model_outputs[3],
             )
         elif num_outputs == 3:
             assert isinstance(model_outputs[0], Buffer)
@@ -580,6 +641,14 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[1],
                 logit_offsets=model_outputs[2],
+            )
+        elif num_outputs == 2:
+            assert isinstance(model_outputs[0], Buffer)
+            assert isinstance(model_outputs[1], Buffer)
+            return ModelOutputs(
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[0],
+                hidden_states=model_outputs[1],
             )
         else:
             assert isinstance(model_outputs[0], Buffer)

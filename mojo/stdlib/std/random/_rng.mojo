@@ -58,7 +58,7 @@ struct _PhiloxWrapper(Copyable):
     var _cache_index: Int
     """Index into the cache for the next value to return."""
 
-    fn __init__(out self, seed: UInt64 = 0):
+    def __init__(out self, seed: UInt64 = 0):
         """Initializes the Philox wrapper.
 
         Args:
@@ -70,7 +70,7 @@ struct _PhiloxWrapper(Copyable):
             Self._cache_length
         )  # Start empty to trigger generation
 
-    fn next_uint32(mut self) -> UInt32:
+    def next_uint32(mut self) -> UInt32:
         """Generates the next 32-bit random number.
 
         Returns:
@@ -84,7 +84,7 @@ struct _PhiloxWrapper(Copyable):
         self._cache_index += 1
         return result
 
-    fn next_uint64(mut self) -> UInt64:
+    def next_uint64(mut self) -> UInt64:
         """Generates a 64-bit random number from two 32-bit values.
 
         Returns:
@@ -94,7 +94,7 @@ struct _PhiloxWrapper(Copyable):
         var low = UInt64(self.next_uint32())
         return (high << 32) | low
 
-    fn next_float64(mut self) -> Float64:
+    def next_float64(mut self) -> Float64:
         """Generates a random Float64 in the range [0, 1).
 
         Returns:
@@ -121,11 +121,11 @@ struct _RandomState(Copyable):
     var _generator: _PhiloxWrapper
     """The underlying Philox wrapper generator."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initializes with default seed."""
         self._generator = _PhiloxWrapper(0)
 
-    fn __init__(out self, seed: UInt64):
+    def __init__(out self, seed: UInt64):
         """Initializes with a specific seed.
 
         Args:
@@ -133,7 +133,7 @@ struct _RandomState(Copyable):
         """
         self._generator = _PhiloxWrapper(seed)
 
-    fn seed(mut self, value: UInt64):
+    def seed(mut self, value: UInt64):
         """Re-seeds the generator.
 
         Args:
@@ -141,7 +141,7 @@ struct _RandomState(Copyable):
         """
         self._generator = _PhiloxWrapper(value)
 
-    fn random_uint64(mut self, min: UInt64, max: UInt64) -> UInt64:
+    def random_uint64(mut self, min: UInt64, max: UInt64) -> UInt64:
         """Generates a random UInt64 in the range [min, max].
 
         Args:
@@ -167,7 +167,7 @@ struct _RandomState(Copyable):
             if value >= threshold:
                 return min + (value % range)
 
-    fn random_int64(mut self, min: Int64, max: Int64) -> Int64:
+    def random_int64(mut self, min: Int64, max: Int64) -> Int64:
         """Generates a random Int64 in the range [min, max].
 
         Args:
@@ -192,7 +192,7 @@ struct _RandomState(Copyable):
             if value >= threshold:
                 return min + Int64(value % range)
 
-    fn random_float64(mut self, min: Float64, max: Float64) -> Float64:
+    def random_float64(mut self, min: Float64, max: Float64) -> Float64:
         """Generates a random Float64 in the range [min, max).
 
         Args:
@@ -217,7 +217,7 @@ struct _RandomState(Copyable):
 
         return min + unit * range
 
-    fn normal_float64(mut self, mean: Float64, std_dev: Float64) -> Float64:
+    def normal_float64(mut self, mean: Float64, std_dev: Float64) -> Float64:
         """Generates a random Float64 from a normal distribution.
 
         Uses the Box-Muller transform to generate normally distributed values.
@@ -257,7 +257,7 @@ struct _RandomState(Copyable):
         return mean + z0
 
 
-fn _init_random_state() -> _RandomState:
+def _init_random_state() -> _RandomState:
     """Initializes the global random state.
 
     Returns:
@@ -266,7 +266,7 @@ fn _init_random_state() -> _RandomState:
     return _RandomState()
 
 
-fn _get_global_random_state(
+def _get_global_random_state(
     out result: UnsafePointer[_RandomState, MutExternalOrigin]
 ):
     """Gets the global random state.

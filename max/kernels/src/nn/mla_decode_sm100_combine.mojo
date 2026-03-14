@@ -94,18 +94,18 @@ struct CombineParams[
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         return "CombineParams"
 
     @staticmethod
-    fn get_device_type_name() -> String:
+    def get_device_type_name() -> String:
         return "CombineParams"
 
-    fn __init__(
+    def __init__(
         out self,
         out_accum_split_ptr: UnsafePointer[
             Scalar[Self.output_type], origin=MutAnyOrigin
@@ -149,7 +149,7 @@ struct CombineParams[
 # Warp-level reduction utilities
 # ===----------------------------------------------------------------------=== #
 @always_inline
-fn warp_reduce_max(val: Float32) -> Float32:
+def warp_reduce_max(val: Float32) -> Float32:
     """Warp-level max reduction using butterfly pattern."""
     var result = val
 
@@ -161,7 +161,7 @@ fn warp_reduce_max(val: Float32) -> Float32:
 
 
 @always_inline
-fn warp_reduce_sum(val: Float32) -> Float32:
+def warp_reduce_sum(val: Float32) -> Float32:
     """Warp-level sum reduction using butterfly pattern."""
     var result = val
 
@@ -175,7 +175,7 @@ fn warp_reduce_sum(val: Float32) -> Float32:
 # ===----------------------------------------------------------------------=== #
 # Main Combine Kernel - Optimized version matching FlashMLA pattern
 # ===----------------------------------------------------------------------=== #
-fn mla_combine_kernel[
+def mla_combine_kernel[
     output_type: DType,
     accum_type: DType,
     head_dim: Int,
@@ -397,7 +397,7 @@ fn mla_combine_kernel[
 # ===----------------------------------------------------------------------=== #
 # Kernel Dispatch Function
 # ===----------------------------------------------------------------------=== #
-fn launch_mla_combine_kernel[
+def launch_mla_combine_kernel[
     output_type: DType,
     accum_type: DType,
     head_dim: Int,
@@ -480,7 +480,7 @@ fn launch_mla_combine_kernel[
 # ===----------------------------------------------------------------------=== #
 # High-level dispatcher to be called from mla_decode_sm100_dispatch.mojo
 # ===----------------------------------------------------------------------=== #
-fn mla_decode_combine_partial_outputs[
+def mla_decode_combine_partial_outputs[
     output_type: DType,
     accum_type: DType,
     head_dim: Int,

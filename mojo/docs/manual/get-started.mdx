@@ -434,21 +434,16 @@ implement, usually in the form of one or more method signatures.
 
 ## 5. Create and use a function to print the grid
 
-Now let's create a function to generate a string representation of the game grid
-so we can print it to the terminal.
-
-There are actually two different keywords we can use to define functions in
-Mojo: `def` and `fn`. Using `fn` gives us finer-level control over the function
-definition, whereas `def` provides a good set of default behaviors for most use
-cases. See [Functions](/mojo/manual/functions) for more information about
-defining and using functions in Mojo.
+Now let's create a function using the `def` keyword to generate a
+string representation of the game grid so we can print it to the
+terminal.
 
 Let's add the following definition of a function named `grid_str()` to our
 program. The Mojo compiler doesn't care whether we add our function before or
 after `main()`, but the convention is to put `main()` at the end.
 
 ```mojo title="life.mojo"
-fn grid_str(rows: Int, cols: Int, grid: List[List[Int]]) -> String:
+def grid_str(rows: Int, cols: Int, grid: List[List[Int]]) -> String:
     # Create an empty String
     str = String()
 
@@ -585,7 +580,7 @@ struct definition. Here's an example of how we *could* implement the
 constructor for `Grid`:
 
 ```mojo
-    fn __init__(out self, rows: Int, cols: Int, var data: List[List[Int]]):
+    def __init__(out self, rows: Int, cols: Int, var data: List[List[Int]]):
         self.rows = rows
         self.cols = cols
         self.data = data^
@@ -666,7 +661,7 @@ code to use it.
 ```mojo title="life.mojo"
 from gridv1 import Grid
 
-fn grid_str(grid: Grid) -> String:
+def grid_str(grid: Grid) -> String:
     # Create an empty String
     str = String()
 
@@ -754,7 +749,7 @@ struct Grid(Copyable):
     var cols: Int
     var data: List[List[Int]]
 
-    fn grid_str(self) -> String:
+    def grid_str(self) -> String:
         # Create an empty String
         writer = String()
 
@@ -850,7 +845,7 @@ the type conforms to `Writable` and update the `grid_str()` to `write_to()`.
 struct Grid(Copyable, Writable):
     ...
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
       # Iterate through rows 0 through rows-1
       for row in range(self.rows):
           # Iterate through columns 0 through cols-1
@@ -895,7 +890,7 @@ mojo life.mojo
 
 ## 10. Implement methods to support indexing
 
-Looking at the implementation of `__str__()`, you'll notice that we use
+Looking at the implementation of `write_to()`, you'll notice that we use
 `self.data[row][col]` to retrieve the value of a cell in the grid. If
 `my_grid` is an instance of `Grid`, we would use `my_grid.data[row][col]` to
 refer to a cell in the grid. This breaks a fundamental principle of
@@ -921,12 +916,12 @@ built-in operators for a custom type by implementing special *dunder*
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(Copyable, Stringable):
+struct Grid(Copyable, Writable):
     ...
-    fn __getitem__(self, row: Int, col: Int) -> Int:
+    def __getitem__(self, row: Int, col: Int) -> Int:
         return self.data[row][col]
 
-    fn __setitem__(mut self, row: Int, col: Int, value: Int) -> None:
+    def __setitem__(mut self, row: Int, col: Int, value: Int) -> None:
         self.data[row][col] = value
 ```
 
@@ -944,14 +939,14 @@ the `mut`
 state of the current instance. If we were to omit `mut`, we would get an error
 because the compiler would default to read-only access for the argument.
 
-Now that we've implemented these methods, we can update `__str__()` to use
+Now that we've implemented these methods, we can update `write_to()` to use
 indexing syntax to access the cell value.
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(Copyable, Stringable):
+struct Grid(Copyable, Writable):
     ...
-    fn __str__(self) -> String:
+    def write_to(self, mut writer: Some[Writer]):
         ...
             # Iterate through columns 0 through cols-1
             for col in range(self.cols):
@@ -964,31 +959,30 @@ struct Grid(Copyable, Stringable):
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(Copyable, Stringable):
+struct Grid(Copyable, Writable):
     var rows: Int
     var cols: Int
     var data: List[List[Int]]
 
-    fn __str__(self) -> String:
-        # Create an empty String
-        str = String()
-
+    def write_to(self, mut writer: Some[Writer]):
         # Iterate through rows 0 through rows-1
         for row in range(self.rows):
             # Iterate through columns 0 through cols-1
             for col in range(self.cols):
                 if self[row, col] == 1:
-                    str += "*"  # If cell is populated, append an asterisk
+                    # If cell is populated, write an asterisk
+                    writer.write_string("*")
                 else:
-                    str += " "  # If cell is not populated, append a space
+                    # If cell is not populated, write a space
+                    writer.write_string(" ")
             if row != self.rows - 1:
-                str += "\n"     # Add a newline between rows, but not at the end
-        return str
+                # Write a newline between rows, but not at the end
+                writer.write_string("\n")
 
-    fn __getitem__(self, row: Int, col: Int) -> Int:
+    def __getitem__(self, row: Int, col: Int) -> Int:
         return self.data[row][col]
 
-    fn __setitem__(mut self, row: Int, col: Int, value: Int) -> None:
+    def __setitem__(mut self, row: Int, col: Int, value: Int) -> None:
         self.data[row][col] = value
 ```
 
@@ -1013,10 +1007,10 @@ function. We indicate that a method is static by using the
 import std.random
 
 @fieldwise_init
-struct Grid(Copyable, Stringable):
+struct Grid(Copyable, Writable):
     ...
     @staticmethod
-    fn random(rows: Int, cols: Int) -> Self:
+    def random(rows: Int, cols: Int) -> Self:
         # Seed the random number generator using the current time.
         random.seed()
 
@@ -1118,9 +1112,9 @@ we'll have `evolve()` return a new instance of `Grid` for the next generation.
 
 ```mojo title="gridv1.mojo"
 ...
-struct Grid(Copyable, Stringable):
+struct Grid(Copyable, Writable):
     ...
-    fn evolve(self) -> Self:
+    def evolve(self) -> Self:
         next_generation = List[List[Int]]()
 
         for row in range(self.rows):

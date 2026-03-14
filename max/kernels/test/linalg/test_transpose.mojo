@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, TileTensor
+from layout.tile_layout import row_major
+from layout.tile_tensor import stack_allocation
 from linalg.transpose import (
     _simplify_transpose_perms,
     transpose,
@@ -23,40 +23,30 @@ from linalg.transpose import (
 from std.utils.index import IndexList
 
 
-# CHECK-LABEL: test_transpose_4x4_ndbuffer
-fn test_transpose_4x4_ndbuffer():
-    print("== test_transpose_4x4_ndbuffer")
+# CHECK-LABEL: test_transpose_4x4_tiletensor
+def test_transpose_4x4_tiletensor():
+    print("== test_transpose_4x4_tiletensor")
 
-    # Create a matrix of the form
-    # [[0, 1, 2, 3],
-    #  [4, 5, 6, 7],
-    # ...
-    #  [12, 13, 14, 15]]
-    var matrix = NDBuffer[
-        rank=2,
-        DType.int,
-        MutAnyOrigin,
-        DimList(4, 4),
-    ].stack_allocation()
+    var matrix = stack_allocation[dtype=DType.int](row_major[4, 4]())
 
-    matrix[IndexList[2](0, 0)] = 0
-    matrix[IndexList[2](0, 1)] = 1
-    matrix[IndexList[2](0, 2)] = 2
-    matrix[IndexList[2](0, 3)] = 3
-    matrix[IndexList[2](1, 0)] = 4
-    matrix[IndexList[2](1, 1)] = 5
-    matrix[IndexList[2](1, 2)] = 6
-    matrix[IndexList[2](1, 3)] = 7
-    matrix[IndexList[2](2, 0)] = 8
-    matrix[IndexList[2](2, 1)] = 9
-    matrix[IndexList[2](2, 2)] = 10
-    matrix[IndexList[2](2, 3)] = 11
-    matrix[IndexList[2](3, 0)] = 12
-    matrix[IndexList[2](3, 1)] = 13
-    matrix[IndexList[2](3, 2)] = 14
-    matrix[IndexList[2](3, 3)] = 15
+    matrix[0, 0] = 0
+    matrix[0, 1] = 1
+    matrix[0, 2] = 2
+    matrix[0, 3] = 3
+    matrix[1, 0] = 4
+    matrix[1, 1] = 5
+    matrix[1, 2] = 6
+    matrix[1, 3] = 7
+    matrix[2, 0] = 8
+    matrix[2, 1] = 9
+    matrix[2, 2] = 10
+    matrix[2, 3] = 11
+    matrix[3, 0] = 12
+    matrix[3, 1] = 13
+    matrix[3, 2] = 14
+    matrix[3, 3] = 15
 
-    transpose_inplace[4, 4, DType.int](matrix)
+    transpose_inplace[4, 4, DType.int](matrix._to_ndbuffer())
 
     # CHECK: 0
     print(matrix[0, 0])
@@ -107,111 +97,81 @@ fn test_transpose_4x4_ndbuffer():
     print(matrix[3, 3])
 
 
-# CHECK-LABEL: test_transpose_8x8_ndbuffer
-fn test_transpose_8x8_ndbuffer():
-    print("== test_transpose_8x8_ndbuffer")
+# CHECK-LABEL: test_transpose_8x8_tiletensor
+def test_transpose_8x8_tiletensor():
+    print("== test_transpose_8x8_tiletensor")
 
     comptime num_rows: Int = 8
     comptime num_cols: Int = 8
 
-    var matrix = NDBuffer[
-        rank=2,
-        DType.int,
-        MutAnyOrigin,
-        DimList(num_rows, num_cols),
-    ].stack_allocation()
+    var matrix = stack_allocation[dtype=DType.int](
+        row_major[num_rows, num_cols]()
+    )
 
     for i in range(num_rows):
         for j in range(num_cols):
             var val = i * num_cols + j
-            matrix[IndexList[2](i, j)] = Scalar[DType.int](val)
+            matrix[i, j] = Scalar[DType.int](val)
 
-    transpose_inplace[num_rows, num_cols, DType.int](matrix)
+    transpose_inplace[num_rows, num_cols, DType.int](matrix._to_ndbuffer())
 
     for i in range(num_rows):
         for j in range(num_cols):
             var expected: Int = j * num_rows + i
-            var actual: Int = Int(matrix[i, j][0])
+            var actual: Int = Int(matrix[i, j])
             # CHECK-NOT: Transpose 8x8 failed
             if expected != actual:
                 print("Transpose 8x8 failed")
 
 
 # CHECK-LABEL: test_transpose_16x16
-fn test_transpose_16x16_ndbuffer():
-    print("== test_transpose_16x16_ndbuffer")
+def test_transpose_16x16_tiletensor():
+    print("== test_transpose_16x16_tiletensor")
 
     comptime num_rows: Int = 16
     comptime num_cols: Int = 16
 
-    var matrix = NDBuffer[
-        rank=2,
-        DType.int,
-        MutAnyOrigin,
-        DimList(num_rows, num_cols),
-    ].stack_allocation()
+    var matrix = stack_allocation[dtype=DType.int](
+        row_major[num_rows, num_cols]()
+    )
 
     for i in range(num_rows):
         for j in range(num_cols):
             var val = i * num_cols + j
-            matrix[IndexList[2](i, j)] = Scalar[DType.int](val)
+            matrix[i, j] = Scalar[DType.int](val)
 
-    transpose_inplace[num_rows, num_cols, DType.int](matrix)
+    transpose_inplace[num_rows, num_cols, DType.int](matrix._to_ndbuffer())
 
     for i in range(num_rows):
         for j in range(num_cols):
             var expected: Int = j * num_rows + i
-            var actual: Int = Int(matrix[i, j][0])
+            var actual: Int = Int(matrix[i, j])
             # CHECK-NOT: Transpose 16x16 failed
             if expected != actual:
                 print("Transpose 16x16 failed")
 
 
-# CHECK-LABEL: test_transpose_2d_identity_ndbuffer
-fn test_transpose_2d_identity_ndbuffer() raises:
-    print("== test_transpose_2d_identity_ndbuffer")
+# CHECK-LABEL: test_transpose_2d_identity_tiletensor
+def test_transpose_2d_identity_tiletensor() raises:
+    print("== test_transpose_2d_identity_tiletensor")
 
-    comptime in_shape = DimList(3, 3)
-    # Create an input matrix of the form
-    # [[1, 2, 3],
-    #  [4, 5, 6],
-    #  [7, 8, 9]]
-    var input = NDBuffer[
-        rank=2, DType.int, MutAnyOrigin, in_shape
-    ].stack_allocation()
-    input[IndexList[2](0, 0)] = 1
-    input[IndexList[2](0, 1)] = 2
-    input[IndexList[2](0, 2)] = 3
-    input[IndexList[2](1, 0)] = 4
-    input[IndexList[2](1, 1)] = 5
-    input[IndexList[2](1, 2)] = 6
-    input[IndexList[2](2, 0)] = 7
-    input[IndexList[2](2, 1)] = 8
-    input[IndexList[2](2, 2)] = 9
+    var input = stack_allocation[dtype=DType.int](row_major[3, 3]())
+    input[0, 0] = 1
+    input[0, 1] = 2
+    input[0, 2] = 3
+    input[1, 0] = 4
+    input[1, 1] = 5
+    input[1, 2] = 6
+    input[2, 0] = 7
+    input[2, 1] = 8
+    input[2, 2] = 9
 
-    # Create an identity permutation array of the form
-    # [0, 1]
-    var perm = NDBuffer[rank=1, DType.int, MutAnyOrigin, 2].stack_allocation()
-    perm[0] = 0
-    perm[1] = 1
+    var perm: InlineArray[Scalar[DType.int], 2] = [0, 1]
 
-    # Create an output matrix of the form
-    # [[-1, -1, -1],
-    #  [-1, -1, -1],
-    #  [-1, -1, -1]]
-    comptime out_shape = DimList(3, 3)
-    var output = NDBuffer[
-        rank=2, DType.int, MutAnyOrigin, out_shape
-    ].stack_allocation()
-    output.fill(0)
+    var output = stack_allocation[dtype=DType.int](row_major[3, 3]())
+    _ = output.fill(0)
 
-    # transpose
-    transpose(output, input, perm.data)
-
-    # output should have form
-    # [[1, 2, 3],
-    #  [4, 5, 6],
-    #  [7, 8, 9]]
+    transpose(output, input, UnsafePointer(to=perm[0]))
 
     # CHECK: 1
     print(output[0, 0])
@@ -233,51 +193,27 @@ fn test_transpose_2d_identity_ndbuffer() raises:
     print(output[2, 2])
 
 
-# CHECK-LABEL: test_transpose_2d_ndbuffer
-fn test_transpose_2d_ndbuffer() raises:
-    print("== test_transpose_2d_ndbuffer")
+# CHECK-LABEL: test_transpose_2d_tiletensor
+def test_transpose_2d_tiletensor() raises:
+    print("== test_transpose_2d_tiletensor")
 
-    comptime in_shape = DimList(3, 3)
-    # Create an input matrix of the form
-    # [[1, 2, 3],
-    #  [4, 5, 6],
-    #  [7, 8, 9]]
-    var input = NDBuffer[
-        rank=2, DType.int, MutAnyOrigin, in_shape
-    ].stack_allocation()
-    input[IndexList[2](0, 0)] = 1
-    input[IndexList[2](0, 1)] = 2
-    input[IndexList[2](0, 2)] = 3
-    input[IndexList[2](1, 0)] = 4
-    input[IndexList[2](1, 1)] = 5
-    input[IndexList[2](1, 2)] = 6
-    input[IndexList[2](2, 0)] = 7
-    input[IndexList[2](2, 1)] = 8
-    input[IndexList[2](2, 2)] = 9
+    var input = stack_allocation[dtype=DType.int](row_major[3, 3]())
+    input[0, 0] = 1
+    input[0, 1] = 2
+    input[0, 2] = 3
+    input[1, 0] = 4
+    input[1, 1] = 5
+    input[1, 2] = 6
+    input[2, 0] = 7
+    input[2, 1] = 8
+    input[2, 2] = 9
 
-    # Create a permutation array of the form
-    # [1, 0]
-    var perm = NDBuffer[rank=1, DType.int, MutAnyOrigin, 2].stack_allocation()
-    perm[0] = 1
-    perm[1] = 0
+    var perm: InlineArray[Scalar[DType.int], 2] = [1, 0]
 
-    # Create an output matrix of the form
-    # [[-1, -1, -1],
-    #  [-1, -1, -1],
-    #  [-1, -1, -1]]
-    comptime out_shape = DimList(3, 3)
-    var output = NDBuffer[
-        rank=2, DType.int, MutAnyOrigin, out_shape
-    ].stack_allocation()
-    output.fill(0)
+    var output = stack_allocation[dtype=DType.int](row_major[3, 3]())
+    _ = output.fill(0)
 
-    # transpose
-    transpose(output, input, perm.data)
-
-    # output should have form
-    # [[1, 4, 7],
-    #  [2, 5, 8],
-    #  [3, 6, 9]]
+    transpose(output, input, UnsafePointer(to=perm[0]))
 
     # CHECK: 1
     print(output[0, 0])
@@ -299,58 +235,30 @@ fn test_transpose_2d_ndbuffer() raises:
     print(output[2, 2])
 
 
-# CHECK-LABEL: test_transpose_3d_identity_ndbuffer
-fn test_transpose_3d_identity_ndbuffer() raises:
-    print("== test_transpose_3d_identity_ndbuffer")
+# CHECK-LABEL: test_transpose_3d_identity_tiletensor
+def test_transpose_3d_identity_tiletensor() raises:
+    print("== test_transpose_3d_identity_tiletensor")
 
-    comptime in_shape = DimList(2, 2, 3)
-    # Create an input matrix of the form
-    # [[[1, 2, 3],
-    #   [4, 5, 6]],
-    #  [[7, 8, 9],
-    #   [10, 11, 12]]]
-    var input = NDBuffer[
-        rank=3, DType.int, MutAnyOrigin, in_shape
-    ].stack_allocation()
-    input[IndexList[3](0, 0, 0)] = 1
-    input[IndexList[3](0, 0, 1)] = 2
-    input[IndexList[3](0, 0, 2)] = 3
-    input[IndexList[3](0, 1, 0)] = 4
-    input[IndexList[3](0, 1, 1)] = 5
-    input[IndexList[3](0, 1, 2)] = 6
-    input[IndexList[3](1, 0, 0)] = 7
-    input[IndexList[3](1, 0, 1)] = 8
-    input[IndexList[3](1, 0, 2)] = 9
-    input[IndexList[3](1, 1, 0)] = 10
-    input[IndexList[3](1, 1, 1)] = 11
-    input[IndexList[3](1, 1, 2)] = 12
+    var input = stack_allocation[dtype=DType.int](row_major[2, 2, 3]())
+    input[0, 0, 0] = 1
+    input[0, 0, 1] = 2
+    input[0, 0, 2] = 3
+    input[0, 1, 0] = 4
+    input[0, 1, 1] = 5
+    input[0, 1, 2] = 6
+    input[1, 0, 0] = 7
+    input[1, 0, 1] = 8
+    input[1, 0, 2] = 9
+    input[1, 1, 0] = 10
+    input[1, 1, 1] = 11
+    input[1, 1, 2] = 12
 
-    # Create an identity permutation array of the form
-    # [0, 1, 2]
-    var perm = NDBuffer[rank=1, DType.int, MutAnyOrigin, 3].stack_allocation()
-    perm[0] = 0
-    perm[1] = 1
-    perm[2] = 2
+    var perm: InlineArray[Scalar[DType.int], 3] = [0, 1, 2]
 
-    # Create an output matrix of the form
-    # [[[-1, -1, -1],
-    #   [-1, -1, -1]],
-    #  [[-1, -1, -1],
-    #   [-1, -1, -1]]]
-    comptime out_shape = DimList(2, 2, 3)
-    var output = NDBuffer[
-        rank=3, DType.int, MutAnyOrigin, out_shape
-    ].stack_allocation()
-    output.fill(0)
+    var output = stack_allocation[dtype=DType.int](row_major[2, 2, 3]())
+    _ = output.fill(0)
 
-    # transpose
-    transpose(output, input, perm.data)
-
-    # output should have form
-    # [[[1, 2, 3],
-    #   [4, 5, 6]],
-    #  [[7, 8, 9],
-    #   [10, 11, 12]]]
+    transpose(output, input, UnsafePointer(to=perm[0]))
 
     # CHECK: 1
     print(output[0, 0, 0])
@@ -378,60 +286,30 @@ fn test_transpose_3d_identity_ndbuffer() raises:
     print(output[1, 1, 2])
 
 
-# CHECK-LABEL: test_transpose_3d_ndbuffer
-fn test_transpose_3d_ndbuffer() raises:
-    print("== test_transpose_3d_ndbuffer")
+# CHECK-LABEL: test_transpose_3d_tiletensor
+def test_transpose_3d_tiletensor() raises:
+    print("== test_transpose_3d_tiletensor")
 
-    comptime in_shape = DimList(2, 2, 3)
-    # Create an input matrix of the form
-    # [[[1, 2, 3],
-    #   [4, 5, 6]],
-    #  [[7, 8, 9],
-    #   [10, 11, 12]]]
-    var input = NDBuffer[
-        rank=3, DType.int, MutAnyOrigin, in_shape
-    ].stack_allocation()
-    input[IndexList[3](0, 0, 0)] = 1
-    input[IndexList[3](0, 0, 1)] = 2
-    input[IndexList[3](0, 0, 2)] = 3
-    input[IndexList[3](0, 1, 0)] = 4
-    input[IndexList[3](0, 1, 1)] = 5
-    input[IndexList[3](0, 1, 2)] = 6
-    input[IndexList[3](1, 0, 0)] = 7
-    input[IndexList[3](1, 0, 1)] = 8
-    input[IndexList[3](1, 0, 2)] = 9
-    input[IndexList[3](1, 1, 0)] = 10
-    input[IndexList[3](1, 1, 1)] = 11
-    input[IndexList[3](1, 1, 2)] = 12
+    var input = stack_allocation[dtype=DType.int](row_major[2, 2, 3]())
+    input[0, 0, 0] = 1
+    input[0, 0, 1] = 2
+    input[0, 0, 2] = 3
+    input[0, 1, 0] = 4
+    input[0, 1, 1] = 5
+    input[0, 1, 2] = 6
+    input[1, 0, 0] = 7
+    input[1, 0, 1] = 8
+    input[1, 0, 2] = 9
+    input[1, 1, 0] = 10
+    input[1, 1, 1] = 11
+    input[1, 1, 2] = 12
 
-    # Create a identity permutation array of the form
-    # [2, 0, 1]
-    var perm = NDBuffer[rank=1, DType.int, MutAnyOrigin, 3].stack_allocation()
-    perm[0] = 2
-    perm[1] = 0
-    perm[2] = 1
+    var perm: InlineArray[Scalar[DType.int], 3] = [2, 0, 1]
 
-    # Create an output matrix of the form
-    # [[[-1, -1, -1],
-    #   [-1, -1, -1]],
-    #  [[-1, -1, -1],
-    #   [-1, -1, -1]]]
-    comptime out_shape = DimList(3, 2, 2)
-    var output = NDBuffer[
-        rank=3, DType.int, MutAnyOrigin, out_shape
-    ].stack_allocation()
-    output.fill(0)
+    var output = stack_allocation[dtype=DType.int](row_major[3, 2, 2]())
+    _ = output.fill(0)
 
-    # transpose
-    transpose(output, input, perm.data)
-
-    # output should have form (easily verifiable via numpy)
-    # [[[1, 4],
-    #   [7, 10]],
-    #  [[2, 5],
-    #   [8, 11]]
-    #  [[3, 6],
-    #   [9, 12]]]
+    transpose(output, input, UnsafePointer(to=perm[0]))
 
     # CHECK: 1
     print(output[0, 0, 0])
@@ -459,60 +337,30 @@ fn test_transpose_3d_ndbuffer() raises:
     print(output[2, 1, 1])
 
 
-# CHECK-LABEL: test_transpose_si64_ndbuffer
-fn test_transpose_si64_ndbuffer() raises:
-    print("== test_transpose_si64_ndbuffer")
+# CHECK-LABEL: test_transpose_si64_tiletensor
+def test_transpose_si64_tiletensor() raises:
+    print("== test_transpose_si64_tiletensor")
 
-    comptime in_shape = DimList(2, 2, 3)
-    # Create an input matrix of the form
-    # [[[1, 2, 3],
-    #   [4, 5, 6]],
-    #  [[7, 8, 9],
-    #   [10, 11, 12]]]
-    var input = NDBuffer[
-        rank=3, DType.int64, MutAnyOrigin, in_shape
-    ].stack_allocation()
-    input[IndexList[3](0, 0, 0)] = 1
-    input[IndexList[3](0, 0, 1)] = 2
-    input[IndexList[3](0, 0, 2)] = 3
-    input[IndexList[3](0, 1, 0)] = 4
-    input[IndexList[3](0, 1, 1)] = 5
-    input[IndexList[3](0, 1, 2)] = 6
-    input[IndexList[3](1, 0, 0)] = 7
-    input[IndexList[3](1, 0, 1)] = 8
-    input[IndexList[3](1, 0, 2)] = 9
-    input[IndexList[3](1, 1, 0)] = 10
-    input[IndexList[3](1, 1, 1)] = 11
-    input[IndexList[3](1, 1, 2)] = 12
+    var input = stack_allocation[dtype=DType.int64](row_major[2, 2, 3]())
+    input[0, 0, 0] = 1
+    input[0, 0, 1] = 2
+    input[0, 0, 2] = 3
+    input[0, 1, 0] = 4
+    input[0, 1, 1] = 5
+    input[0, 1, 2] = 6
+    input[1, 0, 0] = 7
+    input[1, 0, 1] = 8
+    input[1, 0, 2] = 9
+    input[1, 1, 0] = 10
+    input[1, 1, 1] = 11
+    input[1, 1, 2] = 12
 
-    # Create a identity permutation array of the form
-    # [2, 1, 0]
-    var perm = NDBuffer[rank=1, DType.int, MutAnyOrigin, 3].stack_allocation()
-    perm[0] = 2
-    perm[1] = 1
-    perm[2] = 0
+    var perm: InlineArray[Scalar[DType.int], 3] = [2, 1, 0]
 
-    # Create an output matrix of the form
-    # [[[-1, -1, -1],
-    #   [-1, -1, -1]],
-    #  [[-1, -1, -1],
-    #   [-1, -1, -1]]]
-    comptime out_shape = DimList(3, 2, 2)
-    var output = NDBuffer[
-        rank=3, DType.int64, MutAnyOrigin, out_shape
-    ].stack_allocation()
-    output.fill(0)
+    var output = stack_allocation[dtype=DType.int64](row_major[3, 2, 2]())
+    _ = output.fill(0)
 
-    # transpose
-    transpose(output, input, perm.data)
-
-    # output should have form (easily verifiable via numpy)
-    # [[[ 1,  7],
-    #   [ 4, 10]],
-    #  [[ 2,  8],
-    #   [ 5, 11]],
-    #  [[ 3,  9],
-    #   [ 6, 12]]]
+    transpose(output, input, UnsafePointer(to=perm[0]))
 
     # CHECK: 1
     print(output[0, 0, 0])
@@ -540,9 +388,9 @@ fn test_transpose_si64_ndbuffer() raises:
     print(output[2, 1, 1])
 
 
-# CHECK-LABEL: test_simplify_perm_ndbuffer
-fn test_simplify_perm_ndbuffer():
-    print("== test_simplify_perm_ndbuffer")
+# CHECK-LABEL: test_simplify_perm
+def test_simplify_perm():
+    print("== test_simplify_perm")
     var perm = IndexList[4](0, 2, 3, 1)
     var shape = IndexList[4](8, 3, 200, 200)
     var rank = 4
@@ -666,14 +514,9 @@ fn test_simplify_perm_ndbuffer():
 
 
 # CHECK-LABEL: test_transpose_4x4
-fn test_transpose_4x4():
+def test_transpose_4x4():
     print("== test_transpose_4x4")
 
-    # Create a matrix of the form
-    # [[0, 1, 2, 3],
-    #  [4, 5, 6, 7],
-    # ...
-    #  [12, 13, 14, 15]]
     comptime layout = Layout.row_major(4, 4)
     var stack = InlineArray[Scalar[DType.int], layout.size()](
         uninitialized=True
@@ -749,7 +592,7 @@ fn test_transpose_4x4():
 
 
 # CHECK-LABEL: test_transpose_8x8
-fn test_transpose_8x8():
+def test_transpose_8x8():
     print("== test_transpose_8x8")
 
     comptime num_rows: Int = 8
@@ -778,7 +621,7 @@ fn test_transpose_8x8():
 
 
 # CHECK-LABEL: test_transpose_16x16
-fn test_transpose_16x16():
+def test_transpose_16x16():
     print("== test_transpose_16x16")
 
     comptime num_rows: Int = 16
@@ -807,15 +650,15 @@ fn test_transpose_16x16():
 
 
 def main() raises:
-    test_transpose_4x4_ndbuffer()
-    test_transpose_8x8_ndbuffer()
-    test_transpose_16x16_ndbuffer()
-    test_transpose_2d_identity_ndbuffer()
-    test_transpose_2d_ndbuffer()
-    test_transpose_3d_identity_ndbuffer()
-    test_transpose_3d_ndbuffer()
-    test_transpose_si64_ndbuffer()
-    test_simplify_perm_ndbuffer()
+    test_transpose_4x4_tiletensor()
+    test_transpose_8x8_tiletensor()
+    test_transpose_16x16_tiletensor()
+    test_transpose_2d_identity_tiletensor()
+    test_transpose_2d_tiletensor()
+    test_transpose_3d_identity_tiletensor()
+    test_transpose_3d_tiletensor()
+    test_transpose_si64_tiletensor()
+    test_simplify_perm()
 
     test_transpose_4x4()
     test_transpose_8x8()

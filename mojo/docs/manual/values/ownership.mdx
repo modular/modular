@@ -8,7 +8,7 @@ A challenge you might face when using some programming languages is that you
 must manually allocate and deallocate memory. When multiple parts of the
 program need access to the same memory, it becomes difficult to keep track of
 who "owns" a value and determine when is the right time to deallocate it. If
-you make a mistake, it can result in a "use-after-free" error, a "double free"
+you make a mistake, it may result in a "use-after-free" error, a "double free"
 error, or a "leaked memory" error, any one of which can be catastrophic.
 
 Mojo helps avoid these errors by ensuring there is only one variable that owns
@@ -37,10 +37,10 @@ The fundamental rules that make Mojo's ownership model work are the following:
 A variable *owns* its value. A struct owns its fields.
 
 A *reference* allows you to access a value owned by another variable. A
-reference can have either mutable access or immutable access to that value.
+reference has either mutable access or immutable access to that value.
 
-Mojo references are created when you call a function: function arguments can be
-passed as mutable or immutable references. A function can also return a
+Mojo references are created when you call a function: function arguments are
+passed as mutable or immutable references. A function can return a
 reference instead of returning a value. To capture a returned reference, you
 can use a reference binding:
 
@@ -71,11 +71,11 @@ and whether the function owns the value. Each convention is defined by a
 keyword at the beginning of an argument declaration:
 
 - `read`: The function receives an **immutable reference**. This means the
-  function can read the original value (it is *not* a copy), but it cannot
+  function can read the original value (it's *not* a copy), but it can't
   mutate (modify) it.
 
 - `mut`: The function receives a **mutable reference**. This means the
-  function can read and mutate the original value (it is *not* a copy).
+  function can read and mutate the original value (it's *not* a copy).
 
 - `var`: The function takes **ownership** of a value. This means the function
   has exclusive ownership of the argument. The caller might choose to transfer
@@ -84,7 +84,7 @@ keyword at the beginning of an argument declaration:
   existing value.
 
 - `ref`: The function gets a reference with a parametric mutability: that is,
-  the reference can be either mutable or immutable. You can think of `ref`
+  the reference is either mutable or immutable. You can think of `ref`
   arguments as a generalization of the `read` and `mut` conventions.
   `ref` arguments are an advanced topic, and they're described in more detail in
   [Lifetimes, origins, and references](/mojo/manual/values/lifetimes).
@@ -104,10 +104,10 @@ For example, this function has one argument that's a mutable
 reference and one that's immutable:
 
 ```mojo
-fn add(mut x: Int, read y: Int):
+def add(mut x: Int, read y: Int):
     x += y
 
-fn main():
+def main():
     var a = 1
     var b = 2
     add(a, b)
@@ -149,7 +149,7 @@ copy.
 
 In general, passing an immutable reference is much more efficient
 when handling large or expensive-to-copy values, because the copy constructor
-and destructor are not invoked for a `read` argument.
+and destructor aren't invoked for a `read` argument.
 
 ### Compared to C++ and Rust
 
@@ -161,14 +161,11 @@ mutability in the callee. However, the read convention differs from
 - The Mojo compiler implements a lifetime checker that ensures that values are
   not destroyed when there are outstanding references to those values.
 
-- Small values like `Int`, `Float`, and `SIMD` are always passed in machine
-  registers—instead of through an extra indirection or optimized at every call
-  site—because these types are declared with the
-  [`@register_passable`](/mojo/manual/decorators/register-passable) decorator.
-  This is a significant performance enhancement compared to languages
-  like C++ and Rust.
+- Small values like `Int`, `Float`, and `SIMD` are always passed in
+  machine registers. This provides a significant performance enhancement
+  compared to languages like C++ and Rust.
 
-The major difference between Rust and Mojo is that Mojo does not require a sigil
+The major difference between Rust and Mojo is that Mojo doesn't require a sigil
 on the caller side to pass by immutable reference. Also, Mojo is more efficient
 when passing small values, and Rust defaults to moving values instead of passing
 them around by borrow. These policy and syntax decisions allow Mojo to provide
@@ -224,7 +221,7 @@ def main() raises:
 ```
 
 Although the code using `mut` isn't that much shorter, it's more memory
-efficient because it does not make a copy of the value.
+efficient because it doesn't make a copy of the value.
 
 However, remember that the values passed as `mut` must already be mutable.
 For example, if you try to take a `read` value and pass it to another
@@ -233,7 +230,7 @@ mutable reference from an immutable reference.
 
 :::note
 
-You cannot define [default
+You can't define [default
 values](/mojo/manual/functions#optional-arguments) for `mut`
 arguments.
 
@@ -249,15 +246,15 @@ That is, a mutable reference can't have any other references that *alias* it.
 For example, consider the following code example:
 
 ```mojo
-fn append_twice(mut s: String, other: String):
-   # Mojo knows 's' and 'other' cannot be the same string.
+def append_twice(mut s: String, other: String):
+   # Mojo knows 's' and 'other' can't be the same string.
    s += other
    s += other
 
-fn invalid_access():
+def invalid_access():
   var my_string = "o"  # Create a run-time String value
 
-  # error: passing `my_string` mut is invalid since it is also passed
+  # error: passing `my_string` mut is invalid since it's also passed
   # read.
   append_twice(my_string, my_string)
   print(my_string)
@@ -272,7 +269,7 @@ One way to avoid this issue when you do need both a mutable and an immutable
 reference (or need to pass the same value to two arguments) is to make a copy:
 
 ```mojo
-fn valid_access():
+def valid_access():
   var my_string = "o"           # Create a run-time String value
   var other_string = my_string  # Create a copy of the String value
   append_twice(my_string, other_string)
@@ -280,8 +277,8 @@ fn valid_access():
 ```
 
 Note that argument exclusivity isn't enforced for register-passable trivial
-types (like `Int` and `Bool`), because they are always passed by copy. When
-passing the same value into two `Int` arguments, the callee will receive two
+types (like `Int` and `Bool`) as they're always passed by copy. When
+passing the same value into two `Int` arguments, the callee receives two
 copies of the value.
 
 ## Transfer arguments (`var` and `^`)
@@ -293,7 +290,7 @@ This convention is often combined with use of the postfixed `^` "transfer"
 sigil on the variable that is passed into the function, which ends the
 lifetime of that variable.
 
-Technically, the `var` keyword does not guarantee that the received value is
+Technically, the `var` keyword doesn't guarantee that the received value is
 *the original value*—it guarantees only that the function
 gets unique ownership of a value. This happens in one of
 three ways:
@@ -302,11 +299,11 @@ three ways:
   lifetime of that variable (the variable becomes uninitialized) and ownership
   is transferred into the function.
 
-- The caller **does not** use the `^` transfer sigil, in which case, Mojo copies
+- The caller **doesn't** use the `^` transfer sigil, in which case, Mojo copies
   the value. If the type isn't copyable, this is a compile-time error.
 
 - The caller passes in a newly-created "owned" value, such as a value returned
-  from a function. In this case, no variable owns the value and it can be
+  from a function. In this case, no variable owns the value and it's
   transferred directly to the callee. For example:
 
   ```mojo
@@ -318,14 +315,14 @@ three ways:
   ```
 
 The following code works by making a copy of the string, because `take_text()`
-uses the `var` convention, and the caller does not include the transfer sigil:
+uses the `var` convention, and the caller doesn't include the transfer sigil:
 
 ```mojo
-fn take_text(var text: String):
+def take_text(var text: String):
     text += "!"
     print(text)
 
-fn main():
+def main():
     var message = "Hello"  # Create a run-time String value
     take_text(message)
     print(message)
@@ -338,26 +335,26 @@ Hello
 
 However, if you add the `^` transfer sigil when calling `take_text()`, the
 compiler complains about `print(message)`, because at that point, the `message`
-variable is no longer initialized. That is, this version does not compile:
+variable is no longer initialized. That is, this version doesn't compile:
 
 ```mojo
-fn main():
+def main():
     var message = "Hello"  # Create a run-time String value
     take_text(message^)
     print(message)  # error: use of uninitialized value 'message'
 ```
 
 This is a critical feature of Mojo's lifetime checker, because it ensures that no
-two variables can have ownership of the same value. To fix the error, you must
+two variables have ownership of the same value. To fix the error, you must
 not use the `message` variable after you end its lifetime with the `^` transfer
 sigil. So here is the corrected code:
 
 ```mojo
-fn take_text(var text: String):
+def take_text(var text: String):
     text += "!"
     print(text)
 
-fn main():
+def main():
     var message = "Hello"  # Create a run-time String value
     take_text(message^)
 ```
@@ -367,7 +364,7 @@ Hello!
 ```
 
 Regardless of how it receives the value, when the function declares an argument
-as `var`, it can be certain that it has unique mutable access to that value.
+as `var`, it's certain that it has unique mutable access to that value.
 Because the value is owned, the value is destroyed when the function
 exits—unless the function transfers the value elsewhere.
 
@@ -390,9 +387,9 @@ def consume_string(var s: String) raises:
 ### Transfer implementation details
 
 In Mojo, you shouldn't conflate "ownership transfer" with a "move
-operation"—these are not strictly the same thing.
+operation"—these aren't strictly the same thing.
 
-There are multiple ways that Mojo can transfer ownership of a value:
+There are multiple ways that Mojo transfers ownership of a value:
 
 - If a type implements the [move
   constructor](/mojo/manual/lifecycle/life#move-constructor),
@@ -401,9 +398,9 @@ There are multiple ways that Mojo can transfer ownership of a value:
   variable's lifetime ends at the same point (with or without use of the `^`
   transfer sigil).
 
-- In some cases, Mojo can optimize away the move operation entirely, leaving the
+- In some cases, Mojo optimizes away the move operation entirely, leaving the
   value in the same memory location but updating its ownership. In these cases,
-  a value can be transferred without invoking either the copy or move
+  a value transfers without invoking either the copy or move
   constructors.
 
 In order for the `var` convention to work *without* the transfer

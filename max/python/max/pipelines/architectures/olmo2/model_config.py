@@ -119,7 +119,7 @@ class Olmo2Config(Llama3Config):
 
         This method creates a config instance with all fields that can be determined
         from the pipeline and HuggingFace configuration, without needing the state_dict.
-        Fields that depend on the state_dict (like tie_word_embeddings, float8_config)
+        Fields that depend on the state_dict (like tie_word_embeddings, quant_config)
         should be set via the `finalize()` method.
 
         Overrides Llama3Config.initialize_from_config to use Olmo2-specific

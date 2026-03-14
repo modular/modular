@@ -33,7 +33,7 @@ from nn.mha_mask import CausalMask, MaterializedMask
 from std.utils.index import Index
 
 
-fn bench_decode[
+def bench_decode[
     mask_rank: Int,
     qkv_type: DType,
     output_type: DType,
@@ -109,10 +109,10 @@ fn bench_decode[
     @parameter
     @always_inline
     @__copy_capture(cb_q, cb_k, cb_mask, cb_o, scalar_args_buf_lt)
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             var q_device = LayoutTensor[qkv_type, q_layout](
                 cb_q.offset_ptr(iteration),
                 RuntimeLayout[q_layout].row_major(
@@ -180,7 +180,7 @@ fn bench_decode[
 
         b.iter_custom[_kernel_launch](ctx)
 
-    fn compute_flops() -> Int:
+    def compute_flops() -> Int:
         return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
     m.bench_function[bench_func](
@@ -210,7 +210,7 @@ fn bench_decode[
     _ = mla_args
 
 
-fn bench_prefill[
+def bench_prefill[
     qkv_type: DType,
     output_type: DType,
     mask_type: DType,
@@ -323,10 +323,10 @@ fn bench_prefill[
         input_row_offsets_device,
         cache_row_offsets_device,
     )
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             var q_device = LayoutTensor[qkv_type, q_layout](
                 cb_q.offset_ptr(iteration),
                 RuntimeLayout[q_layout].row_major(
@@ -374,7 +374,7 @@ fn bench_prefill[
 
         b.iter_custom[_kernel_launch](ctx)
 
-    fn compute_flops() -> Int:
+    def compute_flops() -> Int:
         return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
     m.bench_function[bench_func](
@@ -407,7 +407,7 @@ fn bench_prefill[
 
 
 @fieldwise_init
-struct MLA_cfg(ImplicitlyCopyable):
+struct MLA_cfg(ImplicitlyCopyable, Writable):
     # params
     var mask_rank: Int
     var qkv_type: DType
@@ -423,25 +423,6 @@ struct MLA_cfg(ImplicitlyCopyable):
     var kv_depth: Int
     var cache_depth: Int
     var cache_num_heads: Int
-
-    @no_inline
-    fn __str__(self) -> String:
-        # fmt: off
-        return String(
-            "mask_rank", self.mask_rank,
-            "qkv_type=", self.qkv_type,
-            "/output_type=", self.output_type,
-            "/mask_type=", self.mask_type,
-            "/depth=", self.depth,
-            "/prefill_depth=", self.prefill_depth,
-            "/num_heads=", self.num_heads,
-            "/group=", self.group,
-            "/kv_depth=", self.kv_depth,
-            "/cache_depth=", self.cache_depth,
-            "/cache_num_heads=", self.cache_num_heads,
-            "/cache_busting=", self.cache_busting,
-        )
-        # fmt: on
 
 
 def main() raises:

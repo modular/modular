@@ -44,7 +44,7 @@ def compute_group_stats[
     return (mean, 1.0 / math.sqrt(variance + Float64(eps)))
 
 
-fn run_group_norm_gpu[
+def run_group_norm_gpu[
     dtype: DType, rank: Int
 ](
     ctx: DeviceContext,
@@ -91,7 +91,7 @@ fn run_group_norm_gpu[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
@@ -101,14 +101,14 @@ fn run_group_norm_gpu[
     @__copy_capture(gamma)
     @always_inline
     @parameter
-    fn gamma_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+    def gamma_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Coord(coords))
         return gamma.ptr.load[width=width](idx)
 
     @__copy_capture(beta)
     @always_inline
     @parameter
-    fn beta_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+    def beta_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
         var idx = beta.layout(Coord(coords))
         return beta.ptr.load[width=width](idx)
 

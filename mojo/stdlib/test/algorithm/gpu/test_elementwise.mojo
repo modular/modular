@@ -21,7 +21,7 @@ from std.utils import IndexList
 from std.utils.index import Index
 
 
-fn _linear_index[
+def _linear_index[
     rank: Int
 ](coords: IndexList[rank], shape: IndexList[rank]) -> Int:
     """Convert multi-dimensional coordinates to linear index (row-major)."""
@@ -34,7 +34,7 @@ fn _linear_index[
     return linear_idx
 
 
-fn _strided_index[
+def _strided_index[
     rank: Int
 ](coords: IndexList[rank], strides: IndexList[rank]) -> Int:
     """Convert multi-dimensional coordinates to linear index using explicit strides.
@@ -46,7 +46,7 @@ fn _strided_index[
     return linear_idx
 
 
-fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
+def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     var in_host_stack = InlineArray[Scalar[dtype], 16](fill=0)
@@ -77,7 +77,7 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(in_buffer, out_buffer, shape)
     @parameter
-    fn func[
+    def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[2]](idx0)
@@ -125,7 +125,7 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     _ = out_device
 
 
-fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
+def run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
     var in_host_stack = InlineArray[Scalar[dtype], 9](fill=0)
     var in_host = Span(in_host_stack)
@@ -155,7 +155,7 @@ fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(in_buffer, out_buffer, shape)
     @parameter
-    fn func[
+    def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[2]](idx0)
@@ -194,7 +194,7 @@ fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
     _ = out_device
 
 
-fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
+def run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
     var in_host_stack = InlineArray[Scalar[dtype], 2 * 4 * 5](fill=0)
     var in_host = Span(in_host_stack)
@@ -227,7 +227,7 @@ fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(in_buffer, out_buffer, in_strides, out_shape)
     @parameter
-    fn func[
+    def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[3]](idx0)
@@ -324,7 +324,7 @@ def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(input_buffer, output_buffer, shape)
     @parameter
-    fn func[
+    def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[3]](idx0)

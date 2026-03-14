@@ -23,17 +23,18 @@ import torch
 from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
 from max.nn import AttentionWithRope, Linear, RotaryEmbedding
-from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.llama3.model_config import (
     create_rope_embedding,
 )
-from max.pipelines.lib.float8 import parse_float8_config
+from max.pipelines.lib.quant import parse_quant_config
 from test_common.context_utils import create_text_context
 from test_common.graph_utils import is_h100_h200
 from torch.utils.dlpack import from_dlpack
@@ -139,7 +140,7 @@ def get_state_dict(
             normalized_state_dict[name] = WeightData(
                 data=tensor,
                 name=name,
-                dtype=DType.from_torch(tensor.dtype),
+                dtype=torch_dtype_to_max(tensor.dtype),
                 shape=Shape(tensor.shape),
             )
     return normalized_state_dict
@@ -147,7 +148,7 @@ def get_state_dict(
 
 def model(
     config: LlamaConfig,
-    float8_config: Float8Config,
+    quant_config: QuantConfig,
     kv_params: KVCacheParams,
     state_dict: dict[str, WeightData],
     dtype: DType,
@@ -164,14 +165,14 @@ def model(
     )
     attention_multiplier = rope.compute_scale()
 
-    linear_cls = functools.partial(Linear, float8_config=float8_config)
+    linear_cls = functools.partial(Linear, quant_config=quant_config)
 
     layer = AttentionWithRope(
         stacked_qkv="layers.0.self_attn.qkv_proj.weight" in state_dict,
         scale=attention_multiplier,
         clip_qkv=getattr(config, "clip_qkv", None),
         has_bias=False,
-        float8_config=float8_config,
+        quant_config=quant_config,
         num_attention_heads=config.num_attention_heads,
         num_key_value_heads=config.num_key_value_heads,
         hidden_size=config.hidden_size,
@@ -197,15 +198,15 @@ def generate_max_outputs_fp4(
     weight_dtype = DType.uint8
     cache_dtype = DType.bfloat16
 
-    # Parse float8 config for fp4
-    float8_config = parse_float8_config(
+    # Parse quant config for fp4
+    quant_config = parse_quant_config(
         config,
         state_dict,
         weight_dtype,  # uint8 for fp4-e2m1fnX2
     )
 
-    if float8_config is None:
-        raise ValueError("Failed to parse float8 config for FP4")
+    if quant_config is None:
+        raise ValueError("Failed to parse quant config for FP4")
 
     kv_params = KVCacheParams(
         dtype=cache_dtype,
@@ -216,7 +217,7 @@ def generate_max_outputs_fp4(
     )
 
     layer, rope = model(
-        config, float8_config, kv_params, state_dict, weight_dtype
+        config, quant_config, kv_params, state_dict, weight_dtype
     )
 
     device_ref = DeviceRef.GPU()

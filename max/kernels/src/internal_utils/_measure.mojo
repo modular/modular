@@ -25,7 +25,7 @@ from std.utils import IndexList
 # ===----------------------------------------------------------------------=== #
 
 
-fn kl_div(
+def kl_div(
     x: SIMD, y: type_of(x)
 ) -> type_of(x) where x.dtype.is_floating_point():
     """Elementwise function for computing Kullback-Leibler divergence.
@@ -48,7 +48,7 @@ fn kl_div(
     )
 
 
-fn kl_div[
+def kl_div[
     dtype: DType, //
 ](
     output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -57,7 +57,7 @@ fn kl_div[
     len: Int,
 ) raises where dtype.is_floating_point():
     @parameter
-    fn kl_div_elementwise[
+    def kl_div_elementwise[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         output.store(
@@ -71,7 +71,7 @@ fn kl_div[
     elementwise[kl_div_elementwise, simd_width_of[dtype]()](len)
 
 
-fn kl_div[
+def kl_div[
     dtype: DType, //, out_type: DType = DType.float64
 ](
     x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
@@ -84,7 +84,7 @@ fn kl_div[
     var accum_simd = SIMD[out_type, simd_width](0)
     var accum_scalar = Scalar[out_type](0)
 
-    fn kl_div_elementwise[simd_width: Int](idx: Int) unified {mut}:
+    def kl_div_elementwise[simd_width: Int](idx: Int) unified {mut}:
         var xi = x.load[width=simd_width](idx).cast[out_type]()
         var yi = y.load[width=simd_width](idx).cast[out_type]()
         var kl = kl_div(xi, yi)
@@ -106,7 +106,7 @@ fn kl_div[
 # ===----------------------------------------------------------------------=== #
 
 
-fn correlation[
+def correlation[
     dtype: DType, //, out_type: DType = dtype
 ](
     u: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
@@ -154,8 +154,8 @@ fn correlation[
     var vv_simd = SIMD[out_type, simd_width]()
 
     @parameter
-    fn accumulate[weighted: Bool]():
-        fn apply_wfn[simd_width: Int](idx: Int) unified {mut}:
+    def accumulate[weighted: Bool]():
+        def apply_wfn[simd_width: Int](idx: Int) unified {mut}:
             var ui = u.load[width=simd_width](idx).cast[out_type]() - umu
             var vi = v.load[width=simd_width](idx).cast[out_type]() - vmu
             var uw = ui
@@ -192,7 +192,7 @@ fn correlation[
     return (uv / sqrt(uu * vv)).clamp(-1, 1)
 
 
-fn uncentered_unweighted_correlation[
+def uncentered_unweighted_correlation[
     dtype: DType, //, out_type: DType = dtype
 ](
     u: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
@@ -226,7 +226,7 @@ fn uncentered_unweighted_correlation[
 # ===----------------------------------------------------------------------=== #
 
 
-fn cosine[
+def cosine[
     dtype: DType,
     //,
 ](
@@ -252,7 +252,7 @@ fn cosine[
     )
 
 
-fn relative_difference[
+def relative_difference[
     dtype: DType,
     //,
 ](
@@ -284,7 +284,7 @@ fn relative_difference[
 # ===----------------------------------------------------------------------=== #
 
 
-fn _sqrt[
+def _sqrt[
     dtype: DType, //
 ](
     output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -292,7 +292,7 @@ fn _sqrt[
     len: Int,
 ) raises:
     @parameter
-    fn apply_fn[
+    def apply_fn[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         output.store(
@@ -305,7 +305,7 @@ fn _sqrt[
     elementwise[apply_fn, simd_width_of[dtype]()](len)
 
 
-fn _mul[
+def _mul[
     dtype: DType, //
 ](
     output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -314,7 +314,7 @@ fn _mul[
     len: Int,
 ) raises:
     @parameter
-    fn apply_fn[
+    def apply_fn[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         output.store(
@@ -328,7 +328,7 @@ fn _mul[
     elementwise[apply_fn, simd_width_of[dtype]()](len)
 
 
-fn _div[
+def _div[
     dtype: DType, //
 ](
     output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -337,7 +337,7 @@ fn _div[
     len: Int,
 ) raises:
     @parameter
-    fn apply_fn[
+    def apply_fn[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         output.store(
@@ -349,7 +349,7 @@ fn _div[
     elementwise[apply_fn, simd_width_of[dtype]()](len)
 
 
-fn _sum[
+def _sum[
     dtype: DType, //
 ](src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], len: Int) raises -> Scalar[
     dtype
@@ -357,7 +357,7 @@ fn _sum[
     return sum(Span[Scalar[dtype]](ptr=src, length=len))
 
 
-fn _mean[
+def _mean[
     dtype: DType, //
 ](src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], len: Int) raises -> Scalar[
     dtype
@@ -365,7 +365,7 @@ fn _mean[
     return mean(Span[Scalar[dtype]](ptr=src, length=len))
 
 
-fn _dot[
+def _dot[
     dtype: DType, //, out_type: DType = dtype
 ](
     x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], y: type_of(x), len: Int
@@ -376,7 +376,7 @@ fn _dot[
     var accum_simd = SIMD[out_type, simd_width](0)
     var accum_scalar = Scalar[out_type](0)
 
-    fn apply_fn[simd_width: Int](idx: Int) unified {mut}:
+    def apply_fn[simd_width: Int](idx: Int) unified {mut}:
         var xi = x.load[width=simd_width](idx).cast[out_type]()
         var yi = y.load[width=simd_width](idx).cast[out_type]()
 

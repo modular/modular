@@ -42,8 +42,8 @@ from linalg.fp4_utils import (
 from std.random import random_ui64
 from std.builtin.simd import _convert_f32_to_float8_ue8m0
 from layout import (
-    LayoutTensor,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -51,7 +51,7 @@ from layout import (
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-fn simple_init() -> Bool:
+def simple_init() -> Bool:
     for arg in argv():
         if arg == "--simple-init":
             return True
@@ -75,6 +75,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     benchmark: Bool = False,
     swapAB: Bool = False,
     k_group_size: Int = 1,
+    num_clc_pipeline_stages: Int = 2,
     SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
 ](
     ctx: DeviceContext,
@@ -126,9 +127,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         sep=" ",
     )
 
-    comptime static_a_shape = DimList(m.dim, k.dim // 2)
-    comptime static_b_shape = DimList(n.dim, k.dim // 2)
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList[m.dim, k.dim // 2]()
+    comptime static_b_shape = DimList[n.dim, k.dim // 2]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
     var dynamic_a_shape = IndexList[2](m.value, k.value // 2)
     var dynamic_b_shape = IndexList[2](n.value, k.value // 2)
     var dynamic_c_shape = IndexList[2](m.value, n.value)
@@ -171,20 +172,33 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
-    comptime static_a_scales_shape = DimList(
+    # This row major layout coorelates to this
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-mma-scale-factor-a-layout-4x
+
+    # Dim 0: the scale factors cover batches of 128 rows (4 sets of 32 rows to be specifc) so divide to find out how
+    # tiles we have over the first mode
+
+    # Dim 1: Assuming NVFP4_SF_VECTOR_SIZE for SF_VECTOR_SIZE, we know each scale factor covers 16 elements. The MMA has K fixed to 64 (32 in fp8),
+    # so we divide K by 64 (4 scales) and we get the batch of scales for each mma across that mode.
+
+    # Dim 2: Now in each batch as previosuly mentioned we have 32 rows
+    # Dim 3: each column in the row is actually a subrow there are a total of 4 (32 * 4 gives us 128)
+    # Dim 4: each subrow has 4 scale factors.
+
+    comptime static_a_scales_shape = DimList[
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
         Dim(SF_ATOM_M[0]),
         Dim(SF_ATOM_M[1]),
         Dim(SF_ATOM_K),
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
         Dim(SF_ATOM_M[0]),
         Dim(SF_ATOM_M[1]),
         Dim(SF_ATOM_K),
-    )
+    ]()
 
     var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
@@ -339,6 +353,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         AB_swapped=swapAB,
         k_group_size=k_group_size,
         num_accum_pipeline_stages=1 if mma_shape[1] in (192, 256) else 2,
+        num_clc_pipeline_stages=num_clc_pipeline_stages,
     )
 
     comptime K_phys = k.dim.get()
@@ -605,3 +620,39 @@ def main() raises:
                         static[2560](),
                         static[8192](),
                     )
+
+        # Llama-3.1-405B TP8 FP4 shapes (small_bn kernel, M=1)
+        comptime small_bn_block_tile = Index(128, 8, BK)
+        comptime small_bn_umma = Index(128, 8, MMA_K)
+
+        @parameter
+        fn test_small_bn[N: Int, K: Int]() raises:
+            test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                dtype,
+                dtype,
+                out_dtype,
+                scales_dtype,
+                small_bn_block_tile,
+                small_bn_umma,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                swapAB=True,
+                k_group_size=2,
+                num_clc_pipeline_stages=0,
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            ](
+                ctx,
+                dynamic(1),
+                static[N](),
+                static[K](),
+            )
+
+        test_small_bn[2304, 16384]()  # Attn.QKVProj
+        test_small_bn[16384, 2048]()  # Attn.OutProj
+        test_small_bn[6656, 16384]()  # MLP.UpProj / MLP.GateProj
+        test_small_bn[13312, 16384]()  # Fused MLP.UpProj + MLP.GateProj
+        test_small_bn[16384, 6656]()  # MLP.DownProj
+        test_small_bn[7168, 16384]()  # Deepseek

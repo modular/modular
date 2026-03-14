@@ -55,6 +55,13 @@ class GptOssTextModel(DistributedLogitsPostprocessMixin, Module):
         super().__init__()
         self.devices = config.devices
 
+        # Set embedding output dtype for quantized models
+        self.embedding_output_dtype: DType | None = None
+        if config.quant_config and config.quant_config.embedding_output_dtype:
+            self.embedding_output_dtype = (
+                config.quant_config.embedding_output_dtype
+            )
+
         # Create YARN scaling params if configured
         assert config.rope_scaling is not None, (
             "RoPE scaling is required for GPT-OSS models"
@@ -151,6 +158,8 @@ class GptOssTextModel(DistributedLogitsPostprocessMixin, Module):
         **kwargs,
     ) -> tuple[TensorValue, ...]:
         h_embed = self.embed_tokens(tokens)
+        if self.embedding_output_dtype is not None:
+            h_embed = ops.cast(h_embed, self.embedding_output_dtype)
         # Replicate embedding output to all devices
         h = [h_embed.to(device) for device in self.devices]
 

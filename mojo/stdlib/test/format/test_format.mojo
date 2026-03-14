@@ -22,10 +22,10 @@ from std.format._utils import write_sequence_to
 struct TestWritable(Writable):
     var x: Int
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("write_to: ", self.x)
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         writer.write("write_repr_to: ", self.x)
 
 
@@ -91,7 +91,7 @@ def test_write_sequence_to_with_element_fn_counter() raises:
     var count = 0
 
     @parameter
-    fn write_numbers[T: Writer](mut w: T) raises StopIteration:
+    def write_numbers[T: Writer](mut w: T) raises StopIteration:
         if count >= 3:
             raise StopIteration()
         w.write(count)
@@ -109,7 +109,7 @@ def test_write_sequence_to_empty_sequence() raises:
     var output = String()
 
     @parameter
-    fn write_nothing[T: Writer](mut w: T) raises StopIteration:
+    def write_nothing[T: Writer](mut w: T) raises StopIteration:
         raise StopIteration()
 
     write_sequence_to[ElementFn=write_nothing](output)
@@ -123,7 +123,7 @@ def test_write_sequence_to_single_element() raises:
     var written = False
 
     @parameter
-    fn write_once[T: Writer](mut w: T) raises StopIteration:
+    def write_once[T: Writer](mut w: T) raises StopIteration:
         if written:
             raise StopIteration()
         w.write("only")
@@ -142,7 +142,7 @@ def test_write_sequence_to_custom_delimiters() raises:
     var index = 0
 
     @parameter
-    fn write_items[T: Writer](mut w: T) raises StopIteration:
+    def write_items[T: Writer](mut w: T) raises StopIteration:
         if index >= 3:
             raise StopIteration()
         w.write("item", index)
@@ -157,7 +157,7 @@ def test_write_sequence_to_custom_delimiters() raises:
 
 
 struct NullWriter(Writer):
-    fn write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSlice):
         keep(string)
 
 
@@ -178,7 +178,7 @@ def test_format_runtime_does_allocate() raises:
 
 
 def test_format_comptime_does_not_allocate() raises:
-    fn comptime_format[
+    def comptime_format[
         *Ts: Writable,
     ](mut writer: NullWriter, *args: *Ts):
         _FormatUtils.format_to_comptime["Hello, {}, {}, {}"](writer, args)

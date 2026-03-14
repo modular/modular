@@ -17,19 +17,27 @@ import queue
 import time
 from collections.abc import Callable
 from typing import TypeVar, cast
+from unittest.mock import MagicMock
 
 import numpy as np
 from max.driver import CPU, Device
 from max.interfaces import (
+    GenerationStatus,
     RequestID,
     SchedulerResult,
+    TextGenerationInputs,
     TextGenerationOutput,
     TokenBuffer,
 )
 from max.kv_cache.paged_kv_cache.transfer_engine import KVTransferEngineMetadata
 from max.pipelines.core import TextContext
+from max.pipelines.lib import OverlapTextGenerationPipeline
 from max.serve.config import generate_zmq_ipc_path
-from max.serve.scheduler.base import PrefillRequest, PrefillResponse
+from max.serve.scheduler.base import (
+    PrefillRequest,
+    PrefillResponse,
+    SchedulerProgress,
+)
 from max.serve.scheduler.decode_scheduler import (
     DecodeScheduler,
     TokenGenerationSchedulerConfig,
@@ -350,3 +358,175 @@ def test_di_with_dp2_end_to_end() -> None:
     assert len(req2_outputs) == 2
     assert req2_outputs[0].tokens == [100]  # From prefill
     assert req2_outputs[1].tokens == [46, 47, 48, 49]  # From decode
+
+
+def test_overlap_di_schedule_filters_stale_responses() -> None:
+    """Verify schedule() drops responses for request IDs not in batch_constructor."""
+    decode, prefill, server_addr = create_di_scheduler(max_forward_steps_tg=1)
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=10
+    )
+    req_id = ctx.request_id
+    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
+    response_q = cast(queue.Queue, decode.response_queue)  # type: ignore[type-arg]
+    request_queue.put(ctx)
+
+    # Send to prefill, execute prefill, then run decode
+    # (streams prefill token + generates 1 decode token).
+    decode.run_iteration()
+    prefill.run_iteration()
+    decode.run_iteration()
+
+    # Drain both responses (prefill token, first decode token).
+    assert response_q.qsize() == 2
+    response_q.get()
+    response_q.get()
+
+    # Patch execute to inject a stale response for a fabricated request ID.
+    stale_id = RequestID()
+    original_execute = decode.pipeline.execute
+
+    def patched_execute(
+        inputs: TextGenerationInputs[TextContext],
+    ) -> dict[RequestID, TextGenerationOutput]:
+        responses = original_execute(inputs)
+        responses[stale_id] = TextGenerationOutput(
+            request_id=stale_id,
+            tokens=[999],
+            final_status=GenerationStatus.ACTIVE,
+        )
+        return responses
+
+    decode.pipeline.execute = patched_execute  # type: ignore[method-assign]
+
+    # Run another decode iteration; the stale response should be filtered.
+    decode.run_iteration()
+
+    output = response_q.get()
+    assert req_id in output
+    assert stale_id not in output
+
+
+def test_overlap_di_has_pending_outputs_prevents_no_progress() -> None:
+    """Verify run_iteration() returns MADE_PROGRESS when the batch is empty,
+    but the overlap pipeline reports pending outputs."""
+    decode, _prefill, _server_addr = create_di_scheduler()
+
+    # Simulate overlap pipeline behavior without a real OverlapPipeline.
+    mock_pipeline = MagicMock(spec=OverlapTextGenerationPipeline)
+    mock_pipeline.has_pending_outputs.return_value = True
+    mock_pipeline.execute.return_value = {}
+    decode.pipeline = mock_pipeline
+
+    result = decode.run_iteration()
+    assert result == SchedulerProgress.MADE_PROGRESS
+
+
+def test_prefill_reqs_per_replica_decremented_on_completion() -> None:
+    """prefill_reqs_per_replica must return to [0, 0] after requests complete
+    end-to-end with DP=2.
+
+    Regression: check_for_completed_transfers popped from prefill_reqs
+    without decrementing prefill_reqs_per_replica, causing the counter to
+    drift and degrade DP replica load balancing.
+    """
+    decode, prefill, server_addr = create_di_scheduler(dp=2)
+    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
+
+    # Submit 2 requests
+    ctx1 = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    ctx2 = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    request_queue.put(ctx1)
+    request_queue.put(ctx2)
+
+    # Run end-to-end
+    decode.run_iteration()
+    prefill.run_iteration()
+    decode.run_iteration()
+
+    # Both requests should have been popped from prefill_reqs
+    assert decode.prefill_reqs == {}
+
+    # prefill_reqs_per_replica must be back to zero for both replicas
+    assert decode.prefill_reqs_per_replica == [0, 0], (
+        f"prefill_reqs_per_replica not decremented on normal completion: "
+        f"{decode.prefill_reqs_per_replica}"
+    )
+
+
+def test_cancel_pending_prefill_releases_decode_kv_blocks() -> None:
+    """Cancelling a request pending prefill must release its KV cache blocks
+    on the decode side.
+
+    Regression: _handle_cancelled_requests removed the request from
+    prefill_reqs but never called kv_cache.release, permanently leaking
+    the blocks allocated before sending to prefill.
+    """
+    decode, _, ctx = create_default_di_scheduler_and_submit_one_request()
+    req_id = ctx.request_id
+    cancel_queue: queue.Queue = cast(queue.Queue, decode.cancel_queue)  # type: ignore[type-arg]
+    response_q = cast(queue.Queue, decode.response_queue)  # type: ignore[type-arg]
+
+    # Record baseline KV usage.
+    pages_before = decode.kv_cache.get_num_used_pages(replica_idx=0)
+
+    # Send to prefill -> allocates KV blocks on decode
+    decode.run_iteration()
+
+    pages_after_send = decode.kv_cache.get_num_used_pages(replica_idx=0)
+    assert pages_after_send > pages_before, (
+        "Expected KV blocks to be allocated after sending to prefill"
+    )
+
+    # Cancel before prefill runs
+    cancel_queue.put([req_id])
+    decode.run_iteration()
+
+    # Drain the cancelled response
+    assert not response_q.empty()
+    batch = response_q.get()
+    assert req_id in batch
+    assert batch[req_id].result is None  # cancelled
+
+    # KV blocks must be released back to pool
+    pages_after_cancel = decode.kv_cache.get_num_used_pages(replica_idx=0)
+    assert pages_after_cancel == pages_before, (
+        f"KV blocks leaked after cancel: had {pages_before} before, "
+        f"{pages_after_cancel} after cancel (expected {pages_before}). "
+        f"Delta = {pages_after_cancel - pages_before} pages leaked."
+    )
+
+
+def test_stale_prefill_response_after_cancel_does_not_crash() -> None:
+    """A PrefillResponse arriving after the request was cancelled must be
+    silently discarded, not raise KeyError.
+
+    Regression: handle_prefill_response accessed self.prefill_reqs[request_id]
+    without checking membership, crashing when the request had already been
+    cancelled and removed in a prior iteration.
+    """
+    decode, prefill, ctx = create_default_di_scheduler_and_submit_one_request()
+    req_id = ctx.request_id
+    cancel_queue: queue.Queue = cast(queue.Queue, decode.cancel_queue)  # type: ignore[type-arg]
+
+    # Send to prefill
+    decode.run_iteration()
+
+    # Cancel before prefill runs
+    cancel_queue.put([req_id])
+    decode.run_iteration()
+
+    # Prefill runs now and sends a PrefillResponse (has not seen cancel)
+    prefill.run_iteration()
+
+    # Decode receives the stale PrefillResponse
+    # It must not crash and must discard it
+    decode.run_iteration()
+
+    assert req_id not in decode.prefill_reqs
+    assert req_id not in decode.inflight_transfers
+    assert not decode.batch_constructor.contains(req_id)

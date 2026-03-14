@@ -78,7 +78,7 @@ def test_nvfp4_quantization[
     var M = m.value
     var N = n.value
 
-    comptime input_static_shape = DimList(m.dim, n.dim)
+    comptime input_static_shape = DimList[m.dim, n.dim]()
     var input_dynamic_shape = IndexList[2](m.value, n.value)
 
     var host_ptr = alloc[Scalar[dtype]](M * N)
@@ -86,7 +86,7 @@ def test_nvfp4_quantization[
         host_ptr, input_dynamic_shape
     )
 
-    comptime output_static_shape = DimList(m.dim, ceildiv(n.dim, 2))
+    comptime output_static_shape = DimList[m.dim, ceildiv(n.dim, 2)]()
     var output_dynamic_shape = IndexList[2](m.value, ceildiv(n.value, 2))
 
     var host_ptr_output = alloc[Scalar[out_dtype]](M * ceildiv(N, 2))
@@ -123,13 +123,13 @@ def test_nvfp4_quantization[
 
     ctx.enqueue_copy(device_buffer, host_ptr)
 
-    comptime static_scales_shape = DimList(
+    comptime static_scales_shape = DimList[
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(n.dim, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
+    ]()
 
     var dynamic_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),

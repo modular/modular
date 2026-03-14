@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import asyncio
+import pickle
 from unittest.mock import MagicMock, NonCallableMock
 
 import hf_repo_lock
@@ -38,7 +39,11 @@ from max.pipelines import (
     TextAndVisionTokenizer,
     TextTokenizer,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.core import (
+    TextAndVisionContext,
+    TextContext,
+    validate_only_one_image,
+)
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, SamplingConfig
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from test_common.mocks import mock_estimate_memory_footprint
@@ -247,6 +252,35 @@ def test_tokenizer__with_context_validation(
 
     with pytest.raises(ValueError, match="test"):
         _ = asyncio.run(tokenizer.new_context(request))
+
+
+def test_tokenizer__with_context_validators_is_pickleable(
+    llama_3_1_8b_instruct_local_path: str,
+) -> None:
+    """Tokenizers must be pickleable because MAX Serve pickles them when
+    spawning model workers (multiprocessing with 'spawn' start method).
+    """
+    pipeline_config = _create_mock_pipeline_config(
+        llama_3_1_8b_instruct_local_path
+    )
+    tokenizer = TextTokenizer(
+        llama_3_1_8b_instruct_local_path,
+        pipeline_config=pipeline_config,
+        trust_remote_code=True,
+        context_validators=[validate_only_one_image],
+    )
+
+    # Round-trip through pickle: this is what multiprocessing 'spawn' does.
+    restored = pickle.loads(pickle.dumps(tokenizer))
+
+    # Verify the restored tokenizer still works.
+    request = TextGenerationRequest(
+        request_id=RequestID("pickle_roundtrip"),
+        model_name=llama_3_1_8b_instruct_local_path,
+        prompt="Short message",
+    )
+    context = asyncio.run(restored.new_context(request))
+    assert len(context.tokens) > 0
 
 
 def test_tokenizer_regression_MODELS_467() -> None:

@@ -26,7 +26,7 @@ from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 # ===-----------------------------------------------------------------------===#
 
 
-fn _stencil_impl_cpu[
+def _stencil_impl_cpu[
     shape_element_type: DType,
     input_shape_element_type: DType,
     //,
@@ -35,28 +35,32 @@ fn _stencil_impl_cpu[
     stencil_axis: IndexList[stencil_rank, ...],
     simd_width: Int,
     dtype: DType,
-    map_fn: fn(IndexList[stencil_rank, ...]) capturing[_] -> Tuple[
+    map_fn: fn(IndexList[stencil_rank, ...]) unified -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
     ],
-    map_strides: fn(dim: Int) capturing[_] -> Int,
-    load_fn: fn[simd_width: Int, dtype: DType](IndexList[rank, ...]) capturing[
-        _
-    ] -> SIMD[dtype, simd_width],
-    compute_init_fn: fn[simd_width: Int]() capturing[_] -> SIMD[
-        dtype, simd_width
-    ],
+    map_strides: fn(dim: Int) unified -> Int,
+    load_fn: fn[simd_width: Int, dtype: DType](
+        IndexList[rank, ...]
+    ) unified -> SIMD[dtype, simd_width],
+    compute_init_fn: fn[simd_width: Int]() unified -> SIMD[dtype, simd_width],
     compute_fn: fn[simd_width: Int](
         IndexList[rank, ...],
         SIMD[dtype, simd_width],
         SIMD[dtype, simd_width],
-    ) capturing[_] -> SIMD[dtype, simd_width],
+    ) unified -> SIMD[dtype, simd_width],
     compute_finalize_fn: fn[simd_width: Int](
         IndexList[rank, ...], SIMD[dtype, simd_width]
-    ) capturing[_] -> None,
+    ) unified -> None,
 ](
     shape: IndexList[rank, element_type=shape_element_type],
     input_shape: IndexList[rank, element_type=input_shape_element_type],
+    map_fn_closure: map_fn,
+    map_strides_closure: map_strides,
+    load_fn_closure: load_fn,
+    compute_init_fn_closure: compute_init_fn,
+    compute_fn_closure: compute_fn,
+    compute_finalize_fn_closure: compute_finalize_fn,
 ):
     """Computes stencil operation in parallel.
 
@@ -84,6 +88,12 @@ fn _stencil_impl_cpu[
     Args:
         shape: The shape of the output buffer.
         input_shape: The shape of the input buffer.
+        map_fn_closure: Closure mapping output points to input co-domain bounds.
+        map_strides_closure: Closure returning the stride for a given dimension.
+        load_fn_closure: Closure loading a SIMD vector from input.
+        compute_init_fn_closure: Closure initializing the stencil accumulator.
+        compute_fn_closure: Closure processing each stencil point.
+        compute_finalize_fn_closure: Closure finalizing the output value.
     """
     comptime assert rank == 4, "Only stencil of rank-4 supported"
     comptime assert (
@@ -104,7 +114,7 @@ fn _stencil_impl_cpu[
 
     @always_inline
     @parameter
-    fn task_func(i: Int):
+    def task_func(i: Int):
         var start_parallel_offset = i * chunk_size
         var end_parallel_offset = min((i + 1) * chunk_size, parallelism_size)
 
@@ -120,19 +130,28 @@ fn _stencil_impl_cpu[
             )
 
             @always_inline
-            fn func_wrapper[
+            def func_wrapper[
                 simd_width: Int
-            ](idx: Int) unified {mut indices, read input_shape}:
+            ](idx: Int) unified {
+                mut indices,
+                read input_shape,
+                read map_fn_closure,
+                read map_strides_closure,
+                read load_fn_closure,
+                read compute_init_fn_closure,
+                read compute_fn_closure,
+                read compute_finalize_fn_closure,
+            }:
                 indices[rank - 1] = idx
                 var stencil_indices = IndexList[
                     stencil_rank, element_type=stencil_axis.element_type
                 ](indices[stencil_axis[0]], indices[stencil_axis[1]])
-                var bounds = map_fn(stencil_indices)
+                var bounds = map_fn_closure(stencil_indices)
                 var lower_bound = bounds[0]
                 var upper_bound = bounds[1]
-                var step_i = map_strides(0)
-                var step_j = map_strides(1)
-                var result = compute_init_fn[simd_width]()
+                var step_i = map_strides_closure(0)
+                var step_j = map_strides_closure(1)
+                var result = compute_init_fn_closure[simd_width]()
                 var input_height = input_shape[1]
                 var input_width = input_shape[2]
 
@@ -187,10 +206,12 @@ fn _stencil_impl_cpu[
                             rank, element_type=shape_element_type
                         ](indices[0], i, j, indices[3])
 
-                        var val = load_fn[simd_width, dtype](point_idx)
-                        result = compute_fn[simd_width](point_idx, result, val)
+                        var val = load_fn_closure[simd_width, dtype](point_idx)
+                        result = compute_fn_closure[simd_width](
+                            point_idx, result, val
+                        )
 
-                compute_finalize_fn[simd_width](indices, result)
+                compute_finalize_fn_closure[simd_width](indices, result)
 
             vectorize[simd_width, unroll_factor=unroll_factor](
                 shape[rank - 1], func_wrapper

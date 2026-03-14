@@ -32,18 +32,18 @@ comptime kc = 128
 
 
 @export(ABI="C")
-fn pack_b(
+def pack_b(
     packed_b: NDBuffer[
         rank=3,
         type,
         MutAnyOrigin,
-        DimList(width // kernel_cols, K, kernel_cols),
+        DimList[width // kernel_cols, K, kernel_cols](),
     ],
-    b: NDBuffer[rank=2, type, MutAnyOrigin, DimList(K, N)],
+    b: NDBuffer[rank=2, type, MutAnyOrigin, DimList[K, N]()],
 ):
     PackMatrixCols[
-        DimList(K, N),
-        DimList(width // kernel_cols, K, kernel_cols),
+        DimList[K, N](),
+        DimList[width // kernel_cols, K, kernel_cols](),
         type,
         simd_size,
         kernel_cols,
@@ -60,16 +60,16 @@ fn pack_b(
     )
 
 
-fn test_pack_b() raises:
+def test_pack_b() raises:
     var packed_b = NDBuffer[
         rank=3,
         type,
         MutAnyOrigin,
-        DimList(width // kernel_cols, K, kernel_cols),
+        DimList[width // kernel_cols, K, kernel_cols](),
     ].stack_allocation[alignment=64]()
     packed_b.fill(1)
     var b = NDBuffer[
-        rank=2, type, MutAnyOrigin, DimList(K, N)
+        rank=2, type, MutAnyOrigin, DimList[K, N]()
     ].stack_allocation[alignment=64]()
     b.fill(1)
     pack_b(packed_b, b)

@@ -46,7 +46,7 @@ struct FastDiv[dtype: DType](TrivialRegisterPassable, Writable):
     var _log2_shift: UInt8
 
     @always_inline
-    fn __init__(out self, divisor: Int = 1):
+    def __init__(out self, divisor: Int = 1):
         """Initializes FastDiv with the divisor.
 
         Constraints:
@@ -84,7 +84,7 @@ struct FastDiv[dtype: DType](TrivialRegisterPassable, Writable):
             self._sh2 = 0
 
     @always_inline
-    fn __rdiv__(self, other: Scalar[Self.uint_type]) -> Scalar[Self.uint_type]:
+    def __rdiv__(self, other: Scalar[Self.uint_type]) -> Scalar[Self.uint_type]:
         """Divides the other scalar by the divisor.
 
         Args:
@@ -96,7 +96,7 @@ struct FastDiv[dtype: DType](TrivialRegisterPassable, Writable):
         return other / self
 
     @always_inline
-    fn __rtruediv__(
+    def __rtruediv__(
         self, other: Scalar[Self.uint_type]
     ) -> Scalar[Self.uint_type]:
         """Divides the other scalar by the divisor (true division).
@@ -122,7 +122,7 @@ struct FastDiv[dtype: DType](TrivialRegisterPassable, Writable):
             ) >> self._sh2.cast[Self.uint_type]()
 
     @always_inline
-    fn __rmod__(self, other: Scalar[Self.uint_type]) -> Scalar[Self.uint_type]:
+    def __rmod__(self, other: Scalar[Self.uint_type]) -> Scalar[Self.uint_type]:
         """Computes the remainder of division.
 
         Args:
@@ -135,7 +135,7 @@ struct FastDiv[dtype: DType](TrivialRegisterPassable, Writable):
         return other - (q * self._div)
 
     @always_inline
-    fn __divmod__(
+    def __divmod__(
         self, other: Scalar[Self.uint_type]
     ) -> Tuple[Scalar[Self.uint_type], Scalar[Self.uint_type]]:
         """Computes both quotient and remainder.
@@ -150,7 +150,7 @@ struct FastDiv[dtype: DType](TrivialRegisterPassable, Writable):
         return q, (other - (q * self._div))
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    def write_to[W: Writer](self, mut writer: W):
         """Writes the FastDiv parameters to a writer.
 
         Parameters:
@@ -165,13 +165,3 @@ struct FastDiv[dtype: DType](TrivialRegisterPassable, Writable):
         writer.write("sh2: ", self._sh2, "\n")
         writer.write("is_pow2: ", self._is_pow2, "\n")
         writer.write("log2_shift: ", self._log2_shift, "\n")
-
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Get the object as a string.
-
-        Returns:
-            A string representation.
-        """
-        return String.write(self)

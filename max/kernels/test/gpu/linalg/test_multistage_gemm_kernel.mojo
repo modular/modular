@@ -17,7 +17,7 @@ from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils_gpu import MatmulKernels
 
 
-fn multistage_gemm_simple[
+def multistage_gemm_simple[
     M: Int,
     N: Int,
     K: Int,

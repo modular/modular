@@ -18,7 +18,7 @@ from std.gpu.host.compile import _compile_code
 from std.testing import *
 
 
-fn check_sm() -> Bool:
+def check_sm() -> Bool:
     comptime v = _is_sm_9x()
     return v
 

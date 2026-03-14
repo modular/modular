@@ -22,6 +22,13 @@ Usage:
     ./bazelw run //max/examples/diffusion:simple_offline_generation -- \
         --model black-forest-labs/FLUX.2-dev \
         --prompt "A cat in a garden"
+
+    # NVFP4 quantized model (two-repo layout: base model + quantized weights):
+    ./bazelw run //max/examples/diffusion:simple_offline_generation -- \
+        --model black-forest-labs/FLUX.2-dev \
+        --weight-path black-forest-labs/FLUX.2-dev-NVFP4/flux2-dev-nvfp4.safetensors \
+        --quantization-encoding float4_e2m1fnx2 \
+        --prompt "A cat in a garden"
 """
 
 from __future__ import annotations
@@ -31,6 +38,7 @@ import asyncio
 import base64
 import os
 from io import BytesIO
+from pathlib import Path
 from typing import cast
 
 from max.driver import DeviceSpec
@@ -85,6 +93,29 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--prompt",
         required=True,
         help="Text prompt describing the image to generate.",
+    )
+    parser.add_argument(
+        "--weight-path",
+        type=str,
+        action="append",
+        default=None,
+        help="Path(s) to model weight files. Can be specified multiple times.",
+    )
+    parser.add_argument(
+        "--quantization-encoding",
+        type=str,
+        default=None,
+        choices=[
+            "float32",
+            "bfloat16",
+            "q4_k",
+            "q4_0",
+            "q6_k",
+            "float8_e4m3fn",
+            "float4_e2m1fnx2",
+            "gptq",
+        ],
+        help="Weight encoding type (e.g., 'bfloat16', 'float4_e2m1fnx2' for NVFP4).",
     )
     parser.add_argument(
         "--negative-prompt",
@@ -165,6 +196,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=3,
         help="Number of iterations to run for profiling.",
+    )
+    parser.add_argument(
+        "--step-cache",
+        action="store_true",
+        help="Enable first-block step cache optimization.",
+    )
+    parser.add_argument(
+        "--residual-threshold",
+        type=float,
+        default=None,
+        help="Residual threshold for step cache early stopping.",
     )
 
     args = parser.parse_args(argv)
@@ -249,13 +291,18 @@ async def generate_image(args: argparse.Namespace) -> None:
         model=MAXModelConfig(
             model_path=args.model,
             device_specs=[DeviceSpec.accelerator()],
+            weight_path=(
+                [Path(p) for p in args.weight_path] if args.weight_path else []
+            ),
+            quantization_encoding=args.quantization_encoding,
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
+            enable_fbc=args.step_cache,
         ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
-        config.model.huggingface_weight_repo,
+        config.model.huggingface_model_repo,
         prefer_module_v3=config.runtime.prefer_module_v3,
         task=PipelineTask.PIXEL_GENERATION,
     )
@@ -355,6 +402,11 @@ async def generate_image(args: argparse.Namespace) -> None:
                     width=args.width,
                     steps=args.num_inference_steps,
                     guidance_scale=args.guidance_scale,
+                    **(
+                        {"residual_threshold": args.residual_threshold}
+                        if args.residual_threshold is not None
+                        else {}
+                    ),
                 )
             ),
         )
@@ -371,6 +423,11 @@ async def generate_image(args: argparse.Namespace) -> None:
                     width=args.width,
                     steps=args.num_inference_steps,
                     guidance_scale=args.guidance_scale,
+                    **(
+                        {"residual_threshold": args.residual_threshold}
+                        if args.residual_threshold is not None
+                        else {}
+                    ),
                 )
             ),
         )
@@ -390,6 +447,10 @@ async def generate_image(args: argparse.Namespace) -> None:
     print(
         f"Context created: {context.height}x{context.width}, {context.num_inference_steps} steps"
     )
+    if args.step_cache:
+        print(
+            f"Step cache enabled, residual_threshold={context.residual_threshold}."
+        )
 
     # Step 6: Prepare inputs for the pipeline
     # Create a batch with a single context
@@ -411,6 +472,11 @@ async def generate_image(args: argparse.Namespace) -> None:
                     width=args.width,
                     steps=args.num_inference_steps,
                     guidance_scale=args.guidance_scale,
+                    **(
+                        {"residual_threshold": args.residual_threshold}
+                        if args.residual_threshold is not None
+                        else {}
+                    ),
                 )
             ),
         )

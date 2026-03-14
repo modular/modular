@@ -30,14 +30,14 @@ from std.sys.info import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
 comptime MPI_LIBRARY = _Global["MPI_LIBRARY", _init_mpi_dylib]
 
 
-fn mpi_lib_name() -> String:
+def mpi_lib_name() -> String:
     comptime if has_nvidia_gpu_accelerator():
         return "nvshmem_bootstrap_mpi.so.3"
     else:
         return "libmpi.so"
 
 
-fn _init_mpi_dylib() -> OwnedDLHandle:
+def _init_mpi_dylib() -> OwnedDLHandle:
     var lib = mpi_lib_name()
     # If provided, allow an override directory for nvshmem bootstrap libs.
     # Example:
@@ -60,8 +60,8 @@ fn _init_mpi_dylib() -> OwnedDLHandle:
 
 
 @always_inline
-fn _get_mpi_function[
-    func_name: StaticString, result_type: __TypeOfAllTypes
+def _get_mpi_function[
+    func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
     return _get_dylib_function[
         MPI_LIBRARY(),
@@ -86,7 +86,7 @@ comptime MPI_THREAD_MULTIPLE = 3
 # ===-----------------------------------------------------------------------===#
 
 
-fn MPI_Init(
+def MPI_Init(
     mut argc: Int, mut argv: Span[StaticString, StaticConstantOrigin]
 ) raises:
     """Initialize MPI."""
@@ -103,7 +103,7 @@ fn MPI_Init(
         raise Error("failed to MPI_Init with error code:", result)
 
 
-fn MPI_Init_thread(
+def MPI_Init_thread(
     mut argc: Int,
     mut argv: Span[StaticString, StaticConstantOrigin],
     required: c_int,
@@ -125,7 +125,7 @@ fn MPI_Init_thread(
         raise Error("failed to MPI_Init_thread with error code:", result)
 
 
-fn MPI_Initialized(flag: UnsafePointer[c_int, MutExternalOrigin]) raises:
+def MPI_Initialized(flag: UnsafePointer[c_int, MutExternalOrigin]) raises:
     """Check if MPI has been initialized."""
     var result = _get_mpi_function[
         "MPI_Initialized",
@@ -135,7 +135,7 @@ fn MPI_Initialized(flag: UnsafePointer[c_int, MutExternalOrigin]) raises:
         raise Error("failed to check MPI_Initialized with error code:", result)
 
 
-fn MPI_Finalize() raises:
+def MPI_Finalize() raises:
     """Finalize MPI."""
     var result = _get_mpi_function[
         "MPI_Finalize",
@@ -145,7 +145,7 @@ fn MPI_Finalize() raises:
         raise Error("failed to finalize MPI with error code:", result)
 
 
-fn MPI_Comm_split(
+def MPI_Comm_split(
     comm: MPIComm,
     color: c_int,
     key: c_int,
@@ -162,7 +162,7 @@ fn MPI_Comm_split(
         raise Error("failed to MPI_Comm_split with error code:", result)
 
 
-fn MPI_Comm_rank(
+def MPI_Comm_rank(
     comm: MPIComm, rank: UnsafePointer[c_int, MutAnyOrigin]
 ) raises:
     """Get the rank of the current process in the communicator."""
@@ -174,7 +174,7 @@ fn MPI_Comm_rank(
         raise Error("failed to get MPI_Comm_rank with error code:", result)
 
 
-fn MPI_Comm_size(
+def MPI_Comm_size(
     comm: MPIComm, size: UnsafePointer[c_int, MutAnyOrigin]
 ) raises:
     """Get the size of the communicator."""
@@ -186,7 +186,7 @@ fn MPI_Comm_size(
         raise Error("failed to get MPI_Comm_size with error code:", result)
 
 
-fn get_mpi_comm_world() raises -> MPIComm:
+def get_mpi_comm_world() raises -> MPIComm:
     """Get the MPI_COMM_WORLD communicator."""
     var handle = MPI_LIBRARY.get_or_create_ptr()[].borrow()
     var comm_world_ptr = handle.get_symbol[OpaquePointer[MutExternalOrigin]](

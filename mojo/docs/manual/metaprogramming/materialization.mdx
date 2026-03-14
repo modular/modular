@@ -43,7 +43,7 @@ But types that **aren't** implicitly copyable present other challenges. Consider
 the following code:
 
 ```mojo
-fn lookup_fn(count: Int):
+def lookup_fn(count: Int):
     comptime list_of_values = [1, 3, 5, 7]
 
     for i in range(count):
@@ -76,7 +76,7 @@ materialize, by calling the
 Here's the code above with explicit materialization added:
 
 ```mojo
-fn lookup_fn(count: Int):
+def lookup_fn(count: Int):
     comptime list_of_values = [1, 3, 5, 7]
 
     for i in range(count):
@@ -99,7 +99,7 @@ every iteration of the loop, which is clearly wasteful.
 A more efficient version would materialize the list *outside* of the loop:
 
 ```mojo
-fn lookup_fn(count: Int):
+def lookup_fn(count: Int):
     comptime list_of_values = [1, 3, 5, 7]
 
     var list = materialize[list_of_values]()
@@ -135,10 +135,10 @@ The easiest way to use `global_constant()` is with
 allocates a statically sized array of elements on the stack. The following code
 uses `global_constant()` to create a static lookup table.
 
-```
+```mojo
 from std.builtin.globals import global_constant
 
-fn use_lookup(idx: Int) -> Int64:
+def use_lookup(idx: Int) -> Int64:
     comptime numbers: InlineArray[Int64, 10] = [
         1, 3, 14, 34, 63, 101, 148, 204, 269, 343
     ]

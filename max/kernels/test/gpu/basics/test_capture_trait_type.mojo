@@ -13,13 +13,13 @@
 
 from std.gpu import thread_idx
 from std.gpu.host import DeviceContext
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from std.utils import IndexList
 
 
 trait BaseT(TrivialRegisterPassable):
-    fn get_val(self, idx: Int) -> Float32:
+    def get_val(self, idx: Int) -> Float32:
         ...
 
 
@@ -33,14 +33,14 @@ struct ImplT(BaseT):
     ) raises:
         self.values = buf.as_any_origin()
 
-    fn get_val(self, idx: Int) -> Float32:
+    def get_val(self, idx: Int) -> Float32:
         return self.values[idx][0]
 
 
 def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int) raises:
     @parameter
     @__copy_capture(thing)
-    fn kernel_fn():
+    def kernel_fn():
         var idx = Int(thread_idx.x)
         print(thing.get_val(idx) * 2)
 

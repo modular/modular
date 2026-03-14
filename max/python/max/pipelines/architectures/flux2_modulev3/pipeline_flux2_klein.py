@@ -61,11 +61,13 @@ class Flux2KleinPipeline(Flux2Pipeline):
         "transformer": Flux2Pipeline.components["transformer"],
     }
 
+    @traced(message="Flux2KleinPipeline.init_remaining_components")
     def init_remaining_components(self) -> None:
         """Initialize derived attributes, including the compiled CFG combine."""
         super().init_remaining_components()
         self.build_cfg_combine()
 
+    @traced(message="Flux2KleinPipeline.build_cfg_combine")
     def build_cfg_combine(self) -> None:
         """Compile the CFG combine formula with symbolic shapes."""
         dtype = self.transformer.config.dtype
@@ -104,7 +106,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
         result = neg_noise_pred + scaled
         return result.cast(input_dtype)
 
-    @traced
+    @traced(message="Flux2KleinPipeline.prepare_inputs")
     def prepare_inputs(self, context: PixelContext) -> Flux2KleinModelInputs:  # type: ignore[override]
         """Convert a PixelContext into Flux2KleinModelInputs.
 
@@ -149,12 +151,15 @@ class Flux2KleinPipeline(Flux2Pipeline):
             num_inference_steps=base_inputs.num_inference_steps,
             num_images_per_prompt=base_inputs.num_images_per_prompt,
             input_image=base_inputs.input_image,
+            rdt_tensor=base_inputs.rdt_tensor,
+            prev_residual=base_inputs.prev_residual,
+            prev_output=base_inputs.prev_output,
             negative_tokens=negative_tokens,
             guidance_scale=context.guidance_scale,
             is_distilled=is_distilled,
         )
 
-    @traced
+    @traced(message="Flux2KleinPipeline.execute")
     def execute(  # type: ignore[override]
         self,
         model_inputs: Flux2KleinModelInputs,
@@ -197,17 +202,21 @@ class Flux2KleinPipeline(Flux2Pipeline):
         image_latents = None
         image_latent_ids = None
         if model_inputs.input_image is not None:
-            image_tensor = self._numpy_image_to_tensor(model_inputs.input_image)
-            image_latents, image_latent_ids = self.prepare_image_latents(
-                images=[image_tensor],
-                batch_size=batch_size,
-                device=self.vae.devices[0],
-                dtype=self.vae.config.dtype,
-            )
+            with Tracer("prepare_image_input"):
+                image_tensor = self._numpy_image_to_tensor(
+                    model_inputs.input_image
+                )
+                image_latents, image_latent_ids = self.prepare_image_latents(
+                    images=[image_tensor],
+                    batch_size=batch_size,
+                    device=self.vae.devices[0],
+                    dtype=self.vae.config.dtype,
+                )
 
         # 3) Prepare latents and conditioning tensors.
-        latents = self.preprocess_latents(model_inputs.latents)
-        latent_image_ids = model_inputs.latent_image_ids
+        with Tracer("preprocess_latents"):
+            latents = self.preprocess_latents(model_inputs.latents)
+            latent_image_ids = model_inputs.latent_image_ids
 
         # 4) Prepare scheduler tensors.
         with Tracer("prepare_scheduler"):
@@ -222,14 +231,15 @@ class Flux2KleinPipeline(Flux2Pipeline):
                 dts_seq = dts_seq.driver_tensor
 
         # 5) Prepare guidance scale tensor for compiled CFG combine.
-        guidance_scale_tensor: Tensor | None = None
-        if do_cfg:
-            guidance_scale_tensor = Tensor.full(
-                [],
-                model_inputs.guidance_scale,
-                device=self.transformer.devices[0],
-                dtype=DType.float32,
-            )
+        with Tracer("prepare_cfg_scale"):
+            guidance_scale_tensor: Tensor | None = None
+            if do_cfg:
+                guidance_scale_tensor = Tensor.full(
+                    [],
+                    model_inputs.guidance_scale,
+                    device=self.transformer.devices[0],
+                    dtype=DType.float32,
+                )
 
         # 6) Denoising loop.
         is_img2img = image_latents is not None

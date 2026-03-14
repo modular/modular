@@ -266,7 +266,7 @@ add = functional(ops.add)
 #: See :func:`max.graph.ops.allgather` for details.
 allgather = functional(ops.allgather)
 #: Sum values from multiple devices.
-#: See :func:`max.graph.ops.allreduce.sum` for details.
+#: See ``max.graph.ops.allreduce.sum`` for details.
 allreduce_sum = functional(ops.allreduce.sum)
 
 
@@ -337,7 +337,7 @@ cast = functional(ops.cast)
 #: See :func:`max.graph.ops.chunk` for details.
 chunk = functional(ops.chunk)
 #: Multiply two complex-valued tensors.
-#: See :func:`max.graph.ops.complex.mul` for details.
+#: See ``max.graph.ops.complex.mul`` for details.
 complex_mul = functional(ops.complex.mul)
 #: Concatenates a list of tensors along an axis.
 #: See :func:`max.graph.ops.concat` for details.
@@ -503,7 +503,7 @@ def inplace_custom(
         device: Device that the op is assigned to. This becomes a ``target``
             parameter to the kernel.
         values: The op function's arguments. At least one must be a
-            :obj:`BufferValue` or :obj:`_OpaqueValue`.
+            :class:`~max.graph.BufferValue` or :obj:`_OpaqueValue`.
         out_types: The list of op function's return types. Can be None if the
             operation has no outputs.
         parameters: Dictionary of extra parameters expected by the kernel.
@@ -687,6 +687,30 @@ def min(
         axis = 0
     return ops.reduction.min(x, axis=axis)
 
+
+@functional
+def clamp(
+    x: TensorValueLike,
+    lower_bound: TensorValueLike,
+    upper_bound: TensorValueLike,
+) -> TensorValue:
+    """Clamps tensor values to a specified range.
+
+    Args:
+        x: The input tensor.
+        lower_bound: The minimum value. Elements less than this are set to
+            ``lower_bound``.
+        upper_bound: The maximum value. Elements greater than this are set to
+            ``upper_bound``.
+
+    Returns:
+        A tensor with values clamped to the specified range.
+    """
+    return max(min(x, upper_bound), lower_bound)
+
+
+#: Alias for :func:`clamp`.
+clip = clamp
 
 #: Computes the modulo operation element-wise.
 #: See :func:`max.graph.ops.mod` for details.

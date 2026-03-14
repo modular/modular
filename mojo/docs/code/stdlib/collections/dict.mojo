@@ -13,7 +13,7 @@
 from std.testing import *
 
 
-fn test_dict() raises:
+def test_dict() raises:
     # Empty dictionary
     var empty_dict = Dict[String, Int]()
     assert_true(len(empty_dict) == 0)
@@ -87,7 +87,7 @@ fn test_dict() raises:
     )  # Accessing missing key returns default value
 
 
-fn test_itemstring() raises:
+def test_itemstring() raises:
     var my_dict = Dict[Int, Float64]()
     my_dict[1] = 1.1
     my_dict[2] = 2.2
@@ -105,7 +105,7 @@ fn test_itemstring() raises:
     assert_true(dict_as_string.__contains__("2.2"))
 
 
-fn test_fromkeys() raises:
+def test_fromkeys() raises:
     var keys = ["a", "b", "c"]
     var dict = Dict.fromkeys(keys, 0)
     # print(dict.__str__())  # => {"a": 0, "b": 0, "c": 0}
@@ -115,7 +115,7 @@ fn test_fromkeys() raises:
     assert_true(dict["c"] == 0)
 
 
-fn test_find() raises:
+def test_find() raises:
     var my_dict = Dict[String, Int]()
     my_dict["a"] = 1
     my_dict["b"] = 2
@@ -127,7 +127,7 @@ fn test_find() raises:
     assert_true(missing_value == None)
 
 
-fn test_get() raises:
+def test_get() raises:
     var my_dict = Dict[String, Int]()
     my_dict["a"] = 1
     my_dict["b"] = 2
@@ -140,7 +140,7 @@ fn test_get() raises:
     assert_true(my_dict["a"] == my_dict.get("a").or_else(Int.MAX))
 
 
-fn test_get_with_default() raises:
+def test_get_with_default() raises:
     var my_dict = Dict[String, Int]()
     my_dict["a"] = 1
     my_dict["b"] = 2
@@ -158,7 +158,7 @@ fn test_get_with_default() raises:
     assert_true(my_dict["a"] == my_dict.get("a", Int.MAX))
 
 
-fn test_pop() raises:
+def test_pop() raises:
     var my_dict = Dict[String, Int]()
     my_dict["a"] = 1
     my_dict["b"] = 2
@@ -170,7 +170,7 @@ fn test_pop() raises:
     assert_true(missing_value == 99)
 
 
-fn test_pop_with_default() raises:
+def test_pop_with_default() raises:
     var my_dict = Dict[String, Int]()
     my_dict["a"] = 1
     my_dict["b"] = 2
@@ -184,7 +184,7 @@ fn test_pop_with_default() raises:
     assert_true(missing_value == 99)
 
 
-fn test_popitem() raises:
+def test_popitem() raises:
     var my_dict = Dict[String, Int]()
     my_dict["a"] = 1
     my_dict["b"] = 2
@@ -199,7 +199,7 @@ fn test_popitem() raises:
     assert_true(len(my_dict) == 1)
 
 
-fn test_keys() raises:
+def test_keys() raises:
     var my_dict = Dict[String, Int]()
     my_dict["a"] = 1
     my_dict["b"] = 2
@@ -211,7 +211,7 @@ fn test_keys() raises:
     assert_true(keylist[1] == "a" or keylist[1] == "b")
 
 
-fn test_values() raises:
+def test_values() raises:
     var my_dict = Dict[String, Int]()
     my_dict["a"] = 1
     my_dict["b"] = 2
@@ -224,7 +224,7 @@ fn test_values() raises:
     assert_true(valuelist[1] == 1 or valuelist[1] == 2)
 
 
-fn test_items() raises:
+def test_items() raises:
     var my_dict = Dict[String, Int]()
     my_dict["a"] = 1
     my_dict["b"] = 2
@@ -240,7 +240,7 @@ fn test_items() raises:
         )
 
 
-fn test_takeitems() raises:
+def test_takeitems() raises:
     var my_dict = Dict[String, Int]()
     my_dict["a"] = 1
     my_dict["b"] = 2
@@ -258,7 +258,7 @@ fn test_takeitems() raises:
     assert_true(len(my_dict) == 0)
 
 
-fn test_update() raises:
+def test_update() raises:
     var dict1 = Dict[String, Int]()
     dict1["a"] = 1
     dict1["b"] = 2
@@ -277,7 +277,7 @@ fn test_update() raises:
     assert_true(dict1["c"] == 4)
 
 
-fn test_clear() raises:
+def test_clear() raises:
     var my_dict = Dict[String, Int]()
     my_dict["a"] = 1
     my_dict["b"] = 2
@@ -288,7 +288,7 @@ fn test_clear() raises:
     assert_true(len(my_dict) == 0)
 
 
-fn test_setdefault() raises:
+def test_setdefault() raises:
     var my_dict = Dict[String, Int]()
     my_dict["a"] = 1
     my_dict["b"] = 2
@@ -303,7 +303,7 @@ fn test_setdefault() raises:
     assert_true(my_dict["c"] == 99)
 
 
-fn main() raises:
+def main() raises:
     test_dict()
     test_itemstring()
     test_fromkeys()

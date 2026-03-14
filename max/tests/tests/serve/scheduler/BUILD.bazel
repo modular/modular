@@ -10,6 +10,8 @@ package(default_visibility = [
 # TODO(SERVOPT-949): Tests that timeout on macOS
 _MACOS_INCOMPATIBLE_TESTS = [
     "test_paged_scheduler.py",
+    "test_queues.py",
+    "test_scheduler.py",
     "test_tts_scheduler.py",
 ]
 
@@ -17,6 +19,7 @@ _MACOS_INCOMPATIBLE_TESTS = [
 [
     modular_py_test(
         name = src.split("/")[-1].split(".")[0],
+        size = "large",
         srcs = [src],
         mojo_deps = ["//max:MOGGKernelAPI"],
         tags = [
@@ -65,6 +68,7 @@ modular_py_test(
         "//max/python/max/interfaces",
         "//max/python/max/kv_cache",
         "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/serve:config",
         "//max/python/max/serve/scheduler",
         "//max/python/max/serve/worker_interface",

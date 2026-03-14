@@ -244,15 +244,17 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         tokenizer: PreTrainedTokenizerBase,
         max_num_unique_sys_prompt: int,
         num_requests: int,
-    ) -> list[list[int]]:
+    ) -> tuple[list[list[int]], list[list[int]]]:
         """Load and tokenize a limited number of system and user prompts from ShareGPT dataset.
 
         Args:
             tokenizer: Tokenizer to encode prompts.
             max_num_unique_sys_prompt: Number of unique system prompts to load.
             num_requests: Number of user prompts to load.
+
         Returns:
-            List of tokenized prompts (list of token IDs).
+            Tuple of (sys_prompt_pool, user_prompt_pool), each a list of
+            tokenized prompts (list of token IDs).
         """
         dataset_path = hf_hub_download(
             repo_id="anon8231489123/ShareGPT_Vicuna_unfiltered",
@@ -312,29 +314,32 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             f" (sys={max_num_unique_sys_prompt} + user={num_requests})"
             " prompts."
         )
-        return tokenized_prompts
+        sys_prompt_pool = tokenized_prompts[:max_num_unique_sys_prompt]
+        user_prompt_pool = tokenized_prompts[
+            max_num_unique_sys_prompt : max_num_unique_sys_prompt + num_requests
+        ]
+        return (sys_prompt_pool, user_prompt_pool)
 
-    def _sample_sharegpt_tokens(
+    def _repeat_truncate_prompt_tokens(
         self,
-        sharegpt_prompts: list[list[int]],
+        prompt_pool: list[list[int]],
         target_len: int,
         prompt_index: int,
     ) -> list[int]:
-        """Sample tokens from ShareGPT and repeat/truncate to target length.
+        """Select a prompt from the pool by index and repeat or truncate to target length.
 
         Args:
-            sharegpt_prompts: List of tokenized ShareGPT prompts.
+            prompt_pool: List of tokenized prompts (list of token IDs).
             target_len: Target number of tokens.
-            prompt_index: Index to select which prompt to use.
+            prompt_index: Index into the pool to select which prompt to use.
 
         Returns:
-            List of token IDs with exactly target_len tokens.
+            List of token IDs with exactly target_len tokens (or empty if target_len <= 0).
         """
         if target_len <= 0:
             return []
 
-        # Select a prompt
-        prompt_token_ids = sharegpt_prompts[prompt_index]
+        prompt_token_ids = prompt_pool[prompt_index]
         prompt_len = len(prompt_token_ids)
 
         if prompt_len >= target_len:
@@ -343,8 +348,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         else:
             # Repeat tokens to reach target length.
             ratio = (target_len + prompt_len - 1) // prompt_len
-            repeated_ids = (prompt_token_ids * ratio)[:target_len]
-            return repeated_ids
+            return (prompt_token_ids * ratio)[:target_len]
 
     def sample_requests(
         self,
@@ -386,6 +390,11 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
         if input_len is None:
             raise ValueError("input_len is required for RandomBenchmarkDataset")
+        if sys_prompt_ratio > 0 and max_num_unique_sys_prompt <= 0:
+            raise ValueError(
+                "max_num_unique_sys_prompt must be greater than 0 when"
+                " sys_prompt_ratio is greater than 0 for RandomBenchmarkDataset"
+            )
         if output_len is None:
             raise ValueError(
                 "output_len is required for RandomBenchmarkDataset"
@@ -423,18 +432,30 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                     f" instead got: {image_size}"
                 )
 
-        # Load ShareGPT prompts if using synthetic tokens. You may only need a
-        # subset of the prompts.
-        sharegpt_prompt_subset: list[list[int]] = []
-        if self.use_synthetic_tokens:
-            # Use the first max_num_unique_sys_prompt ShareGPT prompts as system
-            # prompts and the remainder as user prompts. Only load as many prompts
-            # as needed to satisfy the synthetic token requests.
-            sharegpt_prompt_subset = self._load_sharegpt_prompts_limited(
-                tokenizer, max_num_unique_sys_prompt, num_requests
-            )
-
         vocab_size = tokenizer.vocab_size
+
+        # Build sys_prompt_pool and user_prompt_pool. For synthetic tokens we load
+        # both from ShareGPT; for random tokens we only build a random sys_prompt_pool
+        # and generate user prompts per request.
+        sys_prompt_pool: list[list[int]] = []
+        user_prompt_pool: list[list[int]] = []
+        if self.use_synthetic_tokens:
+            sys_prompt_pool, user_prompt_pool = (
+                self._load_sharegpt_prompts_limited(
+                    tokenizer, max_num_unique_sys_prompt, num_requests
+                )
+            )
+        elif not self.use_synthetic_tokens and max_num_unique_sys_prompt > 0:
+            # Random path: create sys_prompt_pool with base length of p50 of
+            # input_lens for random token sequences.
+            sys_prompt_base_len = max(1, int(np.percentile(input_lens, 50)))
+            sys_prompt_pool = [
+                np.random.randint(
+                    0, vocab_size, size=sys_prompt_base_len
+                ).tolist()
+                for _ in range(max_num_unique_sys_prompt)
+            ]
+
         max_context_length = int(model_max_length * MAX_CONTEXT_USAGE_RATIO)
 
         input_requests = []
@@ -461,24 +482,19 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
             # Generate system prompt tokens for this request.
             # Use sys_prompt_idx to select which ShareGPT prompt (for synthetic)
-            # or as a seed variation (for random tokens).
+            # or random token sequence (for random tokens).
             sys_prompt_idx = np.random.randint(0, max_num_unique_sys_prompt)
             if self.use_synthetic_tokens:
-                # Sample system prompt from ShareGPT, indexed by sys_prompt_idx.
-                sys_prompt_ids = self._sample_sharegpt_tokens(
-                    sharegpt_prompt_subset, sys_prompt_len_i, sys_prompt_idx
+                sys_prompt_ids = self._repeat_truncate_prompt_tokens(
+                    sys_prompt_pool, sys_prompt_len_i, sys_prompt_idx
                 )
-                # Sample user prompt from ShareGPT, offset to avoid system prompt overlap.
-                user_prompt_ids = self._sample_sharegpt_tokens(
-                    sharegpt_prompt_subset,
-                    user_prompt_len,
-                    max_num_unique_sys_prompt + i,
+                user_prompt_ids = self._repeat_truncate_prompt_tokens(
+                    user_prompt_pool, user_prompt_len, i
                 )
             else:
-                # Generate random token IDs for system prompt.
-                sys_prompt_ids = np.random.randint(
-                    0, vocab_size, size=sys_prompt_len_i
-                ).tolist()
+                sys_prompt_ids = self._repeat_truncate_prompt_tokens(
+                    sys_prompt_pool, sys_prompt_len_i, sys_prompt_idx
+                )
                 # Generate random token IDs for user prompt.
                 user_prompt_offset = np.random.randint(0, vocab_size)
                 user_prompt_ids = [
@@ -490,7 +506,16 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
             # Remove special tokens from the prompt.
             special_ids = set(tokenizer.all_special_ids)
-            replacement = tokenizer.encode(" ", add_special_tokens=False)[0]
+            # Use common space prefix for replacement, pick the first valid one.
+            # - " "      : plain space (some tokenizers use explicit space token)
+            # - U+0120   : GPT-2/BPE style prefix (e.g. Llama 3, DeepSeek)
+            # - U+2581   : SentencePiece style prefix (e.g. Llama 1/2, Mistral)
+            replacement = next(
+                tid
+                for candidate in [" ", chr(0x0120), chr(0x2581)]
+                if (tid := tokenizer.convert_tokens_to_ids(candidate))
+                not in (None, tokenizer.unk_token_id)
+            )
             prompt_ids = [
                 (replacement if (id in special_ids) else id)
                 for id in prompt_ids

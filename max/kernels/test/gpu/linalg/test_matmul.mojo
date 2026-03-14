@@ -24,9 +24,15 @@ import linalg.matmul.vendor.blas as vendor_blas
 from std.algorithm.functional import elementwise
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext, get_gpu_target
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._fillers import arange as arange, random
-from linalg.matmul.gpu import _matmul_gpu
+from linalg.matmul.gpu import _matmul_gpu, multistage_gemm
 from linalg.utils_gpu import MatmulConfig
 from test_utils import ulp_distance
 from std.testing import assert_almost_equal
@@ -46,7 +52,7 @@ comptime epilogue_func_type = fn[
 
 @parameter
 @always_inline
-fn epilogue_test_fn[
+def epilogue_test_fn[
     dtype: DType, width: Int, *, alignment: Int = 1
 ](
     idx: IndexList[2],
@@ -67,7 +73,7 @@ fn epilogue_test_fn[
     return val + bias
 
 
-fn select_max_ulp_distance[
+def select_max_ulp_distance[
     lambda_fn: Optional[epilogue_func_type]
 ](max_ulp_distance: Optional[Int]) -> Int:
     if max_ulp_distance:
@@ -78,7 +84,7 @@ fn select_max_ulp_distance[
         return 2
 
 
-fn test[
+def test[
     dtype: DType,
     /,
     *,
@@ -104,11 +110,12 @@ fn test[
 
     print(m, "x", n, "x", k)
 
-    comptime static_a_shape = DimList(to_dim[M], to_dim[K])
-    comptime static_b_shape = DimList(
-        to_dim[N], to_dim[K]
-    ) if transpose_b else DimList(to_dim[K], to_dim[N])
-    comptime static_c_shape = DimList(to_dim[M], to_dim[N])
+    comptime static_a_shape = DimList[to_dim[M], to_dim[K]]()
+    comptime static_b_shape = DimList[
+        to_dim[N] if transpose_b else to_dim[K],
+        to_dim[K] if transpose_b else to_dim[N],
+    ]()
+    comptime static_c_shape = DimList[to_dim[M], to_dim[N]]()
 
     var dynamic_a_shape = IndexList[2](M.or_else(m), K.or_else(k))
     var dynamic_b_shape = IndexList[2](
@@ -203,7 +210,7 @@ fn test[
     @parameter
     @always_inline
     @__copy_capture(c_tensor, m, n)
-    fn epilogue_fn[
+    def epilogue_fn[
         _dtype: DType,
         width: Int,
         *,
@@ -219,28 +226,49 @@ fn test[
         )
 
     comptime if lambda_fn:
-        _matmul_gpu[
-            use_tensor_core=True,
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=epilogue_fn,
-            config=config,
-        ](
-            c_device,
-            a_device,
-            b_device,
-            ctx,
-        )
+        comptime if config:
+            multistage_gemm[
+                transpose_b=transpose_b,
+                config=config.value(),
+                elementwise_lambda_fn=epilogue_fn,
+            ](
+                TileTensor(c_device),
+                TileTensor(a_device),
+                TileTensor(b_device),
+                ctx,
+            )
+        else:
+            _matmul_gpu[
+                use_tensor_core=True,
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=epilogue_fn,
+            ](
+                TileTensor(c_device),
+                TileTensor(a_device),
+                TileTensor(b_device),
+                ctx,
+            )
     else:
-        _matmul_gpu[
-            use_tensor_core=True,
-            transpose_b=transpose_b,
-            config=config,
-        ](
-            c_device,
-            a_device,
-            b_device,
-            ctx,
-        )
+        comptime if config:
+            multistage_gemm[
+                transpose_b=transpose_b,
+                config=config.value(),
+            ](
+                TileTensor(c_device),
+                TileTensor(a_device),
+                TileTensor(b_device),
+                ctx,
+            )
+        else:
+            _matmul_gpu[
+                use_tensor_core=True,
+                transpose_b=transpose_b,
+            ](
+                TileTensor(c_device),
+                TileTensor(a_device),
+                TileTensor(b_device),
+                ctx,
+            )
 
     ctx.synchronize()
 
@@ -259,7 +287,7 @@ fn test[
     @always_inline
     @__copy_capture(c_ref_tensor, m, n)
     @parameter
-    fn func[
+    def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[2]](idx0)

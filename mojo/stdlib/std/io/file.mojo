@@ -76,7 +76,7 @@ comptime O_CLOEXEC = platform_map[
 # ===----------------------------------------------------------------------=== #
 
 
-fn _open_file(path: String, mode: String) raises -> Int:
+def _open_file(path: String, mode: String) raises -> Int:
     """Open a file and return its file descriptor.
 
     This function implements the complex logic for opening files with proper
@@ -170,11 +170,11 @@ struct FileHandle(Defaultable, Movable, Writer):
     var handle: Int
     """The underlying file descriptor (Unix fd)."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Default constructor."""
         self.handle = -1
 
-    fn __init__(out self, path: StringSlice, mode: StringSlice) raises:
+    def __init__(out self, path: StringSlice, mode: StringSlice) raises:
         """Construct the FileHandle using the file path and mode.
 
         Args:
@@ -187,14 +187,14 @@ struct FileHandle(Defaultable, Movable, Writer):
         """
         self.handle = _open_file(String(path), String(mode))
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Closes the file handle."""
         try:
             self.close()
         except:
             pass
 
-    fn close(mut self) raises:
+    def close(mut self) raises:
         """Closes the file handle.
 
         Raises:
@@ -213,7 +213,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         self.handle = -1
 
-    fn read(self, size: Int = -1) raises -> String:
+    def read(self, size: Int = -1) raises -> String:
         """Reads data from a file and sets the file handle seek position. If
         size is left as the default of -1, it will read to the end of the file.
         Setting size to a number larger than what's in the file will set
@@ -265,7 +265,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         var bytes = self.read_bytes(size)
         return String(from_utf8=bytes)
 
-    fn read[
+    def read[
         dtype: DType, origin: MutOrigin
     ](self, buffer: Span[Scalar[dtype], origin]) raises -> Int:
         """Read data from the file into the Span.
@@ -336,7 +336,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         return bytes_read
 
-    fn read_bytes(self, size: Int = -1) raises -> List[UInt8]:
+    def read_bytes(self, size: Int = -1) raises -> List[UInt8]:
         """Reads data from a file and sets the file handle seek position. If
         size is left as default of -1, it will read to the end of the file.
         Setting size to a number larger than what's in the file will be handled
@@ -422,7 +422,9 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         return result^
 
-    fn seek(self, offset: UInt64, whence: UInt8 = os.SEEK_SET) raises -> UInt64:
+    def seek(
+        self, offset: UInt64, whence: UInt8 = os.SEEK_SET
+    ) raises -> UInt64:
         """Seeks to the given offset in the file.
 
         Args:
@@ -474,7 +476,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         return UInt64(pos)
 
-    fn write_once(mut self, bytes: Span[Byte, _]) raises -> Int:
+    def write_once(mut self, bytes: Span[Byte, _]) raises -> Int:
         """Attempt to write bytes to the file, returning the number of bytes written.
 
         This is a low-level method that performs a single write syscall. It may
@@ -521,7 +523,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         return bytes_written
 
-    fn write_all(mut self, bytes: Span[Byte, _]) raises:
+    def write_all(mut self, bytes: Span[Byte, _]) raises:
         """Write all bytes to the file, handling partial writes automatically.
 
         This method guarantees that all bytes are written by looping until
@@ -564,7 +566,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             total_written += chunk_written
 
     @always_inline
-    fn write_bytes(mut self, bytes: Span[Byte, _]):
+    def write_bytes(mut self, bytes: Span[Byte, _]):
         """Write a span of bytes to the file.
 
         This method is required by the Writer trait and handles partial writes
@@ -615,7 +617,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
             total_written += bytes_written
 
-    fn write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSlice):
         """
         Write a `StringSlice` to this `FileHandle`.
 
@@ -626,7 +628,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         """
         self.write_bytes(string.as_bytes())
 
-    fn write[*Ts: Writable](mut self, *args: *Ts):
+    def write[*Ts: Writable](mut self, *args: *Ts):
         """Write a sequence of Writable arguments to the provided Writer.
 
         Parameters:
@@ -649,7 +651,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         buffer.flush()
 
-    fn _write(
+    def _write(
         self,
         ptr: UnsafePointer[mut=False, UInt8, _, address_space=_],
         len: Int,
@@ -687,7 +689,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
             total_written += bytes_written
 
-    fn __enter__(var self) -> Self:
+    def __enter__(var self) -> Self:
         """The function to call when entering the context.
 
         Returns:
@@ -695,7 +697,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         """
         return self^
 
-    fn _get_raw_fd(self) -> Int:
+    def _get_raw_fd(self) -> Int:
         """Get the raw Unix file descriptor.
 
         Returns:
@@ -704,7 +706,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         return self.handle
 
 
-fn open[
+def open[
     PathLike: os.PathLike
 ](path: PathLike, mode: StringSlice) raises -> FileHandle:
     """Opens the file specified by path using the mode provided, returning a

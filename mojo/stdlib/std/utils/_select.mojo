@@ -13,7 +13,7 @@
 
 
 @always_inline("builtin")
-fn _select_register_value[
+def _select_register_value[
     T: TrivialRegisterPassable
 ](condition: Bool, lhs: T, rhs: T) -> T:
     """Choose one value based on a condition, without IR-level branching.

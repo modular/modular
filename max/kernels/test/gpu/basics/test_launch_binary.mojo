@@ -19,7 +19,7 @@ from std.gpu.host.compile import _compile_code
 from std.testing import assert_equal
 
 
-fn vec_func(
+def vec_func(
     in0: UnsafePointer[Float32, ImmutAnyOrigin],
     in1: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
@@ -63,7 +63,7 @@ def test_vec_add(ctx: DeviceContext) raises:
             assert_equal(
                 out_host[i],
                 Float32(i + 2),
-                msg=t"at index{i} the value is{out_host[i]}",
+                msg=String(t"at index{i} the value is{out_host[i]}"),
             )
 
 

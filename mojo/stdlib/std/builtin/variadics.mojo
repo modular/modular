@@ -44,7 +44,7 @@ struct Variadic:
 
     @staticmethod
     @always_inline("builtin")
-    fn size[T: AnyType](seq: Self.ValuesOfType[T]) -> Int:
+    def size[T: AnyType](seq: Self.ValuesOfType[T]) -> Int:
         """Returns the length of a variadic sequence.
 
         Parameters:
@@ -60,7 +60,7 @@ struct Variadic:
 
     @staticmethod
     @always_inline("builtin")
-    fn size[T: type_of(AnyType)](seq: Self.TypesOfTrait[T]) -> Int:
+    def size[T: type_of(AnyType)](seq: Self.TypesOfTrait[T]) -> Int:
         """Returns the length of a variadic sequence.
 
         Parameters:
@@ -469,13 +469,14 @@ struct Variadic:
 
 
 @fieldwise_init
-struct _VariadicParamListIter[type: TrivialRegisterPassable](
+struct _VariadicParamListIter[type: TrivialRegisterPassable, //, *values: type](
     ImplicitlyCopyable, Iterable, Iterator
 ):
     """Const Iterator for VariadicParamList.
 
     Parameters:
         type: The type of the elements in the list.
+        values: The values in the list.
     """
 
     comptime Element = Self.type
@@ -484,26 +485,27 @@ struct _VariadicParamListIter[type: TrivialRegisterPassable](
     ]: Iterator = Self
 
     var index: Int
-    var src: VariadicParamList[Self.type]
 
     @always_inline
-    fn __next__(mut self) raises StopIteration -> Self.type:
+    def __next__(mut self) raises StopIteration -> Self.type:
         var index = self.index
-        if index >= len(self.src):
+
+        comptime params = VariadicParamList[*Self.values]()
+        if index >= params.size:
             raise StopIteration()
         self.index = index + 1
-        return self.src[index]
+        return params[index]
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
-        var len = len(self.src) - self.index
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var len = VariadicParamList[*Self.values].size - self.index
         return (len, {len})
 
 
-struct VariadicParamList[type: TrivialRegisterPassable](
+struct VariadicParamList[type: TrivialRegisterPassable, //, *values: type](
     Iterable, Sized, TrivialRegisterPassable, Writable
 ):
     """A utility class to access homogeneous variadic parameters.
@@ -522,7 +524,7 @@ struct VariadicParamList[type: TrivialRegisterPassable](
     arguments must have the same type `Int`.
 
     ```mojo
-    fn sum_values[*args: Int]() -> Int:
+    def sum_values[*args: Int]() -> Int:
         var total = 0
 
         # Can use regular for loop because args is a VariadicParamList
@@ -531,22 +533,29 @@ struct VariadicParamList[type: TrivialRegisterPassable](
 
         return total
 
-    fn main():
+    def main():
         print(sum_values(1, 2, 3, 4, 5))
     ```
 
     Parameters:
         type: The type of the elements in the list.
+        values: The values in the list.
     """
 
-    comptime _mlir_type = Variadic.ValuesOfType[Self.type]
-
-    var value: Self._mlir_type
-    """The underlying storage for the variadic list."""
+    comptime size = Int(
+        mlir_value=__mlir_attr[
+            `#kgen.variadic.size<:`,
+            type_of(Self.values),
+            ` `,
+            +Self.values,
+            `> : index`,
+        ]
+    )
+    """The number of elements in the list."""
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _VariadicParamListIter[Self.type]
+    ]: Iterator = _VariadicParamListIter[*Self.values]
     """The iterator type for this variadic list.
 
     Parameters:
@@ -555,58 +564,22 @@ struct VariadicParamList[type: TrivialRegisterPassable](
     """
 
     @always_inline
-    fn __init__(out self, *values: Self.type, comptime_only: ()):
-        """Constructs a VariadicParamList from a variadic list of values at comptime.
-        NOTE: this initializer only works at comptime.
-
-        Args:
-            values: The variadic argument list to construct the variadic list
-              with.
-            comptime_only: Tell callers that this only works at comptime.
-        """
-        self = Self(values=values, comptime_only=())
+    def __init__(out self):
+        """Constructs a VariadicParamList."""
+        pass
 
     @always_inline
-    fn __init__(
-        out self,
-        values: VariadicList[Self.type, is_owned=False],
-        comptime_only: (),
-    ):
-        """Constructs a VariadicParamList from a variadic list of values at comptime.
-        NOTE: this initializer only works at comptime.
-
-        Args:
-            values: The variadic argument list to construct the variadic list
-              with.
-            comptime_only: Tell callers that this only works at comptime.
-        """
-        self.value = __mlir_op.`pop.variadic.load.values`[
-            _type=type_of(self.value)
-        ](values.value)
-
-    @doc_private
-    @always_inline
-    @implicit
-    fn __init__(out self, value: Self._mlir_type):
-        """Constructs a VariadicParamList from a variadic argument type.
-
-        Args:
-            value: The variadic argument to construct the list with.
-        """
-        self.value = value
-
-    @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Gets the size of the list.
 
         Returns:
             The number of elements on the variadic list.
         """
 
-        return Int(mlir_value=__mlir_op.`pop.variadic.size`(self.value))
+        return Self.size
 
     @always_inline
-    fn __getitem__(self, idx: Int) -> Self.type:
+    def __getitem__(self, idx: Int) -> Self.type:
         """Gets a single element on the variadic list.
 
         Args:
@@ -615,9 +588,10 @@ struct VariadicParamList[type: TrivialRegisterPassable](
         Returns:
             The element on the list corresponding to the given index.
         """
-        return __mlir_op.`pop.variadic.get`(self.value, index(idx)._mlir_value)
+        # FIXME: Replace with an attribute.
+        return __mlir_op.`pop.variadic.get`(self.values, index(idx)._mlir_value)
 
-    fn _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
+    def _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
         _constrained_conforms_to[
             conforms_to(Self.type, Writable),
             Parent=Self,
@@ -637,7 +611,7 @@ struct VariadicParamList[type: TrivialRegisterPassable](
         writer.write_string(")")
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the elements of this variadic list to a writer.
 
         Constraints:
@@ -649,7 +623,7 @@ struct VariadicParamList[type: TrivialRegisterPassable](
         self._write_elements(writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Writes the repr of this variadic list to a writer.
 
         Constraints:
@@ -660,7 +634,7 @@ struct VariadicParamList[type: TrivialRegisterPassable](
         """
 
         @parameter
-        fn write_fields(mut w: Some[Writer]):
+        def write_fields(mut w: Some[Writer]):
             self._write_elements[is_repr=True](w)
 
         FormatStruct(writer, "VariadicParamList").params(
@@ -668,13 +642,13 @@ struct VariadicParamList[type: TrivialRegisterPassable](
         ).fields[FieldsFn=write_fields]()
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the list.
 
         Returns:
             An iterator to the start of the list.
         """
-        return {0, self}
+        return {0}
 
 
 # ===-----------------------------------------------------------------------===#
@@ -716,7 +690,7 @@ struct _VariadicListIter[
         Self.list_origin,
     ]
 
-    fn __init__(
+    def __init__(
         out self,
         index: Int,
         ref[Self.list_origin] list: Self.variadic_list_type,
@@ -725,7 +699,7 @@ struct _VariadicListIter[
         self.src = Pointer(to=list)
 
     @always_inline
-    fn __next__(
+    def __next__(
         mut self,
     ) raises StopIteration -> ref[Self.elt_origin._mlir_origin] Self.elt_type:
         var index = self.index
@@ -774,7 +748,7 @@ struct VariadicList[
     @doc_private
     @always_inline
     @implicit
-    fn __init__(out self, value: Self._mlir_type):
+    def __init__(out self, value: Self._mlir_type):
         """Constructs a VariadicList from a variadic argument type.
 
         Args:
@@ -783,7 +757,7 @@ struct VariadicList[
         self.value = value
 
     @always_inline
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Destructor that releases elements if owned."""
 
         # Destroy each element if this variadic has owned elements, destroy
@@ -806,7 +780,7 @@ struct VariadicList[
                     TDestructible
                 ]().destroy_pointee()
 
-    fn consume_elements[
+    def consume_elements[
         elt_handler: fn(idx: Int, var elt: Self.element_type) capturing
     ](deinit self):
         """Consume the variadic list by transferring ownership of each element
@@ -829,7 +803,7 @@ struct VariadicList[
             elt_handler(i, __get_address_as_owned_value(ptr.address))
 
     # FIXME: This is a hack to work around a miscompile, do not use.
-    fn _anihilate(deinit self):
+    def _anihilate(deinit self):
         pass
 
     # ===-------------------------------------------------------------------===#
@@ -837,7 +811,7 @@ struct VariadicList[
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Gets the size of the list.
 
         Returns:
@@ -850,7 +824,7 @@ struct VariadicList[
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __getitem__(
+    def __getitem__(
         self, idx: Int
     ) -> ref[
         # cast mutability of self to match the mutability of the element,
@@ -871,7 +845,7 @@ struct VariadicList[
             __mlir_op.`pop.variadic.get`(self.value, idx._mlir_value)
         )
 
-    fn _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
+    def _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
         _constrained_conforms_to[
             conforms_to(Self.element_type, Writable),
             Parent=Self,
@@ -891,7 +865,7 @@ struct VariadicList[
         writer.write_string(")")
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the elements of this variadic list to a writer.
 
         Constraints:
@@ -903,7 +877,7 @@ struct VariadicList[
         self._write_elements(writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Writes the repr of this variadic list to a writer.
 
         Constraints:
@@ -914,14 +888,14 @@ struct VariadicList[
         """
 
         @parameter
-        fn write_fields(mut w: Some[Writer]):
+        def write_fields(mut w: Some[Writer]):
             self._write_elements[is_repr=True](w)
 
         FormatStruct(writer, "VariadicList").params(
             TypeNames[Self.element_type](),
         ).fields[FieldsFn=write_fields]()
 
-    fn __iter__(
+    def __iter__(
         self,
     ) -> _VariadicListIter[
         Self.element_type, Self.origin, origin_of(self), Self.is_owned
@@ -961,7 +935,7 @@ struct VariadicPack[
     time to generate the correct memory layout and access code.
 
     Therefore, indexing into `VariadicPack` requires compile-time indices using
-    `@parameter for` loops, whereas indexing into `VariadicParamList` uses runtime
+    `comptime for` loops, whereas indexing into `VariadicParamList` uses runtime
     indices.
 
     For example, in the following function signature, `*args: *ArgTypes` creates a
@@ -973,10 +947,10 @@ struct VariadicPack[
     `Intable` trait.
 
     ```mojo
-    fn count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
+    def count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
         var total = 0
 
-        # Must use @parameter for loop because args is a VariadicPack
+        # Must use comptime for loop because args is a VariadicPack
         comptime for i in range(args.__len__()):
             # Each args[i] has a different concrete type from *ArgTypes
             # The compiler generates specific code for each iteration
@@ -1020,7 +994,7 @@ struct VariadicPack[
     # raw variadic pack which can have nested origins in it (which this does not
     # dereference).
     @__unsafe_disable_nested_origin_exclusivity
-    fn __init__(out self, value: Self._mlir_type):
+    def __init__(out self, value: Self._mlir_type):
         """Constructs a VariadicPack from the internal representation.
 
         Args:
@@ -1029,7 +1003,7 @@ struct VariadicPack[
         self._value = value
 
     @always_inline("nodebug")
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Copy construct the variadic pack.
 
         Args:
@@ -1043,7 +1017,7 @@ struct VariadicPack[
         self._value = copy._value
 
     @always_inline("nodebug")
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Destructor that releases elements if owned."""
 
         comptime if Self.is_owned:
@@ -1067,7 +1041,7 @@ struct VariadicPack[
                     to=trait_downcast[ImplicitlyDestructible](self[i])
                 ).mut_cast[True]().destroy_pointee()
 
-    fn consume_elements[
+    def consume_elements[
         elt_handler: fn[idx: Int](var elt: Self.element_types[idx]) capturing
     ](deinit self):
         """Consume the variadic pack by transferring ownership of each element
@@ -1095,7 +1069,7 @@ struct VariadicPack[
 
     @always_inline
     @staticmethod
-    fn __len__() -> Int:
+    def __len__() -> Int:
         """Return the VariadicPack length.
 
         Returns:
@@ -1106,7 +1080,7 @@ struct VariadicPack[
         return result
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Return the VariadicPack length.
 
         Returns:
@@ -1119,7 +1093,7 @@ struct VariadicPack[
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __getitem__[
+    def __getitem_param__[
         index: Int
     ](self) -> ref[Self.origin] Self.element_types[index]:
         """Return a reference to an element of the pack.
@@ -1140,16 +1114,19 @@ struct VariadicPack[
     # C Pack Utilities
     # ===-------------------------------------------------------------------===#
 
+    # FIXME: bound by AnyType
     comptime _kgen_element_types = rebind[
-        Variadic.ValuesOfType[__TypeOfAllTypes]
+        Variadic.ValuesOfType[__mlir_type.`!kgen.type`]
     ](Self.element_types)
     """This is the element_types list lowered to `variadic<type>` type for kgen.
     """
+
+    # FIXME: bound by AnyType
     comptime _variadic_pointer_types = __mlir_attr[
         `#kgen.param.expr<variadic_ptr_map, `,
         Self._kgen_element_types,
         `, 0: index>: `,
-        Variadic.ValuesOfType[__TypeOfAllTypes],
+        Variadic.ValuesOfType[__mlir_type.`!kgen.type`],
     ]
     """Use variadic_ptr_map to construct the type list of the !kgen.pack that
     the !lit.ref.pack will lower to.  It exposes the pointers introduced by the
@@ -1162,16 +1139,17 @@ struct VariadicPack[
 
     @doc_private
     @always_inline("nodebug")
-    fn get_as_kgen_pack(self) -> Self._kgen_pack_with_pointer_type:
+    def get_as_kgen_pack(self) -> Self._kgen_pack_with_pointer_type:
         """This rebinds `in_pack` to the equivalent `!kgen.pack` with kgen
         pointers."""
         return rebind[Self._kgen_pack_with_pointer_type](self._value)
 
+    # FIXME: bound by AnyType
     comptime _variadic_with_pointers_removed = __mlir_attr[
         `#kgen.param.expr<variadic_ptrremove_map, `,
         Self._variadic_pointer_types,
         `>: `,
-        Variadic.ValuesOfType[__TypeOfAllTypes],
+        Variadic.ValuesOfType[__mlir_type.`!kgen.type`],
     ]
     comptime _loaded_kgen_pack_type = __mlir_type[
         `!kgen.pack<:variadic<type> `, Self._variadic_with_pointers_removed, `>`
@@ -1184,12 +1162,12 @@ struct VariadicPack[
     # Useful for FFI, such as calling printf. Otherwise, avoid this if possible.
     @doc_private
     @always_inline("nodebug")
-    fn get_loaded_kgen_pack(self) -> Self._loaded_kgen_pack_type:
+    def get_loaded_kgen_pack(self) -> Self._loaded_kgen_pack_type:
         """This returns the stored KGEN pack after loading all of the elements.
         """
         return __mlir_op.`kgen.pack.load`(self.get_as_kgen_pack())
 
-    fn _write_to[
+    def _write_to[
         O1: ImmutOrigin,
         O2: ImmutOrigin,
         O3: ImmutOrigin,
@@ -1234,7 +1212,9 @@ struct VariadicPack[
         writer.write_string(end)
 
     @no_inline
-    fn write_to(self: VariadicPack[_, Writable, ...], mut writer: Some[Writer]):
+    def write_to(
+        self: VariadicPack[_, Writable, ...], mut writer: Some[Writer]
+    ):
         """Writes the elements of this pack to a writer.
 
         Args:
@@ -1247,7 +1227,7 @@ struct VariadicPack[
         )
 
     @no_inline
-    fn write_repr_to(
+    def write_repr_to(
         self: VariadicPack[_, Writable, ...], mut writer: Some[Writer]
     ):
         """Writes the repr of the elements of this pack to a writer.

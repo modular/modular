@@ -18,6 +18,7 @@ import torch
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
@@ -25,6 +26,7 @@ from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.olmo2.layers.attention import (
     Olmo2Attention as MaxOlmo2Attention,
 )
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 from transformers.models.olmo2.modeling_olmo2 import Olmo2RotaryEmbedding
@@ -114,7 +116,7 @@ def generate_max_outputs(
 
     state_dict = {}
     for weight_name, value in attention_weights.items():
-        state_dict[weight_name] = value.to(dtype.to_torch()).cpu()
+        state_dict[weight_name] = value.to(max_dtype_to_torch(dtype)).cpu()
 
     kv_params = KVCacheParams(
         dtype=dtype,
@@ -134,7 +136,7 @@ def generate_max_outputs(
         rope=Llama3RotaryEmbedding(
             dim=text_config.hidden_size,
             n_heads=text_config.num_attention_heads,
-            theta=text_config.rope_theta,
+            theta=get_rope_theta(text_config),
             max_seq_len=MAX_SEQ_LEN,
             interleaved=False,
             head_dim=text_config.head_dim,

@@ -19,7 +19,7 @@ from nn.conv import Naive2dConvolution
 from std.utils.index import Index
 
 
-fn winograd_1d_convolution_3[
+def winograd_1d_convolution_3[
     dtype: DType, //, filter_len: Int
 ](
     input: UnsafePointer[Scalar[dtype], _],
@@ -54,7 +54,7 @@ fn winograd_1d_convolution_3[
 
 
 # CHECK-LABEL: test_conv1d_winograd
-fn test[dtype: DType](C: Int):  # Input Len
+def test[dtype: DType](C: Int):  # Input Len
     print("== test_conv1d_winograd")
 
     # TODO: make assert dynamic

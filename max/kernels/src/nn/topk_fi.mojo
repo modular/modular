@@ -27,16 +27,18 @@ from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.host.dim import Dim
 from std.gpu.memory import AddressSpace, external_memory
-from layout.coord import (
+from layout import (
+    ComptimeInt,
     Coord,
     CoordLike,
     Idx,
     RuntimeInt,
-    ComptimeInt,
+    TensorLayout,
+    TileTensor,
     coord_to_index_list,
+    row_major,
 )
-from layout.tile_layout import TensorLayout, Layout
-from layout import TileTensor, row_major
+from layout.tile_layout import Layout
 from std.math import ceildiv, gcd, exp
 from std.memory import stack_allocation
 from std.os import Atomic
@@ -45,7 +47,7 @@ from std.sys import align_of, bit_width_of, simd_width_of, size_of
 
 
 @always_inline
-fn get_min_max_value[
+def get_min_max_value[
     vec_size: Int,
     block_size: Int,
     dtype: DType,
@@ -106,7 +108,7 @@ fn get_min_max_value[
     return Tuple[Float32, Float32](min_val, max_val)
 
 
-fn TopKMaskLogitsKernel[
+def TopKMaskLogitsKernel[
     block_size: Int,
     vec_size: Int,
     dtype: DType,
@@ -255,7 +257,7 @@ fn TopKMaskLogitsKernel[
             )
 
 
-fn topk_mask_logits[
+def topk_mask_logits[
     dtype: DType,
     out_idx_type: DType,
     block_size: Int = 1024,
@@ -296,7 +298,7 @@ fn topk_mask_logits[
         top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
 
     @parameter
-    fn launch_kernel[vec_size: Int]() raises:
+    def launch_kernel[vec_size: Int]() raises:
         comptime kernel = TopKMaskLogitsKernel[
             block_size,
             vec_size,
@@ -325,7 +327,7 @@ fn topk_mask_logits[
 
 
 @always_inline
-fn device_sampling_from_prob[
+def device_sampling_from_prob[
     vec_size: Int,
     block_size: Int,
     dtype: DType,
@@ -436,28 +438,28 @@ struct ValueCount[T: DType](Defaultable, TrivialRegisterPassable):
     var value: Scalar[Self.T]
     var count: Int32
 
-    fn __init__(out self, value: Scalar[Self.T], count: Int32):
+    def __init__(out self, value: Scalar[Self.T], count: Int32):
         # Initialize a ValueCount instance.
         self.value = value
         self.count = count
 
-    fn __init__(out self):
+    def __init__(out self):
         # Zero-initialize a ValueCount instance.
         self.value = 0
         self.count = 0
 
-    fn __add__(self, other: Self) -> Self:
+    def __add__(self, other: Self) -> Self:
         # Add two ValueCount instances (element-wise).
         return {self.value + other.value, self.count + other.count}
 
-    fn __iadd__(mut self, other: Self):
+    def __iadd__(mut self, other: Self):
         # In-place addition of another ValueCount.
         self.value += other.value
         self.count += other.count
 
 
 @always_inline
-fn _warp_reduce_value_count[T: DType](val: ValueCount[T]) -> ValueCount[T]:
+def _warp_reduce_value_count[T: DType](val: ValueCount[T]) -> ValueCount[T]:
     """Warp-level reduction for ValueCount using shuffle operations.
 
     Reduces both value and count fields across all lanes in a warp.
@@ -484,7 +486,7 @@ fn _warp_reduce_value_count[T: DType](val: ValueCount[T]) -> ValueCount[T]:
 
 
 @always_inline
-fn _block_reduce_value_count[
+def _block_reduce_value_count[
     T: DType,
     broadcast: Bool = False,
 ](val: ValueCount[T]) -> ValueCount[T]:
@@ -571,7 +573,7 @@ fn _block_reduce_value_count[
     return result
 
 
-fn TopKSamplingFromProbKernel[
+def TopKSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
     probs_origin: ImmutOrigin,
     OutputLayoutType: TensorLayout,
@@ -762,7 +764,7 @@ fn TopKSamplingFromProbKernel[
         output[bx] = Scalar[out_idx_type](sampled_id)
 
 
-fn topk_sampling_from_prob[
+def topk_sampling_from_prob[
     dtype: DType,
     out_idx_type: DType,
     block_size: Int = 1024,
@@ -837,7 +839,7 @@ fn topk_sampling_from_prob[
         top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
 
     @parameter
-    fn launch_kernel[vec_size: Int, deterministic: Bool]() raises:
+    def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
         comptime kernel = TopKSamplingFromProbKernel[
             probs.LayoutType,
             ImmutOrigin(probs.origin),
@@ -865,7 +867,7 @@ fn topk_sampling_from_prob[
 
     # Runtime dispatch to compile-time parameter.
     @parameter
-    fn dispatch_vec_size[deterministic: Bool]() raises:
+    def dispatch_vec_size[deterministic: Bool]() raises:
         comptime for param_vec_size in [16, 8, 4, 2, 1]:
             if vec_size == param_vec_size:
                 return launch_kernel[param_vec_size, deterministic]()
@@ -877,7 +879,7 @@ fn topk_sampling_from_prob[
         dispatch_vec_size[False]()
 
 
-fn TopKTopPSamplingFromProbKernel[
+def TopKTopPSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
     probs_origin: ImmutOrigin,
     OutputLayoutType: TensorLayout,
@@ -1059,14 +1061,15 @@ fn TopKTopPSamplingFromProbKernel[
 
         if (
             aggregate_gt_pivot_0.count < Int32(k)
-            and aggregate_gt_pivot_0.value < p
+            and aggregate_gt_pivot_0.value <= p
         ):
             # Case 1: pivot_0 accepted - count below k AND prob mass below p.
+            # Use <= so that p=0 correctly accepts the argmax (sum_above=0).
             break
 
         if (
             aggregate_gt_pivot_1.count < Int32(k)
-            and aggregate_gt_pivot_1.value < p
+            and aggregate_gt_pivot_1.value <= p
         ):
             # Case 2: pivot_0 rejected, pivot_1 accepted.
             low = pivot_0
@@ -1083,7 +1086,7 @@ fn TopKTopPSamplingFromProbKernel[
         output[bx] = Scalar[out_idx_type](sampled_id)
 
 
-fn topk_topp_sampling_from_prob[
+def topk_topp_sampling_from_prob[
     dtype: DType,
     out_idx_type: DType,
     block_size: Int = 1024,
@@ -1183,7 +1186,7 @@ fn topk_topp_sampling_from_prob[
         seed_buf = DeviceBuffer[DType.uint64](ctx, {}, 0, owning=False)
 
     @parameter
-    fn launch_kernel[vec_size: Int, deterministic: Bool]() raises:
+    def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
         comptime kernel = TopKTopPSamplingFromProbKernel[
             probs.LayoutType,
             ImmutOrigin(probs.origin),
@@ -1212,7 +1215,7 @@ fn topk_topp_sampling_from_prob[
         )
 
     @parameter
-    fn dispatch_vec_size[deterministic: Bool]() raises:
+    def dispatch_vec_size[deterministic: Bool]() raises:
         comptime for param_vec_size in [16, 8, 4, 2, 1]:
             if vec_size == param_vec_size:
                 return launch_kernel[param_vec_size, deterministic]()
@@ -1223,7 +1226,7 @@ fn topk_topp_sampling_from_prob[
         dispatch_vec_size[False]()
 
 
-fn TopKSoftmaxSampleKernel[
+def TopKSoftmaxSampleKernel[
     block_size: Int,
     vec_size: Int,
     dtype: DType,
@@ -1425,7 +1428,7 @@ fn TopKSoftmaxSampleKernel[
                 return
 
 
-fn topk_softmax_sample[
+def topk_softmax_sample[
     dtype: DType,
     out_idx_type: DType,
     block_size: Int = 1024,
@@ -1533,7 +1536,7 @@ fn topk_softmax_sample[
         seed_buf = DeviceBuffer[DType.uint64](ctx, {}, 0, owning=False)
 
     @parameter
-    fn launch_kernel[vec_size: Int]() raises:
+    def launch_kernel[vec_size: Int]() raises:
         comptime kernel = TopKSoftmaxSampleKernel[
             block_size,
             vec_size,

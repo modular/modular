@@ -45,6 +45,7 @@ in another Graph API usage.
 
 from __future__ import annotations
 
+import logging
 import os
 import weakref
 from contextvars import ContextVar
@@ -71,21 +72,48 @@ Ex = TypeVar("Ex", bound=BaseException)
 _SESSION: ContextVar[engine.api.InferenceSession] = ContextVar("_SESSION")
 _SEED: Tensor | None = None
 
-# Environment variable to control interpreter usage
+# Environment variable to control interpreter usage.
+# Set to "0" or "false" to disable the interpreter (always compile).
 _USE_INTERPRETER_ENV_VAR = "MAX_USE_EAGER_INTERPRETER"
+
+# Environment variable to control the maximum number of dispatchable ops
+# for which the interpreter is preferred over the graph compiler.
+# Graphs with more ops than this threshold are compiled so the graph
+# compiler can apply fusion.
+# Benchmarks (CPU & A10G GPU, [64,64] f32 tensors) show the interpreter
+# is 7-10x faster than the compiler for up to 10 user-visible ops.
+# 30 dispatchable IR ops covers ~5 user-visible ops.
+_INTERPRETER_MAX_OPS_ENV_VAR = "MAX_INTERPRETER_MAX_OPS"
+_DEFAULT_INTERPRETER_MAX_OPS = 30
 
 
 def _default_use_interpreter() -> bool:
     """Get the default value for use_interpreter from environment.
 
-    Checks the MAX_USE_EAGER_INTERPRETER environment variable. Set to "1" or "true"
-    (case-insensitive) to enable the interpreter by default.
+    The interpreter is **enabled by default** for small graphs.  Set
+    ``MAX_USE_EAGER_INTERPRETER=0`` or ``false`` to force compilation.
 
     Returns:
         True if interpreter should be used by default, False otherwise.
     """
     env_value = os.environ.get(_USE_INTERPRETER_ENV_VAR, "").lower()
-    return env_value in ("1", "true")
+    return env_value not in ("0", "false")
+
+
+def _interpreter_max_ops() -> int:
+    """Get the maximum dispatchable-op count for interpreter execution.
+
+    Reads ``MAX_INTERPRETER_MAX_OPS`` from the environment.  Graphs with
+    more dispatchable ops than this value fall through to the graph
+    compiler so fusion optimizations can kick in.
+
+    Returns:
+        The op-count threshold (default 30).
+    """
+    raw = os.environ.get(_INTERPRETER_MAX_OPS_ENV_VAR, "")
+    if raw.strip().isdigit():
+        return int(raw.strip())
+    return _DEFAULT_INTERPRETER_MAX_OPS
 
 
 def seed() -> Tensor:
@@ -93,7 +121,7 @@ def seed() -> Tensor:
 
     Returns the global seed tensor used for random number generation in eager
     execution mode. Creates the seed tensor on first access, initialized with
-    the dtype, shape, and device specified by :obj:`ops.random.SeedType`.
+    the dtype, shape, and device specified by :obj:`max.graph.ops.random.SeedType`.
 
     Returns:
         Tensor: The global seed tensor for random number generation.
@@ -150,6 +178,11 @@ class EagerRealizationContext(RealizationContext):
     unrealized: list[weakref.ref[Tensor]]
 
     def __init__(self, use_interpreter: bool | None = None):
+        # When use_interpreter is None (the default), the op-count threshold
+        # gates whether the interpreter is used.  When the caller explicitly
+        # passes True, the threshold is bypassed so the interpreter is always
+        # attempted (falling back only on truly unsupported ops).
+        self._auto_interpreter = use_interpreter is None
         if use_interpreter is None:
             use_interpreter = _default_use_interpreter()
         self._use_interpreter = use_interpreter
@@ -193,7 +226,7 @@ class EagerRealizationContext(RealizationContext):
         _core.lower(
             module,
             [
-                builtin.passes.RemoveDeadValues(),
+                builtin.passes.RemoveDeadValuesPass(),
                 rmo.passes.LegalizeRMOOps(),
             ],
         )
@@ -224,23 +257,47 @@ class EagerRealizationContext(RealizationContext):
 
         outputs, graph = self.finalize_graph()
 
-        # Execute graph via interpreter or compilation
+        # Execute graph via interpreter or compilation.
+        # The interpreter is faster for small graphs where fusion has no
+        # benefit; larger graphs are compiled so the graph compiler can
+        # fuse and optimize across ops.  The op-count threshold only
+        # applies when the interpreter was auto-selected (not explicitly
+        # requested by the caller).
         use_interpreter = self._use_interpreter
         if use_interpreter:
-            # Lazy import to avoid circular dependency
             from max._interpreter import MOInterpreter
 
             interp = MOInterpreter()
-            if not interp.can_execute(graph):
+            max_ops = _interpreter_max_ops() if self._auto_interpreter else None
+            if not interp.can_execute(graph, max_ops=max_ops):
                 use_interpreter = False
 
         if use_interpreter:
             inputs = [self.sources[input._mlir_value] for input in graph.inputs]
-            results = interp.execute(
-                graph,
-                [inp.driver_tensor for inp in inputs],
-            )
-        else:
+            if self._auto_interpreter:
+                # can_execute() gates on handler existence and op count, but
+                # cannot verify that the underlying Mojo kernel supports every
+                # dtype/shape combination.  For example CastOp has a handler
+                # but the kernel raises on float8_e4m3fn.  These errors cross
+                # the Mojo/C++ FFI boundary as plain Exception, so the catch
+                # must be broad.
+                try:
+                    results = interp.execute(
+                        graph,
+                        [inp.driver_tensor for inp in inputs],
+                    )
+                except Exception:
+                    logging.getLogger("max.experimental").debug(
+                        "Interpreter failed, falling back to graph compiler",
+                        exc_info=True,
+                    )
+                    use_interpreter = False
+            else:
+                results = interp.execute(
+                    graph,
+                    [inp.driver_tensor for inp in inputs],
+                )
+        if not use_interpreter:
             # Compile and execute graph
             model = _session().load(graph)
             # Inputs may have been removed by optimization
@@ -339,7 +396,7 @@ class EagerRealizationContext(RealizationContext):
 class LazyRealizationContext(EagerRealizationContext):
     """A realization context that defers execution until explicitly requested.
 
-    Unlike :class:`EagerRealizationContext`, this context does not automatically
+    Unlike :class:`~max.experimental.realization_context.EagerRealizationContext`, this context does not automatically
     execute the computation graph when the context exits. Tensors remain
     unrealized until explicitly awaited via ``await tensor.realize``.
 
@@ -372,7 +429,7 @@ class GraphRealizationContext(RealizationContext):
     """A realization context for ahead-of-time graph compilation.
 
     This context is used when building computation graphs that will be compiled
-    and executed later (e.g., during :meth:`Module.compile`). Tensors in this
+    and executed later (e.g., during :meth:`~max.experimental.nn.Module.compile`). Tensors in this
     context remain as symbolic graph values and cannot be realized.
 
     Unlike eager contexts, this context does not support executing operations

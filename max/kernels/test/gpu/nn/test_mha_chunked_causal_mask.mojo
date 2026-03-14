@@ -54,7 +54,7 @@ def build_ChunkedCausalMask[
                     )
 
 
-fn test_attention[
+def test_attention[
     qkv_type: DType,
     mask_type: DType,
     depth: Int,

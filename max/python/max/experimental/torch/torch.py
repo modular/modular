@@ -54,6 +54,65 @@ except ImportError:
     )
 
 
+# Torch dtype conversion mappings
+_MAX_DTYPE_TO_TORCH = {
+    DType.bool: torch.bool,
+    DType.int8: torch.int8,
+    DType.int16: torch.int16,
+    DType.int32: torch.int32,
+    DType.int64: torch.int64,
+    DType.uint8: torch.uint8,
+    DType.uint16: torch.uint16,
+    DType.uint32: torch.uint32,
+    DType.uint64: torch.uint64,
+    DType.float16: torch.float16,
+    DType.float32: torch.float32,
+    DType.float64: torch.float64,
+    DType.bfloat16: torch.bfloat16,
+    DType.float8_e8m0fnu: torch.float8_e8m0fnu,
+    DType.float8_e4m3fn: torch.float8_e4m3fn,
+    DType.float8_e4m3fnuz: torch.float8_e4m3fnuz,
+    DType.float8_e5m2: torch.float8_e5m2,
+    DType.float8_e5m2fnuz: torch.float8_e5m2fnuz,
+}
+
+_TORCH_TO_MAX_DTYPE = {v: k for k, v in _MAX_DTYPE_TO_TORCH.items()}
+
+
+def max_dtype_to_torch(dtype: DType) -> torch.dtype:
+    """Converts a MAX DType to the corresponding torch dtype.
+
+    Args:
+        dtype: The MAX DType to convert.
+
+    Returns:
+        The corresponding torch dtype object.
+
+    Raises:
+        ValueError: If the dtype is not supported.
+    """
+    if torch_dtype := _MAX_DTYPE_TO_TORCH.get(dtype):
+        return torch_dtype
+    raise ValueError(f"unsupported MAX DType to convert to torch: {dtype}")
+
+
+def torch_dtype_to_max(dtype: torch.dtype) -> DType:
+    """Converts a torch dtype to the corresponding MAX DType.
+
+    Args:
+        dtype: The torch dtype to convert.
+
+    Returns:
+        The corresponding MAX DType enum value.
+
+    Raises:
+        ValueError: If the input dtype is not supported.
+    """
+    if max_dtype := _TORCH_TO_MAX_DTYPE.get(dtype):
+        return max_dtype
+    raise ValueError(f"unsupported torch dtype to convert to MAX: {dtype}")
+
+
 class CustomOpLibrary:
     """A PyTorch interface to custom operations implemented in Mojo.
 
@@ -651,7 +710,7 @@ def max_device(device: torch.device) -> Device:
 
 def max_tensor_type(tensor: torch.Tensor) -> TensorType:
     """Returns the equivalent MAX tensor type for a PyTorch tensor."""
-    dtype = DType.from_torch(tensor.dtype)
+    dtype = torch_dtype_to_max(tensor.dtype)
     shape = max_shape(tensor.shape)
     device = max_device_ref(tensor.device)
     return TensorType(dtype, shape, device=device)

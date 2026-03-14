@@ -36,14 +36,14 @@ struct RegisterCounts(Movable):
     var vgpr_spills: Int
     var sgpr_spills: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.vgprs = 0
         self.sgprs = 0
         self.agprs = 0
         self.vgpr_spills = 0
         self.sgpr_spills = 0
 
-    fn print_summary(self):
+    def print_summary(self):
         """Print register usage summary."""
         print("\nRegister usage:")
         print("  VGPRs: ", self.vgprs)
@@ -53,7 +53,7 @@ struct RegisterCounts(Movable):
         print("  SGPR spills: ", self.sgpr_spills)
 
 
-fn parse_directive_value(asm: String, directive: String) -> Int:
+def parse_directive_value(asm: String, directive: String) -> Int:
     """Parse numeric value from an assembly directive.
 
     Args:
@@ -71,19 +71,19 @@ fn parse_directive_value(asm: String, directive: String) -> Int:
     if line_end <= directive_idx:
         return 0
 
-    var line = asm[directive_idx:line_end]
+    var line = asm[byte=directive_idx:line_end]
     var colon_idx = line.find(":")
     if colon_idx < 0:
         return 0
 
     try:
-        var num_part = line[colon_idx + 1 :].strip()
+        var num_part = line[byte = colon_idx + 1 :].strip()
         return Int(num_part)
     except:
         return 0
 
 
-fn parse_register_counts(asm: String) -> RegisterCounts:
+def parse_register_counts(asm: String) -> RegisterCounts:
     """Extract all register counts from AMD GPU assembly.
 
     Args:
@@ -101,7 +101,7 @@ fn parse_register_counts(asm: String) -> RegisterCounts:
     return counts^
 
 
-fn validate_register_counts(counts: RegisterCounts) raises:
+def validate_register_counts(counts: RegisterCounts) raises:
     """Verify that spill counts are zero.
 
     Args:
@@ -114,7 +114,7 @@ fn validate_register_counts(counts: RegisterCounts) raises:
     assert_true(counts.sgpr_spills == 0, "SGPR spill count should be 0")
 
 
-fn compile_kernel_to_asm[
+def compile_kernel_to_asm[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -173,7 +173,7 @@ fn compile_kernel_to_asm[
     return compiled.asm
 
 
-fn compile_pingpong_kernel_to_asm[
+def compile_pingpong_kernel_to_asm[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -231,7 +231,7 @@ fn compile_pingpong_kernel_to_asm[
     return compiled.asm
 
 
-fn print_test_header[
+def print_test_header[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -244,7 +244,7 @@ fn print_test_header[
     print("Block shape: BM=", block_m, ", BN=", block_n, sep="")
 
 
-fn test_matmul_config[
+def test_matmul_config[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -275,7 +275,7 @@ fn test_matmul_config[
     print("=== Assembly check passed ===\n")
 
 
-fn test_amd_matmul_bf16_max_config() raises:
+def test_amd_matmul_bf16_max_config() raises:
     """Test AMD gemm_kernel_amd assembly for BF16 with max config (256x256x64).
     """
     print("== test_amd_matmul_bf16_max_config (256x256x64)")
@@ -293,7 +293,7 @@ fn test_amd_matmul_bf16_max_config() raises:
     ]()
 
 
-fn test_amd_matmul_fp8_max_config() raises:
+def test_amd_matmul_fp8_max_config() raises:
     """Test AMD gemm_kernel_amd assembly for FP8 with max config (256x256x128).
     """
     print("== test_amd_matmul_fp8_max_config (256x256x128)")
@@ -311,7 +311,7 @@ fn test_amd_matmul_fp8_max_config() raises:
     ]()
 
 
-fn test_amd_pingpong_fp8_max_config() raises:
+def test_amd_pingpong_fp8_max_config() raises:
     """Test AMD ping-pong matmul kernel assembly for FP8 (256x256x128)."""
     print("== test_amd_pingpong_fp8_max_config (256x256x128)")
 
@@ -342,7 +342,7 @@ fn test_amd_pingpong_fp8_max_config() raises:
     print("=== Assembly check passed ===\n")
 
 
-fn test_amd_pingpong_bf16_max_config() raises:
+def test_amd_pingpong_bf16_max_config() raises:
     """Test AMD ping-pong matmul kernel assembly for BF16 (256x256x64)."""
     print("== test_amd_pingpong_bf16_max_config (256x256x64)")
 

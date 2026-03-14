@@ -24,17 +24,17 @@ struct FromNone:
     var value: Int
 
     @implicit
-    fn __init__(out self, none: NoneType):
+    def __init__(out self, none: NoneType):
         self.value = -1
 
     # FIXME: None literal should be of NoneType not !kgen.none.
     @always_inline
     @implicit
-    fn __init__(out self, none: __mlir_type.`!kgen.none`):
+    def __init__(out self, none: __mlir_type.`!kgen.none`):
         self = NoneType()
 
     @implicit
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.value = value
 
 
@@ -47,7 +47,7 @@ def test_type_from_none() raises:
     # Test implicit conversion from `None`
     # -------------------------------------
 
-    fn foo(arg: FromNone):
+    def foo(arg: FromNone):
         pass
 
     # FIXME:

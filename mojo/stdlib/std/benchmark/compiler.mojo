@@ -26,7 +26,7 @@ from std.sys._assembly import inlined_assembly
 
 
 @always_inline
-fn keep[T: AnyType, origin: Origin, //](ref[origin] value: T):
+def keep[T: AnyType, origin: Origin, //](ref[origin] value: T):
     """Provides a hint to the compiler to not optimize the variable use away.
 
     This is useful in benchmarking to avoid the compiler not deleting the
@@ -55,7 +55,7 @@ fn keep[T: AnyType, origin: Origin, //](ref[origin] value: T):
 
 
 @always_inline
-fn black_box[
+def black_box[
     T: AnyType, origin: Origin, //
 ](ref[origin] value: T) -> ref[origin] T:
     """Prevents the compiler from optimizing away computations or values.
@@ -92,7 +92,7 @@ fn black_box[
     Examples:
 
     ```mojo
-    fn benchmark_contains():
+    def benchmark_contains():
         var haystack = "abcdefghijklmnopqrstuvwxyz"
         var needle = "lmnop"
 
@@ -114,7 +114,7 @@ fn black_box[
     ```mojo
     from std.benchmark import keep, black_box
 
-    fn benchmark_contains():
+    def benchmark_contains():
         var haystack = "abcdefghijklmnopqrstuvwxyz"
         var needle = "lmnop"
 
@@ -135,7 +135,7 @@ fn black_box[
 
 
 @always_inline
-fn black_box[T: Movable, //](*, var take: T) -> T:
+def black_box[T: Movable, //](*, var take: T) -> T:
     """Prevents the compiler from optimizing away computations or values.
 
     Unlike `black_box(ref T)`, this function takes an owned value and return the

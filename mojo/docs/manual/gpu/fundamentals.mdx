@@ -117,7 +117,7 @@ from std.gpu import block_dim, block_idx, thread_idx
 
 comptime num_elements = 20
 
-fn scalar_add(
+def scalar_add(
     vector: UnsafePointer[Float32, MutAnyOrigin],
     size: Int,
     scalar: Float32,
@@ -336,7 +336,7 @@ from std.sys import exit, has_accelerator, has_apple_gpu_accelerator
 from std.gpu.host import DeviceContext
 from std.gpu import block_dim, block_idx, global_idx, grid_dim, thread_idx
 
-fn print_threads():
+def print_threads():
     """Print thread block and thread indices."""
 
     print(
@@ -403,10 +403,6 @@ silicon GPUs.
 
 Kernel functions must be
 [non-raising](/mojo/manual/functions/#raising-and-non-raising-functions).
-This means that you must define them using the `fn` keyword and not use the
-`raises` keyword. (The Mojo compiler *always* treats a function declared with
-`def` as a raising function, even if the body of the function doesn't contain
-any code that could raise an error.)
 
 :::note
 
@@ -466,7 +462,7 @@ process out-of-bounds elements:
 ```mojo
 from std.gpu import global_idx
 
-fn process_vector(vector: UnsafePointer[Float32, MutAnyOrigin], size: Int):
+def process_vector(vector: UnsafePointer[Float32, MutAnyOrigin], size: Int):
     if global_idx.x < size:
         # Process vector[global_idx.x] in some way
 ```
