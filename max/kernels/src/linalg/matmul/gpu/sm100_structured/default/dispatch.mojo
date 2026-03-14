@@ -21,12 +21,11 @@ from std.sys import (
 )
 
 from std.algorithm import elementwise
-from buffer.buffer import NDBuffer
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
-from layout import TileTensor
+from layout import Coord, Idx, TileTensor, row_major
 from std.logger import Logger
 
 from std.utils.index import Index, IndexList
@@ -1755,14 +1754,9 @@ def _matmul_dispatch_sm100[
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
         var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](c_lt.size())
 
-        # Construct a temporary NDBuffer, then wrap it in TileTensor for the
-        # recursive call.
-        # TODO(KERN-2219): construct a TileTensor directly here.
-        var c_tmp = NDBuffer[rank=2, c_type, MutExternalOrigin](
-            rebind[UnsafePointer[Scalar[c_type], MutExternalOrigin]](
-                tmp_device_buffer.unsafe_ptr()
-            ),
-            IndexList[2](c_lt.dim[0](), c_lt.dim[1]()),
+        var c_tmp = TileTensor(
+            tmp_device_buffer,
+            row_major(Coord(Idx(c_lt.dim[0]()), Idx(c_lt.dim[1]()))),
         )
 
         _matmul_dispatch_sm100[
@@ -1771,7 +1765,7 @@ def _matmul_dispatch_sm100[
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
-        ](TileTensor(c_tmp), a_tensor, b_tensor, ctx)
+        ](c_tmp, a_tensor, b_tensor, ctx)
 
         _ = tmp_device_buffer^
 
