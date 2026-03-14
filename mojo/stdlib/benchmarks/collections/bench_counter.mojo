@@ -37,7 +37,7 @@ def bench_most_common_small_n[total: Int, n: Int](mut b: Bencher) raises:
 
     @always_inline
     def call_fn() unified {read}:
-        var result = black_box(c).most_common(black_box(n))
+        var result = black_box(c).most_common(UInt(black_box(n)))
         keep(result)
 
     b.iter(call_fn)
@@ -53,7 +53,7 @@ def bench_most_common_large_n[total: Int, n: Int](mut b: Bencher) raises:
 
     @always_inline
     def call_fn() unified {read}:
-        var result = black_box(c).most_common(black_box(n))
+        var result = black_box(c).most_common(UInt(black_box(n)))
         keep(result)
 
     b.iter(call_fn)
