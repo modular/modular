@@ -26,7 +26,7 @@ struct TwoS(TrivialRegisterPassable):
     var s0: S
     var s1: S
 
-    fn __init__(out self, s: S):
+    def __init__(out self, s: S):
         self.s0 = 1
         self.s1 = s
 
@@ -34,22 +34,22 @@ struct TwoS(TrivialRegisterPassable):
 struct OneS(DevicePassable):
     comptime device_type: AnyType = TwoS
 
-    fn _to_device_type[
+    def _to_device_type[
         origin: MutOrigin
     ](self, target: UnsafePointer[NoneType, origin]):
         target.bitcast[Self.device_type]()[] = TwoS(self.s)
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         return "OneS"
 
     var s: S
 
-    fn __init__(out self, s: S):
+    def __init__(out self, s: S):
         self.s = s
 
 
-fn vec_func(
+def vec_func(
     in0: UnsafePointer[S, MutAnyOrigin],
     in1: UnsafePointer[S, MutAnyOrigin],
     output: UnsafePointer[S, MutAnyOrigin],
@@ -67,7 +67,7 @@ def test_function_checked() raises:
     _run_test_function_checked(ctx)
 
 
-fn _run_test_function_checked(ctx: DeviceContext) raises:
+def _run_test_function_checked(ctx: DeviceContext) raises:
     comptime length = 1024
     comptime block_dim = 32
 
@@ -117,7 +117,7 @@ def test_function_experimental() raises:
     _run_test_function_experimental(ctx)
 
 
-fn _run_test_function_experimental(ctx: DeviceContext) raises:
+def _run_test_function_experimental(ctx: DeviceContext) raises:
     comptime length = 1024
     comptime block_dim = 32
 

@@ -21,7 +21,7 @@ from .buffers import KVBuffer, RegisterBuffer, RegisterMMABuffer
 
 
 @always_inline
-fn mma[
+def mma[
     c_register_buffer_type: RegisterBuffer,
     a_register_buffer_type: RegisterMMABuffer,
     b_buffer_type: KVBuffer,

@@ -26,7 +26,7 @@ from std.memory import memcpy
 from std.runtime.asyncrt import parallelism_level
 
 
-fn parallel_memcpy[
+def parallel_memcpy[
     dtype: DType
 ](
     *,
@@ -52,7 +52,7 @@ fn parallel_memcpy[
 
     @parameter
     @always_inline
-    fn _parallel_copy(thread_id: Int):
+    def _parallel_copy(thread_id: Int):
         var begin = count_per_task * thread_id
         var end = min(
             count_per_task * (thread_id + 1),
@@ -69,7 +69,7 @@ fn parallel_memcpy[
     sync_parallelize[_parallel_copy](num_tasks)
 
 
-fn parallel_memcpy[
+def parallel_memcpy[
     dtype: DType,
 ](
     *,

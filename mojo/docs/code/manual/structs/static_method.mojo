@@ -14,11 +14,11 @@
 
 # start-static-method-define
 struct Logger:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @staticmethod
-    fn log_info(message: String):
+    def log_info(message: String):
         print("Info: ", message)
         # end-static-method-define
 

@@ -44,7 +44,7 @@ from ...sm100.warp_specialized_blockwise_fp8 import (
 # =============================================================================
 
 
-fn blockwise_fp8_matmul[
+def blockwise_fp8_matmul[
     transpose_b: Bool,
     a_scales_type: DType,
     b_scales_type: DType,
@@ -220,7 +220,7 @@ fn blockwise_fp8_matmul[
         c_tma_op,
         a_scales_tma_op,
         cluster_dim,
-        UInt(ceildiv(K, BK)),
+        ceildiv(K, BK),
         b_scales,
         problem_shape,
         grid_dim=grid_dim,

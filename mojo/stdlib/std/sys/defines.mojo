@@ -43,7 +43,7 @@ from std.sys import is_defined
 from std.collections.string.string_slice import _get_kgen_string
 
 
-fn is_defined[name: StaticString]() -> Bool:
+def is_defined[name: StaticString]() -> Bool:
     """Return true if the named value is defined.
 
     Parameters:
@@ -59,7 +59,7 @@ fn is_defined[name: StaticString]() -> Bool:
     ]
 
 
-fn _is_bool_like[val: StaticString]() -> Bool:
+def _is_bool_like[val: StaticString]() -> Bool:
     comptime lower_val = val.lower()
     return (
         lower_val == "true"
@@ -71,7 +71,7 @@ fn _is_bool_like[val: StaticString]() -> Bool:
     )
 
 
-fn get_defined_bool[name: StaticString]() -> Bool:
+def get_defined_bool[name: StaticString]() -> Bool:
     """Try to get a boolean-valued define. Compilation fails if the
     name is not defined or the value is not a recognized boolean
     (`True`, `False`, `1`, `0`, `on`, `off`).
@@ -95,7 +95,7 @@ fn get_defined_bool[name: StaticString]() -> Bool:
     return val == "true" or val == "1" or val == "on"
 
 
-fn get_defined_bool[name: StaticString, default: Bool]() -> Bool:
+def get_defined_bool[name: StaticString, default: Bool]() -> Bool:
     """Try to get a boolean-valued define. If the name is not defined,
     return a default value instead. The value must be a recognized boolean
     (`True`, `False`, `1`, `0`, `on`, `off`).
@@ -114,7 +114,7 @@ fn get_defined_bool[name: StaticString, default: Bool]() -> Bool:
         return default
 
 
-fn get_defined_int[name: StaticString]() -> Int:
+def get_defined_int[name: StaticString]() -> Int:
     """Try to get an integer-valued define. Compilation fails if the
     name is not defined.
 
@@ -133,7 +133,7 @@ fn get_defined_int[name: StaticString]() -> Int:
     )
 
 
-fn get_defined_int[name: StaticString, default: Int]() -> Int:
+def get_defined_int[name: StaticString, default: Int]() -> Int:
     """Try to get an integer-valued define. If the name is not defined,
     return a default value instead.
 
@@ -155,7 +155,7 @@ fn get_defined_int[name: StaticString, default: Int]() -> Int:
         ]()
         parametrized[number]()
 
-    fn parametrized[num: Int]():
+    def parametrized[num: Int]():
         print(num)
     ```
 
@@ -172,7 +172,7 @@ fn get_defined_int[name: StaticString, default: Int]() -> Int:
         return default
 
 
-fn get_defined_string[name: StaticString]() -> StaticString:
+def get_defined_string[name: StaticString]() -> StaticString:
     """Try to get a string-valued define. Compilation fails if the
     name is not defined.
 
@@ -190,7 +190,7 @@ fn get_defined_string[name: StaticString]() -> StaticString:
     return StaticString(res)
 
 
-fn get_defined_string[
+def get_defined_string[
     name: StaticString, default: StaticString
 ]() -> StaticString:
     """Try to get a string-valued define. If the name is not defined,
@@ -210,7 +210,7 @@ fn get_defined_string[
         return default
 
 
-fn get_defined_dtype[name: StaticString, default: DType]() -> DType:
+def get_defined_dtype[name: StaticString, default: DType]() -> DType:
     """Try to get a DType-valued define. If the name is not defined,
     return a default value instead.
 
@@ -226,3 +226,26 @@ fn get_defined_dtype[name: StaticString, default: DType]() -> DType:
         return DType._from_str(get_defined_string[name]())
     else:
         return default
+
+
+struct MojoVersion(ImplicitlyCopyable, TrivialRegisterPassable):
+    """Represents the Mojo version as major, minor, and patch numbers."""
+
+    var major: Int
+    """The major version number."""
+    var minor: Int
+    """The minor version number."""
+    var patch: Int
+    """The patch version number."""
+
+    @always_inline("nodebug")
+    def __init__(out self):
+        """Initializes the version by reading it from the compiler at compile time.
+        """
+        self.major = Int(value=__mlir_op.`lit.mojo.version.major`())
+        self.minor = Int(value=__mlir_op.`lit.mojo.version.minor`())
+        self.patch = Int(value=__mlir_op.`lit.mojo.version.patch`())
+
+
+comptime MOJO_VERSION = MojoVersion()
+"""The version of the Mojo language used for the current compilation, available at compile time."""

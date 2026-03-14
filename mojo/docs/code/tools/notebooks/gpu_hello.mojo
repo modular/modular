@@ -17,7 +17,7 @@
 from std.gpu.host import DeviceContext
 
 
-fn kernel():
+def kernel():
     # Does not work on Apple Silicon
     # Can't test due to CI
     # print("Hello from the GPU")

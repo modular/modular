@@ -25,7 +25,7 @@ from layout.tensor_core import TensorCore
 from std.utils.index import IndexList
 
 
-fn mma_load_and_multiply[
+def mma_load_and_multiply[
     dst_dtype: DType,
     dtype: DType,
     lhs_layout: Layout,
@@ -134,7 +134,7 @@ fn mma_load_and_multiply[
     _ = c_reg_tile
 
 
-fn mma_write_operand_kernel[
+def mma_write_operand_kernel[
     dst_dtype: DType,
     dtype: DType,
     layout: Layout,
@@ -201,7 +201,7 @@ def test_write_res_operand[
     print(dst.tensor())
 
 
-fn mma_load_and_print_operands_kernel_ldmatrix[
+def mma_load_and_print_operands_kernel_ldmatrix[
     dst_dtype: DType,
     dtype: DType,
     lhs_layout: Layout,

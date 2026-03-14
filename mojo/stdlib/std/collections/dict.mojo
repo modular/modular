@@ -40,7 +40,7 @@ See the `Dict` docs for more details.
 from std.compile import get_type_name
 from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
 import std.format._utils as fmt
-from std.sys.intrinsics import is_run_in_comptime_interpreter, likely
+from std.sys.intrinsics import likely
 
 from std.bit import count_trailing_zeros, next_power_of_two
 from std.memory import alloc, bitcast, memcpy, memset, pack_bits
@@ -65,13 +65,13 @@ comptime _INITIAL_CAPACITY: Int = 16
 
 
 @always_inline
-fn _h2(hash: UInt64) -> UInt8:
+def _h2(hash: UInt64) -> UInt8:
     """Extract the top 7 bits of the hash as a fingerprint (0x00-0x7F)."""
     return UInt8(hash >> 57)
 
 
 @always_inline
-fn _is_occupied(ctrl: UInt8) -> Bool:
+def _is_occupied(ctrl: UInt8) -> Bool:
     """Check if a control byte represents an occupied slot.
 
     Occupied slots have h2 values in range 0x00-0x7F (top bit clear).
@@ -96,7 +96,7 @@ struct _Group(Copyable, Movable):
     var ctrl: SIMD[DType.uint8, _GROUP_WIDTH]
 
     @always_inline
-    fn __init__(out self, ptr: UnsafePointer[UInt8, _]):
+    def __init__(out self, ptr: UnsafePointer[UInt8, _]):
         """Load a group of control bytes from memory.
 
         Args:
@@ -104,13 +104,13 @@ struct _Group(Copyable, Movable):
         """
         self.ctrl = ptr.load[width=_GROUP_WIDTH]()
 
-    # TODO: Remove `is_run_in_comptime_interpreter()` branches once `pack_bits` is supported
+    # TODO: Remove `__is_run_in_comptime_interpreter` branches once `pack_bits` is supported
     # by the compile-time interpreter. Currently `pack_bits` uses `pop.bitcast`
     # which the interpreter can't handle, so we fall back to scalar loops for
     # comptime contexts (e.g., Dict used in `comptime` expressions).
 
     @always_inline
-    fn match_h2(self, h2: UInt8) -> UInt16:
+    def match_h2(self, h2: UInt8) -> UInt16:
         """Return a bitmask of slots matching the given h2 fingerprint.
 
         Args:
@@ -119,25 +119,25 @@ struct _Group(Copyable, Movable):
         Returns:
             A bitmask where bit i is set if ctrl[i] == h2.
         """
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             return Self._scalar_match(self.ctrl, h2)
         return pack_bits(self.ctrl.eq(SIMD[DType.uint8, _GROUP_WIDTH](h2)))
 
     @always_inline
-    fn match_empty(self) -> UInt16:
+    def match_empty(self) -> UInt16:
         """Return a bitmask of empty slots.
 
         Returns:
             A bitmask where bit i is set if ctrl[i] == EMPTY (0xFF).
         """
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             return Self._scalar_match(self.ctrl, _CTRL_EMPTY)
         return pack_bits(
             self.ctrl.eq(SIMD[DType.uint8, _GROUP_WIDTH](_CTRL_EMPTY))
         )
 
     @always_inline
-    fn match_empty_or_deleted(self) -> UInt16:
+    def match_empty_or_deleted(self) -> UInt16:
         """Return a bitmask of empty or deleted slots.
 
         Both EMPTY (0xFF) and DELETED (0x80) have the top bit set,
@@ -146,7 +146,7 @@ struct _Group(Copyable, Movable):
         Returns:
             A bitmask where bit i is set if ctrl[i] is EMPTY or DELETED.
         """
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             var result = UInt16(0)
 
             comptime for i in range(_GROUP_WIDTH):
@@ -158,7 +158,7 @@ struct _Group(Copyable, Movable):
         )
 
     @always_inline
-    fn _convert_special_to_empty_and_full_to_deleted(
+    def _convert_special_to_empty_and_full_to_deleted(
         self,
     ) -> SIMD[DType.uint8, _GROUP_WIDTH]:
         """Convert ctrl bytes for in-place rehash preparation.
@@ -170,7 +170,7 @@ struct _Group(Copyable, Movable):
         Returns:
             Transformed control byte vector.
         """
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             var result = SIMD[DType.uint8, _GROUP_WIDTH](0)
 
             comptime for i in range(_GROUP_WIDTH):
@@ -189,7 +189,7 @@ struct _Group(Copyable, Movable):
 
     @staticmethod
     @always_inline
-    fn _scalar_match(
+    def _scalar_match(
         ctrl: SIMD[DType.uint8, _GROUP_WIDTH], target: UInt8
     ) -> UInt16:
         """Scalar fallback for compile-time evaluation.
@@ -222,10 +222,10 @@ struct DictKeyError[K: KeyElement](ImplicitlyCopyable, Writable):
     """
 
     @doc_private
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write the error and the key to the writer.
 
         Args:
@@ -233,7 +233,7 @@ struct DictKeyError[K: KeyElement](ImplicitlyCopyable, Writable):
         """
         self.write_repr_to(writer)
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write the error to the writer.
 
         Args:
@@ -248,7 +248,7 @@ struct DictKeyError[K: KeyElement](ImplicitlyCopyable, Writable):
 struct EmptyDictError(ImplicitlyCopyable, Writable):
     """A custom error type for when a `Dict` is empty."""
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write the error to the writer.
 
         Args:
@@ -256,7 +256,7 @@ struct EmptyDictError(ImplicitlyCopyable, Writable):
         """
         self.write_repr_to(writer)
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write the error to the writer.
 
         Args:
@@ -300,7 +300,7 @@ struct _DictEntryIter[
     var seen: Int
     var src: Pointer[Dict[Self.K, Self.V, Self.H], Self.origin]
 
-    fn __init__(
+    def __init__(
         out self,
         index: Int,
         seen: Int,
@@ -310,11 +310,11 @@ struct _DictEntryIter[
         self.seen = seen
         self.src = Pointer(to=dict)
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     @always_inline
-    fn __next__(
+    def __next__(
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
         if self.seen >= len(self.src[]):
@@ -343,7 +343,7 @@ struct _DictEntryIter[
         raise StopIteration()
 
     @always_inline
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         var len = len(self.src[]) - self.seen
         return (len, {len})
 
@@ -372,16 +372,16 @@ struct _TakeDictEntryIter[
     var index: Int
     var src: Pointer[Dict[Self.K, Self.V, Self.H], Self.origin]
 
-    fn __init__(out self, ref[Self.origin] dict: Dict[Self.K, Self.V, Self.H]):
+    def __init__(out self, ref[Self.origin] dict: Dict[Self.K, Self.V, Self.H]):
         self.index = 0
         self.src = Pointer(to=dict)
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     @always_inline
-    fn __next__(
+    def __next__(
         mut self,
     ) raises StopIteration -> Self.Element:
         if len(self.src[]) <= 0:
@@ -435,17 +435,17 @@ struct _DictKeyIter[
     var iter: Self.dict_entry_iter
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     @always_inline
-    fn __next__(
+    def __next__(
         mut self,
     ) raises StopIteration -> ref[self.iter.__next__().key] Self.Element:
         return self.iter.__next__().key
 
     @always_inline
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         return self.iter.bounds()
 
 
@@ -477,10 +477,10 @@ struct _DictValueIter[
     var iter: _DictEntryIter[Self.K, Self.V, Self.H, Self.origin, Self.forward]
     comptime Element = Self.V
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __reversed__(
+    def __reversed__(
         self,
     ) -> _DictValueIter[Self.K, Self.V, Self.H, Self.origin, False]:
         var src = self.iter.src
@@ -490,7 +490,7 @@ struct _DictValueIter[
             )
         )
 
-    fn __next__(
+    def __next__(
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
         ref entry_ref = self.iter.__next__()
@@ -501,7 +501,7 @@ struct _DictValueIter[
         ]()[]
 
     @always_inline
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         return self.iter.bounds()
 
 
@@ -530,7 +530,7 @@ struct DictEntry[
     var value: Self.V
     """The value associated with the key."""
 
-    fn __init__(out self, var key: Self.K, var value: Self.V):
+    def __init__(out self, var key: Self.K, var value: Self.V):
         """Create an entry from a key and value, computing the hash.
 
         Args:
@@ -541,7 +541,7 @@ struct DictEntry[
         self.key = key^
         self.value = value^
 
-    fn reap_value(deinit self) -> Self.V:
+    def reap_value(deinit self) -> Self.V:
         """Take the value from an owned entry.
 
         Returns:
@@ -627,8 +627,8 @@ struct Dict[
       # var dict2 = dict1  # Error: Dict is not implicitly copyable
       var dict2 = dict1.copy()  # Deep copy
       dict2["c"] = 3
-      print(dict1.__str__())   # => {"a": 1, "b": 2}
-      print(dict2.__str__())   # => {"a": 1, "b": 2, "c": 3}
+      print(dict1)   # => {"a": 1, "b": 2}
+      print(dict2)   # => {"a": 1, "b": 2, "c": 3}
       ```
 
       This is different from Python, where assignment creates a reference to
@@ -648,12 +648,12 @@ struct Dict[
       # Using `ref` gets mutable (read-write) references
       for ref value in inventory.values():
           value += 1  # Modify inventory values in-place
-      print(inventory.__str__())  # => {"apples": 11, "bananas": 6}
+      print(inventory)  # => {"apples": 11, "bananas": 6}
 
       # Using `var` gets an owned copy of the value
       for var key in inventory.keys():
           inventory[key] += 1  # Modify inventory values in-place
-      print(inventory.__str__())  # => {"apples": 12, "bananas": 7}
+      print(inventory)  # => {"apples": 12, "bananas": 7}
       ```
 
       Note that indexing into a `Dict` with a key that's a reference to the
@@ -675,7 +675,7 @@ struct Dict[
       ```mojo
       var phonebook = {"Alice": "555-0101", "Bob": "555-0102"}
       var phone = phonebook.get("Charlie")
-      print(phone.__str__()) if phone else print('phone not found')
+      print(phone) if phone else print('phone not found')
       ```
 
 
@@ -697,7 +697,7 @@ struct Dict[
 
     # Access safely with default value
     phone = phonebook.get("David", "555-0000")
-    print(phone.__str__())               # => '555-0000'
+    print(phone)               # => '555-0000'
 
     # Check for keys
     if "Bob" in phonebook:
@@ -731,7 +731,7 @@ struct Dict[
     var more_numbers = {"David": "555-0104", "Eve": "555-0105"}
     backup.update(more_numbers)          # Merge in-place
     var combined = backup | more_numbers # Create new merged dict
-    print(combined.__str__())
+    print(combined)
     ```
 
     Parameters:
@@ -808,8 +808,8 @@ struct Dict[
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __init__(out self):
-        """Initialize an empty dictiontary."""
+    def __init__(out self):
+        """Initialize an empty dictionary."""
         self._capacity = _INITIAL_CAPACITY
         self._ctrl = alloc[UInt8](self._capacity + _GROUP_WIDTH)
         memset(self._ctrl, _CTRL_EMPTY, self._capacity + _GROUP_WIDTH)
@@ -819,7 +819,7 @@ struct Dict[
         self._growth_left = self._capacity * 7 // 8
 
     @always_inline
-    fn __init__(out self, *, capacity: Int):
+    def __init__(out self, *, capacity: Int):
         """Initialize an empty dictionary with a pre-reserved capacity.
 
         The capacity is rounded up to the next power of two (minimum 16)
@@ -845,7 +845,7 @@ struct Dict[
         self._growth_left = self._capacity * 7 // 8
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         var keys: List[Self.K],
         var values: List[Self.V],
@@ -871,11 +871,11 @@ struct Dict[
     # TODO: add @property when Mojo supports it to make
     # it possible to do `self._reserved`.
     @always_inline
-    fn _reserved(self) -> Int:
+    def _reserved(self) -> Int:
         return self._capacity
 
     @staticmethod
-    fn fromkeys(keys: List[Self.K, ...], value: Self.V) -> Self:
+    def fromkeys(keys: List[Self.K, ...], value: Self.V) -> Self:
         """Create a new dictionary with keys from list and values set to value.
 
         Args:
@@ -890,7 +890,7 @@ struct Dict[
         ```mojo
         var keys = ["a", "b", "c"]
         var dict = Dict.fromkeys(keys, 0)
-        print(dict.__str__())  # => {"a": 0, "b": 0, "c": 0}
+        print(dict)  # => {"a": 0, "b": 0, "c": 0}
         ```
         """
         var my_dict = Dict[Self.K, Self.V, Self.H]()
@@ -899,7 +899,7 @@ struct Dict[
         return my_dict^
 
     @staticmethod
-    fn fromkeys(
+    def fromkeys(
         keys: List[Self.K, ...], value: Optional[Self.V] = None
     ) -> Dict[Self.K, Optional[Self.V], Self.H]:
         """Create a new dictionary with keys from list and values set to value.
@@ -913,8 +913,8 @@ struct Dict[
         """
         return Dict[Self.K, Optional[Self.V], Self.H].fromkeys(keys, value)
 
-    fn __init__(out self, *, copy: Self):
-        """Copy an existing dictiontary.
+    def __init__(out self, *, copy: Self):
+        """Copy an existing dictionary.
 
         Args:
             copy: The existing dict.
@@ -940,7 +940,7 @@ struct Dict[
         # Copy the order array
         self._order = copy._order.copy()
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Destroy all keys and values in the dictionary and free memory."""
         # Destroy all occupied slot entries
         for i in range(self._capacity):
@@ -956,7 +956,7 @@ struct Dict[
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __getitem__(
+    def __getitem__(
         ref self, ref key: Self.K
     ) raises DictKeyError[Self.K] -> ref[self] Self.V:
         """Retrieve a value out of the dictionary.
@@ -972,7 +972,7 @@ struct Dict[
         """
         return self._find_ref(key)
 
-    fn __setitem__(mut self, var key: Self.K, var value: Self.V):
+    def __setitem__(mut self, var key: Self.K, var value: Self.V):
         """Set a value in the dictionary by key.
 
         Args:
@@ -981,7 +981,7 @@ struct Dict[
         """
         self._insert(key^, value^)
 
-    fn __contains__(self, key: Self.K) -> Bool:
+    def __contains__(self, key: Self.K) -> Bool:
         """Check if a given key is in the dictionary or not.
 
         Args:
@@ -993,7 +993,7 @@ struct Dict[
         var found, _ = self._find_slot(hash[HasherType=Self.H](key), key)
         return found
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the dict's keys as immutable references.
 
         Returns:
@@ -1001,7 +1001,7 @@ struct Dict[
         """
         return _DictKeyIter(_DictEntryIter(0, 0, self))
 
-    fn __reversed__(
+    def __reversed__(
         ref self,
     ) -> _DictKeyIter[Self.K, Self.V, Self.H, origin_of(self), False]:
         """Iterate backwards over the dict keys, returning immutable references.
@@ -1013,7 +1013,7 @@ struct Dict[
             _DictEntryIter[forward=False](len(self._order) - 1, 0, self)
         )
 
-    fn __or__(self, other: Self) -> Self:
+    def __or__(self, other: Self) -> Self:
         """Merge self with other and return the result as a new dict.
 
         Args:
@@ -1026,7 +1026,7 @@ struct Dict[
         result.update(other)
         return result^
 
-    fn __ior__(mut self, other: Self):
+    def __ior__(mut self, other: Self):
         """Merge self with other in place.
 
         Args:
@@ -1038,7 +1038,7 @@ struct Dict[
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """The number of elements currently stored in the dictionary.
 
         Returns:
@@ -1046,7 +1046,7 @@ struct Dict[
         """
         return self._len
 
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Check if the dictionary is empty or not.
 
         Returns:
@@ -1055,7 +1055,7 @@ struct Dict[
         """
         return len(self).__bool__()
 
-    fn __eq__(self, other: Self) -> Bool where conforms_to(Self.V, Equatable):
+    def __eq__(self, other: Self) -> Bool where conforms_to(Self.V, Equatable):
         """Checks if two dictionaries are equal.
 
         Two dictionaries are equal if they contain the same keys and the
@@ -1082,7 +1082,7 @@ struct Dict[
 
         return True
 
-    fn __hash__[
+    def __hash__[
         H2: Hasher
     ](self, mut hasher: H2) where conforms_to(Self.V, Hashable):
         """Hashes the dictionary using the given hasher.
@@ -1109,51 +1109,7 @@ struct Dict[
             combined ^= h
         hasher._update_with_simd(combined)
 
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __repr__(
-        self,
-    ) -> String where conforms_to(Self.K, Writable) and conforms_to(
-        Self.V, Writable
-    ):
-        """Returns a string representation of a `Dict`.
-
-        Returns:
-            A string representation of the Dict.
-        """
-        var output = String()
-        self.write_repr_to(output)
-        return output^
-
-    @no_inline
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(
-        self,
-    ) -> String where conforms_to(Self.K, Writable) and conforms_to(
-        Self.V, Writable
-    ):
-        """Returns a string representation of a `Dict`.
-
-        Returns:
-            A string representation of the Dict.
-
-        Examples:
-
-        ```mojo
-        var my_dict = Dict[Int, Float64]()
-        my_dict[1] = 1.1
-        my_dict[2] = 2.2
-        dict_as_string = String(my_dict)
-        print(dict_as_string)
-        # prints {1: 1.1, 2: 2.2}
-        ```
-        """
-        var minimum_capacity = self._minimum_size_of_string_representation()
-        var output = String(capacity=minimum_capacity)
-        self.write_to(output)
-        return output^
-
-    fn _write_dict_body[
+    def _write_dict_body[
         f_key: fn(Self.K, mut Some[Writer]), f_val: fn(Self.V, mut Some[Writer])
     ](self, mut writer: Some[Writer]) where conforms_to(
         Self.K, Writable
@@ -1173,7 +1129,7 @@ struct Dict[
         writer.write_string("}")
 
     @no_inline
-    fn write_to(
+    def write_to(
         self, mut writer: Some[Writer]
     ) where conforms_to(Self.K, Writable) and conforms_to(Self.V, Writable):
         """Write this `Dict` to the writer.
@@ -1187,7 +1143,7 @@ struct Dict[
         ](writer)
 
     @no_inline
-    fn write_repr_to(
+    def write_repr_to(
         self, mut writer: Some[Writer]
     ) where conforms_to(Self.K, Writable) and conforms_to(Self.V, Writable):
         """Write this `Dict`'s representation to the writer.
@@ -1197,7 +1153,7 @@ struct Dict[
         """
 
         @parameter
-        fn write_fields(mut w: Some[Writer]):
+        def write_fields(mut w: Some[Writer]):
             self._write_dict_body[
                 f_key=fmt.write_repr_to[Self.K],
                 f_val=fmt.write_repr_to[Self.V],
@@ -1211,7 +1167,7 @@ struct Dict[
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn _minimum_size_of_string_representation(self) -> Int:
+    def _minimum_size_of_string_representation(self) -> Int:
         # we do a rough estimation of the minimum number of chars that we'll see
         # in the string representation, we assume that String(key) and String(value)
         # will be both at least one char.
@@ -1221,7 +1177,7 @@ struct Dict[
             - 2  # remove the last ", "
         )
 
-    fn find(self, key: Self.K) -> Optional[Self.V]:
+    def find(self, key: Self.K) -> Optional[Self.V]:
         """Find a value in the dictionary by key.
 
         Args:
@@ -1238,9 +1194,9 @@ struct Dict[
         my_dict["a"] = 1
         my_dict["b"] = 2
         var value = my_dict.find("a")
-        print(value.__str__())  # => 1
+        print(value)  # => 1
         var missing_value = my_dict.find("c")
-        print(missing_value.__str__())  # => None
+        print(missing_value)  # => None
         ```
         """
 
@@ -1249,7 +1205,7 @@ struct Dict[
         except:
             return Optional[Self.V](None)
 
-    fn _find_ref(
+    def _find_ref(
         ref self, ref key: Self.K
     ) raises DictKeyError[Self.K] -> ref[self] Self.V:
         """Find a value in the dictionary by key.
@@ -1272,7 +1228,7 @@ struct Dict[
 
         raise DictKeyError[Self.K]()
 
-    fn get(self, key: Self.K) -> Optional[Self.V]:
+    def get(self, key: Self.K) -> Optional[Self.V]:
         """Get a value from the dictionary by key.
 
         Args:
@@ -1289,10 +1245,10 @@ struct Dict[
         my_dict["a"] = 1
         my_dict["b"] = 2
         var value = my_dict.get("a")
-        print(value.__str__())  # => 1
+        print(value)  # => 1
 
         var missing_value = my_dict.get("c")
-        print(missing_value.__str__())  # => -1
+        print(missing_value)  # => -1
 
         from std.testing import assert_true
         assert_true(my_dict["a"] == my_dict.get("a").or_else(Int.MAX))
@@ -1300,7 +1256,7 @@ struct Dict[
         """
         return self.find(key)
 
-    fn get(self, key: Self.K, var default: Self.V) -> Self.V:
+    def get(self, key: Self.K, var default: Self.V) -> Self.V:
         """Get a value from the dictionary by key.
 
         Args:
@@ -1317,10 +1273,10 @@ struct Dict[
         my_dict["a"] = 1
         my_dict["b"] = 2
         var value = my_dict.get("a", Int.MAX)
-        print(value.__str__())  # => 1
+        print(value)  # => 1
 
         var missing_value = my_dict.get("c", -1)
-        print(missing_value.__str__())  # => -1
+        print(missing_value)  # => -1
 
         from std.testing import assert_true
         assert_true(my_dict["a"] == my_dict.get("a", Int.MAX))
@@ -1328,7 +1284,7 @@ struct Dict[
         """
         return self.find(key).or_else(default^)
 
-    fn pop(mut self, key: Self.K, var default: Self.V) -> Self.V:
+    def pop(mut self, key: Self.K, var default: Self.V) -> Self.V:
         """Remove a value from the dictionary by key.
 
         Args:
@@ -1347,9 +1303,9 @@ struct Dict[
         my_dict["a"] = 1
         my_dict["b"] = 2
         var value = my_dict.pop("a", 99)
-        print(value.__str__())  # => 1
+        print(value)  # => 1
         var missing_value = my_dict.pop("c", 99)
-        print(missing_value.__str__())  # => 99
+        print(missing_value)  # => 99
         ```
         """
         try:
@@ -1357,7 +1313,7 @@ struct Dict[
         except:
             return default^
 
-    fn pop(mut self, ref key: Self.K) raises DictKeyError[Self.K] -> Self.V:
+    def pop(mut self, ref key: Self.K) raises DictKeyError[Self.K] -> Self.V:
         """Remove a value from the dictionary by key.
 
         Args:
@@ -1377,9 +1333,9 @@ struct Dict[
         my_dict["a"] = 1
         my_dict["b"] = 2
         var value = my_dict.pop("a", 99)
-        print(value.__str__())  # => 1
+        print(value)  # => 1
         var missing_value = my_dict.pop("c", 99)
-        print(missing_value.__str__())  # => 99
+        print(missing_value)  # => 99
         ```
         """
         var hash = hash[HasherType=Self.H](key)
@@ -1394,7 +1350,7 @@ struct Dict[
             return entry^.reap_value()
         raise DictKeyError[Self.K]()
 
-    fn popitem(
+    def popitem(
         mut self,
     ) raises EmptyDictError -> DictEntry[Self.K, Self.V, Self.H]:
         """Remove and return a (key, value) pair from the dictionary.
@@ -1437,7 +1393,7 @@ struct Dict[
 
         raise EmptyDictError()
 
-    fn keys(ref self) -> _DictKeyIter[Self.K, Self.V, Self.H, origin_of(self)]:
+    def keys(ref self) -> _DictKeyIter[Self.K, Self.V, Self.H, origin_of(self)]:
         """Iterate over the dict's keys as immutable references.
 
         Returns:
@@ -1456,7 +1412,7 @@ struct Dict[
         """
         return Self.__iter__(self)
 
-    fn values(
+    def values(
         ref self,
     ) -> _DictValueIter[Self.K, Self.V, Self.H, origin_of(self)]:
         """Iterate over the dict's values as references.
@@ -1477,7 +1433,7 @@ struct Dict[
         """
         return _DictValueIter(_DictEntryIter(0, 0, self))
 
-    fn items(
+    def items(
         ref self,
     ) -> _DictEntryIter[Self.K, Self.V, Self.H, origin_of(self)]:
         """Iterate over the dict's entries as immutable references.
@@ -1503,7 +1459,7 @@ struct Dict[
         """
         return _DictEntryIter(0, 0, self)
 
-    fn take_items(
+    def take_items(
         mut self,
     ) -> _TakeDictEntryIter[Self.K, Self.V, Self.H, origin_of(self)]:
         """Iterate over the dict's entries and move them out of the dictionary
@@ -1530,7 +1486,7 @@ struct Dict[
         """
         return _TakeDictEntryIter(self)
 
-    fn update(mut self, other: Self, /):
+    def update(mut self, other: Self, /):
         """Update the dictionary with the key/value pairs from other,
         overwriting existing keys.
 
@@ -1550,13 +1506,13 @@ struct Dict[
         dict2["b"] = 3
         dict2["c"] = 4
         dict1.update(dict2)
-        print(dict1.__str__())  # => {"a": 1, "b": 3, "c": 4}
+        print(dict1)  # => {"a": 1, "b": 3, "c": 4}
         ```
         """
         for entry in other.items():
             self[entry.key.copy()] = entry.value.copy()
 
-    fn clear(mut self):
+    def clear(mut self):
         """Remove all elements from the dictionary.
 
         Example:
@@ -1583,7 +1539,7 @@ struct Dict[
         self._len = 0
         self._growth_left = self._capacity * 7 // 8
 
-    fn setdefault(
+    def setdefault(
         mut self, key: Self.K, var default: Self.V
     ) -> ref[self] Self.V:
         """Get a value from the dictionary by key, or set it to a default if it
@@ -1604,11 +1560,11 @@ struct Dict[
         var my_dict = Dict[String, Int]()
         my_dict["a"] = 1
         var value1 = my_dict.setdefault("a", 99)
-        print(value1.__str__())  # => 1
+        print(value1)  # => 1
 
         var value2 = my_dict.setdefault("b", 99)
-        print(value2.__str__())  # => 99
-        print(my_dict.__str__())  # => {"a": 1, "b": 99}
+        print(value2)  # => 99
+        print(my_dict)  # => {"a": 1, "b": 99}
         ```
         """
         self._maybe_resize()
@@ -1631,10 +1587,10 @@ struct Dict[
     # Internal methods
     # ===-------------------------------------------------------------------===#
 
-    fn _insert(mut self, var key: Self.K, var value: Self.V):
+    def _insert(mut self, var key: Self.K, var value: Self.V):
         self._insert(DictEntry[Self.K, Self.V, Self.H](key^, value^))
 
-    fn _insert[
+    def _insert[
         safe_context: Bool = False
     ](mut self, var entry: DictEntry[Self.K, Self.V, Self.H]):
         comptime if not safe_context:
@@ -1657,7 +1613,7 @@ struct Dict[
             ), "_growth_left went negative after insert"
 
     @always_inline
-    fn _set_ctrl(mut self, index: Int, value: UInt8):
+    def _set_ctrl(mut self, index: Int, value: UInt8):
         """Set a control byte, maintaining the mirror for wrap-around SIMD loads.
 
         Args:
@@ -1671,7 +1627,7 @@ struct Dict[
             self._ctrl[self._capacity + index] = value
 
     @always_inline
-    fn _find_slot(self, hash: UInt64, key: Self.K) -> Tuple[Bool, Int]:
+    def _find_slot(self, hash: UInt64, key: Self.K) -> Tuple[Bool, Int]:
         """Find a slot matching the given key, or an empty slot for insertion.
 
         This intentionally does NOT return DELETED slots for insertion.
@@ -1717,7 +1673,7 @@ struct Dict[
             pos = (pos + _GROUP_WIDTH) & (self._capacity - 1)
 
     @always_inline
-    fn _find_empty_slot(self, hash: UInt64) -> Int:
+    def _find_empty_slot(self, hash: UInt64) -> Int:
         """Find the first EMPTY or DELETED slot for the given hash.
 
         Used during resize and in-place rehash when we know the key is
@@ -1739,7 +1695,7 @@ struct Dict[
                 return (pos + bit) & (self._capacity - 1)
             pos = (pos + _GROUP_WIDTH) & (self._capacity - 1)
 
-    fn _maybe_resize(mut self):
+    def _maybe_resize(mut self):
         """Resize the table if growth_left has been exhausted."""
         if self._growth_left > 0:
             self._maybe_compact_order()
@@ -1787,7 +1743,7 @@ struct Dict[
         old_ctrl.free()
         old_slots.free()
 
-    fn _rehash_in_place(mut self):
+    def _rehash_in_place(mut self):
         """Rehash the table in place without changing capacity.
 
         Reclaims DELETED tombstones by moving all entries to their ideal
@@ -1869,7 +1825,7 @@ struct Dict[
 
         slot_map.free()
 
-    fn _maybe_compact_order(mut self):
+    def _maybe_compact_order(mut self):
         """Compact the order array if it has too many stale entries."""
         if len(self._order) <= 2 * self._len:
             return
@@ -1916,7 +1872,7 @@ struct OwnedKwargsDict[V: Copyable & ImplicitlyDestructible](
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize an empty keyword dictionary."""
         self._dict = Dict[Self.key_type, Self.V, default_comp_time_hasher]()
 
@@ -1925,7 +1881,7 @@ struct OwnedKwargsDict[V: Copyable & ImplicitlyDestructible](
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __getitem__(
+    def __getitem__(
         ref self, ref key: Self.key_type
     ) raises DictKeyError[Self.key_type] -> ref[self._dict[key]] Self.V:
         """Retrieve a value out of the keyword dictionary.
@@ -1942,7 +1898,7 @@ struct OwnedKwargsDict[V: Copyable & ImplicitlyDestructible](
         return self._dict[key]
 
     @always_inline
-    fn __setitem__(mut self, key: Self.key_type, var value: Self.V):
+    def __setitem__(mut self, key: Self.key_type, var value: Self.V):
         """Set a value in the keyword dictionary by key.
 
         Args:
@@ -1956,7 +1912,7 @@ struct OwnedKwargsDict[V: Copyable & ImplicitlyDestructible](
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __contains__(self, key: Self.key_type) -> Bool:
+    def __contains__(self, key: Self.key_type) -> Bool:
         """Check if a given key is in the keyword dictionary or not.
 
         Args:
@@ -1969,7 +1925,7 @@ struct OwnedKwargsDict[V: Copyable & ImplicitlyDestructible](
         return key in self._dict
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """The number of elements currently stored in the keyword dictionary.
 
         Returns:
@@ -1982,7 +1938,7 @@ struct OwnedKwargsDict[V: Copyable & ImplicitlyDestructible](
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn find(self, key: Self.key_type) -> Optional[Self.V]:
+    def find(self, key: Self.key_type) -> Optional[Self.V]:
         """Find a value in the keyword dictionary by key.
 
         Args:
@@ -1995,7 +1951,7 @@ struct OwnedKwargsDict[V: Copyable & ImplicitlyDestructible](
         return self._dict.find(key)
 
     @always_inline
-    fn pop(mut self, key: self.key_type, var default: Self.V) -> Self.V:
+    def pop(mut self, key: self.key_type, var default: Self.V) -> Self.V:
         """Remove a value from the dictionary by key.
 
         Args:
@@ -2010,7 +1966,7 @@ struct OwnedKwargsDict[V: Copyable & ImplicitlyDestructible](
         return self._dict.pop(key, default^)
 
     @always_inline
-    fn pop(
+    def pop(
         mut self, ref key: self.key_type
     ) raises DictKeyError[Self.key_type] -> Self.V:
         """Remove a value from the dictionary by key.
@@ -2027,7 +1983,7 @@ struct OwnedKwargsDict[V: Copyable & ImplicitlyDestructible](
         """
         return self._dict.pop(key)
 
-    fn __iter__(
+    def __iter__(
         ref self,
     ) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the keyword dict's keys as immutable references.
@@ -2037,7 +1993,7 @@ struct OwnedKwargsDict[V: Copyable & ImplicitlyDestructible](
         """
         return rebind[Self.IteratorType[origin_of(self)]](self._dict.keys())
 
-    fn keys(
+    def keys(
         ref self,
     ) -> _DictKeyIter[
         Self.key_type, Self.V, default_comp_time_hasher, origin_of(self._dict)
@@ -2049,7 +2005,7 @@ struct OwnedKwargsDict[V: Copyable & ImplicitlyDestructible](
         """
         return self._dict.keys()
 
-    fn values(
+    def values(
         ref self,
     ) -> _DictValueIter[
         Self.key_type, Self.V, default_comp_time_hasher, origin_of(self._dict)
@@ -2061,7 +2017,7 @@ struct OwnedKwargsDict[V: Copyable & ImplicitlyDestructible](
         """
         return self._dict.values()
 
-    fn items(
+    def items(
         ref self,
     ) -> _DictEntryIter[
         Self.key_type, Self.V, default_comp_time_hasher, origin_of(self._dict)
@@ -2093,9 +2049,9 @@ struct OwnedKwargsDict[V: Copyable & ImplicitlyDestructible](
         return _DictEntryIter(0, 0, self._dict)
 
     @always_inline
-    fn _insert(mut self, var key: Self.key_type, var value: Self.V):
+    def _insert(mut self, var key: Self.key_type, var value: Self.V):
         self._dict._insert(key^, value^)
 
     @always_inline
-    fn _insert(mut self, key: StringLiteral, var value: Self.V):
+    def _insert(mut self, key: StringLiteral, var value: Self.V):
         self._insert(String(key), value^)

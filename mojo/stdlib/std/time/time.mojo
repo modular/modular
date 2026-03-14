@@ -55,11 +55,11 @@ struct _CTimeSpec(Defaultable, TrivialRegisterPassable, Writable):
     var tv_sec: Int  # Seconds
     var tv_subsec: Int  # subsecond (nanoseconds on linux and usec on mac)
 
-    fn __init__(out self):
+    def __init__(out self):
         self.tv_sec = 0
         self.tv_subsec = 0
 
-    fn as_nanoseconds(self) -> UInt:
+    def as_nanoseconds(self) -> UInt:
         comptime if CompilationTarget.is_linux():
             return UInt(self.tv_sec * _NSEC_PER_SEC + self.tv_subsec)
         else:
@@ -67,18 +67,13 @@ struct _CTimeSpec(Defaultable, TrivialRegisterPassable, Writable):
                 self.tv_sec * _NSEC_PER_SEC + self.tv_subsec * _NSEC_PER_USEC
             )
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(self.as_nanoseconds(), "ns")
 
 
 @always_inline
-fn _clock_gettime(clockid: Int) -> _CTimeSpec:
+def _clock_gettime(clockid: Int) -> _CTimeSpec:
     """Low-level call to the clock_gettime libc function"""
     var ts = _CTimeSpec()
 
@@ -89,7 +84,7 @@ fn _clock_gettime(clockid: Int) -> _CTimeSpec:
 
 
 @always_inline
-fn _gettime_as_nsec_unix(clockid: Int) -> UInt:
+def _gettime_as_nsec_unix(clockid: Int) -> UInt:
     comptime if CompilationTarget.is_linux():
         var ts = _clock_gettime(clockid)
         return ts.as_nanoseconds()
@@ -100,23 +95,7 @@ fn _gettime_as_nsec_unix(clockid: Int) -> UInt:
 
 
 @always_inline
-fn _gpu_clock() -> UInt:
-    """Returns a 64-bit unsigned cycle counter."""
-    comptime asm = _gpu_clock_inst()
-    return UInt(Int(llvm_intrinsic[asm, Int64]()))
-
-
-fn _gpu_clock_inst() -> StaticString:
-    comptime if is_nvidia_gpu():
-        return "llvm.nvvm.read.ptx.sreg.clock64"
-    elif is_amd_gpu():
-        return "llvm.amdgcn.s.memtime"
-    else:
-        CompilationTarget.unsupported_target_error[operation="_gpu_clock",]()
-
-
-@always_inline
-fn _amd_gpu_realtime() -> UInt64:
+def _amd_gpu_realtime() -> UInt64:
     """Returns the AMD GPU real-time counter (constant-speed clock).
 
     This reads the s_memrealtime register which provides a constant-speed
@@ -137,36 +116,36 @@ comptime _AMD_GPU_REALTIME_FREQ_HZ: UInt64 = 100_000_000
 
 
 @always_inline
-fn _realtime_nanoseconds() -> UInt:
+def _realtime_nanoseconds() -> UInt:
     """Returns the current realtime time in nanoseconds"""
     return _gettime_as_nsec_unix(_CLOCK_REALTIME)
 
 
 @always_inline
-fn _monotonic_nanoseconds() -> UInt:
+def _monotonic_nanoseconds() -> UInt:
     """Returns the current monotonic time in nanoseconds"""
 
     comptime if is_gpu():
-        return _gpu_clock()
+        return UInt(global_perf_counter_ns())
     else:
         return _gettime_as_nsec_unix(_CLOCK_MONOTONIC)
 
 
 @always_inline
-fn _monotonic_raw_nanoseconds() -> UInt:
+def _monotonic_raw_nanoseconds() -> UInt:
     """Returns the current monotonic time in nanoseconds"""
     return _gettime_as_nsec_unix(_CLOCK_MONOTONIC_RAW)
 
 
 @always_inline
-fn _process_cputime_nanoseconds() -> UInt:
+def _process_cputime_nanoseconds() -> UInt:
     """Returns the high-resolution per-process timer from the CPU"""
 
     return _gettime_as_nsec_unix(_CLOCK_PROCESS_CPUTIME_ID)
 
 
 @always_inline
-fn _thread_cputime_nanoseconds() -> UInt:
+def _thread_cputime_nanoseconds() -> UInt:
     """Returns the thread-specific CPU-time clock"""
 
     return _gettime_as_nsec_unix(_CLOCK_THREAD_CPUTIME_ID)
@@ -178,7 +157,7 @@ fn _thread_cputime_nanoseconds() -> UInt:
 
 
 @always_inline
-fn perf_counter() -> Float64:
+def perf_counter() -> Float64:
     """Return the value (in fractional seconds) of a performance counter, i.e.
     a clock with the highest available resolution to measure a short duration.
     It does include time elapsed during sleep and is system-wide. The reference
@@ -197,7 +176,7 @@ fn perf_counter() -> Float64:
 
 
 @always_inline
-fn perf_counter_ns() -> UInt:
+def perf_counter_ns() -> UInt:
     """Return the value (in nanoseconds) of a performance counter, i.e.
     a clock with the highest available resolution to measure a short duration.
     It does include time elapsed during sleep and is system-wide. The reference
@@ -216,7 +195,7 @@ fn perf_counter_ns() -> UInt:
 
 
 @always_inline
-fn global_perf_counter_ns() -> SIMD[DType.uint64, 1]:
+def global_perf_counter_ns() -> SIMD[DType.uint64, 1]:
     """Returns the current value in the global nanosecond resolution timer. This value
     is common across all SM's.
 
@@ -250,7 +229,7 @@ fn global_perf_counter_ns() -> SIMD[DType.uint64, 1]:
 
 
 @always_inline
-fn monotonic() -> UInt:
+def monotonic() -> UInt:
     """
     Returns the current monotonic time time in nanoseconds. This function
     queries the current platform's monotonic clock, making it useful for
@@ -270,7 +249,7 @@ fn monotonic() -> UInt:
 
 @always_inline
 @parameter
-fn time_function[func: fn() raises capturing[_] -> None]() raises -> UInt:
+def time_function[func: fn() raises capturing[_] -> None]() raises -> UInt:
     """Measures the time spent in the function.
 
     Parameters:
@@ -290,7 +269,7 @@ fn time_function[func: fn() raises capturing[_] -> None]() raises -> UInt:
 
 @always_inline
 @parameter
-fn time_function[func: fn() capturing[_] -> None]() -> UInt:
+def time_function[func: fn() capturing[_] -> None]() -> UInt:
     """Measures the time spent in the function.
 
     Parameters:
@@ -301,7 +280,7 @@ fn time_function[func: fn() capturing[_] -> None]() -> UInt:
     """
 
     @parameter
-    fn raising_func() raises:
+    def raising_func() raises:
         func()
 
     try:
@@ -315,7 +294,7 @@ fn time_function[func: fn() capturing[_] -> None]() -> UInt:
 # ===-----------------------------------------------------------------------===#
 
 
-fn sleep(sec: Float64):
+def sleep(sec: Float64):
     """Suspends the current thread for the seconds specified.
 
     Args:
@@ -387,7 +366,7 @@ fn sleep(sec: Float64):
     _ = external_call["nanosleep", Int32](req, rem)
 
 
-fn sleep(sec: UInt):
+def sleep(sec: UInt):
     """Suspends the current thread for the seconds specified.
 
     Args:

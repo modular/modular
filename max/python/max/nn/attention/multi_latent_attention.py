@@ -30,7 +30,6 @@ from max.graph import (
 )
 
 from ..comm import Allreduce
-from ..float8_config import Float8Config
 from ..kernels import (
     flare_mla_prefill_plan,
     mla_decode_graph,
@@ -41,6 +40,7 @@ from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import Module, Shardable
 from ..linear import Linear
 from ..norm import RMSNorm
+from ..quant_config import QuantConfig
 from ..rotary_embedding import RotaryEmbedding
 from .mask_config import MHAMaskVariant
 
@@ -76,7 +76,7 @@ class LatentAttentionWithRope(Module, Shardable):
             multiple are provided, the first device is used.
         linear_cls: Linear class to use for the outputs dense layer.
         o_proj_dtype: Optional dtype override for the output projection.
-        o_proj_float8_config: Optional float8 config for the output projection.
+        o_proj_quant_config: Optional quantization config for the output projection.
         scale: Value used to scale the results of the attention output.
         q_lora_rank: Optional LoRA rank for Q projection.
         kv_lora_rank: LoRA rank for KV projections.
@@ -107,7 +107,7 @@ class LatentAttentionWithRope(Module, Shardable):
         devices: list[DeviceRef] | None = None,
         linear_cls: Callable[..., Linear] = Linear,
         o_proj_dtype: DType | None = None,
-        o_proj_float8_config: Float8Config | None = None,
+        o_proj_quant_config: QuantConfig | None = None,
         scale: float | None = None,
         q_lora_rank: int | None = None,
         kv_lora_rank: int = 512,
@@ -205,18 +205,29 @@ class LatentAttentionWithRope(Module, Shardable):
         )
         proj_dtype = o_proj_dtype if o_proj_dtype is not None else dtype
         self._o_proj_dtype = proj_dtype
-        self._o_proj_float8_config = o_proj_float8_config
+        self._o_proj_quant_config = o_proj_quant_config
         self.o_proj = linear_cls(
             in_dim=self.n_heads * self.v_head_dim,
             out_dim=self.hidden_size,
             dtype=proj_dtype,
             device=self.devices[0],
-            float8_config=o_proj_float8_config,
+            quant_config=o_proj_quant_config,
         )
 
     def create_mla_prefill_metadata(
         self, input_row_offsets: TensorValue, kv_collection: PagedCacheValues
     ) -> MLAPrefillMetadata:
+        """Creates the prefill planning metadata required by MLA prefill kernels.
+
+        Args:
+            input_row_offsets: Ragged row offsets tensor describing the token
+                boundaries for each sequence in the batch.
+            kv_collection: Paged KV cache values for the current device.
+
+        Returns:
+            An :class:`MLAPrefillMetadata` instance containing buffer row
+            offsets, cache offsets, and buffer lengths for the prefill step.
+        """
         (buffer_row_offsets, cache_offsets, buffer_lengths) = (
             flare_mla_prefill_plan(
                 self.kv_params,
@@ -364,7 +375,7 @@ class LatentAttentionWithRope(Module, Shardable):
                     graph_mode=self.graph_mode,
                     linear_cls=self.linear_cls,
                     o_proj_dtype=self._o_proj_dtype,
-                    o_proj_float8_config=self._o_proj_float8_config,
+                    o_proj_quant_config=self._o_proj_quant_config,
                     scale=self._scale,
                     q_lora_rank=self.q_lora_rank,
                     kv_lora_rank=self.kv_lora_rank,
@@ -425,7 +436,7 @@ class LatentAttentionWithRope(Module, Shardable):
                     graph_mode=self.graph_mode,
                     linear_cls=self.linear_cls,
                     o_proj_dtype=self._o_proj_dtype,
-                    o_proj_float8_config=self._o_proj_float8_config,
+                    o_proj_quant_config=self._o_proj_quant_config,
                     scale=self._scale,
                     q_lora_rank=self.q_lora_rank,
                     kv_lora_rank=self.kv_lora_rank,
@@ -617,6 +628,15 @@ class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
         input_row_offsets_: list[TensorValue],
         kv_collections: list[PagedCacheValues],
     ) -> list[MLAPrefillMetadata]:
+        """Creates per-device MLA prefill metadata for tensor-parallel execution.
+
+        Args:
+            input_row_offsets_: Per-device ragged row offset tensors.
+            kv_collections: Per-device paged KV cache values.
+
+        Returns:
+            A list of :class:`MLAPrefillMetadata` instances, one per device.
+        """
         multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
 
         for input_row_offsets, kv_collection in zip(
@@ -718,6 +738,15 @@ class DataParallelLatentAttentionWithRope(LatentAttentionWithRope):
         input_row_offsets_: list[TensorValue],
         kv_collections: list[PagedCacheValues],
     ) -> list[MLAPrefillMetadata]:
+        """Creates per-device MLA prefill metadata for data-parallel execution.
+
+        Args:
+            input_row_offsets_: Per-device ragged row offset tensors.
+            kv_collections: Per-device paged KV cache values.
+
+        Returns:
+            A list of :class:`MLAPrefillMetadata` instances, one per device.
+        """
         multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
 
         for input_row_offsets, kv_collection in zip(

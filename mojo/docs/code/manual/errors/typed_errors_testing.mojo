@@ -35,7 +35,7 @@ struct ValidationError(Copyable, Writable):
     var field: String
     var reason: String
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "ValidationError: ", self.reason, " (field: ", self.field, ")"
         )
@@ -48,7 +48,7 @@ struct ConfigError(Copyable, Writable):
     var key: String
     var message: String
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("ConfigError[", self.key, "]: ", self.message)
 
 
@@ -57,7 +57,7 @@ struct ConfigError(Copyable, Writable):
 # =============================================================================
 
 
-fn validate_username(name: String) raises ValidationError:
+def validate_username(name: String) raises ValidationError:
     """Validate a username."""
     if not name:
         raise ValidationError(field="username", reason="cannot be empty")
@@ -67,7 +67,7 @@ fn validate_username(name: String) raises ValidationError:
         )
 
 
-fn validate_age(age: Int) raises ValidationError:
+def validate_age(age: Int) raises ValidationError:
     """Validate an age value."""
     if age < 0:
         raise ValidationError(field="age", reason="cannot be negative")
@@ -75,7 +75,7 @@ fn validate_age(age: Int) raises ValidationError:
         raise ValidationError(field="age", reason="must be realistic")
 
 
-fn load_config(key: String) raises ConfigError -> String:
+def load_config(key: String) raises ConfigError -> String:
     """Load a configuration value."""
     if key == "missing":
         raise ConfigError(key=key, message="key not found")

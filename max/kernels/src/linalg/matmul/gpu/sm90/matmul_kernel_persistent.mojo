@@ -43,7 +43,7 @@ __extension HopperMatmulSM90Kernel:
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-    fn run_persistent[
+    def run_persistent[
         a_tma_rank: Int,
         b_tma_rank: Int,
         c_tma_rank: Int,
@@ -174,7 +174,7 @@ __extension HopperMatmulSM90Kernel:
         `nvvm.cluster_dim`=cluster_shape,
     )
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-    fn run_unaligned[
+    def run_unaligned[
         c_tma_rank: Int,
         c_tile_shape: IndexList[c_tma_rank],
         c_desc_shape: IndexList[c_tma_rank],

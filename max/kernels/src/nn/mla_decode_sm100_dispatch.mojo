@@ -17,20 +17,13 @@ from std.sys import size_of
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
-from layout.layout import (
-    Layout,
-    UNKNOWN_VALUE,
-)
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
 from layout.tma_async import (
     create_split_tma,
     SplitLastDimTMATensorTile,
 )
 from std.logger import Logger
 
-from layout.layout_tensor import (
-    LayoutTensor,
-)
-from layout.tile_tensor import lt_to_tt
 from nn.mha_fa3_utils import (
     NonNullPointer,
     NullPointer,
@@ -42,7 +35,6 @@ from nn.mha_utils import (
     MHAConfig,
 )
 from nn.mha_fa3_utils import KVTMATile
-from layout.runtime_layout import RuntimeLayout
 from std.utils.numerics import get_accum_type
 from std.utils.index import Index
 from std.utils import IndexList
@@ -77,13 +69,13 @@ comptime DEFAULT_NUM_PARTITIONS = NUM_PARTITIONS.get(len(NUM_PARTITIONS) - 1, 0)
 
 
 @always_inline
-fn _get_partition_bucket[i: Int]() -> Int:
+def _get_partition_bucket[i: Int]() -> Int:
     """Return the i-th partition bucket value."""
     comptime res = NUM_PARTITIONS.get(i, DEFAULT_NUM_PARTITIONS)
     return res
 
 
-fn _bucket_num_partitions(num_partitions: Int) -> Int:
+def _bucket_num_partitions(num_partitions: Int) -> Int:
     """Map num_partitions to the smallest bucket value >= num_partitions."""
     comptime for kv in NUM_PARTITIONS.items():
         comptime v = kv.value
@@ -95,7 +87,9 @@ fn _bucket_num_partitions(num_partitions: Int) -> Int:
 from nn.mla_decode_sm100_utils import (
     MLA_SM100_Decode_Config,
     QOTMATile,
+    ScalesTMATile,
     tma_tile_qo,
+    tma_tile_scales,
     MLA_Decode_Pack,
     num_matrix_view_rows_decode,
 )
@@ -111,7 +105,7 @@ from nn.mla_decode_sm100_combine import mla_decode_combine_partial_outputs
 # ------------------------------------------------------------------------------
 # Compute num_partitions heuristic (shared by dispatch and pre-compute op)
 # ------------------------------------------------------------------------------
-fn _compute_num_partitions[
+def _compute_num_partitions[
     num_heads: Int,
     is_fp8_kv: Bool = False,
 ](
@@ -286,7 +280,7 @@ fn _compute_num_partitions[
 # ------------------------------------------------------------------------------
 # Public pre-compute function for MOGG ops
 # ------------------------------------------------------------------------------
-fn compute_mla_dispatch_scalars[
+def compute_mla_dispatch_scalars[
     num_heads: Int,
     _is_cache_length_accurate: Bool = False,
     is_fp8_kv: Bool = False,
@@ -295,10 +289,10 @@ fn compute_mla_dispatch_scalars[
     max_cache_valid_length: Int,
     q_max_seq_len: Int,
     sm_count: Int,
-) -> Tuple[Int, Int, Int, Int]:
-    """Pure computation of the 4 MLA dispatch scalars (no I/O).
+) -> Tuple[Int, Int, Int]:
+    """Pure computation of the packed 3-value MLA dispatch metadata.
 
-    Returns ``(batch_size, q_max_seq_len, num_partitions, max_cache_valid_length)``.
+    Returns ``(batch_size, q_max_seq_len, num_partitions)``.
     """
     var effective = max_cache_valid_length
 
@@ -310,7 +304,7 @@ fn compute_mla_dispatch_scalars[
         batch_size, effective, q_max_seq_len, split_page_size, sm_count
     )
 
-    return (batch_size, q_max_seq_len, num_partitions, max_cache_valid_length)
+    return (batch_size, q_max_seq_len, num_partitions)
 
 
 struct MLADispatchScalarArgs[
@@ -318,11 +312,11 @@ struct MLADispatchScalarArgs[
     _is_cache_length_accurate: Bool = False,
     is_fp8_kv: Bool = False,
 ]:
-    """Pre-computed scalar dispatch args for MLA decode legacy (non-capturable) path.
+    """Pre-computed MLA decode args for the legacy (non-capturable) path.
 
-    Holds a GPU buffer containing
-    ``[batch_size, q_max_seq_len, num_partitions, max_cache_valid_length]``
-    and stores the scalar values as plain Int fields for host-side dispatch.
+    Owns a GPU buffer containing ``[batch_size, q_max_seq_len, num_partitions]``
+    and caches the host-side ``batch_size``/``q_max_seq_len`` pair needed by
+    ``mla_decode_sm100_dispatch``.
 
     Usage::
 
@@ -332,32 +326,30 @@ struct MLADispatchScalarArgs[
         var gpu_lt = args.gpu_layout_tensor()
         mla_decode_sm100_dispatch[...](
             ..., gpu_lt,
-            args.batch_size, args.q_max_seq_len, args.max_cache_valid_length,
+            args.batch_size, args.q_max_seq_len, max_cache_len,
             ctx,
         )
         _ = args  # keepalive
     """
 
     comptime MLAScalarArgsLT = LayoutTensor[
-        DType.int64, Layout.row_major(4), MutAnyOrigin
+        DType.int64, Layout.row_major(3), MutAnyOrigin
     ]
 
     var gpu_buf: DeviceBuffer[DType.int64]
     var batch_size: Int
     var q_max_seq_len: Int
-    var max_cache_valid_length: Int
 
-    fn __init__(
+    def __init__(
         out self,
         batch_size: Int,
         max_cache_len: Int,
         q_max_seq_len: Int,
         ctx: DeviceContext,
     ) raises:
-        self.gpu_buf = ctx.enqueue_create_buffer[DType.int64](4)
+        self.gpu_buf = ctx.enqueue_create_buffer[DType.int64](3)
         self.batch_size = batch_size
         self.q_max_seq_len = q_max_seq_len
-        self.max_cache_valid_length = max_cache_len
 
         comptime sm_count = ctx.default_device_info.sm_count
         var scalars = compute_mla_dispatch_scalars[
@@ -366,19 +358,18 @@ struct MLADispatchScalarArgs[
             is_fp8_kv=Self.is_fp8_kv,
         ](batch_size, max_cache_len, q_max_seq_len, sm_count)
 
-        var host_args = InlineArray[Int64, 4](uninitialized=True)
+        var host_args = InlineArray[Int64, 3](uninitialized=True)
         host_args[0] = Int64(scalars[0])
         host_args[1] = Int64(scalars[1])
         host_args[2] = Int64(scalars[2])
-        host_args[3] = Int64(scalars[3])
         var output_buf = DeviceBuffer[DType.int64](
-            ctx, self.gpu_buf.unsafe_ptr(), 4, owning=False
+            ctx, self.gpu_buf.unsafe_ptr(), 3, owning=False
         )
         output_buf.enqueue_copy_from(
             UnsafePointer(to=host_args).bitcast[Scalar[DType.int64]]()
         )
 
-    fn gpu_layout_tensor(
+    def gpu_layout_tensor(
         self,
     ) -> Self.MLAScalarArgsLT:
         return Self.MLAScalarArgsLT(
@@ -391,7 +382,7 @@ struct MLADispatchScalarArgs[
 # ------------------------------------------------------------------------------
 # MLA decoding implementation for SM100
 # ------------------------------------------------------------------------------
-fn mla_decode_sm100_dispatch[
+def mla_decode_sm100_dispatch[
     q_type: DType,
     q_layout: Layout,
     k_t: MHAOperand,
@@ -437,9 +428,10 @@ fn mla_decode_sm100_dispatch[
     comptime if not _is_cache_length_accurate:
         effective_max_cache_len += q_max_seq_len
 
-    var split_page_size = 64 if (
+    var use_small_split_pages = (
         effective_max_cache_len <= 512 and batch_size >= 32
-    ) else 128
+    )
+    var split_page_size = 64 if use_small_split_pages else 128
     comptime sm_count = ctx.default_device_info.sm_count
     comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
     var num_partitions = _compute_num_partitions[num_heads, _is_fp8_kv](
@@ -461,7 +453,9 @@ fn mla_decode_sm100_dispatch[
     # For example, bs=64/cl=256 gets 5 pages at page_size=64 (vs 3 at 128),
     # allowing np=2 with 2-3 pages per split instead of 1-2.
     # =========================================================================
-    if effective_max_cache_len <= 512 and batch_size >= 32:
+    @parameter
+    @always_inline
+    def launch_impl[split_page_size_param: Int]() raises:
         _mla_decode_sm100_dispatch_impl[
             q_type=q_type,
             q_layout=q_layout,
@@ -477,7 +471,7 @@ fn mla_decode_sm100_dispatch[
             ragged=ragged,
             _is_cache_length_accurate=_is_cache_length_accurate,
             decoding_warp_split_k=decoding_warp_split_k,
-            split_page_size=64,
+            split_page_size=split_page_size_param,
             per_token_scale_rope_aware=per_token_scale_rope_aware,
         ](
             q,
@@ -491,52 +485,21 @@ fn mla_decode_sm100_dispatch[
             batch_size,
             q_max_seq_len,
             num_partitions,
-            max_cache_valid_length,
             effective_max_cache_len,
             ctx,
             q_scale_ptr,
         )
+
+    if use_small_split_pages:
+        launch_impl[64]()
     else:
-        _mla_decode_sm100_dispatch_impl[
-            q_type=q_type,
-            q_layout=q_layout,
-            k_t=k_t,
-            output_type=output_type,
-            output_layout=output_layout,
-            mask_t=mask_t,
-            valid_layout=valid_layout,
-            config=config,
-            depth=depth,
-            num_heads=num_heads,
-            group=group,
-            ragged=ragged,
-            _is_cache_length_accurate=_is_cache_length_accurate,
-            decoding_warp_split_k=decoding_warp_split_k,
-            split_page_size=128,
-            per_token_scale_rope_aware=per_token_scale_rope_aware,
-        ](
-            q,
-            k,
-            output,
-            scale,
-            valid_length,
-            mask,
-            scales_ptr,
-            scalar_args_buf,
-            batch_size,
-            q_max_seq_len,
-            num_partitions,
-            max_cache_valid_length,
-            effective_max_cache_len,
-            ctx,
-            q_scale_ptr,
-        )
+        launch_impl[128]()
 
 
 # ------------------------------------------------------------------------------
 # Inner dispatch implementation parameterized on split_page_size
 # ------------------------------------------------------------------------------
-fn _mla_decode_sm100_dispatch_impl[
+def _mla_decode_sm100_dispatch_impl[
     q_type: DType,
     q_layout: Layout,
     k_t: MHAOperand,
@@ -572,7 +535,6 @@ fn _mla_decode_sm100_dispatch_impl[
     batch_size: Int,
     q_max_seq_len: Int,
     num_partitions: Int,
-    max_cache_valid_length: Int,
     effective_max_cache_len: Int,
     ctx: DeviceContext,
     q_scale_ptr: UnsafePointer[
@@ -684,7 +646,7 @@ fn _mla_decode_sm100_dispatch_impl[
         # Dispatch to specialized kernel based on num_partitions for compile-time unrolling.
         # Supports up to MAX_NUM_SPLITS splits to allow higher SM utilization on B200.
         @parameter
-        fn launch_combine[n_splits: Int, wph: Int]() raises:
+        def launch_combine[n_splits: Int, wph: Int]() raises:
             mla_decode_combine_partial_outputs[
                 output_type=output_type,
                 accum_type=AccumType,
@@ -704,7 +666,7 @@ fn _mla_decode_sm100_dispatch_impl[
             )
 
         @parameter
-        fn dispatch_combine[wph: Int]() raises:
+        def dispatch_combine[wph: Int]() raises:
             """Dispatch the combine kernel with the given warps_per_head,
             matching num_partitions to the correct compile-time bucket."""
             comptime for _b in range(len(NUM_PARTITIONS)):
@@ -845,7 +807,7 @@ fn _mla_decode_sm100_dispatch_impl[
         )
 
 
-fn mla_decode_sm100_sink_split_k[
+def mla_decode_sm100_sink_split_k[
     q_type: DType,
     q_layout: Layout,
     k_t: MHAOperand,
@@ -1000,6 +962,15 @@ fn mla_decode_sm100_sink_split_k[
             swizzle_mode=mla_config.rope_swizzle_mode,  # SWIZZLE_128B
         ](ctx)
 
+        # Scales TMA: per-token float32 scales loaded via TMA.
+        # The scales tensor is [total_blocks, page_size, 1, 1] in row-major,
+        # indexed by row_idx (same paging as KV cache blocks).
+        # We treat it as a flat [1, total_elements] 2D tensor for TMA.
+        var _total_scale_elements = k.num_kv_rows()
+        scale_tma = tma_tile_scales[BN=mla_config.BN](
+            ctx, scales_ptr, _total_scale_elements
+        )
+
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
             var valid_len: ValidLengthType = {
@@ -1021,6 +992,7 @@ fn mla_decode_sm100_sink_split_k[
                 q_rope_tma,
                 k_content_tma,
                 k_rope_tma,
+                scale_tma,
                 o_tma_op,
                 k,
                 lse_accum_split_ptr,
@@ -1031,7 +1003,6 @@ fn mla_decode_sm100_sink_split_k[
                 q_max_seq_len,
                 valid_len,
                 mask,
-                scales_ptr,
                 q_scale_ptr,
                 scalar_args_buf,
                 ctx,
@@ -1055,6 +1026,7 @@ fn mla_decode_sm100_sink_split_k[
                 q_rope_tma,
                 k_content_tma,
                 k_rope_tma,
+                scale_tma,
                 o_tma_op,
                 k,
                 lse_accum_split_ptr,
@@ -1065,7 +1037,6 @@ fn mla_decode_sm100_sink_split_k[
                 q_max_seq_len,
                 valid_len,
                 mask,
-                scales_ptr,
                 q_scale_ptr,
                 scalar_args_buf,
                 ctx,
@@ -1220,7 +1191,7 @@ fn mla_decode_sm100_sink_split_k[
 
 
 @always_inline
-fn launch_mla_sm100_decode_enqueue_kernel[
+def launch_mla_sm100_decode_enqueue_kernel[
     q_type: DType,
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -1388,7 +1359,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
 
 
 @always_inline
-fn launch_mla_sm100_decode_native_fp8[
+def launch_mla_sm100_decode_native_fp8[
     q_type: DType,
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -1480,7 +1451,7 @@ fn launch_mla_sm100_decode_native_fp8[
 
 
 @always_inline
-fn launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
+def launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
     q_type: DType,
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -1516,6 +1487,7 @@ fn launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
         BN=config.BK1,  # 64
         BK=config.rope_depth,  # 64
     ],
+    scale_tma: ScalesTMATile[BN=config.BN],
     o_tma: QOTMATile[
         dtype=output_type,
         BM=config.out_rows,
@@ -1531,7 +1503,6 @@ fn launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
     q_max_seq_len: Int,
     valid_len: ValidLengthType,
     mask: MaskType,
-    scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     scalar_args_buf: LayoutTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
@@ -1542,7 +1513,8 @@ fn launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
 
     This is a dedicated launch function for the SnapMLA FP8 per-token-scale rope-aware path.
     Q and K are split into FP8 content (512 dims, SWIZZLE_64B) and BF16 rope
-    (64 dims, SWIZZLE_128B), requiring 4 TMA descriptors instead of 2.
+    (64 dims, SWIZZLE_128B), requiring 5 TMA descriptors (content, rope, scales, Q_nope, Q_rope).
+    Per-token scales are loaded via TMA alongside content and rope.
     """
     var mla_decode_pack = MLA_Decode_Pack[
         ValidLengthType=ValidLengthType,
@@ -1575,11 +1547,11 @@ fn launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
         q_rope_tma,
         k_content_tma,
         k_rope_tma,
+        scale_tma,
         o_tma,
         kv_lut,
         scale,
         mla_decode_pack,
-        scales_ptr,
         q_scale_ptr,
         scalar_args_buf,
         grid_dim=grid_dim,

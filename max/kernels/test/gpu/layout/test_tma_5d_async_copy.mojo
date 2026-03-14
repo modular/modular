@@ -36,7 +36,7 @@ from std.utils.index import Index, IndexList
 
 # Test loading a single 5d tile.
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
-fn test_tma_5d_load_kernel[
+def test_tma_5d_load_kernel[
     dtype: DType,
     dst_layout: Layout,
     tile_rank: Int,

@@ -18,8 +18,8 @@ from std.algorithm.functional import vectorize
 from std.gpu import block_idx, global_idx
 from std.gpu.host import DeviceContext, DeviceBuffer
 from kv_cache.types import KVCacheT
-from layout import Coord, Idx, TileTensor, row_major
-from layout.tile_layout import Layout, TensorLayout
+from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout.tile_layout import Layout
 from nn.mha import MHAConfig, _kernel_mask
 from nn.mha_mask import MHAMask
 from nn.softmax import _softmax_gpu
@@ -29,7 +29,7 @@ from std.utils.numerics import get_accum_type
 
 
 @always_inline
-fn _bmm0_bs[
+def _bmm0_bs[
     QLayoutType: TensorLayout,
     KVLayoutType: TensorLayout,
     //,
@@ -107,7 +107,7 @@ fn _bmm0_bs[
             Int(batch), Int(x), kv_head, 0
         )
 
-        fn accum_fn[width: Int](offset: Int) unified {mut}:
+        def accum_fn[width: Int](offset: Int) unified {mut}:
             comptime alignment = align_of[SIMD[p_type, width]]()
             var q_val = q.load[width=width, alignment=alignment](
                 y * UInt(num_heads) * UInt(depth) + UInt(offset)
@@ -137,7 +137,7 @@ fn _bmm0_bs[
 
 
 @always_inline
-fn _bmm1_bs[
+def _bmm1_bs[
     QLayoutType: TensorLayout,
     KVLayoutType: TensorLayout,
     //,
@@ -217,7 +217,7 @@ fn _bmm1_bs[
 # ===-----------------------------------------------------------------------===#
 
 
-fn mha_cross_gpu_naive[
+def mha_cross_gpu_naive[
     cache_t: KVCacheT,
     mask_t: MHAMask,
     dtype: DType,
@@ -335,7 +335,7 @@ fn mha_cross_gpu_naive[
 
     @parameter
     @__copy_capture(p_buffer)
-    fn input_fn_device[
+    def input_fn_device[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
         var p_coord = Coord(coords)

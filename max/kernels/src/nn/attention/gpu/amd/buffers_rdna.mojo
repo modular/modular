@@ -30,8 +30,8 @@ from std.sys import simd_width_of
 from std.gpu import barrier, lane_id
 from std.gpu import warp_id as get_warp_id
 from layout import Layout, LayoutTensor
-from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.layout import blocked_product
+from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.layout_tensor import (
     ThreadScope,
     copy_dram_to_local,
@@ -66,7 +66,7 @@ comptime RDNA_CD_FRAG_SIZE = 8
 
 
 @always_inline
-fn get_rdna_fragment_layout() -> Layout:
+def get_rdna_fragment_layout() -> Layout:
     """Get the fragment layout for RDNA WMMA output fragments.
 
     RDNA uses Wave32 (32 lanes) with 16x16 output tiles, so each lane
@@ -83,7 +83,7 @@ fn get_rdna_fragment_layout() -> Layout:
 
 
 @always_inline
-fn get_rdna_warp_layout() -> Layout:
+def get_rdna_warp_layout() -> Layout:
     """Get the warp thread layout for RDNA WMMA operations.
 
     For RDNA Wave32 with 16x16 tiles, using col_major(16, 2):
@@ -98,7 +98,7 @@ fn get_rdna_warp_layout() -> Layout:
 
 
 @always_inline
-fn get_rdna_warp_coords[BN: Int, WN: Int]() -> IndexList[2]:
+def get_rdna_warp_coords[BN: Int, WN: Int]() -> IndexList[2]:
     """Get warp coordinates for RDNA Wave32."""
     comptime num_warps_n = BN // WN
     var warp_row, warp_col = divmod(get_warp_id(), UInt(num_warps_n))
@@ -216,7 +216,7 @@ struct KBufferRDNA[
     var global_iterator: Self.GlobalTiledIteratorType
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         global_tile: Self.GlobalTensorType,
         num_b_rows: OptionalReg[Int],
@@ -240,11 +240,11 @@ struct KBufferRDNA[
 
     @always_inline
     @staticmethod
-    fn get_dtype() -> DType:
+    def get_dtype() -> DType:
         return Self._dtype
 
     @always_inline
-    fn load_from_dram(
+    def load_from_dram(
         mut self,
     ):
         copy_dram_to_local[src_thread_layout=Self.thread_layout,](
@@ -258,11 +258,11 @@ struct KBufferRDNA[
         self.load_tile_id = (self.load_tile_id + 1) % Self.num_stages
 
     @always_inline
-    fn get_mma_tile(self) -> Self.MMATileType:
+    def get_mma_tile(self) -> Self.MMATileType:
         return self.mma_tile
 
     @always_inline
-    fn copy_to_shared[
+    def copy_to_shared[
         tile_id: Int = 0
     ](self,):
         var smem_tile = Self.SharedTileType(self.smem_ptr)
@@ -278,7 +278,7 @@ struct KBufferRDNA[
         )
 
     @always_inline
-    fn load_from_shared[
+    def load_from_shared[
         k_mma: Int,
     ](self):
         var warp_col = get_rdna_warp_coords[Self.BN, Self.WN]()[1]
@@ -421,7 +421,7 @@ struct VBufferRDNA[
     var remaining_rows: Int
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         global_tile: Self.GlobalTensorType,
         shared_ptr: UnsafePointer[
@@ -450,16 +450,16 @@ struct VBufferRDNA[
 
     @always_inline
     @staticmethod
-    fn get_dtype() -> DType:
+    def get_dtype() -> DType:
         return Self._dtype
 
     @always_inline
     @staticmethod
-    fn pad[dim: Int]() -> Int:
+    def pad[dim: Int]() -> Int:
         return pad[Self.dtype, Self.depth, dim]()
 
     @always_inline
-    fn load_from_dram(
+    def load_from_dram(
         mut self,
     ):
         """Load V tile from global memory using Wave32-aware pattern.
@@ -518,11 +518,11 @@ struct VBufferRDNA[
         self.global_iterator._incr()
 
     @always_inline
-    fn get_mma_tile(self) -> Self.MMATileType:
+    def get_mma_tile(self) -> Self.MMATileType:
         return self.mma_tile
 
     @always_inline
-    fn copy_to_shared[
+    def copy_to_shared[
         tile_id: Int = 0
     ](self,):
         """Copy V tile to shared memory with transpose for RDNA.
@@ -574,7 +574,7 @@ struct VBufferRDNA[
                     smem_tile[smem_row, smem_col] = val
 
     @always_inline
-    fn load_from_shared[
+    def load_from_shared[
         k_mma: Int,
     ](self):
         """Load MMA fragments from shared memory for RDNA Wave32.
@@ -673,11 +673,11 @@ struct QRegisterBufferRDNA[
 
     @staticmethod
     @always_inline
-    fn get_dtype() -> DType:
+    def get_dtype() -> DType:
         return Self.reg_dtype
 
     @always_inline
-    fn __init__(out self, tensor: LayoutTensor[Self.dtype, ...]):
+    def __init__(out self, tensor: LayoutTensor[Self.dtype, ...]):
         self.reg_tile = type_of(self.reg_tile).stack_allocation()
 
         var warp_row = get_rdna_warp_coords[Self.BN, Self.WN]()[0]
@@ -736,23 +736,23 @@ struct QRegisterBufferRDNA[
                             self.reg_tile[frag_idx, Self.simd_width + j] = 0
 
     @always_inline
-    fn get_iter(self) -> Self.TiledIteratorType:
+    def get_iter(self) -> Self.TiledIteratorType:
         return self.reg_tile.tiled_iterator[
             Self.num_mmas * Self.num_k_tiles, Self.rdna_frag_size, axis=0
         ]()
 
     @always_inline
-    fn get_mma_tile[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
+    def get_mma_tile[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
         return self.reg_tile.split[Self.num_tiles]()[tile_idx].split[
             Self.num_k_tiles
         ]()[k_idx]
 
     @always_inline
-    fn get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
+    def get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
         return self.reg_tile
 
     @always_inline
-    fn zero(self):
+    def zero(self):
         _ = self.reg_tile.fill(0)
 
 
@@ -777,22 +777,22 @@ struct OutputRegisterBufferRDNA[
     var reg_tile: Self.RegisterTileType
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         self.reg_tile = Self.RegisterTileType.stack_allocation()
 
     @staticmethod
     @always_inline
-    fn get_dtype() -> DType:
+    def get_dtype() -> DType:
         return Self.reg_dtype
 
     @always_inline
-    fn vectorize(
+    def vectorize(
         self,
     ) -> Self.RegisterTileType.VectorizedType[1, Self.output_frag_size]:
         return self.reg_tile.vectorize[1, Self.output_frag_size]()
 
     @always_inline
-    fn apply_softmax_denominator(self, rowsum: LayoutTensor[Self.dtype, ...]):
+    def apply_softmax_denominator(self, rowsum: LayoutTensor[Self.dtype, ...]):
         """Apply softmax denominator normalization to output accumulator."""
 
         comptime for m_mma in range(Self.num_m_mmas):
@@ -805,11 +805,11 @@ struct OutputRegisterBufferRDNA[
                     ](rowsum_inv)
 
     @always_inline
-    fn zero(self):
+    def zero(self):
         _ = self.reg_tile.fill(0)
 
     @always_inline
-    fn get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
+    def get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
         return self.reg_tile
 
 
@@ -864,7 +864,7 @@ struct PRegisterBufferRDNA[
     ]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         shared_ptr: UnsafePointer[
             Scalar[Self.dtype],
@@ -876,7 +876,7 @@ struct PRegisterBufferRDNA[
         self.shared_memory_ptr = shared_ptr
 
     @always_inline
-    fn get_mma_tile[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
+    def get_mma_tile[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
         """Get MMA tile by loading from shared memory.
 
         RDNA WMMA B register: b_frag[v] = B[v, lane%16].
@@ -904,25 +904,25 @@ struct PRegisterBufferRDNA[
 
     @staticmethod
     @always_inline
-    fn get_dtype() -> DType:
+    def get_dtype() -> DType:
         return Self.mma_dtype
 
     @always_inline
-    fn vectorize(
+    def vectorize(
         self,
     ) -> Self.RegisterTileType.VectorizedType[1, Self.output_frag_size]:
         return self.reg_tile.vectorize[1, Self.output_frag_size]()
 
     @always_inline
-    fn zero(self):
+    def zero(self):
         _ = self.reg_tile.fill(0)
 
     @always_inline
-    fn get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
+    def get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
         return self.reg_tile
 
     @always_inline
-    fn copy_to_shared[chunk_idx: Int](self):
+    def copy_to_shared[chunk_idx: Int](self):
         """Copy one BK chunk of P register tile to shared memory using RDNA layouts.
 
         Each chunk corresponds to BK=32 keys. With 2 warps each handling WN=32

@@ -25,13 +25,12 @@ The key scenarios tested:
 3. View tensors - stride[0] is UNKNOWN because actual stride depends on parent tensor
 """
 
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout.int_tuple import IntTuple
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from std.testing import TestSuite, assert_equal
 from std.utils import Index, IndexList
 
 
-fn test_ptr_at_offset_static_2d() raises:
+def test_ptr_at_offset_static_2d() raises:
     """Test that ptr_at_offset(IndexList) produces correct pointers for 2D layouts.
     """
     comptime layout = Layout.row_major(10, 20)
@@ -54,7 +53,7 @@ fn test_ptr_at_offset_static_2d() raises:
     assert_equal(ptr[], 115)
 
 
-fn test_ptr_at_offset_static_3d() raises:
+def test_ptr_at_offset_static_3d() raises:
     """Test that ptr_at_offset(IndexList) produces correct pointers for 3D layouts.
     """
     comptime layout = Layout.row_major(5, 10, 20)
@@ -73,7 +72,7 @@ fn test_ptr_at_offset_static_3d() raises:
     assert_equal(ptr[], 243)
 
 
-fn test_ptr_at_offset_static_4d() raises:
+def test_ptr_at_offset_static_4d() raises:
     """Test that ptr_at_offset(IndexList) produces correct pointers for 4D layouts.
     """
     comptime layout = Layout.row_major(2, 4, 8, 16)
@@ -92,7 +91,7 @@ fn test_ptr_at_offset_static_4d() raises:
     assert_equal(ptr[], 820)
 
 
-fn test_ptr_at_offset_col_major() raises:
+def test_ptr_at_offset_col_major() raises:
     """Test that ptr_at_offset(IndexList) produces correct pointers for col-major layouts.
     """
     comptime layout = Layout.col_major(10, 20)
@@ -111,7 +110,7 @@ fn test_ptr_at_offset_col_major() raises:
     assert_equal(ptr[], 32)
 
 
-fn test_ptr_at_offset_with_unknown_stride() raises:
+def test_ptr_at_offset_with_unknown_stride() raises:
     """Test that ptr_at_offset uses runtime stride for UNKNOWN dimensions.
 
     This tests the per-dimension approach: when a stride is UNKNOWN_VALUE,
@@ -149,7 +148,7 @@ fn test_ptr_at_offset_with_unknown_stride() raises:
     assert_equal(ptr[], Int32(expected_offset))
 
 
-fn test_ptr_at_offset_view_tensor() raises:
+def test_ptr_at_offset_view_tensor() raises:
     """Test that view tensors use correct runtime strides via ptr_at_offset.
 
     This simulates PagedKVCache-like scenarios where a 4D view's stride[0]

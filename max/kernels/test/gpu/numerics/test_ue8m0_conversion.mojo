@@ -37,7 +37,7 @@ from std.memory import bitcast
 # CHECK: 2**2
 # CHECK: 2**0
 # CHECK: 2**127
-fn test_simd_f32_to_ue8m0():
+def test_simd_f32_to_ue8m0():
     print("== test_simd_f32_to_ue8m0")
 
     comptime M = 32
@@ -94,7 +94,7 @@ fn test_simd_f32_to_ue8m0():
 
 # CHECK-LABEL: test_simd_ue8m0_to_f32
 # CHECK: [2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0]
-fn test_simd_ue8m0_to_f32():
+def test_simd_ue8m0_to_f32():
     print("== test_simd_ue8m0_to_f32")
 
     var f32_simd = SIMD[DType.float32, 8](
@@ -107,7 +107,7 @@ fn test_simd_ue8m0_to_f32():
     print(ue8m0_casted_f32)
 
 
-fn test_simd_f32_to_ue8m0_ptx_kernel[
+def test_simd_f32_to_ue8m0_ptx_kernel[
     size: Int,
     target: DType,
     idx: Int,
@@ -139,7 +139,7 @@ fn test_simd_f32_to_ue8m0_ptx_kernel[
 # CHECK: 2**2
 # CHECK: 2**0
 # CHECK: 2**127
-fn test_simd_f32_to_ue8m0_ptx_path(ctx: DeviceContext) raises:
+def test_simd_f32_to_ue8m0_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_f32_to_ue8m0_ptx_path")
 
     comptime M = 32
@@ -191,7 +191,7 @@ fn test_simd_f32_to_ue8m0_ptx_path(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-fn test_simd_ue8m0_to_f32_ptx_kernel[
+def test_simd_ue8m0_to_f32_ptx_kernel[
     size: Int,
     target: DType,
 ](x: SIMD[DType.float8_e8m0fnu, size]):
@@ -201,7 +201,7 @@ fn test_simd_ue8m0_to_f32_ptx_kernel[
 
 # CHECK-LABEL: test_simd_ue8m0_to_f32_ptx_path
 # CHECK: [2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0]
-fn test_simd_ue8m0_to_f32_ptx_path(ctx: DeviceContext) raises:
+def test_simd_ue8m0_to_f32_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_ue8m0_to_f32_ptx_path")
 
     var f32_simd = SIMD[DType.float32, 8](

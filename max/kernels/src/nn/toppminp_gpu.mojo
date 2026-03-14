@@ -21,13 +21,7 @@ from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.dim import Dim
 from std.gpu.memory import external_memory
 from std.random import Random
-from layout import (
-    Coord,
-    CoordLike,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, CoordLike, Idx, TileTensor, row_major
 from std.memory import bitcast, stack_allocation
 from nn.softmax import _softmax_gpu
 from nn.topk import (
@@ -43,7 +37,7 @@ comptime DEBUG_FILE = False
 comptime SEED = 42
 
 
-fn topk_wrapper[
+def topk_wrapper[
     T: DType,
     out_idx_type: DType,
     is_top_p: Bool,
@@ -153,9 +147,9 @@ fn topk_wrapper[
 
 
 @always_inline
-fn normalize(value: BFloat16) -> UInt16:
+def normalize(value: BFloat16) -> UInt16:
     @always_inline
-    fn reinterpret(value: BFloat16) -> UInt16:
+    def reinterpret(value: BFloat16) -> UInt16:
         # For unsigned integral types: No conversion needed, return as-is
         return bitcast[DType.uint16, 1](value)
 
@@ -172,14 +166,14 @@ fn normalize(value: BFloat16) -> UInt16:
 
 
 @always_inline
-fn normalize_u32(value: UInt32) -> UInt32:
+def normalize_u32(value: UInt32) -> UInt32:
     return value
 
 
 @always_inline
-fn normalize(value: Int32) -> UInt32:
+def normalize(value: Int32) -> UInt32:
     @always_inline
-    fn reinterpret(value: Int32) -> UInt32:
+    def reinterpret(value: Int32) -> UInt32:
         # For signed integral types: Convert to unsigned int to ensure proper
         # comparison
         return value.cast[DType.uint32]()
@@ -193,14 +187,14 @@ fn normalize(value: Int32) -> UInt32:
 
 
 @always_inline
-fn normalize(value: UInt16) -> UInt16:
+def normalize(value: UInt16) -> UInt16:
     return value
 
 
 @always_inline
-fn normalize(value: Float32) -> UInt32:
+def normalize(value: Float32) -> UInt32:
     @always_inline
-    fn reinterpret(value: Float32) -> UInt32:
+    def reinterpret(value: Float32) -> UInt32:
         # For floating-point types: Reinterpret the bit pattern as an unsigned int
         # This allows for comparison of floating-point values based on their binary
         # representation
@@ -214,7 +208,7 @@ fn normalize(value: Float32) -> UInt32:
 
 
 @always_inline
-fn normalize(
+def normalize(
     value: Scalar,
     out result: Scalar[_uint_type_of_width[bit_width_of[value.dtype]()]()],
 ):
@@ -242,7 +236,7 @@ fn normalize(
 
 
 @always_inline
-fn radix_sort_pairs_kernel[
+def radix_sort_pairs_kernel[
     dtype: DType,
     out_idx_type: DType,
     current_bit: Int,
@@ -469,12 +463,12 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
     var _selection: Int32
     var _size: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self._d_buffers = [{}, {}]
         self._selection = 0
         self._size = 0
 
-    fn __init__(
+    def __init__(
         out self,
         current: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin],
         alternate: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin],
@@ -484,13 +478,13 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
         self._selection = 0
         self._size = size
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self._d_buffers = copy._d_buffers.copy()
         self._selection = copy._selection
         self._size = copy._size
 
     @always_inline
-    fn current(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
+    def current(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
         return DeviceBuffer[Self.dtype](
             ctx,
             self._d_buffers[self._selection],
@@ -499,7 +493,7 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
         )
 
     @always_inline
-    fn alternate(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
+    def alternate(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
         return DeviceBuffer[Self.dtype](
             ctx,
             self._d_buffers[self._selection ^ 1],
@@ -508,12 +502,12 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
         )
 
     @always_inline
-    fn swap(mut self):
+    def swap(mut self):
         self._selection ^= 1
 
 
 @always_inline
-fn run_radix_sort_pairs_gpu[
+def run_radix_sort_pairs_gpu[
     dtype: DType,
     out_idx_type: DType,
     ascending: Bool = False,
@@ -558,7 +552,7 @@ fn run_radix_sort_pairs_gpu[
 
 
 @always_inline
-fn topp_minp_sampling_kernel[
+def topp_minp_sampling_kernel[
     dtype: DType,
     out_idx_type: DType,
     is_top_p: Bool,
@@ -644,7 +638,7 @@ fn topp_minp_sampling_kernel[
 
 
 @always_inline
-fn _is_supported_dtype[dtype: DType]() -> Bool:
+def _is_supported_dtype[dtype: DType]() -> Bool:
     """
     Check if the type is supported by the radix sort kernel.
     If not supported, need to add a normalize function for that
@@ -658,7 +652,7 @@ fn _is_supported_dtype[dtype: DType]() -> Bool:
 
 
 @always_inline
-fn _topp_minp_sampling_gpu[
+def _topp_minp_sampling_gpu[
     dtype: DType,
     out_idx_type: DType,
     //,
@@ -736,7 +730,7 @@ fn _topp_minp_sampling_gpu[
 
     @parameter
     @__copy_capture(input_logits)
-    fn apply_temperature[
+    def apply_temperature[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
         var idx = input_logits.layout(Coord(coords))
@@ -840,7 +834,7 @@ fn _topp_minp_sampling_gpu[
 
 
 @always_inline
-fn top_p_sampling_gpu[
+def top_p_sampling_gpu[
     dtype: DType,
     out_idx_type: DType,
     //,
@@ -870,7 +864,7 @@ fn top_p_sampling_gpu[
 
 
 @always_inline
-fn min_p_sampling_gpu[
+def min_p_sampling_gpu[
     dtype: DType,
     out_idx_type: DType,
     //,

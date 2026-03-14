@@ -22,7 +22,7 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
@@ -35,7 +35,7 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
@@ -76,11 +76,11 @@ def test_matmul_sm100_epilogue[
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} register_based_epilogue={register_based_epilogue} swapAB={swapAB} k_group_size={k_group_size}"
     )
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList[m.dim, k.dim]()
+    comptime static_b_shape = DimList[
+        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
+    ]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
     var dynamic_a_shape = IndexList[2](m.value, k.value)
     var dynamic_b_shape = IndexList[2](
         n.value, k.value
@@ -136,7 +136,7 @@ def test_matmul_sm100_epilogue[
     @parameter
     @always_inline
     @__copy_capture(c_tensor)
-    fn test_lambda_add_coords_prod[
+    def test_lambda_add_coords_prod[
         _dtype: DType,
         width: Int,
         *,
@@ -188,7 +188,7 @@ def test_matmul_sm100_epilogue[
     @parameter
     @always_inline
     @__copy_capture(c_dev, a_dev, b_dev)
-    fn kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(ctx: DeviceContext) raises:
         blackwell_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
             config=matmul_config,
@@ -236,7 +236,7 @@ def test_matmul_sm100_epilogue[
         @parameter
         @always_inline
         @__copy_capture(c_tensor_host)
-        fn test_lambda_add_coords_prod_local[
+        def test_lambda_add_coords_prod_local[
             _dtype: DType,
             width: Int,
             *,

@@ -22,12 +22,12 @@ from std.utils import IndexList
 
 
 @always_inline
-fn add(x: SIMD, y: type_of(x)) -> type_of(x):
+def add(x: SIMD, y: type_of(x)) -> type_of(x):
     return x + y
 
 
 @parameter
-fn bench_gather_reduce(mut b: Bencher):
+def bench_gather_reduce(mut b: Bencher):
     comptime type = DType.float32
     var num_rows = 500000
     var embedding_dim = 32
@@ -53,7 +53,7 @@ fn bench_gather_reduce(mut b: Bencher):
             indices[i, j] = random_si64(0, num_rows).cast[DType.int32]()
 
     @parameter
-    fn to_bench():
+    def to_bench():
         gather_reduce[type, 0, 1, simd_width_of[type](), add](
             output,
             input,

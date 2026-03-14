@@ -26,7 +26,7 @@ Example using `source_location()` to get the current location:
 ```mojo
 from std.reflection import source_location
 
-fn main():
+def main():
     var loc = source_location()
     print(loc)  # Prints: /path/to/file.mojo:5:15
     print("Line:", loc.line, "Column:", loc.col)
@@ -41,7 +41,7 @@ location:
 from std.reflection import call_location
 
 @always_inline  # Required for call_location() to work
-fn my_assert(cond: Bool, msg: String = "assertion failed") raises:
+def my_assert(cond: Bool, msg: String = "assertion failed") raises:
     if not cond:
         raise Error(call_location().prefix(msg))
 
@@ -64,7 +64,7 @@ struct SourceLocation(TrivialRegisterPassable, Writable):
     ```mojo
     from std.reflection import source_location, SourceLocation
 
-    fn main():
+    def main():
         # Get current location
         var loc = source_location()
         print(loc)  # Prints: /path/to/file.mojo:6:19
@@ -87,18 +87,8 @@ struct SourceLocation(TrivialRegisterPassable, Writable):
     var file_name: StaticString
     """The file name."""
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the source location.
-
-        Returns:
-            A string in the format "file_name:line:col".
-        """
-        return String.write(self)
-
-    @no_inline
-    fn prefix[T: Writable](self, msg: T) -> String:
+    def prefix[T: Writable](self, msg: T) -> String:
         """Returns the given message prefixed with the source location.
 
         Parameters:
@@ -110,9 +100,9 @@ struct SourceLocation(TrivialRegisterPassable, Writable):
         Returns:
             A string in the format "At file:line:col: msg".
         """
-        return t"At {self}: {msg}"
+        return String(t"At {self}: {msg}")
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """
         Formats the source location to the provided Writer.
 
@@ -123,7 +113,7 @@ struct SourceLocation(TrivialRegisterPassable, Writable):
 
 
 @always_inline("nodebug")
-fn source_location() -> SourceLocation:
+def source_location() -> SourceLocation:
     """Returns the location for where this function is called.
 
     This currently doesn't work when called in a parameter expression.
@@ -136,11 +126,11 @@ fn source_location() -> SourceLocation:
     ```mojo
     from std.reflection import source_location
 
-    fn log_message(msg: String):
+    def log_message(msg: String):
         var loc = source_location()
         print("[", loc.file_name, ":", loc.line, "]", msg)
 
-    fn main():
+    def main():
         log_message("hello")  # Prints: [ /path/to/file.mojo : 4 ] hello
     ```
     """
@@ -161,7 +151,7 @@ fn source_location() -> SourceLocation:
 
 
 @always_inline("nodebug")
-fn call_location[*, inline_count: Int = 1]() -> SourceLocation:
+def call_location[*, inline_count: Int = 1]() -> SourceLocation:
     """Returns the location for where the caller of this function is called.
 
     An optional `inline_count` parameter can be specified to skip over that many
@@ -195,13 +185,13 @@ fn call_location[*, inline_count: Int = 1]() -> SourceLocation:
     from std.reflection import call_location
 
     @always_inline  # Required for call_location() to work
-    fn assert_positive(value: Int) raises:
+    def assert_positive(value: Int) raises:
         # call_location() returns where assert_positive() was called,
         # not where call_location() itself is called.
         if value <= 0:
             raise Error(call_location().prefix("value must be positive"))
 
-    fn main():
+    def main():
         try:
             assert_positive(-1)  # Error will point to THIS line
         except e:

@@ -1,5 +1,4 @@
-load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
-load("//bazel:api.bzl", "modular_py_library")
+load("//bazel:api.bzl", "modular_py_library", "modular_versioned_expand_template")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -29,7 +28,7 @@ filegroup(
     ],
 )
 
-expand_template(
+modular_versioned_expand_template(
     name = "lit_common_configured",
     testonly = True,
     out = "lit.common.configured",

@@ -65,7 +65,7 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         target: StaticString,
     ](
@@ -494,7 +494,7 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
             raise Error("Unsupported target device")
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
     ](
         x: InputTensor[dtype=dtype, rank=2, ...],
@@ -533,7 +533,7 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         target: StaticString,
     ](
@@ -932,7 +932,7 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
             raise Error("Unsupported target device")
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
     ](
         x: InputTensor[dtype=dtype, rank=3, ...],
@@ -963,7 +963,7 @@ struct CausalConv1DVarlenStates:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         target: StaticString,
     ](
@@ -1058,7 +1058,7 @@ struct CausalConv1DVarlenStates:
             raise Error("Unsupported target device")
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
     ](
         x: InputTensor[dtype=dtype, rank=2, ...],

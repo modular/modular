@@ -34,24 +34,23 @@ from std.gpu.memory import AddressSpace
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import A100, is_cpu, is_valid_target
 from layout import (
+    ComptimeInt,
+    Coord,
+    CoordLike,
+    Idx,
     IntTuple,
     Layout,
     LayoutTensor,
+    RuntimeInt,
     RuntimeLayout,
+    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    coord_to_index_list,
     row_major,
 )
 from layout.tma_async import TMATensorTile, create_tensor_tile, create_tma_tile
-from layout.tile_layout import Layout as TileLayout, TensorLayout
-from layout.coord import (
-    Coord,
-    CoordLike,
-    ComptimeInt,
-    RuntimeInt,
-    Idx,
-    coord_to_index_list,
-)
+from layout.tile_layout import Layout as TileLayout
 from std.logger import Logger
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
@@ -105,7 +104,7 @@ comptime elementwise_epilogue_type = fn[
 # Similar to _get_start_indices_of_nth_subvolume but returns only the batch
 # dimensions for matmul, skipping the last 2 dimsnions.
 @always_inline
-fn _get_batch_dims[
+def _get_batch_dims[
     rank: Int
 ](flat_index: Int, shape: IndexList[rank, ...], out res: type_of(shape)):
     res = {}
@@ -120,17 +119,17 @@ fn _get_batch_dims[
 
 # A utility to reshape NDBuffer with rank > 3 to rank-3.
 @always_inline
-fn _reshape_nd_buffer_with_batch_to_3d(
+def _reshape_nd_buffer_with_batch_to_3d(
     buffer: NDBuffer[...],
 ) -> NDBuffer[
     rank=3,
     buffer.type,
     buffer.origin,
-    DimList(
+    DimList[
         Dim(),
         buffer.shape.get[buffer.rank - 2](),
         buffer.shape.get[buffer.rank - 1](),
-    ),
+    ](),
     address_space=buffer.address_space,
 ]:
     comptime rank = buffer.rank
@@ -145,11 +144,11 @@ fn _reshape_nd_buffer_with_batch_to_3d(
         batch_size, buffer.dim[rank - 2](), buffer.dim[rank - 1]()
     )
 
-    comptime static_shape = DimList(
+    comptime static_shape = DimList[
         Dim(),
         buffer.shape.get[buffer.rank - 2](),
         buffer.shape.get[buffer.rank - 1](),
-    )
+    ]()
 
     return NDBuffer[
         rank=3,
@@ -161,7 +160,7 @@ fn _reshape_nd_buffer_with_batch_to_3d(
 
 
 @parameter
-fn _reshape_to_3d[layout: Layout]() -> Layout:
+def _reshape_to_3d[layout: Layout]() -> Layout:
     comptime rank = len(layout.shape)
 
     # NOTE: need to cast because int tuple returns comptime int
@@ -184,7 +183,7 @@ fn _reshape_to_3d[layout: Layout]() -> Layout:
 
 
 @always_inline
-fn _slice_types[
+def _slice_types[
     stride_types: Variadic.TypesOfTrait[CoordLike], n_dims: Int
 ]() -> Variadic.TypesOfTrait[CoordLike]:
     """
@@ -198,7 +197,7 @@ fn _slice_types[
 
 
 @always_inline
-fn _shape_types_to_3d[
+def _shape_types_to_3d[
     shape_types: Variadic.TypesOfTrait[CoordLike]
 ]() -> Variadic.TypesOfTrait[CoordLike]:
     """
@@ -224,7 +223,7 @@ fn _shape_types_to_3d[
 
 
 @always_inline
-fn _reshape_tile_tensor_with_batch_to_3d(
+def _reshape_tile_tensor_with_batch_to_3d(
     tensor: TileTensor,
     out result: TileTensor[
         mut=tensor.mut,
@@ -304,7 +303,7 @@ fn _reshape_tile_tensor_with_batch_to_3d(
 
 # A utility to reshape NDBuffer with rank > 2 to rank-2.
 @always_inline
-fn _reshape_nd_buffer_with_batch_to_2d(
+def _reshape_nd_buffer_with_batch_to_2d(
     buffer: NDBuffer,
 ) -> NDBuffer[
     rank=2, buffer.type, buffer.origin, address_space=buffer.address_space
@@ -325,7 +324,7 @@ fn _reshape_nd_buffer_with_batch_to_2d(
 
 
 @always_inline
-fn _small_batched_matmul[
+def _small_batched_matmul[
     rank: Int,
     a_type: DType,
     b_type: DType,
@@ -364,7 +363,7 @@ fn _small_batched_matmul[
             @always_inline
             @__copy_capture(a_view, b_view)
             @parameter
-            fn input_fn[
+            def input_fn[
                 dtype: DType, width: Int, rank: Int
             ](idx: IndexList[rank]) -> SIMD[dtype, width]:
                 return (
@@ -374,7 +373,7 @@ fn _small_batched_matmul[
 
             @always_inline
             @parameter
-            fn output_fn[
+            def output_fn[
                 out_type: DType, width: Int, r: Int
             ](i: IndexList[r], value: SIMD[out_type, width]):
                 comptime if elementwise_epilogue_fn:
@@ -387,7 +386,7 @@ fn _small_batched_matmul[
 
             @always_inline
             @parameter
-            fn reduce_impl[
+            def reduce_impl[
                 ty: DType, width: Int
             ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
                 return v1 + v2
@@ -425,7 +424,7 @@ fn _small_batched_matmul[
                     var a_val = a_buf[indices]
 
                     @always_inline
-                    fn compute_fn[simd_width: Int](n: Int) unified {mut}:
+                    def compute_fn[simd_width: Int](n: Int) unified {mut}:
                         indices[rank - 1] = n
                         b_buf_index[rank - 1] = n
 
@@ -444,7 +443,7 @@ fn _small_batched_matmul[
                     indices[rank - 2] = m
 
                     @always_inline
-                    fn apply_epilogue[width: Int](n: Int) unified {mut}:
+                    def apply_epilogue[width: Int](n: Int) unified {mut}:
                         indices[rank - 1] = n
                         var val = c_buf.load[width=width](indices)
                         comptime func = elementwise_epilogue_fn.value()
@@ -456,7 +455,7 @@ fn _small_batched_matmul[
 
 
 @always_inline
-fn batched_matmul[
+def batched_matmul[
     rank: Int,
     a_type: DType,
     b_type: DType,
@@ -480,7 +479,7 @@ fn batched_matmul[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         # fmt: off
         return String(
             trace_arg("A", a_buf.dynamic_shape, a_buf.dtype),
@@ -523,7 +522,7 @@ fn batched_matmul[
 
 
 @always_inline
-fn _batched_matmul_cpu[
+def _batched_matmul_cpu[
     rank: Int,
     a_type: DType,
     b_type: DType,
@@ -604,7 +603,7 @@ fn _batched_matmul_cpu[
     @always_inline
     @__copy_capture(a, b, c, num_tasks_batch, num_tasks_matmul, m, n, k)
     @parameter
-    fn task_func(task_id: Int):
+    def task_func(task_id: Int):
         var a_stride_between_batches = a.size() // a.dim[0]()
         var b_stride_between_batches = b.size() // b.dim[0]()
         var c_stride_between_batches = c.size() // c.dim[0]()
@@ -650,10 +649,10 @@ fn _batched_matmul_cpu[
             )
 
             @parameter
-            fn elementwise_lambda_2d[
+            def elementwise_lambda_2d[
                 c_type: DType, width: Int, *, alignment: Int = 1
             ](out_coords: IndexList[2], out_val: SIMD[c_type, width]):
-                # the caller provided the elementwise epilogue fn over the original
+                # the caller provided the elementwise epilogue def over the original
                 # buffer rank, not the collapsed buffer rank
                 # so un-collapse the batch dims here
                 comptime if elementwise_epilogue_fn:
@@ -723,7 +722,7 @@ fn _batched_matmul_cpu[
     sync_parallelize[task_func](num_tasks)
 
 
-fn naive_batched_matmul_kernel[
+def naive_batched_matmul_kernel[
     rank: Int,
     c_type: DType,
     a_type: DType,
@@ -779,7 +778,7 @@ fn naive_batched_matmul_kernel[
         c_tensor[z, y, x] = val.cast[c_type]()
 
 
-fn batched_matmul_kernel_gpu[
+def batched_matmul_kernel_gpu[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -828,7 +827,7 @@ fn batched_matmul_kernel_gpu[
     ).to_layout_tensor()
 
     @parameter
-    fn elementwise_epilogue_fn_wrapper[
+    def elementwise_epilogue_fn_wrapper[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
         comptime if elementwise_lambda_fn:
@@ -855,7 +854,7 @@ fn batched_matmul_kernel_gpu[
 
 
 @always_inline
-fn get_shape_index_list[
+def get_shape_index_list[
     rank: Int, dtype: DType, layout: Layout
 ](tensor: LayoutTensor[dtype, layout, ...]) -> IndexList[rank]:
     var index_list = IndexList[rank](0)
@@ -866,7 +865,7 @@ fn get_shape_index_list[
 
 
 @always_inline
-fn _batched_matmul_gpu[
+def _batched_matmul_gpu[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -916,7 +915,7 @@ fn _batched_matmul_gpu[
 
                 @parameter
                 @__copy_capture(c_buf)
-                fn elementwise_epilogue_fn_wrapper[
+                def elementwise_epilogue_fn_wrapper[
                     dtype: DType, width: Int, *, alignment: Int = 1
                 ](
                     out_coords: IndexList[2], val: SIMD[dtype, width]
@@ -979,7 +978,7 @@ fn _batched_matmul_gpu[
 
                 @parameter
                 @__copy_capture(c_ndbuf)
-                fn epilogue_wrapper[
+                def epilogue_wrapper[
                     simd_width: Int, rank: Int, alignment: Int = 1
                 ](idx: IndexList[rank]):
                     var c_coord = Index(idx[0], idx[1], idx[2])
@@ -1041,7 +1040,7 @@ fn _batched_matmul_gpu[
 
         @always_inline
         @parameter
-        fn kernel_helper[
+        def kernel_helper[
             block_m: Int,
             block_n: Int,
             *,
@@ -1125,7 +1124,7 @@ fn _batched_matmul_gpu[
 
 
 @always_inline
-fn batched_matmul[
+def batched_matmul[
     rank: Int,
     a_type: DType,
     b_type: DType,
@@ -1171,7 +1170,7 @@ fn batched_matmul[
 
 
 @always_inline
-fn batched_matmul_shape[
+def batched_matmul_shape[
     rank: Int,
     a_type: DType,
     b_type: DType,
@@ -1231,7 +1230,7 @@ comptime _2D_layout[layout: Layout] = Layout(
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
-fn _bmm_sm100_blockwise_scaled_fp8_kernel[
+def _bmm_sm100_blockwise_scaled_fp8_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -1301,7 +1300,7 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
     )
 
     @parameter
-    fn elementwise_epilogue_fn_wrapper[
+    def elementwise_epilogue_fn_wrapper[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
         comptime if elementwise_lambda_fn:
@@ -1349,7 +1348,7 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
     )
 
 
-fn bmm_sm100_blockwise_scaled_fp8[
+def bmm_sm100_blockwise_scaled_fp8[
     a_layout: Layout,
     b_layout: Layout,
     c_layout: Layout,
@@ -1526,7 +1525,7 @@ fn bmm_sm100_blockwise_scaled_fp8[
     )
 
 
-fn batched_matmul_dynamic_scaled_fp8_naive[
+def batched_matmul_dynamic_scaled_fp8_naive[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1627,7 +1626,7 @@ fn batched_matmul_dynamic_scaled_fp8_naive[
         )
 
 
-fn batched_matmul_dynamic_scaled_fp8[
+def batched_matmul_dynamic_scaled_fp8[
     c_type: DType,
     a_type: DType,
     b_type: DType,

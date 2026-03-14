@@ -46,7 +46,7 @@ comptime epilogue_func_type = fn[
 
 @parameter
 @always_inline
-fn epilogue_test_fn[
+def epilogue_test_fn[
     dtype: DType, width: Int, *, alignment: Int = 1
 ](
     idx: IndexList[2],
@@ -67,7 +67,7 @@ fn epilogue_test_fn[
     return val + bias
 
 
-fn select_max_ulp_distance[
+def select_max_ulp_distance[
     lambda_fn: Optional[epilogue_func_type]
 ](max_ulp_distance: Optional[Int]) -> Int:
     if max_ulp_distance:
@@ -78,7 +78,7 @@ fn select_max_ulp_distance[
         return 2
 
 
-fn test[
+def test[
     dtype: DType,
     /,
     *,
@@ -104,11 +104,12 @@ fn test[
 
     print(m, "x", n, "x", k)
 
-    comptime static_a_shape = DimList(to_dim[M], to_dim[K])
-    comptime static_b_shape = DimList(
-        to_dim[N], to_dim[K]
-    ) if transpose_b else DimList(to_dim[K], to_dim[N])
-    comptime static_c_shape = DimList(to_dim[M], to_dim[N])
+    comptime static_a_shape = DimList[to_dim[M], to_dim[K]]()
+    comptime static_b_shape = DimList[
+        to_dim[N] if transpose_b else to_dim[K],
+        to_dim[K] if transpose_b else to_dim[N],
+    ]()
+    comptime static_c_shape = DimList[to_dim[M], to_dim[N]]()
 
     var dynamic_a_shape = IndexList[2](M.or_else(m), K.or_else(k))
     var dynamic_b_shape = IndexList[2](
@@ -203,7 +204,7 @@ fn test[
     @parameter
     @always_inline
     @__copy_capture(c_tensor, m, n)
-    fn epilogue_fn[
+    def epilogue_fn[
         _dtype: DType,
         width: Int,
         *,
@@ -259,7 +260,7 @@ fn test[
     @always_inline
     @__copy_capture(c_ref_tensor, m, n)
     @parameter
-    fn func[
+    def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[2]](idx0)

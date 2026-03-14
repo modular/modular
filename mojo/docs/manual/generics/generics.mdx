@@ -428,5 +428,237 @@ Think comparisons, predicates, and pure operations.
 
 As a working rule of thumb,
 if your generic code needs to own, copy, or decide when a value dies,
-avoid explicitly destroyed types. Add `ImplicitlyDestroyed` bounds to
+avoid explicitly destroyed types. Add `ImplicitlyDestructible` bounds to
 bypass any issues.
+
+## Conditional trait conformance
+
+:::caution
+Conditional trait conformance is new and evolving. Certain
+capabilities may be unstable or unusable during roll-out. Use
+caution with `Copyable`, `Movable`, `RegisterPassable`,
+`TrivialRegisterPassable`, and `ImplicitlyDestructible`.
+:::
+
+_Conditional trait conformance_ uses checks before allowing a type to
+adopt a trait. If the condition is _satisfied_, the type conforms.
+It must fulfill the trait's requirements by providing required methods
+and associated types, and it gains any default implementation provided
+by the trait. The type can then be used anywhere the trait is required,
+such as when passing it to a function that expects a conforming type.
+
+When the condition _isn't_ satisfied, Mojo skips the conformance. You
+can't use the fully concrete type in contexts that require the trait.
+
+### Example: derived conformance
+
+In the following declaration, Mojo conforms `Wrapper` to `Writable`
+when its parameter, `T`, is also `Writable`:
+
+```mojo
+comptime BaseTraits = Copyable & ImplicitlyDestructible
+@fieldwise_init
+struct Wrapper[T: BaseTraits](
+    Writable where conforms_to(T, Writable)
+):
+    var value: Self.T
+```
+
+When conforming to `Writable`, Wrapper doesn't need to implement any
+methods to enable printing. The trait provides a default implementation
+of the `write_to()` method.
+
+Now consider a type that isn't `Writable`, that you might add into a
+`Wrapper`:
+
+```mojo
+@fieldwise_init
+struct NotWritable(BaseTraits):
+    var data: Int
+```
+
+When instantiated with an `Int` or `String` (both `Writable`), the
+`Wrapper` gains `Writable` conformance. With `NotWritable`, you can build
+a struct, but you can't print it:
+
+```mojo
+var w_int = Wrapper[Int](42)  # Int is Writable
+print(w_int)  # Wrapper[Int](value=42)
+
+
+var w_str = Wrapper[String]("Hello")  # String is Writable
+print(w_str)  # Wrapper[String](value=Hello)
+
+
+# OK: only `Writable` conformance is unavailable
+var w_not_writable = Wrapper[NotWritable](NotWritable(10))
+# print(w_not_writable)  # Compile-time error:
+# invalid call to 'print': could not convert element of 'values' with
+# type 'Wrapper[NotWritable]' to expected type 'Writable'
+```
+
+Since `NotWritable` doesn't conform to `Writable`, the conditional
+conformance check fails and `Wrapper[NotWritable]` doesn't adopt the
+`Writable` conformance. In contrast, `Int` and `String` are `Writable`
+and their wrappers gain the conformance. This allows their instances
+to print by using the `write_to()` method provided by `Writable`.
+
+This pattern is standard for single-type containers like `Optional[T]`,
+`Box[T]`, `Lazy[T]`, and `List[T]`. It says: "This type can do X if its inner
+type can do X."
+
+### Example: parts conformance
+
+Conditional conformance has another standard pattern for types with
+multiple distinct components: `Result[T, E]`, `Pair[L, R]`, `Dict[K, V]`,
+and similar. It says: "This type can do X if each of its parts can do X":
+
+```mojo
+comptime BaseTraits = Copyable & ImplicitlyDestructible
+
+@fieldwise_init
+struct Pair[L: BaseTraits, R: BaseTraits](
+    Hashable where conforms_to(L, Hashable) and conforms_to(R, Hashable)
+):
+    var left: Self.L
+    var right: Self.R
+
+
+@fieldwise_init
+struct NotHashable(BaseTraits):
+    var data: Int
+```
+
+In this example, `Pair` uses two distinct type parameters. When both are
+`Hashable`, the concrete `Pair` type becomes `Hashable`, gaining the `hash()`
+method from the trait:
+
+```mojo
+var pair = Pair[Int, String](left=1, right="one")
+var hash = hash(pair)
+print(hash)  # Prints the hash of the pair
+
+# OK: only hashing is unavailable
+var pair2 = Pair[Int, NotHashable](left=1, right=NotHashable(10)) # Constructible
+# var hash2 = hash(pair2) # Compile time error
+```
+
+### Example: conditional method access
+
+When a type adopts a trait, it must satisfy the trait's required
+methods. The same conditions that determine whether a type can
+conditionally conform to a trait are usually the same conditions used
+to _gate_ required method implementations.
+
+You express these method tests with `where` clauses. If true, the
+method is available. If not, the method can't be used for that
+specialized type. The following example walks you through this
+process and how it works.
+
+You can use `Boolable` instances in `if` statements. You make your
+`Wrapper` testable by conforming to the `Boolable` trait. This
+trait requires a new method, `__bool__()`:
+
+``` mojo
+@fieldwise_init
+struct Wrapper[T: BaseTraits](
+    Writable where conforms_to(T, Writable),
+    Boolable where conforms_to(T, Boolable), # New conditional conformance
+    ):
+    var value: Self.T
+
+    # New method
+    fn __bool__(self) -> Bool where conforms_to(Self.T, Boolable):
+        return trait_downcast[Boolable](self.value).__bool__()
+```
+
+In this example, the condition on `__bool__()` is the same as the one
+used for the `Boolable` conditional conformance. The `where` clause gates
+the method. If the condition is true, the method is available. If not,
+it isn't.
+
+Since the method and the conformance use the same condition, they
+stay aligned. You won't end up in a situation where the wrapped type
+conforms but the method isn't available, or where the method exists
+without the corresponding conformance.
+
+You see this in the following examples:
+
+```mojo
+var w_str = Wrapper[String]("Hello")
+if w_str:  # Chooses the non-empty branch
+    print(t"Non-empty string \"{w_str.value}\" is truthy")
+else:
+    print(t"Empty string \"{w_str.value}\" is falsy")
+
+var w_empty_str = Wrapper[String]("")
+if w_empty_str:  # Chooses the empty branch
+    print(t"Non-empty string \"{w_empty_str.value}\" is truthy")
+else:
+    print(t"Empty string \"{w_empty_str.value}\" is falsy")
+```
+
+The `NotWritable` type from earlier in this section has no traits
+beyond the base `Copyable` and `ImplicitlyDestructible`. Therefore
+it isn't `Boolable` and the condition on the `__bool__()` method
+will fail:
+
+```mojo
+@fieldwise_init
+struct NotWritable(BaseTraits):
+    var data: Int
+
+var w_not_writable = Wrapper[NotWritable](NotWritable(10))
+
+# The instance can't be used as a boolean value due to the
+# the conditional method access for `__bool__()`.
+
+# Compiler error: the method condition is false
+if w_not_writable:
+    print(t"NotWritable with data {w_not_writable.value.data} is truthy")
+else:
+    print(t"NotWritable with data {w_not_writable.value.data} is falsy")
+```
+
+This condition on your method isn't conditional trait conformance.
+It's conditional method _access_. In this example, the method and the
+conformance use the same condition, so they stay aligned.
+
+That said, `where` clauses on methods and functions are useful even when
+you're not working with trait conformance. For example, you might gate
+a method so it only works with non-empty lists, real numbers, or with
+values that fall within the index bounds of a collection.
+
+### Conditional trait composition
+
+Mojo supports flexible condition composition, as shown in these examples:
+
+- Unconditional: No special clauses.
+  ```mojo
+  struct Foo(Copyable, ImplicitlyDestructible):
+  ```
+- Simple condition: as shown in `Wrapper`.
+  ```mojo
+  struct Wrapper[T: BaseTraits](
+      Writable where conforms_to(T, Writable)
+  ):
+  ```
+- Hybrid: Mixes unconditional and conditional traits.
+  ```mojo
+  struct Foo[T: AnyType](
+      Copyable, Writable where conforms_to(T, Writable)
+  )
+  ```
+- Multiple aligned conditions: as shown in `Pair`.
+  ```mojo
+  struct Pair[L: BaseTraits, R: BaseTraits](
+      Hashable where conforms_to(L, Hashable) and conforms_to(R, Hashable)
+  ):
+  ```
+- Multiple independent conditions:
+  ```mojo
+  struct Foo[T: AnyType](
+    Writable where conforms_to(T, Writable),
+    Hashable where conforms_to(T, Hashable),
+  )
+  ```

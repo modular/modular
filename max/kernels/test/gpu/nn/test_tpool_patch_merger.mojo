@@ -22,9 +22,7 @@ GPU kernel output to it.
 from std.math import ceildiv
 
 from std.gpu.host import DeviceContext
-from layout.coord import Coord, Idx
-from layout import row_major
-from layout.tile_tensor import TileTensor
+from layout import Coord, Idx, TileTensor, row_major
 from nn.tpool_patch_merger import (
     tpool_patch_merger,
 )
@@ -32,7 +30,7 @@ from std.random import rand, seed
 from std.testing import assert_almost_equal
 
 
-fn cpu_reference_one_video[
+def cpu_reference_one_video[
     dtype: DType,
 ](
     x: UnsafePointer[Scalar[dtype], _],
@@ -68,7 +66,7 @@ fn cpu_reference_one_video[
             out_base.store(pat_idx * D + d, acc)
 
 
-fn test_tpool_patch_merger(ctx: DeviceContext) raises:
+def test_tpool_patch_merger(ctx: DeviceContext) raises:
     """Compare GPU kernel output to CPU reference (same math as Python)."""
     comptime dtype = DType.bfloat16
     comptime kH = 2

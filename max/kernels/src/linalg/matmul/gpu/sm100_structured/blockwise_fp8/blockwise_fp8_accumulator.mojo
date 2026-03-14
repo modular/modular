@@ -24,20 +24,20 @@ requires per-K-iteration scaling in CUDA cores:
 """
 
 from std.math import gcd
+from std.math.uutils import umod, ufloordiv
 
-from std.gpu import WARP_SIZE, lane_id
-from std.gpu import warp_id as get_warp_id
+from std.gpu import WARP_SIZE, lane_id_int as lane_id, warp_id as get_warp_id
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.sync import syncwarp
 from layout import (
     Coord,
     Idx,
+    TensorLayout,
     TileTensor,
     row_major,
     stack_allocation,
 )
-from layout.tile_layout import TensorLayout
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -57,7 +57,7 @@ from ..structured_kernels.tmem import TmemAddress, TmemFragments
 
 
 @always_inline
-fn get_accumulator_dims[
+def get_accumulator_dims[
     *,
     c_smem_dim1: Int,
     block_tile_shape: IndexList[3],
@@ -94,7 +94,7 @@ fn get_accumulator_dims[
 
 
 @always_inline
-fn is_lower_fragment_required[
+def is_lower_fragment_required[
     cta_group: Int,
     block_tile_shape: IndexList[3],
 ]() -> Bool:
@@ -174,7 +174,7 @@ struct BlockwiseFP8Accumulator[
     var lower: Self.RegTileType
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Create accumulator with zero-initialized register tiles."""
         var accum_layout = row_major[Self.num_stages, Self.num_elements]()
         self.upper = stack_allocation[dtype=Self.accum_type](accum_layout)
@@ -185,7 +185,7 @@ struct BlockwiseFP8Accumulator[
             _ = self.lower.fill(0.0)
 
     @always_inline
-    fn promote[
+    def promote[
         # Parameters derived from argument types (use _ for inference)
         num_pipeline_stages: Int,
         opc: OutputPipelineConfig,
@@ -210,8 +210,8 @@ struct BlockwiseFP8Accumulator[
             opc,
             num_input_stages,
         ],
-        work_tile_coord: Tuple[UInt, UInt],
-        k_iter: UInt,
+        work_tile_coord: Tuple[Int, Int],
+        k_iter: Int,
         problem_shape: StaticTuple[Int32, 3],
     ):
         """Load partial from TMEM, apply scales, accumulate into registers.
@@ -250,14 +250,14 @@ struct BlockwiseFP8Accumulator[
                 gcd(Self.MMA_N, Self.BK) % Self.stageN == 0
             ), "gcd(MMA_N, BK) must be divisible by stageN"
 
-            var global_bn_start = bn * UInt(Self.MMA_N)
+            var global_bn_start = bn * Self.MMA_N
             var begin_n = min(
-                Int32(Self.BK) - Int32(global_bn_start % UInt(Self.BK)),
+                Int32(Self.BK) - Int32(umod(global_bn_start, Self.BK)),
                 Int32(Self.MMA_N),
             )
             var end_n = min(N - Int32(global_bn_start), Int32(Self.MMA_N))
 
-            b_scale_idx0 = Int(global_bn_start // UInt(Self.BK))
+            b_scale_idx0 = ufloordiv(global_bn_start, Self.BK)
             b_scale_next_n = Int(begin_n) if begin_n < end_n else Self.MMA_N
 
             b_scale_0 = rebind[Scalar[Self.accum_type]](
@@ -283,31 +283,29 @@ struct BlockwiseFP8Accumulator[
             )
             b_scale_1 = 0.0
 
-        var warp_id = get_warp_id()
+        var warp_id = Int(get_warp_id())
 
         # Compute row/col offset based on MMA layout
-        var staged_c_row: UInt
-        var staged_c_col: UInt
+        var staged_c_row: UInt32
+        var staged_c_col: Int
 
         comptime if Self.MMA_M == 256 or (
             Self.MMA_M == 128 and opc.cta_group == 1
         ):
-            staged_c_row = warp_id * UInt(WARP_SIZE)
-            staged_c_col = UInt(0)
+            staged_c_row = UInt32(warp_id * WARP_SIZE)
+            staged_c_col = 0
         elif Self.MMA_M == 64 and opc.cta_group == 1:
-            staged_c_row = warp_id * UInt(WARP_SIZE // 2)
-            staged_c_col = UInt(0)
+            staged_c_row = UInt32(warp_id * (WARP_SIZE // 2))
+            staged_c_col = 0
         else:
-            staged_c_row = (warp_id % 2) * UInt(WARP_SIZE)
-            staged_c_col = UInt(Self.BN) * (warp_id // 2)
+            staged_c_row = UInt32(umod(warp_id, 2) * WARP_SIZE)
+            staged_c_col = Self.BN * ufloordiv(warp_id, 2)
 
         # Thread coordinate within fragment
-        comptime threads_per_row = UInt(
-            Self.stageN // Self.repeats // load_width
-        )
+        comptime threads_per_row = Self.stageN // Self.repeats // load_width
         var top_frag_upper_coord = StaticTuple[UInt32, 2](
-            UInt32(lane_id() // threads_per_row),
-            UInt32(lane_id() % threads_per_row * load_width),
+            UInt32(ufloordiv(lane_id(), threads_per_row)),
+            UInt32(umod(lane_id(), threads_per_row) * load_width),
         )
         var bottom_frag_upper_coord = StaticTuple[UInt32, 2](
             top_frag_upper_coord[0] + 8, top_frag_upper_coord[1]
@@ -324,10 +322,10 @@ struct BlockwiseFP8Accumulator[
         var a_scales_smem = a_scales_tiles[tma_load_stage_index]
 
         var upper_sfa0_smem = a_scales_smem[
-            0, UInt32(staged_c_row) + top_frag_upper_coord[0]
+            0, staged_c_row + top_frag_upper_coord[0]
         ].cast[Self.accum_type]()
         var upper_sfa1_smem = a_scales_smem[
-            0, UInt32(staged_c_row) + bottom_frag_upper_coord[0]
+            0, staged_c_row + bottom_frag_upper_coord[0]
         ].cast[Self.accum_type]()
 
         var lower_sfa0_smem = Scalar[Self.accum_type]()
@@ -335,19 +333,19 @@ struct BlockwiseFP8Accumulator[
 
         comptime if Self.is_lower_required:
             lower_sfa0_smem = rebind[Scalar[Self.accum_type]](
-                a_scales_smem[
-                    0, UInt32(staged_c_row) + top_frag_lower_coord[0]
-                ].cast[Self.accum_type]()
+                a_scales_smem[0, staged_c_row + top_frag_lower_coord[0]].cast[
+                    Self.accum_type
+                ]()
             )
             lower_sfa1_smem = rebind[Scalar[Self.accum_type]](
                 a_scales_smem[
-                    0, UInt32(staged_c_row) + bottom_frag_lower_coord[0]
+                    0, staged_c_row + bottom_frag_lower_coord[0]
                 ].cast[Self.accum_type]()
             )
 
         # Signal input pipeline before TMEM loop
         syncwarp()
-        if lane_id() < UInt(Self.cluster_size):
+        if lane_id() < Self.cluster_size:
             epi_stage.arrive_input()
         syncwarp()
 
@@ -362,7 +360,7 @@ struct BlockwiseFP8Accumulator[
 
             comptime if Self.MMA_N != Self.BK:
                 b_scale = (
-                    b_scale_0 if (stage * Self.stageN + Int(staged_c_col))
+                    b_scale_0 if (stage * Self.stageN + staged_c_col)
                     < b_scale_next_n else b_scale_1
                 )
             else:

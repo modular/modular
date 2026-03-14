@@ -34,14 +34,12 @@ from .input_types import (
 )
 from .metrics import KVCacheMetrics
 from .utils import (
-    AttentionDispatchMetadataScalars,
     AttentionDispatchResolver,
     build_max_lengths_tensor,
 )
 
 __all__ = [
     "AttentionDispatchMetadata",
-    "AttentionDispatchMetadataScalars",
     "AttentionDispatchResolver",
     "KVCacheBuffer",
     "KVCacheInputs",

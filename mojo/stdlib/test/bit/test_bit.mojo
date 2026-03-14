@@ -500,19 +500,19 @@ def test_rotate_bits_simd() raises:
     assert_equal(rotate_bits_right[6](Scalar[dtype](96)), 129)
 
 
-fn _log2_floor(n: Int) -> Int:
+def _log2_floor(n: Int) -> Int:
     return Int(floor(log2(Float64(n))))
 
 
 @always_inline
-fn _log2_ceil(n: Int) -> Int:
+def _log2_ceil(n: Int) -> Int:
     """Computes ceil(log_2(d))."""
 
     return Int(_log2_ceil(Scalar[DType.int](n)))
 
 
 @always_inline
-fn _log2_ceil(n: Scalar) -> type_of(n):
+def _log2_ceil(n: Scalar) -> type_of(n):
     return {ceil(log2(Float64(n)))}
 
 
@@ -574,7 +574,7 @@ def test_log2_floor() raises:
                 msg=String("mismatching value for the input value of ", i),
             )
 
-    fn _check_alias[n: Int](expected: Int) raises:
+    def _check_alias[n: Int](expected: Int) raises:
         comptime res = log2_floor(n)
         assert_equal(
             res,
@@ -611,7 +611,7 @@ def test_log2_ceil() raises:
             ),
         )
 
-    fn _check_alias[n: Int](expected: Int) raises:
+    def _check_alias[n: Int](expected: Int) raises:
         comptime res = log2_ceil(n)
         assert_equal(
             res,
@@ -649,7 +649,7 @@ def test_log2_ceil32() raises:
             ),
         )
 
-    fn _check_alias[n: Int32](expected: Int32) raises:
+    def _check_alias[n: Int32](expected: Int32) raises:
         comptime res = log2_ceil(n)
         assert_equal(
             res,

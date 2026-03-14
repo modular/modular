@@ -24,7 +24,7 @@ from std.gpu.host.compile import _compile_code
 from std.testing import assert_true
 
 
-fn control_dep_grids_kernel():
+def control_dep_grids_kernel():
     wait_on_dependent_grids()
     launch_dependent_grids()
 
@@ -53,7 +53,7 @@ def test_grid_control_primitives() raises:
     )
 
 
-fn control_dep_grids_kernel_context():
+def control_dep_grids_kernel_context():
     with PDL():
         pass
 

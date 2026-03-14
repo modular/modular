@@ -15,7 +15,7 @@
 from std.testing import *
 
 
-fn test_gettempdir() raises:
+def test_gettempdir() raises:
     from std.tempfile import gettempdir
 
     var temp_dir = gettempdir()
@@ -24,7 +24,7 @@ fn test_gettempdir() raises:
         assert_true(dir.startswith("/", 0, -1))
 
 
-fn test_mkdtemp() raises:
+def test_mkdtemp() raises:
     from std.tempfile import mkdtemp
     import std.os
 
@@ -35,7 +35,7 @@ fn test_mkdtemp() raises:
     assert_false(std.os.path.exists(dir_path))
 
 
-fn test_rmtree() raises:
+def test_rmtree() raises:
     from std.tempfile import mkdtemp
     import std.os
 
@@ -46,7 +46,7 @@ fn test_rmtree() raises:
     assert_false(std.os.path.exists(dir_path))
 
 
-fn test_temporary_directory_context_manager() raises:
+def test_temporary_directory_context_manager() raises:
     from std.tempfile import TemporaryDirectory
     import std.os
 
@@ -59,7 +59,7 @@ fn test_temporary_directory_context_manager() raises:
     assert_false(std.os.path.exists(temp_dir_copy))
 
 
-fn test_named_temporary_file_context_manager() raises:
+def test_named_temporary_file_context_manager() raises:
     from std.tempfile import NamedTemporaryFile
     from std.pathlib import Path
 
@@ -72,7 +72,7 @@ fn test_named_temporary_file_context_manager() raises:
     assert_false(p.exists())
 
 
-fn test_file_close() raises:
+def test_file_close() raises:
     from std.tempfile import NamedTemporaryFile
     import std.os
 
@@ -88,7 +88,7 @@ fn test_file_close() raises:
     std.os.remove(temp_file.name)  # Clean up manually
 
 
-fn test_file_read() raises:
+def test_file_read() raises:
     from std.tempfile import NamedTemporaryFile
     from std.pathlib import Path
 
@@ -102,7 +102,7 @@ fn test_file_read() raises:
     assert_false(p.exists())
 
 
-fn test_read_bytes() raises:
+def test_read_bytes() raises:
     from std.tempfile import NamedTemporaryFile
     from std.pathlib import Path
 
@@ -123,7 +123,7 @@ fn test_read_bytes() raises:
     assert_false(p.exists())
 
 
-fn test_write() raises:
+def test_write() raises:
     from std.tempfile import NamedTemporaryFile
     from std.pathlib import Path
 
@@ -133,7 +133,7 @@ fn test_write() raises:
         assert_true(f.read() == "Hello world!")
 
 
-fn test_write_bytes() raises:
+def test_write_bytes() raises:
     from std.tempfile import NamedTemporaryFile
 
     var bytes = [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F]  # "Hello" in ASCII
@@ -149,7 +149,7 @@ fn test_write_bytes() raises:
         assert_true(s == "Hello")
 
 
-fn main() raises:
+def main() raises:
     test_gettempdir()
     test_mkdtemp()
     test_rmtree()

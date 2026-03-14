@@ -41,13 +41,13 @@ struct BoringSlice(ImplicitlyCopyable):
 
 
 struct Sliceable:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __getitem__(self, a: FunnySlice) -> FunnySlice:
+    def __getitem__(self, a: FunnySlice) -> FunnySlice:
         return a
 
-    fn __getitem__(self, a: BoringSlice) -> BoringSlice:
+    def __getitem__(self, a: BoringSlice) -> BoringSlice:
         return a
 
 
@@ -66,10 +66,10 @@ def test_sliceable() raises:
 
 
 struct SliceStringable:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __getitem__(self, a: Slice) -> String:
+    def __getitem__(self, a: Slice) -> String:
         return String(a)
 
 

@@ -21,7 +21,7 @@ from linalg.matmul.vendor.blas import Backend, Handle, matmul
 from internal_utils._utils import ValOrDim, dynamic, static
 from _cublas.cublaslt import cublasLtGetVersion, cublasLtMatmulMatrixScale_t
 from std.collections import OptionalReg
-from layout import Layout, LayoutTensor, IntTuple, RuntimeLayout, UNKNOWN_VALUE
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
 from std.sys import argv
@@ -38,7 +38,7 @@ from linalg.fp4_quantization import naive_block_scaled_matmul
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-fn test_scaled_mxfp8_cublaslt[
+def test_scaled_mxfp8_cublaslt[
     input_type: DType,
     output_type: DType,
     transpose_b: Bool,
@@ -67,27 +67,27 @@ fn test_scaled_mxfp8_cublaslt[
         t" shape=({M}, {N}, {K}) "
     )
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(n.dim, k.dim)
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList[m.dim, k.dim]()
+    comptime static_b_shape = DimList[n.dim, k.dim]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
     var dynamic_a_shape = IndexList[2](m.value, k.value)
     var dynamic_b_shape = IndexList[2](n.value, k.value)
     var dynamic_c_shape = IndexList[2](m.value, n.value)
 
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList[
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
+    ]()
 
     var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
@@ -295,7 +295,7 @@ fn test_scaled_mxfp8_cublaslt[
     _ = b_scales
 
 
-fn main() raises:
+def main() raises:
     with DeviceContext() as ctx:
         test_scaled_mxfp8_cublaslt[
             DType.float8_e4m3fn,

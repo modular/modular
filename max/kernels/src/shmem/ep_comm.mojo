@@ -39,13 +39,15 @@ from std.gpu import (
 from std.gpu.host import get_gpu_target
 from std.gpu.intrinsics import Scope, load_acquire, store_release, threadfence
 from std.gpu.sync import syncwarp
-from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
-from layout.int_tuple import (
-    UNKNOWN_VALUE,
+from layout import (
     IntTuple,
-    _get_index_type,
-    _get_layout_type,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
 )
+from layout.int_tuple import _get_index_type, _get_layout_type
 from std.math import exp, recip
 from std.memory import stack_allocation
 from std.memory.unsafe import bitcast
@@ -89,7 +91,7 @@ comptime MAX_GPUS_PER_NODE = 8
 
 
 @always_inline
-fn _BLOCK_SCOPE() -> StaticString:
+def _BLOCK_SCOPE() -> StaticString:
     comptime if is_nvidia_gpu():
         return "block"
     elif is_amd_gpu():
@@ -101,7 +103,7 @@ fn _BLOCK_SCOPE() -> StaticString:
 
 
 @always_inline
-fn _DEVICE_SCOPE() -> StaticString:
+def _DEVICE_SCOPE() -> StaticString:
     comptime if is_nvidia_gpu():
         return "device"
     elif is_amd_gpu():
@@ -117,7 +119,7 @@ comptime BLOCK_SCOPE = _BLOCK_SCOPE()
 
 
 @always_inline
-fn block_memcpy[
+def block_memcpy[
     dst_addr_space: AddressSpace,
     src_addr_space: AddressSpace,
     //,
@@ -146,7 +148,7 @@ fn block_memcpy[
 
 
 @always_inline
-fn block_prefix_sum[
+def block_prefix_sum[
     dtype: DType, //, num_elements: Int
 ](_val: Scalar[dtype]) -> Scalar[dtype]:
     """
@@ -192,7 +194,7 @@ fn block_prefix_sum[
 
 @always_inline
 @parameter
-fn ep_signal_completion[
+def ep_signal_completion[
     p2p_world_size: Int, //, use_shmem: Bool, n_experts_per_device: Int = 0
 ](
     my_rank: Int32,
@@ -253,7 +255,7 @@ fn ep_signal_completion[
 
 
 @always_inline
-fn get_device_alignment() -> Int:
+def get_device_alignment() -> Int:
     comptime gpu_target = get_gpu_target()
     comptime gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
     comptime gpu_alignment = align_of[
@@ -270,42 +272,42 @@ trait TokenFormat(DevicePassable, TrivialRegisterPassable):
 
     @always_inline
     @staticmethod
-    fn token_size() -> Int:
+    def token_size() -> Int:
         "Returns the size of the (quantized) token in bytes."
         ...
 
     @always_inline
     @staticmethod
-    fn src_info_size() -> Int:
+    def src_info_size() -> Int:
         "Returns the size of the source info in bytes. Currently, source info is a single int32 that stores a token's index in the original rank."
         return align_up(size_of[Int32](), Self.alignment)
 
     @always_inline
     @staticmethod
-    fn topk_info_size() -> Int:
+    def topk_info_size() -> Int:
         "Returns the size of the top-k info in bytes. Currently, top-k info is an array of uint16 that stores a token's top-k expert IDs."
         return align_up(size_of[UInt16]() * Self.top_k, Self.alignment)
 
     @always_inline
     @staticmethod
-    fn msg_size() -> Int:
+    def msg_size() -> Int:
         "Returns the size of the message in bytes."
         return Self.token_size() + Self.src_info_size() + Self.topk_info_size()
 
     @always_inline
     @staticmethod
-    fn src_info_offset() -> Int:
+    def src_info_offset() -> Int:
         "Returns the offset of the source info in the message."
         return Self.token_size()
 
     @always_inline
     @staticmethod
-    fn topk_info_offset() -> Int:
+    def topk_info_offset() -> Int:
         "Returns the offset of the top-k info in the message."
         return Self.token_size() + Self.src_info_size()
 
     @always_inline
-    fn pad_expert_offsets[
+    def pad_expert_offsets[
         n_groups: Int
     ](self, row_offsets: UnsafePointer[UInt32, MutAnyOrigin]) -> None:
         """
@@ -314,7 +316,7 @@ trait TokenFormat(DevicePassable, TrivialRegisterPassable):
         pass
 
     @always_inline
-    fn zero_pad_scales[
+    def zero_pad_scales[
         block_size: Int, n_sms: Int
     ](
         self, row_offsets: UnsafePointer[UInt32, MutAnyOrigin], sm_id: Int
@@ -326,7 +328,7 @@ trait TokenFormat(DevicePassable, TrivialRegisterPassable):
 
     @always_inline
     @staticmethod
-    fn copy_token_to_send_buf[
+    def copy_token_to_send_buf[
         src_type: DType,
         block_size: UInt,
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
@@ -339,7 +341,7 @@ trait TokenFormat(DevicePassable, TrivialRegisterPassable):
         ...
 
     @always_inline
-    fn copy_msg_to_output_tensor[
+    def copy_msg_to_output_tensor[
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
         self,
@@ -366,7 +368,7 @@ struct BF16TokenFormat[
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         """Convert the host type object to a device_type and store it at the
         target address.
 
@@ -376,7 +378,7 @@ struct BF16TokenFormat[
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         return String(
             "BF16TokenFormat[output_layout = ",
             String(materialize[Self.output_layout]()),
@@ -390,19 +392,19 @@ struct BF16TokenFormat[
         )
 
     @always_inline
-    fn __init__(out self, output_tokens: Self.TensorType):
+    def __init__(out self, output_tokens: Self.TensorType):
         self.output_tokens = output_tokens
 
     @always_inline
     @staticmethod
-    fn token_size() -> Int:
+    def token_size() -> Int:
         return align_up(
             Self.hid_dim * size_of[DType.bfloat16](), Self.alignment
         )
 
     @always_inline
     @staticmethod
-    fn copy_token_to_send_buf[
+    def copy_token_to_send_buf[
         src_type: DType,
         block_size: UInt,
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
@@ -418,7 +420,7 @@ struct BF16TokenFormat[
         )
 
     @always_inline
-    fn copy_msg_to_output_tensor[
+    def copy_msg_to_output_tensor[
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
         self,
@@ -473,7 +475,7 @@ struct BlockwiseFP8TokenFormat[
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         """Convert the host type object to a device_type and store it at the
         target address.
 
@@ -483,7 +485,7 @@ struct BlockwiseFP8TokenFormat[
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         return String(
             "BlockwiseFP8TokenFormat[fp8_dtype = ",
             String(Self.fp8_dtype),
@@ -503,7 +505,7 @@ struct BlockwiseFP8TokenFormat[
         )
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         output_tokens: Self.TensorType,
         output_scales: Self.ScalesTensorType,
@@ -513,14 +515,14 @@ struct BlockwiseFP8TokenFormat[
 
     @always_inline
     @staticmethod
-    fn fp8_quant_size() -> Int:
+    def fp8_quant_size() -> Int:
         return align_up(
             Self.hid_dim * size_of[Self.fp8_dtype](), Self.alignment
         )
 
     @always_inline
     @staticmethod
-    fn scales_size() -> Int:
+    def scales_size() -> Int:
         comptime assert (
             Self.hid_dim % Self.group_size == 0
         ), "hid_dim must be divisible by 128"
@@ -531,16 +533,16 @@ struct BlockwiseFP8TokenFormat[
 
     @always_inline
     @staticmethod
-    fn token_size() -> Int:
+    def token_size() -> Int:
         return Self.fp8_quant_size() + Self.scales_size()
 
     @always_inline
     @staticmethod
-    fn scales_offset() -> Int:
+    def scales_offset() -> Int:
         return Self.fp8_quant_size()
 
     @always_inline
-    fn pad_expert_offsets[
+    def pad_expert_offsets[
         n_groups: Int
     ](self, row_offsets: UnsafePointer[UInt32, MutAnyOrigin]) -> None:
         """
@@ -567,7 +569,7 @@ struct BlockwiseFP8TokenFormat[
 
     @always_inline
     @staticmethod
-    fn copy_token_to_send_buf[
+    def copy_token_to_send_buf[
         src_type: DType,
         block_size: UInt,
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
@@ -618,7 +620,7 @@ struct BlockwiseFP8TokenFormat[
                 )
 
     @always_inline
-    fn copy_msg_to_output_tensor[
+    def copy_msg_to_output_tensor[
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
         self,
@@ -693,7 +695,7 @@ struct NVFP4TokenFormat[
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         """Convert the host type object to a device_type and store it at the
         target address.
 
@@ -703,7 +705,7 @@ struct NVFP4TokenFormat[
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         return String(
             "NVFP4TokenFormat[fp4_dtype = ",
             String(Self.fp4_dtype),
@@ -723,7 +725,7 @@ struct NVFP4TokenFormat[
         )
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         output_tokens: Self.TensorType,
         output_scales: Self.ScalesTensorType,
@@ -735,12 +737,12 @@ struct NVFP4TokenFormat[
 
     @always_inline
     @staticmethod
-    fn fp4_quant_size() -> Int:
+    def fp4_quant_size() -> Int:
         return align_up(Self.hid_dim // 2, Self.alignment)
 
     @always_inline
     @staticmethod
-    fn scales_size() -> Int:
+    def scales_size() -> Int:
         comptime assert (
             Self.hid_dim % Self.group_size == 0
         ), "hid_dim must be divisible by group_size"
@@ -751,16 +753,16 @@ struct NVFP4TokenFormat[
 
     @always_inline
     @staticmethod
-    fn token_size() -> Int:
+    def token_size() -> Int:
         return Self.fp4_quant_size() + Self.scales_size()
 
     @always_inline
     @staticmethod
-    fn scales_offset() -> Int:
+    def scales_offset() -> Int:
         return Self.fp4_quant_size()
 
     @always_inline
-    fn pad_expert_offsets[
+    def pad_expert_offsets[
         n_groups: Int
     ](self, row_offsets: UnsafePointer[UInt32, MutAnyOrigin]) -> None:
         """
@@ -814,7 +816,7 @@ struct NVFP4TokenFormat[
                 )
 
     @always_inline
-    fn zero_pad_scales[
+    def zero_pad_scales[
         block_size: Int, n_sms: Int
     ](
         self, row_offsets: UnsafePointer[UInt32, MutAnyOrigin], sm_id: Int
@@ -870,7 +872,7 @@ struct NVFP4TokenFormat[
 
     @always_inline
     @staticmethod
-    fn copy_token_to_send_buf[
+    def copy_token_to_send_buf[
         src_type: DType,
         block_size: UInt,
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
@@ -925,7 +927,7 @@ struct NVFP4TokenFormat[
             )
 
     @always_inline
-    fn copy_msg_to_output_tensor[
+    def copy_msg_to_output_tensor[
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
         self,
@@ -1032,10 +1034,10 @@ struct EPLocalSyncCounters[n_experts: Int](
     comptime device_type: AnyType = Self
 
     @always_inline
-    fn __init__(out self, ptr: UnsafePointer[Int32, MutAnyOrigin]):
+    def __init__(out self, ptr: UnsafePointer[Int32, MutAnyOrigin]):
         self.ptr = ptr
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         """Convert the host type object to a device_type and store it at the
         target address.
 
@@ -1045,37 +1047,37 @@ struct EPLocalSyncCounters[n_experts: Int](
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
-        return t"EPLocalSyncCounters[n_experts={Self.n_experts}]"
+    def get_type_name() -> String:
+        return String(t"EPLocalSyncCounters[n_experts={Self.n_experts}]")
 
     @always_inline
     @staticmethod
-    fn dispatch_async_size() -> Int:
+    def dispatch_async_size() -> Int:
         """Returns the size in Int32 elements needed by dispatch_async kernel.
         """
         return 2 * Self.n_experts + MAX_GPUS_PER_NODE
 
     @always_inline
     @staticmethod
-    fn dispatch_wait_size() -> Int:
+    def dispatch_wait_size() -> Int:
         """Returns the size in Int32 elements needed by dispatch_wait kernel."""
         return 2 * Self.n_experts + MAX_GPUS_PER_NODE
 
     @always_inline
     @staticmethod
-    fn combine_async_size() -> Int:
+    def combine_async_size() -> Int:
         """Returns the size in Int32 elements needed by combine_async kernel."""
         return 2 * Self.n_experts + MAX_GPUS_PER_NODE
 
     @always_inline
     @staticmethod
-    fn combine_wait_size() -> Int:
+    def combine_wait_size() -> Int:
         """Returns the size in Int32 elements needed by combine_wait kernel."""
         return 2 * Self.n_experts
 
     @always_inline
     @staticmethod
-    fn total_size() -> Int:
+    def total_size() -> Int:
         """Returns the total size in Int32 elements needed for all counters."""
 
         comptime assert (
@@ -1091,7 +1093,7 @@ struct EPLocalSyncCounters[n_experts: Int](
         )
 
     @always_inline
-    fn get_dispatch_async_ptr(self) -> UnsafePointer[Int32, MutAnyOrigin]:
+    def get_dispatch_async_ptr(self) -> UnsafePointer[Int32, MutAnyOrigin]:
         """Returns pointer to dispatch_async kernel atomic counters.
 
         Layout:
@@ -1101,12 +1103,12 @@ struct EPLocalSyncCounters[n_experts: Int](
         return self.ptr
 
     @always_inline
-    fn get_dispatch_wait_ptr(self) -> UnsafePointer[Int32, MutAnyOrigin]:
+    def get_dispatch_wait_ptr(self) -> UnsafePointer[Int32, MutAnyOrigin]:
         """Returns pointer to dispatch_wait kernel atomic counters."""
         return self.ptr + Self.dispatch_async_size()
 
     @always_inline
-    fn get_combine_async_ptr(self) -> UnsafePointer[Int32, MutAnyOrigin]:
+    def get_combine_async_ptr(self) -> UnsafePointer[Int32, MutAnyOrigin]:
         """Returns pointer to combine_async kernel atomic counters.
 
         Note: Returns the same pointer as get_dispatch_wait_ptr() because
@@ -1115,7 +1117,7 @@ struct EPLocalSyncCounters[n_experts: Int](
         return self.ptr + Self.dispatch_async_size()
 
     @always_inline
-    fn get_combine_wait_ptr(self) -> UnsafePointer[Int32, MutAnyOrigin]:
+    def get_combine_wait_ptr(self) -> UnsafePointer[Int32, MutAnyOrigin]:
         """Returns pointer to combine_wait kernel atomic counters."""
         return self.ptr + Self.dispatch_async_size() + Self.dispatch_wait_size()
 
@@ -1191,7 +1193,7 @@ struct EPDispatchKernel[
 
     @staticmethod
     @always_inline
-    fn _get_recv_buf_layout(
+    def _get_recv_buf_layout(
         out result: RuntimeLayout[
             Self.recv_layout_static,
             element_type=_get_layout_type(
@@ -1206,7 +1208,7 @@ struct EPDispatchKernel[
 
     @staticmethod
     @always_inline
-    fn _get_recv_count_layout(
+    def _get_recv_count_layout(
         out result: RuntimeLayout[
             Layout.row_major(Self.n_local_experts, Self.n_ranks),
             element_type=DType.int32,
@@ -1217,7 +1219,7 @@ struct EPDispatchKernel[
 
     @staticmethod
     @always_inline
-    fn _get_send_buf_layout(
+    def _get_send_buf_layout(
         out result: RuntimeLayout[
             Layout.row_major(Self.max_tokens_per_rank, Self.msg_bytes),
             element_type=DType.int32,
@@ -1232,7 +1234,7 @@ struct EPDispatchKernel[
 
     @staticmethod
     @always_inline
-    fn monitor_and_signal_completion[
+    def monitor_and_signal_completion[
         topk_ids_layout: Layout, //
     ](
         topk_ids: LayoutTensor[DType.int32, topk_ids_layout, ImmutAnyOrigin],
@@ -1304,7 +1306,7 @@ struct EPDispatchKernel[
 
     @staticmethod
     @always_inline
-    fn copy_and_send_tokens[
+    def copy_and_send_tokens[
         input_type: DType,
         input_tokens_layout: Layout,
         topk_ids_layout: Layout,
@@ -1498,7 +1500,7 @@ struct EPDispatchKernel[
 
     @staticmethod
     @always_inline
-    fn wait_for_arrivals_and_compute_offsets[
+    def wait_for_arrivals_and_compute_offsets[
         row_offsets_layout: Layout, expert_ids_layout: Layout, //
     ](
         format_handler: Self.token_fmt_type,
@@ -1612,7 +1614,7 @@ struct EPDispatchKernel[
 
     @staticmethod
     @always_inline
-    fn copy_received_tokens_to_output[
+    def copy_received_tokens_to_output[
         src_info_layout: Layout, row_offsets_layout: Layout, //
     ](
         format_handler: Self.token_fmt_type,
@@ -1726,7 +1728,7 @@ struct EPDispatchKernel[
 
     @staticmethod
     @always_inline
-    fn pack_shared_expert_inputs[
+    def pack_shared_expert_inputs[
         shared_expert_input_dtype: DType,
         shared_expert_input_layout: Layout,
         //,
@@ -1785,7 +1787,7 @@ struct EPDispatchKernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-fn dispatch_async_kernel[
+def dispatch_async_kernel[
     input_type: DType,
     num_threads: Int,
     input_tokens_layout: Layout,
@@ -1898,7 +1900,7 @@ fn dispatch_async_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-fn dispatch_wait_kernel[
+def dispatch_wait_kernel[
     num_threads: Int,
     row_offsets_layout: Layout,
     expert_ids_layout: Layout,
@@ -2085,7 +2087,7 @@ struct EPCombineKernel[
 
     @staticmethod
     @always_inline
-    fn _get_send_buf_layout(
+    def _get_send_buf_layout(
         out result: RuntimeLayout[
             Self.send_layout_static,
             element_type=_get_layout_type(
@@ -2100,7 +2102,7 @@ struct EPCombineKernel[
 
     @staticmethod
     @always_inline
-    fn _get_recv_buf_layout(
+    def _get_recv_buf_layout(
         out result: RuntimeLayout[
             Layout.row_major(
                 Self.max_tokens_per_rank, Self.top_k, Self.msg_bytes
@@ -2113,7 +2115,7 @@ struct EPCombineKernel[
 
     @staticmethod
     @always_inline
-    fn _get_recv_count_layout(
+    def _get_recv_count_layout(
         out result: RuntimeLayout[
             Layout.row_major(Self.n_local_experts, Self.n_ranks),
             element_type=DType.int32,
@@ -2128,7 +2130,7 @@ struct EPCombineKernel[
 
     @staticmethod
     @always_inline
-    fn copy_shared_expert_outputs[
+    def copy_shared_expert_outputs[
         input_type: DType,
         input_tokens_layout: Layout,
         output_tokens_layout: Layout,
@@ -2167,7 +2169,7 @@ struct EPCombineKernel[
 
     @staticmethod
     @always_inline
-    fn send_tokens_back[
+    def send_tokens_back[
         input_type: DType,
         input_tokens_layout: Layout,
         src_info_layout: Layout,
@@ -2384,7 +2386,7 @@ struct EPCombineKernel[
 
     @staticmethod
     @always_inline
-    fn wait_for_all_arrivals(
+    def wait_for_all_arrivals(
         recv_count_p: UnsafePointer[UInt64, MutAnyOrigin],
         atomic_counter: UnsafePointer[Int32, MutAnyOrigin],
     ) -> None:
@@ -2419,7 +2421,7 @@ struct EPCombineKernel[
 
     @staticmethod
     @always_inline
-    fn reduce_and_copy_to_output[
+    def reduce_and_copy_to_output[
         output_type: DType,
         output_tokens_layout: Layout,
         router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
@@ -2562,7 +2564,7 @@ struct EPCombineKernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-fn combine_async_kernel[
+def combine_async_kernel[
     input_type: DType,
     num_threads: Int,
     input_tokens_layout: Layout,
@@ -2675,7 +2677,7 @@ fn combine_async_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-fn combine_wait_kernel[
+def combine_wait_kernel[
     output_type: DType,
     num_threads: Int,
     output_tokens_layout: Layout,
@@ -2770,7 +2772,7 @@ fn combine_wait_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-fn dispatch_kernel[
+def dispatch_kernel[
     input_type: DType,
     num_threads: Int,
     input_tokens_layout: Layout,
@@ -2934,7 +2936,7 @@ fn dispatch_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-fn combine_kernel[
+def combine_kernel[
     input_type: DType,
     num_threads: Int,
     input_tokens_layout: Layout,
@@ -3068,7 +3070,7 @@ fn combine_kernel[
 
                 @always_inline
                 @parameter
-                fn add_shared_expert_output[
+                def add_shared_expert_output[
                     dtype: DType, width: Int, *, alignment: Int = 1
                 ](
                     idx: IndexList[2], combined_val: SIMD[dtype, width]
@@ -3123,7 +3125,7 @@ fn combine_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-fn fused_silu_kernel[
+def fused_silu_kernel[
     output_dtype: DType,
     input_dtype: DType,
     output_layput: Layout,
@@ -3198,7 +3200,7 @@ fn fused_silu_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-fn fused_silu_fp8_kernel[
+def fused_silu_fp8_kernel[
     fp8_dtype: DType,
     scales_dtype: DType,
     input_dtype: DType,
@@ -3301,7 +3303,7 @@ fn fused_silu_fp8_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-fn fused_silu_nvfp4_kernel[
+def fused_silu_nvfp4_kernel[
     fp4_dtype: DType,
     scales_dtype: DType,
     input_dtype: DType,

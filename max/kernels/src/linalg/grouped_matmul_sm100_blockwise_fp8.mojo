@@ -42,13 +42,19 @@ from std.gpu.sync import (
 )
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
-from layout import Layout, LayoutTensor
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
+from layout.layout import zipped_divide
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.int_tuple import IntTuple
-from layout.layout_tensor import LayoutTensorIter, zipped_divide, upcast
+from layout.layout_tensor import LayoutTensorIter, upcast
 from layout.swizzle import make_swizzle
 from layout.runtime_tuple import idx2crd, crd2idx
-from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout, RuntimeTuple
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import (
     PipelineState,
@@ -85,7 +91,7 @@ comptime logger = Logger()
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
+def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -505,7 +511,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
                             ](c_mn)
 
 
-fn grouped_matmul_sm100_blockwise_scaled_fp8[
+def grouped_matmul_sm100_blockwise_scaled_fp8[
     a_layout: Layout,
     b_layout: Layout,
     c_layout: Layout,
@@ -668,7 +674,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
 
 
 @always_inline
-fn _get_accumulator_size[
+def _get_accumulator_size[
     *,
     c_smem_layout: Layout,
     block_tile_shape: IndexList[3],
@@ -703,7 +709,7 @@ fn _get_accumulator_size[
 
 
 @always_inline
-fn load_AB[
+def load_AB[
     a_type: DType,
     b_type: DType,
     a_scales_type: DType,
@@ -856,7 +862,7 @@ fn load_AB[
 
 
 @always_inline
-fn multi_stage_reg_epilogue[
+def multi_stage_reg_epilogue[
     c_tile_rank: Int,
     c_tile_shape: IndexList[c_tile_rank],
     c_desc_shape: IndexList[c_tile_rank],
@@ -958,7 +964,7 @@ fn multi_stage_reg_epilogue[
             var casted = src.cast[c_type]()
             comptime for _j in range(cast_width):
                 upper_st[offset + _j] = casted[_j]
-        stsm_helper[swizzle, UInt(stageN), swizzle_mode=c_swizzle](
+        stsm_helper[swizzle, stageN, swizzle_mode=c_swizzle](
             upper_st, c_smem_warp_tile_upper
         )
 
@@ -979,7 +985,7 @@ fn multi_stage_reg_epilogue[
                 var casted = src.cast[c_type]()
                 comptime for _j in range(cast_width):
                     lower_st[offset + _j] = casted[_j]
-            stsm_helper[swizzle, UInt(stageN), swizzle_mode=c_swizzle](
+            stsm_helper[swizzle, stageN, swizzle_mode=c_swizzle](
                 lower_st, c_smem_warp_tile_lower
             )
 
@@ -1109,7 +1115,7 @@ fn multi_stage_reg_epilogue[
 
 
 @always_inline
-fn promote_accumulators[
+def promote_accumulators[
     pipeline_stages: UInt,
     num_accum_pipeline_stages: Int,
     accum_type: DType,
@@ -1450,7 +1456,7 @@ fn promote_accumulators[
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
-fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
+def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -1997,7 +2003,7 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         _ = tmem_dealloc_mbar[].arrive()
 
 
-fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
+def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     a_layout: Layout,
     b_layout: Layout,
     c_layout: Layout,
@@ -2259,7 +2265,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     )
 
 
-fn grouped_matmul_dynamic_scaled_fp8[
+def grouped_matmul_dynamic_scaled_fp8[
     c_type: DType,
     a_type: DType,
     b_type: DType,

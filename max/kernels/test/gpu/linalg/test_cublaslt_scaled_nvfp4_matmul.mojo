@@ -23,7 +23,7 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from _cublas.cublaslt import cublasLtGetVersion, cublasLtMatmulMatrixScale_t
 from std.collections import OptionalReg
 from std.builtin.simd import _convert_f32_to_float8_ue8m0
-from layout import Layout, LayoutTensor, IntTuple, RuntimeLayout, UNKNOWN_VALUE
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
 from std.sys import argv
@@ -39,7 +39,7 @@ from linalg.fp4_quantization import naive_block_scaled_matmul
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-fn test_block_scaled_nvfp4_cublaslt[
+def test_block_scaled_nvfp4_cublaslt[
     out_dtype: DType,
     in_dtype: DType,
     transpose_b: Bool,
@@ -80,27 +80,27 @@ fn test_block_scaled_nvfp4_cublaslt[
     # Replace this with float4-e2m1fn when GENAI-337 is fixed.
     comptime input_dtype = DType.uint8
 
-    comptime static_a_shape = DimList(m.dim, k.dim // 2)
-    comptime static_b_shape = DimList(n.dim, k.dim // 2)
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList[m.dim, k.dim // 2]()
+    comptime static_b_shape = DimList[n.dim, k.dim // 2]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
     var dynamic_a_shape = IndexList[2](m.value, k.value // 2)
     var dynamic_b_shape = IndexList[2](n.value, k.value // 2)
     var dynamic_c_shape = IndexList[2](m.value, n.value)
 
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList[
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
+    ]()
 
     var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
@@ -262,7 +262,7 @@ fn test_block_scaled_nvfp4_cublaslt[
     _ = b_scales
 
 
-fn main() raises:
+def main() raises:
     with DeviceContext() as ctx:
         test_block_scaled_nvfp4_cublaslt[
             DType.bfloat16,

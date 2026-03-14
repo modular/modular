@@ -21,15 +21,15 @@ struct MyPet(Copyable):
     var name: String
     var age: Int
 
-    fn __init__(out self, var name: String, age: Int):
+    def __init__(out self, var name: String, age: Int):
         self.name = name^
         self.age = age
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.name = copy.name
         self.age = copy.age
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         self.name = take.name^
         self.age = take.age
 

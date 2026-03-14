@@ -24,7 +24,7 @@ from std.memory import stack_allocation
 from std.testing import assert_almost_equal
 
 
-fn tcgen05_st_ld_roundtrip_kernel[
+def tcgen05_st_ld_roundtrip_kernel[
     M: Int, N: Int
 ](data: LayoutTensor[DType.float32, Layout.row_major(M, N), MutAnyOrigin]):
     var elect_one_warp = warp_id() == 0
@@ -103,7 +103,7 @@ def test_tcgen05_st_ld_roundtrip(ctx: DeviceContext) raises:
             )
 
 
-fn tcgen05_cp_ld_roundtrip_kernel[
+def tcgen05_cp_ld_roundtrip_kernel[
     M: Int, N: Int
 ](data: LayoutTensor[DType.float32, Layout.row_major(M, N), MutAnyOrigin]):
     comptime M_smem = 128

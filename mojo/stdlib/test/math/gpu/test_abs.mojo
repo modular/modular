@@ -20,13 +20,13 @@ comptime MI300X_TARGET = get_gpu_target["mi300x"]()
 
 
 def test_abs() raises:
-    fn do_abs[
+    def do_abs[
         dtype: DType, *, width: Int = 1
     ](val: SIMD[dtype, width]) -> type_of(val):
         return abs(val)
 
     # AMD GPU kernels cannot have a return value
-    fn do_abs_noreturn[
+    def do_abs_noreturn[
         dtype: DType, *, width: Int = 1
     ](val: SIMD[dtype, width], x: UnsafePointer[mut=True, Scalar[dtype], _]):
         x.store(0, abs(val))

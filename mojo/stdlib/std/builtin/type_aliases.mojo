@@ -15,9 +15,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-comptime __TypeOfAllTypes = __mlir_type.`!kgen.type`
-"""Represents any register passable Mojo data type."""
-
 comptime ImmutOrigin = Origin[mut=False]
 """Immutable origin reference type."""
 
@@ -115,13 +112,13 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
     # ===-------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __init__(out self):
+    def __init__(out self):
         """Construct an Origin."""
         pass
 
     @always_inline("builtin")
     @implicit
-    fn __init__(v: Origin) -> ImmutOrigin[_mlir_origin=v._mlir_origin]:
+    def __init__(v: Origin) -> ImmutOrigin[_mlir_origin=v._mlir_origin]:
         """Implicitly convert an origin to an immutable one.
 
         Args:
@@ -131,7 +128,7 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
 
     @always_inline("builtin")
     @staticmethod
-    fn unsafe_mut_cast[
+    def unsafe_mut_cast[
         dest_mut: Bool
     ]() -> Origin[
         _mlir_origin=__mlir_attr[

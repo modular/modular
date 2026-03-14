@@ -324,7 +324,7 @@ class _TensorTypeBase(Type[MlirType]):
 
         For a static tensor, returns the product of all static dimensions.
         This is the number of elements the tensor will hold **during execution**,
-        :obj:`TensorType` doesn't actually hold any element values at all.
+        :class:`TensorType` doesn't actually hold any element values at all.
 
         For any non-static tensor, in other words a tensor having any symbolic
         dimensions, the return value will be meaningless.

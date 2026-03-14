@@ -31,11 +31,13 @@ from max.nn.kernels import (
 from max.nn.sampling import (
     RejectionSampler,
     RejectionSamplerWithResiduals,
-    TypicalAcceptanceSampler,
+    greedy_acceptance_sampler,
+    stochastic_acceptance_sampler,
 )
 from max.pipelines.core import TextContext
 
 from .sampling_config import SamplingConfig
+from .sampling_logits_processor import PenaltyInputs, SamplerInputs
 
 
 def _sampling_input_types(
@@ -321,6 +323,75 @@ def token_sampler(
         return graph
 
 
+class TokenSampler:
+    """Samples tokens from the logits."""
+
+    def __init__(
+        self,
+        session: InferenceSession,
+        sampling_config: SamplingConfig,
+        device: DeviceRef,
+        return_logits: bool = False,
+    ) -> None:
+        self._model = session.load(
+            token_sampler(
+                sampling_config=sampling_config,
+                device=device,
+                return_logits=return_logits,
+            )
+        )
+        self._device = device.to_device()
+
+    def sample_logits_with_prev(
+        self,
+        logits: Buffer,
+        prev_tokens: Buffer,
+        prev_logits: Buffer,
+        sampler_inputs: SamplerInputs,
+        penalty_inputs: PenaltyInputs | None = None,
+    ) -> tuple[Buffer, Buffer, Buffer]:
+        """Samples tokens from the logits with previous logits."""
+        graph_inputs: list[Buffer] = [
+            logits,
+            prev_tokens,
+            *sampler_inputs.as_list(),
+            prev_logits,
+        ]
+        if penalty_inputs is not None:
+            graph_inputs.extend(penalty_inputs.as_list())
+        tokens, all_tokens, all_logits = self._model(*graph_inputs)[:3]
+        return tokens, all_tokens, all_logits
+
+    def sample_logits(
+        self,
+        logits: Buffer,
+        sampler_inputs: SamplerInputs,
+        penalty_inputs: PenaltyInputs | None = None,
+    ) -> Buffer:
+        """Samples tokens from the logits."""
+        batch_size = sampler_inputs.top_k.shape[0]
+        prev_tokens = Buffer.zeros(
+            (batch_size, 0),
+            dtype=DType.int64,
+            device=self._device,
+        )
+        prev_logits = Buffer.zeros(
+            (batch_size, 0),
+            dtype=DType.float32,
+            device=self._device,
+        )
+        # Notice that `_all_tokens` is same as `tokens` since the `prev_tokens`
+        # is empty. `_all_logits` only contains the logits for the single step.
+        tokens, _all_tokens, _all_logits = self.sample_logits_with_prev(
+            logits=logits,
+            prev_tokens=prev_tokens,
+            prev_logits=prev_logits,
+            sampler_inputs=sampler_inputs,
+            penalty_inputs=penalty_inputs,
+        )
+        return tokens
+
+
 def rejection_sampler(
     device: DeviceRef,
     *,
@@ -451,7 +522,7 @@ def rejection_sampler_with_residuals(
         return graph
 
 
-def greedy_acceptance_sampler(
+def build_greedy_acceptance_sampler_graph(
     device: DeviceRef,
 ) -> Graph:
     """Builds a graph that implements strict greedy acceptance for MTP.
@@ -474,23 +545,22 @@ def greedy_acceptance_sampler(
         TensorType(
             DType.float32, ["total_output_len", "vocab_size"], device=device
         ),
-        TensorType(DType.int64, ["logit_offsets_len"], device=device),
     ]
     with Graph("greedy_acceptance_sampler", input_types=graph_inputs) as graph:
-        draft_tokens, target_logits, target_logit_offsets = graph.inputs
+        draft_tokens, target_logits = graph.inputs
 
-        sampler = TypicalAcceptanceSampler(device=device, greedy=True)
-        first_rejected_idx, target_tokens, bonus_tokens = sampler(
-            draft_tokens.tensor,
-            target_logits.tensor,
-            target_logit_offsets.tensor,
+        first_rejected_idx, target_tokens, bonus_tokens = (
+            greedy_acceptance_sampler(
+                draft_tokens=draft_tokens.tensor,
+                target_logits=target_logits.tensor,
+            )
         )
         graph.output(first_rejected_idx, target_tokens, bonus_tokens)
 
         return graph
 
 
-def typical_acceptance_sampler(
+def build_stochastic_acceptance_sampler_graph(
     device: DeviceRef,
     *,
     seed: int = 0,
@@ -515,7 +585,6 @@ def typical_acceptance_sampler(
         TensorType(
             DType.float32, ["total_output_len", "vocab_size"], device=device
         ),
-        TensorType(DType.int64, ["logit_offsets_len"], device=device),
         TensorType(DType.float32, ["batch_size"], device=device),
         TensorType(DType.int64, ["batch_size"], device=device),
         TensorType(DType.int64, [], device=DeviceRef.CPU()),
@@ -526,7 +595,6 @@ def typical_acceptance_sampler(
         (
             draft_tokens,
             target_logits,
-            target_logit_offsets,
             temperature,
             top_k,
             max_k,
@@ -534,16 +602,17 @@ def typical_acceptance_sampler(
             min_top_p,
         ) = graph.inputs
 
-        sampler = TypicalAcceptanceSampler(device=device, seed=seed)
-        first_rejected_idx, recovered_tokens, bonus_tokens = sampler(
-            draft_tokens.tensor,
-            target_logits.tensor,
-            target_logit_offsets.tensor,
-            temperature.tensor,
-            top_k.tensor,
-            max_k.tensor,
-            top_p.tensor,
-            min_top_p.tensor,
+        first_rejected_idx, recovered_tokens, bonus_tokens = (
+            stochastic_acceptance_sampler(
+                draft_tokens=draft_tokens.tensor,
+                target_logits=target_logits.tensor,
+                temperature=temperature.tensor,
+                top_k=top_k.tensor,
+                max_k=max_k.tensor,
+                top_p=top_p.tensor,
+                min_top_p=min_top_p.tensor,
+                seed=seed,
+            )
         )
         graph.output(first_rejected_idx, recovered_tokens, bonus_tokens)
 
@@ -577,10 +646,10 @@ class _TypicalAcceptanceRunner(RejectionRunner):
         self, session: InferenceSession, device_ref: DeviceRef
     ) -> None:
         self._greedy = session.load(
-            greedy_acceptance_sampler(device=device_ref)
+            build_greedy_acceptance_sampler_graph(device=device_ref)
         )
         self._stochastic = session.load(
-            typical_acceptance_sampler(device=device_ref)
+            build_stochastic_acceptance_sampler_graph(device=device_ref)
         )
         self._device = device_ref.to_device()
 
@@ -599,7 +668,6 @@ class _TypicalAcceptanceRunner(RejectionRunner):
             a, b, c = self._greedy(
                 draft_tokens,
                 target_logits,
-                target_logit_offsets,
             )
         else:
             top_k_np = np.array(
@@ -615,7 +683,6 @@ class _TypicalAcceptanceRunner(RejectionRunner):
             a, b, c = self._stochastic(
                 draft_tokens,
                 target_logits,
-                target_logit_offsets,
                 Buffer.from_numpy(temps_np).to(self._device),
                 Buffer.from_numpy(top_k_np).to(self._device),
                 Buffer.from_numpy(np.array(np.max(top_k_np), dtype=np.int64)),
@@ -634,7 +701,9 @@ class _GreedyRunner(RejectionRunner):
     def __init__(
         self, session: InferenceSession, device_ref: DeviceRef
     ) -> None:
-        self._model = session.load(greedy_acceptance_sampler(device=device_ref))
+        self._model = session.load(
+            build_greedy_acceptance_sampler_graph(device=device_ref)
+        )
 
     def run(
         self,
@@ -648,7 +717,6 @@ class _GreedyRunner(RejectionRunner):
         a, b, c = self._model(
             draft_tokens,
             target_logits,
-            target_logit_offsets,
         )
         assert isinstance(a, Buffer)
         assert isinstance(b, Buffer)

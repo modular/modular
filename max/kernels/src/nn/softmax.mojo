@@ -36,20 +36,18 @@ from std.gpu import (
 from std.gpu.host import DeviceAttribute, DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 from layout._utils import idx2crd
-from layout.int_tuple import UNKNOWN_VALUE
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
 from layout import (
     Coord,
     Idx,
+    Layout,
+    LayoutTensor,
+    RowMajorLayout,
     RuntimeInt,
+    TensorLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
     coord_to_index_list,
     row_major,
-)
-from layout.tile_layout import RowMajorLayout
-from layout.tile_tensor import (
-    TileTensor,
-    TensorLayout,
     stack_allocation as tt_stack_allocation,
 )
 from layout.tensor_core import get_fragment_size
@@ -66,7 +64,7 @@ from std.utils.numerics import get_accum_type, min_or_neg_inf
 # ===-----------------------------------------------------------------------===#
 
 
-fn reduce_add_simd[
+def reduce_add_simd[
     simd_width: Int,
     step_simd_width: Int,
     dtype: DType,
@@ -90,27 +88,27 @@ fn reduce_add_simd[
 
 
 @always_inline
-fn sub(x: SIMD, y: type_of(x)) -> type_of(x):
+def sub(x: SIMD, y: type_of(x)) -> type_of(x):
     return x - y
 
 
 @always_inline
-fn mul(x: SIMD, y: type_of(x)) -> type_of(x):
+def mul(x: SIMD, y: type_of(x)) -> type_of(x):
     return x * y
 
 
 @always_inline
-fn identity(x: SIMD) -> type_of(x):
+def identity(x: SIMD) -> type_of(x):
     return x
 
 
 @always_inline
-fn reciprocal(x: SIMD) -> type_of(x):
+def reciprocal(x: SIMD) -> type_of(x):
     return 1 / x
 
 
 @always_inline
-fn _exp_concrete(x: SIMD) -> type_of(x):
+def _exp_concrete(x: SIMD) -> type_of(x):
     """The concrete implementation of the exp function.
 
     This is a helper function that is used to provide a concrete implementation
@@ -122,7 +120,7 @@ fn _exp_concrete(x: SIMD) -> type_of(x):
 
 
 @always_inline
-fn _exp2_concrete(x: SIMD) -> type_of(x):
+def _exp2_concrete(x: SIMD) -> type_of(x):
     """The concrete implementation of the exp2 function."""
     comptime assert x.dtype.is_floating_point(), "dtype must be floating point"
     return exp2(x)
@@ -133,7 +131,7 @@ fn _exp2_concrete(x: SIMD) -> type_of(x):
 # ===-----------------------------------------------------------------------===#
 
 
-fn _softmax_2_pass_step1[
+def _softmax_2_pass_step1[
     simd_width: Int,
     dtype: DType,
 ](input: TileTensor[dtype, ...]) -> StaticTuple[Scalar[dtype], 2]:
@@ -182,7 +180,7 @@ fn _softmax_2_pass_step1[
     return StaticTuple[Scalar[dtype], 2](running_max[0], running_sum[0])
 
 
-fn _softmax_2_pass_step2[
+def _softmax_2_pass_step2[
     simd_width: Int,
     unroll_factor: Int,
     dtype: DType,
@@ -205,7 +203,7 @@ fn _softmax_2_pass_step2[
     var output_lt = output.to_layout_tensor()
 
     @always_inline
-    fn _step_2[simd_width: Int](idx: Int) unified {mut}:
+    def _step_2[simd_width: Int](idx: Int) unified {mut}:
         var running_max_simd = SIMD[dtype, simd_width](running_max)
         var running_sum_simd = SIMD[dtype, simd_width](running_sum)
         var input_val = input_lt.load[width=simd_width](IndexList[1](idx))
@@ -219,7 +217,7 @@ fn _softmax_2_pass_step2[
     )
 
 
-fn softmax_2_pass[
+def softmax_2_pass[
     simd_width: Int,
     dtype: DType,
 ](output: TileTensor[mut=True, dtype, ...], input: TileTensor[dtype, ...],):
@@ -273,7 +271,7 @@ fn softmax_2_pass[
 # ===-----------------------------------------------------------------------===#
 
 
-fn _softmax_3_pass_step_2[
+def _softmax_3_pass_step_2[
     simd_width: Int,
     unroll_factor: Int,
     dtype: DType,
@@ -306,7 +304,7 @@ fn _softmax_3_pass_step_2[
     var output_lt = output.to_layout_tensor()
 
     @always_inline
-    fn step_2[simd_width: Int](idx: Int) unified {mut}:
+    def step_2[simd_width: Int](idx: Int) unified {mut}:
         var vin = input_fn_1d[simd_width](idx)
         var elem = vin - SIMD[dtype, simd_width](max_val)
 
@@ -322,7 +320,7 @@ fn _softmax_3_pass_step_2[
     return accum_scalar + accum_simd.reduce_add()
 
 
-fn _softmax_3_pass_step_3[
+def _softmax_3_pass_step_3[
     simd_width: Int,
     unroll_factor: Int,
     dtype: DType,
@@ -343,7 +341,7 @@ fn _softmax_3_pass_step_3[
     var output_lt = output.to_layout_tensor()
 
     @always_inline
-    fn step_3[
+    def step_3[
         simd_width: Int
     ](idx: Int) unified {var accum_proc, mut output_lt}:
         var accum_simd = SIMD[dtype, simd_width](accum_proc)
@@ -354,7 +352,7 @@ fn _softmax_3_pass_step_3[
     vectorize[simd_width, unroll_factor=unroll_factor](output_lt.size(), step_3)
 
 
-fn _softmax_3_pass_base[
+def _softmax_3_pass_base[
     simd_width: Int,
     dtype: DType,
     input_fn_1d: fn[_simd_width: Int](Int) capturing[_] -> SIMD[
@@ -397,7 +395,7 @@ fn _softmax_3_pass_base[
     # Reduce function
     @always_inline
     @parameter
-    fn reduce_impl[
+    def reduce_impl[
         ty: DType, width: Int
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return max(v1, v2)
@@ -407,7 +405,7 @@ fn _softmax_3_pass_base[
     # needs n-D.
     @parameter
     @always_inline
-    fn input_fn[
+    def input_fn[
         _dtype: DType, _width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[_dtype, _width]:
         comptime assert _rank == 1
@@ -416,7 +414,7 @@ fn _softmax_3_pass_base[
     # Output function
     @parameter
     @always_inline
-    fn output_fn[
+    def output_fn[
         _dtype: DType, _width: Int, _rank: Int
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         comptime assert _rank == 1
@@ -459,7 +457,7 @@ fn _softmax_3_pass_base[
     ](output, accum)
 
 
-fn softmax_3_pass[
+def softmax_3_pass[
     simd_width: Int,
     dtype: DType,
     origins: OriginSet,
@@ -530,7 +528,7 @@ fn softmax_3_pass[
 # ===-----------------------------------------------------------------------===#
 
 
-fn logsoftmax[
+def logsoftmax[
     dtype: DType,
     simd_width: Int,
     rank: Int,
@@ -549,7 +547,7 @@ fn logsoftmax[
     )
 
 
-fn logsoftmax[
+def logsoftmax[
     dtype: DType,
     simd_width: Int,
     rank: Int,
@@ -564,7 +562,7 @@ fn logsoftmax[
 
     @parameter
     @always_inline
-    fn input_fn[
+    def input_fn[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
         return input_lt.load[width=_simd_width](coords)
@@ -584,7 +582,7 @@ fn logsoftmax[
 # ===-----------------------------------------------------------------------===#
 
 
-fn _softmax_cpu[
+def _softmax_cpu[
     dtype: DType,
     simd_width: Int,
     rank: Int,
@@ -614,7 +612,7 @@ fn _softmax_cpu[
     @__copy_capture(chunk_size, inner_dim, outer_dim)
     @parameter
     @always_inline
-    fn task_func(task_id: Int) raises:
+    def task_func(task_id: Int) raises:
         var start_offset = task_id * chunk_size
         var end_offset = min((task_id + 1) * chunk_size, outer_dim)
         for i in range(start_offset, end_offset):
@@ -630,7 +628,7 @@ fn _softmax_cpu[
             # Given input lambda accepts N-dimensional coordinates, but the
             # softmax base routines operate on 1D buffers. Here we wrap the
             # given input lambda with some 1D-to-n-D translation logic.
-            fn input_fn_1d[_width: Int](idx: Int) -> SIMD[dtype, _width]:
+            def input_fn_1d[_width: Int](idx: Int) -> SIMD[dtype, _width]:
                 indices[rank - 1] = idx
                 return input_fn[_width, rank](indices)
 
@@ -647,7 +645,7 @@ fn _softmax_cpu[
 
 
 # Softmax (no input lambda)
-fn softmax[
+def softmax[
     dtype: DType,
     simd_width: Int,
     rank: Int,
@@ -660,7 +658,7 @@ fn softmax[
 
     @parameter
     @always_inline
-    fn input_fn[
+    def input_fn[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
         return input_lt.load[width=_simd_width](coords)
@@ -674,7 +672,7 @@ fn softmax[
     )
 
 
-fn softmax_kernel[
+def softmax_kernel[
     BLOCK_SIZE: Int,
     input_fn: fn[_dtype: DType, _simd_width: Int, _rank: Int](
         IndexList[_rank]
@@ -712,14 +710,14 @@ fn softmax_kernel[
 
     @parameter
     @always_inline
-    fn _max[
+    def _max[
         dtype: DType, width: Int
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return max(x, y)
 
     @parameter
     @always_inline
-    fn _sum[
+    def _sum[
         dtype: DType, width: Int
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
@@ -801,7 +799,7 @@ fn softmax_kernel[
             output.store(row_coords, normalized)
 
 
-fn _softmax_gpu[
+def _softmax_gpu[
     dtype: DType,
     simd_width: Int,
     rank: Int,
@@ -826,7 +824,7 @@ fn _softmax_gpu[
 
     @always_inline
     @parameter
-    fn input_fn_wrapper[
+    def input_fn_wrapper[
         _dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
         return rebind[SIMD[_dtype, width]](input_fn[width, rank](idx))
@@ -855,7 +853,7 @@ fn _softmax_gpu[
     )
 
 
-fn softmax[
+def softmax[
     dtype: DType,
     simd_width: Int,
     rank: Int,
@@ -871,7 +869,7 @@ fn softmax[
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     @parameter
-    fn trace_information() -> String:
+    def trace_information() -> String:
         return trace_arg("input", shape, dtype)
 
     with Trace[TraceLevel.OP, target=target](
@@ -909,7 +907,7 @@ fn softmax[
 # ===----------------------------------------------------------------------=== #
 
 
-fn _softmax_temperature_kernel[
+def _softmax_temperature_kernel[
     BLOCK_SIZE: Int,
     dtype: DType,
     temp_dtype: DType,
@@ -953,14 +951,14 @@ fn _softmax_temperature_kernel[
 
     @parameter
     @always_inline
-    fn _max[
+    def _max[
         _dtype: DType, width: Int
     ](x: SIMD[_dtype, width], y: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
         return max(x, y)
 
     @parameter
     @always_inline
-    fn _sum[
+    def _sum[
         _dtype: DType, width: Int
     ](x: SIMD[_dtype, width], y: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
         return x + y
@@ -1019,7 +1017,7 @@ fn _softmax_temperature_kernel[
             ]()
 
 
-fn softmax_with_temperature[
+def softmax_with_temperature[
     dtype: DType,
     temp_dtype: DType = DType.float32,
     TempLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
@@ -1088,7 +1086,7 @@ fn softmax_with_temperature[
 # ===----------------------------------------------------------------------=== #
 
 
-fn _online_softmax_kernel[
+def _online_softmax_kernel[
     WM: Int,
     WN: Int,
     dtype: DType,
@@ -1291,7 +1289,7 @@ fn _online_softmax_kernel[
 
 
 @always_inline
-fn _online_softmax_iter_for_mma_output[
+def _online_softmax_iter_for_mma_output[
     dtype: DType,
     score_layout_by_mma_unit: Layout,
     block_layout_by_warp: Layout,
@@ -1630,7 +1628,7 @@ fn _online_softmax_iter_for_mma_output[
 # Note that the `for k` loops are across warps (k is the index into
 # the `num_warps_n` rowwise warps).
 @always_inline
-fn _online_softmax_iter_for_mma_output_split_warp_reduce[
+def _online_softmax_iter_for_mma_output_split_warp_reduce[
     output_layout: Layout,
     //,
     dtype: DType,
@@ -1948,7 +1946,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
 
 
 @always_inline
-fn _rowmax_online_softmax[
+def _rowmax_online_softmax[
     dtype: DType,
     reg_tile_layout: Layout,
     row_accum_layout: Layout,
@@ -2049,7 +2047,7 @@ fn _rowmax_online_softmax[
 
 
 @always_inline
-fn _rowsum[
+def _rowsum[
     dtype: DType,
     reg_tile_layout: Layout,
     fragment_layout: Layout,
@@ -2106,7 +2104,7 @@ fn _rowsum[
 
 
 @always_inline
-fn _online_softmax_correction[
+def _online_softmax_correction[
     dtype: DType,
     row_accum_layout: Layout,
     accum_frag_layout: Layout,

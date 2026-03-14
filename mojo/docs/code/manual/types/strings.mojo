@@ -14,13 +14,13 @@
 from std.testing import *
 
 
-fn construct_1() raises:
+def construct_1() raises:
     var s: String = "Testing"
     s += " Mojo strings"
     assert_true(s == "Testing Mojo strings")
 
 
-fn construct_2() raises:
+def construct_2() raises:
     var s = "Items in list: " + String(5)
     assert_true(s == "Items in list: 5")
 
@@ -28,14 +28,14 @@ fn construct_2() raises:
     assert_true(s == "Items in list: 5")
 
 
-fn format_1() raises:
+def format_1() raises:
     var s = "{0} {1} {0}".format("Mojo", 1.125)
     assert_true(s == "Mojo 1.125 Mojo")
     var s2 = "{} {}".format(True, "hello world")
     assert_true(s2 == "True hello world")
 
 
-fn template_1() raises:
+def template_1() raises:
     var count = 3
     var items = "apples"
     var template = t"Give me {count} {items}."  # Template string

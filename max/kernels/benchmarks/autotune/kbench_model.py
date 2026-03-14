@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+import contextlib
 import copy
 import csv
+import ctypes
 import functools
 import glob
 import json
@@ -21,10 +23,15 @@ import logging
 import math
 import multiprocessing
 import os
+import queue
 import shutil
+import signal
 import string
 import subprocess
 import sys
+import threading
+from collections import deque
+from collections.abc import Generator, Sequence
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from itertools import product
@@ -34,6 +41,34 @@ from subprocess import list2cmdline
 from time import time
 from typing import Any
 
+_devnull_fd: int | None = None
+
+
+@contextlib.contextmanager
+def _suppress_output() -> Generator[None, None, None]:
+    """Redirect OS-level stdout/stderr to /dev/null.
+
+    This catches output from C/Mojo code loaded via ctypes, not just
+    Python's sys.stdout.  A process-level /dev/null fd is cached so we
+    only open it once per worker.
+    """
+    global _devnull_fd
+    if _devnull_fd is None:
+        _devnull_fd = os.open(os.devnull, os.O_WRONLY)
+
+    saved_stdout = os.dup(1)
+    saved_stderr = os.dup(2)
+    try:
+        os.dup2(_devnull_fd, 1)
+        os.dup2(_devnull_fd, 2)
+        yield
+    finally:
+        os.dup2(saved_stdout, 1)
+        os.dup2(saved_stderr, 2)
+        os.close(saved_stdout)
+        os.close(saved_stderr)
+
+
 import numpy as np
 import pandas as pd
 import utils
@@ -41,6 +76,28 @@ import yaml
 from rich.progress import (
     Progress,
 )
+
+ScalarValue = str | int | float | bool
+
+_WRAPPER_SOURCE = """\
+from {module_name} import main as _bench_main
+from std.builtin._startup import _ensure_current_or_global_runtime_init
+
+
+@export
+fn benchmark_entry() -> Int32:
+    # Shared libraries don't get the __wrap_and_execute_main
+    # startup that executables do, so the Mojo async runtime is
+    # never registered.  Benchmarks that use CPU parallelism
+    # (e.g. elementwise) will abort on a null Runtime* without
+    # this.  The call is idempotent — a no-op after the first.
+    _ensure_current_or_global_runtime_init()
+    try:
+        _bench_main()
+        return 0
+    except:
+        return 1
+"""
 
 
 @dataclass
@@ -59,7 +116,7 @@ class ProcessOutput:
 
 # TODO: remove and replace directly with subprocess.run
 def _run_cmdline(
-    cmd: list[str],
+    cmd: Sequence[str],
     dryrun: bool = False,
     timeout: int | None = None,
     env: dict[str, str] | None = None,
@@ -103,19 +160,6 @@ def _run_cmdline(
             f"Unable to run command {list2cmdline(cmd)}: {exc}",
             os.EX_OSERR,
         )
-
-
-def _init_gpu_worker(
-    gpu_queue: multiprocessing.Queue,  # type: ignore[type-arg]
-    visible_device_prefix: str,
-) -> None:
-    """Worker initializer that assigns a dedicated GPU to each pool worker."""
-    gpu_id = gpu_queue.get()
-    if visible_device_prefix:
-        os.environ[visible_device_prefix] = str(gpu_id)
-    logging.debug(
-        f"Worker pid={os.getpid()} assigned {visible_device_prefix}={gpu_id}"
-    )
 
 
 @dataclass(frozen=True)
@@ -167,7 +211,7 @@ class SupportedLangs:
 @dataclass
 class Param:
     name: str
-    value: Any
+    value: ScalarValue
 
     def define(self, lang: Lang) -> list[str]:
         """Generate command line arguments for this parameter."""
@@ -186,21 +230,24 @@ class Param:
 @dataclass
 class ParamSpace:
     name: str
-    value: Any
-    value_set: list[Any] = field(default_factory=list)
+    value: ScalarValue | list[ScalarValue] | None
+    value_set: list[ScalarValue] = field(default_factory=list)
     length: int = 0
 
     def __post_init__(self) -> None:
         """Initialize value set from flattened values."""
-        # Try evaluating value as an arithmetic expression:
+        values: list[ScalarValue]
+        if not isinstance(self.value, list):
+            values = [self.value] if self.value is not None else []
+        else:
+            values = self.value
+        # Try evaluating values as arithmetic expressions:
         try:
-            if not isinstance(self.value, list):
-                self.value = [self.value]
-            self.value = [eval(x) for x in self.value]
-        except:
+            values = [eval(str(x)) for x in values]
+        except Exception:
             pass
         # Note: as of python3.7+ the built-in dict is guaranteed to maintain insertion order.
-        self.value_set = list(dict.fromkeys(utils.flatten(self.value)))
+        self.value_set = list(dict.fromkeys(utils.flatten(values)))
         self.value = None
         self.length = len(self.value_set)
 
@@ -306,7 +353,7 @@ class SpecInstance:
         self,
         *,
         output_dir: Path,
-        build_opts: list[str] = [],  # noqa: B006
+        build_opts: Sequence[str],
         dryrun: bool = False,
         idx: int = -1,
         enable_logging: bool = True,
@@ -335,8 +382,7 @@ class SpecInstance:
         if executor == SupportedLangs.MOJO:
             cmd = [executor.path]
             cmd.extend(["build"])
-            if build_opts:
-                cmd.extend(build_opts)
+            cmd.extend(build_opts)
             cmd.extend(
                 [
                     *self._get_defines,
@@ -348,6 +394,65 @@ class SpecInstance:
             out = _run_cmdline(cmd, dryrun)
             if out.return_code == os.EX_OK:
                 out.path = bin_path
+            else:
+                out.path = None
+            return out
+
+        return ProcessOutput()
+
+    def build_shared_lib(
+        self,
+        *,
+        output_dir: Path,
+        build_opts: Sequence[str],
+        dryrun: bool = False,
+        idx: int = -1,
+        enable_logging: bool = True,
+    ) -> ProcessOutput:
+        """Build the spec instance as a shared library (.so).
+
+        Generates a wrapper .mojo file that imports main() from the benchmark
+        and exports benchmark_entry() as a C-ABI symbol, then compiles to .so.
+        """
+        bin_name = self.hash(with_variables=False)
+        so_path = output_dir / Path(bin_name + ".so")
+
+        if enable_logging:
+            logging.info(f"building .so [{idx}][{bin_name}]")
+            logging.debug(
+                f"defines: {self._get_defines}"
+                + "\n"
+                + f"vars   : {self._get_vars}"
+            )
+
+        executor = self.executor
+
+        if not executor.needs_compilation:
+            return ProcessOutput(return_code=os.EX_OK, path=self.file)
+
+        if executor == SupportedLangs.MOJO:
+            # Generate wrapper file that imports and calls the benchmark's main().
+            module_name = Path(self.file).with_suffix("").name
+            wrapper_source = _WRAPPER_SOURCE.format(module_name=module_name)
+            wrapper_path = output_dir / f"{module_name}_wrapper.mojo"
+            wrapper_path.write_text(wrapper_source)
+
+            cmd = [executor.path, "build", "--emit", "shared-lib"]
+            cmd.extend(["-I", str(Path(self.file).parent)])
+            cmd.extend(build_opts)
+            cmd.extend(
+                [
+                    "-D",
+                    "KBENCH_USE_ENV_ARGS=True",
+                    *self._get_defines,
+                    str(wrapper_path),
+                    "-o",
+                    str(so_path),
+                ]
+            )
+            out = _run_cmdline(cmd, dryrun)
+            if out.return_code == os.EX_OK:
+                out.path = so_path
             else:
                 out.path = None
             return out
@@ -493,18 +598,14 @@ class Spec:
             raise ValueError(f"Could not load spec from {file}\nException: {e}")  # noqa: B904
 
     @staticmethod
-    def load_yaml_list(yaml_path_list: list[str]) -> Spec:
-        spec: Spec = None  # type: ignore
-        for i, yaml_path in enumerate(yaml_path_list):
-            spec_ld = Spec.load_yaml(Path(yaml_path))
-            if i == 0:
-                spec = spec_ld
-            else:
-                spec.join(spec_ld)
+    def load_yaml_list(yaml_path_list: Sequence[Path]) -> Spec:
+        spec = Spec.load_yaml(Path(yaml_path_list[0]))
+        for yaml_path in yaml_path_list[1:]:
+            spec.join(Spec.load_yaml(Path(yaml_path)))
         return spec
 
     @staticmethod
-    def parse_params(param_list: list[str]):  # noqa: ANN205
+    def parse_params(param_list: Sequence[str]):  # noqa: ANN205
         """
         Parse the parameters as (key,value) dictionary.
         The parameters can be defined as follows:
@@ -517,7 +618,7 @@ class Spec:
         Returns:
             Spec: Dictionary of with extra param names as keys and param values.
         """
-        d: dict[str, list] = {}  # type: ignore[type-arg]
+        d: dict[str, list[Any]] = {}
         IFS = ":"
         for p in param_list:
             name = ""
@@ -542,7 +643,7 @@ class Spec:
             d[name].extend(vals)
         return d
 
-    def extend_params(self, param_list: list[str]) -> None:
+    def extend_params(self, param_list: Sequence[str]) -> None:
         # Expand with CLI params
         extra_params = self.parse_params(param_list)
 
@@ -564,7 +665,7 @@ class Spec:
 
         self.setup_mesh()
 
-    def extend_shape_params(self, param_set: list[Param]) -> None:
+    def extend_shape_params(self, param_set: Sequence[Param]) -> None:
         # TODO: check for collisions in param-names
 
         extra_params: list[ParamSpace] = []
@@ -682,12 +783,12 @@ class Spec:
 
     @staticmethod
     def apply_rules(
-        mesh: list[SpecInstance], rules: list[str]
+        mesh: Sequence[SpecInstance], rules: Sequence[str]
     ) -> list[SpecInstance]:
         new_mesh: list[SpecInstance] = []
 
         if not rules:
-            return mesh
+            return list(mesh)
 
         def remove_dlr(s: str) -> str:
             return s.replace("$", "")
@@ -712,8 +813,8 @@ class Spec:
                 new_mesh.append(s)
         return new_mesh
 
-    def filter(self, filter_list: list[str]) -> None:
-        filters: dict[str, list] = {}  # type: ignore[type-arg]
+    def filter(self, filter_list: Sequence[str]) -> None:
+        filters: dict[str, list[str]] = {}
         for f in filter_list:
             if "=" in f:
                 name, val = f.split("=")
@@ -780,6 +881,7 @@ class BuildItem:
         spec_instance: the parameter set used as the basis of build
         output_dir: output directory specific for this build item
         dryrun: set to True to enable dryrun
+        use_shared_lib: set to True to build as shared library
         output_path: path to output file
         bin_path: path to executable binary
         build_output: output message for build
@@ -791,8 +893,9 @@ class BuildItem:
     idx: int
     spec_instance: SpecInstance
     output_dir: Path
-    build_opts: list  # type: ignore[type-arg]
+    build_opts: list[str]
     dryrun: bool = False
+    use_shared_lib: bool = False
     output_path: Path = Path()
     bin_path: Path | None = None
 
@@ -803,14 +906,323 @@ class BuildItem:
 
 
 @dataclass
-class ExecTaskArgs:
-    """Arguments for a single benchmark execution task."""
+class ExecItemTask:
+    """Single benchmark item to execute."""
 
     build_item: BuildItem
-    profile: str
-    exec_prefix: list[str]
-    exec_suffix: list[str]
-    timeout_secs: int | None
+    use_shared_lib: bool
+    profile: str = ""
+    exec_prefix: list[str] = field(default_factory=list)
+    exec_suffix: list[str] = field(default_factory=list)
+
+
+class ItemPool:
+    """Thread-safe pool with .so affinity and work-stealing."""
+
+    def __init__(self, binary_groups: list[list[ExecItemTask]]) -> None:
+        self._lock = threading.Lock()
+        self._binary_groups: deque[list[ExecItemTask]] = deque(
+            sorted(binary_groups, key=len, reverse=True)
+        )
+        self._gpu_queues: dict[int | str, deque[ExecItemTask]] = {}
+
+    def register_gpu(self, gpu_id: int | str) -> None:
+        with self._lock:
+            self._gpu_queues[gpu_id] = deque()
+
+    def next_for(self, gpu_id: int | str) -> ExecItemTask | None:
+        with self._lock:
+            # 1. Try own per-GPU queue (items from current binary group).
+            if self._gpu_queues[gpu_id]:
+                return self._gpu_queues[gpu_id].popleft()
+            # 2. Grab entire next binary group from global pool.
+            if self._binary_groups:
+                group = self._binary_groups.popleft()
+                self._gpu_queues[gpu_id].extend(group)
+                return self._gpu_queues[gpu_id].popleft()
+            # 3. Work-steal: take from longest per-GPU queue.
+            longest = max(
+                self._gpu_queues, key=lambda g: len(self._gpu_queues[g])
+            )
+            if self._gpu_queues[longest]:
+                return self._gpu_queues[longest].popleft()
+            # 4. All done.
+            return None
+
+
+class _SharedLibExecutor:
+    """Manages a cached ctypes shared library for worker-process benchmarks."""
+
+    def __init__(self) -> None:
+        self._so_path: Path | None = None
+        self._lib: ctypes.CDLL | None = None
+
+    def execute(self, bi: BuildItem) -> BuildItem:
+        """Load the library (if changed) and run the benchmark."""
+        assert bi.bin_path is not None
+        if self._so_path != bi.bin_path:
+            self._so_path = bi.bin_path
+            try:
+                self._lib = ctypes.CDLL(str(self._so_path))
+                self._lib.benchmark_entry.restype = ctypes.c_int32
+            except OSError as e:
+                logging.error(f"Failed to load {self._so_path}: {e}")
+                self._lib = None
+
+        # Benchmark execution — suppress noisy Mojo runtime output.
+        with _suppress_output():
+            return _worker_exec_shared_lib(bi, self._lib)
+
+
+def _start_worker(
+    gpu_id: int | str,
+    visible_device_prefix: str,
+    task_queue: multiprocessing.Queue[ExecItemTask | None],
+    result_queue: multiprocessing.Queue[BuildItem],
+) -> multiprocessing.Process:
+    """Start a worker process for a specific GPU."""
+    proc = multiprocessing.Process(
+        target=_gpu_worker_loop,
+        args=(gpu_id, visible_device_prefix, task_queue, result_queue),
+        daemon=True,
+    )
+    proc.start()
+    return proc
+
+
+def _gpu_worker_loop(
+    gpu_id: int | str,
+    visible_device_prefix: str,
+    task_queue: multiprocessing.Queue[ExecItemTask | None],
+    result_queue: multiprocessing.Queue[BuildItem],
+) -> None:
+    """Worker loop running in a child process, one per GPU."""
+    os.setpgrp()  # New process group so we can kill the entire tree
+    if visible_device_prefix:
+        os.environ[visible_device_prefix] = str(gpu_id)
+    logging.debug(
+        f"Worker pid={os.getpid()} assigned {visible_device_prefix}={gpu_id}"
+    )
+
+    executor = _SharedLibExecutor()
+    while (task := task_queue.get()) is not None:
+        bi = task.build_item
+        try:
+            if task.use_shared_lib:
+                bi = executor.execute(bi)
+            else:
+                bi = Scheduler.execute_item(
+                    build_item=bi,
+                    profile=task.profile,
+                    exec_prefix=task.exec_prefix,
+                    exec_suffix=task.exec_suffix,
+                )
+        except Exception as e:
+            bi.exec_output = ProcessOutput(
+                return_code=1, stderr=f"Worker error: {e}"
+            )
+
+        result_queue.put(bi)
+
+
+def _worker_exec_shared_lib(
+    bi: BuildItem,
+    lib: ctypes.CDLL | None,
+) -> BuildItem:
+    """Execute a single BuildItem via ctypes in the worker process."""
+    if lib is None:
+        bi.exec_output = ProcessOutput(
+            return_code=1,
+            stderr=f"Failed to load {bi.bin_path}",
+        )
+        return bi
+
+    # Set env vars for runtime args ($-prefixed params).
+    env_keys: list[str] = []
+    for param in bi.spec_instance.params:
+        if param.name.startswith("$"):
+            var_name = param.name.removeprefix("$")
+            key = f"KBENCH_ARG_{var_name}"
+            os.environ[key] = str(param.value)
+            env_keys.append(key)
+    os.environ["KBENCH_OUTFILE"] = str(bi.output_path)
+
+    t_start = time()
+    ok = False
+    error_msg = ""
+    try:
+        rc = lib.benchmark_entry()
+        ok = rc == 0
+        if not ok:
+            error_msg = f"benchmark_entry returned {rc}"
+    except Exception as e:
+        error_msg = str(e)
+
+    bi.exec_benchmark_time = time() - t_start
+
+    # Clean up env vars.
+    os.environ.pop("KBENCH_OUTFILE", None)
+    for key in env_keys:
+        os.environ.pop(key, None)
+
+    if ok:
+        bi.exec_output = ProcessOutput(return_code=os.EX_OK, stdout="OK")
+    else:
+        bi.exec_output = ProcessOutput(return_code=1, stderr=error_msg)
+    return bi
+
+
+def _poll_result(
+    result_queue: multiprocessing.Queue[BuildItem],
+    proc: multiprocessing.Process,
+    timeout_secs: int | None,
+) -> tuple[BuildItem | None, str]:
+    """Poll for a result, detecting worker death between attempts.
+
+    Returns (result, status) where result is None on timeout or worker death.
+    """
+    deadline = None if timeout_secs is None else time() + timeout_secs
+    while True:
+        wait = 1.0
+        if deadline is not None:
+            remaining = deadline - time()
+            if remaining <= 0:
+                return None, "timed out"
+            wait = min(wait, remaining)
+        try:
+            bi = result_queue.get(timeout=wait)
+            status = (
+                "succeeded"
+                if bi.exec_output.return_code == os.EX_OK
+                else "crashed"
+            )
+            return bi, status
+        except queue.Empty:
+            # Detect worker crash (e.g. signal killed the process)
+            # so we don't wait the full timeout for a dead process.
+            if not proc.is_alive():
+                return None, f"worker died (exit code {proc.exitcode})"
+
+
+def _respawn_worker(
+    gpu_id: int | str,
+    visible_device_prefix: str,
+    proc: multiprocessing.Process,
+    task_queue: multiprocessing.Queue[ExecItemTask | None],
+    result_queue: multiprocessing.Queue[BuildItem],
+) -> tuple[
+    multiprocessing.Process,
+    multiprocessing.Queue[ExecItemTask | None],
+    multiprocessing.Queue[BuildItem],
+]:
+    """Terminate *proc* and return a fresh (proc, task_q, result_q) tuple."""
+    pid = proc.pid
+    if pid is not None:
+        try:
+            os.killpg(pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            proc.terminate()
+    else:
+        proc.terminate()
+    proc.join(timeout=5)
+    if proc.is_alive():
+        pid = proc.pid
+        if pid is not None:
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                proc.kill()
+        else:
+            proc.kill()
+        proc.join(timeout=2)
+    task_queue.close()
+    result_queue.close()
+    task_queue = multiprocessing.Queue()
+    result_queue = multiprocessing.Queue()
+    proc = _start_worker(
+        gpu_id, visible_device_prefix, task_queue, result_queue
+    )
+    return proc, task_queue, result_queue
+
+
+def _gpu_manager(
+    gpu_id: int | str,
+    visible_device_prefix: str,
+    item_pool: ItemPool,
+    timeout_secs: int | None,
+    results_list: list[BuildItem],
+    results_lock: threading.Lock,
+    progress: Any,
+    progress_task: Any,
+    shutdown_event: threading.Event,
+) -> None:
+    """Manager thread for a single GPU. Owns one worker process."""
+    task_queue: multiprocessing.Queue[ExecItemTask | None] = (
+        multiprocessing.Queue()
+    )
+    result_queue: multiprocessing.Queue[BuildItem] = multiprocessing.Queue()
+    proc = _start_worker(
+        gpu_id, visible_device_prefix, task_queue, result_queue
+    )
+
+    while not shutdown_event.is_set():
+        item = item_pool.next_for(gpu_id)
+        if item is None:
+            break
+
+        task_queue.put(item)
+        completed_bi, status = _poll_result(result_queue, proc, timeout_secs)
+
+        if completed_bi is None:
+            # Worker died or timed out — fabricate a failure result.
+            item.build_item.exec_output = ProcessOutput(
+                return_code=1, stderr=status
+            )
+            completed_bi = item.build_item
+
+        with results_lock:
+            results_list[completed_bi.idx] = completed_bi
+            progress.update(progress_task, advance=1)
+            done = int(progress.tasks[progress_task].completed)
+            total = int(progress.tasks[progress_task].total)
+        logging.info(
+            f"{status} [{done}/{total}] ({utils._percentage(done, total)}%)"
+        )
+
+        if completed_bi.exec_output.return_code != os.EX_OK:
+            proc, task_queue, result_queue = _respawn_worker(
+                gpu_id,
+                visible_device_prefix,
+                proc,
+                task_queue,
+                result_queue,
+            )
+
+    # Clean shutdown.
+    task_queue.put(None)
+    proc.join(timeout=10)
+    if proc.is_alive():
+        pid = proc.pid
+        if pid is not None:
+            try:
+                os.killpg(pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                proc.terminate()
+        else:
+            proc.terminate()
+        proc.join(timeout=5)
+        if proc.is_alive():
+            pid = proc.pid
+            if pid is not None:
+                try:
+                    os.killpg(pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    proc.kill()
+            else:
+                proc.kill()
+            proc.join(timeout=2)
+    task_queue.close()
+    result_queue.close()
 
 
 def _get_similar_files(path: Path) -> list[Path]:
@@ -846,9 +1258,11 @@ class Scheduler:
     output_dir: Path
     num_specs: int
     num_unique_build_items: int = 0
+    t_build_total: float = 0.0
+    t_benchmark_total: float = 0.0
+    t_elapsed_total: float = 0.0
 
     CHUNK_SIZE: int = 1
-    EXEC_STRIDE: int = 100
 
     def __init__(
         self,
@@ -862,6 +1276,8 @@ class Scheduler:
         dryrun: bool,
         output_suffix: str = "output.csv",
         progress: Progress = Progress(),
+        use_shared_lib: bool = False,
+        output_dir_list: list[Path] | None = None,
     ) -> None:
         self.num_cpu = num_cpu
         self.num_gpu = num_gpu
@@ -869,12 +1285,24 @@ class Scheduler:
             raise ValueError(
                 "num_gpu must be greater than 0 and less than or equal to num_cpu."
             )
-
         self.obj_cache = obj_cache
         self.num_specs = len(spec_list)
-        output_dir_list = [
-            Path(f"{output_dir}/out_{i}") for i in range(self.num_specs)
-        ]
+
+        if output_dir_list is not None:
+            # Per-item output dirs: assign sequential out_0/, out_1/, ...
+            # within each base dir.
+            dir_counters: dict[Path, int] = {}
+            resolved_dirs: list[Path] = []
+            for base_dir in output_dir_list:
+                idx = dir_counters.get(base_dir, 0)
+                resolved_dirs.append(base_dir / f"out_{idx}")
+                dir_counters[base_dir] = idx + 1
+            item_output_dirs = resolved_dirs
+        else:
+            item_output_dirs = [
+                Path(f"{output_dir}/out_{i}") for i in range(self.num_specs)
+            ]
+
         self.output_suffix = output_suffix
         self.output_dir = output_dir
         self.run_only = run_only
@@ -883,14 +1311,17 @@ class Scheduler:
             BuildItem(
                 idx=i,
                 spec_instance=spec_list[i],
-                output_dir=output_dir_list[i],
+                output_dir=item_output_dirs[i],
                 build_opts=build_opts,
                 dryrun=dryrun,
-                output_path=output_dir_list[i] / output_suffix,
+                use_shared_lib=use_shared_lib
+                and spec_list[i].executor == SupportedLangs.MOJO,
+                output_path=item_output_dirs[i] / output_suffix,
             )
             for i in range(self.num_specs)
         ]
 
+        self._shutdown_event: threading.Event | None = None
         self.setup_build_pool()
         self.mk_output_dirs()
         self.progress = progress
@@ -946,11 +1377,13 @@ class Scheduler:
             "Created directories for all instances in spec." + utils.LINE
         )
 
-    def schedule_unique_build_items(self) -> list[dict]:  # type: ignore[type-arg]
+    def schedule_unique_build_items(
+        self,
+    ) -> tuple[dict[str, int], dict[str, Path]]:
         # Stores items that need to be build (i.e. not in cache)
         unique_build_items: dict[str, int] = {}
         # Stores paths to real binaries that have been cached beforehand
-        unique_build_paths: dict[str, str] = {}
+        unique_build_paths: dict[str, Path] = {}
 
         for b in self.build_items:
             i = b.idx
@@ -966,7 +1399,7 @@ class Scheduler:
             bin_path = self.obj_cache.query(bin_name)
             debug_msg += [f"In cache: {bool(bin_path)}"]
             if isinstance(bin_path, str):
-                unique_build_paths[bin_name] = bin_path
+                unique_build_paths[bin_name] = Path(bin_path)
             elif bin_path is BuildFailed:
                 # This binary failed to build before and would just fail again.
                 # Skip it.
@@ -981,27 +1414,32 @@ class Scheduler:
                     idx = unique_build_items[bin_name]
                     debug_msg += [f"Currently in schedule (ref_idx=[{idx}])"]
             logging.debug("\n".join(debug_msg) + utils.LINE)
-        return [unique_build_items, unique_build_paths]
+        return unique_build_items, unique_build_paths
 
     @staticmethod
     def _pool_build_wrapper(bi: BuildItem) -> BuildItem:
         t_start_item = time()
-        bi.build_output = bi.spec_instance.build(
+        build_fn = (
+            bi.spec_instance.build_shared_lib
+            if bi.use_shared_lib
+            else bi.spec_instance.build
+        )
+        bi.build_output = build_fn(
             output_dir=bi.output_dir,
             build_opts=bi.build_opts,
             dryrun=bi.dryrun,
             idx=bi.idx,
             enable_logging=False,
         )
-        build_elapsed_time = int((time() - t_start_item) * 1e3)
-
-        bi.build_elapsed_time = build_elapsed_time
+        elapsed_ms = int((time() - t_start_item) * 1e3)
+        bi.build_elapsed_time = elapsed_ms
         return bi
 
     def build_all(self) -> None:
         """
         Build all unique items scheduled by the scheduler.
         """
+        t_start = time()
 
         unique_build_items_dict, unique_build_paths = (
             self.schedule_unique_build_items()
@@ -1075,11 +1513,33 @@ class Scheduler:
             )
 
         self.close_build_pool()
+        self.t_build_total = time() - t_start
 
         # update all build items with their binary path
         for b in self.build_items:
             bin_name = b.spec_instance.hash(with_variables=False)
             self.build_items[b.idx].bin_path = unique_build_paths.get(bin_name)
+
+        # Log build summary
+        seen: set[str] = set()
+        build_succeeded = 0
+        build_failed = 0
+        for b in self.build_items:
+            h = b.spec_instance.hash(with_variables=False)
+            if h in seen:
+                continue
+            seen.add(h)
+            if b.bin_path is not None:
+                build_succeeded += 1
+            else:
+                build_failed += 1
+        total = build_succeeded + build_failed
+        parts = [f"{build_succeeded} succeeded"]
+        if build_failed:
+            parts.append(f"{build_failed} failed")
+        logging.info(
+            f"Build summary: {', '.join(parts)} ({total} unique items)"
+        )
 
     @staticmethod
     def execute_item(
@@ -1130,57 +1590,154 @@ class Scheduler:
 
         return build_item
 
-    @staticmethod
-    def _pool_execute_item_wrapper(
-        args: ExecTaskArgs,
-    ) -> BuildItem:
-        return Scheduler.execute_item(
-            build_item=args.build_item,
-            profile=args.profile,
-            exec_prefix=args.exec_prefix,
-            exec_suffix=args.exec_suffix,
-            timeout_secs=args.timeout_secs,
-        )
-
     def setup_build_pool(self) -> None:
         self.build_pool = Pool(self.num_cpu)
-
-    def setup_execution_pool(
-        self,
-        visible_device_prefix: str = "",
-        use_mpirun: bool = False,
-    ) -> None:
-        if visible_device_prefix and self.num_gpu > 1 and not use_mpirun:
-            gpu_queue: multiprocessing.Queue = multiprocessing.Queue()  # type: ignore[type-arg]
-            # Respect any pre-set device visibility env var
-            existing = os.environ.get(visible_device_prefix, "")
-            if existing.strip():
-                visible_ids = list(
-                    dict.fromkeys(v.strip() for v in existing.split(","))
-                )
-                for gpu_id in visible_ids[: self.num_gpu]:
-                    gpu_queue.put(gpu_id)
-            else:
-                for i in range(self.num_gpu):
-                    gpu_queue.put(i)
-            self.execution_pool = Pool(
-                self.num_gpu,
-                initializer=_init_gpu_worker,
-                initargs=(gpu_queue, visible_device_prefix),
-            )
-        else:
-            self.execution_pool = Pool(self.num_gpu)
 
     def close_build_pool(self) -> None:
         self.build_pool.close()
         self.build_pool.join()
 
-    def close_execution_pool(self) -> None:
-        self.execution_pool.close()
-        self.execution_pool.join()
+    def _make_gpu_ids(self, visible_device_prefix: str) -> list[int | str]:
+        """Return list of GPU IDs from env or range(num_gpu)."""
+        existing = os.environ.get(visible_device_prefix, "")
+        if existing.strip():
+            visible_ids: list[int | str] = list(
+                dict.fromkeys(v.strip() for v in existing.split(","))
+            )
+            return visible_ids[: self.num_gpu]
+        return list(range(self.num_gpu))
+
+    def execute_all(
+        self,
+        visible_device_prefix: str,
+        timeout_secs: int | None,
+        profile: str,
+        exec_prefix: Sequence[str],
+        exec_suffix: Sequence[str],
+    ) -> None:
+        """Execute all build items using process-per-GPU with manager threads.
+
+        Each GPU gets a dedicated worker process managed by a parent thread.
+        Items are distributed via an ItemPool with .so affinity and
+        work-stealing.
+        """
+        t_start = time()
+        num_build_items = len(self.build_items)
+        exec_progress = self.progress.add_task("run", total=num_build_items)
+
+        # Pre-filter: log and skip items that failed to build.
+        executable_items: list[BuildItem] = []
+        no_binary_count = 0
+        for bi in self.build_items:
+            if bi.bin_path:
+                executable_items.append(bi)
+            else:
+                bin_name = bi.spec_instance.hash(with_variables=False)
+                logging.error(
+                    f"Skipping [{bin_name}]: build failed (no binary produced)"
+                )
+                self.progress.update(exec_progress, advance=1)
+                no_binary_count += 1
+
+        # Group executable items by binary hash (items sharing a .so).
+        groups: dict[str, list[ExecItemTask]] = {}
+        for bi in executable_items:
+            key = bi.spec_instance.hash(with_variables=False)
+            groups.setdefault(key, []).append(
+                ExecItemTask(
+                    build_item=bi,
+                    use_shared_lib=bi.use_shared_lib,
+                    profile=profile,
+                    exec_prefix=list(exec_prefix),
+                    exec_suffix=list(exec_suffix),
+                )
+            )
+
+        binary_groups = [g for g in groups.values() if g]
+        gpu_ids = self._make_gpu_ids(visible_device_prefix)
+
+        # Only isolate GPUs when kbench itself is parallelizing across GPUs
+        # and not using mpirun. Otherwise let benchmarks see all GPUs.
+        use_mpirun = any("mpirun" in p for p in exec_prefix)
+        if len(gpu_ids) <= 1 or use_mpirun:
+            visible_device_prefix = ""
+
+        num_items = num_build_items - no_binary_count
+        largest_group = (
+            max(len(g) for g in binary_groups) if binary_groups else 0
+        )
+
+        logging.info(
+            f"Distributing {num_items} items ({len(binary_groups)} binary "
+            f"groups) across {len(gpu_ids)} GPUs "
+            f"(largest group: {largest_group} items)"
+        )
+
+        item_pool = ItemPool(binary_groups)
+        for gpu_id in gpu_ids:
+            item_pool.register_gpu(gpu_id)
+
+        # Launch one manager thread per GPU.
+        results_lock = threading.Lock()
+        shutdown_event = threading.Event()
+        self._shutdown_event = shutdown_event
+        threads: list[threading.Thread] = []
+        for gpu_id in gpu_ids:
+            t = threading.Thread(
+                target=_gpu_manager,
+                args=(
+                    gpu_id,
+                    visible_device_prefix,
+                    item_pool,
+                    timeout_secs,
+                    self.build_items,
+                    results_lock,
+                    self.progress,
+                    exec_progress,
+                    shutdown_event,
+                ),
+            )
+            t.start()
+            threads.append(t)
+
+        for t in threads:
+            t.join()
+        self.t_benchmark_total = time() - t_start
+
+        # Log execution summary
+        exec_succeeded = 0
+        exec_crashed = 0
+        exec_timed_out = 0
+        exec_no_binary = 0
+        for b in self.build_items:
+            if b.bin_path is None:
+                exec_no_binary += 1
+            elif b.exec_output.return_code == os.EX_OK:
+                exec_succeeded += 1
+            elif (
+                b.exec_output.stderr
+                and "timed out" in b.exec_output.stderr.lower()
+            ):
+                exec_timed_out += 1
+            else:
+                exec_crashed += 1
+        total = exec_succeeded + exec_crashed + exec_timed_out + exec_no_binary
+        parts = [f"{exec_succeeded} succeeded"]
+        if exec_crashed:
+            parts.append(f"{exec_crashed} crashed")
+        if exec_timed_out:
+            parts.append(f"{exec_timed_out} timed out")
+        if exec_no_binary:
+            parts.append(f"{exec_no_binary} failed to build")
+        logging.info(f"Execution summary: {', '.join(parts)} ({total} total)")
+
+    def shutdown_workers(self) -> None:
+        """Signal manager threads to stop after current item."""
+        if self._shutdown_event is not None:
+            self._shutdown_event.set()
 
     @staticmethod
-    def get_build_df(bi_list: list[BuildItem]) -> pd.DataFrame:
+    def get_build_df(bi_list: Sequence[BuildItem]) -> pd.DataFrame:
         build_df = pd.DataFrame(
             {
                 "name": ["build" for b in bi_list],
@@ -1239,7 +1796,7 @@ class Scheduler:
 
     # Retrieve, sort, and pick top choices
     @staticmethod
-    def get_valid_specs(bi_list: list[BuildItem], spec: Spec):  # noqa: ANN205
+    def get_valid_specs(bi_list: Sequence[BuildItem], spec: Spec):  # noqa: ANN205
         valid_specs: list[pd.DataFrame] = []
         invalid_specs: list[int] = []
 
@@ -1324,6 +1881,10 @@ class Scheduler:
                     and not bi_list[idx].bin_path
                 ):
                     failure_type = "build"
+                elif (
+                    stderr := bi_list[idx].exec_output.stderr
+                ) and "timed out" in stderr.lower():
+                    failure_type = "timeout"
                 else:
                     failure_type = "execution"
                 failure_records.append(

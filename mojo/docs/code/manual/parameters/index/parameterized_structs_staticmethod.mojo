@@ -16,31 +16,31 @@ struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
     var data: UnsafePointer[Self.ElementType, MutExternalOrigin]
     var size: Int
 
-    fn __init__(out self, var *elements: Self.ElementType):
+    def __init__(out self, var *elements: Self.ElementType):
         self.size = len(elements)
         self.data = alloc[Self.ElementType](self.size)
         for i in range(self.size):
             (self.data + i).init_pointee_move(elements[i].copy())
 
-    fn __init__(out self, *, count: Int, value: Self.ElementType):
+    def __init__(out self, *, count: Int, value: Self.ElementType):
         self.size = count
         self.data = alloc[Self.ElementType](self.size)
         for i in range(self.size):
             (self.data + i).init_pointee_copy(value)
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         for i in range(self.size):
             (self.data + i).destroy_pointee()
         self.data.free()
 
-    fn __getitem__(self, i: Int) raises -> ref[self] Self.ElementType:
+    def __getitem__(self, i: Int) raises -> ref[self] Self.ElementType:
         if i < self.size:
             return self.data[i]
         else:
             raise Error("Out of bounds")
 
     @staticmethod
-    fn splat(count: Int, value: Self.ElementType) -> Self:
+    def splat(count: Int, value: Self.ElementType) -> Self:
         # Create a new array with count instances of the given value
         return Self(count=count, value=value)
 

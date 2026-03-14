@@ -19,7 +19,7 @@ from tensor._indexing import _dot_prod
 from std.utils import IndexList
 
 
-fn random_uniform[
+def random_uniform[
     dtype: DType,
     rank: Int,
     //,
@@ -61,7 +61,7 @@ fn random_uniform[
     @parameter
     @always_inline
     @__copy_capture(strides, delta)
-    fn generate[
+    def generate[
         width: Int, _rank: Int, alignment: Int = 1
     ](idx: IndexList[_rank],):
         comptime assert width <= 4

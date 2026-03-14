@@ -39,16 +39,18 @@ from std.gpu.host.info import is_cpu, is_gpu
 from std.gpu.memory import external_memory
 from std.gpu.primitives import block
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from layout.coord import (
+from layout import (
     Coord,
     CoordLike,
-    DynamicCoord,
     Idx,
     RuntimeInt,
+    TensorLayout,
+    TileTensor,
     coord_to_index_list,
+    row_major,
 )
-from layout.tile_layout import Layout, TensorLayout
-from layout import TileTensor, row_major
+from layout.coord import DynamicCoord
+from layout.tile_layout import Layout
 from std.memory import stack_allocation
 from register import register_internal
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
@@ -65,7 +67,7 @@ from .reshape import reshape
 
 
 @always_inline
-fn block_reduce[
+def block_reduce[
     dtype: DType, max_warps_per_block: Int
 ](val: Scalar[dtype]) -> Scalar[dtype]:
     var m2_shared = stack_allocation[
@@ -104,7 +106,7 @@ fn block_reduce[
 
 
 # using numerically stable Welford online algorithm to compute single pass mean and variance
-fn welford_update[
+def welford_update[
     dtype: DType, //
 ](
     val: Scalar[dtype],
@@ -119,7 +121,7 @@ fn welford_update[
     m2 += d1 * d2
 
 
-fn welford_combine[
+def welford_combine[
     dtype: DType, //
 ](
     mean: Scalar[dtype],
@@ -139,7 +141,7 @@ fn welford_combine[
     res_count = x_count
 
 
-fn welford_warp_reduce[
+def welford_warp_reduce[
     dtype: DType, //
 ](
     thread_mean: Scalar[dtype],
@@ -162,26 +164,7 @@ fn welford_warp_reduce[
         welford_combine(mean, m2, count, res_mean, res_m2, res_count)
 
 
-fn welford_warp_all_reduce[
-    dtype: DType, //
-](
-    thread_mean: Scalar[dtype],
-    thread_m2: Scalar[dtype],
-    thread_count: Scalar[dtype],
-    mut res_mean: Scalar[dtype],
-    mut res_m2: Scalar[dtype],
-    mut res_count: Scalar[dtype],
-):
-    welford_warp_reduce(
-        thread_mean, thread_m2, thread_count, res_mean, res_m2, res_count
-    )
-    # broadcasting res from warp lane_id 0 to all in a warp
-    res_mean = warp.broadcast(res_mean)
-    res_m2 = warp.broadcast(res_m2)
-    res_count = warp.broadcast(res_count)
-
-
-fn welford_block_all_reduce[
+def welford_block_all_reduce[
     dtype: DType, //
 ](
     thread_mean: Scalar[dtype],
@@ -259,7 +242,7 @@ fn welford_block_all_reduce[
     )
 
 
-fn layer_norm_gpu_warp_tiling[
+def layer_norm_gpu_warp_tiling[
     mut: Bool,
     LayoutType: TensorLayout,
     origin: Origin[mut=mut],
@@ -335,7 +318,7 @@ fn layer_norm_gpu_warp_tiling[
             )
 
 
-fn layer_norm_gpu_block[
+def layer_norm_gpu_block[
     mut: Bool,
     LayoutType: TensorLayout,
     origin: Origin[mut=mut],
@@ -368,14 +351,13 @@ fn layer_norm_gpu_block[
     var row_mean = Scalar[accum_type]()
     var row_m2 = Scalar[accum_type]()
     var row_count = Scalar[accum_type]()
+    var thread_mean = Scalar[accum_type]()
+    var thread_m2 = Scalar[accum_type]()
+    var thread_count = Scalar[accum_type]()
 
     with PDL():
         # Every block has a single row to process
         for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
-            var thread_mean = Scalar[accum_type]()
-            var thread_m2 = Scalar[accum_type]()
-            var thread_count = Scalar[accum_type]()
-
             var offset = x * block_dim.x * simd_width + tid * simd_width
 
             if offset < num_cols:
@@ -388,16 +370,16 @@ fn layer_norm_gpu_block[
                         vec_data[Int(i)], thread_mean, thread_m2, thread_count
                     )
 
-            # a whole block computes part of the row main and variance and broadcasts to
-            # thread_idx 0 to update the final row mean and variance
-            welford_block_all_reduce(
-                thread_mean,
-                thread_m2,
-                thread_count,
-                row_mean,
-                row_m2,
-                row_count,
-            )
+        # a whole block computes part of the row main and variance and broadcasts to
+        # thread_idx 0 to update the final row mean and variance
+        welford_block_all_reduce(
+            thread_mean,
+            thread_m2,
+            thread_count,
+            row_mean,
+            row_m2,
+            row_count,
+        )
 
         var row_var = max(row_m2 / row_count, 0)
         var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
@@ -426,7 +408,7 @@ fn layer_norm_gpu_block[
                 )
 
 
-fn layer_norm_reshape[
+def layer_norm_reshape[
     rank: Int, //, output_rank: Int
 ](shape: IndexList[rank, ...],) -> IndexList[output_rank]:
     comptime if rank == output_rank:
@@ -437,7 +419,7 @@ fn layer_norm_reshape[
     return IndexList[output_rank](prod_all_but_last_dim, last_dim)
 
 
-fn layer_norm_gpu[
+def layer_norm_gpu[
     dtype: DType,
     rank: Int,
     //,
@@ -473,7 +455,7 @@ fn layer_norm_gpu[
 
     @parameter
     @always_inline
-    fn input_fn_2d[
+    def input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
         # Translate a given 2D index back to the original n-D tensor
@@ -483,7 +465,7 @@ fn layer_norm_gpu[
 
     @parameter
     @always_inline
-    fn output_fn_2d[
+    def output_fn_2d[
         simd_width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]):
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
@@ -560,7 +542,7 @@ fn layer_norm_gpu[
 
 
 @always_inline
-fn _sum_to_mean[
+def _sum_to_mean[
     dtype: DType, //
 ](sum_val: Scalar[dtype], n: Int) -> Scalar[dtype]:
     comptime if dtype.is_integral():
@@ -568,7 +550,7 @@ fn _sum_to_mean[
     return sum_val / Scalar[dtype](n)
 
 
-fn layer_norm_cpu[
+def layer_norm_cpu[
     dtype: DType,
     //,
     input_fn: fn[width: Int](Int, Int) capturing -> SIMD[dtype, width],
@@ -610,7 +592,7 @@ fn layer_norm_cpu[
         @always_inline
         @parameter
         @__copy_capture(row)
-        fn output_fn_1d[
+        def output_fn_1d[
             dtype_: DType, simd_width: Int, alignment: Int
         ](idx: Int, val: SIMD[dtype_, simd_width]):
             output_fn[simd_width, alignment](
@@ -619,7 +601,7 @@ fn layer_norm_cpu[
 
         @__copy_capture(row)
         @parameter
-        fn input_gen_wrapper[
+        def input_gen_wrapper[
             dtype: DType, simd_width: Int
         ](col: Int) -> SIMD[dtype, simd_width]:
             return input_fn[simd_width](row, col).cast[dtype]()
@@ -642,7 +624,7 @@ fn layer_norm_cpu[
         )  # use biased estimator
         var norm_factor = rsqrt(var_val + epsilon)
 
-        fn _normalize[simd_width: Int](col: Int) unified {mut}:
+        def _normalize[simd_width: Int](col: Int) unified {mut}:
             var out_val = input_fn[simd_width](row, col)
             var gamma_val = gamma_fn[simd_width, 1](Index(col))
             var beta_col = beta.layout(Idx(col))
@@ -659,7 +641,7 @@ fn layer_norm_cpu[
         vectorize[simd_width](num_cols, _normalize)
 
 
-fn layer_norm_cpu[
+def layer_norm_cpu[
     dtype: DType,
     rank: Int,
     //,
@@ -690,14 +672,14 @@ fn layer_norm_cpu[
 
     @__copy_capture(chunk_size, prod_all_but_last_dim, last_dim, epsilon)
     @parameter
-    fn task_func(thread_id: Int) raises:
+    def task_func(thread_id: Int) raises:
         var row_idx = thread_id * chunk_size
         var chunk_rows = min(chunk_size, prod_all_but_last_dim - row_idx)
 
         @__copy_capture(row_idx)
         @parameter
         @always_inline
-        fn input_fn_2d[
+        def input_fn_2d[
             simd_width: Int
         ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
             # Translate a given 2D index back to the original n-D tensor
@@ -710,7 +692,7 @@ fn layer_norm_cpu[
         @__copy_capture(row_idx)
         @parameter
         @always_inline
-        fn output_fn_2d[
+        def output_fn_2d[
             simd_width: Int, alignment: Int
         ](row: Int, col: Int, val: SIMD[dtype, simd_width]):
             # Translate a given 2D index back to the original n-D tensor
@@ -728,7 +710,7 @@ fn layer_norm_cpu[
 
 
 @always_inline
-fn layer_norm[
+def layer_norm[
     dtype: DType,
     rank: Int,
     input_0_fn: fn[_width: Int, _rank: Int](IndexList[_rank]) capturing -> SIMD[
@@ -759,7 +741,7 @@ fn layer_norm[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return trace_arg("input", shape, dtype)
 
     with Trace[TraceLevel.OP, target=target](
@@ -785,7 +767,7 @@ fn layer_norm[
 
 
 @always_inline
-fn layer_norm_shape[
+def layer_norm_shape[
     dtype: DType,
     single_thread_blocking_override: Bool,
 ](
@@ -820,7 +802,7 @@ fn layer_norm_shape[
 
 
 @always_inline
-fn _rms_norm_warp_tiling_subkernel[
+def _rms_norm_warp_tiling_subkernel[
     dtype: DType,
     simd_width: Int,
     accum_type: DType,
@@ -862,7 +844,7 @@ fn _rms_norm_warp_tiling_subkernel[
     return norm_val
 
 
-fn rms_norm_gpu_warp_tiling_128[
+def rms_norm_gpu_warp_tiling_128[
     mut: Bool,
     LayoutType: TensorLayout,
     origin: Origin[mut=mut],
@@ -929,7 +911,7 @@ fn rms_norm_gpu_warp_tiling_128[
             output_fn[simd_width, align](Int(row), Int(idx), norm_val)
 
 
-fn rms_norm_gpu_warp_tiling[
+def rms_norm_gpu_warp_tiling[
     mut: Bool,
     LayoutType: TensorLayout,
     origin: Origin[mut=mut],
@@ -990,7 +972,7 @@ fn rms_norm_gpu_warp_tiling[
 
 
 @always_inline
-fn _rms_norm_gpu_block_subkernel[
+def _rms_norm_gpu_block_subkernel[
     dtype: DType,
     //,
     simd_width: Int,
@@ -1063,7 +1045,7 @@ fn _rms_norm_gpu_block_subkernel[
             output_fn[simd_width, align](Int(row), offset, norm_val)
 
 
-fn rms_norm_gpu_block[
+def rms_norm_gpu_block[
     mut: Bool,
     LayoutType: TensorLayout,
     origin: Origin[mut=mut],
@@ -1096,7 +1078,7 @@ fn rms_norm_gpu_block[
         ](gamma, epsilon, weight_offset, num_cols)
 
 
-fn rms_norm_gpu[
+def rms_norm_gpu[
     dtype: DType,
     rank: Int,
     //,
@@ -1129,7 +1111,7 @@ fn rms_norm_gpu[
 
     @parameter
     @always_inline
-    fn output_fn_2d[
+    def output_fn_2d[
         simd_width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
         # Translate a given 2D index back to the original n-D tensor
@@ -1139,7 +1121,7 @@ fn rms_norm_gpu[
 
     @parameter
     @always_inline
-    fn input_fn_2d[
+    def input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
         # Translate a given 2D index back to the original n-D tensor
@@ -1272,7 +1254,7 @@ fn rms_norm_gpu[
         )
 
 
-fn rms_norm_cpu[
+def rms_norm_cpu[
     dtype: DType,
     //,
     input_fn: fn[width: Int](Int, Int) capturing -> SIMD[dtype, width],
@@ -1312,7 +1294,7 @@ fn rms_norm_cpu[
         var mean_val = _sum_to_mean(sum_val, num_cols)
         var norm_factor = rsqrt(mean_val + epsilon.cast[intermediate_type]())
 
-        fn _normalize[simd_width: Int](col: Int) unified {mut}:
+        def _normalize[simd_width: Int](col: Int) unified {mut}:
             var input_val = input_fn[simd_width](row, col).cast[
                 intermediate_type
             ]()
@@ -1336,7 +1318,7 @@ fn rms_norm_cpu[
         vectorize[simd_width](num_cols, _normalize)
 
 
-fn rms_norm_cpu[
+def rms_norm_cpu[
     dtype: DType,
     rank: Int,
     //,
@@ -1365,7 +1347,7 @@ fn rms_norm_cpu[
         chunk_size, prod_all_but_last_dim, last_dim, epsilon, weight_offset
     )
     @parameter
-    fn task_func(thread_id: Int):
+    def task_func(thread_id: Int):
         var num_rows = min(
             chunk_size, prod_all_but_last_dim - thread_id * chunk_size
         )
@@ -1374,7 +1356,7 @@ fn rms_norm_cpu[
         @__copy_capture(row_idx)
         @parameter
         @always_inline
-        fn output_fn_2d[
+        def output_fn_2d[
             simd_width: Int, alignment: Int
         ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
             # Translate a given 2D index back to the original n-D tensor.
@@ -1387,7 +1369,7 @@ fn rms_norm_cpu[
         @__copy_capture(row_idx)
         @parameter
         @always_inline
-        fn input_fn_2d[
+        def input_fn_2d[
             simd_width: Int
         ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
             # Translate a given 2D index back to the original n-D tensor.
@@ -1412,7 +1394,7 @@ fn rms_norm_cpu[
 
 
 @always_inline
-fn _rms_norm_impl[
+def _rms_norm_impl[
     dtype: DType,
     rank: Int,
     input_0_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
@@ -1465,7 +1447,7 @@ fn _rms_norm_impl[
         comptime assert False, "unsupported target " + target
 
 
-fn rms_norm_fused_residual_add_gpu_warp_tiling[
+def rms_norm_fused_residual_add_gpu_warp_tiling[
     mut1: Bool,
     LayoutType1: TensorLayout,
     origin1: Origin[mut=mut1],
@@ -1562,7 +1544,7 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
             output_fn[simd_width, align](Int(row), Int(idx), norm2_val)
 
 
-fn rms_norm_fused_residual_add_gpu_block[
+def rms_norm_fused_residual_add_gpu_block[
     mut1: Bool,
     LayoutType1: TensorLayout,
     origin1: Origin[mut=mut1],
@@ -1609,7 +1591,7 @@ fn rms_norm_fused_residual_add_gpu_block[
         @parameter
         @always_inline
         @__copy_capture(shared_mem)
-        fn stage1_output_fn[
+        def stage1_output_fn[
             width: Int, alignment: Int
         ](row: Int, col: Int, val: SIMD[dtype, width]):
             residual_val = residual_input_fn[width](row, col)
@@ -1633,7 +1615,7 @@ fn rms_norm_fused_residual_add_gpu_block[
         @parameter
         @always_inline
         @__copy_capture(shared_mem)
-        fn stage2_input_fn[
+        def stage2_input_fn[
             width: Int
         ](row: Int, col: Int) -> SIMD[dtype, width]:
             return shared_mem.load[width=width](col)
@@ -1647,7 +1629,7 @@ fn rms_norm_fused_residual_add_gpu_block[
         ](gamma2, epsilon2, weight_offset2, num_cols)
 
 
-fn rms_norm_fused_residual_add_gpu[
+def rms_norm_fused_residual_add_gpu[
     dtype: DType,
     rank: Int,
     //,
@@ -1690,7 +1672,7 @@ fn rms_norm_fused_residual_add_gpu[
 
     @parameter
     @always_inline
-    fn output_fn_2d[
+    def output_fn_2d[
         simd_width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
         # Translate a given 2D index back to the original n-D tensor
@@ -1700,7 +1682,7 @@ fn rms_norm_fused_residual_add_gpu[
 
     @parameter
     @always_inline
-    fn output_residual_fn_2d[
+    def output_residual_fn_2d[
         simd_width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
         # Translate a given 2D index back to the original n-D tensor
@@ -1710,7 +1692,7 @@ fn rms_norm_fused_residual_add_gpu[
 
     @parameter
     @always_inline
-    fn input_fn_2d[
+    def input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
         # Translate a given 2D index back to the original n-D tensor
@@ -1720,7 +1702,7 @@ fn rms_norm_fused_residual_add_gpu[
 
     @parameter
     @always_inline
-    fn residual_input_fn_2d[
+    def residual_input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
         # Translate a given 2D index back to the original n-D tensor
@@ -1845,7 +1827,7 @@ fn rms_norm_fused_residual_add_gpu[
         )
 
 
-fn rms_norm_fused_residual_add_cpu[
+def rms_norm_fused_residual_add_cpu[
     dtype: DType,
     rank: Int,
     //,
@@ -1884,7 +1866,7 @@ fn rms_norm_fused_residual_add_cpu[
     @parameter
     @always_inline
     @__copy_capture(intermediate_buffer)
-    fn intermediate_output_fn[
+    def intermediate_output_fn[
         width: Int, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var residual_val = residual_input_fn[width](idx)
@@ -1905,7 +1887,7 @@ fn rms_norm_fused_residual_add_cpu[
     @parameter
     @always_inline
     @__copy_capture(intermediate_buffer)
-    fn intermediate_input_fn[
+    def intermediate_input_fn[
         width: Int, rank_: Int
     ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
         var intermediate_idx = intermediate_buffer.layout(Coord(idx))
@@ -1922,7 +1904,7 @@ fn rms_norm_fused_residual_add_cpu[
 
 @register_internal("rms_norm")
 @always_inline
-fn rms_norm[
+def rms_norm[
     dtype: DType,
     rank: Int,
     input_0_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
@@ -1945,14 +1927,14 @@ fn rms_norm[
 
     @always_inline
     @parameter
-    fn output_fn_wrapper[
+    def output_fn_wrapper[
         width: Int, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         output_0_fn[width, rank, alignment](idx, val)
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return trace_arg("input", shape, dtype)
 
     with Trace[TraceLevel.OP, target=target](
@@ -1970,7 +1952,7 @@ fn rms_norm[
         ](shape, gamma, epsilon, weight_offset, ctx)
 
 
-fn _rms_norm_fused_residual_add_impl[
+def _rms_norm_fused_residual_add_impl[
     dtype: DType,
     rank: Int,
     input_0_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
@@ -2061,7 +2043,7 @@ fn _rms_norm_fused_residual_add_impl[
 
 @register_internal("rms_norm_fused_residual_add")
 @always_inline
-fn rms_norm_fused_residual_add[
+def rms_norm_fused_residual_add[
     dtype: DType,
     rank: Int,
     //,
@@ -2095,21 +2077,21 @@ fn rms_norm_fused_residual_add[
 
     @always_inline
     @parameter
-    fn output_fn_wrapper[
+    def output_fn_wrapper[
         width: Int, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         output_0_fn[width, rank, alignment](idx, val)
 
     @always_inline
     @parameter
-    fn output_residual_fn_wrapper[
+    def output_residual_fn_wrapper[
         width: Int, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         output_residual_fn[width, rank, alignment](idx, val)
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return trace_arg("input", shape, dtype)
 
     with Trace[TraceLevel.OP, target=target](
@@ -2139,7 +2121,7 @@ fn rms_norm_fused_residual_add[
 
 
 @always_inline
-fn rms_norm_fused_fp8[
+def rms_norm_fused_fp8[
     in_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
@@ -2203,7 +2185,7 @@ fn rms_norm_fused_fp8[
     # Tracing for performance profiling
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return (
             trace_arg("input", shape, in_dtype)
             + " -> "
@@ -2238,7 +2220,7 @@ fn rms_norm_fused_fp8[
 
 
 @always_inline
-fn _rms_norm_fused_fp8_gpu[
+def _rms_norm_fused_fp8_gpu[
     in_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
@@ -2272,7 +2254,7 @@ fn _rms_norm_fused_fp8_gpu[
     # Create 2D input function (following rms_norm_fused_residual_add pattern)
     @parameter
     @always_inline
-    fn input_fn_2d[
+    def input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[in_dtype, simd_width]:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
@@ -2297,7 +2279,7 @@ fn _rms_norm_fused_fp8_gpu[
 
     # Dispatch: select SIMD width and kernel strategy based on column count
     @parameter
-    fn launch[sw: Int, warp_tiling: Bool]() raises:
+    def launch[sw: Int, warp_tiling: Bool]() raises:
         _rms_norm_fused_fp8_gpu_launch[
             sw,
             in_dtype,
@@ -2332,7 +2314,7 @@ fn _rms_norm_fused_fp8_gpu[
         launch[1, False]()
 
 
-fn _rms_norm_fused_fp8_kernel_warp_tiling[
+def _rms_norm_fused_fp8_kernel_warp_tiling[
     mut: Bool,
     origin: Origin[mut=mut],
     LayoutType: TensorLayout,
@@ -2378,7 +2360,7 @@ fn _rms_norm_fused_fp8_kernel_warp_tiling[
     @always_inline
     @__copy_capture(gamma, weight_offset)
     @parameter
-    fn apply_gamma[
+    def apply_gamma[
         width: Int
     ](val: SIMD[accum_type, width], col: Int) -> SIMD[accum_type, width]:
         var gamma_val = gamma.load[width=width, alignment=align](
@@ -2434,7 +2416,7 @@ fn _rms_norm_fused_fp8_kernel_warp_tiling[
             output_fn[simd_width](row, idx, output_fp8)
 
 
-fn _rms_norm_fused_fp8_gpu_launch[
+def _rms_norm_fused_fp8_gpu_launch[
     simd_width: Int,
     in_dtype: DType,
     out_dtype: DType,
@@ -2469,7 +2451,7 @@ fn _rms_norm_fused_fp8_gpu_launch[
     @always_inline
     @parameter
     @__copy_capture(output)
-    fn output_fn[width: Int](row: Int, col: Int, val: SIMD[out_dtype, width]):
+    def output_fn[width: Int](row: Int, col: Int, val: SIMD[out_dtype, width]):
         """Write output to buffer."""
         output.store[width=width](IndexList[2](row, col), val)
 
@@ -2536,7 +2518,7 @@ fn _rms_norm_fused_fp8_gpu_launch[
             )
 
 
-fn _rms_norm_fused_fp8_kernel_block[
+def _rms_norm_fused_fp8_kernel_block[
     mut: Bool,
     origin: Origin[mut=mut],
     LayoutType: TensorLayout,
@@ -2581,7 +2563,7 @@ fn _rms_norm_fused_fp8_kernel_block[
     @always_inline
     @__copy_capture(gamma, weight_offset)
     @parameter
-    fn apply_gamma[
+    def apply_gamma[
         width: Int
     ](val: SIMD[accum_type, width], col: Int) -> SIMD[accum_type, width]:
         var gamma_val = gamma.load[width=width, alignment=align](
@@ -2651,7 +2633,7 @@ fn _rms_norm_fused_fp8_kernel_block[
 
 
 @always_inline
-fn rms_norm_shape[
+def rms_norm_shape[
     dtype: DType,
     single_thread_blocking_override: Bool,
 ](
@@ -2667,7 +2649,7 @@ fn rms_norm_shape[
     )
 
 
-fn group_norm_reshape[
+def group_norm_reshape[
     dtype: DType,
     rank: Int,
 ](
@@ -2702,7 +2684,7 @@ fn group_norm_reshape[
     }
 
 
-fn group_norm_gpu_warp_tiling[
+def group_norm_gpu_warp_tiling[
     LayoutType: TensorLayout,
     origin: MutOrigin,
     //,
@@ -2775,7 +2757,7 @@ fn group_norm_gpu_warp_tiling[
             )
 
 
-fn group_norm_gpu_block[
+def group_norm_gpu_block[
     LayoutType: TensorLayout,
     origin: MutOrigin,
     //,
@@ -2874,7 +2856,7 @@ fn group_norm_gpu_block[
                 )
 
 
-fn group_norm_gpu_multi_block_stats[
+def group_norm_gpu_multi_block_stats[
     StatsLayoutType: TensorLayout,
     stats_origin: MutOrigin,
     //,
@@ -2954,7 +2936,7 @@ fn group_norm_gpu_multi_block_stats[
             stats.ptr.store(base_idx + 2, row_count)
 
 
-fn group_norm_gpu_multi_block_norm[
+def group_norm_gpu_multi_block_norm[
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
     StatsLayoutType: TensorLayout,
@@ -3072,7 +3054,7 @@ fn group_norm_gpu_multi_block_norm[
                 )
 
 
-fn group_norm_gpu[
+def group_norm_gpu[
     dtype: DType,
     rank: Int,
     //,
@@ -3109,7 +3091,7 @@ fn group_norm_gpu[
     @parameter
     @always_inline
     @__copy_capture(shape, num_groups, channels_per_group)
-    fn input_fn_2d[
+    def input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) capturing -> SIMD[dtype, simd_width]:
         var n = row // num_groups
@@ -3318,7 +3300,7 @@ fn group_norm_gpu[
 
 
 @always_inline
-fn group_norm[
+def group_norm[
     dtype: DType,
     rank: Int,
     input_fn: fn[width: Int, _rank: Int](IndexList[_rank]) capturing -> SIMD[
@@ -3362,7 +3344,7 @@ fn group_norm[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return trace_arg("input", shape, dtype)
 
     with Trace[TraceLevel.OP, target=target](
@@ -3386,7 +3368,7 @@ fn group_norm[
 
 
 @always_inline
-fn group_norm_shape[
+def group_norm_shape[
     dtype: DType,
     single_thread_blocking_override: Bool,
 ](

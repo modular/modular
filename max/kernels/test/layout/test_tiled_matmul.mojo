@@ -25,17 +25,12 @@ struct Dim(ImplicitlyCopyable, RegisterPassable, Writable):
     var n: Int
     var k: Int
 
-    fn subrange(self, sub_dim: Self) -> Self:
+    def subrange(self, sub_dim: Self) -> Self:
         return Self(
             self.m // sub_dim.m, self.n // sub_dim.n, self.k // sub_dim.k
         )
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the dim.
 
         Args:
@@ -46,7 +41,7 @@ struct Dim(ImplicitlyCopyable, RegisterPassable, Writable):
 
 trait TiledOp:
     @staticmethod
-    fn op(
+    def op(
         dst: LayoutTensor[mut=True, ...],
         lhs: LayoutTensor,
         rhs: LayoutTensor,
@@ -57,7 +52,7 @@ trait TiledOp:
 # matrix multiply and accumulate
 struct MMA(TiledOp):
     @staticmethod
-    fn op(
+    def op(
         dst: LayoutTensor[mut=True, ...],
         lhs: LayoutTensor,
         rhs: LayoutTensor,
@@ -79,7 +74,7 @@ struct MMA(TiledOp):
 # matrix multiply and accumulate, vectorized and parallelized
 struct MMA_Vec(TiledOp):
     @staticmethod
-    fn op(
+    def op(
         dst: LayoutTensor[mut=True, ...],
         lhs: LayoutTensor,
         rhs: LayoutTensor,
@@ -93,7 +88,7 @@ struct MMA_Vec(TiledOp):
         for var m in range(M):
             for var n in range(N):
 
-                fn dot[width: Int](k: Int) unified {mut}:
+                def dot[width: Int](k: Int) unified {mut}:
                     dst.store[width](
                         m,
                         n,
@@ -107,7 +102,7 @@ struct MMA_Vec(TiledOp):
                 vectorize[width, size=K](dot)
 
 
-fn gemm_l2_cache[
+def gemm_l2_cache[
     mma: TiledOp, L1: Dim, L2: Dim
 ](
     dst: LayoutTensor[mut=True, ...], lhs: LayoutTensor, rhs: LayoutTensor
@@ -162,7 +157,7 @@ fn gemm_l2_cache[
     _ = l2_rhs_cache^
 
 
-fn gemm_l1_cache[
+def gemm_l1_cache[
     mma: TiledOp, L1: Dim, L2: Dim
 ](dst: LayoutTensor[mut=True, ...], lhs: LayoutTensor, rhs: LayoutTensor):
     comptime M = dst.shape[0]()
@@ -190,7 +185,7 @@ fn gemm_l1_cache[
     #     l1_rhs_cache.append(LayoutTensor[dtype, L1.n, L1.k]())
 
     @parameter
-    fn process_raw(m_1: Int):
+    def process_raw(m_1: Int):
         # Cache the current lhs tile and reuse it for all rhs tiles in the column
         var l1_lhs_cache = LayoutTensor[
             dst.dtype, Layout(IntTuple(L1.m, L1.k)), MutAnyOrigin
@@ -234,7 +229,7 @@ fn gemm_l1_cache[
     # _ = len(l1_rhs_cache)
 
 
-fn test_tiled_matmul[use_l1_cache: Bool]() raises:
+def test_tiled_matmul[use_l1_cache: Bool]() raises:
     if use_l1_cache:
         print("=== test_tiled_matmul_l1_cache")
     else:

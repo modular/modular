@@ -30,20 +30,15 @@ struct RasterOrder(Equatable, Hashable, TrivialRegisterPassable, Writable):
     comptime AlongM = Self(1)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self._value == 0:
             writer.write("rasterN")
         else:
@@ -64,7 +59,7 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
     comptime INVALID_WORK_INFO = Self(0, 0, 0, 0, False)
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
     ):
         self.m = 0
@@ -74,24 +69,19 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
         self.is_valid_tile = False
 
     @always_inline
-    fn is_valid(self) -> Bool:
+    def is_valid(self) -> Bool:
         return self.is_valid_tile
 
     @always_inline
-    fn is_final_split(self, k_tiles_per_output_tile: UInt32) -> Bool:
+    def is_final_split(self, k_tiles_per_output_tile: UInt32) -> Bool:
         return (self.k_start + self.num_k_tiles) == k_tiles_per_output_tile
 
     @always_inline
-    fn get_k_start(self) -> UInt32:
+    def get_k_start(self) -> UInt32:
         return self.k_start
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "(",
             self.m,
@@ -117,11 +107,11 @@ struct MatmulSchedule(TrivialRegisterPassable):
     comptime DS_SCHEDULER = Self(3)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
 
@@ -164,7 +154,7 @@ struct TileScheduler[
     )
 
     @always_inline
-    fn __init__(out self, prob_shape: IndexList[3]):
+    def __init__(out self, prob_shape: IndexList[3]):
         comptime if Self.schedule == MatmulSchedule.TILE2D:
             comptime assert _check_cluster(
                 Self.cluster, Self.raster_dim
@@ -200,7 +190,7 @@ struct TileScheduler[
             )
 
     @always_inline
-    fn get_current_work_info(mut self) -> WorkInfo:
+    def get_current_work_info(mut self) -> WorkInfo:
         comptime if Self.schedule == MatmulSchedule.DS_SCHEDULER:
             var m_block_idx: UInt32 = 0
             var n_block_idx: UInt32 = 0
@@ -229,11 +219,11 @@ struct TileScheduler[
             )
 
     @always_inline
-    fn advance(mut self):
+    def advance(mut self):
         self.idx += Self.num_grids
 
     @always_inline
-    fn fetch_next_work(mut self) -> WorkInfo:
+    def fetch_next_work(mut self) -> WorkInfo:
         comptime if Self.schedule == MatmulSchedule.DS_SCHEDULER:
             return self.fetch_next_work_ds()
         else:
@@ -241,7 +231,7 @@ struct TileScheduler[
             return self.get_current_work_info()
 
     @always_inline
-    fn _index_to_mn(self) -> Tuple[UInt, UInt]:
+    def _index_to_mn(self) -> Tuple[UInt, UInt]:
         """Map the thread block's index to coordinates of work tile."""
 
         comptime if Self.schedule == MatmulSchedule.TILE2D:
@@ -250,7 +240,7 @@ struct TileScheduler[
         return self._index_to_mn_tile1d()
 
     @always_inline
-    fn _index_to_mn_tile1d(self) -> Tuple[UInt, UInt]:
+    def _index_to_mn_tile1d(self) -> Tuple[UInt, UInt]:
         # Grid dim as if there is no persist kernel
         logical_grid_dim = Index[dtype=DType.uint32](
             ceildiv(self.prob_shape[1], Self.tile_shape[1]),
@@ -268,7 +258,7 @@ struct TileScheduler[
         return (m, n)
 
     @always_inline
-    fn _index_to_mn_tile2d(self) -> Tuple[UInt, UInt]:
+    def _index_to_mn_tile2d(self) -> Tuple[UInt, UInt]:
         # We consider a sweep on busy SMs a wave, not all SMs
         comptime log_num_grids = FastDiv[DType.uint32](Int(Self.num_grids))
         comptime log_grid_shape = FastDiv[DType.uint32](Self.grid_shape[0])
@@ -299,14 +289,14 @@ struct TileScheduler[
         )
 
     @always_inline
-    fn num_output_tiles(self) -> UInt:
+    def num_output_tiles(self) -> UInt:
         return UInt(
             ceildiv(self.prob_shape[0], Self.wave_shape[0])
             * ceildiv(self.prob_shape[1], Self.wave_shape[1])
         )
 
     @always_inline
-    fn fetch_next_work_ds(mut self) -> WorkInfo:
+    def fetch_next_work_ds(mut self) -> WorkInfo:
         var m_block_idx: UInt32 = 0
         var n_block_idx: UInt32 = 0
         var is_valid = self._get_next_block(m_block_idx, n_block_idx)
@@ -324,7 +314,7 @@ struct TileScheduler[
 
     # Calculates swizzled M and N block indices for better cache utilization
     @always_inline
-    fn _get_swizzled_block_idx(
+    def _get_swizzled_block_idx(
         self, num_m_blocks: UInt32, block_idx: Int
     ) -> Tuple[UInt32, UInt32]:
         """
@@ -354,7 +344,7 @@ struct TileScheduler[
 
     # Gets the next (m_block_idx, n_block_idx) pair for the current thread block to process
     @always_inline
-    fn _get_next_block(
+    def _get_next_block(
         mut self, mut m_block_idx: UInt32, mut n_block_idx: UInt32
     ) -> Bool:
         """
@@ -379,7 +369,7 @@ struct TileScheduler[
         return True
 
 
-fn _check_cluster(cluster_dims: IndexList[3], raster_dim: UInt32) -> Bool:
+def _check_cluster(cluster_dims: IndexList[3], raster_dim: UInt32) -> Bool:
     """Check if block cluster is along the raster dimension."""
 
     comptime for i in range(3):

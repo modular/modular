@@ -53,7 +53,7 @@ from std.utils import Index, IndexList, StaticTuple
 # ===-----------------------------------------------------------------------===#
 
 
-fn bytecount_with_dtype[dtype: DType](shape: IndexList) -> Int:
+def bytecount_with_dtype[dtype: DType](shape: IndexList) -> Int:
     return shape.flattened_length() * size_of[dtype]()
 
 
@@ -70,7 +70,9 @@ struct StateContext(TrivialRegisterPassable):
     var ctx_ptr: OpaquePointer[MutAnyOrigin]
 
     @always_inline
-    fn __init__(out self, num_slots: Int, ctx_ptr: OpaquePointer[MutAnyOrigin]):
+    def __init__(
+        out self, num_slots: Int, ctx_ptr: OpaquePointer[MutAnyOrigin]
+    ):
         self.num_slots = num_slots
         self.ctx_ptr = ctx_ptr
 
@@ -80,7 +82,7 @@ struct StateContext(TrivialRegisterPassable):
         )
 
     @always_inline
-    fn __getitem__(self, index: Int) -> OpaquePointer[MutAnyOrigin]:
+    def __getitem__(self, index: Int) -> OpaquePointer[MutAnyOrigin]:
         assert 0 <= index < self.num_slots, "index must be within bounds"
         return external_call[
             "MGP_RT_GetContextPayloadPtr",
@@ -88,7 +90,7 @@ struct StateContext(TrivialRegisterPassable):
         ](index, self.ctx_ptr)
 
 
-fn pack_string_res(
+def pack_string_res(
     str_ptr: UnsafePointer[Byte, ImmutAnyOrigin], str_len: Int
 ) raises -> String:
     var span = Span(ptr=str_ptr, length=str_len)
@@ -103,7 +105,7 @@ fn pack_string_res(
 
 @register_internal("builtin.create_error_async_values_and_destruct_error")
 @no_inline
-fn create_error_async_values_and_destruct_error(
+def create_error_async_values_and_destruct_error(
     async_ptr: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
     async_len: Int,
     var err: Error,
@@ -120,27 +122,27 @@ fn create_error_async_values_and_destruct_error(
 
 @register_internal("builtin.create_index_async")
 @no_inline
-fn create_index_async(value: Int, async_ptr: OpaquePointer[MutAnyOrigin]):
+def create_index_async(value: Int, async_ptr: OpaquePointer[MutAnyOrigin]):
     external_call["MGP_RT_CreateAsync_ssizet", NoneType](value, async_ptr)
 
 
 @register_internal("builtin.create_si64_async")
 @no_inline
 @export
-fn create_si64_async(value: Int64, async_ptr: OpaquePointer[MutAnyOrigin]):
+def create_si64_async(value: Int64, async_ptr: OpaquePointer[MutAnyOrigin]):
     external_call["MGP_RT_CreateAsync_int64t", NoneType](value, async_ptr)
 
 
 @register_internal("builtin.create_chain_async")
 @no_inline
-fn create_chain_async(async_ptr: OpaquePointer[MutAnyOrigin]):
+def create_chain_async(async_ptr: OpaquePointer[MutAnyOrigin]):
     external_call["MGP_RT_CreateAsync_chain", NoneType](async_ptr)
 
 
 @register_internal("builtin.create_bool_async")
 @register_internal("builtin.create_i1_async")
 @no_inline
-fn create_i1_async(
+def create_i1_async(
     value: Bool,
     async_ptr: OpaquePointer[MutAnyOrigin],
 ):
@@ -149,7 +151,7 @@ fn create_i1_async(
 
 @register_internal("builtin.create_buffer_ref_async")
 @no_inline
-fn create_buffer_ref_async(
+def create_buffer_ref_async(
     buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
     async_ptr: OpaquePointer[MutAnyOrigin],
     call_ctx: DeviceContextPtr,
@@ -161,7 +163,7 @@ fn create_buffer_ref_async(
 
 @register_internal("builtin.create_non_tracked_buffer_ref_async")
 @no_inline
-fn create_non_tracked_buffer_ref_async(
+def create_non_tracked_buffer_ref_async(
     buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
     async_ptr: OpaquePointer[MutAnyOrigin],
 ):
@@ -172,7 +174,7 @@ fn create_non_tracked_buffer_ref_async(
 
 @register_internal("builtin.create_non_tracked_tensor_async")
 @no_inline
-fn create_non_tracked_tensor_async[
+def create_non_tracked_tensor_async[
     tensor_rank: Int,
     buffer_rank: Int,
     dtype: DType,
@@ -195,7 +197,7 @@ fn create_non_tracked_tensor_async[
 
 @register_internal("builtin.create_buffer_ref_with_borrow_async")
 @no_inline
-fn create_buffer_ref_with_borrow_async[
+def create_buffer_ref_with_borrow_async[
     borrowee_type: Int,
 ](
     buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
@@ -213,7 +215,7 @@ fn create_buffer_ref_with_borrow_async[
 
 @register_internal("builtin.create_tensor_spec_async")
 @no_inline
-fn create_tensor_spec_async[
+def create_tensor_spec_async[
     spec_rank: Int
 ](spec: IndexList[spec_rank], async_ptr: OpaquePointer[MutAnyOrigin],):
     # Mojo impl is bitwise compatible with cpp variant, can construct TensorSpec in mojo
@@ -231,7 +233,7 @@ fn create_tensor_spec_async[
 
 @register_internal("builtin.create_tensor_with_borrow_async")
 @no_inline
-fn create_tensor_async[
+def create_tensor_async[
     tensor_rank: Int,
     buffer_rank: Int,
     dtype: DType,
@@ -260,13 +262,13 @@ fn create_tensor_async[
 
 
 @export
-fn empty_destructor(ptr: UnsafePointer[UInt8, MutExternalOrigin]):
+def empty_destructor(ptr: UnsafePointer[UInt8, MutExternalOrigin]):
     pass
 
 
 @register_internal("builtin.create_mojo_value_async")
 @no_inline
-fn create_mojo_value_async(
+def create_mojo_value_async(
     val_ptr: UnsafePointer[UInt8, MutAnyOrigin],
     async_ptr: OpaquePointer[MutAnyOrigin],
     size: Int,
@@ -299,7 +301,7 @@ fn create_mojo_value_async(
 
 @register_internal("builtin.create_python_mojo_value_async")
 @no_inline
-fn create_python_mojo_value_async(
+def create_python_mojo_value_async(
     val_ptr: UnsafePointer[UInt8, MutAnyOrigin],
     async_ptr: OpaquePointer[MutAnyOrigin],
     size: Int,
@@ -322,21 +324,9 @@ fn create_python_mojo_value_async(
     )
 
 
-@register_internal("builtin.transfer_async")
-@no_inline
-fn transfer_async(
-    async_src: OpaquePointer[MutAnyOrigin],
-    async_dst: OpaquePointer[MutAnyOrigin],
-):
-    external_call[
-        "MGP_RT_TransferAsyncRef",
-        NoneType,
-    ](async_src, async_dst)
-
-
 @register_internal("builtin.unpack_async")
 @no_inline
-fn unpack_async(
+def unpack_async(
     async_ptr: OpaquePointer[MutAnyOrigin],
 ) -> OpaquePointer[MutAnyOrigin]:
     return external_call[
@@ -347,7 +337,7 @@ fn unpack_async(
 
 @register_internal("builtin.unpack_device_ctx")
 @no_inline
-fn unpack_device_ctx(
+def unpack_device_ctx(
     async_ptr: OpaquePointer[MutAnyOrigin],
 ) -> DeviceContextPtr:
     var ptr = external_call[
@@ -360,7 +350,7 @@ fn unpack_device_ctx(
 
 @register_internal("builtin.unpack_buffer_ref")
 @no_inline
-fn unpack_buffer_ref(
+def unpack_buffer_ref(
     async_ptr: OpaquePointer[MutAnyOrigin],
 ) -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
     var size: UInt64 = 0
@@ -374,7 +364,7 @@ fn unpack_buffer_ref(
 
 @register_internal("builtin.unpack_tensor")
 @no_inline
-fn unpack_tensor[
+def unpack_tensor[
     buffer_rank: Int,
     tensor_rank: Int,
     dtype: DType,
@@ -405,7 +395,7 @@ fn unpack_tensor[
 
 @register_internal("builtin.unpack_tensor_spec")
 @no_inline
-fn unpack_tensor_spec[
+def unpack_tensor_spec[
     spec_rank: Int
 ](async_ptr: OpaquePointer[MutAnyOrigin]) -> IndexList[spec_rank]:
     var storage = InlineArray[Int, spec_rank](uninitialized=True)
@@ -423,7 +413,7 @@ fn unpack_tensor_spec[
 
 @register_internal("builtin.unpack_context")
 @no_inline
-fn unpack_context(
+def unpack_context(
     async_ptr: OpaquePointer[MutAnyOrigin],
 ) -> StateContext:
     # We want to construct this because we want all payloads to be implemented
@@ -437,7 +427,7 @@ fn unpack_context(
 
 @register_internal("builtin.get_buffer_data")
 @always_inline
-fn get_buffer_data(
+def get_buffer_data(
     buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin]
 ) -> UnsafePointer[Int8, MutAnyOrigin]:
     return buffer.data
@@ -450,7 +440,7 @@ fn get_buffer_data(
 
 @register_internal("mgp.tensor.create")
 @no_inline
-fn mgp_tensor_create[
+def mgp_tensor_create[
     spec_rank: Int,
     buffer_rank: Int,
     dtype: DType,
@@ -475,7 +465,7 @@ fn mgp_tensor_create[
 
 @register_internal("mgp.tensor.extract.tensor_spec")
 @no_inline
-fn mgp_tensor_extract_tensor_spec[
+def mgp_tensor_extract_tensor_spec[
     tensor_rank: Int,
     buffer_rank: Int,
     dtype: DType,
@@ -494,7 +484,7 @@ fn mgp_tensor_extract_tensor_spec[
 
 @register_internal("mgp.tensor.extract.buffer")
 @no_inline
-fn mgp_tensor_extract_buffer[
+def mgp_tensor_extract_buffer[
     buffer_rank: Int,
     dtype: DType,
 ](buffer: NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin]) -> NDBuffer[
@@ -513,7 +503,7 @@ fn mgp_tensor_extract_buffer[
 
 @register_internal("mgp.buffer.alloc")
 @no_inline
-fn mgp_buffer_alloc(
+def mgp_buffer_alloc(
     byte_size: Int, dev_context: DeviceContextPtr
 ) raises -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
     # Default to alignment of 0 which means kPreferredMemoryAlignment if cRawAlign is kUnknownSize (SizeUtils.h).
@@ -527,7 +517,7 @@ fn mgp_buffer_alloc(
 
 @register_internal("mgp.buffer.constant")
 @export
-fn mgp_buffer_constant(
+def mgp_buffer_constant(
     resource_ptr: OpaquePointer[MutAnyOrigin],
     resource_bytecount: Int,
 ) -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
@@ -539,7 +529,7 @@ fn mgp_buffer_constant(
 
 
 @register_internal("mgp.buffer.constant.external")
-fn mgp_buffer_constant_external(
+def mgp_buffer_constant_external(
     weights: UnsafePointer[WeightsRegistry, MutAnyOrigin],
     name_ptr: UnsafePointer[Byte, ImmutAnyOrigin],
     name_len: UInt,
@@ -568,7 +558,7 @@ fn mgp_buffer_constant_external(
 
 
 @no_inline
-fn fill_buffer[
+def fill_buffer[
     dtype: DType
 ](
     buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
@@ -583,7 +573,7 @@ fn fill_buffer[
 
 @register_internal("mgp.buffer.set_with_index")
 @no_inline
-fn mgp_buffer_set_with_index[
+def mgp_buffer_set_with_index[
     bDevice: StaticString
 ](buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin], *vals: Int) raises:
     assert is_cpu[bDevice](), "set_with_index can only work on cpu buffers"
@@ -604,7 +594,7 @@ fn mgp_buffer_set_with_index[
 
 @register_internal("mgp.buffer.to_bool")
 @no_inline
-fn mgp_buffer_to_bool[
+def mgp_buffer_to_bool[
     bDevice: StaticString
 ](buffer: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin]) -> Bool:
     assert is_cpu[bDevice](), "to_bool can only work on cpu buffers"
@@ -615,7 +605,7 @@ fn mgp_buffer_to_bool[
 
 @register_internal("mgp.buffer.to_index")
 @no_inline
-fn mgp_buffer_to_index(
+def mgp_buffer_to_index(
     buffer: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin]
 ) raises -> Int:
     var bufSize = buffer.num_elements()
@@ -631,7 +621,7 @@ fn mgp_buffer_to_index(
 
 @register_internal("mgp.buffer.slice")
 @no_inline
-fn mgp_buffer_slice(
+def mgp_buffer_slice(
     buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin], offset: Int, size: Int
 ) -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
     return NDBuffer[rank=1, DType.int8](buffer.data + offset, Index(size))
@@ -639,7 +629,7 @@ fn mgp_buffer_slice(
 
 @register_internal("mgp.buffer.concat")
 @no_inline
-fn mgp_buffer_concat[
+def mgp_buffer_concat[
     bDevice: StaticString
 ](
     output: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
@@ -675,7 +665,7 @@ fn mgp_buffer_concat[
 
 @register_internal("mgp.buffer.device_to_host")
 @no_inline
-fn mgp_buffer_device_to_host[
+def mgp_buffer_device_to_host[
     cOtherDevice: StaticString,
     dHostDevice: StaticString,
 ](
@@ -699,7 +689,7 @@ fn mgp_buffer_device_to_host[
 
 @register_internal("mgp.buffer.device_to_device")
 @no_inline
-fn mgp_buffer_device_to_device[
+def mgp_buffer_device_to_device[
     cSrcDevice: StaticString,
     dDstDevice: StaticString,
 ](
@@ -734,7 +724,7 @@ fn mgp_buffer_device_to_device[
 
 @register_internal("mgp.buffer.host_to_device")
 @no_inline
-fn mgp_buffer_host_to_device[
+def mgp_buffer_host_to_device[
     cHostDevice: StaticString,
     dOtherDevice: StaticString,
 ](
@@ -758,7 +748,7 @@ fn mgp_buffer_host_to_device[
 
 @register_internal("mgp.buffer.get_cached")
 @no_inline
-fn mgp_buffer_get_cached(
+def mgp_buffer_get_cached(
     ctx: StateContext,
     buffer_slot: UInt,
     storage_ref_addr: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
@@ -780,7 +770,7 @@ fn mgp_buffer_get_cached(
 
 @register_internal("mgp.buffer.remove_cached")
 @no_inline
-fn mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: UInt64):
+def mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: UInt64):
     external_call["MGP_RT_RemoveCachedBuffer", NoneType](
         Int(buffer_slot), ctx.ctx_ptr
     )
@@ -788,7 +778,7 @@ fn mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: UInt64):
 
 @register_internal("mgp.buffer.get_size")
 @no_inline
-fn mgp_buffer_get_size(
+def mgp_buffer_get_size(
     buf: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin]
 ) -> Int:
     return buf.num_elements()
@@ -796,7 +786,7 @@ fn mgp_buffer_get_size(
 
 @register_internal("destruct_async_refs")
 @no_inline
-fn destruct_async_refs(
+def destruct_async_refs(
     storage_ref_addr: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
     size: Int,
     direct_ref: Bool,
@@ -813,7 +803,7 @@ fn destruct_async_refs(
 
 @register_internal("mgp.tensor_spec.create")
 @no_inline
-fn mgp_tensor_spec_create[
+def mgp_tensor_spec_create[
     aRawDims: DimList,
     aRawDimsRank: Int,
 ](*runtimeDims: Int) -> IndexList[aRawDimsRank]:
@@ -832,7 +822,7 @@ fn mgp_tensor_spec_create[
 
 @register_internal("mgp.tensor_spec.get_dim")
 @no_inline
-fn mgp_tensor_spec_get_dim[
+def mgp_tensor_spec_get_dim[
     spec_rank: Int, axis: UInt64
 ](spec: IndexList[spec_rank]) -> Int:
     comptime assert axis < UInt64(
@@ -847,20 +837,20 @@ fn mgp_tensor_spec_get_dim[
 
 
 @export
-fn mgp_device_context_destroy(dev_ctx: DeviceContextPtr):
+def mgp_device_context_destroy(dev_ctx: DeviceContextPtr):
     # DeviceContext is refcounted, we don't need to explicitly destroy it
     pass
 
 
 @register_internal("mgp.sync")
 @no_inline
-fn mgp_sync(ctx: StateContext, dev_ctx: DeviceContextPtr) raises:
+def mgp_sync(ctx: StateContext, dev_ctx: DeviceContextPtr) raises:
     dev_ctx[].synchronize()
 
 
 @register_internal("mgp.debug.print")
 @no_inline
-fn mgp_debug_print[
+def mgp_debug_print[
     aDebugString: StaticString,
     bLabel: StaticString,
 ](ctx: StateContext,) raises:
@@ -872,7 +862,7 @@ fn mgp_debug_print[
 
 @register_internal("mgp.debug.tensor.print")
 @no_inline
-fn mgp_debug_tensor_print[
+def mgp_debug_tensor_print[
     spec_rank: Int,
     dtype: DType,
 ](
@@ -898,134 +888,134 @@ fn mgp_debug_tensor_print[
 
 
 @register_internal("float4_e2m1fn")
-fn DTypeFloat4E2M1TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeFloat4E2M1TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float4_e2m1fn._mlir_value
 
 
 @register_internal("float8_e8m0fnu")
-fn DTypeFloat8E8M0FnuTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeFloat8E8M0FnuTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float8_e8m0fnu._mlir_value
 
 
 @register_internal("float8_e5m2")
-fn DTypeFloat8E5M2TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeFloat8E5M2TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float8_e5m2._mlir_value
 
 
 @register_internal("float8_e5m2fnuz")
-fn DTypeFloat8E5M2FnuzTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeFloat8E5M2FnuzTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float8_e5m2fnuz._mlir_value
 
 
 @register_internal("float8_e3m4")
-fn DTypeFloat8E3M4TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeFloat8E3M4TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float8_e3m4._mlir_value
 
 
 @register_internal("float8_e4m3fn")
-fn DTypeFloat8E4M3FnTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeFloat8E4M3FnTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float8_e4m3fn._mlir_value
 
 
 @register_internal("float8_e4m3fnuz")
-fn DTypeFloat8E4M3FnuzTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeFloat8E4M3FnuzTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float8_e4m3fnuz._mlir_value
 
 
 @register_internal("bfloat16")
-fn DTypeBFloat16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeBFloat16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.bfloat16._mlir_value
 
 
 @register_internal("float16")
-fn DTypeFloat16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeFloat16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float16._mlir_value
 
 
 @register_internal("float32")
-fn DTypeFloat32TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeFloat32TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float32._mlir_value
 
 
 @register_internal("float64")
-fn DTypeFloat64TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeFloat64TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float64._mlir_value
 
 
 @register_internal("int8")
-fn DTypeInt8TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeInt8TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.int8._mlir_value
 
 
 @register_internal("int16")
-fn DTypeInt16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeInt16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.int16._mlir_value
 
 
 @register_internal("int32")
-fn DTypeInt32TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeInt32TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.int32._mlir_value
 
 
 @register_internal("uint32")
-fn DTypeUInt32TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeUInt32TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.uint32._mlir_value
 
 
 @register_internal("uint64")
-fn DTypeUInt64TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeUInt64TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.uint64._mlir_value
 
 
 @register_internal("int64")
-fn DTypeInt64TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeInt64TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.int64._mlir_value
 
 
 @register_internal("uint8")
-fn DTypeUInt8TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeUInt8TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.uint8._mlir_value
 
 
 @register_internal("uint16")
-fn DTypeUInt16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeUInt16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.uint16._mlir_value
 
 
 @register_internal("bool")
-fn DTypeBoolTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+def DTypeBoolTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.bool._mlir_value
 
 
 @register_internal("index")
-fn IndexTypeDef(ty: Int) -> Int:
+def IndexTypeDef(ty: Int) -> Int:
     return ty
 
 
 @register_internal("deviceContext")
-fn DeviceContextDef(ty: DeviceContextPtr):
+def DeviceContextDef(ty: DeviceContextPtr):
     pass
 
 
 @register_internal("simd")
-fn SimdTypeDef[
+def SimdTypeDef[
     dtype: DType, width: Int
 ](ty: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return ty
 
 
 @register_internal("indices")
-fn TensorIndicesTypeDef[rank: Int](ty: IndexList[rank]) -> IndexList[rank]:
+def TensorIndicesTypeDef[rank: Int](ty: IndexList[rank]) -> IndexList[rank]:
     return ty
 
 
 @register_internal("dim_type")
-fn DimTypeDef(ty: Dim) -> Dim:
+def DimTypeDef(ty: Dim) -> Dim:
     return ty
 
 
 @register_internal("managed_tensor_slice")
-fn ManagedTensorSliceDef[
+def ManagedTensorSliceDef[
     mut: Bool,
     input: IO,
     dtype: DType,
@@ -1045,18 +1035,18 @@ fn ManagedTensorSliceDef[
 
 
 @register_internal("create_unknown_dim")
-fn create_unknown_dim() -> Dim:
+def create_unknown_dim() -> Dim:
     return Dim()
 
 
 @register_internal("create_known_dim")
-fn create_known_dim[known_val: Int]() -> Dim:
+def create_known_dim[known_val: Int]() -> Dim:
     return Dim(known_val)
 
 
 @register_internal("reshape_contiguous_managed_tensor_slice")
 @always_inline
-fn reshape_contiguous_buffer[
+def reshape_contiguous_buffer[
     dtype: DType, old_rank: Int, new_rank: Int, mut: Bool, input: IO
 ](
     buffer: ManagedTensorSlice[
@@ -1075,7 +1065,7 @@ fn reshape_contiguous_buffer[
 
 @register_internal("get_simd_width_for_dtypes")
 @always_inline
-fn get_simd_width_for_dtypes[
+def get_simd_width_for_dtypes[
     dtypes: StaticTuple[DType, _], target: StaticString
 ]() -> Int:
     comptime assert dtypes.size > 0
@@ -1089,7 +1079,7 @@ fn get_simd_width_for_dtypes[
 
 
 @register_internal("get_address_space")
-fn get_address_space() -> AddressSpace:
+def get_address_space() -> AddressSpace:
     return AddressSpace.GENERIC
 
 
@@ -1097,7 +1087,7 @@ fn get_address_space() -> AddressSpace:
 # Used by the graph compiler to construct tensors from MGP repr. of tensor
 @register_internal("to_managed_tensor_slice")
 @always_inline
-fn to_managed_tensor_slice[
+def to_managed_tensor_slice[
     dtype: DType, rank: Int, mut: Bool, input: IO
 ](
     data: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -1123,7 +1113,7 @@ fn to_managed_tensor_slice[
 
 # Extract a scalar from a managed tensor slice.
 @always_inline
-fn _get_scalar_from_managed_tensor_slice[
+def _get_scalar_from_managed_tensor_slice[
     dtype: DType,
 ](tensor: ManagedTensorSlice[dtype=dtype, ...]) -> Scalar[dtype]:
     # Assumes that tensor is on the host!
@@ -1134,7 +1124,7 @@ fn _get_scalar_from_managed_tensor_slice[
 
 @register_internal("get_scalar_from_managed_tensor_slice")
 @always_inline
-fn get_scalar_from_managed_tensor_slice[
+def get_scalar_from_managed_tensor_slice[
     dtype: DType, mut: Bool, input: IO
 ](
     tensor: ManagedTensorSlice[
@@ -1147,14 +1137,14 @@ fn get_scalar_from_managed_tensor_slice[
 
 @register_internal("get_int_from_shape")
 @always_inline
-fn get_int_from_shape[
+def get_int_from_shape[
     param_index: Int, rank: Int
 ](shape: IndexList[rank]) -> Int:
     return shape[param_index]
 
 
 @always_inline
-fn _to_managed_tensor_slice_index_list_shape[
+def _to_managed_tensor_slice_index_list_shape[
     dtype: DType, rank: Int, mut: Bool, input: IO
 ](
     data: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -1177,7 +1167,7 @@ fn _to_managed_tensor_slice_index_list_shape[
 # Helper method used by compiler to reconcile MGP list with dtype Mojo expects.
 @register_internal("to_managed_tensor_slice_list")
 @always_inline
-fn to_managed_tensor_slice_list[
+def to_managed_tensor_slice_list[
     dtype: DType, rank: Int, mut: Bool, input: IO
 ](
     raw_list_ptr: OpaquePointer[MutAnyOrigin],
@@ -1228,73 +1218,73 @@ fn to_managed_tensor_slice_list[
 struct MyInt(Movable):
     var val: Int
 
-    fn __init__(out self, val: Int):
+    def __init__(out self, val: Int):
         self.val = val
 
-    fn __init__(out self, *, deinit take: MyInt):
+    def __init__(out self, *, deinit take: MyInt):
         print("MyInt.__moveinit__", take.val)
         self.val = take.val
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         print("MyInt.__del__", self.val)
 
 
 @register_internal("testfuse.my_int.from_index")
 @no_inline
-fn test_my_int_from_index(x: Int) -> MyInt:
+def test_my_int_from_index(x: Int) -> MyInt:
     return MyInt(x)
 
 
 @register_internal("testfuse.my_int.square")
 @no_inline
-fn test_my_int_square(x: MyInt) -> MyInt:
+def test_my_int_square(x: MyInt) -> MyInt:
     return MyInt(x.val * x.val)
 
 
 @register_internal("testfuse.my_int.to_index")
 @no_inline
-fn test_my_int_to_index(x: MyInt) -> Int:
+def test_my_int_to_index(x: MyInt) -> Int:
     return x.val
 
 
 struct MyIntReg(TrivialRegisterPassable):
     var val: Int
 
-    fn __init__(out self, val: Int):
+    def __init__(out self, val: Int):
         self.val = val
 
 
 @register_internal("testfuse.my_int_reg.square")
 @no_inline
-fn test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
+def test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
     return MyIntReg(x.val * x.val)
 
 
 struct MyIntReg2(ImplicitlyCopyable, RegisterPassable):
     var val: Int
 
-    fn __init__(out self, val: Int):
+    def __init__(out self, val: Int):
         self.val = val
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         print("MyIntReg2.__del__", self.val)
 
 
 @register_internal("testfuse.my_int_reg2.from_index")
 @no_inline
-fn test_my_int_reg2_from_index(x: Int) -> MyIntReg2:
+def test_my_int_reg2_from_index(x: Int) -> MyIntReg2:
     return MyIntReg2(x)
 
 
 @register_internal("testfuse.my_int_reg2.square")
 @no_inline
-fn test_my_int_reg2_square(x: MyIntReg2) -> MyIntReg2:
+def test_my_int_reg2_square(x: MyIntReg2) -> MyIntReg2:
     return MyIntReg2(x.val * x.val)
 
 
 @register_internal("testfuse.my_int_reg2.to_index")
 @no_inline
-fn test_my_int_reg2_to_index(x: MyIntReg2) -> Int:
+def test_my_int_reg2_to_index(x: MyIntReg2) -> Int:
     return x.val
 
 
@@ -1332,13 +1322,13 @@ comptime StateContextRef = OpaquePointer[MutAnyOrigin]
 
 @register_internal("mogg.as_scalar")
 @always_inline
-fn mogg_as_scalar(tensor: ManagedTensorSlice) -> Scalar[tensor.dtype]:
+def mogg_as_scalar(tensor: ManagedTensorSlice) -> Scalar[tensor.dtype]:
     return _get_scalar_from_managed_tensor_slice(tensor)
 
 
 @register_internal("mogg.async.__del__")
 @no_inline
-fn mogg_async_del(
+def mogg_async_del(
     async_ptr: UnsafePointer[AnyAsyncValueRefPtr, MutAnyOrigin], size: Int
 ):
     """
@@ -1350,7 +1340,9 @@ fn mogg_async_del(
 
 @register_internal("mogg.async.unpack")
 @no_inline
-fn mogg_async_unpack[T: __TypeOfAllTypes](async_ptr: AnyAsyncValueRefPtr) -> T:
+def mogg_async_unpack[
+    T: TrivialRegisterPassable
+](async_ptr: AnyAsyncValueRefPtr) -> T:
     """
     Returns the value stored in the AnyAsyncValueRef.
     """
@@ -1368,28 +1360,28 @@ struct MoggAsyncPackHelper:
     types.
     """
 
-    fn __init__(out self, data: Int, async_ptr: AnyAsyncValueRefPtr):
+    def __init__(out self, data: Int, async_ptr: AnyAsyncValueRefPtr):
         """
         Packs an integer value into the asynchronous context.
         Calls create_index_async to handle the packing.
         """
         create_index_async(data, async_ptr)
 
-    fn __init__(out self, data: Int64, async_ptr: AnyAsyncValueRefPtr):
+    def __init__(out self, data: Int64, async_ptr: AnyAsyncValueRefPtr):
         """
         Packs a 64-bit integer value into the asynchronous context.
         Calls create_si64_async to handle the packing.
         """
         create_si64_async(data, async_ptr)
 
-    fn __init__(out self, data: Bool, async_ptr: AnyAsyncValueRefPtr):
+    def __init__(out self, data: Bool, async_ptr: AnyAsyncValueRefPtr):
         """
         Packs a boolean value into the asynchronous context.
         Calls create_i1_async to handle the packing.
         """
         create_i1_async(data, async_ptr)
 
-    fn __init__[
+    def __init__[
         spec_rank: Int
     ](out self, data: IndexList[spec_rank], async_ptr: AnyAsyncValueRefPtr):
         """
@@ -1398,7 +1390,7 @@ struct MoggAsyncPackHelper:
         """
         create_tensor_spec_async(data, async_ptr)
 
-    fn __init__(
+    def __init__(
         out self,
         data: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
         device_ctx_ptr: DeviceContextPtr,
@@ -1409,7 +1401,7 @@ struct MoggAsyncPackHelper:
         """
         create_buffer_ref_async(data, async_ptr, device_ctx_ptr)
 
-    fn __init__(
+    def __init__(
         out self,
         var data: Some[Movable & ImplicitlyDestructible],
         async_ptr: AnyAsyncValueRefPtr,
@@ -1422,7 +1414,7 @@ struct MoggAsyncPackHelper:
 
         # MGP_RT_CreateOwnedAsyncMojoValue expects a type erased destructor
         @always_inline("nodebug")
-        fn erased_destructor(ptr: UnsafePointer[UInt8, MutExternalOrigin]):
+        def erased_destructor(ptr: UnsafePointer[UInt8, MutExternalOrigin]):
             ptr.bitcast[Type]().destroy_pointee()
 
         var dst_ptr = external_call[
@@ -1441,7 +1433,7 @@ struct MoggAsyncPackHelper:
 
 @register_internal("mogg.async.pack")
 @no_inline
-fn mogg_async_pack(pack_helper: MoggAsyncPackHelper):
+def mogg_async_pack(pack_helper: MoggAsyncPackHelper):
     """
     Packs asynchronous data using the provided MoggAsyncPackHelper.
 
@@ -1454,7 +1446,7 @@ fn mogg_async_pack(pack_helper: MoggAsyncPackHelper):
 
 
 @no_inline
-fn mogg_async_pack_borrow[
+def mogg_async_pack_borrow[
     buffer_rank: Int,
     dtype: DType,
     //,
@@ -1487,7 +1479,7 @@ fn mogg_async_pack_borrow[
 
 
 @no_inline
-fn mogg_async_pack_borrow[
+def mogg_async_pack_borrow[
     spec_rank: Int,  # unused
     is_tensor: Bool,  # unused
 ](
@@ -1506,7 +1498,7 @@ fn mogg_async_pack_borrow[
 
 @register_internal("mogg.tensor.__init__")
 @always_inline
-fn mogg_tensor_init[
+def mogg_tensor_init[
     dtype: DType,
     rank: Int,
     mut: Bool,
@@ -1536,7 +1528,7 @@ fn mogg_tensor_init[
 
 @register_internal("mogg.async.ready")
 @no_inline
-fn mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
+def mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
     """
     Marks the chain as ready.
     """
@@ -1545,7 +1537,7 @@ fn mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
 
 @register_internal("mogg.async.check_task_error")
 @no_inline
-fn mogg_async_check_task_error(mut error: Optional[Error]) raises:
+def mogg_async_check_task_error(mut error: Optional[Error]) raises:
     """Raises the captured error from an async task, if present."""
     if error:
         raise error.take()
@@ -1553,7 +1545,7 @@ fn mogg_async_check_task_error(mut error: Optional[Error]) raises:
 
 @register_internal("mogg.async.error")
 @no_inline
-fn mogg_async_error(
+def mogg_async_error(
     async_ptr: AnyAsyncValueRefPtr,
     err: Error,
     source_notes: String = "",
@@ -1578,7 +1570,7 @@ fn mogg_async_error(
 
 @register_internal("tmp.reshape_contiguous_managed_tensor_slice")
 @always_inline
-fn tmp_reshape_contiguous_buffer[
+def tmp_reshape_contiguous_buffer[
     static_shape: DimList, static_stride: DimList, new_rank: Int
 ](
     buffer: ManagedTensorSlice,
@@ -1609,7 +1601,7 @@ fn tmp_reshape_contiguous_buffer[
 
 @register_internal("tmp.mgp.buffer.get_cached")
 @no_inline
-fn tmp_mgp_buffer_get_cached(
+def tmp_mgp_buffer_get_cached(
     ctx: StateContextRef,
     buffer_slot: Int,
 ) -> Tuple[NDBuffer[rank=1, DType.int8, MutAnyOrigin], TensorBufferRefPtr]:
@@ -1640,13 +1632,13 @@ fn tmp_mgp_buffer_get_cached(
 
 @register_internal("tmp.mgp.buffer.remove_cached")
 @no_inline
-fn tmp_mgp_buffer_remove_cached(ctx: StateContextRef, buffer_slot: UInt64):
+def tmp_mgp_buffer_remove_cached(ctx: StateContextRef, buffer_slot: UInt64):
     external_call["TMP_MGP_RT_RemoveCachedBuffer", NoneType](buffer_slot, ctx)
 
 
 @register_internal("mgp.assert")
 @no_inline
-fn mgp_assert(
+def mgp_assert(
     cond: Bool, msg_ptr: UnsafePointer[Byte, ImmutAnyOrigin], msg_len: Int
 ) raises:
     """
@@ -1663,7 +1655,7 @@ fn mgp_assert(
 
 @register_internal("split_dim_indices")
 @always_inline
-fn split_dim_indices[
+def split_dim_indices[
     rank: Int, axis: Int
 ](indices: IndexList[rank], new_shape_dim: Int) -> IndexList[rank + 1]:
     var out = IndexList[rank + 1]()
@@ -1690,7 +1682,7 @@ fn split_dim_indices[
 
 @register_internal("merge_dim_indices")
 @always_inline
-fn merge_dim_indices[
+def merge_dim_indices[
     rank: Int, axis: Int
 ](indices: IndexList[rank], old_shape_dim: Int) -> IndexList[rank - 1]:
     var out = IndexList[rank - 1]()
@@ -1715,7 +1707,7 @@ fn merge_dim_indices[
 
 @register_internal("insert_index")
 @always_inline
-fn insert_index[
+def insert_index[
     rank: Int, axis: Int, value: Int
 ](indices: IndexList[rank]) -> IndexList[rank + 1]:
     var out = IndexList[rank + 1]()
@@ -1731,14 +1723,14 @@ fn insert_index[
     return out
 
 
-fn all_zeros(indices: IndexList) -> Bool:
+def all_zeros(indices: IndexList) -> Bool:
     comptime for i in range(indices.size):
         if indices[i] != 0:
             return False
     return True
 
 
-fn get_buffer_mem_storage_handle(
+def get_buffer_mem_storage_handle(
     buffer: OpaquePointer[MutAnyOrigin],
     type: Int,
     memStorageHandle: OpaquePointer[MutAnyOrigin],
@@ -1750,7 +1742,9 @@ fn get_buffer_mem_storage_handle(
 
 @register_internal("pop.select")
 @always_inline
-fn select[T: __TypeOfAllTypes](cond: Bool, true_case: T, false_case: T) -> T:
+def select[
+    T: TrivialRegisterPassable
+](cond: Bool, true_case: T, false_case: T) -> T:
     if cond:
         return true_case
 
@@ -1759,7 +1753,7 @@ fn select[T: __TypeOfAllTypes](cond: Bool, true_case: T, false_case: T) -> T:
 
 @register_internal("pop.simd.select")
 @always_inline
-fn simd_select[
-    T: __TypeOfAllTypes
+def simd_select[
+    T: TrivialRegisterPassable
 ](cond: Bool, true_case: T, false_case: T) -> T:
     return select(cond, true_case, false_case)

@@ -19,11 +19,11 @@ from std.sys.info import CompilationTarget
 from std.testing import TestSuite, assert_equal
 
 
-fn get_user_path() -> String:
+def get_user_path() -> String:
     return "/home/user"
 
 
-fn get_current_home() -> String:
+def get_current_home() -> String:
     return getenv("HOME")
 
 

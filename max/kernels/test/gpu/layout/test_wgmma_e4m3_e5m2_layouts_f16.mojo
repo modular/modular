@@ -28,7 +28,7 @@ from layout._utils import ManagedLayoutTensor
 from std.memory import bitcast
 
 
-fn wgmma_f16_kernel[
+def wgmma_f16_kernel[
     M: Int,
     N: Int,
     K: Int,
