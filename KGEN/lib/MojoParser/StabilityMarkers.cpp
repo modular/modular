@@ -9,6 +9,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
+#include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/MojoParser/StabilityMarkers.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
@@ -144,16 +145,47 @@ void M::KGEN::LIT::checkDeprecationAndWarn(ASTDecl &decl, SMLoc useLoc,
   diag.attachNote(decl.getLoc()) << "'" << declName << "' declared here";
 }
 
+/// Returns the ASTDecl whose name should be checked against the use-site's
+/// recursively-stable-name set:
+/// - A direct struct/trait reference → &decl
+/// - A method/alias declared in a struct → parent struct decl
+/// - A method/alias declared in an extension → the struct the extension extends
+/// - Any other decl (top-level function, alias, etc.) → &decl itself
+static ASTDecl *getCanonicalOwnerTypeDecl(ASTDecl &decl, SharedState &shared) {
+  // Direct struct/trait reference.
+  if (isa_and_nonnull<StructDeclOp, TraitDeclOp>(decl.getIfOperation()))
+    return &decl;
+
+  ASTDecl *parent = decl.getParentDecl();
+  if (!parent)
+    return &decl;
+
+  // Method/alias inside a struct or trait.
+  if (isa_and_nonnull<StructDeclOp, TraitDeclOp>(parent->getIfOperation()))
+    return parent;
+
+  // Method/alias inside an extension: navigate to the extended struct.
+  if (auto extOp = dyn_cast_or_null<ExtensionDeclOp>(parent->getIfOperation()))
+    if (auto targetRef = extOp.getTargetStruct())
+      return &shared.getDeclResolver().getDeclForTypeSymbol(*targetRef);
+
+  // For top-level functions and other cases, check the decl itself.
+  return &decl;
+}
+
 void M::KGEN::LIT::checkDeclUsageWarnings(ASTDecl &decl, SMLoc useLoc,
                                           ASTDecl &useSiteDecl,
                                           SharedState &shared,
                                           SourceRange range, CallSyntax syntax,
                                           SMLoc fixitLoc) {
-  // Check for deprecation warning first.
+  // Deprecation warnings are never suppressed by @stable(recursive=True).
   checkDeprecationAndWarn(decl, useLoc, shared, range, syntax, fixitLoc);
 
-  // Check for stability warning.
-  checkStabilityAndWarn(decl, useLoc, useSiteDecl, shared, range);
+  // Suppress stability warnings when the decl (or its owner type) was imported
+  // with @stable(recursive=True) in the current scope.
+  ASTDecl *ownerType = getCanonicalOwnerTypeDecl(decl, shared);
+  if (!useSiteDecl.hasRecursivelyStableType(ownerType))
+    checkStabilityAndWarn(decl, useLoc, useSiteDecl, shared, range);
 }
 
 void M::KGEN::LIT::checkStableTraitMemberImplementation(

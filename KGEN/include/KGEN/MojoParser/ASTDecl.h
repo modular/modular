@@ -150,6 +150,19 @@ public:
   void addUnresolvedWildCardImport(StringAttr importedModule, bool isFullImport,
                                    SMLoc loc);
 
+  /// Record that `name` was imported with @stable(recursive=True) into this
+  /// scope, suppressing stability warnings for that name and its members.
+  void addRecursivelyStableName(mlir::StringAttr name);
+
+  /// Return true if `name` is covered by a @stable(recursive=True) import
+  /// override in this scope or any enclosing scope.
+  bool hasRecursivelyStableName(mlir::StringAttr name) const;
+
+  /// Return true if `typeDecl`'s user-visible name is covered by a
+  /// @stable(recursive=True) import override in this scope. Returns false if
+  /// `typeDecl` is null or has no user-visible name.
+  bool hasRecursivelyStableType(const ASTDecl *typeDecl) const;
+
   /// Return the doc string for this decl, or nullptr if there isn't one.
   DocStringAttr getDocString() const;
 
@@ -389,6 +402,11 @@ private:
   using UnresolvedWildcardImportsType =
       llvm::MapVector<StringAttr, std::pair<SMLoc, bool>>;
   std::unique_ptr<UnresolvedWildcardImportsType> unresolvedWildcardImports;
+
+  /// Lazily-allocated set of import names that were imported with
+  /// @stable(recursive=True) into this scope.  These names suppress stability
+  /// warnings for the named binding and all member accesses through it.
+  std::unique_ptr<llvm::DenseSet<mlir::StringAttr>> recursivelyStableNames;
 
   /// A map from each trait symbol that a struct conforms to, to the first
   /// symbol that explicitly inherits from it. This provides better diagnostics

@@ -202,6 +202,29 @@ static std::pair<ASTDecl *, size_t> getNearestParamScopeAndDepth(
   return {paramScope, --depth}; // Adjust so depth starts at 0.
 }
 
+void ASTDecl::addRecursivelyStableName(StringAttr name) {
+  if (!recursivelyStableNames)
+    recursivelyStableNames = std::make_unique<llvm::DenseSet<StringAttr>>();
+  recursivelyStableNames->insert(name);
+}
+
+bool ASTDecl::hasRecursivelyStableName(StringAttr name) const {
+  for (const ASTDecl *scope = this; scope; scope = scope->getParentDecl()) {
+    if (scope->recursivelyStableNames &&
+        scope->recursivelyStableNames->contains(name))
+      return true;
+  }
+  return false;
+}
+
+bool ASTDecl::hasRecursivelyStableType(const ASTDecl *typeDecl) const {
+  if (!typeDecl)
+    return false;
+  if (auto name = typeDecl->getUserNameIfOperation())
+    return hasRecursivelyStableName(StringAttr::get(getContext(), *name));
+  return false;
+}
+
 /// Add an unresolved wild card import into this scope.
 void ASTDecl::addUnresolvedWildCardImport(StringAttr importedModule,
                                           bool isFullImport, SMLoc loc) {

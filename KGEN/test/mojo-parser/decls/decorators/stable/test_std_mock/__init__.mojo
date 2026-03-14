@@ -20,13 +20,28 @@ struct StableStruct:
 struct UnstableStruct:
     """An unstable struct that should trigger warnings when used."""
 
-    def __init__(out self):
+    comptime UNSTABLE_CONST: Int = 99
+
+    fn __init__(out self):
         """Unstable constructor."""
         pass
 
     def unstable_method(self) -> Int:
         """An unstable method that should trigger warnings when called."""
         return 42
+
+    comptime AliasedType = AnotherUnstableStruct
+
+
+struct AnotherUnstableStruct:
+    """A second unstable struct, exposed via a comptime alias in UnstableStruct."""
+
+    fn __init__(out self):
+        pass
+
+    @staticmethod
+    fn static_method() -> Int:
+        return 0
 
 
 @stable
@@ -51,6 +66,15 @@ trait UnstableTrait:
     """An unstable trait that should trigger warnings when implemented."""
 
     pass
+
+
+trait UnstableTraitWithMembers:
+    """An unstable trait with a default-impl method and an associated comptime."""
+
+    comptime ASSOC_TYPE = Int
+
+    fn default_method(self) -> Int:
+        return 42
 
 
 @stable
@@ -86,6 +110,14 @@ trait TraitWithUnstableMethod:
 
     def unstable_required_method(self) -> Int:
         ...
+
+
+# Extension of UnstableStruct with an additional unstable method, for testing
+# that @stable(recursive=True) suppresses warnings on extension-defined members.
+__extension UnstableStruct:
+    fn extension_method(self) -> Int:
+        """An unstable extension method on UnstableStruct."""
+        return 99
 
 
 # Test same-package usage: stable functions calling unstable functions internally.

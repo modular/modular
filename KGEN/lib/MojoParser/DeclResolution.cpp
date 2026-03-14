@@ -295,7 +295,7 @@ LogicalResult Decorators::handleStable(ExprNode *expr, ASTDecl &decl) {
     return success();
   };
 
-  // Handle @stable(since="version") form.
+  // Handle @stable(...) call form.
   if (auto callNode = dyn_cast<CallNode>(expr)) {
     auto callee = dyn_cast<DeclRefNode>(callNode->callee);
     if (!callee || callee->spelling != "stable")
@@ -305,15 +305,39 @@ LogicalResult Decorators::handleStable(ExprNode *expr, ASTDecl &decl) {
     // success().
 
     if (callNode->operands.size() != 1) {
-      shared.emitError(expr->getLoc(),
-                       "@stable accepts only the 'since' argument");
+      shared.emitError(
+          expr->getLoc(),
+          "@stable accepts only one argument, either 'since' or 'recursive'");
       return success();
     }
 
     auto &arg = callNode->operands.front();
-    if (!arg.isKeyword() || arg.name != "since") {
+    if (!arg.isKeyword()) {
       shared.emitError(arg.expr->getLoc(),
-                       "@stable only accepts the keyword argument 'since'");
+                       "@stable requires a keyword argument ('since' or "
+                       "'recursive'), not a positional argument");
+      return success();
+    }
+
+    if (arg.name == "recursive") {
+      auto *boolNode = dyn_cast<BoolLiteralNode>(arg.expr);
+      if (!boolNode || !boolNode->value) {
+        shared.emitError(arg.expr->getLoc(),
+                         "'recursive' argument to @stable must be True");
+        return success();
+      }
+      // recursive=True is only valid on import statements, and import
+      // decorator handling is done eagerly in parseFromImportDecorators.
+      shared.emitError(expr->getLoc(),
+                       "@stable(recursive=True) is only valid on import "
+                       "statements");
+      return success();
+    }
+
+    if (arg.name != "since") {
+      shared.emitError(arg.expr->getLoc(),
+                       "@stable only accepts keyword arguments 'since' or "
+                       "'recursive'");
       return success();
     }
 
@@ -2950,9 +2974,6 @@ static ParseResult parseOptionalInheritanceList(
       if (inheritedFrom->contains(symbol))
         continue;
       ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
-
-      // Check if implementing an unstable trait should trigger a warning.
-      checkStabilityAndWarn(traitDecl, loc, decl, shared);
 
       // Check for API author error: stable trait cannot inherit from unstable.
       // Only applies when `decl` is a trait (not a struct conforming to a
