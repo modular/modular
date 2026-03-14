@@ -899,12 +899,8 @@ def test_removeprefix() raises:
         StringSlice("hello world").removeprefix("llo wor"), "hello world"
     )
     # Only removes once, not recursively.
-    assert_equal(
-        StringSlice("aahello").removeprefix("aa"), "hello"
-    )
-    assert_equal(
-        StringSlice("aaaahello").removeprefix("aa"), "aahello"
-    )
+    assert_equal(StringSlice("aahello").removeprefix("aa"), "hello")
+    assert_equal(StringSlice("aaaahello").removeprefix("aa"), "aahello")
     # Unicode prefix.
     assert_equal(StringSlice("héllo").removeprefix("hé"), "llo")
     assert_equal(StringSlice("héllo").removeprefix("ll"), "héllo")
@@ -928,12 +924,8 @@ def test_removesuffix() raises:
         StringSlice("hello world").removesuffix("llo wor"), "hello world"
     )
     # Only removes once, not recursively.
-    assert_equal(
-        StringSlice("helloaa").removesuffix("aa"), "hello"
-    )
-    assert_equal(
-        StringSlice("helloaaaa").removesuffix("aa"), "helloaa"
-    )
+    assert_equal(StringSlice("helloaa").removesuffix("aa"), "hello")
+    assert_equal(StringSlice("helloaaaa").removesuffix("aa"), "helloaa")
     # Unicode suffix.
     assert_equal(StringSlice("hellé").removesuffix("lé"), "hel")
     assert_equal(StringSlice("hellé").removesuffix("ll"), "hellé")
