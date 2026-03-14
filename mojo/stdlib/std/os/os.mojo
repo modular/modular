@@ -58,7 +58,7 @@ comptime SEEK_END: UInt8 = 2
 trait _DirentLike(Copyable, ImplicitlyDestructible):
     """Internal trait for platform-specific directory entry types."""
 
-    fn get_name_ptr(
+    def get_name_ptr(
         ref self,
     ) -> UnsafePointer[mut=False, Byte, AnyOrigin[mut=False]]:
         """Returns a pointer to the null-terminated name bytes."""
@@ -78,7 +78,7 @@ struct _dirent_linux(_DirentLike):
     var name: InlineArray[c_char, Self.MAX_NAME_SIZE]
     """Name of entry."""
 
-    fn get_name_ptr(
+    def get_name_ptr(
         ref self,
     ) -> UnsafePointer[mut=False, Byte, AnyOrigin[mut=False]]:
         return self.name.unsafe_ptr().bitcast[Byte]().as_any_origin()
@@ -99,7 +99,7 @@ struct _dirent_macos(_DirentLike):
     var name: InlineArray[c_char, Self.MAX_NAME_SIZE]
     """Name of entry."""
 
-    fn get_name_ptr(
+    def get_name_ptr(
         ref self,
     ) -> UnsafePointer[mut=False, Byte, AnyOrigin[mut=False]]:
         return self.name.unsafe_ptr().bitcast[Byte]().as_any_origin()
