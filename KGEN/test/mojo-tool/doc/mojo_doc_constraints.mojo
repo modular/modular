@@ -372,6 +372,67 @@ def fn_with_cond_where[
 
 
 ##===----------------------------------------------------------------------===##
+# Trait conformance constraints (conforms_to)
+# Tests that simple conforms_to(T, Trait) constraints are merged into the
+# parameter's type bounds (e.g. T: Serializable & Printable) rather than
+# shown as a separate where clause. Associated type paths (e.g. T.Element)
+# are non-mergeable and remain as where clauses with unqualified trait names.
+# Note: Module-path stripping (e.g. std::builtin::bool::Boolable -> Boolable)
+# cannot be tested here because locally-defined traits have no module prefix.
+# That code path is validated via stdlib APIs (all, any, take_while, drop_while).
+##===----------------------------------------------------------------------===##
+
+
+trait Serializable:
+    fn serialize(self) -> Int:
+        ...
+
+
+trait Printable:
+    fn print_it(self):
+        ...
+
+
+# CHECK-LABEL: "name": "fn_with_single_trait_conformance",
+# CHECK: "signature": "fn_with_single_trait_conformance[T: Serializable & Printable]()"
+fn fn_with_single_trait_conformance[
+    T: Serializable
+]() where conforms_to(T, Printable):
+    """Function with a single trait conformance constraint.
+
+    Parameters:
+        T: A type that must conform to both Serializable and Printable.
+    """
+    pass
+
+
+# CHECK-LABEL: "name": "fn_with_compound_trait_conformance",
+# CHECK: "signature": "fn_with_compound_trait_conformance[T: Serializable & Printable & Serializable]()"
+fn fn_with_compound_trait_conformance[
+    T: Serializable
+]() where conforms_to(T, Serializable & Printable):
+    """Function with a compound trait conformance constraint.
+
+    Parameters:
+        T: A type that must conform to both Serializable and Printable.
+    """
+    pass
+
+
+# CHECK-LABEL: "name": "fn_with_param_trait_constraint",
+# CHECK: "signature": "fn_with_param_trait_constraint[T: Serializable & Printable]()"
+fn fn_with_param_trait_constraint[
+    T: Serializable where conforms_to(T, Printable)
+]():
+    """Function with parameter-level trait conformance constraint.
+
+    Parameters:
+        T: A type that must conform to both Serializable and Printable.
+    """
+    pass
+
+
+##===----------------------------------------------------------------------===##
 # Struct with method-level constraints
 # Note: In JSON output, struct fields are alphabetical, so 'functions' comes
 # before 'name' and 'signature'.

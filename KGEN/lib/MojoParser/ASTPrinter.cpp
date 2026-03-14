@@ -625,6 +625,14 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       if (name == "__mlir_i1__" && operands.size() == 2)
         return printParam(os, operands.back(), diagShared);
 
+      // Don't print Bool.__init__ wrapping a TypeConformsToTraitAttr — the
+      // Bool wrapper adds no user value and we already print the inner
+      // conforms_to in readable "Type: Trait" form.
+      if (name == "__init__" && operands.size() >= 2 &&
+          tryGetTypeNameFromSymbolRef(nameAttr) == "Bool" &&
+          isa<TypeConformsToTraitAttr>(operands.back()))
+        return printParam(os, operands.back(), diagShared);
+
       // Print arithmetic functions using their mathematical form rather than
       // as dunder method calls.
       static SmallDenseMap<StringRef, StringRef> binaryOpNames{
@@ -848,11 +856,24 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   }
 
   if (auto conformsTo = dyn_cast<TypeConformsToTraitAttr>(param)) {
-    os << "conforms_to(" << ASTType(conformsTo.getTypeValue()) << ", ";
+    // Print as "conforms_to(Type, Trait1 & Trait2)" using valid Mojo syntax,
+    // but strip fully-qualified module paths from trait names so we don't leak
+    // internal names like "std::builtin::bool::Boolable" into diagnostics and
+    // doc output.
+    os << "conforms_to(";
+    printParam(os, conformsTo.getTypeValue(), diagShared);
+    os << ", ";
     llvm::interleave(
         conformsTo.getTraitNames().getValues(), os,
         [&](TypedAttr traitName) {
-          os << cast<StringAttr>(traitName).getValue();
+          StringRef fullName = cast<StringAttr>(traitName).getValue();
+          // Strip module path prefix (e.g. std::builtin::bool::Boolable ->
+          // Boolable). This is similar to trimBuiltinNamespace() but handles
+          // arbitrary module depths by keeping only the final component.
+          size_t lastColon = fullName.rfind("::");
+          os << (lastColon != StringRef::npos
+                     ? fullName.drop_front(lastColon + 2)
+                     : fullName);
         },
         " & ");
     os << ")";
