@@ -676,7 +676,7 @@ def rotate_bits_right[
 
 
 @always_inline
-fn bit_mask[dtype: DType](start: Int, end: Int) -> Scalar[dtype]:
+def bit_mask[dtype: DType](start: Int, end: Int) -> Scalar[dtype]:
     """Returns a scalar with bits in the half-open range `[start, end)` set to 1
     and all other bits set to 0.
 
