@@ -17,7 +17,8 @@ from std.sys.intrinsics import PrefetchOptions
 
 from std.algorithm import unswitch
 from buffer.buffer import NDBuffer, partial_simd_load
-from buffer.dimlist import DimList
+from buffer.dimlist import Dim, DimList
+from layout import TileTensor, coord_to_index_list
 from std.memory import (
     memcpy,
     stack_allocation,
@@ -883,6 +884,155 @@ def pack_transposed_b_ndbuffer[
         c_shape,
         transposed=True,
     ](b_input, output_buffer, kernel_type_m)
+
+
+@always_inline
+def pack_matmul_b_shape_func[
+    a_type: DType,
+    c_type: DType,
+    transpose_in_0: Bool,
+    single_thread_blocking_override: Bool,
+](
+    b_input: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    kernel_type_m: Int = 0,
+) -> IndexList[2]:
+    """TileTensor overload of `pack_matmul_b_shape_func`. Converts to NDBuffer
+    and delegates.
+
+    Unlike the NDBuffer overload, this does not take `a_shape`/`c_shape` DimList
+    params — those were only used to extract `kernel_type_m` from a static M
+    dimension. Pass `kernel_type_m` directly instead (0 = dynamic M).
+    """
+    comptime assert b_input.rank == 2, "b must be rank 2"
+    comptime assert b_input.flat_rank == 2, "b must have a non-nested layout"
+
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+    comptime b_shape = DimList[
+        dim[b_input.static_shape[0]], dim[b_input.static_shape[1]]
+    ]()
+    var b_buf = NDBuffer[rank=2, b_input.dtype, _, b_shape](
+        b_input.ptr,
+        rebind[IndexList[2]](coord_to_index_list(b_input.layout.shape_coord())),
+    )
+
+    return _pack_matmul_b_shape_func_impl[
+        a_type,
+        DimList.create_unknown[2](),
+        b_input.dtype,
+        b_shape,
+        c_type,
+        DimList.create_unknown[2](),
+        transpose_in_0,
+        single_thread_blocking_override,
+    ](b_buf, kernel_type_m)
+
+
+@always_inline
+def pack_b_ndbuffer[
+    b_type: DType,
+    //,
+    a_type: DType,
+    c_type: DType,
+](
+    b_input: TileTensor[
+        mut=False, b_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    output_buffer: TileTensor[
+        mut=True, b_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    kernel_type_m: Int = 0,
+) raises:
+    """TileTensor overload of `pack_b_ndbuffer`. Converts to NDBuffer and
+    delegates.
+
+    Unlike the NDBuffer overload, this does not take `a_shape`/`c_shape` DimList
+    params — those were only used to extract `kernel_type_m` from a static M
+    dimension. Pass `kernel_type_m` directly instead (0 = dynamic M).
+    """
+    comptime assert b_input.rank == 2, "b must be rank 2"
+    comptime assert b_input.flat_rank == 2, "b must have a non-nested layout"
+    comptime assert output_buffer.rank == 2, "output must be rank 2"
+    comptime assert (
+        output_buffer.flat_rank == 2
+    ), "output must have a non-nested layout"
+
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+    comptime b_shape = DimList[
+        dim[b_input.static_shape[0]], dim[b_input.static_shape[1]]
+    ]()
+    var b_buf = NDBuffer[rank=2, b_input.dtype, _, b_shape](
+        b_input.ptr,
+        rebind[IndexList[2]](coord_to_index_list(b_input.layout.shape_coord())),
+    )
+    var out_buf = NDBuffer[rank=2, output_buffer.dtype](
+        output_buffer.ptr,
+        rebind[IndexList[2]](
+            coord_to_index_list(output_buffer.layout.shape_coord())
+        ),
+    )
+
+    _pack_b_ndbuffer_impl[
+        a_type,
+        DimList.create_unknown[2](),
+        c_type,
+        DimList.create_unknown[2](),
+        transposed=False,
+        output_origin=output_buffer.origin,
+    ](b_buf, out_buf, kernel_type_m)
+
+
+@always_inline
+def pack_transposed_b_ndbuffer[
+    b_type: DType,
+    //,
+    a_type: DType,
+    c_type: DType,
+](
+    b_input: TileTensor[
+        mut=False, b_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    output_buffer: TileTensor[
+        mut=True, b_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    kernel_type_m: Int = 0,
+) raises:
+    """TileTensor overload of `pack_transposed_b_ndbuffer`. Converts to NDBuffer
+    and delegates.
+
+    Unlike the NDBuffer overload, this does not take `a_shape`/`c_shape` DimList
+    params — those were only used to extract `kernel_type_m` from a static M
+    dimension. Pass `kernel_type_m` directly instead (0 = dynamic M).
+    """
+    comptime assert b_input.rank == 2, "b must be rank 2"
+    comptime assert b_input.flat_rank == 2, "b must have a non-nested layout"
+    comptime assert output_buffer.rank == 2, "output must be rank 2"
+    comptime assert (
+        output_buffer.flat_rank == 2
+    ), "output must have a non-nested layout"
+
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+    comptime b_shape = DimList[
+        dim[b_input.static_shape[0]], dim[b_input.static_shape[1]]
+    ]()
+    var b_buf = NDBuffer[rank=2, b_input.dtype, _, b_shape](
+        b_input.ptr,
+        rebind[IndexList[2]](coord_to_index_list(b_input.layout.shape_coord())),
+    )
+    var out_buf = NDBuffer[rank=2, output_buffer.dtype, _](
+        output_buffer.ptr,
+        rebind[IndexList[2]](
+            coord_to_index_list(output_buffer.layout.shape_coord())
+        ),
+    )
+
+    _pack_b_ndbuffer_impl[
+        a_type,
+        DimList.create_unknown[2](),
+        c_type,
+        DimList.create_unknown[2](),
+        transposed=True,
+        output_origin=output_buffer.origin,
+    ](b_buf, out_buf, kernel_type_m)
 
 
 @fieldwise_init

@@ -8736,13 +8736,11 @@ struct Struct_grouped_matmul_ragged:
         comptime assert is_gpu[target](), "grouped matmul only support GPUs"
         cuda_ctx = context.get_device_context()
         grouped_matmul(
-            managed_tensor_slice_to_ndbuffer(c),
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(
-                expert_start_indices
-            ).make_dims_unknown(),
-            managed_tensor_slice_to_ndbuffer(expert_ids).make_dims_unknown(),
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
             Int(max_num_tokens_per_expert),
             Int(num_active_experts),
             cuda_ctx,
@@ -8875,13 +8873,13 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
             tokens_padded_per_expert=tokens_padded_per_expert,
             target=target,
         ](
-            managed_tensor_slice_to_ndbuffer(c),
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(a_scales),
-            managed_tensor_slice_to_ndbuffer(b_scales),
-            managed_tensor_slice_to_ndbuffer(expert_start_indices),
-            managed_tensor_slice_to_ndbuffer(expert_ids),
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
             Int(max_num_tokens_per_expert),
             Int(num_active_experts),
             cuda_ctx,
@@ -8971,11 +8969,11 @@ struct Struct_matmul_dynamic_block_scaled:
             transpose_b=True,
             target=target,
         ](
-            managed_tensor_slice_to_ndbuffer(c),
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(a_scales),
-            managed_tensor_slice_to_ndbuffer(b_scales),
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
             tensor_sf,
             cuda_ctx,
         )
@@ -9009,9 +9007,9 @@ struct Struct_quantize_dynamic_block_scaled:
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             target=target,
         ](
-            managed_tensor_slice_to_ndbuffer(output),
-            managed_tensor_slice_to_ndbuffer(scales),
-            managed_tensor_slice_to_ndbuffer(input),
+            output.to_tile_tensor[DType.int64](),
+            scales.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
             tensor_sf,
             cuda_ctx,
         )
@@ -9133,8 +9131,8 @@ struct Struct_interleave_block_scales:
 
         cuda_ctx = context.get_device_context()
         block_scales_interleave[SF_VECTOR_SIZE=SF_VECTOR_SIZE, target=target](
-            managed_tensor_slice_to_ndbuffer(output_scales),
-            managed_tensor_slice_to_ndbuffer(input_scales),
+            output_scales.to_tile_tensor[DType.int64](),
+            input_scales.to_tile_tensor[DType.int64](),
             cuda_ctx,
         )
 
@@ -10160,10 +10158,10 @@ struct Struct_swishGLU:
         ctx: DeviceContextPtr,
     ) raises:
         swishGLU[target=target,](
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b0),
-            managed_tensor_slice_to_ndbuffer(b1),
-            managed_tensor_slice_to_ndbuffer(c),
+            a.to_tile_tensor[DType.int64](),
+            b0.to_tile_tensor[DType.int64](),
+            b1.to_tile_tensor[DType.int64](),
+            c.to_tile_tensor[DType.int64](),
             ctx,
         )
 
@@ -11364,19 +11362,17 @@ struct Struct_lora_sgmv_ragged:
     ) raises:
         comptime assert is_gpu[target](), "SGMV only supported on GPUs"
         cuda_ctx = context.get_device_context()
-        var a_tensor = managed_tensor_slice_to_ndbuffer(a)
+        var a_tensor = a.to_tile_tensor[DType.int64]()
 
         if a_tensor.dim[0]() == 0:
             return
 
         grouped_matmul(
-            managed_tensor_slice_to_ndbuffer(c),
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(
-                input_row_offsets
-            ).make_dims_unknown(),
-            managed_tensor_slice_to_ndbuffer(lora_ids).make_dims_unknown(),
+            c.to_tile_tensor[DType.int64](),
+            a_tensor,
+            b.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            lora_ids.to_tile_tensor[DType.int64](),
             Int(max_seq_length),
             lora_ids.dim_size[0](),
             cuda_ctx,
@@ -11404,19 +11400,17 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
     ) raises:
         comptime assert is_gpu[target](), "SGMV only supported on GPUs"
         cuda_ctx = context.get_device_context()
-        var a_tensor = managed_tensor_slice_to_ndbuffer(a)
+        var a_tensor = a.to_tile_tensor[DType.int64]()
 
         if a_tensor.dim[0]() == 0:
             return
 
         shrink_qkv_permute_3mn_sm100(
-            managed_tensor_slice_to_ndbuffer(c),
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(
-                input_row_offsets
-            ).make_dims_unknown(),
-            managed_tensor_slice_to_ndbuffer(lora_ids).make_dims_unknown(),
+            c.to_tile_tensor[DType.int64](),
+            a_tensor,
+            b.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            lora_ids.to_tile_tensor[DType.int64](),
             Int(max_seq_length),
             lora_ids.dim_size[0](),
             cuda_ctx,

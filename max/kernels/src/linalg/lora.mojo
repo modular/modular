@@ -26,7 +26,14 @@ from std.gpu.host.info import B200
 from std.utils import IndexList
 from std.utils.index import Index
 import std.itertools
-from layout import IntTuple, Layout, RuntimeLayout, TileTensor, UNKNOWN_VALUE
+from layout import (
+    IntTuple,
+    Layout,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    coord_to_index_list,
+)
 
 
 def shrink_qkv_permute_3mn_sm100[
@@ -81,9 +88,9 @@ def shrink_qkv_permute_3mn_sm100[
     var c_tensor_lora = TileTensor(c_lora).to_layout_tensor()
     comptime N = c_shape.get[2]()
     comptime B = c_shape.get[0]()
-    comptime assert (
-        c_shape.has_value[2]() and c_shape.get[0]() == 3
-    ), "the outer dimension of c_shape must be known and equal to 3"
+    comptime assert c_shape.has_value[2]() and c_shape.get[0]() == 3, String(
+        "the outer dimension of c_shape must be known and equal to 3",
+    )
     comptime N_Total = B * N
     # Create an empty (null-backed) 2D NDBuffer for C with only shape/stride set.
     # This ensures GroupGEMM does NOT write into C directly; any changes to the
@@ -148,6 +155,80 @@ def shrink_qkv_permute_3mn_sm100[
         b,
         a_offsets,
         expert_ids,
+        max_num_tokens_per_expert,
+        num_active_experts,
+        ctx,
+    )
+
+
+@always_inline
+def shrink_qkv_permute_3mn_sm100(
+    c_lora: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    a_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    expert_ids: TileTensor[
+        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
+    ],
+    max_num_tokens_per_expert: Int,
+    num_active_experts: Int,
+    ctx: DeviceContext,
+) raises:
+    """TileTensor overload of `shrink_qkv_permute_3mn_sm100`. Converts to
+    NDBuffer and delegates."""
+    comptime assert c_lora.rank == 3 and c_lora.flat_rank == 3
+    comptime assert a.rank == 2 and a.flat_rank == 2
+    comptime assert b.rank == 3 and b.flat_rank == 3
+    comptime assert a_offsets.rank == 1 and a_offsets.flat_rank == 1
+    comptime assert expert_ids.rank == 1 and expert_ids.flat_rank == 1
+
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+
+    comptime c_shape = DimList[
+        dim[c_lora.static_shape[0]],
+        dim[c_lora.static_shape[1]],
+        dim[c_lora.static_shape[2]],
+    ]()
+    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
+    comptime b_shape = DimList[
+        dim[b.static_shape[0]], dim[b.static_shape[1]], dim[b.static_shape[2]]
+    ]()
+    comptime a_offsets_shape = DimList[dim[a_offsets.static_shape[0]]]()
+    comptime expert_ids_shape = DimList[dim[expert_ids.static_shape[0]]]()
+
+    var c_buf = NDBuffer[rank=3, c_lora.dtype, MutAnyOrigin, c_shape](
+        c_lora.ptr,
+        rebind[IndexList[3]](coord_to_index_list(c_lora.layout.shape_coord())),
+    )
+    var a_buf = NDBuffer[rank=2, a.dtype, ImmutAnyOrigin, a_shape](
+        a.ptr,
+        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
+    )
+    var b_buf = NDBuffer[rank=3, b.dtype, ImmutAnyOrigin, b_shape](
+        b.ptr,
+        rebind[IndexList[3]](coord_to_index_list(b.layout.shape_coord())),
+    )
+    var a_off_buf = NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin](
+        a_offsets.ptr,
+        rebind[IndexList[1]](
+            coord_to_index_list(a_offsets.layout.shape_coord())
+        ),
+    )
+    var exp_buf = NDBuffer[rank=1, DType.int32, ImmutAnyOrigin](
+        expert_ids.ptr,
+        rebind[IndexList[1]](
+            coord_to_index_list(expert_ids.layout.shape_coord())
+        ),
+    )
+
+    shrink_qkv_permute_3mn_sm100(
+        c_buf,
+        a_buf,
+        b_buf,
+        a_off_buf,
+        exp_buf,
         max_num_tokens_per_expert,
         num_active_experts,
         ctx,

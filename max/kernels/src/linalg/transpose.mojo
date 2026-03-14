@@ -18,7 +18,7 @@ from std.sys.intrinsics import strided_load, strided_store
 
 from std.algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
 from buffer import NDBuffer
-from buffer.dimlist import DimList
+from buffer.dimlist import Dim, DimList
 from layout import (
     Layout,
     LayoutTensor,
@@ -26,6 +26,7 @@ from layout import (
     RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
+    coord_to_index_list,
 )
 from layout.int_tuple import fill_like
 from layout.layout import is_row_major
@@ -1723,3 +1724,51 @@ def transpose[
                 simplified_rank,
             )
     transpose_strided(output, input, perms)
+
+
+def transpose[
+    dtype: DType
+](
+    output: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    perms: UnsafePointer[Scalar[DType.int], _],
+) raises:
+    """TileTensor overload of `transpose`. Converts to NDBuffer and delegates.
+    """
+    comptime assert (
+        output.rank == input.rank
+    ), "output and input must have the same rank"
+    comptime assert (
+        output.flat_rank == output.rank
+    ), "output must have a non-nested layout"
+    comptime assert (
+        input.flat_rank == input.rank
+    ), "input must have a non-nested layout"
+
+    comptime rank = output.rank
+
+    # Construct NDBuffers with static shapes preserved (no strides).
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+    comptime _out_dim[idx: Int]: Dim = dim[output.static_shape[idx]]
+    comptime _in_dim[idx: Int]: Dim = dim[input.static_shape[idx]]
+    comptime out_shape = DimList[*Variadic.tabulate[rank, _out_dim[_]]]()
+    comptime in_shape = DimList[*Variadic.tabulate[rank, _in_dim[_]]]()
+
+    var out_buf = NDBuffer[rank=rank, dtype, output.origin, out_shape](
+        output.ptr,
+        rebind[IndexList[rank]](
+            coord_to_index_list(output.layout.shape_coord())
+        ),
+    )
+    var in_buf = NDBuffer[rank=rank, dtype, input.origin, in_shape](
+        input.ptr,
+        rebind[IndexList[rank]](
+            coord_to_index_list(input.layout.shape_coord())
+        ),
+    )
+
+    transpose(out_buf, in_buf, perms)
