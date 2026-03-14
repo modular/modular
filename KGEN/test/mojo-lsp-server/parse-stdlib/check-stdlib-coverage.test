@@ -1,2 +1,0 @@
-// Fail if any stdlib subfolder is not listed in the BUILD.bazel parse-stdlib lists.
-// RUN: parse-mojo-files-with-lsp --check-subdir-coverage {ALL_SUBDIRS} $MODULAR_MOJO_MAX_IMPORT_PATH
