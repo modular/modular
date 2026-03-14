@@ -248,7 +248,14 @@ class KVCacheParams(KVCacheParamInterface):
         Raises:
             ValueError: If configuration parameters are invalid or incompatible.
         """
+        if self.is_mla and self.num_q_heads is None:
+            raise ValueError(
+                "num_q_heads is required when is_mla=True so the attention"
+                "dispatch resolver can use the MLA kernel."
+            )
+
         if self.data_parallel_degree > 1:
+            # Data parallel mode: simply duplicate the heads across all devices
             if self.n_devices < self.data_parallel_degree:
                 raise ValueError(
                     f"Data parallelism degree ({self.data_parallel_degree}) cannot be greater than the number of devices ({self.n_devices})"
@@ -258,28 +265,32 @@ class KVCacheParams(KVCacheParamInterface):
                     f"We do not yet support DP + TP at the same time. Found {self.data_parallel_degree=} and {self.n_devices=}"
                 )
             self.n_kv_heads_per_device = self.n_kv_heads
-        elif self.is_mla:
-            # MLA always caches one latent vector per device.
-            self.n_kv_heads_per_device = 1
-            if self.num_q_heads is None:
-                raise ValueError(
-                    "num_q_heads is required when is_mla=True so the "
-                    "attention dispatch resolver can use the MLA kernel."
-                )
-            devices_per_replica = self.n_devices // self.data_parallel_degree
-            self.num_q_heads_per_device = (
-                self.num_q_heads // devices_per_replica
-            )
+            self.num_q_heads_per_device = self.num_q_heads
 
         else:
             # Tensor parallel mode: shard by heads, keep all layers per device
-            if self.n_kv_heads % self.n_devices != 0:
-                raise ValueError(
-                    f"Number of KV heads ({self.n_kv_heads}) must be divisible by the number of devices ({self.n_devices})"
+            # First, resolve the number of KV heads per device
+            if self.is_mla:
+                self.n_kv_heads_per_device = 1
+            else:
+                if self.n_kv_heads % self.n_devices != 0:
+                    raise ValueError(
+                        f"Number of KV heads ({self.n_kv_heads}) must be divisible by the number of devices ({self.n_devices})"
+                    )
+                self.n_kv_heads_per_device = max(
+                    self.n_kv_heads // self.n_devices, 1
                 )
-            self.n_kv_heads_per_device = max(
-                self.n_kv_heads // self.n_devices, 1
-            )
+
+            # Then, resolve the number of query heads per device if it
+            # is provided.
+            if self.num_q_heads is not None:
+                if self.num_q_heads % self.n_devices != 0:
+                    raise ValueError(
+                        f"Number of query heads ({self.num_q_heads}) must be divisible by the number of devices ({self.n_devices})"
+                    )
+                self.num_q_heads_per_device = max(
+                    self.num_q_heads // self.n_devices, 1
+                )
 
         # Validate inputs
         if (
