@@ -15,7 +15,7 @@ from std.builtin.format_int import _format_int
 from std.testing import assert_equal, TestSuite
 
 
-fn test_format_int() raises:
+def test_format_int() raises:
     assert_equal(_format_int[DType.int](123), "123")
     assert_equal(_format_int[DType.int, radix=2](4), "100")
     assert_equal(_format_int[DType.int, radix=2](255), "11111111")
@@ -64,7 +64,7 @@ fn test_format_int() raises:
     # assert_equal(_format_int[radix=2](int256_min), "-1" + "0" * 255)
 
 
-fn test_hex() raises:
+def test_hex() raises:
     assert_equal(hex(0), "0x0")
     assert_equal(hex(1), "0x1")
     assert_equal(hex(5), "0x5")
@@ -94,7 +94,7 @@ fn test_hex() raises:
 
 @fieldwise_init
 struct Ind(Intable):
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return 1
 
 

@@ -37,13 +37,13 @@ struct ncclResult_t(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime ncclSuccess = Self(0)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("ncclResult_t(", Int(self._value), ")")
 
 
@@ -52,7 +52,7 @@ struct ncclRedOp_t(TrivialRegisterPassable):
     var _value: Int32
     comptime ncclSum = Self(0)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
 
@@ -63,7 +63,7 @@ struct ncclDataType_t(TrivialRegisterPassable):
     comptime ncclFloat32 = Self(7)
     comptime ncclBfloat16 = Self(9)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
 
@@ -84,7 +84,7 @@ comptime NCCL_LIBRARY_PATHS: List[Path] = [
 
 
 # Unified CCL loader (selects RCCL/NCCL at compile time)
-fn _init_ccl_dylib() -> OwnedDLHandle:
+def _init_ccl_dylib() -> OwnedDLHandle:
     comptime if has_amd_gpu_accelerator():
         return _find_dylib["RCCL"](materialize[RCCL_LIBRARY_PATHS]())
     else:
@@ -95,33 +95,33 @@ comptime CCL_LIBRARY = _Global["CCL_LIBRARY", _init_ccl_dylib]
 
 
 @always_inline
-fn _get_ccl_function[
-    func_name: StaticString, result_type: __TypeOfAllTypes
+def _get_ccl_function[
+    func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
     return _ffi_get_dylib_function[CCL_LIBRARY(), func_name, result_type]()
 
 
 # Paired wrappers grouped RCCl/NCCL for comparison
 struct _Group:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __enter__(self) raises:
+    def __enter__(self) raises:
         _check_ccl_ok(
             _get_ccl_function["ncclGroupStart", fn() -> ncclResult_t]()()
         )
 
-    fn __exit__(self) raises:
+    def __exit__(self) raises:
         _check_ccl_ok(
             _get_ccl_function["ncclGroupEnd", fn() -> ncclResult_t]()()
         )
 
 
-fn group() -> _Group:
+def group() -> _Group:
     return _Group()
 
 
-fn ncclCommInitAll(
+def ncclCommInitAll(
     comms: UnsafePointer[ncclComm_t, _],
     ndev: Int,
     devlist: UnsafePointer[Int32, _],
@@ -133,7 +133,7 @@ fn ncclCommInitAll(
 
 
 @always_inline
-fn _ccl_allreduce(
+def _ccl_allreduce(
     sendbuff: OpaquePointer,
     recvbuff: OpaquePointer,
     count: Int,
@@ -159,7 +159,7 @@ fn _ccl_allreduce(
 
 # === AllGather binding (unified) ===
 @always_inline
-fn _ccl_allgather(
+def _ccl_allgather(
     sendbuff: OpaquePointer,
     recvbuff: OpaquePointer,
     count: Int,
@@ -183,7 +183,7 @@ fn _ccl_allgather(
 
 # === Broadcast binding (unified) ===
 @always_inline
-fn _ccl_broadcast(
+def _ccl_broadcast(
     sendbuff: OpaquePointer,
     recvbuff: OpaquePointer,
     count: Int,
@@ -216,7 +216,7 @@ fn _ccl_broadcast(
 
 
 @always_inline
-fn _ccl_stream_ptr(
+def _ccl_stream_ptr(
     ctx: DeviceContext,
 ) raises -> OpaquePointer[ExternalOrigin[mut=True]]:
     comptime if has_amd_gpu_accelerator():
@@ -230,12 +230,12 @@ struct Communicators(ImplicitlyCopyable):
     var ngpus: Int
     var comms: InlineArray[ncclComm_t, MAX_GPUS]
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.ngpus = copy.ngpus
         self.comms = copy.comms.copy()
 
 
-fn _dtype_to_ccl[dtype: DType]() raises -> ncclDataType_t:
+def _dtype_to_ccl[dtype: DType]() raises -> ncclDataType_t:
     comptime if dtype == DType.float32:
         return ncclDataType_t.ncclFloat32
     elif dtype == DType.bfloat16:
@@ -247,12 +247,12 @@ fn _dtype_to_ccl[dtype: DType]() raises -> ncclDataType_t:
 
 
 @always_inline
-fn _check_ccl_ok(status: ncclResult_t) raises:
+def _check_ccl_ok(status: ncclResult_t) raises:
     if status != ncclResult_t.ncclSuccess:
         raise Error("CCL call failed with status ", Int(status._value))
 
 
-fn _get_global_comms(ngpus: Int) raises -> Communicators:
+def _get_global_comms(ngpus: Int) raises -> Communicators:
     var NAME = String(t"COMM_VENDOR_CCL_{ngpus}")
     if global_ptr := _get_global_or_null(NAME).bitcast[Communicators]():
         return global_ptr[]
@@ -279,7 +279,7 @@ fn _get_global_comms(ngpus: Int) raises -> Communicators:
     return ptr[]
 
 
-fn init_comms(ngpus: Int) raises:
+def init_comms(ngpus: Int) raises:
     """Pre-initialize NCCL/RCCL communicators.
 
     Must be called from a single thread before using allreduce
@@ -290,7 +290,7 @@ fn init_comms(ngpus: Int) raises:
 
 
 @parameter
-fn allreduce[
+def allreduce[
     dtype: DType,
     input_origin: Origin[mut=False],
     rank_sigs_origin: Origin[mut=True],
@@ -348,7 +348,7 @@ fn allreduce[
 
 
 @parameter
-fn _is_ccl_symbol_available[name: StaticString]() -> Bool:
+def _is_ccl_symbol_available[name: StaticString]() -> Bool:
     # Resolve a CCL symbol by name from the appropriate vendor DSO.
     # We intentionally cast to a trivial signature and do not call it.
     try:
@@ -358,20 +358,20 @@ fn _is_ccl_symbol_available[name: StaticString]() -> Bool:
         return False
 
 
-fn is_allreduce_available() -> Bool:
+def is_allreduce_available() -> Bool:
     return _is_ccl_symbol_available["ncclAllReduce"]()
 
 
-fn is_allgather_available() -> Bool:
+def is_allgather_available() -> Bool:
     return _is_ccl_symbol_available["ncclAllGather"]()
 
 
-fn is_broadcast_available() -> Bool:
+def is_broadcast_available() -> Bool:
     return _is_ccl_symbol_available["ncclBroadcast"]()
 
 
 @parameter
-fn allgather[
+def allgather[
     dtype: DType,
     inputs_origin: Origin[mut=False],
     outputs_origin: Origin[mut=True],
@@ -436,7 +436,7 @@ fn allgather[
 
 
 @parameter
-fn broadcast[
+def broadcast[
     dtype: DType,
     rank: Int,
     input_origin: Origin[mut=False],

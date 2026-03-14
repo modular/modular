@@ -37,10 +37,7 @@ from std.sys import size_of
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.info import B200
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import (
-    TileTensor,
-    flatten_leading,
-)
+from layout import TileTensor, flatten_leading
 from structured_kernels.tile_types import create_tma_tile
 
 from std.utils.index import Index, IndexList
@@ -51,7 +48,7 @@ from .blockwise_fp8_1d2d_smem import BlockwiseFP8_1D2DSmem
 from .blockwise_fp8_1d2d_matmul_kernel import BlockwiseFP8_1D2DMatmulKernel
 
 
-fn grouped_matmul_1d2d_blockwise_fp8[
+def grouped_matmul_1d2d_blockwise_fp8[
     a_scales_type: DType,
     b_scales_type: DType,
     transpose_b: Bool,
@@ -216,7 +213,7 @@ fn grouped_matmul_1d2d_blockwise_fp8[
     )
 
 
-fn grouped_matmul_dynamic_scaled_fp8_1d2d[
+def grouped_matmul_dynamic_scaled_fp8_1d2d[
     a_scales_type: DType,
     b_scales_type: DType,
     //,

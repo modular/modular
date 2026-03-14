@@ -256,20 +256,20 @@ def test_string_indexing() raises:
     assert_equal("H", str[byte=0])
     assert_equal("!", str[byte=-1])
     assert_equal("H", str[byte=-len(str)])
-    assert_equal("llo Mojo!!", str[2:])
-    assert_equal("lo Mojo!", str[3:-1])
-    assert_equal("lo Moj", str[3:-3])
+    assert_equal("llo Mojo!!", str[byte=2:])
+    assert_equal("lo Mojo!", str[byte=3:-1])
+    assert_equal("lo Moj", str[byte=3:-3])
 
-    assert_equal("Hello Mojo!!", str[-50::])
-    assert_equal("Hello Mojo!!", str[:50:])
+    assert_equal("Hello Mojo!!", str[byte= -50::])
+    assert_equal("Hello Mojo!!", str[byte=:50:])
 
     var str2 = "😌😃"
     assert_equal("😌", str2[byte=0])
-    assert_equal("😌", str2[0:4])
+    assert_equal("😌", str2[byte=0:4])
     assert_equal("😃", str2[byte=4])
-    assert_equal("😃", str2[4:])
+    assert_equal("😃", str2[byte=4:])
     var str3 = "😌😃🥰😋"
-    assert_equal("😃🥰", str3[4:12])
+    assert_equal("😃🥰", str3[byte=4:12])
 
 
 def test_atol() raises:
@@ -1009,7 +1009,7 @@ def test_strip() raises:
 
 
 def test_hash() raises:
-    fn assert_hash_equals_literal_hash[s: StaticString]() raises:
+    def assert_hash_equals_literal_hash[s: StaticString]() raises:
         assert_equal(hash(s), hash(String(s)))
 
     assert_hash_equals_literal_hash["a"]()
@@ -1117,7 +1117,7 @@ def test_string_char_slices_iter() raises:
     var vs = "123"
 
     # Borrow immutably
-    fn conc(vs: String) -> String:
+    def conc(vs: String) -> String:
         var c = String()
         for v in vs.codepoint_slices():
             c += v
@@ -1230,7 +1230,7 @@ def test_format_args() raises:
     var s = " {} , {} {} !".format("Hello", "Beautiful", "World")
     assert_equal(s, " Hello , Beautiful World !")
 
-    fn curly(c: StaticString) -> String:
+    def curly(c: StaticString) -> String:
         return "there is a single curly " + c + " left unclosed or unescaped"
 
     with assert_raises(contains=curly("{")):
@@ -1488,7 +1488,7 @@ def test_variadic_ctors() raises:
     var s2 = String.write("message", 42, 42.2, True, sep=", ")
     assert_equal(s2, "message, 42, 42.2, True")
 
-    fn forward_variadic_pack[
+    def forward_variadic_pack[
         *Ts: Writable,
     ](*args: *Ts) -> String:
         return String(args)
@@ -1608,7 +1608,7 @@ def test_from_utf8_lossy() raises:
     var four_byte = String(from_utf8_lossy=Span([Byte(0xF0), 0x9F, 0x94, 0xA5]))
     assert_equal(four_byte, "🔥")
 
-    fn replacement_bytes() -> List[Byte]:
+    def replacement_bytes() -> List[Byte]:
         # The byte sequence for the replacement character '�'
         return [Byte(0xEF), 0xBF, 0xBD]
 

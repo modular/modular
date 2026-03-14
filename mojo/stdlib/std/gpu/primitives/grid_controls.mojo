@@ -41,7 +41,7 @@ comptime _SUPPORT_PDL_LAUNCH = _support_pdl_launch()
 
 @doc_private
 @always_inline("nodebug")
-fn _support_pdl_launch() -> Bool:
+def _support_pdl_launch() -> Bool:
     """Determines if programmatic dependency launch (PDL) is supported.
 
     Checks if the current GPU supports PDL (Hopper SM90+ architecture).
@@ -62,7 +62,7 @@ fn _support_pdl_launch() -> Bool:
 
 @doc_private
 @always_inline("nodebug")
-fn pdl_launch_attributes(
+def pdl_launch_attributes(
     pdl_level: PDLLevel = PDLLevel(),
 ) -> List[LaunchAttribute]:
     """Returns launch attributes for programmatic dependency launch (PDL).
@@ -92,7 +92,7 @@ fn pdl_launch_attributes(
 
 
 @always_inline("nodebug")
-fn launch_dependent_grids():
+def launch_dependent_grids():
     """Launches dependent grids that were previously configured to depend on the
     current grid.
 
@@ -113,7 +113,7 @@ fn launch_dependent_grids():
 
 
 @always_inline("nodebug")
-fn wait_on_dependent_grids():
+def wait_on_dependent_grids():
     """Waits for all dependent grids launched by this grid to complete execution.
 
     This function blocks the calling grid until all dependent grids that were launched
@@ -150,12 +150,12 @@ struct PDLLevel(Defaultable, TrivialRegisterPassable):
     """PDL no-wait overlap at end of kernel."""
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize the PDL level to OFF."""
         self = PDLLevel(get_defined_int["PDL_LEVEL", 0]())
 
     @always_inline
-    fn __init__(out self, level: Int):
+    def __init__(out self, level: Int):
         """Initialize the PDL level.
 
         Args:
@@ -164,7 +164,7 @@ struct PDLLevel(Defaultable, TrivialRegisterPassable):
         self._level = level
 
     @always_inline
-    fn __eq__(self, other: PDLLevel) -> Bool:
+    def __eq__(self, other: PDLLevel) -> Bool:
         """Check if the PDL level is equal to another PDL level.
 
         Args:
@@ -176,7 +176,7 @@ struct PDLLevel(Defaultable, TrivialRegisterPassable):
         return self._level == other._level
 
     @always_inline
-    fn __eq__(self, other: Int) -> Bool:
+    def __eq__(self, other: Int) -> Bool:
         """Check if the PDL level is equal to another PDL level.
 
         Args:
@@ -188,7 +188,7 @@ struct PDLLevel(Defaultable, TrivialRegisterPassable):
         return self._level == other
 
     @always_inline
-    fn __ne__(self, other: PDLLevel) -> Bool:
+    def __ne__(self, other: PDLLevel) -> Bool:
         """Check if the PDL level is not equal to another PDL level.
 
         Args:
@@ -200,7 +200,7 @@ struct PDLLevel(Defaultable, TrivialRegisterPassable):
         return self._level != other._level
 
     @always_inline
-    fn __gt__(self, other: PDLLevel) -> Bool:
+    def __gt__(self, other: PDLLevel) -> Bool:
         """Check if the PDL level is greater than another PDL level.
 
         Args:
@@ -212,7 +212,7 @@ struct PDLLevel(Defaultable, TrivialRegisterPassable):
         return self._level > other._level
 
     @always_inline
-    fn __ge__(self, other: PDLLevel) -> Bool:
+    def __ge__(self, other: PDLLevel) -> Bool:
         """Check if the PDL level is greater than or equal to another PDL level.
 
         Args:
@@ -237,18 +237,18 @@ struct PDL(Defaultable):
     """
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize the PDL control structure."""
         pass
 
     @always_inline
-    fn __enter__(self):
+    def __enter__(self):
         """Launch dependent grids that were previously configured to depend on the
         current grid."""
         wait_on_dependent_grids()
 
     @always_inline
-    fn __exit__(self):
+    def __exit__(self):
         """Wait for all dependent grids launched by this grid to complete execution.
         """
         launch_dependent_grids()

@@ -22,7 +22,7 @@ from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 from std.utils.index import IndexList
 
 
-fn _vector_addition_cpu(
+def _vector_addition_cpu(
     output: ManagedTensorSlice[mut=True, ...],
     lhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
     rhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
@@ -38,7 +38,7 @@ fn _vector_addition_cpu(
         output.store[1](idx, result)
 
 
-fn _vector_addition_gpu(
+def _vector_addition_gpu(
     output: ManagedTensorSlice[mut=True, ...],
     lhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
     rhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
@@ -53,7 +53,7 @@ fn _vector_addition_gpu(
 
     # The function that will be launched and distributed across GPU threads.
     @parameter
-    fn vector_addition_gpu_kernel(length: Int):
+    def vector_addition_gpu_kernel(length: Int):
         var tid = block_dim.x * block_idx.x + thread_idx.x
         if tid < UInt(length):
             var idx = IndexList[output.rank](Int(tid))
@@ -74,7 +74,7 @@ fn _vector_addition_gpu(
 @compiler.register("vector_addition")
 struct VectorAddition:
     @staticmethod
-    fn execute[
+    def execute[
         # The kind of device this will be run on: "cpu" or "gpu"
         target: StaticString,
     ](

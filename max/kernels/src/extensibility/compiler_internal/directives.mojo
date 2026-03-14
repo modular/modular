@@ -20,34 +20,32 @@ from layout import IntTuple, Layout
 from std.utils import IndexList
 
 
-fn __mogg_intrinsic_attr(intrin: StaticString):
+def __mogg_intrinsic_attr(intrin: StaticString):
     return
 
 
 # Register a DPS Kernel
 @__mogg_intrinsic_attr("mogg.intrinsic_register")
-fn register(name: StaticString):
+def register(name: StaticString):
     pass
 
 
 # Indicates that a DPS Kernel is a view operation
 @__mogg_intrinsic_attr("mogg.view_kernel")
-fn view_kernel():
+def view_kernel():
     return
 
 
-fn get_row_major_tensor_spec[
+def get_row_major_tensor_spec[
     dtype: DType, rank: Int, shape: DimList
-]() -> StaticTensorSpec[
-    dtype, rank, shape, DimList.get_row_major_strides[shape]()
-]:
+]() -> StaticTensorSpec[dtype, rank, shape, shape.get_row_major_strides()]:
     """
     Returns a row-major StaticTensorSpec with the specified shape and dtype.
     """
     return {align_of[dtype](), AddressSpace.GENERIC, False, None, None, None}
 
 
-fn _get_unknown_tensor_spec[
+def _get_unknown_tensor_spec[
     dtype: DType, rank: Int
 ]() -> StaticTensorSpec[
     dtype, rank, DimList.create_unknown[rank](), DimList.create_unknown[rank]()
@@ -95,7 +93,7 @@ struct StaticTensorSpec[
     var out_lambda: OptionalReg[Self.out_lambda_t]
     var out_compute_lambda: OptionalReg[Self.out_compute_lambda_t]
 
-    fn __init__(
+    def __init__(
         out self,
         alignment: Int,
         address_space: AddressSpace,
@@ -113,7 +111,7 @@ struct StaticTensorSpec[
         self.out_lambda = out_lambda
         self.out_compute_lambda = out_compute_lambda
 
-    fn __init__(
+    def __init__(
         out self, internals: StaticTensorSpecInternal[Self.dtype, Self.rank]
     ):
         """
@@ -133,7 +131,7 @@ struct StaticTensorSpec[
     comptime get_unknown = _get_unknown_tensor_spec[Self.dtype, Self.rank]
 
     @always_inline
-    fn with_layout[
+    def with_layout[
         new_rank: Int, new_shape: DimList, new_strides: DimList
     ](self) -> StaticTensorSpec[Self.dtype, new_rank, new_shape, new_strides]:
         return {
@@ -146,7 +144,7 @@ struct StaticTensorSpec[
         }
 
     @always_inline
-    fn with_layout_and_alignment[
+    def with_layout_and_alignment[
         new_rank: Int, new_shape: DimList, new_strides: DimList
     ](self, new_alignment: Int) -> StaticTensorSpec[
         Self.dtype, new_rank, new_shape, new_strides
@@ -161,10 +159,10 @@ struct StaticTensorSpec[
         }
 
     @always_inline
-    fn to_layout(self) -> Layout:
+    def to_layout(self) -> Layout:
         return Layout(IntTuple(self.shape), IntTuple(self.strides))
 
-    fn get_internals(self) -> StaticTensorSpecInternal[Self.dtype, Self.rank]:
+    def get_internals(self) -> StaticTensorSpecInternal[Self.dtype, Self.rank]:
         """
         Returns a StaticTensorSpecInternal from a StaticTensorSpec.
         """

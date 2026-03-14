@@ -73,6 +73,7 @@ dependencies = [
   "pytest-xdist",
   "pytest>=7.2",
   "python-json-logger",
+  "PyGithub>=2.1.0",
   "PyYAML",
   "pyzmq",
   "plotext",

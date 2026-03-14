@@ -17,12 +17,12 @@ from nn.gather_scatter import gather
 
 
 # CHECK-LABEL: test_gather
-fn test_gather(ctx: DeviceContext) raises:
+def test_gather(ctx: DeviceContext) raises:
     print("== test_gather")
 
     @no_inline
     @parameter
-    fn _test_gather[indices_type: DType]() raises:
+    def _test_gather[indices_type: DType]() raises:
         comptime num_rows = 16
         comptime row_size = 4
         comptime num_indices = 16

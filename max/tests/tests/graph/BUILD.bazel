@@ -15,13 +15,18 @@ _MULTI_VERSION_TEST_SRCS = [
 _MACOS_INCOMPATIBLE_TESTS = [
     "ops/test_argsort.py",
     "ops/test_constant.py",
+    "ops/test_custom.py",
     "ops/test_layer_norm.py",
+    "ops/test_reduction.py",
     "ops/test_tile.py",
+    "ops/elementwise/test_div.py",
     "ops/elementwise/test_is_nan.py",
+    "ops/test_nonzero.py",
 ]
 
 modular_py_test(
     name = "tests",
+    size = "large",
     srcs = glob(
         ["**/*.py"],
         exclude = _MULTI_VERSION_TEST_SRCS + _MACOS_INCOMPATIBLE_TESTS,
@@ -94,6 +99,7 @@ modular_py_test(
         "//max/python/max/mlir",
         requirement("hypothesis"),
         requirement("numpy"),
+        requirement("torch"),
     ],
 )
 

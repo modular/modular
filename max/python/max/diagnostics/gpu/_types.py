@@ -26,10 +26,10 @@ class GPUStats(msgspec.Struct):
     as the primary data structure returned by GPU diagnostic queries.
     """
 
-    """Detailed memory usage statistics for the GPU."""
     memory: MemoryStats
-    """Current GPU compute and memory utilization percentages."""
+    """Detailed memory usage statistics for the GPU."""
     utilization: UtilizationStats
+    """Current GPU compute and memory utilization percentages."""
 
 
 class MemoryStats(msgspec.Struct):
@@ -40,14 +40,14 @@ class MemoryStats(msgspec.Struct):
     bottlenecks during model inference or training.
     """
 
-    """Total GPU memory capacity in bytes."""
     total_bytes: int
-    """Currently available GPU memory in bytes."""
+    """Total GPU memory capacity in bytes."""
     free_bytes: int
-    """Currently allocated GPU memory in bytes."""
+    """Currently available GPU memory in bytes."""
     used_bytes: int
-    """Memory reserved by the driver, if available from the GPU vendor."""
+    """Currently allocated GPU memory in bytes."""
     reserved_bytes: int | None
+    """Memory reserved by the driver, if available from the GPU vendor."""
 
 
 class UtilizationStats(msgspec.Struct):

@@ -22,10 +22,9 @@ from std.sys._assembly import inlined_assembly
 from std.algorithm.functional import unswitch
 from std.gpu import barrier, block_idx_int as block_idx, lane_id, thread_idx
 from std.gpu import warp_id as get_warp_id
-from layout import Layout, LayoutTensor
-from layout._utils import idx2crd, make_amd_buffer_resource
-from layout.int_tuple import UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.layout import blocked_product
+from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.layout_tensor import (
     ThreadScope,
     copy_dram_to_local,
@@ -84,37 +83,37 @@ trait AttentionConfig(ImplicitlyCopyable):
 
     @staticmethod
     @always_inline
-    fn q_head_idx() -> UInt:
+    def q_head_idx() -> UInt:
         ...
 
     @staticmethod
     @always_inline
-    fn q_tile_idx() -> UInt:
+    def q_tile_idx() -> UInt:
         ...
 
     @staticmethod
     @always_inline
-    fn kv_head_idx() -> UInt:
+    def kv_head_idx() -> UInt:
         ...
 
     @staticmethod
     @always_inline
-    fn get_mma_shape() -> IndexList[3]:
+    def get_mma_shape() -> IndexList[3]:
         ...
 
     @staticmethod
     @always_inline
-    fn get_q_offset[q_depth: UInt]() -> UInt32:
+    def get_q_offset[q_depth: UInt]() -> UInt32:
         ...
 
     @staticmethod
     @always_inline
-    fn get_output_offset[output_depth: UInt]() -> UInt32:
+    def get_output_offset[output_depth: UInt]() -> UInt32:
         ...
 
 
 @always_inline
-fn _mask_apply[
+def _mask_apply[
     attention_config_t: AttentionConfig,
     accum_type: DType,
     token_gen: Bool,
@@ -454,29 +453,29 @@ struct Attention[
 
     @staticmethod
     @always_inline
-    fn q_head_idx() -> UInt:
+    def q_head_idx() -> UInt:
         return Self.attention_config_t.q_head_idx()
 
     @staticmethod
     @always_inline
-    fn q_tile_idx() -> UInt:
+    def q_tile_idx() -> UInt:
         return Self.attention_config_t.q_tile_idx()
 
     @staticmethod
     @always_inline
-    fn kv_head_idx() -> UInt:
+    def kv_head_idx() -> UInt:
         return Self.attention_config_t.kv_head_idx()
 
     @always_inline
-    fn zero_p_buffer[stage: Int = 0](self):
+    def zero_p_buffer[stage: Int = 0](self):
         self.p_reg_buffer.zero[stage]()
 
     @always_inline
-    fn get_batch_idx(self) -> Int:
+    def get_batch_idx(self) -> Int:
         return self.batch_idx
 
     @always_inline
-    fn scale_p_reg[stage: Int = 0](self):
+    def scale_p_reg[stage: Int = 0](self):
         var p_reg_vectorized = self.p_reg_buffer.vectorize[stage]()
 
         comptime for m_mma in range(Self.num_m_mmas):
@@ -486,7 +485,7 @@ struct Attention[
 
     @staticmethod
     @always_inline
-    fn get_tensor_core_mma_qk(
+    def get_tensor_core_mma_qk(
         out result: TiledTensorCore[
             get_accum_type[Self.q_type](),
             Self.q_type,
@@ -499,7 +498,7 @@ struct Attention[
 
     @staticmethod
     @always_inline
-    fn get_tensor_core_mma_pv(
+    def get_tensor_core_mma_pv(
         out result: TiledTensorCore[
             get_accum_type[Self.q_type](),
             Self.q_type,
@@ -511,7 +510,7 @@ struct Attention[
         return type_of(result)()
 
     @always_inline
-    fn mma_qk[
+    def mma_qk[
         k_buffer_type: KVBuffer,
         //,
         prefetch_function: OptionalReg[fn() capturing -> None] = None,
@@ -534,7 +533,7 @@ struct Attention[
         )
 
     @always_inline
-    fn mma_pv[
+    def mma_pv[
         v_buffer_type: KVBuffer,
         //,
         prefetch_function: OptionalReg[fn() capturing -> None] = None,
@@ -554,7 +553,7 @@ struct Attention[
         )
 
     @always_inline
-    fn mask_status(
+    def mask_status(
         self,
         kv_tile_start_row: UInt32,
     ) -> TileMaskStatus:
@@ -578,16 +577,16 @@ struct Attention[
             )
 
     @always_inline
-    fn mask_advance(mut self):
+    def mask_advance(mut self):
         comptime if not Self.token_gen:
             self.mask_warp_col += UInt32(Self.BN)
 
     @always_inline
-    fn mask_skip_tile(self, status: TileMaskStatus) -> Bool:
+    def mask_skip_tile(self, status: TileMaskStatus) -> Bool:
         return status == TileMaskStatus.FULL_MASK
 
     @always_inline
-    fn mask_skip_and_advance(
+    def mask_skip_and_advance(
         mut self,
         kv_tile_start_row: UInt32,
     ) -> Bool:
@@ -601,7 +600,7 @@ struct Attention[
         return False
 
     @always_inline
-    fn mask_apply[
+    def mask_apply[
         stage: Int = 0
     ](
         mut self,
@@ -611,7 +610,7 @@ struct Attention[
     ):
         @always_inline
         @parameter
-        fn _mask_apply_impl(masked: Bool):
+        def _mask_apply_impl(masked: Bool):
             _mask_apply[
                 attention_config_t=Self.attention_config_t,
                 accum_type=Self.accum_type,
@@ -653,7 +652,7 @@ struct Attention[
         self.mask_advance()
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         attention_config: Self.attention_config_t,
         output_ptr: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin],
@@ -770,7 +769,7 @@ struct Attention[
             _ = self.softmax.rowsum_tensor.fill(0)
 
     @always_inline
-    fn online_softmax[stage: Int = 0](mut self):
+    def online_softmax[stage: Int = 0](mut self):
         var warp_scratch = self.warp_scratch_tensor
         var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
 
@@ -783,7 +782,7 @@ struct Attention[
         )
 
     @always_inline
-    fn store_output(self):
+    def store_output(self):
         var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
         var warp_col = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[1]
         var output_tile = self.gmem_manager.get_output_tensor(self.output_ptr)
@@ -817,14 +816,14 @@ struct Attention[
             )
 
     @always_inline
-    fn copy_fragment_to_smem(self):
+    def copy_fragment_to_smem(self):
         comptime if not Self.token_gen:
             return
 
         self.p_reg_buffer.copy_to_shared()
 
     @always_inline
-    fn store_partition_info(
+    def store_partition_info(
         self,
         num_partitions: Int,
         exp_sum_ptr: UnsafePointer[

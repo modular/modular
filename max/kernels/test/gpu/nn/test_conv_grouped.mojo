@@ -1,0 +1,206 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Tests for grouped convolution (num_groups > 1) on GPU.
+
+Verifies that the naive GPU conv2d kernel correctly restricts channel
+iteration to group-local channels when num_groups > 1.
+"""
+
+from std.random import rand
+from std.testing import assert_false
+
+from layout import Layout, LayoutTensor
+from std.gpu.host import DeviceContext
+from nn.conv import Naive2dConvolution, conv_gpu
+from std.utils.index import Index, IndexList
+
+
+def test_grouped_conv2d[
+    N: Int,
+    H: Int,
+    W: Int,
+    C_in: Int,
+    R: Int,
+    S: Int,
+    C_out: Int,
+    num_groups: Int,
+    pad: Int,
+    name: StringLiteral,
+](ctx: DeviceContext) raises:
+    """Test grouped conv2d on GPU against CPU reference."""
+    comptime C_per_group = C_in // num_groups
+    comptime H_out = H + 2 * pad - R + 1
+    comptime W_out = W + 2 * pad - S + 1
+
+    comptime dtype = DType.float32
+
+    # NHWC layout for input/output, RSCF for filter
+    # For grouped conv, filter C dim = C_in / num_groups
+    comptime input_layout = Layout.row_major(N, H, W, C_in)
+    comptime filter_layout = Layout.row_major(R, S, C_per_group, C_out)
+    comptime output_layout = Layout.row_major(N, H_out, W_out, C_out)
+
+    comptime in_size = N * H * W * C_in
+    comptime filter_size = R * S * C_per_group * C_out
+    comptime out_size = N * H_out * W_out * C_out
+
+    print(
+        "  ",
+        name,
+        ": N=",
+        N,
+        " ",
+        H,
+        "x",
+        W,
+        "x",
+        C_in,
+        " -> ",
+        C_out,
+        "ch (",
+        R,
+        "x",
+        S,
+        " groups=",
+        num_groups,
+        " pad=",
+        pad,
+        ")",
+        sep="",
+    )
+
+    # Host memory
+    var input_host = alloc[Scalar[dtype]](in_size)
+    var filter_host = alloc[Scalar[dtype]](filter_size)
+    var out_gpu_host = alloc[Scalar[dtype]](out_size)
+    var out_ref_host = alloc[Scalar[dtype]](out_size)
+
+    rand(input_host, in_size)
+    rand(filter_host, filter_size)
+
+    # CPU reference (Naive2dConvolution takes 5D NDHWC shapes with D=1)
+    Naive2dConvolution[dtype, dtype, dtype].run(
+        out_ref_host,
+        input_host,
+        filter_host,
+        Index(N, 1, H_out, W_out, C_out),
+        Index(N, 1, H, W, C_in),
+        Index(1, R, S, C_per_group, C_out),
+        IndexList[2](0, 0),  # pad_d
+        IndexList[2](pad, pad),  # pad_h
+        IndexList[2](pad, pad),  # pad_w
+        IndexList[3](1, 1, 1),  # stride
+        IndexList[3](1, 1, 1),  # dilation
+        num_groups,
+    )
+
+    # Device memory
+    var input_dev = ctx.enqueue_create_buffer[dtype](in_size)
+    var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
+    var out_dev = ctx.enqueue_create_buffer[dtype](out_size)
+
+    ctx.enqueue_copy(input_dev, input_host)
+    ctx.enqueue_copy(filter_dev, filter_host)
+
+    var input_lt = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
+    var filter_lt = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
+    var out_lt = LayoutTensor[dtype, output_layout](out_dev.unsafe_ptr())
+
+    # Run GPU conv with groups
+    conv_gpu[
+        input_layout,
+        filter_layout,
+        output_layout,
+        dtype,
+        dtype,
+        dtype,
+    ](
+        input_lt.as_any_origin(),
+        filter_lt.as_any_origin(),
+        out_lt.as_any_origin(),
+        IndexList[2](1, 1),  # stride
+        IndexList[2](1, 1),  # dilation
+        IndexList[4](pad, pad, pad, pad),
+        num_groups,
+        ctx,
+    )
+
+    ctx.synchronize()
+    ctx.enqueue_copy(out_gpu_host, out_dev)
+    ctx.synchronize()
+
+    # Compare
+    var max_diff: Float32 = 0.0
+    var errors = 0
+    for i in range(out_size):
+        var gpu_val = out_gpu_host[i].cast[DType.float32]()
+        var ref_val = out_ref_host[i].cast[DType.float32]()
+        var diff = abs(gpu_val - ref_val)
+        if diff > max_diff:
+            max_diff = diff
+        var scale = max(abs(ref_val), Float32(1e-6))
+        if diff / scale > 0.01:
+            errors += 1
+
+    if errors > 0:
+        print("    FAILED: ", errors, " errors, max_diff=", max_diff)
+    else:
+        print("    PASSED (max_diff=", max_diff, ")")
+
+    assert_false(errors > 0, "Grouped conv2d GPU output mismatch")
+
+    # Cleanup
+    input_host.free()
+    filter_host.free()
+    out_gpu_host.free()
+    out_ref_host.free()
+    _ = input_dev^
+    _ = filter_dev^
+    _ = out_dev^
+
+
+def main() raises:
+    print("=" * 60)
+    print("Grouped Convolution GPU Test")
+    print("=" * 60)
+
+    with DeviceContext() as ctx:
+        print("\n--- 2D Grouped Conv (groups > 1) ---")
+
+        # Basic: 2 groups, small
+        test_grouped_conv2d[1, 8, 8, 4, 3, 3, 4, 2, 1, "basic_2groups"](ctx)
+
+        # 4 groups
+        test_grouped_conv2d[1, 8, 8, 8, 3, 3, 8, 4, 1, "4groups"](ctx)
+
+        # Depthwise (groups == C_in == C_out)
+        test_grouped_conv2d[1, 8, 8, 16, 3, 3, 16, 16, 1, "depthwise"](ctx)
+
+        # HuBERT-like: 768 channels, 16 groups, kernel 128
+        # (This is the shape from the bug report)
+        test_grouped_conv2d[1, 1, 400, 768, 1, 128, 768, 16, 0, "hubert_like"](
+            ctx
+        )
+
+        # Larger batch
+        test_grouped_conv2d[2, 16, 16, 32, 3, 3, 64, 8, 1, "batch2_8groups"](
+            ctx
+        )
+
+        # groups=1 sanity check (should still work)
+        test_grouped_conv2d[1, 8, 8, 4, 3, 3, 8, 1, 1, "groups1_sanity"](ctx)
+
+        print()
+        print("=" * 60)
+        print("ALL GROUPED CONV TESTS PASSED!")
+        print("=" * 60)

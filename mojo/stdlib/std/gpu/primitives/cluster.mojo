@@ -34,7 +34,7 @@ from std.utils.index import IndexList, product
 
 
 @always_inline("nodebug")
-fn block_rank_in_cluster() -> UInt32:
+def block_rank_in_cluster() -> UInt32:
     """Returns the unique identifier (rank) for the current thread block within its cluster.
 
     Returns:
@@ -58,7 +58,7 @@ fn block_rank_in_cluster() -> UInt32:
 
 
 @always_inline("nodebug")
-fn elect_one_sync() -> Bool:
+def elect_one_sync() -> Bool:
     """Elects a single thread within a warp to perform an operation.
 
     Returns:
@@ -77,7 +77,7 @@ fn elect_one_sync() -> Bool:
 
 
 @always_inline("nodebug")
-fn elect_one_sync_with_mask(mask: UInt32 = 0xFFFFFFFF) -> Bool:
+def elect_one_sync_with_mask(mask: UInt32 = 0xFFFFFFFF) -> Bool:
     """Elects a single thread within a warp to perform an operation.
 
     Args:
@@ -108,7 +108,7 @@ fn elect_one_sync_with_mask(mask: UInt32 = 0xFFFFFFFF) -> Bool:
 
 
 @always_inline("nodebug")
-fn cluster_arrive_relaxed():
+def cluster_arrive_relaxed():
     """Signals arrival at a cluster synchronization point with relaxed memory ordering.
 
     This is a relaxed version of cluster_arrive() that does not enforce memory ordering
@@ -125,7 +125,7 @@ fn cluster_arrive_relaxed():
 
 
 @always_inline("nodebug")
-fn cluster_arrive():
+def cluster_arrive():
     """Signals arrival at a cluster synchronization point with memory ordering guarantees.
 
     This function ensures all prior memory operations from this thread block are visible to
@@ -141,7 +141,7 @@ fn cluster_arrive():
 
 
 @always_inline("nodebug")
-fn cluster_wait():
+def cluster_wait():
     """Waits for all thread blocks in the cluster to arrive at the synchronization point.
 
     This function blocks until all thread blocks in the cluster have called cluster_arrive()
@@ -157,7 +157,7 @@ fn cluster_wait():
 
 
 @always_inline("nodebug")
-fn cluster_sync():
+def cluster_sync():
     """Performs a full cluster synchronization with memory ordering guarantees.
 
     This is a convenience function that combines cluster_arrive() and cluster_wait()
@@ -169,7 +169,7 @@ fn cluster_sync():
 
 
 @always_inline("nodebug")
-fn cluster_sync_relaxed():
+def cluster_sync_relaxed():
     """Performs a full cluster synchronization with relaxed memory ordering.
 
     This is a convenience function that combines cluster_arrive_relaxed() and cluster_wait()
@@ -181,7 +181,7 @@ fn cluster_sync_relaxed():
 
 
 @always_inline("nodebug")
-fn cluster_sync_acquire():
+def cluster_sync_acquire():
     """Acquires the cluster sync proxy.
 
     Only supported on NVIDIA SM90+ GPUs.
@@ -198,7 +198,7 @@ fn cluster_sync_acquire():
 
 
 @always_inline("nodebug")
-fn cluster_sync_release():
+def cluster_sync_release():
     """Release the cluster sync proxy.
 
     Only supported on NVIDIA SM90+ GPUs."""
@@ -214,7 +214,7 @@ fn cluster_sync_release():
 
 
 @always_inline("nodebug")
-fn clusterlaunchcontrol_query_cancel_is_canceled(
+def clusterlaunchcontrol_query_cancel_is_canceled(
     result: UnsafePointer[
         mut=True, UInt128, _, address_space=AddressSpace.SHARED
     ]
@@ -251,7 +251,7 @@ fn clusterlaunchcontrol_query_cancel_is_canceled(
 
 
 @always_inline("nodebug")
-fn clusterlaunchcontrol_query_cancel_get_first_ctaid[
+def clusterlaunchcontrol_query_cancel_get_first_ctaid[
     id: String
 ](
     result: UnsafePointer[
@@ -300,7 +300,7 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid[
 
 
 @always_inline("nodebug")
-fn clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
+def clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
     result: UnsafePointer[
         mut=True, UInt128, _, address_space=AddressSpace.SHARED
     ],
@@ -340,7 +340,7 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
 
 
 @always_inline("nodebug")
-fn clusterlaunchcontrol_try_cancel[
+def clusterlaunchcontrol_try_cancel[
     multicast: Bool = False
 ](
     result: UnsafePointer[
@@ -379,7 +379,7 @@ fn clusterlaunchcontrol_try_cancel[
 
 
 @always_inline("nodebug")
-fn cluster_mask_base[
+def cluster_mask_base[
     cluster_shape: IndexList[3],
     axis: Int,
 ]() -> UInt16:

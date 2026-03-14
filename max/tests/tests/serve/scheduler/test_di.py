@@ -17,19 +17,27 @@ import queue
 import time
 from collections.abc import Callable
 from typing import TypeVar, cast
+from unittest.mock import MagicMock
 
 import numpy as np
 from max.driver import CPU, Device
 from max.interfaces import (
+    GenerationStatus,
     RequestID,
     SchedulerResult,
+    TextGenerationInputs,
     TextGenerationOutput,
     TokenBuffer,
 )
 from max.kv_cache.paged_kv_cache.transfer_engine import KVTransferEngineMetadata
 from max.pipelines.core import TextContext
+from max.pipelines.lib import OverlapTextGenerationPipeline
 from max.serve.config import generate_zmq_ipc_path
-from max.serve.scheduler.base import PrefillRequest, PrefillResponse
+from max.serve.scheduler.base import (
+    PrefillRequest,
+    PrefillResponse,
+    SchedulerProgress,
+)
 from max.serve.scheduler.decode_scheduler import (
     DecodeScheduler,
     TokenGenerationSchedulerConfig,
@@ -350,3 +358,65 @@ def test_di_with_dp2_end_to_end() -> None:
     assert len(req2_outputs) == 2
     assert req2_outputs[0].tokens == [100]  # From prefill
     assert req2_outputs[1].tokens == [46, 47, 48, 49]  # From decode
+
+
+def test_overlap_di_schedule_filters_stale_responses() -> None:
+    """Verify schedule() drops responses for request IDs not in batch_constructor."""
+    decode, prefill, server_addr = create_di_scheduler(max_forward_steps_tg=1)
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=10
+    )
+    req_id = ctx.request_id
+    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
+    response_q = cast(queue.Queue, decode.response_queue)  # type: ignore[type-arg]
+    request_queue.put(ctx)
+
+    # Send to prefill, execute prefill, then run decode
+    # (streams prefill token + generates 1 decode token).
+    decode.run_iteration()
+    prefill.run_iteration()
+    decode.run_iteration()
+
+    # Drain both responses (prefill token, first decode token).
+    assert response_q.qsize() == 2
+    response_q.get()
+    response_q.get()
+
+    # Patch execute to inject a stale response for a fabricated request ID.
+    stale_id = RequestID()
+    original_execute = decode.pipeline.execute
+
+    def patched_execute(
+        inputs: TextGenerationInputs[TextContext],
+    ) -> dict[RequestID, TextGenerationOutput]:
+        responses = original_execute(inputs)
+        responses[stale_id] = TextGenerationOutput(
+            request_id=stale_id,
+            tokens=[999],
+            final_status=GenerationStatus.ACTIVE,
+        )
+        return responses
+
+    decode.pipeline.execute = patched_execute  # type: ignore[method-assign]
+
+    # Run another decode iteration; the stale response should be filtered.
+    decode.run_iteration()
+
+    output = response_q.get()
+    assert req_id in output
+    assert stale_id not in output
+
+
+def test_overlap_di_has_pending_outputs_prevents_no_progress() -> None:
+    """Verify run_iteration() returns MADE_PROGRESS when the batch is empty,
+    but the overlap pipeline reports pending outputs."""
+    decode, _prefill, _server_addr = create_di_scheduler()
+
+    # Simulate overlap pipeline behavior without a real OverlapPipeline.
+    mock_pipeline = MagicMock(spec=OverlapTextGenerationPipeline)
+    mock_pipeline.has_pending_outputs.return_value = True
+    mock_pipeline.execute.return_value = {}
+    decode.pipeline = mock_pipeline
+
+    result = decode.run_iteration()
+    assert result == SchedulerProgress.MADE_PROGRESS

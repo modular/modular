@@ -22,7 +22,7 @@ from std.utils.index import Index, IndexList
 comptime dtype = DType.float32
 
 
-fn test_conv_transposed_cudnn[
+def test_conv_transposed_cudnn[
     input_len: Int,
     kernel_len: Int,
     in_channels: Int = 1,

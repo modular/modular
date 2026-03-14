@@ -16,7 +16,7 @@ from std.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 
-fn vec_func(
+def vec_func(
     in0: UnsafePointer[Float32, ImmutAnyOrigin],
     in1: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
@@ -29,7 +29,7 @@ fn vec_func(
     output[tid] = in0[tid] + in1[tid] + Float32(supplement)
 
 
-fn test(ctx: DeviceContext) raises:
+def test(ctx: DeviceContext) raises:
     comptime length = 1024
 
     # Allocate the input buffers as sub buffers of a bigger one

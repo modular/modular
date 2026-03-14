@@ -86,7 +86,13 @@ modular_py_test(
         "test_smoke_test_github_matrix.py",
     ],
     imports = [".."],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
+        ":smoke_test",
         ":smoke_test_github_matrix",
         requirement("click"),
     ],

@@ -17,7 +17,7 @@ from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.testing import *
 
 
-fn register_intrinsics():
+def register_intrinsics():
     warpgroup_reg_alloc[64]()
     warpgroup_reg_dealloc[64]()
 

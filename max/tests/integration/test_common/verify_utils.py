@@ -665,17 +665,34 @@ class KLDivergenceValidator(DistanceValidatorBase):
     def threshold_str(self) -> str:
         return f"kl_div={self._threshold}"
 
+    @staticmethod
+    def _smooth_probs(
+        probs: numpy.typing.NDArray[np.floating],
+        eps: float = 1e-10,
+    ) -> numpy.typing.NDArray[np.floating]:
+        """Smooths probabilities so no entry is below eps.
+
+        Applies (1 - N*eps) * probs + eps, which preserves the simplex
+        (probabilities still sum to 1) and guarantees a minimum value of eps.
+
+        The choice of eps is a tradeoff between numerical stability and
+        vocabulary size N. The (1 - N*eps) factor redistributes probability
+        away from softmax values to fund the eps floor. For typical vocab
+        sizes (~2e5), N*eps is ~2e-5, which is negligible for any
+        significant probability.
+        """
+        n = probs.shape[-1]
+        return (1 - n * eps) * probs + eps
+
     def _compute_distance(
         self,
         target: numpy.typing.NDArray,  # type: ignore[type-arg]
         reference: numpy.typing.NDArray,  # type: ignore[type-arg]
     ) -> numpy.typing.NDArray:  # type: ignore[type-arg]
-        eps = 1e-9
-        result = rel_entr(
-            softmax(reference, -1), softmax(target, -1) + eps
+        return rel_entr(
+            self._smooth_probs(softmax(reference, -1)),
+            self._smooth_probs(softmax(target, -1)),
         ).sum(-1)
-
-        return result
 
 
 class LPIPSValidator(ValidatorBase):

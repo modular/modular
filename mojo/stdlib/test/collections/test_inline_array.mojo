@@ -378,7 +378,7 @@ def test_inline_array_triviality() raises:
     assert_true(InlineArray[String, 1].__move_ctor_is_trivial)
 
 
-fn _return_array[copy: Bool = False]() -> InlineArray[Int32, 4]:
+def _return_array[copy: Bool = False]() -> InlineArray[Int32, 4]:
     var arr = InlineArray[Int32, 4](fill=0)
 
     comptime if copy:
@@ -505,13 +505,7 @@ def test_inline_array_conditional_conformances() raises:
     assert_true(conforms_to(InlineArray[Int, 3], Copyable))
     assert_true(conforms_to(InlineArray[Int, 3], ImplicitlyCopyable))
     assert_true(conforms_to(InlineArray[Int, 3], ImplicitlyDestructible))
-    # TODO(MOCO-3413): The `conforms_to` builtin does not evaluate the
-    # `where` clause on conditional conformances — it sees that
-    # `InlineArray` has a conformance for `Writable` and returns True
-    # without checking whether the condition holds for the concrete
-    # `ElementType`. The type checker at call sites *does* enforce the
-    # condition correctly.
-    # assert_false(conforms_to(InlineArray[NonWritable, 3], Writable))
+    assert_false(conforms_to(InlineArray[NonWritable, 3], Writable))
 
 
 def test_inline_array_iter_bounds() raises:

@@ -114,7 +114,7 @@ def test_merge() raises:
     var a = [1, 2, 3]
     var b = [4, 5, 6]
 
-    fn inner(cond: Bool, x: Int, mut a: List[Int], mut b: List[Int]):
+    def inner(cond: Bool, x: Int, mut a: List[Int], mut b: List[Int]):
         var either = Pointer(to=a) if cond else Pointer(to=b)
         either[].append(x)
 
@@ -143,7 +143,7 @@ def test_nicheable() raises:
 # We don't actually need to run this,
 # but Mojo's exclusivity check shouldn't complain
 def _test_get_immutable() raises -> Int:
-    fn foo(
+    def foo(
         x: Pointer[mut=False, Int, ...], y: Pointer[mut=False, Int, ...]
     ) -> Int:
         return x[]

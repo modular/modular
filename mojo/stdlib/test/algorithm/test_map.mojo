@@ -22,7 +22,7 @@ def test_map() raises:
 
     @parameter
     @__copy_capture(vector)
-    fn add_two(idx: Int):
+    def add_two(idx: Int):
         vector[idx] = vector[idx] + 2
 
     map[add_two](len(vector))
@@ -35,7 +35,7 @@ def test_map() raises:
 
     @parameter
     @__copy_capture(vector)
-    fn add(idx: Int):
+    def add(idx: Int):
         vector[idx] = vector[idx] + vector[idx]
 
     map[add](len(vector))

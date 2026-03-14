@@ -23,7 +23,7 @@ struct Point(Writable):
     var y: Int
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("Point(", self.x, ", ", self.y, ")")
 
 
@@ -197,7 +197,7 @@ def test_write_hex() raises:
 
 
 def test_closure_non_capturing() raises:
-    fn write_closure(mut writer: Some[Writer]):
+    def write_closure(mut writer: Some[Writer]):
         writer.write("Hello Mojo!")
 
     def write_non_capturing[
@@ -212,10 +212,10 @@ def test_closure_non_capturing() raises:
 
 
 def _test_closure_capturing(mut writer: Some[Writer & Writable]) raises:
-    fn write_closure() capturing:
+    def write_closure() capturing:
         writer.write("Hello Mojo!")
 
-    fn write_capturing[func: fn() capturing -> None]():
+    def write_capturing[func: fn() capturing -> None]():
         func()
 
     write_capturing[write_closure]()

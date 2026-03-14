@@ -73,7 +73,7 @@ struct TensorMapDataType(TrivialRegisterPassable):
     """TensorFloat-32 with flush-to-zero for denormals."""
 
     @staticmethod
-    fn from_dtype[dtype: DType]() -> Self:
+    def from_dtype[dtype: DType]() -> Self:
         """Converts a Mojo `DType` to the corresponding TMA data type.
 
         Parameters:
@@ -152,7 +152,7 @@ struct TensorMapSwizzle(
     """128-byte swizzle pattern."""
 
     @always_inline("nodebug")
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         """Converts the swizzle mode to an integer value.
 
         Returns:
@@ -161,7 +161,7 @@ struct TensorMapSwizzle(
         return Int(self._value)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Checks if two swizzle modes are equal.
 
         Args:
@@ -173,7 +173,7 @@ struct TensorMapSwizzle(
         return self._value == other._value
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Checks if two swizzle modes are not equal.
 
         Args:
@@ -185,7 +185,7 @@ struct TensorMapSwizzle(
         return self._value != other._value
 
     @always_inline
-    fn bytes(self) -> Int:
+    def bytes(self) -> Int:
         """Gets the swizzle size in bytes.
 
         Returns:
@@ -193,18 +193,8 @@ struct TensorMapSwizzle(
         """
         return Int((2**self._value) * 16)
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Converts the swizzle mode to a string representation.
-
-        Returns:
-            A string describing the swizzle mode.
-        """
-        return String.write(self)
-
     @always_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the swizzle mode to a writer.
 
         Args:
@@ -279,11 +269,11 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
     comptime device_type: AnyType = TMADescriptor
     """The device-side type for this TMA descriptor."""
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """Gets the type name for this descriptor.
 
         Returns:
@@ -292,7 +282,7 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
         return "TMADescriptor"
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initializes an empty TMA descriptor.
 
         The descriptor data is uninitialized and must be filled using
@@ -301,7 +291,7 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
         self.data = StaticTuple[UInt8, 128]()
 
     @always_inline
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Creates a copy of a TMA descriptor.
 
         Args:
@@ -310,7 +300,7 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
         self.data = copy.data
 
 
-fn prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False, _]):
+def prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False, _]):
     """Prefetches a TMA descriptor into the constant cache.
 
     Issues a hardware prefetch instruction to bring the TMA descriptor into
@@ -326,7 +316,7 @@ fn prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False, _]):
 
 
 @always_inline
-fn create_tma_descriptor[
+def create_tma_descriptor[
     dtype: DType,
     rank: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,

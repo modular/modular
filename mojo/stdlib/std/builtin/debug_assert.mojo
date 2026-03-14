@@ -21,7 +21,6 @@ from std.os import abort
 from std.sys import (
     is_amd_gpu,
     is_apple_gpu,
-    is_run_in_comptime_interpreter,
     is_gpu,
     is_nvidia_gpu,
 )
@@ -42,7 +41,7 @@ comptime ASSERT_MODE = get_defined_string["ASSERT", "safe"]()
 
 
 @always_inline("nodebug")
-fn _string_free_comptime_assert[
+def _string_free_comptime_assert[
     cond: Bool, msg: StaticString, *extra: StaticString
 ]():
     """Compile-time assertion that avoids `String` to prevent circular deps.
@@ -54,12 +53,12 @@ fn _string_free_comptime_assert[
 
     __mlir_op.`kgen.param.assert`[
         cond=cond.__mlir_i1__(),
-        message=_get_kgen_string[msg, extra](),
+        message=_get_kgen_string[msg, *extra](),
     ]()
 
 
 @no_inline
-fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
+def _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
     _string_free_comptime_assert[
         ASSERT_MODE == "none"
         or ASSERT_MODE == "warn"
@@ -88,7 +87,7 @@ fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
 
 
 @always_inline
-fn debug_assert[
+def debug_assert[
     cond: fn() capturing[_] -> Bool,
     assert_mode: StaticString = "none",
     *Ts: Writable,
@@ -147,7 +146,7 @@ fn debug_assert[
     on:
 
     ```mojo
-    fn check_name() capturing -> Bool:
+    def check_name() capturing -> Bool:
         return String("name: ", name) in person
 
     debug_assert[check_name]("unexpected name")
@@ -194,7 +193,7 @@ fn debug_assert[
 
 
 @always_inline
-fn debug_assert[
+def debug_assert[
     assert_mode: StaticString = "none",
     *Ts: Writable,
     cpu_only: Bool = False,
@@ -253,7 +252,7 @@ fn debug_assert[
     on:
 
     ```mojo
-    fn check_name() capturing -> Bool:
+    def check_name() capturing -> Bool:
         return String("name: ", name) in person
 
     debug_assert[check_name]("unexpected name")
@@ -306,7 +305,7 @@ fn debug_assert[
 
 
 @always_inline
-fn debug_assert[
+def debug_assert[
     assert_mode: StaticString = "none",
     cpu_only: Bool = False,
     _use_compiler_assume: Bool = False,
@@ -364,7 +363,7 @@ fn debug_assert[
     on:
 
     ```mojo
-    fn check_name() capturing -> Bool:
+    def check_name() capturing -> Bool:
         return String("name: ", name) in person
 
     debug_assert[check_name]("unexpected name")
@@ -406,7 +405,7 @@ fn debug_assert[
 
 
 @no_inline
-fn _debug_assert_msg(
+def _debug_assert_msg(
     message: UnsafePointer[mut=False, Byte, _], length: Int, loc: SourceLocation
 ):
     """Aborts with (or prints) the given message and location.
@@ -418,7 +417,7 @@ fn _debug_assert_msg(
     abort's implementation could use debug_assert)
     """
 
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         print("At: ", loc, ": Assert Error: ", message, sep="")
 
         comptime if ASSERT_MODE != "warn":

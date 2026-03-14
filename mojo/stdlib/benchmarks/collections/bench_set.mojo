@@ -19,14 +19,14 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
 # ===-----------------------------------------------------------------------===#
-fn make_int_set[size: Int]() -> Set[Int]:
+def make_int_set[size: Int]() -> Set[Int]:
     var s = Set[Int]()
     for i in range(size):
         s.add(i)
     return s^
 
 
-fn make_string_set[size: Int]() -> Set[String]:
+def make_string_set[size: Int]() -> Set[String]:
     var s = Set[String]()
     for i in range(size):
         s.add(String("key_") + String(i))
@@ -70,13 +70,13 @@ fn bench_set_init_variadic(mut b: Bencher) raises:
 # Benchmark Set.__eq__ (Int keys)
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_set_eq_int[size: Int](mut b: Bencher) raises:
+def bench_set_eq_int[size: Int](mut b: Bencher) raises:
     """Benchmark equality check of two equal Int sets."""
     var s1 = make_int_set[size]()
     var s2 = make_int_set[size]()
 
     @always_inline
-    fn call_fn() unified {read}:
+    def call_fn() unified {read}:
         keep(black_box(s1) == black_box(s2))
 
     b.iter(call_fn)
@@ -86,13 +86,13 @@ fn bench_set_eq_int[size: Int](mut b: Bencher) raises:
 # Benchmark Set.__eq__ (String keys - expensive hash)
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_set_eq_string[size: Int](mut b: Bencher) raises:
+def bench_set_eq_string[size: Int](mut b: Bencher) raises:
     """Benchmark equality check of two equal String sets."""
     var s1 = make_string_set[size]()
     var s2 = make_string_set[size]()
 
     @always_inline
-    fn call_fn() unified {read}:
+    def call_fn() unified {read}:
         keep(black_box(s1) == black_box(s2))
 
     b.iter(call_fn)
@@ -102,13 +102,13 @@ fn bench_set_eq_string[size: Int](mut b: Bencher) raises:
 # Benchmark Set.__eq__ early exit (different sizes)
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_set_eq_diff_size[size: Int](mut b: Bencher) raises:
+def bench_set_eq_diff_size[size: Int](mut b: Bencher) raises:
     """Benchmark equality fast-path rejection when sizes differ."""
     var s1 = make_int_set[size]()
     var s2 = make_int_set[size + 1]()
 
     @always_inline
-    fn call_fn() unified {read}:
+    def call_fn() unified {read}:
         keep(black_box(s1) == black_box(s2))
 
     b.iter(call_fn)
@@ -118,7 +118,7 @@ fn bench_set_eq_diff_size[size: Int](mut b: Bencher) raises:
 # Benchmark Set.__eq__ early exit (same size, different elements)
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_set_eq_diff_elems[size: Int](mut b: Bencher) raises:
+def bench_set_eq_diff_elems[size: Int](mut b: Bencher) raises:
     """Benchmark equality when sets have same size but different elements."""
     var s1 = make_int_set[size]()
     var s2 = Set[Int]()
@@ -126,7 +126,7 @@ fn bench_set_eq_diff_elems[size: Int](mut b: Bencher) raises:
         s2.add(i + size)
 
     @always_inline
-    fn call_fn() unified {read}:
+    def call_fn() unified {read}:
         keep(black_box(s1) == black_box(s2))
 
     b.iter(call_fn)
@@ -136,12 +136,12 @@ fn bench_set_eq_diff_elems[size: Int](mut b: Bencher) raises:
 # Benchmark Set.__contains__
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_set_contains[size: Int](mut b: Bencher) raises:
+def bench_set_contains[size: Int](mut b: Bencher) raises:
     """Benchmark membership check for 10 elements."""
     var s = make_int_set[size]()
 
     @always_inline
-    fn call_fn() unified {read}:
+    def call_fn() unified {read}:
         ref int_set = black_box(s)
         for key in range(10):
             keep(black_box(key) in int_set)
@@ -153,12 +153,12 @@ fn bench_set_contains[size: Int](mut b: Bencher) raises:
 # Benchmark Set.add
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_set_add[size: Int](mut b: Bencher) raises:
+def bench_set_add[size: Int](mut b: Bencher) raises:
     """Benchmark adding 10 existing elements (duplicate check) to a set."""
     var s = make_int_set[size]()
 
     @always_inline
-    fn call_fn() unified {mut s}:
+    def call_fn() unified {mut s}:
         ref int_set = black_box(s)
         for key in range(10):
             int_set.add(black_box(key))
@@ -170,7 +170,7 @@ fn bench_set_add[size: Int](mut b: Bencher) raises:
 # Benchmark Set.union
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_set_union[size: Int](mut b: Bencher) raises:
+def bench_set_union[size: Int](mut b: Bencher) raises:
     """Benchmark union of two sets with 50% overlap."""
     var s1 = make_int_set[size]()
     var s2 = Set[Int]()
@@ -179,7 +179,7 @@ fn bench_set_union[size: Int](mut b: Bencher) raises:
         s2.add(i)
 
     @always_inline
-    fn call_fn() unified {read}:
+    def call_fn() unified {read}:
         keep(black_box(s1) | black_box(s2))
 
     b.iter(call_fn)
@@ -189,7 +189,7 @@ fn bench_set_union[size: Int](mut b: Bencher) raises:
 # Benchmark Set.intersection
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_set_intersection[size: Int](mut b: Bencher) raises:
+def bench_set_intersection[size: Int](mut b: Bencher) raises:
     """Benchmark intersection of two sets with 50% overlap."""
     var s1 = make_int_set[size]()
     var s2 = Set[Int]()
@@ -198,7 +198,7 @@ fn bench_set_intersection[size: Int](mut b: Bencher) raises:
         s2.add(i)
 
     @always_inline
-    fn call_fn() unified {read}:
+    def call_fn() unified {read}:
         keep(black_box(s1) & black_box(s2))
 
     b.iter(call_fn)
@@ -208,7 +208,7 @@ fn bench_set_intersection[size: Int](mut b: Bencher) raises:
 # Benchmark Set.difference
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_set_difference[size: Int](mut b: Bencher) raises:
+def bench_set_difference[size: Int](mut b: Bencher) raises:
     """Benchmark difference of two sets with 50% overlap."""
     var s1 = make_int_set[size]()
     var s2 = Set[Int]()
@@ -217,7 +217,7 @@ fn bench_set_difference[size: Int](mut b: Bencher) raises:
         s2.add(i)
 
     @always_inline
-    fn call_fn() unified {read}:
+    def call_fn() unified {read}:
         keep(black_box(s1) - black_box(s2))
 
     b.iter(call_fn)

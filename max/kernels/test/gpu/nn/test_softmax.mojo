@@ -15,14 +15,18 @@ from std.math import isclose
 from std.random import rand, random_float64, seed
 from std.sys import has_amd_gpu_accelerator
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
-from layout.int_tuple import UNKNOWN_VALUE
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor, RuntimeLayout
-from layout import Coord, Idx, TileTensor, row_major
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from nn.softmax import (
     _online_softmax_kernel,
     _softmax_cpu,
@@ -35,7 +39,7 @@ from std.utils.numerics import get_accum_type
 from std.utils import IndexList
 
 
-fn test_gpu_softmax(ctx: DeviceContext) raises:
+def test_gpu_softmax(ctx: DeviceContext) raises:
     print("== test_gpu_softmax")
 
     comptime type = DType.float32
@@ -72,7 +76,7 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
 
     @parameter
     @__copy_capture(in_device)
-    fn input_fn_device[
+    def input_fn_device[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
         return in_device.load[width=_simd_width](
@@ -81,7 +85,7 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
 
     @parameter
     @__copy_capture(in_host)
-    fn input_fn_host[
+    def input_fn_host[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
         return in_host.load[width=_simd_width](rebind[IndexList[rank]](coords))
@@ -92,7 +96,7 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
 
     _softmax_cpu[type, 1, rank, origin_of()._mlir_origin, input_fn_host](
         shape,
-        TileTensor(NDBuffer[rank=rank, type](out_ref.ptr, shape)),
+        TileTensor(out_ref.ptr, row_major(Coord(shape))),
         rank - 1,
     )
 
@@ -184,14 +188,14 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext) raises:
 
     @parameter
     @__copy_capture(in_device_ref)
-    fn input_fn_ref[
+    def input_fn_ref[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[ref_type, _simd_width]:
         return in_device_ref.load[width=_simd_width](coords)
 
     @parameter
     @__copy_capture(in_device_test)
-    fn input_fn_test[
+    def input_fn_test[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[test_type, _simd_width]:
         return in_device_test.load[width=_simd_width](coords)
@@ -219,7 +223,7 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext) raises:
     _ = in_device_ref
 
 
-fn test_gpu_online_softmax[
+def test_gpu_online_softmax[
     WM: Int, WN: Int, transpose_fragments: Bool
 ](ctx: DeviceContext) raises:
     print("== test_online_softmax")
@@ -280,14 +284,14 @@ fn test_gpu_online_softmax[
 
     @parameter
     @__copy_capture(in_host)
-    fn input_fn_host[
+    def input_fn_host[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
         return in_host.load[width=_simd_width](rebind[IndexList[rank]](coords))
 
     _softmax_cpu[type, 1, rank, origin_of()._mlir_origin, input_fn_host](
         shape,
-        TileTensor(NDBuffer[rank=rank, type](out_ref.ptr, shape)),
+        TileTensor(out_ref.ptr, row_major(Coord(shape))),
         rank - 1,
     )
 
@@ -307,14 +311,14 @@ fn test_gpu_online_softmax[
     _ = out_device_ptr
 
 
-fn test_gpu_logsoftmax(ctx: DeviceContext) raises:
+def test_gpu_logsoftmax(ctx: DeviceContext) raises:
     print("== test_gpu_logsoftmax")
 
     comptime type = DType.float32
     comptime rank = 3
 
     @parameter
-    fn _test_shape(shape: IndexList[rank]) raises:
+    def _test_shape(shape: IndexList[rank]) raises:
         var in_host_ptr = alloc[Scalar[type]](shape.flattened_length())
         var in_device_ptr = ctx.enqueue_create_buffer[type](
             shape.flattened_length()
@@ -344,7 +348,7 @@ fn test_gpu_logsoftmax(ctx: DeviceContext) raises:
 
         @parameter
         @__copy_capture(in_device)
-        fn input_fn_device[
+        def input_fn_device[
             _simd_width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
             return in_device.load[width=_simd_width](
@@ -353,7 +357,7 @@ fn test_gpu_logsoftmax(ctx: DeviceContext) raises:
 
         @parameter
         @__copy_capture(in_host)
-        fn input_fn_host[
+        def input_fn_host[
             _simd_width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
             return in_host.load[width=_simd_width](
@@ -373,7 +377,7 @@ fn test_gpu_logsoftmax(ctx: DeviceContext) raises:
             logsoftmax=True,
         ](
             shape,
-            TileTensor(NDBuffer[rank=rank, type](out_ref.ptr, shape)),
+            TileTensor(out_ref.ptr, row_major(Coord(shape))),
             rank - 1,
         )
 
@@ -409,7 +413,7 @@ fn test_gpu_logsoftmax(ctx: DeviceContext) raises:
     _test_shape(IndexList[rank](1, 1, 4))
 
 
-fn test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
+def test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
     """Test GPU softmax_with_temperature against CPU reference.
 
     Parameters:
@@ -489,7 +493,7 @@ fn test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
 
     @parameter
     @__copy_capture(scaled_host)
-    fn input_fn_cpu[
+    def input_fn_cpu[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
         return scaled_host.load[width=_simd_width](
@@ -498,7 +502,7 @@ fn test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
 
     _softmax_cpu[type, 1, rank, origin_of()._mlir_origin, input_fn_cpu](
         shape,
-        TileTensor(NDBuffer[rank=rank, type](out_ref.ptr, shape)),
+        TileTensor(out_ref.ptr, row_major(Coord(shape))),
         rank - 1,
     )
 

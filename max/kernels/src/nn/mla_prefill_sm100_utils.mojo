@@ -42,11 +42,13 @@ from nn.mha_fa3_utils import (
 )
 from nn.mha_utils import OptionallyStaticInt, MHAPartitionScheme
 
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
+from layout import (
+    Layout,
+    LayoutTensor,
+    row_major,
+    stack_allocation as tt_stack_allocation,
+)
 from layout.tma_async import RaggedTMA3DTile, PipelineState
-from layout.tile_tensor import stack_allocation as tt_stack_allocation
-from layout import row_major
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 
@@ -114,7 +116,7 @@ struct MLAConfig(TrivialRegisterPassable):
     comptime mbar_size = size_of[DType.int64]()
     comptime num_correction_cols = 1
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         num_q_heads: Int,
@@ -183,10 +185,10 @@ struct MLAConfig(TrivialRegisterPassable):
         self.dtype_size = qkv_dtype_size
 
     @always_inline
-    fn num_qo(self) -> Int:
+    def num_qo(self) -> Int:
         return 2
 
-    fn supported(self) -> Bool:
+    def supported(self) -> Bool:
         return (
             self.depth >= 64
             and self.BN >= 64
@@ -195,18 +197,18 @@ struct MLAConfig(TrivialRegisterPassable):
             and self.smem_used <= Self.sm100_smem_carveout
         )
 
-    fn correction_smem_elements(self) -> Int:
+    def correction_smem_elements(self) -> Int:
         return self.BM * Self.num_correction_cols
 
-    fn num_active_warps_per_group(self) -> Int:
+    def num_active_warps_per_group(self) -> Int:
         return 4
 
-    fn num_active_threads_per_group(self) -> Int:
+    def num_active_threads_per_group(self) -> Int:
         return WARP_SIZE * self.num_active_warps_per_group()
 
 
 @always_inline
-fn split_smem[
+def split_smem[
     first: Layout, second: Layout, first_dtype: DType, second_dtype: DType
 ](tensor: SharedMemLT) -> Tuple[
     SharedMemLT[first_dtype, first], SharedMemLT[second_dtype, second]
@@ -226,13 +228,13 @@ struct MLAPositionSummary(TrivialRegisterPassable):
     var score_row: UInt32
 
     @always_inline
-    fn __init__(out self, num_keys: UInt32, score_row: UInt32):
+    def __init__(out self, num_keys: UInt32, score_row: UInt32):
         self.num_keys = num_keys
         self.score_row = score_row
 
     @staticmethod
     @always_inline
-    fn get_num_keys_and_start_pos[
+    def get_num_keys_and_start_pos[
         KRopeType: MHAOperand,
         //,
         _ndbuffer_mha_operand: Bool,
@@ -255,12 +257,12 @@ struct MLAPositionSummary(TrivialRegisterPassable):
 
     @staticmethod
     @always_inline
-    fn get_score_row(seq_info: SeqInfo, start_pos: UInt32) -> UInt32:
+    def get_score_row(seq_info: SeqInfo, start_pos: UInt32) -> UInt32:
         return start_pos + warp.broadcast(seq_info.prompt_offset)
 
     @staticmethod
     @always_inline
-    fn create[
+    def create[
         KRopeType: MHAOperand,
         //,
         _ndbuffer_mha_operand: Bool,
@@ -320,7 +322,7 @@ struct MLAKVProducerPipeline[
     var smem: Self.SMemType
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         mbar: MBarType,
         smem: Self.SMemType,
@@ -334,7 +336,7 @@ struct MLAKVProducerPipeline[
         self.kv_pipeline.state._phase = 1
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         kv_pipeline: KVPipeline[
             Self.config.num_kv_stages, Self.config.num_qk_stages
@@ -350,7 +352,7 @@ struct MLAKVProducerPipeline[
         self.kv_pipeline.state._phase = 1
 
     @always_inline
-    fn get_kv_smem[*, qk_stage: Int](self) -> Self.SMemType:
+    def get_kv_smem[*, qk_stage: Int](self) -> Self.SMemType:
         comptime stage_offset = qk_stage * Self.config.padded_depth * Self.config.BN
         var dyn_offset: UInt32 = (
             UInt32(Self.k_elements) * self.kv_pipeline.state.index()
@@ -358,7 +360,7 @@ struct MLAKVProducerPipeline[
         return self.smem + stage_offset + dyn_offset
 
     @always_inline
-    fn get_k[*, qk_stage: Int, expect: Bool = True](self) -> Self.KPairType:
+    def get_k[*, qk_stage: Int, expect: Bool = True](self) -> Self.KPairType:
         p_mbar = self.kv_pipeline.producer_mbar[qk_stage=qk_stage]()
 
         comptime if expect:
@@ -366,17 +368,17 @@ struct MLAKVProducerPipeline[
         return {p_mbar, {self.get_kv_smem[qk_stage=qk_stage]()}}
 
     @always_inline
-    fn get_v[*, qk_stage: Int](self) -> Self.VPairType:
+    def get_v[*, qk_stage: Int](self) -> Self.VPairType:
         p_mbar = self.kv_pipeline.producer_mbar[qk_stage=qk_stage]()
         p_mbar[].expect_bytes(Int32(Self.v_bytes))
         return {p_mbar, {self.get_kv_smem[qk_stage=qk_stage]()}}
 
     @always_inline
-    fn acquire_kv[*, qk_stage: Int = Self.config.num_qk_stages - 1](self):
+    def acquire_kv[*, qk_stage: Int = Self.config.num_qk_stages - 1](self):
         self.kv_pipeline.producer_acquire[qk_stage]()
 
     @always_inline
-    fn commit_kv_step(mut self):
+    def commit_kv_step(mut self):
         """
         Step the kv pipeline. The does not perform the commit on the mbars;
         that should be handled by the `tma_op.async_copy`.
@@ -394,47 +396,47 @@ struct TMAtoCvtPipeline[
     var state: PipelineState[Self.num_kv_stages]
 
     @always_inline
-    fn __init__(out self, consumer_mbars: MBarType, producer_mbars: MBarType):
+    def __init__(out self, consumer_mbars: MBarType, producer_mbars: MBarType):
         self.consumer_mbars = consumer_mbars
         self.producer_mbars = producer_mbars
         self.state = {}
 
     @always_inline
-    fn init(self):
+    def init(self):
         comptime for i in range(Self.num_kv_stages):
             self.consumer_mbars[i].init(Int32(Self.num_consumer))
             self.producer_mbars[i].init(Int32(Self.num_producer))
 
     @always_inline
-    fn producer_mbar(self) -> MBarType:
+    def producer_mbar(self) -> MBarType:
         var idx: UInt32 = self.state.index()
         return self.producer_mbars + idx
 
     @always_inline
-    fn consumer_mbar(self) -> MBarType:
+    def consumer_mbar(self) -> MBarType:
         var idx: UInt32 = self.state.index()
         return self.consumer_mbars + idx
 
     @always_inline
-    fn producer_acquire(self):
+    def producer_acquire(self):
         self.consumer_mbar()[].wait(self.state.phase())
 
     @always_inline
-    fn consumer_wait(self):
+    def consumer_wait(self):
         self.producer_mbar()[].wait(self.state.phase())
 
     @always_inline
-    fn producer_commit(mut self):
+    def producer_commit(mut self):
         _ = self.producer_mbar()[].arrive()
         self.step()
 
     @always_inline
-    fn consumer_release(mut self):
+    def consumer_release(mut self):
         _ = self.consumer_mbar()[].arrive()
         self.step()
 
     @always_inline
-    fn step(mut self):
+    def step(mut self):
         self.state.step()
 
 
@@ -448,52 +450,52 @@ struct CvtToMMAPipline[
     var state: PipelineState[Self.num_stages]
 
     @always_inline
-    fn __init__(out self, producer_mbars: MBarType, consumer_mbars: MBarType):
+    def __init__(out self, producer_mbars: MBarType, consumer_mbars: MBarType):
         self.producer_mbars = producer_mbars
         self.consumer_mbars = consumer_mbars
         self.state = {}
 
     @always_inline
-    fn init(self):
+    def init(self):
         comptime for i in range(Self.num_stages):
             self.producer_mbars[i].init(Int32(Self.num_producer))
             self.consumer_mbars[i].init(Int32(Self.num_consumer))
 
     @always_inline
-    fn producer_mbar(self) -> MBarType:
+    def producer_mbar(self) -> MBarType:
         var idx: UInt32 = self.state.index()
         return self.producer_mbars + idx
 
     @always_inline
-    fn consumer_mbar(self) -> MBarType:
+    def consumer_mbar(self) -> MBarType:
         var idx: UInt32 = self.state.index()
         return self.consumer_mbars + idx
 
     @always_inline
-    fn producer_acquire(self):
+    def producer_acquire(self):
         self.consumer_mbar()[].wait(self.state.phase())
 
     @always_inline
-    fn consumer_wait(self):
+    def consumer_wait(self):
         self.producer_mbar()[].wait(self.state.phase())
 
     @always_inline
-    fn producer_commit(mut self):
+    def producer_commit(mut self):
         _ = self.producer_mbar()[].arrive()
         self.step()
 
     @always_inline
-    fn consumer_release(mut self, elect: Int32):
+    def consumer_release(mut self, elect: Int32):
         elect_mma_arrive(self.consumer_mbar(), elect)
         self.step()
 
     @always_inline
-    fn step(mut self):
+    def step(mut self):
         self.state.step()
 
 
 @always_inline
-fn cvt_block_fp8_to_bf16_with_scale[
+def cvt_block_fp8_to_bf16_with_scale[
     input_type: DType,
     output_type: DType,
     KRopeType: MHAOperand,
@@ -657,7 +659,7 @@ struct SM100MLA[
 
     @staticmethod
     @always_inline
-    fn softmax(
+    def softmax(
         tmem_addr: UInt32,
         warp_idx: UInt32,
         mbars: Self.MiscMBarsType,
@@ -711,7 +713,7 @@ struct SM100MLA[
 
         @parameter
         @always_inline
-        fn mask_row[
+        def mask_row[
             BN: Int, //, mask_strategy: MaskStrategy
         ](mut s: InlineArray[Scalar[Self.accum_type], BN], kv_row: UInt32):
             apply_mask[mask_strategy=mask_strategy](
@@ -747,7 +749,7 @@ struct SM100MLA[
 
         @parameter
         @always_inline
-        fn load_mask_max[
+        def load_mask_max[
             *, mask_strategy: MaskStrategy
         ](kv_row: UInt32) -> Scalar[Self.accum_type]:
             # break up into sets of 32
@@ -888,7 +890,7 @@ struct SM100MLA[
 
         @parameter
         @always_inline
-        fn store_exp(
+        def store_exp(
             row_max: Scalar[Self.accum_type],
         ) -> SIMD[Self.accum_type, 2]:
             comptime exp_simd = 2
@@ -1137,7 +1139,7 @@ struct SM100MLA[
 
     @staticmethod
     @always_inline
-    fn correction(
+    def correction(
         tmem_addr: UInt32,
         mbars: Self.MiscMBarsType,
         score_row: UInt32,
@@ -1324,7 +1326,7 @@ struct SM100MLA[
 
     @staticmethod
     @always_inline
-    fn mask_status(
+    def mask_status(
         mask: Self.MaskType, score_row: UInt32, kv_row: UInt32
     ) -> TileMaskStatus:
         return mask.status(
@@ -1337,7 +1339,7 @@ struct SM100MLA[
 
     @staticmethod
     @always_inline
-    fn descriptor_q(
+    def descriptor_q(
         q_smem: SharedMemPointer[Scalar[Self.qkv_type]],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[

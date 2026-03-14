@@ -131,7 +131,8 @@ def code_link_role(name, rawtext, text, lineno, inliner, options={}, content=[])
     reference_node += code_node
     return [reference_node], []
 
-_GITHUB_BASE = "https://github.com/modular/modular/blob/main"
+_GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
+_GITHUB_BASE = f"https://github.com/modular/modular/blob/{_GITHUB_BRANCH}"
 
 
 def _source_url(source_file, lineno, end_lineno):

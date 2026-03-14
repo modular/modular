@@ -16,7 +16,7 @@ from collections.abc import Callable
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
-from max.nn.float8_config import Float8Config
+from max.nn.quant_config import QuantConfig
 
 from ..attention.attention_with_rope import AttentionWithRope
 from ..attention.mask_config import MHAMaskVariant
@@ -59,7 +59,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
         stacked_qkv: bool = False,
         scale: float | None = None,
         has_bias: bool = False,
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
         clip_qkv: float | None = None,
     ):
         """Initializes the LoRA-enabled attention layer.
@@ -97,7 +97,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             stacked_qkv=stacked_qkv,
             scale=scale,
             has_bias=has_bias,
-            float8_config=float8_config,
+            quant_config=quant_config,
             clip_qkv=clip_qkv,
         )
 
@@ -145,10 +145,10 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             self.wqkv_bias.to(x.device) if self.wqkv_bias is not None else None
         )
 
-        if self.float8_config:
+        if self.quant_config:
             # FP8 path
             weight_scale = self.qkv_weight_scale
-            if self.float8_config.is_static:
+            if self.quant_config.is_static:
                 assert self.qkv_input_scale is not None
                 x8 = quantize_static_scaled_float8(
                     x, self.qkv_input_scale.to(DeviceRef.CPU())
@@ -157,8 +157,8 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             else:
                 x8, x_scales = quantize_dynamic_scaled_float8(
                     x,
-                    self.float8_config.input_scale,
-                    self.float8_config.weight_scale,
+                    self.quant_config.input_scale,
+                    self.quant_config.weight_scale,
                     scales_type=weight_scale.dtype,
                 )
 

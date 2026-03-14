@@ -138,21 +138,20 @@ Sampling
    MinPSampler
    RejectionSampler
    RejectionSamplerWithResiduals
-   TypicalAcceptanceSampler
 
-Float8
-------
+Quantization
+------------
 
 .. autosummary::
    :nosignatures:
    :toctree: generated
    :template: autosummary/class.rst
 
-   Float8Config
-   Float8InputScaleSpec
-   Float8ScaleGranularity
-   Float8ScaleOrigin
-   Float8WeightScaleSpec
+   QuantConfig
+   InputScaleSpec
+   ScaleGranularity
+   ScaleOrigin
+   WeightScaleSpec
 
 Hooks
 -----

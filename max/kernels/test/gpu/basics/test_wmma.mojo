@@ -22,9 +22,7 @@ from std.gpu.compute.mma_util import (
     load_matrix_b,
     store_matrix_d,
 )
-from layout import TileTensor
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.testing import assert_false
 
@@ -32,7 +30,7 @@ from std.utils.numerics import isnan
 
 
 # TF32 Tensor core Matmul with shape m16n8k8
-fn mma_kernel_fp32_tf32(
+def mma_kernel_fp32_tf32(
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     a_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
     b_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
@@ -69,7 +67,7 @@ fn mma_kernel_fp32_tf32(
 
 
 # FP32-BF16 (mixed precision) Tensor core Matmul with shape m16n8k8
-fn mma_kernel_fp32_bf16(
+def mma_kernel_fp32_bf16(
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     a_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
     b_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
@@ -106,7 +104,7 @@ fn mma_kernel_fp32_bf16(
 
 
 # FP32-BF16 (mixed precision) Tensor core Matmul with shape m16n8k16
-fn mma_kernel_fp32_bf16_2(
+def mma_kernel_fp32_bf16_2(
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     a_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
     b_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
@@ -143,7 +141,7 @@ fn mma_kernel_fp32_bf16_2(
 
 
 # FP32-FP16 (mixed precision) Tensor core Matmul with shape m16n8k8
-fn mma_kernel_fp32_fp16(
+def mma_kernel_fp32_fp16(
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     a_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
     b_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
@@ -180,7 +178,7 @@ fn mma_kernel_fp32_fp16(
 
 
 # FP16 Tensor core Matmul with shape m16n8k8
-fn mma_kernel_fp16_fp16(
+def mma_kernel_fp16_fp16(
     c_ptr: UnsafePointer[Float16, MutAnyOrigin],
     a_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
     b_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
@@ -216,7 +214,7 @@ fn mma_kernel_fp16_fp16(
     store_matrix_d[mma_m, mma_n, mma_k](c_ptr, d_reg, c_tile_row, c_tile_col, n)
 
 
-fn run_mma_fp32_tf32(
+def run_mma_fp32_tf32(
     M: Int,
     N: Int,
     K: Int,
@@ -266,7 +264,7 @@ fn run_mma_fp32_tf32(
 
     @always_inline
     @parameter
-    fn run_func_mma(ctx: DeviceContext) raises:
+    def run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_tf32
         ctx.enqueue_function_experimental[kernel](
             c_device,
@@ -318,7 +316,7 @@ fn run_mma_fp32_tf32(
 
     @always_inline
     @parameter
-    fn run_func_naive(ctx: DeviceContext) raises:
+    def run_func_naive(ctx: DeviceContext) raises:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
@@ -387,7 +385,7 @@ fn run_mma_fp32_tf32(
     _ = c_host_ref
 
 
-fn run_mma_fp32_bf16(
+def run_mma_fp32_bf16(
     M: Int,
     N: Int,
     K: Int,
@@ -437,7 +435,7 @@ fn run_mma_fp32_bf16(
 
     @always_inline
     @parameter
-    fn run_func_mma(ctx: DeviceContext) raises:
+    def run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_bf16
         ctx.enqueue_function_experimental[kernel](
             c_device,
@@ -486,7 +484,7 @@ fn run_mma_fp32_bf16(
 
     @always_inline
     @parameter
-    fn run_func_naive(ctx: DeviceContext) raises:
+    def run_func_naive(ctx: DeviceContext) raises:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
@@ -553,7 +551,7 @@ fn run_mma_fp32_bf16(
     _ = c_host_ref
 
 
-fn run_mma_fp32_bf16_2(
+def run_mma_fp32_bf16_2(
     M: Int,
     N: Int,
     K: Int,
@@ -603,7 +601,7 @@ fn run_mma_fp32_bf16_2(
 
     @always_inline
     @parameter
-    fn run_func_mma(ctx: DeviceContext) raises:
+    def run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_bf16_2
         ctx.enqueue_function_experimental[kernel](
             c_device,
@@ -652,7 +650,7 @@ fn run_mma_fp32_bf16_2(
 
     @always_inline
     @parameter
-    fn run_func_naive(ctx: DeviceContext) raises:
+    def run_func_naive(ctx: DeviceContext) raises:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
@@ -719,7 +717,7 @@ fn run_mma_fp32_bf16_2(
     _ = c_host_ref
 
 
-fn run_mma_fp32_fp16(
+def run_mma_fp32_fp16(
     M: Int,
     N: Int,
     K: Int,
@@ -769,7 +767,7 @@ fn run_mma_fp32_fp16(
 
     @always_inline
     @parameter
-    fn run_func_mma(ctx: DeviceContext) raises:
+    def run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_fp16
         ctx.enqueue_function_experimental[kernel](
             c_device,
@@ -818,7 +816,7 @@ fn run_mma_fp32_fp16(
 
     @always_inline
     @parameter
-    fn run_func_naive(ctx: DeviceContext) raises:
+    def run_func_naive(ctx: DeviceContext) raises:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
@@ -885,7 +883,7 @@ fn run_mma_fp32_fp16(
     _ = c_host_ref
 
 
-fn run_mma_fp16_fp16(
+def run_mma_fp16_fp16(
     M: Int,
     N: Int,
     K: Int,
@@ -935,7 +933,7 @@ fn run_mma_fp16_fp16(
 
     @always_inline
     @parameter
-    fn run_func_mma(ctx: DeviceContext) raises:
+    def run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp16_fp16
         ctx.enqueue_function_experimental[kernel](
             c_device,
@@ -984,7 +982,7 @@ fn run_mma_fp16_fp16(
 
     @always_inline
     @parameter
-    fn run_func_naive(ctx: DeviceContext) raises:
+    def run_func_naive(ctx: DeviceContext) raises:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,

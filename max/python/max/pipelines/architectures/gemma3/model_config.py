@@ -18,8 +18,8 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams
+from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import LinearScalingParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
@@ -121,8 +121,8 @@ class Gemma3Config(ArchConfigWithKVCache):
     """Whether to tie weight embeddings. When true, the output linear layer
     uses the same weight as the embedding layer."""
 
-    float8_config: Float8Config | None = None
-    """Float8 quantization configuration."""
+    quant_config: QuantConfig | None = None
+    """Scaled quantization configuration."""
 
     def get_kv_params(self) -> KVCacheParams:
         return self.kv_params
@@ -216,7 +216,7 @@ class Gemma3Config(ArchConfigWithKVCache):
 
         This method creates a config instance with all fields that can be determined
         from the pipeline and HuggingFace configuration, without needing the state_dict.
-        Fields that depend on the state_dict (like tie_word_embeddings, float8_config)
+        Fields that depend on the state_dict (like tie_word_embeddings, quant_config)
         should be set via the `finalize()` method.
 
         Args:
@@ -243,22 +243,42 @@ class Gemma3Config(ArchConfigWithKVCache):
             for spec in pipeline_config.model.device_specs
         ]
 
-        rope_scaling_params = None
-        rope_scaling = huggingface_config.rope_scaling
-
-        if rope_scaling is not None:
-            # Since "rope_type" huggingface config is not standardized, we need
-            # to check for both "type" and "rope_type" keys.
-            rope_type = rope_scaling.get("type")
-            rope_type_alt = rope_scaling.get("rope_type")
-            if rope_type is None and rope_type_alt is None:
-                raise ValueError(
-                    "Neither 'type' nor 'rope_type' found in rope_scaling huggingface config"
-                )
-            if rope_type == "linear" or rope_type_alt == "linear":
+        # transformers >= 5.0 moves rope config into nested rope_parameters;
+        # transformers 4.x uses direct attributes.
+        rope_params = getattr(huggingface_config, "rope_parameters", None)
+        if isinstance(rope_params, dict) and "full_attention" in rope_params:
+            rope_theta = rope_params["full_attention"]["rope_theta"]
+            rope_local_base_freq = rope_params["sliding_attention"][
+                "rope_theta"
+            ]
+            full_attn_params = rope_params["full_attention"]
+            rope_type = full_attn_params.get(
+                "rope_type", full_attn_params.get("type")
+            )
+            rope_scaling_params = None
+            if rope_type == "linear":
                 rope_scaling_params = LinearScalingParams(
-                    factor=rope_scaling["factor"]
+                    factor=full_attn_params["factor"]
                 )
+        else:
+            rope_theta = huggingface_config.rope_theta
+            rope_local_base_freq = huggingface_config.rope_local_base_freq
+            rope_scaling_params = None
+            rope_scaling = huggingface_config.rope_scaling
+            if rope_scaling is not None:
+                # Since "rope_type" huggingface config is not standardized,
+                # we need to check for both "type" and "rope_type" keys.
+                rope_type = rope_scaling.get("type")
+                rope_type_alt = rope_scaling.get("rope_type")
+                if rope_type is None and rope_type_alt is None:
+                    raise ValueError(
+                        "Neither 'type' nor 'rope_type' found in"
+                        " rope_scaling huggingface config"
+                    )
+                if rope_type == "linear" or rope_type_alt == "linear":
+                    rope_scaling_params = LinearScalingParams(
+                        factor=rope_scaling["factor"]
+                    )
 
         hidden_activation = _HIDDEN_ACTIVATION_MAP.get(
             huggingface_config.hidden_activation,
@@ -278,14 +298,14 @@ class Gemma3Config(ArchConfigWithKVCache):
                 pipeline_config, huggingface_config=huggingface_config
             ),
             rms_norm_eps=huggingface_config.rms_norm_eps,
-            rope_theta=huggingface_config.rope_theta,
+            rope_theta=rope_theta,
             attention_bias=huggingface_config.attention_bias,
             query_pre_attn_scalar=huggingface_config.query_pre_attn_scalar,
             sliding_window=huggingface_config.sliding_window,
             final_logit_softcapping=huggingface_config.final_logit_softcapping,
             attn_logit_softcapping=huggingface_config.attn_logit_softcapping,
             rope_scaling=rope_scaling_params,
-            rope_local_base_freq=huggingface_config.rope_local_base_freq,
+            rope_local_base_freq=rope_local_base_freq,
             sliding_window_pattern=huggingface_config._sliding_window_pattern,
             dtype=dtype,
             devices=device_refs,
@@ -304,19 +324,19 @@ class Gemma3Config(ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
         state_dict: dict[str, WeightData],
         return_logits: ReturnLogits,
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
     ) -> None:
         """Define parameters that can't be determined just from the pipeline config.
 
         This method sets fields that require introspection of the model weights
-        (state_dict), such as tie_word_embeddings and float8_config.
+        (state_dict), such as tie_word_embeddings and quant_config.
 
         Args:
             huggingface_config: The HuggingFace model configuration object.
             state_dict: The model's state dictionary containing weights.
             return_logits: Whether to return the last token, all tokens or a
                 variable number of logits.
-            float8_config: Float8 quantization configuration (optional).
+            quant_config: Scaled quantization configuration (optional).
         """
         # When tie_word_embeddings=True, the embedding weights are shared with
         # the output weights.
@@ -326,7 +346,7 @@ class Gemma3Config(ArchConfigWithKVCache):
         )
 
         self.tie_word_embeddings = tie_word_embeddings
-        self.float8_config = float8_config
+        self.quant_config = quant_config
         self.return_logits = return_logits
 
 

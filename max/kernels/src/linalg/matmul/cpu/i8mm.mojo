@@ -41,18 +41,18 @@ struct LoadStore_i8mm[
     var skip_boundary_check: Bool
 
     @always_inline
-    fn __init__(out self, skip_boundary_check: Bool):
+    def __init__(out self, skip_boundary_check: Bool):
         self.output_tile = _Accumulator[
             Self.dtype, Self.tile_rows, Self.num_simd_cols, Self.simd_size
         ]()
         self.skip_boundary_check = skip_boundary_check
 
     @always_inline
-    fn _initialize_c_tile(mut self):
+    def _initialize_c_tile(mut self):
         self.output_tile.init(0)
 
     @always_inline
-    fn _load_c_tile(
+    def _load_c_tile(
         mut self,
         c_ptr: UnsafePointer[Scalar[Self.dtype], ...],
         c_stride: Int,
@@ -96,7 +96,7 @@ struct LoadStore_i8mm[
                 self.output_tile[idx0, idx1] = c_data
 
     @always_inline
-    fn _store_c_tile(
+    def _store_c_tile(
         mut self,
         c_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         c_stride: Int,
@@ -145,7 +145,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
     # Parameters for global reference.
 
     @always_inline
-    fn _accumulate[
+    def _accumulate[
         simd_size: Int, kernel_rows: Int, kernel_cols: Int
     ](
         self,
@@ -207,7 +207,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
                 c_local[idx0, idx1] = c_val
 
     @always_inline
-    fn __inner_matmul__[
+    def __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
         simd_size: Int,

@@ -93,7 +93,7 @@ def seed() -> Tensor:
 
     Returns the global seed tensor used for random number generation in eager
     execution mode. Creates the seed tensor on first access, initialized with
-    the dtype, shape, and device specified by :obj:`ops.random.SeedType`.
+    the dtype, shape, and device specified by :obj:`max.graph.ops.random.SeedType`.
 
     Returns:
         Tensor: The global seed tensor for random number generation.
@@ -339,7 +339,7 @@ class EagerRealizationContext(RealizationContext):
 class LazyRealizationContext(EagerRealizationContext):
     """A realization context that defers execution until explicitly requested.
 
-    Unlike :class:`EagerRealizationContext`, this context does not automatically
+    Unlike :class:`~max.experimental.realization_context.EagerRealizationContext`, this context does not automatically
     execute the computation graph when the context exits. Tensors remain
     unrealized until explicitly awaited via ``await tensor.realize``.
 
@@ -372,7 +372,7 @@ class GraphRealizationContext(RealizationContext):
     """A realization context for ahead-of-time graph compilation.
 
     This context is used when building computation graphs that will be compiled
-    and executed later (e.g., during :meth:`Module.compile`). Tensors in this
+    and executed later (e.g., during :meth:`~max.experimental.nn.Module.compile`). Tensors in this
     context remain as symbolic graph values and cannot be realized.
 
     Unlike eager contexts, this context does not support executing operations

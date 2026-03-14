@@ -10,6 +10,16 @@ package(default_visibility = [
 ])
 
 modular_py_library(
+    name = "tag_filters",
+    testonly = True,
+    srcs = ["tag_filters.py"],
+    imports = ["."],
+    deps = [
+        requirement("click"),
+    ],
+)
+
+modular_py_library(
     name = "hf_config_overrides",
     testonly = True,
     srcs = [
@@ -246,10 +256,10 @@ modular_py_binary(
     tags = ["no-pydeps"],
     deps = [
         ":create_pipelines",
+        ":tag_filters",
         "//max/python/max/driver",
         "//max/python/max/pipelines/lib",
         "//max/python/max/serve:config",
-        "//max/tests/integration/accuracy:verify_pipelines",
         "//max/tests/integration/accuracy/logit_verification:logit_verification_config",
         requirement("click"),
     ],
@@ -271,9 +281,25 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//max/tests/integration/accuracy:verify_pipelines",
         "//max/tests/integration/tools:precompile_all_pipelines",
+        "//max/tests/integration/tools:tag_filters",
     ],
+)
+
+modular_run_binary_test(
+    name = "test_precompile_all_pipelines_smoke",
+    size = "medium",
+    args = [
+        "--devices",
+        "cpu",
+        "--dry-run",
+    ],
+    binary = "//max/tests/integration/tools:precompile_all_pipelines",
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 modular_py_binary(

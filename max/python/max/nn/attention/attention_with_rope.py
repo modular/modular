@@ -29,11 +29,11 @@ from max.graph import (
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weight import _compute_shard_range
-from max.nn.float8_config import Float8Config
 from max.nn.kernels import (
     convert_weights_to_fp8_fnuz_if_needed,
     rms_norm_key_cache,
 )
+from max.nn.quant_config import QuantConfig
 
 from ..clamp import clamp
 from ..comm import Allreduce
@@ -87,7 +87,7 @@ class AttentionWithRope(Module, Shardable):
         stacked_qkv: bool = False,
         scale: float | None = None,
         has_bias: bool = False,
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
         clip_qkv: float | None = None,
         use_qk_norm: bool = False,
         rms_norm_eps: float = 1e-6,
@@ -108,7 +108,7 @@ class AttentionWithRope(Module, Shardable):
             stacked_qkv: Whether Q/K/V weights are stacked in a single Weight.
             scale: Optional attention scale; defaults to sqrt(1/head_dim).
             has_bias: Whether Q/K/V have bias (stacked_qkv forbids bias).
-            float8_config: Optional Float8 config (dynamic or static).
+            quant_config: Optional quantization config (dynamic or static).
             clip_qkv: If provided, clamp Q/K/V weights to [-clip_qkv, clip_qkv].
             use_qk_norm: Whether to use RMSNorm on Q/K.
             rms_norm_eps: Value to use for numerical stability in RMSNorm.
@@ -127,7 +127,7 @@ class AttentionWithRope(Module, Shardable):
         )
         self.clip_qkv = clip_qkv
         self.devices = devices or [DeviceRef.CPU()]
-        self.float8_config = float8_config
+        self.quant_config = quant_config
         self.stacked_qkv = stacked_qkv
         self.use_qk_norm = use_qk_norm
         self.rms_norm_eps = rms_norm_eps
@@ -168,8 +168,8 @@ class AttentionWithRope(Module, Shardable):
         # Static FP8 + stacked QKV needs special scale plumbing; not wired up yet.
         if (
             stacked_qkv
-            and (float8_config is not None)
-            and float8_config.is_static
+            and (quant_config is not None)
+            and quant_config.is_static
         ):
             raise NotImplementedError(
                 "Float8 static scaling with stacked_qkv=True is not supported yet."
@@ -194,7 +194,7 @@ class AttentionWithRope(Module, Shardable):
                 dtype=dtype,
                 device=self.devices[0],
                 has_bias=has_bias,
-                float8_config=float8_config,
+                quant_config=quant_config,
             )
             self.k_proj = linear_cls(
                 in_dim=hidden_size,
@@ -202,7 +202,7 @@ class AttentionWithRope(Module, Shardable):
                 dtype=dtype,
                 device=self.devices[0],
                 has_bias=has_bias,
-                float8_config=float8_config,
+                quant_config=quant_config,
             )
             self.v_proj = linear_cls(
                 in_dim=hidden_size,
@@ -210,7 +210,7 @@ class AttentionWithRope(Module, Shardable):
                 dtype=dtype,
                 device=self.devices[0],
                 has_bias=has_bias,
-                float8_config=float8_config,
+                quant_config=quant_config,
             )
 
         self.o_proj = linear_cls(
@@ -218,7 +218,7 @@ class AttentionWithRope(Module, Shardable):
             out_dim=hidden_size,
             dtype=dtype,
             device=self.devices[0],
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
 
         if sharding_strategy is not None:
@@ -353,7 +353,7 @@ class AttentionWithRope(Module, Shardable):
                     stacked_qkv=self.stacked_qkv,
                     scale=self.scale,
                     has_bias=self.has_bias,
-                    float8_config=self.float8_config,
+                    quant_config=self.quant_config,
                     clip_qkv=self.clip_qkv,
                 )
 
@@ -413,7 +413,7 @@ class AttentionWithRope(Module, Shardable):
                     stacked_qkv=self.stacked_qkv,
                     scale=self.scale,
                     has_bias=self.has_bias,
-                    float8_config=self.float8_config,
+                    quant_config=self.quant_config,
                     clip_qkv=self.clip_qkv,
                 )
                 if self.stacked_qkv:
@@ -465,8 +465,8 @@ class AttentionWithRope(Module, Shardable):
             # vllm does.
             # https://github.com/vllm-project/vllm/blob/9b1769dd9ad13a5688d1e2b1b5f00b07b3716969/vllm/model_executor/layers/quantization/compressed_tensors/schemes/compressed_tensors_w8a8_fp8.py#L35
             if (
-                self.float8_config
-                and self.float8_config.weight_scale.is_tensor
+                self.quant_config
+                and self.quant_config.weight_scale.is_tensor
                 and self.q_proj.weight_scale is not None
                 and self.k_proj.weight_scale is not None
                 and self.v_proj.weight_scale is not None
@@ -479,9 +479,9 @@ class AttentionWithRope(Module, Shardable):
                 wv = wv * self.v_proj.weight_scale.to(wv.device)
 
             wqkv = ops.concat((wq, wk, wv))
-            if self.float8_config and self.float8_config.is_nvfp4:
+            if self.quant_config and self.quant_config.is_nvfp4:
                 return wqkv
-            if self.float8_config and self.float8_config.is_static:
+            if self.quant_config and self.quant_config.is_static:
                 assert self.qkv_weight_scale is not None
 
                 wqkv, qkv_weight_scale = convert_weights_to_fp8_fnuz_if_needed(
@@ -512,7 +512,7 @@ class AttentionWithRope(Module, Shardable):
     @property
     def qkv_input_scale(self) -> TensorValue | None:
         """The max of q, k, and v scale input vectors."""
-        if not self.float8_config or self.float8_config.is_dynamic:
+        if not self.quant_config or self.quant_config.is_dynamic:
             return None
 
         if self.stacked_qkv:
@@ -537,7 +537,7 @@ class AttentionWithRope(Module, Shardable):
     @property
     def qkv_weight_scale(self) -> TensorValue:
         """The max of q, k, and v scale weight vectors."""
-        assert self.float8_config is not None
+        assert self.quant_config is not None
 
         if self.stacked_qkv:
             # TODO: Handle stacked QKV weight scale when implemented
@@ -561,7 +561,7 @@ class AttentionWithRope(Module, Shardable):
 
         weight_scale = ops.concat((q_scale, k_scale, v_scale))
 
-        if self.float8_config.is_dynamic or weight_scale.rank == 2:
+        if self.quant_config.is_dynamic or weight_scale.rank == 2:
             # In the dynamic scaling case, return the weight scales directly.
             return weight_scale
 
@@ -571,7 +571,7 @@ class AttentionWithRope(Module, Shardable):
     @property
     def qkv_weight_scale_2(self) -> TensorValue | None:
         """The max of q, k, and v scale input vectors."""
-        if not self.float8_config or self.float8_config.is_dynamic:
+        if not self.quant_config or self.quant_config.is_dynamic:
             return None
 
         if self.stacked_qkv:
@@ -608,7 +608,7 @@ class AttentionWithRope(Module, Shardable):
         wqkv_bias = (
             self.wqkv_bias.to(x.device) if self.wqkv_bias is not None else None
         )
-        if self.float8_config and self.float8_config.is_nvfp4:
+        if self.quant_config and self.quant_config.is_nvfp4:
             input_scale = self.qkv_input_scale
             weight_scale = self.qkv_weight_scale
             weight_scale_2 = self.qkv_weight_scale_2
@@ -640,10 +640,10 @@ class AttentionWithRope(Module, Shardable):
                 tensor_sf=input_scale * weight_scale_2,
             )
 
-        elif self.float8_config:
+        elif self.quant_config:
             # FP8 path
             weight_scale = self.qkv_weight_scale
-            if self.float8_config.is_static:
+            if self.quant_config.is_static:
                 assert self.qkv_input_scale is not None
                 x = quantize_static_scaled_float8(
                     x, self.qkv_input_scale.to(DeviceRef.CPU())
@@ -652,8 +652,8 @@ class AttentionWithRope(Module, Shardable):
             else:
                 x, x_scales = quantize_dynamic_scaled_float8(
                     x,
-                    self.float8_config.input_scale,
-                    self.float8_config.weight_scale,
+                    self.quant_config.input_scale,
+                    self.quant_config.weight_scale,
                     scales_type=weight_scale.dtype,
                 )
 
@@ -911,7 +911,23 @@ class GGUFQAttentionWithRope(AttentionWithRope):
 
 
 class GPTQAttentionWithRope(AttentionWithRope):
-    """Implementation of the GPTQ attention layer."""
+    """Implementation of the GPTQ attention layer.
+
+    Args:
+        quantization_config: The GPTQ quantization configuration, including
+            ``desc_act`` for activation-order permutation support.
+        rope: The rope layer to borrow the ``freqs_cis`` value from.
+        num_attention_heads: The number of attention heads.
+        num_key_value_heads: The number of key/value heads.
+        hidden_size: The dimension of the hidden states.
+        kv_params: The KV cache parameters, including number of KV heads,
+            head dim, and dtype.
+        devices: The device or devices on which to place the weights and run
+            the computation. If multiple are provided, the first device is used.
+        dtype: The DType for the output projection weights.
+        scale: Optional attention scale; defaults to ``sqrt(1/head_dim)``.
+        linear_cls: The linear class to use for the output projection.
+    """
 
     def __init__(
         self,
@@ -1106,7 +1122,7 @@ class TensorParallelAttentionWithRope(
         stacked_qkv: bool = False,
         scale: float | None = None,
         has_bias: bool = False,
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
         clip_qkv: float | None = None,
         use_qk_norm: bool = False,
         rms_norm_eps: float = 1e-6,
@@ -1126,7 +1142,7 @@ class TensorParallelAttentionWithRope(
             stacked_qkv: Whether the weights are stacked together.
             scale: Value used to scale the results of the attention output.
             has_bias: Whether to use an attention bias.
-            float8_config: Float8 configuration for quantization.
+            quant_config: Quantization configuration.
             clip_qkv: If provided, the QKV weights are clamped between
                 `[-clip_qkv, clip_qkv]`.
             use_qk_norm: Whether to use RMSNorm on Q/K.
@@ -1144,7 +1160,7 @@ class TensorParallelAttentionWithRope(
             stacked_qkv=stacked_qkv,
             scale=scale,
             has_bias=has_bias,
-            float8_config=float8_config,
+            quant_config=quant_config,
             clip_qkv=clip_qkv,
             use_qk_norm=use_qk_norm,
             rms_norm_eps=rms_norm_eps,
@@ -1228,7 +1244,7 @@ class DataParallelAttentionWithRope(AttentionWithRope):
         stacked_qkv: bool = False,
         scale: float | None = None,
         has_bias: bool = False,
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
         clip_qkv: float | None = None,
         use_qk_norm: bool = False,
         rms_norm_eps: float = 1e-6,
@@ -1246,7 +1262,7 @@ class DataParallelAttentionWithRope(AttentionWithRope):
             stacked_qkv=stacked_qkv,
             scale=scale,
             has_bias=has_bias,
-            float8_config=float8_config,
+            quant_config=quant_config,
             clip_qkv=clip_qkv,
             use_qk_norm=use_qk_norm,
             rms_norm_eps=rms_norm_eps,
@@ -1310,7 +1326,7 @@ class DataParallelAttentionWithRope(AttentionWithRope):
                 stacked_qkv=self.stacked_qkv,
                 scale=self.scale,
                 has_bias=self.has_bias,
-                float8_config=self.float8_config,
+                quant_config=self.quant_config,
                 clip_qkv=self.clip_qkv,
             )
             if self.stacked_qkv:
@@ -1382,7 +1398,7 @@ class AttentionWithRopeNoOpaque(Module):
       - no stacked qkv
       - no bias
       - no clip_qkv
-      - no float8_config
+      - no quant_config
     """
 
     # This class will not use the RotaryEmbedding to calculate rope, but it

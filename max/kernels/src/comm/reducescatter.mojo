@@ -17,8 +17,8 @@ from std.collections import InlineArray
 from std.collections.optional import Optional
 from std.builtin.variadics import Variadic
 
-from layout import Coord, Idx, TileTensor, row_major
-from layout.tile_layout import TensorLayout, Layout
+from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout.tile_layout import Layout
 from layout.coord import _CoordToDynamic
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -47,6 +47,7 @@ from .sync import (
     MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
+    circular_add,
     is_p2p_enabled,
 )
 
@@ -60,7 +61,7 @@ comptime elementwise_epilogue_type = fn[
 
 
 @always_inline
-fn _load_reduce[
+def _load_reduce[
     dtype: DType,
     //,
     ngpus: Int,
@@ -131,7 +132,7 @@ struct ReduceScatterConfig[
     var unit_numel: Int
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         axis_size: Int,
         unit_numel: Int,
@@ -150,7 +151,7 @@ struct ReduceScatterConfig[
         self.unit_numel = unit_numel
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         num_elements: Int,
         threads_per_gpu: Int,
@@ -165,42 +166,42 @@ struct ReduceScatterConfig[
         self.unit_numel = Self.simd_width
 
     @always_inline
-    fn rank_unit_start(self, rank: Int) -> Int:
+    def rank_unit_start(self, rank: Int) -> Int:
         """Start unit index along scatter axis for this rank."""
         return rank * self.axis_part + min(rank, self.axis_remainder)
 
     @always_inline
-    fn rank_units(self, rank: Int) -> Int:
+    def rank_units(self, rank: Int) -> Int:
         """Number of units for this rank."""
         return self.axis_part + Int(rank < self.axis_remainder)
 
     @always_inline
-    fn rank_num_elements(self, rank: Int) -> Int:
+    def rank_num_elements(self, rank: Int) -> Int:
         """Total elements for this rank."""
         return self.rank_units(rank) * self.unit_numel
 
     @always_inline
-    fn rank_start(self, rank: Int) -> Int:
+    def rank_start(self, rank: Int) -> Int:
         """Flat element start offset for this rank."""
         return self.rank_unit_start(rank) * self.unit_numel
 
     @always_inline
-    fn rank_end(self, rank: Int) -> Int:
+    def rank_end(self, rank: Int) -> Int:
         """Flat element end offset for this rank."""
         return self.rank_start(rank + 1)
 
     @always_inline
-    fn rank_part(self, rank: Int) -> Int:
+    def rank_part(self, rank: Int) -> Int:
         """Number of elements for this rank (alias for rank_num_elements)."""
         return self.rank_num_elements(rank)
 
     @always_inline
-    fn thr_local_start(self, thread_idx: UInt) -> Int:
+    def thr_local_start(self, thread_idx: UInt) -> Int:
         return Int(thread_idx) * Self.simd_width
 
 
 @always_inline
-fn _reduce_scatter_flat_impl[
+def _reduce_scatter_flat_impl[
     dtype: DType,
     simd_width: Int,
     alignment: Int,
@@ -247,7 +248,7 @@ fn _reduce_scatter_flat_impl[
 
 
 @always_inline
-fn _reduce_scatter_impl[
+def _reduce_scatter_impl[
     dtype: DType,
     num_buffers: Int,
     in_tile_layout: TensorLayout,
@@ -306,7 +307,7 @@ fn _reduce_scatter_impl[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-fn _reducescatter_kernel[
+def _reducescatter_kernel[
     dtype: DType,
     in_layout: TensorLayout,
     out_layout: TensorLayout,
@@ -366,7 +367,7 @@ fn _reducescatter_kernel[
         ](uninitialized=True)
 
         comptime for i in range(ngpus):
-            reordered[i] = in_bufs[(my_rank + i) % ngpus]
+            reordered[i] = in_bufs[circular_add[ngpus](my_rank, i)]
 
         var u_start = config.rank_unit_start(my_rank)
         var n_units = config.rank_units(my_rank)
@@ -438,7 +439,7 @@ fn _reducescatter_kernel[
 
 
 @always_inline
-fn _reducescatter_p2p[
+def _reducescatter_p2p[
     dtype: DType,
     ngpus: Int,
     in_layout: TensorLayout,
@@ -534,7 +535,7 @@ fn _reducescatter_p2p[
 
 
 @parameter
-fn reducescatter[
+def reducescatter[
     dtype: DType,
     ngpus: Int,
     in_layout: TensorLayout,
@@ -621,8 +622,8 @@ fn reducescatter[
         unit_numel = simd_width
     elif axis == 0:
         # 2D axis-0: partition rows, unit = one row
-        var dim_0 = Int(input_buffers[0].layout.shape[0]().value())
-        var dim_1 = Int(input_buffers[0].layout.shape[1]().value())
+        var dim_0 = input_buffers[0].layout.shape[0]().value()
+        var dim_1 = input_buffers[0].layout.shape[1]().value()
         if dim_1 % simd_width != 0:
             raise Error(
                 "inner dimension (axis 1) must be a multiple of SIMD width"
@@ -632,8 +633,8 @@ fn reducescatter[
         unit_numel = dim_1
     else:
         # axis == 1: partition column groups, unit = simd_width columns
-        var dim_0 = Int(input_buffers[0].layout.shape[0]().value())
-        var dim_1 = Int(input_buffers[0].layout.shape[1]().value())
+        var dim_0 = input_buffers[0].layout.shape[0]().value()
+        var dim_1 = input_buffers[0].layout.shape[1]().value()
         if dim_1 % simd_width != 0:
             raise Error(
                 "scatter dimension (axis 1) must be a multiple of SIMD width"
@@ -661,11 +662,11 @@ fn reducescatter[
             output_buffer.rank == 2
         ), "axis >= 0 requires 2D output buffer"
         var n_units = config_check.rank_units(my_rank)
-        var expected_rows = n_units if axis == 0 else Int(
-            input_buffers[0].layout.shape[0]().value()
+        var expected_rows = (
+            n_units if axis == 0 else input_buffers[0].layout.shape[0]().value()
         )
         var expected_cols = (
-            Int(input_buffers[0].layout.shape[1]().value()) if axis
+            input_buffers[0].layout.shape[1]().value() if axis
             == 0 else n_units * simd_width
         )
         var out_rows = Int(output_buffer.dim[0]())
@@ -691,7 +692,7 @@ fn reducescatter[
     @always_inline
     @parameter
     @__copy_capture(output_buffer)
-    fn default_output_lambda[
+    def default_output_lambda[
         _dtype: DType,
         _width: Int,
         *,

@@ -30,7 +30,12 @@ Usage:
 """
 
 from std.gpu.memory import AddressSpace
-from layout import Layout as LegacyLayout, LayoutTensor, TileTensor
+from layout import (
+    LayoutTensor,
+    Layout as LegacyLayout,
+    TensorLayout,
+    TileTensor,
+)
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 
 from linalg.structuring import SMemTile as LTSMemTile
@@ -40,7 +45,6 @@ from structured_kernels.tile_types import SMemTile2D, TmaOpType
 
 # Import variadic types for TileTensor load overload
 from std.builtin.variadics import Variadic
-from layout.tile_layout import TensorLayout
 from std.utils.index import IndexList
 
 
@@ -79,7 +83,7 @@ struct TileLoaderTMA[
     var multicast_mask: UInt16
 
     @always_inline
-    fn __init__(out self, tma_op: Self.TmaOpPtr, multicast_mask: UInt16):
+    def __init__(out self, tma_op: Self.TmaOpPtr, multicast_mask: UInt16):
         """Initialize the TMA tile loader.
 
         Args:
@@ -90,7 +94,7 @@ struct TileLoaderTMA[
         self.multicast_mask = multicast_mask
 
     @always_inline
-    fn load[
+    def load[
         tile_layout: Layout,
         /,
         alignment: Int = 128,
@@ -98,8 +102,8 @@ struct TileLoaderTMA[
         self,
         dest: LTSMemTile[Self.dtype, tile_layout, alignment=alignment],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
-        k_coord: UInt,
-        row_coord: UInt,
+        k_coord: Int,
+        row_coord: Int,
     ):
         """Load a tile using TMA hardware acceleration.
 
@@ -113,11 +117,11 @@ struct TileLoaderTMA[
             row_coord: Row coordinate (M for A, N for B) in global memory (elements).
         """
         self.tma_op[].async_multicast_load[Self.cta_group](
-            dest, barrier, (Int(k_coord), Int(row_coord)), self.multicast_mask
+            dest, barrier, (k_coord, row_coord), self.multicast_mask
         )
 
     @always_inline
-    fn load[
+    def load[
         dim0: Int,
         dim1: Int,
         /,
@@ -126,8 +130,8 @@ struct TileLoaderTMA[
         self,
         dest: SMemTile2D[Self.dtype, dim0, dim1, alignment=alignment],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
-        k_coord: UInt,
-        row_coord: UInt,
+        k_coord: Int,
+        row_coord: Int,
     ):
         """Load a TileTensor tile using TMA hardware acceleration.
 
@@ -142,11 +146,11 @@ struct TileLoaderTMA[
         """
         # TileTensor overload of async_multicast_load - no conversion needed
         self.tma_op[].async_multicast_load[Self.cta_group](
-            dest, barrier, (Int(k_coord), Int(row_coord)), self.multicast_mask
+            dest, barrier, (k_coord, row_coord), self.multicast_mask
         )
 
     @always_inline
-    fn load[
+    def load[
         LayoutType: TensorLayout
     ](
         self,
@@ -157,8 +161,8 @@ struct TileLoaderTMA[
             address_space=AddressSpace.SHARED,
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
-        k_coord: UInt,
-        row_coord: UInt,
+        k_coord: Int,
+        row_coord: Int,
     ):
         """Load a TileTensor tile with variadic shape/stride types using TMA.
 
@@ -172,7 +176,7 @@ struct TileLoaderTMA[
             row_coord: Row coordinate (M for A, N for B) in global memory (elements).
         """
         self.tma_op[].async_multicast_load[Self.cta_group](
-            dest, barrier, (Int(k_coord), Int(row_coord)), self.multicast_mask
+            dest, barrier, (k_coord, row_coord), self.multicast_mask
         )
 
 
@@ -203,7 +207,7 @@ struct TileLoader[
     var multicast_mask: UInt16
 
     @always_inline
-    fn __init__[
+    def __init__[
         tma_op_type: AnyType
     ](
         out self,
@@ -215,7 +219,7 @@ struct TileLoader[
         self.multicast_mask = multicast_mask
 
     @always_inline
-    fn load[
+    def load[
         LayoutType: TensorLayout
     ](
         self,
@@ -226,12 +230,12 @@ struct TileLoader[
             address_space=AddressSpace.SHARED,
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
-        k_coord: UInt,
-        row_coord: UInt,
+        k_coord: Int,
+        row_coord: Int,
     ):
         """Load a tile using TMA async multicast load."""
         self.tma_op[].async_multicast_load[Self.cta_group](
-            dest, barrier, (Int(k_coord), Int(row_coord)), self.multicast_mask
+            dest, barrier, (k_coord, row_coord), self.multicast_mask
         )
 
 
@@ -262,14 +266,14 @@ struct ScalesLoader[
     var tma_op: Self.TmaOpPtr
 
     @always_inline
-    fn __init__[
+    def __init__[
         tma_op_type: AnyType
     ](out self, tma_op: Pointer[tma_op_type, Self.tma_origin]):
         """Accepts any TMA pointer. Rebinds to the loader's derived type."""
         self.tma_op = rebind[Self.TmaOpPtr](tma_op)
 
     @always_inline
-    fn load[
+    def load[
         LayoutType: TensorLayout
     ](
         self,

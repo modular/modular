@@ -30,7 +30,7 @@ from std.builtin.dtype import _uint_type_of_width
 
 
 @always_inline("nodebug")
-fn bitcast[
+def bitcast[
     src_dtype: DType,
     src_width: Int,
     //,
@@ -113,7 +113,7 @@ fn bitcast[
     return SIMD(mlir_value=res)
 
 
-fn _llvm_bitwidth(dtype: DType) -> Int:
+def _llvm_bitwidth(dtype: DType) -> Int:
     # fmt: off
     return (
         1 if dtype == DType._uint1 else
@@ -131,7 +131,7 @@ fn _llvm_bitwidth(dtype: DType) -> Int:
 
 
 @always_inline("nodebug")
-fn pack_bits[
+def pack_bits[
     src_width: Int,
     //,
     dtype: DType = _uint_type_of_width[src_width](),

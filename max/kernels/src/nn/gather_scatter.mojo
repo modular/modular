@@ -39,12 +39,12 @@ from std.collections import OptionalReg
 
 
 @always_inline
-fn _unsafe_normalize_neg_index(idx: Int, dim_size: Int) -> Int:
+def _unsafe_normalize_neg_index(idx: Int, dim_size: Int) -> Int:
     return idx + dim_size if idx < 0 else idx
 
 
 @always_inline
-fn _unsafe_normalize_neg_index[
+def _unsafe_normalize_neg_index[
     dtype: DType, width: Int, out_type: DType = DType.int
 ](idx: SIMD[dtype, width], dim_size: Int) -> SIMD[out_type, width]:
     return idx.lt(0).select(
@@ -54,7 +54,7 @@ fn _unsafe_normalize_neg_index[
 
 
 @always_inline
-fn normalize_neg_index(idx: Int, dim_size: Int) raises -> Int:
+def normalize_neg_index(idx: Int, dim_size: Int) raises -> Int:
     """Indices passed to gather and scatter ops may be negative. This performs
     a normalization so that they can be used to index into a buffer.
 
@@ -67,7 +67,7 @@ fn normalize_neg_index(idx: Int, dim_size: Int) raises -> Int:
 
 
 @always_inline
-fn normalize_neg_index[
+def normalize_neg_index[
     dtype: DType, width: Int, out_type: DType = DType.int
 ](idx: SIMD[dtype, width], dim_size: Int) raises -> SIMD[out_type, width]:
     """Indices passed to gather and scatter ops may be negative. This performs
@@ -91,20 +91,20 @@ struct Axis(Indexer, Intable, TrivialRegisterPassable):
     var axis: Int
 
     @always_inline
-    fn __init__(out self, axis: Int):
+    def __init__(out self, axis: Int):
         self.axis = axis
 
     @always_inline
-    fn __init__(out self, axis: Int, rank: Int) raises:
+    def __init__(out self, axis: Int, rank: Int) raises:
         self.axis = normalize_neg_index(axis, rank)
 
     @always_inline
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return self.axis
 
     @doc_private
     @always_inline("nodebug")
-    fn __mlir_index__(self) -> __mlir_type.index:
+    def __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:
@@ -114,7 +114,7 @@ struct Axis(Indexer, Intable, TrivialRegisterPassable):
 
 
 @always_inline
-fn gather_reduce[
+def gather_reduce[
     dtype: DType,
     gather_axis: Int,
     reduce_axis: Int,
@@ -187,7 +187,7 @@ fn gather_reduce[
         gather_axis_size,
     )
     @parameter
-    fn task_func(task_id: Int):
+    def task_func(task_id: Int):
         comptime prefetch_offset = -1
 
         var output = output_bind
@@ -223,10 +223,10 @@ fn gather_reduce[
             @always_inline
             @__copy_capture(input, indices, output)
             @parameter
-            fn gather_k_tile[simd_width: Int](k: Int):
+            def gather_k_tile[simd_width: Int](k: Int):
                 @always_inline
                 @parameter
-                fn reduce_j_tile[
+                def reduce_j_tile[
                     unroll_factor: Int
                 ](
                     accums: StaticTuple[SIMD[dtype, simd_width], unroll_factor],
@@ -283,7 +283,7 @@ fn gather_reduce[
 
 
 # TODO: Delete / for testing purposes (test_gather.mojo)
-fn gather[
+def gather[
     dtype: DType,
     indices_type: DType,
     //,
@@ -310,7 +310,7 @@ fn gather[
     @parameter
     @__copy_capture(end_indices_ptr)
     @always_inline
-    fn prefetch_fn[
+    def prefetch_fn[
         _input_rank: Int, _indices_rank: Int
     ](
         _input_coords: IndexList[_input_rank],
@@ -345,7 +345,7 @@ fn gather[
 
     @parameter
     @always_inline
-    fn input_fn[
+    def input_fn[
         width: Int, _rank: Int
     ](index: IndexList[_rank]) -> SIMD[dtype, width]:
         var coords = Coord(index)
@@ -354,7 +354,7 @@ fn gather[
 
     @parameter
     @always_inline
-    fn indices_fn[
+    def indices_fn[
         width: Int, _rank: Int
     ](index: IndexList[_rank]) -> SIMD[indices_type, width]:
         var coords = Coord(index)
@@ -363,7 +363,7 @@ fn gather[
 
     @parameter
     @always_inline
-    fn output_fn[
+    def output_fn[
         width: Int, _rank: Int
     ](index: IndexList[_rank], val: SIMD[dtype, width]):
         var coords = Coord(index)
@@ -389,7 +389,7 @@ fn gather[
     )
 
 
-fn gather[
+def gather[
     dtype: DType,
     indices_type: DType,
     //,
@@ -416,7 +416,7 @@ fn gather[
     @parameter
     @__copy_capture(end_indices_ptr)
     @always_inline
-    fn prefetch_fn[
+    def prefetch_fn[
         _input_rank: Int, _indices_rank: Int
     ](
         _input_coords: IndexList[_input_rank],
@@ -451,7 +451,7 @@ fn gather[
 
     @parameter
     @always_inline
-    fn input_fn[
+    def input_fn[
         width: Int, _rank: Int
     ](index: IndexList[_rank]) -> SIMD[dtype, width]:
         var coords = Coord(index)
@@ -460,7 +460,7 @@ fn gather[
 
     @parameter
     @always_inline
-    fn indices_fn[
+    def indices_fn[
         width: Int, _rank: Int
     ](index: IndexList[_rank]) -> SIMD[indices_type, width]:
         var coords = Coord(index)
@@ -469,7 +469,7 @@ fn gather[
 
     @parameter
     @always_inline
-    fn output_fn[
+    def output_fn[
         width: Int, _rank: Int
     ](index: IndexList[_rank], val: SIMD[dtype, width]):
         var coords = Coord(index)
@@ -495,7 +495,7 @@ fn gather[
     )
 
 
-fn gather_guards(
+def gather_guards(
     axis: Axis,
     input_shape: IndexList,
     indices_shape: IndexList,
@@ -529,7 +529,7 @@ comptime error_index_fn_type = fn(Int) capturing -> None
 
 
 @always_inline
-fn gather_elementwise_fn_wrapper[
+def gather_elementwise_fn_wrapper[
     *,
     dtype: DType,
     indices_type: DType,
@@ -558,7 +558,7 @@ fn gather_elementwise_fn_wrapper[
 ):
     @parameter
     @always_inline
-    fn gather_elementwise_fn[
+    def gather_elementwise_fn[
         simd_width: Int, rank: Int
     ](idx: IndexList[rank, ...]):
         # out_coords consists of 3 chunks:
@@ -630,7 +630,7 @@ fn gather_elementwise_fn_wrapper[
 
 # TODO: Delete / for testing purposes (test_gather.mojo)
 @always_inline
-fn gather[
+def gather[
     *,
     dtype: DType,
     indices_type: DType,
@@ -678,7 +678,7 @@ fn gather[
 
         @parameter
         @always_inline
-        fn error_index_fn(val: Int):
+        def error_index_fn(val: Int):
             error_index = val
 
         comptime error_fn = Optional[error_index_fn_type](
@@ -687,7 +687,7 @@ fn gather[
 
         @parameter
         @always_inline
-        fn gather_elementwise_fn[
+        def gather_elementwise_fn[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             gather_elementwise_fn_wrapper[
@@ -742,7 +742,7 @@ fn gather[
 
 
 @always_inline
-fn gather[
+def gather[
     *,
     dtype: DType,
     indices_type: DType,
@@ -794,7 +794,7 @@ fn gather[
 
         @parameter
         @always_inline
-        fn error_index_fn(val: Int):
+        def error_index_fn(val: Int):
             error_index = val
 
         comptime error_fn = Optional[error_index_fn_type](
@@ -803,7 +803,7 @@ fn gather[
 
         @parameter
         @always_inline
-        fn gather_elementwise_fn[
+        def gather_elementwise_fn[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             gather_elementwise_fn_wrapper[
@@ -877,7 +877,7 @@ struct ScatterOobIndexStrategy(Equatable, ImplicitlyCopyable, Writable):
 
 
 @always_inline
-fn scatter_nd_generator[
+def scatter_nd_generator[
     output_type: DType,
     indices_type: DType,
     single_thread_blocking_override: Bool,
@@ -1009,7 +1009,7 @@ fn scatter_nd_generator[
             updates_flat,
         )
         @parameter
-        fn update_func[
+        def update_func[
             simd_width: Int,
             _rank: Int,
             alignment: Int = 1,
@@ -1124,7 +1124,7 @@ fn scatter_nd_generator[
 
 
 @always_inline
-fn scatter_nd[
+def scatter_nd[
     output_type: DType,
     indices_type: DType,
     single_thread_blocking_override: Bool,
@@ -1150,7 +1150,7 @@ fn scatter_nd[
 
 
 @always_inline
-fn scatter_nd_shape[
+def scatter_nd_shape[
     input_type: DType,
     indices_type: DType,
     single_thread_blocking_override: Bool,
@@ -1220,7 +1220,7 @@ fn scatter_nd_shape[
 
 
 @always_inline
-fn gather_shape[
+def gather_shape[
     output_rank: Int,
     input_type: DType,
     indices_type: DType,
@@ -1282,7 +1282,7 @@ fn gather_shape[
 
 
 @always_inline
-fn scatter_elements[
+def scatter_elements[
     reduce_fn: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing -> SIMD[dtype, width],
@@ -1329,7 +1329,7 @@ fn scatter_elements[
 
     @__copy_capture(axis, input_ax_dim)
     @parameter
-    fn update_func[
+    def update_func[
         simd_width: Int, _rank: Int, alignment: Int = 1
     ](_indices_coords: IndexList[_rank]):
         var indices_coords = rebind[IndexList[rank]](_indices_coords)
@@ -1348,7 +1348,7 @@ fn scatter_elements[
 
 
 @always_inline
-fn scatter_elements_shape[
+def scatter_elements_shape[
     input_type: DType,
     indices_type: DType,
     //,
@@ -1409,7 +1409,7 @@ fn scatter_elements_shape[
 
 
 @always_inline
-fn gather_elements[
+def gather_elements[
     input_type: DType,
     indices_type: DType,
 ](
@@ -1445,7 +1445,7 @@ fn gather_elements[
 
     @__copy_capture(input_ax_dim, axis)
     @parameter
-    fn gather_func[
+    def gather_func[
         simd_width: Int, _rank: Int, alignment: Int = 1
     ](_output_coords: IndexList[_rank]):
         var output_coords = Coord(_output_coords)
@@ -1472,7 +1472,7 @@ fn gather_elements[
 
 
 @always_inline
-fn gather_nd_shape[
+def gather_nd_shape[
     output_rank: Int,
     input_type: DType,
     indices_type: DType,
@@ -1540,7 +1540,7 @@ fn gather_nd_shape[
 # ===-----------------------------------------------------------------------===#
 
 
-fn gather_nd[
+def gather_nd[
     dtype: DType,
     indices_type: DType,
     batch_dims: Int,
@@ -1589,7 +1589,7 @@ fn gather_nd[
         ](data, indices, output, ctx.get_device_context())
 
 
-fn _gather_nd_impl[
+def _gather_nd_impl[
     dtype: DType,
     indices_type: DType,
     //,
@@ -1614,7 +1614,7 @@ fn _gather_nd_impl[
     # This is modeled as an elementwise function mapping an index in the
     # output to an index in the input
     @parameter
-    fn gather_nd_elementwise_fn[
+    def gather_nd_elementwise_fn[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](output_idx_arg: IndexList[rank]):
         var output_idx = rebind[IndexList[output.rank]](output_idx_arg)
@@ -1723,7 +1723,7 @@ fn _gather_nd_impl[
 # ===-----------------------------------------------------------------------===#
 
 
-fn scatter_set_constant[
+def scatter_set_constant[
     data_type: DType,
     index_type: DType,
     //,
@@ -1775,7 +1775,7 @@ fn scatter_set_constant[
 
     @always_inline
     @parameter
-    fn scatter_set_constant_fn[
+    def scatter_set_constant_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](idx: IndexList[rank_]):
         comptime assert rank_ == 1, "scatter_set_constant_fn: rank must be 1"

@@ -34,7 +34,8 @@ def _resolve_np(
     cache_length: int,
 ) -> int:
     """Returns num_partitions from the real Mojo dispatch kernel."""
-    return resolver(batch_size, 1, cache_length).num_partitions
+    metadata = resolver(batch_size, 1, cache_length).to_numpy()
+    return int(metadata[2])
 
 
 @pytest.fixture(scope="module")
@@ -48,6 +49,21 @@ def mla_resolver() -> AttentionDispatchResolver:
         is_mla=True,
         n_kv_heads_per_device=1,
         num_q_heads=NUM_HEADS,
+    )
+
+
+@pytest.fixture(scope="module")
+def mla_resolver_fp8() -> AttentionDispatchResolver:
+    """Builds an MLA dispatch resolver with ``is_fp8_kv=True``."""
+    device = DeviceRef.GPU()
+    session = InferenceSession(devices=[CPU(), Accelerator()])
+    return AttentionDispatchResolver(
+        session=session,
+        device=device,
+        is_mla=True,
+        n_kv_heads_per_device=1,
+        num_q_heads=NUM_HEADS,
+        is_fp8_kv=True,
     )
 
 
@@ -123,3 +139,58 @@ def test_mla_probe_coverage_negative(
         "num_partitions, but all were covered — the test harness may "
         "be broken."
     )
+
+
+def test_mla_probe_coverage_fp8(
+    mla_resolver_fp8: AttentionDispatchResolver,
+) -> None:
+    """Probe coverage holds when ``is_fp8_kv=True``.
+
+    FP8 doubles the ``min_pages_per_split`` thresholds, which changes
+    reachable num_partitions values.
+    """
+    strategy = MLAProbeStrategy()
+    max_cache_length = 16384
+
+    for batch_size in BATCH_SIZES:
+        reachable_nps: set[int] = set()
+        for cl in range(1, max_cache_length + 1):
+            reachable_nps.add(_resolve_np(mla_resolver_fp8, batch_size, cl))
+
+        probe_lengths = strategy.probe_lengths(max_cache_length)
+        captured_nps: set[int] = set()
+        for cl in probe_lengths:
+            captured_nps.add(_resolve_np(mla_resolver_fp8, batch_size, cl))
+        captured_nps_sorted = sorted(captured_nps)
+
+        for runtime_np in sorted(reachable_nps):
+            bucketed = strategy.bucket_num_partitions(
+                runtime_np, captured_nps_sorted
+            )
+            assert bucketed is not None, (
+                f"batch_size={batch_size}: runtime "
+                f"num_partitions={runtime_np} cannot be bucketed. "
+                f"captured={captured_nps_sorted}, "
+                f"reachable={sorted(reachable_nps)}"
+            )
+
+
+def test_fp8_produces_fewer_partitions(
+    mla_resolver: AttentionDispatchResolver,
+    mla_resolver_fp8: AttentionDispatchResolver,
+) -> None:
+    """FP8 doubles ``min_pages_per_split``, producing ``np_fp8 <= np_bf16``."""
+    found_difference = False
+    for batch_size in [16, 32, 64, 128]:
+        for cl in [512, 1024, 2048, 4096, 8192, 16384]:
+            np_bf16 = _resolve_np(mla_resolver, batch_size, cl)
+            np_fp8 = _resolve_np(mla_resolver_fp8, batch_size, cl)
+            assert np_fp8 <= np_bf16, (
+                f"FP8 produced more partitions than BF16: "
+                f"bs={batch_size}, cl={cl}, np_fp8={np_fp8}, "
+                f"np_bf16={np_bf16}"
+            )
+            if np_fp8 < np_bf16:
+                found_difference = True
+
+    assert found_difference, "is_fp8 flag had no effect on num_partitions."

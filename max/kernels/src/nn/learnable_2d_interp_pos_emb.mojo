@@ -38,8 +38,7 @@ from std.gpu import (
     thread_idx_int as thread_idx,
 )
 from std.gpu.host import DeviceContext
-from layout.tile_layout import TensorLayout
-from layout.tile_tensor import TileTensor
+from layout import TensorLayout, TileTensor
 
 
 # ---------------------------------------------------------------------------
@@ -48,7 +47,7 @@ from layout.tile_tensor import TileTensor
 
 
 @always_inline
-fn _cubic_weight(x: Float32) -> Float32:
+def _cubic_weight(x: Float32) -> Float32:
     """Catmull-Rom cubic weight (a = -0.75), matching PyTorch F.interpolate."""
     var a: Float32 = -0.75
     var ax = abs(x)
@@ -67,7 +66,7 @@ fn _cubic_weight(x: Float32) -> Float32:
 # ---------------------------------------------------------------------------
 
 
-fn _gpu_kernel[
+def _gpu_kernel[
     dtype: DType,
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
@@ -182,7 +181,7 @@ fn _gpu_kernel[
 # ---------------------------------------------------------------------------
 
 
-fn learnable_2d_interp_pos_emb[
+def learnable_2d_interp_pos_emb[
     dtype: DType,
 ](
     output: TileTensor[mut=True, dtype, ...],

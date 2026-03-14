@@ -43,7 +43,7 @@ struct Node[
     var next: Self._NodePointer
     """The next node in the list."""
 
-    fn __init__(
+    def __init__(
         out self,
         var value: Self.ElementType,
         prev: Optional[Self._NodePointer],
@@ -61,25 +61,11 @@ struct Node[
         self.prev = prev.value() if prev else Self._NodePointer()
         self.next = next.value() if next else Self._NodePointer()
 
-    fn __str__[
-        _ElementType: Copyable & ImplicitlyDestructible & Writable
-    ](self: Node[_ElementType]) -> String:
-        """Convert this node's value to a string representation.
-
-        Parameters:
-            _ElementType: Used to conditionally enable this function if
-                `_ElementType` is `Writable`.
-
-        Returns:
-            String representation of the node's value.
-        """
-        return String.write(self.value)
-
-    fn _into_value(deinit self) -> Self.ElementType:
+    def _into_value(deinit self) -> Self.ElementType:
         return self.value^
 
     @no_inline
-    fn write_to[
+    def write_to[
         _ElementType: Copyable & ImplicitlyDestructible & Writable
     ](self: Node[_ElementType], mut writer: Some[Writer]):
         """Write this node's value to the given writer.
@@ -111,7 +97,7 @@ struct _LinkedListIter[
 
     comptime Element = Self.ElementType  # FIXME(MOCO-2068): shouldn't be needed.
 
-    fn __init__(out self, src: Pointer[LinkedList[Self.Element], Self.origin]):
+    def __init__(out self, src: Pointer[LinkedList[Self.Element], Self.origin]):
         self.src = src
 
         comptime if Self.forward:
@@ -119,10 +105,10 @@ struct _LinkedListIter[
         else:
             self.curr = self.src[]._tail
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __next__(
+    def __next__(
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
         if not self.curr:
@@ -179,7 +165,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
     var _size: Int
     """The number of elements in the list."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize an empty linked list.
 
         Notes:
@@ -189,7 +175,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         self._tail = Self._NodePointer()
         self._size = 0
 
-    fn __init__(
+    def __init__(
         out self, var *elements: Self.ElementType, __list_literal__: () = ()
     ):
         """Initialize a linked list with the given elements.
@@ -203,7 +189,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         """
         self = Self(elements=elements^)
 
-    fn __init__(out self, *, var elements: VariadicList[Self.ElementType, _]):
+    def __init__(out self, *, var elements: VariadicList[Self.ElementType, _]):
         """Construct a list from a `VariadicList`.
 
         Args:
@@ -216,12 +202,12 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         # Transfer all of the elements into the list.
         @parameter
-        fn init_elt(idx: Int, var elt: Self.ElementType):
+        def init_elt(idx: Int, var elt: Self.ElementType):
             self.append(elt^)
 
         elements^.consume_elements[init_elt]()
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Initialize this list as a copy of another list.
 
         Args:
@@ -236,7 +222,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             self.append(curr[].value.copy())
             curr = curr[].next
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Clean up the list by freeing all nodes.
 
         Notes:
@@ -249,7 +235,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             curr.free()
             curr = next
 
-    fn append(mut self, var value: Self.ElementType):
+    def append(mut self, var value: Self.ElementType):
         """Add an element to the end of the list.
 
         Args:
@@ -272,7 +258,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         self._tail = addr
         self._size += 1
 
-    fn prepend(mut self, var value: Self.ElementType):
+    def prepend(mut self, var value: Self.ElementType):
         """Add an element to the beginning of the list.
 
         Args:
@@ -293,7 +279,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         self._head = addr
         self._size += 1
 
-    fn reverse(mut self):
+    def reverse(mut self):
         """Reverse the order of elements in the list.
 
         Notes:
@@ -310,7 +296,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         self._tail = self._head
         self._head = prev
 
-    fn pop(mut self) raises -> Self.ElementType:
+    def pop(mut self) raises -> Self.ElementType:
         """Remove and return the last element of the list.
 
         Returns:
@@ -336,7 +322,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         elem.free()
         return node^._into_value()
 
-    fn pop[I: Indexer, //](mut self, var i: I) raises -> Self.ElementType:
+    def pop[I: Indexer, //](mut self, var i: I) raises -> Self.ElementType:
         """Remove the ith element of the list, counting from the tail if
         given a negative index.
 
@@ -375,7 +361,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         raise Error("Invalid index for pop: ", idx)
 
-    fn maybe_pop(mut self) -> Optional[Self.ElementType]:
+    def maybe_pop(mut self) -> Optional[Self.ElementType]:
         """Removes the tail of the list and returns it, if it exists.
 
         Returns:
@@ -397,7 +383,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         elem.free()
         return node^._into_value()
 
-    fn maybe_pop[
+    def maybe_pop[
         I: Indexer, //
     ](mut self, var i: I) -> Optional[Self.ElementType]:
         """Remove the ith element of the list, counting from the tail if
@@ -434,7 +420,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             self._size -= 1
             return Optional[Self.ElementType](node^._into_value())
 
-    fn clear(mut self):
+    def clear(mut self):
         """Removes all elements from the list.
 
         Notes:
@@ -451,7 +437,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         self._tail = Self._NodePointer()
         self._size = 0
 
-    fn insert[I: Indexer](mut self, idx: I, var elem: Self.ElementType) raises:
+    def insert[I: Indexer](mut self, idx: I, var elem: Self.ElementType) raises:
         """Insert an element `elem` into the list at index `idx`.
 
         Parameters:
@@ -517,7 +503,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         else:
             raise Error("Index ", i, " out of bounds")
 
-    fn extend(mut self, var other: Self):
+    def extend(mut self, var other: Self):
         """Extends the list with another.
 
         Args:
@@ -542,7 +528,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         other._head = Self._NodePointer()
         other._tail = Self._NodePointer()
 
-    fn count[
+    def count[
         _ElementType: Equatable & Copyable, //
     ](self: LinkedList[_ElementType], read elem: _ElementType) -> UInt:
         """Count the occurrences of `elem` in the list.
@@ -570,7 +556,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         return UInt(count)
 
-    fn __contains__[
+    def __contains__[
         _ElementType: Equatable & Copyable, //
     ](self: LinkedList[_ElementType], value: _ElementType) -> Bool:
         """Checks if the list contains `value`.
@@ -596,7 +582,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         return False
 
-    fn __eq__(
+    def __eq__(
         read self,
         read other: Self,
     ) -> Bool where conforms_to(Self.ElementType, Equatable):
@@ -628,7 +614,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         return True
 
-    fn __hash__[
+    def __hash__[
         H: Hasher
     ](self, mut hasher: H) where conforms_to(Self.ElementType, Hashable):
         """Hash the elements of this list.
@@ -645,7 +631,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             elt.__hash__(hasher)
             curr = curr[].next
 
-    fn _get_node_ptr[
+    def _get_node_ptr[
         I: Indexer, //
     ](ref self, idx: I) -> UnsafePointer[
         Node[Self.ElementType], MutExternalOrigin
@@ -682,7 +668,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
                 curr = curr[].prev
             return curr
 
-    fn __getitem__[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
+    def __getitem__[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
         """Get the element at the specified index.
 
         Parameters:
@@ -700,7 +686,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         assert len(self) > 0, "unable to get item from empty list"
         return self._get_node_ptr(idx)[].value
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Get the number of elements in the list.
 
         Returns:
@@ -711,7 +697,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         """
         return self._size
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.
 
         Returns:
@@ -724,7 +710,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         """
         return _LinkedListIter(Pointer(to=self))
 
-    fn __reversed__(
+    def __reversed__(
         self,
     ) -> _LinkedListIter[Self.ElementType, origin_of(self), forward=False]:
         """Iterate backwards over the list, returning immutable references.
@@ -741,7 +727,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             Self.ElementType, origin_of(self), forward=False
         ](Pointer(to=self))
 
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Check if the list is non-empty.
 
         Returns:
@@ -752,7 +738,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         """
         return len(self) != 0
 
-    fn _write_self_to[
+    def _write_self_to[
         f: fn(Self.ElementType, mut Some[Writer])
     ](self, mut writer: Some[Writer]) where conforms_to(
         Self.ElementType, Writable
@@ -760,41 +746,13 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         var iterator = self.__iter__()
 
         @parameter
-        fn iterate(mut w: Some[Writer]) raises StopIteration:
+        def iterate(mut w: Some[Writer]) raises StopIteration:
             f(iterator.__next__(), w)
 
         fmt.write_sequence_to[ElementFn=iterate](writer)
         _ = iterator^
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String where conforms_to(Self.ElementType, Writable):
-        """Convert the list to its string representation.
-
-        Returns:
-            String representation of the list.
-
-        Notes:
-            Time Complexity: O(n) in len(self).
-        """
-        var writer = String()
-        self.write_to(writer)
-        return writer
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String where conforms_to(Self.ElementType, Writable):
-        """Convert the list to its string representation.
-
-        Returns:
-            String representation of the list.
-
-        Notes:
-            Time Complexity: O(n) in len(self).
-        """
-        var writer = String()
-        self.write_repr_to(writer)
-        return writer
-
-    fn write_to(
+    def write_to(
         self, mut writer: Some[Writer]
     ) where conforms_to(Self.ElementType, Writable):
         """Write the list to the given writer.
@@ -804,7 +762,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         """
         self._write_self_to[f=fmt.write_to[Self.ElementType]](writer)
 
-    fn write_repr_to(
+    def write_repr_to(
         self, mut writer: Some[Writer]
     ) where conforms_to(Self.ElementType, Writable):
         """Write the repr representation of this LinkedList to a Writer.
@@ -814,7 +772,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         """
 
         @parameter
-        fn write_fields(mut w: Some[Writer]):
+        def write_fields(mut w: Some[Writer]):
             self._write_self_to[f=fmt.write_repr_to[Self.ElementType]](w)
 
         fmt.FormatStruct(writer, "LinkedList").params(

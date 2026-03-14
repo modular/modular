@@ -170,6 +170,10 @@ def mock_huggingface_config(func: Callable[_P, _R]) -> Callable[_P, _R]:
                 cfg.num_key_value_heads = 32
                 cfg.num_hidden_layers = 2
                 cfg.rope_theta = 10000.0
+                cfg.rope_parameters = {
+                    "rope_type": "default",
+                    "rope_theta": 10000.0,
+                }
                 cfg.max_position_embeddings = 2048
                 cfg.intermediate_size = 11008
                 cfg.vocab_size = 32000

@@ -23,11 +23,11 @@ struct Foo[z: Int]:
 struct Bar[x: Int, //, y: Int, *, foo: Foo[x], bar: Foo[y] = Foo[y]()](
     ImplicitlyCopyable, Intable
 ):
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return self.x + self.y + self.foo.z + self.bar.z
 
 
-fn takes_some_arg(x: Some[Intable]) -> Int:
+def takes_some_arg(x: Some[Intable]) -> Int:
     return x.__int__()
 
 
@@ -37,7 +37,7 @@ def test_some_arg() raises:
     assert_equal(takes_some_arg(Bar[foo=Foo[5](), bar=Foo[7]()]()), 24)
 
 
-fn takes_some_param[x: Some[Intable]]() -> Int:
+def takes_some_param[x: Some[Intable]]() -> Int:
     return materialize[x]().__int__()
 
 
@@ -47,7 +47,7 @@ def test_some_param() raises:
     assert_equal(takes_some_param[Bar[foo=Foo[5](), bar=Foo[7]()]()](), 24)
 
 
-fn takes_multiple_traits(x: Some[Intable & Copyable]) -> type_of(x):
+def takes_multiple_traits(x: Some[Intable & Copyable]) -> type_of(x):
     return x.copy()
 
 
@@ -56,10 +56,10 @@ def test_some_return() raises:
 
 
 def test_closure() raises:
-    fn some_closure(x: Some[Intable]) -> Int:
+    def some_closure(x: Some[Intable]) -> Int:
         return x.__int__() * 2
 
-    fn takes_some_closure[func: fn(Some[Intable]) -> Int]() raises:
+    def takes_some_closure[func: fn(Some[Intable]) -> Int]() raises:
         assert_equal(func(Int(4)), 8)
 
     takes_some_closure[some_closure]()

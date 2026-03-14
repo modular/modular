@@ -22,8 +22,8 @@ import os
 import sys
 import time
 import traceback
-from collections.abc import Generator, Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Generator, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -40,6 +40,7 @@ from max.tests.integration.accuracy.logit_verification.logit_verification_config
     PregeneratedTorchGoldens,
     SupportedEncoding,
 )
+from tag_filters import TagFilter, TagFilterParamType
 from test_common.evaluate import ModelOutput
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.process_isolation import run_in_isolated_process
@@ -478,53 +479,6 @@ def dump_v2_v3_comparison(
                 f"| {emoji} | {display_name(name)}"
                 f" | {_fmt_v2_v3_diff(v2.avg_mae, v3.avg_mae)} |\n"
             )
-
-
-@dataclass
-class TagFilter:
-    """User-provided filters on a tag list."""
-
-    must_have: Sequence[str] = field(default_factory=list)
-    must_not_have: Sequence[str] = field(default_factory=list)
-
-    def satisfied_by(self, tags: Sequence[str]) -> bool:
-        """Determines if this filter is satisfied by a tag list."""
-        if not all(required_tag in tags for required_tag in self.must_have):
-            return False
-        return not any(
-            forbidden_tag in tags for forbidden_tag in self.must_not_have
-        )
-
-
-class TagFilterParamType(click.ParamType):
-    name = "tag filter"
-
-    def convert(
-        self,
-        value: str | TagFilter,
-        param: click.Parameter | None,
-        ctx: click.Context | None,
-    ) -> TagFilter:
-        # Unsure why click sometimes tries to re-convert an already-converted
-        # value, but it does.
-        if isinstance(value, TagFilter):
-            return value
-        assert isinstance(value, str), f"Value of unexpected type {type(value)}"
-        if not value:
-            return TagFilter()
-        parts = value.split(",")
-        required = []
-        forbidden = []
-        for part in parts:
-            if part.startswith("+"):
-                required.append(part[1:])
-            elif part.startswith("-"):
-                forbidden.append(part[1:])
-            else:
-                raise ValueError(
-                    f"Tag filter part {part!r} does not start with '+' or '-'"
-                )
-        return TagFilter(must_have=required, must_not_have=forbidden)
 
 
 class InfraError(Exception):
@@ -1160,6 +1114,12 @@ def _is_pixel_generation(config: PipelineConfig) -> bool:
         " against the torch baseline."
     ),
 )
+@click.option(
+    "--override-pipeline-golden-location",
+    "override_pipeline_golden_location",
+    default=None,
+    help="Override pregenerated_golden_path for a pipeline. Format: PIPELINE_NAME:/path/to/golden.tar.gz",
+)
 def main(
     report: TextIO | None,
     store_verdicts_json: Path | None,
@@ -1172,6 +1132,7 @@ def main(
     name_filter: str | None,
     no_aws: bool,
     compare_v2_v3: bool,
+    override_pipeline_golden_location: str,
 ) -> None:
     """Run logit-level comparisons of a Modular pipeline against a reference."""
 
@@ -1183,6 +1144,18 @@ def main(
         else DeviceKind.GPU
     )
     devices_str = "cpu" if devices_str is None else devices_str
+
+    golden_path_override: tuple[str, str] | None = None
+    if override_pipeline_golden_location is not None:
+        if ":" not in override_pipeline_golden_location:
+            raise click.BadParameter(
+                f"Expected format PIPELINE_NAME:/path, got: {override_pipeline_golden_location!r}",
+                param_hint="'try --override-pipeline-golden-location allenai/OLMo-1B-hf-float32:/path/to/golden.tar.gz'",
+            )
+        override_pipeline_name, golden_path_replacement = (
+            override_pipeline_golden_location.split(":", 1)
+        )
+        golden_path_override = (override_pipeline_name, golden_path_replacement)
 
     if compare_v2_v3:
         # V2 vs V3 comparison mode: run both V2 and V3 and compare their outputs.
@@ -1238,6 +1211,22 @@ def main(
             if f.strip()
         ):
             continue
+
+        if golden_path_override is not None:
+            (override_pipeline_name, golden_path_replacement) = (
+                golden_path_override
+            )
+            if pipeline_name == override_pipeline_name:
+                # then replace the golden_path for this pipeline with the user specified tar path
+                if pipeline_config.pregenerated_torch_goldens is not None:
+                    pipeline_config = pipeline_config.model_copy(
+                        update={
+                            "pregenerated_torch_goldens": pipeline_config.pregenerated_torch_goldens.model_copy(
+                                update={"tar_file": golden_path_replacement}
+                            )
+                        }
+                    )
+
         if no_aws and pipeline_config.encoding in TORCH_INCOMPATIBLE_ENCODINGS:
             raise click.ClickException(
                 f"Pipeline {pipeline_name!r} uses encoding"

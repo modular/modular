@@ -18,7 +18,7 @@ struct Grid(Copyable, Writable):
     var cols: Int
     var data: List[List[Int]]
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         # Iterate through rows 0 through rows-1
         for row in range(self.rows):
             # Iterate through columns 0 through cols-1

@@ -20,7 +20,7 @@ from linalg.grouped_matmul_tile_scheduler import TileScheduler
 from std.utils.index import Index, IndexList
 
 
-fn test_kernel[
+def test_kernel[
     swizzle: Bool, shape: DimList
 ](group_offsets: NDBuffer[rank=1, DType.uint32, MutAnyOrigin, shape]):
     var offset_tensor = from_ndbuffer_row_major(group_offsets)
@@ -40,7 +40,7 @@ fn test_kernel[
 
 def test(ctx: DeviceContext) raises:
     comptime group_len = 3
-    comptime offset_shape = DimList(group_len + 1)
+    comptime offset_shape = DimList[group_len + 1]()
 
     # Host allocation
     var host_group_offsets_ptr = alloc[Scalar[DType.uint32]](group_len + 1)

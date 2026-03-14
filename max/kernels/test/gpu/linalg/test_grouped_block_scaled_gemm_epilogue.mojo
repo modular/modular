@@ -34,9 +34,14 @@ from internal_utils import assert_almost_equal
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
-from layout.tile_layout import row_major as tile_row_major
-from layout.tile_tensor import TileTensor
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major as tile_row_major,
+)
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -57,7 +62,7 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scale
 )
 
 
-fn test_grouped_gemm_epilogue[
+def test_grouped_gemm_epilogue[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -100,11 +105,11 @@ fn test_grouped_gemm_epilogue[
     var num_groups = 1
 
     # Create NDBuffer shapes
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList[m.dim, k.dim]()
+    comptime static_b_shape = DimList[
+        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
+    ]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
 
     var dynamic_a_shape = IndexList[2](m.value, k.value)
     var dynamic_b_shape = IndexList[2](
@@ -163,20 +168,20 @@ fn test_grouped_gemm_epilogue[
     )
 
     # Scale factor shapes (5D)
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList[
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
+    ]()
 
     var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
@@ -223,7 +228,7 @@ fn test_grouped_gemm_epilogue[
     @parameter
     @always_inline
     @__copy_capture(c_tensor)
-    fn epilogue_add_c[
+    def epilogue_add_c[
         _dtype: DType,
         width: Int,
         *,
@@ -337,32 +342,32 @@ fn test_grouped_gemm_epilogue[
     )
 
     # Template tensors - 3D TileTensors with batch=1
-    comptime static_a_3d_shape = DimList(1, m.dim, k.dim)
+    comptime static_a_3d_shape = DimList[1, m.dim, k.dim]()
     var a_template_nd = NDBuffer[rank=3, a_type, _, static_a_3d_shape](
         a_device.unsafe_ptr(), IndexList[3](1, m.value, k.value)
     )
-    comptime static_b_3d_shape = DimList(
-        1, n.dim, k.dim
-    ) if transpose_b else DimList(1, k.dim, n.dim)
+    comptime static_b_3d_shape = DimList[
+        1, n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
+    ]()
     var b_template_nd = NDBuffer[rank=3, b_type, _, static_b_3d_shape](
         b_device.unsafe_ptr(),
         IndexList[3](1, n.value, k.value) if transpose_b else IndexList[3](
             1, k.value, n.value
         ),
     )
-    comptime static_c_3d_shape = DimList(1, m.dim, n.dim)
+    comptime static_c_3d_shape = DimList[1, m.dim, n.dim]()
     var c_template_nd = NDBuffer[rank=3, c_type, _, static_c_3d_shape](
         c_device.unsafe_ptr(), IndexList[3](1, m.value, n.value)
     )
 
     # Scale factor template tensors - 5D with batch=1 and merged last dims
-    comptime static_a_scales_5d_shape = DimList(
+    comptime static_a_scales_5d_shape = DimList[
         1,
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
-    )
+    ]()
     var a_scales_5d_nd = NDBuffer[
         rank=5, scales_dtype, _, static_a_scales_5d_shape
     ](
@@ -375,13 +380,13 @@ fn test_grouped_gemm_epilogue[
             SF_ATOM_M[1] * SF_ATOM_K,
         ),
     )
-    comptime static_b_scales_5d_shape = DimList(
+    comptime static_b_scales_5d_shape = DimList[
         1,
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
-    )
+    ]()
     var b_scales_5d_nd = NDBuffer[
         rank=5, scales_dtype, _, static_b_scales_5d_shape
     ](
@@ -441,7 +446,7 @@ fn test_grouped_gemm_epilogue[
     @parameter
     @always_inline
     @__copy_capture(c_tensor_host)
-    fn epilogue_add_c_host[
+    def epilogue_add_c_host[
         _dtype: DType,
         width: Int,
         *,

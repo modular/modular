@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Conv2d, GroupNorm, Module
@@ -132,6 +133,20 @@ class ResnetBlock2D(Module[[Tensor, Tensor | None], Tensor]):
                 permute=True,
             )
 
+    def _use_fused_conv_residual(self) -> bool:
+        """Check if fused conv2d + residual add should be used.
+
+        Returns True when running on NVIDIA GPU with matching channel counts
+        (so the shortcut is identity, not a projection conv).
+        """
+        return (
+            self.in_channels == self.out_channels
+            and self.conv_shortcut is None
+            and isinstance(self.conv2.device, DeviceRef)
+            and self.conv2.device.is_gpu()
+            and accelerator_api() == "cuda"
+        )
+
     def forward(self, x: Tensor, temb: Tensor | None = None) -> Tensor:
         """Apply ResnetBlock2D forward pass.
 
@@ -150,6 +165,39 @@ class ResnetBlock2D(Module[[Tensor, Tensor | None], Tensor]):
         h = self.conv1(h)
 
         h = F.silu(self.norm2(h))
-        h = self.conv2(h)
 
-        return h + shortcut
+        if self._use_fused_conv_residual():
+            # Fused conv2d + TMA residual add + bias in a single kernel.
+            # Permute inputs to NHWC for the custom op.
+            h_nhwc = F.permute(h, [0, 2, 3, 1])
+            shortcut_nhwc = F.permute(shortcut, [0, 2, 3, 1])
+            weight = self.conv2.weight
+            bias = self.conv2.bias
+            # conv2 is always created with has_bias=True, so bias
+            # is always a Tensor (never the literal 0 fallback).
+            assert isinstance(bias, Tensor), "conv2 bias must be a Tensor"
+
+            pad = self.conv2.padding
+            stride = self.conv2.stride
+
+            result_nhwc = F.custom(
+                "conv2d_residual_add",
+                device=h.device,
+                values=[h_nhwc, weight, shortcut_nhwc, bias],
+                out_types=[shortcut_nhwc.type],
+                parameters={
+                    "stride_h": stride[0],
+                    "stride_w": stride[1],
+                    "pad_top": pad[0],
+                    "pad_bottom": pad[1],
+                    "pad_left": pad[2],
+                    "pad_right": pad[3],
+                    "has_bias": True,
+                },
+            )[0]
+
+            # Permute back to NCHW.
+            return F.permute(result_nhwc, [0, 3, 1, 2])
+        else:
+            h = self.conv2(h)
+            return h + shortcut

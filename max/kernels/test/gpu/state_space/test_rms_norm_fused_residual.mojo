@@ -28,7 +28,7 @@ def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
-fn compute_rms_ref[
+def compute_rms_ref[
     dtype: DType
 ](
     data_ptr: UnsafePointer[Scalar[dtype], _], size: Int, eps: Scalar[dtype]
@@ -41,7 +41,7 @@ fn compute_rms_ref[
     return sqrt((sum_of_squares / Float32(size)) + eps.cast[DType.float32]())
 
 
-fn run_rms_norm_fused_residual_gpu[
+def run_rms_norm_fused_residual_gpu[
     dtype: DType, rank: Int
 ](
     ctx: DeviceContext,
@@ -125,7 +125,7 @@ fn run_rms_norm_fused_residual_gpu[
     @__copy_capture(input_tensor)
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         return input_tensor.load[width=width](rebind[IndexList[rank]](coords))
@@ -133,7 +133,7 @@ fn run_rms_norm_fused_residual_gpu[
     @__copy_capture(residual_tensor)
     @always_inline
     @parameter
-    fn residual_input_fn[
+    def residual_input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         return residual_tensor.load[width=width](
@@ -144,7 +144,7 @@ fn run_rms_norm_fused_residual_gpu[
     @__copy_capture(output_tensor)
     @always_inline
     @parameter
-    fn output_fn[
+    def output_fn[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         output_tensor.store[width=width](coords, val)
@@ -152,7 +152,7 @@ fn run_rms_norm_fused_residual_gpu[
     @__copy_capture(residual_output_tensor)
     @always_inline
     @parameter
-    fn residual_output_fn[
+    def residual_output_fn[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         residual_output_tensor.store[width=width](coords, val)
@@ -241,7 +241,7 @@ fn run_rms_norm_fused_residual_gpu[
 # =============================================================================
 
 
-fn test_rms_norm_fused_residual_gpu_float32_2d() raises:
+def test_rms_norm_fused_residual_gpu_float32_2d() raises:
     """Test rms_norm_fused_residual GPU with float32 and 2D shape."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -249,7 +249,7 @@ fn test_rms_norm_fused_residual_gpu_float32_2d() raises:
     run_rms_norm_fused_residual_gpu[DType.float32](ctx, Index(4, 16), rtol=1e-3)
 
 
-fn test_rms_norm_fused_residual_gpu_float32_small() raises:
+def test_rms_norm_fused_residual_gpu_float32_small() raises:
     """Test rms_norm_fused_residual GPU with small dimensions."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -257,7 +257,7 @@ fn test_rms_norm_fused_residual_gpu_float32_small() raises:
     run_rms_norm_fused_residual_gpu[DType.float32](ctx, Index(2, 8), rtol=1e-3)
 
 
-fn test_rms_norm_fused_residual_gpu_float32_large_cols() raises:
+def test_rms_norm_fused_residual_gpu_float32_large_cols() raises:
     """Test rms_norm_fused_residual GPU with larger column count."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -267,7 +267,7 @@ fn test_rms_norm_fused_residual_gpu_float32_large_cols() raises:
     )
 
 
-fn test_rms_norm_fused_residual_gpu_float32_3d() raises:
+def test_rms_norm_fused_residual_gpu_float32_3d() raises:
     """Test rms_norm_fused_residual GPU with 3D shape."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -277,7 +277,7 @@ fn test_rms_norm_fused_residual_gpu_float32_3d() raises:
     )
 
 
-fn test_rms_norm_fused_residual_gpu_float32_larger() raises:
+def test_rms_norm_fused_residual_gpu_float32_larger() raises:
     """Test rms_norm_fused_residual GPU with larger dimensions."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -287,7 +287,7 @@ fn test_rms_norm_fused_residual_gpu_float32_larger() raises:
     )
 
 
-fn test_rms_norm_fused_residual_gpu_bfloat16() raises:
+def test_rms_norm_fused_residual_gpu_bfloat16() raises:
     """Test rms_norm_fused_residual GPU with bfloat16."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -297,7 +297,7 @@ fn test_rms_norm_fused_residual_gpu_bfloat16() raises:
     )
 
 
-fn test_rms_norm_fused_residual_gpu_float16() raises:
+def test_rms_norm_fused_residual_gpu_float16() raises:
     """Test rms_norm_fused_residual GPU with float16."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -305,7 +305,7 @@ fn test_rms_norm_fused_residual_gpu_float16() raises:
     run_rms_norm_fused_residual_gpu[DType.float16](ctx, Index(4, 16), rtol=1e-2)
 
 
-fn test_rms_norm_fused_residual_gpu_many_rows() raises:
+def test_rms_norm_fused_residual_gpu_many_rows() raises:
     """Test rms_norm_fused_residual GPU with many rows."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -315,7 +315,7 @@ fn test_rms_norm_fused_residual_gpu_many_rows() raises:
     )
 
 
-fn test_rms_norm_fused_residual_gpu_large_cols_loop() raises:
+def test_rms_norm_fused_residual_gpu_large_cols_loop() raises:
     """Test rms_norm_fused_residual GPU when num_cols > block_dim * simd_width.
 
     This exercises the loop in the first stage of the GPU kernel that populates
@@ -332,7 +332,7 @@ fn test_rms_norm_fused_residual_gpu_large_cols_loop() raises:
     )
 
 
-fn test_rms_norm_fused_residual_gpu_bfloat16_large_cols_loop() raises:
+def test_rms_norm_fused_residual_gpu_bfloat16_large_cols_loop() raises:
     """Test fused residual GPU with bfloat16 and large cols requiring loop."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -347,7 +347,7 @@ fn test_rms_norm_fused_residual_gpu_bfloat16_large_cols_loop() raises:
 # =============================================================================
 
 
-fn test_rms_norm_fused_residual_gpu_dropout_float32_2d() raises:
+def test_rms_norm_fused_residual_gpu_dropout_float32_2d() raises:
     """Test rms_norm_fused_residual GPU with dropout enabled (float32, 2D)."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -357,7 +357,7 @@ fn test_rms_norm_fused_residual_gpu_dropout_float32_2d() raises:
     )
 
 
-fn test_rms_norm_fused_residual_gpu_dropout_float32_3d() raises:
+def test_rms_norm_fused_residual_gpu_dropout_float32_3d() raises:
     """Test rms_norm_fused_residual GPU with dropout enabled (float32, 3D)."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -367,7 +367,7 @@ fn test_rms_norm_fused_residual_gpu_dropout_float32_3d() raises:
     )
 
 
-fn test_rms_norm_fused_residual_gpu_dropout_float32_large_cols() raises:
+def test_rms_norm_fused_residual_gpu_dropout_float32_large_cols() raises:
     """Test dropout path with large columns requiring loop iterations."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -377,7 +377,7 @@ fn test_rms_norm_fused_residual_gpu_dropout_float32_large_cols() raises:
     )
 
 
-fn test_rms_norm_fused_residual_gpu_dropout_bfloat16() raises:
+def test_rms_norm_fused_residual_gpu_dropout_bfloat16() raises:
     """Test rms_norm_fused_residual GPU with dropout enabled (bfloat16)."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -387,7 +387,7 @@ fn test_rms_norm_fused_residual_gpu_dropout_bfloat16() raises:
     )
 
 
-fn test_rms_norm_fused_residual_gpu_dropout_float16() raises:
+def test_rms_norm_fused_residual_gpu_dropout_float16() raises:
     """Test rms_norm_fused_residual GPU with dropout enabled (float16)."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():

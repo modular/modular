@@ -114,7 +114,10 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.epilogue_components i
 from linalg.matmul.gpu.sm100_structured.structured_kernels.output_writer import (
     TileWriter,
 )
-from linalg.utils import elementwise_compute_lambda_type
+from linalg.utils import (
+    elementwise_compute_lambda_type,
+    elementwise_epilogue_type,
+)
 
 from .conv_config import Conv2dConfig, Conv2dProblemShape
 from .conv_smem import Conv2dSmem
@@ -137,6 +140,7 @@ struct Conv2dFpropKernel[
     # Cluster shape
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
     # Optional epilogue lambda for fusion (bias, activation, residual add)
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
@@ -160,6 +164,8 @@ struct Conv2dFpropKernel[
         out_type: Output data type.
         config: Kernel configuration.
         cluster_shape: CUDA cluster dimensions.
+        elementwise_lambda_fn: Optional void epilogue lambda applied after
+            output write. Signature: `fn(IndexList[2], SIMD) -> None`.
         elementwise_compute_lambda_fn: Optional epilogue lambda for fusion
             (bias add, activation functions, residual connections).
         register_based_epilogue: Whether to apply the lambda in registers.
@@ -430,6 +436,7 @@ struct Conv2dFpropKernel[
         num_output_stages=Self.SmemType.num_output_stages,
         num_output_warps=Self.num_output_warps,
         # Epilogue lambda for fusion (bias, activation, residual add)
+        elementwise_lambda_fn=Self.elementwise_lambda_fn,
         elementwise_compute_lambda_fn=Self.elementwise_compute_lambda_fn,
         register_based_epilogue=Self.register_based_epilogue,
     ]
@@ -457,7 +464,7 @@ struct Conv2dFpropKernel[
 
     @staticmethod
     @always_inline
-    fn mma[
+    def mma[
         tiles_origin: MutOrigin,
         //,
     ](
@@ -494,7 +501,7 @@ struct Conv2dFpropKernel[
 
     @staticmethod
     @always_inline
-    fn init_barriers(
+    def init_barriers(
         ctx: Self.Context,
         act_tma_op: Self.ActTmaOp,
         filter_tma_op: Self.FilterTmaOp,
@@ -564,7 +571,7 @@ struct Conv2dFpropKernel[
 
     @staticmethod
     @always_inline
-    fn load_input_tiles[
+    def load_input_tiles[
         act_tma_origin: ImmutOrigin,
         filter_tma_origin: ImmutOrigin,
         tiles_origin: MutOrigin,
@@ -593,8 +600,8 @@ struct Conv2dFpropKernel[
             Self.config.k_group_size,
         ],
         iter_idx: UInt32,
-        work_m_coord: UInt,
-        work_n_coord: UInt,
+        work_m_coord: Int,
+        work_n_coord: Int,
         peer_cta_coord: Tuple[UInt, UInt, UInt],
         elect_one_cta: Bool,
     ):
@@ -606,18 +613,18 @@ struct Conv2dFpropKernel[
         - work_n_coord: N coordinate (output channels)
         - iter_idx: K dimension tile index (C * R * S)
         """
-        var peer_rank_n = peer_cta_coord[0]
-        var peer_rank_m = peer_cta_coord[1]
-        var peer_m_rank = peer_cta_coord[2]
+        var peer_rank_n = Int(peer_cta_coord[0])
+        var peer_rank_m = Int(peer_cta_coord[1])
+        var peer_m_rank = Int(peer_cta_coord[2])
 
         # Coordinates for TMA
-        var act_gmem_m_coord = peer_m_rank * UInt(
-            Self.act_tma_rows
-        ) + work_m_coord * UInt(Self.BM)
+        var act_gmem_m_coord = (
+            peer_m_rank * Self.act_tma_rows + work_m_coord * Self.BM
+        )
         var filter_gmem_n_coord = (
-            peer_rank_m * UInt(Self.filter_tma_rows)
-            + peer_rank_n * UInt(Self.BN)
-            + work_n_coord * UInt(Self.MMA_N)
+            peer_rank_m * Self.filter_tma_rows
+            + peer_rank_n * Self.BN
+            + work_n_coord * Self.MMA_N
         )
 
         if elect_one_sync():
@@ -633,16 +640,15 @@ struct Conv2dFpropKernel[
 
                 # Peer CTA slicing
                 var act_peer_tile = type_of(act_tile)(
-                    act_tile.ptr + peer_m_rank * UInt(Self.act_tma_load_size),
+                    act_tile.ptr + peer_m_rank * Self.act_tma_load_size,
                     act_tile.layout,
                 )
                 var filter_peer_tile = type_of(filter_tile)(
-                    filter_tile.ptr
-                    + peer_rank_m * UInt(Self.filter_tma_load_size),
+                    filter_tile.ptr + peer_rank_m * Self.filter_tma_load_size,
                     filter_tile.layout,
                 )
 
-                var k_coord = UInt(iter_idx + UInt32(j)) * UInt(Self.BK)
+                var k_coord = Int(iter_idx + UInt32(j)) * Self.BK
 
                 # Load tiles - act_loader uses im2col TMA
                 act_loader.load(
@@ -664,7 +670,7 @@ struct Conv2dFpropKernel[
     @__llvm_arg_metadata(act_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(filter_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(out_tma_op, `nvvm.grid_constant`)
-    fn run(
+    def run(
         act_tma_op: Self.ActTmaOp,
         filter_tma_op: Self.FilterTmaOp,
         out_tma_op: Self.OutTmaOp,
@@ -702,7 +708,7 @@ struct Conv2dFpropKernel[
     @__llvm_arg_metadata(filter_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(out_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(src_tma_op, `nvvm.grid_constant`)
-    fn run_with_residual(
+    def run_with_residual(
         act_tma_op: Self.ActTmaOp,
         filter_tma_op: Self.FilterTmaOp,
         out_tma_op: Self.OutTmaOp,
@@ -741,7 +747,7 @@ struct Conv2dFpropKernel[
 
     @staticmethod
     @always_inline
-    fn _run_impl[
+    def _run_impl[
         has_residual: Bool,
         _src_rank: Int = Self.SrcTmaOp.rank,
         _src_tile_shape: IndexList[_src_rank] = Self.SrcTmaOp.tile_shape,
@@ -872,8 +878,8 @@ struct Conv2dFpropKernel[
                                     filter_loader,
                                     tiles,
                                     UInt32(i),
-                                    UInt(current.m),
-                                    UInt(current.n),
+                                    Int(current.m),
+                                    Int(current.n),
                                     ctx.peer_cta_coord,
                                     ctx.elect_one_cta,
                                 )
@@ -894,8 +900,8 @@ struct Conv2dFpropKernel[
                                     filter_loader,
                                     tiles,
                                     UInt32(i),
-                                    UInt(current.m),
-                                    UInt(current.n),
+                                    Int(current.m),
+                                    Int(current.n),
                                     ctx.peer_cta_coord,
                                     ctx.elect_one_cta,
                                 )
