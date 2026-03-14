@@ -104,10 +104,10 @@ For example, this function has one argument that's a mutable
 reference and one that's immutable:
 
 ```mojo
-fn add(mut x: Int, read y: Int):
+def add(mut x: Int, read y: Int):
     x += y
 
-fn main():
+def main():
     var a = 1
     var b = 2
     add(a, b)
@@ -246,12 +246,12 @@ That is, a mutable reference can't have any other references that *alias* it.
 For example, consider the following code example:
 
 ```mojo
-fn append_twice(mut s: String, other: String):
+def append_twice(mut s: String, other: String):
    # Mojo knows 's' and 'other' can't be the same string.
    s += other
    s += other
 
-fn invalid_access():
+def invalid_access():
   var my_string = "o"  # Create a run-time String value
 
   # error: passing `my_string` mut is invalid since it's also passed
@@ -269,7 +269,7 @@ One way to avoid this issue when you do need both a mutable and an immutable
 reference (or need to pass the same value to two arguments) is to make a copy:
 
 ```mojo
-fn valid_access():
+def valid_access():
   var my_string = "o"           # Create a run-time String value
   var other_string = my_string  # Create a copy of the String value
   append_twice(my_string, other_string)
@@ -318,11 +318,11 @@ The following code works by making a copy of the string, because `take_text()`
 uses the `var` convention, and the caller doesn't include the transfer sigil:
 
 ```mojo
-fn take_text(var text: String):
+def take_text(var text: String):
     text += "!"
     print(text)
 
-fn main():
+def main():
     var message = "Hello"  # Create a run-time String value
     take_text(message)
     print(message)
@@ -338,7 +338,7 @@ compiler complains about `print(message)`, because at that point, the `message`
 variable is no longer initialized. That is, this version doesn't compile:
 
 ```mojo
-fn main():
+def main():
     var message = "Hello"  # Create a run-time String value
     take_text(message^)
     print(message)  # error: use of uninitialized value 'message'
@@ -350,11 +350,11 @@ not use the `message` variable after you end its lifetime with the `^` transfer
 sigil. So here is the corrected code:
 
 ```mojo
-fn take_text(var text: String):
+def take_text(var text: String):
     text += "!"
     print(text)
 
-fn main():
+def main():
     var message = "Hello"  # Create a run-time String value
     take_text(message^)
 ```

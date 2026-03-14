@@ -23,6 +23,7 @@ import torch
 from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
 from max.interfaces import TextGenerationContext
@@ -139,7 +140,7 @@ def get_state_dict(
             normalized_state_dict[name] = WeightData(
                 data=tensor,
                 name=name,
-                dtype=DType.from_torch(tensor.dtype),
+                dtype=torch_dtype_to_max(tensor.dtype),
                 shape=Shape(tensor.shape),
             )
     return normalized_state_dict

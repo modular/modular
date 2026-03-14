@@ -174,6 +174,27 @@ class TestBinaryElementwiseOps:
         expected = np.minimum(a_np, b_np)
         np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
 
+    @pytest.mark.parametrize("dtype", ELEMENTWISE_DTYPES)
+    def test_clamp(self, dtype: DType) -> None:
+        """Test elementwise clamp op matches numpy."""
+        shape = [3]
+        np_dtype = dtype.to_numpy()
+        a_np = np.array([12, 12, 12], dtype=np_dtype).reshape(shape)
+        lower_bound_np = np.array([0, 2, 12], dtype=np_dtype).reshape(shape)
+        upper_bound_np = np.array([13, 3, 15], dtype=np_dtype).reshape(shape)
+
+        a = Tensor.from_dlpack(a_np)
+        lower_bound = Tensor.from_dlpack(lower_bound_np)
+        upper_bound = Tensor.from_dlpack(upper_bound_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = F.clamp(a, lower_bound, upper_bound)
+
+        expected = np.clip(a_np, lower_bound_np, upper_bound_np)
+        np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
+
 
 class TestBinaryComparisonOps:
     """Tests for binary comparison Mojo ops (output is bool)."""

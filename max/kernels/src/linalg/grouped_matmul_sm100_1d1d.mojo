@@ -57,6 +57,7 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
     UNKNOWN_VALUE,
+    lt_to_tt,
 )
 from layout.layout import flatten, coalesce, zipped_divide
 from layout.layout_tensor import upcast
@@ -295,10 +296,10 @@ def copy_accum_to_gmem[
                 ]()
 
                 stsm_helper[swizzle, stageN, transpose_c=transpose_c](
-                    upper_frag_casted, c_smem_warp_tile_upper
+                    upper_frag_casted, lt_to_tt(c_smem_warp_tile_upper)
                 )
                 stsm_helper[swizzle, stageN, transpose_c=transpose_c](
-                    lower_frag_casted, c_smem_warp_tile_lower
+                    lower_frag_casted, lt_to_tt(c_smem_warp_tile_lower)
                 )
             else:
                 var c_smem_warp_tile_upper = c_smem_tile.tile[
@@ -308,7 +309,7 @@ def copy_accum_to_gmem[
                 ]()
 
                 stsm_helper[swizzle, stageN, transpose_c=transpose_c](
-                    upper_frag_casted, c_smem_warp_tile_upper
+                    upper_frag_casted, lt_to_tt(c_smem_warp_tile_upper)
                 )
 
             # Guard the write to shared memory is done.
@@ -329,7 +330,7 @@ def copy_accum_to_gmem[
                 data_paths, stageN
             ](0, 0)
             stsm_helper[swizzle, stageN, transpose_c=transpose_c](
-                upper_frag_casted, c_smem_warp_tile_upper
+                upper_frag_casted, lt_to_tt(c_smem_warp_tile_upper)
             )
 
             var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
@@ -338,7 +339,7 @@ def copy_accum_to_gmem[
 
             comptime if is_lower_frag_required:
                 stsm_helper[swizzle, stageN, transpose_c=transpose_c](
-                    lower_frag_casted, c_smem_warp_tile_lower
+                    lower_frag_casted, lt_to_tt(c_smem_warp_tile_lower)
                 )
 
             # Guard the write to shared memory is done.

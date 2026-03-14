@@ -17,6 +17,7 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max/dtype",
+        "//max/python/max/experimental/torch",
         "//max/python/max/nn",
         "//max/python/max/graph",
         "//max/python/max/pipelines/lib",

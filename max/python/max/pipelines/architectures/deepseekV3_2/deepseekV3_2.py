@@ -107,13 +107,15 @@ def _unpack_kv_collections_with_scales(
 
 
 def _validate_parallelism_config(config: DeepseekV3_2Config) -> None:
-    """Validate parallelism configuration for DeepseekV3.2."""
+    """Validate parallelism configuration for DeepseekV3.2.
+
+    Supported multi-GPU modes:
+      - DP attention + EP MoE: ``data_parallel_degree == num_devices``
+      - TP attention + EP MoE: ``data_parallel_degree == 1``
+    ``DeepseekV3_2Config.__post_init__`` already enforces
+    ``data_parallel_degree in (1, num_devices)``.
+    """
     num_devices = len(config.devices)
-    if config.data_parallel_degree != num_devices:
-        raise ValueError(
-            f"data_parallel_degree must match the number of devices ({num_devices}). "
-            "Tensor-parallel attention is not supported for DeepseekV3.2."
-        )
     # Skip EP validation in virtual device mode (compilation-only) since EP
     # will be disabled later due to NVSHMEM linking requirements
     if (
@@ -501,7 +503,7 @@ class DeepseekV3_2(Module):
             input_row_offsets.to(devices[0]), signal_buffers
         )
 
-        if len(devices) > 1:
+        if self.config.data_parallel_degree > 1:
             # Split batch across devices for data-parallel attention.
             h, input_row_offsets_ = split_batch_replicated(
                 devices,
@@ -753,6 +755,7 @@ class DeepseekV3_2(Module):
             all_hs_distributed=h,
             normalizer=self.norm_shards,
             signal_buffers=signal_buffers,
+            duplicated_hs=self.config.data_parallel_degree == 1,
         )
 
         return ret_val

@@ -2383,28 +2383,25 @@ struct ArgMax:
     ) raises:
         var axis_val = normalize_neg_index(Int(axis), rank)
 
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            comptime if target == "cpu":
-                argmax(
-                    input.to_tile_tensor[DType.int64](),
-                    axis_val,
-                    output.to_tile_tensor[DType.int64](),
-                )
-            else:
-                if axis_val != rank - 1:
-                    raise Error("axis other than -1 not supported on GPU")
+        comptime if target == "cpu":
+            argmax(
+                input.to_tile_tensor[DType.int64](),
+                axis_val,
+                output.to_tile_tensor[DType.int64](),
+            )
+        else:
+            if axis_val != rank - 1:
+                raise Error("axis other than -1 not supported on GPU")
 
-                # Has no static shape info
+            # Has no static shape info
 
-                # TODO(KERN-1045): Add support for taking advantage of static_shapes
-                var cuda_ctx = ctx.get_device_context()
-                argmax_gpu(
-                    cuda_ctx,
-                    input.to_tile_tensor[DType.int64](),
-                    output.to_tile_tensor[DType.int64](),
-                )
+            # TODO(KERN-1045): Add support for taking advantage of static_shapes
+            var cuda_ctx = ctx.get_device_context()
+            argmax_gpu(
+                cuda_ctx,
+                input.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[DType.int64](),
+            )
 
 
 @compiler.register("mo.arg_min")
@@ -2422,26 +2419,23 @@ struct ArgMin:
     ) raises:
         var axis_val = normalize_neg_index(Int(axis), rank)
 
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            comptime if target == "cpu":
-                argmin(
-                    input.to_tile_tensor[DType.int64](),
-                    axis_val,
-                    output.to_tile_tensor[DType.int64](),
-                )
-            else:
-                if axis_val != rank - 1:
-                    raise Error("axis other than -1 not supported on GPU")
+        comptime if target == "cpu":
+            argmin(
+                input.to_tile_tensor[DType.int64](),
+                axis_val,
+                output.to_tile_tensor[DType.int64](),
+            )
+        else:
+            if axis_val != rank - 1:
+                raise Error("axis other than -1 not supported on GPU")
 
-                # TODO(KERN-1045): Add support for taking advantage of static_shapes
-                var cuda_ctx = ctx.get_device_context()
-                argmin_gpu(
-                    cuda_ctx,
-                    input.to_tile_tensor[DType.int64](),
-                    output.to_tile_tensor[DType.int64](),
-                )
+            # TODO(KERN-1045): Add support for taking advantage of static_shapes
+            var cuda_ctx = ctx.get_device_context()
+            argmin_gpu(
+                cuda_ctx,
+                input.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[DType.int64](),
+            )
 
 
 @compiler.register("mo.arg_nonzero")
@@ -2546,16 +2540,13 @@ struct ReduceAdd:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            sum[
-                output.dtype,
-                input_fn,
-                output_fn,
-                single_thread_blocking_override=False,
-                target=target,
-            ](input.shape(), axis_val, ctx)
+        sum[
+            output.dtype,
+            input_fn,
+            output_fn,
+            single_thread_blocking_override=False,
+            target=target,
+        ](input.shape(), axis_val, ctx)
 
     @staticmethod
     def shape[
@@ -2601,16 +2592,13 @@ struct ReduceMul:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            product[
-                output.dtype,
-                input_fn,
-                output_fn,
-                single_thread_blocking_override=False,
-                target=target,
-            ](input.shape(), axis_val, ctx)
+        product[
+            output.dtype,
+            input_fn,
+            output_fn,
+            single_thread_blocking_override=False,
+            target=target,
+        ](input.shape(), axis_val, ctx)
 
     @staticmethod
     def shape[
@@ -2656,16 +2644,13 @@ struct ReduceMax:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            reduce_max[
-                output.dtype,
-                input_fn,
-                output_fn,
-                single_thread_blocking_override=False,
-                target=target,
-            ](input.shape(), axis_val, ctx)
+        reduce_max[
+            output.dtype,
+            input_fn,
+            output_fn,
+            single_thread_blocking_override=False,
+            target=target,
+        ](input.shape(), axis_val, ctx)
 
     @staticmethod
     def shape[
@@ -2711,16 +2696,13 @@ struct ReduceMin:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            reduce_min[
-                output.dtype,
-                input_fn,
-                output_fn,
-                single_thread_blocking_override=False,
-                target=target,
-            ](input.shape(), axis_val, ctx)
+        reduce_min[
+            output.dtype,
+            input_fn,
+            output_fn,
+            single_thread_blocking_override=False,
+            target=target,
+        ](input.shape(), axis_val, ctx)
 
     @staticmethod
     def shape[
@@ -2825,23 +2807,20 @@ struct ReduceMinMax:
             init_min, init_max
         )
 
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            _reduce_generator[
-                num_reductions,
-                dtype,
-                input_0_fn_wrapper,
-                output_0_fn_wrapper,
-                reduce_fn,
-                single_thread_blocking_override=False,
-                target=target,
-            ](
-                input.shape(),
-                init=init,
-                reduce_dim=axis,
-                context=ctx,
-            )
+        _reduce_generator[
+            num_reductions,
+            dtype,
+            input_0_fn_wrapper,
+            output_0_fn_wrapper,
+            reduce_fn,
+            single_thread_blocking_override=False,
+            target=target,
+        ](
+            input.shape(),
+            init=init,
+            reduce_dim=axis,
+            context=ctx,
+        )
         _ = axis
 
     @staticmethod
@@ -3199,15 +3178,12 @@ struct GatherND:
         indices: InputTensor[...],
         ctx: DeviceContextPtr,
     ) raises:
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            gather_nd[batch_dims=batchDims, target=target](
-                data.to_tile_tensor[DType.int64](),
-                indices.to_tile_tensor[DType.int64](),
-                output.to_tile_tensor[DType.int64](),
-                ctx,
-            )
+        gather_nd[batch_dims=batchDims, target=target](
+            data.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+            ctx,
+        )
 
     @staticmethod
     def shape[
@@ -3269,24 +3245,21 @@ struct Gather:
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            gather[
-                dtype=output.dtype,
-                indices_type=indices.dtype,
-                input_fn=input_fn,
-                indices_fn=indices_fn,
-                output_fn=output_fn,
-                target=target,
-                single_thread_blocking_override=False,
-            ](
-                Axis(Int(axis), input.rank),
-                input.shape(),
-                indices.shape(),
-                output.shape(),
-                context=ctx,
-            )
+        gather[
+            dtype=output.dtype,
+            indices_type=indices.dtype,
+            input_fn=input_fn,
+            indices_fn=indices_fn,
+            output_fn=output_fn,
+            target=target,
+            single_thread_blocking_override=False,
+        ](
+            Axis(Int(axis), input.rank),
+            input.shape(),
+            indices.shape(),
+            output.shape(),
+            context=ctx,
+        )
 
     @staticmethod
     def shape[
@@ -3751,18 +3724,15 @@ struct TopK:
         sorted: Scalar[DType.bool],
         ctx: DeviceContextPtr,
     ) raises:
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            top_k[largest=True, target=target](
-                input.to_tile_tensor[DType.int64](),
-                Int(k),
-                Int(axis),
-                values.to_tile_tensor[DType.int64](),
-                indices.to_tile_tensor[DType.int64](),
-                sorted,
-                ctx,
-            )
+        top_k[largest=True, target=target](
+            input.to_tile_tensor[DType.int64](),
+            Int(k),
+            Int(axis),
+            values.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            sorted,
+            ctx,
+        )
 
     @staticmethod
     def shape(
@@ -4823,69 +4793,66 @@ struct Conv:
         var filter_buf = filter.to_layout_tensor()
         var output_buf = output.to_layout_tensor()
 
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            comptime if is_cpu[target]():
-                comptime assert (
-                    not filter_is_fcrs
-                ), "Filter layout FCRS is not supported on CPU"
-                conv_nhwc_direct[
-                    input_buf.layout,  # input shape
-                    filter_buf.layout,  # filter shape
-                    output_buf.layout,  # output shape
-                    input.dtype,
-                    filter.dtype,
-                    output.dtype,
-                    filter_packed,
-                    conv_attr,
-                    lambdas_have_fusion,
-                    output_fn,
-                ](
-                    input_buf,
-                    filter_buf,
-                    output_buf,
-                    stride_tuple,
-                    dilation_tuple,
-                    pad_d_tuple,
-                    pad_h_tuple,
-                    pad_w_tuple,
-                    Int(num_groups),
-                )
-            else:
-                comptime assert (input.rank == 4 and filter.rank == 4) or (
-                    input.rank == 5 and filter.rank == 5
-                ), "only rank 4 or 5 tensor is supported on cuda gpu"
-                comptime assert (
-                    filter_packed == False
-                ), "only unpacked filter is supported on cuda gpu"
+        comptime if is_cpu[target]():
+            comptime assert (
+                not filter_is_fcrs
+            ), "Filter layout FCRS is not supported on CPU"
+            conv_nhwc_direct[
+                input_buf.layout,  # input shape
+                filter_buf.layout,  # filter shape
+                output_buf.layout,  # output shape
+                input.dtype,
+                filter.dtype,
+                output.dtype,
+                filter_packed,
+                conv_attr,
+                lambdas_have_fusion,
+                output_fn,
+            ](
+                input_buf,
+                filter_buf,
+                output_buf,
+                stride_tuple,
+                dilation_tuple,
+                pad_d_tuple,
+                pad_h_tuple,
+                pad_w_tuple,
+                Int(num_groups),
+            )
+        else:
+            comptime assert (input.rank == 4 and filter.rank == 4) or (
+                input.rank == 5 and filter.rank == 5
+            ), "only rank 4 or 5 tensor is supported on cuda gpu"
+            comptime assert (
+                filter_packed == False
+            ), "only unpacked filter is supported on cuda gpu"
 
-                var cuda_ctx = ctx.get_device_context()
+            var cuda_ctx = ctx.get_device_context()
 
-                var pad_tuple = IndexList[2 * (input.rank - 2)](0)
+            var pad_tuple = IndexList[2 * (input.rank - 2)](0)
 
-                comptime for i in range(2 * (input.rank - 2)):
-                    pad_tuple[i] = Int(paddings._ptr[i])
+            comptime for i in range(2 * (input.rank - 2)):
+                pad_tuple[i] = Int(paddings._ptr[i])
 
-                conv_gpu[
-                    input_buf.layout,  # input shape
-                    filter_buf.layout,  # filter shape
-                    output_buf.layout,  # output shape
-                    input.dtype,
-                    filter.dtype,
-                    output.dtype,
-                    output_fn,
-                    filter_is_fcrs,
-                ](
-                    input_buf,
-                    filter_buf,
-                    output_buf,
-                    stride_tuple,
-                    dilation_tuple,
-                    pad_tuple,
-                    Int(num_groups),
-                    cuda_ctx,
-                )
+            conv_gpu[
+                input_buf.layout,  # input shape
+                filter_buf.layout,  # filter shape
+                output_buf.layout,  # output shape
+                input.dtype,
+                filter.dtype,
+                output.dtype,
+                output_fn,
+                filter_is_fcrs,
+            ](
+                input_buf,
+                filter_buf,
+                output_buf,
+                stride_tuple,
+                dilation_tuple,
+                pad_tuple,
+                Int(num_groups),
+                cuda_ctx,
+            )
 
     @staticmethod
     def shape(
@@ -4969,31 +4936,28 @@ struct Conv2dResidualAdd:
         var stride_tuple = IndexList[2](stride_h, stride_w)
         var dilation_tuple = IndexList[2](1, 1)
 
-        with Trace[TraceLevel.OP, target=target](
-            "conv2d_residual_add", task_id=get_safe_task_id(ctx)
-        ):
-            conv_gpu[
-                input_buf.layout,
-                filter_buf.layout,
-                output_buf.layout,
-                input.dtype,
-                filter.dtype,
-                output.dtype,
-                output_fn,
-                True,  # filter_is_fcrs
-                has_residual=True,
-            ](
-                input_buf,
-                filter_buf,
-                output_buf,
-                stride_tuple,
-                dilation_tuple,
-                pad_tuple,
-                1,  # num_groups
-                cuda_ctx,
-                source.unsafe_ptr().as_any_origin(),
-                Float32(1.0),  # beta
-            )
+        conv_gpu[
+            input_buf.layout,
+            filter_buf.layout,
+            output_buf.layout,
+            input.dtype,
+            filter.dtype,
+            output.dtype,
+            output_fn,
+            True,  # filter_is_fcrs
+            has_residual=True,
+        ](
+            input_buf,
+            filter_buf,
+            output_buf,
+            stride_tuple,
+            dilation_tuple,
+            pad_tuple,
+            1,  # num_groups
+            cuda_ctx,
+            source.unsafe_ptr().as_any_origin(),
+            Float32(1.0),  # beta
+        )
 
     @staticmethod
     def shape(
@@ -5878,16 +5842,15 @@ struct GGMLQ40Dequantize:
         output: OutputTensor[dtype=DType.float32, rank=2, ...],
         input: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        with Trace[TraceLevel.OP, target=StaticString("cpu")](_trace_name):
-            var input_tensor = input.to_layout_tensor()
-            var output_tensor = output.to_layout_tensor()
-            Q4sym[group_size=32].dequantize_and_write_to_tensor(
-                input_tensor,
-                output_tensor,
-                rebind[IndexList[output_tensor.rank]](
-                    output_tensor.runtime_layout.shape.value.canonicalize()
-                ),
-            )
+        var input_tensor = input.to_layout_tensor()
+        var output_tensor = output.to_layout_tensor()
+        Q4sym[group_size=32].dequantize_and_write_to_tensor(
+            input_tensor,
+            output_tensor,
+            rebind[IndexList[output_tensor.rank]](
+                output_tensor.runtime_layout.shape.value.canonicalize()
+            ),
+        )
 
     @staticmethod
     @always_inline
@@ -5913,10 +5876,9 @@ struct VroomQ40Matmul:
         a: InputTensor[dtype=DType.float32, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        with Trace[TraceLevel.OP, target=StaticString("cpu")](_trace_name):
-            matmul_qint4[32](
-                a.to_layout_tensor(), b.to_layout_tensor(), c.to_layout_tensor()
-            )
+        matmul_qint4[32](
+            a.to_layout_tensor(), b.to_layout_tensor(), c.to_layout_tensor()
+        )
 
     @staticmethod
     @always_inline
@@ -5937,10 +5899,9 @@ struct VroomQ40RepackWeights:
         b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        with Trace[TraceLevel.OP, target=StaticString("cpu")](_trace_name):
-            matmul_qint4_pack_b[32](
-                b.to_layout_tensor(), b_packed.to_layout_tensor()
-            )
+        matmul_qint4_pack_b[32](
+            b.to_layout_tensor(), b_packed.to_layout_tensor()
+        )
 
     @staticmethod
     @always_inline
@@ -5963,11 +5924,10 @@ struct GGMLQ4KDequantize:
         output: OutputTensor[dtype=DType.float32, rank=2, ...],
         input: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        with Trace[TraceLevel.OP, target=StaticString("cpu")](_trace_name):
-            q4_k_dequantize_impl(
-                input.to_layout_tensor(),
-                output.to_layout_tensor(),
-            )
+        q4_k_dequantize_impl(
+            input.to_layout_tensor(),
+            output.to_layout_tensor(),
+        )
 
     @staticmethod
     @always_inline
@@ -5998,10 +5958,9 @@ struct VroomQ4KMatmul:
         a: InputTensor[dtype=DType.float32, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        with Trace[TraceLevel.OP, target=StaticString("cpu")](_trace_name):
-            matmul_Q4_K(
-                a.to_layout_tensor(), b.to_layout_tensor(), c.to_layout_tensor()
-            )
+        matmul_Q4_K(
+            a.to_layout_tensor(), b.to_layout_tensor(), c.to_layout_tensor()
+        )
 
     @staticmethod
     @always_inline
@@ -6022,10 +5981,7 @@ struct VroomQ4KRepackWeights:
         b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        with Trace[TraceLevel.OP, target=StaticString("cpu")](_trace_name):
-            matmul_Q4_K_pack_b(
-                b.to_layout_tensor(), b_packed.to_layout_tensor()
-            )
+        matmul_Q4_K_pack_b(b.to_layout_tensor(), b_packed.to_layout_tensor())
 
     @staticmethod
     @always_inline
@@ -6050,16 +6006,15 @@ struct GGMLQ6KDequantize:
         output: OutputTensor[dtype=DType.float32, rank=2, ...],
         input: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        with Trace[TraceLevel.OP, target=StaticString("cpu")](_trace_name):
-            var input_tensor = input.to_layout_tensor()
-            var output_tensor = output.to_layout_tensor()
-            q6_k_dequantize_impl(
-                input_tensor,
-                output_tensor,
-                rebind[IndexList[output_tensor.rank]](
-                    output_tensor.runtime_layout.shape.value.canonicalize()
-                ),
-            )
+        var input_tensor = input.to_layout_tensor()
+        var output_tensor = output.to_layout_tensor()
+        q6_k_dequantize_impl(
+            input_tensor,
+            output_tensor,
+            rebind[IndexList[output_tensor.rank]](
+                output_tensor.runtime_layout.shape.value.canonicalize()
+            ),
+        )
 
     @staticmethod
     @always_inline
@@ -6090,10 +6045,9 @@ struct VroomQ6KMatmul:
         a: InputTensor[dtype=DType.float32, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        with Trace[TraceLevel.OP, target=StaticString("cpu")](_trace_name):
-            matmul_Q6_K(
-                a.to_layout_tensor(), b.to_layout_tensor(), c.to_layout_tensor()
-            )
+        matmul_Q6_K(
+            a.to_layout_tensor(), b.to_layout_tensor(), c.to_layout_tensor()
+        )
 
     @staticmethod
     @always_inline
@@ -6114,10 +6068,7 @@ struct VroomQ6KRepackWeights:
         b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        with Trace[TraceLevel.OP, target=StaticString("cpu")](_trace_name):
-            matmul_Q6_K_pack_b(
-                b.to_layout_tensor(), b_packed.to_layout_tensor()
-            )
+        matmul_Q6_K_pack_b(b.to_layout_tensor(), b_packed.to_layout_tensor())
 
     @staticmethod
     @always_inline
@@ -6147,15 +6098,12 @@ struct QMatmulGPU_b4_g32:
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            matmul_gpu_qint4[32, target](
-                c.to_layout_tensor(),
-                a.to_layout_tensor(),
-                b.to_layout_tensor(),
-                ctx,
-            )
+        matmul_gpu_qint4[32, target](
+            c.to_layout_tensor(),
+            a.to_layout_tensor(),
+            b.to_layout_tensor(),
+            ctx,
+        )
 
     @staticmethod
     @always_inline
@@ -6181,15 +6129,12 @@ struct QMatmulGPU_b4_g128:
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            matmul_gpu_qint4[128, target](
-                c.to_layout_tensor(),
-                a.to_layout_tensor(),
-                b.to_layout_tensor(),
-                ctx,
-            )
+        matmul_gpu_qint4[128, target](
+            c.to_layout_tensor(),
+            a.to_layout_tensor(),
+            b.to_layout_tensor(),
+            ctx,
+        )
 
     @staticmethod
     @always_inline
@@ -6214,12 +6159,9 @@ struct QMatmulGPURepackGGUF:
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            gpu_qint4_repack_Q4_0[b_shape=b.static_spec.shape, target](
-                b.to_layout_tensor(), b_packed.to_layout_tensor(), ctx
-            )
+        gpu_qint4_repack_Q4_0[b_shape=b.static_spec.shape, target](
+            b.to_layout_tensor(), b_packed.to_layout_tensor(), ctx
+        )
 
     @staticmethod
     @always_inline
@@ -6243,12 +6185,9 @@ struct QMatmulGPURepackGPTQ_b4_g128:
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            gpu_qint4_repack_GPTQ[128, target](
-                b.to_layout_tensor(), b_packed.to_layout_tensor(), ctx=ctx
-            )
+        gpu_qint4_repack_GPTQ[128, target](
+            b.to_layout_tensor(), b_packed.to_layout_tensor(), ctx=ctx
+        )
 
     @staticmethod
     @always_inline
@@ -6273,21 +6212,18 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            var perm_idx_lt = perm_idx.to_layout_tensor()
-            gpu_qint4_repack_GPTQ[128, target](
-                b.to_layout_tensor(),
-                b_packed.to_layout_tensor(),
-                LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE)](
-                    perm_idx_lt.ptr,
-                    RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                        perm_idx_lt.runtime_layout.shape.value.canonicalize()
-                    ),
-                ).get_immutable(),
-                ctx=ctx,
-            )
+        var perm_idx_lt = perm_idx.to_layout_tensor()
+        gpu_qint4_repack_GPTQ[128, target](
+            b.to_layout_tensor(),
+            b_packed.to_layout_tensor(),
+            LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE)](
+                perm_idx_lt.ptr,
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    perm_idx_lt.runtime_layout.shape.value.canonicalize()
+                ),
+            ).get_immutable(),
+            ctx=ctx,
+        )
 
     @staticmethod
     @always_inline
@@ -7042,31 +6978,25 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
         comptime if is_gpu[target]():
             device_ctx = ctx.get_device_context()
 
-        with Trace[TraceLevel.OP, target=target](
-            "mo.rope.ragged",
-            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        ):
-            var x_tensor = x.to_tile_tensor[DType.int64]()
-            var row_offsets_tensor = input_row_offsets.to_tile_tensor[
-                DType.int64
-            ]()
-            var start_tensor = start_pos.to_tile_tensor[DType.int64]()
-            var freqs_cis_tensor = freqs_cis.to_tile_tensor[DType.int64]()
-            comptime assert row_offsets_tensor.flat_rank == 1
-            comptime assert start_tensor.flat_rank == 1
-            comptime assert freqs_cis_tensor.flat_rank == 2
+        var x_tensor = x.to_tile_tensor[DType.int64]()
+        var row_offsets_tensor = input_row_offsets.to_tile_tensor[DType.int64]()
+        var start_tensor = start_pos.to_tile_tensor[DType.int64]()
+        var freqs_cis_tensor = freqs_cis.to_tile_tensor[DType.int64]()
+        comptime assert row_offsets_tensor.flat_rank == 1
+        comptime assert start_tensor.flat_rank == 1
+        comptime assert freqs_cis_tensor.flat_rank == 2
 
-            rope_ragged[
-                interleaved=Self.interleaved,
-                target=target,
-                output_fn=output_fn,
-            ](
-                x_tensor,
-                row_offsets_tensor,
-                start_tensor,
-                freqs_cis_tensor,
-                device_ctx,
-            )
+        rope_ragged[
+            interleaved=Self.interleaved,
+            target=target,
+            output_fn=output_fn,
+        ](
+            x_tensor,
+            row_offsets_tensor,
+            start_tensor,
+            freqs_cis_tensor,
+            device_ctx,
+        )
 
 
 @compiler.register("mo.rope.ragged.with_position_id")
@@ -7122,34 +7052,28 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
         comptime if is_gpu[target]():
             device_ctx = ctx.get_device_context()
 
-        with Trace[TraceLevel.OP, target=target](
-            "mo.rope.ragged.with_position_id",
-            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        ):
-            var x_tensor = x.to_tile_tensor[DType.int64]()
-            var row_offsets_tensor = input_row_offsets.to_tile_tensor[
-                DType.int64
-            ]()
-            var start_tensor = start_pos.to_tile_tensor[DType.int64]()
-            var freqs_cis_tensor = freqs_cis.to_tile_tensor[DType.int64]()
-            var position_ids_tensor = position_ids.to_tile_tensor[DType.int64]()
-            comptime assert row_offsets_tensor.flat_rank == 1
-            comptime assert start_tensor.flat_rank == 1
-            comptime assert freqs_cis_tensor.flat_rank == 2
-            comptime assert position_ids_tensor.flat_rank == 2
+        var x_tensor = x.to_tile_tensor[DType.int64]()
+        var row_offsets_tensor = input_row_offsets.to_tile_tensor[DType.int64]()
+        var start_tensor = start_pos.to_tile_tensor[DType.int64]()
+        var freqs_cis_tensor = freqs_cis.to_tile_tensor[DType.int64]()
+        var position_ids_tensor = position_ids.to_tile_tensor[DType.int64]()
+        comptime assert row_offsets_tensor.flat_rank == 1
+        comptime assert start_tensor.flat_rank == 1
+        comptime assert freqs_cis_tensor.flat_rank == 2
+        comptime assert position_ids_tensor.flat_rank == 2
 
-            rope_ragged[
-                interleaved=Self.interleaved,
-                target=target,
-                output_fn=output_fn,
-            ](
-                x_tensor,
-                row_offsets_tensor,
-                start_tensor,
-                freqs_cis_tensor,
-                device_ctx,
-                position_ids=position_ids_tensor.as_any_origin().as_immut(),
-            )
+        rope_ragged[
+            interleaved=Self.interleaved,
+            target=target,
+            output_fn=output_fn,
+        ](
+            x_tensor,
+            row_offsets_tensor,
+            start_tensor,
+            freqs_cis_tensor,
+            device_ctx,
+            position_ids=position_ids_tensor.as_any_origin().as_immut(),
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -7851,35 +7775,31 @@ struct Struct_mla_prefill_graph_paged:
             target
         ](), "mo.mla.graph.prefill.paged.fp8 is only supported on GPU"
 
-        with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.prefill.paged.fp8",
-            task_id=get_safe_task_id(context),
-        ):
-            mla_prefill_branch_fp8[
-                m_scale_granularity=m_scale_granularity,
-                n_scale_granularity=n_scale_granularity,
-                k_scale_granularity=k_scale_granularity,
-                mask_str=mask_str,
-                target=target,
-            ](
-                output.to_tile_tensor[DType.int64](),
-                q.to_tile_tensor[DType.int64](),
-                input_row_offsets.to_tile_tensor[DType.int64](),
-                freqs_cis.to_tile_tensor[DType.int64](),
-                kv_norm_gamma.to_tile_tensor[DType.int64](),
-                kv_collection,
-                layer_idx,
-                scale,
-                epsilon,
-                buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
-                cache_offsets_1d.to_tile_tensor[DType.int64](),
-                Int(buffer_length),
-                w_k.to_tile_tensor[DType.int64](),
-                w_k_scale.to_tile_tensor[DType.int64](),
-                w_uv.to_tile_tensor[DType.int64](),
-                w_uv_scale.to_tile_tensor[DType.int64](),
-                context.get_device_context(),
-            )
+        mla_prefill_branch_fp8[
+            m_scale_granularity=m_scale_granularity,
+            n_scale_granularity=n_scale_granularity,
+            k_scale_granularity=k_scale_granularity,
+            mask_str=mask_str,
+            target=target,
+        ](
+            output.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            freqs_cis.to_tile_tensor[DType.int64](),
+            kv_norm_gamma.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            scale,
+            epsilon,
+            buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+            cache_offsets_1d.to_tile_tensor[DType.int64](),
+            Int(buffer_length),
+            w_k.to_tile_tensor[DType.int64](),
+            w_k_scale.to_tile_tensor[DType.int64](),
+            w_uv.to_tile_tensor[DType.int64](),
+            w_uv_scale.to_tile_tensor[DType.int64](),
+            context.get_device_context(),
+        )
 
 
 @compiler.register("mo.mla.compute_dispatch_args.scalar")
@@ -7973,33 +7893,29 @@ struct Struct_mla_decode_graph_paged_fp8_capturable:
             target
         ](), "mo.mla.graph.decode.paged.fp8.capturable is only supported on GPU"
 
-        with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.decode.paged.fp8.capturable",
-            task_id=get_safe_task_id(context),
-        ):
-            mla_decode_branch_fp8[
-                m_scale_granularity=m_scale_granularity,
-                n_scale_granularity=n_scale_granularity,
-                k_scale_granularity=k_scale_granularity,
-                mask_str=mask_str,
-                target=target,
-            ](
-                output.to_tile_tensor[DType.int64](),
-                q.to_tile_tensor[DType.int64](),
-                input_row_offsets.to_tile_tensor[DType.int64](),
-                freqs_cis.to_tile_tensor[DType.int64](),
-                kv_norm_gamma.to_tile_tensor[DType.int64](),
-                kv_collection,
-                layer_idx,
-                scale,
-                epsilon,
-                w_uk.to_tile_tensor[DType.int64](),
-                w_uk_scale.to_tile_tensor[DType.int64](),
-                w_uv.to_tile_tensor[DType.int64](),
-                w_uv_scale.to_tile_tensor[DType.int64](),
-                scalar_args.to_tile_tensor[DType.int64](),
-                context.get_device_context(),
-            )
+        mla_decode_branch_fp8[
+            m_scale_granularity=m_scale_granularity,
+            n_scale_granularity=n_scale_granularity,
+            k_scale_granularity=k_scale_granularity,
+            mask_str=mask_str,
+            target=target,
+        ](
+            output.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            freqs_cis.to_tile_tensor[DType.int64](),
+            kv_norm_gamma.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            scale,
+            epsilon,
+            w_uk.to_tile_tensor[DType.int64](),
+            w_uk_scale.to_tile_tensor[DType.int64](),
+            w_uv.to_tile_tensor[DType.int64](),
+            w_uv_scale.to_tile_tensor[DType.int64](),
+            scalar_args.to_tile_tensor[DType.int64](),
+            context.get_device_context(),
+        )
 
 
 @compiler.register("mo.mla.graph.decode.paged.fp8")
@@ -8051,33 +7967,29 @@ struct Struct_mla_decode_graph_paged_fp8:
         var null_ptr = UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]()
         var null_scalar_args = TileTensor(null_ptr, row_major[3]())
 
-        with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.decode.paged.fp8",
-            task_id=get_safe_task_id(context),
-        ):
-            mla_decode_branch_fp8[
-                m_scale_granularity=m_scale_granularity,
-                n_scale_granularity=n_scale_granularity,
-                k_scale_granularity=k_scale_granularity,
-                mask_str=mask_str,
-                target=target,
-            ](
-                output.to_tile_tensor[DType.int64](),
-                q.to_tile_tensor[DType.int64](),
-                input_row_offsets.to_tile_tensor[DType.int64](),
-                freqs_cis.to_tile_tensor[DType.int64](),
-                kv_norm_gamma.to_tile_tensor[DType.int64](),
-                kv_collection,
-                layer_idx,
-                scale,
-                epsilon,
-                w_uk.to_tile_tensor[DType.int64](),
-                w_uk_scale.to_tile_tensor[DType.int64](),
-                w_uv.to_tile_tensor[DType.int64](),
-                w_uv_scale.to_tile_tensor[DType.int64](),
-                null_scalar_args,
-                context.get_device_context(),
-            )
+        mla_decode_branch_fp8[
+            m_scale_granularity=m_scale_granularity,
+            n_scale_granularity=n_scale_granularity,
+            k_scale_granularity=k_scale_granularity,
+            mask_str=mask_str,
+            target=target,
+        ](
+            output.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            freqs_cis.to_tile_tensor[DType.int64](),
+            kv_norm_gamma.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            scale,
+            epsilon,
+            w_uk.to_tile_tensor[DType.int64](),
+            w_uk_scale.to_tile_tensor[DType.int64](),
+            w_uv.to_tile_tensor[DType.int64](),
+            w_uv_scale.to_tile_tensor[DType.int64](),
+            null_scalar_args,
+            context.get_device_context(),
+        )
 
 
 @compiler.register("mo.mla.graph.prefill.paged")
@@ -8123,31 +8035,27 @@ struct Struct_mla_prefill_graph_bf16_paged:
             target
         ](), "mo.mla.graph.prefill.paged is only supported on GPU"
 
-        with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.prefill.paged",
-            task_id=get_safe_task_id(context),
-        ):
-            mla_prefill_branch_bf16[
-                mask_str=mask_str,
-                target=target,
-            ](
-                output.to_tile_tensor[DType.int64](),
-                q.to_tile_tensor[DType.int64](),
-                kv.to_tile_tensor[DType.int64](),
-                input_row_offsets.to_tile_tensor[DType.int64](),
-                freqs_cis.to_tile_tensor[DType.int64](),
-                kv_norm_gamma.to_tile_tensor[DType.int64](),
-                kv_collection,
-                layer_idx,
-                scale,
-                epsilon,
-                buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
-                cache_offsets_1d.to_tile_tensor[DType.int64](),
-                Int(buffer_length),
-                w_k.to_tile_tensor[DType.int64](),
-                w_uv.to_tile_tensor[DType.int64](),
-                context.get_device_context(),
-            )
+        mla_prefill_branch_bf16[
+            mask_str=mask_str,
+            target=target,
+        ](
+            output.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            kv.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            freqs_cis.to_tile_tensor[DType.int64](),
+            kv_norm_gamma.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            scale,
+            epsilon,
+            buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+            cache_offsets_1d.to_tile_tensor[DType.int64](),
+            Int(buffer_length),
+            w_k.to_tile_tensor[DType.int64](),
+            w_uv.to_tile_tensor[DType.int64](),
+            context.get_device_context(),
+        )
 
 
 @compiler.register("mo.mla.graph.decode.paged.capturable")
@@ -8191,29 +8099,25 @@ struct Struct_mla_decode_graph_bf16_paged_capturable:
             target
         ](), "mo.mla.graph.decode.paged.capturable is only supported on GPU"
 
-        with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.decode.paged.capturable",
-            task_id=get_safe_task_id(context),
-        ):
-            mla_decode_branch_bf16[
-                mask_str=mask_str,
-                target=target,
-            ](
-                output.to_tile_tensor[DType.int64](),
-                q.to_tile_tensor[DType.int64](),
-                kv.to_tile_tensor[DType.int64](),
-                input_row_offsets.to_tile_tensor[DType.int64](),
-                freqs_cis.to_tile_tensor[DType.int64](),
-                kv_norm_gamma.to_tile_tensor[DType.int64](),
-                kv_collection,
-                layer_idx,
-                scale,
-                epsilon,
-                w_uk.to_tile_tensor[DType.int64](),
-                w_uv.to_tile_tensor[DType.int64](),
-                scalar_args.to_tile_tensor[DType.int64](),
-                context.get_device_context(),
-            )
+        mla_decode_branch_bf16[
+            mask_str=mask_str,
+            target=target,
+        ](
+            output.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            kv.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            freqs_cis.to_tile_tensor[DType.int64](),
+            kv_norm_gamma.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            scale,
+            epsilon,
+            w_uk.to_tile_tensor[DType.int64](),
+            w_uv.to_tile_tensor[DType.int64](),
+            scalar_args.to_tile_tensor[DType.int64](),
+            context.get_device_context(),
+        )
 
 
 @compiler.register("mo.mla.graph.decode.paged")
@@ -8259,29 +8163,25 @@ struct Struct_mla_decode_graph_bf16_paged:
         var null_ptr = UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]()
         var null_scalar_args = TileTensor(null_ptr, row_major[3]())
 
-        with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.decode.paged",
-            task_id=get_safe_task_id(context),
-        ):
-            mla_decode_branch_bf16[
-                mask_str=mask_str,
-                target=target,
-            ](
-                output.to_tile_tensor[DType.int64](),
-                q.to_tile_tensor[DType.int64](),
-                kv.to_tile_tensor[DType.int64](),
-                input_row_offsets.to_tile_tensor[DType.int64](),
-                freqs_cis.to_tile_tensor[DType.int64](),
-                kv_norm_gamma.to_tile_tensor[DType.int64](),
-                kv_collection,
-                layer_idx,
-                scale,
-                epsilon,
-                w_uk.to_tile_tensor[DType.int64](),
-                w_uv.to_tile_tensor[DType.int64](),
-                null_scalar_args,
-                context.get_device_context(),
-            )
+        mla_decode_branch_bf16[
+            mask_str=mask_str,
+            target=target,
+        ](
+            output.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            kv.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            freqs_cis.to_tile_tensor[DType.int64](),
+            kv_norm_gamma.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            scale,
+            epsilon,
+            w_uk.to_tile_tensor[DType.int64](),
+            w_uv.to_tile_tensor[DType.int64](),
+            null_scalar_args,
+            context.get_device_context(),
+        )
 
 
 @compiler.register("mo.mla.graph.prefill.decode.paged.fp8.capturable")
@@ -8338,39 +8238,35 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_capturable:
             " on GPU"
         )
 
-        with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.prefill.decode.paged.fp8.capturable",
-            task_id=get_safe_task_id(context),
-        ):
-            mla_prefill_decode_graph_fp8[
-                m_scale_granularity=m_scale_granularity,
-                n_scale_granularity=n_scale_granularity,
-                k_scale_granularity=k_scale_granularity,
-                mask_str=mask_str,
-                target=target,
-            ](
-                output.to_tile_tensor[DType.int64](),
-                q.to_tile_tensor[DType.int64](),
-                input_row_offsets.to_tile_tensor[DType.int64](),
-                freqs_cis.to_tile_tensor[DType.int64](),
-                kv_norm_gamma.to_tile_tensor[DType.int64](),
-                kv_collection,
-                layer_idx,
-                scale,
-                epsilon,
-                buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
-                cache_offsets_1d.to_tile_tensor[DType.int64](),
-                Int(buffer_length),
-                Int(kv_collection.max_seq_length),
-                w_k.to_tile_tensor[DType.int64](),
-                w_k_scale.to_tile_tensor[DType.int64](),
-                w_uk.to_tile_tensor[DType.int64](),
-                w_uk_scale.to_tile_tensor[DType.int64](),
-                w_uv.to_tile_tensor[DType.int64](),
-                w_uv_scale.to_tile_tensor[DType.int64](),
-                scalar_args.to_tile_tensor[DType.int64](),
-                context.get_device_context(),
-            )
+        mla_prefill_decode_graph_fp8[
+            m_scale_granularity=m_scale_granularity,
+            n_scale_granularity=n_scale_granularity,
+            k_scale_granularity=k_scale_granularity,
+            mask_str=mask_str,
+            target=target,
+        ](
+            output.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            freqs_cis.to_tile_tensor[DType.int64](),
+            kv_norm_gamma.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            scale,
+            epsilon,
+            buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+            cache_offsets_1d.to_tile_tensor[DType.int64](),
+            Int(buffer_length),
+            Int(kv_collection.max_seq_length),
+            w_k.to_tile_tensor[DType.int64](),
+            w_k_scale.to_tile_tensor[DType.int64](),
+            w_uk.to_tile_tensor[DType.int64](),
+            w_uk_scale.to_tile_tensor[DType.int64](),
+            w_uv.to_tile_tensor[DType.int64](),
+            w_uv_scale.to_tile_tensor[DType.int64](),
+            scalar_args.to_tile_tensor[DType.int64](),
+            context.get_device_context(),
+        )
 
 
 @compiler.register("mo.mla.graph.prefill.decode.paged.fp8")
@@ -8428,39 +8324,35 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
         var null_ptr = UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]()
         var null_scalar_args = TileTensor(null_ptr, row_major[3]())
 
-        with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.prefill.decode.paged.fp8",
-            task_id=get_safe_task_id(context),
-        ):
-            mla_prefill_decode_graph_fp8[
-                m_scale_granularity=m_scale_granularity,
-                n_scale_granularity=n_scale_granularity,
-                k_scale_granularity=k_scale_granularity,
-                mask_str=mask_str,
-                target=target,
-            ](
-                output.to_tile_tensor[DType.int64](),
-                q.to_tile_tensor[DType.int64](),
-                input_row_offsets.to_tile_tensor[DType.int64](),
-                freqs_cis.to_tile_tensor[DType.int64](),
-                kv_norm_gamma.to_tile_tensor[DType.int64](),
-                kv_collection,
-                layer_idx,
-                scale,
-                epsilon,
-                buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
-                cache_offsets_1d.to_tile_tensor[DType.int64](),
-                Int(buffer_length),
-                Int(kv_collection.max_seq_length),
-                w_k.to_tile_tensor[DType.int64](),
-                w_k_scale.to_tile_tensor[DType.int64](),
-                w_uk.to_tile_tensor[DType.int64](),
-                w_uk_scale.to_tile_tensor[DType.int64](),
-                w_uv.to_tile_tensor[DType.int64](),
-                w_uv_scale.to_tile_tensor[DType.int64](),
-                null_scalar_args,
-                context.get_device_context(),
-            )
+        mla_prefill_decode_graph_fp8[
+            m_scale_granularity=m_scale_granularity,
+            n_scale_granularity=n_scale_granularity,
+            k_scale_granularity=k_scale_granularity,
+            mask_str=mask_str,
+            target=target,
+        ](
+            output.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            freqs_cis.to_tile_tensor[DType.int64](),
+            kv_norm_gamma.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            scale,
+            epsilon,
+            buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+            cache_offsets_1d.to_tile_tensor[DType.int64](),
+            Int(buffer_length),
+            Int(kv_collection.max_seq_length),
+            w_k.to_tile_tensor[DType.int64](),
+            w_k_scale.to_tile_tensor[DType.int64](),
+            w_uk.to_tile_tensor[DType.int64](),
+            w_uk_scale.to_tile_tensor[DType.int64](),
+            w_uv.to_tile_tensor[DType.int64](),
+            w_uv_scale.to_tile_tensor[DType.int64](),
+            null_scalar_args,
+            context.get_device_context(),
+        )
 
 
 @compiler.register("mo.mla.graph.prefill.decode.paged.capturable")
@@ -8509,34 +8401,30 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_capturable:
             " on GPU"
         )
 
-        with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.prefill.decode.paged.capturable",
-            task_id=get_safe_task_id(context),
-        ):
-            mla_prefill_decode_graph_bf16[
-                mask_str=mask_str,
-                target=target,
-            ](
-                output.to_tile_tensor[DType.int64](),
-                q.to_tile_tensor[DType.int64](),
-                kv.to_tile_tensor[DType.int64](),
-                input_row_offsets.to_tile_tensor[DType.int64](),
-                freqs_cis.to_tile_tensor[DType.int64](),
-                kv_norm_gamma.to_tile_tensor[DType.int64](),
-                kv_collection,
-                layer_idx,
-                scale,
-                epsilon,
-                buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
-                cache_offsets_1d.to_tile_tensor[DType.int64](),
-                Int(buffer_length),
-                Int(kv_collection.max_seq_length),
-                w_k.to_tile_tensor[DType.int64](),
-                w_uk.to_tile_tensor[DType.int64](),
-                w_uv.to_tile_tensor[DType.int64](),
-                scalar_args.to_tile_tensor[DType.int64](),
-                context.get_device_context(),
-            )
+        mla_prefill_decode_graph_bf16[
+            mask_str=mask_str,
+            target=target,
+        ](
+            output.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            kv.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            freqs_cis.to_tile_tensor[DType.int64](),
+            kv_norm_gamma.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            scale,
+            epsilon,
+            buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+            cache_offsets_1d.to_tile_tensor[DType.int64](),
+            Int(buffer_length),
+            Int(kv_collection.max_seq_length),
+            w_k.to_tile_tensor[DType.int64](),
+            w_uk.to_tile_tensor[DType.int64](),
+            w_uv.to_tile_tensor[DType.int64](),
+            scalar_args.to_tile_tensor[DType.int64](),
+            context.get_device_context(),
+        )
 
 
 @compiler.register("mo.mla.graph.prefill.decode.paged")
@@ -8586,34 +8474,30 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
         var null_ptr = UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]()
         var null_scalar_args = TileTensor(null_ptr, row_major[3]())
 
-        with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.prefill.decode.paged",
-            task_id=get_safe_task_id(context),
-        ):
-            mla_prefill_decode_graph_bf16[
-                mask_str=mask_str,
-                target=target,
-            ](
-                output.to_tile_tensor[DType.int64](),
-                q.to_tile_tensor[DType.int64](),
-                kv.to_tile_tensor[DType.int64](),
-                input_row_offsets.to_tile_tensor[DType.int64](),
-                freqs_cis.to_tile_tensor[DType.int64](),
-                kv_norm_gamma.to_tile_tensor[DType.int64](),
-                kv_collection,
-                layer_idx,
-                scale,
-                epsilon,
-                buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
-                cache_offsets_1d.to_tile_tensor[DType.int64](),
-                Int(buffer_length),
-                Int(kv_collection.max_seq_length),
-                w_k.to_tile_tensor[DType.int64](),
-                w_uk.to_tile_tensor[DType.int64](),
-                w_uv.to_tile_tensor[DType.int64](),
-                null_scalar_args,
-                context.get_device_context(),
-            )
+        mla_prefill_decode_graph_bf16[
+            mask_str=mask_str,
+            target=target,
+        ](
+            output.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            kv.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            freqs_cis.to_tile_tensor[DType.int64](),
+            kv_norm_gamma.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            scale,
+            epsilon,
+            buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+            cache_offsets_1d.to_tile_tensor[DType.int64](),
+            Int(buffer_length),
+            Int(kv_collection.max_seq_length),
+            w_k.to_tile_tensor[DType.int64](),
+            w_uk.to_tile_tensor[DType.int64](),
+            w_uv.to_tile_tensor[DType.int64](),
+            null_scalar_args,
+            context.get_device_context(),
+        )
 
 
 @compiler.register("mo.mla.graph.prefill.decode.paged.quantized.capturable")
@@ -8665,34 +8549,30 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
         var null_ptr = UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]()
         var null_scalar_args = TileTensor(null_ptr, row_major[3]())
 
-        with Trace[TraceLevel.OP, target=target](
-            "mo.mla.graph.prefill.decode.paged.quantized.capturable",
-            task_id=get_safe_task_id(context),
-        ):
-            mla_prefill_decode_graph_bf16[
-                mask_str=mask_str,
-                target=target,
-            ](
-                output.to_tile_tensor[DType.int64](),
-                q.to_tile_tensor[DType.int64](),
-                kv.to_tile_tensor[DType.int64](),
-                input_row_offsets.to_tile_tensor[DType.int64](),
-                freqs_cis.to_tile_tensor[DType.int64](),
-                kv_norm_gamma.to_tile_tensor[DType.int64](),
-                kv_collection,
-                layer_idx,
-                scale,
-                epsilon,
-                buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
-                cache_offsets_1d.to_tile_tensor[DType.int64](),
-                Int(buffer_length),
-                Int(kv_collection.max_seq_length),
-                w_k.to_tile_tensor[DType.int64](),
-                w_uk.to_tile_tensor[DType.int64](),
-                w_uv.to_tile_tensor[DType.int64](),
-                null_scalar_args,
-                context.get_device_context(),
-            )
+        mla_prefill_decode_graph_bf16[
+            mask_str=mask_str,
+            target=target,
+        ](
+            output.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            kv.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            freqs_cis.to_tile_tensor[DType.int64](),
+            kv_norm_gamma.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            scale,
+            epsilon,
+            buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+            cache_offsets_1d.to_tile_tensor[DType.int64](),
+            Int(buffer_length),
+            Int(kv_collection.max_seq_length),
+            w_k.to_tile_tensor[DType.int64](),
+            w_uk.to_tile_tensor[DType.int64](),
+            w_uv.to_tile_tensor[DType.int64](),
+            null_scalar_args,
+            context.get_device_context(),
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -8856,13 +8736,11 @@ struct Struct_grouped_matmul_ragged:
         comptime assert is_gpu[target](), "grouped matmul only support GPUs"
         cuda_ctx = context.get_device_context()
         grouped_matmul(
-            managed_tensor_slice_to_ndbuffer(c),
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(
-                expert_start_indices
-            ).make_dims_unknown(),
-            managed_tensor_slice_to_ndbuffer(expert_ids).make_dims_unknown(),
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
             Int(max_num_tokens_per_expert),
             Int(num_active_experts),
             cuda_ctx,
@@ -8995,13 +8873,13 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
             tokens_padded_per_expert=tokens_padded_per_expert,
             target=target,
         ](
-            managed_tensor_slice_to_ndbuffer(c),
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(a_scales),
-            managed_tensor_slice_to_ndbuffer(b_scales),
-            managed_tensor_slice_to_ndbuffer(expert_start_indices),
-            managed_tensor_slice_to_ndbuffer(expert_ids),
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
             Int(max_num_tokens_per_expert),
             Int(num_active_experts),
             cuda_ctx,
@@ -9091,11 +8969,11 @@ struct Struct_matmul_dynamic_block_scaled:
             transpose_b=True,
             target=target,
         ](
-            managed_tensor_slice_to_ndbuffer(c),
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(a_scales),
-            managed_tensor_slice_to_ndbuffer(b_scales),
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
             tensor_sf,
             cuda_ctx,
         )
@@ -9129,9 +9007,9 @@ struct Struct_quantize_dynamic_block_scaled:
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             target=target,
         ](
-            managed_tensor_slice_to_ndbuffer(output),
-            managed_tensor_slice_to_ndbuffer(scales),
-            managed_tensor_slice_to_ndbuffer(input),
+            output.to_tile_tensor[DType.int64](),
+            scales.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
             tensor_sf,
             cuda_ctx,
         )
@@ -9253,8 +9131,8 @@ struct Struct_interleave_block_scales:
 
         cuda_ctx = context.get_device_context()
         block_scales_interleave[SF_VECTOR_SIZE=SF_VECTOR_SIZE, target=target](
-            managed_tensor_slice_to_ndbuffer(output_scales),
-            managed_tensor_slice_to_ndbuffer(input_scales),
+            output_scales.to_tile_tensor[DType.int64](),
+            input_scales.to_tile_tensor[DType.int64](),
             cuda_ctx,
         )
 
@@ -10118,58 +9996,51 @@ struct Struct_fused_token_sampling:
     ) raises:
         comptime assert is_valid_target[target](), "not a valid target"
 
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            comptime if is_cpu[target]():
-                # When top_k == 1, argmax is equivalent to our topk_fused_sampling with k == 1
-                # However, switching to just using our topk_fused_sampling leads to a -37% perf
-                # drop in q4_k benchmarking for llama 3.
-                if max_k == 1:
-                    argmax(
-                        input.to_tile_tensor[DType.int64](),
-                        rank - 1,
-                        out_idxs.to_tile_tensor[DType.int64](),
-                    )
-                    return
-                _fused_token_sampling_cpu(
-                    Int(max_k),
+        comptime if is_cpu[target]():
+            # When top_k == 1, argmax is equivalent to our topk_fused_sampling with k == 1
+            # However, switching to just using our topk_fused_sampling leads to a -37% perf
+            # drop in q4_k benchmarking for llama 3.
+            if max_k == 1:
+                argmax(
                     input.to_tile_tensor[DType.int64](),
+                    rank - 1,
                     out_idxs.to_tile_tensor[DType.int64](),
-                    k=K.to_tile_tensor[DType.int64]()
-                    .as_any_origin()
-                    .as_immut(),
-                    temperature=temperature.to_tile_tensor[DType.int64]()
-                    .as_any_origin()
-                    .as_immut(),
-                    top_p=top_p.to_tile_tensor[DType.int64]()
-                    .as_any_origin()
-                    .as_immut(),
-                    seed=seed.to_tile_tensor[DType.int64]()
-                    .as_any_origin()
-                    .as_immut(),
                 )
-            else:
-                var cuda_ctx = ctx.get_device_context()
-                _fused_token_sampling_gpu(
-                    cuda_ctx,
-                    Int(max_k),
-                    min_top_p,
-                    input.to_tile_tensor[DType.int64](),
-                    out_idxs.to_tile_tensor[DType.int64](),
-                    k=K.to_tile_tensor[DType.int64]()
-                    .as_any_origin()
-                    .as_immut(),
-                    temperature=temperature.to_tile_tensor[DType.int64]()
-                    .as_any_origin()
-                    .as_immut(),
-                    top_p=top_p.to_tile_tensor[DType.int64]()
-                    .as_any_origin()
-                    .as_immut(),
-                    seed=seed.to_tile_tensor[DType.int64]()
-                    .as_any_origin()
-                    .as_immut(),
-                )
+                return
+            _fused_token_sampling_cpu(
+                Int(max_k),
+                input.to_tile_tensor[DType.int64](),
+                out_idxs.to_tile_tensor[DType.int64](),
+                k=K.to_tile_tensor[DType.int64]().as_any_origin().as_immut(),
+                temperature=temperature.to_tile_tensor[DType.int64]()
+                .as_any_origin()
+                .as_immut(),
+                top_p=top_p.to_tile_tensor[DType.int64]()
+                .as_any_origin()
+                .as_immut(),
+                seed=seed.to_tile_tensor[DType.int64]()
+                .as_any_origin()
+                .as_immut(),
+            )
+        else:
+            var cuda_ctx = ctx.get_device_context()
+            _fused_token_sampling_gpu(
+                cuda_ctx,
+                Int(max_k),
+                min_top_p,
+                input.to_tile_tensor[DType.int64](),
+                out_idxs.to_tile_tensor[DType.int64](),
+                k=K.to_tile_tensor[DType.int64]().as_any_origin().as_immut(),
+                temperature=temperature.to_tile_tensor[DType.int64]()
+                .as_any_origin()
+                .as_immut(),
+                top_p=top_p.to_tile_tensor[DType.int64]()
+                .as_any_origin()
+                .as_immut(),
+                seed=seed.to_tile_tensor[DType.int64]()
+                .as_any_origin()
+                .as_immut(),
+            )
 
 
 @compiler.register("min_p_sampling")
@@ -10191,25 +10062,22 @@ struct Struct_min_p_sampling:
     ) raises:
         comptime assert is_valid_target[target](), "not a valid target"
 
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            comptime if is_cpu[target]():
-                min_p_sampling_cpu(
-                    min_ps.to_tile_tensor[DType.int64](),
-                    input.to_tile_tensor[DType.int64](),
-                    out_token_ids.to_tile_tensor[DType.int64](),
-                    temperature,
-                )
-            else:
-                var cuda_ctx = ctx.get_device_context()
-                min_p_sampling_gpu(
-                    cuda_ctx,
-                    min_ps.to_tile_tensor[DType.int64](),
-                    input.to_tile_tensor[DType.int64](),
-                    out_token_ids.to_tile_tensor[DType.int64](),
-                    temperature,
-                )
+        comptime if is_cpu[target]():
+            min_p_sampling_cpu(
+                min_ps.to_tile_tensor[DType.int64](),
+                input.to_tile_tensor[DType.int64](),
+                out_token_ids.to_tile_tensor[DType.int64](),
+                temperature,
+            )
+        else:
+            var cuda_ctx = ctx.get_device_context()
+            min_p_sampling_gpu(
+                cuda_ctx,
+                min_ps.to_tile_tensor[DType.int64](),
+                input.to_tile_tensor[DType.int64](),
+                out_token_ids.to_tile_tensor[DType.int64](),
+                temperature,
+            )
 
 
 @compiler.register("sampler.apply_penalties")
@@ -10233,18 +10101,15 @@ struct Struct_sampler_apply_penalties:
     ) raises:
         comptime assert is_valid_target[target](), "not a valid target"
 
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            apply_penalties_to_logits[target=target](
-                logits.to_tile_tensor[DType.int64](),
-                compressed_frequency_data.to_tile_tensor[DType.int64](),
-                frequency_offsets.to_tile_tensor[DType.int64](),
-                frequency_penalty.to_tile_tensor[DType.int64](),
-                presence_penalty.to_tile_tensor[DType.int64](),
-                repetition_penalty.to_tile_tensor[DType.int64](),
-                ctx,
-            )
+        apply_penalties_to_logits[target=target](
+            logits.to_tile_tensor[DType.int64](),
+            compressed_frequency_data.to_tile_tensor[DType.int64](),
+            frequency_offsets.to_tile_tensor[DType.int64](),
+            frequency_penalty.to_tile_tensor[DType.int64](),
+            presence_penalty.to_tile_tensor[DType.int64](),
+            repetition_penalty.to_tile_tensor[DType.int64](),
+            ctx,
+        )
 
 
 @compiler.register("sampler.update_frequency_data")
@@ -10266,15 +10131,12 @@ struct Struct_sampler_update_frequency_data:
     ) raises:
         comptime assert is_valid_target[target](), "not a valid target"
 
-        with Trace[TraceLevel.OP, target=target](
-            _trace_name, task_id=get_safe_task_id(ctx)
-        ):
-            update_frequency_data[target=target](
-                compressed_frequency_data.to_tile_tensor[DType.int64](),
-                frequency_offsets.to_tile_tensor[DType.int64](),
-                new_tokens.to_tile_tensor[DType.int64](),
-                ctx,
-            )
+        update_frequency_data[target=target](
+            compressed_frequency_data.to_tile_tensor[DType.int64](),
+            frequency_offsets.to_tile_tensor[DType.int64](),
+            new_tokens.to_tile_tensor[DType.int64](),
+            ctx,
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -10296,10 +10158,10 @@ struct Struct_swishGLU:
         ctx: DeviceContextPtr,
     ) raises:
         swishGLU[target=target,](
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b0),
-            managed_tensor_slice_to_ndbuffer(b1),
-            managed_tensor_slice_to_ndbuffer(c),
+            a.to_tile_tensor[DType.int64](),
+            b0.to_tile_tensor[DType.int64](),
+            b1.to_tile_tensor[DType.int64](),
+            c.to_tile_tensor[DType.int64](),
             ctx,
         )
 
@@ -10472,10 +10334,7 @@ struct DistributedAllReduceSum:
                 dev_ctxs_input[index],
             )
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
-            _launch_device_collective[num_devices](
-                launch_allreduce, dev_ctxs_input
-            )
+        _launch_device_collective[num_devices](launch_allreduce, dev_ctxs_input)
 
 
 @compiler.register("mo.distributed.reducescatter.sum")
@@ -10486,7 +10345,7 @@ struct DistributedReduceScatterSum:
         rank: Int,
         target: StaticString,
         _trace_name: StaticString,
-        axis: Int = -1,
+        axis: Int = 0,
     ](
         outputs: FusedOutputVariadicTensors[dtype=dtype, rank=rank, ...],
         inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
@@ -10575,10 +10434,9 @@ struct DistributedReduceScatterSum:
                 dev_ctxs_input[index],
             )
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
-            _launch_device_collective[num_devices](
-                launch_reducescatter, dev_ctxs_input
-            )
+        _launch_device_collective[num_devices](
+            launch_reducescatter, dev_ctxs_input
+        )
 
 
 @compiler.register("mo.distributed.allgather")
@@ -10648,8 +10506,7 @@ struct DistributedAllGather:
         comptime for i in range(signal_buffers.size):
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
-            allgather[ngpus=num_devices](in_bufs, out_bufs, rank_sigs, dev_ctxs)
+        allgather[ngpus=num_devices](in_bufs, out_bufs, rank_sigs, dev_ctxs)
 
 
 @compiler.register("mo.distributed.broadcast")
@@ -10741,10 +10598,7 @@ struct DistributedBroadcast:
                 root,
             )
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
-            _launch_device_collective[num_devices](
-                launch_broadcast, dev_ctxs_input
-            )
+        _launch_device_collective[num_devices](launch_broadcast, dev_ctxs_input)
 
 
 @compiler.register("mo.distributed.scatter")
@@ -10825,8 +10679,7 @@ struct DistributedScatter:
                 dev_ctxs_input[index],
             )
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
-            _launch_device_collective[ngpus](launch_scatter, dev_ctxs_input)
+        _launch_device_collective[ngpus](launch_scatter, dev_ctxs_input)
 
 
 @compiler.register("mo.distributed.allreduce_add_rms_norm_quant_fp8")
@@ -10960,10 +10813,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
                 dev_ctxs[index],
             )
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
-            _launch_device_collective[num_devices](
-                launch_fused_allreduce, dev_ctxs
-            )
+        _launch_device_collective[num_devices](launch_fused_allreduce, dev_ctxs)
 
 
 # Note: this is not a "real" index_tensor op that covers all cases, but rather
@@ -11512,19 +11362,17 @@ struct Struct_lora_sgmv_ragged:
     ) raises:
         comptime assert is_gpu[target](), "SGMV only supported on GPUs"
         cuda_ctx = context.get_device_context()
-        var a_tensor = managed_tensor_slice_to_ndbuffer(a)
+        var a_tensor = a.to_tile_tensor[DType.int64]()
 
         if a_tensor.dim[0]() == 0:
             return
 
         grouped_matmul(
-            managed_tensor_slice_to_ndbuffer(c),
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(
-                input_row_offsets
-            ).make_dims_unknown(),
-            managed_tensor_slice_to_ndbuffer(lora_ids).make_dims_unknown(),
+            c.to_tile_tensor[DType.int64](),
+            a_tensor,
+            b.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            lora_ids.to_tile_tensor[DType.int64](),
             Int(max_seq_length),
             lora_ids.dim_size[0](),
             cuda_ctx,
@@ -11552,19 +11400,17 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
     ) raises:
         comptime assert is_gpu[target](), "SGMV only supported on GPUs"
         cuda_ctx = context.get_device_context()
-        var a_tensor = managed_tensor_slice_to_ndbuffer(a)
+        var a_tensor = a.to_tile_tensor[DType.int64]()
 
         if a_tensor.dim[0]() == 0:
             return
 
         shrink_qkv_permute_3mn_sm100(
-            managed_tensor_slice_to_ndbuffer(c),
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(
-                input_row_offsets
-            ).make_dims_unknown(),
-            managed_tensor_slice_to_ndbuffer(lora_ids).make_dims_unknown(),
+            c.to_tile_tensor[DType.int64](),
+            a_tensor,
+            b.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            lora_ids.to_tile_tensor[DType.int64](),
             Int(max_seq_length),
             lora_ids.dim_size[0](),
             cuda_ctx,
@@ -11803,27 +11649,23 @@ struct Struct_sliced_add_ragged:
         var a_tile_tensor = a.to_tile_tensor[DType.int64]()
         var b_tile_tensor = b.to_tile_tensor[DType.int64]()
 
-        with Trace[TraceLevel.OP, target=target](
-            "sliced-add",
-            task_id=get_safe_task_id(context),
-        ):
-            comptime if is_gpu[target]():
-                ctx: Optional[DeviceContext] = context.get_device_context()
-                sliced_add[target=target](
-                    c_tile_tensor,
-                    a_tile_tensor,
-                    b_tile_tensor,
-                    lora_end_idx.to_tile_tensor[DType.int64](),
-                    ctx,
-                )
-            else:
-                sliced_add[target=target](
-                    c_tile_tensor,
-                    a_tile_tensor,
-                    b_tile_tensor,
-                    lora_end_idx.to_tile_tensor[DType.int64](),
-                    None,
-                )
+        comptime if is_gpu[target]():
+            ctx: Optional[DeviceContext] = context.get_device_context()
+            sliced_add[target=target](
+                c_tile_tensor,
+                a_tile_tensor,
+                b_tile_tensor,
+                lora_end_idx.to_tile_tensor[DType.int64](),
+                ctx,
+            )
+        else:
+            sliced_add[target=target](
+                c_tile_tensor,
+                a_tile_tensor,
+                b_tile_tensor,
+                lora_end_idx.to_tile_tensor[DType.int64](),
+                None,
+            )
 
 
 # ===-----------------------------------------------------------------------===#

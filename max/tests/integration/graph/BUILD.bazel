@@ -151,9 +151,11 @@ modular_py_test(
     tags = [
         "external-exclusive",  # Times out if run with too many other tests (only test_matmul_packed)
     ],
-    # TODO(GEX-3155): Investigate and enable on macOS
     target_compatible_with = select({
+        # TODO(GEX-3155): Investigate and enable on macOS
         "@platforms//os:macos": ["@platforms//:incompatible"],
+        # TODO(GEX-3381): Timing out on ASAN
+        "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [

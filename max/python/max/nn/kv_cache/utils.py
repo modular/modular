@@ -34,7 +34,7 @@ class AttentionDispatchResolver:
         device: DeviceRef,
         is_mla: bool,
         n_kv_heads_per_device: int,
-        num_q_heads: int | None = None,
+        num_q_heads_per_device: int | None = None,
         is_fp8_kv: bool = False,
     ) -> None:
         self._model: Model | None = None
@@ -45,9 +45,9 @@ class AttentionDispatchResolver:
             return
 
         if self._is_mla:
-            assert num_q_heads is not None
+            assert num_q_heads_per_device is not None
             self._model = self._build_mla_model(
-                session, device, num_q_heads, is_fp8_kv
+                session, device, num_q_heads_per_device, is_fp8_kv
             )
         else:
             self._model = self._build_mha_model(

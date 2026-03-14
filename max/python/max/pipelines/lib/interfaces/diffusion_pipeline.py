@@ -30,10 +30,9 @@ from max.engine import InferenceSession, Model
 from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import Graph, TensorType
-from max.graph.weights import WeightsFormat, load_weights
+from max.graph.weights import load_weights
 from max.interfaces import PixelGenerationContext
 from max.interfaces.tokens import TokenBuffer
-from max.pipelines.lib.hf_utils import HuggingFaceRepo, download_weight_files
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 from max.profiler import Tracer
 from PIL import Image
@@ -58,6 +57,12 @@ class DiffusionPipeline(ABC):
     """
 
     components: dict[str, type[ComponentModel]] | None = None
+
+    unprefixed_weight_component: str | None = None
+    """When set, weight files without a ``<component>/`` prefix are assigned to
+    this component.  This supports multi-repo layouts where quantized weights
+    for one component (e.g. the transformer) are shipped as flat files in a
+    separate repo while the remaining components use the base model repo."""
 
     default_num_inference_steps: int = 50
     """Default number of denoising steps when the user does not specify one.
@@ -149,9 +154,11 @@ class DiffusionPipeline(ABC):
                 )
                 encoding = pipeline_encoding
             else:
-                # Component not in weight repo — load from model repo
-                # with default (unquantized) encoding.
-                abs_paths = self._get_fallback_component_weights(name)
+                # Component weights not provided — download from base model
+                # repo.  These components (e.g. VAE, text encoder) always use
+                # bfloat16 regardless of the quantization applied to the
+                # primary component.
+                abs_paths = self._download_component_weights(name)
                 encoding = "bfloat16"
 
             loaded_sub_models[name] = component_cls(
@@ -180,17 +187,10 @@ class DiffusionPipeline(ABC):
     def _resolve_relative_component_paths(self) -> dict[str, list[str]]:
         """Group weight paths by component name (first path segment).
 
-        Handles two layouts:
-        * Standard diffusers layout — paths like `transformer/model.safetensors`
-          are grouped by the first segment.
-        * Flat/single-file layout — root-level files (no `/`) are assigned to
-          the "transformer" component. This is the common case for single-file
-          quantized checkpoints where the user passes a separate `--weight-path`
-          for transformer weights while other components are loaded from the
-          model repo.
+        Files without a ``/`` separator (i.e. flat filenames) are assigned to
+        :attr:`unprefixed_weight_component` when it is set.
         """
         result: dict[str, list[str]] = {}
-        unprefixed: list[str] = []
 
         for path in self.pipeline_config.model.weight_path:
             path_str = str(path)
@@ -198,18 +198,9 @@ class DiffusionPipeline(ABC):
             if len(parts) >= 2:
                 component = parts[0]
                 result.setdefault(component, []).append(path_str)
-            else:
-                unprefixed.append(path_str)
-
-        # Root-level weight files are assumed to be transformer weights.
-        if unprefixed:
-            if self.components and "transformer" in self.components:
-                result.setdefault("transformer", []).extend(unprefixed)
-            else:
-                logger.warning(
-                    "Found root-level weight files %s but no 'transformer' "
-                    "component to assign them to.",
-                    unprefixed,
+            elif self.unprefixed_weight_component:
+                result.setdefault(self.unprefixed_weight_component, []).append(
+                    path_str
                 )
 
         if not result:
@@ -218,6 +209,35 @@ class DiffusionPipeline(ABC):
                 " <component>/<file>"
             )
         return result
+
+    def _download_component_weights(self, component_name: str) -> list[Path]:
+        """Download weight files for a component from the base model repo."""
+        from max.graph.weights import WeightsFormat
+
+        from ..hf_utils import download_weight_files
+
+        model_repo = self.pipeline_config.model.huggingface_model_repo
+        all_safetensors = model_repo.weight_files.get(
+            WeightsFormat.safetensors, []
+        )
+        component_files = [
+            f for f in all_safetensors if f.startswith(f"{component_name}/")
+        ]
+        if not component_files:
+            raise ValueError(
+                f"No weight files found for component '{component_name}' "
+                f"in base model repo '{model_repo.repo_id}'."
+            )
+        if model_repo.repo_type == "online":
+            return download_weight_files(
+                huggingface_model_id=model_repo.repo_id,
+                filenames=component_files,
+                revision=self.pipeline_config.model.huggingface_model_revision,
+                force_download=self.pipeline_config.model.force_download,
+            )
+        else:
+            local_path = Path(model_repo.repo_id)
+            return [local_path / f for f in component_files]
 
     def _resolve_absolute_paths(
         self, weight_paths: list[Path], relative_paths: list[str]
@@ -233,48 +253,6 @@ class DiffusionPipeline(ABC):
         if not absolute_paths:
             raise ValueError(f"Component weights not found: {relative_paths}")
         return absolute_paths
-
-    def _get_fallback_component_weights(
-        self, component_name: str
-    ) -> list[Path]:
-        """Load component weights from the model repo.
-
-        When a separate `--weight-path` repo supplies only a subset of
-        components (e.g. transformer weights from an NVFP4 checkpoint), the
-        remaining components fall back to the original `--model-path` repo.
-        """
-        model_config = self.pipeline_config.model
-        model_repo: HuggingFaceRepo = model_config.huggingface_model_repo
-
-        all_safetensors = model_repo.weight_files.get(
-            WeightsFormat.safetensors, []
-        )
-        component_files = [
-            f for f in all_safetensors if f.startswith(f"{component_name}/")
-        ]
-
-        if not component_files:
-            raise ValueError(
-                f"No weight files found for component '{component_name}' "
-                f"in model repo '{model_repo.repo_id}'."
-            )
-
-        logger.info(
-            "Loading '%s' weights from model repo '%s' (not in weight repo).",
-            component_name,
-            model_repo.repo_id,
-        )
-
-        if model_repo.repo_type == "online":
-            return download_weight_files(
-                huggingface_model_id=model_repo.repo_id,
-                filenames=component_files,
-                revision=model_config.huggingface_model_revision,
-                force_download=model_config.force_download,
-            )
-        else:
-            local_path = Path(model_repo.repo_id)
-            return [local_path / f for f in component_files]
 
 
 @dataclass(kw_only=True)
