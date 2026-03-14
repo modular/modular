@@ -106,24 +106,87 @@ static bool shouldExcludeParameterFromDocs(PassingKind passingKind,
   return false;
 }
 
-/// Converts a set of constraint attributes to its string representation.
-/// If an evaluator is provided, the constraint's proposition is rebound before
-/// printing.
-static std::string constraintsToString(ArrayRef<ConstraintAttr> constraints,
-                                       ParameterEvaluator *evaluator,
-                                       SharedState &shared) {
-  std::string result;
+/// Try to parse a printed constraint string as "conforms_to(ParamName, Traits)"
+/// where ParamName is a simple identifier (no dots). If successful, returns
+/// true and fills in paramName and traitStr.
+static bool parseConformsToString(StringRef printed, StringRef &paramName,
+                                  StringRef &traitStr) {
+  if (!printed.starts_with("conforms_to(") || !printed.ends_with(")"))
+    return false;
+  // Extract contents between "conforms_to(" and ")"
+  StringRef inner = printed.drop_front(strlen("conforms_to(")).drop_back(1);
+  // Split at the first ", " to get paramName and traits
+  auto [lhs, rhs] = inner.split(", ");
+  if (rhs.empty())
+    return false;
+  // Only merge if the type is a simple identifier (no dots = not an associated
+  // type path like T.Element).
+  if (lhs.contains('.'))
+    return false;
+  paramName = lhs;
+  traitStr = rhs;
+  return true;
+}
+
+/// Process constraints and merge any simple conforms_to constraints into the
+/// matching parameter's type bounds. Returns remaining non-merged constraints
+/// as a "where ..." string. A conforms_to constraint is mergeable when its
+/// printed form is "conforms_to(ParamName, Traits)" where ParamName is a
+/// direct parameter (not an associated type path like T.Element).
+static std::string
+mergeConformsToConstraints(ArrayRef<ConstraintAttr> constraints,
+                           ParameterEvaluator *evaluator, SharedState &shared,
+                           SmallVectorImpl<PublicParameterDecl> &parameters,
+                           const MojoASTDeclRef *currentDeclContext) {
+  std::string remaining;
   if (constraints.empty())
-    return result;
-  llvm::raw_string_ostream os(result);
+    return remaining;
+  llvm::raw_string_ostream os(remaining);
+
   for (const ConstraintAttr &c : constraints) {
     TypedAttr proposition = c.getProposition();
     if (evaluator)
       proposition = evaluator->getReboundAttribute(proposition);
-    os << " where ";
-    ASTType::printParam(os, proposition, &shared);
+
+    // Print the constraint to check if it's a mergeable conforms_to.
+    std::string printed;
+    {
+      llvm::raw_string_ostream pos(printed);
+      ASTType::printParam(pos, proposition, &shared);
+    }
+
+    StringRef paramName, traitStr;
+    if (parseConformsToString(printed, paramName, traitStr)) {
+      // Find the matching parameter in the list.
+      PublicParameterDecl *matchingParam = nullptr;
+      for (auto &param : parameters) {
+        if (param.getName() == paramName) {
+          matchingParam = &param;
+          break;
+        }
+      }
+      if (matchingParam) {
+        // Split trait string by " & " and merge into the parameter type.
+        SmallVector<std::string> traitNames;
+        SmallVector<StringRef> parts;
+        traitStr.split(parts, " & ");
+        for (StringRef part : parts) {
+          StringRef trimmed = part.trim();
+          // Skip AnyType — it is always implicitly present and should not
+          // appear in user-facing documentation.
+          if (!trimmed.empty() && trimmed != "AnyType")
+            traitNames.push_back(trimmed.str());
+        }
+        matchingParam->appendTraitBounds(traitNames, shared,
+                                         currentDeclContext);
+        continue; // Merged — don't add to remaining constraints.
+      }
+    }
+
+    // Non-mergeable constraint: keep as a where clause.
+    os << " where " << printed;
   }
-  return result;
+  return remaining;
 }
 
 /// Two spaces that are forcefully added to markdown lines that can be used for
@@ -634,9 +697,12 @@ populatePublicParameterDecls(SharedState &shared, ArrayRef<Type> paramTypes,
                                              shared, passingKind, variadicKind,
                                              defaultValue, parentDeclContext));
     if (const ArrayRef<ConstraintAttr> constraints = pogs[idx].getConstraints();
-        !constraints.empty())
-      parameters.back().setConstraints(
-          constraintsToString(constraints, &evaluator, shared));
+        !constraints.empty()) {
+      std::string remaining = mergeConformsToConstraints(
+          constraints, &evaluator, shared, parameters, parentDeclContext);
+      if (!remaining.empty())
+        parameters.back().setConstraints(remaining);
+    }
   }
   return evaluator;
 }
@@ -814,6 +880,28 @@ PublicParameterDecl::PublicParameterDecl(
     for (const std::string &traitName : traitNames) {
       TypeMetadata metadata = ::KGEN::TypeExtractionUtils::extractLibraryInfo(
           traitName, currentDeclContext, &sharedState);
+      traitMetadata.push_back(std::move(metadata));
+    }
+  }
+}
+
+void PublicParameterDecl::appendTraitBounds(
+    ArrayRef<std::string> newTraitNames, KGEN::LIT::SharedState &shared,
+    const MojoASTDeclRef *currentDeclContext) {
+  for (const std::string &trait : newTraitNames) {
+    type += " & ";
+    type += trait;
+  }
+  // Rebuild typeMetadata for the full compound type string.
+  typeMetadata = ::KGEN::TypeExtractionUtils::extractLibraryInfo(
+      type, currentDeclContext, &shared);
+  // Rebuild per-trait metadata for compound types.
+  traitMetadata.clear();
+  SmallVector<std::string> allTraits = parseCompoundTraitType(type);
+  if (allTraits.size() > 1) {
+    for (const std::string &traitName : allTraits) {
+      TypeMetadata metadata = ::KGEN::TypeExtractionUtils::extractLibraryInfo(
+          traitName, currentDeclContext, &shared);
       traitMetadata.push_back(std::move(metadata));
     }
   }
@@ -1397,15 +1485,17 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
     if (const ArrayRef<ConstraintAttr> constraints =
             paramMetaAttribs[parIdx].getConstraints();
         !constraints.empty()) {
-      std::string constrString =
-          constraintsToString(constraints, &evaluator, shared);
-      parameters.back().setConstraints(constrString);
+      std::string remaining = mergeConformsToConstraints(
+          constraints, &evaluator, shared, parameters, &declRef);
+      if (!remaining.empty())
+        parameters.back().setConstraints(remaining);
     }
   }
 
-  // evaluate constraints
+  // Evaluate function-level constraints, merging conforms_to into param types.
   if (!sigConstraints.empty())
-    fnConstraints = constraintsToString(sigConstraints, &evaluator, shared);
+    fnConstraints = mergeConformsToConstraints(sigConstraints, &evaluator,
+                                               shared, parameters, &declRef);
 
   // Grab the types of the arguments to the function.
   for (auto [argIdx, userType, sigType, conventionX, pogAttr] :

@@ -369,6 +369,12 @@ public:
   /// Set the constraints of this decl.
   void setConstraints(StringRef cnstr) { constraints = cnstr; }
 
+  /// Append additional trait bounds to this parameter's type string.
+  /// Used when merging conforms_to constraints into the type declaration.
+  void appendTraitBounds(ArrayRef<std::string> traitNames,
+                         KGEN::LIT::SharedState &shared,
+                         const MojoASTDeclRef *currentDeclContext);
+
   /// Get constraints of this declaration as string. It might be empty.
   StringRef getConstraints() const { return constraints; }
 
