@@ -37,14 +37,14 @@ def make_string_set[size: Int]() -> Set[String]:
 # Benchmark Set.__init__ from List
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_set_init_from_list[size: Int](mut b: Bencher) raises:
+def bench_set_init_from_list[size: Int](mut b: Bencher) raises:
     """Benchmark Set construction from a List of size elements."""
     var elements = List[Int]()
     for i in range(size):
         elements.append(i)
 
     @always_inline
-    fn call_fn() unified {read}:
+    def call_fn() unified {read}:
         var s = Set[Int](black_box(elements))
         keep(len(s))
 
@@ -55,11 +55,11 @@ fn bench_set_init_from_list[size: Int](mut b: Bencher) raises:
 # Benchmark Set.__init__ from variadic args
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_set_init_variadic(mut b: Bencher) raises:
+def bench_set_init_variadic(mut b: Bencher) raises:
     """Benchmark Set construction from 10 variadic Int elements."""
 
     @always_inline
-    fn call_fn() unified {}:
+    def call_fn() unified {}:
         var s = Set[Int](0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
         keep(len(s))
 

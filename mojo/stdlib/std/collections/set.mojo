@@ -23,7 +23,7 @@ from std.hashlib import Hasher, default_hasher
 from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
 
 
-fn _dict_capacity_for(n: Int) -> Int:
+def _dict_capacity_for(n: Int) -> Int:
     """Return the Dict slot count needed to hold n entries without rehashing.
 
     Dict's 7/8 load factor means `growth_left = capacity * 7 // 8`. Requesting
