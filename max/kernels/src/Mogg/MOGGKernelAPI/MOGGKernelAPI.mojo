@@ -129,7 +129,11 @@ from linalg.utils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
 from nn import arg_nonzero
-from nn._ragged_utils import get_batch_from_row_offsets, merge_ragged_tensors
+from nn._ragged_utils import (
+    get_batch_from_row_offsets,
+    merge_ragged_tensors,
+    eagle_prefill_shift_tokens,
+)
 from nn.activations import relu
 from nn.arange import arange_shape
 from nn.argmaxmin import argmax, argmin
@@ -11332,6 +11336,38 @@ struct MergeRaggedTensors:
             a_row_offsets.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             b_row_offsets.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Eagle Prefill Shift Tokens
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.eagle_prefill_shift_tokens")
+struct EaglePrefillShiftTokens:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        tokens: InputTensor[dtype=dtype, rank=rank, ...],
+        offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        shift_next_tokens: InputTensor[dtype=dtype, rank=1, ...],
+        num_draft_tokens: InputTensor[dtype=DType.int64, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        eagle_prefill_shift_tokens[target=target](
+            output.to_tile_tensor[DType.int64](),
+            tokens.to_tile_tensor[DType.int64](),
+            offsets.to_tile_tensor[DType.uint32](),
+            shift_next_tokens.to_tile_tensor[DType.int64](),
+            num_draft_tokens.to_tile_tensor[DType.int64](),
             ctx,
         )
 

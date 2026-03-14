@@ -298,24 +298,3 @@ def seek_processing_position(
         context.tokens.skip_processing(delta)
     elif delta < 0:
         context.tokens.rewind_processing(-delta)
-
-
-def shift_draft_tokens(
-    tokens: npt.NDArray[np.integer[Any]],
-    batch: list[TextContext],
-    shift_next_tokens: npt.NDArray[np.int64],
-) -> npt.NDArray[np.integer[Any]]:
-    """Shift each context's tokens left by 1, appending the given token.
-
-    For chunked prefill, the draft model needs to see the same prompt
-    tokens but with positions shifted so the last token in each
-    context's span is replaced by the target-sampled next token.
-    """
-    shifted = np.empty_like(tokens)
-    offset = 0
-    for i, ctx in enumerate(batch):
-        n = ctx.tokens.active_length
-        shifted[offset : offset + n - 1] = tokens[offset + 1 : offset + n]
-        shifted[offset + n - 1] = shift_next_tokens[i]
-        offset += n
-    return shifted

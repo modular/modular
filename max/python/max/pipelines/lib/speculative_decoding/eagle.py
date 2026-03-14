@@ -21,7 +21,7 @@ import numpy as np
 import numpy.typing as npt
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.graph import DeviceRef
+from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
     PipelineTokenizer,
@@ -30,6 +30,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
+from max.nn.kernels import eagle_prefill_shift_tokens
 from max.pipelines.core import TextContext, reserve_token_space_for_batch
 from max.pipelines.lib.interfaces import (
     ModelInputs,
@@ -46,7 +47,6 @@ from .utils import (
     build_response,
     compute_max_num_draft_steps,
     seek_processing_position,
-    shift_draft_tokens,
     update_contexts_and_compute_metrics_eagle,
 )
 
@@ -54,6 +54,23 @@ if TYPE_CHECKING:
     from ..config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
+
+
+def _build_eagle_prefill_shift_graph(device: DeviceRef) -> Graph:
+    """Builds a graph for the Eagle prefill token shift op."""
+    graph_inputs = [
+        TensorType(DType.int64, ["total_seq_len"], device=device),
+        TensorType(DType.uint32, ["offsets_len"], device=device),
+        TensorType(DType.int64, ["batch_size"], device=device),
+        TensorType(DType.int64, [1], device=device),
+    ]
+    with Graph("eagle_prefill_shift_tokens", input_types=graph_inputs) as graph:
+        tokens, offsets, shift_next, num_draft = graph.inputs
+        shifted = eagle_prefill_shift_tokens(
+            tokens.tensor, offsets.tensor, shift_next.tensor, num_draft.tensor
+        )
+        graph.output(shifted)
+        return graph
 
 
 def _get_hidden_dim(hf_config: AutoConfig) -> int:
@@ -113,6 +130,13 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         # the gather graph for one device.
         self._hs_gather_model = self._session.load(
             build_gather_graph(device_refs[:1], DType.bfloat16, hidden_dim)
+        )
+
+        # Graph to shift tokens for Eagle prefill. During prefill it shifts
+        # tokens left by 1 and appends the sampled bonus token; during decode
+        # it copies inputs unchanged. Dispatches on num_draft_tokens sentinel.
+        self._eagle_prefill_shifter = self._session.load(
+            _build_eagle_prefill_shift_graph(device_refs[0])
         )
 
     def _prepare_draft_batch(
@@ -182,14 +206,18 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         if shift_next_tokens is not None:
             assert isinstance(base_inputs, ModelInputsWithTokensAndOffsets)
-            tokens = base_inputs.tokens
-            shifted = shift_draft_tokens(
-                tokens.to_numpy(),
-                context_batch,
-                shift_next_tokens,
+            shift_next_buf = Buffer.from_numpy(shift_next_tokens).to(
+                base_inputs.tokens.device
             )
-            device = tokens.device
-            base_inputs.tokens = Buffer.from_numpy(shifted).to(device)
+            num_draft_buf = Buffer.from_numpy(np.zeros(1, dtype=np.int64)).to(
+                base_inputs.tokens.device
+            )
+            (base_inputs.tokens,) = self._eagle_prefill_shifter(
+                base_inputs.tokens,
+                base_inputs.input_row_offsets,
+                shift_next_buf,
+                num_draft_buf,
+            )
 
         base_inputs.hidden_states = hidden_states
 

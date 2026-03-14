@@ -16,7 +16,7 @@ from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import merge_ragged_tensors
+from max.nn.kernels import eagle_prefill_shift_tokens, merge_ragged_tensors
 
 BATCH_SIZE = 5
 HIDDEN_DIM = 64
@@ -243,3 +243,144 @@ def test_merge_ragged_tensors_1d() -> None:
 def test_merge_ragged_tensors_2d() -> None:
     merge_ragged_tensors_2d(Accelerator(0), DeviceRef.GPU())
     merge_ragged_tensors_2d(CPU(0), DeviceRef.CPU())
+
+
+# ---------------------------------------------------------------------------
+# eagle_prefill_shift_tokens tests
+# ---------------------------------------------------------------------------
+
+
+def _build_and_run_shift(
+    device: Device,
+    device_ref: DeviceRef,
+    tokens: torch.Tensor,
+    offsets: torch.Tensor,
+    shift_next_tokens: torch.Tensor,
+    num_draft_tokens: torch.Tensor,
+) -> torch.Tensor:
+    """Builds a graph for eagle_prefill_shift_tokens and executes it."""
+    with Graph(
+        "eagle_prefill_shift_tokens",
+        input_types=(
+            TensorType(DType.int64, ["total_seq_len"], device=device_ref),
+            TensorType(DType.uint32, ["offsets_len"], device=device_ref),
+            TensorType(DType.int64, ["batch_size"], device=device_ref),
+            TensorType(DType.int64, [1], device=device_ref),
+        ),
+    ) as graph:
+        t, o, s, k = graph.inputs
+        result = eagle_prefill_shift_tokens(
+            t.tensor, o.tensor, s.tensor, k.tensor
+        )
+        graph.output(result)
+
+    session = InferenceSession(devices=[device])
+    compiled = session.load(graph)
+
+    results = compiled.execute(
+        Buffer.from_dlpack(tokens).to(device),
+        Buffer.from_dlpack(offsets).to(device),
+        Buffer.from_dlpack(shift_next_tokens).to(device),
+        Buffer.from_dlpack(num_draft_tokens).to(device),
+    )
+    return torch.from_dlpack(results[0]).to("cpu")
+
+
+def _torch_reference_prefill_shift(
+    tokens: torch.Tensor,
+    offsets: torch.Tensor,
+    shift_next_tokens: torch.Tensor,
+) -> torch.Tensor:
+    """Pure-torch reference for the K=0 (prefill) shift behavior."""
+    output = torch.empty_like(tokens)
+    batch_size = offsets.shape[0] - 1
+    for b in range(batch_size):
+        start = int(offsets[b])
+        end = int(offsets[b + 1])
+        output[start : end - 1] = tokens[start + 1 : end]
+        output[end - 1] = shift_next_tokens[b]
+    return output
+
+
+def eagle_prefill_shift_single_batch(
+    device: Device, device_ref: DeviceRef
+) -> None:
+    """K=0 with a single request: tokens shift left, bonus appended."""
+    tokens = torch.tensor([10, 20, 30, 40], dtype=torch.int64)
+    offsets = torch.tensor([0, 4], dtype=torch.uint32)
+    shift_next = torch.tensor([99], dtype=torch.int64)
+    num_draft = torch.tensor([0], dtype=torch.int64)
+
+    result = _build_and_run_shift(
+        device, device_ref, tokens, offsets, shift_next, num_draft
+    )
+    expected = torch.tensor([20, 30, 40, 99], dtype=torch.int64)
+    assert torch.equal(result, expected)
+
+
+def eagle_prefill_shift_multi_batch(
+    device: Device, device_ref: DeviceRef
+) -> None:
+    """K=0 with multiple requests of varying lengths."""
+    # Batch 0: [10, 20, 30]       -> [20, 30, 77]
+    # Batch 1: [40, 50]           -> [50, 88]
+    # Batch 2: [60, 70, 80, 90]   -> [70, 80, 90, 55]
+    tokens = torch.tensor(
+        [10, 20, 30, 40, 50, 60, 70, 80, 90], dtype=torch.int64
+    )
+    offsets = torch.tensor([0, 3, 5, 9], dtype=torch.uint32)
+    shift_next = torch.tensor([77, 88, 55], dtype=torch.int64)
+    num_draft = torch.tensor([0], dtype=torch.int64)
+
+    result = _build_and_run_shift(
+        device, device_ref, tokens, offsets, shift_next, num_draft
+    )
+    expected = _torch_reference_prefill_shift(tokens, offsets, shift_next)
+    assert torch.equal(result, expected)
+
+
+def eagle_prefill_shift_single_token_per_request(
+    device: Device, device_ref: DeviceRef
+) -> None:
+    """K=0 where each request has exactly 1 token — entire output is bonus."""
+    tokens = torch.tensor([1, 2, 3], dtype=torch.int64)
+    offsets = torch.tensor([0, 1, 2, 3], dtype=torch.uint32)
+    shift_next = torch.tensor([11, 22, 33], dtype=torch.int64)
+    num_draft = torch.tensor([0], dtype=torch.int64)
+
+    result = _build_and_run_shift(
+        device, device_ref, tokens, offsets, shift_next, num_draft
+    )
+    expected = torch.tensor([11, 22, 33], dtype=torch.int64)
+    assert torch.equal(result, expected)
+
+
+def eagle_decode_passthrough(device: Device, device_ref: DeviceRef) -> None:
+    """K>0 (decode mode): tokens are returned unchanged."""
+    tokens = torch.tensor([10, 20, 30, 40, 50], dtype=torch.int64)
+    offsets = torch.tensor([0, 3, 5], dtype=torch.uint32)
+    shift_next = torch.tensor([77, 88], dtype=torch.int64)
+    num_draft = torch.tensor([3], dtype=torch.int64)
+
+    result = _build_and_run_shift(
+        device, device_ref, tokens, offsets, shift_next, num_draft
+    )
+    assert torch.equal(result, tokens)
+
+
+def test_eagle_prefill_shift_single_batch() -> None:
+    eagle_prefill_shift_single_batch(Accelerator(0), DeviceRef.GPU())
+
+
+def test_eagle_prefill_shift_multi_batch() -> None:
+    eagle_prefill_shift_multi_batch(Accelerator(0), DeviceRef.GPU())
+
+
+def test_eagle_prefill_shift_single_token() -> None:
+    eagle_prefill_shift_single_token_per_request(
+        Accelerator(0), DeviceRef.GPU()
+    )
+
+
+def test_eagle_decode_passthrough() -> None:
+    eagle_decode_passthrough(Accelerator(0), DeviceRef.GPU())
