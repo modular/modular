@@ -393,4 +393,4 @@ class YarnRotaryEmbedding(RotaryEmbedding):
             - min_val
         ) / diff
 
-        return F.min(F.max(linear_func, 0), 1)
+        return F.clip(linear_func, 0, 1)

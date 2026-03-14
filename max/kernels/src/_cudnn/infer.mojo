@@ -2125,7 +2125,7 @@ comptime cudnnCallback_t = fn(
 
 
 struct cudnnAlgorithmUnionStruct(TrivialRegisterPassable):
-    var algo: OpaquePointer
+    var algo: OpaquePointer[MutAnyOrigin]
 
 
 comptime cudnnDropoutDescriptor_t = UnsafePointer[cudnnDropoutStruct, _]

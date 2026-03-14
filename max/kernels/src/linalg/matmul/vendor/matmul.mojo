@@ -140,33 +140,14 @@ def matmul[
             IndexList[2](Int(c.dim[0]()), Int(c.dim[1]())),
         )
 
-        # Recurse via the NDBuffer shim: c_tmp is a locally-constructed
-        # NDBuffer that doesn't have an owning TileTensor layout.
-        # TODO(KERN-2219): once the NDBuffer shim is removed, call the
-        # TileTensor overload directly to avoid double conversion.
         matmul[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
-        ](c_tmp, rebind[ImmA](a_buf), rebind[ImmB](b_buf), ctx)
+        ](
+            TileTensor(c_tmp),
+            TileTensor(rebind[ImmA](a_buf)),
+            TileTensor(rebind[ImmB](b_buf)),
+            ctx,
+        )
 
         _ = tmp_device_buffer^
-
-
-def matmul[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    //,
-    transpose_b: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[mut=False, rank=2, a_type, _, _],
-    b: NDBuffer[mut=False, rank=2, b_type, _, _],
-    ctx: DeviceContext,
-) raises:
-    """NDBuffer shim — converts to TileTensor and delegates."""
-    matmul[
-        transpose_b=transpose_b,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ](TileTensor(c), TileTensor(a), TileTensor(b), ctx)

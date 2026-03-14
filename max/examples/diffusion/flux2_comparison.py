@@ -32,6 +32,7 @@ import statistics
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 # Varying-input configurations for recompilation stress testing.
@@ -624,7 +625,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Summary header
     print("\n" + "=" * 60)
-    print("FLUX.2 Performance Comparison")
+    print(f"FLUX.2 Performance Comparison — {datetime.now():%Y-%m-%d}")
     print("=" * 60)
     _print_gpu_info()
     if args.vary_prompts:
@@ -637,9 +638,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  resolution       : {args.width}x{args.height}")
         print(f"  inference steps  : {args.num_inference_steps}")
     print(f"  guidance scale   : {args.guidance_scale}")
-    print(f"  enable FBC       : {args.enable_fbc}")
-    print(f"  residual thresh  : {args.residual_threshold}")
     print(f"  warmup runs      : {args.num_warmups}")
+    print()
+    print("  Torch config:")
+    print("    mode           : torch.compile (max-autotune)")
+    print("    dtype          : BF16")
+    print()
+    print("  MAX config:")
+    print("    dtype          : BF16")
+    caching_parts: list[str] = []
+    if args.enable_fbc:
+        caching_parts.append(
+            f"first block cache (threshold: {args.residual_threshold})"
+        )
+    print(f"    caching        : {', '.join(caching_parts) or 'none'}")
     print()
 
     timed_configs = _iter_configs(args, args.num_iterations)

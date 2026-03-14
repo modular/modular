@@ -18,6 +18,7 @@ import torch
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
@@ -115,7 +116,7 @@ def generate_max_outputs(
 
     state_dict = {}
     for weight_name, value in attention_weights.items():
-        state_dict[weight_name] = value.to(dtype.to_torch()).cpu()
+        state_dict[weight_name] = value.to(max_dtype_to_torch(dtype)).cpu()
 
     kv_params = KVCacheParams(
         dtype=dtype,

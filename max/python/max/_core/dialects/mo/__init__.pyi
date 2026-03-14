@@ -2658,7 +2658,7 @@ class CustomOp(max._core.Operation):
 
     ```mojo
       @register_internal("test_custom_op")
-      fn foo(...):
+      def foo(...):
         pass
     ```
 
@@ -2679,7 +2679,7 @@ class CustomOp(max._core.Operation):
     ```
     ```mojo
       @register_internal("test_custom_op")
-      fn foo(...):
+      def foo(...):
         pass
     ```
     """
@@ -4415,12 +4415,28 @@ class ParallelOp(max._core.Operation):
     block argument with a layout attribute that the yield does not carry).
     The block argument uses the first input's type as a representative.
 
+    An optional second input group (`extraInputs`) may be provided for
+    additional per-device operands (e.g., signal buffers). When present,
+    extraInputs must have the same length as inputs, and the body block
+    receives an additional argument for the extra input.
+
+    Example with individual types (different device IDs):
     ```mlir
     %res:2 = mo.parallel %arg in (%a : !mo.tensor<[3], f32, gpu:0>,
                                   %b : !mo.tensor<[3], f32, gpu:1>)
           -> (!mo.tensor<[3], f32, gpu:0>, !mo.tensor<[3], f32, gpu:1>) {
       %1 = mo.relu(%arg) : !mo.tensor<[3], f32, gpu:0>
       mo.yield %1 : !mo.tensor<[3], f32, gpu:0>
+    }
+    ```
+
+    Example with extra inputs (tupled per-device operands):
+    ```mlir
+    %res:2 = mo.parallel (%arg, %sig) in
+        ((%a, %sig0) : (!mo.tensor<[3], f32, gpu:0>, !mo.buffer<[1], ui8, gpu:0>),
+         (%b, %sig1) : (!mo.tensor<[3], f32, gpu:1>, !mo.buffer<[1], ui8, gpu:1>)) {
+      %out, %ch = mo.bundled.allreduce.sum(%arg, %sig, %ch_in) : ...
+      mo.yield %out : !mo.tensor<[3], f32, gpu:0>
     }
     ```
     """
@@ -4431,9 +4447,12 @@ class ParallelOp(max._core.Operation):
         location: Location,
         results: Sequence[max._core.Type],
         inputs: Sequence[max._core.Value[max._core.Type]],
+        extra_inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def extra_inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class PowOp(max._core.Operation):
     """

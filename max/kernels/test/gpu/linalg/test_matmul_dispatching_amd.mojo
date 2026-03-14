@@ -23,7 +23,13 @@ from std.sys import align_of, simd_width_of, get_defined_bool
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext, get_gpu_target
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._fillers import random
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils_gpu import MatmulConfig
@@ -94,7 +100,7 @@ fn test_dispatch_dynamic_m[
     _matmul_gpu[
         use_tensor_core=True,
         transpose_b=True,
-    ](c_nd, a_nd, b_nd, ctx)
+    ](TileTensor(c_nd), TileTensor(a_nd), TileTensor(b_nd), ctx)
 
     vendor_blas.matmul(
         ctx,
@@ -240,7 +246,7 @@ fn test_oob_diagnostic[
     _matmul_gpu[
         use_tensor_core=True,
         transpose_b=True,
-    ](c_nd, a_nd, b_nd, ctx)
+    ](TileTensor(c_nd), TileTensor(a_nd), TileTensor(b_nd), ctx)
 
     # Reference
     vendor_blas.matmul(
@@ -474,7 +480,7 @@ fn test_oob_epilogue[
         use_tensor_core=True,
         transpose_b=True,
         elementwise_lambda_fn=epilogue_fn,
-    ](c_nd, a_nd, b_nd, ctx)
+    ](TileTensor(c_nd), TileTensor(a_nd), TileTensor(b_nd), ctx)
 
     vendor_blas.matmul(
         ctx,
@@ -693,7 +699,7 @@ fn test_oob_epilogue_dynamic_m[
         use_tensor_core=True,
         transpose_b=True,
         elementwise_lambda_fn=epilogue_fn,
-    ](c_nd, a_nd, b_nd, ctx)
+    ](TileTensor(c_nd), TileTensor(a_nd), TileTensor(b_nd), ctx)
 
     vendor_blas.matmul(
         ctx,

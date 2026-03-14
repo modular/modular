@@ -1826,9 +1826,7 @@ class VariadicReduceAttr(max._core.Attribute):
 class VariadicSizeAttr(max._core.Attribute):
     @overload
     def __init__(
-        self,
-        type: max._core.dialects.builtin.IndexType,
-        variadic: max._core.dialects.builtin.TypedAttr,
+        self, variadic: max._core.dialects.builtin.TypedAttr
     ) -> None: ...
     @overload
     def __init__(
@@ -1836,8 +1834,6 @@ class VariadicSizeAttr(max._core.Attribute):
         type: max._core.dialects.builtin.IndexType,
         variadic: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
-    @property
-    def type(self) -> max._core.dialects.builtin.IndexType: ...
     @property
     def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
 

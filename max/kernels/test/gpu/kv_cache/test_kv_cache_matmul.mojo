@@ -20,7 +20,13 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._utils import ManagedLayoutTensor
 from layout._fillers import random
 from linalg.matmul.gpu import _matmul_gpu
@@ -214,9 +220,9 @@ def execute_fused_qkv_matmul[
     )
 
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
-        ref_output_device_ndbuffer,
-        hidden_state_device_2d,
-        weight_device_ndbuffer,
+        TileTensor(ref_output_device_ndbuffer),
+        TileTensor(hidden_state_device_2d),
+        TileTensor(weight_device_ndbuffer),
         ctx,
     )
 
