@@ -1060,6 +1060,20 @@ def test_removeprefix() raises:
     assert_equal(
         StaticString("hello world").removeprefix("llo wor"), "hello world"
     )
+    # Test with String type.
+    assert_equal(String("hello world").removeprefix(""), "hello world")
+    assert_equal(String("hello world").removeprefix("hello"), " world")
+    assert_equal(
+        String("hello world").removeprefix("world"), "hello world"
+    )
+    assert_equal(String("hello world").removeprefix("hello world"), "")
+    # Prefix longer than string returns original unchanged.
+    assert_equal(String("hi").removeprefix("hello world"), "hi")
+    # Only removes once, not recursively.
+    assert_equal(String("aaaahello").removeprefix("aa"), "aahello")
+    # Unicode prefix.
+    assert_equal(String("héllo").removeprefix("hé"), "llo")
+    assert_equal(String("héllo").removeprefix("ll"), "héllo")
 
 
 def test_removesuffix() raises:
@@ -1072,6 +1086,20 @@ def test_removesuffix() raises:
     assert_equal(
         StaticString("hello world").removesuffix("llo wor"), "hello world"
     )
+    # Test with String type.
+    assert_equal(String("hello world").removesuffix(""), "hello world")
+    assert_equal(String("hello world").removesuffix("world"), "hello ")
+    assert_equal(
+        String("hello world").removesuffix("hello"), "hello world"
+    )
+    assert_equal(String("hello world").removesuffix("hello world"), "")
+    # Suffix longer than string returns original unchanged.
+    assert_equal(String("hi").removesuffix("hello world"), "hi")
+    # Only removes once, not recursively.
+    assert_equal(String("helloaaaa").removesuffix("aa"), "helloaa")
+    # Unicode suffix.
+    assert_equal(String("hellé").removesuffix("lé"), "hel")
+    assert_equal(String("hellé").removesuffix("ll"), "hellé")
 
 
 def test_intable() raises:
