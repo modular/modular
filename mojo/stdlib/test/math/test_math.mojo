@@ -40,6 +40,7 @@ from std.math import (
     log1p,
     log2,
     perm,
+    prod,
     pi,
     rsqrt,
     sin,
@@ -130,6 +131,34 @@ def test_perm() raises:
     assert_equal(perm(5), factorial(5))
     assert_equal(perm(0), 1)
     assert_equal(perm(10, 3), 720)
+
+
+def test_prod() raises:
+    # Empty span returns start (default 1)
+    var empty = List[Int64]()
+    assert_equal(prod(Span[Int64](empty)), Int64(1))
+
+    # Empty span with custom start
+    assert_equal(prod(Span[Int64](empty), start=Int64(5)), Int64(5))
+
+    # Basic int64 product
+    var il: InlineArray[Int64, 5] = [1, 2, 3, 4, 5]
+    assert_equal(prod(Span[Int64](il)), Int64(120))
+
+    # Product with start value
+    assert_equal(prod(Span[Int64](il), start=Int64(2)), Int64(240))
+
+    # Float product
+    var fl: InlineArray[Float64, 3] = [1.5, 2.0, 4.0]
+    assert_almost_equal(prod(Span[Float64](fl)), Float64(12.0))
+
+    # Single element
+    var single: InlineArray[Int64, 1] = [Int64(42)]
+    assert_equal(prod(Span[Int64](single)), Int64(42))
+
+    # Product with a zero element
+    var with_zero: InlineArray[Int64, 3] = [1, 0, 3]
+    assert_equal(prod(Span[Int64](with_zero)), Int64(0))
 
 
 def test_copysign() raises:

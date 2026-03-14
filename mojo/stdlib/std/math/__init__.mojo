@@ -89,6 +89,7 @@ from .math import (
     min,
     modf,
     perm,
+    prod,
     pow,
     recip,
     remainder,

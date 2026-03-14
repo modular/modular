@@ -34,7 +34,7 @@ from std.sys._assembly import inlined_assembly
 from std.ffi import _external_call_const
 from std.sys.info import _is_sm_9x_or_newer, is_32bit
 
-from std.algorithm import vectorize
+from std.algorithm import product as _product, vectorize
 from std.bit import count_trailing_zeros
 from std.builtin.dtype import _integral_type_of
 from std.builtin.simd import _modf, _simd_apply
@@ -3140,6 +3140,40 @@ def ulp[
             x2_inf_mask.select(xabs - nextafter(xabs, -inf_val), x2 - xabs),
         ),
     )
+
+
+# ===----------------------------------------------------------------------=== #
+# prod
+# ===----------------------------------------------------------------------=== #
+
+
+def prod[
+    dtype: DType
+](src: Span[Scalar[dtype], _], start: Scalar[dtype] = 1) raises -> Scalar[
+    dtype
+]:
+    """Computes the product of all elements in a buffer, with an optional
+    starting value.
+
+    Equivalent to Python's `math.prod(iterable, start=1)`.
+
+    Parameters:
+        dtype: The dtype of the input elements.
+
+    Args:
+        src: The buffer of elements to multiply.
+        start: The initial value of the product. Defaults to `1`.
+
+    Returns:
+        The product of `start` and all elements of `src`. Returns `start` if
+        `src` is empty.
+
+    Raises:
+        If the reduction fails.
+    """
+    if len(src) == 0:
+        return start
+    return start * _product(src)
 
 
 # ===----------------------------------------------------------------------=== #
