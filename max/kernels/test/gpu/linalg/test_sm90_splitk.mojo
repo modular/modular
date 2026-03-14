@@ -16,6 +16,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
+from layout import TileTensor
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
@@ -178,9 +179,9 @@ def test_warp_specialize_gemm_with_multicasting[
         splits=splits,
         raster_order=RasterOrder.AlongN,
     ](
-        c_device_nd,
-        a_device_nd,
-        b_device_nd,
+        TileTensor(c_device_nd),
+        TileTensor(a_device_nd),
+        TileTensor(b_device_nd),
         ctx,
     )
 

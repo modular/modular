@@ -17,6 +17,7 @@ from std.sys import align_of
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
+from layout import TileTensor
 from internal_utils import assert_almost_equal, assert_with_measure
 from std.random import rand
 from internal_utils._measure import relative_difference
@@ -215,9 +216,9 @@ def test_matmul_sm90[
         elementwise_lambda_fn=elf,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
     ](
-        c_device,
-        a_device,
-        b_device,
+        TileTensor(c_device),
+        TileTensor(a_device),
+        TileTensor(b_device),
         ctx,
     )
 

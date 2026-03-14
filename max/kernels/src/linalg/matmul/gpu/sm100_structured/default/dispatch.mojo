@@ -243,35 +243,6 @@ def matmul_dispatch_sm100[
 
 
 @always_inline
-def matmul_dispatch_sm100[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    transpose_b: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    register_based_epilogue: Bool = True,
-    pdl_level: PDLLevel = PDLLevel(),
-](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[mut=False, rank=2, a_type, _, _],
-    b: NDBuffer[mut=False, rank=2, b_type, _, _],
-    ctx: DeviceContext,
-) raises:
-    """NDBuffer overload — converts to TileTensor and delegates."""
-    matmul_dispatch_sm100[
-        transpose_b=transpose_b,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        elementwise_lambda_wrapper=elementwise_lambda_wrapper,
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        register_based_epilogue=register_based_epilogue,
-        pdl_level=pdl_level,
-    ](TileTensor(c), TileTensor(a), TileTensor(b), ctx)
-
-
 # NOTE:
 # 1. SM100 matmul supports compute lambdas so we should just use normal and compute lambdas.
 def matmul_dispatch_sm100_fp8[

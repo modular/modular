@@ -14,7 +14,6 @@ from std.math import ceildiv
 from std.sys import size_of
 
 from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.gpu.host import DeviceContext, FuncAttribute
@@ -149,49 +148,6 @@ def warp_specialize_gemm_with_multicasting[
         ](c_device, a_device, b_device, ctx)
 
 
-def warp_specialize_gemm_with_multicasting[
-    c_type: DType,
-    c_shape: DimList,
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    *,
-    transpose_b: Bool,
-    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    grid_shape: OptionalReg[IndexList[2]] = None,
-    use_tma_store: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    schedule: MatmulSchedule = MatmulSchedule.NONE,
-    hilbert_swizzle: Bool = False,
-    splits: Int = 0,
-    raster_order: RasterOrder = RasterOrder.AlongM,
-    swapAB: Bool = False,
-](
-    c_device: NDBuffer[rank=2, c_type, _, c_shape],
-    a_device: NDBuffer[rank=2, a_type, _, a_shape],
-    b_device: NDBuffer[rank=2, b_type, _, b_shape],
-    ctx: DeviceContext,
-) raises:
-    """NDBuffer overload — converts to TileTensor and delegates."""
-    warp_specialize_gemm_with_multicasting[
-        transpose_b=transpose_b,
-        config=config,
-        grid_shape=grid_shape,
-        use_tma_store=use_tma_store,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        schedule=schedule,
-        hilbert_swizzle=hilbert_swizzle,
-        splits=splits,
-        raster_order=raster_order,
-        swapAB=swapAB,
-    ](TileTensor(c_device), TileTensor(a_device), TileTensor(b_device), ctx)
-
-
 def _warp_specialize_gemm_with_multicasting_impl[
     c_type: DType,
     a_type: DType,
@@ -223,8 +179,7 @@ def _warp_specialize_gemm_with_multicasting_impl[
     var b = b_device.to_layout_tensor()
     var c = c_device.to_layout_tensor()
 
-    # Static shape from the LayoutTensor's type-level layout, equivalent to
-    # the DimList.get[i]() used in the NDBuffer overload.
+    # Static shape from the LayoutTensor's type-level layout.
     comptime N_static = c.layout.shape[1].value()
     comptime K_static = a.layout.shape[1].value()
 
@@ -715,8 +670,7 @@ def warp_specialize_gemm_with_multicasting_splitk[
     var c = c_device.to_layout_tensor()
 
     var M = c.dim[0]()
-    # Static shape from the LayoutTensor's type-level layout, equivalent to
-    # the DimList.get[i]() used in the NDBuffer overload.
+    # Static shape from the LayoutTensor's type-level layout.
     comptime N = c.layout.shape[1].value()
     comptime K = a.layout.shape[1].value()
 
