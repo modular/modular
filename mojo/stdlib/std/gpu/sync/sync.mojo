@@ -145,15 +145,24 @@ def barrier():
 def barrier_count(predicate: Bool) -> Int32:
     """Counts threads in the block with `predicate` true and synchronizes.
 
-    All threads in the block participate; the return value is the number of
-    threads whose `predicate` evaluated to true. This is a block-wide barrier
-    reduction that also synchronizes the block. Available on NVIDIA GPUs only
-    and maps to PTX `bar.red.popc`.
+    All threads in the block participate; this performs a block-wide barrier
+    reduction and returns the number of threads whose `predicate` evaluated to
+    true. Available on NVIDIA GPUs only and maps to PTX `bar.red.popc`.
+
+    Args:
+        predicate: Boolean flag for the calling thread to contribute to the
+            population count.
+
+    Returns:
+        The count of threads in the block with `predicate` true, broadcast to
+        all threads.
     """
 
     comptime if is_nvidia_gpu():
-        return __mlir_op.`nvvm.barrier0.popc`[_type=__mlir_type.i32](
-            to_i32(Int32(predicate))
+        return Int32(
+            __mlir_op.`nvvm.barrier0.popc`[_type=__mlir_type.i32](
+                to_i32(Int32(predicate))
+            )
         )
     else:
         CompilationTarget.unsupported_target_error[
