@@ -301,28 +301,6 @@ def _reshape_tile_tensor_with_batch_to_3d(
     )
 
 
-# A utility to reshape NDBuffer with rank > 2 to rank-2.
-@always_inline
-def _reshape_nd_buffer_with_batch_to_2d(
-    buffer: NDBuffer,
-) -> NDBuffer[
-    rank=2, buffer.type, buffer.origin, address_space=buffer.address_space
-]:
-    comptime rank = buffer.rank
-    comptime assert rank >= 2, "expecting at least rank-2 NDBuffer"
-
-    var batch_size = 1
-
-    comptime for i in range(rank - 1):
-        batch_size *= buffer.dim[i]()
-
-    var matrix_shape = IndexList[2](batch_size, buffer.dim[rank - 1]())
-
-    return NDBuffer[rank=2, buffer.type, address_space=buffer.address_space](
-        buffer.data.bitcast[Scalar[buffer.type]](), matrix_shape
-    )
-
-
 @always_inline
 def _small_batched_matmul[
     rank: Int,
@@ -910,6 +888,27 @@ def _batched_matmul_gpu[
         with Trace[TraceLevel.OP]("batched_matmul_via_matmul"):
             # If the batch size is 1, then this is just a matmul and we can use the
             # matmul kernel directly.
+
+            # batch_size==1, so flatten (1, X, Y) → (X, Y)
+            # by constructing rank-2 TileTensors directly.
+            var c_2d = TileTensor(
+                c_tensor_reshaped.ptr,
+                row_major(Coord(Idx(m), Idx(n))),
+            )
+            var a_2d = TileTensor(
+                a_tensor_reshaped.ptr,
+                row_major(Coord(Idx(m), Idx(k))),
+            )
+            var b_2d = TileTensor(
+                b_tensor_reshaped.ptr,
+                row_major(
+                    Coord(
+                        Idx(Int(b_tensor_reshaped.dim(1))),
+                        Idx(Int(b_tensor_reshaped.dim(2))),
+                    )
+                ),
+            )
+
             comptime if elementwise_epilogue_fn:
                 comptime elementwise_epilogue = elementwise_epilogue_fn.value()
 
@@ -927,50 +926,12 @@ def _batched_matmul_gpu[
 
                     elementwise_epilogue(batch_coords, val)
 
-                # TODO(KERN-2219): Replace _to_ndbuffer() roundtrip with a
-                # pure TileTensor batch-to-2D reshape.
                 _matmul_gpu[
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_epilogue_fn_wrapper,
-                ](
-                    TileTensor(
-                        _reshape_nd_buffer_with_batch_to_2d(
-                            c_buf._to_ndbuffer()
-                        )
-                    ),
-                    TileTensor(
-                        _reshape_nd_buffer_with_batch_to_2d(
-                            a_buf._to_ndbuffer()
-                        )
-                    ),
-                    TileTensor(
-                        _reshape_nd_buffer_with_batch_to_2d(
-                            b_buf._to_ndbuffer()
-                        )
-                    ),
-                    ctx=ctx,
-                )
+                ](c_2d, a_2d, b_2d, ctx=ctx)
             else:
-                # TODO(KERN-2219): Replace _to_ndbuffer() roundtrip with a
-                # pure TileTensor batch-to-2D reshape.
-                _matmul_gpu[transpose_b=transpose_b](
-                    TileTensor(
-                        _reshape_nd_buffer_with_batch_to_2d(
-                            c_buf._to_ndbuffer()
-                        )
-                    ),
-                    TileTensor(
-                        _reshape_nd_buffer_with_batch_to_2d(
-                            a_buf._to_ndbuffer()
-                        )
-                    ),
-                    TileTensor(
-                        _reshape_nd_buffer_with_batch_to_2d(
-                            b_buf._to_ndbuffer()
-                        )
-                    ),
-                    ctx=ctx,
-                )
+                _matmul_gpu[transpose_b=transpose_b](c_2d, a_2d, b_2d, ctx=ctx)
 
             return
 
