@@ -664,7 +664,7 @@ struct _VariadicListIter[
     elt_origin: Origin[mut=elt_is_mutable],
     list_origin: ImmutOrigin,
     is_owned: Bool,
-]:
+](RegisterPassable):
     """Iterator for VariadicList.
 
     Parameters:
@@ -717,7 +717,7 @@ struct VariadicList[
     //,
     element_type: AnyType,
     is_owned: Bool,
-](Movable, Sized, Writable):
+](RegisterPassable, Sized, Writable):
     """A utility class to access variadic function arguments of memory-only
     types that may have ownership. It exposes references to the elements in a
     way that can be enumerated.  Each element may be accessed with `elt[]`.
@@ -824,15 +824,20 @@ struct VariadicList[
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    def __getitem__(
-        self, idx: Int
-    ) -> ref[
+    def __getitem__[
+        self_origin: ImmutOrigin
+    ](ref[self_origin] self, idx: Int) -> ref[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        origin_of(Self.origin, self).unsafe_mut_cast[Self.elt_is_mutable]()
+        origin_of(Self.origin, self_origin).unsafe_mut_cast[
+            Self.elt_is_mutable
+        ]()
     ] Self.element_type:
         """Gets a single element on the variadic list.
+
+        Parameters:
+            self_origin: The origin of the list.
 
         Args:
             idx: The index of the element to access on the list.
@@ -895,12 +900,17 @@ struct VariadicList[
             TypeNames[Self.element_type](),
         ).fields[FieldsFn=write_fields]()
 
-    def __iter__(
-        self,
+    def __iter__[
+        self_origin: ImmutOrigin
+    ](
+        ref[self_origin] self,
     ) -> _VariadicListIter[
-        Self.element_type, Self.origin, origin_of(self), Self.is_owned
+        Self.element_type, Self.origin, self_origin, Self.is_owned
     ]:
         """Iterate over the list.
+
+        Parameters:
+            self_origin: The origin of the list.
 
         Returns:
             An iterator to the start of the list.
