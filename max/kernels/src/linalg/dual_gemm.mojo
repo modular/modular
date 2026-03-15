@@ -936,36 +936,6 @@ def config_in_smem[
     return c
 
 
-def dual_gemm[
-    c_type: DType,
-    c_shape: DimList,
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    //,
-    *,
-    transpose_b: Bool,
-    binary_lambda_fn: binary_fn_type = swilu,
-    config: Optional[MatmulConfig[a_type, b_type, c_type, transpose_b]] = None,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-](
-    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
-    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
-    b0: NDBuffer[rank=2, b_type, ImmutAnyOrigin, b_shape],
-    b1: NDBuffer[rank=2, b_type, ImmutAnyOrigin, b_shape],
-    ctx: DeviceContext,
-) raises:
-    """NDBuffer overload of `dual_gemm`. Converts to TileTensor and
-    delegates."""
-    dual_gemm[
-        transpose_b=transpose_b,
-        binary_lambda_fn=binary_lambda_fn,
-        config=config,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ](TileTensor(c), TileTensor(a), TileTensor(b0), TileTensor(b1), ctx)
-
-
 # ---------------------------------------------------------------------------- #
 # Dual-Gemv
 # ---------------------------------------------------------------------------- #
@@ -1102,56 +1072,8 @@ def dual_gemv_kernel[
             c.data.store(output_idx + mid * n + nid, val0.cast[c_type]())
 
 
-def dual_gemv[
-    c_type: DType,
-    c_shape: DimList,
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    //,
-    *,
-    binary_lambda_fn: binary_fn_type = swilu,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-](
-    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
-    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
-    b0: NDBuffer[rank=2, b_type, ImmutAnyOrigin, b_shape],
-    b1: NDBuffer[rank=2, b_type, ImmutAnyOrigin, b_shape],
-    ctx: DeviceContext,
-) raises:
-    """NDBuffer overload of `dual_gemv`. Converts to TileTensor and
-    delegates."""
-    dual_gemv[
-        binary_lambda_fn=binary_lambda_fn,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ](TileTensor(c), TileTensor(a), TileTensor(b0), TileTensor(b1), ctx)
-
-
 # ---------------------------------------------------------------------------- #
-# SwiGLU Layer
-# ---------------------------------------------------------------------------- #
-
-
-@register_internal("swishGLU")
-@always_inline
-def swishGLU[
-    target: StaticString = "cpu",
-](
-    a: NDBuffer[rank=2, _, ImmutAnyOrigin, _],
-    b0: NDBuffer[rank=2, _, ImmutAnyOrigin, _],
-    b1: NDBuffer[rank=2, _, ImmutAnyOrigin, _],
-    c: NDBuffer[rank=2, _, MutAnyOrigin, _],
-    ctx: DeviceContextPtr,
-) raises:
-    """NDBuffer overload of `swishGLU`. Converts to TileTensor and delegates."""
-    swishGLU[target](
-        TileTensor(a), TileTensor(b0), TileTensor(b1), TileTensor(c), ctx
-    )
-
-
-# ---------------------------------------------------------------------------- #
-# TileTensor overloads
+# SwiGLU Layer / TileTensor overloads
 # ---------------------------------------------------------------------------- #
 
 
@@ -1551,6 +1473,7 @@ def dual_gemv[
     )
 
 
+@register_internal("swishGLU")
 @always_inline
 def swishGLU[
     target: StaticString = "cpu",

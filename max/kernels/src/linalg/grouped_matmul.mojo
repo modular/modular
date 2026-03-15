@@ -109,20 +109,30 @@ def naive_grouped_matmul[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    """NDBuffer overload of `naive_grouped_matmul`. Converts to TileTensor and
-    delegates."""
-    naive_grouped_matmul[
-        transpose_b=transpose_b,
+    """NDBuffer implementation of naive grouped matmul."""
+    comptime assert transpose_b, "Only support transposed B in grouped matmul."
+
+    comptime kernel = naive_grouped_matmul_kernel[
+        c_type,
+        c_shape,
+        a_type,
+        a_shape,
+        b_type,
+        b_shape,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](
-        TileTensor(c),
-        TileTensor(a),
-        TileTensor(b),
-        TileTensor(a_offsets),
-        TileTensor(expert_ids),
-        max_num_tokens_per_expert,
-        num_active_experts,
-        ctx,
+    ]
+    ctx.enqueue_function[kernel, kernel](
+        c,
+        a,
+        b,
+        a_offsets,
+        expert_ids,
+        grid_dim=(
+            ceildiv(c.dim[1](), 32),
+            ceildiv(max_num_tokens_per_expert, 16),
+            num_active_experts,
+        ),
+        block_dim=(32, 16, 1),
     )
 
 
@@ -1027,87 +1037,7 @@ def grouped_matmul_amd[
 
 
 # ===----------------------------------------------------------------------=== #
-# Entry Point and Dispatch
-# ===----------------------------------------------------------------------=== #
-
-
-def grouped_matmul[
-    c_type: DType,
-    c_shape: DimList,
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    //,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-](
-    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
-    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
-    b: NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape],
-    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
-    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
-    max_num_tokens_per_expert: Int,
-    num_active_experts: Int,
-    ctx: DeviceContext,
-) raises:
-    """NDBuffer overload of `grouped_matmul`. Converts to TileTensor and
-    delegates."""
-    grouped_matmul[elementwise_lambda_fn=elementwise_lambda_fn,](
-        TileTensor(c),
-        TileTensor(a),
-        TileTensor(b),
-        TileTensor(a_offsets),
-        TileTensor(expert_ids),
-        max_num_tokens_per_expert,
-        num_active_experts,
-        ctx,
-    )
-
-
-# ===----------------------------------------------------------------------===#
-# Vendor Grouped GEMM for LoRA
-# ===----------------------------------------------------------------------===#
-
-
-def grouped_matmul_vendor[
-    c_type: DType,
-    c_shape: DimList,
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    *,
-    transpose_b: Bool = True,
-    use_tf32: Bool = False,
-](
-    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
-    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
-    b: NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape],
-    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
-    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
-    max_num_tokens_per_expert: Int,
-    num_active_experts: Int,
-    ctx: DeviceContext,
-) raises:
-    """NDBuffer overload of `grouped_matmul_vendor`. Converts to TileTensor and
-    delegates."""
-    grouped_matmul_vendor[
-        transpose_b=transpose_b,
-        use_tf32=use_tf32,
-    ](
-        TileTensor(c),
-        TileTensor(a),
-        TileTensor(b),
-        TileTensor(a_offsets),
-        TileTensor(expert_ids),
-        max_num_tokens_per_expert,
-        num_active_experts,
-        ctx,
-    )
-
-
-# ===----------------------------------------------------------------------=== #
-# TileTensor overloads
+# Entry Point and Dispatch (TileTensor overloads)
 # ===----------------------------------------------------------------------=== #
 
 

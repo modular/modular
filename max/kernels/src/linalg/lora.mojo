@@ -32,39 +32,7 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    coord_to_index_list,
 )
-
-
-def shrink_qkv_permute_3mn_sm100[
-    c_type: DType,
-    c_shape: DimList,
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-](
-    c_lora: NDBuffer[rank=3, c_type, MutAnyOrigin, c_shape],
-    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
-    b: NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape],
-    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
-    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
-    max_num_tokens_per_expert: Int,
-    num_active_experts: Int,
-    ctx: DeviceContext,
-) raises:
-    """NDBuffer overload of `shrink_qkv_permute_3mn_sm100`. Converts to
-    TileTensor and delegates."""
-    shrink_qkv_permute_3mn_sm100(
-        TileTensor(c_lora),
-        TileTensor(a),
-        TileTensor(b),
-        TileTensor(a_offsets),
-        TileTensor(expert_ids),
-        max_num_tokens_per_expert,
-        num_active_experts,
-        ctx,
-    )
 
 
 @always_inline
@@ -145,7 +113,7 @@ def shrink_qkv_permute_3mn_sm100(
         mut=True,
         rank=2,
         c_type,
-        MutAnyOrigin,
+        c_lora.origin,
         shape=DimList[Dim(), Dim(N_Total)](),
         strides=DimList.create_unknown[2](),
     ]()  # data=null, shape/stride zeroed
@@ -194,42 +162,13 @@ def shrink_qkv_permute_3mn_sm100(
             off, val.cast[c_type]()
         )
 
-    # Construct NDBuffers for a, b, a_offsets, expert_ids at the call boundary
-    # since the dummy null-backed c is an NDBuffer and grouped_matmul requires
-    # uniform argument types.
-    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
-    comptime b_shape = DimList[
-        dim[b.static_shape[0]], dim[b.static_shape[1]], dim[b.static_shape[2]]
-    ]()
-
-    var a_buf = NDBuffer[rank=2, a.dtype, ImmutAnyOrigin, a_shape](
-        a.ptr,
-        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
-    )
-    var b_buf = NDBuffer[rank=3, b.dtype, ImmutAnyOrigin, b_shape](
-        b.ptr,
-        rebind[IndexList[3]](coord_to_index_list(b.layout.shape_coord())),
-    )
-    var a_off_buf = NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin](
-        a_offsets.ptr,
-        rebind[IndexList[1]](
-            coord_to_index_list(a_offsets.layout.shape_coord())
-        ),
-    )
-    var exp_buf = NDBuffer[rank=1, DType.int32, ImmutAnyOrigin](
-        expert_ids.ptr,
-        rebind[IndexList[1]](
-            coord_to_index_list(expert_ids.layout.shape_coord())
-        ),
-    )
-
     # Run grouped_matmul and apply permute_dim_lora as the elementwise epilogue.
     grouped_matmul[elementwise_lambda_fn=permute_dim_lora_bmn,](
-        c,
-        a_buf,
-        b_buf,
-        a_off_buf,
-        exp_buf,
+        TileTensor(c),
+        a,
+        b,
+        a_offsets,
+        expert_ids,
         max_num_tokens_per_expert,
         num_active_experts,
         ctx,

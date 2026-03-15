@@ -604,11 +604,6 @@ def bench_grouped_matmul[
             c_dev,
             a_offsets_dev,
             expert_ids_dev,
-            a,
-            b,
-            c,
-            a_offsets,
-            expert_ids,
         )
         @always_inline
         def bench_func(mut bench: Bencher):
@@ -625,11 +620,11 @@ def bench_grouped_matmul[
                             elementwise_epilogue_type
                         ](epilogue_fn) if has_epilogue else None,
                     ](
-                        c_dev,
-                        a_dev,
-                        b_dev,
-                        a_offsets_dev,
-                        expert_ids_dev,
+                        TileTensor(c_dev),
+                        TileTensor(a_dev),
+                        TileTensor(b_dev),
+                        TileTensor(a_offsets_dev),
+                        TileTensor(expert_ids_dev),
                         max_num_tokens_by_expert,
                         num_active_experts,
                         ctx,

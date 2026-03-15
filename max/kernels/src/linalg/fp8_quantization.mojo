@@ -202,34 +202,6 @@ def quantize_dynamic_scaled_fp8[
         )
 
 
-@always_inline
-fn quantize_dynamic_scaled_fp8[
-    out_dtype: DType,
-    in_dtype: DType,
-    scales_dtype: DType,
-    //,
-    input_fn: fn[width: Int, alignment: Int](
-        row: Int, col: Int
-    ) capturing -> SIMD[in_dtype, width],
-    group_size_or_per_token: Int,
-    num_cols: Int,
-    pdl_level: PDLLevel = PDLLevel(),
-](
-    scaled_output: NDBuffer[mut=True, rank=2, out_dtype, _],
-    scales: NDBuffer[mut=True, rank=2, scales_dtype, _],
-    scale_ub: Float32,
-    ctx: DeviceContext,
-    num_rows: Int,
-) raises:
-    """NDBuffer wrapper that delegates to the TileTensor implementation."""
-    quantize_dynamic_scaled_fp8[
-        input_fn=input_fn,
-        group_size_or_per_token=group_size_or_per_token,
-        num_cols=num_cols,
-        pdl_level=pdl_level,
-    ](TileTensor(scaled_output), TileTensor(scales), scale_ub, ctx, num_rows)
-
-
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
@@ -382,42 +354,6 @@ def batched_quantize_dynamic_scaled_fp8[
         grid_dim=(num_rows, num_cols // group_size, batch_size),
         block_dim=num_threads,
         attributes=pdl_launch_attributes(pdl_level),
-    )
-
-
-@always_inline
-fn batched_quantize_dynamic_scaled_fp8[
-    out_dtype: DType,
-    in_dtype: DType,
-    scales_dtype: DType,
-    //,
-    input_fn: fn[width: Int, alignment: Int](
-        batch: Int, row: Int, col: Int
-    ) capturing -> SIMD[in_dtype, width],
-    group_size_or_per_token: Int,
-    num_cols: Int,
-    pdl_level: PDLLevel = PDLLevel(),
-](
-    scaled_output: NDBuffer[mut=True, rank=3, out_dtype, _],
-    scales: NDBuffer[mut=True, rank=3, scales_dtype, _],
-    scale_ub: Float32,
-    ctx: DeviceContext,
-    num_rows: Int,
-    batch_size: Int,
-) raises:
-    """NDBuffer wrapper that delegates to the TileTensor implementation."""
-    batched_quantize_dynamic_scaled_fp8[
-        input_fn=input_fn,
-        group_size_or_per_token=group_size_or_per_token,
-        num_cols=num_cols,
-        pdl_level=pdl_level,
-    ](
-        TileTensor(scaled_output),
-        TileTensor(scales),
-        scale_ub,
-        ctx,
-        num_rows,
-        batch_size,
     )
 
 
@@ -632,7 +568,6 @@ def matmul_dynamic_scaled_fp8[
     )
 
 
-@always_inline
 def matmul_dynamic_scaled_fp8[
     c_type: DType,
     a_type: DType,
@@ -1189,16 +1124,14 @@ def naive_blockwise_scaled_fp8_grouped_matmul[
     scales_granularity_mnk: Optional[IndexList[3]] = None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin, ...],
-    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin, ...],
-    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin, ...],
-    a_scales: LayoutTensor[a_scales_type, a_scale_layout, ImmutAnyOrigin, ...],
-    b_scales: LayoutTensor[b_scales_type, b_scale_layout, ImmutAnyOrigin, ...],
-    a_offsets: LayoutTensor[
-        a_offsets_type, a_offsets_layout, ImmutAnyOrigin, ...
-    ],
+    c: LayoutTensor[mut=True, c_type, c_layout, ...],
+    a: LayoutTensor[mut=False, a_type, a_layout, ...],
+    b: LayoutTensor[mut=False, b_type, b_layout, ...],
+    a_scales: LayoutTensor[mut=False, a_scales_type, a_scale_layout, ...],
+    b_scales: LayoutTensor[mut=False, b_scales_type, b_scale_layout, ...],
+    a_offsets: LayoutTensor[mut=False, a_offsets_type, a_offsets_layout, ...],
     expert_ids: LayoutTensor[
-        expert_ids_type, expert_ids_layout, ImmutAnyOrigin, ...
+        mut=False, expert_ids_type, expert_ids_layout, ...
     ],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
