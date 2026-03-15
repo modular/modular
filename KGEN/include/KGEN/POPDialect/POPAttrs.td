@@ -1102,7 +1102,8 @@ def POP_VariadicToArrayAttr : POP_ExprAttr<"VariadicToArray", "variadic_to_array
   ];
 
   let extraClassDeclaration = [{
-    Type getType() const;
+    POP::ArrayType getType() const;
+    Type getElementType() const;
   }];
 }
 

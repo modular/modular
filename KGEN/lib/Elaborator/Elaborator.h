@@ -190,6 +190,8 @@ public:
         result = it->second;
     });
     if (result != value) {
+      static std::mutex errsMutex;
+      std::lock_guard<std::mutex> lock(errsMutex);
       llvm::errs() << "\nresult != value\n";
       llvm::errs() << "result: " << result << "\n";
       llvm::errs() << "value: " << value << "\n";
