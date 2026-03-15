@@ -621,22 +621,17 @@ def pack_matmul_b_shape_func[
     transpose_in_0: Bool,
     single_thread_blocking_override: Bool,
 ](b_input: NDBuffer[mut=False, rank=2, b_type, _, b_shape]) -> IndexList[2]:
-    # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
+    """NDBuffer wrapper. Extracts kernel_type_m from a_shape and delegates
+    to the TileTensor overload."""
     var kernel_type_m = 0
-
     comptime if a_shape.at[0]().has_value():
         kernel_type_m = a_shape.at[0]().get()
-
-    return _pack_matmul_b_shape_func_impl[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-        transpose_in_0,
-        single_thread_blocking_override,
-    ](b_input, kernel_type_m)
+    return pack_matmul_b_shape_func[
+        a_type=a_type,
+        c_type=c_type,
+        transpose_in_0=transpose_in_0,
+        single_thread_blocking_override=single_thread_blocking_override,
+    ](TileTensor(b_input), kernel_type_m)
 
 
 def pack_b[
@@ -797,7 +792,9 @@ def _pack_b_ndbuffer_impl[
                 perm[0] = 1
                 perm[1] = 0
 
-                transpose[rank=2](output_buffer, b_input, perm.data)
+                transpose(
+                    TileTensor(output_buffer), TileTensor(b_input), perm.data
+                )
 
             else:
                 memcpy(dest=output_buffer.data, src=b_input.data, count=n * k)
@@ -846,18 +843,14 @@ def pack_b_ndbuffer[
     b_input: NDBuffer[mut=False, rank=2, b_type, _, b_shape],
     output_buffer: NDBuffer[rank=2, b_type, output_origin],
 ) raises:
-    # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
+    """NDBuffer wrapper. Extracts kernel_type_m from a_shape and delegates
+    to the TileTensor overload."""
     var kernel_type_m = 0
-
     comptime if a_shape.at[0]().has_value():
         kernel_type_m = a_shape.at[0]().get()
-    _pack_b_ndbuffer_impl[
-        a_type,
-        a_shape,
-        c_type,
-        c_shape,
-        transposed=False,
-    ](b_input, output_buffer, kernel_type_m)
+    pack_b_ndbuffer[a_type=a_type, c_type=c_type](
+        TileTensor(b_input), TileTensor(output_buffer), kernel_type_m
+    )
 
 
 @register_internal("layout_transform_NK_to_KNkni")
@@ -872,18 +865,14 @@ def pack_transposed_b_ndbuffer[
     b_input: NDBuffer[mut=False, rank=2, b_type, _, b_shape],
     output_buffer: NDBuffer[mut=True, rank=2, b_type, _],
 ) raises:
-    # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
+    """NDBuffer wrapper. Extracts kernel_type_m from a_shape and delegates
+    to the TileTensor overload."""
     var kernel_type_m = 0
-
     comptime if a_shape.at[0]().has_value():
         kernel_type_m = a_shape.at[0]().get()
-    _pack_b_ndbuffer_impl[
-        a_type,
-        a_shape,
-        c_type,
-        c_shape,
-        transposed=True,
-    ](b_input, output_buffer, kernel_type_m)
+    pack_transposed_b_ndbuffer[a_type=a_type, c_type=c_type](
+        TileTensor(b_input), TileTensor(output_buffer), kernel_type_m
+    )
 
 
 @always_inline
@@ -896,12 +885,10 @@ def pack_matmul_b_shape_func[
     b_input: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     kernel_type_m: Int = 0,
 ) -> IndexList[2]:
-    """TileTensor overload of `pack_matmul_b_shape_func`. Converts to NDBuffer
-    and delegates.
+    """TileTensor primary implementation of `pack_matmul_b_shape_func`.
 
-    Unlike the NDBuffer overload, this does not take `a_shape`/`c_shape` DimList
-    params — those were only used to extract `kernel_type_m` from a static M
-    dimension. Pass `kernel_type_m` directly instead (0 = dynamic M).
+    Takes `kernel_type_m` directly instead of extracting it from `a_shape`
+    DimList params (0 = dynamic M).
     """
     comptime assert b_input.rank == 2, "b must be rank 2"
     comptime assert b_input.flat_rank == 2, "b must have a non-nested layout"
@@ -942,12 +929,10 @@ def pack_b_ndbuffer[
     ],
     kernel_type_m: Int = 0,
 ) raises:
-    """TileTensor overload of `pack_b_ndbuffer`. Converts to NDBuffer and
-    delegates.
+    """TileTensor primary implementation of `pack_b_ndbuffer`.
 
-    Unlike the NDBuffer overload, this does not take `a_shape`/`c_shape` DimList
-    params — those were only used to extract `kernel_type_m` from a static M
-    dimension. Pass `kernel_type_m` directly instead (0 = dynamic M).
+    Takes `kernel_type_m` directly instead of extracting it from `a_shape`
+    DimList params (0 = dynamic M).
     """
     comptime assert b_input.rank == 2, "b must be rank 2"
     comptime assert b_input.flat_rank == 2, "b must have a non-nested layout"
@@ -996,12 +981,10 @@ def pack_transposed_b_ndbuffer[
     ],
     kernel_type_m: Int = 0,
 ) raises:
-    """TileTensor overload of `pack_transposed_b_ndbuffer`. Converts to NDBuffer
-    and delegates.
+    """TileTensor primary implementation of `pack_transposed_b_ndbuffer`.
 
-    Unlike the NDBuffer overload, this does not take `a_shape`/`c_shape` DimList
-    params — those were only used to extract `kernel_type_m` from a static M
-    dimension. Pass `kernel_type_m` directly instead (0 = dynamic M).
+    Takes `kernel_type_m` directly instead of extracting it from `a_shape`
+    DimList params (0 = dynamic M).
     """
     comptime assert b_input.rank == 2, "b must be rank 2"
     comptime assert b_input.flat_rank == 2, "b must have a non-nested layout"
