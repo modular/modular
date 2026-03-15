@@ -161,9 +161,9 @@ struct String(
     var text = "Hello"
 
     # String properties and indexing
-    print(len(text))     # 5
-    print(text[1])       # e
-    print(text[-1])      # o
+    print(text.byte_length())     # 5
+    print(text[byte=1])       # e
+    print(text[byte=-1])      # o
 
     # In-place concatenation
     text += " World"
@@ -401,6 +401,7 @@ struct String(
         Examples:
 
         ```mojo
+        %# from std.testing import assert_equal
         # Valid UTF-8 sequence
         var fire_emoji_bytes = [Byte(0xF0), 0x9F, 0x94, 0xA5]
         var fire_emoji = String(from_utf8_lossy=fire_emoji_bytes)
@@ -444,18 +445,18 @@ struct String(
     # register pressure.
 
     def __init__[
-        *Ts: Writable,
-    ](out self, *args: *Ts, sep: StaticString = "", end: StaticString = ""):
+        *Ts: Writable
+    ](out self, *args: *Ts, sep: StringSlice = "", end: StringSlice = ""):
         """
         Construct a string by concatenating a sequence of Writable arguments.
+
+        Parameters:
+            Ts: Types of the provided argument sequence.
 
         Args:
             args: A sequence of Writable arguments.
             sep: The separator used between elements.
             end: The String to write after printing the elements.
-
-        Parameters:
-            Ts: Types of the provided argument sequence.
 
         Examples:
 
@@ -479,16 +480,12 @@ struct String(
             args._write_to(buffer, end=end, sep=sep)
             buffer.flush()
 
-    # TODO(MOCO-1791): Default arguments and param inference aren't powerful
-    # to declare sep/end as StringSlice.
     @staticmethod
-    def __init__[
-        *Ts: Writable,
-    ](
+    def __init__(
         out self,
-        args: VariadicPack[_, Writable, *Ts],
-        sep: StaticString = "",
-        end: StaticString = "",
+        args: VariadicPack[_, Writable, ...],
+        sep: StringSlice = "",
+        end: StringSlice = "",
     ):
         """
         Construct a string by passing a variadic pack.
@@ -498,20 +495,17 @@ struct String(
             sep: The separator used between elements.
             end: The String to write after printing the elements.
 
-        Parameters:
-            Ts: Types of the provided argument sequence.
-
         Examples:
 
         ```mojo
+        %# from std.testing import assert_equal
         def variadic_pack_to_string[
             *Ts: Writable,
         ](*args: *Ts) -> String:
             return String(args)
 
         string = variadic_pack_to_string(1, ", ", 2.0, ", ", "three")
-        %# from testing import assert_equal
-        %# assert_equal(string, "1, 2.0, three")
+        assert_equal(string, "1, 2.0, three")
         ```
         """
         comptime length = args.__len__()
@@ -529,17 +523,17 @@ struct String(
 
     @staticmethod
     def write[
-        *Ts: Writable,
-    ](*args: *Ts, sep: StaticString = "", end: StaticString = "") -> Self:
+        *Ts: Writable
+    ](*args: *Ts, sep: StringSlice = "", end: StringSlice = "") -> Self:
         """Construct a string by concatenating a sequence of Writable arguments.
+
+        Parameters:
+            Ts: Types of the provided argument sequence.
 
         Args:
             args: A sequence of Writable arguments.
             sep: The separator used between elements.
             end: The String to write after printing the elements.
-
-        Parameters:
-            Ts: Types of the provided argument sequence.
 
         Returns:
             A string formed by formatting the argument sequence.
@@ -1076,8 +1070,7 @@ struct String(
     # ===------------------------------------------------------------------=== #
 
     def write_to(self, mut writer: Some[Writer]):
-        """
-        Formats this string to the provided Writer.
+        """Formats this string to the provided Writer.
 
         Args:
             writer: The object to write to.
@@ -1334,7 +1327,7 @@ struct String(
             Query the length of a string, in bytes and Unicode codepoints:
 
             ```mojo
-            %# from testing import assert_equal
+            %# from std.testing import assert_equal
 
             var s = StringSlice("ನಮಸ್ಕಾರ")
             assert_equal(s.count_codepoints(), 7)
@@ -1345,7 +1338,7 @@ struct String(
             Unicode codepoint length:
 
             ```mojo
-            %# from testing import assert_equal
+            %# from std.testing import assert_equal
 
             var s = StringSlice("abc")
             assert_equal(s.count_codepoints(), 3)
@@ -1356,7 +1349,7 @@ struct String(
             the length in Unicode codepoints, not grapheme clusters:
 
             ```mojo
-            %# from testing import assert_equal
+            %# from std.testing import assert_equal
 
             var s = StringSlice("á")
             assert_equal(s.count_codepoints(), 2)
@@ -1945,9 +1938,9 @@ struct String(
 
         ```mojo
         var s = String("hello")
-        print(s.center(10))        # "  hello   "
-        print(s.center(11, "*"))   # "***hello***"
-        print(s.center(3))         # "hello" (no padding)
+        print(s.ascii_center(10))        # "  hello   "
+        print(s.ascii_center(11, "*"))   # "***hello***"
+        print(s.ascii_center(3))         # "hello" (no padding)
         ```
         """
         return StringSlice(self).ascii_center(width, fillchar)

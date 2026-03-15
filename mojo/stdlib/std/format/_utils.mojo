@@ -40,7 +40,9 @@ def constrained_conforms_to_writable[*Ts: AnyType, Parent: AnyType]():
         ]()
 
 
-struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
+struct _SequenceWriter[W: Writer, origin: MutOrigin, sep_origin: ImmutOrigin](
+    Movable, Writer
+):
     """A writer that handles sequences of elements with separators.
 
     This writer ensures separators are only inserted between elements, even
@@ -50,9 +52,13 @@ struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
     var writer: Pointer[Self.W, Self.origin]
     var is_first_element: Bool
     var at_element_start: Bool
-    var sep: StaticString
+    var sep: StringSlice[Self.sep_origin]
 
-    def __init__(out self, ref[Self.origin] writer: Self.W, sep: StaticString):
+    def __init__(
+        out self,
+        ref[Self.origin] writer: Self.W,
+        sep: StringSlice[Self.sep_origin],
+    ):
         self.writer = Pointer(to=writer)
         self.is_first_element = True
         self.at_element_start = True
@@ -85,9 +91,9 @@ def write_sequence_to[
     W: Writer, ElementFn: fn[T: Writer](mut T) raises StopIteration capturing
 ](
     mut writer: W,
-    start: StaticString = "[",
-    end: StaticString = "]",
-    sep: StaticString = ", ",
+    start: StringSlice = "[",
+    end: StringSlice = "]",
+    sep: StringSlice = ", ",
 ):
     """Writes a sequence of elements to a writer using a callback function.
 
@@ -130,9 +136,9 @@ def write_sequence_to[
 ](
     mut writer: Some[Writer],
     *args: *Ts,
-    start: StaticString,
-    end: StaticString,
-    sep: StaticString = ", ",
+    start: StringSlice,
+    end: StringSlice,
+    sep: StringSlice = ", ",
 ):
     """Writes a sequence of writable values to a writer with delimiters.
 
@@ -159,9 +165,9 @@ def write_sequence_to[
     ElementFn: fn[i: Int](mut Some[Writer]) capturing,
 ](
     mut writer: Some[Writer],
-    open: StaticString = "[",
-    close: StaticString = "]",
-    sep: StaticString = ", ",
+    open: StringSlice = "[",
+    close: StringSlice = "]",
+    sep: StringSlice = ", ",
 ):
     """Writes a compile-time sized sequence of elements using an indexed callback.
 
@@ -574,16 +580,15 @@ def _hex_digits_to_hex_chars(
     %# from std.memory import memset_zero
     %# from std.testing import assert_equal
     %# from std.utils import StringSlice
-    %# from std.io.write import _hex_digits_to_hex_chars
-    items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-    comptime S = StringSlice[origin_of(items)]
-    ptr = items.unsafe_ptr()
+    %# from std.format._utils import _hex_digits_to_hex_chars
+    var items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    var ptr = items.unsafe_ptr()
     ptr.store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
-    assert_equal("0001f525", S(ptr=ptr, length=8))
+    assert_equal("0001f525", StringSlice(ptr=ptr, length=8))
     ptr.store(_hex_digits_to_hex_chars(UInt16(ord("你"))))
-    assert_equal("4f60", S(ptr=ptr, length=4))
+    assert_equal("4f60", StringSlice(ptr=ptr, length=4))
     ptr.store(_hex_digits_to_hex_chars(UInt8(ord("Ö"))))
-    assert_equal("d6", S(ptr=ptr, length=2))
+    assert_equal("d6", StringSlice(ptr=ptr, length=2))
     ```
     """
     comptime size = size_of[decimal.dtype]()
@@ -601,10 +606,10 @@ def _write_hex[
     Examples:
 
     ```mojo
-    %# from memory import memset_zero
-    %# from testing import assert_equal
-    %# from utils import StringSlice
-    %# from io.write import _write_hex
+    %# from std.memory import memset_zero
+    %# from std.testing import assert_equal
+    %# from std.utils import StringSlice
+    %# from std.format._utils import _write_hex
     var s = String()
     _write_hex[amnt_hex_bytes=8](s, ord("🔥"))
     assert_equal("\\U0001f525", s)

@@ -1178,17 +1178,13 @@ struct VariadicPack[
         return __mlir_op.`kgen.pack.load`(self.get_as_kgen_pack())
 
     def _write_to[
-        O1: ImmutOrigin,
-        O2: ImmutOrigin,
-        O3: ImmutOrigin,
-        *,
-        is_repr: Bool = False,
+        is_repr: Bool = False
     ](
         self: VariadicPack[_, Writable, ...],
         mut writer: Some[Writer],
-        start: StringSlice[O1] = StaticString(""),
-        end: StringSlice[O2] = StaticString(""),
-        sep: StringSlice[O3] = StaticString(", "),
+        start: StringSlice = "",
+        end: StringSlice = "",
+        sep: StringSlice = ", ",
     ):
         """Writes a sequence of writable values from a pack to a writer with
         delimiters.
@@ -1198,9 +1194,6 @@ struct VariadicPack[
         enclosed by start and end delimiters.
 
         Parameters:
-            O1: The origin of the open `StringSlice`.
-            O2: The origin of the close `StringSlice`.
-            O3: The origin of the separator `StringSlice`.
             is_repr: Whether to use repr formatting for elements.
 
         Args:
@@ -1230,11 +1223,7 @@ struct VariadicPack[
         Args:
             writer: The object to write to.
         """
-        self._write_to(
-            writer,
-            start=StaticString("("),
-            end=StaticString(")"),
-        )
+        self._write_to(writer, start="(", end=")")
 
     @no_inline
     def write_repr_to(
@@ -1245,11 +1234,7 @@ struct VariadicPack[
         Args:
             writer: The object to write to.
         """
-        self._write_to[is_repr=True](
-            writer,
-            start=StaticString("("),
-            end=StaticString(")"),
-        )
+        self._write_to[is_repr=True](writer, start="(", end=")")
 
 
 # ===-----------------------------------------------------------------------===#
