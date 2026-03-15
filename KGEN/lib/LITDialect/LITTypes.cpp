@@ -98,7 +98,6 @@ TypeSignatureType TypeSignatureType::remapToSignature(
   MLIRContext *ctx = paramDecls.getContext();
   paramListAttrs =
       PogListAttr::get(ctx, remapper.replace(paramListAttrs.getPogs()),
-                       paramListAttrs.getOrigPackConvention(),
                        paramListAttrs.getOrigVariadicConvention());
   return TypeSignatureType::getChecked(emitError, ctx, inputParamTypes,
                                        paramListAttrs);
@@ -122,6 +121,7 @@ TypeSignatureType TypeSignatureType::bind(ArrayRef<TypedAttr> values) const {
   SmallVector<Type> newParamTypes;
   SmallVector<PogMetadataAttr> newPogs;
 
+  bool hasVarArg = false;
   ParameterEvaluator evaluator;
   for (auto [i, val, type, pogAttr] :
        llvm::enumerate(values, getParamTypes(), paramListAttr.getPogs())) {
@@ -135,11 +135,17 @@ TypeSignatureType TypeSignatureType::bind(ArrayRef<TypedAttr> values) const {
     newParamTypes.push_back(evaluator.getReboundType(type));
     newPogs.push_back(
         cast<PogMetadataAttr>(evaluator.getReboundAttribute(pogAttr)));
+    hasVarArg |= pogAttr.isAnyVarArg();
 
     evaluator.appendIndexBinding(
         ParamIndexRefAttr::get(newParamTypes.size() - 1, newParamTypes.back()));
   }
-  auto paramListAttrs = PogListAttr::get(getContext(), newPogs);
+  ArgConvention origVariadicConvention =
+      hasVarArg ? paramListAttr.getOrigVariadicConvention()
+                : ArgConvention::ByRefError;
+
+  auto paramListAttrs =
+      PogListAttr::get(getContext(), newPogs, origVariadicConvention);
   return TypeSignatureType::get(getContext(), newParamTypes, paramListAttrs);
 }
 
@@ -1219,7 +1225,6 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   SmallVector<TypedAttr> defaultValues;
   SmallVector<ArgConvention> argConventions;
   SmallVector<VariadicKind> argVariadics;
-  std::optional<ArgConvention> origArgPackConvention;
   std::optional<ArgConvention> origVariadicConvention;
 
   PassingKindParser passingKindParser(p);
@@ -1235,11 +1240,10 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
 
     // Parse the argument type and its input convention.
     Type &type = argTypes.emplace_back();
-    if (p.parseType(type) ||
-        parseConventionAndVariadicness(
-            p, argConventions.emplace_back(),
-            argVariadics.emplace_back(VariadicKind::None),
-            origArgPackConvention, origVariadicConvention, idx++))
+    if (p.parseType(type) || parseConventionAndVariadicness(
+                                 p, argConventions.emplace_back(),
+                                 argVariadics.emplace_back(VariadicKind::None),
+                                 origVariadicConvention, idx++))
       return failure();
 
     // Parse an optional default value.
@@ -1271,8 +1275,7 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   MLIRContext *ctx = p.getContext();
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, argNames, argPassingKinds, argVariadics,
-                       defaultValues, origArgPackConvention,
-                       origVariadicConvention,
+                       defaultValues, origVariadicConvention,
                        /*constraints=*/{}),
       numOriginDecls, captureOrigins, isNestedOriginExclusivityCheckingDisabled,
       constraints);
@@ -1470,13 +1473,13 @@ bool FnType::isPosVarArg(size_t index) {
 }
 
 /// For a PosVarArg, return the declared ArgConvention of the elements. For
-/// example: fn x(inout *args: Int) is declared 'inout'.
-ArgConvention FnType::getPosVarArgConvention(size_t index) {
+/// example: fn x(mut *args: Int) is declared 'mut'.
+ArgConvention FnType::getVariadicConvention(size_t index) {
   PogListAttr pogs = getMetadata().getArgListAttrs();
-  if (pogs.getVariadicKind(index) == VariadicKind::PosVarArg)
+  if (pogs.getVariadicKind(index) == VariadicKind::PosVarArg ||
+      pogs.getVariadicKind(index) == VariadicKind::PackVarArg)
     return pogs.getOrigVariadicConvention();
-  else
-    return ArgConvention::ReadReg;
+  return ArgConvention::ByRefError;
 }
 
 bool FnType::isKwVarArg(size_t index) {
@@ -1494,15 +1497,6 @@ Type FnType::getIfVariadicPack(size_t index) {
   return RefType::stripRefConvention(getArgument(index),
                                      getArgConvention(index));
 }
-
-/// For a vararg, return the declared ArgConvention of the elements. For
-/// example: fn x(mut *args: Int) is declared 'mut'.
-ArgConvention FnType::getPackVarArgConvention(size_t index) {
-  assert(getMetadata().isPack(index));
-  return getArgListAttrs().getOrigPackConvention();
-}
-
-bool FnType::hasPackVarArgs() { return getMetadata().hasPackVarArgs(); }
 
 std::optional<size_t> FnType::findPackVarArgIndex() {
   size_t numUserArgs = getNumArguments() - hasMemoryOnlyResult();
@@ -1627,10 +1621,10 @@ bool FnTypeGeneratorType::isPosVarArg(size_t index) {
   return getBody().isPosVarArg(index);
 }
 
-/// For a PosVarArg, return the declared ArgConvention of the elements. For
-/// example: fn x(inout *args: Int) is declared 'inout'.
-ArgConvention FnTypeGeneratorType::getPosVarArgConvention(size_t index) {
-  return getBody().getPosVarArgConvention(index);
+/// For a PosVarArg/PackVarArg, return the declared ArgConvention of the
+/// elements. For example: fn x(mut *args: Int) is declared 'mut'.
+ArgConvention FnTypeGeneratorType::getVariadicConvention(size_t index) {
+  return getBody().getVariadicConvention(index);
 }
 
 bool FnTypeGeneratorType::isKwVarArg(size_t index) {
@@ -1644,16 +1638,6 @@ bool FnTypeGeneratorType::isPack(size_t index) {
 /// If the specified argument is a variadic pack, return the VariadicPack.
 Type FnTypeGeneratorType::getIfVariadicPack(size_t index) {
   return getBody().getIfVariadicPack(index);
-}
-
-/// For a PosVarArg, return the declared ArgConvention of the elements. For
-/// example: fn x(inout *args: Int) is declared 'inout'.
-ArgConvention FnTypeGeneratorType::getPackVarArgConvention(size_t index) {
-  return getBody().getPackVarArgConvention(index);
-}
-
-bool FnTypeGeneratorType::hasPackVarArgs() {
-  return getBody().hasPackVarArgs();
 }
 
 std::optional<size_t> FnTypeGeneratorType::findPackVarArgIndex() {

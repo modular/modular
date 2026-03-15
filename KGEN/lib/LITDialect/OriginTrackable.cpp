@@ -381,7 +381,7 @@ static void getCallOpEffects(
       if (auto pack = packVal.getDefiningOp<RefPackCreateOp>()) {
         if (signature.isPack(idx + argIdxOffset)) {
           auto argConvention =
-              signature.getPackVarArgConvention(idx + argIdxOffset);
+              signature.getVariadicConvention(idx + argIdxOffset);
           for (auto packOperand : pack.getOperands())
             addArgument(packOperand, argConvention);
 

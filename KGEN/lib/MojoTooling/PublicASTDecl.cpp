@@ -1501,8 +1501,8 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
   for (auto [argIdx, userType, sigType, conventionX, pogAttr] :
        llvm::enumerate(userArgTypes, sigTypes, argConventions, argPogs)) {
     ArgConvention convention = conventionX;
-    if (auto variadic = dyn_cast<VariadicType>(userType))
-      convention = signature.getPosVarArgConvention(argIdx);
+    if (signature.isPosVarArg(argIdx))
+      convention = signature.getVariadicConvention(argIdx);
 
     TypedAttr defaultValue;
     if (auto defaultAttr = signature.getArgListAttrs().getDefault(argIdx))

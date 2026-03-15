@@ -118,7 +118,6 @@ def PogMetadataAttr : DialectAttribute<(attr
 
 def PogListAttr : DialectAttribute<(attr
   ConcreteAttrArray<"PogMetadataAttr">:$pogs,
-  EnumAttr<"ArgConvention">:$origPackConvention,
   EnumAttr<"ArgConvention">:$origVariadicConvention
 )>;
 

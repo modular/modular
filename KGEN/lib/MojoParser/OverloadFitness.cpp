@@ -911,7 +911,7 @@ OverloadFitness OverloadFitness::evaluate(
       while (posOperandIdx != numPosOperands) {
         if (auto result = processPositionalOperand(
                 varArgsEltType,
-                signature.getPosVarArgConvention(expectedArgIdx)))
+                signature.getVariadicConvention(expectedArgIdx)))
           return std::move(*result);
         result.payload.passesVarArgArgument = true;
       }
@@ -923,7 +923,7 @@ OverloadFitness OverloadFitness::evaluate(
     if (ASTType variadicPackType =
             signature.getIfVariadicPack(expectedArgIdx)) {
       auto actualArgConvention =
-          signature.getPackVarArgConvention(expectedArgIdx);
+          signature.getVariadicConvention(expectedArgIdx);
       RefPackType packType = variadicPackType.getVariadicPackInfo(shared);
       for (TypedAttr element : packType.getVariadicIfResolved().getValues()) {
         auto refType = packType.getElementRefTypeFor(ASTType(element).mlirType);

@@ -106,15 +106,6 @@ lit.fn @signature_type<dt: dtype, w: scalar<dt>>(%a: index owned = 1) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.fn @variadic<x: variadic<index> pos_vararg, y: dtype pack_vararg>[mut lt](
-lit.fn @variadic<x: variadic<index> pos_vararg, y: dtype pack_vararg>[mut lt](
-  // CHECK-SAME: %a: !kgen.variadic<index> pos_vararg, %b: !kgen.variadic<index> owned|kw_vararg,
-  // CHECK-SAME: %c: !lit.ref<!kgen.pack<[index, index]>, mut lt> read_mem|pack_vararg)
-  %a: !kgen.variadic<index> pos_vararg, %b: !kgen.variadic<index> owned|kw_vararg, %c: !lit.ref<!kgen.pack<[index, index]>, mut lt> read_mem|pack_vararg
-) {
-  kgen.return
-}
-
 // CHECK-LABEL: lit.fn @default_params<
 // CHECK-SAME: a: dtype, b: dtype = f32, c: scalar<si32> = 1, *,
 // CHECK-SAME: d: dtype, e: dtype = si8, f: scalar<si16> = 2

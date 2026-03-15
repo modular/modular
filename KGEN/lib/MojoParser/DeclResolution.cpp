@@ -1148,9 +1148,8 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
     ArgConvention conv = sig.getArgConvention(idx);
     // Handle vararg kinds.
     if (sig.isPosVarArg(idx)) {
-      auto variadic = sugarCast<VariadicType>(type);
-      type = variadic.getElementType();
-      conv = sig.getPosVarArgConvention(idx);
+      type = sugarCast<VariadicType>(type).getElementType();
+      conv = sig.getVariadicConvention(idx);
     } else if (sig.isKwVarArg(idx)) {
       // Don't need to unpack anything. We treat the whole dictionary as the
       // value type.
@@ -2222,7 +2221,7 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
     if (funcSignature.isPosVarArg(argIdx)) {
       auto declOp =
           makeVarArgWrapper(bbArg, argName, decl, emitter, argDecl.getLoc(),
-                            funcSignature.getPosVarArgConvention(argIdx));
+                            funcSignature.getVariadicConvention(argIdx));
       if (!declOp)
         return failure();
       declOp.setArgShadowIndex(bbArg.getArgNumber());

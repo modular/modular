@@ -1022,11 +1022,13 @@ ASTDecl *ClosureEmitter::createStructWrapper(
   assert(moveParentStrAttr && "closures are expected to conform to Movable");
   auto initName = StringAttr::get(ctx, "__init__");
   SmallVector<Type> initArgumentTypes;
-  SmallVector<PogMetadataAttr> argPogs;
+  SmallVector<StringAttr> argNames;
+  SmallVector<PassingKind> argPassingKinds;
   SmallVector<ArgConvention> argConventions;
 
   initArgumentTypes.reserve(2);
-  argPogs.reserve(2);
+  argNames.reserve(2);
+  argPassingKinds.reserve(2);
   argConventions.reserve(2);
 
   // the constructor takes an instance of type "impl" and an instance of type
@@ -1034,20 +1036,21 @@ ASTDecl *ClosureEmitter::createStructWrapper(
   Type refInitImplType = ASTType((paramType)).getRefForArgument(implName, true);
   argConventions.push_back(ArgConvention::OwnedMem);
   initArgumentTypes.push_back(refInitImplType);
-  argPogs.push_back(PogMetadataAttr::get(StringAttr::get(ctx, implName),
-                                         PassingKind::PosOnly));
+  argNames.push_back(StringAttr::get(ctx, implName));
+  argPassingKinds.push_back(PassingKind::PosOnly);
 
   RefType refSelfType = ASTType(structDecl.getTypeDeclSelf())
                             .getRefForArgument(selfName.getValue(), true);
   argConventions.push_back(ArgConvention::ByRefResult);
   initArgumentTypes.push_back(refSelfType);
-  argPogs.push_back(PogMetadataAttr::get(selfName, PassingKind::Implicit));
+  argNames.push_back(selfName);
+  argPassingKinds.push_back(PassingKind::Implicit);
   b.setInsertionPointToEnd(&declOp.getFields().front());
   auto [initFnOp, initDecl] = synthesizeFunction(
       structDecl, initName, {}, PogListAttr::get(ctx), initArgumentTypes,
-      argConventions, PogListAttr::get(ctx, argPogs), NoneType::get(ctx),
-      SpecialFunctionKind::kInit, smLocation, b, {}, "", true,
-      InlineLevel::Automatic);
+      argConventions, PogListAttr::get(ctx, argNames, argPassingKinds),
+      NoneType::get(ctx), SpecialFunctionKind::kInit, smLocation, b, {}, "",
+      true, InlineLevel::Automatic);
 
   // Generate the body of the constructor, which should contain a call to the
   // move constructor.
@@ -1172,20 +1175,19 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
   // The constructor is a no-op.
   auto initName = StringAttr::get(ctx, "__init__");
   SmallVector<Type> initArgumentTypes;
-  SmallVector<PogMetadataAttr> argPogs;
   SmallVector<ArgConvention> argConventions;
 
   RefType refSelfType = ASTType(structDecl.getTypeDeclSelf())
                             .getRefForArgument(selfName.getValue(), true);
   argConventions.push_back(ArgConvention::ByRefResult);
   initArgumentTypes.push_back(refSelfType);
-  argPogs.push_back(PogMetadataAttr::get(selfName, PassingKind::Implicit));
   b.setInsertionPointToEnd(&declOp.getFields().front());
   auto [initFnOp, initDecl] = synthesizeFunction(
       structDecl, initName, {}, PogListAttr::get(ctx), initArgumentTypes,
-      argConventions, PogListAttr::get(ctx, argPogs), NoneType::get(ctx),
-      SpecialFunctionKind::kInit, smLocation, b, {}, "", true,
-      InlineLevel::Automatic);
+      argConventions,
+      PogListAttr::get(ctx, {selfName}, {PassingKind::Implicit}),
+      NoneType::get(ctx), SpecialFunctionKind::kInit, smLocation, b, {}, "",
+      true, InlineLevel::Automatic);
   b.setInsertionPointToStart(&initFnOp.getBodyRegion().front());
   IREmitter::emitNormalReturn(b);
   initDecl->resolvedness = DeclResolvedness::body;

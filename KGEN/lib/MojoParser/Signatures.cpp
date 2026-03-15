@@ -1070,12 +1070,16 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
 PogListAttr TypeCheckedParamList::getParamListAttr() const {
   assert(allParamConstraints.size() == names.size() &&
          "constraints array has different size than parameter arrays");
+  // In a parameter list, any variadic list is claimed to be ReadMem.
+  std::optional<ArgConvention> origVariadicConvention;
+  for (auto var : variadicKinds) {
+    if (var != VariadicKind::None)
+      origVariadicConvention = ArgConvention::ReadMem;
+  }
 
-  return PogListAttr::get(shared.getContext(),
-                          PogListAttr::toPogs(names, passingKinds,
-                                              variadicKinds, defaults,
-                                              allParamConstraints),
-                          ArgConvention::ByRefError, ArgConvention::ReadMem);
+  return PogListAttr::get(shared.getContext(), names, passingKinds,
+                          variadicKinds, defaults, origVariadicConvention,
+                          allParamConstraints);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1655,15 +1659,15 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     case ParsedArgument::kConventionDeinit:
       llvm_unreachable("not a pack arg convention");
     case ParsedArgument::kConventionVar:
-      arg.kgenVariadicConvention = ArgConvention::OwnedMem;
+      arg.variadicArgConvention = ArgConvention::OwnedMem;
       arg.kgenConvention = ArgConvention::OwnedMem;
       break;
     case ParsedArgument::kConventionRead:
-      arg.kgenVariadicConvention = ArgConvention::ReadMem;
+      arg.variadicArgConvention = ArgConvention::ReadMem;
       arg.kgenConvention = ArgConvention::ReadMem;
       break;
     case ParsedArgument::kConventionMut:
-      arg.kgenVariadicConvention = ArgConvention::Mut;
+      arg.variadicArgConvention = ArgConvention::Mut;
       arg.kgenConvention = ArgConvention::ReadMem;
       break;
     }
@@ -1686,7 +1690,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
   // value, we're passing the array of pointers by value.
   if (arg.variadicKind == VariadicKind::PosVarArg) {
     fullType = VariadicType::get(fullType);
-    arg.variadicElementArgConvention = arg.kgenConvention;
+    arg.variadicArgConvention = arg.kgenConvention;
     arg.kgenConvention = ArgConvention::ReadReg;
   } else if (arg.variadicKind == VariadicKind::KwVarArg) {
     // We build OwnedKwargsDict[ValType].
@@ -2455,12 +2459,12 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
   SmallVector<ArgConvention> argConventions;
   argConventions.reserve(numArgs);
 
-  ArgConvention argPackOrigConvention = ArgConvention::ByRefError;
-  ArgConvention argVariadicOrigConvention = ArgConvention::ReadMem;
+  ArgConvention argVariadicOrigConvention = ArgConvention::ByRefError;
   [[maybe_unused]] int numVariadics = 0;
   for (auto [idx, arg] : llvm::enumerate(argList.parsedArgs)) {
-    if (arg.variadicKind == VariadicKind::PosVarArg) {
-      argVariadicOrigConvention = arg.variadicElementArgConvention;
+    if (arg.variadicKind == VariadicKind::PosVarArg ||
+        arg.variadicKind == VariadicKind::PackVarArg) {
+      argVariadicOrigConvention = arg.variadicArgConvention;
       ++numVariadics;
     }
 
@@ -2468,15 +2472,12 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
         PogMetadataAttr::get(arg.name, arg.getKWArgHandlingAsPassingKind(),
                              arg.variadicKind, defaults[idx]));
     argConventions.push_back(arg.kgenConvention);
-    if (arg.variadicKind == VariadicKind::PackVarArg)
-      argPackOrigConvention = arg.kgenVariadicConvention;
   }
   assert(numVariadics <= 1 && "There can be at most one variadic argument");
 
   PogListAttr paramListAttr = paramList.getParamListAttr();
   auto metadata = FnMetadataAttr::get(
-      PogListAttr::get(ctx, argPogs, argPackOrigConvention,
-                       argVariadicOrigConvention),
+      PogListAttr::get(ctx, argPogs, argVariadicOrigConvention),
       implicitOriginDecls.size(),
       getOriginsAccessibleByParams(paramListAttr, paramList.paramDeclAttrs,
                                    paramList.shared, captureOrigins),

@@ -1182,10 +1182,10 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
       while (posOperandIdx != numOperands) {
         auto &operand = operands[posOperandIdx];
         if (!operand.keyword &&
-            failed(inferOneOperand(
-                operand, expectedArgIdx, varArgsEltType,
-                signature.getPosVarArgConvention(expectedArgIdx), argPogs,
-                operands.syntax)))
+            failed(
+                inferOneOperand(operand, expectedArgIdx, varArgsEltType,
+                                signature.getVariadicConvention(expectedArgIdx),
+                                argPogs, operands.syntax)))
           return failure();
         ++posOperandIdx;
       }
@@ -1233,7 +1233,7 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
           RefType refType = packType.getElementRefTypeFor(
               ASTType(attrForElementType).mlirType);
           ArgConvention packEltConvention =
-              signature.getPackVarArgConvention(expectedArgIdx);
+              signature.getVariadicConvention(expectedArgIdx);
           if (failed(inferOneOperand(operand, expectedArgIdx, refType,
                                      packEltConvention, argPogs,
                                      operands.syntax))) {

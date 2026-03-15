@@ -145,7 +145,6 @@ ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
 /// will be added to the appropriate index array if a variadicness is present.
 ParseResult parseConventionAndVariadicness(
     AsmParser &p, ArgConvention &convention, VariadicKind &variadic,
-    std::optional<ArgConvention> &origArgPackConvention,
     std::optional<ArgConvention> &origVariadicConvention, size_t idx);
 
 /// Print an optional passing convention and variadicness.

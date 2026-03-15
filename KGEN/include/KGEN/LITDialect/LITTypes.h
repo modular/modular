@@ -94,9 +94,9 @@ public:
   /// Returns true if the argument at this index is a positional vararg.
   bool isPosVarArg(size_t index);
 
-  /// For a PosVarArg, return the declared ArgConvention of the elements. For
-  /// example: fn x(inout *args: Int) is declared 'inout'.
-  ArgConvention getPosVarArgConvention(size_t index);
+  /// For a PosVarArg/PackVarArg, return the declared ArgConvention of the
+  /// elements. For example: fn x(mut *args: Int) is declared 'mut'.
+  ArgConvention getVariadicConvention(size_t index);
 
   /// Returns true if the argument at this index is a keyword vararg.
   bool isKwVarArg(size_t index);
@@ -104,15 +104,8 @@ public:
   /// Returns true if the argument at this index is a pack vararg.
   bool isPack(size_t index);
 
-  /// For a PackVarArg, return the declared ArgConvention of the elements. For
-  /// example: fn x[*Ts: AnyType](mut *pack: *Ts) is declared 'mut'.
-  ArgConvention getPackVarArgConvention(size_t index);
-
   /// If the specified argument is a variadic pack, return the VariadicPack.
   Type getIfVariadicPack(size_t index);
-
-  /// Returns true if the signature has has pack arguments.
-  bool hasPackVarArgs();
 
   /// Returns the index of the pack variadic arg, or std::nullopt if none.
   std::optional<size_t> findPackVarArgIndex();
@@ -237,9 +230,9 @@ public:
   /// Returns true if the argument at this index is a positional vararg.
   bool isPosVarArg(size_t index);
 
-  /// For a PosVarArg, return the declared ArgConvention of the elements. For
-  /// example: fn x(inout *args: Int) is declared 'inout'.
-  ArgConvention getPosVarArgConvention(size_t index);
+  /// For a PosVarArg/PackVarArg, return the declared ArgConvention of the
+  /// elements. For example: fn x(mut *args: Int) is declared 'mut'.
+  ArgConvention getVariadicConvention(size_t index);
 
   /// Returns true if the argument at this index is a keyword vararg.
   bool isKwVarArg(size_t index);
@@ -247,15 +240,8 @@ public:
   /// Returns true if the argument at this index is a pack vararg.
   bool isPack(size_t index);
 
-  /// For a PackVarArg, return the declared ArgConvention of the elements. For
-  /// example: fn x[*Ts: AnyType](inout *pack: *Ts) is declared 'inout'.
-  ArgConvention getPackVarArgConvention(size_t index);
-
   /// If the specified argument is a variadic pack, return the VariadicPack.
   Type getIfVariadicPack(size_t index);
-
-  /// Returns true if the signature has has pack arguments.
-  bool hasPackVarArgs();
 
   /// Returns the index of the pack variadic arg, or std::nullopt if none.
   std::optional<size_t> findPackVarArgIndex();
