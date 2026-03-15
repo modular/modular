@@ -518,8 +518,8 @@ DIAG(err_operator_requires_least_one_operand, Error, MLIR,
      "operator requires at least one operand")
 DIAG(err_operator_returns_single_i1_operand, Error, MLIR,
      "not operator returns a single i1 operand")
-DIAG(err_pack_convention_specified, Error, MLIR,
-     "pack convention not specified")
+DIAG(err_variadic_convention_specified, Error, MLIR,
+     "variadic convention not specified")
 DIAG(err_pack_convention_specified_without_pack, Error, MLIR,
      "pack convention specified without pack")
 DIAG(err_pack_supported_parameter_list, Error, MLIR,

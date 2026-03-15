@@ -21,7 +21,7 @@
 
 // -----
 
-// expected-error @+1 {{default value of variadic must be UnknownAttr}}
+// expected-error @+1 {{variadic convention not specified}}
 #variadic_with_default = #lit.pog_list<
   [<"a", pos, not_vararg>, <"b", pos_or_kw, pos_vararg, default :i8 1>, <"c", kw, not_vararg>, <"d", kw, not_vararg>]
 >

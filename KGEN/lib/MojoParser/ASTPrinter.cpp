@@ -1568,9 +1568,8 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
 
       bool printStar = false;
       if (sig.isPosVarArg(idx)) { // Print with the element of the variadic.
-        auto variadic = cast<VariadicType>(type);
-        type = variadic.getElementType();
-        convention = sig.getPosVarArgConvention(idx);
+        type = cast<VariadicType>(type).getElementType();
+        convention = sig.getVariadicConvention(idx);
         printStar = true;
       }
 
@@ -1579,7 +1578,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
       StringAttr name = sig.getArgName(idx);
       hadAnyNames |= !name.empty();
       if (sig.isPack(idx)) {
-        convention = sig.getPackVarArgConvention(idx);
+        convention = sig.getVariadicConvention(idx);
         printConvention(convention);
         os << '*';
         if (!name.empty())

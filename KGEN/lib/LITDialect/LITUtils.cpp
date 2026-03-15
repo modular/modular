@@ -227,7 +227,6 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> defaultParams;
   SmallVector<VariadicKind> argsVariadic;
-  std::optional<ArgConvention> origPackConvention;
   std::optional<ArgConvention> origVariadicConvention;
   SmallVector<SmallVector<ConstraintAttr>> constraints;
 
@@ -265,10 +264,9 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
             p, argsVariadic.emplace_back(VariadicKind::None), idx++)))
       return failure();
 
-    // Parameters don't really have ArgConvention's.
-    if (argsVariadic.back() == VariadicKind::PackVarArg)
-      origPackConvention = ArgConvention::ReadReg;
-    else if (argsVariadic.back() == VariadicKind::PosVarArg)
+    // Parameters don't have ArgConvention's.
+    if (argsVariadic.back() == VariadicKind::PackVarArg ||
+        argsVariadic.back() == VariadicKind::PosVarArg)
       origVariadicConvention = ArgConvention::ReadReg;
 
     TypedAttr defaultVal;
@@ -294,8 +292,7 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
 
   paramListAttr =
       PogListAttr::get(ctx, paramNames, paramPassingKinds, argsVariadic,
-                       defaultParams, std::move(origPackConvention),
-                       std::move(origVariadicConvention), constraints);
+                       defaultParams, origVariadicConvention, constraints);
   return success();
 }
 
@@ -349,7 +346,6 @@ void LIT::printOptionalWhereClauses(AsmPrinter &p,
 
 ParseResult LIT::parseConventionAndVariadicness(
     AsmParser &p, ArgConvention &convention, VariadicKind &variadic,
-    std::optional<ArgConvention> &origArgPackConvention,
     std::optional<ArgConvention> &origVariadicConvention, size_t idx) {
   mlir::SMLoc loc = p.getCurrentLocation();
   StringRef str;
@@ -369,7 +365,7 @@ ParseResult LIT::parseConventionAndVariadicness(
       }
 
       if (variadic == VariadicKind::PackVarArg) {
-        origArgPackConvention = convention;
+        origVariadicConvention = convention;
         if (convention != ArgConvention::OwnedMem)
           convention = ArgConvention::ReadMem;
       }
@@ -384,7 +380,7 @@ ParseResult LIT::parseConventionAndVariadicness(
     variadic = *kind;
 
     if (variadic == VariadicKind::PackVarArg) {
-      origArgPackConvention = convention;
+      origVariadicConvention = convention;
       if (convention != ArgConvention::OwnedMem)
         convention = ArgConvention::ReadMem;
     } else if (variadic == VariadicKind::PosVarArg) {
@@ -508,10 +504,9 @@ ParseResult LIT::parseOptionalParamSignature(
   if (parseBody && failed(parseBody()))
     return failure();
 
-  paramListAttr =
-      PogListAttr::get(p.getContext(), paramNames, paramPassingKinds,
-                       argVariadics, defaultParams, std::nullopt,
-                       std::move(origVariadicConvention), constraints);
+  paramListAttr = PogListAttr::get(
+      p.getContext(), paramNames, paramPassingKinds, argVariadics,
+      defaultParams, origVariadicConvention, constraints);
   return success();
 }
 
@@ -634,7 +629,7 @@ void LIT::printFnType(AsmPrinter &p, FnType signature) {
       assert(argConv == ArgConvention::ReadMem ||
              argConv == ArgConvention::OwnedMem ||
              argConv == ArgConvention::OwnedReg);
-      argConv = signature.getPackVarArgConvention(i);
+      argConv = signature.getVariadicConvention(i);
     }
     VariadicKind variadicness = argListAttr.getVariadicKind(i);
     ArgConvention convention = variadicness == VariadicKind::PosVarArg

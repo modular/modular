@@ -552,7 +552,6 @@ static ParseResult parseLITFunctionSignature(
   SmallVector<TypedAttr> defaults;
   SmallVector<ArgConvention> argConventions;
   SmallVector<VariadicKind> argVariadics;
-  std::optional<ArgConvention> origArgPackConvention;
   std::optional<ArgConvention> origVariadicConvention;
 
   PassingKindParser passingKindParser(p);
@@ -583,9 +582,9 @@ static ParseResult parseLITFunctionSignature(
     // input convention, and variadicness.
     if (p.parseColonType(arg.type) ||
         p.parseOptionalLocationSpecifier(arg.sourceLoc) ||
-        parseConventionAndVariadicness(
-            p, argConventions.emplace_back(), argVariadics.emplace_back(),
-            origArgPackConvention, origVariadicConvention, idx++))
+        parseConventionAndVariadicness(p, argConventions.emplace_back(),
+                                       argVariadics.emplace_back(),
+                                       origVariadicConvention, idx++))
       return failure();
 
     // Parse an optional default value.
@@ -612,7 +611,7 @@ static ParseResult parseLITFunctionSignature(
 
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(p.getContext(), argNames, argPassingKinds, argVariadics,
-                       defaults, origArgPackConvention, origVariadicConvention,
+                       defaults, origVariadicConvention,
                        /*constraints=*/{}),
       originDecls.size(), captureOrigins,
       isNestedOriginExclusivityCheckingDisabled, constraints);
@@ -693,14 +692,8 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
     p.printOptionalLocationSpecifier(arg.getLoc());
     auto argConv = signature.getArgConvention(i);
 
-    if (argListAttr.isPack(i)) {
-      assert(argConv == ArgConvention::ReadMem ||
-             argConv == ArgConvention::OwnedMem ||
-             argConv == ArgConvention::OwnedReg);
-      argConv = signature.getPackVarArgConvention(i);
-    }
-    if (argListAttr.isPosVarArg(i))
-      argConv = argListAttr.getOrigVariadicConvention();
+    if (argListAttr.isPack(i) || argListAttr.isPosVarArg(i))
+      argConv = signature.getVariadicConvention(i);
 
     printConventionAndVariadicness(p, argConv, argListAttr.getVariadicKind(i));
 

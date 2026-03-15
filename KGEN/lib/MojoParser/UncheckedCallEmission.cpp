@@ -208,7 +208,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     // In the case of a variadic argument, we need to remove the
     // !pop.variadic<> wrapper to get the type to convert to.
     expectedType = sugarCast<VariadicType>(expectedType).getElementType();
-    convention = calleeSig.getPosVarArgConvention(argIdx);
+    convention = calleeSig.getVariadicConvention(argIdx);
   } else if (ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx)) {
     RefPackType packType = variadicPackType.getVariadicPackInfo(emitter.shared);
 
@@ -219,7 +219,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
         ASTType(packType.getVariadicIfResolved().getValues()[sequenceIndex]);
     // Get the !lit.ref with the origin and other paraphernalia.
     expectedType = packType.getElementRefTypeFor(expectedType);
-    convention = calleeSig.getPackVarArgConvention(argIdx);
+    convention = calleeSig.getVariadicConvention(argIdx);
   }
 
   switch (convention) {
@@ -304,10 +304,8 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   // If this is a variadic list, use the convention of the elements, not the
   // convention of the list itself.
   bool isPosVarArg = calleeSig.isPosVarArg(argIdx);
-  if (isPosVarArg)
-    convention = calleeSig.getPosVarArgConvention(argIdx);
-  else if (calleeSig.getIfVariadicPack(argIdx))
-    convention = calleeSig.getPackVarArgConvention(argIdx);
+  if (isPosVarArg || calleeSig.isPack(argIdx))
+    convention = calleeSig.getVariadicConvention(argIdx);
 
   // Handle emission in a compile-time context.  Parameter calls need to
   // generate parameter attributes.
@@ -1508,6 +1506,12 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
       checkOriginAccess(argVal, convention, argIdx, origin);
   };
 
+  // Normal arguments.
+  if (!signature.isPack(argIdx) && !signature.isPosVarArg(argIdx)) {
+    checkArg(argVal, signature.getArgConvention(argIdx));
+    return;
+  }
+
   // Handle positional/homogenous variadics.
   if (signature.isPosVarArg(argIdx)) {
     // There are two ways to form a pos vararg:
@@ -1523,15 +1527,9 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
              "Unknown way to create variadic list");
     }
 
-    auto conv = signature.getPosVarArgConvention(argIdx);
+    auto conv = signature.getVariadicConvention(argIdx);
     for (auto elt : unpackedArgs)
       checkArg(elt, conv);
-    return;
-  }
-
-  // Normal arguments.
-  if (!signature.isPack(argIdx)) {
-    checkArg(argVal, signature.getArgConvention(argIdx));
     return;
   }
 
@@ -1546,7 +1544,7 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
 
   auto pack = packVal.getDefiningOp<RefPackCreateOp>();
   assert(pack && "unknown variadic pack processing logic");
-  auto conv = signature.getPackVarArgConvention(argIdx);
+  auto conv = signature.getVariadicConvention(argIdx);
   for (auto packOperand : pack.getOperands())
     checkArg(packOperand, conv);
 }

@@ -158,17 +158,18 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
       [pos, pos_or_kw, kw, kw],
     >
     ```
+
+    The `origVariadicConvention` indicates whether the original argument
+    convention of a VariadicList or VariadicPack, e.g. "mut *args: Int".
   }];
 
   let parameters = (ins
     OptionalArrayRefParameter<"PogMetadataAttr">:$pogs,
-    LIT_OptionalConventionParameter:$origPackConvention,
     LIT_OptionalConventionParameter:$origVariadicConvention
   );
 
   let assemblyFormat = [{
     `<` `[` (`]`) : ($pogs^ `]`)?
-        (`,` custom<ArgConvention>($origPackConvention)^)?
         (`,` custom<ArgConvention>($origVariadicConvention)^)?
     `>`
   }];
@@ -183,7 +184,6 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
                      "ArrayRef<PassingKind>":$passingKinds,
                      "ArrayRef<VariadicKind>":$variadics,
                      "ArrayRef<TypedAttr>":$defaults,
-                     "std::optional<ArgConvention>":$elementConventions,
                      "std::optional<ArgConvention>":$origVariadicConvention,
                      "ArrayRef<SmallVector<ConstraintAttr>>":$constraints)>
   ];
@@ -308,8 +308,6 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
 
     /// Return true if the signature has any variadic argument.
     bool hasAnyVarArg() const;
-    /// Return true if the signature has a variadic pack argument.
-    bool hasPackVarArgs() const;
     /// Return true if the signature has a keyword variadic argument.
     bool hasKwVarArgs() const;
     /// Return true if the argument at `idx` is a any variadic or pack argument.

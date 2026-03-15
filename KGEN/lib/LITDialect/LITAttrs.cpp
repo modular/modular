@@ -42,7 +42,7 @@ void LITDialect::registerAttributes() {
 //===----------------------------------------------------------------------===//
 
 PogListAttr PogListAttr::get(MLIRContext *context) {
-  return PogListAttr::get(context, {}, {});
+  return PogListAttr::get(context, {}, ArgConvention::ByRefError);
 }
 
 PogListAttr PogListAttr::get(MLIRContext *context, size_t numPogs) {
@@ -54,8 +54,7 @@ PogListAttr PogListAttr::get(MLIRContext *context, size_t numPogs) {
 
 PogListAttr PogListAttr::get(MLIRContext *context,
                              ArrayRef<PogMetadataAttr> pogs) {
-  return PogListAttr::get(context, pogs, ArgConvention::ByRefError,
-                          ArgConvention::ReadMem);
+  return PogListAttr::get(context, pogs, ArgConvention::ByRefError);
 }
 
 PogListAttr PogListAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
@@ -72,18 +71,15 @@ PogListAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
                  ArrayRef<PassingKind> passingKinds,
                  ArrayRef<VariadicKind> argVariadics,
                  ArrayRef<TypedAttr> defaults,
-                 std::optional<ArgConvention> origPackConvention,
                  std::optional<ArgConvention> origVariadicConvention,
                  ArrayRef<SmallVector<ConstraintAttr>> constraints) {
   return PogListAttr::get(
       context, toPogs(names, passingKinds, argVariadics, defaults, constraints),
-      origPackConvention.value_or(ArgConvention::ByRefError),
-      origVariadicConvention.value_or(ArgConvention::ReadMem));
+      origVariadicConvention.value_or(ArgConvention::ByRefError));
 }
 
 LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                   ArrayRef<PogMetadataAttr> pogs,
-                                  ArgConvention origPackConvention,
                                   ArgConvention origVariadicConvention) {
   size_t numEl = pogs.size();
   for (PogMetadataAttr pogAttr : pogs)
@@ -97,14 +93,14 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
     return failure();
 
   // We verified the passing kinds' order and number, so we can use a handler.
-  bool sawPack = false;
+  bool sawVariadic = false;
   auto verifyVariadicIdx = [&](size_t idx, VariadicKind kind) -> LogicalResult {
     bool isPack = kind == VariadicKind::PackVarArg;
-    if (isPack) {
-      sawPack = true;
-      if (origPackConvention == ArgConvention::ByRefError)
+    if (isPack || kind == VariadicKind::PosVarArg) {
+      sawVariadic = true;
+      if (origVariadicConvention == ArgConvention::ByRefError)
         return emitError() << diagMsg(
-                   Diag::DiagID::err_pack_convention_specified);
+                   Diag::DiagID::err_variadic_convention_specified);
     }
 
     if (idx >= numEl) {
@@ -131,7 +127,7 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
       return failure();
   }
 
-  if (origPackConvention != ArgConvention::ByRefError && !sawPack)
+  if (origVariadicConvention != ArgConvention::ByRefError && !sawVariadic)
     return emitError() << diagMsg(
                Diag::DiagID::err_pack_convention_specified_without_pack);
 
@@ -139,8 +135,7 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 PogListAttr PogListAttr::cloneWith(ArrayRef<PogMetadataAttr> pogs) const {
-  return PogListAttr::get(getContext(), pogs, getOrigPackConvention(),
-                          getOrigVariadicConvention());
+  return PogListAttr::get(getContext(), pogs, getOrigVariadicConvention());
 }
 
 VariadicKind PogListAttr::getVariadicKind(size_t idx) const {
@@ -261,15 +256,19 @@ GeneratorMetadataAttrInterface PogListAttr::getSpecializedMetadata(
   SmallVector<PogMetadataAttr> newPogs;
 
   size_t numParams = boundParams.size();
+  bool hasAnyVarArg = false;
   for (auto [idx, pog] : llvm::enumerate(getPogs().take_front(numParams))) {
     if (!boundParams[idx]) {
       auto newPog = evaluator.getReboundAttribute(pog);
       newPogs.emplace_back(cast<PogMetadataAttr>(newPog));
+      hasAnyVarArg |= pog.isAnyVarArg();
     }
   }
+  auto varargsConvention = getOrigVariadicConvention();
+  if (!hasAnyVarArg)
+    varargsConvention = ArgConvention::ByRefError;
 
-  return PogListAttr::get(getContext(), newPogs, getOrigPackConvention(),
-                          getOrigVariadicConvention());
+  return PogListAttr::get(getContext(), newPogs, varargsConvention);
 }
 
 /// Get a new metadata attribute for a generator with the given number of
@@ -286,8 +285,7 @@ PogListAttr::prependAsInferredParams(ArrayRef<StringAttr> newParams) const {
                                            VariadicKind::None));
   }
   newPogs.append(getPogs().begin(), getPogs().end());
-  return PogListAttr::get(getContext(), newPogs, getOrigPackConvention(),
-                          getOrigVariadicConvention());
+  return PogListAttr::get(getContext(), newPogs, getOrigVariadicConvention());
 }
 
 GeneratorMetadataAttrInterface
@@ -365,8 +363,7 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
       argListAttrs.getPogs().drop_front(numBound);
 
   auto newArgListAttrs = PogListAttr::get(
-      getContext(), newPogs, argListAttrs.getOrigPackConvention(),
-      argListAttrs.getOrigVariadicConvention());
+      getContext(), newPogs, argListAttrs.getOrigVariadicConvention());
   return get(newArgListAttrs, getNumImplicitOriginDecls(), getCaptureOrigins(),
              getIsNestedOriginExclusivityCheckingDisabled(), getConstraints());
 }
@@ -458,10 +455,6 @@ size_t FnMetadataAttr::getNumArgs() const {
 
 bool FnMetadataAttr::hasAnyVarArg() const {
   return getArgListAttrs().hasAnyVarArg();
-}
-
-bool FnMetadataAttr::hasPackVarArgs() const {
-  return getArgListAttrs().hasPackVarArg();
 }
 
 bool FnMetadataAttr::hasKwVarArgs() const {
