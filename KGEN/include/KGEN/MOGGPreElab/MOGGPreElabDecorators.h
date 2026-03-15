@@ -70,6 +70,20 @@ constexpr StringLiteral MOGG_INTRINSIC_ELEMWISE_FOR_EACH =
 constexpr StringLiteral MOGG_INTRINSIC_VIEW_MATERIALIZE =
     "mogg.view_materialize";
 
+/// MOGG Intrinsic for the input / output lambda implementations.
+constexpr StringLiteral MOGG_INTRINSIC_INPUT_FUSION_HOOK =
+    "mogg.dps_input_fusion_hook";
+constexpr StringLiteral MOGG_INTRINSIC_OUTPUT_FUSION_HOOK =
+    "mogg.dps_output_fusion_hook";
+
+constexpr StringLiteral MOGG_INTRINSIC_MIXED_PRECISION_OUTPUT_FUSION_HOOK =
+    "mogg.dps_mixed_precision_output_fusion_hook";
+constexpr StringLiteral
+    MOGG_INTRINSIC_MIXED_PRECISION_COMPUTE_OUTPUT_FUSION_HOOK =
+        "mogg.dps_mixed_precision_compute_output_fusion_hook";
+constexpr StringLiteral MOGG_INTRINSIC_MIXED_PRECISION_INPUT_FUSION_HOOK =
+    "mogg.dps_mixed_precision_input_fusion_hook";
+
 /// MOGG Intrinsic for the ManagedTensorSlice _fused_load method.
 constexpr StringLiteral MOGG_INTRINSIC_TENSOR_FUSED_LOAD =
     "mogg.tensor_fused_load";
@@ -232,7 +246,13 @@ constexpr StringLiteral MOJO_INTERNAL_DPS_INDEX_LIST_TYPE_NAME =
     "std::IndexList";
 
 // We support tuples of DPS tensors for operations with variadic input/outputs
+// VariadicTensors is the unfused variant; the fused variants carry per-element
+// fusion structs via a heterogeneous Tuple.
 constexpr StringLiteral MOJO_VARIADIC_TENSORS_NAME = "tensor::VariadicTensors";
+constexpr StringLiteral MOJO_FUSED_INPUT_VARIADIC_TENSORS_NAME =
+    "tensor::_FusedInputVariadicTensors";
+constexpr StringLiteral MOJO_FUSED_OUTPUT_VARIADIC_TENSORS_NAME =
+    "tensor::_FusedOutputVariadicTensors";
 
 // The stored mojo type symbol name of device contexts in extensibility kernels.
 constexpr StringLiteral MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_PTR_TYPE_NAME =
