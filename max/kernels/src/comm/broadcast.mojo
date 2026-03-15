@@ -32,7 +32,7 @@ from std.gpu.primitives.grid_controls import (
 )
 
 from std.sys import align_of, is_amd_gpu, simd_width_of, size_of
-from buffer import NDBuffer
+
 from std.gpu.memory import Consistency, multimem_st
 from std.gpu.intrinsics import Scope
 from layout import Coord, RuntimeInt, TensorLayout, TileTensor, row_major
@@ -437,7 +437,6 @@ def _should_use_2stage[ngpus: Int](num_bytes: Int) -> Bool:
 @always_inline
 def broadcast[
     dtype: DType,
-    rank: Int,
     //,
     ngpus: Int,
     in_layout: TensorLayout,
@@ -454,12 +453,10 @@ def broadcast[
     root: Int,
     _max_num_blocks: Optional[Int] = None,
 ) raises:
-    """TileTensor overload of broadcast. Constructs NDBuffers and delegates
-    to the NDBuffer implementation.
+    """Broadcast data from root GPU to all participating GPUs.
 
     Parameters:
         dtype: Data type of the tensor elements.
-        rank: Number of dimensions in the tensors.
         ngpus: Number of GPUs participating in the broadcast.
         in_layout: Layout of the input TileTensor.
         in_origin: Origin of the input TileTensor.
@@ -474,41 +471,6 @@ def broadcast[
         root: Root GPU rank (source of broadcast data).
         _max_num_blocks: Optional grid limit.
     """
-    var num_elements = input_buffer.num_elements()
-
-    var flat_shape = IndexList[rank](1)
-    flat_shape[0] = num_elements
-
-    var ndb_input = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
-        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](input_buffer.ptr),
-        flat_shape,
-    )
-    var ndb_output = NDBuffer[rank=rank, dtype, MutAnyOrigin](
-        rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](output_buffer.ptr),
-        flat_shape,
-    )
-
-    broadcast[ngpus=ngpus, pdl_level=pdl_level, use_multimem=use_multimem](
-        ndb_input, ndb_output, rank_sigs, ctx, root, _max_num_blocks
-    )
-
-
-@parameter
-def broadcast[
-    dtype: DType,
-    rank: Int,
-    //,
-    ngpus: Int,
-    pdl_level: PDLLevel = PDLLevel(),
-    use_multimem: Bool = False,
-](
-    input_buffer: NDBuffer[rank=rank, dtype, ImmutAnyOrigin],
-    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    ctx: DeviceContext,
-    root: Int,
-    _max_num_blocks: Optional[Int] = None,
-) raises:
     comptime assert ngpus >= 2, "broadcast requires at least 2 GPUs"
 
     var my_rank: Int = Int(ctx.id())
@@ -531,8 +493,9 @@ def broadcast[
     # Default max blocks if not specified.
     comptime sm_version = get_sm_version()
     # TODO: _dispatch_max_num_blocks was tuned for allreduce; may need separate tuning for broadcast
+    var num_bytes = num_elements * size_of[dtype]()
     var max_num_blocks = _max_num_blocks.or_else(
-        _dispatch_max_num_blocks[ngpus, sm_version](input_buffer.bytecount())
+        _dispatch_max_num_blocks[ngpus, sm_version](num_bytes)
     )
 
     var grid_size = min(
@@ -541,11 +504,11 @@ def broadcast[
     )
 
     var input_tile = TileTensor(
-        input_buffer.data,
+        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](input_buffer.ptr),
         row_major(Coord(RuntimeInt[DType.int64](Int64(num_elements)))),
     )
     var output_tile = TileTensor(
-        output_buffer.data,
+        rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](output_buffer.ptr),
         row_major(Coord(RuntimeInt[DType.int64](Int64(num_elements)))),
     )
     comptime TileLayout = type_of(input_tile).LayoutType
@@ -571,12 +534,9 @@ def broadcast[
         )
     else:
         # Dispatch between 1-stage and 2-stage based on size and GPU count
-        var num_bytes = input_buffer.bytecount()
         if _should_use_2stage[ngpus](num_bytes):
-            # Use 2-stage for large data with multiple GPUs
-            broadcast_2stage[
-                dtype=dtype, rank=rank, ngpus=ngpus, pdl_level=pdl_level
-            ](
+            # Use 2-stage for large data with multiple GPUs.
+            broadcast_2stage[dtype=dtype, ngpus=ngpus, pdl_level=pdl_level](
                 input_buffer,
                 output_buffer,
                 rank_sigs,
@@ -607,13 +567,12 @@ def broadcast[
 @parameter
 def broadcast_2stage[
     dtype: DType,
-    rank: Int,
     //,
     ngpus: Int,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    input_buffer: NDBuffer[rank=rank, dtype, ImmutAnyOrigin],
-    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
+    input_buffer: TileTensor[mut=False, dtype, ...],
+    output_buffer: TileTensor[mut=True, dtype, ...],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,
@@ -639,7 +598,6 @@ def broadcast_2stage[
 
     Parameters:
         dtype: Data dtype of tensor elements.
-        rank: Number of dimensions in tensors.
         ngpus: Number of GPUs participating.
         pdl_level: Control PDL behavior for the kernel.
 
@@ -675,7 +633,7 @@ def broadcast_2stage[
     )
 
     var output_tile = TileTensor(
-        output_buffer.data,
+        rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](output_buffer.ptr),
         row_major(Coord(RuntimeInt[DType.int64](Int64(num_elements)))),
     )
     comptime OutLayout = type_of(output_tile).LayoutType
@@ -690,7 +648,7 @@ def broadcast_2stage[
 
     ctx.enqueue_function[kernel, kernel](
         output_tile,
-        input_buffer.data,
+        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](input_buffer.ptr),
         rank_sigs,
         num_elements,
         my_rank,

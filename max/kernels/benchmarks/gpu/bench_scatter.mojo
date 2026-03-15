@@ -36,6 +36,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm.sync import enable_p2p
 from comm.scatter import scatter
+from layout import TileTensor
 from comm import MAX_GPUS, Signal
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import arg_parse, human_readable_size, CacheBustingBuffer
@@ -153,7 +154,7 @@ def bench_scatter[
             signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
         )
 
-    # Build NDBuffer wrappers for scatter API.
+    # Build NDBuffer wrappers (used to construct TileTensors for scatter API).
     var in_bufs = InlineArray[
         NDBuffer[rank=rank, dtype, ImmutAnyOrigin], dp_size
     ](fill={})
@@ -172,6 +173,12 @@ def bench_scatter[
         )
         list_of_ctx[gpu_idx].synchronize()
 
+    # Build TileTensor input array for the scatter API.
+    comptime InputTileType = type_of(TileTensor(in_bufs[0]))
+    var tt_in_bufs = InlineArray[InputTileType, dp_size](uninitialized=True)
+    for dp_idx in range(dp_size):
+        tt_in_bufs[dp_idx] = TileTensor(in_bufs[dp_idx])
+
     @parameter
     @always_inline
     def bench_iter(
@@ -186,10 +193,11 @@ def bench_scatter[
                     cb_inputs[dp_idx].offset_ptr(cache_iter),
                     IndexList[rank](num_elems),
                 )
+                tt_in_bufs[dp_idx] = TileTensor(in_bufs[dp_idx])
 
             scatter[ngpus=ngpus, dp_size=dp_size](
-                in_bufs,
-                out_bufs[ctx_idx],
+                tt_in_bufs,
+                TileTensor(out_bufs[ctx_idx]),
                 rank_sigs,
                 ctx_inner,
             )

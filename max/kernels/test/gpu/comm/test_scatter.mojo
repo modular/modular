@@ -32,6 +32,7 @@ Uses the example from KERN-2435: DP=4, TP=2, 8 GPUs distributing row_offsets.
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from layout import TileTensor
 from std.collections import InlineArray
 from std.math import ceildiv
 from std.sys import size_of
@@ -124,10 +125,16 @@ def _test_pull[
         rank_sigs[i] = sig_buf.unsafe_ptr().bitcast[Signal]()
         signal_bufs.append(sig_buf)
 
+    # Build TileTensor input array for the TileTensor-primary overload.
+    comptime InputTileType = type_of(TileTensor(input_bufs[0]))
+    var tt_input_bufs = InlineArray[InputTileType, dp_size](uninitialized=True)
+    for dp in range(dp_size):
+        tt_input_bufs[dp] = TileTensor(input_bufs[dp])
+
     # Launch scatter.
     comptime for i in range(ngpus):
         scatter[ngpus=ngpus, dp_size=dp_size](
-            input_bufs, output_bufs[i], rank_sigs, ctxs[i]
+            tt_input_bufs, TileTensor(output_bufs[i]), rank_sigs, ctxs[i]
         )
     for i in range(ngpus):
         ctxs[i].synchronize()

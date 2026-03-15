@@ -230,7 +230,6 @@ def _allgather_p2p[
 @always_inline
 def allgather[
     dtype: DType,
-    rank: Int,
     ngpus: Int,
     in_layout: TensorLayout,
     in_origin: Origin,
@@ -245,12 +244,15 @@ def allgather[
     ctxs: List[DeviceContext],
     _max_num_blocks: Optional[Int] = None,
 ) raises:
-    """TileTensor overload of allgather. Constructs NDBuffers and delegates
-    to the NDBuffer implementation.
+    """Performs all-gather across GPUs with variadic output.
+
+    Each device receives individual copies of all input buffers.
+
+    The implementation automatically selects between P2P and non-P2P paths
+    based on hardware capabilities.
 
     Parameters:
         dtype: Data type of the tensor elements.
-        rank: Number of dimensions in input tensors.
         ngpus: Number of GPUs participating in all-gather.
         in_layout: Layout of the input TileTensors.
         in_origin: Origin of the input TileTensors.
@@ -260,75 +262,6 @@ def allgather[
     Args:
         input_buffers: Input buffers from each GPU as TileTensors.
         output_buffers: Flat array of ngpus * ngpus output TileTensors.
-        rank_sigs: Signal pointers for P2P synchronization.
-        ctxs: List of device contexts for participating GPUs.
-        _max_num_blocks: Maximum number of blocks for kernel launch (optional).
-    """
-    # Build NDBuffer arrays from TileTensors using flat shapes.
-    # Allgather treats buffers as flat, so only total element count matters.
-    var ndb_inputs = InlineArray[
-        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
-    ](fill={})
-    comptime for i in range(ngpus):
-        var in_shape = IndexList[rank](1)
-        in_shape[0] = input_buffers[i].num_elements()
-        ndb_inputs[i] = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-                input_buffers[i].ptr
-            ),
-            in_shape,
-        )
-
-    var ndb_outputs = InlineArray[
-        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
-    ](fill={})
-    comptime for i in range(ngpus * ngpus):
-        var out_shape = IndexList[rank](1)
-        out_shape[0] = output_buffers[i].num_elements()
-        ndb_outputs[i] = NDBuffer[rank=rank, dtype, MutAnyOrigin](
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-                output_buffers[i].ptr
-            ),
-            out_shape,
-        )
-
-    allgather[ngpus=ngpus](
-        ndb_inputs, ndb_outputs, rank_sigs, ctxs, _max_num_blocks
-    )
-
-
-@always_inline
-def allgather[
-    dtype: DType,
-    rank: Int,
-    ngpus: Int,
-](
-    input_buffers: InlineArray[
-        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
-    ],
-    output_buffers: InlineArray[
-        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
-    ],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    ctxs: List[DeviceContext],
-    _max_num_blocks: Optional[Int] = None,
-) raises:
-    """
-    Performs all-gather across GPUs with variadic output.
-
-    Each device receives individual copies of all input buffers.
-
-    The implementation automatically selects between P2P and non-P2P paths
-    based on hardware capabilities.
-
-    Parameters:
-        dtype: DType - The data type of tensor elements.
-        rank: Int - Number of dimensions in input tensors.
-        ngpus: Int - Number of GPUs participating in all-gather.
-
-    Args:
-        input_buffers: Input buffers from each GPU.
-        output_buffers: Flat array of ngpus * ngpus output buffers.
                        Layout: output_buffers[device_idx * ngpus + input_idx]
                        contains device_idx's copy of input_idx's data.
         rank_sigs: Signal pointers for P2P synchronization.
@@ -350,12 +283,37 @@ def allgather[
     # Default max blocks if not specified.
     var max_num_blocks = _max_num_blocks.or_else(216)
 
+    # Build flat 1D NDBuffer arrays from TileTensors at the internal call
+    # boundary.
+    comptime rank = 1
+    var ndb_inputs = InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
+    ](fill={})
+    comptime for i in range(ngpus):
+        ndb_inputs[i] = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
+            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                input_buffers[i].ptr
+            ),
+            IndexList[rank](input_buffers[i].num_elements()),
+        )
+
+    var ndb_outputs = InlineArray[
+        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
+    ](fill={})
+    comptime for i in range(ngpus * ngpus):
+        ndb_outputs[i] = NDBuffer[rank=rank, dtype, MutAnyOrigin](
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                output_buffers[i].ptr
+            ),
+            IndexList[rank](output_buffers[i].num_elements()),
+        )
+
     # Check P2P availability.
     if not is_p2p_enabled():
-        return _allgather_naive(input_buffers, output_buffers, ctxs)
+        return _allgather_naive(ndb_inputs, ndb_outputs, ctxs)
     else:
         return _allgather_p2p(
-            input_buffers, output_buffers, rank_sigs, max_num_blocks, ctxs
+            ndb_inputs, ndb_outputs, rank_sigs, max_num_blocks, ctxs
         )
 
 

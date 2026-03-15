@@ -16,6 +16,7 @@ from std.sys import size_of, has_amd_gpu_accelerator, simd_width_of
 from std.itertools import product
 
 from buffer import NDBuffer
+from layout import TileTensor
 from buffer.dimlist import DimList
 from comm import Signal, MAX_GPUS, group_start, group_end
 from comm.sync import enable_p2p
@@ -194,14 +195,21 @@ def allreduce_test[
 
     group_start()
 
+    # Build TileTensor arrays for the TileTensor-primary allreduce.
+    comptime InTT = type_of(TileTensor(in_bufs[0]))
+    var tt_in_bufs = InlineArray[InTT, num_buffers](uninitialized=True)
+    comptime for i in range(num_buffers):
+        tt_in_bufs[i] = TileTensor(in_bufs[i])
+
     comptime for i in range(ngpus):
         allreduce[
+            rank=rank,
             ngpus=ngpus,
             output_lambda=Optional[elementwise_epilogue_type](
                 outputs_lambda[input_index=i, ...]
             ) if use_custom_epilogue else None,
             use_multimem=use_multimem,
-        ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
+        ](tt_in_bufs, TileTensor(out_bufs[i]), rank_sigs, list_of_ctx[i])
     group_end()
 
     for i in range(ngpus):

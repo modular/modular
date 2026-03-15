@@ -120,12 +120,22 @@ def _verify_results[
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
+    # Build TileTensor arrays from NDBuffer arrays for TileTensor-primary APIs.
+    # TODO(KERN-2149): Remove once in_bufs/ar_out_bufs are declared as TileTensor.
+    comptime InTT = type_of(TileTensor(in_bufs[0]))
+    comptime OutTT = type_of(TileTensor(ar_out_bufs[0]))
+    var tt_in = InlineArray[InTT, ngpus](uninitialized=True)
+    var tt_out = InlineArray[OutTT, ngpus](uninitialized=True)
+    comptime for _i in range(ngpus):
+        tt_in[_i] = TileTensor(in_bufs[_i])
+        tt_out[_i] = TileTensor(ar_out_bufs[_i])
+
     # Run allreduce.
     group_start()
 
     comptime for i in range(ngpus):
-        allreduce[ngpus=ngpus](
-            in_bufs, ar_out_bufs[i], rank_sigs, list_of_ctx[i]
+        allreduce[rank=2, ngpus=ngpus](
+            tt_in, tt_out[i], rank_sigs, list_of_ctx[i]
         )
     group_end()
 
@@ -340,6 +350,16 @@ def _verify_add_results[
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
+    # Build TileTensor arrays from NDBuffer arrays.
+    # TODO(KERN-2149): Remove once in_bufs/ar_out_bufs are declared as TileTensor.
+    comptime InTT = type_of(TileTensor(in_bufs[0]))
+    comptime OutTT = type_of(TileTensor(ar_out_bufs[0]))
+    var tt_in = InlineArray[InTT, ngpus](uninitialized=True)
+    var tt_out = InlineArray[OutTT, ngpus](uninitialized=True)
+    comptime for _i in range(ngpus):
+        tt_in[_i] = TileTensor(in_bufs[_i])
+        tt_out[_i] = TileTensor(ar_out_bufs[_i])
+
     var residual_ptr = residual_dev.unsafe_ptr()
 
     group_start()
@@ -367,9 +387,10 @@ def _verify_add_results[
             )
 
         allreduce[
+            rank=2,
             ngpus=ngpus,
             output_lambda=Optional[elementwise_epilogue_type](add_epilogue_v),
-        ](in_bufs, ar_out_bufs[i], rank_sigs, list_of_ctx[i])
+        ](tt_in, tt_out[i], rank_sigs, list_of_ctx[i])
     group_end()
 
     for i in range(ngpus):
@@ -733,8 +754,17 @@ def bench_allreduce_rmsnorm_fp8[
             _repoint_input_bufs[num_cols=num_cols](
                 in_bufs, cb_inputs, cache_iter, num_rows
             )
-            allreduce[ngpus=ngpus](
-                in_bufs, ar_out_bufs[ctx_idx], rank_sigs, ctx_inner
+            # TODO(KERN-2149): Remove NDBuffer→TileTensor conversion once
+            # in_bufs is declared as TileTensor.
+            comptime _InTT = type_of(TileTensor(in_bufs[0]))
+            var _tt_in = InlineArray[_InTT, ngpus](uninitialized=True)
+            comptime for _j in range(ngpus):
+                _tt_in[_j] = TileTensor(in_bufs[_j])
+            allreduce[rank=2, ngpus=ngpus](
+                _tt_in,
+                TileTensor(ar_out_bufs[ctx_idx]),
+                rank_sigs,
+                ctx_inner,
             )
 
         bench.iter_custom[call_fn](ctx)
@@ -760,8 +790,15 @@ def bench_allreduce_rmsnorm_fp8[
             )
 
             # Allreduce.
-            allreduce[ngpus=ngpus](
-                in_bufs, ar_out_bufs[ctx_idx], rank_sigs, ctx_inner
+            comptime _InTT = type_of(TileTensor(in_bufs[0]))
+            var _tt_in = InlineArray[_InTT, ngpus](uninitialized=True)
+            comptime for _j in range(ngpus):
+                _tt_in[_j] = TileTensor(in_bufs[_j])
+            allreduce[rank=2, ngpus=ngpus](
+                _tt_in,
+                TileTensor(ar_out_bufs[ctx_idx]),
+                rank_sigs,
+                ctx_inner,
             )
 
             # Fused RMSNorm + FP8.
@@ -870,6 +907,10 @@ def bench_allreduce_rmsnorm_fp8[
             _repoint_input_bufs[num_cols=num_cols](
                 in_bufs, cb_inputs, cache_iter, num_rows
             )
+            comptime _InTT = type_of(TileTensor(in_bufs[0]))
+            var _tt_in = InlineArray[_InTT, ngpus](uninitialized=True)
+            comptime for _j in range(ngpus):
+                _tt_in[_j] = TileTensor(in_bufs[_j])
 
             # Step 1: Allreduce with add epilogue (fuses allreduce + add).
             var ar_ptr = ar_out_dev[ctx_idx].unsafe_ptr()
@@ -899,9 +940,15 @@ def bench_allreduce_rmsnorm_fp8[
                 )
 
             allreduce[
+                rank=2,
                 ngpus=ngpus,
                 output_lambda=Optional[elementwise_epilogue_type](add_epilogue),
-            ](in_bufs, ar_out_bufs[ctx_idx], rank_sigs, ctx_inner)
+            ](
+                _tt_in,
+                TileTensor(ar_out_bufs[ctx_idx]),
+                rank_sigs,
+                ctx_inner,
+            )
 
             # Step 2: Fused RMSNorm + FP8 (reads from ar_out which has
             # allreduce + residual).

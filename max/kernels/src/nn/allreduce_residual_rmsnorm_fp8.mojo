@@ -801,14 +801,18 @@ def _launch_split_allreduce_rmsnorm_fp8[
     Faster than fused 2-stage for large with-residual payloads because
     it avoids carrying bf16 residual data through scratch buffers.
     """
-    # Reconstruct NDBuffer inputs for allreduce.
-    var input_buffers = InlineArray[
-        NDBuffer[rank=2, in_dtype, ImmutAnyOrigin], ngpus
-    ](uninitialized=True)
+    # Construct TileTensor inputs for allreduce.
+    var _ndb0 = NDBuffer[rank=2, in_dtype, ImmutAnyOrigin](
+        src_ptrs[0], IndexList[2](rows, cols)
+    )
+    comptime _TT = type_of(TileTensor(_ndb0))
+    var input_buffers = InlineArray[_TT, ngpus](fill=TileTensor(_ndb0))
 
-    comptime for i in range(ngpus):
-        input_buffers[i] = NDBuffer[rank=2, in_dtype, ImmutAnyOrigin](
-            src_ptrs[i], IndexList[2](rows, cols)
+    comptime for i in range(1, ngpus):
+        input_buffers[i] = TileTensor(
+            NDBuffer[rank=2, in_dtype, ImmutAnyOrigin](
+                src_ptrs[i], IndexList[2](rows, cols)
+            )
         )
 
     var res_ptr = residual.data
@@ -872,9 +876,10 @@ def _launch_split_allreduce_rmsnorm_fp8[
         )
 
     allreduce[
+        rank=2,
         ngpus=ngpus,
         output_lambda=Optional[elementwise_epilogue_type](add_epilogue),
-    ](input_buffers, residual_output, rank_sigs, ctx)
+    ](input_buffers, TileTensor(residual_output), rank_sigs, ctx)
 
     # Step 2: Fused RMSNorm + FP8 on residual_output (kernel already compiled).
     rms_norm_fused_fp8[in_dtype, out_dtype, scales_dtype, 2, input_fn](

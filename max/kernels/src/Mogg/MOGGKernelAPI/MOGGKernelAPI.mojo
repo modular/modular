@@ -10286,12 +10286,13 @@ struct DistributedAllReduceSum:
         var input_size_bytes = inputs[0].size() * size_of[dtype]()
         _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
-        # Marshal input tensors into NDBuffers (not TileTensors) to
-        # preserve multi-dimensional shape for correct coordinate mapping
-        # in the output lambda.
-        var in_bufs = InlineArray[
-            NDBuffer[rank=rank, dtype, ImmutAnyOrigin], num_devices
-        ](fill={})
+        # Marshal input tensors into TileTensors.
+        comptime InputTileType = type_of(
+            inputs[0].to_tile_tensor[DType.int64]().as_immut()
+        )
+        var in_bufs = InlineArray[InputTileType, inputs.size](
+            uninitialized=True
+        )
 
         # Marshal signal buffers into the expected format.
         var rank_sigs = InlineArray[
@@ -10299,11 +10300,8 @@ struct DistributedAllReduceSum:
         ](fill={})
 
         comptime for i in range(num_devices):
-            in_bufs[i] = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-                    inputs[i]._ptr
-                ),
-                inputs[i].shape(),
+            in_bufs[i] = rebind[InputTileType](
+                inputs[i].to_tile_tensor[DType.int64]().as_immut()
             )
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
@@ -10334,13 +10332,9 @@ struct DistributedAllReduceSum:
                     rebind[SIMD[dtype, _width]](val),
                 )
 
-            var out_buf = NDBuffer[rank=rank, dtype, MutAnyOrigin](
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-                    outputs[index]._ptr
-                ),
-                outputs[index].shape(),
-            )
+            var out_buf = outputs[index].to_tile_tensor[DType.int64]()
             allreduce[
+                rank=rank,
                 ngpus=num_devices,
                 output_lambda=output_lambda[output_index=index, ...],
             ](
@@ -10493,14 +10487,42 @@ struct DistributedAllGather:
         var input_size_bytes = inputs[0].size() * size_of[dtype]()
         _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
-        # Marshal input/output tensors into NDBuffers (not TileTensors)
-        # because inputs can have different shapes in uneven allgather.
-        var in_bufs = InlineArray[
+        # Marshal input/output tensors via NDBuffer to get dynamic-layout
+        # TileTensors. Inputs can have different static shapes in uneven
+        # allgather, so we go through NDBuffer (all-dynamic DimList) to
+        # produce a homogeneous TileTensor type for the InlineArray.
+        var ndb_inputs = InlineArray[
             NDBuffer[rank=rank, dtype, ImmutAnyOrigin], num_devices
         ](fill={})
-        var out_bufs = InlineArray[
-            NDBuffer[rank=rank, dtype, MutAnyOrigin], num_devices * num_devices
+        var ndb_outputs = InlineArray[
+            NDBuffer[rank=rank, dtype, MutAnyOrigin],
+            num_devices * num_devices,
         ](fill={})
+
+        comptime for i in range(num_devices):
+            ndb_inputs[i] = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
+                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                    inputs[i]._ptr
+                ),
+                inputs[i].shape(),
+            )
+
+        comptime for i in range(num_devices * num_devices):
+            ndb_outputs[i] = NDBuffer[rank=rank, dtype, MutAnyOrigin](
+                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                    outputs[i]._ptr
+                ),
+                outputs[i].shape(),
+            )
+
+        comptime InputTileType = type_of(TileTensor(ndb_inputs[0]).as_immut())
+        var in_bufs = InlineArray[InputTileType, num_devices](
+            uninitialized=True
+        )
+        comptime OutputTileType = type_of(TileTensor(ndb_outputs[0]))
+        var out_bufs = InlineArray[OutputTileType, num_devices * num_devices](
+            uninitialized=True
+        )
 
         # Marshal signal buffers.
         var rank_sigs = InlineArray[
@@ -10508,21 +10530,11 @@ struct DistributedAllGather:
         ](fill={})
 
         comptime for i in range(num_devices):
-            in_bufs[i] = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-                    inputs[i]._ptr
-                ),
-                inputs[i].shape(),
-            )
+            in_bufs[i] = TileTensor(ndb_inputs[i]).as_immut()
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         comptime for i in range(num_devices * num_devices):
-            out_bufs[i] = NDBuffer[rank=rank, dtype, MutAnyOrigin](
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-                    outputs[i]._ptr
-                ),
-                outputs[i].shape(),
-            )
+            out_bufs[i] = TileTensor(ndb_outputs[i])
 
         var dev_ctxs = List[DeviceContext]()
         for i in range(len(dev_ctxs_input)):
@@ -10610,7 +10622,7 @@ struct DistributedBroadcast:
             read outputs,
         }:
             var out_buf = outputs[index].to_tile_tensor[DType.int64]()
-            broadcast[rank=rank, ngpus=num_devices](
+            broadcast[ngpus=num_devices](
                 in_buf,
                 out_buf,
                 rank_sigs,
@@ -10662,22 +10674,30 @@ struct DistributedScatter:
         # so payload_size=0. This still validates the buffer holds a Signal.
         _check_signal_buffer_size(signal_buffers[0].size(), 0)
 
-        # Marshal input tensors into NDBuffers (not TileTensors) to avoid
-        # rebind type mismatches if inputs have different static shapes.
-        var in_bufs = InlineArray[
+        # Marshal input tensors via NDBuffer to get dynamic-layout
+        # TileTensors. Inputs can have different static shapes, so we go
+        # through NDBuffer (all-dynamic DimList) to produce a homogeneous
+        # TileTensor type for the InlineArray.
+        var ndb_inputs = InlineArray[
             NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
-        ](fill={})
-        var rank_sigs = InlineArray[
-            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
         comptime for i in range(ngpus):
-            in_bufs[i] = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
+            ndb_inputs[i] = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
                 rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
                     inputs[i]._ptr
                 ),
                 inputs[i].shape(),
             )
+
+        comptime InputTileType = type_of(TileTensor(ndb_inputs[0]).as_immut())
+        var in_bufs = InlineArray[InputTileType, ngpus](uninitialized=True)
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
+
+        comptime for i in range(ngpus):
+            in_bufs[i] = TileTensor(ndb_inputs[i]).as_immut()
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
@@ -10690,12 +10710,7 @@ struct DistributedScatter:
             read dev_ctxs_input,
             read outputs,
         }:
-            var out_buf = NDBuffer[rank=rank, dtype, MutAnyOrigin](
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-                    outputs[index]._ptr
-                ),
-                outputs[index].shape(),
-            )
+            var out_buf = outputs[index].to_tile_tensor[DType.int64]()
             scatter[ngpus=ngpus, dp_size=ngpus](
                 in_bufs,
                 out_buf,
