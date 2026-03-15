@@ -3808,9 +3808,9 @@ public:
   ConvertPOPGlobalConstant(
       SymbolTable &symtab,
       DenseMap<std::pair<TypedAttr, TypedAttr>, LLVM::GlobalOp> &constants,
-      mlir::LLVMTypeConverter &typeConverter)
+      mlir::LLVMTypeConverter &typeConverter, InterpreterMemoryConverter &imc)
       : ConvertPOPToLLVMPattern(typeConverter), symtab(symtab),
-        constants(constants) {}
+        constants(constants), imc(imc) {}
 
   LogicalResult
   matchAndRewrite(GlobalConstantOp op, GlobalConstantOpAdaptor adaptor,
@@ -3839,9 +3839,10 @@ public:
       global.getBodyRegion().push_back(new Block);
       ImplicitLocOpBuilder b(op.getLoc(), op.getContext());
       b.setInsertionPointToStart(global.getBody());
-      ErrorOr<Value> value =
-          convertParameterToLLVM(b, *getTypeConverter(), /*imc=*/nullptr,
-                                 /*scope=*/nullptr, op.getValue());
+      InterpreterMemoryConverter::MaterializationScope scope =
+          imc.createScope();
+      ErrorOr<Value> value = convertParameterToLLVM(
+          b, *getTypeConverter(), /*imc=*/&imc, &scope, op.getValue());
       if (value.isError()) {
         b.emitError(value.getError());
         return failure();
@@ -3862,6 +3863,7 @@ private:
   SymbolTable &symtab;
   /// Uniqued constants.
   DenseMap<std::pair<TypedAttr, TypedAttr>, LLVM::GlobalOp> &constants;
+  InterpreterMemoryConverter &imc;
 };
 
 //===----------------------------------------------------------------------===//
@@ -3928,6 +3930,7 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
     return signalPassFailure();
   }
   POPToLLVMTypeConverter typeConverter(targetInfo);
+  InterpreterMemoryConverter imc(symtab, typeConverter);
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
@@ -3963,7 +3966,8 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   // Convert global constants.
   DenseMap<std::pair<TypedAttr, TypedAttr>, LLVM::GlobalOp> constants;
   target.addIllegalOp<GlobalConstantOp>();
-  patterns.insert<ConvertPOPGlobalConstant>(symtab, constants, typeConverter);
+  patterns.insert<ConvertPOPGlobalConstant>(symtab, constants, typeConverter,
+                                            imc);
 
   // pop.compiler.* are all illegal.
   target.addIllegalOp<CompilerGlobalLoadOp, CompilerGlobalStoreOp>();

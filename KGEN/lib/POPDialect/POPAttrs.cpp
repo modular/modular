@@ -2246,19 +2246,21 @@ TypedAttr SIMDShrAttr::get(MLIRContext *ctx, TypedAttr value, TypedAttr shft) {
 
 bool VariadicToArrayAttr::isConstant() const { return false; }
 
-Type VariadicToArrayAttr::getType() const {
+Type VariadicToArrayAttr::getElementType() const {
+  return cast<VariadicType>(getVariadic().getType()).getElementType();
+}
+
+POP::ArrayType VariadicToArrayAttr::getType() const {
   auto size = VariadicSizeAttr::get(getVariadic());
-  auto varType = cast<VariadicType>(getVariadic().getType());
-  return ArrayType::get(size, varType.getElementType());
+  return ArrayType::get(size, getElementType());
 }
 
 TypedAttr VariadicToArrayAttr::get(TypedAttr variadic) {
-  auto type = cast<VariadicType>(variadic.getType());
-  assert(type && "expected a 'variadic' type for the input");
   auto vaAttr = sugarDynCast<VariadicAttr>(variadic);
   if (vaAttr) {
     ArrayRef<TypedAttr> values = vaAttr.getValues();
-    auto arrayType = ArrayType::get(values.size(), type.getElementType());
+    auto arrayType =
+        ArrayType::get(values.size(), vaAttr.getType().getElementType());
     return POP::ArrayAttr::get(values, arrayType);
   }
   return Base::get(variadic.getContext(), variadic);
