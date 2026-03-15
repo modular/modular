@@ -499,8 +499,13 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // value, empty variadic list, or empty pack.
     if (calleeSig.isPosVarArg(argIdx)) {
       // VarArgs arguments are fulfilled with an empty !kgen.variadic list.
-      auto argAttr = VariadicAttr::get(ArrayRef<TypedAttr>(),
-                                       sugarCast<VariadicType>(expectedType));
+      // Replace the inferred origin with an empty origin.
+      auto refType =
+          cast<RefType>(cast<VariadicType>(expectedType).getElementType());
+      refType =
+          refType.getWithOrigin(OriginUnionAttr::get(refType.getOriginType()));
+      auto argAttr =
+          VariadicAttr::get(ArrayRef<TypedAttr>(), VariadicType::get(refType));
       argumentValues.push_back({PValue(argAttr), callExpr});
       continue;
     }
@@ -1331,10 +1336,6 @@ bool ExclusivityChecker::mayAccessCallerStack() const {
             // FIXME: Why is this coming through here??
             UnboundAttr>(origin))
       continue;
-
-    // Any uses of an param.index.ref are outside the current function.
-    if (isa<ParamIndexRefAttr>(origin))
-      return true;
 
     // If this is reading out of an Origin, be conservative, we have no idea
     // what it could be.

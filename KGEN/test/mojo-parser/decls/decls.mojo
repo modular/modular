@@ -470,7 +470,7 @@ def callVariadic[p: Int](x: Int):
     # CHECK-NEXT: lit.call {{.*}}@"variadics({{.*}}Int*)"{{.*}}(%[[VAR]])
     variadics(x, 1)
 
-    # CHECK: {{.*}}@"variadics({{.*}}Int*)"), []
+    # CHECK: {{.*}}@"variadics({{.*}}Int*)"), rebind(:variadic<!lit.ref<!Int, imm {}>> []))>
     comptime EmptyVariadic = variadics()
     # CHECK: {{.*}}@"variadics({{.*}}Int*)"){{.*}}[store_to_mem(p), store_to_mem({1})]
     comptime NonEmptyVariadic = variadics(p, 1)
