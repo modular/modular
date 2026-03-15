@@ -11,15 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import align_of, simd_width_of, size_of, has_nvidia_gpu_accelerator
-from std.sys.info import _is_sm_100x_or_newer
+from std.sys import simd_width_of, size_of, has_nvidia_gpu_accelerator
 
 from std.algorithm import elementwise
 from buffer.buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import B200
-from layout import TileTensor, coord_to_index_list
+from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 
 from std.utils import Index, IndexList
 
@@ -31,7 +30,7 @@ def matmul[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](c: TileTensor, a: TileTensor, b: TileTensor, ctx: DeviceContext,) raises:
-    """TileTensor overload of the vendor matmul dispatch. Constructs
+    """Vendor matmul dispatch for TileTensor operands. Constructs
     NDBuffers internally since the vendor BLAS library requires them.
     """
     comptime assert c.rank == 2, "c must be of rank 2"
@@ -127,46 +126,20 @@ def matmul[
             )
             return
 
-        # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
+        # Otherwise, we need to allocate a new buffer for c and apply the
+        # epilogue.
         var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](
             c_buf.num_elements()
         )
 
-        # Construct a new buffer with external origin pointing to the temporary storage.
-        var c_tmp = NDBuffer[rank=2, c_type, MutExternalOrigin](
-            rebind[UnsafePointer[Scalar[c_type], MutExternalOrigin]](
-                tmp_device_buffer.unsafe_ptr()
-            ),
-            IndexList[2](Int(c.dim[0]()), Int(c.dim[1]())),
+        var c_tmp = TileTensor(
+            tmp_device_buffer,
+            row_major(Coord(Idx(Int(c.dim[0]())), Idx(Int(c.dim[1]())))),
         )
 
-        # Recurse via the NDBuffer shim: c_tmp is a locally-constructed
-        # NDBuffer that doesn't have an owning TileTensor layout.
-        # TODO(KERN-2219): once the NDBuffer shim is removed, call the
-        # TileTensor overload directly to avoid double conversion.
         matmul[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
-        ](c_tmp, rebind[ImmA](a_buf), rebind[ImmB](b_buf), ctx)
+        ](c_tmp, a, b, ctx)
 
         _ = tmp_device_buffer^
-
-
-def matmul[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    //,
-    transpose_b: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[mut=False, rank=2, a_type, _, _],
-    b: NDBuffer[mut=False, rank=2, b_type, _, _],
-    ctx: DeviceContext,
-) raises:
-    """NDBuffer shim — converts to TileTensor and delegates."""
-    matmul[
-        transpose_b=transpose_b,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ](TileTensor(c), TileTensor(a), TileTensor(b), ctx)

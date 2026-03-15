@@ -121,9 +121,9 @@ def test[
     )
 
     _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
-        c_device,
-        a_device,
-        b_device,
+        TileTensor(c_device),
+        TileTensor(a_device),
+        TileTensor(b_device),
         ctx,
     )
 

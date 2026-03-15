@@ -26,27 +26,33 @@ from std.gpu.host.info import B200
 from std.utils import IndexList
 from std.utils.index import Index
 import std.itertools
-from layout import IntTuple, Layout, RuntimeLayout, TileTensor, UNKNOWN_VALUE
+from layout import (
+    IntTuple,
+    Layout,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 
 
-def shrink_qkv_permute_3mn_sm100[
-    c_type: DType,
-    c_shape: DimList,
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-](
-    c_lora: NDBuffer[rank=3, c_type, MutAnyOrigin, c_shape],
-    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
-    b: NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape],
-    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
-    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
+@always_inline
+def shrink_qkv_permute_3mn_sm100(
+    c_lora: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    a_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    expert_ids: TileTensor[
+        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
+    ],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    """LoRA shrink GMM with planar Q/K/V output on SM100.
+    """TileTensor primary implementation of `shrink_qkv_permute_3mn_sm100`.
+
+    LoRA shrink GMM with planar Q/K/V output on SM100.
 
     Performs the LoRA 'shrink' grouped matmul for routed tokens:
     computes `[M, K] @ [G, 3N, K]^T` per active expert, then **permutes**
@@ -61,7 +67,7 @@ def shrink_qkv_permute_3mn_sm100[
         b:      Shrink weights per expert, shape (G, 3N, K).
         a_offsets: Inclusive prefix sums of tokens per (active) expert,
                 length (num_experts + 1). Defines per-expert [start, end) in A/C.
-        expert_ids: Expert indices for the active groups, length ≥ num_active_experts.
+        expert_ids: Expert indices for the active groups, length >= num_active_experts.
         max_num_tokens_per_expert: Upper bound on tokens for any active expert.
         num_active_experts: Number of experts participating in this call.
         ctx:    DeviceContext used for enqueues and synchronization.
@@ -74,16 +80,31 @@ def shrink_qkv_permute_3mn_sm100[
         **aliases the same storage** as c_lora.
         - a_offsets is non-decreasing with a_offsets[0] == 0 and
         a_offsets[num_active_experts] == M.
-        - expert_ids[i] ∈ [0, G) for valid experts; kernel may treat -1 as inactive.
+        - expert_ids[i] in [0, G) for valid experts; kernel may treat -1 as inactive.
         - The epilogue assumes `N % vector_width == 0` for aligned vector stores.
     """
-    var M = c_lora.dim[1]()
-    var c_tensor_lora = TileTensor(c_lora).to_layout_tensor()
+    comptime assert c_lora.rank == 3 and c_lora.flat_rank == 3
+    comptime assert a.rank == 2 and a.flat_rank == 2
+    comptime assert b.rank == 3 and b.flat_rank == 3
+    comptime assert a_offsets.rank == 1 and a_offsets.flat_rank == 1
+    comptime assert expert_ids.rank == 1 and expert_ids.flat_rank == 1
+
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+    comptime c_type = c_lora.dtype
+
+    comptime c_shape = DimList[
+        dim[c_lora.static_shape[0]],
+        dim[c_lora.static_shape[1]],
+        dim[c_lora.static_shape[2]],
+    ]()
+
+    var M = Int(c_lora.dim(1))
+    var c_tensor_lora = c_lora.to_layout_tensor()
     comptime N = c_shape.get[2]()
     comptime B = c_shape.get[0]()
-    comptime assert (
-        c_shape.has_value[2]() and c_shape.get[0]() == 3
-    ), "the outer dimension of c_shape must be known and equal to 3"
+    comptime assert c_shape.has_value[2]() and c_shape.get[0]() == 3, String(
+        "the outer dimension of c_shape must be known and equal to 3",
+    )
     comptime N_Total = B * N
     # Create an empty (null-backed) 2D NDBuffer for C with only shape/stride set.
     # This ensures GroupGEMM does NOT write into C directly; any changes to the
@@ -92,7 +113,7 @@ def shrink_qkv_permute_3mn_sm100[
         mut=True,
         rank=2,
         c_type,
-        MutAnyOrigin,
+        c_lora.origin,
         shape=DimList[Dim(), Dim(N_Total)](),
         strides=DimList.create_unknown[2](),
     ]()  # data=null, shape/stride zeroed
@@ -143,7 +164,7 @@ def shrink_qkv_permute_3mn_sm100[
 
     # Run grouped_matmul and apply permute_dim_lora as the elementwise epilogue.
     grouped_matmul[elementwise_lambda_fn=permute_dim_lora_bmn,](
-        c,
+        TileTensor(c),
         a,
         b,
         a_offsets,

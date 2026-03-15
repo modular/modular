@@ -34,11 +34,11 @@ from std.gpu.memory import external_memory
 from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, TileTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
 from layout.layout_tensor import copy_dram_to_sram
-from linalg.matmul.gpu import _matmul_gpu
+from linalg.matmul.gpu import _matmul_gpu, multistage_gemm
 from linalg.utils_gpu import MatmulKernels
 from std.memory import alloc
 from std.memory.unsafe import bitcast
@@ -832,10 +832,10 @@ def test_quantized[
 
     comptime kernels_ref = MatmulKernels[a_type, a_type, a_type, True]()
     comptime config_ref = kernels_ref.ampere_128x128_4
-    _matmul_gpu[use_tensor_core=True, transpose_b=True, config=config_ref](
-        c_device_ref_nd,
-        a_device_nd,
-        b_device_ref_nd,
+    multistage_gemm[transpose_b=True, config=config_ref](
+        TileTensor(c_device_ref_nd),
+        TileTensor(a_device_nd),
+        TileTensor(b_device_ref_nd),
         ctx,
     )
 

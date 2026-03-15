@@ -30,6 +30,7 @@ from std.sys import size_of
 from std.sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
 from std.memory import Pointer, destroy_n, memcpy, uninit_copy_n, uninit_move_n
+from std.memory._nonnull import NonNullUnsafePointer
 from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
 
@@ -253,8 +254,12 @@ struct List[T: Copyable](
         T: The type of elements stored in the list.
     """
 
+    comptime _UnsafePointerType = NonNullUnsafePointer[
+        Self.T, MutExternalOrigin
+    ]
+
     # Fields
-    var _data: UnsafePointer[Self.T, MutExternalOrigin]
+    var _data: Self._UnsafePointerType
     """The underlying storage for the list."""
     var _len: Int
     """The number of elements in the list."""
@@ -310,7 +315,7 @@ struct List[T: Copyable](
 
     def __init__(out self):
         """Constructs an empty list."""
-        self._data = {}
+        self._data = Self._UnsafePointerType.dangling()
         self._len = 0
         self.capacity = 0
 
@@ -321,9 +326,9 @@ struct List[T: Copyable](
             capacity: The requested capacity of the list.
         """
         if capacity:
-            self._data = alloc[Self.T](capacity)
+            self._data = {unsafe_from_nullable = alloc[Self.T](capacity)}
         else:
-            self._data = {}
+            self._data = Self._UnsafePointerType.dangling()
         self._len = 0
         self.capacity = capacity
         self._annotate_new()
@@ -430,8 +435,9 @@ struct List[T: Copyable](
         comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
 
         destroy_n(self._data.bitcast[TDestructible](), count=len(self))
-        self._annotate_delete()
-        self._data.free()
+        if self.capacity > 0:
+            self._annotate_delete()
+            self._data.free()
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -679,10 +685,10 @@ struct List[T: Copyable](
             dest=new_data, src=self._data, count=len(self)
         )
 
-        if self._data:
+        if self.capacity > 0:
             self._annotate_delete()
             self._data.free()
-        self._data = new_data
+        self._data = {unsafe_from_nullable = new_data}
         self.capacity = new_capacity
         self._annotate_new()
 
@@ -1180,7 +1186,7 @@ struct List[T: Copyable](
         """
         self._annotate_delete()
         var ptr = self._data
-        self._data = {}
+        self._data = Self._UnsafePointerType.dangling()
         self._len = 0
         self.capacity = 0
         return ptr
@@ -1358,7 +1364,11 @@ struct List[T: Copyable](
     ](ref[origin, address_space] self) -> UnsafePointer[
         Self.T, origin, address_space=address_space
     ]:
-        """Retrieves a pointer to the underlying memory.
+        """Retrieves a pointer to the underlying memory, or a dangling pointer
+        if the `List` has not yet allocated.
+
+        You should use the `len` of this `List` to determine if the pointer
+        is valid for reads and writes.
 
         Parameters:
             origin: The origin of the `List`.

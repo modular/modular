@@ -39,6 +39,8 @@ _STACKED_QKV_INFIXES = {
 
 
 class Flux2TransformerModel(ComponentModel):
+    model: Callable[..., Any] | None
+
     def __init__(
         self,
         config: dict[str, Any],
@@ -57,11 +59,10 @@ class Flux2TransformerModel(ComponentModel):
             encoding,
             devices,
         )
-        self._enable_fbc = False
         self.load_model()
 
-    @traced
-    def load_model(self) -> Callable[..., Any]:
+    @traced(message="Flux2TransformerModel.load_model")
+    def load_model(self) -> None:
         state_dict = {key: value.data() for key, value in self.weights.items()}
 
         # Convert BFL single-file NVFP4 naming to MAX parameter naming.
@@ -97,9 +98,9 @@ class Flux2TransformerModel(ComponentModel):
             flux = Flux2Transformer2DModel(self.config)
             flux.to(self.devices[0])
         self._flux_model = flux
-        # Model is not yet compiled; compile_model() must be called before use.
-        self.model = self._not_compiled
-        return self.model
+        self._standard_model: Callable[..., Any] | None = None
+        self._step_cache_model: Callable[..., Any] | None = None
+        self.model = None
 
     @staticmethod
     def _split_stacked_qkv(
@@ -134,24 +135,33 @@ class Flux2TransformerModel(ComponentModel):
                 out[key] = value
         return out
 
-    @staticmethod
-    def _not_compiled(*_args: Any, **_kwargs: Any) -> Any:
-        raise RuntimeError(
-            "Flux2 transformer not compiled. Call compile_model() first."
-        )
+    @traced(message="Flux2TransformerModel.use_standard_model")
+    def use_standard_model(self) -> None:
+        if self._standard_model is None:
+            self._flux_model._step_cache_enabled = False
+            self._standard_model = self._flux_model.compile(
+                *self._flux_model.input_types(step_cache_enabled=False),
+                weights=self._state_dict,
+            )
+        if self.model is self._step_cache_model:
+            self._step_cache_model = None
+        self.model = self._standard_model
 
-    @traced
-    def compile_model(self, enable_fbc: bool) -> None:
-        self._enable_fbc = enable_fbc
-        self.model = self._flux_model.compile(
-            *self._flux_model.input_types(step_cache_enabled=enable_fbc),
-            weights=self._state_dict,
-        )
-        # Free weight dict and graph — no second compilation will happen.
-        del self._state_dict
-        del self._flux_model
+    @traced(message="Flux2TransformerModel.use_step_cache_model")
+    def use_step_cache_model(self, rdt: float = 0.05) -> None:
+        if self._step_cache_model is None:
+            assert self._flux_model is not None
+            self._flux_model._step_cache_enabled = True
+            self._flux_model._rdt_value = rdt
+            self._step_cache_model = self._flux_model.compile(
+                *self._flux_model.input_types(step_cache_enabled=True),
+                weights=self._state_dict,
+            )
+        if self.model is self._standard_model:
+            self._standard_model = None
+        self.model = self._step_cache_model
 
-    @traced
+    @traced(message="Flux2TransformerModel.__call__")
     def __call__(
         self,
         hidden_states: Tensor,
@@ -162,22 +172,8 @@ class Flux2TransformerModel(ComponentModel):
         guidance: Tensor,
         prev_residual: Tensor | None = None,
         prev_output: Tensor | None = None,
-        rdt: Tensor | None = None,
     ) -> Any:
-        if self._enable_fbc:
-            return self.model(
-                hidden_states,
-                encoder_hidden_states,
-                timestep,
-                img_ids,
-                txt_ids,
-                guidance,
-                prev_residual,
-                prev_output,
-                rdt,
-            )
-
-        return self.model(
+        args: tuple[Any, ...] = (
             hidden_states,
             encoder_hidden_states,
             timestep,
@@ -185,3 +181,10 @@ class Flux2TransformerModel(ComponentModel):
             txt_ids,
             guidance,
         )
+        if prev_residual is not None:
+            args = (*args, prev_residual, prev_output)
+        if self.model is None:
+            raise RuntimeError(
+                "Model not compiled. Call use_standard_model() or use_step_cache_model() first."
+            )
+        return self.model(*args)

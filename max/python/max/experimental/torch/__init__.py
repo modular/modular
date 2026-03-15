@@ -11,6 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .torch import CustomOpLibrary, graph_op
+from .torch import (
+    CustomOpLibrary,
+    graph_op,
+    max_dtype_to_torch,
+    torch_dtype_to_max,
+)
 
-__all__ = ["CustomOpLibrary", "graph_op"]
+__all__ = [
+    "CustomOpLibrary",
+    "graph_op",
+    "max_dtype_to_torch",
+    "torch_dtype_to_max",
+]

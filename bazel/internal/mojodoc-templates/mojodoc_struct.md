@@ -25,11 +25,11 @@ description: {% if decl.summary
 {% endmacro -%}
 {# Print each declaration #}
 {% macro process_decl_body(decl) %}
-{% if decl.signature or decl.convention %}
+{% if decl.signature %}
 <div class="mojo-function-sig">
 
-{% if decl.convention %}
-`{{decl.convention}}`
+{% if decl.implicit %}
+`@implicit`
 {% endif %}
 {# For values that could contain IR (signatures, types, values), use #}
 {# double backticks to preserve literal backticks. #}

@@ -84,13 +84,3 @@ class ImageProviderOptions(BaseModel):
         description="The number of images to generate. Defaults to 1.",
         ge=1,
     )
-
-    residual_threshold: float = Field(
-        0.08,
-        description=(
-            "Residual threshold for early stopping in the denoising loop. "
-            "Lower values produce higher quality results but take longer. "
-            "Defaults to 0.08."
-        ),
-        gt=0.0,
-    )

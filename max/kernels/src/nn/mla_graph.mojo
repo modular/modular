@@ -881,8 +881,8 @@ def mla_prefill_branch_fp8[
     quantize_dynamic_scaled_fp8[
         input_fn, k_scale_granularity, k_latent.static_shape[1]
     ](
-        fp8_k_latent._to_ndbuffer().make_dims_unknown(),
-        fp8_k_latent_scale._to_ndbuffer().make_dims_unknown(),
+        fp8_k_latent,
+        fp8_k_latent_scale,
         1200.0,
         ctx,
         Int(k_latent.dim[0]()),
@@ -1048,8 +1048,8 @@ def quantize_and_bmm_fp8_helper[
         group_size_or_per_token=k_scale_granularity,
         num_cols=K,
     ](
-        fp8_a._to_ndbuffer().make_dims_unknown(),
-        fp8_a_scale._to_ndbuffer().make_dims_unknown(),
+        fp8_a,
+        fp8_a_scale,
         1200.0,
         ctx,
         num_rows=m,
@@ -1685,9 +1685,9 @@ def mla_prefill_branch_bf16[
             transpose_b=True,
             elementwise_lambda_fn=k_elementwise_convert,
         ](
-            k_dummy_flat.to_layout_tensor(),
-            k_latent.to_layout_tensor(),
-            w_k.to_layout_tensor(),
+            k_dummy_flat,
+            k_latent,
+            w_k,
             Optional(ctx),
         )
 
@@ -1720,9 +1720,9 @@ def mla_prefill_branch_bf16[
             transpose_b=True,
             elementwise_lambda_fn=v_elementwise_convert,
         ](
-            v_dummy_flat.to_layout_tensor(),
-            k_latent.to_layout_tensor(),
-            w_v.to_layout_tensor(),
+            v_dummy_flat,
+            k_latent,
+            w_v,
             Optional(ctx),
         )
 
@@ -1779,9 +1779,9 @@ def mla_prefill_branch_bf16[
             ),
         )
         matmul[target=target, transpose_b=True](
-            k_flat.to_layout_tensor(),
-            k_latent.to_layout_tensor(),
-            w_k.to_layout_tensor(),
+            k_flat,
+            k_latent,
+            w_k,
             Optional(ctx),
         )
 
@@ -1797,9 +1797,9 @@ def mla_prefill_branch_bf16[
             row_major((Idx(buffer_length), Idx[num_heads * v_head_dim]())),
         )
         matmul[target=target, transpose_b=True](
-            v_flat.to_layout_tensor(),
-            k_latent.to_layout_tensor(),
-            w_v.to_layout_tensor(),
+            v_flat,
+            k_latent,
+            w_v,
             Optional(ctx),
         )
 

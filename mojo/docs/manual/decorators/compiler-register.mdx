@@ -25,11 +25,11 @@ The following snippet shows the outline of a custom operation:
 struct AddVectorsCustom:
 
     @staticmethod
-    fn execute[...](...) raises:
+    def execute[...](...) raises:
         pass
 
     @staticmethod
-    fn shape(...) raises -> IndexList:
+    def shape(...) raises -> IndexList:
         pass
 ```
 
@@ -86,7 +86,7 @@ from std.runtime.asyncrt import DeviceContextPtr
 @compiler.register("add_vectors_custom")
 struct AddVectorsCustom:
     @staticmethod
-    fn execute[
+    def execute[
         # "gpu" or "cpu"
         target: StaticString,
     ](
@@ -101,7 +101,7 @@ struct AddVectorsCustom:
 
         @parameter
         @always_inline
-        fn func[width: Int](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
+        def func[width: Int](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + y.load[width](idx)
 
         foreach[func, target=target](out, ctx)
@@ -126,7 +126,7 @@ output tensor matches the first input tensor, you could use the following
 
 ```mojo
     @staticmethod
-    fn shape(
+    def shape(
         in1: InputTensor,
         in2: InputTensor,
     ) raises -> IndexList[in1.rank]:
