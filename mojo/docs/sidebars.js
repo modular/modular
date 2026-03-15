@@ -75,6 +75,7 @@ const mojoSidebars = {
         "mojo/manual/parameters/index",
         "mojo/manual/traits",
         "mojo/manual/generics/generics",
+        "mojo/manual/metaprogramming/constraints",
         "mojo/manual/metaprogramming/materialization",
         "mojo/manual/reflection",
       ],
