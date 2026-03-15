@@ -1410,14 +1410,6 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
     return {};
   }
 
-  auto metaType = ASTType(elementType).getMetaType();
-  if (!metaType || !sugarIsa<StructMetaType, AnyTraitType>(metaType)) {
-    emitter.emitError(arg.typeExpr->getLoc(),
-                      Diag::DiagID::err_argument_type_list_elements_types)
-        << arg.typeExpr->getRange();
-    return {};
-  }
-
   // The reference is immutable when borrowing, mutable otherwise.
   bool isMutable = arg.convention != ParsedArgument::kConventionRead &&
                    arg.convention != ParsedArgument::kConventionUnspec;
@@ -1438,8 +1430,9 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
 
   // We expect:
   // VariadicPack[
-  //   mut: Bool, _mlir_origin: !lit.origin, origin: Origin[mut], //,
-  //   element_type: AnyType,is_owned: Bool]
+  //   elt_is_mut: Bool, _mlir_origin: !lit.origin, origin: Origin[mut], //,
+  //   is_owned: Bool, element_trait: type_of(AnyType), *element_types:
+  //   element_type]
   if (!packDecl) {
     emitter.emitError(arg.loc, Diag::DiagID::err_malformed_variadicpack);
     return {};
@@ -1450,63 +1443,27 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
     emitter.emitError(arg.loc, Diag::DiagID::err_malformed_variadicpack);
     return {};
   }
-  auto typeSig = packStruct.getSignature();
 
-#if 0
-  // TODO: This should work, but cannot because the type list is parametric and
-  // we have no "splat list" operator.
-  ParamBindings bindings(emitter.declScope);
-  bindings.add(arg.typeExpr, refType.getOrigin());
-  bindings.add(arg.typeExpr, PValue(elementType));
-  bindings.add(arg.typeExpr, param.get());
-
-  ParameterExprArrayAttr bindingValuesAttr = bindings.verifyBindings(
-      packStruct, typeSig, /*disableDiags=*/false, /*partial=*/false);
-  if (!bindingValuesAttr)
-    return {};
-  LIT::StructType boundType =
-      packStruct.bindAll(bindingValuesAttr.getValue());
-  return TypeParamAttr::get(boundType, StructMetaType::get(boundType));
-#endif
-
-  auto isMutType = typeSig.getParamTypes()[0];
-  auto isVarType = typeSig.getParamTypes()[3];
-  auto traitMetaType = typeSig.getParamTypes()[4];
-  if (!sugarIsa<LIT::StructType>(isMutType) ||
-      !sugarIsa<OriginType>(typeSig.getParamTypes()[1]) ||
-      !sugarIsa<LIT::StructType>(typeSig.getParamTypes()[2]) ||
-      !sugarIsa<LIT::StructType>(isVarType) ||
-      !sugarIsa<AnyTraitType>(traitMetaType) ||
-      !sugarIsa<VariadicType>(typeSig.getParamTypes()[5])) {
-    emitter.emitError(arg.loc, Diag::DiagID::err_malformed_variadicpack);
-    return {};
-  }
-
-  PValue isMut = emitter.emitPValue({refType.isMutable(), arg.typeExpr},
-                                    EC_Type, isMutType);
   PValue origin =
       emitter.getStdlibOriginOf(refType.getOrigin(), arg.typeExpr->getLoc());
-  auto isVarAttr = BoolAttr::get(emitter.getContext(), isVar);
-  PValue isVarVal =
-      emitter.emitPValue({isVarAttr, arg.typeExpr}, EC_Type, isVarType);
-
-  // The default element_trait param type is
-  // !lit.anytrait<<@std::@builtin::@anytype::@AnyType>>
-  // reflecting that it takes any trait like Stringable.
-  // If the declared type of the pack elements is a trait subtype of AnyType,
-  // it will be that traits metatype.  Downcast to the same type, but with
-  // !lit.anytrait<AnyType> type.
-  PValue traitMT = emitter.emitPValue({PValue(elementType), arg.typeExpr},
-                                      EC_Type, traitMetaType);
-
-  if (!isMut || !origin || !isVarVal || !traitMT)
+  if (!origin)
     return {};
 
-  // Bind the VariadicPack[isMutable, origin, element_trait, element_types]
-  // parameters.
-  return packStruct.bindReference({isMut.get(), refType.getOrigin(),
-                                   origin.get(), isVarVal.get(), traitMT.get(),
-                                   param.get()});
+  ParamBindings bindings(emitter.declScope, arg.typeExpr);
+  bindings.add(arg.typeExpr, origin,
+               StringAttr::get(emitter.getContext(), "origin"));
+  auto isVarAttr = BoolAttr::get(emitter.getContext(), isVar);
+  bindings.add(arg.typeExpr, isVarAttr);
+  bindings.add(arg.typeExpr, PValue(elementType));
+  bindings.add(arg.typeExpr,
+               UnpackedAttr::get(param.get(), /*kwOnly=*/false, elementType));
+
+  auto typeSig = packStruct.getSignature();
+  ParameterExprArrayAttr bindingValuesAttr =
+      bindings.verifyStructBindings(*packDecl, typeSig);
+  if (!bindingValuesAttr)
+    return {};
+  return packStruct.bindReference(bindingValuesAttr.getValue());
 }
 
 /// Type check each argument in turn, resolving their type and default
