@@ -84,11 +84,46 @@ struct TalkativeCopableMovableMem(ImplicitlyCopyable, Writable):
 
 
 # ===----------------------------------------------------------------------=== #
-# Inout varargs
+# Parameter varargs
 # ===----------------------------------------------------------------------=== #
 
 
-def test_inout_varargs():
+def takes_int_params[*args: Int]():
+    comptime args_list = VariadicParamList[*args]()
+
+    # CHECK: -- Testing parameter varargs
+    print("-- Testing parameter varargs")
+
+    # can dynamically index the parameter list.
+    var total = 0
+    for i in range(len(args_list)):
+        total += args_list[i]
+    print("index:", total)
+    # CHECK-NEXT: index: 15
+
+    # can iterate the parameter list.
+    total = 0
+    for i in args_list:
+        total += i
+    print("iterate: ", total)
+    # CHECK-NEXT: iterate: 15
+
+    # can also get statically-indexed elements as comptime values.
+    comptime elt = args_list[3]
+    print("comptime elt3: ", elt)
+    # CHECK-NEXT: comptime elt3: 4
+
+
+def test_param_varargs():
+    takes_int_params[1, 2, 3, 4, 5]()
+
+
+# ===----------------------------------------------------------------------=== #
+# mut varargs
+# ===----------------------------------------------------------------------=== #
+
+
+def test_mut_varargs():
     # CHECK: -- Testing mut varargs
     print("-- Testing mut varargs")
     var s1: String = "hello"
@@ -391,7 +426,8 @@ def test_tuple():
 
 
 def main():
-    test_inout_varargs()
+    test_param_varargs()
+    test_mut_varargs()
     test_owned_varargs()
     test_owned_reg_varargs()
     test_non_trivial_reg_varargs()
