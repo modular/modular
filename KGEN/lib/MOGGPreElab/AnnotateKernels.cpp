@@ -35,6 +35,10 @@ static constexpr std::array<StringLiteral, 3> kMaxManagedTensorSlice = {
     "tensor", "managed_tensor_slice", "ManagedTensorSlice"};
 static constexpr std::array<StringLiteral, 3> kMaxVariadicTensors = {
     "tensor", "managed_tensor_slice", "VariadicTensors"};
+static constexpr std::array<StringLiteral, 3> kMaxFusedInputVariadicTensors = {
+    "tensor", "managed_tensor_slice", "_FusedInputVariadicTensors"};
+static constexpr std::array<StringLiteral, 3> kMaxFusedOutputVariadicTensors = {
+    "tensor", "managed_tensor_slice", "_FusedOutputVariadicTensors"};
 
 // TODO(GEX-1822): Should be able to query this information from
 // The lit.struct.decl ops for each of these types rather than hard-coding them.
@@ -55,6 +59,16 @@ enum class VariadicTensorsParams {
   kRank,
   kSize,
   kIOSpec,
+  kStaticSpecs,
+  kNumParams
+};
+
+// _FusedInput/OutputVariadicTensors no longer carry mut/input/io_spec
+// parameters -- the IOSpec is determined by the type name itself.
+enum class FusedVariadicTensorsParams {
+  kDType,
+  kRank,
+  kSize,
   kStaticSpecs,
   kNumParams
 };
@@ -526,7 +540,15 @@ extractIOSpecSubFields(LIT::StructType structType) {
     return extractMutInputFromTensorStruct(structType);
   }
 
-  // Check if this is a VariadicTensors
+  // _FusedInput/OutputVariadicTensors encode their IOSpec in the type name,
+  // so they don't carry mut/input parameters. Return empty pair here; the
+  // caller handles them via maybeGetFixedIOSpec().
+  if (symbolMatches(structType.getSymbol(), kMaxFusedInputVariadicTensors) ||
+      symbolMatches(structType.getSymbol(), kMaxFusedOutputVariadicTensors)) {
+    return std::make_pair(TypedAttr(), TypedAttr());
+  }
+
+  // Legacy VariadicTensors still carry mut/input parameters.
   if (symbolMatches(structType.getSymbol(), kMaxVariadicTensors)) {
     auto allParameters = structType.getParamValues();
     ASSERT_STREAM(
@@ -640,14 +662,24 @@ processIOSpecs(LIT::FnOp func, bool isShapeFunc = false) {
       continue;
     }
 
-    auto [mut, input] = extractIOSpecSubFields(structType);
-
-    if (!mut && !input)
-      continue;
-
     auto argName = func.getFuncTypeGenerator().getArgName(argIdx);
     auto loc = func.getBodyRegion().getArgument(argIdx).getLoc();
-    auto ioSpec = maybeGetIOSpec(mut, input, loc, argName, isShapeFunc);
+
+    // Fused variadic types encode their IOSpec in the type name itself.
+    std::optional<IOSpec> ioSpec;
+    if (symbolMatches(structType.getSymbol(), kMaxFusedInputVariadicTensors)) {
+      ioSpec = IOSpec::FusedInputTensor;
+    } else if (symbolMatches(structType.getSymbol(),
+                             kMaxFusedOutputVariadicTensors)) {
+      ioSpec = IOSpec::FusedOutputTensor;
+    } else {
+      auto [mut, input] = extractIOSpecSubFields(structType);
+
+      if (!mut && !input)
+        continue;
+
+      ioSpec = maybeGetIOSpec(mut, input, loc, argName, isShapeFunc);
+    }
 
     auto hasIOSpec = ioSpec.has_value();
 
