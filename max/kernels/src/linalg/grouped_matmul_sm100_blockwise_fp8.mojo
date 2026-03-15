@@ -54,7 +54,6 @@ from layout import (
     coord_to_index_list,
 )
 from layout.layout import zipped_divide
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import LayoutTensorIter, upcast
 from layout.swizzle import make_swizzle
 from layout.runtime_tuple import idx2crd, crd2idx
@@ -2027,16 +2026,14 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, ...],
-    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin, ...],
-    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin, ...],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, ImmutAnyOrigin, ...],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin, ...],
-    a_offsets: LayoutTensor[
-        a_offsets_type, a_offsets_layout, ImmutAnyOrigin, ...
-    ],
+    c: LayoutTensor[mut=True, c_type, c_layout, ...],
+    a: LayoutTensor[mut=False, a_type, a_layout, ...],
+    b: LayoutTensor[mut=False, b_type, b_layout, ...],
+    a_scales: LayoutTensor[mut=False, a_scales_type, a_scales_layout, ...],
+    b_scales: LayoutTensor[mut=False, b_scales_type, b_scales_layout, ...],
+    a_offsets: LayoutTensor[mut=False, a_offsets_type, a_offsets_layout, ...],
     expert_ids: LayoutTensor[
-        expert_ids_type, expert_ids_layout, ImmutAnyOrigin, ...
+        mut=False, expert_ids_type, expert_ids_layout, ...
     ],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
@@ -2268,6 +2265,12 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     )
 
 
+# ===----------------------------------------------------------------------=== #
+# TileTensor primary implementation
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
 def grouped_matmul_dynamic_scaled_fp8[
     c_type: DType,
     a_type: DType,
@@ -2286,17 +2289,35 @@ def grouped_matmul_dynamic_scaled_fp8[
     tokens_padded_per_expert: Bool = False,
     target: StaticString = "cpu",
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, MutAnyOrigin, _],
-    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, _],
-    b: NDBuffer[rank=3, b_type, ImmutAnyOrigin, _],
-    a_scales: NDBuffer[rank=2, a_scales_type, ImmutAnyOrigin, _],
-    b_scales: NDBuffer[rank=3, b_scales_type, ImmutAnyOrigin, _],
-    a_offsets: NDBuffer[rank=1, a_offsets_type, ImmutAnyOrigin, _],
-    expert_ids: NDBuffer[rank=1, expert_ids_type, ImmutAnyOrigin, _],
+    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
+    a_scales: TileTensor[
+        mut=False, a_scales_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    b_scales: TileTensor[
+        mut=False, b_scales_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    a_offsets: TileTensor[
+        mut=False, a_offsets_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    expert_ids: TileTensor[
+        mut=False, expert_ids_type, address_space=AddressSpace.GENERIC, ...
+    ],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
+    """TileTensor primary implementation of `grouped_matmul_dynamic_scaled_fp8`.
+    """
+    comptime assert c.rank == 2 and c.flat_rank == 2
+    comptime assert a.rank == 2 and a.flat_rank == 2
+    comptime assert b.rank == 3 and b.flat_rank == 3
+    comptime assert a_scales.rank == 2 and a_scales.flat_rank == 2
+    comptime assert b_scales.rank == 3 and b_scales.flat_rank == 3
+    comptime assert a_offsets.rank == 1 and a_offsets.flat_rank == 1
+    comptime assert expert_ids.rank == 1 and expert_ids.flat_rank == 1
+
     comptime assert (
         ctx.default_device_info == B200 or ctx.default_device_info == H100
     ), "Only support SM100 or SM90"
@@ -2324,18 +2345,19 @@ def grouped_matmul_dynamic_scaled_fp8[
         " fp8 matmul"
     )
 
-    var a_tensor = from_ndbuffer_row_major(a)
-    var b_tensor = from_ndbuffer_row_major(b)
-    var c_tensor = from_ndbuffer_row_major(c)
-    var a_scales_tensor = from_ndbuffer_row_major(a_scales)
-    var b_scales_tensor = from_ndbuffer_row_major(b_scales)
-    var a_offsets_tensor = from_ndbuffer_row_major(a_offsets)
-    var expert_ids_tensor = from_ndbuffer_row_major(expert_ids)
+    # Convert to LayoutTensor for internal dispatch functions.
+    var a_tensor = a.to_layout_tensor()
+    var b_tensor = b.to_layout_tensor()
+    var c_tensor = c.to_layout_tensor()
+    var a_scales_tensor = a_scales.to_layout_tensor()
+    var b_scales_tensor = b_scales.to_layout_tensor()
+    var a_offsets_tensor = a_offsets.to_layout_tensor()
+    var expert_ids_tensor = expert_ids.to_layout_tensor()
 
-    comptime num_experts = b.shape.get[0]()
-    comptime N = b.shape.get[1]()
-    comptime K = b.shape.get[2]()
-    var seq_len = a.dim[0]()
+    comptime num_experts = b.static_shape[0]
+    comptime N = b.static_shape[1]
+    comptime K = b.static_shape[2]
+    _ = Int(a.dim[0]())
 
     if num_active_experts == 0 or max_num_tokens_per_expert == 0:
         return
@@ -2384,142 +2406,3 @@ def grouped_matmul_dynamic_scaled_fp8[
             num_active_experts,
             ctx,
         )
-
-
-# ===----------------------------------------------------------------------=== #
-# TileTensor overloads
-# ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-def grouped_matmul_dynamic_scaled_fp8[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    a_scales_type: DType,
-    b_scales_type: DType,
-    a_offsets_type: DType,
-    expert_ids_type: DType,
-    //,
-    input_scale_granularity: StaticString,
-    weight_scale_granularity: StaticString,
-    m_scale_granularity: Int,
-    n_scale_granularity: Int,
-    k_scale_granularity: Int,
-    transpose_b: Bool = False,
-    tokens_padded_per_expert: Bool = False,
-    target: StaticString = "cpu",
-](
-    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
-    a_scales: TileTensor[
-        mut=False, a_scales_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_scales: TileTensor[
-        mut=False, b_scales_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    a_offsets: TileTensor[
-        mut=False, a_offsets_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    expert_ids: TileTensor[
-        mut=False, expert_ids_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    max_num_tokens_per_expert: Int,
-    num_active_experts: Int,
-    ctx: DeviceContext,
-) raises:
-    """TileTensor overload of `grouped_matmul_dynamic_scaled_fp8`. Converts to
-    NDBuffer and delegates."""
-    comptime assert c.rank == 2 and c.flat_rank == 2
-    comptime assert a.rank == 2 and a.flat_rank == 2
-    comptime assert b.rank == 3 and b.flat_rank == 3
-    comptime assert a_scales.rank == 2 and a_scales.flat_rank == 2
-    comptime assert b_scales.rank == 3 and b_scales.flat_rank == 3
-    comptime assert a_offsets.rank == 1 and a_offsets.flat_rank == 1
-    comptime assert expert_ids.rank == 1 and expert_ids.flat_rank == 1
-
-    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
-    comptime c_shape = DimList[dim[c.static_shape[0]], dim[c.static_shape[1]]]()
-    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
-    comptime b_shape = DimList[
-        dim[b.static_shape[0]], dim[b.static_shape[1]], dim[b.static_shape[2]]
-    ]()
-    comptime a_scales_shape = DimList[
-        dim[a_scales.static_shape[0]],
-        dim[a_scales.static_shape[1]],
-    ]()
-    comptime b_scales_shape = DimList[
-        dim[b_scales.static_shape[0]],
-        dim[b_scales.static_shape[1]],
-        dim[b_scales.static_shape[2]],
-    ]()
-    comptime a_offsets_shape = DimList[dim[a_offsets.static_shape[0]]]()
-    comptime expert_ids_shape = DimList[dim[expert_ids.static_shape[0]]]()
-
-    var c_buf = NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape](
-        c.ptr,
-        rebind[IndexList[2]](coord_to_index_list(c.layout.shape_coord())),
-    )
-    var a_buf = NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape](
-        a.ptr,
-        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
-    )
-    var b_buf = NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape](
-        b.ptr,
-        rebind[IndexList[3]](coord_to_index_list(b.layout.shape_coord())),
-    )
-    var a_scales_buf = NDBuffer[
-        rank=2, a_scales_type, ImmutAnyOrigin, a_scales_shape
-    ](
-        a_scales.ptr,
-        rebind[IndexList[2]](
-            coord_to_index_list(a_scales.layout.shape_coord())
-        ),
-    )
-    var b_scales_buf = NDBuffer[
-        rank=3, b_scales_type, ImmutAnyOrigin, b_scales_shape
-    ](
-        b_scales.ptr,
-        rebind[IndexList[3]](
-            coord_to_index_list(b_scales.layout.shape_coord())
-        ),
-    )
-    var a_off_buf = NDBuffer[
-        rank=1, a_offsets_type, ImmutAnyOrigin, a_offsets_shape
-    ](
-        a_offsets.ptr,
-        rebind[IndexList[1]](
-            coord_to_index_list(a_offsets.layout.shape_coord())
-        ),
-    )
-    var exp_buf = NDBuffer[
-        rank=1, expert_ids_type, ImmutAnyOrigin, expert_ids_shape
-    ](
-        expert_ids.ptr,
-        rebind[IndexList[1]](
-            coord_to_index_list(expert_ids.layout.shape_coord())
-        ),
-    )
-
-    grouped_matmul_dynamic_scaled_fp8[
-        input_scale_granularity=input_scale_granularity,
-        weight_scale_granularity=weight_scale_granularity,
-        m_scale_granularity=m_scale_granularity,
-        n_scale_granularity=n_scale_granularity,
-        k_scale_granularity=k_scale_granularity,
-        transpose_b=transpose_b,
-        tokens_padded_per_expert=tokens_padded_per_expert,
-        target=target,
-    ](
-        c_buf,
-        a_buf,
-        b_buf,
-        a_scales_buf,
-        b_scales_buf,
-        a_off_buf,
-        exp_buf,
-        max_num_tokens_per_expert,
-        num_active_experts,
-        ctx,
-    )
