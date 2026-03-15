@@ -720,9 +720,10 @@ def test_or(a: MemExample) -> MemExample:
 # CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, imm *"mems`">> read_mem|pos_vararg)
 def variadic_mems(*mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
+  # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}@VariadicList::@"__init__
+  # CHECK-SAME: <{{.*}}origin<0> *"mems`", {{.*}}, :!AnyType !MemExample, :!Bool {:i1 0}>(%mems)
   # CHECK-NEXT: lifetime.start %mems_0
-  # CHECK-NEXT: lit.call {{.*}}@VariadicList::@"__init__
-  # CHECK-SAME: <{{.*}}origin<0> *"mems`", {{.*}}, :!AnyType !MemExample, :!Bool {:i1 0}>(%mems, %mems_0)
+  # CHECK-NEXT: lit.ref.store [[TMP]], %mems_0
   pass
 
 # CHECK-LABEL: lit.fn @"call_variadic_mems
@@ -781,9 +782,10 @@ def variadic_field_sensitivity():
 # CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">> mut|pos_vararg)
 def variadic_inout_mems(mut *mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
+  # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}@VariadicList::@"__init__
+  # CHECK-SAME: <:!Bool {:i1 1}, {{.*}}origin<1> *"mems`", {{.*}}, :!AnyType !MemExample, :!Bool {:i1 0}>(%mems)
   # CHECK-NEXT: lifetime.start %mems_0
-  # CHECK-NEXT: lit.call {{.*}}@VariadicList::@"__init__
-  # CHECK-SAME: <:!Bool {:i1 1}, {{.*}}origin<1> *"mems`", {{.*}}, :!AnyType !MemExample, :!Bool {:i1 0}>(%mems, %mems_0)
+  # CHECK-NEXT: lit.ref.store [[TMP]], %mems_0
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mems_0 :
   # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[IMMREF]], [[ZERO]])
@@ -816,9 +818,8 @@ def call_variadic_inout_mems():
 
 # CHECK-LABEL: lit.fn @"variadic_owned_mems
 def variadic_owned_mems(var *mems: MemExample):
-    # CHECK: lit.call {{.*}}::@VariadicList::@"__init__{{.*}}"[{{.*}}]<{{.*}}>({{.*}}) :
-    # CHECK-SAME: !lit.generator<[1]("value": !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">>
-    # CHECK-SAME: "self": !lit.ref<{{.*}}#VariadicList <:!Bool {:i1 1},
+    # CHECK: lit.call {{.*}}::@VariadicList::@"__init__{{.*}}"<{{.*}}>({{.*}}) :
+    # CHECK-SAME: !lit.generator<("value": !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">>
     mems[0].x += 1
 
 

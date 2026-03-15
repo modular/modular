@@ -343,9 +343,10 @@ def variadic_inout_mems_iter(mut *mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
 
   # CHECK: [[IMMREF:%.*]] = lit.ref.immut %mems_0 :
+  # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__iter__{{.*}}([[IMMREF]])
   # CHECK: %iter = lit.var.decl
   # CHECK-NEXT: lifetime.start %iter
-  # CHECK-NEXT: lit.call {{.*}}__iter__{{.*}}([[IMMREF]], %iter)
+  # CHECK-NEXT: lit.ref.store [[TMP]], %iter
   var iter = mems.__iter__()
 
   # CHECK-NEXT: %__try_error__ = lit.var.decl

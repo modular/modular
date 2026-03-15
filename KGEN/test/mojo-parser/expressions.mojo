@@ -1055,8 +1055,9 @@ struct TwoParamsStruct[a: Int, b: Int](ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.fn @"variadic_subscript{{.*}}"<idx: !Int, a: variadic<!Int> pos_vararg>
 def variadic_subscript[idx: Int, *a: Int](*b: Int):
-    # CHECK: %b_0 = lit.var.decl "b"
-    # CHECK: lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b, %b_0)
+    # CHECK-NEXT: %b_0 = lit.var.decl "b"
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b)
+    # CHECK-NEXT: lit.ref.store [[TMP]], %b_0
     # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <#kgen.variadic.get<:variadic<!Int> a, 2>>
     comptime v0 = a[2]
 
