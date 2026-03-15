@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import DType, thread_idx
+from std.gpu import thread_idx
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.gpu.sync import barrier_count
@@ -21,7 +21,7 @@ from std.testing import assert_equal
 def barrier_count_kernel[
     active: Int,
 ](output: UnsafePointer[Int32, MutAnyOrigin]):
-    let predicate = thread_idx.x < UInt(active)
+    var predicate = thread_idx.x < UInt(active)
     output[thread_idx.x] = barrier_count(predicate)
 
 
