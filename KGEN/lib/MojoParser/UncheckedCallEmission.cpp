@@ -287,6 +287,8 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
   llvm_unreachable("unknown argument convention");
 }
 
+/// Emit the given (remaining) operands as a variadic or pack sequence,
+/// appending to the given argument value vector.
 LogicalResult CallEmitter::emitRemainingPosOperands(
     size_t argIdx, MutableArrayRef<ASTExprAnd<AnyValue>> remainingOperands,
     ArgConvention convention, Type expectedType,
@@ -324,12 +326,9 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     if (isPosVarArg) {
       auto varType = cast<VariadicType>(expectedType);
       Type varElType = varType.getElementType();
-
-      // If the element has a memory-only type, drop it into memory.
-      if (hasAddress(convention)) {
-        for (TypedAttr &arg : args)
-          arg = StoreToMemAttr::get(arg, varElType);
-      }
+      assert(hasAddress(convention) && "variadics always passed in memory");
+      for (TypedAttr &arg : args)
+        arg = StoreToMemAttr::get(arg, varElType);
       auto newVarType = VariadicType::get(varElType);
       argValue = PValue(VariadicAttr::get(args, newVarType));
     } else {
@@ -366,21 +365,12 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     if (!argVal)
       return failure();
     args.push_back(argVal);
-
-    // Variadic and pack arguments are always passed through memory. An
-    // exception was carved out for trivial register-passable values, which
-    // don't require origin tracking.
-    // TODO(MOCO-726): Make variadics always pass through memory.
-    if (hasAddress(convention) ||
-        ASTType(argVal.getType()).isTrivial(callExpr->getLoc(), emitter.shared))
-      continue;
-    emitter.shared.emitError(operand.expr->getLoc(),
-                             Diag::DiagID::err_cannot_bind_non_trivial_value);
   }
 
-  // If there are origins on anything, create a uniform representation and
-  // cast to a common reference type.
-  if (!args.empty() && isa<RefType>(args.back().getType())) {
+  // Create a uniform representation of origins.
+  if (!args.empty()) {
+    assert(isa<RefType>(args.back().getType()) &&
+           "variadics always passed in memory");
     // If one arg is a reference, then they all are.
     SmallVector<TypedAttr> refOrigins;
     for (auto arg : args)
