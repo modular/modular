@@ -15,12 +15,32 @@ This version is still a work in progress.
 
 ## Language changes
 
+- Mojo supports indexing with subscripts and names using the standard Python
+  `__getitem__` and `__getattr__` methods.  Previously it used a heuristic to
+  determine whether a `__get*__` method was operated with dynamic or parameter
+  indexes.  Mojo now has a simple and explicit policy: if a type implements a
+  `__getitem_param__` or `__getattr_param__` method and the indices are valid
+  parameter expressions, the compiler will pick it (but will not support a
+  `__setitem__` pair).  If not or if the indices are only valid runtime values,
+  Mojo will try `getitem`/`setitem` as usual. This makes the behavior more
+  predictable and explicit, but requires types to switch to the "param" method
+  names if they desire parameter-style subscripting.  This only affects a small
+  number of special types like `Tuple` and `VariadicPack`.
+
 ## Library changes
 
 - Standard library types now use conditional conformances, replacing previous
   `_constrained_conforms_to` checks:
   - `List`: `Hashable`
+  - `Optional`: `Hashable`
   - `Tuple`: `Equatable`, `Hashable`
+
+- `perf_counter_ns()` now returns correct nanoseconds on GPU instead of raw
+  cycle counts. Previously on NVIDIA GPUs it used `clock64` (a cycle counter
+  dependent on GPU core clock frequency); it now uses `globaltimer` which
+  provides actual nanosecond resolution. On AMD GPUs, it now uses
+  `s_memrealtime` (a constant-speed real-time clock) instead of `s_memtime`
+  (a cycle counter).
 
 - The `DimList` type has moved to representing its dimensions as parameters to
   the type instead of values inside the type, directly reflecting that the
@@ -34,6 +54,9 @@ This version is still a work in progress.
   var name = "Mojo"
   print(t"C:\{name}\Documents") # prints "C:\Mojo\Documents"
 ```
+
+- Subscripting `String` and `StringSlice` now requires a named parameter for range
+  indexing, for example `s[1:3]` is now `s[byte=1:3]`.
 
 ## Tooling changes
 

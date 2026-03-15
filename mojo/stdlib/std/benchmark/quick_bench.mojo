@@ -48,7 +48,7 @@ struct QuickBench:
 
     @always_inline
     def run[
-        T_out: __TypeOfAllTypes
+        T_out: TrivialRegisterPassable
     ](
         mut self,
         func: fn() -> T_out,
@@ -86,7 +86,7 @@ struct QuickBench:
 
     @always_inline
     def run[
-        T0: __TypeOfAllTypes, /, T_out: __TypeOfAllTypes
+        T0: TrivialRegisterPassable, /, T_out: TrivialRegisterPassable
     ](
         mut self,
         func: fn(T0) -> T_out,
@@ -127,10 +127,10 @@ struct QuickBench:
 
     @always_inline
     def run[
-        T0: __TypeOfAllTypes,
-        T1: __TypeOfAllTypes,
+        T0: TrivialRegisterPassable,
+        T1: TrivialRegisterPassable,
         /,
-        T_out: __TypeOfAllTypes,
+        T_out: TrivialRegisterPassable,
     ](
         mut self,
         func: fn(T0, T1) -> T_out,
@@ -174,11 +174,11 @@ struct QuickBench:
 
     @always_inline
     def run[
-        T0: __TypeOfAllTypes,
-        T1: __TypeOfAllTypes,
-        T2: __TypeOfAllTypes,
+        T0: TrivialRegisterPassable,
+        T1: TrivialRegisterPassable,
+        T2: TrivialRegisterPassable,
         /,
-        T_out: __TypeOfAllTypes,
+        T_out: TrivialRegisterPassable,
     ](
         mut self,
         func: fn(T0, T1, T2) -> T_out,
@@ -225,12 +225,12 @@ struct QuickBench:
 
     @always_inline
     def run[
-        T0: __TypeOfAllTypes,
-        T1: __TypeOfAllTypes,
-        T2: __TypeOfAllTypes,
-        T3: __TypeOfAllTypes,
+        T0: TrivialRegisterPassable,
+        T1: TrivialRegisterPassable,
+        T2: TrivialRegisterPassable,
+        T3: TrivialRegisterPassable,
         /,
-        T_out: __TypeOfAllTypes,
+        T_out: TrivialRegisterPassable,
     ](
         mut self,
         func: fn(T0, T1, T2, T3) -> T_out,
@@ -280,13 +280,13 @@ struct QuickBench:
 
     @always_inline
     def run[
-        T0: __TypeOfAllTypes,
-        T1: __TypeOfAllTypes,
-        T2: __TypeOfAllTypes,
-        T3: __TypeOfAllTypes,
-        T4: __TypeOfAllTypes,
+        T0: TrivialRegisterPassable,
+        T1: TrivialRegisterPassable,
+        T2: TrivialRegisterPassable,
+        T3: TrivialRegisterPassable,
+        T4: TrivialRegisterPassable,
         /,
-        T_out: __TypeOfAllTypes,
+        T_out: TrivialRegisterPassable,
     ](
         mut self,
         func: fn(T0, T1, T2, T3, T4) -> T_out,
@@ -339,14 +339,14 @@ struct QuickBench:
 
     @always_inline
     def run[
-        T0: __TypeOfAllTypes,
-        T1: __TypeOfAllTypes,
-        T2: __TypeOfAllTypes,
-        T3: __TypeOfAllTypes,
-        T4: __TypeOfAllTypes,
-        T5: __TypeOfAllTypes,
+        T0: TrivialRegisterPassable,
+        T1: TrivialRegisterPassable,
+        T2: TrivialRegisterPassable,
+        T3: TrivialRegisterPassable,
+        T4: TrivialRegisterPassable,
+        T5: TrivialRegisterPassable,
         /,
-        T_out: __TypeOfAllTypes,
+        T_out: TrivialRegisterPassable,
     ](
         mut self,
         func: fn(T0, T1, T2, T3, T4, T5) -> T_out,
@@ -402,15 +402,15 @@ struct QuickBench:
 
     @always_inline
     def run[
-        T0: __TypeOfAllTypes,
-        T1: __TypeOfAllTypes,
-        T2: __TypeOfAllTypes,
-        T3: __TypeOfAllTypes,
-        T4: __TypeOfAllTypes,
-        T5: __TypeOfAllTypes,
-        T6: __TypeOfAllTypes,
+        T0: TrivialRegisterPassable,
+        T1: TrivialRegisterPassable,
+        T2: TrivialRegisterPassable,
+        T3: TrivialRegisterPassable,
+        T4: TrivialRegisterPassable,
+        T5: TrivialRegisterPassable,
+        T6: TrivialRegisterPassable,
         /,
-        T_out: __TypeOfAllTypes,
+        T_out: TrivialRegisterPassable,
     ](
         mut self,
         func: fn(T0, T1, T2, T3, T4, T5, T6) -> T_out,
@@ -469,16 +469,16 @@ struct QuickBench:
 
     @always_inline
     def run[
-        T0: __TypeOfAllTypes,
-        T1: __TypeOfAllTypes,
-        T2: __TypeOfAllTypes,
-        T3: __TypeOfAllTypes,
-        T4: __TypeOfAllTypes,
-        T5: __TypeOfAllTypes,
-        T6: __TypeOfAllTypes,
-        T7: __TypeOfAllTypes,
+        T0: TrivialRegisterPassable,
+        T1: TrivialRegisterPassable,
+        T2: TrivialRegisterPassable,
+        T3: TrivialRegisterPassable,
+        T4: TrivialRegisterPassable,
+        T5: TrivialRegisterPassable,
+        T6: TrivialRegisterPassable,
+        T7: TrivialRegisterPassable,
         /,
-        T_out: __TypeOfAllTypes,
+        T_out: TrivialRegisterPassable,
     ](
         mut self,
         func: fn(T0, T1, T2, T3, T4, T5, T6, T7) -> T_out,
@@ -540,17 +540,17 @@ struct QuickBench:
 
     @always_inline
     def run[
-        T0: __TypeOfAllTypes,
-        T1: __TypeOfAllTypes,
-        T2: __TypeOfAllTypes,
-        T3: __TypeOfAllTypes,
-        T4: __TypeOfAllTypes,
-        T5: __TypeOfAllTypes,
-        T6: __TypeOfAllTypes,
-        T7: __TypeOfAllTypes,
-        T8: __TypeOfAllTypes,
+        T0: TrivialRegisterPassable,
+        T1: TrivialRegisterPassable,
+        T2: TrivialRegisterPassable,
+        T3: TrivialRegisterPassable,
+        T4: TrivialRegisterPassable,
+        T5: TrivialRegisterPassable,
+        T6: TrivialRegisterPassable,
+        T7: TrivialRegisterPassable,
+        T8: TrivialRegisterPassable,
         /,
-        T_out: __TypeOfAllTypes,
+        T_out: TrivialRegisterPassable,
     ](
         mut self,
         func: fn(T0, T1, T2, T3, T4, T5, T6, T7, T8) -> T_out,
@@ -615,18 +615,18 @@ struct QuickBench:
 
     @always_inline
     def run[
-        T0: __TypeOfAllTypes,
-        T1: __TypeOfAllTypes,
-        T2: __TypeOfAllTypes,
-        T3: __TypeOfAllTypes,
-        T4: __TypeOfAllTypes,
-        T5: __TypeOfAllTypes,
-        T6: __TypeOfAllTypes,
-        T7: __TypeOfAllTypes,
-        T8: __TypeOfAllTypes,
-        T9: __TypeOfAllTypes,
+        T0: TrivialRegisterPassable,
+        T1: TrivialRegisterPassable,
+        T2: TrivialRegisterPassable,
+        T3: TrivialRegisterPassable,
+        T4: TrivialRegisterPassable,
+        T5: TrivialRegisterPassable,
+        T6: TrivialRegisterPassable,
+        T7: TrivialRegisterPassable,
+        T8: TrivialRegisterPassable,
+        T9: TrivialRegisterPassable,
         /,
-        T_out: __TypeOfAllTypes,
+        T_out: TrivialRegisterPassable,
     ](
         mut self,
         func: fn(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9) -> T_out,

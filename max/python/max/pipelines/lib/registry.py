@@ -317,6 +317,46 @@ class SupportedArchitecture:
         return TextTokenizer
 
 
+class _ValidatedNewContext:
+    """Picklable wrapper that applies architecture-level validators.
+
+    Unlike a closure or ``functools.wraps``-decorated function, this plain
+    class survives pickling when tokenizers are sent to model-worker
+    subprocesses.
+    """
+
+    def __init__(
+        self,
+        tokenizer: PipelineTokenizer[Any, Any, Any],
+        validators: list[Callable[..., None]],
+    ) -> None:
+        self._tokenizer = tokenizer
+        self._validators = validators
+
+    async def __call__(self, request: Any) -> Any:
+        # Call the original (unwrapped) class method, not the instance
+        # attribute, so we always reach the real implementation.
+        context = await type(self._tokenizer).new_context(
+            self._tokenizer, request
+        )
+        for validator in self._validators:
+            validator(context)
+        return context
+
+
+def _apply_context_validators(
+    tokenizer: PipelineTokenizer[Any, Any, Any],
+    validators: list[Callable[..., None]],
+) -> None:
+    """Wraps a tokenizer's new_context to apply architecture-level validators.
+
+    This keeps validation logic out of individual tokenizer classes while
+    ensuring validators run automatically after context creation.
+    """
+    wrapper = _ValidatedNewContext(tokenizer, validators)
+    tokenizer.new_context = wrapper  # type: ignore[method-assign]
+
+
 class PipelineRegistry:
     """Registry for managing supported model architectures and their pipelines.
 
@@ -847,7 +887,6 @@ class PipelineRegistry:
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
                 chat_template=pipeline_config.model.retrieve_chat_template(),
-                context_validators=arch.context_validators,
             )
         else:
             tokenizer = arch.tokenizer(
@@ -857,8 +896,11 @@ class PipelineRegistry:
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 chat_template=pipeline_config.model.retrieve_chat_template(),
-                context_validators=arch.context_validators,
             )
+
+        if arch.context_validators:
+            _apply_context_validators(tokenizer, arch.context_validators)
+
         # Cast tokenizer to the proper type for text generation pipeline compatibility
         typed_tokenizer = cast(
             PipelineTokenizer[

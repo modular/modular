@@ -71,13 +71,13 @@ def parse_directive_value(asm: String, directive: String) -> Int:
     if line_end <= directive_idx:
         return 0
 
-    var line = asm[directive_idx:line_end]
+    var line = asm[byte=directive_idx:line_end]
     var colon_idx = line.find(":")
     if colon_idx < 0:
         return 0
 
     try:
-        var num_part = line[colon_idx + 1 :].strip()
+        var num_part = line[byte = colon_idx + 1 :].strip()
         return Int(num_part)
     except:
         return 0

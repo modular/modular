@@ -49,12 +49,8 @@ class SpeculativeDecodingMetrics:
     total_acceptance_lengths: int
     num_generations: int
 
-    log_on_destruction: bool = False
-
     @classmethod
-    def empty(
-        self, log_on_destruction: bool = False
-    ) -> SpeculativeDecodingMetrics:
+    def empty(self) -> SpeculativeDecodingMetrics:
         """Create an empty metrics object."""
         return SpeculativeDecodingMetrics(
             bonus_tokens_used=0,
@@ -62,7 +58,6 @@ class SpeculativeDecodingMetrics:
             draft_tokens_generated=0,
             total_acceptance_lengths=0,
             num_generations=0,
-            log_on_destruction=log_on_destruction,
         )
 
     def update(
@@ -103,11 +98,6 @@ class SpeculativeDecodingMetrics:
             f"bonus_tokens_used={self.bonus_tokens_used}, "
             f"draft_tokens_accepted={self.draft_tokens_accepted}/{self.draft_tokens_generated})"
         )
-
-    def __del__(self) -> None:
-        """Log metrics on destruction of object if enabled."""
-        if self.log_on_destruction:
-            logger.info(f"SpeculativeDecodingMetrics: {self.__str__()}")
 
 
 # TODO: dedup update_contexts_and_compute_metrics_standalone and update_contexts_and_compute_metrics_eagle!

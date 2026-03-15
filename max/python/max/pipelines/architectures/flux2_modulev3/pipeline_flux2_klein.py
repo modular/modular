@@ -68,13 +68,13 @@ class Flux2KleinPipeline(Flux2Pipeline):
         "transformer": Flux2Pipeline.components["transformer"],
     }
 
-    @traced
+    @traced(message="Flux2KleinPipeline.init_remaining_components")
     def init_remaining_components(self) -> None:
         """Initialize derived attributes, including the compiled CFG combine."""
         super().init_remaining_components()
         self.build_cfg_combine()
 
-    @traced
+    @traced(message="Flux2KleinPipeline.build_cfg_combine")
     def build_cfg_combine(self) -> None:
         """Compile the CFG combine formula with symbolic shapes."""
         dtype = self.transformer.config.dtype
@@ -113,7 +113,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
         result = neg_noise_pred + scaled
         return result.cast(input_dtype)
 
-    @traced
+    @traced(message="Flux2KleinPipeline.prepare_inputs")
     def prepare_inputs(self, context: PixelContext) -> Flux2KleinModelInputs:  # type: ignore[override]
         """Convert a PixelContext into Flux2KleinModelInputs.
 
@@ -168,7 +168,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
             is_distilled=is_distilled,
         )
 
-    @traced
+    @traced(message="Flux2KleinPipeline.execute")
     def execute(  # type: ignore[override]
         self,
         model_inputs: Flux2KleinModelInputs,

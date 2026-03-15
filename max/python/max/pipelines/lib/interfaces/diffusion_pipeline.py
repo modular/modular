@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable
 from dataclasses import MISSING, dataclass, field, fields
@@ -43,6 +44,8 @@ if TYPE_CHECKING:
 
     from ..config import PipelineConfig
 
+logger = logging.getLogger("max.pipelines")
+
 CompileTarget: TypeAlias = Callable[..., Any] | Module[..., Any]
 CompileDecorator: TypeAlias = Callable[[CompileTarget], "CompileWrapper"]
 
@@ -54,6 +57,12 @@ class DiffusionPipeline(ABC):
     """
 
     components: dict[str, type[ComponentModel]] | None = None
+
+    unprefixed_weight_component: str | None = None
+    """When set, weight files without a ``<component>/`` prefix are assigned to
+    this component.  This supports multi-repo layouts where quantized weights
+    for one component (e.g. the transformer) are shipped as flat files in a
+    separate repo while the remaining components use the base model repo."""
 
     default_num_inference_steps: int = 50
     """Default number of denoising steps when the user does not specify one.
@@ -127,6 +136,7 @@ class DiffusionPipeline(ABC):
 
         relative_paths = self._resolve_relative_component_paths()
         loaded_sub_models: dict[str, ComponentModel] = {}
+        pipeline_encoding = self.pipeline_config.model.quantization_encoding
 
         for name, component_cls in tqdm(
             self.components.items(), desc="Loading sub models"
@@ -137,13 +147,23 @@ class DiffusionPipeline(ABC):
             config_dict = self._get_component_config_dict(
                 components_config, name
             )
-            abs_paths = self._resolve_absolute_paths(
-                weight_paths, relative_paths[name]
-            )
+
+            if name in relative_paths:
+                abs_paths = self._resolve_absolute_paths(
+                    weight_paths, relative_paths[name]
+                )
+                encoding = pipeline_encoding
+            else:
+                # Component weights not provided — download from base model
+                # repo.  These components (e.g. VAE, text encoder) always use
+                # bfloat16 regardless of the quantization applied to the
+                # primary component.
+                abs_paths = self._download_component_weights(name)
+                encoding = "bfloat16"
 
             loaded_sub_models[name] = component_cls(
                 config=config_dict,
-                encoding=self.pipeline_config.model.quantization_encoding,
+                encoding=encoding,
                 devices=self.devices,
                 weights=load_weights(abs_paths),
             )
@@ -165,7 +185,11 @@ class DiffusionPipeline(ABC):
         return config_dict
 
     def _resolve_relative_component_paths(self) -> dict[str, list[str]]:
-        """Group weight paths by component name (first path segment)."""
+        """Group weight paths by component name (first path segment).
+
+        Files without a ``/`` separator (i.e. flat filenames) are assigned to
+        :attr:`unprefixed_weight_component` when it is set.
+        """
         result: dict[str, list[str]] = {}
 
         for path in self.pipeline_config.model.weight_path:
@@ -174,12 +198,46 @@ class DiffusionPipeline(ABC):
             if len(parts) >= 2:
                 component = parts[0]
                 result.setdefault(component, []).append(path_str)
+            elif self.unprefixed_weight_component:
+                result.setdefault(self.unprefixed_weight_component, []).append(
+                    path_str
+                )
 
         if not result:
             raise ValueError(
-                "No component weights found. Expected format: <component>/<file>"
+                "No component weights found. Expected format:"
+                " <component>/<file>"
             )
         return result
+
+    def _download_component_weights(self, component_name: str) -> list[Path]:
+        """Download weight files for a component from the base model repo."""
+        from max.graph.weights import WeightsFormat
+
+        from ..hf_utils import download_weight_files
+
+        model_repo = self.pipeline_config.model.huggingface_model_repo
+        all_safetensors = model_repo.weight_files.get(
+            WeightsFormat.safetensors, []
+        )
+        component_files = [
+            f for f in all_safetensors if f.startswith(f"{component_name}/")
+        ]
+        if not component_files:
+            raise ValueError(
+                f"No weight files found for component '{component_name}' "
+                f"in base model repo '{model_repo.repo_id}'."
+            )
+        if model_repo.repo_type == "online":
+            return download_weight_files(
+                huggingface_model_id=model_repo.repo_id,
+                filenames=component_files,
+                revision=self.pipeline_config.model.huggingface_model_revision,
+                force_download=self.pipeline_config.model.force_download,
+            )
+        else:
+            local_path = Path(model_repo.repo_id)
+            return [local_path / f for f in component_files]
 
     def _resolve_absolute_paths(
         self, weight_paths: list[Path], relative_paths: list[str]

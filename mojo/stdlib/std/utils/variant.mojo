@@ -498,7 +498,7 @@ struct Variant[*Ts: Movable](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    def __getitem__[T: AnyType](ref self) -> ref[self] T:
+    def __getitem_param__[T: AnyType](ref self) -> ref[self] T:
         """Get the value out of the variant as a type-checked type.
 
         This explicitly check that your value is of that type!

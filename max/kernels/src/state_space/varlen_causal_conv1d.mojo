@@ -64,7 +64,7 @@ comptime PAD_SLOT_ID: Int32 = -1
 # ============================================================================
 
 
-fn causal_conv1d_varlen_states_cpu[
+def causal_conv1d_varlen_states_cpu[
     x_dtype: DType,
     x_layout: Layout,
     cu_seqlens_dtype: DType,
@@ -159,7 +159,7 @@ fn causal_conv1d_varlen_states_cpu[
                 states.ptr[states_offset] = Scalar[states_dtype](val)
 
 
-fn causal_conv1d_varlen_fwd_cpu[
+def causal_conv1d_varlen_fwd_cpu[
     x_dtype: DType,
     x_layout: Layout,
     weight_dtype: DType,
@@ -349,7 +349,7 @@ fn causal_conv1d_varlen_fwd_cpu[
                     conv_states.ptr[state_offset] = val
 
 
-fn causal_conv1d_varlen_update_cpu[
+def causal_conv1d_varlen_update_cpu[
     x_dtype: DType,
     x_layout: Layout,
     weight_dtype: DType,
@@ -565,7 +565,7 @@ fn causal_conv1d_varlen_update_cpu[
 # ============================================================================
 
 
-fn causal_conv1d_varlen_states_gpu[
+def causal_conv1d_varlen_states_gpu[
     x_dtype: DType,
     x_layout: Layout,
     cu_seqlens_dtype: DType,
@@ -659,7 +659,7 @@ fn causal_conv1d_varlen_states_gpu[
         states.ptr[states_offset] = val
 
 
-fn causal_conv1d_varlen_fwd_gpu[
+def causal_conv1d_varlen_fwd_gpu[
     x_dtype: DType,
     x_layout: Layout,
     weight_dtype: DType,
@@ -837,7 +837,7 @@ fn causal_conv1d_varlen_fwd_gpu[
             conv_states.ptr[state_offset] = val
 
 
-fn causal_conv1d_varlen_update_gpu[
+def causal_conv1d_varlen_update_gpu[
     x_dtype: DType,
     x_layout: Layout,
     weight_dtype: DType,

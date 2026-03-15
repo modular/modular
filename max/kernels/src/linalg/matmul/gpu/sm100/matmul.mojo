@@ -35,12 +35,19 @@ from std.gpu.sync import (
     mbarrier_arrive,
 )
 from std.gpu.compute.arch.tcgen05 import *
-from layout import IntTuple, Layout, LayoutTensor, RuntimeTuple, UNKNOWN_VALUE
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout.layout import coalesce
-from layout.layout_tensor import LayoutTensorIter
 from layout.runtime_tuple import idx2crd
 from layout.swizzle import Swizzle, make_swizzle
 from layout.tensor_core_async import st_matrix_n_layout
+from layout.tile_layout import TensorLayout
 from layout.tma_async import TMATensorTile
 from structured_kernels.tile_types import (
     SMemTileArray2D,
@@ -101,82 +108,6 @@ struct WarpRole[has_scheduler: Bool = True](TrivialRegisterPassable):
     def is_scheduler() -> Bool:
         comptime assert Self.has_scheduler, "Scheduler warp is not enabled"
         return Self.Scheduler == warp_id()
-
-
-# TODO: Remove this LayoutTensorIter overload once all callers migrate
-# to SMemTileArray2D. See the TileTensor overload below.
-@always_inline
-def consumer_main_loop[
-    accum_type: DType,
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    a_smem_layout: Layout,
-    b_smem_layout: Layout,
-    a_swizzle: TensorMapSwizzle,
-    b_swizzle: TensorMapSwizzle,
-    transpose_b: Bool,
-    pipeline_stages: Int,
-    /,
-    *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cta_group: Int = 1,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
-    k_group_size: Int = 1,
-](
-    tmem_addr: UInt32,
-    a_smem_iter: LayoutTensorIter[
-        a_type,
-        a_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ],
-    b_smem_iter: LayoutTensorIter[
-        b_type,
-        b_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ],
-    load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
-    mma_op: MmaOpSM100_SS[
-        c_type,
-        a_type,
-        b_type,
-        block_tile_shape,
-        mma_shape,
-        accum_type=accum_type,
-        cta_group=cta_group,
-        cluster_shape=cluster_shape,
-        a_swizzle=a_swizzle,
-        b_swizzle=b_swizzle,
-        transpose_b=transpose_b,
-    ],
-    elect_one_warp: Bool,
-    iter_idx: UInt32,
-    k_start: UInt32,
-):
-    var stage = load_mma_pipeline.consumer_stage()
-
-    load_mma_pipeline.wait_producer()
-
-    # Compose TMEM address: accum stage encoded in column field with stride in columns.
-    if elect_one_sync():
-        for j in range(UInt32(k_group_size)):
-            var offset = stage * UInt32(k_group_size) + j
-            var a_smem_tile = a_smem_iter.next(offset)[]
-            var b_smem_tile = b_smem_iter.next(offset)[]
-            mma_op.mma(
-                a_smem_tile,
-                b_smem_tile,
-                tmem_addr,
-                init_c=(
-                    (iter_idx + j) == k_start
-                ),  # Initialize C on first iteration
-            )
-        mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
 
 
 @always_inline
@@ -268,28 +199,40 @@ def f32_frag_to_smem[
     swizzle_mode: TensorMapSwizzle,
     vec_dtype: DType,
     vec_size: Int,
+    DstLayout: TensorLayout,
 ](
     vec: InlineArray[Scalar[vec_dtype], vec_size],
-    dst: LayoutTensor[mut=True, _, _, address_space=AddressSpace.SHARED, ...],
+    dst: TileTensor[
+        _, DstLayout, MutAnyOrigin, address_space=AddressSpace.SHARED
+    ],
 ):
-    # TODO: apply swizzle. Somehow swizzle+distribute results in wrong values.
-    # alias swizzle = make_swizzle[DType.float64, swizzle_mode]() # hack
-    # var dst_frag = dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4), swizzle=swizzle](lane_id())
-    var dst_frag = dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
-        Int(lane_id())
-    )
-    comptime assert (
-        2 * dst_frag.layout.size() == vec_size
-    ), "2*dst_frag.layout.size() must be equal to vec_size"
+    # Manual implementation of dst.vectorize[1, 2]().distribute[row_major(8, 4)]
+    # because the compiler can't prove `all_dims_known` through layout types
+    # produced by `lt_to_tt()`. See MSTDL-2422.
+    comptime stride0 = dst.static_stride[0]
+    comptime shape0 = dst.static_shape[0]
+    comptime shape1 = dst.static_shape[1]
 
-    comptime for i in range(dst_frag.layout.shape[0].value()):
-        comptime for j in range(dst_frag.layout.shape[1].value()):
-            comptime i_vec = i + j * dst_frag.layout.shape[0].value()
-            val = SIMD[dst.dtype, 2](
+    comptime frag_rows = shape0 // 8
+    comptime frag_cols = shape1 // 8
+    comptime assert (
+        2 * frag_rows * frag_cols == vec_size
+    ), "2*frag_rows*frag_cols must be equal to vec_size"
+
+    var lane = lane_id()
+    var thread_row = Int((lane >> 2) & 7)
+    var thread_col = Int(lane & 3)
+    var base_offset = thread_row * Int(stride0) + thread_col * 2
+
+    comptime for i in range(frag_rows):
+        comptime for j in range(frag_cols):
+            comptime i_vec = i + j * frag_rows
+            var val = SIMD[dst.dtype, 2](
                 rebind[Scalar[dst.dtype]](vec[2 * i_vec]),
                 rebind[Scalar[dst.dtype]](vec[2 * i_vec + 1]),
             )
-            dst_frag[i, j] = rebind[dst_frag.element_type](val)
+            var offset = base_offset + i * 8 * Int(stride0) + j * 8
+            (dst.ptr + offset).store(val)
 
 
 @always_inline
@@ -298,11 +241,14 @@ def stsm_helper[
     stageN: Int,
     vec_dtype: DType,
     vec_size: Int,
+    DstLayout: TensorLayout,
     transpose_c: Bool = False,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
     vec: InlineArray[Scalar[vec_dtype], vec_size],
-    dst: LayoutTensor[mut=True, _, _, address_space=AddressSpace.SHARED, ...],
+    dst: TileTensor[
+        _, DstLayout, MutAnyOrigin, address_space=AddressSpace.SHARED
+    ],
     warp_offset: UInt32 = 0,
 ):
     comptime if size_of[dst.dtype]() == 4:
@@ -318,17 +264,20 @@ def stsm_helper[
     # E.g. dst layout can be (16, 16) : (32, 1), which is tiled from
     # row-major(16, 32). The map should use tile's stride to calculate
     # the dst row offset.
-    comptime stride0 = dst.layout.stride[0].value()
-    comptime stride1 = dst.layout.stride[1].value()
+    comptime stride0 = dst.static_stride[0]
+    comptime stride1 = dst.static_stride[1]
     comptime assert stride1 == 1, (
         "stride1 must be 1. Got: "
         + String(stride1)
-        + " for layout: "
-        + String(dst.layout)
+        + " for strides ("
+        + String(stride0)
+        + ", "
+        + String(stride1)
+        + ")"
     )
-    comptime shape0 = dst.layout.shape[
+    comptime shape0 = dst.static_shape[
         1
-    ].value() if not transpose_c else dst.layout.shape[0].value()
+    ] if not transpose_c else dst.static_shape[0]
     # the layout looks like
     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-matrix-fragments-shape-16256b
     # but transposed and coalesced by 8 elements.
@@ -554,6 +503,71 @@ def shared_memory_epilogue_transpose[
 
 
 @always_inline
+def shared_memory_epilogue_transpose[
+    stage: UInt,
+    stageN: UInt,
+    c_type: DType,
+    c_smem_layout: Layout,
+    swizzle: Swizzle,
+    compute_lambda_fn: elementwise_compute_lambda_type,
+    num_output_warps: Int,
+    warp_dim: Int,
+    MMA_M: Int,
+    BN: Int,
+    cta_group: Int,
+    DstLayout: TensorLayout,
+](
+    M: UInt32,
+    N: UInt32,
+    c_col: UInt,
+    c_row: UInt,
+    c_smem: TileTensor[
+        _, DstLayout, MutAnyOrigin, address_space=AddressSpace.SHARED
+    ],
+    warp_i: UInt,
+    warp_j: UInt,
+):
+    """TileTensor overload. Delegates to the LayoutTensor overload since the
+    function body only uses `c_smem.ptr` — all layout algebra operates on the
+    `c_smem_layout` compile-time parameter directly."""
+    shared_memory_epilogue_transpose[
+        stage,
+        stageN,
+        c_type,
+        c_smem_layout,
+        swizzle,
+        compute_lambda_fn,
+        num_output_warps,
+        warp_dim,
+        MMA_M,
+        BN,
+        cta_group,
+    ](
+        M,
+        N,
+        c_col,
+        c_row,
+        LayoutTensor[
+            c_type,
+            c_smem_layout,
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ](
+            rebind[
+                UnsafePointer[
+                    Scalar[c_type],
+                    MutAnyOrigin,
+                    address_space=AddressSpace.SHARED,
+                ]
+            ](c_smem.ptr),
+            RuntimeLayout[c_smem_layout](),
+        ),
+        warp_i,
+        warp_j,
+    )
+
+
+@always_inline
 def shared_memory_epilogue[
     MMA_M: UInt,
     data_paths: UInt,
@@ -741,6 +755,89 @@ def shared_memory_epilogue[
         shared_memory_row_lower_half += UInt(distribute_rows)
 
     named_barrier[Int32(num_output_warps * WARP_SIZE)]()
+
+
+@always_inline
+def shared_memory_epilogue[
+    MMA_M: UInt,
+    data_paths: UInt,
+    num_stages: UInt,
+    stage: UInt,
+    stageN: UInt,
+    c_type: DType,
+    shared_n: UInt,
+    simd_size: UInt,
+    c_smem_upper_layout: Layout,
+    c_smem_lower_layout: Layout,
+    swizzle: Swizzle,
+    compute_lambda_fn: elementwise_compute_lambda_type,
+    num_output_warps: Int,
+    UpperLayout: TensorLayout,
+    LowerLayout: TensorLayout,
+](
+    M: UInt32,
+    N: UInt32,
+    c_col: UInt,
+    c_row: UInt,
+    c_smem_warp_tile_upper: TileTensor[
+        _, UpperLayout, MutAnyOrigin, address_space=AddressSpace.SHARED
+    ],
+    c_smem_warp_tile_lower: TileTensor[
+        _, LowerLayout, MutAnyOrigin, address_space=AddressSpace.SHARED
+    ],
+):
+    """TileTensor overload. Delegates to the LayoutTensor overload since the
+    function body uses `.vectorize().distribute()` on LayoutTensor."""
+    shared_memory_epilogue[
+        MMA_M,
+        data_paths,
+        num_stages,
+        stage,
+        stageN,
+        c_type,
+        shared_n,
+        simd_size,
+        c_smem_upper_layout,
+        c_smem_lower_layout,
+        swizzle,
+        compute_lambda_fn,
+        num_output_warps,
+    ](
+        M,
+        N,
+        c_col,
+        c_row,
+        LayoutTensor[
+            c_type,
+            c_smem_upper_layout,
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ](
+            rebind[
+                UnsafePointer[
+                    Scalar[c_type],
+                    MutAnyOrigin,
+                    address_space=AddressSpace.SHARED,
+                ]
+            ](c_smem_warp_tile_upper.ptr),
+            RuntimeLayout[c_smem_upper_layout](),
+        ),
+        LayoutTensor[
+            c_type,
+            c_smem_lower_layout,
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ](
+            rebind[
+                UnsafePointer[
+                    Scalar[c_type],
+                    MutAnyOrigin,
+                    address_space=AddressSpace.SHARED,
+                ]
+            ](c_smem_warp_tile_lower.ptr),
+            RuntimeLayout[c_smem_lower_layout](),
+        ),
+    )
 
 
 @always_inline

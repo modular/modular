@@ -613,11 +613,16 @@ class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
     """Distributed tensor parallel implementation of the Latent Attention with
     Rope. Note that using tensor parallelism for MLA will cause the KV-cache to
     be duplicated across all devices, which is not efficient.
+
+    When ``skip_allreduce`` is True, the final all-reduce is skipped. This is
+    intended for mixed TP-attention + EP-MoE configurations, where the
+    communication is handled explicitly by the caller.
     """
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, *, skip_allreduce: bool = False, **kwargs) -> None:
         super().__init__(**kwargs)
         num_devices = len(self.devices)
+        self.skip_allreduce = skip_allreduce
         self.sharding_strategy = ShardingStrategy.tensor_parallel(num_devices)
         self.allreduce = Allreduce(num_devices)
 
@@ -702,6 +707,9 @@ class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
                     mla_decode_metadata=mla_decode_metadata_i,
                 )
             )
+
+        if self.skip_allreduce:
+            return inputs
 
         return self.allreduce(
             inputs=inputs,

@@ -115,7 +115,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
     var _producer_phase: UInt32
 
     @always_inline
-    fn __init__(out self, ptr: MbarPtr):
+    def __init__(out self, ptr: MbarPtr):
         """Initialize the producer-consumer pipeline with default phases.
 
         Args:
@@ -131,17 +131,17 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
         self._consumer_phase = 0
 
     @always_inline
-    fn wait_producer(self):
+    def wait_producer(self):
         """Consumer waits for producer."""
         self.full[self._consumer_stage].wait(self._consumer_phase)
 
     @always_inline
-    fn wait_consumer(self):
+    def wait_consumer(self):
         """Producer waits for consumer."""
         self.empty[self._producer_stage].wait(self._producer_phase)
 
     @always_inline
-    fn try_wait_producer(self) -> Bool:
+    def try_wait_producer(self) -> Bool:
         """Non-blocking check if producer data is ready.
 
         Returns:
@@ -158,7 +158,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
         return self.full[self._consumer_stage].try_wait(self._consumer_phase)
 
     @always_inline
-    fn try_wait_consumer(self) -> Bool:
+    def try_wait_consumer(self) -> Bool:
         """Non-blocking check if consumer has freed the stage.
 
         Returns:
@@ -170,7 +170,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
         return self.empty[self._producer_stage].try_wait(self._producer_phase)
 
     @always_inline
-    fn wait_producer_if_needed(self, already_ready: Bool):
+    def wait_producer_if_needed(self, already_ready: Bool):
         """Conditionally wait for producer if not already ready.
 
         Args:
@@ -180,7 +180,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
             self.wait_producer()
 
     @always_inline
-    fn wait_consumer_if_needed(self, already_ready: Bool):
+    def wait_consumer_if_needed(self, already_ready: Bool):
         """Conditionally wait for consumer if not already ready.
 
         Args:
@@ -190,7 +190,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
             self.wait_consumer()
 
     @always_inline
-    fn producer_mbar(self, stage: UInt32) -> MbarPtr:
+    def producer_mbar(self, stage: UInt32) -> MbarPtr:
         """Get the producer barrier for a specific stage.
 
         Args:
@@ -202,7 +202,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
         return self.full + stage
 
     @always_inline
-    fn consumer_mbar(self, stage: UInt32) -> MbarPtr:
+    def consumer_mbar(self, stage: UInt32) -> MbarPtr:
         """Get the consumer barrier for a specific stage.
 
         Args:
@@ -214,7 +214,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
         return self.empty + stage
 
     @always_inline
-    fn producer_stage(self) -> UInt32:
+    def producer_stage(self) -> UInt32:
         """Get the current producer stage index.
 
         Returns:
@@ -223,7 +223,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
         return self._producer_stage
 
     @always_inline
-    fn consumer_stage(self) -> UInt32:
+    def consumer_stage(self) -> UInt32:
         """Get the current consumer stage index.
 
         Returns:
@@ -232,7 +232,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
         return self._consumer_stage
 
     @always_inline
-    fn consumer_step(mut self):
+    def consumer_step(mut self):
         """Advance the consumer to the next pipeline stage.
 
         Increments the consumer stage and wraps to 0 when reaching num_stages,
@@ -248,7 +248,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
             self._consumer_phase ^= 1
 
     @always_inline
-    fn producer_step(mut self):
+    def producer_step(mut self):
         """Advance the producer to the next pipeline stage.
 
         Increments the producer stage and wraps to 0 when reaching num_stages,
@@ -262,7 +262,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
 
     @staticmethod
     @always_inline
-    fn smem_bytes() -> UInt32:
+    def smem_bytes() -> UInt32:
         """Calculate the shared memory bytes required for pipeline barriers.
 
         Returns:
@@ -272,7 +272,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
         return UInt32(2 * Self.num_stages * size_of[SharedMemBarrier]())
 
     @always_inline
-    fn init_mbars(
+    def init_mbars(
         self, producer_arrive_count: Int32, consumer_arrive_count: Int32
     ):
         """
@@ -290,7 +290,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
             self.empty[i].init(consumer_arrive_count)
 
     @always_inline
-    fn producer_signal_and_step(mut self):
+    def producer_signal_and_step(mut self):
         """Wait for consumer, signal production, and advance stage.
 
         Combined operation for CLC throttling (Load warp):
@@ -303,7 +303,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
         self.producer_step()
 
     @always_inline
-    fn consumer_signal_and_step(mut self):
+    def consumer_signal_and_step(mut self):
         """Wait for producer, signal consumption, and advance stage.
 
         Combined operation for CLC throttling (Scheduler warp):
@@ -320,7 +320,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
     # =========================================================================
 
     @always_inline
-    fn produce[
+    def produce[
         origin: MutOrigin, //
     ](ref[origin] self) -> ProduceContext[origin, Self.num_stages]:
         """Produce one pipeline stage with encapsulated barriers.
@@ -337,7 +337,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
         return ProduceContext(Pointer(to=self))
 
     @always_inline
-    fn consume[
+    def consume[
         origin: MutOrigin, //
     ](ref[origin] self) -> ConsumeContext[origin, Self.num_stages]:
         """Consume one pipeline stage with encapsulated barriers.
@@ -353,7 +353,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
         return ConsumeContext(Pointer(to=self))
 
     @always_inline
-    fn consume_explicit[
+    def consume_explicit[
         origin: MutOrigin, //
     ](ref[origin] self) -> ExplicitConsumeContext[origin, Self.num_stages]:
         """Consume one pipeline stage with EXPLICIT barrier arrive.
@@ -384,7 +384,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
     # =========================================================================
 
     @always_inline
-    fn acquire_producer[
+    def acquire_producer[
         origin: MutOrigin, //
     ](ref[origin] self) -> ProducerStage[origin, Self.num_stages]:
         """Acquire a producer stage handle using linear types.
@@ -408,7 +408,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
         )
 
     @always_inline
-    fn acquire_consumer[
+    def acquire_consumer[
         origin: MutOrigin, //
     ](ref[origin] self) -> ConsumerStage[origin, Self.num_stages]:
         """Acquire a consumer stage handle using linear types.
@@ -484,7 +484,7 @@ struct ProducerStage[
     var _mbar: MbarPtr
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pipeline: Pointer[
             ProducerConsumerPipeline[Self.num_stages], Self.pipeline_origin
@@ -497,12 +497,12 @@ struct ProducerStage[
         self._mbar = mbar
 
     @always_inline
-    fn index(self) -> UInt32:
+    def index(self) -> UInt32:
         """Get the current stage index."""
         return self._index
 
     @always_inline
-    fn mbar(self) -> MbarPtr:
+    def mbar(self) -> MbarPtr:
         """Get the barrier to signal when production is complete.
 
         Caller is responsible for signaling via mma_arrive or similar.
@@ -510,7 +510,7 @@ struct ProducerStage[
         return self._mbar
 
     @always_inline
-    fn release(deinit self):
+    def release(deinit self):
         """Advance producer to next stage.
 
         This is the only way to destroy this linear type.
@@ -538,7 +538,7 @@ struct ProduceContext[
     var _stage: Optional[ProducerStage[Self.pipeline_origin, Self.num_stages]]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pipeline: Pointer[
             ProducerConsumerPipeline[Self.num_stages], Self.pipeline_origin
@@ -548,7 +548,7 @@ struct ProduceContext[
         self._stage = None
 
     @always_inline
-    fn __enter__(
+    def __enter__(
         mut self,
     ) -> ref[self._stage.value()] ProducerStage[
         Self.pipeline_origin, Self.num_stages
@@ -563,7 +563,7 @@ struct ProduceContext[
         return self._stage.value()
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         """Release the stage (advances producer)."""
         self._stage.take().release()
         # take() already sets _stage to None
@@ -599,7 +599,7 @@ struct ConsumerStage[
     var _mbar: MbarPtr
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pipeline: Pointer[
             ProducerConsumerPipeline[Self.num_stages], Self.pipeline_origin
@@ -612,12 +612,12 @@ struct ConsumerStage[
         self._mbar = mbar
 
     @always_inline
-    fn index(self) -> UInt32:
+    def index(self) -> UInt32:
         """Get the current stage index."""
         return self._index
 
     @always_inline
-    fn mbar(self) -> MbarPtr:
+    def mbar(self) -> MbarPtr:
         """Get the barrier for manual signaling.
 
         Use this for specialized signaling patterns like umma_arrive_leader_cta.
@@ -626,7 +626,7 @@ struct ConsumerStage[
         return self._mbar
 
     @always_inline
-    fn arrive(self):
+    def arrive(self):
         """Manually arrive on the consumer barrier.
 
         Use for lane-guarded patterns:
@@ -637,7 +637,7 @@ struct ConsumerStage[
         _ = self._mbar[0].arrive()
 
     @always_inline
-    fn release(deinit self):
+    def release(deinit self):
         """Signal consumption complete and advance to next stage.
 
         This is the standard exit path. Equivalent to:
@@ -648,7 +648,7 @@ struct ConsumerStage[
         self.pipeline[].consumer_step()
 
     @always_inline
-    fn release_without_signal(deinit self):
+    def release_without_signal(deinit self):
         """Advance to next stage WITHOUT signaling.
 
         Use when you've already signaled via arrive() or specialized APIs.
@@ -672,7 +672,7 @@ struct ConsumeContext[
     var _stage: Optional[ConsumerStage[Self.pipeline_origin, Self.num_stages]]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pipeline: Pointer[
             ProducerConsumerPipeline[Self.num_stages], Self.pipeline_origin
@@ -682,7 +682,7 @@ struct ConsumeContext[
         self._stage = None
 
     @always_inline
-    fn __enter__(
+    def __enter__(
         mut self,
     ) -> ref[self._stage.value()] ConsumerStage[
         Self.pipeline_origin, Self.num_stages
@@ -698,7 +698,7 @@ struct ConsumeContext[
         return self._stage.value()
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         """Release the stage (signals consumption + advances)."""
         self._stage.take().release()
         # take() already sets _stage to None
@@ -729,7 +729,7 @@ struct ExplicitConsumeContext[
     var _stage: Optional[ConsumerStage[Self.pipeline_origin, Self.num_stages]]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         pipeline: Pointer[
             ProducerConsumerPipeline[Self.num_stages], Self.pipeline_origin
@@ -739,7 +739,7 @@ struct ExplicitConsumeContext[
         self._stage = None
 
     @always_inline
-    fn __enter__(
+    def __enter__(
         mut self,
     ) -> ref[self._stage.value()] ConsumerStage[
         Self.pipeline_origin, Self.num_stages
@@ -756,7 +756,7 @@ struct ExplicitConsumeContext[
         return self._stage.value()
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         """Advance to next stage WITHOUT signaling barrier."""
         # Caller is responsible for signaling via stage.arrive() or stage.mbar()
         self._stage.take().release_without_signal()

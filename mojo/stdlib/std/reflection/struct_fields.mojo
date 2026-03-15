@@ -130,10 +130,10 @@ def struct_field_index_by_name[
     )
 
 
-struct ReflectedType[T: __mlir_type.`!kgen.type`](TrivialRegisterPassable):
+struct ReflectedType[T: AnyType](TrivialRegisterPassable):
     """Wrapper struct for compile-time type values from reflection.
 
-    This struct wraps a `!kgen.type` value as a type parameter, allowing
+    This struct wraps a `!kgen.non_struct_type` value as a type parameter, allowing
     type values to be returned from functions and passed around at compile time.
 
     Parameters:
@@ -163,7 +163,8 @@ def struct_field_type_by_name[
         StructT,
         `, `,
         name.value,
-        `> : !kgen.type`,
+        `> : `,
+        AnyType,
     ]
 ]:
     """Returns the type of the field with the given name in struct `StructT`.
@@ -257,16 +258,17 @@ def struct_field_count[T: AnyType]() -> Int:
     # This avoids needing a dedicated struct_field_count attribute.
     return Int(
         mlir_value=__mlir_attr[
-            `#kgen.variadic.size<#kgen.struct_field_types<`,
+            `#kgen.variadic.size<:!kgen.variadic<!kgen.type> `,
+            `#kgen.struct_field_types<`,
             T,
-            `> : !kgen.variadic<!kgen.type>> : index`,
+            `>> : index`,
         ]
     )
 
 
 def struct_field_types[
     T: AnyType,
-]() -> __mlir_type[`!kgen.variadic<!kgen.type>`]:
+]() -> Variadic.TypesOfTrait[AnyType]:
     """Returns the types of all fields in struct `T` as a variadic.
 
     This function works with both concrete types and generic type parameters.

@@ -56,7 +56,7 @@ from std.sys._libc_errno import ErrNo, get_errno, set_errno
 from std.memory import OwnedPointer
 
 from std.sys.info import CompilationTarget, is_32bit, is_64bit
-from std.sys.intrinsics import _mlirtype_is_eq
+from std.sys.intrinsics import _type_is_eq
 from .cstring import CStringSlice
 from .unsafe_union import UnsafeUnion
 
@@ -296,7 +296,7 @@ struct OwnedDLHandle(Movable):
         return self._handle.check_symbol(name)
 
     def get_function[
-        result_type: __TypeOfAllTypes
+        result_type: TrivialRegisterPassable
     ](self, var name: String) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
@@ -314,7 +314,7 @@ struct OwnedDLHandle(Movable):
 
     @always_inline
     def _get_function[
-        func_name: StaticString, result_type: __TypeOfAllTypes
+        func_name: StaticString, result_type: TrivialRegisterPassable
     ](self) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
@@ -330,7 +330,7 @@ struct OwnedDLHandle(Movable):
 
     @always_inline
     def _get_function[
-        result_type: __TypeOfAllTypes
+        result_type: TrivialRegisterPassable
     ](self, *, cstr_name: UnsafePointer[mut=False, c_char, _]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
@@ -385,7 +385,7 @@ struct OwnedDLHandle(Movable):
     @always_inline
     def call[
         name: StaticString,
-        return_type: __TypeOfAllTypes = NoneType,
+        return_type: TrivialRegisterPassable = NoneType,
         *T: AnyType,
     ](self, *args: *T) -> return_type:
         """Call a function with any amount of arguments.
@@ -404,7 +404,7 @@ struct OwnedDLHandle(Movable):
         return self._handle.call[name, return_type](args)
 
     def call[
-        name: StaticString, return_type: __TypeOfAllTypes = NoneType
+        name: StaticString, return_type: TrivialRegisterPassable = NoneType
     ](self, args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
         """Call a function with any amount of arguments.
 
@@ -529,7 +529,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
         return self.handle.__bool__()
 
     def get_function[
-        result_type: __TypeOfAllTypes
+        result_type: TrivialRegisterPassable
     ](self, var name: String) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
@@ -550,7 +550,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
 
     @always_inline
     def _get_function[
-        func_name: StaticString, result_type: __TypeOfAllTypes
+        func_name: StaticString, result_type: TrivialRegisterPassable
     ](self) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
@@ -570,7 +570,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
 
     @always_inline
     def _get_function[
-        result_type: __TypeOfAllTypes
+        result_type: TrivialRegisterPassable
     ](self, *, cstr_name: UnsafePointer[mut=False, c_char, _]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
@@ -671,7 +671,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
     @always_inline
     def call[
         name: StaticString,
-        return_type: __TypeOfAllTypes = NoneType,
+        return_type: TrivialRegisterPassable = NoneType,
         *T: AnyType,
     ](self, *args: *T) -> return_type:
         """Call a function with any amount of arguments.
@@ -690,7 +690,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
         return self.call[name, return_type](args)
 
     def call[
-        name: StaticString, return_type: __TypeOfAllTypes = NoneType
+        name: StaticString, return_type: TrivialRegisterPassable = NoneType
     ](self, args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
         """Call a function with any amount of arguments.
 
@@ -718,7 +718,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
 def _get_dylib_function[
     dylib_global: _Global[StorageType=OwnedDLHandle, ...],
     func_name: StaticString,
-    result_type: __TypeOfAllTypes,
+    result_type: TrivialRegisterPassable,
 ]() raises -> result_type:
     var func_cache_name = String(t"{dylib_global.name}/{func_name}")
     var func_ptr = _get_global_or_null(func_cache_name)
@@ -963,7 +963,7 @@ def _get_global_or_null(name: StringSlice) -> OpaquePointer[MutExternalOrigin]:
 @always_inline("nodebug")
 def external_call[
     callee: StaticString,
-    return_type: __TypeOfAllTypes,
+    return_type: TrivialRegisterPassable,
     *types: AnyType,
 ](*args: *types) -> return_type:
     """Calls an external function.
@@ -985,7 +985,7 @@ def external_call[
 @always_inline("nodebug")
 def external_call[
     callee: StaticString,
-    return_type: __TypeOfAllTypes,
+    return_type: TrivialRegisterPassable,
 ](args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
     """Calls an external function.
 
@@ -1006,7 +1006,7 @@ def external_call[
     var loaded_pack = args.get_loaded_kgen_pack()
     comptime callee_kgen_string = _get_kgen_string[callee]()
 
-    comptime if _mlirtype_is_eq[return_type, NoneType]():
+    comptime if _type_is_eq[return_type, NoneType]():
         __mlir_op.`pop.external_call`[func=callee_kgen_string, _type=None](
             loaded_pack
         )
@@ -1026,7 +1026,7 @@ def external_call[
 @always_inline("nodebug")
 def _external_call_const[
     callee: StaticString,
-    return_type: __TypeOfAllTypes,
+    return_type: TrivialRegisterPassable,
     *types: AnyType,
 ](*args: *types) -> return_type:
     """Mark the external function call as having no observable effects to the

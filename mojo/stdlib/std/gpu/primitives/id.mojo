@@ -221,7 +221,7 @@ struct _ThreadIdx[ResultType: _FromInt = UInt](
             ]()
 
     @always_inline("nodebug")
-    def __getattr__[dim: StringLiteral](self) -> Self.ResultType:
+    def __getattr_param__[dim: StringLiteral](self) -> Self.ResultType:
         """Gets the `x`, `y`, or `z` coordinates of a thread within a block.
 
         Returns:
@@ -275,7 +275,7 @@ struct _BlockIdx[ResultType: _FromInt = UInt](
             ]()
 
     @always_inline("nodebug")
-    def __getattr__[dim: StringLiteral](self) -> Self.ResultType:
+    def __getattr_param__[dim: StringLiteral](self) -> Self.ResultType:
         """Gets the `x`, `y`, or `z` coordinates of a block within a grid.
 
         Returns:
@@ -310,7 +310,7 @@ struct _BlockDim[ResultType: _FromInt = UInt](
         return
 
     @always_inline("nodebug")
-    def __getattr__[dim: StaticString](self) -> Self.ResultType:
+    def __getattr_param__[dim: StaticString](self) -> Self.ResultType:
         """Gets the `x`, `y`, or `z` dimension of the block.
 
         Returns:
@@ -378,7 +378,7 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
         return
 
     @always_inline("nodebug")
-    def __getattr__[dim: StaticString](self) -> UInt:
+    def __getattr_param__[dim: StaticString](self) -> UInt:
         """Gets the `x`, `y`, or `z` dimension of the grid.
 
         Returns:
@@ -420,7 +420,7 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
             # Metal passes grid dimension as a gridDim.dim * blockDim.dim.
             # To make things compatible with NVidia and AMDGPU, divide result
             # by block_dim.dim
-            return gridDim // block_dim.__getattr__[dim]()
+            return gridDim // block_dim.__getattr_param__[dim]()
         else:
             CompilationTarget.unsupported_target_error[
                 operation=__get_current_function_name(),
@@ -446,16 +446,16 @@ struct _GlobalIdx(Defaultable, TrivialRegisterPassable):
         return
 
     @always_inline("nodebug")
-    def __getattr__[dim: StringLiteral](self) -> UInt:
+    def __getattr_param__[dim: StringLiteral](self) -> UInt:
         """Gets the `x`, `y`, or `z` dimension of the program.
 
         Returns:
             The `x`, `y`, or `z` dimension of the program.
         """
         _verify_xyz[dim]()
-        var t_idx = thread_idx.__getattr__[dim]()
-        var b_idx = block_idx.__getattr__[dim]()
-        var b_dim = block_dim.__getattr__[dim]()
+        var t_idx = thread_idx.__getattr_param__[dim]()
+        var b_idx = block_idx.__getattr_param__[dim]()
+        var b_dim = block_dim.__getattr_param__[dim]()
 
         return std.math.fma(b_idx, b_dim, t_idx)
 
@@ -479,7 +479,7 @@ struct _ClusterDim(Defaultable, TrivialRegisterPassable):
         return
 
     @always_inline("nodebug")
-    def __getattr__[dim: StaticString](self) -> UInt:
+    def __getattr_param__[dim: StaticString](self) -> UInt:
         """Gets the `x`, `y`, or `z` dimension of the cluster.
 
         Returns:
@@ -519,7 +519,7 @@ struct _ClusterIdx(Defaultable, TrivialRegisterPassable):
         return "llvm.nvvm.read.ptx.sreg.clusterid." + dim
 
     @always_inline("nodebug")
-    def __getattr__[dim: StringLiteral](self) -> UInt:
+    def __getattr_param__[dim: StringLiteral](self) -> UInt:
         """Gets the `x`, `y`, or `z` coordinates of a cluster within a grid.
 
         Returns:
@@ -558,7 +558,7 @@ struct _ClusterBlockIdx(Defaultable, TrivialRegisterPassable):
         return "llvm.nvvm.read.ptx.sreg.cluster.ctaid." + dim
 
     @always_inline("nodebug")
-    def __getattr__[dim: StringLiteral](self) -> UInt:
+    def __getattr_param__[dim: StringLiteral](self) -> UInt:
         """Gets the `x`, `y`, or `z` coordinates of a threadblock within a cluster.
 
         Returns:

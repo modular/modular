@@ -20,7 +20,7 @@ from std.algorithm import vectorize
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from buffer.dimlist import DimList
 from layout.layout import *
-from layout import LayoutTensor
+from layout import LayoutTensor, TileTensor
 
 comptime elementwise_epilogue_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
@@ -116,6 +116,28 @@ struct GemmShape(TrivialRegisterPassable):
         comptime assert b.rank == 2
 
         return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
+
+    @staticmethod
+    def get[
+        transpose_b: Bool,
+    ](c: TileTensor, a: TileTensor, b: TileTensor,) -> GemmShape:
+        """Constructor of a gemm shape record from TileTensor inputs.
+
+        M, N, and K are intentionally calculated using `a` and `c` ONLY. This
+        is because `b` may be padded to a multiple of the tile size if it has
+        been pre-packed.
+
+        Args:
+            c: TileTensor with allocated output space.
+            a: TileTensor containing matrix operand A.
+            b: TileTensor containing matrix operand B.
+        """
+
+        comptime assert c.rank == 2, "c must be of rank 2"
+        comptime assert a.rank == 2, "a must be of rank 2"
+        comptime assert b.rank == 2, "b must be of rank 2"
+
+        return GemmShape(Int(c.dim[0]()), Int(c.dim[1]()), Int(a.dim[1]()))
 
     # TODO: re-enable using IndexList.
     @always_inline

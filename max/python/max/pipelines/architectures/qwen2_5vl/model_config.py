@@ -194,7 +194,7 @@ class Qwen2_5VLConfig(ArchConfigWithKVCache):
     ) -> KVCacheParams:
         # Delegate to Llama3Config for language model parameters.
         llm_config = getattr(
-            huggingface_config, "llm_config", huggingface_config
+            huggingface_config, "text_config", huggingface_config
         )
         return Llama3Config.construct_kv_params(
             huggingface_config=llm_config,
@@ -208,7 +208,7 @@ class Qwen2_5VLConfig(ArchConfigWithKVCache):
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         # Delegate to Llama3Config for language model parameters.
         llm_config = getattr(
-            huggingface_config, "llm_config", huggingface_config
+            huggingface_config, "text_config", huggingface_config
         )
         return Llama3Config.get_num_layers(llm_config)
 
@@ -275,9 +275,12 @@ class Qwen2_5VLConfig(ArchConfigWithKVCache):
             pipeline_config, hf_vision_config
         )
 
-        # Create Llama3Config for the language model
+        # Create Llama3Config for the language model using the text sub-config
+        # so RoPE attributes (rope_scaling / rope_parameters) resolve correctly
+        # under both transformers v4 and v5.
+        text_config = huggingface_config.text_config
         llm_config = Llama3Config.initialize_from_config(
-            pipeline_config, huggingface_config
+            pipeline_config, text_config
         )
 
         return cls(
@@ -291,7 +294,7 @@ class Qwen2_5VLConfig(ArchConfigWithKVCache):
             vision_start_token_id=huggingface_config.vision_start_token_id,
             spatial_merge_size=hf_vision_config.spatial_merge_size,
             tokens_per_second=hf_vision_config.tokens_per_second,
-            mrope_section=huggingface_config.rope_scaling["mrope_section"],
+            mrope_section=text_config.rope_scaling["mrope_section"],
             # Vision configuration
             vision_config=vision_config,
             # Composed language model configuration

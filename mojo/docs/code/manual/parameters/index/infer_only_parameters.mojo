@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn dependent_type[dtype: DType, //, value: Scalar[dtype]]():
+def dependent_type[dtype: DType, //, value: Scalar[dtype]]():
     print("Value: ", value)
     print("DType: ", dtype)
 

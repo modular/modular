@@ -683,7 +683,7 @@ struct DeviceContextPtrList[size: Int](Sized, TrivialRegisterPassable):
         """
         self.ptrs = ptrs
 
-    def __getitem__[index: Int](self) -> DeviceContext:
+    def __getitem_param__[index: Int](self) -> DeviceContext:
         """Access a `DeviceContext` at a compile-time known index.
 
         Parameters:

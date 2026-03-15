@@ -66,19 +66,19 @@ both built-in styles:
 ```mojo
 # Mark function `a` as deprecated with a custom message
 @deprecated("Sunsetting a")
-fn a():
+def a():
     pass
 
 # Mark function `b` as deprecated with alternative
 @deprecated(use=c)
-fn b():
+def b():
     pass
 
 # `c` is `b`'s recommended replacement after deprecation
-fn c():
+def c():
     pass
 
-fn main():
+def main():
     a() # custom warning
     b() # warning with recommended replacement
     c() # no warning
@@ -94,13 +94,13 @@ deprecation.mojo:16:6: warning: Sunsetting a
     a() # custom warning
     ~^~
 deprecation.mojo:3:4: note: 'a' declared here
-fn a():
+def a():
    ^
 deprecation.mojo:17:6: warning: 'b' is deprecated, use 'c' instead
     b() # warning with recommended replacement
     ~^~
 deprecation.mojo:8:4: note: 'b' declared here
-fn b():
+def b():
    ^
 This is a functioning app
 ```
@@ -121,7 +121,7 @@ In Mojo, you can deprecate any of the following items:
 
   ```mojo
   @deprecated("This function is being phased out")
-  fn legacy_function(self):
+  def legacy_function(self):
       pass
   ```
 
@@ -130,7 +130,7 @@ In Mojo, you can deprecate any of the following items:
   ```mojo
   @deprecated(use=Honkable)
   trait Quackable:
-      fn quack(self):
+      def quack(self):
           ...
   ```
 - **`comptime` values**:

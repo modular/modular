@@ -21,7 +21,7 @@ struct FileError(Equatable, ImplicitlyCopyable, Writable):
     comptime permission_denied = FileError(_variant=2)
     comptime already_exists = FileError(_variant=3)
 
-    fn variant_name(self) -> String:
+    def variant_name(self) -> String:
         if self._variant == 1:
             return "not_found"
         elif self._variant == 2:
@@ -30,11 +30,11 @@ struct FileError(Equatable, ImplicitlyCopyable, Writable):
             return "already_exists"
         return "unknown"
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("FileError.", self.variant_name())
 
 
-fn open_file(path: String) raises FileError -> String:
+def open_file(path: String) raises FileError -> String:
     if not path:
         raise FileError.not_found
     if path == "/secret":
@@ -44,7 +44,7 @@ fn open_file(path: String) raises FileError -> String:
     return "Contents of " + path
 
 
-fn handle_file_error(e: FileError):
+def handle_file_error(e: FileError):
     if e == FileError.not_found:
         print("Not found:", e)
     elif e == FileError.permission_denied:

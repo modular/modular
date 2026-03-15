@@ -41,6 +41,7 @@ from ..structured_kernels.config import (
     MatmulConfig,
     build_configs,
     choose_config,
+    default_matmul_config_bf16_fp8,
 )
 from ... import matmul_kernel_naive, gemv_gpu, multistage_gemm
 from ....vendor.matmul import matmul as matmul_vendor
@@ -77,22 +78,21 @@ def matmul_dispatch_sm100[
     register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[mut=False, rank=2, a_type, _, _],
-    b: NDBuffer[mut=False, rank=2, b_type, _, _],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises:
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
     comptime assert a_type == b_type, "a_type and b_type must be the same"
 
-    var m = c.dim[0]()
-    comptime static_N = c.shape.get[1]()
-    comptime static_K = a.shape.get[1]()
+    var m = Int(c.dim[0]())
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
 
     comptime if get_defined_bool["AUTOTUNING_MODE", False]():
-        var c_tensor = TileTensor(c)
-        var a_tensor = TileTensor(a)
-        var b_tensor = TileTensor(b)
-
         comptime BM = get_defined_int["TUNE_BM", 128]()
         comptime BN = get_defined_int["TUNE_BN", 64]()
         comptime BK = (
@@ -129,7 +129,7 @@ def matmul_dispatch_sm100[
             transpose_b=transpose_b,
             config=config,
             register_based_epilogue=register_based_epilogue,
-        ](c_tensor, a_tensor, b_tensor, ctx)
+        ](c, a, b, ctx)
 
     # M=1 (or N=1): use GEMV split-K for both BF16 and FP8.
     # static_N=1 is not supported on SM100 due to TMA requirements
@@ -197,7 +197,7 @@ def matmul_dispatch_sm100[
     # 1. `N * size_of(c_type) % 16B == 0` for output buffer (TMA requirement)
     # 2. `c_type == DType.bfloat16` SM100 kernel only supports bfloat16 for output buffer
     comptime if (
-        c_type == DType.bfloat16
+        c_type in (DType.bfloat16, DType.float8_e4m3fn)
         and static_N * size_of[c_type]() % 16 == 0
         and static_K * size_of[a_type]() % 16 == 0
         and transpose_b
@@ -242,6 +242,7 @@ def matmul_dispatch_sm100[
     ](c, a, b, ctx)
 
 
+@always_inline
 # NOTE:
 # 1. SM100 matmul supports compute lambdas so we should just use normal and compute lambdas.
 def matmul_dispatch_sm100_fp8[
@@ -256,17 +257,20 @@ def matmul_dispatch_sm100_fp8[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[rank=2, a_type, _, _],
-    b: NDBuffer[rank=2, b_type, _, _],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
-    comptime static_N = c.shape.get[1]()
-    comptime static_K = a.shape.get[1]()
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
 
     comptime MMA_K = 32
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
-    var m = c.dim[0]()
+    var m = Int(c.dim[0]())
 
     if m <= 128:
         return heuristic_and_outliers_dispatch[
@@ -1349,14 +1353,17 @@ def heuristic_and_outliers_dispatch[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[rank=2, a_type, _, _],
-    b: NDBuffer[rank=2, b_type, _, _],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
-    var m = c.dim[0]()
-    comptime static_N = c.shape.get[1]()
-    comptime static_K = a.shape.get[1]()
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+    var m = Int(c.dim[0]())
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
 
     comptime assert a_type == b_type and a_type in (
         DType.bfloat16,
@@ -1432,6 +1439,20 @@ def heuristic_and_outliers_dispatch[
             ](c, a, b, ctx)
             return DISPATCH_HIT
 
+    # For float8_e4m3fn output, we should never fail dispatching, use the default config.
+    comptime if c_type == DType.float8_e4m3fn:
+        comptime default_config = default_matmul_config_bf16_fp8[
+            a_type, b_type, c_type, transpose_b
+        ]()
+        _matmul_dispatch_sm100[
+            transpose_b=transpose_b,
+            config=default_config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
+        return DISPATCH_HIT
+
     return DISPATCH_MISS
 
 
@@ -1449,14 +1470,17 @@ def matmul_dispatch_sm100_bf16[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[rank=2, a_type, _, _],
-    b: NDBuffer[rank=2, b_type, _, _],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
-    var m = c.dim[0]()
-    comptime static_N = c.shape.get[1]()
-    comptime static_K = a.shape.get[1]()
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+    var m = Int(c.dim[0]())
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
 
     comptime MMA_K = 16
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
@@ -1576,15 +1600,16 @@ def _vendor_blas_matmul_sm100[
     elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[mut=False, rank=2, a_type, _, _],
-    b: NDBuffer[mut=False, rank=2, b_type, _, _],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises:
-    comptime K = a.shape.get[1]()
-    comptime a_shape = a.shape
-    comptime b_shape = b.shape
-    comptime c_shape = c.shape
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+    comptime K = a.static_shape[1]
+
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
@@ -1611,37 +1636,27 @@ def _vendor_blas_matmul_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
-            ](
-                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
-                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
-                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
-                config,
-                ctx,
-            )
+            ](c, a, b, config, ctx)
         else:
             comptime BLOCK_DIM = 16
             logger.info("Executing Naive matmul kernel")
-
-            var c_tensor = TileTensor(c)
-            var a_tensor = TileTensor(a)
-            var b_tensor = TileTensor(b)
 
             comptime kernel = matmul_kernel_naive[
                 c_type,
                 a_type,
                 b_type,
-                type_of(c_tensor).LayoutType,
-                type_of(a_tensor).LayoutType,
-                type_of(b_tensor).LayoutType,
+                type_of(c).LayoutType,
+                type_of(a).LayoutType,
+                type_of(b).LayoutType,
                 BLOCK_DIM,
                 transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
             ]
 
             ctx.enqueue_function[kernel, kernel](
-                c_tensor,
-                a_tensor,
-                b_tensor,
+                c,
+                a,
+                b,
                 m,
                 n,
                 k,
@@ -1664,9 +1679,9 @@ def _matmul_dispatch_sm100[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[rank=2, a_type, _, _],
-    b: NDBuffer[rank=2, b_type, _, _],
+    c_tensor: TileTensor[mut=True, c_type, ...],
+    a_tensor: TileTensor[a_type, ...],
+    b_tensor: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises:
     """Our sm100 matmul kernel still does not support fusion of elementwise
@@ -1675,16 +1690,12 @@ def _matmul_dispatch_sm100[
     operations if there is any.
     """
 
-    var c_tensor = TileTensor(c)
-    var a_tensor = TileTensor(a)
-    var b_tensor = TileTensor(b)
-
     comptime assert (
         elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
     ), "Either the epilogue lambda or the compute lambda can be used"
 
     comptime if not elementwise_lambda_fn:
-        if not c.data:
+        if not c_tensor.ptr:
             raise "c must be allocated!"
 
         blackwell_matmul_tma_umma_warp_specialized[
@@ -1696,6 +1707,9 @@ def _matmul_dispatch_sm100[
         return
 
     else:
+        # Epilogue path uses a LayoutTensor for c.load in the closure.
+        var c_lt = c_tensor.to_layout_tensor()
+
         comptime epilogue = elementwise_lambda_fn.value()
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
         # arch support 32B load/store to global memory, see KERN-2037.
@@ -1703,28 +1717,28 @@ def _matmul_dispatch_sm100[
             has_nvidia_gpu_accelerator()
             and ctx.default_device_info.compute >= B200.compute
         )
-        comptime simd_size = 32 // size_of[c.type]() if use_32b_simd else (
-            simd_width_of[c.type, target=get_gpu_target()]()
+        comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
+            simd_width_of[c_type, target=get_gpu_target()]()
         )
 
         @parameter
-        @__copy_capture(c)
+        @__copy_capture(c_lt)
         def epilogue_wrapper[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])
-            var c_val = c.load[
+            var c_val = c_lt.load[
                 width=simd_width,
-                # Load takes alignment in bytes, lambda takes number of elements
-                alignment=alignment * size_of[c.type](),
+                # load_alignment is in bytes, lambda alignment is in elements
+                load_alignment=alignment * size_of[c_type](),
             ](c_coord)
-            epilogue[c.type, simd_width, alignment=alignment](c_coord, c_val)
+            epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
 
         # If c is already allocated, we can just use the sm100 matmul and
         # apply the epilogue.
-        if c.data:
-            var m = c.dim[0]()
-            var n = c.dim[1]()
+        if c_tensor.ptr:
+            var m = c_lt.dim[0]()
+            var n = c_lt.dim[1]()
 
             blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b,
@@ -1739,16 +1753,16 @@ def _matmul_dispatch_sm100[
             return
 
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
-        var tmp_device_buffer = ctx.enqueue_create_buffer[c.type](
-            c.num_elements()
-        )
+        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](c_lt.size())
 
-        # Construct a new buffer with external origin pointing to the temporary storage.
-        var c_tmp = NDBuffer[rank=2, c.type, MutExternalOrigin](
-            rebind[UnsafePointer[Scalar[c.type], MutExternalOrigin]](
+        # Construct a temporary NDBuffer, then wrap it in TileTensor for the
+        # recursive call.
+        # TODO(KERN-2219): construct a TileTensor directly here.
+        var c_tmp = NDBuffer[rank=2, c_type, MutExternalOrigin](
+            rebind[UnsafePointer[Scalar[c_type], MutExternalOrigin]](
                 tmp_device_buffer.unsafe_ptr()
             ),
-            IndexList[2](c.dim[0](), c.dim[1]()),
+            IndexList[2](c_lt.dim[0](), c_lt.dim[1]()),
         )
 
         _matmul_dispatch_sm100[
@@ -1757,7 +1771,7 @@ def _matmul_dispatch_sm100[
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
-        ](c_tmp, a, b, ctx)
+        ](TileTensor(c_tmp), a_tensor, b_tensor, ctx)
 
         _ = tmp_device_buffer^
 
@@ -1811,14 +1825,17 @@ def sm100_heuristic_and_outliers_dispatch[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, _, _],
-    a: NDBuffer[rank=2, a_type, _, _],
-    b: NDBuffer[rank=2, b_type, _, _],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
-    var m = c.dim[0]()
-    comptime static_N = c.shape.get[1]()
-    comptime static_K = a.shape.get[1]()
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+    var m = Int(c.dim[0]())
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
 
     comptime assert a_type == b_type and a_type in (
         DType.bfloat16,
@@ -1838,10 +1855,6 @@ def sm100_heuristic_and_outliers_dispatch[
     @always_inline
     def rule(x: TuningConfigSM100) -> Bool:
         return x.K == static_K and x.N == static_N
-
-    var c_tensor = TileTensor(c)
-    var a_tensor = TileTensor(a)
-    var b_tensor = TileTensor(b)
 
     comptime outlier_configs = outliers.find[rule]()
 
@@ -1874,7 +1887,7 @@ def sm100_heuristic_and_outliers_dispatch[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
-            ](c_tensor, a_tensor, b_tensor, ctx)
+            ](c, a, b, ctx)
 
             return DISPATCH_HIT
 
@@ -1895,7 +1908,21 @@ def sm100_heuristic_and_outliers_dispatch[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
-            ](c_tensor, a_tensor, b_tensor, ctx)
+            ](c, a, b, ctx)
             return DISPATCH_HIT
+
+    # For float8_e4m3fn output, we should never fail dispatching, use the default config.
+    comptime if c_type == DType.float8_e4m3fn:
+        comptime default_config = default_matmul_config_bf16_fp8[
+            a_type, b_type, c_type, transpose_b
+        ]()
+        blackwell_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b,
+            config=default_config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
+        return DISPATCH_HIT
 
     return DISPATCH_MISS

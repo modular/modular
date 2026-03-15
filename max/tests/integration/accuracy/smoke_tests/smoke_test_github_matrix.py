@@ -100,6 +100,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "microsoft/phi-3.5-mini-instruct__modulev3": MULTI,
     "microsoft/phi-4__modulev3": MULTI,
     "nvidia/deepseek-v3.1-nvfp4__fp8kv": NON_XL | {"8xMI355"},
+    "nvidia/deepseek-v3.1-nvfp4__tpep": NON_XL | {"8xMI355"},
 }
 
 MODELS = {**HF_MODELS, **CUSTOM_MODELS}

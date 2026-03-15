@@ -315,6 +315,7 @@ class DeepseekV3NextN(Module):
             all_hs_distributed=h,
             normalizer=self.shared_head_norm_shards,
             signal_buffers=signal_buffers,
+            duplicated_hs=not self.use_data_parallel_attention,
         )
 
         return ret_val

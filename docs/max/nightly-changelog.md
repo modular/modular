@@ -33,6 +33,12 @@ This version is still a work in progress.
 
 ## MAX kernels {#26-3-max-kernels}
 
+- kbench now runs benchmarks via shared library (.so) by default, reusing
+  persistent workers and CUDA contexts instead of spawning subprocesses.
+  Benchmark execution phase is ~10x faster (e.g. 4.25 h → 0.4 h on a tuning
+  workload). Falls back to subprocess mode when profiling or using custom exec
+  wrappers.
+
 <!-- Please place Layout/LayoutTensor changes under "Library changes" in the
      **Mojo changelog**, since the layout package is packaged with and
      documented alongside Mojo. -->

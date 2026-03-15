@@ -296,14 +296,6 @@ def main() raises:
                 )
 
                 comptime for register_based_epilogue in [True, False]:
-                    # SMEM epilogue has issues for MMA_M==128 and odd MMA_N
-                    comptime if (
-                        not register_based_epilogue
-                        and mma_m_scale == 1
-                        and mma_n_scale % 2 != 0
-                    ):
-                        continue
-
                     # Helper to run test with varying cluster/k_group/sizes
                     @parameter
                     def run[

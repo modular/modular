@@ -544,8 +544,10 @@ struct VariadicParamList[type: TrivialRegisterPassable, //, *values: type](
 
     comptime size = Int(
         mlir_value=__mlir_attr[
-            `#kgen.variadic.size<`,
-            Self.values,
+            `#kgen.variadic.size<:`,
+            type_of(Self.values),
+            ` `,
+            +Self.values,
             `> : index`,
         ]
     )
@@ -1091,7 +1093,7 @@ struct VariadicPack[
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    def __getitem__[
+    def __getitem_param__[
         index: Int
     ](self) -> ref[Self.origin] Self.element_types[index]:
         """Return a reference to an element of the pack.
@@ -1112,16 +1114,19 @@ struct VariadicPack[
     # C Pack Utilities
     # ===-------------------------------------------------------------------===#
 
+    # FIXME: bound by AnyType
     comptime _kgen_element_types = rebind[
-        Variadic.ValuesOfType[__TypeOfAllTypes]
+        Variadic.ValuesOfType[__mlir_type.`!kgen.type`]
     ](Self.element_types)
     """This is the element_types list lowered to `variadic<type>` type for kgen.
     """
+
+    # FIXME: bound by AnyType
     comptime _variadic_pointer_types = __mlir_attr[
         `#kgen.param.expr<variadic_ptr_map, `,
         Self._kgen_element_types,
         `, 0: index>: `,
-        Variadic.ValuesOfType[__TypeOfAllTypes],
+        Variadic.ValuesOfType[__mlir_type.`!kgen.type`],
     ]
     """Use variadic_ptr_map to construct the type list of the !kgen.pack that
     the !lit.ref.pack will lower to.  It exposes the pointers introduced by the
@@ -1139,11 +1144,12 @@ struct VariadicPack[
         pointers."""
         return rebind[Self._kgen_pack_with_pointer_type](self._value)
 
+    # FIXME: bound by AnyType
     comptime _variadic_with_pointers_removed = __mlir_attr[
         `#kgen.param.expr<variadic_ptrremove_map, `,
         Self._variadic_pointer_types,
         `>: `,
-        Variadic.ValuesOfType[__TypeOfAllTypes],
+        Variadic.ValuesOfType[__mlir_type.`!kgen.type`],
     ]
     comptime _loaded_kgen_pack_type = __mlir_type[
         `!kgen.pack<:variadic<type> `, Self._variadic_with_pointers_removed, `>`

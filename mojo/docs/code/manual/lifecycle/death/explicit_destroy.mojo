@@ -15,7 +15,7 @@ from std.pathlib import Path
 from std.tempfile import gettempdir
 
 
-fn write_to_disk(path: String, data: String) raises:
+def write_to_disk(path: String, data: String) raises:
     """Write string to file."""
     var p = Path(path)
     with open(p, "w") as f:
@@ -27,22 +27,22 @@ struct FileBuffer:
     var path: String
     var data: String
 
-    fn __init__(out self, path: String):
+    def __init__(out self, path: String):
         self.path = path
         self.data = ""
 
-    fn write(mut self, content: String):
+    def write(mut self, content: String):
         self.data += content
 
-    fn save_and_close(deinit self) raises:
+    def save_and_close(deinit self) raises:
         write_to_disk(self.path, self.data)
 
-    fn discard(deinit self):
+    def discard(deinit self):
         # Abandon buffered data without writing
         pass
 
 
-fn main() raises:
+def main() raises:
     var path = String(
         Path(gettempdir().or_else("/tmp/")).joinpath("tempfile.txt")
     )

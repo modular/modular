@@ -26,10 +26,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
+import io
 import statistics
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 # Varying-input configurations for recompilation stress testing.
@@ -235,11 +238,44 @@ def _warmup_configs_and_prompts(
     return warmup_configs, warmup_prompts
 
 
+def _print_gpu_info() -> None:
+    """Print GPU name, VRAM, and CUDA build version."""
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            print("  GPU: not available (CPU mode)")
+            return
+        name = torch.cuda.get_device_name(0)
+        total_memory = torch.cuda.get_device_properties(0).total_memory
+        total_gb = total_memory / (1024**3)
+        cuda_version = torch.version.cuda or "N/A"
+        print(f"  GPU            : {name}")
+        print(f"  VRAM           : {total_gb:.1f} GB")
+        print(f"  CUDA (build)   : {cuda_version}")
+    except Exception as e:
+        print(f"  GPU info       : unavailable ({e})")
+
+
 def _truncate_prompt(prompt: str, max_len: int = 40) -> str:
     """Return a display-friendly truncated prompt."""
     if len(prompt) <= max_len:
         return prompt
     return prompt[: max_len - 1] + "…"
+
+
+def _images_to_jpeg_base64(images: list[Any]) -> list[str]:
+    """Convert PIL images to JPEG-encoded base64 strings.
+
+    This mirrors the post-processing that MAX performs internally
+    (numpy → PIL → JPEG → base64) so that timing comparisons are fair.
+    """
+    result = []
+    for img in images:
+        buf = io.BytesIO()
+        img.save(buf, format="jpeg")
+        result.append(base64.b64encode(buf.getvalue()).decode("ascii"))
+    return result
 
 
 def _load_diffusers_pipeline() -> Any:
@@ -272,7 +308,8 @@ def run_diffusers(args: argparse.Namespace) -> TimingResult:
     """Benchmark FLUX.2 through diffusers. Returns split timings.
 
     Preprocessing is measured as text encoding (encode_prompt). Execution
-    is the remainder: latent prep, denoising loop, and VAE decode.
+    is the remainder: latent prep, denoising loop, VAE decode, and
+    JPEG + base64 encoding (to match MAX's post-processing).
     """
     import torch
 
@@ -297,7 +334,7 @@ def run_diffusers(args: argparse.Namespace) -> TimingResult:
         prompt_embeds, _text_ids = pipe.encode_prompt(
             prompt=prompt, device=pipe._execution_device
         )
-        pipe(
+        output = pipe(
             prompt_embeds=prompt_embeds,
             num_inference_steps=steps,
             guidance_scale=args.guidance_scale,
@@ -305,11 +342,13 @@ def run_diffusers(args: argparse.Namespace) -> TimingResult:
             width=w,
             generator=generator,
         )
+        _images_to_jpeg_base64(output.images)
         torch.cuda.synchronize()
 
     result = TimingResult()
     timed_configs = _iter_configs(args, args.num_iterations)
     timed_prompts = _iter_prompts(args, args.num_iterations)
+
     for i, ((h, w, steps), prompt) in enumerate(
         zip(timed_configs, timed_prompts, strict=False)
     ):
@@ -329,10 +368,10 @@ def run_diffusers(args: argparse.Namespace) -> TimingResult:
         torch.cuda.synchronize()
         t_preprocess = time.perf_counter() - t0
 
-        # Execution: latent prep + denoising loop + VAE decode
+        # Execution: latent prep + denoising loop + VAE decode + JPEG encode
         torch.cuda.synchronize()
         t1 = time.perf_counter()
-        pipe(
+        output = pipe(
             prompt_embeds=prompt_embeds,
             num_inference_steps=steps,
             guidance_scale=args.guidance_scale,
@@ -340,6 +379,7 @@ def run_diffusers(args: argparse.Namespace) -> TimingResult:
             width=w,
             generator=generator,
         )
+        _images_to_jpeg_base64(output.images)
         torch.cuda.synchronize()
         t_execute = time.perf_counter() - t1
 
@@ -478,6 +518,7 @@ def run_max(args: argparse.Namespace) -> TimingResult:
     result = TimingResult()
     timed_configs = _iter_configs(args, args.num_iterations)
     timed_prompts = _iter_prompts(args, args.num_iterations)
+
     for i, ((h, w, steps), prompt) in enumerate(
         zip(timed_configs, timed_prompts, strict=False)
     ):
@@ -584,8 +625,9 @@ def main(argv: list[str] | None = None) -> int:
 
     # Summary header
     print("\n" + "=" * 60)
-    print("FLUX.2 Performance Comparison")
+    print(f"FLUX.2 Performance Comparison — {datetime.now():%Y-%m-%d}")
     print("=" * 60)
+    _print_gpu_info()
     if args.vary_prompts:
         print("  prompts          : varied (seq-length stress test)")
     else:
@@ -596,9 +638,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  resolution       : {args.width}x{args.height}")
         print(f"  inference steps  : {args.num_inference_steps}")
     print(f"  guidance scale   : {args.guidance_scale}")
-    print(f"  enable FBC       : {args.enable_fbc}")
-    print(f"  residual thresh  : {args.residual_threshold}")
     print(f"  warmup runs      : {args.num_warmups}")
+    print()
+    print("  Torch config:")
+    print("    mode           : torch.compile (max-autotune)")
+    print("    dtype          : BF16")
+    print()
+    print("  MAX config:")
+    print("    dtype          : BF16")
+    caching_parts: list[str] = []
+    if args.enable_fbc:
+        caching_parts.append(
+            f"first block cache (threshold: {args.residual_threshold})"
+        )
+    print(f"    caching        : {', '.join(caching_parts) or 'none'}")
     print()
 
     timed_configs = _iter_configs(args, args.num_iterations)

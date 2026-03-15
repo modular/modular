@@ -289,12 +289,10 @@ def compute_mla_dispatch_scalars[
     max_cache_valid_length: Int,
     q_max_seq_len: Int,
     sm_count: Int,
-) -> Tuple[Int, Int, Int, Int]:
-    """Pure computation of the packed 4-value MLA dispatch metadata.
+) -> Tuple[Int, Int, Int]:
+    """Pure computation of the packed 3-value MLA dispatch metadata.
 
-    Returns ``(batch_size, q_max_seq_len, num_partitions,
-    max_cache_valid_length)``. The raw cache length is kept only for packed
-    metadata compatibility.
+    Returns ``(batch_size, q_max_seq_len, num_partitions)``.
     """
     var effective = max_cache_valid_length
 
@@ -306,7 +304,7 @@ def compute_mla_dispatch_scalars[
         batch_size, effective, q_max_seq_len, split_page_size, sm_count
     )
 
-    return (batch_size, q_max_seq_len, num_partitions, max_cache_valid_length)
+    return (batch_size, q_max_seq_len, num_partitions)
 
 
 struct MLADispatchScalarArgs[
@@ -316,8 +314,7 @@ struct MLADispatchScalarArgs[
 ]:
     """Pre-computed MLA decode args for the legacy (non-capturable) path.
 
-    Owns a GPU buffer containing
-    ``[batch_size, q_max_seq_len, num_partitions, max_cache_valid_length]``
+    Owns a GPU buffer containing ``[batch_size, q_max_seq_len, num_partitions]``
     and caches the host-side ``batch_size``/``q_max_seq_len`` pair needed by
     ``mla_decode_sm100_dispatch``.
 
@@ -336,7 +333,7 @@ struct MLADispatchScalarArgs[
     """
 
     comptime MLAScalarArgsLT = LayoutTensor[
-        DType.int64, Layout.row_major(4), MutAnyOrigin
+        DType.int64, Layout.row_major(3), MutAnyOrigin
     ]
 
     var gpu_buf: DeviceBuffer[DType.int64]
@@ -350,7 +347,7 @@ struct MLADispatchScalarArgs[
         q_max_seq_len: Int,
         ctx: DeviceContext,
     ) raises:
-        self.gpu_buf = ctx.enqueue_create_buffer[DType.int64](4)
+        self.gpu_buf = ctx.enqueue_create_buffer[DType.int64](3)
         self.batch_size = batch_size
         self.q_max_seq_len = q_max_seq_len
 
@@ -361,13 +358,12 @@ struct MLADispatchScalarArgs[
             is_fp8_kv=Self.is_fp8_kv,
         ](batch_size, max_cache_len, q_max_seq_len, sm_count)
 
-        var host_args = InlineArray[Int64, 4](uninitialized=True)
+        var host_args = InlineArray[Int64, 3](uninitialized=True)
         host_args[0] = Int64(scalars[0])
         host_args[1] = Int64(scalars[1])
         host_args[2] = Int64(scalars[2])
-        host_args[3] = Int64(scalars[3])
         var output_buf = DeviceBuffer[DType.int64](
-            ctx, self.gpu_buf.unsafe_ptr(), 4, owning=False
+            ctx, self.gpu_buf.unsafe_ptr(), 3, owning=False
         )
         output_buf.enqueue_copy_from(
             UnsafePointer(to=host_args).bitcast[Scalar[DType.int64]]()

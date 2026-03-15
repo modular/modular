@@ -196,7 +196,9 @@ struct Tuple[*element_types: Movable](
         return Self.__len__()
 
     @always_inline("nodebug")
-    def __getitem__[idx: Int](ref self) -> ref[self] Self.element_types[idx]:
+    def __getitem_param__[
+        idx: Int
+    ](ref self) -> ref[self] Self.element_types[idx]:
         """Get a reference to an element in the tuple.
 
         Parameters:

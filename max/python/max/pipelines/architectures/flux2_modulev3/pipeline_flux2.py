@@ -146,6 +146,7 @@ class Flux2Pipeline(DiffusionPipeline):
         - Flux2 VAE (with BatchNorm-based latent normalization)
     """
 
+    unprefixed_weight_component = "transformer"
     default_num_inference_steps = 28
 
     vae: AutoencoderKLFlux2Model
@@ -158,7 +159,7 @@ class Flux2Pipeline(DiffusionPipeline):
         "transformer": Flux2TransformerModel,
     }
 
-    @traced
+    @traced(message="Flux2Pipeline.init_remaining_components")
     def init_remaining_components(self) -> None:
         """Initialize derived attributes that depend on loaded components."""
         # Store derived config/device references before unwrapping.
@@ -190,7 +191,7 @@ class Flux2Pipeline(DiffusionPipeline):
         self.transformer.compile_model(enable_fbc)
         self._enable_fbc = enable_fbc
 
-    @traced
+    @traced(message="Flux2Pipeline.prepare_inputs")
     def prepare_inputs(self, context: PixelContext) -> Flux2ModelInputs:  # type: ignore[override]
         """Convert a PixelContext into Flux2ModelInputs."""
         if context.latents.size == 0:
@@ -340,7 +341,7 @@ class Flux2Pipeline(DiffusionPipeline):
             prev_output=prev_output,
         )
 
-    @traced
+    @traced(message="Flux2Pipeline.build_preprocess_latents")
     def build_preprocess_latents(self) -> None:
         device = self.transformer.devices[0]
         input_types = [
@@ -355,7 +356,7 @@ class Flux2Pipeline(DiffusionPipeline):
             input_types=input_types,
         )
 
-    @traced
+    @traced(message="Flux2Pipeline.build_prepare_image_latents")
     def build_prepare_image_latents(self) -> None:
         dtype = self.vae.config.dtype
         device = self.vae.devices[0]
@@ -375,7 +376,7 @@ class Flux2Pipeline(DiffusionPipeline):
             ],
         )
 
-    @traced
+    @traced(message="Flux2Pipeline.build_prepare_scheduler")
     def build_prepare_scheduler(self) -> None:
         input_types = [
             TensorType(
@@ -389,7 +390,7 @@ class Flux2Pipeline(DiffusionPipeline):
             input_types=input_types,
         )
 
-    @traced
+    @traced(message="Flux2Pipeline.build_scheduler_step")
     def build_scheduler_step(self) -> None:
         dtype = self.transformer.config.dtype
         device = self.transformer.devices[0]
@@ -407,7 +408,7 @@ class Flux2Pipeline(DiffusionPipeline):
             input_types=input_types,
         )
 
-    @traced
+    @traced(message="Flux2Pipeline.build_concat_image_latents")
     def build_concat_image_latents(self) -> None:
         dtype = self.transformer.config.dtype
         device = self.transformer.devices[0]
@@ -428,7 +429,7 @@ class Flux2Pipeline(DiffusionPipeline):
             input_types=input_types,
         )
 
-    @traced
+    @traced(message="Flux2Pipeline.build_decode_latents")
     def build_decode_latents(self) -> None:
         device = self.transformer.devices[0]
         self._bn_mean: Tensor = self.vae.bn.running_mean
@@ -525,7 +526,7 @@ class Flux2Pipeline(DiffusionPipeline):
 
         return image_latents
 
-    @traced
+    @traced(message="Flux2Pipeline.prepare_image_latents")
     def prepare_image_latents(
         self,
         images: list[Tensor],
@@ -591,7 +592,7 @@ class Flux2Pipeline(DiffusionPipeline):
 
         return image_latents, image_latent_ids
 
-    @traced
+    @traced(message="Flux2Pipeline.prepare_prompt_embeddings")
     def prepare_prompt_embeddings(
         self,
         tokens: Tensor,
@@ -653,7 +654,7 @@ class Flux2Pipeline(DiffusionPipeline):
 
         return prompt_embeds, text_ids
 
-    @traced
+    @traced(message="Flux2Pipeline.decode_latents")
     def decode_latents(
         self,
         latents: Tensor,
@@ -705,7 +706,7 @@ class Flux2Pipeline(DiffusionPipeline):
             )
         )
 
-    @traced
+    @traced(message="Flux2Pipeline.preprocess_latents")
     def preprocess_latents(self, latents: Tensor) -> Tensor:
         return self._patchify_and_pack(latents)
 
@@ -784,7 +785,7 @@ class Flux2Pipeline(DiffusionPipeline):
         all_timesteps = sigmas_curr.cast(self.transformer.config.dtype)
         return all_timesteps, all_dt
 
-    @traced
+    @traced(message="Flux2Pipeline.execute")
     def execute(  # type: ignore[override]
         self,
         model_inputs: Flux2ModelInputs,
