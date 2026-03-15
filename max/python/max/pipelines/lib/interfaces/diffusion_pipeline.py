@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, TypeAlias, overload
 import numpy as np
 import numpy.typing as npt
 from max._core.driver import Device
-from max.driver import CPU, Accelerator
+from max.driver import CPU, Accelerator, Buffer
 from max.engine import InferenceSession, Model
 from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
@@ -34,15 +34,17 @@ from max.graph.weights import load_weights
 from max.interfaces import PixelGenerationContext
 from max.interfaces.tokens import TokenBuffer
 from max.pipelines.lib.interfaces.component_model import ComponentModel
-from max.profiler import Tracer
 from PIL import Image
 from tqdm import tqdm
 from typing_extensions import Self
 
 if TYPE_CHECKING:
-    from max.engine import InferenceSession
-
     from ..config import PipelineConfig
+    from .cache_mixin import (
+        CacheMixin,
+        DenoisingCacheConfig,
+        DenoisingCacheState,
+    )
 
 logger = logging.getLogger("max.pipelines")
 
@@ -76,8 +78,14 @@ class DiffusionPipeline(ABC):
         session: InferenceSession,
         devices: list[Device],
         weight_paths: list[Path],
+        cache_config: DenoisingCacheConfig | None = None,
         **kwargs: Any,
     ) -> None:
+        from .cache_mixin import DenoisingCacheConfig
+
+        self.cache_config: DenoisingCacheConfig = (
+            cache_config or DenoisingCacheConfig()
+        )
         self.pipeline_config = pipeline_config
         self.session = session
         self.devices = devices
@@ -238,6 +246,128 @@ class DiffusionPipeline(ABC):
         else:
             local_path = Path(model_repo.repo_id)
             return [local_path / f for f in component_files]
+
+    def run_transformer(
+        self,
+        cache_state: DenoisingCacheState,
+        **kwargs: Any,
+    ) -> tuple[Tensor, ...]:
+        """Run the transformer for one denoising step.
+
+        Subclasses must override this to call their transformer with the
+        appropriate model-specific arguments.  The method should return
+        ``(noise_pred,)`` when first_block_caching is disabled, or
+        ``(new_residual, noise_pred)`` when first_block_caching is enabled.
+
+        Args:
+            cache_state: Per-request mutable cache state for this stream.
+            **kwargs: Model-specific arguments forwarded from
+                ``run_denoising_step``.
+        """
+        raise NotImplementedError
+
+    def run_denoising_step(
+        self,
+        step: int,
+        cache_state: DenoisingCacheState,
+        device: Device,
+        **kwargs: Any,
+    ) -> Tensor:
+        """Execute one denoising step with caching logic.
+
+        Delegates the actual transformer call to ``self.run_transformer()``,
+        which subclasses override with model-specific arguments.
+
+        Args:
+            step: Current step index.
+            cache_state: Per-request mutable cache state for this stream.
+            device: Target device.
+            **kwargs: Model-specific arguments forwarded to
+                ``run_transformer``.
+
+        Returns:
+            noise_pred tensor for this step.
+        """
+        # Cast self to CacheMixin to access cache attributes.
+        # Concrete pipelines inherit from both DiffusionPipeline and CacheMixin.
+        mixin: CacheMixin = self  # type: ignore[assignment]
+        cache_config = mixin.cache_config
+
+        # 1. TaylorSeer scheduling decision
+        skip_transformer = False
+        warmup_steps = cache_config.taylorseer_warmup_steps
+        cache_interval = cache_config.taylorseer_cache_interval
+        max_order_tensor = mixin._cache_taylor_max_order_tensor
+        if cache_config.taylorseer:
+            assert warmup_steps is not None
+            assert cache_interval is not None
+            skip_transformer = mixin.taylorseer_skip_transformer(
+                step,
+                warmup_steps,
+                cache_interval,
+            )
+
+        # 2. Compute TaylorSeer step delta
+        taylor_delta_tensor: Tensor | None = None
+        if cache_config.taylorseer:
+            assert max_order_tensor is not None
+            assert cache_state.taylor_factor_0 is not None
+            assert cache_state.taylor_factor_1 is not None
+            delta = (
+                float(step - cache_state.taylor_last_compute_step)
+                if cache_state.taylor_last_compute_step is not None
+                else 1.0
+            )
+            taylor_delta_tensor = Tensor(
+                storage=Buffer.from_dlpack(
+                    np.array([delta], dtype=np.float32)
+                ).to(device)
+            )
+
+        # 3. Predict path (skip transformer)
+        if cache_config.taylorseer and skip_transformer:
+            assert cache_state.taylor_factor_0 is not None
+            assert cache_state.taylor_factor_1 is not None
+            assert cache_state.taylor_factor_2 is not None
+            assert taylor_delta_tensor is not None
+            assert max_order_tensor is not None
+            return mixin.taylor_predict(
+                cache_state.taylor_factor_0,
+                cache_state.taylor_factor_1,
+                cache_state.taylor_factor_2,
+                taylor_delta_tensor,
+                max_order_tensor,
+            )
+
+        # 4. Full compute path
+        result = self.run_transformer(cache_state, **kwargs)
+        if cache_config.first_block_caching:
+            new_residual, noise_pred = result
+            cache_state.prev_residual = new_residual
+            cache_state.prev_output = noise_pred
+        else:
+            noise_pred = result[0]
+
+        # 5. TaylorSeer factor update
+        if cache_config.taylorseer:
+            assert cache_state.taylor_factor_0 is not None
+            assert cache_state.taylor_factor_1 is not None
+            assert taylor_delta_tensor is not None
+            assert max_order_tensor is not None
+            (
+                cache_state.taylor_factor_0,
+                cache_state.taylor_factor_1,
+                cache_state.taylor_factor_2,
+            ) = mixin.taylor_update(
+                noise_pred,
+                cache_state.taylor_factor_0,
+                cache_state.taylor_factor_1,
+                taylor_delta_tensor,
+                max_order_tensor,
+            )
+            cache_state.taylor_last_compute_step = step
+
+        return noise_pred
 
     def _resolve_absolute_paths(
         self, weight_paths: list[Path], relative_paths: list[str]
@@ -531,34 +661,28 @@ class CompileWrapper:
         input_types_tuple = tuple(input_types)
         self._compiled_module: Callable[..., Any] | None = None
         self._compiled_model: Model | None = None
-        self._target_name = target_name
 
-        with Tracer(f"compile_{target_name}"):
-            if isinstance(compile_target, Module):
-                self._compiled_module = compile_target.compile(
-                    *input_types_tuple
-                )
-                return
+        if isinstance(compile_target, Module):
+            self._compiled_module = compile_target.compile(*input_types_tuple)
+            return
 
-            with Graph(
-                compile_target.__name__, input_types=input_types_tuple
-            ) as graph:
-                output = compile_target(*graph.inputs)
-                if isinstance(output, Iterable):
-                    graph.output(*output)
-                else:
-                    graph.output(output)
-                compiled_graph = graph
-
-            device: CPU | Accelerator
-            if any(
-                input_type.device.is_gpu() for input_type in input_types_tuple
-            ):
-                device = Accelerator()
+        with Graph(
+            compile_target.__name__, input_types=input_types_tuple
+        ) as graph:
+            output = compile_target(*graph.inputs)
+            if isinstance(output, Iterable):
+                graph.output(*output)
             else:
-                device = CPU()
-            session = InferenceSession([device])
-            self._compiled_model = session.load(compiled_graph)
+                graph.output(output)
+            compiled_graph = graph
+
+        device: CPU | Accelerator
+        if any(input_type.device.is_gpu() for input_type in input_types_tuple):
+            device = Accelerator()
+        else:
+            device = CPU()
+        session = InferenceSession([device])
+        self._compiled_model = session.load(compiled_graph)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Execute the compiled session with the given arguments.
@@ -570,22 +694,19 @@ class CompileWrapper:
         Returns:
             The result of the session execution.
         """
-        with Tracer(f"exec_{self._target_name}"):
-            if self._compiled_module is not None:
-                return self._compiled_module(*args, **kwargs)
+        if self._compiled_module is not None:
+            return self._compiled_module(*args, **kwargs)
 
-            if self._compiled_model is None:
-                raise RuntimeError("CompileWrapper has no compiled target.")
+        if self._compiled_model is None:
+            raise RuntimeError("CompileWrapper has no compiled target.")
 
-            normalized_args = tuple(self._unwrap_tensor(arg) for arg in args)
-            normalized_kwargs = {
-                key: self._unwrap_tensor(val) for key, val in kwargs.items()
-            }
-            buffers = self._compiled_model(
-                *normalized_args, **normalized_kwargs
-            )
-            outputs = [Tensor.from_dlpack(buffer) for buffer in buffers]
-            return outputs[0] if len(outputs) == 1 else outputs
+        normalized_args = tuple(self._unwrap_tensor(arg) for arg in args)
+        normalized_kwargs = {
+            key: self._unwrap_tensor(val) for key, val in kwargs.items()
+        }
+        buffers = self._compiled_model(*normalized_args, **normalized_kwargs)
+        outputs = [Tensor.from_dlpack(buffer) for buffer in buffers]
+        return outputs[0] if len(outputs) == 1 else outputs
 
     @staticmethod
     def _unwrap_tensor(value: Any) -> Any:

@@ -180,6 +180,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "iterations to stress text-encoder recompilation/performance."
         ),
     )
+    parser.add_argument(
+        "--taylorseer",
+        action="store_true",
+        help="Enable TaylorSeer cache optimization for the MAX pipeline.",
+    )
+    parser.add_argument(
+        "--taylorseer-cache-interval",
+        type=int,
+        default=None,
+        help="Steps between full computations for TaylorSeer (model default if unset).",
+    )
+    parser.add_argument(
+        "--taylorseer-warmup-steps",
+        type=int,
+        default=None,
+        help="Warmup steps for TaylorSeer factor gathering (model default if unset).",
+    )
+    parser.add_argument(
+        "--taylorseer-max-order",
+        type=int,
+        default=None,
+        choices=[1, 2],
+        help="Taylor expansion order: 1=linear, 2=quadratic (model default if unset).",
+    )
     return parser.parse_args(argv)
 
 
@@ -407,6 +431,7 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
     from max.pipelines.core import PixelContext
     from max.pipelines.lib import PixelGenerationTokenizer
     from max.pipelines.lib.interfaces import DiffusionPipeline
+    from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
     from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
     from max.pipelines.lib.pipeline_variants.pixel_generation import (
         PixelGenerationPipeline,
@@ -447,10 +472,20 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
         max_length=max_length,
     )
 
+    cache_config = DenoisingCacheConfig(
+        first_block_caching=args.enable_fbc,
+        residual_threshold=args.residual_threshold if args.enable_fbc else None,
+        taylorseer=args.taylorseer,
+        taylorseer_cache_interval=args.taylorseer_cache_interval,
+        taylorseer_warmup_steps=args.taylorseer_warmup_steps,
+        taylorseer_max_order=args.taylorseer_max_order,
+    )
+
     pipeline_model = cast(type[DiffusionPipeline], arch.pipeline_model)
     pipeline = PixelGenerationPipeline[PixelContext](
         pipeline_config=config,
         pipeline_model=pipeline_model,
+        cache_config=cache_config,
     )
     return pipeline, tokenizer, config
 
@@ -483,7 +518,6 @@ async def _build_max_inputs(
                 width=width,
                 steps=steps,
                 guidance_scale=args.guidance_scale,
-                residual_threshold=args.residual_threshold,
             )
         ),
     )
@@ -638,6 +672,19 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  resolution       : {args.width}x{args.height}")
         print(f"  inference steps  : {args.num_inference_steps}")
     print(f"  guidance scale   : {args.guidance_scale}")
+    print(f"  enable FBC       : {args.enable_fbc}")
+    print(f"  residual thresh  : {args.residual_threshold}")
+    print(f"  taylorseer       : {args.taylorseer}")
+    if args.taylorseer:
+        print(
+            f"  ts interval      : {args.taylorseer_cache_interval or 'model-default'}"
+        )
+        print(
+            f"  ts warmup        : {args.taylorseer_warmup_steps or 'model-default'}"
+        )
+        print(
+            f"  ts max order     : {args.taylorseer_max_order or 'model-default'}"
+        )
     print(f"  warmup runs      : {args.num_warmups}")
     print()
     print("  Torch config:")

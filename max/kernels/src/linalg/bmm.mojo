@@ -301,28 +301,6 @@ def _reshape_tile_tensor_with_batch_to_3d(
     )
 
 
-# A utility to reshape NDBuffer with rank > 2 to rank-2.
-@always_inline
-def _reshape_nd_buffer_with_batch_to_2d(
-    buffer: NDBuffer,
-) -> NDBuffer[
-    rank=2, buffer.type, buffer.origin, address_space=buffer.address_space
-]:
-    comptime rank = buffer.rank
-    comptime assert rank >= 2, "expecting at least rank-2 NDBuffer"
-
-    var batch_size = 1
-
-    comptime for i in range(rank - 1):
-        batch_size *= buffer.dim[i]()
-
-    var matrix_shape = IndexList[2](batch_size, buffer.dim[rank - 1]())
-
-    return NDBuffer[rank=2, buffer.type, address_space=buffer.address_space](
-        buffer.data.bitcast[Scalar[buffer.type]](), matrix_shape
-    )
-
-
 @always_inline
 def _small_batched_matmul[
     rank: Int,
@@ -475,50 +453,16 @@ def batched_matmul[
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    comptime assert not transpose_a, "transpose_a not yet supported"
-
-    @always_inline
-    @parameter
-    def description_fn() -> String:
-        # fmt: off
-        return String(
-            trace_arg("A", a_buf.dynamic_shape, a_buf.dtype),
-            ";", trace_arg("B", b_buf.dynamic_shape, b_buf.dtype),
-            ";", trace_arg("C", c_buf.dynamic_shape, c_buf.dtype),
-            ";transpose_a=", transpose_a,
-            ";transpose_b=", transpose_b,
-        )
-        # fmt: on
-
-    with Trace[TraceLevel.OP, target=target](
-        "batched_matmul",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=get_safe_task_id(context),
-    ):
-        # TODO: generalize to > rank 3
-        comptime if (
-            single_thread_blocking_override
-            and not transpose_b
-            and is_cpu[target]()
-        ):
-            return _small_batched_matmul[
-                rank,
-                a_type,
-                b_type,
-                c_type,
-                elementwise_epilogue_fn,
-            ](
-                c_buf.make_dims_unknown(),
-                a_buf.make_dims_unknown(),
-                b_buf.make_dims_unknown(),
-            )
-
-        batched_matmul[
-            transpose_b=transpose_b,
-            elementwise_epilogue_fn=elementwise_epilogue_fn,
-            saturated_vnni=saturated_vnni,
-            target=target,
-        ](c_buf, a_buf, b_buf, context=context)
+    """NDBuffer overload of `batched_matmul`. Converts to TileTensor and
+    delegates."""
+    batched_matmul[
+        transpose_a=transpose_a,
+        transpose_b=transpose_b,
+        elementwise_epilogue_fn=elementwise_epilogue_fn,
+        saturated_vnni=saturated_vnni,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](TileTensor(c_buf), TileTensor(a_buf), TileTensor(b_buf), context=context)
 
 
 @always_inline
@@ -910,6 +854,28 @@ def _batched_matmul_gpu[
         with Trace[TraceLevel.OP]("batched_matmul_via_matmul"):
             # If the batch size is 1, then this is just a matmul and we can use the
             # matmul kernel directly.
+
+            # batch_size==1, so flatten (1, X, Y) → (X, Y)
+            # by constructing rank-2 TileTensors directly.
+            var c_2d = TileTensor(
+                c_tensor_reshaped.ptr,
+                row_major(Coord(Idx(m), Idx(n))),
+            )
+            var a_2d = TileTensor(
+                a_tensor_reshaped.ptr,
+                row_major(Coord(Idx(m), Idx(k))),
+            )
+            # Use b's actual dims since their order depends on transpose_b.
+            var b_2d = TileTensor(
+                b_tensor_reshaped.ptr,
+                row_major(
+                    Coord(
+                        Idx(Int(b_tensor_reshaped.dim(1))),
+                        Idx(Int(b_tensor_reshaped.dim(2))),
+                    )
+                ),
+            )
+
             comptime if elementwise_epilogue_fn:
                 comptime elementwise_epilogue = elementwise_epilogue_fn.value()
 
@@ -927,50 +893,12 @@ def _batched_matmul_gpu[
 
                     elementwise_epilogue(batch_coords, val)
 
-                # TODO(KERN-2219): Replace _to_ndbuffer() roundtrip with a
-                # pure TileTensor batch-to-2D reshape.
                 _matmul_gpu[
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_epilogue_fn_wrapper,
-                ](
-                    TileTensor(
-                        _reshape_nd_buffer_with_batch_to_2d(
-                            c_buf._to_ndbuffer()
-                        )
-                    ),
-                    TileTensor(
-                        _reshape_nd_buffer_with_batch_to_2d(
-                            a_buf._to_ndbuffer()
-                        )
-                    ),
-                    TileTensor(
-                        _reshape_nd_buffer_with_batch_to_2d(
-                            b_buf._to_ndbuffer()
-                        )
-                    ),
-                    ctx=ctx,
-                )
+                ](c_2d, a_2d, b_2d, ctx=ctx)
             else:
-                # TODO(KERN-2219): Replace _to_ndbuffer() roundtrip with a
-                # pure TileTensor batch-to-2D reshape.
-                _matmul_gpu[transpose_b=transpose_b](
-                    TileTensor(
-                        _reshape_nd_buffer_with_batch_to_2d(
-                            c_buf._to_ndbuffer()
-                        )
-                    ),
-                    TileTensor(
-                        _reshape_nd_buffer_with_batch_to_2d(
-                            a_buf._to_ndbuffer()
-                        )
-                    ),
-                    TileTensor(
-                        _reshape_nd_buffer_with_batch_to_2d(
-                            b_buf._to_ndbuffer()
-                        )
-                    ),
-                    ctx=ctx,
-                )
+                _matmul_gpu[transpose_b=transpose_b](c_2d, a_2d, b_2d, ctx=ctx)
 
             return
 
@@ -1170,31 +1098,19 @@ def batched_matmul[
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    comptime assert is_valid_target[target](), "unsupported target"
-
-    comptime if is_cpu[target]():
-        _batched_matmul_cpu[
-            transpose_b=transpose_b,
-            elementwise_epilogue_fn=elementwise_epilogue_fn,
-            saturated_vnni=saturated_vnni,
-        ](
-            c_buf.make_dims_unknown(),
-            a_buf.make_dims_unknown(),
-            b_buf.make_dims_unknown(),
-        )
-    else:
-        comptime assert (
-            saturated_vnni == False
-        ), "saturated_vnni is not applicable on the gpu"
-        _batched_matmul_gpu[
-            transpose_b=transpose_b,
-            elementwise_epilogue_fn=elementwise_epilogue_fn,
-        ](
-            TileTensor(c_buf),
-            TileTensor(a_buf),
-            TileTensor(b_buf),
-            context.get_device_context(),
-        )
+    """NDBuffer overload of `batched_matmul` (no transpose_a). Converts to
+    TileTensor and delegates."""
+    batched_matmul[
+        transpose_b=transpose_b,
+        elementwise_epilogue_fn=elementwise_epilogue_fn,
+        saturated_vnni=saturated_vnni,
+        target=target,
+    ](
+        TileTensor(c_buf),
+        TileTensor(a_buf),
+        TileTensor(b_buf),
+        context=context,
+    )
 
 
 @always_inline
@@ -1213,8 +1129,7 @@ def batched_matmul[
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    """TileTensor overload of `batched_matmul`. Converts to NDBuffer and
-    delegates."""
+    """TileTensor primary implementation of `batched_matmul`."""
     comptime assert c_buf.rank >= 2, "c must be at least rank 2"
     comptime assert (
         c_buf.rank == a_buf.rank == b_buf.rank
@@ -1228,10 +1143,11 @@ def batched_matmul[
     comptime assert (
         b_buf.flat_rank == b_buf.rank
     ), "b must have a non-nested layout"
+    comptime assert not transpose_a, "transpose_a not yet supported"
 
     comptime rank = c_buf.rank
 
-    # Construct NDBuffers with static shapes preserved (no strides).
+    # Construct NDBuffers at call boundary for internal functions.
     comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
     comptime _c_dim[idx: Int]: Dim = dim[c_buf.static_shape[idx]]
     comptime _a_dim[idx: Int]: Dim = dim[a_buf.static_shape[idx]]
@@ -1259,14 +1175,67 @@ def batched_matmul[
         ),
     )
 
-    batched_matmul[
-        transpose_a=transpose_a,
-        transpose_b=transpose_b,
-        elementwise_epilogue_fn=elementwise_epilogue_fn,
-        saturated_vnni=saturated_vnni,
-        single_thread_blocking_override=single_thread_blocking_override,
-        target=target,
-    ](c_nd, a_nd, b_nd, context=context)
+    @always_inline
+    @parameter
+    def description_fn() -> String:
+        # fmt: off
+        return String(
+            trace_arg("A", a_nd.dynamic_shape, a_nd.dtype),
+            ";", trace_arg("B", b_nd.dynamic_shape, b_nd.dtype),
+            ";", trace_arg("C", c_nd.dynamic_shape, c_nd.dtype),
+            ";transpose_a=", transpose_a,
+            ";transpose_b=", transpose_b,
+        )
+        # fmt: on
+
+    with Trace[TraceLevel.OP, target=target](
+        "batched_matmul",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(context),
+    ):
+        # TODO: generalize to > rank 3
+        comptime if (
+            single_thread_blocking_override
+            and not transpose_b
+            and is_cpu[target]()
+        ):
+            return _small_batched_matmul[
+                rank,
+                a_buf.dtype,
+                b_buf.dtype,
+                c_buf.dtype,
+                elementwise_epilogue_fn,
+            ](
+                c_nd.make_dims_unknown(),
+                a_nd.make_dims_unknown(),
+                b_nd.make_dims_unknown(),
+            )
+
+        comptime assert is_valid_target[target](), "unsupported target"
+
+        comptime if is_cpu[target]():
+            _batched_matmul_cpu[
+                transpose_b=transpose_b,
+                elementwise_epilogue_fn=elementwise_epilogue_fn,
+                saturated_vnni=saturated_vnni,
+            ](
+                c_nd.make_dims_unknown(),
+                a_nd.make_dims_unknown(),
+                b_nd.make_dims_unknown(),
+            )
+        else:
+            comptime assert (
+                saturated_vnni == False
+            ), "saturated_vnni is not applicable on the gpu"
+            _batched_matmul_gpu[
+                transpose_b=transpose_b,
+                elementwise_epilogue_fn=elementwise_epilogue_fn,
+            ](
+                c_buf,
+                a_buf,
+                b_buf,
+                context.get_device_context(),
+            )
 
 
 @always_inline

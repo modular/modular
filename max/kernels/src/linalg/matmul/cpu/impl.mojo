@@ -545,7 +545,7 @@ def _matmul_cpu_impl[
             b.data, IndexList[1](b.dim[0]())
         )
         gemv[parallelize=True, elementwise_lambda_fn=elementwise_lambda_fn](
-            out, lhs, rhs
+            TileTensor(out), TileTensor(lhs), TileTensor(rhs)
         )
     else:
         # SGEMM calls for MacOS >= 13.0.0 and a, b, c of type Float32 are
