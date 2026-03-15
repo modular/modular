@@ -63,8 +63,6 @@ DIAG(err_cannot_access_instance_field_without_instance, Error, Parser,
      "cannot access instance field '{0}' without an instance of {1}")
 DIAG(err_cannot_bind_mlir_type, Error, Parser,
      "cannot bind MLIR type {0} to trait {1}")
-DIAG(err_cannot_bind_non_trivial_value, Error, Parser,
-     "cannot bind non-trivial value to trivial variadic argument")
 DIAG(err_cannot_call_unresolved_expression, Error, Parser,
      "cannot call this unresolved expression")
 DIAG(err_cannot_capture_by_move_read_only, Error, Parser,
