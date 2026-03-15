@@ -18,6 +18,7 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
+from max.nn.kernels import extract_accepted_hs
 
 
 def build_gather_graph(
@@ -56,4 +57,37 @@ def build_gather_graph(
             outputs.append(gathered)
 
         graph.output(*outputs)
+        return graph
+
+
+def build_extract_hs_graph(
+    device_ref: DeviceRef,
+    dtype: DType,
+    hidden_dim: int,
+) -> Graph:
+    """Builds a graph wrapping the extract_accepted_hs custom op.
+
+    Args:
+        device_ref: Device reference for the graph.
+        dtype: Data type of the hidden states.
+        hidden_dim: Hidden dimension size.
+
+    Returns:
+        A graph that extracts accepted hidden states.
+    """
+    input_types = [
+        TensorType(dtype, ["total_hs", hidden_dim], device=device_ref),
+        TensorType(DType.uint32, ["offsets_len"], device=device_ref),
+        TensorType(DType.int64, ["local_batch"], device=device_ref),
+        TensorType(DType.int64, [1], device=DeviceRef.CPU()),
+    ]
+    with Graph("extract_accepted_hs", input_types=input_types) as graph:
+        hs, hs_offsets, first_rejected, num_draft_tokens = graph.inputs
+        accepted_hs, accepted_offsets = extract_accepted_hs(
+            hs.tensor,
+            hs_offsets.tensor,
+            first_rejected.tensor,
+            num_draft_tokens.tensor,
+        )
+        graph.output(accepted_hs, accepted_offsets)
         return graph

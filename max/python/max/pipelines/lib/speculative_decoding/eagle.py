@@ -41,7 +41,7 @@ from transformers import AutoConfig
 
 from ..sampling import PenaltyInputs, SamplerInputs
 from .base import SpeculativeDecodingPipelineBase
-from .eagle_hidden_state_graphs import build_gather_graph
+from .eagle_hidden_state_graphs import build_extract_hs_graph
 from .utils import (
     ModelInputsWithTokensAndOffsets,
     build_response,
@@ -122,21 +122,19 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             draft_weight_adapters,
         )
 
-        # Gather graph for extracting hidden states corresponding to accepted tokens after verification
-        device_refs = [DeviceRef.from_device(dev) for dev in self.devices]
+        # Extract-HS graph for extracting hidden states corresponding to accepted tokens after verification
+        device_ref = DeviceRef.from_device(self.devices[0])
         hf_config = self._target_model.huggingface_config
         hidden_dim = _get_hidden_dim(hf_config)
-        # hidden_states is now a single tensor on device 0, so only build
-        # the gather graph for one device.
-        self._hs_gather_model = self._session.load(
-            build_gather_graph(device_refs[:1], DType.bfloat16, hidden_dim)
+        self._hs_extract_model = self._session.load(
+            build_extract_hs_graph(device_ref, DType.bfloat16, hidden_dim)
         )
 
         # Graph to shift tokens for Eagle prefill. During prefill it shifts
         # tokens left by 1 and appends the sampled bonus token; during decode
         # it copies inputs unchanged. Dispatches on num_draft_tokens sentinel.
         self._eagle_prefill_shifter = self._session.load(
-            _build_eagle_prefill_shift_graph(device_refs[0])
+            _build_eagle_prefill_shift_graph(device_ref)
         )
 
     def _prepare_draft_batch(
@@ -460,33 +458,32 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
     def _extract_hs_for_draft(
         self,
         hidden_states: Buffer,
-        logit_offsets: list[int],
-        first_rejected: list[int],
-        num_draft_tokens: int = 0,
+        merged_offsets: Buffer,
+        first_rejected_np: npt.NDArray[np.integer[Any]],
+        num_draft_tokens: int,
     ) -> Buffer:
-        """Gather accepted hidden states from verification output for draft input.
+        """Extract accepted hidden states from verification output for draft input.
 
         For prefill (num_draft_tokens=0), returns hidden states unchanged.
-        For decode, gathers the accepted rows using the gather graph.
+        For decode, runs the extract op which packs accepted rows at the
+        start of the output buffer, then slices to the accepted count.
         """
-        if num_draft_tokens == 0:
-            return hidden_states
-
-        # Compute gather indices
-        gather_indices: list[int] = []
-        for start_row, num_rows in zip(
-            logit_offsets[:-1], first_rejected, strict=True
-        ):
-            for r in range(num_rows + 1):
-                gather_indices.append(start_row + r)
-        if gather_indices:
-            indices_np = np.array(gather_indices, dtype=np.int64)
-        else:
-            indices_np = np.array([], dtype=np.int64)
-
-        indices_buf = Buffer.from_numpy(indices_np).to(hidden_states.device)
-        (sliced_hs,) = self._hs_gather_model(hidden_states, indices_buf)
-        return sliced_hs
+        device = hidden_states.device
+        first_rejected_buf = Buffer.from_numpy(
+            first_rejected_np.astype(np.int64)
+        ).to(device)
+        num_draft_buf = Buffer.from_numpy(
+            np.array([num_draft_tokens], dtype=np.int64)
+        )
+        accepted_hs, accepted_offsets = self._hs_extract_model(
+            hidden_states,
+            merged_offsets,
+            first_rejected_buf,
+            num_draft_buf,
+        )
+        accepted_offsets_np = accepted_offsets.to_numpy()
+        total_accepted = int(accepted_offsets_np[-1])
+        return accepted_hs[:total_accepted, :]
 
     @traced
     def execute(
@@ -610,8 +607,8 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         # 5. Extract accepted hidden states for draft model.
         sliced_target_hs = self._extract_hs_for_draft(
             target_hs,
-            merged_offsets.to_numpy().tolist(),
-            first_rejected_np.tolist(),
+            merged_offsets,
+            first_rejected_np,
             num_draft_tokens_generated,
         )
 
