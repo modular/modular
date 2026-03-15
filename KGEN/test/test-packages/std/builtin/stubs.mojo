@@ -893,9 +893,9 @@ struct _VariadicListIter[
     //,
     elt_type: AnyType,
     elt_origin: Origin[mut=elt_is_mutable],
-    list_origin: Origin[],
+    list_origin: Origin[mut=False],
     is_owned: Bool,
-]:
+](RegisterPassable):
     """Iterator for VariadicList.
 
     Parameters:
@@ -914,6 +914,14 @@ struct _VariadicListIter[
     var index: Int
     var src: Pointer[Self.variadic_list_type, Self.list_origin]
 
+    def __init__(
+        out self,
+        index: Int,
+        ref[Self.list_origin] list: Self.variadic_list_type,
+    ):
+        self.index = index
+        self.src = Pointer(to=list)
+
     def __next__(
         mut self,
     ) raises StopIteration -> ref[Self.elt_origin] Self.elt_type:
@@ -927,7 +935,7 @@ struct VariadicList[
     //,
     element_type: AnyType,
     is_owned: Bool,
-]:
+](RegisterPassable):
     comptime reference_type = Pointer[Self.element_type, Self.origin]
     comptime _mlir_ref_type = Self.reference_type._mlir_type
     comptime _mlir_type = __mlir_type[
@@ -941,29 +949,30 @@ struct VariadicList[
     ):
         pass
 
-    def __getitem__(
-        self, idx: Int
-    ) -> ref[
+    def __getitem__[
+        self_origin: Origin[mut=False]
+    ](ref[self_origin] self, idx: Int) -> ref[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        origin_of(Self.origin, self).unsafe_mut_cast[Self.elt_is_mutable]()
+        origin_of(Self.origin, self_origin).unsafe_mut_cast[
+            Self.elt_is_mutable
+        ]()
     ] Self.element_type:
         while True:
             pass
 
-    def __iter__(
-        self,
-        out result: _VariadicListIter[
-            Self.element_type, Self.origin, origin_of(self), Self.is_owned
-        ],
-    ):
+    def __iter__[
+        self_origin: Origin[]
+    ](ref[self_origin] self) -> _VariadicListIter[
+        Self.element_type, Self.origin, self_origin, Self.is_owned
+    ]:
         """Iterate over the list.
 
         Returns:
             An iterator to the start of the list.
         """
-        return type_of(result)(0, Pointer(to=self))
+        return {0, self}
 
 
 struct VariadicPack[
