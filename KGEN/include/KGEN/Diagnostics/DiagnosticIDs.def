@@ -45,8 +45,6 @@ DIAG(err_ambiguous_captured_value, Error, Parser,
      "ambiguous captured value: '{0}'")
 DIAG(err_ambiguous_import_both, Error, Parser,
      "ambiguous import, both {0} and {1} exist in the file system.")
-DIAG(err_argument_type_list_elements_types, Error, Parser,
-     "argument type list elements must be types")
 DIAG(err_argument_type_specified, Error, Parser,
      "argument type must be specified")
 DIAG(err_attribute_spec_requires_keyword_parameter, Error, Parser,
