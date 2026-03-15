@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.testing import TestSuite
-from std.testing import assert_equal
+from std.testing import assert_equal, assert_raises
 
 
 def test_max() raises:
@@ -28,6 +28,22 @@ def test_max() raises:
     )
 
     assert_equal(actual_result, expected_result)
+
+
+def test_max_iterable() raises:
+    var expected_result = 10
+    var l = [1, 2, 10, 4, 5, 6]
+    assert_equal(max(l), expected_result)
+
+    assert_equal(max(range(20)), 19)
+
+    expected_result = 10
+    var t = {1, 2, 8, 4, 10, 6}
+    assert_equal(max(t), expected_result)
+
+    with assert_raises():
+        l = []
+        _ = max(l)
 
 
 def test_max_scalar() raises:

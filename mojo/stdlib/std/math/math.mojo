@@ -3863,6 +3863,50 @@ def max[T: Copyable & Comparable](x: T, *ys: T) -> T:
     return res.copy()
 
 
+fn max[
+    origin: ImmutOrigin, T: Iterable, //
+](
+    ref[origin] seq: T,
+    out max_element: T.IteratorType[origin_of(seq)].Element,
+) raises StopIteration where conforms_to(
+    type_of(max_element), ImplicitlyDestructible & Comparable & Movable
+):
+    """
+    Gets the maximum value from a sequence of values.
+
+    Parameters:
+        origin: The origin of the sequence.
+        T: A type that is both copyable and comparable with greater than.
+
+    Args:
+        seq: The sequence to get the maximum value from.
+
+    Raises:
+        StopIteration: If the sequence is empty.
+
+    Returns:
+        The maximum value from the input sequence.
+    """
+    var it = iter(seq)
+
+    # Will raise on empty container
+    var m = trait_downcast_var[Comparable & Movable & ImplicitlyDestructible](
+        next(it)
+    )
+
+    while True:
+        try:
+            var n = trait_downcast_var[
+                Comparable & Movable & ImplicitlyDestructible
+            ](next(it))
+
+            if n > m:
+                m = n^
+        except:
+            break
+    max_element = m^
+
+
 # ===----------------------------------------------------------------------=== #
 # min
 # ===----------------------------------------------------------------------=== #
@@ -3929,6 +3973,49 @@ def min[T: Copyable & Comparable](x: T, *ys: T) -> T:
         if y < res:
             res = y.copy()
     return res.copy()
+
+
+fn min[
+    origin: ImmutOrigin, T: Iterable, //
+](
+    ref[origin] seq: T,
+    out min_element: T.IteratorType[origin_of(seq)].Element,
+) raises StopIteration where conforms_to(
+    type_of(min_element), ImplicitlyDestructible & Comparable & Movable
+):
+    """Gets the minimum value from a sequence of values.
+
+    Parameters:
+        origin: The origin of the sequence.
+        T: The type to iterate over.
+
+    Args:
+        seq: The sequence of values to find the minimum of.
+
+    Raises:
+        StopIteration: If the sequence is empty.
+
+    Returns:
+        The minimum value from the input sequence.
+    """
+    var it = iter(seq)
+
+    # Will raise on empty container
+    var m = trait_downcast_var[Comparable & Movable & ImplicitlyDestructible](
+        next(it)
+    )
+
+    while True:
+        try:
+            var n = trait_downcast_var[
+                Comparable & Movable & ImplicitlyDestructible
+            ](next(it))
+            if n < m:
+                m = n^
+        except:
+            break
+
+    min_element = m^
 
 
 # ===----------------------------------------------------------------------=== #

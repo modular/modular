@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.testing import TestSuite
-from std.testing import assert_equal
+from std.testing import assert_equal, assert_raises
 
 
 def test_min() raises:
@@ -35,6 +35,22 @@ def test_min_scalar() raises:
     assert_equal(min(Bool(False), Bool(True)), Bool(False))
     assert_equal(min(Bool(False), Bool(False)), Bool(False))
     assert_equal(min(Bool(True), Bool(True)), Bool(True))
+
+
+def test_min_iterable() raises:
+    var expected_result = 0
+    var l = [1, 2, 10, 4, 0, 6]
+    assert_equal(min(l), expected_result)
+
+    assert_equal(min(range(20)), 0)
+
+    expected_result = 0
+    var t = {1, 2, 8, 4, 0, 6}
+    assert_equal(min(t), expected_result)
+
+    with assert_raises():
+        l = []
+        _ = min(l)
 
 
 def main() raises:
