@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import shlex
 import subprocess
 import tempfile
@@ -140,11 +141,14 @@ def is_mojo_binary_package_path(path: Path) -> bool:
 def _build_mojo_source_package(path: Path) -> Path:
     assert is_mojo_source_package_path(path)
 
-    # Create a deterministic path in the temp directory based on the source path
+    # Create a deterministic path in the temp directory based on the source path.
+    # Include the user ID in the path to avoid permission conflicts
+    # when multiple OS users share the same temp directory (Linux).
     path_hash = hashlib.md5(str(path.absolute()).encode()).hexdigest()
     tmp_path = (
         Path(tempfile.gettempdir())
-        / ".modular/mojo_pkg"
+        / f".modular_{os.getuid()}"
+        / "mojo_pkg"
         / f"mojo_pkg_{path_hash}.mojopkg"
     )
 
