@@ -5914,6 +5914,38 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         )
         return DeviceStream(result)
 
+    def create_external_stream(
+        self, external_stream: OpaquePointer[MutAnyOrigin]
+    ) raises -> DeviceStream:
+        """Creates a non-owning stream wrapper around an externally managed GPU stream.
+
+        The returned `DeviceStream` does not
+        take ownership of the underlying stream. The caller is responsible for
+        ensuring the external stream remains valid for the lifetime of the
+        returned wrapper.
+
+        Args:
+            external_stream: An opaque pointer to the external GPU stream handle
+                (e.g., a `CUstream` or `hipStream_t` cast to `void*`).
+
+        Returns:
+            A `DeviceStream` wrapping the external stream without taking
+            ownership of it.
+
+        Raises:
+            If wrapping the external stream fails.
+        """
+        var result = _DeviceStreamPtr()
+
+        # const char *AsyncRT_DeviceContext_createExternalStream(const DeviceStream **stream, void *externalStream, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_createExternalStream",
+                _ConstCharPtr,
+            ](UnsafePointer(to=result), external_stream, self._handle)
+        )
+        return DeviceStream(result)
+
     @always_inline
     def synchronize(self) raises:
         """Blocks until all asynchronous calls on the stream associated with
