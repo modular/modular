@@ -33,7 +33,7 @@ KEYWORDS = [
     "finally",
     "for",
     "from",
-    "fn",
+    "fn",  # Used to be a keyword
     "global",
     "if",
     "import",
@@ -65,14 +65,13 @@ KEYWORDS = [
 ]
 
 
-@pytest.mark.parametrize("fn", ["fn", "def"])
 @pytest.mark.parametrize("kw", KEYWORDS)
-def test_keyword_as_method_name(fn, kw):
+def test_keyword_as_method_name(kw):
     """Keywords can be used as a member method name."""
     source = (
         "@fieldwise_init\n"
         "struct Foo:\n"
-        f"    {fn} {kw}(self): pass\n"
+        f"    def {kw}(self): pass\n"
         "def main():\n"
         "    var x = Foo()\n"
         f"    x.{kw}()\n"
@@ -80,7 +79,7 @@ def test_keyword_as_method_name(fn, kw):
     expected = (
         "@fieldwise_init\n"
         "struct Foo:\n"
-        f"    {fn} {kw}(self):\n"
+        f"    def {kw}(self):\n"
         "        pass\n"
         "\n"
         "\n"
@@ -117,19 +116,19 @@ def test_keyword_as_trait_name(kw):
     """Keywords can be used as a trait name, with backticks."""
     source = (
         f"trait `{kw}`:\n"
-        f"    fn {kw}(self): pass\n"
+        f"    def {kw}(self): pass\n"
         "\n"
         f"struct Foo(`{kw}`):\n"
-        f"    fn {kw}(self): pass\n"
+        f"    def {kw}(self): pass\n"
     )
     expected = (
         f"trait `{kw}`:\n"
-        f"    fn {kw}(self):\n"
+        f"    def {kw}(self):\n"
         "        pass\n"
         "\n"
         "\n"
         f"struct Foo(`{kw}`):\n"
-        f"    fn {kw}(self):\n"
+        f"    def {kw}(self):\n"
         "        pass\n"
     )
     assert_mojo_format(source, expected)
@@ -139,11 +138,11 @@ def test_keyword_as_trait_name(kw):
 def test_keyword_as_mlir_region_name(kw):
     """Keywords can be used as __mlir_region names."""
     source = (
-        "fn foo():\n"
+        "def foo():\n"
         f"    __mlir_region {kw}(): pass\n"
     )
     expected = (
-        "fn foo():\n"
+        "def foo():\n"
         f"    __mlir_region {kw}():\n"
         "        pass\n"
     )

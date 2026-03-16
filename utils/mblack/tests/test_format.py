@@ -154,7 +154,7 @@ def test_python_2_hint() -> None:
 
 
 def test_unexpected_indent_error_message() -> None:
-    source = "fn main():\n  x = 0\n   if x > 0:\n    x = 2\n"
+    source = "def main():\n  x = 0\n   if x > 0:\n    x = 2\n"
     mode = mblack.Mode(target_versions={mblack.TargetVersion.MOJO})
     with pytest.raises(mblack.parsing.InvalidInput, match="Unexpected indent"):
         mblack.format_str(source, mode=mode)
