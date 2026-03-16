@@ -85,7 +85,7 @@ from std.reflection import (
     get_type_name, struct_field_types
 )
 
-fn show_type[T: AnyType]():
+def show_type[T: AnyType]():
     comptime type_name = get_type_name[T]()
     comptime field_count = struct_field_count[T]() # count of fields
     comptime field_names = struct_field_names[T]() # indexed list of field names
@@ -108,10 +108,10 @@ comptime DefaultItemCount = 10
 
 struct ParameterizedStruct[T: Copyable, item_count: Int = DefaultItemCount](Copyable):
     var list: List[Self.T]
-    fn __init__(out self):
+    def __init__(out self):
        self.list = List[Self.T](capacity=Self.item_count)
 
-fn main():
+def main():
     show_type[MyStruct]()
     show_type[Optional[Float64]]()
     show_type[Dict[Int, String]]()
@@ -188,7 +188,7 @@ reflection enables generic, type-safe operations without hardcoding field access
 
 When a struct conforms to `MakeCopyable`, it gains the `copy_to()` method that
 uses reflection to perform the copy. Like all methods, you call it from an
-instance. For this method, you provide it with target instance.
+instance. For this method, you provide it with a target instance.
 
 Its behavior is similar in spirit to `ImplicitlyCopyable`, but `copy_to()`
 limits copying to fields whose types conform to `Copyable`. It requires an
@@ -198,7 +198,7 @@ already initialized target, avoiding matching values to `__init__` arguments.
 from std.reflection import struct_field_count, struct_field_types
 
 trait MakeCopyable:
-    fn copy_to(self, mut other: Self):
+    def copy_to(self, mut other: Self):
         comptime field_count = struct_field_count[Self]()
         comptime field_types = struct_field_types[Self]()
 
@@ -210,7 +210,11 @@ trait MakeCopyable:
 
             # Perform the copy
             ref p_value = __struct_field_ref(idx, self)
-            __struct_field_ref(idx, other) = p_value
+            trait_downcast[Copyable & ImplicitlyDestructible](
+                __struct_field_ref(idx, other)
+            ) = trait_downcast[Copyable & ImplicitlyDestructible](
+                p_value
+            ).copy()
 ```
 
 ### Insights
@@ -239,7 +243,7 @@ struct MultiType(Writable, MakeCopyable):
     var y: Bool
     var z: Float64
 
-    fn write_to[W: Writer](self, mut writer: W):
+    def write_to[W: Writer](self, mut writer: W):
         writer.write("[{}, {}, {}, {}]".format(self.w, self.x, self.y, self.z))
 ```
 
@@ -251,7 +255,7 @@ After copying, `target_instance` has received its values from
 `original_instance`'s fields:
 
 ```mojo
-fn main():
+def main():
     var original_instance = MultiType("Hello", 1, True, 2.5)
     var target_instance = MultiType("", 0, False, 0.0)
 
@@ -275,7 +279,7 @@ early return for the first inequality (`False`), otherwise returning `True`:
 ```mojo
 from std.reflection import struct_field_count, struct_field_types
 
-fn test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
+def test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
     comptime field_count = struct_field_count[T]()
     comptime field_types = struct_field_types[T]()
 
@@ -294,7 +298,7 @@ fn test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
     return True
 ```
 
-# Insights
+### Insights
 
 - This example uses two key elements to ensure smooth operation:
   `conforms_to()` and `trait_downcast[]()`.
@@ -308,14 +312,14 @@ fn test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
 - As its name suggests, `__struct_field_ref()` is limited to use with
   struct types.
 
-# Calling the tests
+### Calling the tests
 
 To demonstrate this function, the following `main()` first
 copies values (equal), and then mutates `original_instance`
-and tests again (inequal):
+and tests again (unequal):
 
 ```mojo
-fn main():
+def main():
     var original_instance = MultiType("Hello", 1, True, 2.5)
     var target_instance = MultiType("", 0, False, 0.0)
     original_instance.copy_to(target_instance)

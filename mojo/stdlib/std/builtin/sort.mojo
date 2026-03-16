@@ -30,7 +30,7 @@ comptime insertion_sort_threshold = 32
 
 
 @always_inline
-fn _insertion_sort[
+def _insertion_sort[
     T: Copyable,
     origin: MutOrigin,
     //,
@@ -56,7 +56,7 @@ fn _insertion_sort[
 
 # put everything thats "<" to the left of pivot
 @always_inline
-fn _quicksort_partition_right[
+def _quicksort_partition_right[
     T: Copyable,
     origin: MutOrigin,
     //,
@@ -85,7 +85,7 @@ fn _quicksort_partition_right[
 
 # put everything thats "<=" to the left of pivot
 @always_inline
-fn _quicksort_partition_left[
+def _quicksort_partition_left[
     T: Copyable,
     origin: MutOrigin,
     //,
@@ -111,7 +111,7 @@ fn _quicksort_partition_left[
         right -= 1
 
 
-fn _heap_sort_fix_down[
+def _heap_sort_fix_down[
     T: Copyable,
     origin: MutOrigin,
     //,
@@ -134,7 +134,7 @@ fn _heap_sort_fix_down[
 
 
 @always_inline
-fn _heap_sort[
+def _heap_sort[
     T: Copyable,
     origin: MutOrigin,
     //,
@@ -152,7 +152,7 @@ fn _heap_sort[
 
 
 @always_inline
-fn _estimate_initial_height(size: Int) -> Int:
+def _estimate_initial_height(size: Int) -> Int:
     # Compute the log2 of the size rounded upward.
     var log2: Int = (bit_width_of[DType.int]() - 1) ^ count_leading_zeros(
         size | 1
@@ -163,7 +163,7 @@ fn _estimate_initial_height(size: Int) -> Int:
 
 
 @always_inline
-fn _delegate_small_sort[
+def _delegate_small_sort[
     T: Copyable,
     origin: MutOrigin,
     //,
@@ -194,7 +194,7 @@ fn _delegate_small_sort[
 
 
 @always_inline
-fn _quicksort[
+def _quicksort[
     T: Copyable,
     origin: MutOrigin,
     //,
@@ -261,7 +261,7 @@ fn _quicksort[
 # This is being passed mutable origins that are taken from the same memory
 # object, so of course they alias.  The caller guarantees they don't overlap.
 @__unsafe_disable_nested_origin_exclusivity
-fn _merge[
+def _merge[
     T: Copyable,
     span_origin: MutOrigin,
     result_origin: MutOrigin,
@@ -321,7 +321,7 @@ fn _merge[
         j += 1
 
 
-fn _stable_sort_impl[
+def _stable_sort_impl[
     T: Copyable,
     span_life: MutOrigin,
     tmp_life: MutOrigin,
@@ -357,7 +357,7 @@ fn _stable_sort_impl[
         merge_size *= 2
 
 
-fn _stable_sort[
+def _stable_sort[
     T: Copyable,
     origin: MutOrigin,
     //,
@@ -375,7 +375,7 @@ fn _stable_sort[
 
 
 @always_inline
-fn _partition[
+def _partition[
     T: Copyable,
     origin: MutOrigin,
     //,
@@ -407,7 +407,7 @@ fn _partition[
     return right
 
 
-fn _partition[
+def _partition[
     T: Copyable,
     origin: MutOrigin,
     //,
@@ -425,7 +425,7 @@ fn _partition[
             k -= pivot + 1
 
 
-fn partition[
+def partition[
     T: Copyable,
     origin: MutOrigin,
     //,
@@ -454,7 +454,7 @@ fn partition[
 
 
 # Junction from public to private API
-fn _sort[
+def _sort[
     T: Copyable,
     origin: MutOrigin,
     //,
@@ -482,7 +482,7 @@ fn _sort[
 # (same for partition)
 # Eventually we want a sort that takes a Span and one that takes a List with
 # optional cmp_fn.
-fn sort[
+def sort[
     T: Copyable,
     origin: MutOrigin,
     //,
@@ -509,7 +509,7 @@ fn sort[
     _sort[cmp_fn, stable=stable](span)
 
 
-fn sort[
+def sort[
     dtype: DType,
     origin: MutOrigin,
     //,
@@ -532,7 +532,7 @@ fn sort[
     _sort[cmp_fn, stable=stable, do_smallsort=True](span)
 
 
-fn sort[
+def sort[
     origin: MutOrigin,
     //,
     cmp_fn: fn(Int, Int) capturing[_] -> Bool,
@@ -554,7 +554,7 @@ fn sort[
     _sort[cmp_fn, stable=stable, do_smallsort=True](span)
 
 
-fn sort[
+def sort[
     origin: MutOrigin,
     //,
     *,
@@ -572,13 +572,13 @@ fn sort[
     """
 
     @parameter
-    fn _cmp_fn(lhs: Int, rhs: Int) -> Bool:
+    def _cmp_fn(lhs: Int, rhs: Int) -> Bool:
         return lhs < rhs
 
     sort[_cmp_fn, stable=stable](span)
 
 
-fn sort[
+def sort[
     T: Copyable & Comparable,
     origin: MutOrigin,
     //,
@@ -597,7 +597,7 @@ fn sort[
     """
 
     @parameter
-    fn _cmp_fn(a: T, b: T) -> Bool:
+    def _cmp_fn(a: T, b: T) -> Bool:
         return a < b
 
     sort[_cmp_fn, stable=stable](span)
@@ -609,7 +609,7 @@ fn sort[
 
 
 @always_inline
-fn _sort2[
+def _sort2[
     origin: MutOrigin,
     //,
     T: Copyable,
@@ -620,7 +620,7 @@ fn _sort2[
 
 
 @always_inline
-fn _sort3[
+def _sort3[
     origin: MutOrigin,
     //,
     T: Copyable,
@@ -632,7 +632,7 @@ fn _sort3[
 
 
 @always_inline
-fn _sort_partial_3[
+def _sort_partial_3[
     origin: MutOrigin,
     //,
     T: Copyable,
@@ -648,7 +648,7 @@ fn _sort_partial_3[
 
 
 @always_inline
-fn _small_sort[
+def _small_sort[
     origin: MutOrigin,
     //,
     n: Int,

@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 from max.mlir.dialects import mo, rmo
 
 from ..graph import Graph
@@ -27,7 +29,7 @@ def transfer_to(
     """Inserts a device transfer node into the compiled graph.
 
     Moves ``x`` to ``device`` at execution time. This is a **graph-level
-    operation**: it operates on symbolic :obj:`TensorValue` objects during
+    operation**: it operates on symbolic :class:`~max.graph.TensorValue` objects during
     graph tracing and is baked into the compiled graph as an
     ``mo.transfer`` MLIR op.
 
@@ -49,10 +51,20 @@ def transfer_to(
         device: The target device.
 
     Returns:
-        A new :obj:`TensorValue` on the specified device.
+        A new :class:`~max.graph.TensorValue` on the specified device.
     """
     x = TensorValue(x)
     device = DeviceRef.from_device(device)
+
+    if device.is_cpu() and not x.type.device.is_cpu() and x.rank == 0:
+        warnings.warn(
+            "transfer_to(CPU) on a scalar tensor detected during graph"
+            " construction. If this tensor is a static model weight,"
+            " consider annotating the field as `PinnedDeviceTensor`"
+            " (from max.experimental.nn) to keep it on its current"
+            " device and avoid a device sync at runtime.",
+            stacklevel=2,
+        )
 
     if device == x.type.device:
         return x

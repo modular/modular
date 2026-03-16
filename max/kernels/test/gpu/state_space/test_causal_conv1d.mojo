@@ -17,11 +17,11 @@ from std.sys.info import simd_width_of
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 from std.gpu.host import DeviceContext
 from layout import (
-    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
-    RuntimeTuple,
     RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
 )
 from std.random import rand
 from layout.int_tuple import fill_like
@@ -40,7 +40,7 @@ def main() raises:
 
 
 @always_inline
-fn silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
+def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     """Reference SiLU implementation: x * sigmoid(x) = x / (1 + exp(-x))."""
     var x_f32 = x.cast[DType.float32]()
     var neg_x = -x_f32
@@ -50,7 +50,7 @@ fn silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     return (x_f32 * sigmoid_x).cast[dtype]()
 
 
-fn run_causal_conv1d_gpu[
+def run_causal_conv1d_gpu[
     dtype: DType,
     activation: StaticString,
 ](
@@ -427,7 +427,7 @@ fn run_causal_conv1d_gpu[
     result_cpu_heap.free()
 
 
-fn test_basic_gpu_causal_conv1d() raises:
+def test_basic_gpu_causal_conv1d() raises:
     """Test basic GPU causal conv1d without activation."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -435,7 +435,7 @@ fn test_basic_gpu_causal_conv1d() raises:
     run_causal_conv1d_gpu[DType.float32, "none"](2, 4, 8, 3, ctx=ctx)
 
 
-fn test_gpu_causal_conv1d_with_silu() raises:
+def test_gpu_causal_conv1d_with_silu() raises:
     """Test GPU causal conv1d with SiLU activation."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -443,7 +443,7 @@ fn test_gpu_causal_conv1d_with_silu() raises:
     run_causal_conv1d_gpu[DType.float32, "silu"](2, 4, 8, 3, ctx=ctx)
 
 
-fn test_gpu_causal_conv1d_width_1() raises:
+def test_gpu_causal_conv1d_width_1() raises:
     """Test GPU causal conv1d with kernel width 1."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -451,7 +451,7 @@ fn test_gpu_causal_conv1d_width_1() raises:
     run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 1, ctx=ctx)
 
 
-fn test_gpu_causal_conv1d_width_2() raises:
+def test_gpu_causal_conv1d_width_2() raises:
     """Test GPU causal conv1d with kernel width 2."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -459,7 +459,7 @@ fn test_gpu_causal_conv1d_width_2() raises:
     run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 2, ctx=ctx)
 
 
-fn test_gpu_causal_conv1d_width_3() raises:
+def test_gpu_causal_conv1d_width_3() raises:
     """Test GPU causal conv1d with kernel width 3."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -467,7 +467,7 @@ fn test_gpu_causal_conv1d_width_3() raises:
     run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 3, ctx=ctx)
 
 
-fn test_gpu_causal_conv1d_width_4() raises:
+def test_gpu_causal_conv1d_width_4() raises:
     """Test GPU causal conv1d with kernel width 4."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -475,7 +475,7 @@ fn test_gpu_causal_conv1d_width_4() raises:
     run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 4, ctx=ctx)
 
 
-fn test_gpu_causal_conv1d_large_sequence() raises:
+def test_gpu_causal_conv1d_large_sequence() raises:
     """Test GPU causal conv1d with larger sequence length."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -483,7 +483,7 @@ fn test_gpu_causal_conv1d_large_sequence() raises:
     run_causal_conv1d_gpu[DType.float32, "none"](2, 16, 128, 3, ctx=ctx)
 
 
-fn test_gpu_causal_conv1d_mamba_dimensions() raises:
+def test_gpu_causal_conv1d_mamba_dimensions() raises:
     """Test GPU causal conv1d with mamba-130m-hf realistic dimensions."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -495,7 +495,7 @@ fn test_gpu_causal_conv1d_mamba_dimensions() raises:
         )
 
 
-fn test_gpu_causal_conv1d_strict_tolerance() raises:
+def test_gpu_causal_conv1d_strict_tolerance() raises:
     """Test GPU causal conv1d with strict tolerance (0.01%)."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():

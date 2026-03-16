@@ -14,14 +14,16 @@
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import (
+    Coord,
+    Idx,
     Layout,
     LayoutTensor,
+    RuntimeInt,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx, RuntimeInt
 from layout._fillers import random
 from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
@@ -38,7 +40,7 @@ from std.utils.numerics import get_accum_type, max_finite, min_finite
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
 
-fn test_static_scaled_fp8_quant[
+def test_static_scaled_fp8_quant[
     out_dtype: DType,
     in_dtype: DType,
 ](ctx: DeviceContext, scale: Float32, m: Int, n: Int) raises:
@@ -106,7 +108,7 @@ fn test_static_scaled_fp8_quant[
     _ = out_device^
 
 
-fn test_dynamic_fp8_quant[
+def test_dynamic_fp8_quant[
     out_dtype: DType,
     in_dtype: DType,
     scales_dtype: DType,
@@ -119,8 +121,8 @@ fn test_dynamic_fp8_quant[
     ) if group_size_or_per_token == -1 else group_size_or_per_token
     comptime accum_dtype = get_accum_type[in_dtype]()
 
-    comptime static_shape = DimList(to_dim[M], to_dim[N])
-    comptime static_scales_shape = DimList(to_dim[N] // group_size, to_dim[M])
+    comptime static_shape = DimList[to_dim[M], to_dim[N]]()
+    comptime static_scales_shape = DimList[to_dim[N] // group_size, to_dim[M]]()
     var dynamic_shape = Index(M.or_else(m), N.or_else(n))
     var dynamic_scales_shape = Index(n // group_size, m)
     var total_size = m * n
@@ -176,7 +178,7 @@ fn test_dynamic_fp8_quant[
     @__copy_capture(in_ndbuffer)
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int) -> SIMD[in_dtype, width]:
         return in_ndbuffer.load[width=width, alignment=alignment](row, col)
@@ -184,8 +186,8 @@ fn test_dynamic_fp8_quant[
     quantize_dynamic_scaled_fp8[
         input_fn, group_size_or_per_token, in_ndbuffer.shape.get[1]()
     ](
-        out_ndbuffer.make_dims_unknown(),
-        scales_ndbuffer.make_dims_unknown(),
+        TileTensor(out_ndbuffer.make_dims_unknown()),
+        TileTensor(scales_ndbuffer.make_dims_unknown()),
         1200.0,
         ctx,
         in_ndbuffer.dim[0](),
@@ -247,7 +249,7 @@ fn test_dynamic_fp8_quant[
     _ = scales_device^
 
 
-fn test_batched_dynamic_fp8_quant[
+def test_batched_dynamic_fp8_quant[
     out_dtype: DType,
     in_dtype: DType,
     scales_dtype: DType,
@@ -261,12 +263,12 @@ fn test_batched_dynamic_fp8_quant[
     ) if group_size_or_per_token == -1 else group_size_or_per_token
     comptime accum_dtype = get_accum_type[in_dtype]()
 
-    comptime static_shape = DimList(to_dim[BS], to_dim[M], to_dim[K])
-    comptime static_scales_shape = DimList(
+    comptime static_shape = DimList[to_dim[BS], to_dim[M], to_dim[K]]()
+    comptime static_scales_shape = DimList[
         to_dim[BS],
         to_dim[K] // group_size,
         to_dim[M],
-    )
+    ]()
     var dynamic_shape = Index(BS.or_else(bs), M.or_else(m), K.or_else(k))
     var dynamic_scales_shape = Index(bs, k // group_size, m)
     var total_size = bs * m * k
@@ -326,7 +328,7 @@ fn test_batched_dynamic_fp8_quant[
     @parameter
     @__copy_capture(in_ndbuffer)
     @always_inline
-    fn input_fn[
+    def input_fn[
         width: Int, alignment: Int
     ](batch: Int, row: Int, col: Int) capturing -> SIMD[in_dtype, width]:
         return in_ndbuffer.load[width=width, alignment=alignment](
@@ -338,8 +340,8 @@ fn test_batched_dynamic_fp8_quant[
         group_size_or_per_token=group_size_or_per_token,
         num_cols=in_ndbuffer.shape.get[2](),
     ](
-        out_ndbuffer.make_dims_unknown(),
-        scales_ndbuffer.make_dims_unknown(),
+        TileTensor(out_ndbuffer.make_dims_unknown()),
+        TileTensor(scales_ndbuffer.make_dims_unknown()),
         1200.0,
         ctx,
         num_rows=m,

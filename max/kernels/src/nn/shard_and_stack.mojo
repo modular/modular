@@ -19,7 +19,7 @@ from tensor import InputVariadicTensors, OutputVariadicTensors
 from std.utils import IndexList, product
 
 
-fn _validate_shard_and_stack[
+def _validate_shard_and_stack[
     axis: Int,
 ](
     outputs: OutputVariadicTensors,
@@ -93,7 +93,7 @@ fn _validate_shard_and_stack[
             )
 
 
-fn _shard_and_stack_multi_device[
+def _shard_and_stack_multi_device[
     axis: Int,
 ](
     outputs: OutputVariadicTensors,
@@ -137,7 +137,7 @@ fn _shard_and_stack_multi_device[
 
     @no_inline
     @parameter
-    fn transfer(tp_index: Int) raises:
+    def transfer(tp_index: Int) raises:
         # Device context for this output (index 0 is CPU, so +1)
         var gpu_ctx = dev_ctxs_input[tp_index + 1]
         var output_tensor = dyn_outputs[tp_index]
@@ -181,7 +181,7 @@ fn _shard_and_stack_multi_device[
     sync_parallelize[transfer](outputs.size)
 
 
-fn _shard_and_stack_single_device[
+def _shard_and_stack_single_device[
     axis: Int,
 ](
     outputs: OutputVariadicTensors,
@@ -218,7 +218,7 @@ fn _shard_and_stack_single_device[
 
     @no_inline
     @parameter
-    fn process_task(input_idx: Int):
+    def process_task(input_idx: Int):
         var input_tensor = dyn_inputs[input_idx]
 
         for tp_index in range(outputs.size):
@@ -251,7 +251,7 @@ fn _shard_and_stack_single_device[
     parallelize[process_task](inputs.size)
 
 
-fn shard_and_stack[
+def shard_and_stack[
     axis: Int,
 ](
     outputs: OutputVariadicTensors,

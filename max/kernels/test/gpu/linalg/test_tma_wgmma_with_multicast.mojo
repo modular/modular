@@ -47,7 +47,7 @@ from std.utils.numerics import get_accum_type
 
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-fn multicast_tma_wgmma_kernel[
+def multicast_tma_wgmma_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,

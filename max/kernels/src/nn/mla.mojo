@@ -61,10 +61,17 @@ from std.gpu.memory import (
     external_memory,
 )
 from kv_cache.types import KVCacheT
-from layout.int_tuple import IntTuple
+from layout import (
+    IntTuple,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    TensorLayout,
+    TileTensor,
+    lt_to_tt,
+)
 from layout.layout import *
 from layout.layout_tensor import (
-    LayoutTensor,
     LayoutTensorIter,
     ThreadScope,
     copy_dram_to_local,
@@ -73,11 +80,8 @@ from layout.layout_tensor import (
     copy_local_to_shared,
     copy_sram_to_dram,
 )
-from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
 from layout.tensor_core import get_fragment_size, get_mma_shape
-from layout.tile_tensor import TileTensor, lt_to_tt
-from layout.tile_layout import TensorLayout
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from std.memory import stack_allocation
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -112,6 +116,7 @@ from nn.mla_decode_sm100_dispatch import (
     MLADispatchScalarArgs,
     mla_decode_sm100_dispatch,
 )
+from .mla_prefill_sm100_per_token_scale import mla_sm100_prefill_per_token_scale
 
 
 # ===-----------------------------------------------------------------------===#
@@ -121,7 +126,7 @@ from nn.mla_decode_sm100_dispatch import (
 
 # entrypoint for MLA decoding kernels
 @always_inline
-fn flare_mla_decoding[
+def flare_mla_decoding[
     rank: Int,
     cache_t: KVCacheT,
     mask_t: MHAMask,
@@ -146,7 +151,7 @@ fn flare_mla_decoding[
     scale: Float32,
     ctx: DeviceContext,
     scalar_args_buf: LayoutTensor[
-        DType.int64, Layout.row_major(4), MutAnyOrigin
+        DType.int64, Layout.row_major(3), MutAnyOrigin
     ],
     q_max_seq_len: OptionalReg[Int] = None,
     kv_input_row_offsets: OptionalReg[
@@ -199,7 +204,7 @@ fn flare_mla_decoding[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return String(";").join(
             Span(
                 [
@@ -280,7 +285,7 @@ fn flare_mla_decoding[
 
 
 # entrypoint for LayoutTensor[mut=True, , Layout.row_major[3](), MutAnyOrigin]as K input, used by tests.
-fn flare_mla_decoding[
+def flare_mla_decoding[
     mask_t: MHAMask,
     dtype: DType,
     q_layout: Layout,
@@ -298,7 +303,7 @@ fn flare_mla_decoding[
     scale: Float32,
     ctx: DeviceContext,
     scalar_args_buf: LayoutTensor[
-        DType.int64, Layout.row_major(4), MutAnyOrigin
+        DType.int64, Layout.row_major(3), MutAnyOrigin
     ],
     # if not set, we select num_partitions based on heuristics
     num_partitions: Optional[Int] = None,
@@ -350,7 +355,7 @@ fn flare_mla_decoding[
 
 
 @always_inline
-fn flare_mla_decoding_dispatch[
+def flare_mla_decoding_dispatch[
     k_t: MHAOperand,
     mask_t: MHAMask,
     dtype: DType,
@@ -385,7 +390,7 @@ fn flare_mla_decoding_dispatch[
     scale: Float32,
     ctx: DeviceContext,
     scalar_args_buf: LayoutTensor[
-        DType.int64, Layout.row_major(4), MutAnyOrigin
+        DType.int64, Layout.row_major(3), MutAnyOrigin
     ],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
@@ -520,7 +525,7 @@ fn flare_mla_decoding_dispatch[
                 local_args.gpu_layout_tensor(),
                 local_args.batch_size,
                 local_args.q_max_seq_len,
-                local_args.max_cache_valid_length,
+                max_cache_valid_length,
                 ctx,
                 q_scale_ptr,
             )
@@ -635,7 +640,7 @@ fn flare_mla_decoding_dispatch[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-fn mla_decoding[
+def mla_decoding[
     q_type: DType,
     k_t: MHAOperand,
     output_type: DType,
@@ -793,7 +798,7 @@ fn mla_decoding[
 
 
 @always_inline
-fn mla_decoding_single_batch[
+def mla_decoding_single_batch[
     q_type: DType,
     k_t: MHAOperand,
     output_type: DType,
@@ -1045,7 +1050,7 @@ fn mla_decoding_single_batch[
 
     @always_inline
     @parameter
-    fn loop_over_kvcache[
+    def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
         var k_ptr = k.block_paged_ptr[Int(BN)](
@@ -1165,7 +1170,7 @@ fn mla_decoding_single_batch[
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
         @parameter
-        fn _apply_mask[masked: Bool]():
+        def _apply_mask[masked: Bool]():
             var scale_log2e: Scalar[accum_type] = (
                 scale.cast[
                     accum_type
@@ -1390,7 +1395,7 @@ fn mla_decoding_single_batch[
 
 # entrypoint for MLA prefill kernels
 @always_inline
-fn flare_mla_prefill[
+def flare_mla_prefill[
     rank: Int,
     cache_t: KVCacheT,
     mask_t: MHAMask,
@@ -1466,7 +1471,7 @@ fn flare_mla_prefill[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return String(";").join(
             Span(
                 [
@@ -1570,7 +1575,7 @@ fn flare_mla_prefill[
 
 # entrypoint for as K_rope LayoutTensor input, used by tests.
 @always_inline
-fn flare_mla_prefill[
+def flare_mla_prefill[
     rank: Int,
     mask_t: MHAMask,
     dtype: DType,
@@ -1624,7 +1629,7 @@ fn flare_mla_prefill[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return String(";").join(
             Span(
                 [
@@ -1723,7 +1728,7 @@ fn flare_mla_prefill[
 
 # entrypoint for as K_rope LayoutTensor input, used by tests.
 @always_inline
-fn flare_mla_prefill[
+def flare_mla_prefill[
     rank: Int,
     mask_t: MHAMask,
     dtype: DType,
@@ -1771,7 +1776,7 @@ fn flare_mla_prefill[
 
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return String(";").join(
             Span(
                 [
@@ -1877,7 +1882,172 @@ fn flare_mla_prefill[
 
 
 @always_inline
-fn flare_mla_prefill_dispatch[
+def flare_mla_prefill[
+    rank: Int,
+    mask_t: MHAMask,
+    dtype: DType,
+    scale_dtype: DType,
+    q_layout: Layout,
+    //,
+](
+    output: LayoutTensor[mut=True, _, address_space=AddressSpace.GENERIC, ...],
+    q_nope: LayoutTensor[
+        mut=False, dtype, q_layout, address_space=AddressSpace.GENERIC, ...
+    ],
+    q_rope: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
+    q_scale: LayoutTensor[
+        mut=False, scale_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
+    k_scales: LayoutTensor[
+        mut=False, scale_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    v: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
+    k_rope: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
+    mask_functor: mask_t,
+    valid_length: LayoutTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    cache_row_offsets: LayoutTensor[
+        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    scale: Float32,
+    ctx: DeviceContext,
+    q_max_seq_len: OptionalReg[Int] = None,
+    cache_offsets: OptionalReg[
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        ]
+    ] = None,
+) raises:
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("q_nope", q_nope.runtime_layout.shape.value),
+                    trace_arg("q_rope", q_rope.runtime_layout.shape.value),
+                    trace_arg("k", k.runtime_layout.shape.value),
+                    trace_arg("v", v.runtime_layout.shape.value),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                ]
+            )
+        )
+
+    with Trace[TraceLevel.OP, target=ctx.default_device_info.api](
+        "flare_mla_prefill",
+        Trace[
+            TraceLevel.OP, target=ctx.default_device_info.api
+        ]._get_detail_str[description_fn](),
+        task_id=Int(ctx.id()),
+    ):
+        var max_prompt_len: Int = q_nope.dim[0]()
+
+        comptime assert q_scale.layout.rank() == 2, (
+            "q_scale must be a per token scale 2D tensor of [batch_size *"
+            " seq_len, 1]"
+        )
+        if q_max_seq_len:
+            max_prompt_len = q_max_seq_len.value()
+        var cache_row_offsets_lt = LayoutTensor[
+            cache_row_offsets.dtype,
+            cache_row_offsets.layout,
+            MutAnyOrigin,
+        ](
+            cache_row_offsets.ptr,
+            RuntimeLayout[cache_row_offsets.layout].row_major(
+                cache_row_offsets.runtime_layout.shape.value.canonicalize()
+            ),
+        )
+
+        comptime assert k_scales.layout.rank() == 2, (
+            "k_scales must be a per token scale 2D tensor of [batch_size *"
+            " num_keys, 1]"
+        )
+
+        var k_operand = RaggedMHAOperand(
+            LayoutTensor[k.dtype, k.layout, k.origin](
+                k.ptr,
+                RuntimeLayout[k.layout].row_major(
+                    k.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            LayoutTensor[k_scales.dtype, k_scales.layout, ImmutAnyOrigin](
+                k_scales.ptr,
+                RuntimeLayout[k_scales.layout].row_major(
+                    k_scales.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            cache_row_offsets_lt,
+        )
+
+        var v_operand = RaggedMHAOperand(
+            LayoutTensor[v.dtype, v.layout, v.origin](
+                v.ptr,
+                RuntimeLayout[v.layout].row_major(
+                    v.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            cache_row_offsets_lt,
+        )
+        var k_rope_operand = LayoutTensorMHAOperand(
+            LayoutTensor[k_rope.dtype, k_rope.layout, k_rope.origin](
+                k_rope.ptr,
+                RuntimeLayout[k_rope.layout].row_major(
+                    k_rope.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+        )
+
+        var batch_size: Int = valid_length.dim[0]() - 1
+
+        if batch_size == 0 or max_prompt_len == 0:
+            return
+
+        comptime output_type = output.dtype
+        comptime kv_num_heads = Int(k_rope.layout.shape[2])
+        comptime cache_depth = Int(k_rope.layout.shape[3])
+        comptime q_depth = Int(q_nope.layout.shape[q_nope.rank - 1]) + Int(
+            q_rope.layout.shape[q_rope.rank - 1]
+        )
+        comptime num_keys_per_block = UInt(
+            64
+        ) if has_nvidia_gpu_accelerator() else UInt(
+            128
+        )  # BN = 64 for nvidia, 128 in the only supported BN for amd
+        comptime mha_config = MHAConfig[dtype](
+            UInt(Int(q_layout.shape[rank - 2])),
+            UInt(Int(k.layout.shape[rank - 1])),
+            num_keys_per_block=num_keys_per_block,
+            WN=num_keys_per_block,
+            algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
+        )
+        mla_sm100_prefill_per_token_scale[
+            config=mha_config,
+            group=Int(mha_config.num_heads // UInt(kv_num_heads)),
+            q_depth=q_depth,
+            cache_depth=cache_depth,
+            _ndbuffer_mha_operand=True,
+        ](
+            output,
+            q_nope,
+            q_rope,
+            q_scale,
+            k_operand,
+            k_rope_operand,
+            v_operand,
+            mask_functor,
+            valid_length,
+            DynamicInt(max_prompt_len),
+            scale,
+            batch_size,
+            ctx,
+        )
+
+
+@always_inline
+def flare_mla_prefill_dispatch[
     k_t: MHAOperand,
     v_t: MHAOperand,
     k_rope_t: MHAOperand,
@@ -2032,7 +2202,7 @@ fn flare_mla_prefill_dispatch[
         Int32(config.num_threads())
     )
 )
-fn mla_prefill[
+def mla_prefill[
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
@@ -2082,11 +2252,11 @@ fn mla_prefill[
     seq_len = end_of_seq - start_of_seq
 
     @always_inline
-    fn q_block_idx() -> UInt:
+    def q_block_idx() -> UInt:
         return block_idx.x if is_nvidia_gpu() else block_idx.y
 
     @always_inline
-    fn head_idx() -> UInt:
+    def head_idx() -> UInt:
         return block_idx.y if is_nvidia_gpu() else block_idx.x
 
     if seq_len < Int(q_block_idx() * config.block_m()):
@@ -2155,7 +2325,7 @@ fn mla_prefill[
 
 
 @always_inline
-fn mla_prefill_single_batch[
+def mla_prefill_single_batch[
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
@@ -2430,7 +2600,7 @@ fn mla_prefill_single_batch[
     @__copy_capture(seq_len, max_seq_len, num_keys, start_pos)
     @always_inline
     @parameter
-    fn loop_over_kvcache[
+    def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
         if (
@@ -2543,7 +2713,7 @@ fn mla_prefill_single_batch[
 
         @always_inline
         @parameter
-        fn _mask_tensor_row(
+        def _mask_tensor_row(
             tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
         ):
             return {
@@ -2628,7 +2798,7 @@ fn mla_prefill_single_batch[
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
         @parameter
-        fn _apply_mask[masked: Bool]():
+        def _apply_mask[masked: Bool]():
             var scale_log2e: Scalar[accum_type] = (
                 scale.cast[
                     accum_type
@@ -2944,7 +3114,7 @@ fn mla_prefill_single_batch[
 # ===-----------------------------------------------------------------------===#
 
 
-fn set_buffer_lengths_to_zero[
+def set_buffer_lengths_to_zero[
     BufferLengthsLayoutType: TensorLayout,
 ](
     buffer_lengths: TileTensor[
@@ -2959,7 +3129,7 @@ fn set_buffer_lengths_to_zero[
 
 
 @always_inline
-fn mla_prefill_plan[
+def mla_prefill_plan[
     cache_t: KVCacheT,
 ](
     buffer_row_offsets: TileTensor[mut=True, DType.uint32, ...],
@@ -3012,7 +3182,7 @@ fn mla_prefill_plan[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
-fn mla_prefill_plan_kernel[
+def mla_prefill_plan_kernel[
     BufferRowOffsetsLayoutType: TensorLayout,
     CacheOffsetsLayoutType: TensorLayout,
     BufferLengthsLayoutType: TensorLayout,
@@ -3135,7 +3305,7 @@ fn mla_prefill_plan_kernel[
 
 
 @always_inline
-fn _k_cache_to_buffer[
+def _k_cache_to_buffer[
     dtype: DType,
     cache_t: KVCacheT,
     BufferRowOffsetsLayoutType: TensorLayout,
@@ -3159,7 +3329,9 @@ fn _k_cache_to_buffer[
     @always_inline
     @parameter
     @__copy_capture(k_cache, buffer_row_offsets, cache_offsets)
-    fn copy_fn[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+    def copy_fn[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]):
         comptime assert rank == 2, "rank should be equal to 2"
 
         var global_token_idx = idx[0]

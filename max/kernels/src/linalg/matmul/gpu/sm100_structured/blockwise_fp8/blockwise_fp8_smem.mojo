@@ -134,48 +134,48 @@ struct BlockwiseFP8TileCore[
 
     # ========== Tile Accessors ==========
     @always_inline
-    fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
+    def a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
         """Get A tile array accessor."""
         return self.tiles.a_tiles()
 
     @always_inline
-    fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
+    def b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
         """Get B tile array accessor."""
         return self.tiles.b_tiles()
 
     @always_inline
-    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
+    def c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
         """Get C tile array accessor."""
         return self.tiles.c_tiles()
 
     @always_inline
-    fn a_scales_tiles(ref[AddressSpace.SHARED] self) -> Self.AScalesTileArray:
+    def a_scales_tiles(ref[AddressSpace.SHARED] self) -> Self.AScalesTileArray:
         """Get A-scales tile array accessor."""
         return self.tiles.a_scales_tiles()
 
     # ========== Size Utilities ==========
     @staticmethod
     @always_inline
-    fn ab_pipeline_size() -> Int:
+    def ab_pipeline_size() -> Int:
         """Total size of A+B tiles for all pipeline stages (in elements)."""
         return Self.ATileArray.num_elements + Self.BTileArray.num_elements
 
     @staticmethod
     @always_inline
-    fn a_scales_pipeline_size() -> Int:
+    def a_scales_pipeline_size() -> Int:
         """Total size of A-scales tiles for all pipeline stages (in elements).
         """
         return Self.AScalesTileArray.num_elements
 
     @staticmethod
     @always_inline
-    fn c_output_size() -> Int:
+    def c_output_size() -> Int:
         """Size of C tiles for all output stages (in elements)."""
         return Self.CTileArray.num_elements
 
     @staticmethod
     @always_inline
-    fn total_tile_size() -> Int:
+    def total_tile_size() -> Int:
         """Total tile storage size (A+B+A-scales+C) in elements."""
         return (
             Self.ab_pipeline_size()
@@ -227,22 +227,22 @@ struct BlockwiseFP8Smem[
 
     # ========== Tile Accessors (forwarding) ==========
     @always_inline
-    fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.ATileArray:
+    def a_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.ATileArray:
         """Get A tile array accessor."""
         return self.core.a_tiles()
 
     @always_inline
-    fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.BTileArray:
+    def b_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.BTileArray:
         """Get B tile array accessor."""
         return self.core.b_tiles()
 
     @always_inline
-    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.CTileArray:
+    def c_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.CTileArray:
         """Get C tile array accessor."""
         return self.core.c_tiles()
 
     @always_inline
-    fn a_scales_tiles(
+    def a_scales_tiles(
         ref[AddressSpace.SHARED] self,
     ) -> Self.Core.AScalesTileArray:
         """Get A-scales tile array accessor."""
@@ -251,25 +251,25 @@ struct BlockwiseFP8Smem[
     # ========== Size Utilities (forwarding) ==========
     @staticmethod
     @always_inline
-    fn ab_pipeline_size() -> Int:
+    def ab_pipeline_size() -> Int:
         """Total size of A+B tiles for all pipeline stages (in elements)."""
         return Self.Core.ab_pipeline_size()
 
     @staticmethod
     @always_inline
-    fn a_scales_pipeline_size() -> Int:
+    def a_scales_pipeline_size() -> Int:
         """Total size of A-scales tiles for all pipeline stages (in elements).
         """
         return Self.Core.a_scales_pipeline_size()
 
     @staticmethod
     @always_inline
-    fn c_output_size() -> Int:
+    def c_output_size() -> Int:
         """Size of C tiles for all output stages (in elements)."""
         return Self.Core.c_output_size()
 
     @staticmethod
     @always_inline
-    fn total_tile_size() -> Int:
+    def total_tile_size() -> Int:
         """Total tile storage size (A+B+A-scales+C) in elements."""
         return Self.Core.total_tile_size()

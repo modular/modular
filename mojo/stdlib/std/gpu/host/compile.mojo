@@ -27,7 +27,7 @@ from .info import A100, GPUInfo
 
 
 @always_inline
-fn get_gpu_target[
+def get_gpu_target[
     # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
     target_arch: StaticString = _accelerator_arch(),
 ]() -> _TargetType:
@@ -51,13 +51,13 @@ fn get_gpu_target[
 
 
 @always_inline("nodebug")
-fn _cross_compilation() -> Bool:
+def _cross_compilation() -> Bool:
     return __mlir_attr.`#kgen.param.expr<cross_compilation> : i1`
 
 
 @always_inline
-fn _compile_code[
-    func_type: __TypeOfAllTypes,
+def _compile_code[
+    func_type: TrivialRegisterPassable,
     //,
     func: func_type,
     /,
@@ -82,7 +82,7 @@ fn _compile_code[
 
 
 @no_inline
-fn _to_sass[
+def _to_sass[
     target: _TargetType = get_gpu_target()
 ](asm: String, *, nvdisasm_opts: String = "") raises -> String:
     comptime nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")
@@ -97,7 +97,7 @@ fn _to_sass[
             output_file=elf_file,
         )
         return std.subprocess.run(
-            t"{nvdisasm_path} -ndf -c {nvdisasm_opts} {elf_file}"
+            String(t"{nvdisasm_path} -ndf -c {nvdisasm_opts} {elf_file}")
         )
     return ""
 
@@ -108,7 +108,7 @@ fn _to_sass[
 
 
 @no_inline
-fn _ptxas_compile[
+def _ptxas_compile[
     target: _TargetType = get_gpu_target()
 ](
     asm: String, *, options: String = "", output_file: Optional[Path] = None

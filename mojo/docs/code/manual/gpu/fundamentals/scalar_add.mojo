@@ -20,7 +20,7 @@ from std.gpu import block_dim, block_idx, thread_idx
 comptime num_elements = 20
 
 
-fn scalar_add(
+def scalar_add(
     vector: UnsafePointer[Float32, MutAnyOrigin], size: Int, scalar: Float32
 ):
     """

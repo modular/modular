@@ -25,7 +25,12 @@ from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
 from max.interfaces import PixelGenerationContext, TokenBuffer
-from max.pipelines.lib.interfaces import DiffusionPipeline, PixelModelInputs
+from max.pipelines.lib.interfaces import (
+    CacheMixin,
+    DenoisingCacheState,
+    DiffusionPipeline,
+    PixelModelInputs,
+)
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 
 from ..autoencoders import AutoencoderKLModel
@@ -74,7 +79,7 @@ class FluxPipelineOutput:
     images: np.ndarray | Tensor
 
 
-class FluxPipeline(DiffusionPipeline):
+class FluxPipeline(DiffusionPipeline, CacheMixin):
     vae: AutoencoderKLModel
     text_encoder: ClipModel
     text_encoder_2: T5Model
@@ -102,6 +107,13 @@ class FluxPipeline(DiffusionPipeline):
 
         self._transformer_device: Device = self.transformer.devices[0]
         self._guidance_embeds: bool = self.transformer.config.guidance_embeds
+
+        self.init_cache(
+            cache_config=self.cache_config,
+            transformer=self.transformer,
+            dtype=self.transformer.config.dtype,
+            device=self.transformer.devices[0],
+        )
 
         # Tensor caches.
         self._cached_guidance: dict[str, Tensor] = {}
@@ -367,6 +379,23 @@ class FluxPipeline(DiffusionPipeline):
         cpu_image: Tensor = image.to(CPU())
         return np.from_dlpack(cpu_image)
 
+    def run_transformer(
+        self,
+        cache_state: DenoisingCacheState,
+        **kwargs: Any,
+    ) -> tuple[Tensor, ...]:
+        return self.transformer(
+            kwargs["latents"],
+            kwargs["prompt_embeds"],
+            kwargs["pooled_prompt_embeds"],
+            kwargs["timestep"],
+            kwargs["latent_image_ids"],
+            kwargs["text_ids"],
+            kwargs["guidance"],
+            prev_residual=cache_state.prev_residual,
+            prev_output=cache_state.prev_output,
+        )
+
     def execute(  # type: ignore[override]
         self,
         model_inputs: FluxModelInputs,
@@ -443,34 +472,63 @@ class FluxPipeline(DiffusionPipeline):
 
         num_timesteps = int(model_inputs.sigmas.shape[0]) - 1
 
+        timesteps: np.ndarray = model_inputs.timesteps
+        num_timesteps = timesteps.shape[0]
+        timesteps_np = np.broadcast_to(
+            timesteps[:, None], (num_timesteps, batch_size)
+        )
+        timesteps_batched = Tensor.from_dlpack(timesteps_np).to(
+            self.transformer.devices[0]
+        )
+        # Cache state initialization.
+        dev = self.transformer.devices[0]
+        image_seq_len = int(latents.shape[1])
+        cache_pos = self.create_cache_state(
+            batch_size, image_seq_len, self.transformer.config
+        )
+        cache_neg = (
+            self.create_cache_state(
+                batch_size, image_seq_len, self.transformer.config
+            )
+            if model_inputs.do_true_cfg
+            else None
+        )
+
         for i in range(num_timesteps):
             timestep = timesteps_seq[i : i + 1]
             dt = dts_seq[i : i + 1]
 
-            noise_pred = self.transformer(
-                latents,
-                prompt_embeds,
-                pooled_prompt_embeds,
-                timestep,
-                latent_image_ids,
-                text_ids,
-                guidance,
-            )[0]
+            noise_pred = self.run_denoising_step(
+                step=i,
+                cache_state=cache_pos,
+                device=dev,
+                latents=latents,
+                prompt_embeds=prompt_embeds,
+                pooled_prompt_embeds=pooled_prompt_embeds,
+                timestep=timestep,
+                latent_image_ids=latent_image_ids,
+                text_ids=text_ids,
+                guidance=guidance,
+            )
 
             if model_inputs.do_true_cfg:
                 assert negative_prompt_embeds is not None
                 assert negative_pooled_prompt_embeds is not None
                 assert negative_text_ids is not None
-                neg_noise_pred = self.transformer(
-                    latents,
-                    negative_prompt_embeds,
-                    negative_pooled_prompt_embeds,
-                    timestep,
-                    latent_image_ids,
-                    negative_text_ids,
-                    guidance,
-                )[0]
+                assert cache_neg is not None
 
+                neg_noise_pred = self.run_denoising_step(
+                    step=i,
+                    cache_state=cache_neg,
+                    device=dev,
+                    latents=latents,
+                    prompt_embeds=negative_prompt_embeds,
+                    pooled_prompt_embeds=negative_pooled_prompt_embeds,
+                    timestep=timestep,
+                    latent_image_ids=latent_image_ids,
+                    text_ids=negative_text_ids,
+                    guidance=guidance,
+                )
                 noise_pred = neg_noise_pred + model_inputs.true_cfg_scale * (
                     noise_pred - neg_noise_pred
                 )

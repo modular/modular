@@ -17,15 +17,30 @@ from typing import Any
 from max.driver import Device
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
-from max.graph.weights import Weights
+from max.graph.shape import Shape
+from max.graph.weights import WeightData, Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.profiler import traced
 
 from .flux2 import Flux2Transformer2DModel
 from .model_config import Flux2Config
+from .nvfp4_weight_adapter import convert_nvfp4_state_dict
+
+# Mapping from stacked QKV key infixes to the split (Q, K, V) infixes.
+_STACKED_QKV_INFIXES = {
+    ".attn.qkv_proj.": (".attn.to_q.", ".attn.to_k.", ".attn.to_v."),
+    ".attn.add_qkv_proj.": (
+        ".attn.add_q_proj.",
+        ".attn.add_k_proj.",
+        ".attn.add_v_proj.",
+    ),
+}
 
 
 class Flux2TransformerModel(ComponentModel):
+    model: Callable[..., Any] | None
+
     def __init__(
         self,
         config: dict[str, Any],
@@ -46,11 +61,29 @@ class Flux2TransformerModel(ComponentModel):
         )
         self.load_model()
 
-    def load_model(self) -> Callable[..., Any]:
+    @traced(message="Flux2TransformerModel.load_model")
+    def load_model(self) -> None:
         state_dict = {key: value.data() for key, value in self.weights.items()}
+
+        # Convert BFL single-file NVFP4 naming to MAX parameter naming.
+        if getattr(self.config, "quant_config", None) is not None:
+            state_dict = convert_nvfp4_state_dict(state_dict)
+
+        # Detect stacked (fused) QKV weights and split into separate Q/K/V
+        # so the model always sees the split format.
+        stacked_qkv = any(
+            ".attn.qkv_proj." in k or ".attn.add_qkv_proj." in k
+            for k in state_dict
+        )
+        if stacked_qkv:
+            state_dict = self._split_stacked_qkv(state_dict)
+
+        self._state_dict = state_dict
+
         # Klein/distilled checkpoints can omit guidance embedder weights.
         has_guidance_embedder = any(
-            "time_guidance_embed.guidance_embedder." in k for k in state_dict
+            "time_guidance_embed.guidance_embedder." in k or "guidance_in." in k
+            for k in state_dict
         )
         if not has_guidance_embedder and getattr(
             self.config, "guidance_embeds", True
@@ -64,9 +97,71 @@ class Flux2TransformerModel(ComponentModel):
         with F.lazy():
             flux = Flux2Transformer2DModel(self.config)
             flux.to(self.devices[0])
-        self.model = flux.compile(*flux.input_types(), weights=state_dict)
-        return self.model
+        self._flux_model = flux
+        self._standard_model: Callable[..., Any] | None = None
+        self._step_cache_model: Callable[..., Any] | None = None
+        self.model = None
 
+    @staticmethod
+    def _split_stacked_qkv(
+        state_dict: dict[str, WeightData],
+    ) -> dict[str, WeightData]:
+        """Split fused QKV weights into separate Q, K, V entries."""
+        out: dict[str, WeightData] = {}
+        for key, value in state_dict.items():
+            matched = False
+            for stacked, (q, k, v) in _STACKED_QKV_INFIXES.items():
+                if stacked not in key:
+                    continue
+                matched = True
+                if key.endswith((".weight", ".weight_scale")):
+                    buf = value.to_buffer()
+                    chunk = buf.shape[0] // 3
+                    for infix, i in zip([q, k, v], range(3), strict=False):
+                        split_name = key.replace(stacked, infix)
+                        split_buf = buf[i * chunk : (i + 1) * chunk, :]
+                        out[split_name] = WeightData(
+                            split_buf,
+                            split_name,
+                            value.dtype,
+                            Shape(split_buf.shape),
+                        )
+                elif key.endswith((".weight_scale_2", ".input_scale")):
+                    # Per-tensor scales are shared across Q/K/V.
+                    for infix in (q, k, v):
+                        out[key.replace(stacked, infix)] = value
+                break
+            if not matched:
+                out[key] = value
+        return out
+
+    @traced(message="Flux2TransformerModel.use_standard_model")
+    def use_standard_model(self) -> None:
+        if self._standard_model is None:
+            self._flux_model._step_cache_enabled = False
+            self._standard_model = self._flux_model.compile(
+                *self._flux_model.input_types(step_cache_enabled=False),
+                weights=self._state_dict,
+            )
+        if self.model is self._step_cache_model:
+            self._step_cache_model = None
+        self.model = self._standard_model
+
+    @traced(message="Flux2TransformerModel.use_step_cache_model")
+    def use_step_cache_model(self, rdt: float = 0.05) -> None:
+        if self._step_cache_model is None:
+            assert self._flux_model is not None
+            self._flux_model._step_cache_enabled = True
+            self._flux_model._rdt_value = rdt
+            self._step_cache_model = self._flux_model.compile(
+                *self._flux_model.input_types(step_cache_enabled=True),
+                weights=self._state_dict,
+            )
+        if self.model is self._standard_model:
+            self._standard_model = None
+        self.model = self._step_cache_model
+
+    @traced(message="Flux2TransformerModel.__call__")
     def __call__(
         self,
         hidden_states: Tensor,
@@ -75,8 +170,10 @@ class Flux2TransformerModel(ComponentModel):
         img_ids: Tensor,
         txt_ids: Tensor,
         guidance: Tensor,
+        prev_residual: Tensor | None = None,
+        prev_output: Tensor | None = None,
     ) -> Any:
-        return self.model(
+        args: tuple[Any, ...] = (
             hidden_states,
             encoder_hidden_states,
             timestep,
@@ -84,3 +181,10 @@ class Flux2TransformerModel(ComponentModel):
             txt_ids,
             guidance,
         )
+        if prev_residual is not None:
+            args = (*args, prev_residual, prev_output)
+        if self.model is None:
+            raise RuntimeError(
+                "Model not compiled. Call use_standard_model() or use_step_cache_model() first."
+            )
+        return self.model(*args)

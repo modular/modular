@@ -19,7 +19,7 @@ from std.python.bindings import PythonModuleBuilder
 
 
 @export
-fn PyInit_mojo_module_a() -> PythonObject:
+def PyInit_mojo_module_a() -> PythonObject:
     try:
         var m = PythonModuleBuilder("mojo_module_a")
         _ = (

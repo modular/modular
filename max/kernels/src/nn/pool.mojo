@@ -33,16 +33,16 @@ struct PoolMethod(TrivialRegisterPassable):
     comptime AVG = PoolMethod(1)  # Average pooling not counting padded regions.
 
     @always_inline("nodebug")
-    fn __eq__(self, rhs: PoolMethod) -> Bool:
+    def __eq__(self, rhs: PoolMethod) -> Bool:
         return self.value == rhs.value
 
     @always_inline("nodebug")
-    fn __ne__(self, rhs: PoolMethod) -> Bool:
+    def __ne__(self, rhs: PoolMethod) -> Bool:
         return self.value != rhs.value
 
 
 @always_inline
-fn pool_shape_ceil[
+def pool_shape_ceil[
     input_type: DType,
     filter_type: DType,
     strides_type: DType,
@@ -68,7 +68,7 @@ fn pool_shape_ceil[
 
 
 @always_inline
-fn pool_shape[
+def pool_shape[
     input_type: DType,
     filter_type: DType,
     strides_type: DType,
@@ -94,7 +94,7 @@ fn pool_shape[
 
 
 @always_inline
-fn pool_shape_impl[
+def pool_shape_impl[
     input_type: DType,
     filter_type: DType,
     strides_type: DType,
@@ -183,7 +183,7 @@ fn pool_shape_impl[
 
 
 @always_inline
-fn max_pool_cpu[
+def max_pool_cpu[
     dtype: DType, int_type: DType
 ](
     input: TileTensor[dtype, ...],
@@ -239,23 +239,18 @@ fn max_pool_cpu[
     comptime stencil_axis = IndexList[stencil_rank](1, 2)
 
     @always_inline
-    @__copy_capture(
-        stride_h,
-        padding_h_low,
-        padding_w_low,
-        stride_w,
-        dilation_h,
-        dilation_w,
-        pool_window_h,
-        pool_window_w,
-    )
-    @parameter
-    fn map_fn[
-        rank: Int
-    ](point: IndexList[stencil_rank, ...]) -> Tuple[
-        IndexList[stencil_rank],
-        IndexList[stencil_rank],
-    ]:
+    fn map_fn(
+        point: IndexList[stencil_rank, ...],
+    ) unified {
+        var stride_h,
+        var padding_h_low,
+        var padding_w_low,
+        var stride_w,
+        var dilation_h,
+        var dilation_w,
+        var pool_window_h,
+        var pool_window_w,
+    } -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride_h - padding_h_low,
             point[1] * stride_w - padding_w_low,
@@ -267,43 +262,46 @@ fn max_pool_cpu[
         return lower_bound, upper_bound
 
     @always_inline
-    @parameter
     fn load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[output.rank, ...]) -> SIMD[dtype, simd_width]:
+    ](point: IndexList[output.rank, ...]) unified {
+        mut input,
+    } -> SIMD[
+        dtype, simd_width
+    ]:
         var i = input.layout(Coord(point))
         return rebind[SIMD[dtype, simd_width]](
             input.ptr.load[width=simd_width](i)
         )
 
     @always_inline
-    @parameter
-    fn max_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
+    fn max_pool_compute_init[
+        simd_width: Int
+    ]() unified {} -> SIMD[dtype, simd_width]:
         return min_or_neg_inf[dtype]()
 
     @always_inline
-    @parameter
     fn max_pool_compute[
         simd_width: Int
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) -> SIMD[dtype, simd_width]:
+    ) unified {} -> SIMD[dtype, simd_width]:
         return max(val, result)
 
     @always_inline
-    @parameter
     fn max_pool_compute_finalize[
         simd_width: Int
-    ](point: IndexList[output.rank, ...], val: SIMD[dtype, simd_width],):
+    ](
+        point: IndexList[output.rank, ...],
+        val: SIMD[dtype, simd_width],
+    ) unified {mut output}:
         var i = output.layout(Coord(point))
-
         output.ptr.store(i, val)
 
     @always_inline
-    @parameter
-    fn dilation_fn(dim: Int) -> Int:
+    fn dilation_fn(dim: Int) unified {mut dilations} -> Int:
         return Int(dilations[dim])
 
     comptime stencil_with_padding = stencil[
@@ -312,12 +310,12 @@ fn max_pool_cpu[
         stencil_axis,
         simd_width,
         dtype,
-        map_fn[stencil_rank],
-        dilation_fn,
-        load_fn,
-        max_pool_compute_init,
-        max_pool_compute,
-        max_pool_compute_finalize,
+        type_of(map_fn),
+        type_of(dilation_fn),
+        type_of(load_fn),
+        type_of(max_pool_compute_init),
+        type_of(max_pool_compute),
+        type_of(max_pool_compute_finalize),
     ]
 
     comptime stencil_empty_padding = stencil[
@@ -326,12 +324,12 @@ fn max_pool_cpu[
         stencil_axis,
         simd_width,
         dtype,
-        map_fn[stencil_rank],
-        dilation_fn,
-        load_fn,
-        max_pool_compute_init,
-        max_pool_compute,
-        max_pool_compute_finalize,
+        type_of(map_fn),
+        type_of(dilation_fn),
+        type_of(load_fn),
+        type_of(max_pool_compute_init),
+        type_of(max_pool_compute),
+        type_of(max_pool_compute_finalize),
     ]
     # ceil_mode = True implies padding to the right/bottom with neginfinity
     # value, so in that case we use stencil_with_padding
@@ -343,6 +341,12 @@ fn max_pool_cpu[
             rebind[IndexList[output.rank]](
                 coord_to_index_list(input.layout.shape_coord())
             ),
+            map_fn,
+            dilation_fn,
+            load_fn,
+            max_pool_compute_init,
+            max_pool_compute,
+            max_pool_compute_finalize,
         )
     else:
         return stencil_with_padding(
@@ -352,11 +356,17 @@ fn max_pool_cpu[
             rebind[IndexList[output.rank]](
                 coord_to_index_list(input.layout.shape_coord()),
             ),
+            map_fn,
+            dilation_fn,
+            load_fn,
+            max_pool_compute_init,
+            max_pool_compute,
+            max_pool_compute_finalize,
         )
 
 
 @always_inline
-fn max_pool_gpu[
+def max_pool_gpu[
     dtype: DType, int_type: DType
 ](
     ctx: DeviceContext,
@@ -428,7 +438,7 @@ fn max_pool_gpu[
         pool_window_w,
     )
     @parameter
-    fn map_fn[
+    def map_fn[
         rank: Int
     ](point: IndexList[stencil_rank, ...]) -> Tuple[
         IndexList[stencil_rank],
@@ -446,7 +456,7 @@ fn max_pool_gpu[
 
     @always_inline
     @parameter
-    fn load_fn[
+    def load_fn[
         simd_width: Int, dtype: DType
     ](point: IndexList[output.rank, ...]) -> SIMD[dtype, simd_width]:
         var i = input.layout(Coord(point))
@@ -456,12 +466,12 @@ fn max_pool_gpu[
 
     @always_inline
     @parameter
-    fn max_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
+    def max_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
         return min_or_neg_inf[dtype]()
 
     @always_inline
     @parameter
-    fn max_pool_compute[
+    def max_pool_compute[
         simd_width: Int
     ](
         point: IndexList[output.rank, ...],
@@ -472,7 +482,7 @@ fn max_pool_gpu[
 
     @always_inline
     @parameter
-    fn max_pool_compute_finalize[
+    def max_pool_compute_finalize[
         simd_width: Int
     ](point: IndexList[output.rank, ...], val: SIMD[dtype, simd_width],):
         var i = output.layout(Coord(point))
@@ -484,7 +494,7 @@ fn max_pool_gpu[
         dilation_w,
     )
     @parameter
-    fn dilation_fn(dim: Int) -> Int:
+    def dilation_fn(dim: Int) -> Int:
         if dim == 0:
             return dilation_h
         else:
@@ -515,7 +525,7 @@ fn max_pool_gpu[
 
 
 @always_inline
-fn avg_pool_cpu[
+def avg_pool_cpu[
     dtype: DType,
     int_type: DType,
     rank: Int = 4,
@@ -602,24 +612,18 @@ fn avg_pool_cpu[
     comptime stencil_axis = IndexList[stencil_rank](1, 2)
 
     @always_inline
-    @__copy_capture(
-        stride_h,
-        stride_w,
-        padding_h_high,
-        padding_w_low,
-        dilation_h,
-        dilation_w,
-        pool_window_h,
-        pool_window_w,
-        padding_h_low,
-    )
-    @parameter
-    fn map_fn[
-        rank: Int
-    ](point: IndexList[stencil_rank, ...]) -> Tuple[
-        IndexList[stencil_rank],
-        IndexList[stencil_rank],
-    ]:
+    fn map_fn(
+        point: IndexList[stencil_rank, ...],
+    ) unified {
+        var stride_h,
+        var stride_w,
+        var padding_h_low,
+        var padding_w_low,
+        var dilation_h,
+        var dilation_w,
+        var pool_window_h,
+        var pool_window_w,
+    } -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride_h - padding_h_low,
             point[1] * stride_w - padding_w_low,
@@ -631,36 +635,36 @@ fn avg_pool_cpu[
         return lower_bound, upper_bound
 
     @always_inline
-    @parameter
     fn load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[output.rank, ...]) -> SIMD[dtype, simd_width]:
+    ](point: IndexList[output.rank, ...]) unified {
+        mut input,
+    } -> SIMD[
+        dtype, simd_width
+    ]:
         var i = input.layout(Coord(point))
-
         return rebind[SIMD[dtype, simd_width]](
             input.ptr.load[width=simd_width](i)
         )
 
     @always_inline
-    @parameter
-    fn avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
+    fn avg_pool_compute_init[
+        simd_width: Int
+    ]() unified {} -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
     @always_inline
-    @parameter
     fn avg_pool_compute[
         simd_width: Int
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) -> SIMD[dtype, simd_width]:
+    ) unified {} -> SIMD[dtype, simd_width]:
         return val + result
 
-    # Returns the size of the pooling window at dim excluding the
-    # pool_window_size.
     @always_inline
-    fn pool_dim_size(
+    def pool_dim_size(
         dim: Int, size: Int, pad_low: Int, pad_high: Int, pool_window_size: Int
     ) -> Int:
         if dim < pad_low:
@@ -671,20 +675,22 @@ fn avg_pool_cpu[
             return pool_window_size
 
     @always_inline
-    @__copy_capture(
-        output_height,
-        padding_h_low,
-        padding_h_high,
-        pool_window_h,
-        output_width,
-        padding_w_low,
-        padding_w_high,
-        pool_window_w,
-    )
-    @parameter
     fn avg_pool_compute_finalize_exclude_boundary[
         simd_width: Int
-    ](point: IndexList[output.rank, ...], val: SIMD[dtype, simd_width],):
+    ](
+        point: IndexList[output.rank, ...],
+        val: SIMD[dtype, simd_width],
+    ) unified {
+        mut output,
+        var output_height,
+        var padding_h_low,
+        var padding_h_high,
+        var pool_window_h,
+        var output_width,
+        var padding_w_low,
+        var padding_w_high,
+        var pool_window_w,
+    }:
         var window_h = pool_dim_size(
             point[1],
             output_height,
@@ -703,18 +709,21 @@ fn avg_pool_cpu[
         output.ptr.store(i, res)
 
     @always_inline
-    @__copy_capture(pool_window_h, pool_window_w)
-    @parameter
     fn avg_pool_compute_finalize[
         simd_width: Int
-    ](point: IndexList[output.rank, ...], val: SIMD[dtype, simd_width],):
+    ](
+        point: IndexList[output.rank, ...],
+        val: SIMD[dtype, simd_width],
+    ) unified {
+        mut output,
+        var pool_window_h,
+        var pool_window_w,
+    }:
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         var i = output.layout(Coord(point))
         output.ptr.store(i, res)
 
-    @always_inline
-    @parameter
-    fn dilation_fn(dim: Int) -> Int:
+    fn dilation_fn(dim: Int) unified {mut dilations} -> Int:
         return Int(dilations[dim])
 
     comptime stencil_with_padding = stencil[
@@ -723,12 +732,12 @@ fn avg_pool_cpu[
         stencil_axis,
         simd_width,
         dtype,
-        map_fn[stencil_rank],
-        dilation_fn,
-        load_fn,
-        avg_pool_compute_init,
-        avg_pool_compute,
-        avg_pool_compute_finalize,
+        type_of(map_fn),
+        type_of(dilation_fn),
+        type_of(load_fn),
+        type_of(avg_pool_compute_init),
+        type_of(avg_pool_compute),
+        type_of(avg_pool_compute_finalize),
     ]
 
     comptime stencil_with_padding_count_exclude_boundary = stencil[
@@ -737,12 +746,12 @@ fn avg_pool_cpu[
         stencil_axis,
         simd_width,
         dtype,
-        map_fn[stencil_rank],
-        dilation_fn,
-        load_fn,
-        avg_pool_compute_init,
-        avg_pool_compute,
-        avg_pool_compute_finalize_exclude_boundary,
+        type_of(map_fn),
+        type_of(dilation_fn),
+        type_of(load_fn),
+        type_of(avg_pool_compute_init),
+        type_of(avg_pool_compute),
+        type_of(avg_pool_compute_finalize_exclude_boundary),
     ]
 
     comptime stencil_empty_padding = stencil[
@@ -751,12 +760,12 @@ fn avg_pool_cpu[
         stencil_axis,
         simd_width,
         dtype,
-        map_fn[stencil_rank],
-        dilation_fn,
-        load_fn,
-        avg_pool_compute_init,
-        avg_pool_compute,
-        avg_pool_compute_finalize,
+        type_of(map_fn),
+        type_of(dilation_fn),
+        type_of(load_fn),
+        type_of(avg_pool_compute_init),
+        type_of(avg_pool_compute),
+        type_of(avg_pool_compute_finalize),
     ]
 
     if empty_padding and not ceil_mode:
@@ -767,6 +776,12 @@ fn avg_pool_cpu[
             rebind[IndexList[output.rank]](
                 coord_to_index_list(input.layout.shape_coord())
             ),
+            map_fn,
+            dilation_fn,
+            load_fn,
+            avg_pool_compute_init,
+            avg_pool_compute,
+            avg_pool_compute_finalize,
         )
     else:
         comptime if count_boundary:
@@ -777,6 +792,12 @@ fn avg_pool_cpu[
                 rebind[IndexList[output.rank]](
                     coord_to_index_list(input.layout.shape_coord())
                 ),
+                map_fn,
+                dilation_fn,
+                load_fn,
+                avg_pool_compute_init,
+                avg_pool_compute,
+                avg_pool_compute_finalize,
             )
         else:
             return stencil_with_padding_count_exclude_boundary(
@@ -786,11 +807,17 @@ fn avg_pool_cpu[
                 rebind[IndexList[output.rank]](
                     coord_to_index_list(input.layout.shape_coord())
                 ),
+                map_fn,
+                dilation_fn,
+                load_fn,
+                avg_pool_compute_init,
+                avg_pool_compute,
+                avg_pool_compute_finalize_exclude_boundary,
             )
 
 
 @always_inline
-fn avg_pool_gpu[
+def avg_pool_gpu[
     dtype: DType,
     int_type: DType,
     count_boundary: Bool = False,
@@ -892,7 +919,7 @@ fn avg_pool_gpu[
         padding_h_low,
     )
     @parameter
-    fn map_fn[
+    def map_fn[
         rank: Int
     ](point: IndexList[stencil_rank, ...]) -> Tuple[
         IndexList[stencil_rank],
@@ -910,7 +937,7 @@ fn avg_pool_gpu[
 
     @always_inline
     @parameter
-    fn load_fn[
+    def load_fn[
         simd_width: Int, dtype: DType
     ](point: IndexList[output.rank, ...]) -> SIMD[dtype, simd_width]:
         var i = input.layout(Coord(point))
@@ -920,12 +947,12 @@ fn avg_pool_gpu[
 
     @always_inline
     @parameter
-    fn avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
+    def avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
     @always_inline
     @parameter
-    fn avg_pool_compute[
+    def avg_pool_compute[
         simd_width: Int
     ](
         point: IndexList[output.rank, ...],
@@ -937,7 +964,7 @@ fn avg_pool_gpu[
     # Returns the size of the pooling window at dim excluding the
     # pool_window_size.
     @always_inline
-    fn pool_dim_size(
+    def pool_dim_size(
         dim: Int, size: Int, pad_low: Int, pad_high: Int, pool_window_size: Int
     ) -> Int:
         if dim < pad_low:
@@ -959,7 +986,7 @@ fn avg_pool_gpu[
         pool_window_w,
     )
     @parameter
-    fn avg_pool_compute_finalize_exclude_boundary[
+    def avg_pool_compute_finalize_exclude_boundary[
         simd_width: Int
     ](point: IndexList[output.rank, ...], val: SIMD[dtype, simd_width],):
         var window_h = pool_dim_size(
@@ -980,7 +1007,7 @@ fn avg_pool_gpu[
     @always_inline
     @__copy_capture(pool_window_h, pool_window_w)
     @parameter
-    fn avg_pool_compute_finalize[
+    def avg_pool_compute_finalize[
         simd_width: Int
     ](point: IndexList[output.rank, ...], val: SIMD[dtype, simd_width],):
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
@@ -994,7 +1021,7 @@ fn avg_pool_gpu[
         dilation_w,
     )
     @parameter
-    fn dilation_fn(dim: Int) -> Int:
+    def dilation_fn(dim: Int) -> Int:
         if dim == 0:
             return dilation_h
         else:
@@ -1062,7 +1089,7 @@ fn avg_pool_gpu[
 
 
 @always_inline
-fn avg_pool[
+def avg_pool[
     dtype: DType,
     int_type: DType,
     count_boundary: Bool = False,
@@ -1091,7 +1118,7 @@ fn avg_pool[
 
 
 @always_inline
-fn max_pool[
+def max_pool[
     dtype: DType,
     int_type: DType,
     target: StaticString = "cpu",

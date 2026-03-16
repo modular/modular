@@ -14,13 +14,7 @@
 from std.math import isclose
 
 from std.gpu.host import DeviceContext
-from layout import (
-    Coord,
-    CoordLike,
-    TileTensor,
-    coord,
-    row_major,
-)
+from layout import Coord, CoordLike, TileTensor, coord, row_major
 
 from nn.bicubic import cpu_bicubic_kernel, gpu_bicubic_kernel, resize_bicubic
 from std.testing import assert_almost_equal
@@ -40,7 +34,7 @@ test assertions.
 """
 
 
-fn test_bicubic_kernel[
+def test_bicubic_kernel[
     dtype: DType,
 ](input_dim: Coord, output_dim: Coord, ctx: DeviceContext) raises where (
     input_dim.all_dims_known
@@ -642,7 +636,7 @@ fn test_bicubic_kernel[
     output_ref_host_ptr.free()
 
 
-fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
+def test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     """Test that GPU kernel can handle large images without exceeding thread limits.
     """
     # Test with 64x64 output which would exceed 1024 threads/block limit.

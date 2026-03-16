@@ -61,7 +61,7 @@ trait IntervalElement(Comparable, Copyable, Intable, Writable):
     `Writable`, `Intable`, and `Comparable` traits. Which is also subtractable.
     """
 
-    fn __sub__(self, rhs: Self) -> Self:
+    def __sub__(self, rhs: Self) -> Self:
         """Subtracts rhs from self, must be implemented in concrete types.
 
         Args:
@@ -94,7 +94,7 @@ struct Interval[T: IntervalElement](
     var end: Self.T
     """The exclusive end of the interval."""
 
-    fn __init__(out self, start: Self.T, end: Self.T):
+    def __init__(out self, start: Self.T, end: Self.T):
         """Initialize an interval with start and end values.
 
         Args:
@@ -108,7 +108,7 @@ struct Interval[T: IntervalElement](
         self.start = start.copy()
         self.end = end.copy()
 
-    fn __init__(out self, interval: Tuple[Self.T, Self.T], /):
+    def __init__(out self, interval: Tuple[Self.T, Self.T], /):
         """Initialize an interval with a tuple of start and end values.
 
         Args:
@@ -117,7 +117,7 @@ struct Interval[T: IntervalElement](
         self.start = interval[0].copy()
         self.end = interval[1].copy()
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Create a new instance of the interval by copying the values
         from an existing one.
 
@@ -127,7 +127,7 @@ struct Interval[T: IntervalElement](
         self.start = copy.start.copy()
         self.end = copy.end.copy()
 
-    fn overlaps(self, other: Self) -> Bool:
+    def overlaps(self, other: Self) -> Bool:
         """Returns whether this interval overlaps with another interval.
 
         Args:
@@ -138,7 +138,7 @@ struct Interval[T: IntervalElement](
         """
         return other.start < self.end and other.end > self.start
 
-    fn union(self, other: Self) -> Self:
+    def union(self, other: Self) -> Self:
         """Returns the union of this interval and another interval.
 
         Args:
@@ -162,7 +162,7 @@ struct Interval[T: IntervalElement](
         var end = self.end.copy() if self.end > other.end else other.end.copy()
         return Self(start, end)
 
-    fn intersection(self, other: Self) -> Self:
+    def intersection(self, other: Self) -> Self:
         """Returns the intersection of this interval and another interval.
 
         Args:
@@ -186,7 +186,7 @@ struct Interval[T: IntervalElement](
         var end = self.end.copy() if self.end < other.end else other.end.copy()
         return Self(start, end)
 
-    fn __contains__(self, other: Self.T) -> Bool:
+    def __contains__(self, other: Self.T) -> Bool:
         """Returns whether a value is contained within this interval.
 
         Args:
@@ -197,7 +197,7 @@ struct Interval[T: IntervalElement](
         """
         return self.start <= other.copy() < self.end.copy()
 
-    fn __contains__(self, other: Self) -> Bool:
+    def __contains__(self, other: Self) -> Bool:
         """Returns whether another interval is fully contained within this
         interval.
 
@@ -210,7 +210,7 @@ struct Interval[T: IntervalElement](
         """
         return self.start <= other.start and self.end >= other.end
 
-    fn __le__(self, other: Self) -> Bool:
+    def __le__(self, other: Self) -> Bool:
         """Returns whether this interval is less than or equal to another
         interval.
 
@@ -222,7 +222,7 @@ struct Interval[T: IntervalElement](
         """
         return self.start <= other.start
 
-    fn __ge__(self, other: Self) -> Bool:
+    def __ge__(self, other: Self) -> Bool:
         """Returns whether this interval is greater than or equal to another
         interval.
 
@@ -234,7 +234,7 @@ struct Interval[T: IntervalElement](
         """
         return self.end >= other.end
 
-    fn __lt__(self, other: Self) -> Bool:
+    def __lt__(self, other: Self) -> Bool:
         """Returns whether this interval is less than another interval.
 
         Args:
@@ -245,7 +245,7 @@ struct Interval[T: IntervalElement](
         """
         return self.start < other.start
 
-    fn __gt__(self, other: Self) -> Bool:
+    def __gt__(self, other: Self) -> Bool:
         """Returns whether this interval is greater than another interval.
 
         Args:
@@ -256,7 +256,7 @@ struct Interval[T: IntervalElement](
         """
         return self.end > other.end
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Returns the length of this interval.
 
         Returns:
@@ -265,7 +265,7 @@ struct Interval[T: IntervalElement](
         assert Bool(self), "interval is empty"
         return Int(self.end - self.start)
 
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Returns whether this interval is empty.
 
         Returns:
@@ -274,32 +274,13 @@ struct Interval[T: IntervalElement](
         return self.start < self.end
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes this interval to a writer in the format '(start, end)'.
 
         Args:
             writer: The writer to write the interval to.
         """
         writer.write("(", self.start, ", ", self.end, ")")
-
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Returns a string representation of this interval.
-
-        Returns:
-            A string in the format '(start, end)' representing this interval.
-        """
-        return String.write(self)
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        """Returns a string representation of this interval suitable for
-        debugging.
-
-        Returns:
-            A string in the format '(start, end)' representing this interval.
-        """
-        return t"Interval{self}"
 
 
 struct _IntervalNode[
@@ -336,7 +317,7 @@ struct _IntervalNode[
     var _is_red: Bool
     """Red-black node color."""
 
-    fn __init__(
+    def __init__(
         out self,
         start: Self.T,
         end: Self.T,
@@ -367,7 +348,7 @@ struct _IntervalNode[
             is_red=is_red,
         )
 
-    fn __init__(
+    def __init__(
         out self,
         interval: Interval[Self.T],
         data: Self.U,
@@ -395,7 +376,7 @@ struct _IntervalNode[
         self.parent = parent.or_else({})
         self._is_red = is_red
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Create a new instance of the interval node by copying the values
         from an existing one.
 
@@ -411,7 +392,7 @@ struct _IntervalNode[
         self._is_red = copy._is_red
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes this interval node to a writer in the format
         '(start, end): data'.
 
@@ -420,28 +401,7 @@ struct _IntervalNode[
         """
         writer.write(self.interval, "=", self.data)
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Returns a string representation of this interval node.
-
-        Returns:
-            A string in the format '(start, end): data' representing this
-            interval node.
-        """
-        return String.write(self)
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        """Returns a string representation of this interval node suitable for
-        debugging.
-
-        Returns:
-            A string in the format '(start, end): data' representing this
-            interval node.
-        """
-        return t"IntervalNode({self})"
-
-    fn depth(self) -> Int:
+    def depth(self) -> Int:
         """Returns the depth of this interval node.
 
         Returns:
@@ -451,7 +411,7 @@ struct _IntervalNode[
         var right_depth = self.right[].depth() if self.right else 0
         return 1 + max(left_depth, right_depth)
 
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Returns whether this interval node is empty.
 
         Returns:
@@ -459,7 +419,7 @@ struct _IntervalNode[
         """
         return Bool(self.interval)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Returns whether this interval node is equal to another interval node.
 
         Args:
@@ -470,10 +430,10 @@ struct _IntervalNode[
         """
         return self.interval == other.interval and self.data == other.data
 
-    fn __lt__(self, other: Self) -> Bool:
+    def __lt__(self, other: Self) -> Bool:
         return self.interval < other.interval
 
-    fn __gt__(self, other: Self) -> Bool:
+    def __gt__(self, other: Self) -> Bool:
         return self.interval > other.interval
 
 
@@ -500,17 +460,17 @@ struct IntervalTree[
     var _len: Int
     """The number of elements in the interval tree."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initializes an empty IntervalTree."""
         self._root = {}
         self._len = 0
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Destructor that frees the interval tree's memory."""
         Self._del_helper(self._root)
 
     @staticmethod
-    fn _del_helper(node: Self._IntervalNodePointer):
+    def _del_helper(node: Self._IntervalNodePointer):
         if node[].left:
             Self._del_helper(node[].left)
         if node[].right:
@@ -518,7 +478,7 @@ struct IntervalTree[
         node.destroy_pointee()
         node.free()
 
-    fn _left_rotate(mut self, rotation_node: Self._IntervalNodePointer):
+    def _left_rotate(mut self, rotation_node: Self._IntervalNodePointer):
         """Performs a left rotation around node x in the red-black tree.
 
         This method performs a left rotation around the given node x, which is a
@@ -585,7 +545,7 @@ struct IntervalTree[
                 rotation_right_child[].right[].max_end,
             )
 
-    fn _right_rotate(mut self, rotation_node: Self._IntervalNodePointer):
+    def _right_rotate(mut self, rotation_node: Self._IntervalNodePointer):
         """Performs a right rotation around node y in the red-black tree.
 
         This method performs a right rotation around the given node y, which is a
@@ -645,7 +605,7 @@ struct IntervalTree[
                 rotation_left_child[].left[].max_end,
             )
 
-    fn insert(mut self, interval: Tuple[Self.T, Self.T], data: Self.U):
+    def insert(mut self, interval: Tuple[Self.T, Self.T], data: Self.U):
         """Insert a new interval into the tree using a tuple representation.
 
         Args:
@@ -654,7 +614,7 @@ struct IntervalTree[
         """
         self.insert(Interval(interval[0], interval[1]), data)
 
-    fn insert(mut self, interval: Interval[Self.T], data: Self.U):
+    def insert(mut self, interval: Interval[Self.T], data: Self.U):
         """Insert a new interval into the tree.
 
         This method inserts a new interval and its associated data into the interval tree.
@@ -702,7 +662,7 @@ struct IntervalTree[
 
         self._insert_fixup(new_node)
 
-    fn _insert_fixup(mut self, current_node0: Self._IntervalNodePointer):
+    def _insert_fixup(mut self, current_node0: Self._IntervalNodePointer):
         """Fixes up the red-black tree properties after an insertion.
 
         This method restores the red-black tree properties that may have been violated
@@ -753,24 +713,7 @@ struct IntervalTree[
         # Ensure root is black to maintain red-black tree properties
         self._root[]._is_red = False
 
-    fn __str__(self) -> String:
-        """Returns a string representation of the interval tree.
-
-        Returns:
-            A string representation of the interval tree.
-        """
-        return String.write(self)
-
-    fn __repr__(self) -> String:
-        """Returns a string representation of the interval tree suitable for
-        debugging.
-
-        Returns:
-            A string representation of the interval tree.
-        """
-        return String.write(self)
-
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the interval tree to a writer.
 
         Args:
@@ -779,7 +722,7 @@ struct IntervalTree[
         self._draw(writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this `IntervalTree` to a writer.
 
         Args:
@@ -787,7 +730,7 @@ struct IntervalTree[
         """
 
         @parameter
-        fn write_fields(mut w: Some[Writer]):
+        def write_fields(mut w: Some[Writer]):
             self._draw(w)
 
         fmt.FormatStruct(writer, "IntervalTree").params(
@@ -795,7 +738,7 @@ struct IntervalTree[
         ).fields[FieldsFn=write_fields]()
 
     @no_inline
-    fn _draw[w: Writer](self, mut writer: w):
+    def _draw[w: Writer](self, mut writer: w):
         """Draws the interval tree in a simple ASCII tree format.
 
         Creates a text representation of the tree using ASCII characters, with each node
@@ -811,7 +754,7 @@ struct IntervalTree[
         self._draw_helper(writer, self._root, "", True)
 
     @no_inline
-    fn _draw_helper[
+    def _draw_helper[
         w: Writer
     ](
         self,
@@ -852,7 +795,7 @@ struct IntervalTree[
         self._draw_helper(writer, node[].right, next_indent, True)
 
     @no_inline
-    fn _draw3[w: Writer](self, mut writer: w) raises:
+    def _draw3[w: Writer](self, mut writer: w) raises:
         """Draws the interval tree in a simple ASCII tree format.
 
         Creates a text representation of the tree using ASCII characters, with each node
@@ -888,7 +831,7 @@ struct IntervalTree[
             work_list.append((node[].right, indent, True))
 
     @no_inline
-    fn _draw2[w: Writer](self, mut writer: w) raises:
+    def _draw2[w: Writer](self, mut writer: w) raises:
         """Draws the interval tree in a visual ASCII art format.
 
         Creates a grid representation of the tree with nodes and connecting branches.
@@ -960,7 +903,7 @@ struct IntervalTree[
             if row_str:
                 writer.write(row_str, "\n")
 
-    fn depth(self) -> Int:
+    def depth(self) -> Int:
         """Returns the depth of the interval tree.
 
         Returns:
@@ -971,7 +914,7 @@ struct IntervalTree[
 
         return self._root[].depth()
 
-    fn transplant(
+    def transplant(
         mut self,
         mut u: Self._IntervalNodePointer,
         mut v: Self._IntervalNodePointer,
@@ -992,7 +935,7 @@ struct IntervalTree[
         if v:
             v[].parent = u[].parent
 
-    fn search(self, interval: Tuple[Self.T, Self.T]) raises -> List[Self.U]:
+    def search(self, interval: Tuple[Self.T, Self.T]) raises -> List[Self.U]:
         """Searches for intervals overlapping with the given tuple.
 
         Args:
@@ -1006,7 +949,7 @@ struct IntervalTree[
         """
         return self.search(Interval(interval[0], interval[1]))
 
-    fn search(self, interval: Interval[Self.T]) raises -> List[Self.U]:
+    def search(self, interval: Interval[Self.T]) raises -> List[Self.U]:
         """Searches for intervals overlapping with the given interval.
 
         Args:
@@ -1020,7 +963,7 @@ struct IntervalTree[
         """
         return self._search_helper(self._root, interval)
 
-    fn _search_helper(
+    def _search_helper(
         self, node: Self._IntervalNodePointer, interval: Interval[Self.T]
     ) raises -> List[Self.U]:
         var result = List[Self.U]()

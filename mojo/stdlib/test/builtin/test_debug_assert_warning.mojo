@@ -17,7 +17,7 @@
 
 
 # CHECK-LABEL: test_ok
-fn main():
+def main():
     print("== test_ok")
     # CHECK: test_debug_assert_warning.mojo:23:17: Assert Error: failed, but we don't terminate
     debug_assert(False, "failed, but we don't terminate")

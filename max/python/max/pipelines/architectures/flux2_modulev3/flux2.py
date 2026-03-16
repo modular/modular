@@ -11,6 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
+from collections.abc import Sequence
+
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Linear, Module
@@ -18,6 +22,11 @@ from max.experimental.nn.norm import LayerNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
+from max.graph.dim import Dim
+from max.nn.quant_config import QuantConfig
+from max.pipelines.lib.interfaces.cache_mixin import (
+    fbcache_conditional_execution,
+)
 
 from .layers.embeddings import TimestepEmbedding, Timesteps
 from .layers.flux2_attention import (
@@ -101,6 +110,7 @@ class Flux2Modulation(
         dim: int,
         mod_param_sets: int = 2,
         bias: bool = False,
+        quant_config: QuantConfig | None = None,
     ):
         """Initialize Flux2Modulation.
 
@@ -108,8 +118,10 @@ class Flux2Modulation(
             dim: Input/output dimension.
             mod_param_sets: Number of parameter sets (2 for dual-stream, 1 for single-stream).
             bias: Whether to use bias in linear layer.
+            quant_config: Optional NVFP4 quantization config.
         """
         self.mod_param_sets = mod_param_sets
+        # Modulation layers are always BF16 in NVFP4 checkpoints.
         self.linear = Linear(dim, dim * 3 * mod_param_sets, bias=bias)
 
     def forward(
@@ -155,6 +167,7 @@ class Flux2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
         mlp_ratio: float = 3.0,
         eps: float = 1e-6,
         bias: bool = False,
+        quant_config: QuantConfig | None = None,
     ):
         """Initialize Flux2TransformerBlock.
 
@@ -165,6 +178,7 @@ class Flux2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
             mlp_ratio: Multiplier for feedforward hidden dimension.
             eps: Epsilon for layer normalization.
             bias: Whether to use bias in linear layers.
+            quant_config: Optional NVFP4 quantization config.
         """
         self.mlp_hidden_dim = int(dim * mlp_ratio)
 
@@ -187,6 +201,7 @@ class Flux2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
             added_proj_bias=bias,
             out_bias=bias,
             eps=eps,
+            quant_config=quant_config,
         )
 
         # Feedforward layers
@@ -194,14 +209,22 @@ class Flux2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
             dim, eps=eps, elementwise_affine=False, use_bias=False
         )
         self.ff = Flux2FeedForward(
-            dim=dim, dim_out=dim, mult=mlp_ratio, bias=bias
+            dim=dim,
+            dim_out=dim,
+            mult=mlp_ratio,
+            bias=bias,
+            quant_config=quant_config,
         )
 
         self.norm2_context = LayerNorm(
             dim, eps=eps, elementwise_affine=False, use_bias=False
         )
         self.ff_context = Flux2FeedForward(
-            dim=dim, dim_out=dim, mult=mlp_ratio, bias=bias
+            dim=dim,
+            dim_out=dim,
+            mult=mlp_ratio,
+            bias=bias,
+            quant_config=quant_config,
         )
 
     def forward(
@@ -215,6 +238,7 @@ class Flux2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
             tuple[Tensor, Tensor, Tensor], tuple[Tensor, Tensor, Tensor]
         ],
         image_rotary_emb: tuple[Tensor, Tensor] | None = None,
+        position_ids: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         """Forward pass for dual-stream transformer block.
 
@@ -252,6 +276,7 @@ class Flux2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
             norm_hidden_states,
             norm_encoder_hidden_states,
             image_rotary_emb=image_rotary_emb,
+            position_ids=position_ids,
         )
         if isinstance(attn_result, tuple):
             attn_output, context_attn_output = attn_result
@@ -302,6 +327,7 @@ class Flux2SingleTransformerBlock(Module[..., Tensor | tuple[Tensor, Tensor]]):
         mlp_ratio: float = 3.0,
         eps: float = 1e-6,
         bias: bool = False,
+        quant_config: QuantConfig | None = None,
     ):
         """Initialize Flux2SingleTransformerBlock.
 
@@ -312,6 +338,7 @@ class Flux2SingleTransformerBlock(Module[..., Tensor | tuple[Tensor, Tensor]]):
             mlp_ratio: Multiplier for feedforward hidden dimension.
             eps: Epsilon for layer normalization.
             bias: Whether to use bias in linear layers.
+            quant_config: Optional NVFP4 quantization config.
         """
         # Single normalization (elementwise_affine=False)
         self.norm = LayerNorm(
@@ -329,6 +356,7 @@ class Flux2SingleTransformerBlock(Module[..., Tensor | tuple[Tensor, Tensor]]):
             eps=eps,
             mlp_ratio=mlp_ratio,
             mlp_mult_factor=2,
+            quant_config=quant_config,
         )
 
     def forward(
@@ -337,6 +365,7 @@ class Flux2SingleTransformerBlock(Module[..., Tensor | tuple[Tensor, Tensor]]):
         encoder_hidden_states: Tensor | None = None,
         temb_mod_params: tuple[Tensor, Tensor, Tensor] | None = None,
         image_rotary_emb: tuple[Tensor, Tensor] | None = None,
+        position_ids: Tensor | None = None,
         split_hidden_states: bool = False,
         text_seq_len: int | None = None,
     ) -> Tensor | tuple[Tensor, Tensor]:
@@ -381,6 +410,7 @@ class Flux2SingleTransformerBlock(Module[..., Tensor | tuple[Tensor, Tensor]]):
         attn_output = self.attn.forward(
             norm_hidden_states,
             image_rotary_emb=image_rotary_emb,
+            position_ids=position_ids,
         )
 
         # Gate and residual
@@ -399,7 +429,7 @@ class Flux2SingleTransformerBlock(Module[..., Tensor | tuple[Tensor, Tensor]]):
             return hidden_states
 
 
-class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
+class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
     def __init__(
         self,
         config: Flux2Config,
@@ -430,6 +460,7 @@ class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
         self.patch_size = patch_size
         self.out_channels = out_channels or in_channels
         self.inner_dim = num_attention_heads * attention_head_dim
+        quant_config = getattr(config, "quant_config", None)
 
         # 1. Positional embeddings (RoPE)
         self.pos_embed = Flux2PosEmbed(
@@ -444,20 +475,18 @@ class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
             guidance_embeds=getattr(config, "guidance_embeds", True),
         )
 
-        # 3. Modulation layers
-        # Two sets of modulation parameters for dual-stream blocks (attn + mlp per stream)
+        # 3. Modulation layers (always BF16)
         self.double_stream_modulation_img = Flux2Modulation(
             self.inner_dim, mod_param_sets=2, bias=False
         )
         self.double_stream_modulation_txt = Flux2Modulation(
             self.inner_dim, mod_param_sets=2, bias=False
         )
-        # One set for single-stream blocks (parallel attn+mlp)
         self.single_stream_modulation = Flux2Modulation(
             self.inner_dim, mod_param_sets=1, bias=False
         )
 
-        # 4. Input embeddings
+        # 4. Input embeddings (always BF16)
         self.x_embedder = Linear(in_channels, self.inner_dim, bias=False)
         self.context_embedder = Linear(
             joint_attention_dim, self.inner_dim, bias=False
@@ -473,6 +502,7 @@ class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
                     mlp_ratio=mlp_ratio,
                     eps=eps,
                     bias=False,
+                    quant_config=quant_config,
                 )
                 for _ in range(num_layers)
             ]
@@ -490,12 +520,13 @@ class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
                     mlp_ratio=mlp_ratio,
                     eps=eps,
                     bias=False,
+                    quant_config=quant_config,
                 )
                 for _ in range(num_single_layers)
             ]
         )
 
-        # 7. Output layers
+        # 7. Output layers (always BF16)
         self.norm_out = AdaLayerNormContinuous(
             embedding_dim=self.inner_dim,
             conditioning_embedding_dim=self.inner_dim,
@@ -514,7 +545,31 @@ class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
         self.in_channels = in_channels
         self.joint_attention_dim = joint_attention_dim
 
-    def input_types(self) -> tuple[TensorType, ...]:
+        # Step-cache config (set before compilation by use_step_cache_model)
+        self._step_cache_enabled: bool = False
+        self._rdt_value: float = 0.05
+
+    def _fbcache_conditional_execution_output_types(self) -> list[TensorType]:
+        """Return [residual_type, output_type] for fbcache_conditional_execution / input_types."""
+        residual_type = TensorType(
+            self.max_dtype,
+            shape=["batch_size", "image_seq_len", self.inner_dim],
+            device=self.device,
+        )
+        output_type = TensorType(
+            self.max_dtype,
+            shape=[
+                "batch_size",
+                "image_seq_len",
+                self.patch_size * self.patch_size * self.out_channels,
+            ],
+            device=self.device,
+        )
+        return [residual_type, output_type]
+
+    def input_types(
+        self, step_cache_enabled: bool = False
+    ) -> tuple[TensorType, ...]:
         """Define input tensor types for the model with symbolic shapes.
 
         Returns:
@@ -547,7 +602,7 @@ class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
             self.max_dtype, shape=["batch_size"], device=self.device
         )
 
-        return (
+        base_types = (
             hidden_states_type,
             encoder_hidden_states_type,
             timestep_type,
@@ -555,6 +610,87 @@ class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
             txt_ids_type,
             guidance_type,
         )
+
+        if not step_cache_enabled:
+            return base_types
+
+        return base_types + tuple(
+            self._fbcache_conditional_execution_output_types()
+        )
+
+    def _run_first_block(
+        self,
+        hidden_states: Tensor,
+        encoder_hidden_states: Tensor,
+        double_stream_mod_img: tuple[
+            tuple[Tensor, Tensor, Tensor], tuple[Tensor, Tensor, Tensor]
+        ],
+        double_stream_mod_txt: tuple[
+            tuple[Tensor, Tensor, Tensor], tuple[Tensor, Tensor, Tensor]
+        ],
+        image_rotary_emb: tuple[Tensor, Tensor],
+        position_ids: Tensor,
+    ) -> tuple[Tensor, Tensor]:
+        """Run the first dual-stream transformer block.
+
+        Returns:
+            (first_encoder_hidden_states, first_hidden_states).
+        """
+        return self.transformer_blocks[0](
+            hidden_states=hidden_states,
+            encoder_hidden_states=encoder_hidden_states,
+            temb_mod_params_img=double_stream_mod_img,
+            temb_mod_params_txt=double_stream_mod_txt,
+            image_rotary_emb=image_rotary_emb,
+            position_ids=position_ids,
+        )
+
+    def _run_remaining_blocks(
+        self,
+        hidden_states: Tensor,
+        encoder_hidden_states: Tensor,
+        temb: Tensor,
+        double_stream_mod_img: tuple[
+            tuple[Tensor, Tensor, Tensor], tuple[Tensor, Tensor, Tensor]
+        ],
+        double_stream_mod_txt: tuple[
+            tuple[Tensor, Tensor, Tensor], tuple[Tensor, Tensor, Tensor]
+        ],
+        single_stream_mod: tuple[Tensor, Tensor, Tensor],
+        image_rotary_emb: tuple[Tensor, Tensor],
+        position_ids: Tensor,
+        num_txt_tokens: int | Dim,
+    ) -> Tensor:
+        """Run remaining dual-stream blocks, single-stream blocks, norm, and proj.
+
+        Returns:
+            Output tensor of shape [B, image_seq_len, patch_size² * out_channels].
+        """
+        for rest_block in self.transformer_blocks[1:]:
+            encoder_hidden_states, hidden_states = rest_block(
+                hidden_states=hidden_states,
+                encoder_hidden_states=encoder_hidden_states,
+                temb_mod_params_img=double_stream_mod_img,
+                temb_mod_params_txt=double_stream_mod_txt,
+                image_rotary_emb=image_rotary_emb,
+                position_ids=position_ids,
+            )
+        hidden_states = F.concat([encoder_hidden_states, hidden_states], axis=1)
+        for i in range(len(self.single_transformer_blocks)):
+            single_block: Flux2SingleTransformerBlock = (
+                self.single_transformer_blocks[i]
+            )
+            hidden_states = single_block(  # type: ignore[assignment]
+                hidden_states=hidden_states,
+                encoder_hidden_states=None,
+                temb_mod_params=single_stream_mod,
+                image_rotary_emb=image_rotary_emb,
+                position_ids=position_ids,
+                split_hidden_states=False,
+            )
+        hidden_states = hidden_states[:, num_txt_tokens:, :]
+        hidden_states = self.norm_out(hidden_states, temb)
+        return self.proj_out(hidden_states)
 
     def forward(
         self,
@@ -564,7 +700,9 @@ class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
         img_ids: Tensor,
         txt_ids: Tensor,
         guidance: Tensor,
-    ) -> tuple[Tensor]:
+        prev_residual: Tensor | None = None,
+        prev_output: Tensor | None = None,
+    ) -> tuple[Tensor] | tuple[Tensor, Tensor]:
         """Forward pass through Flux2 Transformer.
 
         Args:
@@ -574,9 +712,12 @@ class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
             img_ids: Image position IDs of shape [image_seq_len, 4].
             txt_ids: Text position IDs of shape [text_seq_len, 4].
             guidance: Guidance scale of shape [B] (scaled to [0, 1] range).
+            prev_residual: Previous first-block residual for cache reuse.
+            prev_output: Previous output for cache reuse.
 
         Returns:
-            Denoised output of shape [B, H*W, patch_size^2 * out_channels].
+            If step-cache is disabled, returns (output,).
+            If step-cache is enabled, returns (output, first_block_residual).
         """
         # Handle batch dimension in ids (squeeze if needed)
         if img_ids.rank == 3:
@@ -614,39 +755,63 @@ class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
         # Concatenate text and image position IDs
         ids = F.concat([txt_ids, img_ids], axis=0)
         image_rotary_emb = self.pos_embed(ids)
+        position_ids = F.arange(
+            0, ids.shape[0], dtype=DType.uint32, device=hidden_states.device
+        )
+        position_ids = F.broadcast_to(
+            position_ids[None, :],
+            [hidden_states.shape[0], ids.shape[0]],
+        )
 
-        # 4. Dual-stream transformer blocks
-        for block in self.transformer_blocks:
-            encoder_hidden_states, hidden_states = block(
-                hidden_states=hidden_states,
-                encoder_hidden_states=encoder_hidden_states,
-                temb_mod_params_img=double_stream_mod_img,
-                temb_mod_params_txt=double_stream_mod_txt,
+        # Run first block (shared between standard and step-cache paths).
+        first_encoder_hidden_states, first_hidden_states = (
+            self._run_first_block(
+                hidden_states,
+                encoder_hidden_states,
+                double_stream_mod_img,
+                double_stream_mod_txt,
+                image_rotary_emb,
+                position_ids,
+            )
+        )
+
+        if not self._step_cache_enabled:
+            # Standard path: run remaining blocks sequentially.
+            output = self._run_remaining_blocks(
+                first_hidden_states,
+                first_encoder_hidden_states,
+                temb,
+                double_stream_mod_img,
+                double_stream_mod_txt,
+                single_stream_mod,
+                image_rotary_emb,
+                position_ids,
+                num_txt_tokens,
+            )
+            return (output,)
+
+        # Step-cache path: F.cond branching for cache reuse.
+        assert prev_residual is not None
+        assert prev_output is not None
+
+        first_block_residual = first_hidden_states - hidden_states
+
+        return fbcache_conditional_execution(
+            first_block_residual,
+            prev_residual,
+            prev_output,
+            self._rdt_value,
+            self._run_remaining_blocks,
+            dict(
+                hidden_states=first_hidden_states,
+                encoder_hidden_states=first_encoder_hidden_states,
+                temb=temb,
+                double_stream_mod_img=double_stream_mod_img,
+                double_stream_mod_txt=double_stream_mod_txt,
+                single_stream_mod=single_stream_mod,
                 image_rotary_emb=image_rotary_emb,
-            )
-
-        # 5. Concatenate text and image for single-stream blocks
-        hidden_states = F.concat([encoder_hidden_states, hidden_states], axis=1)
-
-        # 6. Single-stream transformer blocks
-        for i in range(len(self.single_transformer_blocks)):
-            single_block: Flux2SingleTransformerBlock = (
-                self.single_transformer_blocks[i]
-            )
-            hidden_states = single_block(  # type: ignore[assignment]
-                hidden_states=hidden_states,
-                encoder_hidden_states=None,
-                temb_mod_params=single_stream_mod,
-                image_rotary_emb=image_rotary_emb,
-                split_hidden_states=False,
-            )
-
-        # 7. Remove text tokens from concatenated stream
-        hidden_states = hidden_states[:, num_txt_tokens:, :]
-
-        # 8. Output projection
-        hidden_states = self.norm_out(hidden_states, temb)
-        output = self.proj_out(hidden_states)
-
-        # Return as tuple for consistency with Flux1 (pipeline expects [0] indexing)
-        return (output,)
+                position_ids=position_ids,
+                num_txt_tokens=num_txt_tokens,
+            ),
+            self._fbcache_conditional_execution_output_types(),
+        )

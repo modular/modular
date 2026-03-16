@@ -19,7 +19,7 @@ from std.ffi import external_call
 
 
 # TODO: When we have global variables, this should be a global list.
-fn argv() -> Span[StaticString, StaticConstantOrigin]:
+def argv() -> Span[StaticString, StaticConstantOrigin]:
     """Gets the list of command line arguments given to the `mojo` CLI.
 
     For example:

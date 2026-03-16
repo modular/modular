@@ -17,7 +17,7 @@ from nn.argsort import argsort
 from std.testing import assert_true
 
 
-fn test_argsort[
+def test_argsort[
     *,
     ascending: Bool,
     filler: fn(Int, Int) -> Float32,
@@ -130,10 +130,10 @@ fn test_argsort[
 
 
 def main() raises:
-    fn linear_filler(i: Int, n: Int) -> Float32:
+    def linear_filler(i: Int, n: Int) -> Float32:
         return Float32(i)
 
-    fn reverse_filler(i: Int, n: Int) -> Float32:
+    def reverse_filler(i: Int, n: Int) -> Float32:
         return Float32(n - i)
 
     test_argsort[ascending=True, filler=linear_filler]()

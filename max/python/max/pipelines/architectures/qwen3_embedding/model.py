@@ -26,7 +26,7 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, ops
-from max.graph.weights import WeightData, Weights, WeightsAdapter
+from max.graph.weights import Weights, WeightsAdapter
 from max.nn.embedding import Embedding
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.linear import MLP, Linear
@@ -42,6 +42,8 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModel,
 )
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 from transformers import AutoConfig
 
 from .layers import (
@@ -123,26 +125,6 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         self.model = session.load(graph, weights_registry=self.state_dict)
         timer.done()
 
-    def _get_state_dict(
-        self, weights: Weights, adapter: WeightsAdapter | None
-    ) -> dict[str, WeightData]:
-        """Get state dictionary from weights.
-
-        Args:
-            weights: Model weights
-            adapter: Optional adapter
-
-        Returns:
-            State dictionary
-        """
-        if adapter:
-            return adapter(
-                dict(weights.items()),
-                huggingface_config=self.huggingface_config,
-                pipeline_config=self.pipeline_config,
-            )
-        return {key: value.data() for key, value in weights.items()}
-
     def _build_graph(
         self,
         weights: Weights,
@@ -160,7 +142,9 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             Compiled graph
         """
         # Load weights
-        state_dict = self._get_state_dict(weights, adapter)
+        state_dict = parse_state_dict_from_weights(
+            self.pipeline_config, weights, adapter
+        )
 
         # Get configuration
         dtype = self.dtype
@@ -172,7 +156,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         rope = Llama3RotaryEmbedding(
             dim=self.huggingface_config.hidden_size,
             n_heads=self.huggingface_config.num_attention_heads,
-            theta=self.huggingface_config.rope_theta,
+            theta=get_rope_theta(self.huggingface_config),
             max_seq_len=max_seq_len,
             head_dim=head_dim,
             interleaved=False,  # Qwen3 uses non-interleaved RoPE

@@ -35,7 +35,7 @@ comptime TILE_SZ_B = 16
 comptime TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
 
 
-fn matmul(
+def matmul(
     a_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
     b_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
     c_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
@@ -105,7 +105,7 @@ fn matmul(
             c[Index(row, col + out_idx)] = c_reg.load(out_idx)
 
 
-fn run_matmul(ctx: DeviceContext) raises:
+def run_matmul(ctx: DeviceContext) raises:
     print("== run_matmul")
 
     comptime m = 512
@@ -116,9 +116,9 @@ fn run_matmul(ctx: DeviceContext) raises:
     var b_host_ptr = alloc[Scalar[DType.int]](k * n)
     var c_host_ptr = alloc[Scalar[DType.int]](m * n)
 
-    var a_host = NDBuffer[rank=2, DType.int, _, DimList(m, k)](a_host_ptr)
-    var b_host = NDBuffer[rank=2, DType.int, _, DimList(k, n)](b_host_ptr)
-    var c_host = NDBuffer[rank=2, DType.int, _, DimList(m, n)](c_host_ptr)
+    var a_host = NDBuffer[rank=2, DType.int, _, DimList[m, k]()](a_host_ptr)
+    var b_host = NDBuffer[rank=2, DType.int, _, DimList[k, n]()](b_host_ptr)
+    var c_host = NDBuffer[rank=2, DType.int, _, DimList[m, n]()](c_host_ptr)
 
     for i in range(m):
         for j in range(k):

@@ -13,3 +13,4 @@
 """Provides the AMD GPU backend implementations for matmuls."""
 
 from .matmul import gemm_kernel_amd
+from .pingpong_kernel import AMDPingPongMatmul, KernelConfig

@@ -24,9 +24,7 @@ from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import external_memory
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
-from layout import Layout, LayoutTensor
-from layout.int_tuple import IntTuple
-from layout.runtime_layout import RuntimeLayout
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tensor_tile
 from std.logger import Logger
@@ -59,7 +57,7 @@ comptime _3D_layout[layout: Layout, rank: Int] = Layout.row_major(
 )
 
 
-fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
+def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -478,7 +476,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
-fn matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
+def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -559,7 +557,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     )
 
 
-fn matmul_sm100_blockwise_scaled_fp8[
+def matmul_sm100_blockwise_scaled_fp8[
     a_layout: Layout,
     b_layout: Layout,
     c_layout: Layout,

@@ -18,14 +18,13 @@ from std.math import ceildiv
 from layout import (
     Idx,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
-    TileTensor,
     TensorLayout,
+    TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
-from layout.layout_tensor import LayoutTensor
-from layout.tile_layout import TensorLayout
 
 from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext, FuncAttribute
@@ -46,7 +45,7 @@ from std.utils.index import Index
 # ===----------------------------------------------------------------------=== #
 
 
-fn apply_mask_kernel[
+def apply_mask_kernel[
     mask_t: MHAMask,
     ScoresLayoutType: TensorLayout,
     scores_origin: MutOrigin,
@@ -83,7 +82,7 @@ fn apply_mask_kernel[
     output.ptr[Int(global_seq_idx) * max_num_keys + Int(key_idx)] = masked_val
 
 
-fn fill_invalid_topk_kernel[
+def fill_invalid_topk_kernel[
     IROLayoutType: TensorLayout,
     iro_origin: ImmutOrigin,
     cache_lengths_layout: TensorLayout,
@@ -174,7 +173,7 @@ fn fill_invalid_topk_kernel[
 
 
 @always_inline
-fn mla_indexer_ragged_float8_paged[
+def mla_indexer_ragged_float8_paged[
     dtype: DType,
     KCollectionT: KVCollectionT,
     num_heads: Int,
@@ -323,7 +322,7 @@ fn mla_indexer_ragged_float8_paged[
 
             @always_inline
             @parameter
-            fn apply_mask_dispatch[mask_t: MHAMask](mask: mask_t) raises:
+            def apply_mask_dispatch[mask_t: MHAMask](mask: mask_t) raises:
                 comptime mask_kernel = apply_mask_kernel[
                     mask_t,
                     scores_tile.LayoutType,

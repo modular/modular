@@ -7,6 +7,11 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
+# TODO(GEX-3155): Tests that timeout on remote macOS CI
+_MACOS_INCOMPATIBLE_TESTS = [
+    "test_sampling.py",
+]
+
 [
     modular_py_test(
         name = src.replace(".py", ""),
@@ -16,11 +21,16 @@ package(default_visibility = [
             "norm_test_utils.py",
             src,
         ],
+        gpu_constraints = ["//:has_gpu"] if "_gpu.py" in src else [],
         mojo_deps = ["//max:MOGGKernelAPI"],
         tags = ["no-pydeps"] + (["skip-external-ci"] if src in [
             # FIXME: SDLC-3032
             "test_module.py",
-        ] else []),
+        ] else []) + (["gpu"] if "_gpu.py" in src else []),
+        target_compatible_with = select({
+            "@platforms//os:macos": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }) if src in _MACOS_INCOMPATIBLE_TESTS else [],
         deps = [
             "//max/python/max/driver",
             "//max/python/max/dtype",

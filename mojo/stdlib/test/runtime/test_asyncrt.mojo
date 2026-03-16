@@ -21,11 +21,11 @@ def test_runtime_task() raises:
     print("== test_runtime_task")
 
     @parameter
-    async fn test_asyncrt_add[lhs: Int](rhs: Int) -> Int:
+    async def test_asyncrt_add[lhs: Int](rhs: Int) -> Int:
         return lhs + rhs
 
     @parameter
-    async fn test_asyncrt_add_two_of_them(a: Int, b: Int) -> Int:
+    async def test_asyncrt_add_two_of_them(a: Int, b: Int) -> Int:
         return await create_task(test_asyncrt_add[1](a)) + await create_task(
             test_asyncrt_add[2](b)
         )
@@ -40,11 +40,11 @@ def test_runtime_taskgroup() raises:
     print("== test_runtime_taskgroup")
 
     @parameter
-    async fn return_value[value: Int]() -> Int:
+    async def return_value[value: Int]() -> Int:
         return value
 
     @parameter
-    async fn run_as_group() -> Int:
+    async def run_as_group() -> Int:
         var t0 = create_task(return_value[1]())
         var t1 = create_task(return_value[2]())
         return await t0 + await t1

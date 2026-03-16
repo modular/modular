@@ -17,9 +17,12 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import cached_property
+from math import prod
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 from max.driver import (
     Buffer,
     Device,
@@ -29,22 +32,14 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType, Value
-from max.graph.weights import (
-    WeightData,
-    Weights,
-    WeightsAdapter,
-)
+from max.graph import BufferType, DeviceRef, Graph, TensorType
+from max.graph.buffer_utils import cast_tensor_to
+from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm import Signals
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import estimate_ep_memory_usage
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParamInterface,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
@@ -59,13 +54,14 @@ from max.pipelines.lib.config.config_enums import (
     is_float4_encoding,
     supported_encoding_dtype,
 )
-from max.pipelines.lib.float8 import parse_float8_config
+from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
 
 from ..deepseekV3.model import DeepseekV3Inputs
+from .context import KimiK2_5TextAndVisionContext
 from .kimik2_5 import KimiK2_5
 from .model_config import KimiK2_5Config, KimiK2_5TextConfig
 
@@ -92,7 +88,7 @@ class KimiK2_5ModelInputs(DeepseekV3Inputs):
     pixel_values: list[Buffer] | None = None
     """Pixel values for vision inputs."""
 
-    grid_thw: list[Buffer] | None = None
+    grid_thws: list[Buffer] | None = None
     """Grid dimensions (temporal, height, width) for each image/video, shape (n_images, 3) per device."""
 
     cu_seqlens: list[Buffer] | None = None
@@ -104,9 +100,6 @@ class KimiK2_5ModelInputs(DeepseekV3Inputs):
     vision_position_ids: list[Buffer] | None = None
     """Vision rotary position IDs per device."""
 
-    max_grid_size: list[Buffer] | None = None
-    """Maximum grid size for vision inputs per device."""
-
     @property
     def has_vision_inputs(self) -> bool:
         """Check if this input contains vision data."""
@@ -114,7 +107,8 @@ class KimiK2_5ModelInputs(DeepseekV3Inputs):
 
 
 class KimiK2_5Model(
-    AlwaysSignalBuffersMixin, PipelineModelWithKVCache[TextContext]
+    AlwaysSignalBuffersMixin,
+    PipelineModelWithKVCache[KimiK2_5TextAndVisionContext],
 ):
     """A Kimi-K2.5 pipeline model for multimodal text generation."""
 
@@ -137,7 +131,7 @@ class KimiK2_5Model(
     ) -> None:
         if pipeline_config.model.device_specs[0] == DeviceSpec.cpu():
             raise ValueError("DeepseekV2 currently only supported on gpu.")
-
+        self.session = session
         super().__init__(
             pipeline_config,
             session,
@@ -149,7 +143,7 @@ class KimiK2_5Model(
             return_hidden_states,
         )
 
-        self.language_model = self.load_model(session)
+        self.vision_model, self.language_model = self.load_model(session)
 
     @classmethod
     def get_kv_params(
@@ -161,7 +155,11 @@ class KimiK2_5Model(
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
         encoding = pipeline_config.model.quantization_encoding
-        if encoding is not None and is_float4_encoding(encoding):
+        if (
+            encoding is not None
+            and is_float4_encoding(encoding)
+            and kv_cache_config.kv_cache_format is None
+        ):
             cache_dtype = DType.bfloat16
         return KimiK2_5TextConfig.construct_kv_params(
             huggingface_config=huggingface_config.text_config,
@@ -194,6 +192,10 @@ class KimiK2_5Model(
         """Create model configuration from huggingface config."""
         config = self.huggingface_config.text_config
 
+        # data_parallel_degree controls the attention strategy:
+        #   == num_devices  ->  DP attention  (each device owns a batch shard)
+        #   == 1            ->  TP attention  (heads sharded, tokens replicated)
+        data_parallel_degree = self.pipeline_config.model.data_parallel_degree
         max_batch_total_tokens = (
             self.pipeline_config.runtime.max_batch_total_tokens
         )
@@ -209,30 +211,41 @@ class KimiK2_5Model(
 
         dtype = self.dtype
         if dtype in (DType.float8_e4m3fn, DType.uint8, DType.float4_e2m1fn):
-            float8_config = parse_float8_config(config, state_dict, dtype)
+            quant_config = parse_quant_config(config, state_dict, dtype)
         else:
-            float8_config = None
+            quant_config = None
 
         # Check if EP should be configured
-        if self.pipeline_config.runtime.ep_size == 1:
+        ep_size = self.pipeline_config.runtime.ep_size
+        if ep_size == 1:
             ep_config = None
         else:
-            if self.pipeline_config.runtime.ep_size % len(self.devices) != 0:
+            if ep_size % len(self.devices) != 0:
                 raise ValueError(
                     "If you are running with expert parallelism, ep_size must"
                     " be set to the total number of GPUs across nodes."
                 )
-            n_nodes = self.pipeline_config.runtime.ep_size // len(self.devices)
+            n_nodes = ep_size // len(self.devices)
+
+            # With a mixed TP-attention + EP-MoE strategy, the attention output
+            # will be scattered across ranks, so each rank will only send a
+            # subset of the tokens.
+            attn_tp_size = ep_size // data_parallel_degree
+            ep_max_rank_send_tokens = (
+                self.pipeline_config.runtime.max_batch_input_tokens
+                // attn_tp_size
+            )
+
             ep_kwargs: dict[str, Any] = dict(
                 dispatch_dtype=dtype,
                 combine_dtype=DType.bfloat16,
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
                 n_experts=config.n_routed_experts,
-                max_tokens_per_rank=self.pipeline_config.runtime.max_batch_input_tokens,
+                max_tokens_per_rank=ep_max_rank_send_tokens,
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
-                dispatch_fp8_config=None,
+                dispatch_quant_config=None,
             )
 
             if config.n_shared_experts == 1:
@@ -240,20 +253,10 @@ class KimiK2_5Model(
                 # the same shape as routed experts.
                 ep_kwargs["fused_shared_expert"] = True
 
-            if float8_config is not None:
-                ep_kwargs["dispatch_fp8_config"] = float8_config
+            if quant_config is not None:
+                ep_kwargs["dispatch_quant_config"] = quant_config
 
             ep_config = EPConfig(**ep_kwargs)
-
-        # Determine data_parallel_degree: EP requires data-parallel attention
-        if ep_config is not None:
-            # When EP is used, data parallelism is required for attention
-            data_parallel_degree = len(self.devices)
-        else:
-            # Use the configured value from pipeline_config
-            data_parallel_degree = (
-                self.pipeline_config.model.data_parallel_degree
-            )
 
         norm_dtype = state_dict[
             "language_model.layers.0.self_attn.kv_a_layernorm.weight"
@@ -278,19 +281,26 @@ class KimiK2_5Model(
         model_config.norm_dtype = norm_dtype
         model_config.correction_bias_dtype = correction_bias_dtype
         model_config.max_batch_context_length = max_batch_total_tokens
-        model_config.float8_config = float8_config
+        model_config.quant_config = quant_config
         model_config.ep_config = ep_config
         model_config.graph_mode = graph_mode
         model_config.data_parallel_degree = data_parallel_degree
         model_config.return_logits = self.return_logits
         model_config.return_hidden_states = self.return_hidden_states
 
+        if ep_size > 1:
+            attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
+            logger.info(
+                f"KimiK2_5: data_parallel_degree={data_parallel_degree},"
+                f" ep_size={ep_size}. Use {attn_strategy}-attention + EP-MoE"
+                f" strategy."
+            )
+
         return model_config
 
     @classmethod
     def estimate_weights_size(cls, pipeline_config: PipelineConfig) -> int:
         """Calculates the estimated memory consumption of our model."""
-
         model_config = pipeline_config.model
         weights_size = model_config.weights_size()
         n_gpus_per_node = len(model_config.device_specs)
@@ -398,6 +408,7 @@ class KimiK2_5Model(
         assert encoding is not None
         mla_activation_memory: int = 0
         moe_activation_memory: int = 0
+        ep_buffer_memory = 0
 
         # During the prefill, we need to up-project all the KV cache for
         # current requests. The total context length of requests in a batch
@@ -420,17 +431,25 @@ class KimiK2_5Model(
                 * pipeline_config.model.kv_cache.cache_dtype.size_in_bytes
             )
 
-        # Estimate activation memory during Expert Parallel MoE.
+        # Estimate buffer and activation memory during Expert Parallel MoE.
         if pipeline_config.runtime.ep_size > 1:
             n_gpus_per_node = len(pipeline_config.model.device_specs)
-            max_input_len_per_rank = (
-                pipeline_config.runtime.max_batch_input_tokens
+
+            # With a mixed TP-attention + EP-MoE strategy, the attention output
+            # will be scattered across ranks, so each rank will only send a
+            # subset of the tokens.
+            attn_tp_size = (
+                pipeline_config.runtime.ep_size
+                // pipeline_config.model.data_parallel_degree
+            )
+            ep_max_rank_send_tokens = (
+                pipeline_config.runtime.max_batch_input_tokens // attn_tp_size
             )
 
             # Calculate the maximum number of tokens a rank may receive during
             # all-to-all routing. Each token selects top_k experts, and in the
             # worst case all selections land on one rank.
-            max_recv_tokens_per_rank = max_input_len_per_rank * min(
+            max_recv_tokens_per_rank = ep_max_rank_send_tokens * min(
                 huggingface_config.text_config.n_routed_experts,
                 pipeline_config.runtime.ep_size
                 * huggingface_config.text_config.num_experts_per_tok,
@@ -454,26 +473,17 @@ class KimiK2_5Model(
 
             # Adding 256MB per GPU to account for misc items (e.g. FP8 scalars).
             moe_activation_memory += 256 * 1024 * 1024
-
             moe_activation_memory *= n_gpus_per_node
 
-        # We only need to consider the maximum of the MLA and MoE activation
-        # memories, because the MLA and MoE layers are executed sequentially.
-        activation_memory = max(mla_activation_memory, moe_activation_memory)
-
-        # EP SHMEM communication buffers are persistent (allocated once at
-        # model init, not freed between layers), so add on top of the
-        # per-layer activation peak.
-        ep_buffer_memory = 0
-        if pipeline_config.runtime.ep_size > 1:
-            n_gpus_per_node = len(pipeline_config.model.device_specs)
+            # EP SHMEM communication buffers are persistent (allocated once at
+            # model init, not freed between layers).
             n_nodes = pipeline_config.runtime.ep_size // n_gpus_per_node
 
             per_device_ep_memory = estimate_ep_memory_usage(
                 hidden_size=huggingface_config.text_config.hidden_size,
                 dispatch_dtype=supported_encoding_dtype(encoding),
                 combine_dtype=DType.bfloat16,
-                max_tokens_per_rank=pipeline_config.runtime.max_batch_input_tokens,
+                max_tokens_per_rank=ep_max_rank_send_tokens,
                 n_experts=huggingface_config.text_config.n_routed_experts,
                 n_nodes=n_nodes,
                 n_gpus_per_node=n_gpus_per_node,
@@ -486,6 +496,9 @@ class KimiK2_5Model(
                 f"{to_human_readable_bytes(ep_buffer_memory)}"
             )
 
+        # We only need to consider the maximum of the MLA and MoE activation
+        # memories, because the MLA and MoE layers are executed sequentially.
+        activation_memory = max(mla_activation_memory, moe_activation_memory)
         activation_memory += ep_buffer_memory
 
         if activation_memory != 0:
@@ -495,7 +508,7 @@ class KimiK2_5Model(
 
         return activation_memory
 
-    def load_model(self, session: InferenceSession) -> Model:
+    def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Load the model with the given weights."""
 
         max_batch_size = self.pipeline_config.runtime.max_batch_size
@@ -571,14 +584,25 @@ class KimiK2_5Model(
             llm_config=config,
         )
         self.model_config = kimik2_5_config
-        config.use_subgraphs = False  # subgraphs assume to weights prefix, which leads to misplaced weights in a composite model
         self.nn_model = KimiK2_5(self.model_config)
         self.nn_model.load_state_dict(
             state_dict, weight_alignment=1, strict=True
         )
         self.state_dict = self.nn_model.state_dict()
+        logger.info("Loaded Weigths")
 
-        # Create the graph
+        # Load the vision model.
+        timer = CompilationTimer("vision model")
+        vision_graph = self._build_vision_graph(
+            kimik2_5_config, vision_state_dict
+        )
+        timer.mark_build_complete()
+        vision_model = session.load(
+            vision_graph, weights_registry=self.state_dict
+        )
+        timer.done()
+
+        # Load the language model.
         timer = CompilationTimer("language model")
         language_graph = self._build_language_graph(config)
         timer.mark_build_complete()
@@ -587,7 +611,7 @@ class KimiK2_5Model(
         )
         timer.done()
 
-        return language_model
+        return vision_model, language_model
 
     def _build_vision_graph(
         self, config: KimiK2_5Config, state_dict: dict[str, WeightData]
@@ -597,16 +621,22 @@ class KimiK2_5Model(
         vision_encoder = self.nn_model.vision_encoder
 
         # Define vision graph input types - one per device
+        # pixel_values are raw NCHW patches fed into PatchEmbedding's Conv2d.
         pixel_values_types = [
             TensorType(
-                DType.float32,
-                shape=["vision_seq_len", config.vision_config.vt_hidden_size],
+                config.vision_config.dtype,
+                shape=[
+                    "n_patches",
+                    config.vision_config.in_channels,
+                    config.vision_config.patch_size,
+                    config.vision_config.patch_size,
+                ],
                 device=DeviceRef.from_device(device),
             )
             for device in self.devices
         ]
 
-        grid_thw_types = [
+        grid_thws_types = [
             TensorType(
                 DType.int64,
                 shape=["n_images", 3],
@@ -635,8 +665,8 @@ class KimiK2_5Model(
 
         vision_rot_pos_ids_types = [
             TensorType(
-                DType.int32,
-                shape=["vision_seq_len", 2],
+                DType.int64,
+                shape=["n_patches"],
                 device=DeviceRef.from_device(device),
             )
             for device in self.devices
@@ -648,27 +678,17 @@ class KimiK2_5Model(
         )
         signal_buffer_types: list[BufferType] = signals.input_types()
 
-        max_grid_size_types = [
-            TensorType(
-                DType.int32,
-                shape=[],
-                device=DeviceRef.CPU(),
-            )
-            for _ in self.devices
-        ]
-
         # Build the vision graph
         with Graph(
-            "kimik2_5_vision",
+            "kimik2_5_vision_graph",
             input_types=tuple(
                 [
                     *pixel_values_types,
-                    *grid_thw_types,
+                    *grid_thws_types,
                     *cu_seqlens_types,
                     *max_seqlen_types,
                     *vision_rot_pos_ids_types,
                     *signal_buffer_types,
-                    *max_grid_size_types,
                 ]
             ),
         ) as graph:
@@ -679,7 +699,7 @@ class KimiK2_5Model(
             pixel_values_list = [inp.tensor for inp in all_inputs[:n_devices]]
             all_inputs = all_inputs[n_devices:]
 
-            grid_thw_list = [inp.tensor for inp in all_inputs[:n_devices]]
+            grid_thws_list = [inp.tensor for inp in all_inputs[:n_devices]]
             all_inputs = all_inputs[n_devices:]
 
             cu_seqlens_list = [inp.tensor for inp in all_inputs[:n_devices]]
@@ -691,56 +711,38 @@ class KimiK2_5Model(
             rot_pos_ids_list = [inp.tensor for inp in all_inputs[:n_devices]]
             all_inputs = all_inputs[n_devices:]
 
-            signal_buffers = [inp.buffer for inp in all_inputs]
-
-            max_grid_size_list = [inp.tensor for inp in all_inputs[:n_devices]]
-            all_inputs = all_inputs[n_devices:]
+            n_signal_buffers = len(signal_buffer_types)
+            signal_buffers = [
+                inp.buffer for inp in all_inputs[:n_signal_buffers]
+            ]
+            # total_output_patches must be a static int: tpool_patch_merger has
+            # no mogg.shape function so dynamic string dims are unsupported.
+            # Use max_batch_input_tokens as an upper bound — each merged image
+            # patch corresponds to one image token in the LLM sequence.
+            total_output_patches: int = (
+                self.pipeline_config.runtime.max_batch_input_tokens
+                * prod(self.model_config.vision_config.merge_kernel_size)
+            )
 
             # Execute vision transformer (includes patch merger projection).
+            # max_h and max_w are computed at runtime inside Transformer.__call__
+            # from the grid_thws input via ops.max.
             image_embeddings = vision_encoder(
                 pixel_values=pixel_values_list,
-                grid_thw=grid_thw_list,
-                cu_seqlens=cu_seqlens_list,
-                max_seqlen=max_seqlen_list,
-                rot_pos_ids=rot_pos_ids_list,
+                grid_thws=grid_thws_list,
+                input_row_offsets=cu_seqlens_list,
+                max_seq_len=max_seqlen_list,
+                position_ids=rot_pos_ids_list,
                 signal_buffers=signal_buffers,
-                max_grid_size=max_grid_size_list,
+                total_output_patches=total_output_patches,
             )
             assert image_embeddings is not None, (
                 "Vision encoder must return a valid output"
             )
 
-            graph.output(image_embeddings)
+            graph.output(*image_embeddings)
 
             return graph
-
-    def _unflatten_kv_inputs(
-        self,
-        kv_inputs_flat: Sequence[Value[Any]],
-        kv_params: KVCacheParamInterface | None = None,
-    ) -> list[PagedCacheValues]:
-        kv_params = kv_params or self.get_kv_params(
-            huggingface_config=self.huggingface_config,
-            pipeline_config=self.pipeline_config,
-            devices=[DeviceRef.from_device(d) for d in self.devices],
-            kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
-        )
-        n_devices = kv_params.n_devices
-        fetch_types = kv_params.get_symbolic_inputs()[0]
-        len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(n_devices):
-            start_idx = i * len_of_kv_tuple_per_dev
-            kv_caches_per_dev.append(
-                PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-                )
-            )
-        return kv_caches_per_dev
 
     def _build_language_graph(self, config: KimiK2_5TextConfig) -> Graph:
         """Build the language model graph for text generation with image embeddings."""
@@ -750,17 +752,20 @@ class KimiK2_5Model(
 
         # Create the graph
         with Graph(
-            "deepseekV3_graph",
+            "kimik2_5_language_graph",
             input_types=language_model.input_types(self.kv_params),
         ) as graph:
+            n = len(self.devices)
+            tokens, all_inputs = graph.inputs[0], graph.inputs[1:]
+            image_embeddings, all_inputs = all_inputs[:n], all_inputs[n:]
+            image_token_indices, all_inputs = all_inputs[:n], all_inputs[n:]
             (
-                tokens,
                 devices_input_row_offsets,
                 host_input_row_offsets,
                 return_n_logits,
                 data_parallel_splits,
                 *variadic_args,
-            ) = graph.inputs
+            ) = all_inputs
 
             variadic_args_iter = iter(variadic_args)
             # Multi-GPU passes a signal buffer per device: unmarshal these.
@@ -786,20 +791,44 @@ class KimiK2_5Model(
             ep_model_inputs = list(variadic_args_iter)
 
             outputs = language_model(
-                tokens.tensor,
-                signal_buffers,
-                kv_caches_per_dev,
-                return_n_logits.tensor,
-                devices_input_row_offsets.tensor,
-                host_input_row_offsets.tensor,
-                data_parallel_splits.tensor,
-                batch_context_lengths,
-                ep_model_inputs,
+                tokens=tokens.tensor,
+                image_embeddings=[v.tensor for v in image_embeddings],
+                image_token_indices=[v.tensor for v in image_token_indices],
+                signal_buffers=signal_buffers,
+                kv_collections=kv_caches_per_dev,
+                return_n_logits=return_n_logits.tensor,
+                input_row_offsets=devices_input_row_offsets.tensor,
+                host_input_row_offsets=host_input_row_offsets.tensor,
+                data_parallel_splits=data_parallel_splits.tensor,
+                batch_context_lengths=batch_context_lengths,
+                ep_inputs=ep_model_inputs,
             )
 
             graph.output(*outputs)
 
         return graph
+
+    @cached_property
+    def _empty_image_embeddings(
+        self,
+    ) -> list[Buffer]:
+        """Create empty image embeddings for text-only inputs on multi-device."""
+        image_embeddings = Buffer.zeros(
+            shape=[
+                0,
+                self.huggingface_config.text_config.hidden_size,
+            ],
+            dtype=DType.bfloat16,
+        ).to(self.devices)
+        return image_embeddings
+
+    @cached_property
+    def _empty_image_image_token_indices(self) -> list[Buffer]:
+        """Create empty image scatter indices for text-only inputs on multi-device."""
+        return Buffer.zeros(
+            shape=[0],
+            dtype=DType.int32,
+        ).to(self.devices)
 
     def execute(
         self,
@@ -809,15 +838,13 @@ class KimiK2_5Model(
         assert model_inputs.kv_cache_inputs is not None, (
             "KimiK2_5 requires KV cache inputs"
         )
-
         if model_inputs.has_vision_inputs:
             assert model_inputs.image_token_indices is not None
             assert model_inputs.pixel_values is not None
             assert model_inputs.vision_position_ids is not None
-            assert model_inputs.max_grid_size is not None
             assert model_inputs.cu_seqlens is not None
             assert model_inputs.max_seqlen is not None
-            assert model_inputs.grid_thw is not None
+            assert model_inputs.grid_thws is not None
 
             assert self.model_config is not None, (
                 "Model config must be initialized"
@@ -825,13 +852,12 @@ class KimiK2_5Model(
 
             image_embeddings = self.vision_model.execute(
                 *model_inputs.pixel_values,
-                *model_inputs.grid_thw,
+                *model_inputs.grid_thws,
                 *model_inputs.cu_seqlens,
                 *model_inputs.max_seqlen,
                 *model_inputs.vision_position_ids,
                 *model_inputs.signal_buffers,
-                *model_inputs.max_grid_size,
-            )  # output should be projected via multimodal_projector as part of vision_graph
+            )
 
             assert len(image_embeddings) == len(self.devices)
             # assert image embeddings have the same hidden size as language model
@@ -841,48 +867,75 @@ class KimiK2_5Model(
                     output.shape[1]
                     == self.huggingface_config.text_config.hidden_size
                 )
+            # Vision graph outputs [upper_bound, D]; slice to actual num patches for this batch.
+            # Cast to bfloat16 so to_numpy() works (DLPack may not support e.g. float8), then copy prefix.
+            grid_np = model_inputs.grid_thws[
+                0
+            ].to_numpy()  # (n_images, 3) with (T, H, W)
+            actual_num_patches = int(
+                np.sum(grid_np[:, 1] * grid_np[:, 2])
+            ) // prod(self.model_config.vision_config.merge_kernel_size)
+            hidden_size = image_embeddings[0].shape[1]
+            image_embeddings = [
+                cast_tensor_to(
+                    Buffer.from_numpy(
+                        cast_tensor_to(emb, DType.float32, session=self.session)
+                        .to_numpy()[:actual_num_patches, :]
+                        .copy()
+                    ),
+                    DType.bfloat16,
+                    session=self.session,
+                ).to(emb.device)
+                for emb in image_embeddings
+            ]
+            assert (
+                model_inputs.image_token_indices[0].shape[0]
+                == image_embeddings[0].shape[0]
+            ), (
+                f"The size of scatter indices must match the number of image embeddings. Got: {model_inputs.image_token_indices[0].shape[0]} != {image_embeddings[0].shape[0]}"
+            )
+        else:
+            # Initialize empty tensors for text-only mode
+            image_embeddings = self._empty_image_embeddings
+            image_token_indices = self._empty_image_image_token_indices
 
-        model_outputs = self.language_model.execute(*model_inputs.buffers)
+        model_outputs = self.language_model.execute(
+            model_inputs.tokens,
+            *image_embeddings,
+            *(model_inputs.image_token_indices or image_token_indices),
+            model_inputs.input_row_offsets,
+            model_inputs.host_input_row_offsets,
+            model_inputs.return_n_logits,
+            model_inputs.data_parallel_splits,
+            *model_inputs.signal_buffers,
+            *(model_inputs.kv_cache_inputs or ()),
+            *model_inputs.batch_context_lengths,
+            *model_inputs.ep_inputs,
+        )
+
         return self._process_model_outputs(model_outputs)
 
     def _process_model_outputs(
         self, model_outputs: list[Buffer]
     ) -> ModelOutputs:
-        num_hidden_state_outputs = len(self.devices)
         num_outputs = len(model_outputs)
 
         # Possible output configurations:
-        # - 1 output: next_token_logits only
+        # - 4 outputs: next_token_logits, logits, logit_offsets + hidden_states
         # - 3 outputs: next_token_logits, logits, logit_offsets (variable logits)
-        # - 1 + N: next_token_logits + hidden_states (one per device)
-        # - 3 + N: next_token_logits, logits, logit_offsets + hidden_states (one per device)
+        # - 2 outputs: next_token_logits + hidden_states
+        # - 1 output: next_token_logits only
 
-        if num_outputs == 3 + num_hidden_state_outputs:
+        if num_outputs == 4:
             assert isinstance(model_outputs[0], Buffer)
             assert isinstance(model_outputs[1], Buffer)
             assert isinstance(model_outputs[2], Buffer)
-            hidden_states_list: list[Buffer] = []
-            for i in range(num_hidden_state_outputs):
-                hs = model_outputs[3 + i]
-                assert isinstance(hs, Buffer)
-                hidden_states_list.append(hs)
+            assert isinstance(model_outputs[3], Buffer)
             return ModelOutputs(
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[1],
                 logit_offsets=model_outputs[2],
-                hidden_states=hidden_states_list,
-            )
-        elif num_outputs == 1 + num_hidden_state_outputs:
-            assert isinstance(model_outputs[0], Buffer)
-            hidden_states_list = []
-            for i in range(num_hidden_state_outputs):
-                hs = model_outputs[1 + i]
-                assert isinstance(hs, Buffer)
-                hidden_states_list.append(hs)
-            return ModelOutputs(
-                next_token_logits=model_outputs[0],
-                logits=model_outputs[0],
-                hidden_states=hidden_states_list,
+                hidden_states=model_outputs[3],
             )
         elif num_outputs == 3:
             assert isinstance(model_outputs[0], Buffer)
@@ -893,6 +946,14 @@ class KimiK2_5Model(
                 logits=model_outputs[1],
                 logit_offsets=model_outputs[2],
             )
+        elif num_outputs == 2:
+            assert isinstance(model_outputs[0], Buffer)
+            assert isinstance(model_outputs[1], Buffer)
+            return ModelOutputs(
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[0],
+                hidden_states=model_outputs[1],
+            )
         else:
             assert isinstance(model_outputs[0], Buffer)
             return ModelOutputs(
@@ -900,9 +961,107 @@ class KimiK2_5Model(
                 logits=model_outputs[0],
             )
 
+    def _prepare_vision_inputs(
+        self,
+        context_batch: Sequence[KimiK2_5TextAndVisionContext],
+    ) -> dict[str, list[Buffer]] | None:
+        """Assemble per-device vision ``Buffer``s from a batch of contexts.
+
+        All per-image quantities (``position_ids``, ``image_token_indices``)
+        are precomputed by the tokenizer and stored on each context. This
+        method only aggregates them across the batch and converts to device
+        ``Buffer``s.
+
+        Args:
+            context_batch: Flat sequence of contexts for a single replica.
+
+        Returns:
+            Dictionary of named per-device ``Buffer`` lists ready to populate
+            a ``KimiK2_5ModelInputs``, or ``None`` when no context in the
+            batch contains images.
+        """
+        contexts_with_images = [ctx for ctx in context_batch if ctx.images]
+        if not contexts_with_images:
+            return None
+
+        # Concatenate raw pixel patches across all images in the batch.
+        all_pixel_values = np.concatenate(
+            [
+                img.pixel_values
+                for ctx in contexts_with_images
+                for img in ctx.images
+            ],
+            axis=0,
+        )
+
+        # Stack (t, h, w) grids for every image. shape: (total_n_images, 3).
+        all_grid_thws_np = np.vstack(
+            [ctx.grid_thws for ctx in contexts_with_images]
+        ).astype(np.int64)
+
+        # Cumulative patch-sequence lengths for packed full-attention.
+        seq_lens = [int(np.prod(g)) for g in all_grid_thws_np]
+        cu_seqlens_np = np.zeros(len(seq_lens) + 1, dtype=np.uint32)
+        np.cumsum(seq_lens, out=cu_seqlens_np[1:])
+
+        max_seqlen_np = np.array([max(seq_lens)], dtype=np.uint32)
+
+        # RoPE position IDs — precomputed per-context by the tokenizer.
+        position_ids_np = np.concatenate(
+            [ctx.position_ids for ctx in contexts_with_images]
+        ).astype(np.int64)
+
+        # Image-placeholder positions in the flattened batch token sequence.
+        # Per-context indices are relative to each context's own buffer, so
+        # adjust by the cumulative token offset as we iterate.
+        token_offset = 0
+        image_token_index_chunks: list[npt.NDArray[np.int32]] = []
+        for ctx in context_batch:
+            if ctx.image_token_indices.size > 0:
+                image_token_index_chunks.append(
+                    ctx.image_token_indices + token_offset
+                )
+            token_offset += ctx.tokens.active_length
+        image_token_indices_np = (
+            np.concatenate(image_token_index_chunks)
+            if image_token_index_chunks
+            else np.empty(0, dtype=np.int32)
+        )
+
+        device0 = self.devices[0]
+        vision_dtype = self.model_config.vision_config.dtype
+        # GPU-backed vision inputs: create on device0, cast to vision dtype, then replicate
+        pixel_values_f32 = Buffer.from_numpy(all_pixel_values).to(device0)
+        pixel_values_buf = (
+            pixel_values_f32
+            if pixel_values_f32.dtype == vision_dtype
+            else cast_tensor_to(
+                pixel_values_f32, vision_dtype, session=self.session
+            )
+        )
+        grid_thws_buf = Buffer.from_numpy(all_grid_thws_np).to(device0)
+        cu_seqlens_buf = Buffer.from_numpy(cu_seqlens_np).to(device0)
+        vision_position_ids_buf = Buffer.from_numpy(position_ids_np).to(device0)
+        image_token_indices_buf = Buffer.from_numpy(image_token_indices_np).to(
+            device0
+        )
+        max_seqlen_buf = Buffer.from_numpy(max_seqlen_np)
+        return {
+            "pixel_values": [pixel_values_buf.to(d) for d in self.devices],
+            "grid_thws": [grid_thws_buf.to(d) for d in self.devices],
+            "cu_seqlens": [cu_seqlens_buf.to(d) for d in self.devices],
+            "max_seqlen": [max_seqlen_buf for _ in self.devices],
+            "vision_position_ids": [
+                vision_position_ids_buf.to(d) for d in self.devices
+            ],
+            "image_token_indices": [
+                image_token_indices_buf.to(d) for d in self.devices
+            ],
+        }
+
     def prepare_initial_token_inputs(
         self,
-        replica_batches: Sequence[Sequence[TextContext]],
+        replica_batches: Sequence[Sequence[KimiK2_5TextAndVisionContext]],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> KimiK2_5ModelInputs:
@@ -1029,6 +1188,8 @@ class KimiK2_5Model(
             else tuple(self.ep_comm_initializer.model_inputs())
         )
 
+        vision_inputs = self._prepare_vision_inputs(context_batch)
+
         return KimiK2_5ModelInputs(
             tokens=tokens,
             input_row_offsets=device_input_row_offsets,
@@ -1041,6 +1202,24 @@ class KimiK2_5Model(
             ),
             data_parallel_splits=data_parallel_splits,
             ep_inputs=ep_inputs,
+            pixel_values=vision_inputs["pixel_values"]
+            if vision_inputs is not None
+            else None,
+            grid_thws=vision_inputs["grid_thws"]
+            if vision_inputs is not None
+            else None,
+            cu_seqlens=vision_inputs["cu_seqlens"]
+            if vision_inputs is not None
+            else None,
+            max_seqlen=vision_inputs["max_seqlen"]
+            if vision_inputs is not None
+            else None,
+            vision_position_ids=vision_inputs["vision_position_ids"]
+            if vision_inputs is not None
+            else None,
+            image_token_indices=vision_inputs["image_token_indices"]
+            if vision_inputs is not None
+            else None,
         )
 
     def prepare_next_token_inputs(
@@ -1048,7 +1227,7 @@ class KimiK2_5Model(
         next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
     ) -> KimiK2_5ModelInputs:
-        assert isinstance(prev_model_inputs, DeepseekV3Inputs)
+        assert isinstance(prev_model_inputs, KimiK2_5ModelInputs)
         row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
         next_row_offsets = self._device_input_row_offsets_prealloc[
             :row_offsets_size

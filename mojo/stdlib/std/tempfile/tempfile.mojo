@@ -37,7 +37,7 @@ comptime TMP_MAX = 10_000
 """Maximum number of attempts when generating unique temporary file names."""
 
 
-fn _get_random_name(size: Int = 8) -> String:
+def _get_random_name(size: Int = 8) -> String:
     comptime characters = "abcdefghijklmnopqrstuvwxyz0123456789_"
     var name = String(capacity=size)
     for _ in range(size):
@@ -48,7 +48,7 @@ fn _get_random_name(size: Int = 8) -> String:
     return name^
 
 
-fn _candidate_tempdir_list() -> List[String]:
+def _candidate_tempdir_list() -> List[String]:
     """Generate a list of candidate temporary directories which
     _get_default_tempdir will try."""
 
@@ -74,7 +74,7 @@ fn _candidate_tempdir_list() -> List[String]:
     return dirlist^
 
 
-fn _get_default_tempdir() raises -> String:
+def _get_default_tempdir() raises -> String:
     """Calculate the default directory to use for temporary files.
 
     We determine whether or not a candidate temp dir is usable by
@@ -93,7 +93,7 @@ fn _get_default_tempdir() raises -> String:
     raise Error("No usable temporary directory found")
 
 
-fn _try_to_create_file(dir: StringSlice) -> Bool:
+def _try_to_create_file(dir: StringSlice) -> Bool:
     for _ in range(TMP_MAX):
         var name = _get_random_name()
         # TODO use os.join when it exists
@@ -120,7 +120,7 @@ fn _try_to_create_file(dir: StringSlice) -> Bool:
     return False
 
 
-fn gettempdir() -> Optional[String]:
+def gettempdir() -> Optional[String]:
     """Return the default directory to use for temporary files.
 
     Returns:
@@ -143,7 +143,7 @@ fn gettempdir() -> Optional[String]:
         return None
 
 
-fn mkdtemp(
+def mkdtemp(
     suffix: String = "", prefix: String = "tmp", dir: Optional[String] = None
 ) raises -> String:
     """Create a temporary directory.
@@ -191,7 +191,7 @@ fn mkdtemp(
 
 
 # TODO use shutil.rmtree (or equivalent) when it exists
-fn _rmtree(path: String, ignore_errors: Bool = False) raises:
+def _rmtree(path: String, ignore_errors: Bool = False) raises:
     """Removes the specified directory and all its contents.
 
     If the path is a symbolic link, an error is raised. If ignore_errors is
@@ -271,7 +271,7 @@ struct TemporaryDirectory:
     var _ignore_cleanup_errors: Bool
     """Whether to ignore cleanup errors."""
 
-    fn __init__(
+    def __init__(
         out self,
         suffix: String = "",
         prefix: String = "tmp",
@@ -296,7 +296,7 @@ struct TemporaryDirectory:
 
         self.name = mkdtemp(suffix, prefix, dir)
 
-    fn __enter__(self) -> String:
+    def __enter__(self) -> String:
         """The function to call when entering the context.
 
         Returns:
@@ -304,7 +304,7 @@ struct TemporaryDirectory:
         """
         return self.name
 
-    fn __exit__(self) raises:
+    def __exit__(self) raises:
         """Called when exiting the context with no error.
 
         Raises:
@@ -312,7 +312,7 @@ struct TemporaryDirectory:
         """
         _rmtree(self.name, ignore_errors=self._ignore_cleanup_errors)
 
-    fn __exit__(self, err: Error) -> Bool:
+    def __exit__(self, err: Error) -> Bool:
         """Called when exiting the context with an error.
 
         Args:
@@ -354,7 +354,7 @@ struct NamedTemporaryFile(Movable):
     var name: String
     """Name of the file."""
 
-    fn __init__(
+    def __init__(
         out self,
         mode: String = "w",
         name: Optional[String] = None,
@@ -412,14 +412,14 @@ struct NamedTemporaryFile(Movable):
         except:
             raise Error("Failed to create temporary file")
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Closes the file handle."""
         try:
             self.close()
         except:
             pass
 
-    fn close(mut self) raises:
+    def close(mut self) raises:
         """Closes the file handle.
 
         Raises:
@@ -447,7 +447,7 @@ struct NamedTemporaryFile(Movable):
         if self._delete:
             std.os.remove(self.name)
 
-    fn read(self, size: Int = -1) raises -> String:
+    def read(self, size: Int = -1) raises -> String:
         """Reads the data from the file.
 
         Args:
@@ -478,7 +478,7 @@ struct NamedTemporaryFile(Movable):
         """
         return self._file_handle.read(size)
 
-    fn read_bytes(self, size: Int = -1) raises -> List[UInt8]:
+    def read_bytes(self, size: Int = -1) raises -> List[UInt8]:
         """Read from file buffer until we have `size` characters or we hit EOF.
         If `size` is negative or omitted, read until EOF.
 
@@ -516,7 +516,7 @@ struct NamedTemporaryFile(Movable):
         """
         return self._file_handle.read_bytes(size)
 
-    fn seek(
+    def seek(
         self, offset: UInt64, whence: UInt8 = std.os.SEEK_SET
     ) raises -> UInt64:
         """Seeks to the given offset in the file.
@@ -556,7 +556,7 @@ struct NamedTemporaryFile(Movable):
         """
         return self._file_handle.seek(offset, whence)
 
-    fn write[*Ts: Writable](mut self, *args: *Ts):
+    def write[*Ts: Writable](mut self, *args: *Ts):
         """Write a sequence of Writable arguments to the provided Writer.
 
         Parameters:
@@ -589,7 +589,7 @@ struct NamedTemporaryFile(Movable):
         buffer.flush()
 
     @always_inline
-    fn write_bytes(mut self, bytes: Span[Byte, _]):
+    def write_bytes(mut self, bytes: Span[Byte, _]):
         """
         Write a span of bytes to the file.
 
@@ -616,7 +616,7 @@ struct NamedTemporaryFile(Movable):
         """
         self._file_handle.write_bytes(bytes)
 
-    fn __enter__(var self) -> Self:
+    def __enter__(var self) -> Self:
         """The function to call when entering the context.
 
         Returns:

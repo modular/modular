@@ -34,7 +34,7 @@ from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheBackend
-from tests.serve.conftest import DEFAULT_ZMQ_ENDPOINT_BASE
+from tests.serve.conftest import async_timeout
 
 
 @dataclass(frozen=True)
@@ -87,9 +87,14 @@ async def test_client(app: FastAPI) -> AsyncGenerator[TestClient, None]:
 
 @pytest.mark.parametrize("enable_prefix_caching", [True], indirect=True)
 @pytest.mark.asyncio
+@async_timeout(10)
 async def test_reset_prefix_cache(test_client: TestClient) -> None:
+    # Don't use hardcoded endpoint, since it collides during parallel test runs
+    zmq_endpoint_base = (
+        test_client.application.state.pipeline_config.runtime.zmq_endpoint_base
+    )
     reset_prefix_cache_backend = ResetPrefixCacheBackend(
-        zmq_endpoint_base=DEFAULT_ZMQ_ENDPOINT_BASE
+        zmq_endpoint_base=zmq_endpoint_base
     )
     assert not reset_prefix_cache_backend.should_reset_prefix_cache()
     response = await test_client.post("/reset_prefix_cache")
@@ -103,6 +108,7 @@ async def test_reset_prefix_cache(test_client: TestClient) -> None:
 
 @pytest.mark.parametrize("enable_prefix_caching", [True], indirect=True)
 @pytest.mark.asyncio
+@async_timeout(10)
 async def test_reset_prefix_cache_get_returns_405_error(
     test_client: TestClient,
 ) -> None:
@@ -114,6 +120,7 @@ async def test_reset_prefix_cache_get_returns_405_error(
 
 @pytest.mark.parametrize("enable_prefix_caching", [False], indirect=True)
 @pytest.mark.asyncio
+@async_timeout(10)
 async def test_reset_prefix_cache_returns_400_error(
     test_client: TestClient,
 ) -> None:

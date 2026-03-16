@@ -28,7 +28,7 @@ from shmem import *
 from std.testing import assert_equal
 
 
-fn ring_bcast(
+def ring_bcast(
     data: UnsafePointer[c_int, MutAnyOrigin],
     nelem: Int,
     root: c_int,

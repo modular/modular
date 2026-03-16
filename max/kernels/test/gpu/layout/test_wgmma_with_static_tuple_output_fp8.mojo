@@ -36,7 +36,7 @@ from layout.tensor_core_async import (
 from std.utils import StaticTuple
 
 
-fn wgmma_kernel_ss[
+def wgmma_kernel_ss[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -120,7 +120,7 @@ fn wgmma_kernel_ss[
         ]()
 
 
-fn wgmma_e4m3_e4m3_f32[
+def wgmma_e4m3_e4m3_f32[
     M: Int,
     N: Int,
     K: Int,
@@ -135,9 +135,11 @@ fn wgmma_e4m3_e4m3_f32[
         sep="",
     )
 
-    comptime static_a_shape = DimList(M, K)
-    comptime static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
-    comptime static_c_shape = DimList(M, N)
+    comptime static_a_shape = DimList[M, K]()
+    comptime static_b_shape = DimList[
+        N if transpose_b else K, K if transpose_b else N
+    ]()
+    comptime static_c_shape = DimList[M, N]()
 
     var a_host_ptr = alloc[Scalar[DType.float8_e4m3fn]](M * K)
     var a_host = NDBuffer[rank=2, DType.float8_e4m3fn, _, static_a_shape](
@@ -232,7 +234,7 @@ fn wgmma_e4m3_e4m3_f32[
         # TODO: Matrix B should always be in col-major layout for cublasLt to work
         var b_host_col_major_ptr = alloc[Scalar[DType.float8_e4m3fn]](N * K)
         var b_host_col_major = NDBuffer[
-            rank=2, DType.float8_e4m3fn, _, DimList(N, K)
+            rank=2, DType.float8_e4m3fn, _, DimList[N, K]()
         ](b_host_col_major_ptr)
 
         for i in range(N):
@@ -243,7 +245,7 @@ fn wgmma_e4m3_e4m3_f32[
             N * K
         )
         var b_device_col_major_nd = NDBuffer[
-            rank=2, DType.float8_e4m3fn, _, DimList(N, K)
+            rank=2, DType.float8_e4m3fn, _, DimList[N, K]()
         ](b_device_col_major.unsafe_ptr())
         ctx.enqueue_copy(b_device_col_major, b_host_col_major_ptr)
 

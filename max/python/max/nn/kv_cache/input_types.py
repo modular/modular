@@ -28,7 +28,6 @@ from typing import (
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, BufferValue, TensorType, TensorValue, Value
-from max.nn.kv_cache.utils import AttentionDispatchMetadataScalars
 from typing_extensions import TypeVar
 
 logger = logging.getLogger("max.pipelines")
@@ -69,6 +68,12 @@ class NestedIterableDataclass(Generic[T]):
         return list(self)[index]
 
     def flatten(self) -> list[T]:
+        """Returns all leaf values as a flat list.
+
+        Returns:
+            A list containing every non-``None`` leaf value yielded by
+            iterating this dataclass.
+        """
         return list(self)
 
 
@@ -85,6 +90,14 @@ class AttentionDispatchMetadata(
     NestedIterableDataclass[_DispatchMetadataT],
     Generic[_DispatchMetadataT],
 ):
+    """Wraps the scalar attention dispatch metadata tensor for a single device.
+
+    The wrapped ``tensor`` must have dtype ``int64`` and rank 1. It encodes
+    the four dispatch scalars consumed by ragged decode kernels: batch size,
+    maximum query sequence length, number of partitions, and maximum cache
+    valid length.
+    """
+
     tensor: _DispatchMetadataT
 
     def __post_init__(self) -> None:
@@ -102,6 +115,8 @@ class AttentionDispatchMetadata(
 
 @dataclass
 class PagedCacheInputSymbols(IterableInputSymbols):
+    """Symbolic graph input types for a single device's paged KV cache."""
+
     kv_blocks: BufferType
     cache_lengths: TensorType
     lookup_table: TensorType
@@ -112,6 +127,8 @@ class PagedCacheInputSymbols(IterableInputSymbols):
 
 @dataclass
 class PagedCacheValues(NestedIterableDataclass[BufferValue | TensorValue]):
+    """Concrete graph values for a single device's paged KV cache."""
+
     kv_blocks: BufferValue
     cache_lengths: TensorValue
     lookup_table: TensorValue
@@ -197,6 +214,19 @@ def attention_dispatch_metadata(
     *,
     device_idx: int | None = None,
 ) -> AttentionDispatchMetadata[TensorValue]:
+    """Extracts the :class:`AttentionDispatchMetadata` from a KV collection.
+
+    Args:
+        kv_collection: The paged KV cache values to extract metadata from.
+        device_idx: Optional device index included in the error message when
+            ``dispatch_metadata`` is ``None``.
+
+    Returns:
+        The :class:`AttentionDispatchMetadata` stored on the collection.
+
+    Raises:
+        ValueError: If ``kv_collection.dispatch_metadata`` is ``None``.
+    """
     dispatch_metadata = kv_collection.dispatch_metadata
     if dispatch_metadata is not None:
         return dispatch_metadata
@@ -211,6 +241,18 @@ def attention_dispatch_metadata(
 def attention_dispatch_metadata_list(
     kv_collections: Sequence[PagedCacheValues],
 ) -> list[AttentionDispatchMetadata[TensorValue]]:
+    """Extracts :class:`AttentionDispatchMetadata` from each KV collection.
+
+    Args:
+        kv_collections: A sequence of per-device paged KV cache values.
+
+    Returns:
+        A list of :class:`AttentionDispatchMetadata` instances, one per
+        device, in the same order as ``kv_collections``.
+
+    Raises:
+        ValueError: If any collection is missing its ``dispatch_metadata``.
+    """
     return [
         attention_dispatch_metadata(kv_collection, device_idx=i)
         for i, kv_collection in enumerate(kv_collections)
@@ -224,7 +266,14 @@ class FlattenableInputSymbols(Protocol):
     def __iter__(self) -> Iterator[Any]: ...
     def __getitem__(self, index: int | slice) -> Any: ...
     def __len__(self) -> int: ...
-    def flatten(self) -> list[TensorType | BufferType]: ...
+    def flatten(self) -> list[TensorType | BufferType]:
+        """Returns all input symbols as a flat list.
+
+        Returns:
+            A flat list of every :class:`~max.graph.TensorType` and
+            :class:`~max.graph.BufferType` contained in this collection.
+        """
+        ...
 
 
 @dataclass
@@ -248,6 +297,12 @@ class PagedCacheInputSymbolsByReplica(
         return len(self.values)
 
     def flatten(self) -> list[TensorType | BufferType]:
+        """Returns all per-replica input symbols as a flat list.
+
+        Returns:
+            A flat list of every :class:`~max.graph.TensorType` and
+            :class:`~max.graph.BufferType` across all replicas.
+        """
         items = []
         for item in self.values:
             items.extend(item.flatten())
@@ -258,6 +313,8 @@ class PagedCacheInputSymbolsByReplica(
 class MultiKVCacheInputSymbols(
     Sequence[PagedCacheInputSymbolsByReplica], FlattenableInputSymbols
 ):
+    """Aggregates symbolic KV cache inputs for all KV caches across all replicas."""
+
     values: list[PagedCacheInputSymbolsByReplica]
 
     def __iter__(self) -> Iterator[PagedCacheInputSymbolsByReplica]:
@@ -270,6 +327,12 @@ class MultiKVCacheInputSymbols(
         return len(self.values)
 
     def flatten(self) -> list[TensorType | BufferType]:
+        """Returns all input symbols across all KV caches and replicas as a flat list.
+
+        Returns:
+            A flat list of every :class:`~max.graph.TensorType` and
+            :class:`~max.graph.BufferType` across all KV caches and replicas.
+        """
         items = []
         for item in self.values:
             items.extend(item.flatten())
@@ -278,9 +341,7 @@ class MultiKVCacheInputSymbols(
 
 @dataclass
 class KVCacheInputsPerDevice:
-    """``KVCacheInputsPerDevice`` is a class that holds the KV cache inputs for
-    a single device.
-    """
+    """Holds the concrete KV cache buffer inputs for a single device."""
 
     blocks: Buffer
     cache_lengths: Buffer
@@ -288,12 +349,18 @@ class KVCacheInputsPerDevice:
     max_lengths: Buffer
     kv_scales: Buffer | None = None  # Scale tensor for FP8 quantization
     attention_dispatch_metadata: Buffer | None = None
-    dispatch_scalars: AttentionDispatchMetadataScalars | None = None
 
     def __iter__(self) -> Iterator[Buffer]:
         yield from self.as_list()
 
     def as_list(self) -> list[Buffer]:
+        """Returns the non-``None`` KV cache buffers in ABI order.
+
+        Returns:
+            A list of :class:`~max.driver.Buffer` objects containing
+            ``blocks``, ``cache_lengths``, ``lookup_table``, ``max_lengths``,
+            and optionally ``kv_scales`` and ``attention_dispatch_metadata``.
+        """
         return [
             self.blocks,
             self.cache_lengths,
@@ -310,7 +377,7 @@ class KVCacheInputsPerDevice:
 
 @dataclass
 class KVCacheInputs:
-    """``KVCacheInputs`` is a sequence of :obj:`KVCacheInputsPerDevice`.
+    """``KVCacheInputs`` is a sequence of :class:`KVCacheInputsPerDevice`.
 
     The number of `KVCacheInputsPerDevice` in the sequence is equal to the
     number of devices used to run the model. For example, if the model is run

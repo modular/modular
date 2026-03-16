@@ -15,7 +15,7 @@
 from gridv1_step7 import Grid
 
 
-fn grid_str(grid: Grid) -> String:
+def grid_str(grid: Grid) -> String:
     # Create an empty String
     str = String()
 

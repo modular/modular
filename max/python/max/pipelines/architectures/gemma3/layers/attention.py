@@ -26,7 +26,6 @@ from max.graph import (
     ops,
 )
 from max.nn.attention import MHAMaskVariant, num_heads_for_device
-from max.nn.float8_config import Float8Config
 from max.nn.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
@@ -39,6 +38,7 @@ from max.nn.kernels import (
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
+from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 
@@ -64,7 +64,7 @@ class Gemma3Attention(Module, Shardable):
         has_bias: bool = False,
         qk_norm_eps: float = 1e-6,
         local_window_size: int = 1024,
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
     ) -> None:
         """Initializes the attention layer.
 
@@ -88,7 +88,7 @@ class Gemma3Attention(Module, Shardable):
             scale: Value used to scale the results of the attention output.
             has_bias: Whether to use an attention bias. Defaults to False.
             qk_norm_eps: Value to use for numerical stability. Defaults to 1e-6.
-            float8_config: Float8 quantization configuration. Defaults to None.
+            quant_config: Scaled quantization configuration. Defaults to None.
         """
 
         super().__init__()
@@ -108,7 +108,7 @@ class Gemma3Attention(Module, Shardable):
         self.local_window_size = local_window_size
         self.sliding_window_pattern = sliding_window_pattern
         self.qk_norm_eps = qk_norm_eps
-        self.float8_config = float8_config
+        self.quant_config = quant_config
 
         self.q_norm = Gemma3RMSNorm(
             self.kv_params.head_dim, DType.bfloat16, self.qk_norm_eps
@@ -125,7 +125,7 @@ class Gemma3Attention(Module, Shardable):
             dtype=dtype,
             device=devices[0],
             has_bias=has_bias,
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
         self.k_proj = linear_cls(
             in_dim=hidden_size,
@@ -133,7 +133,7 @@ class Gemma3Attention(Module, Shardable):
             dtype=dtype,
             device=devices[0],
             has_bias=has_bias,
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
         self.v_proj = linear_cls(
             in_dim=hidden_size,
@@ -141,7 +141,7 @@ class Gemma3Attention(Module, Shardable):
             dtype=dtype,
             device=devices[0],
             has_bias=has_bias,
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
 
         self.o_proj = linear_cls(
@@ -149,7 +149,7 @@ class Gemma3Attention(Module, Shardable):
             out_dim=hidden_size,
             dtype=dtype,
             device=devices[0],
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
 
     @property
@@ -159,7 +159,7 @@ class Gemma3Attention(Module, Shardable):
         wk: TensorValue = self.k_proj.weight
         wv: TensorValue = self.v_proj.weight
         wqkv = ops.concat((wq, wk, wv))
-        if self.float8_config and self.float8_config.is_static:
+        if self.quant_config and self.quant_config.is_static:
             # Float8 always has a weight scale.
             assert self.qkv_weight_scale is not None
             wqkv = quantize_static_scaled_float8(
@@ -184,7 +184,7 @@ class Gemma3Attention(Module, Shardable):
     @property
     def qkv_input_scale(self) -> TensorValue | None:
         """The max of q, k, and v scale input vectors."""
-        if not self.float8_config or self.float8_config.is_dynamic:
+        if not self.quant_config or self.quant_config.is_dynamic:
             return None
 
         assert self.q_proj.input_scale is not None
@@ -204,7 +204,7 @@ class Gemma3Attention(Module, Shardable):
     @property
     def qkv_weight_scale(self) -> TensorValue:
         """The max of q, k, and v scale weight vectors."""
-        assert self.float8_config
+        assert self.quant_config
 
         assert self.q_proj.weight_scale is not None
         assert self.k_proj.weight_scale is not None
@@ -222,11 +222,11 @@ class Gemma3Attention(Module, Shardable):
 
         weight_scale = ops.concat((q_scale, k_scale, v_scale))
 
-        if self.float8_config.is_dynamic:
+        if self.quant_config.is_dynamic:
             # In the dynamic scaling case, return the weight scales directly.
             return weight_scale
 
-        assert self.float8_config.is_static
+        assert self.quant_config.is_static
         # Otherwise, return a scalar max QKV weight scale in the static case.
         return ops.max(weight_scale).reshape([])
 
@@ -243,10 +243,10 @@ class Gemma3Attention(Module, Shardable):
             self.layer_idx, DType.uint32, device=DeviceRef.CPU()
         )
 
-        if self.float8_config:
+        if self.quant_config:
             x_scales: TensorValue
             weight_scale = self.qkv_weight_scale
-            if self.float8_config.is_static:
+            if self.quant_config.is_static:
                 assert self.qkv_input_scale is not None
                 x = quantize_static_scaled_float8(
                     x, self.qkv_input_scale.to(DeviceRef.CPU())
@@ -255,8 +255,8 @@ class Gemma3Attention(Module, Shardable):
             else:
                 x, x_scales = quantize_dynamic_scaled_float8(
                     x,
-                    self.float8_config.input_scale,
-                    self.float8_config.weight_scale,
+                    self.quant_config.input_scale,
+                    self.quant_config.weight_scale,
                     scales_type=weight_scale.dtype,
                 )
 
@@ -440,7 +440,7 @@ class Gemma3Attention(Module, Shardable):
                 has_bias=self.has_bias,
                 qk_norm_eps=self.qk_norm_eps,
                 local_window_size=self.local_window_size,
-                float8_config=self.float8_config,
+                quant_config=self.quant_config,
             )
 
             # Assign sharded weights

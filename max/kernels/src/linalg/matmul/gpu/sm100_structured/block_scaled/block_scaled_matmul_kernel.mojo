@@ -102,7 +102,8 @@ from ..structured_kernels.tile_pipeline import (
     ConsumerTiles,
     BlockScaledTilePayload,
 )
-from layout.tile_layout import RowMajorLayout, _IntToComptimeInt
+from layout import RowMajorLayout
+from layout.tile_layout import _IntToComptimeInt
 from structured_kernels.tile_types import (
     TmaOpType,
     internal_k_major_128B,
@@ -522,7 +523,7 @@ struct BlackwellBlockScaledMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn load_input_tiles[
+    def load_input_tiles[
         tiles_origin: MutOrigin,
         //,
     ](
@@ -654,7 +655,7 @@ struct BlackwellBlockScaledMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn mma[
+    def mma[
         tiles_origin: MutOrigin,
         //,
     ](
@@ -729,7 +730,7 @@ struct BlackwellBlockScaledMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn epilogue(
+    def epilogue(
         c_tiles: Self.SmemType.Core.CTileArray,
         c_tma_op: Self.CTmaOp,
         stage: Self.TileWriterType.Stage,
@@ -771,7 +772,7 @@ struct BlackwellBlockScaledMatmulKernel[
     # ========== Compile-Time Validation ==========
 
     @staticmethod
-    fn validate_config():
+    def validate_config():
         """Validate configuration constraints at compile time."""
         comptime assert Self.transpose_b, "Only support transposed B"
         comptime assert (
@@ -789,7 +790,7 @@ struct BlackwellBlockScaledMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn init_barriers(
+    def init_barriers(
         ctx: Self.Context,
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
@@ -854,7 +855,7 @@ struct BlackwellBlockScaledMatmulKernel[
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
-    fn run(
+    def run(
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
         c_tma_op: Self.CTmaOp,

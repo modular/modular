@@ -27,7 +27,7 @@ from std.testing import assert_equal, assert_true, assert_false
 from std.testing import TestSuite
 
 
-fn my_func() -> Int:
+def my_func() -> Int:
     return 0
 
 
@@ -37,7 +37,7 @@ def test_get_linkage_name() raises:
 
 
 def test_get_linkage_name_nested() raises:
-    fn nested_func(x: Int) -> Int:
+    def nested_func(x: Int) -> Int:
         return x
 
     var name = get_linkage_name[nested_func]()
@@ -47,7 +47,7 @@ def test_get_linkage_name_nested() raises:
     )
 
 
-fn your_func[x: Int]() raises -> Int:
+def your_func[x: Int]() raises -> Int:
     return x
 
 
@@ -67,7 +67,7 @@ def test_get_function_name() raises:
 
 
 def test_get_function_name_nested() raises:
-    fn nested_func(x: Int) -> Int:
+    def nested_func(x: Int) -> Int:
         return x
 
     var name2 = get_function_name[nested_func]()
@@ -112,7 +112,7 @@ def test_get_type_name() raises:
 
 
 def test_get_type_name_nested() raises:
-    fn nested_func[T: AnyType]() -> StaticString:
+    def nested_func[T: AnyType]() -> StaticString:
         return get_type_name[T]()
 
     var name = nested_func[String]()
@@ -131,7 +131,7 @@ def test_get_type_name_simd() raises:
 
 @fieldwise_init
 struct Bar[x: Int, f: Float32 = 1.3](Intable):
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return self.x
 
     var y: Int
@@ -179,18 +179,6 @@ def test_get_type_name_struct() raises:
             "test_type_info.Bar[2, 1.29999995 : SIMD[DType.float32, 1]], "
             "{3, 4.0999999999999996 : SIMD[DType.float64, 1]}, "
             'True, None, {"hello\0", 5}]'
-        ),
-    )
-
-
-def test_get_type_name_partially_bound_type() raises:
-    var name = get_type_name[Foo[Bar[2](y=3, z=0.125), ...]]()
-    assert_equal(
-        name,
-        (
-            "test_type_info.Foo["
-            "test_type_info.Bar[2, 1.29999995 : SIMD[DType.float32, 1]], "
-            "{3, 0.125 : SIMD[DType.float64, 1]}, ?, ?, ?]"
         ),
     )
 
@@ -250,15 +238,8 @@ def test_get_type_name_alias() raises:
         name, "test_type_info.Bar[5, 1.29999995 : SIMD[DType.float32, 1]]"
     )
 
-    # Also test parametric aliases (i.e. unbound parameters).
-    comptime R = Bar[_]
-    name = get_type_name[R]()
-    assert_equal(
-        name, "test_type_info.Bar[?, 1.29999995 : SIMD[DType.float32, 1]]"
-    )
 
-
-fn _get_type_name_generic[T: AnyType]() -> StaticString:
+def _get_type_name_generic[T: AnyType]() -> StaticString:
     """Helper function to test get_type_name through generic parameter."""
     return get_type_name[T]()
 

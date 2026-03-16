@@ -15,10 +15,7 @@ from __future__ import annotations
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn.embedding import Embedding
-from max.nn.kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Layer, LayerList, Module
 from max.nn.linear import Linear
 from max.nn.rotary_embedding import RotaryEmbedding

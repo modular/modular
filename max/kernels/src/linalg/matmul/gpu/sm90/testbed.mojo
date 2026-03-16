@@ -17,6 +17,7 @@ from std.sys import align_of
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
+from layout import TileTensor
 from internal_utils import assert_almost_equal, assert_with_measure
 from std.random import rand
 from internal_utils._measure import relative_difference
@@ -32,7 +33,7 @@ from ..tile_scheduler import MatmulSchedule
 from .matmul import warp_specialize_gemm_with_multicasting
 
 
-fn test_matmul_sm90[
+def test_matmul_sm90[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -61,11 +62,11 @@ fn test_matmul_sm90[
     comptime CLUSTER_N = cluster_shape[0]
     comptime CLUSTER_M = cluster_shape[1]
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList[m.dim, k.dim]()
+    comptime static_b_shape = DimList[
+        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
+    ]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
     var dynamic_a_shape = IndexList[2](m.value, k.value)
     var dynamic_b_shape = IndexList[2](
         n.value, k.value
@@ -182,7 +183,7 @@ fn test_matmul_sm90[
     @parameter
     @always_inline
     @__copy_capture(c_device)
-    fn epilogue_fn[
+    def epilogue_fn[
         _dtype: DType,
         width: Int,
         *,
@@ -215,9 +216,9 @@ fn test_matmul_sm90[
         elementwise_lambda_fn=elf,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
     ](
-        c_device,
-        a_device,
-        b_device,
+        TileTensor(c_device),
+        TileTensor(a_device),
+        TileTensor(b_device),
         ctx,
     )
 

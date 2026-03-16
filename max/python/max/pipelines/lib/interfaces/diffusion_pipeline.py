@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable
 from dataclasses import MISSING, dataclass, field, fields
@@ -25,7 +26,7 @@ from typing import TYPE_CHECKING, Any, TypeAlias, overload
 import numpy as np
 import numpy.typing as npt
 from max._core.driver import Device
-from max.driver import CPU, Accelerator
+from max.driver import CPU, Accelerator, Buffer
 from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType
 from max.graph.weights import load_weights
@@ -37,9 +38,14 @@ from tqdm import tqdm
 from typing_extensions import Self
 
 if TYPE_CHECKING:
-    from max.engine import InferenceSession
-
     from ..config import PipelineConfig
+    from .cache_mixin import (
+        CacheMixin,
+        DenoisingCacheConfig,
+        DenoisingCacheState,
+    )
+
+logger = logging.getLogger("max.pipelines")
 
 CompileTarget: TypeAlias = Callable[..., Any]
 CompileDecorator: TypeAlias = Callable[[CompileTarget], "CompileWrapper"]
@@ -53,14 +59,26 @@ class DiffusionPipeline(ABC):
 
     components: dict[str, type[ComponentModel]] | None = None
 
+    unprefixed_weight_component: str | None = None
+    """When set, weight files without a ``<component>/`` prefix are assigned to
+    this component.  This supports multi-repo layouts where quantized weights
+    for one component (e.g. the transformer) are shipped as flat files in a
+    separate repo while the remaining components use the base model repo."""
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         devices: list[Device],
         weight_paths: list[Path],
+        cache_config: DenoisingCacheConfig | None = None,
         **kwargs: Any,
     ) -> None:
+        from .cache_mixin import DenoisingCacheConfig
+
+        self.cache_config: DenoisingCacheConfig = (
+            cache_config or DenoisingCacheConfig()
+        )
         self.pipeline_config = pipeline_config
         self.session = session
         self.devices = devices
@@ -119,6 +137,7 @@ class DiffusionPipeline(ABC):
 
         relative_paths = self._resolve_relative_component_paths()
         loaded_sub_models: dict[str, ComponentModel] = {}
+        pipeline_encoding = self.pipeline_config.model.quantization_encoding
 
         for name, component_cls in tqdm(
             self.components.items(), desc="Loading sub models"
@@ -129,14 +148,24 @@ class DiffusionPipeline(ABC):
             config_dict = self._get_component_config_dict(
                 components_config, name
             )
-            abs_paths = self._resolve_absolute_paths(
-                weight_paths, relative_paths[name]
-            )
+
+            if name in relative_paths:
+                abs_paths = self._resolve_absolute_paths(
+                    weight_paths, relative_paths[name]
+                )
+                encoding = pipeline_encoding
+            else:
+                # Component weights not provided — download from base model
+                # repo.  These components (e.g. VAE, text encoder) always use
+                # bfloat16 regardless of the quantization applied to the
+                # primary component.
+                abs_paths = self._download_component_weights(name)
+                encoding = "bfloat16"
 
             init_params = inspect.signature(component_cls.__init__).parameters
             init_kwargs: dict[str, Any] = {
                 "config": config_dict,
-                "encoding": self.pipeline_config.model.quantization_encoding,
+                "encoding": encoding,
                 "devices": self.devices,
                 "weights": load_weights(abs_paths),
             }
@@ -162,7 +191,11 @@ class DiffusionPipeline(ABC):
         return config_dict
 
     def _resolve_relative_component_paths(self) -> dict[str, list[str]]:
-        """Group weight paths by component name (first path segment)."""
+        """Group weight paths by component name (first path segment).
+
+        Files without a ``/`` separator (i.e. flat filenames) are assigned to
+        :attr:`unprefixed_weight_component` when it is set.
+        """
         result: dict[str, list[str]] = {}
 
         for path in self.pipeline_config.model.weight_path:
@@ -171,12 +204,168 @@ class DiffusionPipeline(ABC):
             if len(parts) >= 2:
                 component = parts[0]
                 result.setdefault(component, []).append(path_str)
+            elif self.unprefixed_weight_component:
+                result.setdefault(self.unprefixed_weight_component, []).append(
+                    path_str
+                )
 
         if not result:
             raise ValueError(
-                "No component weights found. Expected format: <component>/<file>"
+                "No component weights found. Expected format:"
+                " <component>/<file>"
             )
         return result
+
+    def _download_component_weights(self, component_name: str) -> list[Path]:
+        """Download weight files for a component from the base model repo."""
+        from max.graph.weights import WeightsFormat
+
+        from ..hf_utils import download_weight_files
+
+        model_repo = self.pipeline_config.model.huggingface_model_repo
+        all_safetensors = model_repo.weight_files.get(
+            WeightsFormat.safetensors, []
+        )
+        component_files = [
+            f for f in all_safetensors if f.startswith(f"{component_name}/")
+        ]
+        if not component_files:
+            raise ValueError(
+                f"No weight files found for component '{component_name}' "
+                f"in base model repo '{model_repo.repo_id}'."
+            )
+        if model_repo.repo_type == "online":
+            return download_weight_files(
+                huggingface_model_id=model_repo.repo_id,
+                filenames=component_files,
+                revision=self.pipeline_config.model.huggingface_model_revision,
+                force_download=self.pipeline_config.model.force_download,
+            )
+        else:
+            local_path = Path(model_repo.repo_id)
+            return [local_path / f for f in component_files]
+
+    def run_transformer(
+        self,
+        cache_state: DenoisingCacheState,
+        **kwargs: Any,
+    ) -> tuple[Tensor, ...]:
+        """Run the transformer for one denoising step.
+
+        Subclasses must override this to call their transformer with the
+        appropriate model-specific arguments.  The method should return
+        ``(noise_pred,)`` when first_block_caching is disabled, or
+        ``(new_residual, noise_pred)`` when first_block_caching is enabled.
+
+        Args:
+            cache_state: Per-request mutable cache state for this stream.
+            **kwargs: Model-specific arguments forwarded from
+                ``run_denoising_step``.
+        """
+        raise NotImplementedError
+
+    def run_denoising_step(
+        self,
+        step: int,
+        cache_state: DenoisingCacheState,
+        device: Device,
+        **kwargs: Any,
+    ) -> Tensor:
+        """Execute one denoising step with caching logic.
+
+        Delegates the actual transformer call to ``self.run_transformer()``,
+        which subclasses override with model-specific arguments.
+
+        Args:
+            step: Current step index.
+            cache_state: Per-request mutable cache state for this stream.
+            device: Target device.
+            **kwargs: Model-specific arguments forwarded to
+                ``run_transformer``.
+
+        Returns:
+            noise_pred tensor for this step.
+        """
+        # Cast self to CacheMixin to access cache attributes.
+        # Concrete pipelines inherit from both DiffusionPipeline and CacheMixin.
+        mixin: CacheMixin = self  # type: ignore[assignment]
+        cache_config = mixin.cache_config
+
+        # 1. TaylorSeer scheduling decision
+        skip_transformer = False
+        warmup_steps = cache_config.taylorseer_warmup_steps
+        cache_interval = cache_config.taylorseer_cache_interval
+        max_order_tensor = mixin._cache_taylor_max_order_tensor
+        if cache_config.taylorseer:
+            assert warmup_steps is not None
+            assert cache_interval is not None
+            skip_transformer = mixin.taylorseer_skip_transformer(
+                step,
+                warmup_steps,
+                cache_interval,
+            )
+
+        # 2. Compute TaylorSeer step delta
+        taylor_delta_tensor: Tensor | None = None
+        if cache_config.taylorseer:
+            assert max_order_tensor is not None
+            assert cache_state.taylor_factor_0 is not None
+            assert cache_state.taylor_factor_1 is not None
+            delta = (
+                float(step - cache_state.taylor_last_compute_step)
+                if cache_state.taylor_last_compute_step is not None
+                else 1.0
+            )
+            taylor_delta_tensor = Tensor(
+                storage=Buffer.from_dlpack(
+                    np.array([delta], dtype=np.float32)
+                ).to(device)
+            )
+
+        # 3. Predict path (skip transformer)
+        if cache_config.taylorseer and skip_transformer:
+            assert cache_state.taylor_factor_0 is not None
+            assert cache_state.taylor_factor_1 is not None
+            assert cache_state.taylor_factor_2 is not None
+            assert taylor_delta_tensor is not None
+            assert max_order_tensor is not None
+            return mixin.taylor_predict(
+                cache_state.taylor_factor_0,
+                cache_state.taylor_factor_1,
+                cache_state.taylor_factor_2,
+                taylor_delta_tensor,
+                max_order_tensor,
+            )
+
+        # 4. Full compute path
+        result = self.run_transformer(cache_state, **kwargs)
+        if cache_config.first_block_caching:
+            new_residual, noise_pred = result
+            cache_state.prev_residual = new_residual
+            cache_state.prev_output = noise_pred
+        else:
+            noise_pred = result[0]
+
+        # 5. TaylorSeer factor update
+        if cache_config.taylorseer:
+            assert cache_state.taylor_factor_0 is not None
+            assert cache_state.taylor_factor_1 is not None
+            assert taylor_delta_tensor is not None
+            assert max_order_tensor is not None
+            (
+                cache_state.taylor_factor_0,
+                cache_state.taylor_factor_1,
+                cache_state.taylor_factor_2,
+            ) = mixin.taylor_update(
+                noise_pred,
+                cache_state.taylor_factor_0,
+                cache_state.taylor_factor_1,
+                taylor_delta_tensor,
+                max_order_tensor,
+            )
+            cache_state.taylor_last_compute_step = step
+
+        return noise_pred
 
     def _resolve_absolute_paths(
         self, weight_paths: list[Path], relative_paths: list[str]

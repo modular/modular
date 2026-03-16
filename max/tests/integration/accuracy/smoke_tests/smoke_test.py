@@ -46,7 +46,7 @@ from pathlib import Path
 from pprint import pformat
 from subprocess import Popen, TimeoutExpired, check_call, check_output
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import Any, TypedDict
 
 import click
 import requests
@@ -73,6 +73,47 @@ logger = logging.getLogger(__name__)
 
 EvalResults = dict[str, Any]
 EvalSamples = list[dict[str, Any]]
+
+
+class ModelAlias(TypedDict):
+    hf_model_path: str
+    max_serve_args: str
+
+
+# Maps alias model names to their real HuggingFace model path and extra
+# MAX serve args. Aliases let the same weights be tested under different
+# configurations while keeping results separate in dashboards.
+# max_serve_args are only applied to MAX frameworks, not vllm/sglang.
+MODEL_ALIASES: dict[str, ModelAlias] = {
+    "meta-llama/llama-3.1-8b-instruct__modulev3": {
+        "hf_model_path": "meta-llama/llama-3.1-8b-instruct",
+        "max_serve_args": "--prefer-module-v3",
+    },
+    "meta-llama/llama-3.2-1b-instruct__modulev3": {
+        "hf_model_path": "meta-llama/llama-3.2-1b-instruct",
+        "max_serve_args": "--prefer-module-v3",
+    },
+    "unsloth/gpt-oss-20b-bf16__modulev3": {
+        "hf_model_path": "unsloth/gpt-oss-20b-bf16",
+        "max_serve_args": "--prefer-module-v3",
+    },
+    "microsoft/phi-3.5-mini-instruct__modulev3": {
+        "hf_model_path": "microsoft/phi-3.5-mini-instruct",
+        "max_serve_args": "--prefer-module-v3",
+    },
+    "microsoft/phi-4__modulev3": {
+        "hf_model_path": "microsoft/phi-4",
+        "max_serve_args": "--prefer-module-v3",
+    },
+    "nvidia/deepseek-v3.1-nvfp4__fp8kv": {
+        "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
+        "max_serve_args": "--kv-cache-format float8_e4m3fn",
+    },
+    "nvidia/deepseek-v3.1-nvfp4__tpep": {
+        "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
+        "max_serve_args": "--data-parallel-degree 1",
+    },
+}
 
 
 def is_huge_moe(model: str) -> bool:
@@ -207,8 +248,17 @@ def get_server_cmd(
 
     is_huge_model = is_huge_moe(model)
     if is_huge_model and framework != "sglang":
-        MAX += f" --device-memory-utilization 0.8 --devices gpu:{','.join(str(i) for i in range(gpu_count))} --ep-size {gpu_count} --data-parallel-degree {gpu_count} --max-batch-input-tokens 1024"
-        VLLM += f" --enable-chunked-prefill --gpu-memory-utilization 0.8 --data-parallel-size={gpu_count} --enable-expert-parallel"
+        MAX += f" --device-memory-utilization 0.8 --devices gpu:{','.join(str(i) for i in range(gpu_count))} --ep-size {gpu_count} --max-batch-input-tokens 1024"
+        VLLM += " --enable-chunked-prefill --gpu-memory-utilization 0.8 --enable-expert-parallel"
+        # resolve attention parallelism strategy
+        if "--data-parallel-degree 1" not in serve_extra_args:
+            # default to DP Attn + EP MoE strategy
+            MAX += f" --data-parallel-degree {gpu_count}"
+            VLLM += f" --data-parallel-size={gpu_count}"
+        else:
+            # TP Attn + EP MoE strategy
+            VLLM += f" --tensor-parallel-size={gpu_count}"
+
         # Remove once vLLM >= 0.17 (which includes vllm-project/vllm#34673).
         if "minimax-m2" in model:
             os.environ["VLLM_USE_FLASHINFER_MOE_FP8"] = "0"
@@ -238,9 +288,6 @@ def get_server_cmd(
     # so we need to enable penalties on the server
     if "gpt-oss" in model and framework in ["max-ci", "max"]:
         cmd += ["--enable-penalties"]
-
-    if framework in ["max-ci", "max"] and "tbmod" in model:
-        cmd += ["--prefer-module-v3"]
 
     revision = _load_hf_repo_lock().get(model)
     if revision:
@@ -590,9 +637,16 @@ def smoke_test(
         output_path = Path(build_workspace) / output_path
 
     model = hf_model_path.lower().strip()
+    alias = MODEL_ALIASES.get(model)
+    hf_model_path = alias["hf_model_path"] if alias else model
+    if alias and framework in ["max-ci", "max"]:
+        serve_extra_args = (
+            f"{serve_extra_args} {alias['max_serve_args']}".strip()
+        )
+
     cmd = get_server_cmd(
         framework,
-        model,
+        hf_model_path,
         serve_extra_args=serve_extra_args,
     )
 
@@ -636,9 +690,11 @@ def smoke_test(
         write_github_output("startup_time", f"{startup_time:.2f}")
 
         for task in tasks:
-            test_single_request(model, task, disable_timeouts=disable_timeouts)
+            test_single_request(
+                hf_model_path, task, disable_timeouts=disable_timeouts
+            )
             result, samples = call_eval(
-                model,
+                hf_model_path,
                 task,
                 max_concurrent=max_concurrent,
                 num_questions=num_questions,

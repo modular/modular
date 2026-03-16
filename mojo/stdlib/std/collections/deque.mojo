@@ -100,7 +100,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         var elements: Optional[List[Self.ElementType]] = None,
@@ -148,7 +148,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         if elements is not None:
             self.extend(elements.take())
 
-    fn __init__(
+    def __init__(
         out self, var *values: Self.ElementType, __list_literal__: () = ()
     ):
         """Constructs a deque from the given values.
@@ -159,7 +159,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         """
         self = Self(elements=values^)
 
-    fn __init__(out self, *, var elements: VariadicList[Self.ElementType, _]):
+    def __init__(out self, *, var elements: VariadicList[Self.ElementType, _]):
         """Constructs a deque from the given values.
 
         Args:
@@ -176,7 +176,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         # Transfer all of the elements into the deque.
         @parameter
-        fn init_elt(idx: Int, var elt: Self.ElementType):
+        def init_elt(idx: Int, var elt: Self.ElementType):
             (self._data + idx).init_pointee_move(elt^)
 
         elements^.consume_elements[init_elt]()
@@ -184,7 +184,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         # Remember how many elements we have.
         self._tail = args_length
 
-    fn __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self):
         """Creates a deep copy of the given deque.
 
         Args:
@@ -202,7 +202,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         self._tail = len(copy)
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Destroys all elements in the deque and free its memory."""
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
@@ -213,7 +213,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __add__(self, other: Self) -> Self:
+    def __add__(self, other: Self) -> Self:
         """Concatenates self with other and returns the result as a new deque.
 
         Args:
@@ -227,7 +227,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             new.append(element.copy())
         return new^
 
-    fn __iadd__(mut self, other: Self):
+    def __iadd__(mut self, other: Self):
         """Appends the elements of other deque into self.
 
         Args:
@@ -236,7 +236,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         for element in other:
             self.append(element.copy())
 
-    fn __mul__(self, n: Int) -> Self:
+    def __mul__(self, n: Int) -> Self:
         """Concatenates `n` deques of `self` and returns a new deque.
 
         Args:
@@ -258,7 +258,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
                 new.append(element.copy())
         return new^
 
-    fn __imul__(mut self, n: Int):
+    def __imul__(mut self, n: Int):
         """Concatenates self `n` times in place.
 
         Args:
@@ -273,7 +273,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             for element in orig:
                 self.append(element.copy())
 
-    fn __eq__(
+    def __eq__(
         self, other: Self
     ) -> Bool where conforms_to(Self.ElementType, Equatable):
         """Checks if two deques are equal.
@@ -296,7 +296,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
                 return False
         return True
 
-    fn __hash__[
+    def __hash__[
         H: Hasher
     ](self, mut hasher: H) where conforms_to(Self.ElementType, Hashable):
         """Updates hasher with the hash of each element in the deque.
@@ -311,7 +311,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             var offset = self._physical_index(self._head + i)
             trait_downcast[Hashable]((self._data + offset)[]).__hash__(hasher)
 
-    fn __contains__(
+    def __contains__(
         self, value: Self.ElementType
     ) -> Bool where conforms_to(Self.ElementType, Equatable):
         """Verify if a given value is present in the deque.
@@ -330,7 +330,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
                 return True
         return False
 
-    fn __iter__(
+    def __iter__(
         ref self,
     ) -> Self.IteratorType[origin_of(self)]:
         """Iterates over elements of the deque, returning the references.
@@ -340,7 +340,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         """
         return _DequeIter(0, Pointer(to=self))
 
-    fn __reversed__(
+    def __reversed__(
         ref self,
     ) -> _DequeIter[Self.ElementType, origin_of(self), False]:
         """Iterate backwards over the deque, returning the references.
@@ -355,7 +355,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Checks whether the deque has any elements or not.
 
         Returns:
@@ -364,7 +364,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         return self._head != self._tail
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Gets the number of elements in the deque.
 
         Returns:
@@ -372,7 +372,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         """
         return (self._tail - self._head) & (self._capacity - 1)
 
-    fn __getitem__(ref self, idx: Int) -> ref[self] Self.ElementType:
+    def __getitem__(ref self, idx: Int) -> ref[self] Self.ElementType:
         """Gets the deque element at the given index.
 
         Args:
@@ -397,7 +397,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         offset = self._physical_index(self._head + normalized_idx)
         return (self._data + offset)[]
 
-    fn _write_self_to[
+    def _write_self_to[
         f: fn(Self.ElementType, mut Some[Writer])
     ](self, mut writer: Some[Writer]) where conforms_to(
         Self.ElementType, Writable
@@ -405,14 +405,14 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         var iterator = self.__iter__()
 
         @parameter
-        fn iterate(mut w: Some[Writer]) raises StopIteration:
+        def iterate(mut w: Some[Writer]) raises StopIteration:
             f(iterator.__next__(), w)
 
         fmt.write_sequence_to[ElementFn=iterate](writer)
         _ = iterator^
 
     @no_inline
-    fn write_to(
+    def write_to(
         self, mut writer: Some[Writer]
     ) where conforms_to(Self.ElementType, Writable):
         """Writes `my_deque.__str__()` to a `Writer`.
@@ -423,7 +423,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         self._write_self_to[f=fmt.write_to[Self.ElementType]](writer)
 
     @no_inline
-    fn write_repr_to(
+    def write_repr_to(
         self, mut writer: Some[Writer]
     ) where conforms_to(Self.ElementType, Writable):
         """Writes the repr representation of this deque to a `Writer`.
@@ -433,42 +433,18 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         """
 
         @parameter
-        fn write_fields(mut w: Some[Writer]):
+        def write_fields(mut w: Some[Writer]):
             self._write_self_to[f=fmt.write_repr_to[Self.ElementType]](w)
 
         fmt.FormatStruct(writer, "Deque").params(
             fmt.TypeNames[Self.ElementType](),
         ).fields[FieldsFn=write_fields]()
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String where conforms_to(Self.ElementType, Writable):
-        """Returns a string representation of a `Deque`.
-
-        Returns:
-            A string representation of the deque.
-        """
-        output = String()
-        self.write_to(output)
-        return output^
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __repr__(self) -> String where conforms_to(Self.ElementType, Writable):
-        """Returns a string representation of a `Deque`.
-
-        Returns:
-            A string representation of the deque.
-        """
-        output = String()
-        self.write_repr_to(output)
-        return output^
-
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn append(mut self, var value: Self.ElementType):
+    def append(mut self, var value: Self.ElementType):
         """Appends a value to the right side of the deque.
 
         Args:
@@ -485,7 +461,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         if self._head == self._tail:
             self._realloc(self._capacity << 1)
 
-    fn appendleft(mut self, var value: Self.ElementType):
+    def appendleft(mut self, var value: Self.ElementType):
         """Appends a value to the left side of the deque.
 
         Args:
@@ -502,7 +478,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         if self._head == self._tail:
             self._realloc(self._capacity << 1)
 
-    fn clear(mut self):
+    def clear(mut self):
         """Removes all elements from the deque leaving it with length 0.
 
         Resets the underlying storage capacity to `_min_capacity`.
@@ -516,7 +492,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         self._head = 0
         self._tail = 0
 
-    fn count(
+    def count(
         self, value: Self.ElementType
     ) -> Int where conforms_to(Self.ElementType, Equatable):
         """Counts the number of occurrences of a `value` in the deque.
@@ -536,7 +512,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
                 count += 1
         return count
 
-    fn extend(mut self, var values: List[Self.ElementType]):
+    def extend(mut self, var values: List[Self.ElementType]):
         """Extends the right side of the deque by consuming elements of the list argument.
 
         Args:
@@ -571,7 +547,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         # free the list backing buffer
         values_data.free()
 
-    fn extendleft(mut self, var values: List[Self.ElementType]):
+    def extendleft(mut self, var values: List[Self.ElementType]):
         """Extends the left side of the deque by consuming elements from the list argument.
 
         Acts as series of left appends resulting in reversed order of elements in the list argument.
@@ -607,7 +583,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         values_data.free()
 
-    fn index(
+    def index(
         self,
         value: Self.ElementType,
         start: Int = 0,
@@ -652,7 +628,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
                 return idx
         raise "ValueError: Given element is not in deque"
 
-    fn insert(mut self, idx: Int, var value: Self.ElementType) raises:
+    def insert(mut self, idx: Int, var value: Self.ElementType) raises:
         """Inserts the `value` into the deque at position `idx`.
 
         Args:
@@ -697,7 +673,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         if self._head == self._tail:
             self._realloc(self._capacity << 1)
 
-    fn remove(
+    def remove(
         mut self, value: Self.ElementType
     ) raises where conforms_to(Self.ElementType, Equatable):
         """Removes the first occurrence of the `value`.
@@ -744,7 +720,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         raise "ValueError: Given element is not in deque"
 
-    fn peek(self) raises -> Self.ElementType:
+    def peek(self) raises -> Self.ElementType:
         """Inspect the last (rightmost) element of the deque without removing it.
 
         Returns:
@@ -758,7 +734,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         return (self._data + self._physical_index(self._tail - 1))[].copy()
 
-    fn peekleft(self) raises -> Self.ElementType:
+    def peekleft(self) raises -> Self.ElementType:
         """Inspect the first (leftmost) element of the deque without removing it.
 
         Returns:
@@ -772,7 +748,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         return (self._data + self._head)[].copy()
 
-    fn pop(mut self) raises -> Self.ElementType:
+    def pop(mut self) raises -> Self.ElementType:
         """Removes and returns the element from the right side of the deque.
 
         Returns:
@@ -796,7 +772,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         return element^
 
-    fn popleft(mut self) raises -> Self.ElementType:
+    def popleft(mut self) raises -> Self.ElementType:
         """Removes and returns the element from the left side of the deque.
 
         Returns:
@@ -820,7 +796,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         return element^
 
-    fn reverse(mut self):
+    def reverse(mut self):
         """Reverses the elements of the deque in-place."""
         last = self._head + len(self) - 1
         for i in range(len(self) // 2):
@@ -830,7 +806,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             (self._data + dst).init_pointee_move_from(self._data + src)
             (self._data + src).init_pointee_move(tmp^)
 
-    fn rotate(mut self, n: Int = 1):
+    def rotate(mut self, n: Int = 1):
         """Rotates the deque by `n` steps.
 
         If `n` is positive, rotates to the right.
@@ -855,7 +831,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
                     self._data + self._tail
                 )
 
-    fn _compute_pop_and_move_counts(
+    def _compute_pop_and_move_counts(
         self, len_self: Int, len_values: Int
     ) -> Tuple[Int, Int, Int, Int, Int]:
         """
@@ -895,7 +871,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         )
 
     @always_inline
-    fn _physical_index(self, logical_index: Int) -> Int:
+    def _physical_index(self, logical_index: Int) -> Int:
         """Calculates the physical index in the circular buffer.
 
         Args:
@@ -907,7 +883,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         """
         return logical_index & (self._capacity - 1)
 
-    fn _prepare_for_new_elements(mut self, n_total: Int, n_retain: Int):
+    def _prepare_for_new_elements(mut self, n_total: Int, n_retain: Int):
         """Prepares the deque’s internal buffer for adding new elements by
         reallocating memory and retaining the specified number of existing elements.
 
@@ -933,7 +909,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         self._head = 0
         self._tail = n_retain
 
-    fn _realloc(mut self, new_capacity: Int):
+    def _realloc(mut self, new_capacity: Int):
         """Relocates data to a new storage buffer.
 
         Args:
@@ -997,10 +973,10 @@ struct _DequeIter[
     var index: Int
     var src: Pointer[Deque[Self.T], Self.origin]
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __next__(
+    def __next__(
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
         comptime if Self.forward:
@@ -1017,7 +993,7 @@ struct _DequeIter[
             return self.src[][self.index]
 
     @always_inline
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         var iter_len: Int
 
         comptime if Self.forward:

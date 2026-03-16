@@ -16,6 +16,7 @@ package(default_visibility = [
 modular_py_test(
     name = "flux1",
     size = "large",
+    timeout = "long",
     srcs = glob(["**/test_*.py"]) + ["conftest.py"],
     data = [
         "//max/tests/integration/architectures/flux1/testdata",

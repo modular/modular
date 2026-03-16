@@ -229,7 +229,7 @@ class SymbolicDim(Dim):
 
         dim = SymbolicDim("name")
 
-    Using ``SymbolicDim`` in a :obj:`TensorType`:
+    Using ``SymbolicDim`` in a :class:`~max.graph.TensorType`:
 
     .. code-block:: python
 

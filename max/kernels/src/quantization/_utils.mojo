@@ -15,7 +15,7 @@ from std.sys.intrinsics import llvm_intrinsic
 
 
 @always_inline
-fn roundeven_to_int32[
+def roundeven_to_int32[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[DType.int32, simd_width]:
     comptime native_width = simd_width_of[dtype]()

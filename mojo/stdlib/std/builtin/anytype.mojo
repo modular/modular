@@ -96,17 +96,17 @@ trait AnyType:
     ```mojo
     @explicit_destroy
     struct FileBuffer:
-        fn __init__(out self, path: Path):
+        def __init__(out self, path: Path):
             # ... open the file at the specified `path` ...
 
-        fn write(self, data: Some[Writable]):
+        def write(self, data: Some[Writable]):
             # ... buffered write of the specified data to this file ...
 
-        fn save_and_close(deinit self):
+        def save_and_close(deinit self):
             # ... save out the buffered data ...
 
     # 🔴 ERROR: 'file' abandoned without being explicitly destroyed
-    fn write_greeting_to_file(var file: FileBuffer):
+    def write_greeting_to_file(var file: FileBuffer):
         file.write("Hello there!")
 
         # 🟢 FIX: add `file^.save_and_close()`
@@ -152,10 +152,10 @@ trait ImplicitlyDestructible:
     struct ResourceOwner(ImplicitlyDestructible):
         var ptr: UnsafePointer[Int]
 
-        fn __init__(out self, size: Int):
+        def __init__(out self, size: Int):
             self.ptr = UnsafePointer[Int].alloc(size)
 
-        fn __del__(deinit self):
+        def __del__(deinit self):
             # Clean up owned resources
             self.ptr.free()
     ```
@@ -168,7 +168,7 @@ trait ImplicitlyDestructible:
     - Use composition to automatically handle nested resource cleanup
     """
 
-    fn __del__(deinit self, /):
+    def __del__(deinit self, /):
         """Destroys the instance and cleans up any owned resources.
 
         This method is called automatically when an instance's lifetime ends. It receives
@@ -194,23 +194,23 @@ trait ImplicitlyDestructible:
     """
 
 
-comptime __SomeImpl[Trait: __TypeOfAllTypes, T: Trait] = T
+comptime __SomeImpl[Trait: type_of(AnyType), T: Trait] = T
 
-comptime Some[Trait: __TypeOfAllTypes] = __SomeImpl[Trait, ...]
+comptime Some[Trait: type_of(AnyType)] = __SomeImpl[Trait, ...]
 """An alias allowing users to tersely express that a function argument is an
 instance of a type that implements a trait or trait composition.
 
 For example, instead of writing
 
 ```mojo
-fn foo[T: Intable, //](x: T) -> Int:
+def foo[T: Intable, //](x: T) -> Int:
     return x.__int__()
 ```
 
 one can write:
 
 ```mojo
-fn foo(x: Some[Intable]) -> Int:
+def foo(x: Some[Intable]) -> Int:
     return x.__int__()
 ```
 

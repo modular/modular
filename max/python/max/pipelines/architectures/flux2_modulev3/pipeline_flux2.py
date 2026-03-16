@@ -23,7 +23,11 @@ from max.experimental.tensor import Tensor
 from max.graph import TensorType
 from max.graph.ops import rebind, shape_to_tensor
 from max.pipelines.core import PixelContext
-from max.pipelines.lib.interfaces import DiffusionPipeline
+from max.pipelines.lib.interfaces import (
+    CacheMixin,
+    DenoisingCacheState,
+    DiffusionPipeline,
+)
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 from max.profiler import Tracer, traced
 
@@ -125,7 +129,7 @@ class Flux2PipelineOutput:
     images: np.ndarray | Tensor
 
 
-class Flux2Pipeline(DiffusionPipeline):
+class Flux2Pipeline(DiffusionPipeline, CacheMixin):
     """Diffusion pipeline for Flux2 image generation.
 
     This pipeline wires together:
@@ -134,6 +138,7 @@ class Flux2Pipeline(DiffusionPipeline):
         - Flux2 VAE (with BatchNorm-based latent normalization)
     """
 
+    unprefixed_weight_component = "transformer"
     default_num_inference_steps = 28
 
     vae: AutoencoderKLFlux2Model
@@ -146,6 +151,7 @@ class Flux2Pipeline(DiffusionPipeline):
         "transformer": Flux2TransformerModel,
     }
 
+    @traced(message="Flux2Pipeline.init_remaining_components")
     def init_remaining_components(self) -> None:
         """Initialize derived attributes that depend on loaded components."""
         self.vae_scale_factor = (
@@ -161,12 +167,22 @@ class Flux2Pipeline(DiffusionPipeline):
         self.build_concat_image_latents()
         self.build_decode_latents()
 
+        self.init_cache(
+            cache_config=self.cache_config,
+            transformer=self.transformer,
+            dtype=self.transformer.config.dtype,
+            device=self.transformer.devices[0],
+            rdt=0.06,
+            taylorseer_cache_interval=5,
+            taylorseer_warmup_steps=4,
+        )
+
         self._cached_guidance: dict[str, Tensor] = {}
         self._cached_text_ids: dict[str, Tensor] = {}
         self._cached_sigmas: dict[str, Tensor] = {}
         self._cached_shape_carriers: dict[int, Tensor] = {}
 
-    @traced
+    @traced(message="Flux2Pipeline.prepare_inputs")
     def prepare_inputs(self, context: PixelContext) -> Flux2ModelInputs:  # type: ignore[override]
         """Convert a PixelContext into Flux2ModelInputs."""
         if context.latents.size == 0:
@@ -249,6 +265,7 @@ class Flux2Pipeline(DiffusionPipeline):
             input_image=context.input_image,
         )
 
+    @traced(message="Flux2Pipeline.build_preprocess_latents")
     def build_preprocess_latents(self) -> None:
         device = self.transformer.devices[0]
         input_types = [
@@ -263,6 +280,7 @@ class Flux2Pipeline(DiffusionPipeline):
             input_types=input_types,
         )
 
+    @traced(message="Flux2Pipeline.build_prepare_image_latents")
     def build_prepare_image_latents(self) -> None:
         dtype = self.vae.config.dtype
         device = self.vae.devices[0]
@@ -282,6 +300,7 @@ class Flux2Pipeline(DiffusionPipeline):
             ],
         )
 
+    @traced(message="Flux2Pipeline.build_prepare_scheduler")
     def build_prepare_scheduler(self) -> None:
         input_types = [
             TensorType(
@@ -295,6 +314,7 @@ class Flux2Pipeline(DiffusionPipeline):
             input_types=input_types,
         )
 
+    @traced(message="Flux2Pipeline.build_scheduler_step")
     def build_scheduler_step(self) -> None:
         dtype = self.transformer.config.dtype
         device = self.transformer.devices[0]
@@ -312,6 +332,7 @@ class Flux2Pipeline(DiffusionPipeline):
             input_types=input_types,
         )
 
+    @traced(message="Flux2Pipeline.build_concat_image_latents")
     def build_concat_image_latents(self) -> None:
         dtype = self.transformer.config.dtype
         device = self.transformer.devices[0]
@@ -332,6 +353,7 @@ class Flux2Pipeline(DiffusionPipeline):
             input_types=input_types,
         )
 
+    @traced(message="Flux2Pipeline.build_decode_latents")
     def build_decode_latents(self) -> None:
         device = self.transformer.devices[0]
         self._bn_mean: Tensor = self.vae.bn.running_mean
@@ -428,7 +450,7 @@ class Flux2Pipeline(DiffusionPipeline):
 
         return image_latents
 
-    @traced
+    @traced(message="Flux2Pipeline.prepare_image_latents")
     def prepare_image_latents(
         self,
         images: list[Tensor],
@@ -484,7 +506,7 @@ class Flux2Pipeline(DiffusionPipeline):
 
         return image_latents, image_latent_ids
 
-    @traced
+    @traced(message="Flux2Pipeline.prepare_prompt_embeddings")
     def prepare_prompt_embeddings(
         self,
         tokens: Tensor,
@@ -536,7 +558,7 @@ class Flux2Pipeline(DiffusionPipeline):
 
         return prompt_embeds, text_ids
 
-    @traced
+    @traced(message="Flux2Pipeline.decode_latents")
     def decode_latents(
         self,
         latents: Tensor,
@@ -588,7 +610,7 @@ class Flux2Pipeline(DiffusionPipeline):
             )
         )
 
-    @traced
+    @traced(message="Flux2Pipeline.preprocess_latents")
     def preprocess_latents(self, latents: Tensor) -> Tensor:
         return self._patchify_and_pack(latents)
 
@@ -667,7 +689,23 @@ class Flux2Pipeline(DiffusionPipeline):
         all_timesteps = sigmas_curr.cast(self.transformer.config.dtype)
         return all_timesteps, all_dt
 
-    @traced
+    def run_transformer(
+        self,
+        cache_state: DenoisingCacheState,
+        **kwargs: Any,
+    ) -> tuple[Tensor, ...]:
+        return self.transformer(
+            kwargs["latents"],
+            kwargs["prompt_embeds"],
+            kwargs["timestep"],
+            kwargs["latent_image_ids"],
+            kwargs["text_ids"],
+            kwargs["guidance"],
+            prev_residual=cache_state.prev_residual,
+            prev_output=cache_state.prev_output,
+        )
+
+    @traced(message="Flux2Pipeline.execute")
     def execute(  # type: ignore[override]
         self,
         model_inputs: Flux2ModelInputs,
@@ -717,6 +755,15 @@ class Flux2Pipeline(DiffusionPipeline):
 
         # 4) Denoising loop.
         is_img2img = image_latents is not None
+        device = self.transformer.devices[0]
+
+        seq_len_for_cache = model_inputs.image_seq_len
+        if image_latents is not None:
+            seq_len_for_cache += int(image_latents.shape[1])
+        cache = self.create_cache_state(
+            batch_size, seq_len_for_cache, self.transformer.config
+        )
+
         with Tracer("denoising_loop"):
             for i in range(model_inputs.num_inference_steps):
                 with Tracer(f"denoising_step_{i}"):
@@ -738,15 +785,17 @@ class Flux2Pipeline(DiffusionPipeline):
                         latents_concat = latents
                         latent_image_ids_concat = latent_image_ids
 
-                    with Tracer("transformer"):
-                        noise_pred = self.transformer(
-                            latents_concat,
-                            prompt_embeds,
-                            timestep,
-                            latent_image_ids_concat,
-                            text_ids,
-                            guidance,
-                        )[0]
+                    noise_pred = self.run_denoising_step(
+                        step=i,
+                        cache_state=cache,
+                        device=device,
+                        latents=latents_concat,
+                        prompt_embeds=prompt_embeds,
+                        timestep=timestep,
+                        latent_image_ids=latent_image_ids_concat,
+                        text_ids=text_ids,
+                        guidance=guidance,
+                    )
 
                     with Tracer("scheduler_step"):
                         latents = self.scheduler_step(latents, noise_pred, dt)

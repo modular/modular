@@ -12,10 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from .dispatcher_v2 import DispatcherClientV2, DispatcherServerV2
-from .kvcache_agent import start_kvcache_agent_service
 
 __all__ = [
     "DispatcherClientV2",
     "DispatcherServerV2",
-    "start_kvcache_agent_service",
 ]

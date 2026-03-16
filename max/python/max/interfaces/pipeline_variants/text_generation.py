@@ -68,7 +68,7 @@ class TextGenerationResponseFormat(TypedDict):
     """Represents the response format specification for a text generation request."""
 
     type: str
-    """The type of response format, for example, ``"json_object"``."""
+    """The type of response format, for example, ``json_object``."""
 
     json_schema: dict[str, Any]
     """A JSON schema dictionary that defines the structure and validation rules for the generated response."""
@@ -617,7 +617,7 @@ class TextGenerationContext(BaseContext, Protocol):
         including temperature, top-k/top-p filtering, and stopping criteria.
 
         Returns:
-            The :class:`SamplingParams` instance containing all sampling configuration
+            The :class:`~max.interfaces.context.SamplingParams` instance containing all sampling configuration
             for this context.
         """
         ...
@@ -806,5 +806,17 @@ class VLMTextGenerationContext(TextGenerationContext, Protocol):
         ...
 
     def compute_image_aligned_idx(self, idx: int) -> int:
-        """Possibly aligns a index value downward if it lies in the middle of an image."""
+        """Aligns an index downward to avoid splitting an image token span.
+
+        If ``idx`` falls within the token range occupied by an image, this
+        method returns the ``start_idx`` of that image so that the split point
+        does not cut through image tokens. If ``idx`` does not land inside any
+        image span, it is returned unchanged.
+
+        Args:
+            idx: The candidate index into the token sequence.
+
+        Returns:
+            The adjusted index, guaranteed not to split an image token span.
+        """
         ...

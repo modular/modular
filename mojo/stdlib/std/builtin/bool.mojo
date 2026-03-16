@@ -45,12 +45,12 @@ trait Boolable(ImplicitlyDestructible):
     struct Foo(Boolable):
         var val: Bool
 
-        fn __bool__(self) -> Bool:
+        def __bool__(self) -> Bool:
             return self.val
     ```
     """
 
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Get the boolean representation of the value.
 
         Returns:
@@ -110,14 +110,14 @@ struct Bool(
     # ===-------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __init__(out self):
+    def __init__(out self):
         """Construct a default, `False` Bool."""
         self = False
 
     @doc_private
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: __mlir_type.i1):
+    def __init__(out self, value: __mlir_type.i1):
         """Construct a Bool value given a __mlir_type.i1 value.
 
         Args:
@@ -127,7 +127,7 @@ struct Bool(
 
     @doc_private
     @always_inline("builtin")
-    fn __init__(out self, *, mlir_value: __mlir_type.`!pop.scalar<bool>`):
+    def __init__(out self, *, mlir_value: __mlir_type.`!pop.scalar<bool>`):
         """Construct a Bool value given a `!pop.scalar<bool>` value.
 
         Args:
@@ -138,7 +138,7 @@ struct Bool(
         ](mlir_value)
 
     @always_inline("nodebug")
-    fn __init__[T: Boolable, //](out self, value: T):
+    def __init__[T: Boolable, //](out self, value: T):
         """Set the bool representation of the object.
 
         Parameters:
@@ -150,7 +150,7 @@ struct Bool(
         self = value.__bool__()
 
     @always_inline("builtin")
-    fn __init__(out self, value: None):
+    def __init__(out self, value: None):
         """Set the bool representation of the `None` type to `False`.
 
         Args:
@@ -160,7 +160,7 @@ struct Bool(
 
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, value: Scalar[DType.bool]):
+    def __init__(out self, value: Scalar[DType.bool]):
         """Convert a scalar SIMD value to a Bool.
 
         Args:
@@ -169,7 +169,7 @@ struct Bool(
         self = value.__bool__()
 
     @always_inline("builtin")
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Convert to Bool.
 
         Returns:
@@ -179,7 +179,7 @@ struct Bool(
 
     @doc_private
     @always_inline("builtin")
-    fn __mlir_i1__(self) -> __mlir_type.i1:
+    def __mlir_i1__(self) -> __mlir_type.i1:
         """Convert this Bool to __mlir_type.i1.
 
         This method is a special hook used by the compiler to test boolean
@@ -192,20 +192,8 @@ struct Bool(
         """
         return self._mlir_value
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
-    fn __str__(self) -> String:
-        """Get the bool as a string.
-
-        Returns `"True"` or `"False"`.
-
-        Returns:
-            A string representation.
-        """
-        return String.write(self)
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """
         Formats this boolean to the provided Writer.
 
@@ -216,7 +204,7 @@ struct Bool(
         writer.write("True" if self else "False")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Writes the repr of this boolean to a writer.
 
         The repr of a boolean is the same as its string representation:
@@ -227,19 +215,8 @@ struct Bool(
         """
         self.write_to(writer)
 
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        """Get the bool as a string.
-
-        Returns `"True"` or `"False"`.
-
-        Returns:
-            A string representation.
-        """
-        return String(self)
-
     @always_inline("builtin")
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         """Convert this Bool to an integer.
 
         Returns:
@@ -248,7 +225,7 @@ struct Bool(
         return select[Int](self, 1, 0)
 
     @always_inline("builtin")
-    fn __as_int__(self) -> Int:
+    def __as_int__(self) -> Int:
         """Implicitly convert to an integral representation of the value,
         wherever an `Int` is expected.
 
@@ -258,7 +235,7 @@ struct Bool(
         return self.__int__()
 
     @always_inline("nodebug")
-    fn __float__(self) -> Float64:
+    def __float__(self) -> Float64:
         """Convert this Bool to a float.
 
         Returns:
@@ -267,7 +244,7 @@ struct Bool(
         return select[Float64](self, 1, 0)
 
     @always_inline("builtin")
-    fn __eq__(self, rhs: Bool) -> Bool:
+    def __eq__(self, rhs: Bool) -> Bool:
         """Compare this Bool to RHS.
 
         Performs an equality comparison between the Bool value and the argument.
@@ -282,7 +259,7 @@ struct Bool(
         return ~(self != rhs)
 
     @always_inline("builtin")
-    fn __ne__(self, rhs: Bool) -> Bool:
+    def __ne__(self, rhs: Bool) -> Bool:
         """Compare this Bool to RHS.
 
         Performs a non-equality comparison between the Bool value and the
@@ -298,7 +275,7 @@ struct Bool(
         return self ^ rhs
 
     @always_inline("builtin")
-    fn __lt__(self, rhs: Self) -> Bool:
+    def __lt__(self, rhs: Self) -> Bool:
         """Compare this Bool to RHS using less-than comparison.
 
         Args:
@@ -311,7 +288,7 @@ struct Bool(
         return ~self & rhs
 
     @always_inline("builtin")
-    fn __le__(self, rhs: Self) -> Bool:
+    def __le__(self, rhs: Self) -> Bool:
         """Compare this Bool to RHS using less-than-or-equal comparison.
 
         Args:
@@ -324,7 +301,7 @@ struct Bool(
         return ~self | rhs
 
     @always_inline("builtin")
-    fn __gt__(self, rhs: Self) -> Bool:
+    def __gt__(self, rhs: Self) -> Bool:
         """Compare this Bool to RHS using greater-than comparison.
 
         Args:
@@ -337,7 +314,7 @@ struct Bool(
         return rhs < self
 
     @always_inline("builtin")
-    fn __ge__(self, rhs: Self) -> Bool:
+    def __ge__(self, rhs: Self) -> Bool:
         """Compare this Bool to RHS using greater-than-or-equal comparison.
 
         Args:
@@ -354,7 +331,7 @@ struct Bool(
     # ===-------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __invert__(self) -> Bool:
+    def __invert__(self) -> Bool:
         """Inverts the Bool value.
 
         Returns:
@@ -363,7 +340,7 @@ struct Bool(
         return __mlir_op.`pop.xor`(self._mlir_value, __mlir_attr.true)
 
     @always_inline("builtin")
-    fn __and__(self, rhs: Bool) -> Bool:
+    def __and__(self, rhs: Bool) -> Bool:
         """Returns `self & rhs`.
 
         Bitwise and's the Bool value with the argument. This method gets invoked
@@ -378,7 +355,7 @@ struct Bool(
         return __mlir_op.`pop.and`(self._mlir_value, rhs._mlir_value)
 
     @always_inline("nodebug")
-    fn __iand__(mut self, rhs: Bool):
+    def __iand__(mut self, rhs: Bool):
         """Computes `self & rhs` and store the result in `self`.
 
         Args:
@@ -387,7 +364,7 @@ struct Bool(
         self = self & rhs
 
     @always_inline("builtin")
-    fn __rand__(self, lhs: Bool) -> Bool:
+    def __rand__(self, lhs: Bool) -> Bool:
         """Returns `lhs & self`.
 
         Args:
@@ -399,7 +376,7 @@ struct Bool(
         return lhs & self
 
     @always_inline("builtin")
-    fn __or__(self, rhs: Bool) -> Bool:
+    def __or__(self, rhs: Bool) -> Bool:
         """Returns `self | rhs`.
 
         Bitwise or's the Bool value with the argument. This method gets invoked
@@ -414,7 +391,7 @@ struct Bool(
         return __mlir_op.`pop.or`(self._mlir_value, rhs._mlir_value)
 
     @always_inline("nodebug")
-    fn __ior__(mut self, rhs: Bool):
+    def __ior__(mut self, rhs: Bool):
         """Computes `self | rhs` and store the result in `self`.
 
         Args:
@@ -423,7 +400,7 @@ struct Bool(
         self = self | rhs
 
     @always_inline("builtin")
-    fn __ror__(self, lhs: Bool) -> Bool:
+    def __ror__(self, lhs: Bool) -> Bool:
         """Returns `lhs | self`.
 
         Args:
@@ -435,7 +412,7 @@ struct Bool(
         return lhs | self
 
     @always_inline("builtin")
-    fn __xor__(self, rhs: Bool) -> Bool:
+    def __xor__(self, rhs: Bool) -> Bool:
         """Returns `self ^ rhs`.
 
         Bitwise Xor's the Bool value with the argument. This method gets invoked
@@ -450,7 +427,7 @@ struct Bool(
         return __mlir_op.`pop.xor`(self._mlir_value, rhs._mlir_value)
 
     @always_inline("nodebug")
-    fn __ixor__(mut self, rhs: Bool):
+    def __ixor__(mut self, rhs: Bool):
         """Computes `self ^ rhs` and stores the result in `self`.
 
         Args:
@@ -459,7 +436,7 @@ struct Bool(
         self = self ^ rhs
 
     @always_inline("builtin")
-    fn __rxor__(self, lhs: Bool) -> Bool:
+    def __rxor__(self, lhs: Bool) -> Bool:
         """Returns `lhs ^ self`.
 
         Args:
@@ -470,7 +447,7 @@ struct Bool(
         """
         return lhs ^ self
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
+    def __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
 
         Parameters:
@@ -481,7 +458,7 @@ struct Bool(
         """
         hasher._update_with_simd(Scalar[DType.bool](self))
 
-    fn to_python_object(var self) raises -> PythonObject:
+    def to_python_object(var self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:
@@ -493,7 +470,7 @@ struct Bool(
         return PythonObject(self)
 
     @doc_private
-    fn __init__(out self, *, py: PythonObject) raises:
+    def __init__(out self, *, py: PythonObject) raises:
         """Construct a `Bool` from a PythonObject.
 
         Args:
@@ -511,7 +488,7 @@ struct Bool(
 # ===----------------------------------------------------------------------=== #
 
 
-fn any[
+def any[
     IterableType: Iterable
 ](iterable: IterableType) -> Bool where conforms_to(
     IterableType.IteratorType[origin_of(iterable)].Element,
@@ -538,7 +515,7 @@ fn any[
     return False
 
 
-fn any(value: SIMD) -> Bool:
+def any(value: SIMD) -> Bool:
     """Checks if **any** element in the simd vector is truthy.
 
     Args:
@@ -556,7 +533,7 @@ fn any(value: SIMD) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-fn all[
+def all[
     IterableType: Iterable
 ](iterable: IterableType) -> Bool where conforms_to(
     IterableType.IteratorType[origin_of(iterable)].Element,
@@ -582,7 +559,7 @@ fn all[
     return True
 
 
-fn all(value: SIMD) -> Bool:
+def all(value: SIMD) -> Bool:
     """Checks if **all** elements in the simd vector are truthy.
 
     Args:

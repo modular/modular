@@ -26,7 +26,10 @@ Uses a pull-based approach: each GPU reads its chunk from root via P2P.
 """
 
 from buffer import NDBuffer
+from layout import TileTensor
+from layout.tile_layout import TensorLayout
 from std.collections import InlineArray
+from std.utils import IndexList
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -57,7 +60,7 @@ from .sync import (
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-fn scatter_pull_kernel[
+def scatter_pull_kernel[
     dtype: DType,
     BLOCK_SIZE: Int,
     ngpus: Int,
@@ -120,8 +123,72 @@ fn scatter_pull_kernel[
 # --- Wrapper functions ---
 
 
+@always_inline
 @parameter
-fn scatter[
+def scatter[
+    dtype: DType,
+    rank: Int,
+    //,
+    ngpus: Int,
+    dp_size: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    input_buffers: InlineArray[
+        TileTensor[dtype, in_layout, in_origin], dp_size
+    ],
+    output_buffer: TileTensor[mut=True, dtype, ...],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    ctx: DeviceContext,
+) raises:
+    """TileTensor overload of scatter. Constructs NDBuffers and delegates
+    to the NDBuffer implementation.
+
+    Parameters:
+        dtype: Data type of the tensor elements.
+        rank: Number of dimensions in the tensors.
+        ngpus: Number of GPUs participating.
+        dp_size: Number of data-parallel replicas.
+        in_layout: Layout of the input TileTensors.
+        in_origin: Origin of the input TileTensors.
+        pdl_level: Controls PDL behavior for P2P kernels.
+
+    Args:
+        input_buffers: Input buffers (one per DP replica) as TileTensors.
+        output_buffer: Output buffer for THIS GPU as a TileTensor.
+        rank_sigs: Per-GPU Signal pointers.
+        ctx: Device context for THIS GPU.
+    """
+    # Build NDBuffer arrays from TileTensors.
+    var ndb_inputs = InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], dp_size
+    ](fill={})
+    comptime for i in range(dp_size):
+        var in_shape = IndexList[rank](1)
+        in_shape[0] = input_buffers[i].num_elements()
+        ndb_inputs[i] = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
+            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                input_buffers[i].ptr
+            ),
+            in_shape,
+        )
+
+    var out_shape = IndexList[rank](1)
+    out_shape[0] = output_buffer.num_elements()
+    var ndb_output = NDBuffer[rank=rank, dtype, MutAnyOrigin](
+        rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](output_buffer.ptr),
+        out_shape,
+    )
+
+    scatter[ngpus=ngpus, dp_size=dp_size, pdl_level=pdl_level](
+        ndb_inputs, ndb_output, rank_sigs, ctx
+    )
+
+
+@always_inline
+@parameter
+def scatter[
     dtype: DType,
     rank: Int,
     //,

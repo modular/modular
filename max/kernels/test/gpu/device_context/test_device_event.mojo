@@ -24,7 +24,7 @@ from std.testing import (
 
 
 # Simple kernel for testing event synchronization
-fn simple_kernel(
+def simple_kernel(
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
@@ -38,7 +38,7 @@ fn simple_kernel(
 
 
 # Kernel that does more work to test timing
-fn heavy_kernel(
+def heavy_kernel(
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,

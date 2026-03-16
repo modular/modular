@@ -37,7 +37,7 @@ struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
     var temperature: Scalar[Self.dtype]
     var p_threshold: Scalar[Self.dtype]
 
-    fn __init__(
+    def __init__(
         out self,
         batch_size: Int,
         vocab_size: Int,
@@ -50,15 +50,15 @@ struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
         self.p_threshold = p_threshold
 
 
-fn time_kernel[
+def time_kernel[
     func: fn() raises capturing -> None
 ](mut m: Bench, kernel_name: String) raises:
     @parameter
     @always_inline
-    fn bench_func(mut m: Bencher) raises:
+    def bench_func(mut m: Bencher) raises:
         @parameter
         @always_inline
-        fn kernel_launch() raises:
+        def kernel_launch() raises:
             func()
 
         m.iter[kernel_launch]()
@@ -67,7 +67,7 @@ fn time_kernel[
 
 
 @parameter
-fn fill_random[dtype: DType](mut buffer: TileTensor[mut=True, dtype, ...]):
+def fill_random[dtype: DType](mut buffer: TileTensor[mut=True, dtype, ...]):
     comptime min_val = -1e6
     comptime max_val = 1e6
     var total_elements = buffer.num_elements()
@@ -77,11 +77,11 @@ fn fill_random[dtype: DType](mut buffer: TileTensor[mut=True, dtype, ...]):
 
 
 @parameter
-fn fill_iota[dtype: DType](mut buf: TileTensor[mut=True, dtype, ...]):
+def fill_iota[dtype: DType](mut buf: TileTensor[mut=True, dtype, ...]):
     iota(buf.ptr, buf.num_elements())
 
 
-fn test_is_sorted_descending[
+def test_is_sorted_descending[
     dtype: DType
 ](mut buf: TileTensor[dtype, ...], vocab_size: Int) -> Bool:
     comptime assert buf.rank == 2, "rank must be 2"
@@ -93,7 +93,7 @@ fn test_is_sorted_descending[
         sorted_flag[i] = True
 
     @parameter
-    fn process_rows(start_batch: Int, end_batch: Int):
+    def process_rows(start_batch: Int, end_batch: Int):
         # Process a chunk of batches
         for batch_id in range(start_batch, end_batch):
             var offset = batch_id * vocab_size
@@ -130,7 +130,7 @@ fn test_is_sorted_descending[
     return all_sorted
 
 
-fn print_test_case(test_case: TestCase):
+def print_test_case(test_case: TestCase):
     print(
         "==== Running",
         "Top-P" if test_case.is_top_p else "Min-P",
@@ -149,7 +149,7 @@ fn print_test_case(test_case: TestCase):
     )
 
 
-fn test_case_sampling[
+def test_case_sampling[
     fill_fn: fn[dtype: DType](
         mut TileTensor[mut=True, dtype, ...]
     ) capturing -> None,
@@ -192,7 +192,7 @@ fn test_case_sampling[
 
         @always_inline
         @parameter
-        fn run_func() raises:
+        def run_func() raises:
             if is_top_p:
                 top_p_sampling(
                     p_thresholds,
@@ -245,7 +245,7 @@ fn test_case_sampling[
     p_thresholds_ptr.free()
 
 
-fn test_toppminp[
+def test_toppminp[
     dtype: DType,
     out_idx_type: DType,
     fill_fn: fn[dtype: DType](
@@ -270,7 +270,7 @@ fn test_toppminp[
     test_case_sampling[fill_fn](test_case3)
 
 
-fn test_all_out_idx_types[
+def test_all_out_idx_types[
     dtype: DType,
     fill_fn: fn[dtype: DType](
         mut TileTensor[mut=True, dtype, ...]
@@ -281,7 +281,7 @@ fn test_all_out_idx_types[
     test_toppminp[dtype, DType.uint64, fill_fn]()
 
 
-fn test_all_types[
+def test_all_types[
     fill_fn: fn[dtype: DType](
         mut TileTensor[mut=True, dtype, ...]
     ) capturing -> None,

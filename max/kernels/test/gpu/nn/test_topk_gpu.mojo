@@ -26,13 +26,7 @@ from buffer.dimlist import DimList
 from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
 
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    coord_to_index_list,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 
 from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
 from std.testing import assert_almost_equal, assert_equal
@@ -43,15 +37,15 @@ comptime DEBUG_BENCH = False
 comptime PRINT_OUTPUT = False
 
 
-fn time_kernel[
+def time_kernel[
     func: fn(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, kernel_name: String) raises:
     @parameter
     @always_inline
-    fn bench_func(mut m: Bencher):
+    def bench_func(mut m: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             func(ctx)
 
         m.iter_custom[kernel_launch](ctx)
@@ -63,7 +57,7 @@ fn time_kernel[
     )
 
 
-fn test_case_batched[
+def test_case_batched[
     dtype: DType,
     fill_fn: fn[dtype: DType](TileTensor[mut=True, dtype, ...]) capturing[
         _
@@ -171,7 +165,7 @@ fn test_case_batched[
 
         @always_inline
         @parameter
-        fn run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises:
             _topk_gpu[sampling=sampling, largest=largest](
                 ctx,
                 max_k,
@@ -237,7 +231,7 @@ fn test_case_batched[
 
             @always_inline
             @parameter
-            fn run_func_cpu(ctx: DeviceContext) raises:
+            def run_func_cpu(ctx: DeviceContext) raises:
                 _top_k_cpu[
                     dtype=dtype,
                     out_idx_type=DType.int64,
@@ -300,7 +294,7 @@ fn test_case_batched[
         m.dump_report()
 
 
-fn test_case_multi_rank[
+def test_case_multi_rank[
     dtype: DType,
     fill_fn: fn[dtype: DType](TileTensor[mut=True, dtype, ...]) capturing[
         _
@@ -463,7 +457,7 @@ fn test_case_multi_rank[
 
 
 @parameter
-fn fill_random[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
+def fill_random[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
     comptime min_val = -1e9
     comptime max_val = 1e9
     var total_elements = buffer.num_elements()
@@ -473,7 +467,7 @@ fn fill_random[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
 
 
 @parameter
-fn fill_constant[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
+def fill_constant[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
     var total_elements = buffer.num_elements()
     for i in range(total_elements):
         if i % 3 == 1:
@@ -483,7 +477,7 @@ fn fill_constant[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
 
 
 @parameter
-fn fill_iota[dtype: DType](buf: TileTensor[mut=True, dtype, ...]):
+def fill_iota[dtype: DType](buf: TileTensor[mut=True, dtype, ...]):
     iota(
         buf.ptr,
         coord_to_index_list(buf.layout.shape_coord()).flattened_length(),
@@ -499,7 +493,7 @@ struct TestCase[_sampling: Bool, _largest: Bool = True](ImplicitlyCopyable):
     var batch_size: Int
     var num_blocks_per_input: Optional[Int]
 
-    fn __init__(
+    def __init__(
         out self,
         N: Int,
         K: Int,
@@ -524,7 +518,7 @@ struct TestCaseMultiRank[_sampling: Bool, rank: Int, _largest: Bool = True](
     var block_size: Optional[Int]
     var num_blocks_per_input: Optional[Int]
 
-    fn __init__(
+    def __init__(
         out self,
         input_shape: IndexList[Self.rank],
         K: Int,
@@ -537,7 +531,7 @@ struct TestCaseMultiRank[_sampling: Bool, rank: Int, _largest: Bool = True](
         self.num_blocks_per_input = num_blocks_per_input
 
 
-fn print_test_case(test_case: TestCase):
+def print_test_case(test_case: TestCase):
     var num_blocks_per_in_msg = "auto"
     if test_case.num_blocks_per_input:
         num_blocks_per_in_msg = String(test_case.num_blocks_per_input.value())
@@ -557,7 +551,7 @@ fn print_test_case(test_case: TestCase):
     )
 
 
-fn print_test_case(test_case: TestCaseMultiRank):
+def print_test_case(test_case: TestCaseMultiRank):
     var num_blocks_per_in_msg = "auto"
     if test_case.num_blocks_per_input:
         num_blocks_per_in_msg = String(test_case.num_blocks_per_input.value())
@@ -578,7 +572,7 @@ fn print_test_case(test_case: TestCaseMultiRank):
     )
 
 
-fn test_min_topk[dtype: DType](ctx: DeviceContext) raises:
+def test_min_topk[dtype: DType](ctx: DeviceContext) raises:
     comptime llama3_vocab_size = 128256
 
     comptime test_case0 = TestCase[_sampling=False, _largest=False](
@@ -624,7 +618,7 @@ fn test_min_topk[dtype: DType](ctx: DeviceContext) raises:
     ](ctx, test_case2)
 
 
-fn test_multi_rank[dtype: DType, sampling: Bool](ctx: DeviceContext) raises:
+def test_multi_rank[dtype: DType, sampling: Bool](ctx: DeviceContext) raises:
     comptime llama3_vocab_size = 128256
 
     comptime test_case_multi_rank1 = TestCaseMultiRank[

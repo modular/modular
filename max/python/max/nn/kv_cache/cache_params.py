@@ -122,6 +122,12 @@ class KVCacheBuffer:
 
     @property
     def all_buffers(self) -> list[Buffer]:
+        """Returns all value and scale buffers in a single flat list.
+
+        Returns:
+            A list containing every value buffer followed by every scale
+            buffer (if scales are present).
+        """
         return [*self.values, *(self.scales if self.scales is not None else [])]
 
 
@@ -213,6 +219,10 @@ class KVCacheParams(KVCacheParamInterface):
     n_kv_heads_per_device: int = 0
     """Number of KV heads allocated to each device. Computed automatically in __post_init__."""
 
+    num_q_heads_per_device: int | None = None
+    """Number of query heads per device. Computed automatically in __post_init__
+    from ``num_q_heads`` and the parallelism configuration."""
+
     kvcache_quant_config: KVCacheQuantizationConfig | None = None
     """KVCache quantization config. Currently only FP8 quantization supported."""
 
@@ -238,7 +248,14 @@ class KVCacheParams(KVCacheParamInterface):
         Raises:
             ValueError: If configuration parameters are invalid or incompatible.
         """
+        if self.is_mla and self.num_q_heads is None:
+            raise ValueError(
+                "num_q_heads is required when is_mla=True so the attention"
+                "dispatch resolver can use the MLA kernel."
+            )
+
         if self.data_parallel_degree > 1:
+            # Data parallel mode: simply duplicate the heads across all devices
             if self.n_devices < self.data_parallel_degree:
                 raise ValueError(
                     f"Data parallelism degree ({self.data_parallel_degree}) cannot be greater than the number of devices ({self.n_devices})"
@@ -248,23 +265,32 @@ class KVCacheParams(KVCacheParamInterface):
                     f"We do not yet support DP + TP at the same time. Found {self.data_parallel_degree=} and {self.n_devices=}"
                 )
             self.n_kv_heads_per_device = self.n_kv_heads
-        elif self.is_mla:
-            # MLA always caches one latent vector per device.
-            self.n_kv_heads_per_device = 1
-            if self.num_q_heads is None:
-                raise ValueError(
-                    "num_q_heads is required when is_mla=True so the "
-                    "attention dispatch resolver can use the MLA kernel."
-                )
+            self.num_q_heads_per_device = self.num_q_heads
+
         else:
             # Tensor parallel mode: shard by heads, keep all layers per device
-            if self.n_kv_heads % self.n_devices != 0:
-                raise ValueError(
-                    f"Number of KV heads ({self.n_kv_heads}) must be divisible by the number of devices ({self.n_devices})"
+            # First, resolve the number of KV heads per device
+            if self.is_mla:
+                self.n_kv_heads_per_device = 1
+            else:
+                if self.n_kv_heads % self.n_devices != 0:
+                    raise ValueError(
+                        f"Number of KV heads ({self.n_kv_heads}) must be divisible by the number of devices ({self.n_devices})"
+                    )
+                self.n_kv_heads_per_device = max(
+                    self.n_kv_heads // self.n_devices, 1
                 )
-            self.n_kv_heads_per_device = max(
-                self.n_kv_heads // self.n_devices, 1
-            )
+
+            # Then, resolve the number of query heads per device if it
+            # is provided.
+            if self.num_q_heads is not None:
+                if self.num_q_heads % self.n_devices != 0:
+                    raise ValueError(
+                        f"Number of query heads ({self.num_q_heads}) must be divisible by the number of devices ({self.n_devices})"
+                    )
+                self.num_q_heads_per_device = max(
+                    self.num_q_heads // self.n_devices, 1
+                )
 
         # Validate inputs
         if (
@@ -296,7 +322,27 @@ class KVCacheParams(KVCacheParamInterface):
                 raise ValueError("KVCache quantization config required.")
 
     @property
+    def is_fp8_kv_dtype(self) -> bool:
+        """Whether the KV cache stores FP8 data, for dispatch resolution.
+
+        Unlike ``quantized_kv_cache`` (which also requires valid scale config),
+        this checks only the storage dtype—matching the compile-time detection
+        in the MLA decode kernel.
+
+        TODO(SERVOPT-1094): Once SnapMLA uses a valid scale_dtype, this
+        can be replaced by ``quantized_kv_cache``.
+        """
+        return self.dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz)
+
+    @property
     def quantized_kv_cache(self) -> bool:
+        """Returns whether FP8 KV cache quantization is enabled.
+
+        Returns:
+            ``True`` when the cache dtype is ``float8_e4m3fn`` or
+            ``float8_e4m3fnuz`` and a valid quantization scale dtype is
+            configured; ``False`` otherwise.
+        """
         # Currently only FP8_E4M3 KVCache quantization is supported.
         valid_scale = False
         if self.kvcache_quant_config is not None:
@@ -502,9 +548,9 @@ class KVCacheParams(KVCacheParamInterface):
                 dispatch_metadata=AttentionDispatchMetadata(
                     TensorType(
                         DType.int64,
-                        shape=[4],
-                        # MLA kernels consume dispatch metadata on GPU;
-                        # MHA reads it on CPU.
+                        shape=[3] if self.is_mla else [4],
+                        # MLA kernels consume 3-value dispatch metadata on GPU;
+                        # MHA reads 4-value metadata on CPU.
                         device=device if self.is_mla else DeviceRef.CPU(),
                     )
                 ),
@@ -590,6 +636,21 @@ class MultiKVCacheParams(KVCacheParamInterface):
 
     @classmethod
     def from_params(cls, *params: KVCacheParams) -> MultiKVCacheParams:
+        """Creates a :class:`MultiKVCacheParams` from one or more :class:`KVCacheParams`.
+
+        Args:
+            params: One or more :class:`KVCacheParams` instances to aggregate.
+                All params must share the same ``page_size``,
+                ``data_parallel_degree``, ``n_devices``,
+                ``enable_kvcache_swapping_to_host``, and
+                ``host_kvcache_swap_space_gb`` values.
+
+        Returns:
+            A new :class:`MultiKVCacheParams` aggregating all provided params.
+
+        Raises:
+            ValueError: If no params are provided.
+        """
         if len(params) == 0:
             raise ValueError("MultiKVCacheParams requires at least one param.")
         return cls(

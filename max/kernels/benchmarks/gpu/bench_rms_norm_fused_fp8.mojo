@@ -24,6 +24,7 @@ from internal_utils import (
 from std.runtime.asyncrt import DeviceContextPtr
 from layout import (
     Coord,
+    Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
@@ -39,7 +40,7 @@ from linalg.fp8_quantization import quantize_dynamic_scaled_fp8
 from std.utils.index import Index, IndexList
 
 
-fn bench_rms_norm_fused_fp8[
+def bench_rms_norm_fused_fp8[
     rank: Int,
     //,
     in_dtype: DType,
@@ -114,10 +115,10 @@ fn bench_rms_norm_fused_fp8[
         cb_rms_output,
     )
     @parameter
-    fn bench_rms_norm(mut b: Bencher) raises:
+    def bench_rms_norm(mut b: Bencher) raises:
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             # Construct buffers with offsets
             var data_ptr_offset = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](
                 cb_data.offset_ptr(iteration)
@@ -136,7 +137,7 @@ fn bench_rms_norm_fused_fp8[
             @__copy_capture(data_buf_offset)
             @always_inline
             @parameter
-            fn input_fn[
+            def input_fn[
                 width: Int, _rank: Int
             ](coords: IndexList[_rank]) -> SIMD[in_dtype, width]:
                 var idx = data_buf_offset.layout(Coord(coords))
@@ -148,7 +149,7 @@ fn bench_rms_norm_fused_fp8[
             @always_inline
             @__copy_capture(rms_output_buf_offset)
             @parameter
-            fn rms_output_fn[
+            def rms_output_fn[
                 width: Int, alignment: Int
             ](coords: IndexList[rank], val: SIMD[in_dtype, width]) -> None:
                 var idx = rms_output_buf_offset.layout(Coord(coords))
@@ -179,10 +180,10 @@ fn bench_rms_norm_fused_fp8[
         scales_base_ptr,
     )
     @parameter
-    fn bench_fp8_quant(mut b: Bencher) raises:
+    def bench_fp8_quant(mut b: Bencher) raises:
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             # Input function for FP8 quant (reads from RMS norm output)
             var rms_ptr_offset = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](
                 cb_rms_output.offset_ptr(iteration)
@@ -191,30 +192,30 @@ fn bench_rms_norm_fused_fp8[
             @__copy_capture(rms_ptr_offset)
             @always_inline
             @parameter
-            fn fp8_input_fn[
+            def fp8_input_fn[
                 width: Int, alignment: Int
             ](row: Int, col: Int) -> SIMD[in_dtype, width]:
                 var idx = row * cols + col
                 return rms_ptr_offset.load[width=width](idx)
 
-            var fp8_output_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
+            var fp8_output_tt = TileTensor(
                 UnsafePointer[Scalar[out_dtype], MutAnyOrigin](
                     cb_fp8_output.offset_ptr(iteration)
                 ),
-                Index(rows, cols),
+                row_major(Coord(Idx(rows), Idx(cols))),
             )
-            var scales_ndbuf = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
+            var scales_tt = TileTensor(
                 UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
                     scales_base_ptr
                 ),
-                Index(1, rows),
+                row_major(Coord(Idx(1), Idx(rows))),
             )
 
             quantize_dynamic_scaled_fp8[
                 input_fn=fp8_input_fn,
                 group_size_or_per_token=-1,  # Per-token quantization
                 num_cols=cols,
-            ](fp8_output_ndbuf, scales_ndbuf, Float32(448.0), ctx, rows)
+            ](fp8_output_tt, scales_tt, Float32(448.0), ctx, rows)
 
         b.iter_custom[kernel_launch](ctx)
 
@@ -239,10 +240,10 @@ fn bench_rms_norm_fused_fp8[
         scales_base_ptr_fused,
     )
     @parameter
-    fn bench_fused(mut b: Bencher) raises:
+    def bench_fused(mut b: Bencher) raises:
         @parameter
         @always_inline
-        fn kernel_launch(ctx_: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx_: DeviceContext, iteration: Int) raises:
             # Input function with offset
             var data_ptr_offset = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](
                 cb_data.offset_ptr(iteration)
@@ -251,7 +252,7 @@ fn bench_rms_norm_fused_fp8[
             @__copy_capture(data_ptr_offset)
             @always_inline
             @parameter
-            fn input_fn_fused[
+            def input_fn_fused[
                 width: Int, _rank: Int
             ](coords: IndexList[_rank]) -> SIMD[in_dtype, width]:
                 var data_buf_offset = TileTensor(
@@ -339,7 +340,7 @@ fn bench_rms_norm_fused_fp8[
     @__copy_capture(data_buf_verify)
     @always_inline
     @parameter
-    fn input_fn_verify[
+    def input_fn_verify[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[in_dtype, width]:
         var idx = data_buf_verify.layout(Coord(coords))
@@ -349,7 +350,7 @@ fn bench_rms_norm_fused_fp8[
     @always_inline
     @__copy_capture(rms_output_buf_verify)
     @parameter
-    fn rms_output_fn_verify[
+    def rms_output_fn_verify[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[in_dtype, width]) -> None:
         var idx = rms_output_buf_verify.layout(Coord(coords))
@@ -366,7 +367,7 @@ fn bench_rms_norm_fused_fp8[
     @__copy_capture(rms_verify_base_ptr)
     @always_inline
     @parameter
-    fn fp8_input_fn_verify[
+    def fp8_input_fn_verify[
         width: Int, alignment: Int
     ](row: Int, col: Int) -> SIMD[in_dtype, width]:
         var rms_ptr = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](
@@ -375,20 +376,20 @@ fn bench_rms_norm_fused_fp8[
         var idx = row * cols + col
         return rms_ptr.load[width=width](idx)
 
-    var fp8_output_ndbuf_verify = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
+    var fp8_output_tt_verify = TileTensor(
         UnsafePointer[Scalar[out_dtype], MutAnyOrigin](fp8_verify_base_ptr),
-        Index(rows, cols),
+        row_major(Coord(Idx(rows), Idx(cols))),
     )
-    var scales_ndbuf_verify = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
+    var scales_tt_verify = TileTensor(
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin](scales_base_ptr),
-        Index(1, rows),
+        row_major(Coord(Idx(1), Idx(rows))),
     )
 
     quantize_dynamic_scaled_fp8[
         input_fn=fp8_input_fn_verify,
         group_size_or_per_token=-1,
         num_cols=cols,
-    ](fp8_output_ndbuf_verify, scales_ndbuf_verify, Float32(448.0), ctx, rows)
+    ](fp8_output_tt_verify, scales_tt_verify, Float32(448.0), ctx, rows)
 
     # Run fused kernel
     var data_base_ptr_verify = cb_data.unsafe_ptr()
@@ -396,7 +397,7 @@ fn bench_rms_norm_fused_fp8[
     @__copy_capture(data_base_ptr_verify)
     @always_inline
     @parameter
-    fn input_fn_fused_verify[
+    def input_fn_fused_verify[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[in_dtype, width]:
         var data_ptr = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](

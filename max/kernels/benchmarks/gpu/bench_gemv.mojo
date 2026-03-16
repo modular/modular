@@ -25,15 +25,13 @@ from buffer import DimList, NDBuffer
 from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout import TileTensor
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
 
 from std.utils import IndexList
 
 
-fn _get_run_name[
+def _get_run_name[
     transpose: Bool,
     in_dtype: DType,
     out_dtype: DType,
@@ -61,7 +59,7 @@ fn _get_run_name[
     )
 
 
-fn bench_matmul[
+def bench_matmul[
     in_dtype: DType,
     out_dtype: DType,
     shape_c: DimList,
@@ -96,12 +94,12 @@ fn bench_matmul[
 
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             _matmul_gpu[transpose_b=False, use_tensor_core=True](
-                mat_c, mat_a, mat_b, ctx
+                TileTensor(mat_c), TileTensor(mat_a), TileTensor(mat_b), ctx
             )
 
         b.iter_custom[kernel_launch](ctx)
@@ -126,7 +124,7 @@ fn bench_matmul[
     _ = mat_b_buf^
 
 
-fn bench_matmul_transpose[
+def bench_matmul_transpose[
     in_dtype: DType,
     out_dtype: DType,
     shape_c: DimList,
@@ -161,12 +159,12 @@ fn bench_matmul_transpose[
 
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             _matmul_gpu[transpose_b=True, use_tensor_core=True](
-                mat_c, mat_a, mat_b, ctx
+                TileTensor(mat_c), TileTensor(mat_a), TileTensor(mat_b), ctx
             )
 
         b.iter_custom[kernel_launch](ctx)
@@ -191,7 +189,7 @@ fn bench_matmul_transpose[
     _ = mat_b_buf^
 
 
-fn bench_matmul_naive[
+def bench_matmul_naive[
     in_type: DType,
     out_type: DType,
     shape_c: DimList,
@@ -241,10 +239,10 @@ fn bench_matmul_naive[
     @always_inline
     @__copy_capture(M, N, K)
     @parameter
-    fn bench_func(mut b: Bencher) raises:
+    def bench_func(mut b: Bencher) raises:
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             comptime kernel = matmul_kernel_naive[
                 out_type,
                 in_type,
@@ -289,7 +287,7 @@ fn bench_matmul_naive[
     _ = mat_b_buf^
 
 
-fn create_matmul_bench[
+def create_matmul_bench[
     in_dtype: DType,
     out_dtype: DType,
 ](
@@ -304,31 +302,31 @@ fn create_matmul_bench[
         bench_matmul[
             in_dtype,
             out_dtype,
-            DimList(m.dim, n.dim),
-            DimList(m.dim, k.dim),
-            DimList(k.dim, n.dim),
+            DimList[m.dim, n.dim](),
+            DimList[m.dim, k.dim](),
+            DimList[k.dim, n.dim](),
         ](ctx, h, (m.value, n.value), (m.value, k.value), (k.value, n.value))
 
     elif mode == "transpose":
         bench_matmul_transpose[
             in_dtype,
             out_dtype,
-            DimList(m.dim, n.dim),
-            DimList(m.dim, k.dim),
-            DimList(n.dim, k.dim),
+            DimList[m.dim, n.dim](),
+            DimList[m.dim, k.dim](),
+            DimList[n.dim, k.dim](),
         ](ctx, h, (m.value, n.value), (m.value, k.value), (n.value, k.value))
     elif mode == "naive":
         bench_matmul_naive[
             in_dtype,
             out_dtype,
-            DimList(m.dim, n.dim),
-            DimList(m.dim, k.dim),
-            DimList(k.dim, n.dim),
+            DimList[m.dim, n.dim](),
+            DimList[m.dim, k.dim](),
+            DimList[k.dim, n.dim](),
         ](ctx, h, (m.value, n.value), (m.value, k.value), (k.value, n.value))
 
 
 @parameter
-fn get_dtype[output_type: String]() -> DType:
+def get_dtype[output_type: String]() -> DType:
     if output_type == "float32":
         return DType.float32
     elif output_type == "float16":

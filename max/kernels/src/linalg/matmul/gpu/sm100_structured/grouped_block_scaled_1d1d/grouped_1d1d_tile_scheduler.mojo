@@ -61,7 +61,7 @@ struct GroupedWorkInfo1D1D(TrivialRegisterPassable, Writable):
     var m_start: UInt32  # Expert's start offset in contiguous token space
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         self.m = 0
         self.n = 0
         self.group_idx = 0
@@ -71,22 +71,17 @@ struct GroupedWorkInfo1D1D(TrivialRegisterPassable, Writable):
         self.m_start = 0
 
     @always_inline
-    fn is_valid(self) -> Bool:
+    def is_valid(self) -> Bool:
         """Returns True if this work tile has valid work to do."""
         return self.is_valid_tile
 
     @always_inline
-    fn is_done(self) -> Bool:
+    def is_done(self) -> Bool:
         """Returns True if the scheduler has no more work."""
         return self.terminate
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "GroupedWorkInfo1D1D(m=",
             self.m,
@@ -123,32 +118,32 @@ struct GroupedWorkContext1D1D(ImplicitlyCopyable, Movable):
     var m_end: UInt32  # End offset for bounds checking (exclusive upper bound)
 
     @always_inline
-    fn m(self) -> UInt32:
+    def m(self) -> UInt32:
         """M coordinate in contiguous token space."""
         return self.info.m
 
     @always_inline
-    fn m_start(self) -> UInt32:
+    def m_start(self) -> UInt32:
         """Expert's start token offset in contiguous token space."""
         return self.info.m_start
 
     @always_inline
-    fn n(self) -> UInt32:
+    def n(self) -> UInt32:
         """N coordinate in output space."""
         return self.info.n
 
     @always_inline
-    fn group_idx(self) -> UInt32:
+    def group_idx(self) -> UInt32:
         """Index into active experts list."""
         return self.info.group_idx
 
     @always_inline
-    fn expert_id(self) -> Int32:
+    def expert_id(self) -> Int32:
         """Expert ID for B tensor indexing."""
         return self.info.expert_id
 
     @always_inline
-    fn is_valid(self) -> Bool:
+    def is_valid(self) -> Bool:
         """Whether this tile has valid work."""
         return self.info.is_valid()
 
@@ -212,7 +207,7 @@ struct GroupedWorkIterator1D1D[
     comptime kNum1DBlocksPerGroup: UInt32 = 16
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         num_active_experts: Int,
         group_offsets: Self.OffsetsTile,
@@ -239,7 +234,7 @@ struct GroupedWorkIterator1D1D[
         self.block_idx_start = 0
 
     @always_inline
-    fn next(mut self) -> GroupedWorkContext1D1D:
+    def next(mut self) -> GroupedWorkContext1D1D:
         """Fetch next work tile and return context with work info and scale."""
         var info, m_end = self._fetch_next_work()
         var expert_scale: Float32 = 1.0
@@ -250,7 +245,7 @@ struct GroupedWorkIterator1D1D[
         return GroupedWorkContext1D1D(info, expert_scale, m_end)
 
     @always_inline
-    fn _fetch_next_work(mut self) -> Tuple[GroupedWorkInfo1D1D, UInt32]:
+    def _fetch_next_work(mut self) -> Tuple[GroupedWorkInfo1D1D, UInt32]:
         """Internal method to compute next work tile."""
         self.current_iter += 1
         # Normalize by cta_group so all CTAs in a cluster get the same
@@ -341,7 +336,7 @@ struct GroupedWorkIterator1D1D[
         )
 
     @always_inline
-    fn _get_swizzled_block_idx(
+    def _get_swizzled_block_idx(
         self,
         num_n_blocks: UInt32,
         _block_idx: UInt32,
@@ -391,7 +386,7 @@ struct GroupedWorkIterator1D1D[
         return (m_block_idx, n_block_idx)
 
     @always_inline
-    fn current_expert_id(self) -> Int32:
+    def current_expert_id(self) -> Int32:
         """Get the expert ID for the current group."""
         return rebind[Scalar[DType.int32]](
             self.expert_ids[Int(self.current_group_idx)]

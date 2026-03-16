@@ -26,6 +26,7 @@ from max.driver import DeviceSpec, accelerator_api, load_devices
 from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
 from max.pipelines.lib.hf_utils import is_diffusion_pipeline
+from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 from max.pipelines.lib.memory_estimation import (
     MemoryEstimator,
     to_human_readable_bytes,
@@ -127,6 +128,12 @@ class PipelineConfig(ConfigFileModel):
     )
     """The model-agnostic runtime settings for pipeline execution."""
 
+    cache: DenoisingCacheConfig = Field(
+        default_factory=DenoisingCacheConfig,
+        description="Denoising cache configuration for diffusion pipelines.",
+    )
+    """Cache configuration for FBCache and TaylorSeer optimizations."""
+
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
@@ -184,6 +191,17 @@ class PipelineConfig(ConfigFileModel):
             del kwargs[key]
 
         return extracted
+
+    def _create_cache_config_if_needed(self, kwargs: dict[str, Any]) -> None:
+        """Extract denoising cache kwargs and create DenoisingCacheConfig if any provided."""
+        cache_kwargs = PipelineConfig._extract_kwargs_for_config(
+            kwargs, DenoisingCacheConfig
+        )
+        if cache_kwargs:
+            # Remove None values so DenoisingCacheConfig defaults are used
+            filtered = {k: v for k, v in cache_kwargs.items() if v is not None}
+            if filtered:
+                self.cache = DenoisingCacheConfig(**filtered)
 
     def _create_lora_config_if_needed(self, kwargs: dict[str, Any]) -> None:
         """Extract LoRA kwargs and create valid LoRAConfig if enable_lora provided."""
@@ -409,6 +427,7 @@ class PipelineConfig(ConfigFileModel):
         delattr(self, "_unmatched_kwargs")
 
         # Process specialized config creation
+        self._create_cache_config_if_needed(unmatched_kwargs)
         self._create_lora_config_if_needed(unmatched_kwargs)
         self._create_draft_model_config_if_needed(unmatched_kwargs)
         self._create_speculative_config_if_needed(unmatched_kwargs)
@@ -624,11 +643,25 @@ class PipelineConfig(ConfigFileModel):
 
         # Raise errors when we detect features that are not compatible with the overlap scheduler.
         if self.runtime.enable_overlap_scheduler:
-            if self.runtime.pipeline_role != "prefill_and_decode":
+            if self.runtime.pipeline_role == "decode_only":
+                if self.runtime.max_num_steps != 1:
+                    logger.info(
+                        "Setting max-num-steps=1 for overlap scheduling "
+                        "on %s worker.",
+                        self.runtime.pipeline_role,
+                    )
+                    self.runtime.max_num_steps = 1
+                logger.info(
+                    "Overlap scheduling enabled for decode_only worker "
+                    "(Disaggregated Inference). THIS IS EXPERIMENTAL."
+                )
+            # TODO: Enable overlap scheduling for prefill_only workers
+            # once prefill_only + overlap scheduling is implemented.
+            elif self.runtime.pipeline_role == "prefill_only":
                 raise ValueError(
-                    "The Overlap scheduler does not support Disaggregated Inference yet. "
-                    "It is only supported with the PrefillAndDecode pipeline role. "
-                    f"Found {self.runtime.pipeline_role}."
+                    "Overlap scheduling is not yet supported for "
+                    "prefill_only workers (WIP). Only decode_only and "
+                    "prefill_and_decode roles are currently supported."
                 )
             if self.sampling.enable_structured_output:
                 raise ValueError(
@@ -918,6 +951,30 @@ class PipelineConfig(ConfigFileModel):
         standard estimation for the target model.
         """
         assert self.draft_model is not None
+
+        # This code is a mess and really needs to be overhauled...
+        #
+        # Resolve the target model's architecture first so we can use its
+        # quantization_encoding as the default for the draft model.
+        # _validate_and_resolve_architecture is safe to call again later
+        # (via _validate_and_resolve_remaining_pipeline_config) because the
+        # second call will find quantization_encoding already set and just
+        # validate it.
+        self._validate_and_resolve_architecture(self.model)
+
+        # Default draft model's quantization encoding to the target model's
+        # resolved encoding when the user hasn't explicitly specified one.
+        if (
+            self.draft_model.quantization_encoding is None
+            and self.model.quantization_encoding is not None
+        ):
+            logger.info(
+                f"draft_quantization_encoding not specified, defaulting to"
+                f" target model encoding: {self.model.quantization_encoding}"
+            )
+            self.draft_model.quantization_encoding = (
+                self.model.quantization_encoding
+            )
 
         draft_arch = self._validate_and_resolve_architecture(self.draft_model)
         draft_reservation = draft_arch.pipeline_model.estimate_weights_size(

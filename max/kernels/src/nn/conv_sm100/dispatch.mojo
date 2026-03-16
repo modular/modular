@@ -26,6 +26,7 @@ from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from std.utils.index import IndexList
+from linalg.utils import elementwise_epilogue_type
 
 
 # =========================================================================
@@ -33,7 +34,7 @@ from std.utils.index import IndexList
 # =========================================================================
 
 
-fn _transpose_rscf_to_krsc[
+def _transpose_rscf_to_krsc[
     dtype: DType,
 ](
     src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -58,7 +59,7 @@ fn _transpose_rscf_to_krsc[
     dst_ptr.store(tid, src_ptr.load(src_idx))
 
 
-fn _transpose_fcrs_to_krsc[
+def _transpose_fcrs_to_krsc[
     dtype: DType,
 ](
     src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -88,7 +89,7 @@ fn _transpose_fcrs_to_krsc[
 # =========================================================================
 
 
-fn dispatch_sm100_conv2d[
+def dispatch_sm100_conv2d[
     input_layout: Layout,
     filter_layout: Layout,
     output_layout: Layout,
@@ -96,21 +97,52 @@ fn dispatch_sm100_conv2d[
     filter_type: DType,
     output_type: DType,
     filter_is_fcrs: Bool,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    has_residual: Bool = False,
 ](
     input: LayoutTensor[input_type, input_layout, ...],
     filter: LayoutTensor[filter_type, filter_layout, ...],
     output: LayoutTensor[mut=True, output_type, output_layout, ...],
     symmetric_padding: IndexList[2],
     ctx: DeviceContext,
+    source_ptr: UnsafePointer[
+        Scalar[output_type], MutAnyOrigin
+    ] = UnsafePointer[Scalar[output_type], MutAnyOrigin](),
+    beta: Float32 = 0.0,
 ) raises:
     """Dispatch to SM100 structured conv2d with filter transpose.
 
     This function gates the SM100 kernel import behind @parameter if
     on dtype, so the kernel is never compiled for unsupported dtypes.
+
+    Parameters:
+        input_layout: Layout of the input activation tensor.
+        filter_layout: Layout of the filter weights tensor.
+        output_layout: Layout of the output tensor.
+        input_type: Data type of the input activation tensor.
+        filter_type: Data type of the filter weights tensor.
+        output_type: Data type of the output tensor.
+        filter_is_fcrs: If True, filter is FCRS layout; otherwise RSCF.
+        elementwise_lambda_fn: Optional void epilogue lambda applied after
+            output write. Signature: `fn(IndexList[2], SIMD) -> None`.
+        has_residual: If True, fuse residual add D = Conv(A,B) + beta*C.
+
+    Args:
+        input: Input activation tensor in NHWC layout.
+        filter: Filter weights tensor.
+        output: Output tensor in NHWC layout.
+        symmetric_padding: Symmetric padding (pad_h, pad_w).
+        ctx: Device context for kernel launch.
+        source_ptr: Pointer to residual source tensor C (NHWC, same shape
+            as output). Only used when has_residual is True.
+        beta: Residual scale factor. D = Conv(A,B) + beta*C.
+
+    Raises:
+        Error if kernel launch fails.
     """
 
     comptime if input_type == DType.bfloat16:
-        from .conv2d import conv2d_fprop
+        from .conv2d import conv2d_fprop, conv2d_fprop_with_residual
         from .conv_config import Conv2dConfig, Conv2dProblemShape
 
         # Extract dimensions
@@ -190,7 +222,7 @@ fn dispatch_sm100_conv2d[
             pad_w=symmetric_padding[1],
         )
 
-        comptime static_shape = DimList(-1, -1, -1, -1)
+        comptime static_shape = DimList[-1, -1, -1, -1]()
         var act_nd = NDBuffer[rank=4, input_type, _, static_shape](
             input.ptr, IndexList[4](batch, in_h, in_w, in_c)
         )
@@ -205,12 +237,36 @@ fn dispatch_sm100_conv2d[
             input_type, filter_type, output_type
         ].default_bf16_1sm()
 
-        conv2d_fprop[config=config](
-            out_nd.make_dims_unknown(),
-            act_nd.make_dims_unknown(),
-            filter_nd.make_dims_unknown(),
-            problem,
-            ctx,
-        )
+        comptime if has_residual:
+            var src_nd = NDBuffer[rank=4, output_type, _, static_shape](
+                source_ptr, IndexList[4](batch, out_h, out_w, out_c)
+            )
+            conv2d_fprop_with_residual[
+                config=config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                has_residual=True,
+            ](
+                out_nd.make_dims_unknown(),
+                act_nd.make_dims_unknown(),
+                filter_nd.make_dims_unknown(),
+                src_nd.make_dims_unknown(),
+                beta,
+                problem,
+                ctx,
+            )
+        else:
+            conv2d_fprop[
+                config=config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](
+                out_nd.make_dims_unknown(),
+                act_nd.make_dims_unknown(),
+                filter_nd.make_dims_unknown(),
+                problem,
+                ctx,
+            )
 
+        # Synchronize before freeing the transposed filter buffer to
+        # ensure the async conv2d kernel has finished reading from it.
+        ctx.synchronize()
         _ = filter_buf^

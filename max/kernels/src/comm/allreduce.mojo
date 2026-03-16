@@ -97,6 +97,7 @@ from std.sys import align_of, simd_width_of, size_of
 
 from buffer import NDBuffer
 from layout import Coord, Idx, TileTensor, row_major
+from layout.tile_layout import TensorLayout
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
@@ -128,6 +129,7 @@ from .sync import (
     MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
+    circular_add,
     is_p2p_enabled,
 )
 from .device_query import get_sm_version, _dispatch_max_num_blocks
@@ -137,7 +139,7 @@ comptime elementwise_epilogue_type = fn[
 ](IndexList[rank], SIMD[dtype, size=width]) capturing -> None
 
 
-fn _naive_reduce_kernel[
+def _naive_reduce_kernel[
     dtype: DType
 ](
     dst_buf: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -165,7 +167,7 @@ fn _naive_reduce_kernel[
         dst_buf[i] += src_buf[i]
 
 
-fn _naive_reduce_kernel_with_lambda[
+def _naive_reduce_kernel_with_lambda[
     dtype: DType,
     rank: Int,
     *,
@@ -191,7 +193,7 @@ fn _naive_reduce_kernel_with_lambda[
 
 
 @always_inline
-fn _allreduce_naive_single[
+def _allreduce_naive_single[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -329,7 +331,7 @@ fn _allreduce_naive_single[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-fn _allreduce_2stage_kernel[
+def _allreduce_2stage_kernel[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -396,7 +398,7 @@ fn _allreduce_2stage_kernel[
 
     comptime for i in range(ngpus):
         # Round-robin access pattern to balance NVLink traffic across GPUs.
-        var target = (my_rank + i) % ngpus
+        var target = circular_add[ngpus](my_rank, i)
         # Skip Signal header.
         tmps[i] = (
             rank_sigs[target].address_space_cast[AddressSpace.GENERIC]() + 1
@@ -412,7 +414,9 @@ fn _allreduce_2stage_kernel[
     ](uninitialized=True)
 
     comptime for i in range(num_buffers):
-        var target = 0 if num_buffers == 1 else (my_rank + i) % num_buffers
+        var target = 0 if num_buffers == 1 else circular_add[num_buffers](
+            my_rank, i
+        )
         ptrs[i] = src_ptrs[target]
 
     # --- Stage 1: Reduce-Scatter Phase ---
@@ -430,7 +434,7 @@ fn _allreduce_2stage_kernel[
     @always_inline
     @parameter
     @__copy_capture(tmp_buff)
-    fn rs_output_lambda[
+    def rs_output_lambda[
         _dtype: DType,
         _width: Int,
         *,
@@ -473,7 +477,7 @@ fn _allreduce_2stage_kernel[
         rs_config.stride,
     ):
         comptime for gpu_idx in range(ngpus):
-            var peer_rank = (my_rank + gpu_idx) % ngpus
+            var peer_rank = circular_add[ngpus](my_rank, gpu_idx)
 
             var dst_idx = rs_config.rank_start(peer_rank) + idx
             output_lambda[width=simd_width, alignment=alignment](
@@ -485,7 +489,7 @@ fn _allreduce_2stage_kernel[
 
     # Ragged tail - max 1 simd vector per gpu, spread work between threads
     if global_tid < ngpus:
-        var peer_rank = (my_rank + global_tid) % ngpus
+        var peer_rank = circular_add[ngpus](my_rank, Int(global_tid))
         if peer_rank < rs_config.axis_remainder:
             var idx = (
                 rs_config.rank_part(0) - simd_width
@@ -502,7 +506,7 @@ fn _allreduce_2stage_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-fn _allreduce_1stage_kernel[
+def _allreduce_1stage_kernel[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -558,7 +562,9 @@ fn _allreduce_1stage_kernel[
     ](uninitialized=True)
 
     comptime for i in range(num_buffers):
-        var target = 0 if num_buffers == 1 else (my_rank + i) % num_buffers
+        var target = 0 if num_buffers == 1 else circular_add[num_buffers](
+            my_rank, i
+        )
         ptrs[i] = src_ptrs[target]
 
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
@@ -583,7 +589,7 @@ fn _allreduce_1stage_kernel[
 
 
 @always_inline
-fn _allreduce_p2p[
+def _allreduce_p2p[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -705,7 +711,7 @@ fn _allreduce_p2p[
 
 
 @parameter
-fn allreduce[
+def allreduce[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -781,7 +787,7 @@ fn allreduce[
     @always_inline
     @parameter
     @__copy_capture(output_buffer)
-    fn default_output_lambda[
+    def default_output_lambda[
         _dtype: DType,
         _rank: Int,
         _width: Int,
@@ -834,3 +840,76 @@ fn allreduce[
         pdl_level=pdl_level,
         use_multimem=use_multimem,
     ](input_buffers, output_buffer, rank_sigs, max_num_blocks, ctx)
+
+
+@parameter
+@always_inline
+def allreduce[
+    dtype: DType,
+    rank: Int,
+    ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    output_lambda: Optional[elementwise_epilogue_type] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+    *,
+    use_multimem: Bool = False,
+](
+    input_buffers: InlineArray[
+        TileTensor[dtype, in_layout, in_origin],
+        1 if use_multimem else ngpus,
+    ],
+    output_buffer: TileTensor[mut=True, dtype, ...],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    ctx: DeviceContext,
+    _max_num_blocks: Optional[Int] = None,
+) raises:
+    """TileTensor overload of allreduce. Constructs NDBuffers and delegates
+    to the NDBuffer implementation.
+
+    Parameters:
+        dtype: Data type of the tensor elements.
+        rank: Number of dimensions in the tensors.
+        ngpus: Number of GPUs participating in the allreduce.
+        in_layout: Layout of the input TileTensors.
+        in_origin: Origin of the input TileTensors.
+        output_lambda: Elementwise epilogue applied on the device result.
+        pdl_level: Controls PDL behavior for P2P kernels.
+        use_multimem: Whether to use multimem mode for improved performance.
+
+    Args:
+        input_buffers: Inputs from ALL GPUs as TileTensors.
+        output_buffer: Output for THIS GPU as a TileTensor.
+        rank_sigs: Per-GPU Signal pointers.
+        ctx: Device context for THIS GPU.
+        _max_num_blocks: Optional grid limit.
+    """
+    comptime num_buffers = 1 if use_multimem else ngpus
+
+    # Build a flat shape: first dim = num_elements, rest = 1.
+    # Allreduce treats buffers as flat, so only total element count matters.
+    var flat_shape = IndexList[rank](1)
+    flat_shape[0] = input_buffers[0].num_elements()
+
+    # Build NDBuffer array from TileTensors.
+    var ndb_inputs = InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], num_buffers
+    ](fill={})
+    comptime for i in range(num_buffers):
+        ndb_inputs[i] = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
+            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                input_buffers[i].ptr
+            ),
+            flat_shape,
+        )
+
+    var ndb_output = NDBuffer[rank=rank, dtype, MutAnyOrigin](
+        rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](output_buffer.ptr),
+        flat_shape,
+    )
+
+    allreduce[
+        output_lambda=output_lambda,
+        pdl_level=pdl_level,
+        use_multimem=use_multimem,
+    ](ndb_inputs, ndb_output, rank_sigs, ctx, _max_num_blocks)

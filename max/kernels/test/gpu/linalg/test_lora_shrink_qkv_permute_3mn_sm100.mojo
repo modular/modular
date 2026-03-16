@@ -13,10 +13,18 @@
 
 import std.itertools
 
-from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import B200
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.lora import shrink_qkv_permute_3mn_sm100 as shrink_qkv_permute_3mn
@@ -26,7 +34,7 @@ from std.utils import IndexList
 from std.utils.index import Index
 
 
-fn test[
+def test[
     in_type: DType,
     out_type: DType,
     num_experts: Int,
@@ -69,20 +77,16 @@ fn test[
         )
 
     # Define shapes
-    comptime static_a_shape = DimList(Dim(), K)
     var dynamic_a_shape = IndexList[2](total_num_tokens, K)
     var a_size = total_num_tokens * K
 
     comptime actual_N = 3 * N
-    comptime static_c_ref_shape = DimList(Dim(), actual_N)
     var dynamic_c_ref_shape = IndexList[2](total_num_tokens, actual_N)
     var c_ref_size = total_num_tokens * actual_N
 
-    comptime static_lora_c_shape = DimList(3, Dim(), N)
     var dynamic_lora_c_shape = IndexList[3](3, total_num_tokens, N)
     var lora_c_size = 3 * total_num_tokens * N
 
-    comptime static_b_shape = DimList(num_experts, 3 * N, K)
     var dynamic_b_shape = IndexList[3](num_experts, 3 * N, K)
     var b_size = num_experts * 3 * N * K
 
@@ -140,29 +144,37 @@ fn test[
         num_experts
     )
 
-    var a_dev = NDBuffer[rank=2, a_type, _, static_a_shape](
+    var a_dev = TileTensor(
         a_dev_buffer.unsafe_ptr(),
-        IndexList[2](total_num_tokens, K),
+        row_major(Coord(Idx(total_num_tokens), Idx[K]())),
     )
-    var b_dev = NDBuffer[rank=3, b_type, _, static_b_shape](
+    var b_dev = TileTensor(
         b_dev_buffer.unsafe_ptr(),
-        dynamic_b_shape,
+        row_major[num_experts, 3 * N, K](),
     )
-    var c_dev = NDBuffer[rank=3, c_type, _, static_lora_c_shape](
+    var c_dev = TileTensor(
         c_dev_buffer.unsafe_ptr(),
-        IndexList[3](3, total_num_tokens, N),
+        row_major(Coord(Idx(3), Idx(total_num_tokens), Idx[N]())),
     )
-    var c_ref_dev = NDBuffer[rank=2, c_type, _, static_c_ref_shape](
+    var c_ref_dev = TileTensor(
         c_ref_dev_buffer.unsafe_ptr(),
-        IndexList[2](total_num_tokens, actual_N),
+        row_major(Coord(Idx(total_num_tokens), Idx[actual_N]())),
     )
-    var a_offsets_dev = NDBuffer[rank=1, DType.uint32](
+    var a_offsets_dev = TileTensor(
         a_offsets_dev_buffer.unsafe_ptr(),
-        IndexList[1](num_experts + 1),
+        row_major(
+            Coord(
+                Idx(num_experts + 1),
+            )
+        ),
     )
-    var expert_ids_dev = NDBuffer[rank=1, DType.int32](
+    var expert_ids_dev = TileTensor(
         expert_ids_dev_buffer.unsafe_ptr(),
-        IndexList[1](num_experts),
+        row_major(
+            Coord(
+                Idx(num_experts),
+            )
+        ),
     )
 
     # Move inputs to device
@@ -174,10 +186,10 @@ fn test[
 
     naive_grouped_matmul(
         c_ref_dev,
-        a_dev,
-        b_dev,
-        a_offsets_dev,
-        expert_ids_dev,
+        a_dev.as_immut(),
+        b_dev.as_immut(),
+        a_offsets_dev.as_immut(),
+        expert_ids_dev.as_immut(),
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,
@@ -211,7 +223,7 @@ fn test[
         assert_almost_equal(
             actual,
             expect,
-            msg=(
+            msg=String(
                 t"qkv_idx: {qkv_idx} m: {m} n: {n} ref: {expect} actual:"
                 t" {actual}"
             ),

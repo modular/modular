@@ -79,7 +79,7 @@ def test_causal_mask_asm() raises:
 
     print("== test_causal_mask_asm")
 
-    fn kernel(
+    def kernel(
         q_idx: UInt32, k_idx: UInt32, x: UnsafePointer[Float32, MutAnyOrigin]
     ):
         var mask = CausalMask()
@@ -143,7 +143,7 @@ def test_and_mask() raises:
     assert_true(
         mask2.status(Index(64, 384), Index(64, 128))
         == TileMaskStatus.FULL_MASK,
-        msg=(
+        msg=String(
             t"lhs = {mask2.status(Index(0, 0), Index(0, 0))} rhs ="
             t" {TileMaskStatus.FULL_MASK}"
         ),
@@ -165,7 +165,7 @@ def test_sliding_window_causal_mask() raises:
         assert_equal(
             status,
             expected,
-            msg=t"  {offset}, {size} > {status} (expected: {expected})",
+            msg=String(t"  {offset}, {size} > {status} (expected: {expected})"),
         )
 
         # K > 0 1 2 3 4 5 6 7 8
@@ -197,7 +197,7 @@ def test_sliding_window_causal_mask_asm() raises:
 
     print("== test_sliding_window_causal_mask_asm")
 
-    fn kernel(
+    def kernel(
         q_idx: UInt32, k_idx: UInt32, x: UnsafePointer[Float32, MutAnyOrigin]
     ):
         var mask = SlidingWindowCausalMask[8]()

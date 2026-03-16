@@ -90,7 +90,7 @@ def matmul_qint4_pack_b[
         dst_ptr += n_groups * k_groups * bytes_per_group_int4
 
 
-fn _quantize_a_block[
+def _quantize_a_block[
     group_size: Int, aq_type: DType, dtype: DType
 ](a_ptr: UnsafePointer[Scalar[dtype], _]) -> Tuple[
     SIMD[aq_type, group_size], Float32
@@ -112,7 +112,7 @@ fn _quantize_a_block[
     return (quant_data, scale)
 
 
-fn _quantize_a_buffer[
+def _quantize_a_buffer[
     group_size: Int,
     dtype: DType,
     aq_type: DType,
@@ -148,7 +148,7 @@ fn _quantize_a_buffer[
 
         @parameter
         @always_inline
-        fn process_rows[tile_m: Int](m: Int):
+        def process_rows[tile_m: Int](m: Int):
             for row in range(tile_m):
                 var ak_quant_ptr = a_quant_ptr + row * aq_interleave
                 var ak_scale_ptr = a_scale_ptr + row
@@ -196,7 +196,7 @@ fn _quantize_a_buffer[
     _ = a_scale_ptr
 
 
-fn _unpack_weights[
+def _unpack_weights[
     group_size: Int,
     tile_n: Int,
     simd_width: Int,
@@ -313,7 +313,7 @@ fn _unpack_weights[
 
 
 @always_inline
-fn _scale_and_accumulate[
+def _scale_and_accumulate[
     group_size: Int,
     b_scale_type: DType,
     tile_m: Int,
@@ -337,7 +337,7 @@ fn _scale_and_accumulate[
 
     @parameter
     @always_inline
-    fn apply_a_scale[row: Int](a_scale: Float32):
+    def apply_a_scale[row: Int](a_scale: Float32):
         comptime for col in range(tile_n):
             var dot = c_int32[row, col]
 
@@ -377,18 +377,18 @@ fn _scale_and_accumulate[
 
 trait _MatmulQInt4Kernel:
     @staticmethod
-    fn aq_type() -> DType:
+    def aq_type() -> DType:
         """Returns the type to use for representing quantized A data."""
         ...
 
     @staticmethod
-    fn aq_tuple_type() -> DType:
+    def aq_tuple_type() -> DType:
         """Returns the type to use for representing tuples of quantized A data.
         """
         ...
 
     @staticmethod
-    fn quantize_a_buffer[
+    def quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
         a: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
@@ -398,7 +398,7 @@ trait _MatmulQInt4Kernel:
         ...
 
     @staticmethod
-    fn process_group_packed[
+    def process_group_packed[
         group_size: Int, tile_n: Int, simd_width: Int
     ](
         a_ptr: UnsafePointer[Int8, _],
@@ -409,7 +409,7 @@ trait _MatmulQInt4Kernel:
         ...
 
     @staticmethod
-    fn process_group_unpacked[
+    def process_group_unpacked[
         group_size: Int, tile_m: Int, tile_n: Int, simd_width: Int
     ](
         a_ptr: UnsafePointer[Int8, _],
@@ -425,17 +425,17 @@ trait _MatmulQInt4Kernel:
 struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
     @always_inline
     @staticmethod
-    fn aq_type() -> DType:
+    def aq_type() -> DType:
         return DType.uint8
 
     @always_inline
     @staticmethod
-    fn aq_tuple_type() -> DType:
+    def aq_tuple_type() -> DType:
         return DType.int32
 
     @always_inline
     @staticmethod
-    fn quantize_a_buffer[
+    def quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
         a: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
@@ -448,7 +448,7 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
         return _quantize_a_buffer[group_size](a, a_quant, a_scale)
 
     @staticmethod
-    fn process_group_packed[
+    def process_group_packed[
         group_size: Int, tile_n: Int, simd_width: Int
     ](
         a_ptr: UnsafePointer[Int8, _],
@@ -515,7 +515,7 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
 
     @always_inline
     @staticmethod
-    fn process_group_unpacked[
+    def process_group_unpacked[
         group_size: Int, tile_m: Int, tile_n: Int, simd_width: Int
     ](
         a_ptr: UnsafePointer[Int8, _],
@@ -563,17 +563,17 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
 struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
     @always_inline
     @staticmethod
-    fn aq_type() -> DType:
+    def aq_type() -> DType:
         return DType.uint8
 
     @always_inline
     @staticmethod
-    fn aq_tuple_type() -> DType:
+    def aq_tuple_type() -> DType:
         return DType.int32
 
     @always_inline
     @staticmethod
-    fn quantize_a_buffer[
+    def quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
         a: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
@@ -586,7 +586,7 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
         return _quantize_a_buffer[group_size](a, a_quant, a_scale)
 
     @staticmethod
-    fn process_group_packed[
+    def process_group_packed[
         group_size: Int, tile_n: Int, simd_width: Int
     ](
         a_ptr: UnsafePointer[Int8, _],
@@ -673,7 +673,7 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
 
     @always_inline
     @staticmethod
-    fn process_group_unpacked[
+    def process_group_unpacked[
         group_size: Int, tile_m: Int, tile_n: Int, simd_width: Int
     ](
         a_ptr: UnsafePointer[Int8, _],
@@ -726,17 +726,17 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
 struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
     @always_inline
     @staticmethod
-    fn aq_type() -> DType:
+    def aq_type() -> DType:
         return DType.int8
 
     @always_inline
     @staticmethod
-    fn aq_tuple_type() -> DType:
+    def aq_tuple_type() -> DType:
         return DType.int32
 
     @always_inline
     @staticmethod
-    fn quantize_a_buffer[
+    def quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
         a: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
@@ -749,7 +749,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
         return _quantize_a_buffer[group_size](a, a_quant, a_scale)
 
     @staticmethod
-    fn process_group_packed[
+    def process_group_packed[
         group_size: Int, tile_n: Int, simd_width: Int
     ](
         a_ptr: UnsafePointer[Int8, _],
@@ -796,7 +796,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
 
     @always_inline
     @staticmethod
-    fn process_group_unpacked[
+    def process_group_unpacked[
         group_size: Int, tile_m: Int, tile_n: Int, simd_width: Int
     ](
         a_ptr: UnsafePointer[Int8, _],
@@ -838,16 +838,16 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
 struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
     @always_inline
     @staticmethod
-    fn aq_type() -> DType:
+    def aq_type() -> DType:
         return DType.int8
 
     @always_inline
     @staticmethod
-    fn aq_tuple_type() -> DType:
+    def aq_tuple_type() -> DType:
         return DType.int64
 
     @staticmethod
-    fn quantize_a_buffer[
+    def quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
         a: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
@@ -865,7 +865,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
         )
 
     @staticmethod
-    fn process_group_packed[
+    def process_group_packed[
         group_size: Int, tile_n: Int, simd_width: Int
     ](
         a_ptr: UnsafePointer[Int8, _],
@@ -881,7 +881,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
 
     @always_inline
     @staticmethod
-    fn process_group_unpacked[
+    def process_group_unpacked[
         group_size: Int, tile_m: Int, tile_n: Int, simd_width: Int
     ](
         a_ptr: UnsafePointer[Int8, _],
@@ -949,7 +949,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
         )
 
 
-fn _matmul_qint4_m_1[
+def _matmul_qint4_m_1[
     kernel: _MatmulQInt4Kernel,
     group_size: Int,
     aq_type: DType,
@@ -986,7 +986,7 @@ fn _matmul_qint4_m_1[
 
     @parameter
     @__copy_capture(N, K, k_groups, work_count, num_workers)
-    fn task_func(task_id: Int):
+    def task_func(task_id: Int):
         var block_range = partition_work(task_id, num_workers, work_count, 1)
         var task_n_start = block_range[0] * grain_size
         var task_n_count = block_range[1] * grain_size
@@ -995,7 +995,7 @@ fn _matmul_qint4_m_1[
 
         @parameter
         @always_inline
-        fn process_cols[tile_n: Int](n_idx: Int):
+        def process_cols[tile_n: Int](n_idx: Int):
             var n = task_n_start + n_idx * simd_width
 
             var c_float = _Accumulator[DType.float32, 1, tile_n, simd_width]()
@@ -1034,7 +1034,7 @@ fn _matmul_qint4_m_1[
     sync_parallelize[task_func](num_workers)
 
 
-fn _matmul_qint4_m_any[
+def _matmul_qint4_m_any[
     kernel: _MatmulQInt4Kernel,
     group_size: Int,
     aq_type: DType,
@@ -1068,7 +1068,7 @@ fn _matmul_qint4_m_any[
 
     @parameter
     @__copy_capture(M, N, K, k_groups, work_count, num_workers)
-    fn task_func(task_id: Int):
+    def task_func(task_id: Int):
         var block_range = partition_work(task_id, num_workers, work_count, 1)
         var task_n_start = block_range[0] * grain_size
         var task_n_count = block_range[1] * grain_size
@@ -1081,7 +1081,7 @@ fn _matmul_qint4_m_any[
 
             @parameter
             @always_inline
-            fn process_cols[tile_n: Int](n_idx: Int):
+            def process_cols[tile_n: Int](n_idx: Int):
                 var n = task_n_start + n_idx * simd_width
 
                 comptime k_batch_groups = K_BATCH_SIZE // group_size
@@ -1131,7 +1131,7 @@ fn _matmul_qint4_m_any[
 
                 @parameter
                 @always_inline
-                fn process_rows[tile_m: Int](m: Int):
+                def process_rows[tile_m: Int](m: Int):
                     var c_ptr = c.ptr + c._offset(Index(m, n))
                     var c_float = _Accumulator[
                         DType.float32, tile_m, tile_n, simd_width
@@ -1199,7 +1199,7 @@ fn _matmul_qint4_m_any[
     sync_parallelize[task_func](num_workers)
 
 
-fn _matmul_qint4[
+def _matmul_qint4[
     kernel: _MatmulQInt4Kernel,
     group_size: Int,
     b_layout: Layout = Layout.row_major[2](),
@@ -1249,7 +1249,7 @@ fn _matmul_qint4[
     a_scale_base_ptr.free()
 
 
-fn matmul_qint4[
+def matmul_qint4[
     group_size: Int,
     b_layout: Layout = Layout.row_major[2](),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
@@ -1263,7 +1263,7 @@ fn matmul_qint4[
     ],
 ):
     @parameter
-    fn kernel_dispatch[kernel: _MatmulQInt4Kernel]():
+    def kernel_dispatch[kernel: _MatmulQInt4Kernel]():
         return _matmul_qint4[
             kernel,
             group_size=group_size,

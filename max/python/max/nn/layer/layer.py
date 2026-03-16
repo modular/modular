@@ -82,7 +82,7 @@ class Layer:
     """.. deprecated:: 25.2
 
     Base class for neural network components.
-    Use :obj:`Module` instead.
+    Use :class:`Module` instead.
 
     Provides functionality for adding hooks to the call function of
     each layer to support testing, debugging or profiling.
@@ -113,7 +113,7 @@ class Module(Layer, ABC):
 
     Provides functionality to create custom layers and construct networks with automatic weight tracking.
 
-    The following example uses the :obj:`Module` class to create custom layers and build a neural network:
+    The following example uses the :class:`Module` class to create custom layers and build a neural network:
 
     .. code-block:: python
 
@@ -141,10 +141,10 @@ class Module(Layer, ABC):
         model = MLP()
         print(model.state_dict())  # {"up.weight": Buffer([5, 10]), ...}
 
-    Constructing a graph without :obj:`Module` can result in name collisions
+    Constructing a graph without :class:`Module` can result in name collisions
     with the weights (in this example, there would be three weights with the
-    name `Weight`). With :obj:`Module`, you can use :obj:`state_dict()` or
-    :obj:`load_state_dict()` to initialize or set the weights values, and finalize
+    name ``Weight``). With :class:`Module`, you can use :meth:`state_dict` or
+    :meth:`load_state_dict` to initialize or set the weights values, and finalize
     the weight names to be unique within the model.
     """
 
@@ -186,6 +186,7 @@ class Module(Layer, ABC):
 
     @property
     def layer_weights(self) -> dict[str, Weight]:
+        """Returns a mapping from weight name to :class:`~max.graph.Weight` for this layer."""
         return self._layer_weights
 
     def __delattr__(self, name: str) -> None:
@@ -195,6 +196,16 @@ class Module(Layer, ABC):
         super().__delattr__(name)
 
     def set_shared_weight(self, name: str, weight: Weight) -> None:
+        """Registers a :class:`~max.graph.Weight` as shared on this layer.
+
+        Sets ``name`` as an attribute on this layer and marks the weight as
+        shared so that :meth:`raw_state_dict` and :meth:`load_state_dict` skip
+        it when iterating over owned weights.
+
+        Args:
+            name: The attribute name under which the weight is registered.
+            weight: The :class:`~max.graph.Weight` to share.
+        """
         setattr(self, name, weight)
         self._shared_weights[name] = weight
 
@@ -316,7 +327,7 @@ class Module(Layer, ABC):
 
         Args:
             state_dict: A map from weight name to a numpy array or
-                :obj:`max.driver.Buffer`.
+                :class:`~max.driver.Buffer`.
             override_quantization_encoding: Whether to override the weight
                 quantization based on the loaded value.
             weight_alignment: If specified, overrides the alignment for each
@@ -406,8 +417,8 @@ class Module(Layer, ABC):
     ) -> dict[str, DLPackArray]:
         """Returns values of all weights in the model.
 
-        The values returned are the same as the values set in :obj:`load_state_dict`.
-        If :obj:`load_state_dict` has not been called and none of the weights have
+        The values returned are the same as the values set in :meth:`load_state_dict`.
+        If :meth:`load_state_dict` has not been called and none of the weights have
         values, then they are initialized to zero.
 
         Args:
@@ -417,7 +428,7 @@ class Module(Layer, ABC):
 
         Returns:
             Map from weight name to the weight value (can be numpy array or
-            :obj:`max.driver.Buffer`).
+            :class:`~max.driver.Buffer`).
         """
         state_dict = {}
         for full_weight_name, weight in self.raw_state_dict().items():
@@ -436,8 +447,8 @@ class Module(Layer, ABC):
 
     def raw_state_dict(self) -> dict[str, Weight]:
         """Returns all weights objects in the model.
-        Unlike :obj:`state_dict`, this returns :obj:`max.graph.Weight` objects instead of
-        the assigned values. Some parameters inside the :obj:`Weight` can be
+        Unlike :meth:`state_dict`, this returns :class:`~max.graph.Weight` objects instead of
+        the assigned values. Some parameters inside the :class:`~max.graph.Weight` can be
         configured before a graph is built. Do not change these attributes after
         building a graph:
 
@@ -447,7 +458,7 @@ class Module(Layer, ABC):
         - :obj:`~max.graph.Weight.shape`
 
         Returns:
-            Map from weight name to the :obj:`max.graph.Weight` object.
+            Map from weight name to the :class:`~max.graph.Weight` object.
         """
         state_dict = {}
         for name, layer in recursive_named_layers(self):
@@ -465,7 +476,7 @@ class Module(Layer, ABC):
 
         Subclasses must override this function. There is no exact signature that a
         call function must follow, but inputs/outputs should generally be
-        :obj:`max.graph.TensorValue`. Non-:obj:`TensorValue` inputs are fine, but
+        :class:`~max.graph.TensorValue`. Non-:class:`~max.graph.TensorValue` inputs are fine, but
         cannot be updated once the graph is built.
         """
 

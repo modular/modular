@@ -26,10 +26,6 @@ automatic memory management.
 """
 
 from .arc_pointer import ArcPointer
-from .legacy_unsafe_pointer import (
-    LegacyOpaquePointer,
-    LegacyUnsafePointer,
-)
 from .memory import (
     memcmp,
     memcpy,

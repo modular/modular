@@ -36,8 +36,7 @@ from std.benchmark import (
 )
 from comm.sync import enable_p2p
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor
-from layout.runtime_layout import RuntimeLayout
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from shmem.ep_comm import (
     BF16TokenFormat,
     EP_DATA_READY_FLAG,
@@ -51,7 +50,7 @@ from std.testing import assert_equal
 from std.utils import IndexList
 
 
-fn legalize_topk_ids[
+def legalize_topk_ids[
     n_experts: Int, top_k: Int
 ](topk_ids: UnsafePointer[Int32, MutAnyOrigin], n_tokens: Int):
     for tok_id in range(n_tokens):
@@ -59,7 +58,7 @@ fn legalize_topk_ids[
 
         # The top-k ids for a token should be unique. If not, we will assign a
         # random id to the duplicate id.
-        fn is_duplicate() -> Int:
+        def is_duplicate() -> Int:
             for i in range(top_k):
                 for j in range(i + 1, top_k):
                     if topk_ids_for_token[i] == topk_ids_for_token[j]:
@@ -72,7 +71,7 @@ fn legalize_topk_ids[
             duplicate_idx = is_duplicate()
 
 
-fn test_combine[
+def test_combine[
     hidden_size: Int,
     top_k: Int,
     n_experts: Int,
@@ -236,33 +235,33 @@ fn test_combine[
     # Dispatch helpers
     @always_inline
     @parameter
-    fn get_dispatch_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutAnyOrigin]) raises:
+    def get_dispatch_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutAnyOrigin]) raises:
         return type_of(result)(dispatch_send_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * msg_bytes)
 
     # Combine helpers
     @always_inline
     @parameter
-    fn get_combine_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutAnyOrigin]) raises:
+    def get_combine_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutAnyOrigin]) raises:
         return type_of(result)(combine_send_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * combine_msg_bytes)
 
     @always_inline
     @parameter
-    fn get_combine_recv_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutAnyOrigin]) raises:
+    def get_combine_recv_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutAnyOrigin]) raises:
         return type_of(result)(combine_recv_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes)
 
     @always_inline
     @parameter
-    fn get_combine_recv_count_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt64, MutAnyOrigin]) raises:
+    def get_combine_recv_count_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt64, MutAnyOrigin]) raises:
         return type_of(result)(combine_recv_count_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_experts)
 
     @always_inline
     @parameter
-    fn get_atomic_counters(dev_idx: Int, slot_idx: Int, out result: EPLocalSyncCounters[n_experts]) raises:
+    def get_atomic_counters(dev_idx: Int, slot_idx: Int, out result: EPLocalSyncCounters[n_experts]) raises:
         return EPLocalSyncCounters[n_experts](atomic_counters_list[dev_idx].unsafe_ptr() + slot_idx * EPLocalSyncCounters[n_experts].total_size())
 
     @always_inline
     @parameter
-    fn get_topk_ids_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[DType.int32, topk_ids_layout, ImmutAnyOrigin]) raises:
+    def get_topk_ids_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[DType.int32, topk_ids_layout, ImmutAnyOrigin]) raises:
         return type_of(result)(
             device_topk_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k,
             RuntimeLayout[topk_ids_layout].row_major(
@@ -272,7 +271,7 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn get_input_tokens_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[input_type, input_tokens_layout, ImmutAnyOrigin]) raises:
+    def get_input_tokens_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[input_type, input_tokens_layout, ImmutAnyOrigin]) raises:
         return type_of(result)(
             device_input_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * hidden_size,
             RuntimeLayout[input_tokens_layout].row_major(
@@ -282,7 +281,7 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn get_output_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[input_type, output_layout, MutAnyOrigin]) raises:
+    def get_output_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[input_type, output_layout, MutAnyOrigin]) raises:
         return type_of(result)(
             device_output_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * hidden_size,
             RuntimeLayout[output_layout].row_major(
@@ -292,7 +291,7 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn get_row_offsets_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[DType.uint32, row_offsets_layout, MutAnyOrigin]) raises:
+    def get_row_offsets_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[DType.uint32, row_offsets_layout, MutAnyOrigin]) raises:
         return type_of(result)(
             device_row_offsets_bufs_list[dev_idx].unsafe_ptr() + slot_idx * (n_local_experts + 1),
             RuntimeLayout[row_offsets_layout].row_major(
@@ -302,7 +301,7 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn get_expert_ids_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin]) raises:
+    def get_expert_ids_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin]) raises:
         return type_of(result)(
             device_expert_ids_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_local_experts,
             RuntimeLayout[expert_ids_layout].row_major(
@@ -312,7 +311,7 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn get_src_token_info_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[DType.int32, src_token_info_layout, MutAnyOrigin]) raises:
+    def get_src_token_info_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[DType.int32, src_token_info_layout, MutAnyOrigin]) raises:
         return type_of(result)(
             device_src_token_info_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * 2,
             RuntimeLayout[src_token_info_layout].row_major(
@@ -322,7 +321,7 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn get_output_2_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[input_type, output_2_layout, MutAnyOrigin]) raises:
+    def get_output_2_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[input_type, output_2_layout, MutAnyOrigin]) raises:
         return type_of(result)(
             device_output_2_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k * hidden_size,
             RuntimeLayout[output_2_layout].row_major(
@@ -395,7 +394,7 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn run_dispatch_async(dev_idx: Int, slot_idx: Int) raises:
+    def run_dispatch_async(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_function[dispatch_async, dispatch_async](
             get_input_tokens_tensor(dev_idx, slot_idx),
@@ -411,7 +410,7 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn run_dispatch_async_wait(dev_idx: Int, slot_idx: Int) raises:
+    def run_dispatch_async_wait(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_function[dispatch_wait, dispatch_wait](
             type_of(format_handler)(get_output_tensor(dev_idx, slot_idx)),
@@ -431,13 +430,13 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn run_full_dispatch(dev_idx: Int, slot_idx: Int) raises:
+    def run_full_dispatch(dev_idx: Int, slot_idx: Int) raises:
         run_dispatch_async(dev_idx, slot_idx)
         run_dispatch_async_wait(dev_idx, slot_idx)
 
     @always_inline
     @parameter
-    fn run_combine_async(dev_idx: Int, slot_idx: Int) raises:
+    def run_combine_async(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_function[combine_async, combine_async](
             get_output_tensor(dev_idx, slot_idx),
@@ -456,7 +455,7 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn run_combine_async_wait(dev_idx: Int, slot_idx: Int) raises:
+    def run_combine_async_wait(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_function[combine_wait, combine_wait](
             get_output_2_tensor(dev_idx, slot_idx),
@@ -470,13 +469,13 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn run_e2e(dev_idx: Int, slot_idx: Int) raises:
+    def run_e2e(dev_idx: Int, slot_idx: Int) raises:
         run_combine_async(dev_idx, slot_idx)
         run_combine_async_wait(dev_idx, slot_idx)
 
     @always_inline
     @parameter
-    fn clean_up(dev_idx: Int) raises:
+    def clean_up(dev_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_memset(atomic_counters_list[dev_idx], Int32(0))
         ctx.enqueue_memset(
@@ -519,13 +518,13 @@ fn test_combine[
         list_of_ctx[dev_i].synchronize()
 
     @parameter
-    fn per_gpu_combine(i: Int) raises:
+    def per_gpu_combine(i: Int) raises:
         @parameter
         @always_inline
-        fn bench_iter(mut b: Bencher) raises:
+        def bench_iter(mut b: Bencher) raises:
             @parameter
             @always_inline
-            fn call_fn(ctx: DeviceContext, cache_iter: Int) raises:
+            def call_fn(ctx: DeviceContext, cache_iter: Int) raises:
                 var dev_id = Int(ctx.id())
                 run_combine_async(dev_id, cache_iter)
 
@@ -561,13 +560,13 @@ fn test_combine[
         list_of_ctx[dev_i].synchronize()
 
     @parameter
-    fn per_gpu_combine_wait(i: Int) raises:
+    def per_gpu_combine_wait(i: Int) raises:
         @parameter
         @always_inline
-        fn bench_iter(mut b: Bencher) raises:
+        def bench_iter(mut b: Bencher) raises:
             @parameter
             @always_inline
-            fn call_fn(ctx: DeviceContext, cache_iter: Int) raises:
+            def call_fn(ctx: DeviceContext, cache_iter: Int) raises:
                 var dev_id = Int(ctx.id())
                 run_combine_async_wait(dev_id, cache_iter)
 
@@ -603,7 +602,7 @@ fn test_combine[
 
     @parameter
     @always_inline
-    fn verify_results(dev_idx: Int) raises:
+    def verify_results(dev_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
 
         # Allocate host buffers for copying device outputs

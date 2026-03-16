@@ -33,17 +33,19 @@ from std.math import ceildiv
 from std.sys import simd_width_of
 
 from buffer import NDBuffer
+from layout import TileTensor
+from layout.tile_layout import TensorLayout
 from std.memory import UnsafePointer
 from std.gpu import WARP_SIZE, global_idx, grid_dim
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
-from std.utils import StaticTuple
+from std.utils import IndexList, StaticTuple
 
 from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, is_p2p_enabled
 
 
 @always_inline
-fn _allgather_naive[
+def _allgather_naive[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -96,7 +98,7 @@ fn _allgather_naive[
             )
 
 
-fn _allgather_p2p_kernel[
+def _allgather_p2p_kernel[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -152,7 +154,7 @@ fn _allgather_p2p_kernel[
 
 
 @always_inline
-fn _allgather_p2p[
+def _allgather_p2p[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -226,7 +228,77 @@ fn _allgather_p2p[
 
 
 @always_inline
-fn allgather[
+def allgather[
+    dtype: DType,
+    rank: Int,
+    ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    out_layout: TensorLayout,
+    out_origin: MutOrigin,
+](
+    input_buffers: InlineArray[TileTensor[dtype, in_layout, in_origin], ngpus],
+    output_buffers: InlineArray[
+        TileTensor[mut=True, dtype, out_layout, out_origin], ngpus * ngpus
+    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    ctxs: List[DeviceContext],
+    _max_num_blocks: Optional[Int] = None,
+) raises:
+    """TileTensor overload of allgather. Constructs NDBuffers and delegates
+    to the NDBuffer implementation.
+
+    Parameters:
+        dtype: Data type of the tensor elements.
+        rank: Number of dimensions in input tensors.
+        ngpus: Number of GPUs participating in all-gather.
+        in_layout: Layout of the input TileTensors.
+        in_origin: Origin of the input TileTensors.
+        out_layout: Layout of the output TileTensors.
+        out_origin: Origin of the output TileTensors.
+
+    Args:
+        input_buffers: Input buffers from each GPU as TileTensors.
+        output_buffers: Flat array of ngpus * ngpus output TileTensors.
+        rank_sigs: Signal pointers for P2P synchronization.
+        ctxs: List of device contexts for participating GPUs.
+        _max_num_blocks: Maximum number of blocks for kernel launch (optional).
+    """
+    # Build NDBuffer arrays from TileTensors using flat shapes.
+    # Allgather treats buffers as flat, so only total element count matters.
+    var ndb_inputs = InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
+    ](fill={})
+    comptime for i in range(ngpus):
+        var in_shape = IndexList[rank](1)
+        in_shape[0] = input_buffers[i].num_elements()
+        ndb_inputs[i] = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
+            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                input_buffers[i].ptr
+            ),
+            in_shape,
+        )
+
+    var ndb_outputs = InlineArray[
+        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
+    ](fill={})
+    comptime for i in range(ngpus * ngpus):
+        var out_shape = IndexList[rank](1)
+        out_shape[0] = output_buffers[i].num_elements()
+        ndb_outputs[i] = NDBuffer[rank=rank, dtype, MutAnyOrigin](
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                output_buffers[i].ptr
+            ),
+            out_shape,
+        )
+
+    allgather[ngpus=ngpus](
+        ndb_inputs, ndb_outputs, rank_sigs, ctxs, _max_num_blocks
+    )
+
+
+@always_inline
+def allgather[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -290,7 +362,7 @@ fn allgather[
 # Backward compatibility overload without rank_sigs.
 @deprecated("Use the `signal_buffers` overload of `allgather` instead.")
 @always_inline
-fn allgather[
+def allgather[
     dtype: DType,
     rank: Int,
     ngpus: Int,

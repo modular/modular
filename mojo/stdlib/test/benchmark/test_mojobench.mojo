@@ -27,18 +27,18 @@ from std.testing import TestSuite
 
 
 @parameter
-fn bench1(mut b: Bencher):
+def bench1(mut b: Bencher):
     @parameter
-    fn to_bench():
+    def to_bench():
         print("hello")
 
     b.iter[to_bench]()
 
 
 @parameter
-fn bench2(mut b: Bencher, mystr: String) raises:
+def bench2(mut b: Bencher, mystr: String) raises:
     @parameter
-    fn to_bench():
+    def to_bench():
         print(mystr)
 
     b.iter[to_bench]()

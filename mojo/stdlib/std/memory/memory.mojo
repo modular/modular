@@ -28,7 +28,6 @@ from std.sys import (
     align_of,
     codegen_unreachable,
     get_defined_string,
-    is_run_in_comptime_interpreter,
     is_gpu,
     llvm_intrinsic,
     simd_bit_width,
@@ -44,7 +43,7 @@ from std.algorithm import vectorize
 
 
 @always_inline
-fn _memcmp_impl_unconstrained[
+def _memcmp_impl_unconstrained[
     dtype: DType, //
 ](
     s1: UnsafePointer[mut=False, Scalar[dtype], ...],
@@ -60,7 +59,7 @@ fn _memcmp_impl_unconstrained[
 
 
 @always_inline
-fn _memcmp_opt_impl_unconstrained[
+def _memcmp_opt_impl_unconstrained[
     dtype: DType, //
 ](
     s1: UnsafePointer[mut=False, Scalar[dtype], ...],
@@ -106,21 +105,21 @@ fn _memcmp_opt_impl_unconstrained[
 
 
 @always_inline
-fn _memcmp_impl[
+def _memcmp_impl[
     dtype: DType
 ](
     s1: UnsafePointer[mut=False, Scalar[dtype], ...],
     s2: UnsafePointer[mut=False, Scalar[dtype], ...],
     count: Int,
 ) -> Int where dtype.is_integral():
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         return _memcmp_impl_unconstrained(s1, s2, count)
     else:
         return _memcmp_opt_impl_unconstrained(s1, s2, count)
 
 
 @always_inline
-fn memcmp[
+def memcmp[
     type: AnyType, address_space: AddressSpace
 ](
     s1: UnsafePointer[mut=False, type, _, address_space=address_space],
@@ -161,7 +160,7 @@ fn memcmp[
 
 
 @always_inline
-fn _memcpy_impl(
+def _memcpy_impl(
     dest_data: UnsafePointer[mut=True, Byte, ...],
     src_data: UnsafePointer[mut=False, Byte, ...],
     n: Int,
@@ -174,7 +173,7 @@ fn _memcpy_impl(
         n: The number of bytes to copy.
     """
 
-    fn copy[width: Int](offset: Int) unified {mut}:
+    def copy[width: Int](offset: Int) unified {mut}:
         dest_data.store(offset, src_data.load[width=width](offset))
 
     comptime if is_gpu():
@@ -234,7 +233,7 @@ fn _memcpy_impl(
 
 
 @always_inline
-fn memcpy[
+def memcpy[
     T: AnyType
 ](
     *,
@@ -257,7 +256,7 @@ fn memcpy[
     """
     var n = count * size_of[dest.type]()
 
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         # A fast version for the interpreter to evaluate
         # this function during compile time.
         llvm_intrinsic["llvm.memcpy", NoneType](
@@ -273,7 +272,7 @@ fn memcpy[
 
 
 @always_inline
-fn memmove[
+def memmove[
     T: AnyType
 ](
     *,
@@ -294,7 +293,7 @@ fn memmove[
         count: The number of elements to copy.
     """
     var n = count * size_of[T]()
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         for i in range(n):
             (dest.bitcast[Byte]() + i).store((src.bitcast[Byte]() + i).load())
     else:
@@ -313,10 +312,10 @@ fn memmove[
 
 
 @always_inline("nodebug")
-fn _memset_impl(
+def _memset_impl(
     ptr: UnsafePointer[mut=True, Byte, ...], value: Byte, count: Int
 ):
-    fn fill[width: Int](offset: Int) unified {mut}:
+    def fill[width: Int](offset: Int) unified {mut}:
         ptr.store(offset, SIMD[DType.uint8, width](value))
 
     comptime simd_width = simd_width_of[Byte]()
@@ -324,7 +323,7 @@ fn _memset_impl(
 
 
 @always_inline
-fn memset(ptr: UnsafePointer[mut=True, ...], value: Byte, count: Int):
+def memset(ptr: UnsafePointer[mut=True, ...], value: Byte, count: Int):
     """Fills memory with the given value.
 
     Args:
@@ -341,7 +340,7 @@ fn memset(ptr: UnsafePointer[mut=True, ...], value: Byte, count: Int):
 
 
 @always_inline
-fn memset_zero(ptr: UnsafePointer[mut=True, ...], count: Int):
+def memset_zero(ptr: UnsafePointer[mut=True, ...], count: Int):
     """Fills memory with zeros.
 
     Args:
@@ -352,7 +351,7 @@ fn memset_zero(ptr: UnsafePointer[mut=True, ...], count: Int):
 
 
 @always_inline
-fn memset_zero[
+def memset_zero[
     dtype: DType, //, *, count: Int
 ](ptr: UnsafePointer[mut=True, Scalar[dtype], ...]):
     """Fills memory with zeros.
@@ -368,7 +367,7 @@ fn memset_zero[
     comptime if count > 128:
         return memset_zero(ptr, count)
 
-    fn fill[width: Int](offset: Int) unified {mut}:
+    def fill[width: Int](offset: Int) unified {mut}:
         ptr.store(offset, SIMD[dtype, width](0))
 
     vectorize[simd_width_of[dtype]()](count, fill)
@@ -381,7 +380,7 @@ fn memset_zero[
 
 # TODO(MSTDL-2015): ASAN error when updating to use `UnsafePointer`.
 @always_inline
-fn stack_allocation[
+def stack_allocation[
     count: Int,
     dtype: DType,
     /,
@@ -412,7 +411,7 @@ fn stack_allocation[
 
 # TODO(MSTDL-2015): ASAN error when updating to use `UnsafePointer`.
 @always_inline
-fn stack_allocation[
+def stack_allocation[
     count: Int,
     type: AnyType,
     /,
@@ -493,7 +492,7 @@ fn stack_allocation[
 
 
 @always_inline
-fn _malloc[
+def _malloc[
     type: AnyType,
     /,
 ](
@@ -536,7 +535,7 @@ fn _malloc[
 
 
 @always_inline
-fn _free(ptr: UnsafePointer[mut=True, ...]):
+def _free(ptr: UnsafePointer[mut=True, ...]):
     comptime if is_gpu():
         libc.free(ptr.bitcast[NoneType]())
     else:
@@ -549,7 +548,7 @@ fn _free(ptr: UnsafePointer[mut=True, ...]):
 
 
 @always_inline
-fn uninit_move_n[
+def uninit_move_n[
     T: Movable,
     //,
     *,
@@ -612,7 +611,7 @@ fn uninit_move_n[
 
 
 @always_inline
-fn uninit_copy_n[
+def uninit_copy_n[
     T: Copyable,
     //,
     *,
@@ -674,7 +673,7 @@ fn uninit_copy_n[
 
 
 @always_inline
-fn destroy_n[
+def destroy_n[
     T: ImplicitlyDestructible
 ](pointer: UnsafePointer[mut=True, T, _], count: Int):
     """Destroy `count` initialized values at `pointer`.

@@ -14,7 +14,7 @@
 from std.math import align_up, ceildiv
 
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from layout import Layout, LayoutTensor
+from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
 from std.logger import Logger
 from std.gpu.primitives.warp import shuffle_xor
 from std.math import recip
@@ -41,9 +41,6 @@ from linalg.utils import (
 )
 from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
-from layout import TileTensor
-from layout.coord import Coord, Idx
-from layout.tile_layout import row_major
 from std.memory import UnsafePointer, bitcast
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import barrier
@@ -74,7 +71,7 @@ comptime DISPATCH_MISS = 0
 comptime DISPATCH_HIT = 1
 
 
-fn heuristic_and_outliers_dispatch[
+def heuristic_and_outliers_dispatch[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -154,7 +151,7 @@ fn heuristic_and_outliers_dispatch[
 
     @parameter
     @always_inline
-    fn rule(x: TuningConfigSM100) -> Bool:
+    def rule(x: TuningConfigSM100) -> Bool:
         return x.K == static_K and x.N == static_N
 
     comptime outlier_configs = outliers.find[rule]()
@@ -222,7 +219,7 @@ fn heuristic_and_outliers_dispatch[
     return DISPATCH_MISS
 
 
-fn small_bn_dispatch[
+def small_bn_dispatch[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -263,7 +260,7 @@ fn small_bn_dispatch[
         mma_shape=Index(128, 8, 32),
         cluster_shape=Index(1, 1, 1),
         block_swizzle_size=8,
-        num_accum_pipeline_stages=2,
+        num_accum_pipeline_stages=1,
         k_group_size=2,
         num_clc_pipeline_stages=0,
         AB_swapped=True,
@@ -285,7 +282,7 @@ fn small_bn_dispatch[
 ########################################################
 
 
-fn _block_scaled_matmul_small_bn_with_epilogue[
+def _block_scaled_matmul_small_bn_with_epilogue[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -344,7 +341,7 @@ fn _block_scaled_matmul_small_bn_with_epilogue[
 
         @parameter
         @__copy_capture(c, n)
-        fn epilogue_wrapper[
+        def epilogue_wrapper[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])
@@ -401,7 +398,7 @@ fn _block_scaled_matmul_small_bn_with_epilogue[
         _ = tmp_device_buffer^
 
 
-fn _block_scaled_matmul_with_epilogue[
+def _block_scaled_matmul_with_epilogue[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -470,7 +467,7 @@ fn _block_scaled_matmul_with_epilogue[
         # can't be proved when c's layout type is fully inferred.
         @parameter
         @__copy_capture(c, n)
-        fn epilogue_wrapper[
+        def epilogue_wrapper[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])
@@ -530,7 +527,7 @@ fn _block_scaled_matmul_with_epilogue[
         _ = tmp_device_buffer^
 
 
-fn _vendor_blas_block_scaled_matmul_with_epilogue[
+def _vendor_blas_block_scaled_matmul_with_epilogue[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -615,7 +612,7 @@ fn _vendor_blas_block_scaled_matmul_with_epilogue[
 
         @parameter
         @__copy_capture(c)
-        fn epilogue_wrapper[
+        def epilogue_wrapper[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])

@@ -14,13 +14,7 @@
 from std.math import rsqrt
 
 from std.itertools import product
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    coord_to_index_list,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 from layout.math import mean, variance
 from nn.normalization import *
 from std.testing import assert_almost_equal
@@ -28,7 +22,7 @@ from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 
 
-fn run_layer_norm_cpu[
+def run_layer_norm_cpu[
     dtype: DType, rank: Int
 ](shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     var cols = shape[rank - 1]
@@ -58,7 +52,7 @@ fn run_layer_norm_cpu[
     @__copy_capture(input_buf)
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = input_buf.layout(Coord(coords))
@@ -67,7 +61,7 @@ fn run_layer_norm_cpu[
     @__copy_capture(gamma)
     @always_inline
     @parameter
-    fn gamma_fn[
+    def gamma_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Idx(coords[0]))
@@ -76,7 +70,7 @@ fn run_layer_norm_cpu[
     @__copy_capture(output_buf)
     @always_inline
     @parameter
-    fn output_fn[
+    def output_fn[
         width: Int, _rank: Int, alignment: Int
     ](coords: IndexList[_rank], val: SIMD[dtype, width]):
         var idx = output_buf.layout(Coord(coords))
