@@ -317,6 +317,7 @@ def _count_expert_tokens[
 ) -> UInt64:
     comptime assert topk_ids.flat_rank == 2
     comptime assert smem.flat_rank == 2
+    comptime assert topk_ids.flat_rank >= 2
 
     comptime width = bg_params.width
     comptime MaskType = bg_params.MaskType
@@ -426,6 +427,8 @@ def _copy_tokens_smem_to_gmem[
     comptime assert smem.flat_rank == 2
     comptime assert token_expert_order.flat_rank == 1
     comptime assert restore_token_order.flat_rank == 1
+    comptime assert smem.flat_rank >= 2
+    comptime assert token_expert_order.flat_rank >= 1
 
     var g_offset_copy = g_offset
     comptime width = bg_params.width
@@ -490,6 +493,7 @@ def _copy_tokens_to_gmem[
     comptime assert topk_ids.flat_rank == 2
     comptime assert token_expert_order.flat_rank == 1
     comptime assert restore_token_order.flat_rank == 1
+    comptime assert topk_ids.flat_rank >= 2
 
     comptime width = bg_params.width
     comptime MaskType = bg_params.MaskType
@@ -887,6 +891,9 @@ def group_limited_router_kernel[
     comptime assert expert_weights.flat_rank == 2
     comptime assert expert_scores.flat_rank == 2
     comptime assert expert_bias.flat_rank == 1
+    comptime assert expert_bias.flat_rank >= 1
+    comptime assert expert_scores.flat_rank >= 2
+    comptime assert expert_indices.flat_rank >= 2
 
     comptime assert (
         expert_scores.static_shape[1] == n_routed_experts

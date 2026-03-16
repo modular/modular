@@ -34,6 +34,12 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `TileTensor` now supports hierarchical indexing.
+  E.g. one can index a `TileTensor` with shape `(4, (3, 2))`
+  by `(1)`, `(1, 1)`, or `(1, (1, 1))`.
+
+- `TileTensor` now supports flattening up to depth-4.
+
 - Standard library types now use conditional conformances, replacing previous
   `_constrained_conforms_to` checks:
   - `List`: `Hashable`

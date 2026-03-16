@@ -142,6 +142,18 @@ def fused_rope_rmsnorm_kernel[
     comptime assert freqs_cis.flat_rank == 2
     comptime assert gamma.flat_rank == 1
 
+    # Evidence asserts for TileTensor load/store Coord constraints.
+    comptime assert (
+        TileTensor[
+            freq_dtype, FreqsCisLayoutType, ImmutExternalOrigin
+        ].flat_rank
+        >= 2
+    )
+    comptime assert (
+        TileTensor[gamma_dtype, GammaLayoutType, ImmutExternalOrigin].flat_rank
+        >= 1
+    )
+
     comptime num_q_heads = q_rope.static_shape[1]
     comptime rope_dim = q_rope.static_shape[2]
     comptime kv_norm_dim = gamma.static_shape[0]
@@ -319,6 +331,21 @@ def fused_rope_rmsnorm_quantization_kernel[
     comptime assert input_row_offsets.flat_rank == 1
     comptime assert freqs_cis.flat_rank == 2
     comptime assert gamma.flat_rank == 1
+
+    # Evidence asserts for TileTensor load/store Coord constraints.
+    comptime assert (
+        TileTensor[
+            freq_dtype, FreqsCisLayoutType, ImmutExternalOrigin
+        ].flat_rank
+        >= 2
+    )
+    comptime assert (
+        TileTensor[dtype, KVLayoutType, ImmutExternalOrigin].flat_rank >= 2
+    )
+    comptime assert (
+        TileTensor[gamma_dtype, GammaLayoutType, ImmutExternalOrigin].flat_rank
+        >= 1
+    )
 
     comptime num_q_heads = q_rope.static_shape[1]
     comptime rope_dim = q_rope.static_shape[2]
@@ -1009,6 +1036,9 @@ def quantize_and_bmm_fp8_helper[
     Helper function to quantize and perform a batched matrix multiplication.
     This function uses the transposed view of the input tensor `a`.
     """
+
+    # Evidence assert for TileTensor load Coord constraint.
+    comptime assert type_of(a).flat_rank >= 3
 
     comptime B = a.static_shape[1]
     comptime K = a.static_shape[2]

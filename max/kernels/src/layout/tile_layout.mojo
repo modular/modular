@@ -343,6 +343,14 @@ struct Layout[
     ](self, index: index_type) -> Scalar[linear_idx_type]:
         """Maps a logical coordinate to a linear memory index.
 
+        Supports hierarchical indexing where the coordinate structure can
+        differ from the shape structure. For a layout with shape (4, (3, 2)):
+
+        - (1, (1, 1)): exact structure match, each element maps directly.
+        - (1, 1): rank-matching, the scalar 1 is decomposed within the
+          nested (3, 2) sub-dimension.
+        - (1): scalar index decomposed across all dimensions.
+
         Parameters:
             index_type: The coordinate type.
             linear_idx_type: The data type for the returned linear index.
@@ -353,9 +361,35 @@ struct Layout[
         Returns:
             The linear memory index corresponding to the given coordinates.
         """
-        return crd2idx[out_type=linear_idx_type](
-            index, self._shape, self._stride
-        )
+        comptime index_len = index_type.__len__()
+
+        comptime if index_len == Self.rank:
+            # Hierarchical: each coord element maps to one shape dimension.
+            # If a shape dimension is nested (e.g., (3, 2)) and the
+            # corresponding coord element is a scalar, crd2idx decomposes
+            # the scalar within that sub-dimension.
+            return crd2idx[out_type=linear_idx_type](
+                index, self._shape, self._stride
+            )
+        elif index_type.is_tuple and index_len > Self.rank:
+            # More coord elements than shape dimensions: flatten the coord
+            # and strides, then compute a direct element-wise dot product.
+            var flat_idx = index.tuple().flatten()
+            var flat_stride = self._stride.flatten()
+            var result: Scalar[linear_idx_type] = 0
+
+            comptime flat_len = type_of(flat_idx).__len__()
+            comptime for i in range(flat_len):
+                result += Scalar[linear_idx_type](
+                    flat_idx[i].value() * flat_stride[i].value()
+                )
+
+            return result
+        else:
+            # Scalar or single-element coord: decompose against full shape.
+            return crd2idx[out_type=linear_idx_type](
+                index, self._shape, self._stride
+            )
 
     def idx2crd[
         *,

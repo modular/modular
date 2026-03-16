@@ -339,7 +339,7 @@ def mha_cross_gpu_naive[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
         var p_coord = Coord(coords)
-        comptime assert p_coord.flat_rank == p_buffer.flat_rank
+        comptime assert p_buffer.flat_rank >= p_coord.flat_rank
         return p_buffer.load[width=_simd_width](p_coord)
 
     _softmax_gpu[p_type, 1, 3, input_fn_device](

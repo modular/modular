@@ -520,6 +520,84 @@ def test_coord_flatten_nested_at_end() raises:
     assert_equal(flat[2].value(), 3)
 
 
+def test_coord_flatten_depth2() raises:
+    """Test flatten on a depth-2 nested Coord."""
+    # Coord(Coord(Coord(1, 2), 3), 4) — depth 2
+    var nested = Coord(Coord(Coord(Idx[1](), Idx[2]()), Idx[3]()), Idx[4]())
+    var flat = nested.flatten()
+
+    # Should flatten to (1, 2, 3, 4)
+    assert_equal(len(flat), 4)
+    assert_equal(flat[0].value(), 1)
+    assert_equal(flat[1].value(), 2)
+    assert_equal(flat[2].value(), 3)
+    assert_equal(flat[3].value(), 4)
+
+
+def test_coord_flatten_depth3() raises:
+    """Test flatten on a depth-3 nested Coord."""
+    # Coord(Coord(Coord(Coord(1, 2), 3), 4), 5) — depth 3
+    var nested = Coord(
+        Coord(Coord(Coord(Idx[1](), Idx[2]()), Idx[3]()), Idx[4]()),
+        Idx[5](),
+    )
+    var flat = nested.flatten()
+
+    # Should flatten to (1, 2, 3, 4, 5)
+    assert_equal(len(flat), 5)
+    assert_equal(flat[0].value(), 1)
+    assert_equal(flat[1].value(), 2)
+    assert_equal(flat[2].value(), 3)
+    assert_equal(flat[3].value(), 4)
+    assert_equal(flat[4].value(), 5)
+
+
+def test_coord_flatten_depth2_multiple_nested() raises:
+    """Test flatten with multiple depth-2 nested subtrees."""
+    # Coord(Coord(Coord(1, 2), Coord(3, 4)), Coord(Coord(5, 6), 7))
+    var nested = Coord(
+        Coord(Coord(Idx[1](), Idx[2]()), Coord(Idx[3](), Idx[4]())),
+        Coord(Coord(Idx[5](), Idx[6]()), Idx[7]()),
+    )
+    var flat = nested.flatten()
+
+    # Should flatten to (1, 2, 3, 4, 5, 6, 7)
+    assert_equal(len(flat), 7)
+    assert_equal(flat[0].value(), 1)
+    assert_equal(flat[1].value(), 2)
+    assert_equal(flat[2].value(), 3)
+    assert_equal(flat[3].value(), 4)
+    assert_equal(flat[4].value(), 5)
+    assert_equal(flat[5].value(), 6)
+    assert_equal(flat[6].value(), 7)
+
+
+def test_coord_flat_rank_deep_nesting() raises:
+    """Test that flat_rank is correct for deeply nested Coords."""
+    # Depth 1: Coord(Coord(1, 2), 3) -> flat_rank = 3
+    comptime depth1 = Coord[
+        ComptimeInt[1], Coord[ComptimeInt[2], ComptimeInt[3]]
+    ]
+    comptime assert depth1.flat_rank == 3
+
+    # Depth 2: Coord(Coord(Coord(1, 2), 3), 4) -> flat_rank = 4
+    comptime depth2 = Coord[
+        Coord[Coord[ComptimeInt[1], ComptimeInt[2]], ComptimeInt[3]],
+        ComptimeInt[4],
+    ]
+    comptime assert depth2.flat_rank == 4
+
+    # Depth 3: Coord(Coord(Coord(Coord(1, 2), 3), 4), 5) -> flat_rank = 5
+    comptime depth3 = Coord[
+        Coord[
+            Coord[Coord[ComptimeInt[1], ComptimeInt[2]], ComptimeInt[3]],
+            ComptimeInt[4],
+        ],
+        ComptimeInt[5],
+    ]
+    comptime assert depth3.flat_rank == 5
+
+
 def test_coord_flatten_blocked_product_shape() raises:
     """Test flatten on shape from blocked_product."""
     var block = row_major[2, 2]()
@@ -743,3 +821,227 @@ def test_tile_tensor_flat_indexing_with_coord() raises:
 
     # Read back with flat indices
     assert_equal(tensor[1, 0, 1, 2], 42.0)
+
+
+# ===----------------------------------------------------------------------=== #
+# Hierarchical indexing tests (Layout.__call__ with nested shapes)
+# ===----------------------------------------------------------------------=== #
+
+
+def test_layout_call_hierarchical_exact_match() raises:
+    """Test __call__ with coord structure matching shape structure exactly.
+
+    Layout shape (4, (3, 2)) with row-major strides (6, (2, 1)).
+    Coord (1, (1, 1)) should compute: 1*6 + 1*2 + 1*1 = 9.
+    """
+    # Build a nested layout: shape (4, (3, 2)), stride (6, (2, 1))
+    var inner_shape = Coord(Idx[3](), Idx[2]())
+    var inner_stride = Coord(Idx[2](), Idx[1]())
+    var shape = Coord(Idx[4](), inner_shape)
+    var stride = Coord(Idx[6](), inner_stride)
+    var layout = Layout(shape=shape, stride=stride)
+
+    # (1, (1, 1)) -> 1*6 + 1*2 + 1*1 = 9
+    assert_equal(layout(Coord(Idx[1](), Coord(Idx[1](), Idx[1]()))), 9)
+
+    # (0, (0, 0)) -> 0
+    assert_equal(layout(Coord(Idx[0](), Coord(Idx[0](), Idx[0]()))), 0)
+
+    # (2, (1, 0)) -> 2*6 + 1*2 + 0*1 = 14
+    assert_equal(layout(Coord(Idx[2](), Coord(Idx[1](), Idx[0]()))), 14)
+
+    # (3, (2, 1)) -> 3*6 + 2*2 + 1*1 = 23
+    assert_equal(layout(Coord(Idx[3](), Coord(Idx[2](), Idx[1]()))), 23)
+
+
+def test_layout_call_hierarchical_rank_matching() raises:
+    """Test __call__ with coord rank matching shape rank but flat structure.
+
+    Layout shape (4, (3, 2)) with row-major strides (6, (2, 1)).
+    Coord (1, 1) has rank 2 matching the layout rank.
+    The scalar 1 is decomposed within the (3, 2) sub-dimension.
+    """
+    var inner_shape = Coord(Idx[3](), Idx[2]())
+    var inner_stride = Coord(Idx[2](), Idx[1]())
+    var shape = Coord(Idx[4](), inner_shape)
+    var stride = Coord(Idx[6](), inner_stride)
+    var layout = Layout(shape=shape, stride=stride)
+
+    # (0, 0) -> 0*6 + crd2idx(0, (3,2), (2,1)) = 0
+    assert_equal(layout(Coord(Idx[0](), Idx[0]())), 0)
+
+    # (1, 0) -> 1*6 + crd2idx(0, (3,2), (2,1)) = 6
+    assert_equal(layout(Coord(Idx[1](), Idx[0]())), 6)
+
+    # (1, 1) -> 1*6 + crd2idx(1, (3,2), (2,1))
+    # crd2idx decomposes 1 within (3,2): divmod(1, 3) = (0, 1)
+    # -> 1*2 + 0*1 = 2. Total: 6 + 2 = 8
+    assert_equal(layout(Coord(Idx[1](), Idx[1]())), 8)
+
+    # (0, 5) -> crd2idx(5, (3,2), (2,1))
+    # divmod(5, 3) = (1, 2) -> 2*2 + 1*1 = 5. Total: 0 + 5 = 5
+    assert_equal(layout(Coord(Idx[0](), Idx[5]())), 5)
+
+
+def test_layout_call_hierarchical_scalar() raises:
+    """Test __call__ with a scalar index on a nested layout.
+
+    Layout shape (4, (3, 2)) with strides (6, (2, 1)).
+    Scalar index is decomposed across all dimensions.
+    """
+    var inner_shape = Coord(Idx[3](), Idx[2]())
+    var inner_stride = Coord(Idx[2](), Idx[1]())
+    var shape = Coord(Idx[4](), inner_shape)
+    var stride = Coord(Idx[6](), inner_stride)
+    var layout = Layout(shape=shape, stride=stride)
+
+    # Scalar 0 -> 0
+    assert_equal(layout(Idx[0]()), 0)
+
+    # Scalar 1 -> decomposed via divmod against shape elements
+    # divmod(1, 4) = (0, 1), so dim0 gets 1, rest gets 0
+    # -> 1*6 + 0 = 6
+    assert_equal(layout(Idx[1]()), 6)
+
+
+def test_layout_call_hierarchical_flat_coords() raises:
+    """Test __call__ with more coord elements than shape dimensions.
+
+    Layout shape (4, (3, 2)) has rank 2, flat_rank 3.
+    Coord (1, 1, 1) has rank 3 > layout rank 2.
+    This uses flat dot product with flattened strides (6, 2, 1).
+    """
+    var inner_shape = Coord(Idx[3](), Idx[2]())
+    var inner_stride = Coord(Idx[2](), Idx[1]())
+    var shape = Coord(Idx[4](), inner_shape)
+    var stride = Coord(Idx[6](), inner_stride)
+    var layout = Layout(shape=shape, stride=stride)
+
+    # (1, 1, 1) -> 1*6 + 1*2 + 1*1 = 9 (flat strides)
+    assert_equal(layout(Coord(Idx[1](), Idx[1](), Idx[1]())), 9)
+
+    # (0, 0, 0) -> 0
+    assert_equal(layout(Coord(Idx[0](), Idx[0](), Idx[0]())), 0)
+
+    # (2, 1, 0) -> 2*6 + 1*2 + 0*1 = 14
+    assert_equal(layout(Coord(Idx[2](), Idx[1](), Idx[0]())), 14)
+
+    # (3, 2, 1) -> 3*6 + 2*2 + 1*1 = 23
+    assert_equal(layout(Coord(Idx[3](), Idx[2](), Idx[1]())), 23)
+
+
+def test_layout_call_hierarchical_consistency() raises:
+    """Test that all three indexing forms give consistent results.
+
+    For layout shape (4, (3, 2)) strides (6, (2, 1)):
+    - (2, (1, 0)): exact match
+    - (2, 1): rank-matching with scalar sub-index
+    - (2, 1, 0): flat indexing
+    All should give the same offset: 2*6 + 1*2 + 0*1 = 14.
+    """
+    var inner_shape = Coord(Idx[3](), Idx[2]())
+    var inner_stride = Coord(Idx[2](), Idx[1]())
+    var shape = Coord(Idx[4](), inner_shape)
+    var stride = Coord(Idx[6](), inner_stride)
+    var layout = Layout(shape=shape, stride=stride)
+
+    # Exact match: (2, (1, 0))
+    var exact = layout(Coord(Idx[2](), Coord(Idx[1](), Idx[0]())))
+    # Flat: (2, 1, 0)
+    var flat = layout(Coord(Idx[2](), Idx[1](), Idx[0]()))
+
+    assert_equal(exact, 14)
+    assert_equal(flat, 14)
+
+    # Rank-matching: (2, 1)
+    # Scalar 1 decomposes within (3, 2): divmod(1, 3) = (0, 1)
+    # -> coord (1, 0) in the sub-dim -> 1*2 + 0 = 2. Total: 12 + 2 = 14
+    var rank_match = layout(Coord(Idx[2](), Idx[1]()))
+    assert_equal(rank_match, 14)
+
+
+# ===----------------------------------------------------------------------=== #
+# TileTensor hierarchical indexing tests
+# ===----------------------------------------------------------------------=== #
+
+
+def test_tile_tensor_hierarchical_load_store() raises:
+    """Test TileTensor load/store with coords of varying flat_rank.
+
+    Uses a blocked layout to create a nested shape, then indexes with
+    exact-match, rank-matching, and flat coords.
+    """
+    # blocked_product: block 2x2, tiler 2x3
+    # shape: ((2, 2), (2, 3)), strides: ((2, 1), (12, 4))
+    # flat_rank = 4
+    var block = row_major[2, 2]()
+    var tiler = row_major[2, 3]()
+    var blocked_layout = blocked_product(block, tiler)
+
+    var storage = InlineArray[Float32, 24](fill=0.0)
+    var tensor = TileTensor(storage, blocked_layout)
+
+    # Write using exact-match hierarchical coord: ((1, 0), (0, 2))
+    # -> 1*2 + 0*1 + 0*12 + 2*4 = 10
+    var exact_coord = Coord(
+        Coord(Idx[1](), Idx[0]()), Coord(Idx[0](), Idx[2]())
+    )
+    tensor[exact_coord] = 42.0
+
+    # Read back using flat coord: (1, 0, 0, 2) -> same offset
+    assert_equal(tensor[1, 0, 0, 2], 42.0)
+
+    # Write using rank-matching coord: (Idx(1), Idx(2))
+    # dim 0 is scalar 1, decomposed within shape (2, 2) -> divmod(1, 2) = (0, 1)
+    #   -> 0*2 + 1*1 = 1
+    # dim 1 is scalar 2, decomposed within shape (2, 3) -> divmod(2, 2) = (1, 0)
+    #   -> 1*12 + 0*4 = 12
+    # total offset: 1 + 12 = 13
+    tensor.store(Coord(Idx[1](), Idx[2]()), Float32(99.0))
+
+    # Read back at the same offset
+    var val = tensor.load(Coord(Idx[1](), Idx[2]()))
+    assert_equal(val, 99.0)
+
+
+def test_tile_tensor_hierarchical_getitem_setitem() raises:
+    """Test TileTensor __getitem__/__setitem__ with hierarchical Coord."""
+    var storage = InlineArray[Float32, 24](fill=0.0)
+
+    # Layout shape (4, (3, 2)), stride (6, (2, 1))
+    var inner_shape = Coord(Idx[3](), Idx[2]())
+    var inner_stride = Coord(Idx[2](), Idx[1]())
+    var shape = Coord(Idx[4](), inner_shape)
+    var stride = Coord(Idx[6](), inner_stride)
+    var layout = Layout(shape=shape, stride=stride)
+    var tensor = TileTensor(storage, layout)
+
+    # Write with exact-match coord (2, (1, 0)) -> offset 14
+    tensor[Coord(Idx[2](), Coord(Idx[1](), Idx[0]()))] = 77.0
+    assert_equal(storage[14], 77.0)
+
+    # Read with rank-matching coord (2, 1) -> offset 14
+    # (scalar 1 in (3,2) sub-dim: divmod(1,3)=(0,1) -> 1*2 = 2, total 12+2=14)
+    var val = tensor[Coord(Idx[2](), Idx[1]())]
+    assert_equal(val, 77.0)
+
+
+def test_tile_tensor_hierarchical_scalar_index() raises:
+    """Test TileTensor load with a single scalar coord."""
+    var storage = InlineArray[Float32, 24](fill=0.0)
+
+    # Layout shape (4, (3, 2)), stride (6, (2, 1))
+    var inner_shape = Coord(Idx[3](), Idx[2]())
+    var inner_stride = Coord(Idx[2](), Idx[1]())
+    var shape = Coord(Idx[4](), inner_shape)
+    var stride = Coord(Idx[6](), inner_stride)
+    var layout = Layout(shape=shape, stride=stride)
+    var tensor = TileTensor(storage, layout)
+
+    # Write at a known offset via raw pointer
+    storage[6] = 55.0
+
+    # Scalar index 1 -> decomposed: divmod(1, 4) = (0, 1)
+    # -> 1*6 + 0 = 6
+    var val = tensor.load(Coord(Idx[1]()))
+    assert_equal(val, 55.0)

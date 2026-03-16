@@ -91,7 +91,7 @@ def memcpy_or_fuse[
             simd_width: Int, _rank: Int, alignment: Int = 1
         ](index: IndexList[_rank]):
             var coord = Coord(index)
-            comptime assert coord.flat_rank == input.flat_rank
+            comptime assert input.flat_rank >= coord.flat_rank
             var load = input.load[width=simd_width, alignment=1](coord)
 
             # Convert the linearized address back to the n-D indices.
@@ -498,7 +498,7 @@ def _concat_small[
                 var in_index = out_index
                 in_index[axis] = target_dim
                 var coord = Coord(in_index)
-                comptime assert coord.flat_rank == input.flat_rank
+                comptime assert input.flat_rank >= coord.flat_rank
                 var load = input.load[width=simd_width, alignment=1](coord)
 
                 comptime if epilogue_fn:
@@ -506,7 +506,7 @@ def _concat_small[
                     func[dtype, rank, simd_width](out_index, load)
                 else:
                     var coord = Coord(out_index)
-                    comptime assert coord.flat_rank == output.flat_rank
+                    comptime assert output.flat_rank >= coord.flat_rank
                     output.store[width=simd_width, alignment=1](coord, load)
                 return
             else:
@@ -724,13 +724,14 @@ def _concat_inner_most_single_dim[
         idx, coord_to_index_list(output.layout.shape_coord())
     )
     var in_coord = Coord(index)
-    comptime assert in_coord.flat_rank == inputs.element_type.flat_rank
+    comptime assert inputs.element_type.flat_rank >= in_coord.flat_rank
+    comptime assert output.flat_rank >= in_coord.flat_rank
 
     comptime for i in range(num_inputs):
         var out_index = rebind[IndexList[output.rank]](index.canonicalize())
         out_index[output.rank - 1] = i
         var out_coord = Coord(out_index)
-        comptime assert out_coord.flat_rank == output.flat_rank
+        comptime assert output.flat_rank >= out_coord.flat_rank
 
         comptime if epilogue_fn:
             comptime func = epilogue_fn.value()
@@ -794,7 +795,7 @@ def _concat_gpu_elementwise[
     ](out_index: IndexList[_rank]):
         var in_index = out_index
         var out_coord = Coord(out_index)
-        comptime assert out_coord.flat_rank == output.flat_rank
+        comptime assert output.flat_rank >= out_coord.flat_rank
 
         comptime for i in range(num_inputs):
             var input = inputs[i]
@@ -802,7 +803,7 @@ def _concat_gpu_elementwise[
 
             if in_index[axis] < input_shape[axis]:
                 var in_coord = Coord(in_index)
-                comptime assert in_coord.flat_rank == input.flat_rank
+                comptime assert input.flat_rank >= in_coord.flat_rank
 
                 comptime if epilogue_fn:
                     comptime func = epilogue_fn.value()

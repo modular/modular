@@ -867,6 +867,7 @@ def rms_norm_gpu_warp_tiling_128[
     num_cols: Int,
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
     comptime half_warp_size = WARP_SIZE // 2
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -933,6 +934,7 @@ def rms_norm_gpu_warp_tiling[
     num_cols: Int,
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
 
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -991,6 +993,7 @@ def _rms_norm_gpu_block_subkernel[
     num_cols: Int,
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
 
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -1269,6 +1272,7 @@ def rms_norm_cpu[
     out_shape: IndexList[2],
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
 
     comptime simd_width = simd_width_of[dtype]()
 
@@ -1484,6 +1488,8 @@ def rms_norm_fused_residual_add_gpu_warp_tiling[
     comptime assert gamma1.flat_rank == 1, "gamma1 must have flat_rank 1"
     comptime assert gamma2.rank == 1, "gamma2 must have rank 1"
     comptime assert gamma2.flat_rank == 1, "gamma2 must have flat_rank 1"
+    comptime assert gamma1.flat_rank >= 1
+    comptime assert gamma2.flat_rank >= 1
 
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -2369,6 +2375,7 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
     """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert scale_buffer.flat_rank == 1, "scale_buffer must have rank 1"
+    comptime assert gamma.flat_rank >= 1
 
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
@@ -2573,6 +2580,7 @@ def _rms_norm_fused_fp8_kernel_block[
     """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert scale_buffer.flat_rank == 1, "scale_buffer must have rank 1"
+    comptime assert gamma.flat_rank >= 1
 
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()

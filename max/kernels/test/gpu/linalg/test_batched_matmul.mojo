@@ -97,7 +97,7 @@ def run_bmm_and_check_result[
         comptime func = lambda_fn.value()
         var update_val = func(val)
         var coord = Coord((Idx(idx[0]), Idx(idx[1]), Idx(idx[2])))
-
+        comptime assert c_device.flat_rank >= 3
         c_device.store(coord, update_val.cast[c_device.dtype]())
 
     comptime if lambda_fn:
@@ -170,6 +170,7 @@ def run_bmm_and_check_result[
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[3]](idx0)
         var coord = Coord((Idx(idx[0]), Idx(idx[1]), Idx(idx[2])))
+        comptime assert c_device_ref.flat_rank >= 3
         var val = c_device_ref.load[width=simd_width](coord)
         comptime element_lambda = lambda_fn.value()
         var update_val = element_lambda(val)

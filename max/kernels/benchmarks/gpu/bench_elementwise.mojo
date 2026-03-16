@@ -175,8 +175,8 @@ def run_elementwise[
             ](idx0: IndexList[rank_]):
                 var idx = rebind[IndexList[rank]](idx0)
                 var coord = Coord(idx)
-                comptime assert coord.flat_rank == out_tensor.flat_rank
-                comptime assert coord.flat_rank == in_tensor.flat_rank
+                comptime assert out_tensor.flat_rank >= coord.flat_rank
+                comptime assert in_tensor.flat_rank >= coord.flat_rank
 
                 comptime if emulate_graph_compiler:
                     # In this mode we use the simd_store / simd_load that are copied

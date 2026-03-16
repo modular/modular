@@ -29,7 +29,7 @@ def print_elements(tensor: TileTensor) raises:
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         var coord = Coord(idx)
-        comptime assert coord.flat_rank == tensor.flat_rank
+        comptime assert tensor.flat_rank >= coord.flat_rank
         print(tensor[coord])
 
     elementwise[print_elements_lambda, 1](

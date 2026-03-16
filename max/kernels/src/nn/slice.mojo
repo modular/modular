@@ -355,9 +355,9 @@ def sliced_add[
         var out_val: SIMD[dtype, width]
         var coords = Coord(idx)
 
-        comptime assert a.flat_rank == coords.flat_rank
-        comptime assert b.flat_rank == coords.flat_rank
-        comptime assert c.flat_rank == coords.flat_rank
+        comptime assert a.flat_rank >= coords.flat_rank
+        comptime assert b.flat_rank >= coords.flat_rank
+        comptime assert c.flat_rank >= coords.flat_rank
 
         if idx[0] >= batch_end_idx:
             out_val = a.load[width](coords)

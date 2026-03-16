@@ -401,7 +401,7 @@ struct TileTensor[
     @always_inline("nodebug")
     def __getitem__(
         self, coord: Coord
-    ) -> Self.ElementType where coord.flat_rank == Self.flat_rank:
+    ) -> Self.ElementType where Self.flat_rank >= coord.flat_rank:
         """Retrieve a single element from the tensor at the specified coordinates.
 
         Accepts Coords of flat_rank (flattened).
@@ -456,7 +456,7 @@ struct TileTensor[
     @always_inline("nodebug")
     def __setitem__(
         self, coord: Coord, value: Self.ElementType
-    ) where coord.flat_rank == Self.flat_rank and Self.mut:
+    ) where Self.flat_rank >= coord.flat_rank and Self.mut:
         """Set a single element in the tensor at the specified coordinates.
 
         Accepts Coords of flat_rank (flattened).
@@ -511,7 +511,7 @@ struct TileTensor[
         alignment: Int = align_of[SIMD[Self.dtype, width]](),
         invariant: Bool = False,
     ](self, coord: Coord) -> SIMD[Self.dtype, width] where (
-        coord.flat_rank == Self.flat_rank or coord.flat_rank == 1
+        Self.flat_rank >= coord.flat_rank
     ):
         """Load elements from the tensor at the specified coordinates.
 
@@ -539,7 +539,7 @@ struct TileTensor[
         width: Int = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]](),
     ](self, coord: Coord, value: SIMD[Self.dtype, width]) where (
-        coord.flat_rank == Self.flat_rank and Self.mut
+        Self.flat_rank >= coord.flat_rank and Self.mut
     ):
         """Store elements to the tensor at the specified coordinates.
 

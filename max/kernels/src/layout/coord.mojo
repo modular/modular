@@ -1357,13 +1357,36 @@ comptime _FlattenReducer[
 ]
 
 
-comptime _Flattened[
+comptime _FlattenOnce[
     *element_types: CoordLike
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=element_types,
     Reducer=_FlattenReducer,
 ]
+"""Peels one level of Coord nesting from a variadic type list.
+
+Each tuple element is replaced by its children; scalar elements are kept.
+For example, `(Coord(A, B), C)` becomes `(A, B, C)`, but if `A` is itself
+a Coord the result still contains that nested Coord.
+"""
+
+
+comptime _Flatten2[*element_types: CoordLike] = _FlattenOnce[
+    *_FlattenOnce[*element_types]
+]
+"""Two passes of `_FlattenOnce`, handling up to depth-2 nesting."""
+
+
+comptime _Flattened[*element_types: CoordLike] = _Flatten2[
+    *_Flatten2[*element_types]
+]
+"""Iteratively flatten a variadic type list to its leaf scalar types.
+
+Applies `_FlattenOnce` four times via doubling (`_Flatten2` ∘ `_Flatten2`),
+handling up to four levels of Coord nesting.  Once fully flat, additional
+passes are no-ops since all elements are scalars.
+"""
 
 comptime _NextOffset[
     prev_offset: Int,

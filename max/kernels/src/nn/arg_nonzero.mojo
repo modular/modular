@@ -45,6 +45,8 @@ def arg_nonzero[
     comptime assert (
         output_buffer.flat_rank == 2
     ), "output_buffer must be of rank 2"
+    # Provide evidence that flat_rank >= 2 for the Coord(Idx(...), Idx(...)) stores below.
+    comptime assert output_buffer.flat_rank >= 2
 
     with Trace[TraceLevel.OP, target=StaticString("cpu")]("arg_nonzero"):
         var numel = input_buffer.num_elements()
