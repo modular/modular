@@ -165,11 +165,12 @@ class PixelGenerationPipeline(
                 image_list[offset : offset + num_images_per_prompt], axis=0
             )
 
+            output_format = getattr(_context, "output_format", "jpeg")
             responses[request_id] = GenerationOutput(
                 request_id=request_id,
                 final_status=GenerationStatus.END_OF_SEQUENCE,
                 output=[
-                    OutputImageContent.from_numpy(img, format="jpeg")
+                    OutputImageContent.from_numpy(img, format=output_format)
                     for img in pixel_data
                 ],
             )

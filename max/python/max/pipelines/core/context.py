@@ -734,6 +734,8 @@ class PixelContext:
     """Input image as numpy array (H, W, C) in uint8 format for image-to-image generation."""
     image: npt.NDArray[np.uint8] | None = field(default=None)
     """Decoded output image (H, W, C) uint8 [0, 255]. Set after generation completes."""
+    output_format: str = field(default="jpeg")
+    """Image encoding format for the output (e.g., 'jpeg', 'png', 'webp')."""
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property
@@ -765,7 +767,11 @@ class PixelContext:
         return GenerationOutput(
             request_id=self.request_id,
             final_status=self.status,
-            output=[OutputImageContent.from_numpy(self.image, format="jpeg")],
+            output=[
+                OutputImageContent.from_numpy(
+                    self.image, format=self.output_format
+                )
+            ],
         )
 
 
