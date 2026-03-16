@@ -14,7 +14,6 @@ from std.collections import Optional
 from std.math import align_up, ceildiv, gcd
 from std.sys import align_of, size_of, simd_width_of
 from std.gpu.host.info import B200, H100
-from buffer.buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
