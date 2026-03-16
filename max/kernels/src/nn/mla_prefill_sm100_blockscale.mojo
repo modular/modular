@@ -23,7 +23,6 @@ from nn.fa4_config import FA4Config
 from nn.sm100_attention_utils import (
     KVPipeline,
     SharedMemPointer,
-    SharedMemLT,
     elect,
     MBarType,
     ProducerPipeline,
@@ -513,21 +512,17 @@ __extension SM100MLA:
 
         # If two-qo, we produce qkv in a pattern of
         # q0 & k0, q1, v0, k1, v1, k2, v2...
-        comptime SMemTensorLT[layout: Layout] = SharedMemLT[
-            Self.KVLUTType.dtype, layout
+        # TMA only uses .ptr — flat row_major TileTensor is sufficient.
+        comptime _smem_tt[elems: Int] = TileTensor[
+            Self.KVLUTType.dtype,
+            type_of(tt_row_major[elems]()),
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
         ]
-        comptime QType = SMemTensorLT[
-            Layout.row_major(type_of(q_tma_op).tile_shape)
-        ]
-        comptime KType = SMemTensorLT[
-            Layout.row_major(type_of(k_nope_tma_op).tile_shape)
-        ]
-        comptime KRopeSMType = SMemTensorLT[
-            Layout.row_major(type_of(k_rope_tma_op).tile_shape)
-        ]
-        comptime VType = SMemTensorLT[
-            Layout.row_major(type_of(v_tma_op).tile_shape)
-        ]
+        comptime q_elems = type_of(q_tma_op).tile_shape[0] * type_of(
+            q_tma_op
+        ).tile_shape[1]
+        comptime QType = _smem_tt[q_elems]
 
         var k_rope_head_idx: UInt32 = seq_info.head_idx // UInt32(Self.group)
         var kv_head_idx: UInt32 = seq_info.head_idx
@@ -559,7 +554,7 @@ __extension SM100MLA:
                 Int32(pipeline_kv.k_nope_bytes + q_bytes)
             )
             q_tma_op.async_copy(
-                QType(q_smem),
+                QType(q_smem, tt_row_major[q_elems]()),
                 mbark0.mbar[],
                 q_coord[
                     depth=Self.depth,
@@ -619,7 +614,7 @@ __extension SM100MLA:
             q1_mbar[0].expect_bytes(Int32(q_bytes))
             # Q1
             q_tma_op.async_copy(
-                QType(q_smem + q_elements),
+                QType(q_smem + q_elements, tt_row_major[q_elems]()),
                 q1_mbar[0],
                 q_coord[
                     depth=Self.depth,

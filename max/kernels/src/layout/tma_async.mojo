@@ -1479,6 +1479,49 @@ struct TMATensorTile[
                 ),
             )
 
+    @always_inline("nodebug")
+    def async_copy[
+        coord_rank: Int,
+        //,
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: TileTensor[
+            mut=True,
+            dtype=Self.dtype,
+            address_space=AddressSpace.SHARED,
+            ...,
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        coords: StaticTuple[UInt32, coord_rank],
+    ):
+        """TileTensor overload of the generic rank-dispatched async_copy.
+        Dispatches to the rank-specific TileTensor async_copy methods.
+
+        Parameters:
+            coord_rank: The dimensionality (must be 2 or 3).
+            cta_group: CTA group configuration. Defaults to 1.
+            eviction_policy: Cache eviction policy. Defaults to EVICT_NORMAL.
+
+        Args:
+            dst: TileTensor in shared memory where data will be copied.
+            mem_barrier: The memory barrier for synchronization.
+            coords: The N-dimensional coordinates as StaticTuple.
+        """
+        comptime assert coord_rank in (2, 3)
+
+        comptime if coord_rank == 2:
+            self.async_copy[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](dst, mem_barrier, (Int(coords[0]), Int(coords[1])))
+        elif coord_rank == 3:
+            self.async_copy_3d[eviction_policy=eviction_policy](
+                dst,
+                mem_barrier,
+                (Int(coords[0]), Int(coords[1]), Int(coords[2])),
+            )
+
     @always_inline
     def async_store[
         coord_rank: Int, //, cta_group: Int = 1
