@@ -147,6 +147,9 @@ def test_math() raises:
             recip,
         ](ctx)
 
+fn test_log10_comptime():
+    comptime res = log10(100.0)
+    assert_equal(res, 2.0)
 
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
