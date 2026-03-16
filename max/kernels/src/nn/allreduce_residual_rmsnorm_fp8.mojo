@@ -1148,19 +1148,20 @@ def allreduce_rmsnorm_fp8[
     in_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
-    rank: Int,
     ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
     //,
 ](
     input_buffers: InlineArray[
-        NDBuffer[rank=rank, in_dtype, ImmutAnyOrigin], ngpus
+        TileTensor[in_dtype, in_layout, in_origin], ngpus
     ],
-    output: NDBuffer[mut=True, rank=rank, out_dtype, ...],
+    output: TileTensor[mut=True, out_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
-    scale_output: NDBuffer[mut=True, rank=rank, scales_dtype, ...],
+    scale_output: TileTensor[mut=True, scales_dtype, ...],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
 ) raises:
@@ -1174,17 +1175,18 @@ def allreduce_rmsnorm_fp8[
         in_dtype: Input data type (e.g. bfloat16).
         out_dtype: FP8 output data type (e.g. float8_e4m3fn).
         scales_dtype: Scale factor data type (e.g. float32).
-        rank: Tensor rank of input/output/scale buffers.
         ngpus: Number of GPUs participating.
+        in_layout: Layout of the input TileTensors.
+        in_origin: Origin of the input TileTensors.
 
     Args:
-        input_buffers: Per-GPU input buffers (last dim = cols).
-        output: Output buffer for FP8 values (same shape as input).
+        input_buffers: Per-GPU input buffers as TileTensors.
+        output: Output buffer for FP8 values as a TileTensor.
         gamma: RMSNorm gamma weights (1D TileTensor of length cols).
         epsilon: RMSNorm epsilon for numerical stability.
         weight_offset: Additive offset for gamma weights.
         scale_ub: Upper bound for FP8 scale clamping.
-        scale_output: Output buffer for per-row FP8 scales (last dim = 1).
+        scale_output: Output buffer for per-row FP8 scales as a TileTensor.
         rank_sigs: Per-GPU signal pointers for synchronization.
         ctx: Device context for this GPU.
 
@@ -1213,24 +1215,34 @@ def allreduce_rmsnorm_fp8[
     if not is_p2p_enabled():
         raise Error("allreduce_rmsnorm_fp8 requires P2P access between GPUs")
 
-    var cols = input_buffers[0].dim(rank - 1)
-    var rows = input_buffers[0].num_elements() // cols
+    # Compute rows/cols from TileTensor dims.
+    var in_num_elems = input_buffers[0].num_elements()
+    comptime last_dim_idx = in_layout.rank - 1
+    var cols = Int(input_buffers[0].dim[last_dim_idx]())
+    var rows = in_num_elems // cols
 
-    # Extract raw pointers from NDBuffers.
+    # Extract raw pointers from TileTensors.
     var src_ptrs = InlineArray[
         UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
     ](uninitialized=True)
-
     comptime for i in range(ngpus):
-        src_ptrs[i] = input_buffers[i].data
+        src_ptrs[i] = rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            input_buffers[i].ptr
+        )
 
-    # Create internal 2D/1D views and dispatch.
+    # Create internal 2D/1D NDBuffer views for _dispatch_fused_kernel.
     var output_2d = NDBuffer[mut=True, rank=2, out_dtype, MutAnyOrigin](
-        output.data, IndexList[2](rows, cols)
+        rebind[UnsafePointer[Scalar[out_dtype], MutAnyOrigin]](output.ptr),
+        IndexList[2](rows, cols),
     )
     var scale_output_1d = NDBuffer[
         mut=True, rank=1, scales_dtype, MutAnyOrigin
-    ](scale_output.data, IndexList[1](rows))
+    ](
+        rebind[UnsafePointer[Scalar[scales_dtype], MutAnyOrigin]](
+            scale_output.ptr
+        ),
+        IndexList[1](rows),
+    )
 
     _dispatch_fused_kernel[in_dtype, out_dtype, scales_dtype, ngpus](
         rows,

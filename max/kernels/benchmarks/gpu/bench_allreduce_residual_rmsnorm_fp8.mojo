@@ -197,13 +197,13 @@ def _verify_results[
 
     comptime for i in range(ngpus):
         allreduce_rmsnorm_fp8(
-            in_bufs,
-            v_ff_ndbuf,
+            tt_in,
+            TileTensor(v_ff_ndbuf),
             gamma_tensor,
             epsilon,
             weight_offset,
             scale_ub,
-            v_ff_scales_ndbuf,
+            TileTensor(v_ff_scales_ndbuf),
             rank_sigs,
             list_of_ctx[i],
         )
@@ -863,6 +863,10 @@ def bench_allreduce_rmsnorm_fp8[
             _repoint_input_bufs[num_cols=num_cols](
                 in_bufs, cb_inputs, cache_iter, num_rows
             )
+            comptime _InTT = type_of(TileTensor(in_bufs[0]))
+            var _tt_in = InlineArray[_InTT, ngpus](uninitialized=True)
+            comptime for _j in range(ngpus):
+                _tt_in[_j] = TileTensor(in_bufs[_j])
 
             var ff_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
                 fully_fused_fp8_out_ptrs[ctx_idx],
@@ -873,13 +877,13 @@ def bench_allreduce_rmsnorm_fp8[
             )
 
             allreduce_rmsnorm_fp8(
-                in_bufs,
-                ff_ndbuf,
+                _tt_in,
+                TileTensor(ff_ndbuf),
                 gamma_tensor,
                 epsilon,
                 weight_offset,
                 scale_ub,
-                ff_scales_ndbuf,
+                TileTensor(ff_scales_ndbuf),
                 rank_sigs,
                 ctx_inner,
             )
