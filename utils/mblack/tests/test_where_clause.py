@@ -4,8 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import pytest
-
 import mblack
 from tests.util import assert_mojo_format
 
@@ -14,18 +12,18 @@ from tests.util import assert_mojo_format
 # ====================== #
 
 def test_simple_fn_where_clause():
-    source = f"fn where_simple[x: Bool]() where x: pass"
+    source = "def where_simple[x: Bool]() where x: pass"
     expected = (
-        f"fn where_simple[x: Bool]() where x:\n"
+        "def where_simple[x: Bool]() where x:\n"
         "    pass\n"
     )
     assert_mojo_format(source, expected)
 
 
 def test_composite_fn_where_clause_with_return():
-    source = f"fn where_composite[x: Bool]() -> Int where x and y + z: pass"
+    source = "def where_composite[x: Bool]() -> Int where x and y + z: pass"
     expected = (
-        f"fn where_composite[x: Bool]() -> Int where x and y + z:\n"
+        "def where_composite[x: Bool]() -> Int where x and y + z:\n"
         "    pass\n"
     )
     assert_mojo_format(source, expected)
@@ -33,13 +31,13 @@ def test_composite_fn_where_clause_with_return():
 
 def test_long_fn_where_clause():
     source = (
-        "fn where_long[x: Bool, y: Int, z: Int](\n"
+        "def where_long[x: Bool, y: Int, z: Int](\n"
         "    a: Int, b: Int, c: Int\n"
-        f") where x and   y + z and a == b and c   == d and (e == f or  g):\n"
+        ") where x and   y + z and a == b and c   == d and (e == f or  g):\n"
         "    pass\n"
     )
     expected = (
-        "fn where_long[\n"
+        "def where_long[\n"
         "    x: Bool, y: Int, z: Int\n"
         "](a: Int, b: Int, c: Int) where (\n"
         "    x and y + z and a == b and c == d and (e == f or g)\n"
@@ -51,13 +49,13 @@ def test_long_fn_where_clause():
 
 def test_very_long_fn_where_clause_with_return():
     source = (
-        "fn where_very_long() -> (Int, Int, String) where (\n"
+        "def where_very_long() -> (Int, Int, String) where (\n"
         "    x and y + z and a == b and c == d and (e == f or g) and xx == yy and zz == aa or (ds or dd)\n"
         "):\n"
         "    pass\n"
     )
     expected = (
-        "fn where_very_long() -> (\n"
+        "def where_very_long() -> (\n"
         "    Int,\n"
         "    Int,\n"
         "    String,\n"
@@ -78,14 +76,14 @@ def test_very_long_fn_where_clause_with_return():
 
 def test_multiple_fn_where_clauses():
     source = (
-        "fn where_multiple[x: Bool, y: Int]() "
+        "def where_multiple[x: Bool, y: Int]() "
         "where x and y + z and a == b "
         "where c == d and (e == f or g) and xx == yy "
         "where zz == aa or (ds or dd):\n"
         "    pass\n"
     )
     expected = (
-        "fn where_multiple[\n"
+        "def where_multiple[\n"
         "    x: Bool, y: Int\n"
         "]() where x and y + z and a == b where (\n"
         "    c == d and (e == f or g) and xx == yy\n"
@@ -100,13 +98,13 @@ def test_multiple_fn_where_clauses():
 
 def test_where_clause_in_params():
     source = (
-        "fn where_in_params["
+        "def where_in_params["
         "x: Bool where x is False, "
         "y: Int where y > 0 and x is True]():\n"
         "    pass\n"
     )
     expected = (
-        "fn where_in_params[\n"
+        "def where_in_params[\n"
         "    x: Bool where x is False, y: Int where y > 0 and x is True\n"
         "]():\n"
         "    pass\n"
@@ -116,13 +114,13 @@ def test_where_clause_in_params():
 
 def test_long_where_clause_in_params():
     source = (
-        "fn where_in_params["
+        "def where_in_params["
         "x: Bool where x and y + z and a == b and c == d and (e == f or g) and xx == yy and zz == aa or (ds or dd), "
         "y: Int where y > 0 and x is True]():\n"
         "    pass\n"
     )
     expected = (
-        "fn where_in_params[\n"
+        "def where_in_params[\n"
         "    x: Bool where (\n"
         "        x\n"
         "        and y + z\n"
@@ -142,13 +140,13 @@ def test_long_where_clause_in_params():
 
 def test_multiple_where_clauses_in_params():
     source = (
-        "fn where_in_params["
+        "def where_in_params["
         "x: Bool where x and y + z and a == b where c == d and (e == f or g) and xx == yy where zz == aa or (ds or dd), "
         "y: Int where y > 0 where x is True]():\n"
         "    pass\n"
     )
     expected = (
-        "fn where_in_params[\n"
+        "def where_in_params[\n"
         "    x: Bool where x and y + z and a == b where (\n"
         "        c == d and (e == f or g) and xx == yy\n"
         "    ) where zz == aa or (ds or dd),\n"
@@ -160,9 +158,9 @@ def test_multiple_where_clauses_in_params():
 
 
 def test_composite_param_where_clause_with_default():
-    source = f"fn where_composite[x: Bool where x and y + z = True]() -> Int: pass"
+    source = "def where_composite[x: Bool where x and y + z = True]() -> Int: pass"
     expected = (
-        f"fn where_composite[x: Bool where x and y + z = True]() -> Int:\n"
+        "def where_composite[x: Bool where x and y + z = True]() -> Int:\n"
         "    pass\n"
     )
     assert_mojo_format(source, expected)

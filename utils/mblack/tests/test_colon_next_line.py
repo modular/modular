@@ -12,19 +12,17 @@ import pytest
 from tests.util import assert_mojo_format
 
 
-@pytest.mark.parametrize("keyword", ["fn", "def"])
-def test_func_colon_next_line(keyword):
+def test_func_colon_next_line():
     """Function with colon on the next line."""
-    source = f"{keyword} foo()\n    :\n    pass\n"
-    expected = f"{keyword} foo():\n    pass\n"
+    source = "def foo()\n    :\n    pass\n"
+    expected = "def foo():\n    pass\n"
     assert_mojo_format(source, expected)
 
 
-@pytest.mark.parametrize("keyword", ["fn", "def"])
-def test_func_return_type_colon_next_line(keyword):
+def test_func_return_type_colon_next_line():
     """Function with return type and colon on the next line."""
-    source = f"{keyword} foo() -> Int\n    :\n    return 0\n"
-    expected = f"{keyword} foo() -> Int:\n    return 0\n"
+    source = "def foo() -> Int\n    :\n    return 0\n"
+    expected = "def foo() -> Int:\n    return 0\n"
     assert_mojo_format(source, expected)
 
 
@@ -38,22 +36,22 @@ def test_type_decl_colon_next_line(keyword):
 
 def test_if_colon_next_line():
     """if statement with colon on the next line."""
-    source = "fn main():\n    if True\n        :\n        pass\n"
-    expected = "fn main():\n    if True:\n        pass\n"
+    source = "def main():\n    if True\n        :\n        pass\n"
+    expected = "def main():\n    if True:\n        pass\n"
     assert_mojo_format(source, expected)
 
 
 def test_for_colon_next_line():
     """for loop with colon on the next line."""
-    source = "fn main():\n    for i in range(1)\n        :\n        pass\n"
-    expected = "fn main():\n    for i in range(1):\n        pass\n"
+    source = "def main():\n    for i in range(1)\n        :\n        pass\n"
+    expected = "def main():\n    for i in range(1):\n        pass\n"
     assert_mojo_format(source, expected)
 
 
 def test_while_colon_next_line():
     """while loop with colon on the next line."""
-    source = "fn main():\n    while False\n        :\n        pass\n"
-    expected = "fn main():\n    while False:\n        pass\n"
+    source = "def main():\n    while False\n        :\n        pass\n"
+    expected = "def main():\n    while False:\n        pass\n"
     assert_mojo_format(source, expected)
 
 
@@ -61,13 +59,13 @@ def test_nested_colon_next_line():
     """Colon on next line inside an already-indented block."""
     source = (
         "struct Foo:\n"
-        "    fn bar(self)\n"
+        "    def bar(self)\n"
         "        :\n"
         "        pass\n"
     )
     expected = (
         "struct Foo:\n"
-        "    fn bar(self):\n"
+        "    def bar(self):\n"
         "        pass\n"
     )
     assert_mojo_format(source, expected)
@@ -76,7 +74,7 @@ def test_nested_colon_next_line():
 def test_multiline_signature_colon_next_line():
     """Function with multi-line signature and colon on the next line."""
     source = (
-        "fn foo(\n"
+        "def foo(\n"
         "    x: Int,\n"
         "    y: Int,\n"
         ")\n"
@@ -84,7 +82,7 @@ def test_multiline_signature_colon_next_line():
         "    pass\n"
     )
     expected = (
-        "fn foo(\n"
+        "def foo(\n"
         "    x: Int,\n"
         "    y: Int,\n"
         "):\n"
@@ -96,12 +94,12 @@ def test_multiline_signature_colon_next_line():
 def test_trailing_comment_colon_next_line():
     """Colon on next line when the previous line has a trailing comment."""
     source = (
-        "fn foo()  # comment\n"
+        "def foo()  # comment\n"
         "    :\n"
         "    pass\n"
     )
     expected = (
-        "fn foo():  # comment\n"
+        "def foo():  # comment\n"
         "    pass\n"
     )
     assert_mojo_format(source, expected)
@@ -119,7 +117,7 @@ def test_colon_next_line_fmt_off():
 
     source = (
         "# fmt: off\n"
-        "fn foo()\n"
+        "def foo()\n"
         "    :\n"
         "    pass\n"
         "# fmt: on\n"
@@ -130,7 +128,7 @@ def test_colon_next_line_fmt_off():
 def test_colon_in_docstring_preserved():
     """A colon-only line inside a docstring must not be altered."""
     source = (
-        'fn main()\n'
+        'def main()\n'
         '    :\n'
         '    """\n'
         '    :\n'
@@ -138,7 +136,7 @@ def test_colon_in_docstring_preserved():
         '    pass\n'
     )
     expected = (
-        'fn main():\n'
+        'def main():\n'
         '    """\n'
         '    :\n'
         '    """\n'
