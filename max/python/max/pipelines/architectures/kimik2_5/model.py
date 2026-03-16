@@ -160,7 +160,7 @@ class KimiK2_5Model(
             and is_float4_encoding(encoding)
             and kv_cache_config.kv_cache_format is None
         ):
-            cache_dtype = DType.bfloat16
+            cache_dtype = DType.float8_e4m3fn
         return KimiK2_5TextConfig.construct_kv_params(
             huggingface_config=huggingface_config.text_config,
             pipeline_config=pipeline_config,
