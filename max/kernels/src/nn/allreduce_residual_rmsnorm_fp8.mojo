@@ -1383,3 +1383,124 @@ def allreduce_residual_rmsnorm_fp8[
         residual_2d,
         residual_output_2d,
     )
+
+
+def allreduce_residual_rmsnorm_fp8[
+    in_dtype: DType,
+    out_dtype: DType,
+    scales_dtype: DType,
+    rank: Int,
+    ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    //,
+](
+    input_buffers: InlineArray[
+        TileTensor[in_dtype, in_layout, in_origin], ngpus
+    ],
+    residual: TileTensor[mut=False, in_dtype, ...],
+    output: TileTensor[mut=True, out_dtype, ...],
+    residual_output: TileTensor[mut=True, in_dtype, ...],
+    gamma: TileTensor[in_dtype, ...],
+    epsilon: Scalar[in_dtype],
+    weight_offset: Scalar[in_dtype],
+    scale_ub: Float32,
+    scale_output: TileTensor[mut=True, scales_dtype, ...],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    ctx: DeviceContext,
+) raises:
+    """TileTensor overload of allreduce_residual_rmsnorm_fp8. Constructs
+    NDBuffers and delegates to the NDBuffer implementation.
+
+    Parameters:
+        in_dtype: Input data type (e.g. bfloat16).
+        out_dtype: FP8 output data type (e.g. float8_e4m3fn).
+        scales_dtype: Scale factor data type (e.g. float32).
+        rank: Tensor rank of input/output/scale buffers.
+        ngpus: Number of GPUs participating.
+        in_layout: Layout of the input TileTensors.
+        in_origin: Origin of the input TileTensors.
+
+    Args:
+        input_buffers: Per-GPU input buffers as TileTensors.
+        residual: Residual buffer as a TileTensor.
+        output: Output buffer for FP8 values as a TileTensor.
+        residual_output: Output buffer for pre-norm sum as a TileTensor.
+        gamma: RMSNorm gamma weights (1D TileTensor).
+        epsilon: RMSNorm epsilon for numerical stability.
+        weight_offset: Additive offset for gamma weights.
+        scale_ub: Upper bound for FP8 scale clamping.
+        scale_output: Output buffer for per-row FP8 scales as a TileTensor.
+        rank_sigs: Per-GPU signal pointers for synchronization.
+        ctx: Device context for this GPU.
+    """
+    # Build shapes from TileTensor dims. The NDBuffer overload internally
+    # flattens to 2D (rows x cols), so we only need the last dim for cols
+    # and total elements / cols for rows. Intermediate dims are set to 1.
+    var in_num_elems = input_buffers[0].num_elements()
+    var in_shape = IndexList[rank](1)
+    comptime if rank == 1:
+        in_shape[0] = in_num_elems
+    else:
+        # Extract cols from the last dim of the first input's layout.
+        comptime last_dim_idx = in_layout.rank - 1
+        var cols = Int(input_buffers[0].dim[last_dim_idx]())
+        in_shape[rank - 1] = cols
+        in_shape[0] = in_num_elems // cols
+
+    # Build NDBuffer array from input TileTensors.
+    var ndb_inputs = InlineArray[
+        NDBuffer[rank=rank, in_dtype, ImmutAnyOrigin], ngpus
+    ](fill={})
+    comptime for i in range(ngpus):
+        ndb_inputs[i] = NDBuffer[rank=rank, in_dtype, ImmutAnyOrigin](
+            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                input_buffers[i].ptr
+            ),
+            in_shape,
+        )
+
+    var ndb_residual = NDBuffer[rank=rank, in_dtype, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](residual.ptr),
+        in_shape,
+    )
+
+    # Output shape matches input shape.
+    var ndb_output = NDBuffer[mut=True, rank=rank, out_dtype, MutAnyOrigin](
+        rebind[UnsafePointer[Scalar[out_dtype], MutAnyOrigin]](output.ptr),
+        in_shape,
+    )
+    var ndb_residual_output = NDBuffer[
+        mut=True, rank=rank, in_dtype, MutAnyOrigin
+    ](
+        rebind[UnsafePointer[Scalar[in_dtype], MutAnyOrigin]](
+            residual_output.ptr
+        ),
+        in_shape,
+    )
+
+    # Scale output has same rows but last dim = 1 (per-row scales).
+    var scale_shape = IndexList[rank](1)
+    scale_shape[0] = scale_output.num_elements()
+    var ndb_scale_output = NDBuffer[
+        mut=True, rank=rank, scales_dtype, MutAnyOrigin
+    ](
+        rebind[UnsafePointer[Scalar[scales_dtype], MutAnyOrigin]](
+            scale_output.ptr
+        ),
+        scale_shape,
+    )
+
+    allreduce_residual_rmsnorm_fp8(
+        ndb_inputs,
+        ndb_residual,
+        ndb_output,
+        ndb_residual_output,
+        gamma,
+        epsilon,
+        weight_offset,
+        scale_ub,
+        ndb_scale_output,
+        rank_sigs,
+        ctx,
+    )

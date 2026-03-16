@@ -97,6 +97,7 @@ from std.sys import align_of, simd_width_of, size_of
 
 from buffer import NDBuffer
 from layout import Coord, Idx, TileTensor, row_major
+from layout.tile_layout import TensorLayout
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
@@ -839,3 +840,76 @@ def allreduce[
         pdl_level=pdl_level,
         use_multimem=use_multimem,
     ](input_buffers, output_buffer, rank_sigs, max_num_blocks, ctx)
+
+
+@parameter
+@always_inline
+def allreduce[
+    dtype: DType,
+    rank: Int,
+    ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    output_lambda: Optional[elementwise_epilogue_type] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+    *,
+    use_multimem: Bool = False,
+](
+    input_buffers: InlineArray[
+        TileTensor[dtype, in_layout, in_origin],
+        1 if use_multimem else ngpus,
+    ],
+    output_buffer: TileTensor[mut=True, dtype, ...],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    ctx: DeviceContext,
+    _max_num_blocks: Optional[Int] = None,
+) raises:
+    """TileTensor overload of allreduce. Constructs NDBuffers and delegates
+    to the NDBuffer implementation.
+
+    Parameters:
+        dtype: Data type of the tensor elements.
+        rank: Number of dimensions in the tensors.
+        ngpus: Number of GPUs participating in the allreduce.
+        in_layout: Layout of the input TileTensors.
+        in_origin: Origin of the input TileTensors.
+        output_lambda: Elementwise epilogue applied on the device result.
+        pdl_level: Controls PDL behavior for P2P kernels.
+        use_multimem: Whether to use multimem mode for improved performance.
+
+    Args:
+        input_buffers: Inputs from ALL GPUs as TileTensors.
+        output_buffer: Output for THIS GPU as a TileTensor.
+        rank_sigs: Per-GPU Signal pointers.
+        ctx: Device context for THIS GPU.
+        _max_num_blocks: Optional grid limit.
+    """
+    comptime num_buffers = 1 if use_multimem else ngpus
+
+    # Build a flat shape: first dim = num_elements, rest = 1.
+    # Allreduce treats buffers as flat, so only total element count matters.
+    var flat_shape = IndexList[rank](1)
+    flat_shape[0] = input_buffers[0].num_elements()
+
+    # Build NDBuffer array from TileTensors.
+    var ndb_inputs = InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], num_buffers
+    ](fill={})
+    comptime for i in range(num_buffers):
+        ndb_inputs[i] = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
+            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                input_buffers[i].ptr
+            ),
+            flat_shape,
+        )
+
+    var ndb_output = NDBuffer[rank=rank, dtype, MutAnyOrigin](
+        rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](output_buffer.ptr),
+        flat_shape,
+    )
+
+    allreduce[
+        output_lambda=output_lambda,
+        pdl_level=pdl_level,
+        use_multimem=use_multimem,
+    ](ndb_inputs, ndb_output, rank_sigs, ctx, _max_num_blocks)

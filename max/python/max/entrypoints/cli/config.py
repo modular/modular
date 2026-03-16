@@ -49,6 +49,7 @@ from max.pipelines.lib import (
     SamplingConfig,
     SpeculativeConfig,
 )
+from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 from pydantic import BaseModel
 from typing_extensions import ParamSpec
 
@@ -259,6 +260,7 @@ def get_config_skip_fields(cls: type[BaseModel]) -> set[str]:
                 "lora",
                 "speculative",
                 "runtime",
+                "cache",
             }
         )
     elif cls is PipelineRuntimeConfig:
@@ -380,6 +382,7 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @config_to_flag(MAXModelConfig)
     @config_to_flag(MAXModelConfig, prefix="draft")
     @config_to_flag(KVCacheConfig)
+    @config_to_flag(DenoisingCacheConfig)
     @config_to_flag(LoRAConfig)
     @config_to_flag(ProfilingConfig)
     @config_to_flag(SamplingConfig)

@@ -966,7 +966,6 @@ class PixelGenerationTokenizer(
             true_cfg_scale=image_options.true_cfg_scale,
             num_warmup_steps=num_warmup_steps,
             model_name=request.body.model,
-            residual_threshold=image_options.residual_threshold,
             input_image=preprocessed_image_array,  # Pass numpy array instead of PIL.Image
         )
 

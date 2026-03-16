@@ -22,10 +22,12 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
+    MAXModelConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 
 from ..llama3.model import Llama3Inputs, LlamaModelBase
 from .eagle_llama3 import EagleLlama3
@@ -95,10 +97,20 @@ class EagleLlama3Model(LlamaModelBase):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
     ) -> Graph:
-        state_dict = self._get_state_dict(weights, adapter)
-        model_config = Llama3Config.initialize(self.pipeline_config)
+        draft_model: MAXModelConfig | None = self.pipeline_config.draft_model
+        assert draft_model is not None
+        draft_hf_config = draft_model.huggingface_config
+        assert draft_hf_config is not None
+        state_dict = parse_state_dict_from_weights(
+            self.pipeline_config, weights, adapter, hf_config=draft_hf_config
+        )
+
+        model_config = Llama3Config.initialize_from_config(
+            self.pipeline_config,
+            draft_hf_config,
+        )
         model_config.finalize(
-            huggingface_config=self.huggingface_config,
+            huggingface_config=draft_hf_config,
             state_dict=state_dict,
             norm_method=self.norm_method,
             attention_bias=self.attention_bias,
