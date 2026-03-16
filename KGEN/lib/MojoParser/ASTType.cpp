@@ -741,8 +741,8 @@ bool ASTType::hasNontrivialDestructor(llvm::SMLoc loc,
   return structOp.getDestructorAttr() != TypedAttr();
 }
 
-bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared,
-                         bool isImplicit) const {
+bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared, bool isImplicit,
+                         ASTDecl *scope) const {
   ASTDecl *typeDecl = getDecl(shared);
   if (!typeDecl)
     return true; // MLIR Types are copyable.
@@ -763,28 +763,31 @@ bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared,
   // Conservative: only claim copyable when provably so. If conformance
   // depends on unresolved constraints (NeedsEvidence), return false and let
   // the constraint system prove it in the appropriate context.
-  return checkConformance(trait.bindReference(), shared, nullptr) ==
+  return checkConformance(trait.bindReference(), shared, scope) ==
          ConformanceResult::Yes;
 }
 
 /// Return true if this type is implicitly copyable, either because it is
 /// trivial or conforms to ImplicitlyCopyable trait. Note: this resolves the
 /// body of a struct type.
-bool ASTType::isImplicitlyCopyable(llvm::SMLoc loc, SharedState &shared) const {
-  return isCopyable(loc, shared, /*isImplicit=*/true);
+bool ASTType::isImplicitlyCopyable(llvm::SMLoc loc, SharedState &shared,
+                                   ASTDecl *scope) const {
+  return isCopyable(loc, shared, /*isImplicit=*/true, scope);
 }
 
 /// Return true if this type is explicitly copyable, either because it is
 /// trivial or conforms to the Copyable trait. Note: this resolves the
 /// body of a struct type.
-bool ASTType::isExplicitlyCopyable(llvm::SMLoc loc, SharedState &shared) const {
-  return isCopyable(loc, shared, /*isImplicit=*/false);
+bool ASTType::isExplicitlyCopyable(llvm::SMLoc loc, SharedState &shared,
+                                   ASTDecl *scope) const {
+  return isCopyable(loc, shared, /*isImplicit=*/false, scope);
 }
 
 /// Return true if this type is movable from its own type, either because it
 /// is trivial or has a move constructor from self. Note: this resolves the
 /// body of a struct type.
-bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared) const {
+bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared,
+                        ASTDecl *scope) const {
   ASTDecl *typeDecl = getDecl(shared);
   if (!typeDecl)
     return true; // MLIR types are movable.
@@ -803,7 +806,7 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared) const {
   auto trait = dyn_cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
   if (!trait)
     return false;
-  return checkConformance(trait.bindReference(), shared, nullptr) ==
+  return checkConformance(trait.bindReference(), shared, scope) ==
          ConformanceResult::Yes;
 }
 

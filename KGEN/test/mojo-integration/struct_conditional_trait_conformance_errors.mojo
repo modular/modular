@@ -141,6 +141,30 @@ def wrong_where_clause[
     needs_copyable(x)
 
 
+# ===========================================================================
+# Test: Alias-resolved field type with unsatisfied conditional conformance
+# ===========================================================================
+# When a struct uses comptime aliases to build its field type and the
+# conditional conformance constraint isn't met, the compiler must reject
+# attempts to copy the struct.
+
+
+@fieldwise_init
+struct AliasWrapper[T: ImplicitlyDestructible & Movable](
+    Copyable where conforms_to(T, Copyable),
+    ImplicitlyDestructible,
+    Movable,
+):
+    comptime Inner = ConditionalCopyableWrapper[Self.T]
+    var _field: Self.Inner
+
+
+# CHECK: argument type 'AliasWrapper[MovableOnlyType]' does not conform to trait 'Copyable'
+fn alias_needs_copyable():
+    var w = AliasWrapper(_field=ConditionalCopyableWrapper(MovableOnlyType(1)))
+    needs_copyable(w)
+
+
 def main():
     # ConditionalCopyableWrapper[MovableOnlyType] should NOT be Copyable because
     # MovableOnlyType is not Copyable.
