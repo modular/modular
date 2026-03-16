@@ -33,6 +33,7 @@ from max.nn.kv_cache import (
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
+    QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
@@ -261,7 +262,7 @@ def generate_max_outputs_fp8(
         mlp_quantized_layers=set(),
         attn_quantized_layers=set(),
         embedding_output_dtype=None,
-        quant_method="fp8",
+        format=QuantFormat.BLOCKSCALED_FP8,
     )
 
     latent_attention = LatentAttentionWithRopeFp8(

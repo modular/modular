@@ -59,6 +59,7 @@ from .norm import ConstantLayerNorm, GroupNorm, LayerNorm, RMSNorm
 from .quant_config import (
     InputScaleSpec,
     QuantConfig,
+    QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
@@ -133,6 +134,7 @@ __all__ = [
     "MultiheadAttention",
     "PagedCacheValues",
     "QuantConfig",
+    "QuantFormat",
     "RMSNorm",
     "RaggedAttention",
     "RejectionSampler",

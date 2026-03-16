@@ -21,6 +21,7 @@ from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.nn import (
     InputScaleSpec,
     QuantConfig,
+    QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
@@ -42,6 +43,7 @@ def test_moe_with_shared_experts() -> None:
     shared_experts_dim = 256
 
     quant_config = QuantConfig(
+        format=QuantFormat.BLOCKSCALED_FP8,
         weight_scale=WeightScaleSpec(
             dtype=DType.float32,
             granularity=ScaleGranularity.BLOCK,

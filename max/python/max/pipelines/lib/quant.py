@@ -28,6 +28,7 @@ from max.nn.float8_scale_stacking import can_use_fused_mlp
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
+    QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
@@ -211,7 +212,7 @@ def _parse_compressed_tensors_fp8_config(
         attn_quantized_layers=attn_quantized_layers,
         embedding_output_dtype=embedding_output_dtype,
         bias_dtype=bias_dtype,
-        quant_method="compressed-tensors",
+        format=QuantFormat.COMPRESSED_TENSORS_FP8,
     )
 
 
@@ -285,7 +286,6 @@ def _parse_fbgemm_fp8_config(
         hf_quant_config and hf_quant_config.get("quant_method") == "fbgemm_fp8"
     )
 
-    quant_method = hf_quant_config.get("quant_method")
     # Get the original Hugging Face module names.
     modules_to_not_convert_hf = set(
         hf_quant_config.get("modules_to_not_convert", [])
@@ -323,7 +323,7 @@ def _parse_fbgemm_fp8_config(
         attn_quantized_layers=attn_quantized_layers,
         embedding_output_dtype=embedding_output_dtype,
         bias_dtype=bias_dtype,
-        quant_method=quant_method,
+        format=QuantFormat.FBGEMM_FP8,
     )
 
 
@@ -351,8 +351,6 @@ def _parse_blockscaled_fp8_config(
         raise ValueError("weight_block_size must be specified")
     if hf_quant_config["weight_block_size"] != [128, 128]:
         raise ValueError("weight_block_size must be [128, 128]")
-
-    quant_method = hf_quant_config.get("quant_method")
 
     weight_scale_dtype: DType | None = None
     for weight_name, weight in state_dict.items():
@@ -393,7 +391,7 @@ def _parse_blockscaled_fp8_config(
         attn_quantized_layers=all_layers,
         embedding_output_dtype=DType.bfloat16,
         bias_dtype=bias_dtype,
-        quant_method=quant_method,
+        format=QuantFormat.BLOCKSCALED_FP8,
     )
 
 
@@ -574,8 +572,7 @@ def _parse_modelopt_float4_config(
         attn_quantized_layers=all_layers,
         embedding_output_dtype=DType.bfloat16,
         bias_dtype=bias_dtype,
-        quant_method=quant_method,
-        quant_algo=quant_algo,
+        format=QuantFormat.NVFP4,
     )
 
 
@@ -634,8 +631,7 @@ def _parse_mxfp4_config(
         attn_quantized_layers=set(),
         embedding_output_dtype=DType.bfloat16,
         bias_dtype=bias_dtype,
-        quant_method=quant_method,
-        quant_algo=quant_algo,
+        format=QuantFormat.MXFP4,
         can_use_fused_mlp=False,
     )
 

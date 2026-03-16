@@ -55,6 +55,16 @@ class ScaleOrigin(Enum):
     """Scales are computed at runtime based on the input data."""
 
 
+class QuantFormat(Enum):
+    """Identifies the quantization format of a model checkpoint."""
+
+    COMPRESSED_TENSORS_FP8 = "compressed-tensors-fp8"
+    FBGEMM_FP8 = "fbgemm-fp8"
+    BLOCKSCALED_FP8 = "blockscaled-fp8"
+    NVFP4 = "nvfp4"
+    MXFP4 = "mxfp4"
+
+
 @dataclass
 class WeightScaleSpec:
     """Specifies how weights are scaled for scaled quantization."""
@@ -173,17 +183,14 @@ class QuantConfig:
     So either all of {q,k,v,o}_proj are quantized, or all bfloat16.
     """
 
+    format: QuantFormat
+    """The :class:`~max.nn.quant_config.QuantFormat` identifying the quantization format."""
+
     embedding_output_dtype: DType | None = None
     """The :class:`~max.dtype.DType` of the output from the embedding layer."""
 
     bias_dtype: DType | None = None
     """The :class:`~max.dtype.DType` of bias weights."""
-
-    quant_method: str | None = None
-    """The quantization method used (for example, ``fbgemm_fp8``)."""
-
-    quant_algo: str | None = None
-    """Additional differentiator within same quant_method (for example, modelopt NVFP4 vs FP8)."""
 
     can_use_fused_mlp: bool = False
     """Whether the quantization scales can be used with fused MLP operations."""
@@ -242,15 +249,12 @@ class QuantConfig:
     @property
     def is_nvfp4(self) -> bool:
         """``True`` if this config represents modelopt NVFP4."""
-        return self.quant_method == "modelopt" and self.quant_algo == "NVFP4"
+        return self.format == QuantFormat.NVFP4
 
     @property
     def is_mxfp4(self) -> bool:
         """Returns ``True`` if this config represents MXFP4 quantization."""
-        return self.quant_algo == "MXFP4" and self.quant_method in (
-            "mxfp4",
-            "modelopt",
-        )
+        return self.format == QuantFormat.MXFP4
 
     def quantized_scales_type(
         self, quantized_shape: Shape, device_ref: DeviceRef

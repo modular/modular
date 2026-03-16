@@ -25,6 +25,7 @@ from max.experimental.torch import max_dtype_to_torch
 from max.graph import Shape
 from max.graph.weights import WeightData
 from max.nn.quant_config import (
+    QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
 )
@@ -104,7 +105,7 @@ def test_parse_fbgemm_instruct_config(
     quant_config = parse_quant_config(hf_config, state_dict, dtype)
 
     assert quant_config is not None
-    assert quant_config.quant_method == "fbgemm_fp8"
+    assert quant_config.format == QuantFormat.FBGEMM_FP8
     assert quant_config.input_scale.granularity == ScaleGranularity.COLWISE
     assert quant_config.input_scale.origin == ScaleOrigin.DYNAMIC
     assert quant_config.input_scale.dtype == dtype
@@ -141,7 +142,7 @@ def test_parse_fbgemm_base_config(
     quant_config = parse_quant_config(hf_config, state_dict, dtype)
 
     assert quant_config is not None
-    assert quant_config.quant_method == "fbgemm_fp8"
+    assert quant_config.format == QuantFormat.FBGEMM_FP8
 
     # Check output dtype from the state dict.
     assert quant_config.embedding_output_dtype == DType.bfloat16
@@ -497,7 +498,7 @@ def test_parse_gemma3_compressed_tensors(
     )
 
     assert quant_config is not None
-    assert quant_config.quant_method == "compressed-tensors"
+    assert quant_config.format == QuantFormat.COMPRESSED_TENSORS_FP8
     assert quant_config.input_scale.granularity == ScaleGranularity.COLWISE
     assert quant_config.input_scale.origin == ScaleOrigin.DYNAMIC
     assert quant_config.input_scale.dtype == DType.float32
@@ -756,7 +757,7 @@ def test_parse_fp8_bias_dtype(
     quant_config = parse_quant_config(config, state_dict, dtype)
 
     assert quant_config is not None
-    assert quant_config.quant_method == "fp8"
+    assert quant_config.format == QuantFormat.BLOCKSCALED_FP8
     assert quant_config.bias_dtype == DType.float16
 
 
@@ -785,8 +786,7 @@ def test_parse_float4_from_standalone_hf_quant_config(
     quant_config = parse_quant_config(hf_config, {}, DType.uint8)
 
     assert quant_config is not None
-    assert quant_config.quant_method == "modelopt"
-    assert quant_config.quant_algo == "NVFP4"
+    assert quant_config.format == QuantFormat.NVFP4
 
 
 def test_parse_float4_skips_gptq_quant_method(

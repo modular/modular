@@ -21,6 +21,7 @@ from max.nn.linear import Linear
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
+    QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
@@ -101,6 +102,7 @@ def test_linear_shard_with_float8_tensor_scale() -> None:
         ],
     ):
         quant_config = QuantConfig(
+            format=QuantFormat.COMPRESSED_TENSORS_FP8,
             weight_scale=WeightScaleSpec(
                 dtype=DType.float32, granularity=ScaleGranularity.TENSOR
             ),
@@ -150,6 +152,7 @@ def test_linear_shard_with_float8_rowwise_scale() -> None:
         ],
     ):
         quant_config = QuantConfig(
+            format=QuantFormat.COMPRESSED_TENSORS_FP8,
             weight_scale=WeightScaleSpec(
                 dtype=DType.float32, granularity=ScaleGranularity.ROWWISE
             ),
@@ -192,6 +195,7 @@ def test_linear_shard_with_float8_block_scale() -> None:
         ],
     ):
         quant_config = QuantConfig(
+            format=QuantFormat.BLOCKSCALED_FP8,
             weight_scale=WeightScaleSpec(
                 dtype=DType.float32,
                 granularity=ScaleGranularity.BLOCK,
@@ -266,6 +270,7 @@ def test_linear_sharding_preserves_config() -> None:
         ],
     ):
         quant_config = QuantConfig(
+            format=QuantFormat.COMPRESSED_TENSORS_FP8,
             weight_scale=WeightScaleSpec(
                 dtype=DType.float32, granularity=ScaleGranularity.TENSOR
             ),
@@ -452,6 +457,7 @@ def test_weight_scale_sharding_with_head_aware_columnwise() -> None:
         # Create a Linear layer with float8 config that has rowwise
         # weight_scale.
         quant_config = QuantConfig(
+            format=QuantFormat.FBGEMM_FP8,
             weight_scale=WeightScaleSpec(
                 granularity=ScaleGranularity.ROWWISE,
                 dtype=DType.float32,
@@ -491,6 +497,7 @@ def test_weight_scale_sharding_with_head_aware_columnwise() -> None:
 
         # Also test regular columnwise for comparison.
         quant_config2 = QuantConfig(
+            format=QuantFormat.FBGEMM_FP8,
             weight_scale=WeightScaleSpec(
                 granularity=ScaleGranularity.ROWWISE,
                 dtype=DType.float32,

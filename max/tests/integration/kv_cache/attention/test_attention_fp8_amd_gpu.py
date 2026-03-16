@@ -23,6 +23,7 @@ from max.kv_cache import PagedKVCacheManager
 from max.nn import (
     InputScaleSpec,
     QuantConfig,
+    QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
 )
@@ -282,6 +283,7 @@ def test_attention_with_rope_fp8_amd_static(
 
     # Configuration for static scaling
     quant_config = QuantConfig(
+        format=QuantFormat.COMPRESSED_TENSORS_FP8,
         input_scale=InputScaleSpec(
             dtype=DType.float32,
             granularity=ScaleGranularity.TENSOR,
@@ -375,6 +377,7 @@ def test_attention_with_rope_fp8_amd_dynamic(
 
     # Configuration for dynamic scaling
     quant_config = QuantConfig(
+        format=QuantFormat.FBGEMM_FP8,
         input_scale=InputScaleSpec(
             dtype=DType.float32,
             granularity=ScaleGranularity.COLWISE,
