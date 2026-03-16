@@ -608,32 +608,6 @@ def _pack_matmul_b_shape_func_impl[
     return output
 
 
-@register_internal("pack_matmul_b_shape_func")
-@always_inline
-def pack_matmul_b_shape_func[
-    b_type: DType,
-    b_shape: DimList,
-    //,
-    a_type: DType,
-    a_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-    transpose_in_0: Bool,
-    single_thread_blocking_override: Bool,
-](b_input: NDBuffer[mut=False, rank=2, b_type, _, b_shape]) -> IndexList[2]:
-    """NDBuffer wrapper. Extracts kernel_type_m from a_shape and delegates
-    to the TileTensor overload."""
-    var kernel_type_m = 0
-    comptime if a_shape.at[0]().has_value():
-        kernel_type_m = a_shape.at[0]().get()
-    return pack_matmul_b_shape_func[
-        a_type=a_type,
-        c_type=c_type,
-        transpose_in_0=transpose_in_0,
-        single_thread_blocking_override=single_thread_blocking_override,
-    ](TileTensor(b_input), kernel_type_m)
-
-
 def pack_b[
     transpose_b: Bool,
     simd_size: Int,
@@ -829,52 +803,7 @@ def _pack_b_ndbuffer_impl[
         dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
 
 
-@register_internal("layout_transform_KN_to_KNkni")
-def pack_b_ndbuffer[
-    b_type: DType,
-    b_shape: DimList,
-    //,
-    a_type: DType,
-    a_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-    output_origin: MutOrigin,
-](
-    b_input: NDBuffer[mut=False, rank=2, b_type, _, b_shape],
-    output_buffer: NDBuffer[rank=2, b_type, output_origin],
-) raises:
-    """NDBuffer wrapper. Extracts kernel_type_m from a_shape and delegates
-    to the TileTensor overload."""
-    var kernel_type_m = 0
-    comptime if a_shape.at[0]().has_value():
-        kernel_type_m = a_shape.at[0]().get()
-    pack_b_ndbuffer[a_type=a_type, c_type=c_type](
-        TileTensor(b_input), TileTensor(output_buffer), kernel_type_m
-    )
-
-
-@register_internal("layout_transform_NK_to_KNkni")
-def pack_transposed_b_ndbuffer[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-](
-    b_input: NDBuffer[mut=False, rank=2, b_type, _, b_shape],
-    output_buffer: NDBuffer[mut=True, rank=2, b_type, _],
-) raises:
-    """NDBuffer wrapper. Extracts kernel_type_m from a_shape and delegates
-    to the TileTensor overload."""
-    var kernel_type_m = 0
-    comptime if a_shape.at[0]().has_value():
-        kernel_type_m = a_shape.at[0]().get()
-    pack_transposed_b_ndbuffer[a_type=a_type, c_type=c_type](
-        TileTensor(b_input), TileTensor(output_buffer), kernel_type_m
-    )
-
-
+@register_internal("pack_matmul_b_shape_func")
 @always_inline
 def pack_matmul_b_shape_func[
     a_type: DType,

@@ -21,6 +21,7 @@ from std.collections import Optional
 import std.benchmark
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from layout import TileTensor
 from linalg.bmm import batched_matmul
 from linalg.matmul import matmul
 from linalg.matmul.cpu import matmul as _matmul_cpu
@@ -127,12 +128,7 @@ def test_matmul[
                     transpose_b,
                 ](b, bp, kernel_type_m)
             else:
-                pack_b_ndbuffer[
-                    a_type,
-                    a_shape,
-                    c_type,
-                    c_shape,
-                ](b, bp)
+                pack_b_ndbuffer[a_type, c_type](TileTensor(b), TileTensor(bp))
         else:
             if kernel_type_m != 0:
                 _pack_b_ndbuffer_impl[
@@ -143,14 +139,9 @@ def test_matmul[
                     transpose_b,
                 ](b, bp, kernel_type_m)
             else:
-                pack_transposed_b_ndbuffer[
-                    a_type,
-                    a_shape,
-                    b_type,
-                    b_shape,
-                    c_type,
-                    c_shape,
-                ](b, bp)
+                pack_transposed_b_ndbuffer[a_type, c_type](
+                    TileTensor(b), TileTensor(bp)
+                )
 
     @always_inline
     @__copy_capture(c, a, bp)
@@ -259,13 +250,8 @@ def test_matmul[
         ](b, kernel_type_m)
     else:
         padded_n_k = pack_matmul_b_shape_func[
-            a_type,
-            a_shape,
-            c_type,
-            c_shape,
-            transpose_b,
-            True,
-        ](b)
+            a_type, c_type, transpose_b, True
+        ](TileTensor(b))
 
     var padded_n = (
         padded_n_k[1] if b_packed or (not b_packed and transpose_b) else n
