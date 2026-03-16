@@ -857,7 +857,9 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
   // Generate the copy/moves of all of the elements, emit this at the start of
   // the function so it is ahead of whatever closure emission might generate.
   b = ImplicitLocOpBuilder::atBlockBegin(fn.getLoc(), fn.getBody());
-  IREmitter emitter(structDecl, b);
+  // Use fnDecl (not structDecl) so emitConstructorCall resolves overloads in
+  // the fn's scope, where where-clause constraints are visible as assumptions.
+  IREmitter emitter(fnDecl, b);
 
   assert(fn.getNumArguments() == 2 &&
          "copy and move functions should have two arguments");
@@ -881,6 +883,22 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
   ArrayRef<ConstraintAttr> fnConstraints =
       fn.getFuncTypeGenerator().getBody().getMetadata().getConstraints();
 
+  // Synthesized functions skip DeclResolution's insertKnownAssumptions, so
+  // inject the fn's where-clause constraints as known assumptions manually.
+  // This lets scope-aware conformance checks and emitConstructorCall prove
+  // conditional conformances on alias-resolved field types.  For example:
+  //
+  //   struct AliasField[T: ...](Copyable where conforms_to(T, Copyable)):
+  //     comptime Wrapped = SimpleWrapper[Self.T]
+  //     var field: Self.Wrapped   # ← alias-resolved field
+  //
+  // The synthesized copy ctor has `where conforms_to(T, Copyable)`.  To emit
+  // the copy of `field` (type `SimpleWrapper[T]`), the emitter must prove
+  // that `SimpleWrapper[T]` is Copyable, which requires knowing that the
+  // scope satisfies `conforms_to(T, Copyable)`.
+  if (!fnConstraints.empty())
+    fnDecl.insertKnownAssumptions(fnConstraints);
+
   for (StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
     ASTType fieldType = fieldOp.getType();
 
@@ -903,8 +921,9 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
     if (isMove) {
       // The move constructor can work with movable (preferably) or implicitly
       // copyable (as a fallback) types.
-      if (!fieldType.isMovable(fieldASTDecl.getLoc(), shared) &&
-          !fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared)) {
+      if (!fieldType.isMovable(fieldASTDecl.getLoc(), shared, &fnDecl) &&
+          !fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared,
+                                          &fnDecl)) {
         conditionalTraitOp = fieldConditionallyConformsToBuiltin(
             fieldType.mlirType, "Movable", shared, structDecl, fnConstraints);
         if (!conditionalTraitOp)
@@ -922,7 +941,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
       //   var f: some Copyable
       // ```
       if (!fieldType.isCopyable(fieldASTDecl.getLoc(), shared,
-                                isImplicitlyCopyableStruct)) {
+                                isImplicitlyCopyableStruct, &fnDecl)) {
         conditionalTraitOp = fieldConditionallyConformsToBuiltin(
             fieldType.mlirType, "Copyable", shared, structDecl, fnConstraints);
         if (!conditionalTraitOp)
@@ -968,7 +987,8 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
       // We only do this when not-implicitly copyable so we don't have to deal
       // with the MLIR types.
       if (!isImplicitlyCopyableStruct &&
-          !fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared)) {
+          !fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared,
+                                          &fnDecl)) {
         // Invoke `T(*, copy: Self)`.
         ValueDest dest(MLValue(targetFieldOp), EC_SynthesizedMethod);
         SyntheticNode expr(location);

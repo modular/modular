@@ -1134,6 +1134,49 @@ def test_explicit_copy_in_generic():
     print("explicit_copy_generic:", copy.value)
 
 
+# ===========================================================================
+# Copy/move synthesis through comptime type aliases
+# ===========================================================================
+# Before the fix, synthesized copy/move ctors called isCopyable/isMovable
+# without the fn's where-clause scope, so they couldn't prove that an
+# alias-resolved field type like `SimpleWrapper[T]` is Copyable even when the
+# fn's where-clause asserts `conforms_to(T, Copyable)`.  The structural
+# fallback (fieldConditionallyConformsToBuiltin) also couldn't match because
+# the field param is `SimpleWrapper[T]`, not bare `T`.
+#
+# This struct is the minimal reproduction: the field type is a comptime alias
+# to SimpleWrapper[T] (defined above), which is conditionally Copyable.
+
+
+@fieldwise_init
+struct AliasField[T: ImplicitlyDestructible & Movable](
+    Copyable where conforms_to(T, Copyable),
+    ImplicitlyDestructible,
+    Movable,
+):
+    comptime Wrapped = SimpleWrapper[Self.T]
+    var field: Self.Wrapped
+
+
+fn test_comptime_alias_conditional_conformance():
+    # CHECK: alias_pos: True
+    print("alias_pos:", conforms_to(AliasField[CopyableType], Copyable))
+    # CHECK: alias_neg: False
+    print("alias_neg:", conforms_to(AliasField[MovableOnlyType], Copyable))
+
+    # Synthesized copy through alias-resolved field.
+    var original = AliasField(field=SimpleWrapper(CopyableType(42)))
+    var copied = original.copy()
+    # CHECK: alias_copy: 42
+    print("alias_copy:", copied.field.value.x)
+
+    # Synthesized move through alias-resolved field.
+    var to_move = AliasField(field=SimpleWrapper(CopyableType(99)))
+    var moved = to_move^
+    # CHECK: alias_move: 99
+    print("alias_move:", moved.field.value.x)
+
+
 def main():
     test_simple_conditional()
     test_nested_wrappers()
@@ -1171,3 +1214,4 @@ def main():
     test_implicit_copy_in_generic()
     test_move_in_generic()
     test_explicit_copy_in_generic()
+    test_comptime_alias_conditional_conformance()
