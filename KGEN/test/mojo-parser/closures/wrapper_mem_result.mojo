@@ -14,7 +14,7 @@ struct MemType(ImplicitlyCopyable):
     pass
 
 
-# CHECK-LABEL: lit.struct.decl @"fn
+# CHECK-LABEL: lit.struct.decl @"def
 # CHECK:         lit.struct.field field0 : !kgen.pointer<none>
 # CHECK-NEXT:    lit.struct.field dtor : {{.*}}<("self": !kgen.pointer<none>, |) -> !kgen.none>
 # CHECK-NEXT:    lit.struct.field _copy : {{.*}}<(*, "copy": !kgen.pointer<none>) -> !kgen.pointer<none>>

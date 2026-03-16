@@ -17,7 +17,7 @@ def mut_ship_function(mut x: MemType):
 
 # We can convert from def(read MemType)->None to def(mut MemType)->None but not
 # vice versa (see TTSMFS).
-# expected-error @below {{cannot implicitly convert 'fn(mut x: MemType) -> None' value to 'fn(MemType) -> None' in comptime initializer}}
+# expected-error @below {{cannot implicitly convert 'def(mut x: MemType) -> None' value to 'def(MemType) -> None' in comptime initializer}}
 comptime read_ship_fn_alias: def(read MemType) -> None = mut_ship_function
 
 
@@ -41,7 +41,7 @@ def device_func(i: Int):
 
 
 def test_infer_variadic():
-    # expected-error @below {{invalid call to 'infer_variadic': value passed to 'func' cannot be converted from 'fn(i: Int) -> None' to 'fn(x: Int, y: Int, *args: *ArgTypes) -> None'}}
+    # expected-error @below {{invalid call to 'infer_variadic': value passed to 'func' cannot be converted from 'def(i: Int) -> None' to 'def(x: Int, y: Int, *args: *ArgTypes) -> None'}}
     infer_variadic[device_func]()
 
 
@@ -76,7 +76,7 @@ def device_func(i: ZInt, j: ZInt):
 
 def test_infer_variadic():
     # expected-error @below {{cannot bind type 'ZInt' to trait 'Sprongling'}}
-    # expected-error @below {{invalid call to 'infer_variadic': value passed to 'func' cannot be converted from 'fn(i: ZInt, j: ZInt) -> None' to 'fn(*args: *ArgTypes) -> None'}}
+    # expected-error @below {{invalid call to 'infer_variadic': value passed to 'func' cannot be converted from 'def(i: ZInt, j: ZInt) -> None' to 'def(*args: *ArgTypes) -> None'}}
     infer_variadic[device_func]()
 
 
@@ -139,14 +139,14 @@ def compile[
 
 def test_reject_generic_device_func_unusedT():
     # TODO(MOCO-1828): Better error message.
-    # expected-error @below {{invalid call to 'compile': value passed to 'func' cannot be converted from 'fn[T: AnyType](a: Int, b: Bool) -> Int' to 'fn(*args: *ArgTypes) -> Int'}}
+    # expected-error @below {{invalid call to 'compile': value passed to 'func' cannot be converted from 'def[T: AnyType](a: Int, b: Bool) -> Int' to 'def(*args: *ArgTypes) -> Int'}}
     var thing = compile[device_func_unusedT]()
 
 
 # Slightly different case, for no particular reason
 def test_reject_generic_device_func_usedT():
     # TODO(MOCO-1828): Better error message.
-    # expected-error @below {{invalid call to 'compile': value passed to 'func' cannot be converted from 'fn[T: AnyType](a: T, b: Bool) -> Int' to 'fn(*args: *ArgTypes) -> Int'}}
+    # expected-error @below {{invalid call to 'compile': value passed to 'func' cannot be converted from 'def[T: AnyType](a: T, b: Bool) -> Int' to 'def(*args: *ArgTypes) -> Int'}}
     var thing = compile[device_func_usedT]()
 
 
@@ -199,7 +199,7 @@ def compile[
 
 def main():
     # expected-note @below {{memory-only type bound to generic result type: payload returns 'Int' by reference}}
-    # expected-error @below {{invalid call to 'compile': value passed to 'func' cannot be converted from 'fn(a: Int, b: Bool) raises -> Int' to 'fn(*args: *ArgTypes) -> Int'}}
+    # expected-error @below {{invalid call to 'compile': value passed to 'func' cannot be converted from 'def(a: Int, b: Bool) raises -> Int' to 'def(*args: *ArgTypes) -> Int'}}
     compile[device_func]()
 
 

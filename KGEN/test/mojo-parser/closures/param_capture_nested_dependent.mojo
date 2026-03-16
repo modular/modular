@@ -9,7 +9,7 @@
 # CHECK: lit.struct.decl @"`_CI_
 # CHECK-SAME: <B: !Int, A: !Int, [[SELFO:.*]]: origin<0>, |>(
 
-# CHECK: lit.struct.decl @"fn
+# CHECK: lit.struct.decl @"def
 # CHECK-SAME: <p0: !Int, p1: !Int, |>
 
 # Check that the closure impl parameter is bound to the struct parameter:
@@ -20,7 +20,7 @@
 
 # COM: Check that the closure wrapper parameter is bound to the struct parameter:
 # CHECK-NEXT: %bar = lit.var.decl
-# CHECK-NEXT: lit.call {{.*}}::@"fn{{.*}}"::@"__init__{{.*}}<:!Int B, :!Int A, :origin<0> {{.*}}*"self`2x">(%__call_result_tmp__, %bar)
+# CHECK-NEXT: lit.call {{.*}}::@"def{{.*}}"::@"__init__{{.*}}<:!Int B, :!Int A, :origin<0> {{.*}}*"self`2x">(%__call_result_tmp__, %bar)
 # CHECK-SAME: !lit.generator<[2]({{.*}}"self": !lit.ref<{{.*}}<:!Int B, :!Int A>
 
 

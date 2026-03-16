@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-# CHECK: lit.struct.decl @"fn{{.*}}"<p0: !Int, |>
+# CHECK: lit.struct.decl @"def{{.*}}"<p0: !Int, |>
 
 
 @fieldwise_init

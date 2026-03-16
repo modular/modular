@@ -6,7 +6,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # CHECK: lit.struct.decl @"`_CI_
-# CHECK: lit.struct.decl @"fn() escaping -> None"
+# CHECK: lit.struct.decl @"def() escaping -> None"
 
 
 def no_capture():

@@ -73,7 +73,7 @@ def foo(bar: Bar) raises:
         return bar.x
 
     # TODO: Rename Wrappers (MOCO-2541)
-    # expected-error @below {{'takeDevicePassable' parameter 'T' has 'DevicePassable' type, but value has type 'AnyStruct[fn(number: Int) -> Int_Mova_Impl_Copy_Impl[__mlir_type.`!kgen.closure<@"unified_closures_errors::foo(unified_closures_errors::Bar)", "closure" register_passable>`, {}]]'}}
+    # expected-error @below {{'takeDevicePassable' parameter 'T' has 'DevicePassable' type, but value has type 'AnyStruct[def(number: Int) -> Int_Mova_Impl_Copy_Impl[__mlir_type.`!kgen.closure<@"unified_closures_errors::foo(unified_closures_errors::Bar)", "closure" register_passable>`, {}]]'}}
     takeDevicePassable[type_of(closure)](closure)
 
 
@@ -116,7 +116,7 @@ def takesClosure[T: def(Int) unified -> Int](cb: T, x: Int) -> Int:
 
 
 def useTopLevelClosure():
-    # expected-error @below {{invalid call to 'takesClosure': 'takesClosure' parameter 'T' has 'fn(Int) -> Int' type, but value has type 'fn(x: String) -> String'}}
+    # expected-error @below {{invalid call to 'takesClosure': 'takesClosure' parameter 'T' has 'def(Int) -> Int' type, but value has type 'def(x: String) -> String'}}
     takesClosure[topLevel](topLevel, 1)
 
 
@@ -145,13 +145,13 @@ def traitConstraintMismatch[Q: Animal]():
     def closure(x: Q) unified {var}:
         x.speak()
 
-    # expected-error @below {{does not conform to trait 'fn(x: W) -> None'}}
+    # expected-error @below {{does not conform to trait 'def(x: W) -> None'}}
     takeClosureMammalParam(closure)
 
     def closureWrongConvention(mut x: Dog) unified {var}:
         x.speak()
 
-    # expected-error-re @below {{'takeClosureMammalParam' parameter 'C' has 'fn(x: W) -> None' type, but value has type 'AnyStruct[fn(mut x: Dog) -> None_Mova_Impl_Copy_Impl[__mlir_type.`!kgen.closure<@"unified_closures_errors::traitConstraintMismatch[unified_closures_errors::Animal]()", "closureWrongConvention" nonescaping>`, {}]]'}}
+    # expected-error-re @below {{'takeClosureMammalParam' parameter 'C' has 'def(x: W) -> None' type, but value has type 'AnyStruct[def(mut x: Dog) -> None_Mova_Impl_Copy_Impl[__mlir_type.`!kgen.closure<@"unified_closures_errors::traitConstraintMismatch[unified_closures_errors::Animal]()", "closureWrongConvention" nonescaping>`, {}]]'}}
     takeClosureMammalParam[Dog, type_of(closureWrongConvention)](closureWrongConvention)
 
 # ===----------------------------------------------------------------------=== #
@@ -206,6 +206,6 @@ def incompatible_param_signature() raises:
     def my_func[param_only: Int]() unified {read x}:
         _print(x)
 
-    # expected-error @below {{does not conform to trait 'fn() -> None'}}
+    # expected-error @below {{does not conform to trait 'def() -> None'}}
     callee_no_params(my_func)
 

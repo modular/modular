@@ -11,11 +11,11 @@
 # CHECK: lit.fn @"__call__{{.*}}, |, %n: !Int, ?, %__error__{{.*}}, %__result__{{.*}}) throws -> i1
 # CHECK: lit.raise
 
-# CHECK: lit.struct.decl @"fn{{.*}}
+# CHECK: lit.struct.decl @"def{{.*}}
 # CHECK: lit.fn @"__call__{{.*}}, |, %n: !Int, ?, %__error__{{.*}}, %__result__{{.*}}) throws -> i1
 # CHECK: [[IS_ERR:%.*]] = lit.call_indirect {{.*}}%__error__, %__result__)
 
-# CHECK: lit.fn @"fn{{.*}}_call_`_CI_{{.*}}) throws -> i1
+# CHECK: lit.fn @"def{{.*}}_call_`_CI_{{.*}}) throws -> i1
 
 
 def makes_escaping_closure(m: Int) raises:

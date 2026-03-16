@@ -11,9 +11,9 @@
 # CHECK-NEXT:    [[MEMTMP:%.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!escaping
 # CHECK-NEXT:    %0 = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%m, [[MEMTMP]])
 # CHECK-NEXT:    %myclosure = lit.var.decl "myclosure" var : !lit.ref<!Int
-# CHECK-NEXT:    %1 = lit.call {{.*}}fn{{.*}}__init__{{.*}}([[MEMTMP]], %myclosure)
+# CHECK-NEXT:    %1 = lit.call {{.*}}def{{.*}}__init__{{.*}}([[MEMTMP]], %myclosure)
 # CHECK-NEXT:    lit.ownership.use %myclosure
-# CHECK-NEXT:    lit.call {{.*}}fn{{.*}}__init__{{.*}}"{{.*}}(%myclosure, %__result__){{.*}}*, "take"{{.*}} loc(#[[LOC26:.*]])
+# CHECK-NEXT:    lit.call {{.*}}def{{.*}}__init__{{.*}}"{{.*}}(%myclosure, %__result__){{.*}}*, "take"{{.*}} loc(#[[LOC26:.*]])
 
 # CHECK-DAG: #makes_escaping_closure_name = #debuginfo.source_name<(fn)"makes_escaping_closure"(#Int_name, #Int_name) from <(module)"debuginfo">>
 # CHECK-DAG: #[[SP9:.*]] = #debuginfo.subprogram<{{.*}}, sourceName = #makes_escaping_closure_name, linkageName = "makes_escaping_closure{{.*}}", {{.*}}, line = [[#LN42:]],
@@ -38,9 +38,9 @@ def makes_escaping_closure(m: Int, z: Int) -> def (n: Int) escaping -> Int:
 # CHECK:         [[MEMTMP:%.*]] = lit.var.decl "__call_result_tmp__" synth : {{.*}} loc(#[[LOC0:.*]])
 # CHECK-NEXT:     = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%m, [[MEMTMP]]) : {{.*}} loc(#[[LOC0]])
 # CHECK-NEXT:    %myclosure = lit.var.decl "myclosure" var : {{.*}} loc(#[[LOC0]])
-# CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__init__{{.*}}([[MEMTMP]], %myclosure) : {{.*}} loc(#[[LOC0]])
+# CHECK-NEXT:     = lit.call {{.*}}def{{.*}}__init__{{.*}}([[MEMTMP]], %myclosure) : {{.*}} loc(#[[LOC0]])
 # CHECK-NEXT:     = lit.ref.immut %myclosure : {{.*}} loc(#[[LOC1:.*]])
-# CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__call__({{.*}}) : {{.*}} loc(#[[LOC1]])
+# CHECK-NEXT:     = lit.call {{.*}}def{{.*}}__call__({{.*}}) : {{.*}} loc(#[[LOC1]])
 
 # CHECK-DAG: #closure_in_block_name = #debuginfo.source_name<(fn)"closure_in_block"(#Int_name, #Int_name, #Bool_name) from <(module)"debuginfo">>
 # CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<{{.*}}, sourceName = #closure_in_block_name, linkageName = "closure_in_block{{.*}}",

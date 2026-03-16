@@ -15,8 +15,8 @@ struct Reg(RegisterPassable):
     pass
 
 
-# CHECK-LABEL: lit.struct.decl @"fn(Mem
-# CHECK-LABEL: lit.fn @"__init__(copy:fn(fn_ptr::Mem, /)
+# CHECK-LABEL: lit.struct.decl @"def(Mem
+# CHECK-LABEL: lit.fn @"__init__(copy:def(fn_ptr::Mem, /)
 # CHECK-SAME: (*, %copy: {{.*}}[1](!lit.ref<!Mem, imm *[0,0]> read_mem, |) -> !Int>>, ?, %self:
 # CHECK-NEXT: [[OPAQUE:%.*]] = pop.pointer.bitcast %copy
 # CHECK-NEXT: [[FIELD0:%.*]] = lit.ref.struct.ger %self[field0]
@@ -37,8 +37,8 @@ struct Reg(RegisterPassable):
 # CHECK-NEXT: [[CALL_FIELD:%.*]] = lit.ref.struct.ger %self[call]
 # CHECK-NEXT: store [[CALL]], [[CALL_FIELD]]
 
-# CHECK-LABEL: lit.struct.decl @"fn(Reg
-# CHECK-LABEL: lit.fn @"__init__(copy:fn(fn_ptr::Reg)
+# CHECK-LABEL: lit.struct.decl @"def(Reg
+# CHECK-LABEL: lit.fn @"__init__(copy:def(fn_ptr::Reg)
 # CHECK-SAME: (*, %copy: {{.*}}({{.*}}"__error__": !lit.ref<!Error, mut *[0,1]> byref_error, "__result__": !lit.ref<!Mem, mut *[0,2]> byref_result) throws -> i1>
 # CHECK:      lit.fn call_impl[imm [[REG:.*]], mut [[ELT:.*]], mut [[LT:.*]]]([[FN_PTR:%.*]][*""]: !kgen.pointer<none>,
 # CHECK-SAME: [[ARG:%.*]][*""]: !lit.ref<!Reg, imm [[REG]]> read_mem, |, ?, [[ERR:%.*]]: !lit.ref<!Error, mut [[ELT]]> byref_error, [[SLOT:%.*]]: !lit.ref<!Mem, mut [[LT]]> byref_result) throws -> i1

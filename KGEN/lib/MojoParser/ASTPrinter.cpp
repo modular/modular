@@ -1545,7 +1545,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
   } else if (auto sigGen = dyn_cast<FnTypeGeneratorType>(type)) {
     if (sigGen.isAsync())
       os << "async ";
-    os << "fn";
+    os << "def";
     FnType sig = sigGen.getBody();
     if (!sigGen.getInputParamTypes().empty()) {
       sig =

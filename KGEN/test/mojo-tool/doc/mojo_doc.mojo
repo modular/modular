@@ -59,7 +59,7 @@ comptime alias_cond = 2 if is_nvidia_gpu() else 1
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_fn",
 # CHECK:  "path": "/mojo_doc/#alias_fn",
-# CHECK:  "value": "fn(Int, Int) -> None"
+# CHECK:  "value": "def(Int, Int) -> None"
 comptime alias_fn = fn(Int, Int) -> None
 
 
@@ -330,13 +330,13 @@ def fn_with_params_and_return(arg: Int) -> Int:
 # CHECK: "overloads":
 # CHECK:     "args":
 # CHECK:         "name": "arg_fn"
-# CHECK:         "type": "fn(S, S) capturing -> Bool"
+# CHECK:         "type": "def(S, S) capturing -> Bool"
 # CHECK:     "parameters":
 # CHECK:         "name": "T"
 # CHECK:         "path": "/std/builtin/anytype/AnyType"
 # CHECK:         "type": "AnyType"
 # CHECK:         "name": "param_fn"
-# CHECK:         "type": "fn(T, T) capturing -> Bool"
+# CHECK:         "type": "def(T, T) capturing -> Bool"
 # CHECK:         "default": "T"
 # CHECK:         "name": "S"
 # CHECK:         "path": "/std/builtin/anytype/AnyType"
@@ -344,7 +344,7 @@ def fn_with_params_and_return(arg: Int) -> Int:
 # CHECK:     "returns": {
 # CHECK:       "type": "S"
 # CHECK:     },
-# CHECK:     "signature": "fn_with_fn_param_and_arg[T: AnyType, param_fn: fn(T, T) capturing -> Bool, S: AnyType = T](arg_fn: fn(S, S) capturing -> Bool) -> S"
+# CHECK:     "signature": "fn_with_fn_param_and_arg[T: AnyType, param_fn: def(T, T) capturing -> Bool, S: AnyType = T](arg_fn: def(S, S) capturing -> Bool) -> S"
 
 
 def fn_with_fn_param_and_arg[
@@ -364,7 +364,7 @@ def fn_with_fn_param_and_arg[
 # CHECK:         "name": "origins"
 # CHECK:         "type": "OriginSet"
 # CHECK:         "name": "input_fn_1d"
-# CHECK:         "type": "fn[_simd_width: Int](Int) capturing -> SIMD[dtype, _simd_width]"
+# CHECK:         "type": "def[_simd_width: Int](Int) capturing -> SIMD[dtype, _simd_width]"
 
 
 def logsoftmax[
@@ -982,12 +982,12 @@ struct StructWithAutoParamScalar[a: Scalar]:
 # CHECK:      "path": "/std/builtin/anytype/AnyType"
 # CHECK:      "type": "AnyType"
 # CHECK:      "name": "param_fn"
-# CHECK:      "type": "fn(T, T) capturing -> Bool"
+# CHECK:      "type": "def(T, T) capturing -> Bool"
 # CHECK:      "default": "T",
 # CHECK:      "name": "S"
 # CHECK:      "path": "/std/builtin/anytype/AnyType"
 # CHECK:      "type": "AnyType"
-# CHECK: "signature": "struct StructWithFnParam[T: AnyType, param_fn: fn(T, T) capturing -> Bool, S: AnyType = T]",
+# CHECK: "signature": "struct StructWithFnParam[T: AnyType, param_fn: def(T, T) capturing -> Bool, S: AnyType = T]",
 
 
 struct StructWithFnParam[

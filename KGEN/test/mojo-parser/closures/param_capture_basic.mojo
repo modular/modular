@@ -7,7 +7,7 @@
 
 
 # CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[A:.*]]: !Int, |>
-# CHECK: lit.struct.decl @"fn{{.*}}"
+# CHECK: lit.struct.decl @"def{{.*}}"
 # CHECK: lit.fn @"__init__{{.*}}"<?, a: !Int>[{{.*}}](%impl: !lit.ref<!lit.struct<#escaping0 <:!Int a>{{.*}}> owned_in_mem, |, ?, %self: !lit.ref<!Int1, mut{{.*}}> byref_result) -> !kgen.none {{.*}}specialFnKind = 2 : i8
 # CHECK: lit.fn @"{{.*}}_copyinit_`_CI_{{.*}}"{{.*}}<?, a: !Int>(*, %copy: !kgen.pointer<none>) -> !kgen.pointer<none> {{.*}}specialFnKind = 0 : i8
 # CHECK: lit.fn @"{{.*}}_dtor_`_CI_{{.*}}"<?, a: !Int>(%self: !kgen.pointer<none>, |) -> !kgen.none {{.*}}specialFnKind = 0 : i8
