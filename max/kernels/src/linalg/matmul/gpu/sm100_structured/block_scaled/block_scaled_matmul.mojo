@@ -28,11 +28,7 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
-    LayoutTensor,
-    Layout as LegacyLayout,
     RowMajorLayout,
-    RuntimeInt,
-    RuntimeLayout,
     TensorLayout,
     TileTensor,
     row_major,
@@ -40,7 +36,7 @@ from layout import (
 from structured_kernels.tile_types import create_tma_tile
 from structured_kernels.kernel_common import _to_batched_3d
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from linalg.utils import (
@@ -61,57 +57,6 @@ from .block_scaled_matmul_kernel import BlackwellBlockScaledMatmulKernel
 
 # Use structured SMEM struct for size calculation (matches V3 kernel's SmemType)
 from .block_scaled_smem import BlockScaledSmem
-
-
-# =============================================================================
-# LayoutTensor helpers (kept for grouped_block_scaled_matmul.mojo which imports
-# these). New code should use _to_batched_3d from kernel_common.
-# =============================================================================
-
-
-@parameter
-def _reshape_to_3d[layout: LegacyLayout]() -> LegacyLayout:
-    """Reshape 2D layout to 3D by prepending batch dimension of 1."""
-    comptime rank = len(layout.shape)
-
-    comptime if rank == 3:
-        return materialize[layout]()
-    else:
-        return LegacyLayout.row_major(
-            1,
-            comptime (layout.shape[0].value()),
-            comptime (layout.shape[1].value()),
-        )
-
-
-def _convert_input_to_batched_tensor[
-    dtype: DType,
-    layout: LegacyLayout,
-    reshape_layout: LegacyLayout = _reshape_to_3d[layout](),
-](
-    tensor: LayoutTensor[dtype, layout, ...],
-) -> LayoutTensor[
-    tensor.dtype,
-    reshape_layout,
-    tensor.origin,
-    address_space=tensor.address_space,
-]:
-    """Convert 2D tensor to 3D batched tensor with batch=1."""
-    return LayoutTensor[
-        dtype,
-        reshape_layout,
-        tensor.origin,
-        address_space=tensor.address_space,
-    ](
-        tensor.ptr,
-        RuntimeLayout[reshape_layout].row_major(
-            IndexList[3](
-                1 if tensor.rank == 2 else tensor.dim(0),
-                tensor.dim(0) if tensor.rank == 2 else tensor.dim(1),
-                tensor.dim(1) if tensor.rank == 2 else tensor.dim(2),
-            ),
-        ),
-    )
 
 
 # =============================================================================

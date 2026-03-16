@@ -18,8 +18,7 @@ for TMA-MMA pipeline coordination. Two complementary APIs offer either
 automatic scoped cleanup (context managers) or compiler-enforced explicit
 cleanup (linear types).
 
-All tiles use TileTensor natively. Convert to LayoutTensor at TMA/MMA
-boundaries using {ptr} syntax or explicit LayoutTensor construction.
+All tiles use TileTensor natively.
 
 Key Abstractions
 ----------------
@@ -149,7 +148,7 @@ from .tmem import TmemAllocation, TmemStage
 # SMemArray for barriers (non-tile arrays), SMemPtr for pointers
 from linalg.structuring import SMemPtr, SMemArray
 
-# LayoutTensor-based SMemTileArray for tiles needing element-level access (A-scales)
+# Legacy SMemTileArray for tiles needing element-level access (A-scales)
 from linalg.structuring import SMemTileArray as LTSMemTileArray
 
 # TileTensor-based tile arrays for most tile storage (A, B)

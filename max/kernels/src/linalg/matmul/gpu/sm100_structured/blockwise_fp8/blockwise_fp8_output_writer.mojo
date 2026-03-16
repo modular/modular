@@ -34,7 +34,6 @@ from layout import (
     Idx,
     IntTuple,
     Layout,
-    LayoutTensor,
     RuntimeTuple,
     TensorLayout,
     TileTensor,
@@ -95,7 +94,7 @@ struct BlockwiseFP8TileWriter[
     )
 
     # ========== Tile Array Types ==========
-    # LayoutTensor (for bounds-checked write path)
+    # Legacy SMemTileArray (for bounds-checked write path)
     comptime CTileArrayLT = SMemTileArray[
         Self.c_type, Self.c_smem_layout, Self.num_output_stages, alignment=128
     ]
