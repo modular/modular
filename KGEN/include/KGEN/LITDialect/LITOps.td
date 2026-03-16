@@ -955,9 +955,6 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
     synthesized (which suppresses some warnings).  This type defines a origin
     and returns a mutable reference to its result in that origin.
 
-    For implicitly declared VarDecls, an optional `argShadowIndex` specifies
-    which argument number this VarDecl was created to shadow.
-
     Example:
 
     ```mlir
@@ -969,13 +966,12 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
   let arguments = (ins
     StrAttr:$name,
     LIT_VarDeclKindAttr:$kind,
-    KGEN_ParamDeclAttr:$paramDecl,
-    OptionalAttr<I32Attr>:$argShadowIndex
+    KGEN_ParamDeclAttr:$paramDecl
   );
   let results = (outs LIT_RefType:$result);
 
   let assemblyFormat = [{
-    $name $kind (`(` $argShadowIndex^ `)`)? `:`
+    $name $kind `:`
     custom<VarDeclType>(type($result), $paramDecl) attr-dict
   }];
 
@@ -995,7 +991,6 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
     // maintaining the origin of the vardecl.
     void changeElementType(Type newElementType);
   }];
-  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

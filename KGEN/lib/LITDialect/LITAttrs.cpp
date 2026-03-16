@@ -415,24 +415,11 @@ LogicalResult FnMetadataAttr::verifyFuncType(
       return emitError() << diagMsg(
                  Diag::DiagID::err_byref_result_argument_last_argument);
 
-    Type type = argType;
-
-    // Verify variadics.
-    if (isPosVarArg(i)) {
-      auto variadic = ::dyn_cast<VariadicType>(type);
-      if (!variadic) {
-        return emitError() << diagMsg(
-                   Diag::DiagID::err_argument_signature_varargs_variadic, i,
-                   type);
-      }
-      type = variadic.getElementType();
-    }
-
     // Verify argument conventions.
-    if (hasAddress(conv) && !::isa<RefType>(type)) {
+    if (hasAddress(conv) && !::isa<RefType>(argType)) {
       return emitError() << diagMsg(
                  Diag::DiagID::err_argument_signature_lit_ref, i,
-                 stringifyEnum(conv), type);
+                 stringifyEnum(conv), argType);
     }
   }
 

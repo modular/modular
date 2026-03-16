@@ -34,6 +34,56 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+/// This helper function emits a call to the VariadicList constructor and
+/// returns it.  We have to jump through these hoops to infer the origin from
+/// the list of arguments. Coming into this call, it will be bound to an
+/// implicit origin.
+///
+/// TODO: it would be vunderbar to stop using implicit origins for this and just
+/// use normal autoparams.  This would have ParamInf start inferring this,
+/// simplifying everything.
+static CValue emitVariadicListConstructor(ASTType variadicListType,
+                                          ArgConvention convention,
+                                          CValue variadicList,
+                                          const ExprNode *expr,
+                                          IREmitter &emitter) {
+  auto loc = expr->getLoc();
+  ASTDecl *varListStructDecl = variadicListType.getDecl(emitter.shared);
+  if (!varListStructDecl) {
+    emitter.emitError(loc, Diag::DiagID::err_malformed_variadiclist);
+    return {};
+  }
+  auto varListStruct =
+      dyn_cast_if_present<StructDeclOp>(varListStructDecl->getIfOperation());
+  if (!varListStruct) {
+    emitter.emitError(loc, Diag::DiagID::err_malformed_variadiclist);
+    return {};
+  }
+
+  assert(varListStruct.getSignature().getParamTypes().size() == 5 &&
+         variadicListType.getParamBindings().size() == 5);
+  SmallVector<TypedAttr> typeParams(variadicListType.getParamBindings());
+
+  // Replace the origin parameters.
+  // mlir_origin
+  typeParams[1] =
+      cast<RefType>(
+          cast<VariadicType>(variadicList.getRValueType()).getElementType())
+          .getOrigin();
+  // origin
+  typeParams[2] = emitter.getStdlibOriginOf(typeParams[1], loc);
+  if (!typeParams[2])
+    return {};
+
+  variadicListType = varListStruct.bindReference(typeParams);
+  assert(variadicListType && "Failed to bind type params");
+  ValueDest callDest(ExprContext::EC_CallArgValue);
+  return emitter.emitConstructorCall(
+      variadicListType,
+      CallOperands(CallSyntax::kTypeCall, expr, {{variadicList, expr}}),
+      callDest);
+}
+
 /// This helper function emits a call to VariadicPack(refPackValue) and returns
 /// the result value.  'variadicPackType' is the fully bound VariadicPack type
 /// per the function signature - the callee's view of the type, not the callers.
@@ -204,21 +254,22 @@ void CallEmitter::AfterCallActions::emit() {
 AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
                                     unsigned argIdx, ArgConvention convention,
                                     Type expectedType, size_t sequenceIndex) {
+  // Convert to the element type of a variadic list or pack.
   if (calleeSig.isPosVarArg(argIdx)) {
-    // In the case of a variadic argument, we need to remove the
-    // !pop.variadic<> wrapper to get the type to convert to.
-    expectedType = sugarCast<VariadicType>(expectedType).getElementType();
+    ASTType listType = RefType::stripRefConvention(expectedType, convention);
+    expectedType = listType.getVariadicListInfo().getElementRefType();
     convention = calleeSig.getVariadicConvention(argIdx);
-  } else if (ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx)) {
-    RefPackType packType = variadicPackType.getVariadicPackInfo(emitter.shared);
+  } else if (calleeSig.isPack(argIdx)) {
+    ASTType packType = RefType::stripRefConvention(expectedType, convention);
+    RefPackType refPackType = packType.getVariadicPackInfo(emitter.shared);
 
     // Operands being applied to a concrete pack type argument must be
     // converted to the pack element type at that index.  The calleeSig has the
     // pack type resolved to a concrete list of types it is expecting.
     expectedType =
-        ASTType(packType.getVariadicIfResolved().getValues()[sequenceIndex]);
+        ASTType(refPackType.getVariadicIfResolved().getValues()[sequenceIndex]);
     // Get the !lit.ref with the origin and other paraphernalia.
-    expectedType = packType.getElementRefTypeFor(expectedType);
+    expectedType = refPackType.getElementRefTypeFor(expectedType);
     convention = calleeSig.getVariadicConvention(argIdx);
   }
 
@@ -293,6 +344,9 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     size_t argIdx, MutableArrayRef<ASTExprAnd<AnyValue>> remainingOperands,
     ArgConvention convention, Type expectedType,
     SmallVectorImpl<ASTExprAnd<AnyValue>> &argumentValues) {
+  assert((calleeSig.isPosVarArg(argIdx) || calleeSig.isPack(argIdx)) &&
+         "Must be a variadic we're emitting for");
+
   // Emit all of the remaining values to make sure they're converted to the
   // right type.
   for (auto [idx, operand] : llvm::enumerate(remainingOperands)) {
@@ -303,11 +357,12 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     operand.ir = emittedArg;
   }
 
-  // If this is a variadic list, use the convention of the elements, not the
-  // convention of the list itself.
-  bool isPosVarArg = calleeSig.isPosVarArg(argIdx);
-  if (isPosVarArg || calleeSig.isPack(argIdx))
-    convention = calleeSig.getVariadicConvention(argIdx);
+  // When emitting the arguments, use the convention of the elements, not the
+  // convention of the VariadicList/VariadicPack struct.
+  ASTType listOrPackType =
+      RefType::stripRefConvention(expectedType, convention);
+  convention = calleeSig.getVariadicConvention(argIdx);
+  assert(hasAddress(convention) && "variadics always passed in memory");
 
   // Handle emission in a compile-time context.  Parameter calls need to
   // generate parameter attributes.
@@ -323,20 +378,23 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     }
 
     CValue argValue;
-    if (isPosVarArg) {
-      auto varType = cast<VariadicType>(expectedType);
-      Type varElType = varType.getElementType();
-      assert(hasAddress(convention) && "variadics always passed in memory");
+    if (calleeSig.isPosVarArg(argIdx)) {
+      RefType varEltType =
+          listOrPackType.getVariadicListInfo().getElementRefType();
+      // Don't use the implicit origin from the decl for the elements, bind it
+      // away.
+      varEltType = varEltType.getWithOrigin(
+          OriginUnionAttr::get(varEltType.getOriginType()));
       for (TypedAttr &arg : args)
-        arg = StoreToMemAttr::get(arg, varElType);
-      auto newVarType = VariadicType::get(varElType);
+        arg = StoreToMemAttr::get(arg, varEltType);
+      auto newVarType = VariadicType::get(varEltType);
       argValue = PValue(VariadicAttr::get(args, newVarType));
+      argValue = emitVariadicListConstructor(listOrPackType, convention,
+                                             argValue, callExpr, emitter);
     } else {
-      ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx);
-      assert(variadicPackType && "Unknown variadic argument kind");
       // Bundle them up into a VariadicPack instance.
       argValue = emitVariadicPackConstructor(
-          variadicPackType, /*origin*/ {}, callExpr, emitter,
+          listOrPackType, /*origin*/ {}, callExpr, emitter,
           [&](RefPackType adjustedPackType) -> CValue {
             // RefPack elements are passed through memory.  Use adjustedPackType
             // to get the proper (immortal) origin installed.
@@ -345,9 +403,9 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
                   arg, adjustedPackType.getElementRefTypeFor(arg.getType()));
             return RefPackAttr::get(args, adjustedPackType);
           });
-      if (!argValue)
-        return failure();
     }
+    if (!argValue)
+      return failure();
     argumentValues.push_back({argValue, remainingOperands[0].expr});
     return success();
   }
@@ -402,26 +460,24 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   };
 
   CValue argVal;
-  if (isPosVarArg) { // Positional homogenous varargs
+  if (calleeSig.isPosVarArg(argIdx)) { // Positional homogenous varargs
     // Rebind the origin of the argument to the expected origin if needed.
-    auto expectedVararg = cast<VariadicType>(expectedType);
-    auto refType = cast<RefType>(expectedVararg.getElementType());
+    auto refType = listOrPackType.getVariadicListInfo().getElementRefType();
     expectedType = VariadicType::get(refType.getWithOrigin(getCommonOrigin()));
     argVal = SRValue(POP::VariadicCreateOp::create(*emitter.builder, loc,
                                                    expectedType, args));
-  } else {
-    // Bundle them up into a VariadicPack instance.
-    ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx);
-    assert(variadicPackType && "Must be a VariadicPack");
+    argVal = emitVariadicListConstructor(listOrPackType, convention, argVal,
+                                         callExpr, emitter);
+  } else { // Bundle them up into a VariadicPack instance.
     argVal = emitVariadicPackConstructor(
-        variadicPackType, getCommonOrigin(), callExpr, emitter,
+        listOrPackType, getCommonOrigin(), callExpr, emitter,
         [&](RefPackType adjustedPackType) -> CValue {
           return SRValue(RefPackCreateOp::create(*emitter.builder, loc,
                                                  adjustedPackType, args));
         });
-    if (!argVal)
-      return failure();
   }
+  if (!argVal)
+    return failure();
   argumentValues.push_back({argVal, remainingOperands[0].expr});
   return success();
 }
@@ -498,27 +554,32 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // If we ran out of operands, fulfill this with a keyword argument, default
     // value, empty variadic list, or empty pack.
     if (calleeSig.isPosVarArg(argIdx)) {
+      ASTType listType = RefType::stripRefConvention(expectedType, convention);
+      auto refType = listType.getVariadicListInfo().getElementRefType();
+      refType = refType.getWithOrigin( // Not referencing anything.
+          OriginUnionAttr::get({}, refType.getOriginType()));
+      ArgConvention argConvention = calleeSig.getVariadicConvention(argIdx);
       // VarArgs arguments are fulfilled with an empty !kgen.variadic list.
-      // Replace the inferred origin with an empty origin.
-      auto refType =
-          cast<RefType>(cast<VariadicType>(expectedType).getElementType());
-      refType =
-          refType.getWithOrigin(OriginUnionAttr::get(refType.getOriginType()));
       auto argAttr =
           VariadicAttr::get(ArrayRef<TypedAttr>(), VariadicType::get(refType));
-      argumentValues.push_back({PValue(argAttr), callExpr});
+      auto result = emitVariadicListConstructor(
+          listType, argConvention, PValue(argAttr), callExpr, emitter);
+      if (!result)
+        return failure();
+      argumentValues.push_back({result, callExpr});
       continue;
     }
 
     // Pack arguments are fulfilled with an empty #lit.ref.pack.
-    if (ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx)) {
-      assert(sugarCast<VariadicAttr>(variadicPackType.getVariadicPackTypeList())
+    if (calleeSig.isPack(argIdx)) {
+      ASTType packType = RefType::stripRefConvention(expectedType, convention);
+      assert(sugarCast<VariadicAttr>(packType.getVariadicPackTypeList())
                  .getValues()
                  .empty() &&
              "pack type already checked against operand count");
       // Emit a VariadicPack constructor call.
       auto variadicPack = emitVariadicPackConstructor(
-          variadicPackType, /*origin*/ {}, callExpr, emitter,
+          packType, /*origin*/ {}, callExpr, emitter,
           [&](RefPackType adjustedPackType) -> CValue {
             return RefPackAttr::get(ArrayRef<TypedAttr>(), adjustedPackType);
           });
@@ -1503,39 +1564,31 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
     return;
   }
 
+  // Handle VariadicList and VariadicPack.  They are constructed objects dumped
+  // into a VarDecl because they need to be passed to the callee with ownership.
+  // TODO: Despite the name, this is used for VariadicList as well. It gets the
+  // argument to the VariadicList/VariadicPack constructor.
+  auto ctorArg = RefPackCreateOp::findRefPackCreate(argVal);
+  assert(ctorArg && "couldn't decode variadic pack information!");
+
+  /// Zero argument lists/packs are kgen.param.constant. We can ignore them.
+  if (ctorArg.getDefiningOp<ParamConstantOp>())
+    return;
+
+  auto conv = signature.getVariadicConvention(argIdx);
+
   // Handle positional/homogenous variadics.
   if (signature.isPosVarArg(argIdx)) {
-    // There are two ways to form a pos vararg:
-    // VariadicCreateOp and ParamConstantOp.
-    SmallVector<Value> unpackedArgs;
-    if (auto vararg = argVal.getDefiningOp<POP::VariadicCreateOp>()) {
-      assert(vararg && "only two ways to create a variadic list");
-      unpackedArgs.append(vararg.getOperands().begin(),
-                          vararg.getOperands().end());
-    } else {
-      // Zero elements
-      assert(argVal.getDefiningOp<ParamConstantOp>() &&
-             "Unknown way to create variadic list");
-    }
-
-    auto conv = signature.getVariadicConvention(argIdx);
-    for (auto elt : unpackedArgs)
+    auto vararg = ctorArg.getDefiningOp<POP::VariadicCreateOp>();
+    assert(vararg && "only two ways to create a variadic list");
+    for (auto elt : vararg.getOperands())
       checkArg(elt, conv);
     return;
   }
 
   // Handle variadic packs.
-  auto packVal = RefPackCreateOp::findRefPackCreate(argVal);
-  assert(packVal && "couldn't decode variadic pack information!");
-
-  /// Zero argument packs are kgen.param.constant but they have no
-  /// references anyway.
-  if (packVal.getDefiningOp<ParamConstantOp>())
-    return;
-
-  auto pack = packVal.getDefiningOp<RefPackCreateOp>();
+  auto pack = ctorArg.getDefiningOp<RefPackCreateOp>();
   assert(pack && "unknown variadic pack processing logic");
-  auto conv = signature.getVariadicConvention(argIdx);
   for (auto packOperand : pack.getOperands())
     checkArg(packOperand, conv);
 }
@@ -1872,18 +1925,6 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     ArgConvention convention = conventionX;
     Type declaredArgType = declaredArgTypeX;
 
-    // If this is a variadic operation, the N operands have already been emitted
-    // together and consolidated into a pop.variadic.create/pop.variadic.attr,
-    // which is emitted as an SRValue instead of whatever the underlying type
-    // is.
-    if (calleeSig.isPosVarArg(argIdx))
-      convention = ArgConvention::ReadReg;
-
-    // Owned and borrowed packs are passed as expected, but mut and read
-    // are passed borrowed.
-    if (calleeSig.isPack(argIdx) && convention != ArgConvention::OwnedMem)
-      convention = ArgConvention::ReadMem;
-
     if (isResultSlot(convention)) {
       // Async function signatures have results slots even though they are not
       // actually provided.
@@ -1930,17 +1971,16 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
       // Include the union origin that covers all the values.
       implicitOrigins.push_back(
           argRVType.getVariadicPackInfo(shared).getOrigin());
+    } else if (calleeSig.isPosVarArg(argIdx)) {
+      // If this is a variadic, it will have a wrapper around the ref.
+      ASTType argRVType =
+          RefType::stripRefConvention(arg.getType(), convention);
+      implicitOrigins.push_back(argRVType.getVariadicListInfo().origin);
     }
 
     // See if we have an implicit origin bound for this argument.
-    if (hasImplicitOrigin(convention)) {
+    if (hasImplicitOrigin(convention))
       implicitOrigins.push_back(cast<RefType>(arg.getType()).getOrigin());
-    } else if (calleeSig.isPosVarArg(argIdx)) {
-      // If this is a variadic, it will have a wrapper around the ref.
-      auto eltType = ASTType(arg.getType()).getVariadicElementType();
-      if (auto refType = dyn_cast<RefType>(eltType))
-        implicitOrigins.push_back(refType.getOrigin());
-    }
 
     // The argument looks good on its own, check to see if it is an exclusivity
     // violation with a previous argument.

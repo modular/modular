@@ -251,7 +251,6 @@ static void getCallOpEffects(
   PogListAttr pogs;
   OperandRange callArguments = op.getOperands();
   ArrayRef<ArgConvention> conventions;
-  size_t argIdxOffset = 0;
 
   if (auto directCall = dyn_cast<KGENCallOpInterface>(op)) {
     // These all have the callee as a parameter, not operand.
@@ -264,10 +263,8 @@ static void getCallOpEffects(
         signature.getNumAsyncReturnSlots());
 
     // CreateClosureOp has a subset of the operands of a call.
-    if (isa<CreateClosureOp>(op)) {
+    if (isa<CreateClosureOp>(op))
       conventions = conventions.take_front(op.getNumOperands());
-      argIdxOffset = 1;
-    }
 
     assert(conventions.size() == op.getNumOperands());
   } else {
@@ -279,7 +276,6 @@ static void getCallOpEffects(
     operands.push_back({op.getOperand(0), OperandEffect::regUse});
     assert(conventions.size() == op.getNumOperands() - 1);
     callArguments = callArguments.drop_front();
-    argIdxOffset = 1;
   }
 
   /// Argument conventions cause a direct use of the register of pointee, and
@@ -343,10 +339,9 @@ static void getCallOpEffects(
 
   for (auto [idx, arg, convention] :
        llvm::enumerate(callArguments, conventions)) {
-    // As a special hack, we directly handle the effects and "see through" a
-    // pop.variadic.create, so we can model the effects of the variadic.create
-    // instead of seeing abstract uses of the origins.  This provides two
-    // benefits:
+
+    // If this is VariadicList/VariadicPack, dig out the original arguments so
+    // we can model owned arguments correctly. This provides two benefits:
     //   1) given "direct" access information, it allows us to model 'owned'
     //      argument conventions which consume the operand, something origin
     //      accesses cannot model (because it requires field sensitivity).
@@ -354,50 +349,50 @@ static void getCallOpEffects(
     //      e.g. you can pass `a.x` through varargs and `a.y` through a 'mut'
     //      without the compiler imagining a conflict on "a" just like other
     //      arguments.
-    // TODO(field-sensitive origins): remove this hack.
-    if (auto vararg = arg.getDefiningOp<POP::VariadicCreateOp>()) {
-      ArgConvention elArgConvention = ArgConvention::ReadReg;
-      if (pogs.getVariadicKind(idx) == VariadicKind::PosVarArg)
-        elArgConvention = pogs.getOrigVariadicConvention();
-      for (auto varOperand : vararg.getOperands())
-        addArgument(varOperand, elArgConvention);
-      continue;
-    }
-
-    // If this is a pack, dig out the pack create so we can model owned
-    // arguments correctly.
     // TODO: It would be nice to handle more fine grain effects in a general way
     // on calls.  This is a hack.
     // TODO(field-sensitive origins): remove this hack.
     // TODO: This should be removed. This is disabled for packs passed by-ref
     // when they are owned.
-    if (signature.isPack(idx) &&
+    if ((signature.isPack(idx) || signature.isPosVarArg(idx)) &&
         // Thunks can directly forward pack arguments, but we don't need to
         // model them.
         !isa<BlockArgument>(arg)) {
-      auto packVal = RefPackCreateOp::findRefPackCreate(arg);
-      assert(packVal && "couldn't decode variadic pack information!");
+      auto ctorArg = RefPackCreateOp::findRefPackCreate(arg);
+      assert(ctorArg && "couldn't decode variadic pack information!");
 
-      if (auto pack = packVal.getDefiningOp<RefPackCreateOp>()) {
-        if (signature.isPack(idx + argIdxOffset)) {
-          auto argConvention =
-              signature.getVariadicConvention(idx + argIdxOffset);
-          for (auto packOperand : pack.getOperands())
-            addArgument(packOperand, argConvention);
+      auto argConvention = signature.getVariadicConvention(idx);
 
-          // Also add the pack itself so the VariadicPack doesn't get destroyed
-          // too early.  We already handled all the individual elements, so
-          // don't redundantly process them.  Doing so is a problem for owned
-          // operands.
-          addArgument(arg, convention, /*noIndirect=*/true);
-          if (argConvention != ArgConvention::OwnedMem)
-            typesAccessibleByCallee.push_back(arg.getType());
-          continue;
-        }
+      if (auto pack = ctorArg.getDefiningOp<RefPackCreateOp>()) {
+        for (auto packOperand : pack.getOperands())
+          addArgument(packOperand, argConvention);
+
+        // Also add the pack itself so the VariadicPack doesn't get destroyed
+        // too early.  We already handled all the individual elements, so
+        // don't redundantly process them.  Doing so is a problem for owned
+        // operands.
+        addArgument(arg, convention, /*noIndirect=*/true);
+        if (argConvention != ArgConvention::OwnedMem)
+          typesAccessibleByCallee.push_back(arg.getType());
+        continue;
       }
+
+      if (auto vararg = ctorArg.getDefiningOp<POP::VariadicCreateOp>()) {
+        for (auto varOperand : vararg.getOperands())
+          addArgument(varOperand, argConvention);
+        // Also add the list itself so the VariadicList doesn't get destroyed
+        // too early.  We already handled all the individual elements, so
+        // don't redundantly process them.  Doing so is a problem for owned
+        // operands.
+        addArgument(arg, convention, /*noIndirect=*/true);
+        if (argConvention != ArgConvention::OwnedMem)
+          typesAccessibleByCallee.push_back(arg.getType());
+        continue;
+      }
+
       /// Zero argument packs are kgen.param.constant but they have no
       /// references anyway.
-      assert(packVal.getDefiningOp<ParamConstantOp>());
+      assert(ctorArg.getDefiningOp<ParamConstantOp>());
     }
 
     addArgument(arg, convention);

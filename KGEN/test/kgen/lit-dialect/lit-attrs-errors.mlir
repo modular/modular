@@ -40,10 +40,3 @@
   [<"a", pos, not_vararg>, <"b", pos_or_kw, pack_vararg, default :i8 1>, <"c", kw, not_vararg>, <"d", kw, not_vararg>],
   owned_in_mem
 >
-
-// -----
-
-// expected-error @below {{pack not supported in parameter list}}
-lit.fn @foo() -> !lit<type_signature<"j": variadic<index> pack_vararg>> {
-  kgen.return
-}

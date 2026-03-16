@@ -1568,7 +1568,8 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
 
       bool printStar = false;
       if (sig.isPosVarArg(idx)) { // Print with the element of the variadic.
-        type = cast<VariadicType>(type).getElementType();
+        type = RefType::stripRefConvention(type, convention);
+        type = ASTType(type).getVariadicListInfo().getElementRefType();
         convention = sig.getVariadicConvention(idx);
         printStar = true;
       }
@@ -1588,7 +1589,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
         os << '*';
 
         TypedAttr variadic =
-            ASTType(sig.getIfVariadicPack(idx)).getVariadicPackTypeList();
+            ASTType(sig.getIfVariadicListOrPack(idx)).getVariadicPackTypeList();
         printParam(os, variadic, diagShared);
       } else {
         printConvention(convention);

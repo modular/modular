@@ -1574,7 +1574,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
           ASTType type = implType;
           if (fullSig.getMetadata().isPosVarArg(idx + numSkipped)) {
             os << "*";
-            type = type.getVariadicElementType();
+            type = cast<VariadicType>(type).getElementType();
           }
           os << type.getAsString(/*diags=*/nullptr);
           printConstraints(os, pogs[idx].getConstraints());
@@ -1605,11 +1605,14 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     // variadic state, strip them off.
     unsigned numStars = 0;
     if (fullSig.isPosVarArg(argNo)) {
-      argType = sugarCast<VariadicType>(argType).getElementType();
+      argType = ASTType(fullSig.getIfVariadicListOrPack(argNo))
+                    .getVariadicListInfo()
+                    .elementType;
       convention = fullSig.getVariadicConvention(argNo);
       numStars = 1;
-    } else if (ASTType variadicPack = fullSig.getIfVariadicPack(argNo)) {
-      TypedAttr packVariadic = variadicPack.getVariadicPackTypeList();
+    } else if (fullSig.isPack(argNo)) {
+      TypedAttr packVariadic = ASTType(fullSig.getIfVariadicListOrPack(argNo))
+                                   .getVariadicPackTypeList();
       mangledName += '*';
       ASTType::printParam(os, packVariadic, /*diags=*/nullptr);
       continue;
@@ -1618,9 +1621,9 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
       convention = ArgConvention::ReadReg;
       argType = argType.getKwargsDictRefValueType();
       numStars = 2;
+    } else {
+      argType = RefType::stripRefConvention(argType, convention);
     }
-
-    argType = RefType::stripRefConvention(argType, convention);
     mangledName += argType.getAsString(/*forDiag=*/nullptr);
 
     // Add suffix to disambiguate overloadable conventions.

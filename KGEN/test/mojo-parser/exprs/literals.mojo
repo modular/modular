@@ -87,7 +87,7 @@ def test_list_literal():
     # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!AnyType> []>)
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
-    # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]], %a)
+    # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}({{.*}}, [[TUP_TMP]], %a)
     var a = [1, 2, 3]
 
     # CHECK-DAG: [[TMP1:%.*]] = kgen.param.constant: !Int = <{1}>
@@ -97,14 +97,14 @@ def test_list_literal():
     # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!AnyType> []>)
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK-NEXT: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
-    # CHECK-NEXT: lit.call {{.*}}@IntList::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]])
+    # CHECK: lit.call {{.*}}@IntList::@"__init__{{.*}}({{.*}}, [[TUP_TMP]])
     var b: IntList = [1, 2, 3]
 
     # CHECK: [[VARIADIC:%.*]] = kgen.param.constant: variadic<!lit.ref<!Int, {{.*}}>> = <[]>
     # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!AnyType> []>)
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK-NEXT: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
-    # CHECK-NEXT: lit.call {{.*}}@IntList::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]])
+    # CHECK: lit.call {{.*}}@IntList::@"__init__{{.*}}({{.*}}, [[TUP_TMP]])
     var c: IntList = []
 
     # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}<:!Copyable_ImplicitlyDestructible !FloatDyn>
@@ -240,7 +240,7 @@ def test_set_literal():
     # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!AnyType> []>)
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
-    # CHECK: lit.call {{.*}}@Set::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]], %a)
+    # CHECK: lit.call {{.*}}@Set::@"__init__{{.*}}({{.*}}, [[TUP_TMP]], %a)
     var a = {1, 2, 3}
 
     # MOCO-1974 - Param inference isn't substituting full type
@@ -250,7 +250,7 @@ def test_set_literal():
     # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!AnyType> []>)
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut
-    # CHECK: lit.call {{.*}}@MySet::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]], %b)
+    # CHECK: lit.call {{.*}}@MySet::@"__init__{{.*}}({{.*}}, [[TUP_TMP]], %b)
     var b: MySet[Int] = {1, 2}
 
 
@@ -391,4 +391,3 @@ def comprehensionInForLoop(data: List[List[Int]], rows: Int, cols: Int) raises:
             1 if data[row][col] == 1 else 0 for col in IterRange(cols)
         ]
         useIt(my_list)
-

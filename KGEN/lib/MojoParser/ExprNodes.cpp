@@ -1384,14 +1384,15 @@ static AnyValue emitSingleParamExpr(const Operand &operand,
     PValue value = emitter.emitExprPValue(unpackExpr->subExpr, context);
     if (!value)
       return {};
-    if (!sugarIsa<VariadicType>(value.getType())) {
+    auto variadicType = sugarCast<VariadicType>(value.getType());
+    if (!variadicType) {
       emitter.emitError(unpackExpr->getLoc(),
                         "cannot unpack non-variadic type ")
           << value.getType() << unpackExpr->getRange();
       return {};
     }
     return UnpackedAttr::get(value, /*kwOnly=*/false,
-                             value.getType().getVariadicElementType());
+                             variadicType.getElementType());
   }
 
   return emitter.emitExpr(operand.expr, context);

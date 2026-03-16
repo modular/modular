@@ -110,7 +110,6 @@ def defaultArgumentUntyped(a=1) raises:
 
 # COM: Issue https://github.com/modular/mojo/issues/1091
 def missing_arg_type_or_default(
-    # expected-error @+1 {{number of arguments does not match number of argument names: 5 != 6}}
     a: Int = 9,
     # expected-error @+2 {{required positional argument follows optional positional argument}}
     # expected-error @+1 {{argument type must be specified}}
@@ -806,8 +805,10 @@ struct BadDtor1:
 
   # expected-error @+1 {{only arguments of Self type may be marked 'deinit'}}
   def bad1(self, deinit x: Int): pass
-  # expected-error @+1 {{deinit arguments may not be variadic}}
+  # expected-error @+1 {{self argument may not be variadic}}
   def bad2(deinit *self): pass
+  # expected-error @+1 {{self argument may not be variadic}}
+  def bad3(*self): pass
 
 # expected-error @+1 {{only struct methods may be 'deinit'}}
 def invalid_deinit(deinit self: Int) raises:

@@ -906,12 +906,15 @@ OverloadFitness OverloadFitness::evaluate(
     // If we have a varargs argument, then it will eat the rest of the
     // positional arguments, but we have to check each of them.
     if (signature.isPosVarArg(expectedArgIdx)) {
-      auto expectedVariadic = sugarCast<VariadicType>(expectedType);
-      auto varArgsEltType = expectedVariadic.getElementType();
+      ASTType expectedRVType =
+          RefType::stripRefConvention(expectedType, expectedConvention);
+      auto varArgsEltType =
+          expectedRVType.getVariadicListInfo().getElementRefType();
+      auto actualArgConvention =
+          signature.getVariadicConvention(expectedArgIdx);
       while (posOperandIdx != numPosOperands) {
-        if (auto result = processPositionalOperand(
-                varArgsEltType,
-                signature.getVariadicConvention(expectedArgIdx)))
+        if (auto result =
+                processPositionalOperand(varArgsEltType, actualArgConvention))
           return std::move(*result);
         result.payload.passesVarArgArgument = true;
       }
@@ -920,8 +923,9 @@ OverloadFitness OverloadFitness::evaluate(
 
     // If we have a pack type, it must have a known number of elements, and so
     // consume exactly that many positional operands.
-    if (ASTType variadicPackType =
-            signature.getIfVariadicPack(expectedArgIdx)) {
+    if (signature.isPack(expectedArgIdx)) {
+      ASTType variadicPackType =
+          RefType::stripRefConvention(expectedType, expectedConvention);
       auto actualArgConvention =
           signature.getVariadicConvention(expectedArgIdx);
       RefPackType packType = variadicPackType.getVariadicPackInfo(shared);

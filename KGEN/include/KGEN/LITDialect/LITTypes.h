@@ -104,8 +104,9 @@ public:
   /// Returns true if the argument at this index is a pack vararg.
   bool isPack(size_t index);
 
-  /// If the specified argument is a variadic pack, return the VariadicPack.
-  Type getIfVariadicPack(size_t index);
+  /// If the specified argument is a variadic list/pack, return the
+  /// VariadicList/VariadicPack, stripping RefType, otherwise return null.
+  Type getIfVariadicListOrPack(size_t index);
 
   /// Returns the index of the pack variadic arg, or std::nullopt if none.
   std::optional<size_t> findPackVarArgIndex();
@@ -240,8 +241,9 @@ public:
   /// Returns true if the argument at this index is a pack vararg.
   bool isPack(size_t index);
 
-  /// If the specified argument is a variadic pack, return the VariadicPack.
-  Type getIfVariadicPack(size_t index);
+  /// If the specified argument is a variadic list/pack, return the
+  /// VariadicList/VariadicPack, stripping RefType, otherwise return null.
+  Type getIfVariadicListOrPack(size_t index);
 
   /// Returns the index of the pack variadic arg, or std::nullopt if none.
   std::optional<size_t> findPackVarArgIndex();

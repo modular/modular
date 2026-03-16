@@ -206,9 +206,16 @@ public:
   /// if the current type isn't a reference.
   ASTType getReferenceElementType() const;
 
-  /// Given a VariadicType, return the element as an ASTType.  This aborts if
-  /// the current type isn't a VariadicType.
-  ASTType getVariadicElementType() const;
+  /// Given a VariadicList, return parameters bound to it.
+  struct VariadicListInfo {
+    Type elementType;
+    TypedAttr origin; // The !lit.origin of each element.
+
+    // The arguments passed into the variadic are always references. This
+    // returns the type of the reference.
+    RefType getElementRefType() const;
+  };
+  VariadicListInfo getVariadicListInfo() const;
 
   /// Return the RefPackType that corresponds to the VariadicPack instance.
   RefPackType getVariadicPackInfo(SharedState &shared) const;

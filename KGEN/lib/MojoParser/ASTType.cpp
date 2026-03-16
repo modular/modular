@@ -835,10 +835,22 @@ ASTType ASTType::getReferenceElementType() const {
   return ASTType(sugarCast<RefType>(mlirType).getElementType());
 }
 
-/// Given a VariadicType, return the element as an ASTType.  This aborts if
-/// the current type isn't a VariadicType.
-ASTType ASTType::getVariadicElementType() const {
-  return ASTType(sugarCast<VariadicType>(mlirType).getElementType());
+RefType ASTType::VariadicListInfo::getElementRefType() const {
+  return RefType::get(elementType, origin);
+}
+
+/// Given a VariadicList, return the element type from it.
+ASTType::VariadicListInfo ASTType::getVariadicListInfo() const {
+  assert(!isa<RefType>(mlirType) && "looking at a RefType not a VariadicList");
+  auto bindings = getParamBindings();
+  assert(bindings.size() == 5 &&
+         sugarIsa<LIT::StructType>(bindings[0].getType()) && // Bool
+         sugarIsa<OriginType>(bindings[1].getType()) &&
+         sugarIsa<LIT::StructType>(bindings[2].getType()) && // Origin
+         sugarIsa<LIT::TraitType>(bindings[3].getType()) &&  // AnyType
+         sugarIsa<LIT::StructType>(bindings[4].getType()) && // Bool
+         "Not a VariadicList struct?");
+  return {ASTType(bindings[3]), bindings[1]};
 }
 
 /// Return the RefPackType that corresponds to the VariadicPack instance.

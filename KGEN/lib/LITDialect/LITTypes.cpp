@@ -1489,11 +1489,11 @@ bool FnType::isKwVarArg(size_t index) {
 bool FnType::isPack(size_t index) { return getMetadata().isPack(index); }
 
 /// If the specified argument is a variadic pack, return the VariadicPack.
-Type FnType::getIfVariadicPack(size_t index) {
-  if (!isPack(index))
+Type FnType::getIfVariadicListOrPack(size_t index) {
+  if (!isPack(index) && !isPosVarArg(index))
     return {};
 
-  // Look through references to the VariadicPack type.
+  // Look through references to the VariadicList/VariadicPack type.
   return RefType::stripRefConvention(getArgument(index),
                                      getArgConvention(index));
 }
@@ -1636,8 +1636,8 @@ bool FnTypeGeneratorType::isPack(size_t index) {
 }
 
 /// If the specified argument is a variadic pack, return the VariadicPack.
-Type FnTypeGeneratorType::getIfVariadicPack(size_t index) {
-  return getBody().getIfVariadicPack(index);
+Type FnTypeGeneratorType::getIfVariadicListOrPack(size_t index) {
+  return getBody().getIfVariadicListOrPack(index);
 }
 
 std::optional<size_t> FnTypeGeneratorType::findPackVarArgIndex() {

@@ -304,7 +304,7 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
 
     // Get the variadic pack's element trait.
     ASTType expectedArgVariadicPackType =
-        expectedFnTp.getIfVariadicPack(expectedVariadicArgIndex);
+        expectedFnTp.getIfVariadicListOrPack(expectedVariadicArgIndex);
     RefPackType refPackType =
         expectedArgVariadicPackType.getVariadicPackInfo(shared);
     ASTType variadicElType = refPackType.getVariadicElementType();

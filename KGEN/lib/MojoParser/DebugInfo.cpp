@@ -85,11 +85,11 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
          llvm::enumerate(sig.getArguments(), sig.getArgConventions())) {
       if (isResultSlot(conv))
         continue;
-      Type type = t;
+      ASTType type = RefType::stripRefConvention(t, conv);
+
       // Unwrap variadics pointers if necessary.
       if (sig.isPosVarArg(i))
-        type = cast<VariadicType>(type).getElementType();
-      type = RefType::stripRefConvention(type, conv);
+        type = type.getVariadicListInfo().elementType;
       argTypes.push_back(getSourceName(getCanonicalType(type)));
     }
     kind = DebugInfo::SourceNameKind::Fn;

@@ -294,22 +294,28 @@ static std::string getRefPrefixAsString(SharedState &shared, RefType refType,
 /// Generate a user-readable representation of the given type and variadic kind,
 /// with an optional value convention, and parent struct "Self" type.
 static std::string
-generateTypeString(SharedState &shared, Type type, VariadicKind varKind,
+generateTypeString(SharedState &shared, ASTType type, VariadicKind varKind,
                    std::optional<ASTType> selfType = std::nullopt,
                    std::optional<ArgConvention> convention = std::nullopt) {
   std::string typeName;
   llvm::raw_string_ostream os(typeName);
-  ASTType astType(type);
 
   if (varKind == VariadicKind::PosVarArg) {
-    astType = astType.getVariadicElementType();
-  } else if (varKind == VariadicKind::PackVarArg && !isa<PackType>(type)) {
+    if (convention) {
+      type = RefType::stripRefConvention(type, *convention);
+      type = type.getVariadicListInfo().elementType;
+      convention = ArgConvention::ReadReg;
+    } else if (auto variadicType = sugarDynCast<VariadicType>(type)) {
+      // Variadic in a parameter list.
+      type = variadicType.getElementType();
+    }
+  } else if (varKind == VariadicKind::PackVarArg) {
     // VariadicPack needs special printing, because its argument isn't a type.
     os << "*";
     if (convention)
-      astType = RefType::stripRefConvention(astType, *convention);
+      type = RefType::stripRefConvention(type, *convention);
 
-    ASTType::printParam(os, astType.getVariadicPackTypeList(),
+    ASTType::printParam(os, type.getVariadicPackTypeList(),
                         /*forDiag=*/&shared);
     return os.str();
   }
@@ -319,19 +325,19 @@ generateTypeString(SharedState &shared, Type type, VariadicKind varKind,
     // In some cases variadics are passed directly (which is a hack, but okay).
     // The ABI in these cases is that we pass a variadic of refs. We leave these
     // as is, since eventually (with unpacking) this hack won't be needed.
-    if (!isa<VariadicType>(astType))
-      astType = astType.getReferenceElementType();
+    if (!isa<VariadicType>(type))
+      type = type.getReferenceElementType();
   }
 
   // Get the value type in a kwargs dictionary.
   if (varKind == VariadicKind::KwVarArg)
-    astType = astType.getKwargsDictValueType();
+    type = type.getKwargsDictValueType();
 
   // If this type is the same as the self type, use the "Self" keyword.
-  if (selfType && astType.isEqualCanon(*selfType))
+  if (selfType && type.isEqualCanon(*selfType))
     os << "Self";
   else
-    os << astType.getAsString(/*forDiag=*/&shared);
+    os << type.getAsString(/*forDiag=*/&shared);
 
   return os.str();
 }
