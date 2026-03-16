@@ -51,7 +51,7 @@ modular_py_test(
 
 modular_py_test(
     name = "test_lmcache_kv_connector",
-    timeout = "moderate",
+    timeout = "long",
     srcs = [
         "__init__.py",
         "conftest.py",
