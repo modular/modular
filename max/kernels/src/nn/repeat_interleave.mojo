@@ -135,7 +135,7 @@ def repeat_interleave[
 def repeat_interleave_shape[
     type_repeats: DType,
 ](
-    input: TileTensor[...],
+    input: TileTensor,
     repeats: TileTensor[type_repeats, ...],
     axis: Int,
 ) raises -> IndexList[input.rank]:

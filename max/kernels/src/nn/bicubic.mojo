@@ -114,7 +114,7 @@ def cubic_kernel(x: SIMD) -> type_of(x):
 
 def cpu_bicubic_kernel(
     output_host: TileTensor[mut=True, ...],
-    input_host: TileTensor[...],
+    input_host: TileTensor,
 ) -> None:
     """Perform bicubic interpolation on a TileTensor of form NCHW.
 

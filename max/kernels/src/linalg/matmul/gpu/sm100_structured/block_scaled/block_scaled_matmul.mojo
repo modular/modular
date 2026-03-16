@@ -145,7 +145,7 @@ Preserves the static/dynamic nature of sf_m and sf_k from the input layout.
 
 
 def _to_scales_5d_batched(
-    tensor: TileTensor[...],
+    tensor: TileTensor,
 ) -> tensor.ViewType[_Scales5DLayoutBatched[type_of(tensor).LayoutType]]:
     """Reshape batched (rank 6) scale factors to 5D for TMA.
 
@@ -166,7 +166,7 @@ def _to_scales_5d_batched(
 
 
 def _to_scales_5d_non_batched(
-    tensor: TileTensor[...],
+    tensor: TileTensor,
 ) -> tensor.ViewType[_Scales5DLayoutNonBatched[type_of(tensor).LayoutType]]:
     """Reshape non-batched (rank 5) scale factors to 5D for TMA.
 
@@ -203,11 +203,11 @@ def _create_tma_and_launch[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
-    a_3d: TileTensor[...],
-    b_3d: TileTensor[...],
-    c_3d: TileTensor[...],
-    sfa_5d: TileTensor[...],
-    sfb_5d: TileTensor[...],
+    a_3d: TileTensor,
+    b_3d: TileTensor,
+    c_3d: TileTensor,
+    sfa_5d: TileTensor,
+    sfb_5d: TileTensor,
     ctx: DeviceContext,
     alpha: Float32,
 ) raises:

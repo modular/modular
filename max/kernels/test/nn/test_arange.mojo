@@ -19,7 +19,7 @@ from nn.arange import arange, arange_shape
 from std.utils.index import IndexList
 
 
-def print_elements(tensor: TileTensor[...]) raises:
+def print_elements(tensor: TileTensor) raises:
     print("New shape:", tensor.layout.shape_coord())
     print("New strides:", tensor.layout.stride_coord())
 

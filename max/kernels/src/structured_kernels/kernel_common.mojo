@@ -443,7 +443,7 @@ comptime _Batched3DLayout[L: TensorLayout] = RowMajorLayout[
 
 
 def _to_batched_3d(
-    tensor: TileTensor[...],
+    tensor: TileTensor,
 ) -> tensor.ViewType[_Batched3DLayout[type_of(tensor).LayoutType]]:
     """Reshape 2D TileTensor to 3D by prepending batch=1: (M, K) -> (1, M, K).
 
