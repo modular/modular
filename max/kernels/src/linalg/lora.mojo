@@ -13,7 +13,6 @@
 
 from std.collections import OptionalReg
 
-from buffer.buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from std.gpu.host import DeviceContext
 from std.random import rand
@@ -27,11 +26,14 @@ from std.utils import IndexList
 from std.utils.index import Index
 import std.itertools
 from layout import (
+    Coord,
+    Idx,
     IntTuple,
     Layout,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
 
 
@@ -106,20 +108,13 @@ def shrink_qkv_permute_3mn_sm100(
         "the outer dimension of c_shape must be known and equal to 3",
     )
     comptime N_Total = B * N
-    # Create an empty (null-backed) 2D NDBuffer for C with only shape/stride set.
-    # This ensures GroupGEMM does NOT write into C directly; any changes to the
-    # final C output must happen exclusively via the epilogue function.
-    var c = NDBuffer[
-        mut=True,
-        rank=2,
-        c_type,
-        c_lora.origin,
-        shape=DimList[Dim(), Dim(N_Total)](),
-        strides=DimList.create_unknown[2](),
-    ]()  # data=null, shape/stride zeroed
-
-    # Populate the dynamic shape (row-major strides will be set later if needed).
-    c.dynamic_shape = [M, N_Total]
+    # Create a null-backed TileTensor for C. This ensures GroupGEMM does NOT
+    # write into C directly; any changes to the final C output must happen
+    # exclusively via the epilogue function.
+    var c = TileTensor[c_type](
+        UnsafePointer[Scalar[c_type], MutExternalOrigin](),
+        row_major(Coord(Idx(M), Idx(N_Total))),
+    )
 
     @always_inline
     @__copy_capture(c_tensor_lora, M)
@@ -164,7 +159,7 @@ def shrink_qkv_permute_3mn_sm100(
 
     # Run grouped_matmul and apply permute_dim_lora as the elementwise epilogue.
     grouped_matmul[elementwise_lambda_fn=permute_dim_lora_bmn,](
-        TileTensor(c),
+        c,
         a,
         b,
         a_offsets,
