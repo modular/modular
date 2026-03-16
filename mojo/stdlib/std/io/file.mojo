@@ -460,7 +460,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         ```
         """
         if self.handle < 0:
-            raise "invalid file handle"
+            raise Error("invalid file handle")
 
         assert (
             whence >= 0 and whence < 3
@@ -497,17 +497,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         print(f.tell())  # 10
         ```
         """
-        if self.handle < 0:
-            raise Error("invalid file handle")
-
-        var fd = self._get_raw_fd()
-        var pos = external_call["lseek", Int64](fd, Int64(0), Int(os.SEEK_CUR))
-
-        if pos < 0:
-            var err = get_errno()
-            raise Error("Failed to get file position: " + String(err))
-
-        return UInt64(pos)
+        return self.seek(0, os.SEEK_CUR)
 
     def write_once(mut self, bytes: Span[Byte, _]) raises -> Int:
         """Attempt to write bytes to the file, returning the number of bytes written.
