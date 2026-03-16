@@ -17,6 +17,7 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/EntryPoint.h"
+#include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoTooling/CodeComplete.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/MojoTooling/PublicASTDecl.h"
@@ -1792,11 +1793,20 @@ void MojoDocStrings::addDocString(MojoDocument &mainDoc, MojoASTDeclRef decl,
     }
   }
 
-  // Translate a doc string location to a source location in the main buffer.
+  // Build a source-offset table once for O(1) per-call translation.
+  // Escape sequences (e.g. `\t`, `\n`, `\<newline>`) make the processed
+  // string shorter than or equal to the source; the table records the source
+  // byte offset (from docStartLoc) for each processed byte.
+  StringRef srcBuffer = sourceMgr.getMemoryBuffer(bufferId)->getBuffer();
+  SmallVector<unsigned> srcOffsets = Lexer::buildProcessedToSourceOffsets(
+      docStartLoc.getPointer(), srcBuffer.end(), rawDocStr.size());
   auto translateLoc = [&](const char *loc) -> const char * {
     if (!docStartLoc.isValid())
       return nullptr;
-    return docStartLoc.getPointer() + (loc - rawDocStr.data());
+    size_t procOffset = loc - rawDocStr.data();
+    if (procOffset > rawDocStr.size())
+      return nullptr;
+    return docStartLoc.getPointer() + srcOffsets[procOffset];
   };
   auto translateEndLocToMainDoc = [&](const char *loc) {
     // When translating an end location to the main document, we need to take

@@ -152,6 +152,19 @@ public:
   /// wrapping quotes.
   static SMLoc getStringLiteralStartLoc(StringRef spelling);
 
+  /// Build a table mapping processed-string byte offsets to source byte
+  /// offsets. \p srcStart points to the first byte of the source content
+  /// (i.e., the character immediately after the opening quotes, as returned
+  /// by getStringLiteralStartLoc). \p procCount is the number of bytes in
+  /// the processed string (i.e., the result of getStringLiteralValue).
+  /// Returns a vector of \p procCount + 1 entries: offsets[i] is the source
+  /// byte offset (from srcStart) for processed byte i; offsets[procCount] is
+  /// the source offset one past the last consumed byte (a sentinel).
+  /// Docstrings are never raw strings, so isRaw is not exposed here.
+  static SmallVector<unsigned>
+  buildProcessedToSourceOffsets(const char *srcStart, const char *srcEnd,
+                                size_t procCount);
+
   /// Detect and skip a t-string prefix at \p ptr. Handles t, T, rt, rT, Rt,
   /// RT, tr, tR, Tr, TR. Advances \p ptr past the prefix. Returns true if
   /// the prefix includes 'r'/'R' (i.e. this is a raw t-string).

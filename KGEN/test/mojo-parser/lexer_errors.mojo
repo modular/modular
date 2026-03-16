@@ -271,4 +271,30 @@ rt"Missing closing brace {expr}"
 # Raw t-string: nested raw t-string incomplete
 # expected-error @+1 {{unterminated t-string (missing closing quote)}}
 rt"Nested {rt"inner} incomplete"
+
+# // -----
+
+# Docstring (triple-quoted): incomplete \x escape — only one hex digit before
+# the closing quotes. The lexer must reject this just as it does in single-
+# quoted strings.
+# expected-error @+1 {{invalid hex escape sequence: exactly two hex digits needed}}
+"""\xA"""
+
+# // -----
+
+# Docstring: no hex digits after \x.
+# expected-error @+1 {{invalid hex escape sequence: exactly two hex digits needed}}
+"""\x"""
+
+# // -----
+
+# Docstring: non-hex character after \x (G is not a hex digit).
+# expected-error @+1 {{invalid hex escape sequence: exactly two hex digits needed}}
+"""\xGG"""
+
+# // -----
+
+# Docstring: invalid escape sequence in triple-quoted string.
+# expected-error @+1 {{invalid escape sequence}}
+"""\8"""
 rt"Nested {rt"inner"} incomplete"
