@@ -220,7 +220,6 @@ def _build_and_run_transformer(
     input_row_offsets: torch.Tensor,
     max_seq_len: torch.Tensor,
     position_ids: torch.Tensor,
-    total_output_patches: int,
 ) -> Buffer:
     """Build a MAX graph with Transformer, execute, return output."""
     device = Accelerator(0)
@@ -296,7 +295,6 @@ def _build_and_run_transformer(
             [max_seq_len_in],
             [position_ids_in],
             [],
-            total_output_patches,
         )
         graph.output(outs[0])
 
@@ -345,8 +343,6 @@ def test_transformer(
 
     max_seq_len = torch.tensor([max(seq_lens)], dtype=torch.uint32)
 
-    total_output_patches = sum(h * w for _, h, w in grid_thws)
-
     max_output = _build_and_run_transformer(
         state_dict,
         VT_NUM_LAYERS,
@@ -355,7 +351,6 @@ def test_transformer(
         input_row_offsets,
         max_seq_len,
         position_ids,
-        total_output_patches=total_output_patches,
     )
 
     # Build and run torch reference

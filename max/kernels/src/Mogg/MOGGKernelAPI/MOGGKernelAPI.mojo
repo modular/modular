@@ -11624,6 +11624,19 @@ struct SpatialMerge:
 struct TPoolPatchMerger:
     @always_inline
     @staticmethod
+    def shape(
+        input: InputTensor[rank=2, ...],
+        _grid_thws: InputTensor[dtype=DType.int64, rank=2, ...],
+        _kH: Int32,
+        _kW: Int32,
+        _max_h: Int32,
+        _max_w: Int32,
+        total_output_patches: Int32,
+    ) -> IndexList[2]:
+        return IndexList[2](Int(total_output_patches), Int(input.dim_size(1)))
+
+    @always_inline
+    @staticmethod
     def execute[
         dtype: DType,
         //,
@@ -11636,6 +11649,7 @@ struct TPoolPatchMerger:
         kW: Int32,
         max_h: Int32,
         max_w: Int32,
+        _total_output_patches: Int32,
         ctx: DeviceContextPtr,
     ) raises:
         comptime assert is_gpu[
