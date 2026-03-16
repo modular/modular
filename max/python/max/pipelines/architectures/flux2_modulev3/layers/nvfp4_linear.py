@@ -17,6 +17,7 @@ import operator
 from functools import reduce
 from typing import Literal
 
+from max.driver import CPU
 from max.dtype import DType
 from max.experimental import random
 from max.experimental.nn import Module, PinnedDeviceTensor
@@ -51,8 +52,12 @@ class NVFP4Linear(Module[[Tensor], Tensor]):
         self.weight_scale = random.normal([out_dim, packed_k // 8]).cast(
             DType.float8_e4m3fn
         )
-        self.weight_scale_2 = Tensor.full([], 1.0, dtype=DType.float32)
-        self.input_scale = Tensor.full([], 1.0, dtype=DType.float32)
+        self.weight_scale_2 = Tensor.full(
+            [], 1.0, dtype=DType.float32, device=CPU()
+        )
+        self.input_scale = Tensor.full(
+            [], 1.0, dtype=DType.float32, device=CPU()
+        )
         self.bias = random.normal([out_dim]) if bias else 0
         self._quant_config = quant_config
 
