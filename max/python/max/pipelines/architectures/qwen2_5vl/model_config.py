@@ -340,7 +340,7 @@ class Qwen2_5VLConfig(ArchConfigWithKVCache):
 
         # Finalize llm config (with Qwen2 attention_bias=True)
         self.llm_config.finalize(
-            huggingface_config=huggingface_config,
+            huggingface_config=huggingface_config.text_config,
             state_dict=llm_state_dict,
             return_logits=return_logits,
             norm_method=norm_method,
