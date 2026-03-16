@@ -593,12 +593,15 @@ def _allreduce_p2p[
     dtype: DType,
     rank: Int,
     ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
     output_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
     list_of_in_bufs: InlineArray[
-        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], 1 if use_multimem else ngpus
+        TileTensor[dtype, in_layout, in_origin],
+        1 if use_multimem else ngpus,
     ],
     out_buf: NDBuffer[rank=rank, dtype, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
@@ -612,6 +615,8 @@ def _allreduce_p2p[
         dtype: Data dtype of tensor elements.
         rank: Number of dimensions in tensors.
         ngpus: Number of GPUs participating.
+        in_layout: Layout of the input TileTensors.
+        in_origin: Origin of the input TileTensors.
         output_lambda: An output elementwise lambda.
         pdl_level: Control PDL behavior for the kernel.
         use_multimem: If True, use multi-memory space buffers for input.
@@ -639,19 +644,20 @@ def _allreduce_p2p[
             " allreduce"
         )
 
-    # Pass a stack-allocated array of pointers to the device kernel, which
-    # doesn't need dynamic tensor spec info from NDBuffer.
+    # Extract raw pointers from TileTensors for the device kernel.
     var list_of_in_ptrs = InlineArray[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ](uninitialized=True)
 
     comptime for i in range(num_buffers):
-        list_of_in_ptrs[i] = list_of_in_bufs[i].data
+        list_of_in_ptrs[i] = rebind[
+            UnsafePointer[Scalar[dtype], ImmutAnyOrigin]
+        ](list_of_in_bufs[i].ptr)
 
     comptime BLOCK_SIZE = 256
     comptime rank_4_byte_threshold = 512 * 1024
     comptime rank_8_byte_threshold = 256 * 1024
-    var payload_bytecount = list_of_in_bufs[0].bytecount()
+    var payload_bytecount = num_elements * size_of[dtype]()
 
     if (rank <= 4 and (payload_bytecount < rank_4_byte_threshold)) or (
         rank <= 8 and (payload_bytecount < rank_8_byte_threshold)
@@ -832,40 +838,34 @@ def allreduce[
             + String(max_num_blocks)
         )
 
-    # Build NDBuffer array from TileTensors at the internal call boundary.
-    var ndb_inputs = InlineArray[
-        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], num_buffers
-    ](fill={})
-    comptime for i in range(num_buffers):
-        ndb_inputs[i] = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-                input_buffers[i].ptr
-            ),
-            orig_shape,
-        )
-
     # Check P2P availability.
     if not is_p2p_enabled():
         comptime if use_multimem:
             raise Error(
                 "Allreduce with multimem requires P2P access between GPUs"
             )
+        # Naive path still takes NDBuffer (needs MutAnyOrigin for DMA).
+        # rebind to MutAnyOrigin is safe: DeviceBuffer only reads via DMA copy.
+        var ndb_inputs = InlineArray[
+            NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus
+        ](fill={})
+        comptime for i in range(ngpus):
+            ndb_inputs[i] = NDBuffer[rank=rank, dtype, MutAnyOrigin](
+                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                    input_buffers[i].ptr
+                ),
+                orig_shape,
+            )
         return _allreduce_naive_single[
             ngpus=ngpus,
             output_lambda=actual_output_lambda,
             num_buffers=ngpus,
-        ](
-            rebind[
-                InlineArray[NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus]
-            ](ndb_inputs),
-            ndb_output,
-            max_num_blocks,
-            ctx,
-        )
+        ](ndb_inputs, ndb_output, max_num_blocks, ctx)
 
+    # P2P path takes TileTensors directly.
     return _allreduce_p2p[
         ngpus=ngpus,
         output_lambda=actual_output_lambda,
         pdl_level=pdl_level,
         use_multimem=use_multimem,
-    ](ndb_inputs, ndb_output, rank_sigs, max_num_blocks, ctx)
+    ](input_buffers, ndb_output, rank_sigs, max_num_blocks, ctx)

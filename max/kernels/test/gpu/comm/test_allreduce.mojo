@@ -16,7 +16,6 @@ from std.sys import size_of, has_amd_gpu_accelerator, simd_width_of
 from std.itertools import product
 
 from buffer import NDBuffer
-from layout import TileTensor
 from buffer.dimlist import DimList
 from comm import Signal, MAX_GPUS, group_start, group_end
 from comm.sync import enable_p2p
@@ -27,6 +26,7 @@ from comm.allreduce import (
 )
 import comm.vendor.ccl as vendor_ccl
 from internal_utils import human_readable_size
+from layout import TileTensor
 from std.gpu.host import (
     DeviceBuffer,
     DeviceContext,
@@ -193,13 +193,18 @@ def allreduce_test[
     for i in range(ngpus):
         expected_sum += Scalar[dtype](i + 1)
 
-    group_start()
-
-    # Build TileTensor arrays for the TileTensor-primary allreduce.
-    comptime InTT = type_of(TileTensor(in_bufs[0]))
-    var tt_in_bufs = InlineArray[InTT, num_buffers](uninitialized=True)
+    # Build TileTensor arrays for the TileTensor-primary allreduce overload.
+    comptime InTileType = type_of(TileTensor(in_bufs[0]))
+    var tt_in_bufs = InlineArray[InTileType, num_buffers](uninitialized=True)
     comptime for i in range(num_buffers):
         tt_in_bufs[i] = TileTensor(in_bufs[i])
+
+    comptime OutTileType = type_of(TileTensor(out_bufs[0]))
+    var tt_out_bufs = InlineArray[OutTileType, ngpus](uninitialized=True)
+    comptime for i in range(ngpus):
+        tt_out_bufs[i] = TileTensor(out_bufs[i])
+
+    group_start()
 
     comptime for i in range(ngpus):
         allreduce[
@@ -209,7 +214,7 @@ def allreduce_test[
                 outputs_lambda[input_index=i, ...]
             ) if use_custom_epilogue else None,
             use_multimem=use_multimem,
-        ](tt_in_bufs, TileTensor(out_bufs[i]), rank_sigs, list_of_ctx[i])
+        ](tt_in_bufs, tt_out_bufs[i], rank_sigs, list_of_ctx[i])
     group_end()
 
     for i in range(ngpus):
