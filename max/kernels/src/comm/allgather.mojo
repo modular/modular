@@ -47,14 +47,15 @@ from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, is_p2p_enabled
 @always_inline
 def _allgather_naive[
     dtype: DType,
-    rank: Int,
     ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    out_layout: TensorLayout,
+    out_origin: MutOrigin,
 ](
-    input_buffers: InlineArray[
-        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
-    ],
+    input_buffers: InlineArray[TileTensor[dtype, in_layout, in_origin], ngpus],
     output_buffers: InlineArray[
-        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
+        TileTensor[mut=True, dtype, out_layout, out_origin], ngpus * ngpus
     ],
     ctxs: List[DeviceContext],
 ) raises:
@@ -70,7 +71,9 @@ def _allgather_naive[
         device_buffers.append(
             DeviceBuffer(
                 ctxs[device_idx],
-                input_buffers[device_idx].data,
+                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                    input_buffers[device_idx].ptr
+                ),
                 input_buffers[device_idx].num_elements(),
                 owning=False,
             )
@@ -86,7 +89,9 @@ def _allgather_naive[
 
             var output_device_buffer = DeviceBuffer(
                 curr_ctx,
-                output_buffers[output_idx].data,
+                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                    output_buffers[output_idx].ptr
+                ),
                 output_buffers[output_idx].num_elements(),
                 owning=False,
             )
@@ -158,12 +163,14 @@ def _allgather_p2p[
     dtype: DType,
     rank: Int,
     ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    out_layout: TensorLayout,
+    out_origin: MutOrigin,
 ](
-    input_buffers: InlineArray[
-        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
-    ],
+    input_buffers: InlineArray[TileTensor[dtype, in_layout, in_origin], ngpus],
     output_buffers: InlineArray[
-        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
+        TileTensor[mut=True, dtype, out_layout, out_origin], ngpus * ngpus
     ],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     max_num_blocks: Int,
@@ -171,14 +178,16 @@ def _allgather_p2p[
 ) raises:
     """Performs allgather using peer-to-peer access between GPUs."""
 
-    # Prepare input pointers
+    # Extract raw pointers and sizes from TileTensors.
     var list_of_in_ptrs = StaticTuple[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus
     ]()
     var lengths = StaticTuple[Int, ngpus]()
 
     comptime for i in range(ngpus):
-        list_of_in_ptrs[i] = input_buffers[i].data
+        list_of_in_ptrs[i] = rebind[
+            UnsafePointer[Scalar[dtype], ImmutAnyOrigin]
+        ](input_buffers[i].ptr)
         lengths[i] = input_buffers[i].num_elements()
 
     comptime BLOCK_SIZE = 256
@@ -194,7 +203,9 @@ def _allgather_p2p[
 
         comptime for src_idx in range(ngpus):
             var output_idx = gpu_idx * ngpus + src_idx
-            output_ptrs[src_idx] = output_buffers[output_idx].data
+            output_ptrs[src_idx] = rebind[
+                UnsafePointer[Scalar[dtype], MutAnyOrigin]
+            ](output_buffers[output_idx].ptr)
 
         # Calculate grid size.
         var max_length = 0
@@ -283,37 +294,12 @@ def allgather[
     # Default max blocks if not specified.
     var max_num_blocks = _max_num_blocks.or_else(216)
 
-    # Build flat 1D NDBuffer arrays from TileTensors at the internal call
-    # boundary.
-    comptime rank = 1
-    var ndb_inputs = InlineArray[
-        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
-    ](fill={})
-    comptime for i in range(ngpus):
-        ndb_inputs[i] = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-                input_buffers[i].ptr
-            ),
-            IndexList[rank](input_buffers[i].num_elements()),
-        )
-
-    var ndb_outputs = InlineArray[
-        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
-    ](fill={})
-    comptime for i in range(ngpus * ngpus):
-        ndb_outputs[i] = NDBuffer[rank=rank, dtype, MutAnyOrigin](
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-                output_buffers[i].ptr
-            ),
-            IndexList[rank](output_buffers[i].num_elements()),
-        )
-
     # Check P2P availability.
     if not is_p2p_enabled():
-        return _allgather_naive(ndb_inputs, ndb_outputs, ctxs)
+        return _allgather_naive(input_buffers, output_buffers, ctxs)
     else:
-        return _allgather_p2p(
-            ndb_inputs, ndb_outputs, rank_sigs, max_num_blocks, ctxs
+        return _allgather_p2p[rank=1](
+            input_buffers, output_buffers, rank_sigs, max_num_blocks, ctxs
         )
 
 
@@ -340,5 +326,15 @@ def allgather[
     """
     comptime assert ngpus >= 2, "allgather requires at least 2 GPUs"
 
-    # Use naive implementation for backward compatibility.
-    _allgather_naive(input_buffers, output_buffers, ctxs)
+    # Build TileTensor arrays for the TileTensor-primary _allgather_naive.
+    comptime InTT = type_of(TileTensor(input_buffers[0]))
+    var tt_inputs = InlineArray[InTT, ngpus](uninitialized=True)
+    comptime for i in range(ngpus):
+        tt_inputs[i] = TileTensor(input_buffers[i])
+
+    comptime OutTT = type_of(TileTensor(output_buffers[0]))
+    var tt_outputs = InlineArray[OutTT, ngpus * ngpus](uninitialized=True)
+    comptime for i in range(ngpus * ngpus):
+        tt_outputs[i] = TileTensor(output_buffers[i])
+
+    _allgather_naive(tt_inputs, tt_outputs, ctxs)
