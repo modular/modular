@@ -2112,21 +2112,6 @@ fn expm1[
 fn log10[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
-    """Computes the `log10` of the inputs.
-
-    Constraints:
-        The input must be a floating-point type.
-
-    Parameters:
-        dtype: The `dtype` of the input and output SIMD vector.
-        width: The width of the input and output SIMD vector.
-
-    Args:
-        x: The input argument.
-
-    Returns:
-        The `log10` of the input.
-    """
 
     comptime if is_nvidia_gpu():
         comptime log10_2 = 0.301029995663981195213738894724493027
@@ -2140,12 +2125,12 @@ fn log10[
                 ](x)
                 * log10_2
             )
+
     elif is_amd_gpu():
         return _llvm_unary_fn["llvm.log10"](x)
+
     elif is_apple_gpu():
         return _llvm_unary_fn["llvm.air.log10"](x)
-    comptime if True:
-        return _llvm_unary_fn["llvm.log10"](x)
 
     return _call_libm["log10"](x)
 
