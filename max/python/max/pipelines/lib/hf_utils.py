@@ -658,8 +658,9 @@ def is_diffusion_pipeline(repo: HuggingFaceRepo) -> bool:
 def generate_local_model_path(repo_id: str, revision: str) -> str:
     """Generate the local filesystem path where a Hugging Face model repo is cached.
 
-    This function uses Hugging Face's official snapshot_download with local_files_only=True
-    to resolve the local cache path for a model repository.
+    This function first resolves the model from the local Hugging Face cache.
+    If the repo is not cached yet and offline mode is not enabled, it falls back
+    to downloading the pinned snapshot into the local cache.
 
     Args:
         repo_id: The Hugging Face repository ID in the format "org/model"
@@ -670,16 +671,32 @@ def generate_local_model_path(repo_id: str, revision: str) -> str:
         str: The absolute path to the cached model files for the specified revision.
 
     Raises:
-        FileNotFoundError: If the model is not found in the local cache
+        FileNotFoundError: If the model is not found in the local cache and cannot
+            be downloaded.
     """
+    snapshot_kwargs = {
+        "repo_id": repo_id,
+        "revision": revision,
+    }
     try:
         return huggingface_hub.snapshot_download(
-            repo_id=repo_id,
-            revision=revision,
+            **snapshot_kwargs,
             local_files_only=True,
         )
-    except huggingface_hub.utils.LocalEntryNotFoundError as e:
+    except huggingface_hub.utils.LocalEntryNotFoundError as local_error:
+        if huggingface_hub.constants.HF_HUB_OFFLINE:
+            raise FileNotFoundError(
+                f"Model path does not exist: HF cache for '{repo_id}' "
+                f"(revision: {revision}) not found while "
+                "HF_HUB_OFFLINE is enabled."
+            ) from local_error
+
+    try:
+        return huggingface_hub.snapshot_download(**snapshot_kwargs)
+    except Exception as download_error:
         raise FileNotFoundError(
-            f"Model path does not exist: HF cache for '{repo_id}' "
-            f"(revision: {revision}) not found."
-        ) from e
+            f"Model path does not exist locally and automatic download failed "
+            f"for '{repo_id}' (revision: {revision}). Configure HF_TOKEN for "
+            "gated repos or pre-download the model with "
+            "'//max/tests/integration/tools:download_models'."
+        ) from download_error

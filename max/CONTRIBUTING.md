@@ -21,7 +21,14 @@ For technical details on developing for MAX and models, see the following
 document:
 
 - [Developing the MAX framework](/max/docs/development.md) covers building,
-  testing, and other information you’ll need to work in the MAX framework.
+  testing, including local test prerequisites such as `HF_TOKEN`, model
+  downloads, and GPU-only targets, and other information you’ll need to work
+  in the MAX framework.
+
+When validating a local MAX change, start with the minimal test matrix in the
+[MAX developer guide](/max/docs/development.md#use-a-minimal-test-matrix)
+instead of defaulting to `//max/...`, especially if your change does not need
+HF-backed or GPU-backed integration coverage.
 
 ### Changes we *accept*
 

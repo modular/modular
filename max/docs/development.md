@@ -50,6 +50,36 @@ From the repo root, run this `bazelw` command to run all the MAX tests:
 If it's your first time, it starts by installing the Bazel version manager,
 [Bazelisk](https://github.com/bazelbuild/bazelisk), which then installs Bazel.
 
+### Know the local test prerequisites
+
+Not every MAX test has the same local requirements. Before running a broad
+target, check which of these constraints apply:
+
+- **`HF_TOKEN`**: Some tests exercise gated Hugging Face repos or fetch remote
+  config files. Export a token before running them:
+
+  ```bash
+  export HF_TOKEN="hf_..."
+  ```
+
+- **Model downloads**: Some integration tests resolve model snapshots through
+  the Hugging Face cache. `generate_local_model_path()` now falls back to
+  downloading a missing snapshot automatically unless `HF_HUB_OFFLINE=1`, but
+  first-run downloads can still be slow. If you want to warm the cache up
+  front, use:
+
+  ```bash
+  bazel run //max/tests/integration/tools:download_models -- \
+    meta-llama/Llama-3.2-1B-Instruct
+  ```
+
+- **GPU requirements**: Many integration targets are tagged `gpu` and will not
+  run successfully on a CPU-only machine. Prefer CPU or pure unit targets if
+  your change does not touch GPU execution.
+- **Networked tests**: Targets tagged `requires-network` may contact Hugging
+  Face or other remote endpoints and are more likely to fail in restricted or
+  offline environments.
+
 ### Test a subset of the MAX framework
 
 You can run all the tests within a specific subdirectory by simply
@@ -65,6 +95,23 @@ To find all the test targets, you can run:
 ```bash
 ./bazelw query 'tests(//max/tests/...)'
 ```
+
+### Use a minimal test matrix
+
+For local iteration, start with the smallest target set that matches your
+change. The following commands are good default subsets:
+
+| Change type | Suggested command | Typical prerequisites |
+| --- | --- | --- |
+| Core Python logic and lightweight local regression | `./bazelw test //max/tests/tests:cpu_local_tests` | No GPU; usually no `HF_TOKEN` |
+| Serve process-control unit tests | `./bazelw test //max/tests/tests/serve/unit:tests` | CPU-only, but slower than the default local suite |
+| Pipeline library or architecture logic that should stay CPU-safe | `./bazelw test //max/tests/tests/pipelines/... //max/tests/integration/pipelines:tests` | Network may be needed for some pipeline tests |
+| Tokenization or HF-backed pipeline integration | `./bazelw test //max/tests/integration/pipelines/tokenization:tests //max/tests/integration/architectures/internvl_network_tests:tests` | `HF_TOKEN`, network, and a GPU-capable machine |
+| GPU runtime, graph, or kernel-facing changes | `./bazelw test //max/tests/tests:test_interpreter_ops_gpu //max/tests/integration/pipelines:tests_gpu` | GPU required; network often required |
+
+If you are unsure whether a target needs network or GPUs, inspect its Bazel
+rule for tags such as `gpu` or `requires-network`, or for `env_inherit =
+["HF_TOKEN"]`.
 
 ## Run a MAX pipeline
 

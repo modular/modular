@@ -108,3 +108,22 @@ modular_py_test(
         requirement("torch"),
     ],
 )
+
+test_suite(
+    name = "cpu_local_tests",
+    tests = [
+        ":max_tests",
+        ":test_interpreter",
+        ":test_interpreter_ops",
+        "//max/tests/tests/_core_mojo:tests",
+        "//max/tests/tests/benchmark:tests",
+        "//max/tests/tests/driver:tests",
+        "//max/tests/tests/graph:tests",
+        "//max/tests/tests/graph:multi_version_tests",
+        "//max/tests/tests/mojo-importer:mojo-importer",
+        "//max/tests/tests/nn:cpu_tests",
+        "//max/tests/tests/profiler:tests",
+        "//max/tests/tests/serve:parser_tests",
+        "//max/tests/tests/support:tests",
+    ],
+)

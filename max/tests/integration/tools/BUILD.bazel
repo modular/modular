@@ -153,6 +153,20 @@ pycross_wheel_library(
 )
 
 modular_py_binary(
+    name = "download_models",
+    testonly = True,
+    srcs = ["download_models.py"],
+    imports = ["."],
+    main = "download_models.py",
+    tags = ["no-pydeps"],
+    deps = [
+        "//max/tests/integration:hf_repo_lock",
+        requirement("click"),
+        requirement("huggingface-hub"),
+    ],
+)
+
+modular_py_binary(
     name = "generate_llm_logits",
     testonly = True,
     srcs = [

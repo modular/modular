@@ -50,3 +50,11 @@ _LONG_TIMEOUT_TESTS = [
     )
     for src in glob(["test_*.py"])
 ]
+
+test_suite(
+    name = "cpu_tests",
+    tests = [
+        ":" + src.replace(".py", "")
+        for src in glob(["test_*.py"])
+    ],
+)
