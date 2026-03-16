@@ -131,7 +131,7 @@ struct Span[
     Iterable,
     Sized,
     TrivialRegisterPassable,
-    Writable,
+    Writable where conforms_to(T, Writable),
 ):
     """A non-owning view of contiguous data.
 
@@ -384,8 +384,6 @@ struct Span[
     def _write_self_to[
         f: fn(Self.T, mut Some[Writer])
     ](self, mut writer: Some[Writer]):
-        fmt.constrained_conforms_to_writable[Self.T, Parent=Self]()
-
         var iterator = self.__iter__()
 
         @parameter
@@ -396,11 +394,10 @@ struct Span[
         _ = iterator^
 
     @no_inline
-    def write_to(self, mut writer: Some[Writer]):
+    def write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Write this span to a `Writer`.
-
-        Constraints:
-            `T` must conform to `Writable`.
 
         Args:
             writer: The object to write to.
@@ -408,11 +405,10 @@ struct Span[
         self._write_self_to[f=fmt.write_to[Self.T]](writer)
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Write this span to a `Writer`.
-
-        Constraints:
-            `T` must conform to `Writable`.
 
         Args:
             writer: The object to write to.

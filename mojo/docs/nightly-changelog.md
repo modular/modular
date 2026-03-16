@@ -44,6 +44,7 @@ This version is still a work in progress.
   `_constrained_conforms_to` checks:
   - `List`: `Hashable`
   - `Optional`: `Hashable`
+  - `Span`: `Writable`
   - `Tuple`: `Equatable`, `Hashable`
 
 - `perf_counter_ns()` now returns correct nanoseconds on GPU instead of raw
