@@ -18,11 +18,6 @@ from std.sys import size_of, align_of
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from compiler_internal import StaticTensorSpec
-from compiler_internal.directives import (
-    InputFusion,
-    OutputFusion,
-    ComputeOutputFusion,
-)
 from std.collections import InlineArray
 from std.gpu.host import DeviceBuffer
 from std.gpu.host.info import is_cpu, is_gpu
@@ -1025,14 +1020,9 @@ def ManagedTensorSliceDef[
     input: IO,
     dtype: DType,
     rank: Int,
-    InFusion: InputFusion,
-    OutFusion: OutputFusion,
-    ComputeFusion: ComputeOutputFusion,
     //,
     io_spec: IOSpec[mut, input],
-    static_spec: StaticTensorSpec[
-        dtype, rank, _, _, InFusion, OutFusion, ComputeFusion
-    ],
+    static_spec: StaticTensorSpec[dtype, rank, _, _],
 ](
     ty: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
 ) -> ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]:
@@ -1091,21 +1081,6 @@ def get_simd_width_for_dtypes[
 @register_internal("get_address_space")
 def get_address_space() -> AddressSpace:
     return AddressSpace.GENERIC
-
-
-# Build the StaticTensorSpec parameter for the DPS kernels
-@register_internal("build_static_tensor_specs")
-fn build_static_tensor_specs[
-    dtype: DType,
-    rank: Int,
-    shape: DimList,
-    strides: DimList,
-](
-    alignment: Int,
-    address_space: AddressSpace,
-    exclusive: Bool,
-) -> StaticTensorSpec[dtype, rank, shape, strides]:
-    return {alignment, address_space, exclusive}
 
 
 # TODO: this should take IOSpec as a param -- will require graph compiler changes
@@ -1540,6 +1515,9 @@ def mogg_tensor_init[
         alignment,
         AddressSpace.GENERIC,
         exclusive,
+        None,
+        None,
+        None,
     ),
 ]:
     """
@@ -1591,7 +1569,7 @@ def mogg_async_error(
 
 @register_internal("tmp.reshape_contiguous_managed_tensor_slice")
 @always_inline
-fn tmp_reshape_contiguous_buffer[
+def tmp_reshape_contiguous_buffer[
     static_shape: DimList, static_stride: DimList, new_rank: Int
 ](
     buffer: ManagedTensorSlice,
@@ -1604,6 +1582,9 @@ fn tmp_reshape_contiguous_buffer[
         1,
         AddressSpace.GENERIC,
         True,
+        None,
+        None,
+        None,
     ),
 ]:
     """

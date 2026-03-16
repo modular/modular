@@ -45,6 +45,7 @@ from std.sys.info import (
     _accelerator_arch,
 )
 from std.sys.intrinsics import _type_is_eq
+
 import compiler_internal as compiler
 
 # ===-----------------------------------------------------------------------===#
@@ -327,6 +328,7 @@ from tensor import (
     simd_store_into_managed_tensor_slice,
     view_copy_impl,
 )
+from tensor.io_spec import IO
 from tensor.managed_tensor_slice import _FusedComputeOutputTensor
 from tensor.managed_tensor_slice import (
     _FusedInputTensor as FusedInputTensor,
@@ -3856,7 +3858,7 @@ struct Matmul:
                 )
             )
 
-        comptime has_compute_lambda = type_of(c)._has_compute_fusion
+        comptime has_compute_lambda = c.static_spec.out_compute_lambda is not None
 
         comptime elementwise_lambda = Optional[
             matmul_elementwise_epilogue_type
@@ -3914,7 +3916,7 @@ struct BatchMatmul:
         def output_fn[
             _type: DType, _width: Int, _rank: Int, *, alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_type, _width]):
-            comptime has_compute_lambda = type_of(c)._has_compute_fusion
+            comptime has_compute_lambda = c.static_spec.out_compute_lambda is not None
 
             comptime if has_compute_lambda:
                 var output = c._fused_compute_output_lambda(
@@ -10325,8 +10327,7 @@ struct DistributedAllReduceSum:
                 _alignment: Int,
             ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
                 outputs[output_index]._lambda_store[
-                    width=_width,
-                    element_alignment=_alignment,
+                    width=_width, element_alignment=_alignment
                 ](
                     rebind[IndexList[rank]](coords),
                     rebind[SIMD[dtype, _width]](val),
@@ -10426,8 +10427,7 @@ struct DistributedReduceScatterSum:
                 _alignment: Int,
             ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
                 outputs[output_index]._lambda_store[
-                    width=_width,
-                    element_alignment=_alignment,
+                    width=_width, element_alignment=_alignment
                 ](
                     rebind[IndexList[rank]](coord_to_index_list(coords)),
                     rebind[SIMD[dtype, _width]](val),
@@ -10892,13 +10892,11 @@ struct AdvancedIndexingGetItem:
         out_tensor: OutputTensor[dtype=input_type, rank=output_rank, ...],
         input_tensor: FusedInputTensor[dtype=input_type, rank=input_rank, ...],
         indices: FusedInputVariadicTensors[
-            dtype=index_type,
-            rank=index_rank,
-            size=num_index_tensors,
-            ...,
+            dtype=index_type, rank=index_rank, size=num_index_tensors, ...
         ],
         ctx: DeviceContextPtr,
     ) capturing raises:
+        # TODO: Uses `where` clause when emit mojo is turned on by default.
         comptime assert (
             output_rank == input_rank + index_rank - num_index_tensors
         )
@@ -10977,10 +10975,7 @@ struct AdvancedIndexingSetItemInplace:
         ],
         updates: FusedInputTensor[dtype=input_type, rank=updates_rank, ...],
         indices: FusedInputVariadicTensors[
-            dtype=index_type,
-            rank=index_rank,
-            size=num_index_tensors,
-            ...,
+            dtype=index_type, rank=index_rank, size=num_index_tensors, ...
         ],
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -11037,10 +11032,7 @@ struct AdvancedIndexingSetItem:
         input_tensor: FusedInputTensor[dtype=input_type, rank=input_rank, ...],
         updates: FusedInputTensor[dtype=input_type, rank=updates_rank, ...],
         indices: FusedInputVariadicTensors[
-            dtype=index_type,
-            rank=index_rank,
-            size=num_index_tensors,
-            ...,
+            dtype=index_type, rank=index_rank, size=num_index_tensors, ...
         ],
         ctx: DeviceContextPtr,
     ) capturing raises:
