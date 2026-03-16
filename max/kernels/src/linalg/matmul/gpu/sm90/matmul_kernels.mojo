@@ -1020,7 +1020,7 @@ struct HopperMatmulSM90Kernel[
             Self.c_type, c_tma_rank, c_tile_shape, c_desc_shape
         ],
         c: LayoutTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
-        workspace_buffer: NDBuffer[rank=3, Self.accum_type, MutAnyOrigin],
+        workspace_ptr: UnsafePointer[Scalar[Self.accum_type], MutAnyOrigin],
         locks_ptr: UnsafePointer[UInt8, MutAnyOrigin],
         problem_shape: IndexList[3],
     ):
@@ -1071,7 +1071,7 @@ struct HopperMatmulSM90Kernel[
             NUM_TILES, Self.BM, Self.BN
         )
         var reduction_workspace = LayoutTensor(
-            workspace_buffer.data,
+            workspace_ptr,
             RuntimeLayout[workspace_layout].row_major(
                 IndexList[3](NUM_TILES, Self.BM, Self.BN)
             ),
