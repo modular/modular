@@ -1065,92 +1065,83 @@ IPRational Lexer::getFloatLiteralValue(StringRef spelling) {
 }
 
 /// Helper function to process escape sequences in string content.
+// Advance `src` past one escape unit. Returns the output character, or
+// nullopt for line continuations that produce no output.
+// When `isRaw` is true, backslash is not treated as an escape leader.
+// `end` is the one-past-the-end pointer of the source buffer; it is used
+// to bounds-check multi-byte escape sequences (`\xNN`, octal).
+static std::optional<char> advanceEscapeUnit(const char *&src, const char *end,
+                                             bool isRaw) {
+  char c = *src++;
+  if (c != '\\' || isRaw)
+    return c; // regular char (including '\r', '\n') passes through as-is
+
+  // Escape sequence: `c` was '\\', consume the specifier.
+  assert(src < end && "invalid string should be caught by lexer");
+  char c1 = *src++;
+  switch (c1) {
+  case '\\':
+  case '"':
+  case '\'':
+    return c1;
+  case '\n':
+    return std::nullopt; // line continuation (\ + LF)
+  case '\r':             // line continuation (\ + CR[LF])
+    if (src < end && *src == '\n')
+      ++src;
+    return std::nullopt;
+  case 'a':
+    return '\a';
+  case 'b':
+    return '\b';
+  case 'f':
+    return '\f';
+  case 'n':
+    return '\n';
+  case 'r':
+    return '\r';
+  case 't':
+    return '\t';
+  case 'v':
+    return '\v';
+  case 'x': {
+    assert(src + 2 <= end && "invalid \\x escape should be caught by lexer");
+    char hex0 = src[0], hex1 = src[1];
+    assert(llvm::isHexDigit(hex0) && llvm::isHexDigit(hex1) &&
+           "invalid escape");
+    src += 2;
+    return static_cast<char>((llvm::hexDigitValue(hex0) << 4) |
+                             llvm::hexDigitValue(hex1));
+  }
+  case '0':
+  case '1':
+  case '2':
+  case '3':
+  case '4':
+  case '5':
+  case '6':
+  case '7': {
+    // c1 is the first (mandatory) octal digit. Up to two more may follow;
+    // each is guarded by `src < end` before the dereference.
+    assert(isOctalDigit(c1) && "switch case guarantees c1 is an octal digit");
+    unsigned num = c1 - '0';
+    for (int i = 0; i < 2 && src < end && isOctalDigit(*src); ++i, ++src)
+      num = (num << 3) | (*src - '0');
+    return static_cast<char>(num);
+  }
+  default:
+    return c1; // invalid escape — already diagnosed at lex time; emit c1
+  }
+}
+
 static std::string processEscapeSequences(StringRef bytes, bool isRaw) {
   std::string result;
   result.reserve(bytes.size());
-  for (size_t i = 0, end = bytes.size(); i != end;) {
-    auto c = bytes[i++];
-    if (c != '\\' || isRaw) {
-      result.push_back(c);
-
-      // Handle trailing windows style newline.
-      if (c == '\r' && i < end && bytes[i] == '\n') {
-        result.push_back('\n');
-        ++i;
-      }
-      continue;
-    }
-
-    assert(i + 1 <= end && "invalid string should be caught by lexer");
-    auto c1 = bytes[i++];
-    switch (c1) {
-    case '\\':
-    case '"':
-    case '\'':
-      result.push_back(c1);
-      continue;
-    case '\n':
-      continue;
-    case '\r':
-      if (bytes[i] == '\n')
-        ++i;
-      continue;
-    case 'a':
-      result.push_back('\a');
-      continue;
-    case 'b':
-      result.push_back('\b');
-      continue;
-    case 'f':
-      result.push_back('\f');
-      continue;
-    case 'n':
-      result.push_back('\n');
-      continue;
-    case 'r':
-      result.push_back('\r');
-      continue;
-    case 't':
-      result.push_back('\t');
-      continue;
-    case 'v':
-      result.push_back('\v');
-      continue;
-    case 'x': {
-      char hex0 = bytes[i++];
-      char hex1 = bytes[i++];
-      assert(llvm::isHexDigit(hex0) && llvm::isHexDigit(hex1) &&
-             "invalid escape");
-      result.push_back((llvm::hexDigitValue(hex0) << 4) |
-                       llvm::hexDigitValue(hex1));
-      continue;
-    }
-    case '0':
-    case '1':
-    case '2':
-    case '3':
-    case '4':
-    case '5':
-    case '6':
-    case '7': {
-      size_t startDigit = i - 1;
-      // At most 3 digits
-      while (i < (startDigit + 3) && i < bytes.size() && isOctalDigit(bytes[i]))
-        ++i;
-      unsigned int num;
-      [[maybe_unused]] bool failed =
-          bytes.slice(startDigit, i).getAsInteger(8, num);
-      assert(!failed && "we know this should always work because we lexed it");
-      result.push_back(static_cast<char>(num));
-      continue;
-    }
-    default:
-      // Otherwise it is an invalid escape.  It will already have been diagnosed
-      // at lexer time.
-      result.push_back(c1);
-      continue;
-    }
-  }
+  const char *src = bytes.data();
+  const char *end = bytes.data() + bytes.size();
+  while (src < end)
+    if (auto ch = advanceEscapeUnit(src, end, isRaw))
+      result.push_back(*ch);
   return result;
 }
 
@@ -1175,6 +1166,26 @@ std::string Lexer::getStringLiteralValue(StringRef bytes) {
 
 std::string Lexer::getTStringLiteralValue(StringRef bytes, bool isRaw) {
   return processEscapeSequences(bytes, isRaw);
+}
+
+SmallVector<unsigned> Lexer::buildProcessedToSourceOffsets(const char *srcStart,
+                                                           const char *srcEnd,
+                                                           size_t procCount) {
+  // Each entry records the source byte offset (from srcStart) of the escape
+  // unit that produced processed byte i. For escape sequences (e.g. `\t`),
+  // this is the offset of the leading backslash.
+  SmallVector<unsigned> offsets;
+  offsets.reserve(procCount + 1);
+  const char *src = srcStart;
+  for (size_t produced = 0; produced < procCount;) {
+    unsigned srcOffset = src - srcStart;
+    if (advanceEscapeUnit(src, srcEnd, /*isRaw=*/false)) {
+      offsets.push_back(srcOffset);
+      ++produced;
+    }
+  }
+  offsets.push_back(src - srcStart); // sentinel: source offset past last byte
+  return offsets;
 }
 
 SMLoc Lexer::getStringLiteralStartLoc(StringRef spelling) {

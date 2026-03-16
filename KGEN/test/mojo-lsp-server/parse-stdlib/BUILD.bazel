@@ -15,6 +15,14 @@ load("//bazel:api.bzl", "modular_py_test")
 
 package(default_visibility = ["//visibility:private"])
 
+# LSP parse tests are excluded from sanitizer builds (ASAN, UBSAN) because the
+# instrumentation overhead makes them too slow and they time out reliably.
+_SANITIZER_INCOMPATIBLE = select({
+    "//:asan": ["@platforms//:incompatible"],
+    "//:ubsan": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
 # Files with known LSP errors. Paths are relative to the stdlib root
 # (oss/modular/mojo/stdlib/std). To re-enable a file: remove it from this list.
 _FILE_BLOCKLIST = [
@@ -39,10 +47,9 @@ _FILE_BLOCKLIST = [
     "builtin/variadics.mojo",  # LSP error: undeclared '_type_is_eq' (compiler builtin)
     "collections/dict.mojo",  # LSP error: no matching function in initialization
     "collections/list.mojo",  # LSP error: incompatible types in docstring example
-    "collections/string/codepoint.mojo",  # LSP error: empty/unterminated backtick identifier
     "collections/string/format.mojo",  # LSP error: undeclared 'myComplicatedObject' in docstring
     "collections/string/string.mojo",  # MOCO-3399: LSP crash
-    "collections/string/string_slice.mojo",  # LSP error: empty/unterminated backtick identifier
+    "collections/string/string_slice.mojo",  # LSP error: empty/unterminated backtick identifier (multiple issues; escape-sequence location fix helps but does not eliminate all failures)
     "compile/__init__.mojo",  # MOCO-3399: LSP crash
     "ffi/__init__.mojo",  # MOCO-3399: LSP crash
     "ffi/unsafe_union.mojo",  # MOCO-3399: LSP crash
@@ -85,14 +92,6 @@ _FILE_BLOCKLIST = [
     "memory/_nonnull.mojo",  # LSP error: use of unknown declaration 'NonNullUnsafePointer'
     "utils/variant.mojo",  # LSP error: undeclared 'random' in docstring example
 ]
-
-# LSP parse tests are excluded from sanitizer builds (ASAN, UBSAN) because the
-# instrumentation overhead makes them too slow and they time out reliably.
-_SANITIZER_INCOMPATIBLE = select({
-    "//:asan": ["@platforms//:incompatible"],
-    "//:ubsan": ["@platforms//:incompatible"],
-    "//conditions:default": [],
-})
 
 # One sharded test target covering the entire stdlib (minus blocklisted files).
 # shard_count=50 (the repo maximum) divides ~240 enabled files into ~5 files
