@@ -467,7 +467,7 @@ struct Optional[T: Movable](
             FieldsFn=fields
         ]()
 
-    fn __hash__[
+    def __hash__[
         H: Hasher
     ](self, mut hasher: H) where conforms_to(Self.T, Hashable):
         """Updates hasher with the hash of the contained value, if present.

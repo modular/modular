@@ -180,7 +180,7 @@ struct Batch(TrivialRegisterPassable, Writable):
             / Float64(Unit._divisor(unit))
         )
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Formats this `Batch` to the provided Writer.
 
         Args:
@@ -197,7 +197,7 @@ struct Batch(TrivialRegisterPassable, Writable):
         )
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Writes the repr of this `Batch` to a writer.
 
         Args:

@@ -462,7 +462,7 @@ struct UnsafePointer[
     @always_inline("builtin")
     @implicit
     @doc_hidden
-    fn __init__(
+    def __init__(
         out self,
         other: NonNullUnsafePointer[
             Self.type,
@@ -477,7 +477,7 @@ struct UnsafePointer[
     @always_inline("builtin")
     @implicit
     @doc_hidden
-    fn __init__(
+    def __init__(
         other: NonNullUnsafePointer[...],
         out self: UnsafePointer[
             other.type,
@@ -492,7 +492,7 @@ struct UnsafePointer[
     @always_inline("builtin")
     @implicit
     @doc_hidden
-    fn __init__(
+    def __init__(
         other: NonNullUnsafePointer[mut=True, ...],
         out self: UnsafePointer[
             other.type,
