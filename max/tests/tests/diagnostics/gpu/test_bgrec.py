@@ -19,6 +19,10 @@ from max.diagnostics.gpu import BackgroundRecorder
 
 
 def test_smoke() -> None:
-    with BackgroundRecorder() as recorder:
+    with BackgroundRecorder() as recorder1:
         time.sleep(3)
-    assert len(recorder.stats) > 0
+    assert len(recorder1.stats) > 0
+
+    with BackgroundRecorder(interval=0.1) as recorder2:
+        time.sleep(3)
+    assert len(recorder2.stats) > len(recorder1.stats)

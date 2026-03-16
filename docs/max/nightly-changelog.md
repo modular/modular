@@ -24,6 +24,8 @@ This version is still a work in progress.
   `Quant*` names, including `parse_float8_config()` to
   `parse_quant_config()`, and the public `quant` modules in `max.nn` and
   `max.pipelines.lib`.
+- `max.diagnostics.gpu.BackgroundRecorder`'s sampling interval can now be
+  configured.
 
 ## Breaking changes {#26-3-breaking}
 
