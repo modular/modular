@@ -12,6 +12,7 @@ dependencies = [
   "asgiref",
   "async-asgi-testclient",
   "boto3",
+  "botocore",
   "click>=8.1",
   "codeowners",
   "cyclopts",
