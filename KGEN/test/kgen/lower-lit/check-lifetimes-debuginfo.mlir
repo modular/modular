@@ -6,9 +6,6 @@
 // CHECK: #[[DISP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, sourceName = <"test">, linkageName = "test", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
 // CHECK: #[[DIVAR_X:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "x", file = #{{.*}}, line = 10, flags = Zero> : ![[DI_S_TYPE]]
 // CHECK: #[[DIVAR_Y:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "y", file = #{{.*}}, line = 13, flags = Zero> : ![[DI_S_TYPE]]
-// CHECK: #[[DIARG_X:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "x", file = #{{.*}}, line = 10, arg = 1, flags = Zero> : ![[DI_S_TYPE]]
-// CHECK: #[[DIARG_YS:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "ys", file = #{{.*}}, line = 13, arg = 2, flags = Zero>
-// CHECK: #[[DIARG_Z:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "z", file = #{{.*}}, line = 15, arg = 3, flags = Zero>
 
 #file = #debuginfo.file<"test.mlir" in "">
 #compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #file, producer = "LIT", isOptimized = true, emissionKind = Full>
@@ -150,31 +147,4 @@ lit.fn @test_consumed() -> index {
   %y_a = lit.ref.struct.ger %y[a] : <@S, mut ylife> -> index loc(#locRet)
   %y_a_val = lit.ref.load %y_a : <index, mut ylife->a> loc(#locRet)
   kgen.return %y_a_val : index loc(#locRet)
-} loc(fused<#sp>["test.mlir":10:10])
-
-// CHECK-LABEL: lit.fn @test_arg(%x: {{.*}}, %ys: {{.*}}, %z:
-lit.fn @test_arg(%x: !lit.ref<@S, mut xlife> loc(#locX) owned_in_mem, %ys: !kgen.variadic<!lit.ref<@S, imm *"ys">> loc(#locY) read_mem|pos_vararg, %z: index loc(#locZ) owned) -> index {
-  // CHECK: debuginfo.value #[[DIARG_X]] #[[DIEXPR_DEREF_X]] = %x
-  // CHECK-NOT: debuginfo.value {{.*}} = %ys
-  // CHECK-NOT: debuginfo.value {{.*}} = %z
-  %x_a = lit.ref.struct.ger %x[a] : <@S, mut xlife> -> index loc(#locUse)
-  %x_a_val = lit.ref.load %x_a : <index, mut xlife->a> loc(#locUse)
-
-  // `x` can be destroyed here.
-  // CHECK: debuginfo.kill #[[DIARG_X]] loc(#[[LOC_USE]])
-  // CHECK-NEXT: lit.call @S::@__del__{{.*}}(%x) : {{.*}} loc(#[[LOC_USE]])
-
-  // `ys` is shadowed (using a fake shadowing type for simplicity).
-  %yshadow = lit.var.decl "ys" arg(1) : !lit.ref<!kgen.variadic<!lit.ref<@S, imm *"ys">>, mut *"ys"> loc(#locY)
-  lit.ref.store %ys, %yshadow : !lit.ref<!kgen.variadic<!lit.ref<@S, imm *"ys">>, mut *"ys"> loc(#locY)
-  // CHECK: %[[YSHADOW:.*]] = lit.var.decl "ys"
-  // CHECK: debuginfo.value #[[DIARG_YS]] {{.*}} = %[[YSHADOW]]
-
-  // `z` is shadowed.
-  %zshadow = lit.var.decl "z" arg(2) : !lit.ref<index, mut *"z"> loc(#locZ)
-  lit.ref.store %z, %zshadow : <index, mut *"z"> loc(#locZ)
-  // CHECK: %[[ZSHADOW:.*]] = lit.var.decl "z"
-  // CHECK: debuginfo.value #[[DIARG_Z]] {{.*}} = %[[ZSHADOW]]
-
-  kgen.return %x_a_val : index loc(#locRet)
 } loc(fused<#sp>["test.mlir":10:10])

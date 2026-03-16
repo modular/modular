@@ -1146,25 +1146,26 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
   for (auto [idx, argType] : llvm::enumerate(sigArgTypes)) {
     Type type = argType;
     ArgConvention conv = sig.getArgConvention(idx);
+
+    ASTType rvType = RefType::stripRefConvention(type, conv);
+
     // Handle vararg kinds.
     if (sig.isPosVarArg(idx)) {
-      type = sugarCast<VariadicType>(type).getElementType();
-      conv = sig.getVariadicConvention(idx);
+      type = rvType.getVariadicListInfo().getElementRefType();
+      type = RefType::stripRefConvention(type, sig.getVariadicConvention(idx));
     } else if (sig.isKwVarArg(idx)) {
       // Don't need to unpack anything. We treat the whole dictionary as the
       // value type.
+      type = RefType::stripRefConvention(type, conv);
     } else if (sig.isPack(idx)) {
       // For variadic packs, we don't have a type instance but we have the
       // metatype.
-      Type metatype = ASTType(type)
-                          .getReferenceElementType()
-                          .getVariadicPackInfo(shared)
-                          .getVariadicElementType();
+      Type metatype =
+          rvType.getVariadicPackInfo(shared).getVariadicElementType();
       type = ParamType::get(UnknownAttr::get(metatype));
       conv = ArgConvention::ReadReg;
     }
-    type = RefType::stripRefConvention(type, conv);
-    argTypes.push_back(type);
+    argTypes.push_back(rvType);
   }
 
   bool allVanillaKernelArgs = llvm::all_of(argTypes, [](ASTType astType) {
@@ -2019,91 +2020,6 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   return success();
 }
 
-/// Given a value of !kgen.variadic<..> construct a VariadicList and return
-/// the variable declaration holding it.
-static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
-                                   ASTDecl &parentDecl, IREmitter &emitter,
-                                   SMLoc loc, ArgConvention convention) {
-
-  // Get the right VariadicList instantiation.
-  auto variadicType = sugarCast<VariadicType>(argValue.getType());
-  ASTType variadicEltType = variadicType.getElementType();
-  auto refType = sugarCast<RefType>(variadicEltType);
-  ASTType varListType =
-      emitter.shared.getBuiltinVariadicListType(parentDecl, loc);
-  if (varListType.isTypeCheckErrorType())
-    return {};
-  ASTDecl *varListStructDecl = varListType.getDecl(emitter.shared);
-  if (!varListStructDecl) {
-    emitter.emitError(loc, Diag::DiagID::err_malformed_variadiclist);
-    return {};
-  }
-  auto varListStruct =
-      dyn_cast_if_present<StructDeclOp>(varListStructDecl->getIfOperation());
-  if (!varListStruct) {
-    emitter.emitError(loc, Diag::DiagID::err_malformed_variadiclist);
-    return {};
-  }
-
-  // Bind the "is_owned" parameter, start by filling the parameter list with ?.
-  assert(varListStruct.getSignature().getParamTypes().size() == 5);
-  SmallVector<TypedAttr> typeParams(5);
-  Type boolType = varListStruct.getSignature().getParamTypes()[0];
-  Type eltType = varListStruct.getSignature().getParamTypes()[3];
-
-  SyntheticNode expr(loc);
-
-  // The first parameter is the "elt_is_mutable" parameter.
-  // Emit the "is_mutable" parameter
-  auto makeBoolAttr = [&](bool value) -> PValue {
-    auto boolAttr = BoolAttr::get(emitter.getContext(), value);
-    return emitter.emitPValue({boolAttr, &expr}, EC_Type, boolType);
-  };
-
-  // isMut
-  typeParams[0] = makeBoolAttr(convention == ArgConvention::OwnedMem ||
-                               convention == ArgConvention::DeinitMem ||
-                               convention == ArgConvention::Mut);
-  // mlir_origin
-  typeParams[1] = refType.getOrigin();
-  // origin
-  typeParams[2] = emitter.getStdlibOriginOf(refType.getOrigin(), loc);
-  // element_type
-  typeParams[3] =
-      emitter.emitPValue({refType.getElementType(), &expr}, EC_Type, eltType);
-  // is_owned.
-  typeParams[4] = makeBoolAttr(convention == ArgConvention::OwnedMem ||
-                               convention == ArgConvention::DeinitMem);
-  // Check for any emitted errors.
-  for (auto param : typeParams)
-    if (!param)
-      return {};
-
-  varListType = varListStruct.bindReference(typeParams);
-  assert(varListType && "Failed to bind type params");
-
-  // Emit a VarDeclOp: VariadicList needs a origin for its self accesses.
-  // This also provides a user name for the argument.
-  auto mlirLoc = emitter.translateLocation(loc);
-  VarDeclOp varDecl =
-      emitter.emitVarDecl(argName, UnresolvedType::get(emitter.getContext()),
-                          mlirLoc, VarDeclKind::Arg);
-
-  // Create an instance of the VariadicList, passing in the !kgen.variadic.  The
-  // type checker will deduce all the parameters.
-  ValueDest ctorDest(varDecl, EC_VarArgArgument);
-
-  CallOperands operands(CallSyntax::kTypeCall, &expr);
-  operands.add({argValue, &expr});
-  CValue ctorResult =
-      emitter.emitConstructorCall(varListType, std::move(operands), ctorDest);
-  if (!ctorResult) {
-    ctorDest.resetForError(emitter);
-    return {};
-  }
-  return varDecl;
-}
-
 LogicalResult DeclResolver::resolveSyntheticBody(FnOp fn, ASTDecl &decl) {
   // TODO: Sink this to when the body is actually resolved.
   decl.resolvedness = DeclResolvedness::body;
@@ -2216,18 +2132,6 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
       argDecl.setIRValue(std::move(value));
       shared.notifyListenerOnArgumentDecl(argDecl, argName, argDecl.getLoc());
     };
-
-    // VarArg arguments are projected into a VariadicList.
-    if (funcSignature.isPosVarArg(argIdx)) {
-      auto declOp =
-          makeVarArgWrapper(bbArg, argName, decl, emitter, argDecl.getLoc(),
-                            funcSignature.getVariadicConvention(argIdx));
-      if (!declOp)
-        return failure();
-      declOp.setArgShadowIndex(bbArg.getArgNumber());
-      setDecl(DeclIRValue(declOp));
-      continue;
-    }
 
     CValue argValue;
     if (convention == ArgConvention::ReadMem) {

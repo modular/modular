@@ -340,10 +340,8 @@ def testMethodRef(a: SomeStructWithReferenceSelfArgument):
 # CHECK-LABEL: lit.fn @"variadic_inout_mems_iter
 def variadic_inout_mems_iter(mut *mems: MemExample):
   # Verify the iterator keeps the VariadicList alive.
-  # CHECK-NEXT: %mems_0 = lit.var.decl
 
-  # CHECK: [[IMMREF:%.*]] = lit.ref.immut %mems_0 :
-  # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__iter__{{.*}}([[IMMREF]])
+  # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__iter__{{.*}}(%mems)
   # CHECK: %iter = lit.var.decl
   # CHECK-NEXT: lifetime.start %iter
   # CHECK-NEXT: lit.ref.store [[TMP]], %iter
@@ -358,10 +356,6 @@ def variadic_inout_mems_iter(mut *mems: MemExample):
 
   # Iterator is destroyed as soon as we're done with it.
   # CHECK-NEXT: lifetime.end %iter
-
-  ## NOTE: This destruction should be ordered after the destroy of the iterator
-  ## Since the iterator can refer to the mems struct.
-  # CHECK-NEXT: lifetime.end %mems_0
 
   # CHECK: [[ELTREF:%.*]] = lit.load.consume %__call_result_tmp__
   # CHECK-NEXT: lit.var.lifetime.end %__call_result_tmp__

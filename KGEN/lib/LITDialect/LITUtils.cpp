@@ -359,12 +359,8 @@ ParseResult LIT::parseConventionAndVariadicness(
       // Otherwise we also parse a variadicness
       if (parseVariadicness(p, variadic, idx))
         return failure();
-      if (variadic == VariadicKind::PosVarArg) {
-        origVariadicConvention = convention;
-        convention = ArgConvention::ReadReg;
-      }
-
-      if (variadic == VariadicKind::PackVarArg) {
+      if (variadic == VariadicKind::PosVarArg ||
+          variadic == VariadicKind::PackVarArg) {
         origVariadicConvention = convention;
         if (convention != ArgConvention::OwnedMem)
           convention = ArgConvention::ReadMem;
@@ -379,13 +375,11 @@ ParseResult LIT::parseConventionAndVariadicness(
                        str));
     variadic = *kind;
 
-    if (variadic == VariadicKind::PackVarArg) {
+    if (variadic == VariadicKind::PosVarArg ||
+        variadic == VariadicKind::PackVarArg) {
       origVariadicConvention = convention;
       if (convention != ArgConvention::OwnedMem)
         convention = ArgConvention::ReadMem;
-    } else if (variadic == VariadicKind::PosVarArg) {
-      origVariadicConvention = convention;
-      convention = ArgConvention::ReadReg;
     }
   }
   return success();
@@ -457,7 +451,6 @@ ParseResult LIT::parseOptionalParamSignature(
   SmallVector<SmallVector<ConstraintAttr>> constraints;
 
   // Parse the input parameter types and optional default values.
-  llvm::SMLoc startLoc = p.getCurrentLocation();
   PassingKindParser passingKindParser(p);
   size_t idx = 0;
   auto parseInputParam = [&](SmallVectorImpl<Type> &inputs) -> ParseResult {
@@ -477,11 +470,9 @@ ParseResult LIT::parseOptionalParamSignature(
             p, argVariadics.emplace_back(VariadicKind::None), idx++)))
       return failure();
 
-    if (argVariadics.back() == VariadicKind::PackVarArg)
-      return p.emitError(
-          startLoc, diagMsg(Diag::DiagID::err_pack_supported_parameter_list));
-    if (argVariadics.back() == VariadicKind::PosVarArg)
-      origVariadicConvention = ArgConvention::ReadReg;
+    if (argVariadics.back() == VariadicKind::PackVarArg ||
+        argVariadics.back() == VariadicKind::PosVarArg)
+      origVariadicConvention = ArgConvention::ReadMem;
 
     TypedAttr defaultVal;
     if (failed(parseOptionalDefaultValue(p, defaultVal, type)))
@@ -625,19 +616,16 @@ void LIT::printFnType(AsmPrinter &p, FnType signature) {
 
     p << signature.getArgument(i);
     ArgConvention argConv = signature.getArgConvention(i);
-    if (argListAttr.isPack(i)) {
+    VariadicKind variadicness = argListAttr.getVariadicKind(i);
+    if (variadicness == VariadicKind::PosVarArg ||
+        variadicness == VariadicKind::PackVarArg) {
       assert(argConv == ArgConvention::ReadMem ||
+             argConv == ArgConvention::Mut ||
              argConv == ArgConvention::OwnedMem ||
              argConv == ArgConvention::OwnedReg);
       argConv = signature.getVariadicConvention(i);
     }
-    VariadicKind variadicness = argListAttr.getVariadicKind(i);
-    ArgConvention convention = variadicness == VariadicKind::PosVarArg
-                                   ? signature.getMetadata()
-                                         .getArgListAttrs()
-                                         .getOrigVariadicConvention()
-                                   : argConv;
-    printConventionAndVariadicness(p, convention, variadicness);
+    printConventionAndVariadicness(p, argConv, variadicness);
     printOptionalDefaultValue(p, argListAttr.getDefault(i),
                               signature.getArgument(i), hasAddress(argConv));
 

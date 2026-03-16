@@ -1953,7 +1953,7 @@ void VarDeclOp::build(OpBuilder &b, OperationState &state, Type elementType,
   auto originDecl = ParamDeclAttr::get(originNameAttr, originType);
   auto resultType = RefType::get(
       elementType, ParamDeclRefAttr::get(originNameAttr, originType));
-  build(b, state, resultType, name, kind, originDecl, /*argShadowIndex=*/{});
+  build(b, state, resultType, name, kind, originDecl);
 }
 
 bool VarDeclOp::isSynthetic() { return getKind() == VarDeclKind::Synthesized; }
@@ -1967,12 +1967,6 @@ bool VarDeclOp::shouldWarnAboutUnused() {
          kind != VarDeclKind::InitOutArg &&
          // Don't warn about things like _x, because this silences the warning.
          !getName().starts_with("_");
-}
-
-LogicalResult VarDeclOp::verify() {
-  if (getArgShadowIndex().has_value() && getKind() != VarDeclKind::Arg)
-    return Diag::emitError(this, Diag::DiagID::err_cannot_arg_index_unless_arg);
-  return success();
 }
 
 // Change the element type of the var decl to the specified RValue type,
@@ -2205,6 +2199,8 @@ LogicalResult RefPackCreateOp::verify() {
 /// Given an argument to a function that takes a VariadicPack argument, dig
 /// out the RefPackCreateOp (or ParamConstantOp) that formed it.  This is
 /// guaranteed to succeed immediately during/after the parser, not later.
+///
+/// TODO: This is used for VariadicList as well. Move it off of RefPackCreateOp.
 Value RefPackCreateOp::findRefPackCreate(Value val) {
   // Strip off sugar casts.
   val = RebindOp::strip(val);

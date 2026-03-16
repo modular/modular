@@ -57,8 +57,7 @@ calculateRequiredPosOperandsForPacks(FnTypeGeneratorType signature,
   // provided `variadicPackType` is the rebound type during this inference
   // session).
   size_t lastPosIdx = numPosArgs - 1;
-  assert(!signature.isPosVarArg(lastPosIdx) &&
-         signature.getIfVariadicPack(lastPosIdx));
+  assert(signature.isPack(lastPosIdx));
 
   // If we have a non-empty variadic pack argument, we do require a certain
   // number of positional operands (since the value of positional packs cannot
@@ -1177,8 +1176,11 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
     // If we have a varargs argument, then it will eat the rest of the
     // arguments, but we have to check each of them.
     if (signature.isPosVarArg(expectedArgIdx)) {
-      auto expectedVariadic = sugarCast<VariadicType>(expectedType);
-      auto varArgsEltType = expectedVariadic.getElementType();
+      ASTType expectedRVType =
+          RefType::stripRefConvention(expectedType, expectedConvention);
+      auto variadicListInfo = expectedRVType.getVariadicListInfo();
+      auto varArgsEltType =
+          RefType::get(variadicListInfo.elementType, variadicListInfo.origin);
       while (posOperandIdx != numOperands) {
         auto &operand = operands[posOperandIdx];
         if (!operand.keyword &&
@@ -1195,8 +1197,9 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
     // If we have a pack argument, then we're binding a variadic parameter with
     // multiple type values.  We need to consume all remaining arguments and use
     // their RValue types as bindings.
-    if (ASTType variadicPackType =
-            signature.getIfVariadicPack(expectedArgIdx)) {
+    if (signature.isPack(expectedArgIdx)) {
+      ASTType variadicPackType =
+          RefType::stripRefConvention(expectedType, expectedConvention);
       variadicPackType = evaluator.getReboundType(variadicPackType);
       RefPackType packType = variadicPackType.getVariadicPackInfo(getShared());
 

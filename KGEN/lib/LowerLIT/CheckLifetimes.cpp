@@ -129,7 +129,7 @@ createDebugVariableForVarDecl(VarDeclOp op,
       DebugInfo::DIUnresolvedMLIRType::get(op.getType().getElementType());
   auto varAttr = DebugInfo::DILocalVariableAttr::get(
       localScope, op.getNameAttr(), funcSpAttr.getFile(), fileLoc.getLine(),
-      /*arg=*/op.getArgShadowIndex().value_or(-1) + 1,
+      /*arg=*/0,
       /*alignInBits=*/0, sourceType, DebugInfo::DIFlags::Zero);
 
   return varAttr;
@@ -792,7 +792,6 @@ ValueSet::ValueSet(TypeDeclInfo &typeDeclInfo, FunctionLikeOp func,
   bool genDebugInfo = compileUnit && compileUnit.getEmissionKind() ==
                                          DebugInfo::EmissionKind::Full;
 
-  SmallVector<bool> argShadowed(func.getNumArguments(), false);
   func.getBodyRegion().walk<mlir::WalkOrder::PreOrder>(
       [&](Operation *op) -> WalkResult {
         // Skip looking at nested functions, they are handled as separate
@@ -810,8 +809,6 @@ ValueSet::ValueSet(TypeDeclInfo &typeDeclInfo, FunctionLikeOp func,
               if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
                 debugVariable =
                     createDebugVariableForVarDecl(varDecl, funcSpAttr);
-                if (varDecl.getArgShadowIndex())
-                  argShadowed[*varDecl.getArgShadowIndex()] = true;
               }
             }
 
@@ -836,7 +833,7 @@ ValueSet::ValueSet(TypeDeclInfo &typeDeclInfo, FunctionLikeOp func,
       OpBuilder::atBlockBegin(&func.getBodyRegion().front());
   for (BlockArgument arg : func.getBodyRegion().front().getArguments()) {
     DebugInfo::DILocalVariableAttr debugVariable;
-    if (genDebugInfo && !argShadowed[arg.getArgNumber()])
+    if (genDebugInfo)
       debugVariable = insertDebugVariableForArg(debugBuilder, func, arg,
                                                 pogList, funcSpAttr);
     if (auto trackable = OriginTrackable(arg))

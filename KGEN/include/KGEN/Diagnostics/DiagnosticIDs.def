@@ -422,8 +422,6 @@ DIAG(err_array_attribute_expected_concrete_size, Error, MLIR,
      "array attribute expected a concrete size")
 DIAG(err_bind_params_more_parameters_than_generator, Error, MLIR,
      "bind_params has more parameters than the generator expects")
-DIAG(err_cannot_arg_index_unless_arg, Error, MLIR,
-     "cannot have arg index unless is arg kind")
 DIAG(err_cannot_convert_2, Error, MLIR,
      "cannot convert {0} to trait {1}")
 DIAG(err_cannot_convert_float_string, Error, MLIR,
@@ -594,9 +592,8 @@ DIAG(err_apply_result_function_result_type_2, Error, Dialect,
 DIAG(err_argument_func_type_pointer, Error, Dialect,
      "argument #{0} with convention '{1}' in func type should be a `!kgen.pointer` but got: {2}")
 DIAG(err_argument_signature_lit_ref, Error, Dialect,
-     "argument #{0} with convention '{1}' in signature type should be a `!lit.ref` but got: '{2}'")
-DIAG(err_argument_signature_varargs_variadic, Error, Dialect,
-     "argument #{0} in signature with varargs should be a `!kgen.variadic` but got: {1}")
+     "argument #{0} with convention '{1}' in signature type should be a "
+     "`!lit.ref` but got: '{2}'")
 DIAG(err_array_attribute_type_requires_2, Error, Dialect,
      "array attribute type requires {0} elements but value has {1}")
 DIAG(err_array_element_2, Error, Dialect,

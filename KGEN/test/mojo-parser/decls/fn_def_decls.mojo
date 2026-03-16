@@ -56,7 +56,7 @@ def default_args(a: Int, b: Int = 8, *, c: Int, d: Int = 9):
 
 
 # CHECK-LABEL: lit.fn @"variadic_and_kw_only
-# CHECK-SAME: (%a: !Int, %b: !Int, %args: !kgen.variadic<!lit.ref<!Int, {{.*}}>> read_mem|pos_vararg, *, %c: !Int, %d: !Int = {9})
+# CHECK-SAME: (%a: !Int, %b: !Int, %args: !lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg, *, %c: !Int, %d: !Int = {9})
 def variadic_and_kw_only(
     a: Int, b: Int, *args: Int, c: Int, d: Int = 9
 ):
@@ -64,7 +64,7 @@ def variadic_and_kw_only(
 
 
 # CHECK-LABEL: lit.fn @"variadic_arg_after_default
-# CHECK-SAME: (%a: !Int, %b: !Int = {0}, %args: !kgen.variadic<!lit.ref<!Int, {{.*}}>> read_mem|pos_vararg = :none *?,
+# CHECK-SAME: (%a: !Int, %b: !Int = {0}, %args: !lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg = :none *?,
 # CHECK-SAME:  *, %c: !Int, %d: !Int = {1}, %kwargs: {{.*}}|kw_vararg = :none *?)
 def variadic_arg_after_default(
     a: Int,
@@ -259,4 +259,3 @@ def foldable_param_requires_2[
     y: Int where y > 10 = 11
 ]():
     pass
-

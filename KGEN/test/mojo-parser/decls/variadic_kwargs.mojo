@@ -12,7 +12,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # CHECK-LABEL: lit.fn @"variadic_kwargs
-# CHECK-SAME: %a: !Int, %b: !Int, %args: !kgen.variadic<!lit.ref<!Int, {{.*}}>> read_mem|pos_vararg, *, %c: !Int, %d: !Int,
+# CHECK-SAME: %a: !Int, %b: !Int, %args: !lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg, *, %c: !Int, %d: !Int,
 # CHECK-SAME: %kwargs: !lit.ref<!lit.struct<#OwnedKwargsDict <:!ImplicitlyCopyable !Int>>, mut {{.*}}> owned_in_mem|kw_vararg)
 def variadic_kwargs(
     a: Int, b: Int, *args: Int, c: Int, d: Int, **kwargs: Int
@@ -107,4 +107,3 @@ def test_takes_kw_in_assignment(x: MemOnly):
     # CHECK: %b = lit.var.decl "b" var : !lit.ref<!Int,
     # CHECK: lit.ref.store %[[RES]], %b
     var b = takes_kw(y=x, z=x)
-

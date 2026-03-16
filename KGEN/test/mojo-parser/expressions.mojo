@@ -144,7 +144,8 @@ def memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: [[IMMREF1:%.*]] = lit.ref.immut %regX
   # CHECK-NEXT: [[IMMREF2:%.*]] = lit.ref.immut %regX
   # CHECK-NEXT: [[VARIADIC:%.*]] = pop.variadic.create [[[IMMREF1]], [[IMMREF2]]]
-  # CHECK-NEXT: lit.call {{.*}}variadic{{.*}}([[VARIADIC]])
+  # CHECK: lit.call {{.*}}VariadicList::@"__init__
+  # CHECK: lit.call {{.*}}MemoryOnlyInt::@"variadic
   MemoryOnlyInt.variadic(regX, regX)
 
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %v2
@@ -1026,7 +1027,7 @@ def function_types[
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |, ?, "__result__": !lit.ref<none, mut *[0,0]> byref_result) async|capturing -> !kgen.none
   float6: async def(Int) capturing -> None,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!lit.ref<!Int, {{.*}}>> read_mem|pos_vararg, ?, {{.*}}) throws -> i1
+  # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg, ?, {{.*}}) throws -> i1
   float7: def(*Int) raises -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}<(!Int = {10}, {{.*}}StringLiteral <:string "foo">
@@ -1055,9 +1056,6 @@ struct TwoParamsStruct[a: Int, b: Int](ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.fn @"variadic_subscript{{.*}}"<idx: !Int, a: variadic<!Int> pos_vararg>
 def variadic_subscript[idx: Int, *a: Int](*b: Int):
-    # CHECK-NEXT: %b_0 = lit.var.decl "b"
-    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b)
-    # CHECK-NEXT: lit.ref.store [[TMP]], %b_0
     # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <#kgen.variadic.get<:variadic<!Int> a, 2>>
     comptime v0 = a[2]
 
@@ -1065,25 +1063,21 @@ def variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <#kgen.variadic.get<:variadic<!Int> a, 3>>
     # CHECK: lit.ref.store [[TMP]], %v1
     var v1 = a[3]
-    # CHECK: lit.ref.immut %b_0
-    # CHECK: {{.*}}__getitem__{{.*}}(%{{.*}}, %{{.*}})
+    # CHECK: {{.*}}__getitem__{{.*}}(%b, %{{.*}})
     var v2 = b[idx]
 
 
 # CHECK-LABEL: lit.fn @"variadic_memory_subscript
-# CHECK-SAME: variadic<!lit.ref<{{.*}}TwoParamsStruct <
+# CHECK-SAME: !lit.ref<{{.*}}TwoParamsStruct
 # CHECK-SAME:   #kgen.variadic.get<:variadic<!Int> a, 0>
 # CHECK-SAME:   #kgen.variadic.get<:variadic<!Int> a, 1>
 def variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
-    # CHECK: %b_0 = lit.var.decl
-    # CHECK: [[IMMREF:%.*]] = lit.ref.immut %b_0 :
-    # CHECK: [[B1REF:%.*]] = {{.*}}__getitem__{{.*}}([[IMMREF]],
+    # CHECK: [[B1REF:%.*]] = {{.*}}__getitem__{{.*}}(%b,
     # CHECK: %v0 = lit.var.decl
     # CHECK: lit.memcpy [[B1REF]], %v0
 
     var v0 = b[1]
-    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %b_0 :
-    # CHECK: [[B2REF:%.*]] = {{.*}}__getitem__{{.*}}([[IMMREF]],
+    # CHECK: [[B2REF:%.*]] = {{.*}}__getitem__{{.*}}(%b,
     # CHECK: %v1 = lit.var.decl
     # CHECK: lit.memcpy [[B2REF]], %v1
     var v1 = b[2]

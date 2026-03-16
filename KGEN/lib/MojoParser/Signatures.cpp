@@ -1386,10 +1386,9 @@ static RefType makeImplicitRefTypeForArg(const ParsedArgument &arg, size_t idx,
 // expression is "Ts", and the star before it was syntactically parsed.
 // This expression must be a PValue of variadic metatype.  We need to
 // process it into a VariadicPack.
-static ASTType
-typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
-                                   IREmitter &emitter,
-                                   TypeCheckedFnSignature &tcSignature) {
+static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
+                                     IREmitter &emitter,
+                                     TypeCheckedFnSignature &tcSignature) {
   assert(arg.variadicKind == VariadicKind::PackVarArg &&
          "this applies to pack arguments");
 
@@ -1462,12 +1461,79 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   bindings.add(arg.typeExpr,
                UnpackedAttr::get(param.get(), /*kwOnly=*/false, elementType));
 
-  auto typeSig = packStruct.getSignature();
   ParameterExprArrayAttr bindingValuesAttr =
-      bindings.verifyStructBindings(*packDecl, typeSig);
+      bindings.verifyStructBindings(*packDecl, packStruct.getSignature());
   if (!bindingValuesAttr)
     return {};
   return packStruct.bindReference(bindingValuesAttr.getValue());
+}
+
+// If this argument is a homogenous vararg like "*args: SomeType" then the
+// process it into a VariadicList.
+static ASTType typeCheckVariadicList(ParsedArgument &arg, size_t argIdx,
+                                     IREmitter &emitter,
+                                     TypeCheckedFnSignature &tcSignature) {
+  assert(arg.variadicKind == VariadicKind::PosVarArg &&
+         "this applies to variadic list arguments");
+
+  ASTType elementType =
+      emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
+  if (!elementType) // Error emitting the expression is already diagnosed.
+    return {};
+
+  // Any _'s in the argument type get autoparameterized before we form the
+  // VariadicList around it.
+  elementType =
+      addImplicitTypeParams(arg.name, elementType, tcSignature.paramList,
+                            /*append=*/true, arg.loc);
+
+  // The reference is immutable when borrowing, mutable otherwise.
+  bool isMutable = arg.convention != ParsedArgument::kConventionRead &&
+                   arg.convention != ParsedArgument::kConventionUnspec;
+  bool isVar = arg.convention == ParsedArgument::kConventionVar;
+
+  // Arguments passed by memory need an associated origin parameter, and need
+  // to be passed by reference.
+  RefType refType = makeImplicitRefTypeForArg(arg, argIdx, elementType,
+                                              isMutable, tcSignature);
+
+  // Form a VariadicList type.
+  ASTType variadicListType =
+      emitter.shared.getBuiltinVariadicListType(emitter.declScope, arg.loc);
+  if (isa<TypeCheckErrorType>(variadicListType))
+    return {}; // Sanity check the returned VariadicList declaration.
+  ASTDecl *listDecl = variadicListType.getDecl(emitter.shared);
+
+  // We expect:
+  // VariadicList[elt_is_mutable: Bool, origin: Origin[mut=elt_is_mutable], //,
+  //              element_type: AnyType, is_owned: Bool]
+  if (!listDecl) {
+    emitter.emitError(arg.loc, Diag::DiagID::err_malformed_variadiclist);
+    return {};
+  }
+  auto structDeclOp =
+      dyn_cast_if_present<StructDeclOp>(*listDecl->getIfOperation());
+  if (!structDeclOp || structDeclOp.getParams().size() != 5) {
+    emitter.emitError(arg.loc, Diag::DiagID::err_malformed_variadiclist);
+    return {};
+  }
+
+  PValue origin =
+      emitter.getStdlibOriginOf(refType.getOrigin(), arg.typeExpr->getLoc());
+  if (!origin)
+    return {};
+
+  ParamBindings bindings(emitter.declScope, arg.typeExpr);
+  bindings.add(arg.typeExpr, origin,
+               StringAttr::get(emitter.getContext(), "origin"));
+  bindings.add(arg.typeExpr, PValue(elementType));
+  bindings.add(arg.typeExpr, BoolAttr::get(emitter.getContext(), isVar));
+
+  ParameterExprArrayAttr bindingValuesAttr =
+      bindings.verifyStructBindings(*listDecl, structDeclOp.getSignature());
+  if (!bindingValuesAttr)
+    return {};
+  return structDeclOp.bindReference(bindingValuesAttr.getValue());
 }
 
 /// Type check each argument in turn, resolving their type and default
@@ -1499,16 +1565,18 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
   // Start by computing the declared type of the argument.
   ASTType type;
   if (arg.typeExpr) {
-    if (arg.variadicKind != VariadicKind::PackVarArg) {
+    if (arg.variadicKind == VariadicKind::PackVarArg) {
+      // Ts in "*args: *Ts" is a reference to a variadic list of types, but
+      // needs to be type checked to an instance of VariadicPack.
+      type = typeCheckVariadicPack(arg, idx, typeEmitter, tcSignature);
+    } else if (arg.variadicKind == VariadicKind::PosVarArg) {
+      // "*args: Int" is an instance of VariadicList.
+      type = typeCheckVariadicList(arg, idx, typeEmitter, tcSignature);
+    } else {
       // Emit the argument type. Allow argument types to be "automatically"
       // parameterized: if the type is fully unbound, its parameters are
       // appended to the function parameters.
       type = typeEmitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
-    } else {
-      // Ts in "*args: *Ts" is a reference to a variadic list of types, but
-      // needs to be type checked.
-      type = typeCheckVariadicPackTypeSpecifier(arg, idx, typeEmitter,
-                                                tcSignature);
     }
 
     // If the type couldn't be emitted, mark this argument erroneous (so uses
@@ -1518,8 +1586,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     if (!type) {
       type = shared.getTypeCheckErrorType();
       arg.isErroneous = true;
-      arg.variadicKind =
-          VariadicKind::None; // Don't break invariants on errors.
+      arg.variadicKind = VariadicKind::None; // Don't break invariants.
     }
     type = addImplicitTypeParams(arg.name, type, tcSignature.paramList,
                                  /*append=*/true, arg.loc);
@@ -1529,11 +1596,20 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
              !isStaticMethod) {
     // If this is the 'self' argument in a struct, default the type to Self.
     type = tcSignature.selfType;
+
+    // This can't be variadic.
+    if (arg.variadicKind != VariadicKind::None) {
+      shared.emitError(arg.loc) << "self argument may not be variadic";
+      arg.variadicKind = VariadicKind::None;
+      arg.isErroneous = true;
+    }
+
   } else {
     // Otherwise, this is an error.
     shared.emitError(arg.loc, Diag::DiagID::err_argument_type_specified)
         << SourceRange(arg.loc, arg.loc);
     type = shared.getTypeCheckErrorType();
+    arg.variadicKind = VariadicKind::None;
     arg.isErroneous = true;
   }
   assert(type && "must have an argument type");
@@ -1598,7 +1674,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     break;
   case ParsedArgument::kConventionRef: {
     if (arg.variadicKind != VariadicKind::None) {
-      // There should be no reason this isn't supportable.
+      // There is no reason this isn't supported.
       shared.emitError(arg.loc,
                        Diag::DiagID::err_todo_variadic_isnt_supported_ref);
       arg.variadicKind = VariadicKind::None;
@@ -1630,9 +1706,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     // We can pass trivial register borrowed arguments in a register.  We cannot
     // pass non-trivial ones because we cannot diagnose ownership and have other
     // lifetime issues.
-    if (conv == TypeConvention::RegisterPassableTrivial &&
-        // Positional variadics are always passed in memory.
-        arg.variadicKind != VariadicKind::PosVarArg)
+    if (conv == TypeConvention::RegisterPassableTrivial)
       arg.kgenConvention = ArgConvention::ReadReg;
     break;
   }
@@ -1645,9 +1719,10 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     break;
   }
 
-  // For packs, we figure out the declared arg convention and adjust passed
+  // For variadics, we figure out the declared arg convention and adjust passed
   // convention.
-  if (arg.variadicKind == VariadicKind::PackVarArg) {
+  if (arg.variadicKind == VariadicKind::PackVarArg ||
+      arg.variadicKind == VariadicKind::PosVarArg) {
     // Remember the original declared convention, forcing to memory convention.
     // The VariadicPack itself is passed as borrowed except for owned
     // convention: this allows the callee to consume the pack.
@@ -1657,7 +1732,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     case ParsedArgument::kConventionByRefResult:
     case ParsedArgument::kConventionOut:
     case ParsedArgument::kConventionDeinit:
-      llvm_unreachable("not a pack arg convention");
+      llvm_unreachable("not a variadic arg convention");
     case ParsedArgument::kConventionVar:
       arg.variadicArgConvention = ArgConvention::OwnedMem;
       arg.kgenConvention = ArgConvention::OwnedMem;
@@ -1685,14 +1760,8 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     fullType = type;
   }
 
-  // If this is a valid vararg argument, then we pass it as a variadic type.
-  // The convention is to pass as a register value, in the case of a memory
-  // value, we're passing the array of pointers by value.
-  if (arg.variadicKind == VariadicKind::PosVarArg) {
-    fullType = VariadicType::get(fullType);
-    arg.variadicArgConvention = arg.kgenConvention;
-    arg.kgenConvention = ArgConvention::ReadReg;
-  } else if (arg.variadicKind == VariadicKind::KwVarArg) {
+  // More special cases for kwVarArg's.
+  if (arg.variadicKind == VariadicKind::KwVarArg) {
     // We build OwnedKwargsDict[ValType].
     ASTType dictType =
         shared.getStandardCollectionType(arg.loc, "OwnedKwargsDict");
@@ -1759,10 +1828,6 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
   else // Everything else is passed in memory.
     argIRValue = CValue::getMValueForRef(bbArg);
 
-  // FIXME: This is not setting the correct type for Variadics.  We shouldn't
-  // expose something like !kgen.variadic to subsequent arguments, we should
-  // expose VariadicList.  This will require moving the VariadicList
-  // formation to the caller side.
   ASTDecl &decl = typeEmitter.getDeclResolver().addFullyResolvedDecl(
       argIRValue, arg.name, arg.loc, &typeEmitter.declScope);
 

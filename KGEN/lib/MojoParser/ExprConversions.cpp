@@ -226,7 +226,7 @@ static bool canConvertFunctionTypes(FnType actual, FnType expected,
 
     // Get the variadic pack's element trait.
     ASTType expectedArgVariadicPackType =
-        expected.getIfVariadicPack(expectedVariadicArgIndex);
+        expected.getIfVariadicListOrPack(expectedVariadicArgIndex);
     RefPackType refPackType =
         expectedArgVariadicPackType.getVariadicPackInfo(shared);
     ASTType variadicElType = refPackType.getVariadicElementType();

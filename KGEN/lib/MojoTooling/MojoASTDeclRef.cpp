@@ -284,24 +284,6 @@ ResultType MojoASTDeclRef::getDeclImpl() const {
     }
   }
 
-  // Handle def argument shadows, the parser produces these as
-  // DefArgumentWrapperDLValue so we need to dig through them to find the
-  // underlying BlockArgument for the function.
-  if (auto lvalue = decl->getIfIRValue().getIfLValue()) {
-    // Resolved to mutable.
-    if (auto mlValue = lvalue.getIfMLValue()) {
-      if (auto var = mlValue.getDefiningOp<VarDeclOp>()) {
-        if (var.getArgShadowIndex().has_value()) {
-          if constexpr (isApproximateResult)
-            return PublicDeclKind::DK_PublicArgumentDecl;
-          else
-            return createPublicArgumentDecl(*this,
-                                            var.getArgShadowIndex().value());
-        }
-      }
-    }
-  }
-
   // Now we inspect the IR checking for a parameter.
   if (ParamDeclRefAttr param = getIfParameter(*this)) {
     if constexpr (isApproximateResult) {
