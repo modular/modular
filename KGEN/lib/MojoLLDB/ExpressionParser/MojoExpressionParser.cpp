@@ -596,9 +596,16 @@ Status MojoExpressionParser::prepareForExecution(
   // function in the execution unit, it needs to keep living even if it's not
   // top level, because the result could refer to that function, register it if
   // necessary.
+  //
+  // In REPL mode, always persist the execution unit to keep JIT-section memory
+  // alive. String literals constructed from `StringLiteral` store a raw pointer
+  // into the JIT data section (via `pop.string.address`) without heap-copying,
+  // so freeing the execution unit's JIT sections would leave persisted String
+  // variables with dangling data pointers.
   std::shared_ptr<JITExecutionUnit> persistedExecutionUnit;
   if (executionUnit &&
       (impl->options.GetExecutionPolicy() == eExecutionPolicyTopLevel ||
+       impl->options.GetREPLEnabled() ||
        executionUnit->getJittedFunctions().size() > 1)) {
     persistedExecutionUnit = executionUnit;
   }
