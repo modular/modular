@@ -35,7 +35,6 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/SourceMgr.h"
-
 #include <filesystem>
 
 using namespace M;
@@ -263,26 +262,55 @@ MojoASTDeclRef MojoParserContext::parseFileForLSP(unsigned fileId) {
 
   ASTDecl *moduleDecl = buildModuleDecl(filepath, sourceBuf, impl->sharedState);
   resolveForLSP(*impl->sharedState.declResolver, *moduleDecl);
-  ensureSignaturesResolved();
+  ensureSignaturesResolvedForLSP();
 
   return MojoASTDeclRef(moduleDecl);
 }
 
-void MojoParserContext::ensureSignaturesResolved() {
+void MojoParserContext::ensureSignaturesResolvedForLSP() {
   DeclResolver &resolver = *impl->sharedState.declResolver;
-
   size_t i = 0;
   while (i != resolver.getParsedDeclList().size()) {
     ASTDecl *parsedDecl = resolver.getParsedDeclList()[i++];
 
-    // It isn't safe to leave decls loaded from bytecode in a partially-resolved
-    // state, because their underlying IR may be in an invalid state. To avoid
-    // issues from partially-parsed IR, we need to resolve the bodies of any
-    // decls we load from bytecode.
-    if (parsedDecl->isLoadedFromBytecode())
-      (void)resolver.resolveBody(*parsedDecl, parsedDecl->getLoc());
-    else
+    // Skip named imports (UnresolvedImportOp) that haven't been resolved yet,
+    // regardless of whether they originate from source or bytecode. These are
+    // resolved lazily on first use, so eagerly resolving them here would pull
+    // in all their transitive imports — which can be very expensive (e.g.
+    // _unicode_lookups.mojo with 17 large comptime tables). Once a named import
+    // has been lazily resolved, its resolvedness is promoted to `body` by
+    // aliasDeclsImpl, so it no longer matches this check and will be handled
+    // normally.
+    //
+    // Wildcard imports cannot be skipped: they may contribute new names to the
+    // scope's overload sets, and those names must be visible before any
+    // subsequent signature resolution inspects the scope.
+    if (parsedDecl->resolvedness == DeclResolvedness::unparsed &&
+        isa_and_nonnull<LIT::UnresolvedImportOp>(parsedDecl->getIfOperation()))
+      continue;
+
+    if (parsedDecl->isLoadedFromBytecode()) {
+      // For function ops, resolveSignature suffices for LSP. FnOp bodies are
+      // already materialized in the IR (they are not IsolatedFromAbove, so they
+      // are parsed eagerly when their parent container is materialized). We
+      // skip resolveBody to avoid walking the function body and eagerly
+      // resolving transitive symbol references (e.g. large unicode lookup
+      // tables accessed through _unicode.mojo's helper functions).
+      //
+      // All other bytecode decls (container ops) still require resolveBody.
+      // It isn't safe to leave them in a partially-resolved state: container
+      // ops with a SymbolTable trait (e.g. FileModuleOp) must have at least
+      // one Block in their body region — an LLVM invariant — but signature-
+      // only resolution leaves the body empty. resolveBody materializes the
+      // body from bytecode, satisfying the invariant and making the op's
+      // members visible to LSP queries.
+      if (isa_and_nonnull<LIT::FnOp>(parsedDecl->getIfOperation()))
+        (void)resolver.resolveSignature(*parsedDecl, parsedDecl->getLoc());
+      else
+        (void)resolver.resolveBody(*parsedDecl, parsedDecl->getLoc());
+    } else {
       (void)resolver.resolveSignature(*parsedDecl, parsedDecl->getLoc());
+    }
   }
 }
 
